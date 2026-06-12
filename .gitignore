@@ -1,0 +1,39 @@
+# Machine-local generated files (use setup.ps1 to regenerate)
+.claude/settings.json
+CLAUDE.md
+
+# Environment & secrets
+.env
+*.env.*
+secrets/
+credentials/
+
+# LaTEX
+out/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv*/
+venv*/
+env*/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node / JS
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/

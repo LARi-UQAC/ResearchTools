@@ -1,0 +1,19 @@
+# Dependencies for the scopus skill scripts and the deliberation panel.
+#
+# scopus_api.py / semantic_scholar_api.py : requests
+# gemini_reviewer.py                       : google-genai   (Gemini 2.0 Flash)
+# github_reviewer.py                       : openai          (GPT-4o via GitHub Models)
+# deliberate.py (.claude/skills/deliberation/scripts) imports the two reviewers,
+#   so it needs no dependency beyond these.
+#
+# Validate per CLAUDE.md before use. pip-audit's -r mode needs exact pins, so audit
+# the resolved set with --no-deps (floors below are documentation for humans):
+#   pip-audit --no-deps -r <(echo "requests==2.33.0"; echo "openai==2.38.0"; echo "google-genai==2.7.0")
+# Audited clean 2026-05-31 at requests 2.33.0 / openai 2.38.0 / google-genai 2.7.0.
+# requests floor is >=2.33.0: 2.32.5 carried CVE-2026-25645 (fixed in 2.33.0).
+# google-genai and openai degrade gracefully if absent (the reviewer is marked
+# unavailable), so installing them is optional for local-only runs.
+
+requests>=2.33.0
+google-genai>=1.0.0
+openai>=1.50.0

@@ -258,7 +258,7 @@ two-pass recompilation is needed. Responds in French.
 Formats and validates references per UQAC / LAR.i rules.
 
 **Accepted publishers:** IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET,
-IOP, ACM, MDPI, ASME. Any other publisher requires professor approval. Provides: full LaTeX
+IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC). Any other publisher requires professor approval. Provides: full LaTeX
 reference, clickable DOI via `\href`, a 0–100 % confidence level with justification, and an
 introductory sentence. Never fabricates a reference or DOI.
 
@@ -347,7 +347,7 @@ command.
 ### `latex-writer` key rules
 
 - TiKZ: relative positioning only; arrows perpendicular; no overlaps
-- References: peer-reviewed only (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME); DOI via hyperref; any other publisher needs user confirmation
+- References: peer-reviewed only (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC)); DOI via hyperref; any other publisher needs user confirmation
 - Tables: rows = parameters, cols = concepts; bold headers; 10 % grey row shading
 - Language: French default for UQAC thesis, English for scientific papers
 - Avoid AI-detectable patterns: zero-width spaces, smart quotes, em dashes, perfect parallel lists

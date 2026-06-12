@@ -705,7 +705,7 @@ echo "<full review output>" | python ".claude/skills/deliberation/scripts/delibe
 - Never include a paper without at minimum a Scopus EID or a verified DOI
 - If fewer than 5 papers are found on the first search, broaden the query and search again before reporting
 - Group by theme, not chronologically
-- Flag publishers outside the UQAC accepted list (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI) with **[CHECK PUBLISHER]**
+- Flag publishers outside the UQAC accepted list (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC)) with **[CHECK PUBLISHER]**
 - Respond in French unless the topic or the majority of retrieved papers are in English
 - Prose quality: all synthesis and context paragraphs must follow the scientific writing conventions in `.claude/skills/scientific-writing/references/writing_principles.md` — no bullets in final text, no AI-style transition phrases, tense consistent with IMRAD conventions
 - Engineering scope with cross-disciplinary inclusion: SUBJAREA(ENGI) is the primary anchor; secondary subject areas (COMP, MATH, MEDI, NEUR, BIOC, PHYS, MATE, ENER, CENG, ENVI, EART) are explicitly included to capture biomedical engineering, neural engineering, applied physics, materials, and other cross-disciplinary engineering work

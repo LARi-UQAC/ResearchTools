@@ -7,7 +7,8 @@
 .DESCRIPTION
     Auto-detects Git Bash, Node.js, and your user profile path.
     Optionally configures the Obsidian vault path for the Obsidian-integration
-    section of CLAUDE.md. Writes two files that are gitignored:
+    section of CLAUDE.md. Writes two files that are tracked in the repository
+    (the templates produce committed repo content, not machine-local copies):
         .claude\settings.json
         CLAUDE.md
 
@@ -134,7 +135,7 @@ if (-not $Force) {
     if (Test-Path $settingsTarget) { $existing += ".claude\settings.json" }
     if (Test-Path $claudeTarget)   { $existing += "CLAUDE.md" }
     if ($existing.Count -gt 0) {
-        Write-Warn "These files already exist and will be overwritten: $($existing -join ', ')"
+        Write-Warn "These tracked files exist and will be regenerated (commit the result): $($existing -join ', ')"
     }
     $confirm = Read-Host "Proceed? [Y/n]"
     if ($confirm -match '^[Nn]') {

@@ -2,7 +2,7 @@
 
 Format, verify, or find the following academic reference per LAR.i / UQAC requirements.
 
-**Accepted publishers only**: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI.
+**Accepted publishers only**: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC).
 Any other publisher must be submitted to the professor for approval before inclusion.
 
 **Required LaTeX format**:

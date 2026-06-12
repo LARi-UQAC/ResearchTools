@@ -222,7 +222,7 @@ For every `\cite{key}` call found in the paper (skip keys already validated in S
 | `[YEAR MISMATCH]` | Year differs by more than 1 |
 | `[JOURNAL MISMATCH]` | Journal/conference name substantially differs |
 | `[NOT FOUND]` | No Scopus match via DOI or title |
-| `[PUBLISHER NOT APPROVED]` | Publisher not in: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI, ACM |
+| `[PUBLISHER NOT APPROVED]` | Publisher not in: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC) |
 | `[UNVERIFIED]` | Scopus returned 403/network error |
 
 4. For each validated reference, assess the **confidence level** — how well the paper's abstract/keywords (returned by Scopus) match the context of the `\cite{}` call in the source paper:

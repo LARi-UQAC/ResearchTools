@@ -1,95 +1,44 @@
 # Workflows
 
-## Starting the application
+Common task flows in this workspace. Each maps a goal to the command, the agent it drives,
+and the output produced. Full arguments are in `README.md`.
 
-```bash
-# Quickest — double-click or run:
-.\stcost.bat          # Opens two cmd windows + Chrome
+## Research and writing flows
 
-# PowerShell (supports -Clean to kill old processes):
-.\START_APPLICATION.ps1        # Root wrapper
-# or the canonical script path:
-.\scripts\start\START_APPLICATION.ps1
+| Goal | Command | Agent / skill | Output |
+|---|---|---|---|
+| Literature review on a topic | `/litreview <topic>` | `scopus-researcher` | Structured review, PRISMA + gap/coverage/Pareto matrices, hypotheses, BibTeX |
+| Find or validate one reference | `/scopus`, `/ref` | `scopus` skill | Validated metadata, formatted reference, clickable DOI |
+| Audit an existing review | `/auditreview [file]` | `scopus-auditor` | Reference validation + executable improvement plan |
+| Audit a complete paper | `/auditpaper [file]` | `paper-auditor` (+ `scholar-evaluation`) | Track-change markup plan + ScholarEval score |
+| Audit a UQAC thesis | `/auditthesis [main.tex]` | `thesis-auditor` | Front-matter, hypothesis-flow, and formatting audit plan |
+| Audit a UQAC thesis proposal | by name | `thesis-proposal-auditor` | Proposal-specific audit plan (<=35 pages body) |
+| Clean a `.bib` | `/bibclean [file.bib]` | `bib-cleaner` | Cleaned `.bib` + report (dedup, DOI enrichment, SJR) |
+| Respond to reviewers | `/replyreviewer ...` | `reviewer-response` | One letter per reviewer + traceable `changes` markup |
+| Check submission readiness | `/submitcheck <tex> <journal>` | `submit-checker` | Pass/fail submission checklist |
+| Build a submission package | by name | `cover-paper` | Hidden cover letter, title page PDF, author profile PDF |
+| Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 
-# Manual (two terminals):
-# Terminal 1 — Flask API (port 5000)
-cd api && .\.venv\Scripts\Activate.ps1 && python run.py
+## LaTeX maintenance
 
-# Terminal 2 — Blazor frontend (port 5246)
-cd web\CostEstimator.Web && dotnet run
-```
+- Validate TiKZ figures with `/tikz` before committing them (anchoring, perpendicular
+  arrows, no overlaps, TiKZiT compatibility).
+- Diagnose and fix LaTeX build errors with `/latex` (reads `out/*.log` first, cites the
+  failing line, states whether a two-pass recompilation is needed).
 
-Flask must start **before** Blazor.
+## Calling an agent explicitly
 
-## Health checks
+Agents are normally triggered by context. To invoke one directly, address it by name, for
+example: "Use the `scopus-auditor` agent to audit the review in `literature_review.tex`."
+The slash commands are thin wrappers over these agents.
 
-```bash
-# Flask API
-Invoke-WebRequest http://localhost:5000/api/health -UseBasicParsing
+## Documentation maintenance
 
-# Blazor
-Invoke-WebRequest http://localhost:5246 -UseBasicParsing | Select StatusCode
-```
+After a substantive change, update the relevant doc and verify that links resolve. Keep
+`README.md` and `Architecture.md` as the authoritative inventory; do not duplicate their
+tables into `.claude/CLAUDE.md`.
 
-## Modifying the JS interop layer
-1. Edit the file in `web/CostEstimator.Web/wwwroot/js/`
-2. Increment `?v=N` on the `<script>` tag in `App.razor` for that file
-3. Hard-reload the browser (Ctrl+Shift+R) to bust the cache
+## Environments
 
-## Adding a new API endpoint
-1. Create or extend a route file in `api/routes/`
-2. Register the blueprint in `api/app.py` if adding a new file
-3. Add a corresponding method to `CostEstimatorApiClient.cs` in the Blazor service layer
-4. Document the endpoint in `.claude/CLAUDE.md` (source of truth for cross-layer API contract)
-5. Update `web/CostEstimator.Web/docs/reference/api-endpoints.md` with endpoint details (copy from CLAUDE.md if stable)
-6. If the endpoint is consumer-specific (geometry, composition, etc.), update the relevant guide in `web/CostEstimator.Web/docs/api-integration/`
-
-## Adding a localization key
-1. Open `web/CostEstimator.Web/Services/LocalizationService.cs`
-2. Add the key to the dictionary initializer for both `"fr"` and `"en"` entries
-3. Use `@L["your.key"]` in the Razor component
-4. Update the key registry in `web/CostEstimator.Web/docs/reference/localization-keys.md` for reference
-
-## Adding a new validation step page
-Follow the existing pattern in `Components/Pages/Step1Height.razor`:
-1. Create `Step{N}{Name}.razor` in `Components/Pages/`
-2. Document the step's purpose and validation rules in `web/CostEstimator.Web/docs/ui/step-pages.md`
-3. Update `web/CostEstimator.Web/docs/diagrams/step-workflow.mmd` (Mermaid) if state flow changes
-2. Use `ValidationCard` as the wrapper with appropriate `RenderFragment` slots
-3. Add the route to `Routes.razor` / navigation logic in the step service
-4. Add `POST /api/prepare-step` and `POST /api/validate` calls via `CostEstimatorApiClient`
-
-## Documentation Maintenance
-Always update docs after major changes:
-1. **Frontend feature**: Update `web/CostEstimator.Web/docs/{category}/*.md`
-2. **API change**: Update `.claude/CLAUDE.md##API-endpoints` and relevant integration guide
-3. **Geometry/composition flow**: Update `web/CostEstimator.Web/docs/api-integration/` and relevant Mermaid diagram
-4. **Cross-layer impact**: Update `.claude/CLAUDE.md##Critical-conventions` and both consumer docs
-5. **Verify all links** in updated docs resolve correctly (use markdown link checker before committing)
-
-## Analysis pipeline stages (Python engine)
-1. Page extraction — `cost_estimator_project/pdf_processing/page_extraction.py`
-2. Perimeter calculation — `cost_estimator_project/pdf_processing/perimeter_calculation.py`
-3. Height detection (EasyOCR) — `cost_estimator_project/image_analysis/height_detection.py`
-4. Composition matching — `cost_estimator_project/image_analysis/composition_finder.py`
-5. Scale calibration (YOLO12 + SAM/OpenCV) — `cost_estimator_project/image_analysis/scale_calibrator.py`
-6. Openings + corners detection (YOLO12) — `cost_estimator_project/digital_vision/openings_corners/opening_corner_numbers.py`
-
-## Python virtual environments
-- `cost_estimator_project/.venv` — analysis engine and its dependencies
-- `.venv` (root) — Flask API (`api/requirements.txt`)
-- Always use the correct venv for the layer you are working in
-
-## Stopping services
-
-```bash
-Stop-Process -Name python, dotnet -Force -ErrorAction SilentlyContinue
-```
-
-## Troubleshooting ports
-
-```bash
-netstat -ano | findstr ":5000"
-netstat -ano | findstr ":5246"
-$p = Get-NetTCPConnection -LocalPort 5000 | Select -Expand OwningProcess; Stop-Process -Id $p -Force
-```
+Use the correct virtual environment for the layer you are working in, and run the relevant
+tests manually before pushing (see `testing.md`). There is no CI/CD pipeline.

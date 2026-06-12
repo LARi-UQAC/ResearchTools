@@ -292,7 +292,7 @@ For every `\cite{}`, `\citep{}`, `\citet{}`, `\citealp{}`, `\citealt{}` call acr
 | `[YEAR MISMATCH]` | Year differs by more than 1 from Scopus |
 | `[JOURNAL MISMATCH]` | Journal/conference name substantially differs |
 | `[NOT FOUND]` | No Scopus match via DOI or title |
-| `[PUBLISHER NOT APPROVED]` | Publisher not in: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI, ACM |
+| `[PUBLISHER NOT APPROVED]` | Publisher not in: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC) |
 | `[UNVERIFIED]` | Scopus returned 403 or network error |
 
 4. **Confidence level** — compare the Scopus abstract/keywords to the citation context in the thesis. Assign one level and write one sentence justifying it:

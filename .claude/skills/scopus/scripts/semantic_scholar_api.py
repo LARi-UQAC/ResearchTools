@@ -14,8 +14,8 @@ Rate limit:
     request from this process. Do not bypass it.
 
 API key:
-    Read from the environment variable 'S2_AP_ Key' (the name set on this
-    machine), falling back to 'S2_API_KEY' and 'SEMANTIC_SCHOLAR_API_KEY'.
+    Read from the environment variable 'S2_API_KEY', falling back to
+    'SEMANTIC_SCHOLAR_API_KEY'.
     Sent in the 'x-api-key' header. Without a key the shared public pool is
     used, which is throttled far more aggressively than 1 req/s.
 
@@ -83,7 +83,7 @@ def _get_api_key() -> str | None:
         (the public pool is then used).
     --------------------------------------------------------------------------
     """
-    for name in ("S2_AP_ Key", "S2_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"):
+    for name in ("S2_API_KEY", "SEMANTIC_SCHOLAR_API_KEY"):
         value = os.environ.get(name, "").strip()
         if value:
             return value

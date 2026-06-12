@@ -1,8 +1,11 @@
-# Claude Code — Manual
+# ResearchTools — Manual
 
-Reference for all skills (slash commands) and agents installed in this workspace.
-For a full map of agents, skills, and commands and how they relate to each other,
-see [Architecture.md](Architecture.md).
+Reference for the skills, agents and commands shipped in this repository. Everything
+documented here lives under `.claude/` in **this** repo (academic research tooling for
+LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
+conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
+
+The repo ships **5 skills**, **11 agents**, and **17 commands**.
 
 ---
 
@@ -17,7 +20,9 @@ Follow these steps on any machine after cloning the repository.
 | [Claude Code](https://docs.anthropic.com/claude-code) | Running agents and slash commands |
 | [Git for Windows](https://git-scm.com/download/win) (includes Git Bash) | Hooks that use `bash` shell |
 | [Node.js](https://nodejs.org/) | Caveman-mode hooks (`caveman-activate.js`, etc.) |
-| Python 3.x | Security hooks (`betterleaks`, `pip-audit`, `prompt-injection-defender`) |
+| Python 3.x | Scopus skill scripts + security hooks (`betterleaks`, `pip-audit`, `prompt-injection-defender`) |
+| `pip install requests google-genai openai` | Scopus skill + Gemini/Copilot cross-review |
+| `pandoc` | `word2latex` skill (Word → LaTeX) |
 | Obsidian Desktop *(optional)* | Obsidian vault integration in `CLAUDE.md` |
 
 ### Step 1 — Clone the repository
@@ -37,8 +42,8 @@ asks for your Obsidian vault path (optional), and generates two gitignored files
 .\setup.ps1
 ```
 
-Verify that no `{{placeholder}}` remains after the script completes — it will
-report any unreplaced values in the validation step.
+Verify that no `{{placeholder}}` remains after the script completes — it reports any
+unreplaced values in the validation step.
 
 ### Step 3 — Make agents available globally (optional, recommended)
 
@@ -64,6 +69,29 @@ needed to propagate improvements contributed by any collaborator.
 Fork the repository, improve an agent or skill on a feature branch, and open a
 pull request against `main`. The repository owner reviews and merges; a `git pull`
 on their machine immediately updates the linked entries via the junctions.
+
+---
+
+## Environment variables / API keys
+
+Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable('SCOPUS_API_KEY', 'your-key', 'User')
+```
+
+| Variable / source | Required for | Where to get it |
+|---|---|---|
+| `SCOPUS_API_KEY` | **Required** — all `/scopus`, `/auditreview`, `/auditpaper`, `/auditthesis`, `/litreview`, `/bibclean`, `/replyreviewer`, and PDF retrieval | [Elsevier Developer Portal](https://dev.elsevier.com/) |
+| `.scopus_key` file | Fallback for `SCOPUS_API_KEY` — place the key in `.claude/skills/scopus/.scopus_key` (gitignored) | same key as above |
+| `GEMINI_API_KEY` | *Optional* — Gemini 2.0 Flash cross-review and table enrichment (deliberation panel) | [Google AI Studio](https://aistudio.google.com/apikey) |
+| `GITHUB_TOKEN` | *Optional* — GPT-4o cross-review via GitHub Models (deliberation panel) | GitHub → Settings → Developer settings → Personal access token |
+| `S2_API_KEY` *(or `SEMANTIC_SCHOLAR_API_KEY`)* | *Optional* — Semantic Scholar author/PDF backfill; without it the throttled public pool is used | [Semantic Scholar API key request](https://www.semanticscholar.org/product/api) |
+| `--insttoken` *(CLI flag, not an env var)* | *Optional* — off-campus Elsevier access when not on the UQAC network/VPN | UQAC library / Elsevier institutional token |
+
+> An on-campus network connection or active UQAC VPN is required for Scopus access
+> unless an `--insttoken` is supplied. Secrets are kept out of git: `.env`, `secrets/`,
+> and `credentials/` are listed in `.gitignore`.
 
 ---
 
@@ -100,98 +128,23 @@ Use these tools together to keep sessions fast and cheap.
 
 ---
 
-## Skills (Slash Commands)
+## Skills
 
-Skills are invoked with `/skill-name [arguments]` in any Claude Code session.
+Skills bundle scripts and references the agents reuse. Five ship in this repo.
 
-### `/code-review` — Multi-project code reviewer
-
-Checks bugs, security, style, naming, docstrings, and test coverage against project rules.
-Applies `.claude/rules/` automatically based on detected project type (Blazor, Flask, Python ML, React, LaTeX).
-
-| Command | What it reviews |
-|---------|----------------|
-| `/code-review` | All uncommitted changes (staged + unstaged) |
-| `/code-review staged` | Staged changes only |
-| `/code-review committed` | Commits not yet on main/master |
-| `/code-review main` | Diff vs `main` branch |
-| `/code-review <branch>` | Diff vs any branch (e.g. `/code-review origin/dev`) |
-
-Findings are grouped as 🔴 Critical / 🟡 Warning / 🔵 Info with `file:line` references.
-Add "fix all issues" to trigger an autonomous fix-then-re-review loop.
-
-**File:** `.claude/commands/code-review.md`
-
----
-
-### `/frontend-design` — Distinctive frontend UI builder
-
-Creates production-grade web interfaces with strong aesthetic direction.
-Avoids generic AI aesthetics (Inter font, purple gradients, centered layouts).
-
-| Command | What it does |
-|---------|-------------|
-| `/frontend-design` | Build a UI component, page, or app with a bold design direction |
-
-Applies to: HTML/CSS/JS, React, Vue, artifacts, dashboards, landing pages.
-
-**File:** `.claude/skills/frontend-design/SKILL.md`
-
----
-
-### `/web-artifacts-builder` — Multi-component HTML artifact builder
-
-Builds complex React + shadcn/ui artifacts bundled into a single self-contained HTML file.
-Use for artifacts that need state management, routing, or 40+ shadcn/ui components.
-
-| Command | What it does |
-|---------|-------------|
-| `/web-artifacts-builder` | Initialize, develop, and bundle a React artifact |
-
-**Workflow:** `init-artifact.sh <name>` → develop → `bundle-artifact.sh` → share `bundle.html`
-
-**Stack:** React 18 + TypeScript + Vite + Parcel + Tailwind CSS 3.4.1 + shadcn/ui
-
-> **Prerequisite:** Place `shadcn-components.tar.gz` in `scripts/` before running the init script.
-> Download from: https://github.com/anthropics/skills/releases
-
-**Files:**
-- `.claude/skills/web-artifacts-builder/SKILL.md`
-- `.claude/skills/web-artifacts-builder/scripts/init-artifact.sh`
-- `.claude/skills/web-artifacts-builder/scripts/bundle-artifact.sh`
-
----
-
-### `/pptx` — PowerPoint skill
-
-Handles any `.pptx` file operation: reading, editing, creating from scratch, combining decks, extracting content.
-
-| Command | What it does |
-|---------|-------------|
-| `/pptx` | Auto-selects workflow based on context |
-
-| Task | Method |
-|------|--------|
-| Read / extract text | `python -m markitdown presentation.pptx` |
-| Edit existing deck | Unpack XML → edit → clean → pack (see `editing.md`) |
-| Create from scratch | PptxGenJS (Node.js) — see `pptxgenjs.md` |
-| Visual QA | `soffice` → `pdftoppm` → subagent image inspection |
-
-**Triggers on:** "deck", "slides", "presentation", any `.pptx` filename.
-
-> **Prerequisites:** `pip install "markitdown[pptx]" Pillow defusedxml` · `npm install -g pptxgenjs react react-dom react-icons sharp` · LibreOffice · Poppler
-
-**Files:**
-- `.claude/skills/pptx/SKILL.md`
-- `.claude/skills/pptx/editing.md`
-- `.claude/skills/pptx/pptxgenjs.md`
-- `.claude/skills/pptx/scripts/` (6 Python scripts)
-
----
+| Skill | Purpose | Entry point |
+|---|---|---|
+| `scopus` | Search Scopus, validate references, fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback). | `/scopus`, `.claude/skills/scopus/SKILL.md` |
+| `scientific-writing` | Core writing skill: scientific manuscripts in flowing IMRAD prose with verified citations (IEEE/APA/AMA/Vancouver) and reporting guidelines (CONSORT/STROBE/PRISMA). | `.claude/skills/scientific-writing/SKILL.md` |
+| `scholar-evaluation` | ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations. | `.claude/skills/scholar-evaluation/SKILL.md` |
+| `deliberation` | Two-round Gemini ↔ GitHub Copilot debate over a near-final draft; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |
+| `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
-Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY` env var and an active institutional network connection (campus or VPN).
+Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY`
+(see the API-keys table above) and an active institutional network connection
+(campus or VPN), or an `--insttoken`.
 
 | Command | What it does |
 |---------|-------------|
@@ -202,101 +155,72 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 | `/scopus author <name>` | Author h-index and top publications |
 | `/scopus journal <name or ISSN>` | Journal SJR quartile, CiteScore, subject areas |
 
-**Prerequisite:** `pip install requests google-genai openai` · Campus network or VPN
-
-**Environment variables (Windows User scope):**
-
-| Variable | Required for | Source |
-|---|---|---|
-| `SCOPUS_API_KEY` | All `/scopus` and `/auditreview` commands | Elsevier Developer Portal |
-| `GEMINI_API_KEY` | Cross-review via Gemini 2.0 Flash (optional) | Google AI Studio |
-| `GITHUB_TOKEN` | Cross-review via GitHub Copilot / GPT-4o (optional) | GitHub → Settings → Developer settings → PAT |
-
 **Files:**
 - `.claude/skills/scopus/SKILL.md`
-- `.claude/skills/scopus/scripts/scopus_api.py`
+- `.claude/skills/scopus/scripts/scopus_api.py` — Scopus REST client
+- `.claude/skills/scopus/scripts/semantic_scholar_api.py` — Semantic Scholar fallback
+- `.claude/skills/scopus/scripts/download_pdf.py` — full-text PDF retrieval
+- `.claude/skills/scopus/scripts/gemini_reviewer.py` · `github_reviewer.py` · `gemini_table.py` — cross-review cores
 
 ---
 
-## Workspace Commands
+## Commands (Slash Commands)
 
-Session-behaviour commands scoped to this workspace. Invoked with `/command-name [arguments]` in the chat.
-Files located in `C:\Martin Otis\OutilsLogiciels\.claude\commands\`.
+Invoked with `/command-name [arguments]` in any Claude Code session. All files live in
+`.claude/commands/`.
 
 | Command | What it does | Arguments |
 |---|---|---|
-| `/concis` | Activates concise mode for the rest of the session | No |
-| `/focus <topic>` | Scopes the session to one topic only | Yes — topic to focus on |
-| `/ctx` | Audits context window pressure (turns, topics, recommendation) | No |
+| `/concis` | Concise mode for the rest of the session | No |
+| `/slim` | Slim mode — ultra-minimal output (2 sentences, code only) | No |
+| `/focus <topic>` | Scopes the session to one topic only | Yes — topic |
+| `/ctx` | Audits context-window pressure (turns, topics, recommendation) | No |
 | `/tikz [code]` | Validates TiKZ code against 6 rules (anchoring, arrows, overlaps…) | Optional — code or file |
-| `/test [module]` | Runs project tests following `.claude/rules/testing.md` | Optional — specific module/file |
-| `/doc <target>` | Generates or updates documentation for a file or function | Yes — file/function to document |
+| `/test [module]` | Runs project tests following `.claude/rules/testing.md` | Optional — module/file |
+| `/doc <target>` | Generates or updates documentation for a file or function | Yes — file/function |
 | `/latex [args]` | Diagnoses and fixes LaTeX errors from the `.log` or open file | Optional — specific error |
-| `/ref <citation>` | Formats and validates an academic reference (UQAC/LAR.i style) | Yes — reference to format |
-| `/litreview <topic>` | Full autonomous literature review: search → validate → synthesize → comparison table → hypotheses + contributions → objectives → context → 15-item novelty checklist | Yes — research topic |
-| `/auditreview [file or text]` | Audit an existing review: validate references, flag errors, run 15-item novelty checklist (Section F), produce an executable improvement plan | Optional — file path, pasted text, or leave empty for IDE file |
-| `/auditpaper [file or text]` | Audit a complete scientific paper: references, methodology, results, discussion, future works — Scopus validation + cross-review (Gemini + Copilot) + executable improvement plan | Optional — file path, pasted text, or leave empty for IDE file |
-| `/bibclean [file.bib]` | Clean and validate a BibTeX file: required fields, author normalization, duplicate detection, DOI enrichment via Scopus, SJR quartile annotation, publisher approval check | Optional — `.bib` file path or IDE file |
-| `/submitcheck <file.tex> <journal>` | Check paper submission readiness for a target journal: page count, required sections, reference style, abstract length, keywords, anonymization | Yes — source `.tex` file and journal name |
-| `/auditthesis [main.tex or dir]` | Full UQAC thesis audit: front matter, jury, hypothesis flow (H_N across all chapters), chapter structure (sujet amené/posé/divisé), references, figures, equations, acronyms, LLM-style, bilingual résumé/abstract, UQAC formatting — produces executable plan with maturity verdict | Optional — path to `main.tex`, directory, or IDE file |
-| `/replyreviewer` | Generate point-by-point LaTeX response letters to peer reviewer comments and apply track-change markup directly in the paper using the `changes` package. The reviewer ID (`id=RN`) in each `\added`, `\replaced`, or `\deleted` command is the permanent link between the paper markup and the response letter. One `.tex` letter per reviewer file. | Yes — see usage below |
-
----
+| `/ref <citation>` | Formats and validates an academic reference (UQAC/LAR.i style) | Yes — reference |
+| `/litreview <topic>` | Full autonomous literature review: search → validate → synthesize → comparison table → hypotheses + contributions → objectives → context → novelty checklist | Yes — research topic |
+| `/auditreview [file or text]` | Audit an existing review: validate references, flag errors, novelty checklist, executable improvement plan | Optional — file/text/IDE file |
+| `/auditpaper [file or text]` | Audit a complete paper: references, methodology, results, discussion, future works — Scopus validation + cross-review + improvement plan | Optional — file/text/IDE file |
+| `/auditthesis [main.tex or dir]` | Full UQAC thesis audit: front matter, jury, hypothesis flow, chapter structure, references, figures, equations, acronyms, LLM-style, bilingual résumé/abstract, UQAC formatting | Optional — path/dir/IDE file |
+| `/bibclean [file.bib]` | Clean and validate a BibTeX file: required fields, author normalization, duplicates, DOI enrichment, SJR quartile, publisher approval check | Optional — `.bib` file/IDE file |
+| `/submitcheck <file.tex> <journal>` | Check submission readiness for a target journal: page count, sections, reference style, abstract length, keywords, anonymization | Yes — `.tex` file + journal |
+| `/replyreviewer` | Point-by-point LaTeX response letters + track-change markup in the paper via the `changes` package (one letter per reviewer file) | Yes — see below |
+| `/word2latex` | Convert a Word `.docx` template to a faithful LaTeX source (pandoc + standard patch sequence) | Yes — `.docx` path |
 
 ### `/concis` — Concise mode
 
-Activates for the rest of the session:
-
-- Max 5 sentences for short answers; structured bullets for long answers
-- No preamble ("I will…", "Sure…", "Here is…")
-- No trailing summary after completing a task
-- Code written directly; comments explain WHY only
-
-Responds in French unless the active file is in English.
+Activates for the rest of the session: max 5 sentences for short answers, structured
+bullets for long answers, no preamble, no trailing summary, code written directly with
+WHY-only comments. Responds in French unless the active file is in English.
 
 **File:** `.claude/commands/concis.md`
 
----
-
 ### `/focus <topic>` — Session scope
 
-Restricts the session to a single topic. Everything outside that topic is ignored.
-
-| Command | Effect |
-|---|---|
-| `/focus authentication flow` | Ignore all files and context unrelated to authentication |
-| `/focus step2 perimeter validation` | Scope to Step 2 of Blazer only |
-
-Responds in French unless the active file is in English.
+Restricts the session to a single topic; everything outside it is ignored. Responds in
+French unless the active file is in English.
 
 **File:** `.claude/commands/focus.md`
 
----
-
 ### `/ctx` — Context window audit
 
-Reports in under 10 lines:
-
-1. Estimated number of exchange turns in the active window
-2. Top 3 topics/files consuming the most context
-3. Pressure level: **low / moderate / high**
-4. If moderate or high: recommends running `/compact` before the next heavy task
-
-Does not read any additional files — uses only what is already in context. Responds in French.
+Reports, in under 10 lines: estimated exchange turns, top 3 context-consuming topics/files,
+a low/moderate/high pressure level, and a `/compact` recommendation when needed. Reads no
+additional files. Responds in French.
 
 **File:** `.claude/commands/ctx.md`
 
----
-
 ### `/tikz` — TiKZ validation
 
-Validates TiKZ code (from `$ARGUMENTS` or the file open in the IDE) against 6 rules:
+Validates TiKZ code (from `$ARGUMENTS` or the IDE file) against 6 rules:
 
 | Rule | What is checked |
 |---|---|
 | Line breaks in nodes | `align=center` only — never `text centered` |
 | backgrounds + scaling | No `\begin{scope}[on background layer]` inside `\resizebox`/`\scalebox` |
-| Arrow angles | Arrows must connect perpendicularly to node borders (.north/.south/.east/.west) |
+| Arrow angles | Arrows connect perpendicularly to node borders (.north/.south/.east/.west) |
 | Overlaps | Min 3-character gap between rectangles; arrow labels must not overlap geometry |
 | Anchoring | `positioning` library + `node distance` only — no absolute coordinates |
 | TiKZiT compatibility | Named styles in `.tikzstyles`; no exotic libraries |
@@ -305,85 +229,47 @@ For each violation: cites the line, explains the cause, provides corrected code 
 
 **File:** `.claude/commands/tikz.md`
 
----
-
 ### `/test [module]` — Run project tests
 
-Reads `.claude/rules/testing.md`, selects the correct venv, and runs the tests.
-
-| Command | What it runs |
-|---|---|
-| `/test` | All tests for the active project |
-| `/test test_excel_generator` | Single API test module |
-| `/test Test/test_scale_calibrator.py` | Single engine test file |
-
-Reports: **passed / total** — failures listed with short error message and likely cause.
+Reads `.claude/rules/testing.md`, selects the correct venv, runs the tests, and reports
+**passed / total** with short error messages and likely causes.
 
 **File:** `.claude/commands/test.md`
 
----
-
 ### `/doc <target>` — Documentation generator
 
-Generates or updates documentation following project conventions from `.claude/rules/code-style.md`.
-
-| Language | What is generated |
-|---|---|
-| Python | Module docstring (Stage N format) + Purpose/Inputs/Outputs function docstrings |
-| C# / Blazor | `/// <summary>` for non-trivial public members + doc file cross-reference |
-| LaTeX / Markdown | Equations in `$...$` / `$$...$$`; no redundant headings |
-
-Never documents WHAT — only WHY (hidden constraints, invariants, workarounds).
-Responds in French unless the active file is in English.
+Generates documentation following `.claude/rules/code-style.md` (Python Stage-N module +
+Purpose/Inputs/Outputs docstrings; C# `/// <summary>`; LaTeX/Markdown equation formatting).
+Documents WHY, not WHAT. Responds in French unless the active file is in English.
 
 **File:** `.claude/commands/doc.md`
 
----
-
 ### `/latex` — LaTeX diagnosis and fix
 
-Diagnoses and fixes LaTeX compilation errors from the `.log` file or active IDE file.
-
-Procedure:
-
-1. Reads `out/*.log` first for exact error line numbers
-2. Cites the line, explains the cause, applies the fix directly
-3. Priority checks: `\resizebox` wrapping a `backgrounds`-library tikzpicture, `\\` in `text centered` node, `\addcontentsline` order
-4. States whether a two-pass recompilation is needed
-
-Fixes directly — never asks "would you like me to…". Responds in French.
+Reads `out/*.log` first for exact error lines, cites the line, explains the cause, and
+applies the fix directly. Priority checks: `\resizebox` wrapping a `backgrounds`-library
+tikzpicture, `\\` in a `text centered` node, `\addcontentsline` order. States whether a
+two-pass recompilation is needed. Responds in French.
 
 **File:** `.claude/commands/latex.md`
 
----
-
 ### `/ref <citation>` — Academic reference formatter
 
-Formats and validates academic references per UQAC / LAR.i requirements.
+Formats and validates references per UQAC / LAR.i rules.
 
-**Accepted publishers:** IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI.
-Any other publisher requires professor approval before inclusion.
-
-For each reference provides:
-
-1. Full LaTeX reference (BibTeX or natbib)
-2. Clickable DOI via `\href{http://doi.org/...}{DOI}`
-3. Confidence level (0–100 %) with one-sentence justification
-4. Introductory sentence to use in the text
-
-Will not fabricate a reference or invent a DOI.
+**Accepted publishers:** IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET,
+IOP, ACM, MDPI, ASME. Any other publisher requires professor approval. Provides: full LaTeX
+reference, clickable DOI via `\href`, a 0–100 % confidence level with justification, and an
+introductory sentence. Never fabricates a reference or DOI.
 
 **File:** `.claude/commands/ref.md`
 
----
-
 ### `/replyreviewer` — Peer reviewer response generator
 
-Generates a formal LaTeX response letter for each reviewer comment file and applies track-change
+Generates a formal LaTeX response letter per reviewer comment file and applies track-change
 markup directly in the paper using the `changes` package. The reviewer ID (`id=RN`) in each
 `\added`, `\replaced`, or `\deleted` command is the permanent, visible link between the paper
-modification and the corresponding item in the response letter. No separate annotation markers
-needed. Delegates to the `reviewer-response` agent.
+modification and the response letter. Delegates to the `reviewer-response` agent.
 
 **Full command syntax:**
 
@@ -391,7 +277,7 @@ needed. Delegates to the `reviewer-response` agent.
 /replyreviewer --paper <paper.tex> --reviewers <r1.txt> [r2.txt ...] [--title "Title"] [--editor "Name"]
 ```
 
-Exemple:
+Example:
 ```
 /replyreviewer --paper sn-article.tex --reviewers .\reviewers\R1.txt .\reviewers\R2.txt --editor "Zhouping Yin"
 ```
@@ -405,19 +291,13 @@ Exemple:
 
 **What the agent produces:**
 
-1. **One LaTeX response letter per reviewer** — `<basename>_response_R<N>.tex` alongside the paper. Each letter contains:
-   - Formal opening addressed to the editor with the standard thank-you paragraph
-   - Section 1.1 General Comments — one paragraph per general remark
-   - Section 1.2 Specific Comments — numbered point-by-point: verbatim reviewer comment, then `=>Answer from authors:` response paragraph
-   - Section 2 References Added — IEEE-style references with clickable DOI hyperlinks, validated via Scopus
-
-2. **Annotated original paper** — the `.tex` source is updated with:
-   - `\added[id=RN]{new text}` for added passages
-   - `\replaced[id=RN]{new text}{old text}` for rewritten passages
-   - `\deleted[id=RN]{old text}` for removed passages
-   - Grammar-only fixes applied directly without markup
-   - `\usepackage{changes}` with `\definechangesauthor` for each reviewer (R1 blue, R2 red, R3 orange, R4+ purple) added to the preamble automatically if not already present
-   - The colored reviewer-attributed markup in the paper is the direct, visible link to the corresponding item in the response letter
+1. **One LaTeX response letter per reviewer** — `<basename>_response_R<N>.tex`, each with a
+   formal opening, General Comments, point-by-point Specific Comments, and a Scopus-validated
+   References Added section with clickable DOIs.
+2. **Annotated original paper** — `\added[id=RN]{}` / `\replaced[id=RN]{}{}` / `\deleted[id=RN]{}`
+   markup, grammar-only fixes applied directly, and `\usepackage{changes}` with one
+   `\definechangesauthor` per reviewer (R1 blue, R2 red, R3 orange, R4+ purple) added to the
+   preamble automatically.
 
 **Comment categories processed:**
 
@@ -435,20 +315,10 @@ Exemple:
 | Q | General quality | `\added[id=RN]{...}` |
 | MAJ | Major revision | `\replaced[id=RN]{}{}` / `\deleted[id=RN]{}` |
 
-**Typical workflow:**
+**Prerequisites:** `SCOPUS_API_KEY` set; campus network or VPN active.
 
-```text
-1. Receive reviewer comment files from the journal (save as r1.txt, r2.txt, ...)
-2. Run: /replyreviewer --paper mypaper.tex --reviewers r1.txt r2.txt --editor "Prof. Smith"
-3. Review the generated _response_R1.tex and _response_R2.tex — edit answers as needed
-4. Open the annotated mypaper.tex — each colored `\added`/`\replaced`/`\deleted` shows which reviewer triggered the change
-5. Once satisfied, remove `\added{}`/`\deleted{}`/`\replaced{}` markup before final submission
-   (use /auditpaper to verify the cleaned paper before submitting)
-```
-
-**Prerequisites:** `SCOPUS_API_KEY` env var set; campus network or VPN active.
-
-**Related commands:** `/auditpaper` (full paper audit before/after revision), `/bibclean` (clean the `.bib` file after adding new references), `/ref` (format individual references in IEEE style).
+**Related commands:** `/auditpaper` (full audit before/after revision), `/bibclean`
+(clean the `.bib` after adding references), `/ref` (format individual references).
 
 **File:** `.claude/commands/replyreviewer.md`
 
@@ -456,170 +326,93 @@ Exemple:
 
 ## Agents
 
-Agents are specialists that Claude delegates to automatically based on context, or explicitly on request ("use the blazor-dev agent to…").
+Agents are specialists Claude delegates to automatically based on context, or explicitly on
+request ("use the `scopus-auditor` agent to…"). Eleven ship in this repo; most back a slash
+command.
 
-### Blazer agents
+| Agent | Purpose | Command / trigger | Path |
+| --- | --- | --- | --- |
+| `scopus-researcher` | Autonomous literature review: search, validate, summarize, PRISMA + gap/coverage/Pareto matrices, hypotheses, LaTeX output | `/litreview` | `.claude/agents/scopus-researcher/AGENT.md` |
+| `scopus-auditor` | Audit an existing review; validate every reference; executable improvement plan | `/auditreview` | `.claude/agents/scopus-auditor/AGENT.md` |
+| `paper-auditor` | Full paper content audit (intro→future works) + Scopus validation + ScholarEval score + improvement plan | `/auditpaper` | `.claude/agents/paper-auditor/AGENT.md` |
+| `thesis-auditor` | Full UQAC thesis audit (front matter, hypothesis flow, chapter structure, bilingual consistency, UQAC compliance) | `/auditthesis` | `.claude/agents/thesis-auditor/AGENT.md` |
+| `thesis-proposal-auditor` | Audit a UQAC thesis **proposal** (≤35 pages body, testable hypotheses, suggested methodology, no full results) | thesis-proposal audit / by name | `.claude/agents/thesis-proposal-auditor/AGENT.md` |
+| `reviewer-response` | Point-by-point response letters + traceable `changes`-package markup in the paper | `/replyreviewer` | `.claude/agents/reviewer-response/AGENT.md` |
+| `bib-cleaner` | Validate, deduplicate, normalize and DOI-enrich a `.bib` file | `/bibclean` | `.claude/agents/bib-cleaner/AGENT.md` |
+| `submit-checker` | Pass/fail submission checklist against a target journal's requirements | `/submitcheck` | `.claude/agents/submit-checker/AGENT.md` |
+| `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex/AGENT.md` |
+| `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus) | by name (at submission) | `.claude/agents/cover-paper/AGENT.md` |
+| `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer/AGENT.md` |
 
-| Agent | Triggers on | Path |
-|-------|-------------|------|
-| `blazor-dev` | `.razor` files, JS interop, `LocalizationService`, `ValidationCard`, `ce-*` CSS | `.claude/agents/blazor-dev/AGENT.md` |
-| `flask-api` | Flask routes, session management, Excel export, audit logging, API contract | `.claude/agents/flask-api/AGENT.md` |
-| `analysis-engine` | Python ML/CV pipeline — EasyOCR, YOLO12, SAM, PyMuPDF, OpenCV | `.claude/agents/analysis-engine/AGENT.md` |
+### `latex-writer` key rules
 
-
-#### `blazor-dev` key rules
-- `@rendermode="InteractiveServer"` always; never WASM
-- After editing `geometry-interop.js` → increment `?v=N` in `App.razor`
-- Element identity via `data-ce-vid`, never the ElementReference object
-- All strings via `@L["key"]`; CSS via `ce-*` classes only
-
-#### `flask-api` key rules
-- Session IDs: uuid4 only, never user-supplied
-- Route entry: validate all required fields → 400 immediately if missing
-- File uploads: `secure_filename()` + extension + `%PDF` magic-byte check
-- After new route: update `.claude/CLAUDE.md` + `docs/reference/api-endpoints.md`
-
----
-
-### React-based agents
-
-| Agent | Triggers on | Path |
-|-------|-------------|------|
-| `react-dev` | React components, Leaflet maps, COLREGS routing, vessel data | `.claude/agents/react-dev/AGENT.md` |
-
-#### `react-dev` key rules
-- TypeScript strict mode; no `any`
-- TailwindCSS 4 utilities only; Lucide icons
-- COLREGS collision avoidance logic in `collisionAvoidance.ts`
-
----
-
-### Workspace-root agents (all projects)
-
-| Agent | Triggers on | Path |
-|-------|-------------|------|
-| `latex-writer` | `.tex`, `.tikz`, `.bib`, Beamer slides, academic papers, UQAC thesis | `.claude/agents/latex-writer/AGENT.md` |
-| `security-auditor` | New API endpoints, file upload handlers, input validation logic | `.claude/agents/security-auditor/AGENT.md` |
-| `scopus-researcher` | Literature review requests, `/litreview` command, Scopus search tasks | `.claude/agents/scopus-researcher/AGENT.md` |
-| `scopus-auditor` | Existing review auditing, `/auditreview` command, reference validation + improvement plan | `.claude/agents/scopus-auditor/AGENT.md` |
-| `paper-auditor` | Full scientific paper auditing, `/auditpaper` command — methodology, results, discussion, future works + Scopus validation + cross-review | `.claude/agents/paper-auditor/AGENT.md` |
-| `reviewer-response` | Peer review response workflow, `/replyreviewer` command — comment classification, point-by-point LaTeX letters, paper corrections with `\added[id=RN]{}`/`\deleted[id=RN]{}`/`\replaced[id=RN]{}{}` (changes package), Scopus reference validation | `.claude/agents/reviewer-response/AGENT.md` |
-| `bib-cleaner` | BibTeX file cleaning, `/bibclean` command — required fields, author normalization, duplicates, DOI enrichment, SJR quartile annotation | `.claude/agents/bib-cleaner/AGENT.md` |
-| `submit-checker` | Journal submission readiness, `/submitcheck` command — page count, sections, reference style, abstract, keywords, anonymization | `.claude/agents/submit-checker/AGENT.md` |
-| `thesis-auditor` | UQAC thesis auditing, `/auditthesis` command — front matter, hypothesis flow, chapter structure, references, figures, LLM-style, bilingual consistency, UQAC compliance, maturity verdict | `.claude/agents/thesis-auditor/AGENT.md` |
-
-#### `latex-writer` key rules
 - TiKZ: relative positioning only; arrows perpendicular; no overlaps
-- References: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, MDPI only; DOI via hyperref
-- French default for UQAC thesis
+- References: peer-reviewed only (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME); DOI via hyperref; any other publisher needs user confirmation
+- Tables: rows = parameters, cols = concepts; bold headers; 10 % grey row shading
+- Language: French default for UQAC thesis, English for scientific papers
 - Avoid AI-detectable patterns: zero-width spaces, smart quotes, em dashes, perfect parallel lists
 
-#### `reviewer-response` key rules
+### `reviewer-response` key rules
 
 - Reviewer files assigned sequentially: first file = R1, second = R2, etc.
-- Grammar-only fixes (G category): applied directly — no changes markup
-- Additions: `\added[id=RN]{text}`, deletions: `\deleted[id=RN]{text}`, rewrites: `\replaced[id=RN]{new}{old}` (changes package required)
-- Reviewer colors (changes package): R1 blue, R2 red, R3 orange, R4+ purple (`\definechangesauthor`)
-- Every reference proposed for any comment is validated via Scopus (including DOI): found with DOI = auto-approved, no user confirmation; found without DOI = auto-approved, `[NO DOI]` flagged in summary; not found = removed, alternative searched
-- References without a DOI are flagged `[NO DOI]` in the summary report so the user can verify manually
-- Response letter language follows the paper's primary language (English for IEEE/Elsevier)
-
-#### `security-auditor` key rules
-- Read-only agent; reports findings as `[CRITICAL / HIGH / MEDIUM / LOW] file:line → Fix:`
-- Checks: session ID source, `secure_filename`, magic-byte validation, field validation, `_FILE_LOCK` usage, no `shell=True`
-
----
+- Grammar-only fixes (G): applied directly, no markup
+- Additions `\added[id=RN]{}`, deletions `\deleted[id=RN]{}`, rewrites `\replaced[id=RN]{}{}` (changes package)
+- Reviewer colors: R1 blue, R2 red, R3 orange, R4+ purple (`\definechangesauthor`)
+- Every proposed reference validated via Scopus; `[NO DOI]` flagged in the summary when applicable
 
 ### Calling an agent explicitly
 
-Agents are normally triggered automatically by context. To invoke one directly, address it by name in your message. The examples below use `scopus-auditor` and `reviewer-response`, but the same pattern works for any agent.
-
-#### `scopus-auditor` — explicit call examples
+Agents are normally triggered automatically by context. To invoke one directly, address it
+by name in your message:
 
 ```
 Use the scopus-auditor agent to audit the review in paper_review/literature_review.tex
 ```
 
 ```
-Ask the scopus-auditor to validate all references in sn-article.tex and produce an improvement plan.
+reviewer-response agent: --paper sn-article.tex --reviewers r1.txt --editor "Prof. Yin"
 ```
 
-```
-scopus-auditor: check the .bib file at paper_review/refs.bib — flag any DOI mismatches and low-confidence citations.
-```
-
-What the agent receives as `$ARGUMENTS`: the path(s) or text you provide after the agent name. It reads the file, runs Scopus validation on every reference, assigns confidence levels (`[HIGH/MEDIUM/LOW CONFIDENCE]`) with a one-sentence justification written as a LaTeX comment after each `.bib` entry, flags `[REFERENCE NOT INTRODUCED]` for bare citations, and saves an improvement plan as `<basename>_improvement_plan.md`.
-
-#### `reviewer-response` — explicit call examples
-
-```
-Use the reviewer-response agent with --paper paper_review/sn-article.tex --reviewers paper_review/r1.txt paper_review/r2.txt --editor "Prof. Smith"
-```
-
-```
-reviewer-response agent: --paper sn-article.tex --reviewers r1.txt --title "Framework for Behavior-Based Robot Teleoperation" --editor "Prof. Yin"
-```
-
-What the agent receives as `$ARGUMENTS`: the named flags above. It parses the reviewer files, drafts point-by-point responses, applies `\added[id=RN]{}` / `\replaced[id=RN]{}{}` / `\deleted[id=RN]{}` corrections directly in the paper, validates every proposed reference via Scopus (confidence comment added after each `\bibitem`), and writes one `<basename>_response_R<N>.tex` letter per reviewer.
-
-**Tip:** the slash commands `/auditreview` and `/replyreviewer` are thin wrappers that call these agents with the same argument syntax — use the commands for convenience and the explicit agent names when you need finer control over the arguments or want to chain agents in one message.
+The slash commands `/auditreview`, `/replyreviewer`, `/litreview`, etc. are thin wrappers that
+call these agents with the same argument syntax — use the commands for convenience and the
+explicit agent names when you need finer control or want to chain agents in one message.
 
 ---
 
 ## File Locations Summary
 
-All agents, commands, and skills are consolidated in one location.
+All agents, commands, and skills live under this repository's `.claude/` directory.
 
 ```
-C:\Martin Otis\OutilsLogiciels\
+ResearchTools\
 └── .claude\
-    ├── agents\                           (14 agents total)
-    │   ├── latex-writer\AGENT.md
-    │   ├── security-auditor\AGENT.md
-    │   ├── scopus-researcher\AGENT.md    ← /litreview
-    │   ├── scopus-auditor\AGENT.md       ← /auditreview
-    │   ├── paper-auditor\AGENT.md        ← /auditpaper
-    │   ├── reviewer-response\AGENT.md    ← /replyreviewer
-    │   ├── bib-cleaner\AGENT.md          ← /bibclean
-    │   ├── submit-checker\AGENT.md       ← /submitcheck
-    │   ├── thesis-auditor\AGENT.md       ← /auditthesis
-    │   ├── blazor-dev\AGENT.md           ← Blazer frontend
-    │   ├── flask-api\AGENT.md            ← Flask API
-    │   ├── analysis-engine\AGENT.md      ← ML pipeline
-    │   ├── cost-tester\AGENT.md          ← tests
-    │   └── react-dev\AGENT.md            ← React frontend
-    ├── commands\                          (17 commands total)
-    │   ├── concis.md
-    │   ├── focus.md
-    │   ├── ctx.md
-    │   ├── tikz.md
-    │   ├── test.md
-    │   ├── doc.md
-    │   ├── latex.md
-    │   ├── ref.md
-    │   ├── code-review.md
-    │   ├── slim.md
-    │   ├── litreview.md
-    │   ├── auditreview.md
-    │   ├── auditpaper.md
-    │   ├── bibclean.md
-    │   ├── submitcheck.md
-    │   ├── auditthesis.md
-    │   └── replyreviewer.md
-    └── skills\
-        ├── frontend-design\SKILL.md
-        ├── web-artifacts-builder\
+    ├── agents\                              (11 agents)
+    │   ├── scopus-researcher\AGENT.md       ← /litreview
+    │   ├── scopus-auditor\AGENT.md          ← /auditreview
+    │   ├── paper-auditor\AGENT.md           ← /auditpaper
+    │   ├── thesis-auditor\AGENT.md          ← /auditthesis
+    │   ├── thesis-proposal-auditor\AGENT.md ← thesis-proposal audit
+    │   ├── reviewer-response\AGENT.md       ← /replyreviewer
+    │   ├── bib-cleaner\AGENT.md             ← /bibclean
+    │   ├── submit-checker\AGENT.md          ← /submitcheck
+    │   ├── word-to-latex\AGENT.md           ← /word2latex
+    │   ├── cover-paper\AGENT.md             ← submission package
+    │   └── latex-writer\AGENT.md            ← LaTeX authoring
+    ├── commands\                            (17 commands)
+    │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
+    │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
+    │   ├── ref.md      ├── litreview.md             ├── auditreview.md
+    │   ├── auditpaper.md               ├── auditthesis.md
+    │   ├── bibclean.md ├── submitcheck.md           ├── replyreviewer.md
+    │   └── word2latex.md
+    ├── rules\                               (code-style, preferences, security, testing, workflows)
+    └── skills\                              (5 skills)
+        ├── scopus\
         │   ├── SKILL.md
-        │   └── scripts\  (init-artifact.sh, bundle-artifact.sh)
-        ├── pptx\
-        │   ├── SKILL.md
-        │   ├── editing.md
-        │   ├── pptxgenjs.md
-        │   └── scripts\  (add_slide.py, clean.py, thumbnail.py, office/)
-        └── scopus\
-            ├── SKILL.md
-            └── scripts\
-                ├── scopus_api.py        ← Scopus REST API client
-                ├── gemini_reviewer.py   ← Gemini 2.0 Flash cross-reviewer
-                └── github_reviewer.py   ← GPT-4o via GitHub Models cross-reviewer
+        │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
+        │                  gemini_reviewer.py, github_reviewer.py, gemini_table.py)
+        ├── scientific-writing\SKILL.md
+        ├── scholar-evaluation\SKILL.md      (+ scripts\calculate_scores.py)
+        ├── deliberation\SKILL.md            (+ scripts\deliberate.py)
+        └── word2latex\SKILL.md              (+ scripts\docx_inspect.py, manuscript_bib.py)
 ```

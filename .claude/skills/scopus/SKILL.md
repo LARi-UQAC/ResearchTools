@@ -22,7 +22,7 @@ Then restart Claude Code for the variable to be visible.
 **Optional — Semantic Scholar fallback.** Scopus search returns only the first
 author (`dc:creator`), and a few abstract records carry no author block. When a
 Semantic Scholar key is set, the script backfills the full ordered author list
-by DOI. Key env var (checked in order): `S2_AP_ Key`, `S2_API_KEY`,
+by DOI. Key env var (checked in order): `S2_API_KEY`,
 `SEMANTIC_SCHOLAR_API_KEY`. Without a key the public S2 pool is used (heavily
 throttled). The fallback is non-fatal: if S2 is unreachable or lacks the DOI,
 the pure-Scopus data is returned unchanged. See `## Semantic Scholar fallback`.

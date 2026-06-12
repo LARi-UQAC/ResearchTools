@@ -1,6 +1,3 @@
-# Machine-local generated files (use setup.ps1 to regenerate)
-.claude/settings.json
-CLAUDE.md
 
 # Environment & secrets
 .env

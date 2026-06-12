@@ -1,0 +1,14 @@
+{
+    "workbench.editor.autoLockGroups": {
+        "default": true
+    },
+    "latex-workshop.latex.outDir": "out",
+    "latex-workshop.latex.clean.enabled": true,
+    "latex-workshop.latex.clean.outDir": true,
+    "latex-workshop.latex.autoBuild.run": "onSave",
+    "latex-workshop.formatting.latex": "latexindent",
+    "editor.wordWrap": "on",
+    "[latex]": {
+        "editor.wordWrap": "on"
+    }
+}

@@ -1,36 +1,51 @@
 # Code Style
 
+General code and document conventions for any project in this workspace. Where a project
+ships its own stack, follow the matching language section; the LaTeX and documentation
+sections apply to all academic work.
+
 ## Naming conventions
 
-### C# (Blazor)
-- Classes, methods, properties, EventCallbacks: `PascalCase`
-- Private fields: `_camelCase` (leading underscore)
-- Parameters/locals: `camelCase`
-- Event callback parameters prefixed with `On`: `OnValidateClick`, `OnShapesEdited`
-
-### Python (Flask API + analysis engine)
+### Python
 - Classes: `PascalCase`
 - Functions and module variables: `snake_case`
 - Private functions and module-level internals: `_snake_case`
 - Constants: `UPPER_SNAKE_CASE`
-- Type hints always present in function signatures
+- Type hints always present in function signatures (PEP 8 / PEP 484)
 
-### JavaScript / Razor
-- Component files: `PascalCase.razor`
-- Page files: `Step{N}{Name}.razor` for step workflow pages
-- CSS classes: `kebab-case` with `ce-` prefix (never raw Bootstrap overrides)
+### JavaScript / TypeScript
+- Classes and components: `PascalCase`
+- Functions, variables: `camelCase`
+- Constants: `UPPER_SNAKE_CASE`
+- Files: `kebab-case`, or the framework convention (e.g. `PascalCase` component files)
+
+### C# (when present)
+- Classes, methods, properties: `PascalCase`
+- Private fields: `_camelCase`
+- Parameters and locals: `camelCase`
+
+### LaTeX labels
+- Figures: `fig:three-words`, cited with `\ref{}`
+- Tables: `tab:three-words`, cited with `\ref{}`
+- Equations: `eq:three-words`, cited with `\eqref{}` (or `\ref{}`) before the equation
+- References (`\cite{}`): first author, year, one keyword (e.g. `otis2024diagnosis`)
+- TikZ figures: simple code for the TiKZiT parser, named styles in `.tikzstyles`,
+  `positioning` and node distance only (no absolute coordinates)
 
 ## Docstrings
 
 ### Python
-Module-level docstring explains purpose and pipeline stage:
+Module-level docstring states purpose and, where the module is part of a pipeline, its
+stage:
+
 ```
 """
-Module name — Stage N of the analysis pipeline.
-Brief description.
+Module name - purpose in one or two sentences.
 """
 ```
+
 Function docstrings use the project's extended format:
+
 ```
 """
 --------------------------------------------------------------------------
@@ -46,79 +61,52 @@ Outputs:
 """
 ```
 
-### C#
-Use `/// <summary>` XML doc for public types and non-obvious members only.
+### Other languages
+Use the idiomatic doc form (`/// <summary>` for C#, JSDoc for JS/TS) on public types and
+non-obvious members only. Document WHY, not WHAT.
 
-### Documentation References in Code
-When a docstring mentions a complex behavior or data structure, reference the relevant frontend doc:
-```csharp
-/// <summary>
-/// Handles geometry shape validation. See ../../docs/ui/component-patterns.md for ValidationCard RenderFragment contract.
-/// </summary>
-```
+### References in code
+When a docstring describes complex behavior or a data structure documented elsewhere, link
+to the relevant doc with a relative path.
 
-Python and JavaScript modules should similarly link to their relevant docs sections.
-
-## Documentation Standards
+## Documentation standards
 
 ### Diagrams
-- **Mermaid** (preferred for version control and editability):
-  - Store `.mmd` sources in `web/CostEstimator.Web/docs/diagrams/`
-  - Inline in markdown using ` ```mermaid ... ``` ` fenced blocks
-  - Use for: data flows, state machines, component trees, step workflows
-  
-- **SVG** (for complex visual layouts):
-  - Export from draw.io with layers enabled
-  - Store in `web/CostEstimator.Web/docs/diagrams/` with descriptive names
-  - Reference in markdown: `![Description](diagrams/filename.svg)`
-  - Always maintain the `.drawio` editable source alongside the SVG export
+- Mermaid preferred for version control: store `.mmd` sources and inline with fenced
+  ` ```mermaid ``` ` blocks. Use for data flows, state machines, component trees, workflows.
+- SVG for complex visual layouts; keep the editable source (`.drawio`) alongside the export.
+- TikZ for academic figures (see the LaTeX label rules above and `.claude/CLAUDE.md`).
 
-### Mathematical Equations (KaTeX/LaTeX)
-- **Inline**: Wrap in `$...$` delimiters
-  ```markdown
-  The formula is $\text{Cost} = (\text{Perimeter} \times \text{Height} \times \text{UnitPrice}) + \text{OpeningsCost}$.
-  ```
-- **Display blocks**: Wrap in `$$...$$` delimiters
-  ```markdown
-  $$\text{Wall Cost} = (\text{Perimeter} \times \text{Height} \times \text{UnitPrice}) + \text{OpeningsCost} + \text{CornersCost}$$
-  ```
-- **Canonical reference**: `web/CostEstimator.Web/docs/formulas/canonical-equations.md`
-- **Validation**: Equations referenced in docs must have corresponding unit tests in `api/test_excel_generator.py` or `cost_estimator_project/Test/`
+### Mathematical equations
+- Markdown / KaTeX: inline `$...$`, display `$$...$$`.
+- LaTeX documents: every equation labeled and cited before it appears; variables defined
+  directly under the equation if not already introduced.
 
-### Naming Conventions for Documentation Files
-- **Frontend docs**: `{category}-{topic}.md` (e.g., `component-validation-card.md`, `integration-geometry-interop.md`)
-- **Category folders**: `architecture/`, `ui/`, `interop/`, `api-integration/`, `reference/`, `diagrams/`, `formulas/`, `archive/`
+### Documentation file naming
+- `{category}-{topic}.md` (e.g. `component-validation.md`, `integration-geometry.md`)
+- Category folders such as `architecture/`, `reference/`, `diagrams/`, `formulas/`.
 
 ## Error handling
 
-### C# (Blazor services)
-- Wrap every HTTP call in try/catch
-- Catch `OperationCanceledException` separately for timeout handling
-- Return safe fallbacks: `(string.Empty, "error message")` or `null`
-- Log errors with structured parameters via `ILogger<T>`
+### Python
+- Validate required inputs at entry; fail fast with a clear message.
+- For HTTP/API clients (e.g. the `scopus` scripts), catch network and timeout errors
+  explicitly and surface an actionable message rather than a bare traceback.
+- Do not silently swallow exceptions; log the cause.
 
-### Python (Flask routes)
-- Return `jsonify({"status": "error", "message": "..."})` with explicit HTTP status codes
-- 400 for validation failures, 404 for missing sessions, 500 for unexpected errors
-- Validate all required JSON fields before processing; return 400 immediately if missing
-
-## CSS design system
-- Use `ce-*` classes and CSS variables from `web/CostEstimator.Web/wwwroot/app.css`
-- Do not override Bootstrap directly; use `ce-btn`, `ce-text-*`, `ce-bg-*`, etc.
-- Theme tokens live in `:root` as `--ce-*` variables (e.g. `--ce-primary`, `--ce-danger`)
-- Component-specific classes: `ce-card-header`, `ce-alert-error`, `ce-badge-step`, etc.
+### Web back ends (when present)
+- Wrap external calls in try/catch, handle cancellation and timeout separately, return safe
+  fallbacks, and log with structured parameters.
 
 ## Logging
 
-### C#
-Inject `ILogger<T>` via constructor. Use structured parameters:
-```csharp
-_logger.LogError("Prepare step failed for step {Step}: {Status}", step, response.StatusCode);
+### Python
+Use `logging.getLogger(__name__)` per module. Prefix messages with a context tag:
+
+```python
+logger.info("[SCOPUS] query sent")
+logger.error("[VALIDATION] DOI not found")
 ```
 
-### Python
-Use `logging.getLogger(__name__)` per module. Prefix messages with context tags:
-```python
-logger.info("[UPLOAD] Request received")
-logger.error("[VALIDATION] Session not found")
-```
+### Other languages
+Inject the framework logger and use structured parameters rather than string concatenation.

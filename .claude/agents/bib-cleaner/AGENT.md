@@ -95,7 +95,7 @@ Annotate the entry in the cleaned file with a comment: `% Journal: SJR=X.XX [Q1/
 ### Step 7 — Publisher approval check
 
 For each entry, extract the publisher or journal name. Check against the UQAC approved list:
-IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI, ACM.
+IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC).
 
 Flag `[PUBLISHER NOT APPROVED]` if the publisher is not on the list. Add a comment: `% Requires professor approval before inclusion`.
 

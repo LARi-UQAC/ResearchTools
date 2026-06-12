@@ -136,7 +136,7 @@ A reference is **valid only when every supplied field is `match: true`**. Any `m
 | `[PAGES MISMATCH]` | `field_checks.pages.match: false` |
 | `[YEAR MISMATCH]` | `field_checks.year.match: false` |
 | `[INCOMPLETE BIBTEX ENTRY: <field>]` | Field was absent in the bibliography (`<missing>`) — the verifier marks it `match: null`. Action: enrich the BibTeX entry from `scopus_record` |
-| `[PUBLISHER NOT APPROVED]` | `scopus_record.publisher` not in: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI, ACM |
+| `[PUBLISHER NOT APPROVED]` | `scopus_record.publisher` not in: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC) |
 | `[REFERENCE NOT CITED: key]` | Bibliography entry exists but no `\cite{key}` (or `\citep`/`\citet`/`\textcite`) call references it in the body |
 | `[CITATION WITHOUT REFERENCE: key]` | `\cite{key}` call appears in the body but `key` has no entry in the bibliography |
 | `[REFERENCE FORMAT INVALID]` | Reference uses an unsupported format (numbered list without label, raw text). Pipeline aborts — convert to `.bib` or `\bibitem` first |
@@ -187,7 +187,7 @@ The `verify` response already embeds the full Scopus abstract record under `scop
   | `book-chapter` | book title + publisher | same as `book`. Annotate `[BOOK CHAPTER]` |
   | `unknown` / API error | — | mark `[VENUE UNVERIFIED]` and continue |
 
-  Flag `[PUBLISHER NOT APPROVED]` whenever the resolved publisher is not in the approved list (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI, ACM), regardless of venue type.
+  Flag `[PUBLISHER NOT APPROVED]` whenever the resolved publisher is not in the approved list (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC)), regardless of venue type.
 - **Temporal distribution:** Group all references by decade. Report: total, count and % from last 5 years, count and % from last 10 years, oldest and newest year. Flag `[OUTDATED BIBLIOGRAPHY]` if < 40% from last 5 years and state-of-the-art gap candidates (Step 4) are recent. Flag `[MISSING FOUNDATIONAL WORK]` if no reference older than 10 years. Add a decade histogram in the plan header.
 
   After the relative check, apply two absolute novelty thresholds:
@@ -255,7 +255,7 @@ python ".claude/skills/scopus/scripts/scopus_api.py" search "<contribution topic
 
 For each returned paper, apply three filters:
 - Not already cited anywhere in the review text (compare by title and DOI).
-- Publisher in the approved list: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACME, MDPI, ACM.
+- Publisher in the approved list: IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC).
 - Scopus abstract is directly related to the main contribution (assess from abstract text).
 
 Keep up to 5 candidates from the 5-year search, prioritising the most recent and most cited. Keep the best 1–2 candidates from the 12-month search as a separate group labelled `[VERY RECENT]`.

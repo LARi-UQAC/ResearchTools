@@ -1,51 +1,39 @@
 # Preferences
 
-## Documentation Structure
-- **Frontend documentation home**: `web/CostEstimator.Web/docs/` (all UI, component, interop, and integration docs)
-- **Cross-layer context**: `.claude/CLAUDE.md` (3-layer architecture, no duplication)
-- **Backend docs**: `api/README.md` (Flask-specific)
-- **Engine docs**: `cost_estimator_project/README.md`, `project_structure.md` (Python analysis engine)
-- **Operational scripts**: `scripts/` (`start/`, `audit/`, `test/`, `scaffold/`, `dev/`)
-- **Code rules/style**: This folder `.claude/rules/` (not for end-user docs)
+General working preferences for any project in this workspace. Project-specific docs and
+conventions take precedence where they exist.
 
-When documenting a new frontend feature:
-- Update the relevant subfolder under `web/CostEstimator.Web/docs/` (architecture/ui/interop/api-integration/reference)
-- Link from that index in `DOCUMENTATION_INDEX.md` if it's a major feature
-- In code docstrings, reference the relevant doc with relative path: `/// See docs/ui/component-patterns.md for ValidationCard contract`
+## Documentation structure
 
-## Localization
-- Two languages: French (default) and English
-- All UI strings live in `LocalizationService.cs` — add new keys there, not inline in Razor files
-- Inject with `@inject LocalizationService L` and use `@L["key"]`
-- Key format: `section.key` (e.g. `step1.title`, `home.paramHeight`, `nav.next`)
-- Export language (`ExportLanguage`) may differ from UI language (`CurrentLanguage`)
+- Keep an authoritative inventory in `README.md` and, for relationships, `Architecture.md`.
+- Cross-layer context lives in `.claude/CLAUDE.md`; do not duplicate it elsewhere.
+- Code rules and style live in `.claude/rules/` (this folder), not in end-user docs.
+- When documenting a feature, update the relevant doc and link it from the index rather than
+  scattering notes.
 
-## Blazor render mode
-- Always `@rendermode="InteractiveServer"` (SignalR). Never assume WASM behavior.
+## Language
 
-## JS interop (geometry-interop.js)
-- Element identity across interop calls: use `el.getAttribute('data-ce-vid')` (DOM attribute, survives Blazor proxy re-creation)
-- Never key module-level Maps by the ElementReference object itself
-- After every change to any file in `wwwroot/js/`, increment the `?v=N` query string in `App.razor`:
-  - `geometry-interop.js?v=11` — this is the file that requires versioning
-  - `zoom-interop.js` — no versioning (static)
+- Two languages: French (default) and English.
+- For academic work: French by default for a UQAC thesis, English for scientific papers.
+- Keep user-facing strings centralized (a single localization source) rather than inline.
 
-## ValidationCard component
-- Shared across all 5 steps (`web/CostEstimator.Web/Components/Shared/ValidationCard.razor`)
-- Do not duplicate zoom/pan/rubber-band logic — it belongs here
-- Add step-specific UI via the `RenderFragment` slots: `ImageOverlayContent`, `AfterUserValueContent`, `NavigationButtons`, `ExtraDebugContent`
-- Scale/geometry parameters (Steps 1 & 2 only): `ScaleX`, `ScaleY`, `ScaleUnit`, `GeometryShapesJson`, `OnGetScaleClick`, `OnShapesEdited`
+## Output and token habits
 
-## Geometry annotations
-- Supported shape primitives: `rect`, `triangle`, `trapezoid`, `parallelogram`
-- Store `form` (geometric primitive) and `classification` (architectural element) as separate fields — they must never overwrite each other
-- Dimension enrichment (`_geoEnrichShapeDimensions`) runs at draw completion and after every vertex drag
+- Start sessions lean: `/slim` for quick tasks, `/concis` for exploratory work.
+- Scope long sessions with `/focus <topic>`; check pressure with `/ctx` before `/compact`.
+- Prefix shell commands with `rtk`; caveman style is expected in chat.
 
-## API communication
-- Use `CostEstimatorApiClient` for all HTTP calls from Blazor — never call `HttpClient` directly from pages
-- Session ID flows: PDF upload → `SessionStateService.SessionId` → all subsequent API calls
-- Async methods return tuples on failure: `(string.Empty, "error message")`
+## Working norm (academic)
 
-## Excel export
-- Export language is set independently of UI language via `LocalizationService.ExportLanguage`
-- Cost formula: `(Perimeter × Height × UnitPrice) + OpeningsCost + CornersCost`
+- Never accept the first idea; verify it against validated references via the `scopus` skill,
+  weighing disadvantages almost as much as advantages.
+- Never fabricate references or DOIs. Webfetch may confirm a fact but cannot be a citation.
+- Use the reference-label convention `firstauthor-year-keyword` and the `fig:`/`tab:`/`eq:`
+  label conventions from `code-style.md`.
+- Ask (AskUserQuestion) when a concept or requirement is unclear.
+
+## Reuse over reinvention
+
+- Prefer existing agents, skills, and commands (see the routing table in `.claude/CLAUDE.md`)
+  over ad hoc scripts.
+- Reuse existing utilities and patterns in a project before adding new code.

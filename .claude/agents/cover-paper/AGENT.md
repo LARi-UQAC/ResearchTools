@@ -64,7 +64,7 @@ unicode bullets.>>
 <<2-3 sentences naming the methodology (e.g. structured literature
 review with Scopus + Google Scholar, controlled experiment, simulation
 study, dataset analysis). Mention publisher whitelist when relevant:
-IEEE, Springer, Elsevier, Taylor and Francis, Wiley, IET, ACM, MDPI.>>
+IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC).>>
 
 \textbf{Secondary Methodologies and Contributions}
 

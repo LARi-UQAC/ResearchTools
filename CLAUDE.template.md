@@ -38,7 +38,7 @@ RTK et caveman sont obligatoires dans le chat ; la documentation canonique de RT
 Au tout début de la PREMIÈRE réponse de chaque session (avant tout autre contenu), afficher cette ligne exacte basée sur les messages des hooks SessionStart dans le contexte :
 
 ```
-Session: RTK=<active|inactive> | Caveman=<full|lite|off> | git-sync=on
+Session: RTK=<active|inactive> | Caveman=<full|lite|off> | git-sync=<behind|ahead|on|off>
 ```
 
 Si `[AUTO-SYNC CHECK]` indique `behind>0`, ajouter immédiatement après : `ALERTE: behind=N commits — faire git pull avant tout travail.`

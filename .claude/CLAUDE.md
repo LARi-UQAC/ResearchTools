@@ -23,7 +23,9 @@ Figures: Generated in LaTeX for TiKZiT in VS Code, format .tikz, all generated f
 
 Tables: rows represent the parameters to be analyzed, and columns represent the concepts. The first row and the first column have bold text and the first row has a 10% grey background. All tables need to be cited in the text with a minimum of two sentences to exlain them. Citation to table needs to use "\ref{}" latex command. The label of the reference needs to be meaningful. Use the tab:three words describing the figure.
 
-Mandatory: Never accept the first idea the student gives; always verify the idea with almost the same disadventages than advantages with accurate and validated references. Never fabricate information. All information must be verified using the skill scopus. We can also webfetch to get accurate information. If you don't see the skill scopus and scientific-writing, ask to get an access. AskUserQuestions, ask questions if you are not sure about a concept.
+Mandatory: Never accept the first idea the student gives; always verify the idea with almost the same disadventages than advantages with accurate and validated references. Never fabricate information. All information must be verified using the skill scopus. We can also webfetch to get accurate information but they cannot be used as a citation. If you don't see the skill scopus and scientific-writing, ask to get an access. AskUserQuestions, ask questions if you are not sure about a concept.
+If, upon reading part of the text, you realize that these rules are not being followed, inform the user that their work is incorrect and requires a full audition and revision. You can sugget to use an agent in function of the current work: bib-cleaner, paper-auditor, scopus-auditor, thesis-auditor, thesis-proposal-auditor. 
+
 
 Here are some elements to avoid in your answers:
 -Zero-Width Space (U+200B): A character that takes up no visual space.

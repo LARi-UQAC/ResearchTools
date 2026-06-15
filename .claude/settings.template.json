@@ -6,7 +6,6 @@
   "permissions": {
     "allow": [
       "Bash(npx:*)",
-      "Bash(python3:*)",
       "Bash(node:*)",
       "Bash(echo *)",
       "Bash(pdflatex *)",
@@ -19,7 +18,6 @@
       "Bash(Get-ChildItem *)",
       "Bash(Get-Content *)",
       "Bash(rtk npx:*)",
-      "Bash(rtk python3:*)",
       "Bash(rtk node:*)",
       "Bash(rtk echo *)",
       "Bash(rtk cd *)",

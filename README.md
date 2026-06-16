@@ -51,18 +51,39 @@ This step creates directory junctions from `~/.claude/agents/`, `~/.claude/skill
 `~/.claude/rules/`, and `~/.claude/commands/` into this repository, so that Claude Code
 loads these agents and skills in **every** workspace, not only when you open this folder.
 
-> **Requires Administrator privileges.**
+All links are directory junctions — no Administrator privileges required. Only missing
+junctions are created; existing ones are never overwritten.
 
 ```powershell
-# Review what will be created without making changes
-.\install-junctions.ps1 -WhatIf
+# Preview what will be created without making changes
+.\setup.ps1 -InstallJunctions -Preview
 
 # Apply
-.\install-junctions.ps1
+.\setup.ps1 -InstallJunctions
 ```
 
+> **Alternative (direct):** `.\install-junctions.ps1` (or `.\install-junctions.ps1 -WhatIf` to preview).
+
+**How linking works by directory type:**
+
+| Directory | Link type | One link per… | New file/folder after `git pull` |
+|---|---|---|---|
+| `agents/` | Junction per sub-folder | Agent (e.g. `scopus-researcher/`) | Re-run `.\setup.ps1 -InstallJunctions` — existing agents show `[EXISTS]`, only the new one is created |
+| `skills/` | Junction per sub-folder | Skill (e.g. `scopus/`) | Same as above |
+| `rules/` | Junction on the whole directory | Entire `rules/` folder | Automatic — new `.md` files are visible immediately through the existing junction, no re-run needed |
+| `commands/` | Junction on the whole directory | Entire `commands/` folder | Same as above |
+
+Re-running `.\setup.ps1 -InstallJunctions` is therefore only needed when a **new agent or
+skill sub-directory** is added to the repository. For new rules or commands files, the
+existing junctions already expose them.
+
+**Fallback when `rules/` or `commands/` already exists as a real directory** (another
+project previously created it): the script automatically switches to per-file symbolic
+links for any missing files. If Administrator privileges are required for the symlinks,
+the script re-launches itself elevated.
+
 Because the links point directly into this repository, a `git pull` is all that is
-needed to propagate improvements contributed by any collaborator.
+needed to propagate rule and command improvements contributed by any collaborator.
 
 ### Contributing improvements
 

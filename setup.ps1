@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     ResearchTools setup — generates machine-local settings.json and CLAUDE.md
@@ -18,7 +18,9 @@
 #>
 param(
     [string]$ObsidianVault = "",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$InstallJunctions,
+    [switch]$Preview
 )
 
 Set-StrictMode -Version Latest
@@ -52,6 +54,18 @@ if (-not $WorkspaceRoot) {
 Write-Header "ResearchTools — Setup"
 Write-Host "  Workspace : $WorkspaceRoot"
 Write-Host "  User      : $env:USERNAME"
+
+# ─── InstallJunctions mode ────────────────────────────────────────────────────
+
+if ($InstallJunctions) {
+    $junctionsScript = Join-Path $WorkspaceRoot "install-junctions.ps1"
+    if (-not (Test-Path $junctionsScript)) {
+        Write-Err "install-junctions.ps1 not found at: $junctionsScript"
+        exit 1
+    }
+    if ($Preview) { & $junctionsScript -WhatIf } else { & $junctionsScript }
+    exit 0
+}
 
 # ─── Detect Git Bash ──────────────────────────────────────────────────────────
 
@@ -205,6 +219,8 @@ if ($remaining) {
 
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
-Write-Host "Next step (optional): run .\install-junctions.ps1 as Administrator"
-Write-Host "  to make agents and skills available globally in Claude Code."
+Write-Host ""
+Write-Host "Next step: make agents/skills available globally in Claude Code:"
+Write-Host "  .\setup.ps1 -InstallJunctions           # creates junctions in ~/.claude (auto-elevates)"
+Write-Host "  .\setup.ps1 -InstallJunctions -Preview # preview without making changes"
 Write-Host ""

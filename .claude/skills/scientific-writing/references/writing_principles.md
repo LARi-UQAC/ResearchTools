@@ -1,5 +1,11 @@
 # Scientific Writing Principles
 
+> **Project override (ResearchTools).** Any text produced must keep an AI-usage score under 20% and
+> avoid the style-hygiene ban list in `.claude/CLAUDE.md`: zero-width characters, Unicode tag
+> characters, "smart" curly quotes, the ellipsis character (use `...`), the em dash and double/triple
+> dash and en dash (prefer a simple hyphen `-` or parentheses), stray `*`/`#` markup, and overly
+> perfect hierarchical lists.
+
 ## Overview
 
 Effective scientific writing requires mastering fundamental principles that ensure clarity, precision, and impact. Unlike creative or narrative writing, scientific writing prioritizes accuracy, conciseness, and objectivity. This guide covers the core principles that distinguish good scientific writing from poor writing and provides practical strategies for improvement.
@@ -582,8 +588,9 @@ But: "The participants were heterogeneous." (Plural subject)
 - Use commas for thousands in text (12,500 not 12500)
 
 **Ranges:**
-- Use en-dash (–) for ranges: 15–20 mg
-- Include unit only after second number: 15–20 mg (not 15 mg–20 mg)
+- In ResearchTools LaTeX output, use a simple hyphen (-) for ranges: 15-20 mg. The en-dash (–) shown
+  here is a non-LaTeX fallback only; CLAUDE.md style hygiene bans the en/em dash (prefer a hyphen).
+- Include unit only after second number: 15-20 mg (not 15 mg-20 mg)
 
 ## Paragraph Structure
 

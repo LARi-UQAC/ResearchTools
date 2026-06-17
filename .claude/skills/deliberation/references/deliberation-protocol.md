@@ -34,6 +34,11 @@ claims or gaps, batches of at most 3, one query per second), writes it to a file
 script with `--evidence-file`. Use a file, not `--evidence-context`, so large dumps survive
 PowerShell quoting.
 
+At least one Consensus query in every run MUST be a gap probe of the form "what key recent papers on
+`<draft topic / weakest claim>` are missing from this draft" — the panel's job is not only to
+critique the existing text but to surface references that should be added. The papers these probes
+return feed the `coverage_gap` arbitration (section 4) and the Scopus gate (section 5).
+
 ## 3. The two debate rounds
 
 `deliberate.py` runs the debate; the agent does not prompt the models directly.
@@ -63,7 +68,7 @@ from the original scopus-auditor cross-review so the logic is now defined once):
 | `reference_issue`, `requires_scopus_validation: true` | Run the Scopus gate (section 5) first; accept only if Scopus confirms | `[✓ GEMINI]` or `[✓ COPILOT]` |
 | `text_improvement`, `confidence: high`, single reviewer | Accept unless it contradicts Scopus-validated facts | `[✓ GEMINI]` or `[✓ COPILOT]` |
 | `text_improvement`, `confidence: low` | Flag but do not apply | `[? GEMINI — LOW]` or `[? COPILOT — LOW]` |
-| `coverage_gap` | Run `scopus_api.py search` to verify papers exist; accept if >= 1 result | `[✓ GEMINI]` or `[✓ COPILOT]` |
+| `coverage_gap` | Run `scopus_api.py search` to verify papers exist; accept if >= 1 result. On accept, produce a Scopus-validated BibTeX entry, a one-sentence introduction, and an insertion point, then route into the host agent's gap section | `[✓ GEMINI]` or `[✓ COPILOT]` |
 | `style` | Accept if consistent with the CLAUDE.md anti-AI-style rules | `[✓ GEMINI]` or `[✓ COPILOT]` |
 | Gemini and Copilot contradict each other | Claude decides; note both positions | `[✓ GEMINI — COPILOT DISAGREED]` |
 | Rejected | Log the reason in the Deliberation Log | `[✗ — reason]` |
@@ -156,7 +161,10 @@ Omit any subsection that has no items.
 
 ## 8. Graceful-skip rules
 
-None of these abort the host pipeline.
+The deliberation step is MANDATORY: the host agent runs it on every invocation and does not skip it
+on grounds of usefulness, draft length, or its own confidence. The only sanctioned skips are the
+environmental ones listed below (missing API keys, unreachable MCP), and each still requires the
+agent to record its marker in the Deliberation Log. None of these abort the host pipeline.
 
 - One model unavailable (missing key or missing dependency): the script skips it, still deliberates
   with the survivor, and returns the matching `[REVIEWER UNAVAILABLE: ...]` marker. Items keep

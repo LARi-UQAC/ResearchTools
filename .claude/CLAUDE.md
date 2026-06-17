@@ -43,6 +43,7 @@ Academic, human style, without AI-generated style. Validate output with an AI-us
 the score needs to be lower than 20% for any text you produce. Remain highly self-critical
 and constantly seek the best and most optimal solution in both theory and practice. To
 author text, use the `latex-writer` agent together with the `scientific-writing` skill.
+LaTEX output files are located in sub-directory out/.
 
 ## References
 
@@ -107,8 +108,8 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Autonomous literature review | `scopus-researcher` | `/litreview` |
 | Audit an existing review | `scopus-auditor` | `/auditreview` |
 | Audit a complete paper | `paper-auditor` (+ `scholar-evaluation`) | `/auditpaper` |
-| Audit a UQAC thesis | `thesis-auditor` | `/auditthesis` |
-| Audit a UQAC thesis proposal | `thesis-proposal-auditor` | by name |
+| Audit a UQAC thesis | `thesis-auditor` (+ `scholar-evaluation`) | `/auditthesis` |
+| Audit a UQAC thesis proposal | `thesis-proposal-auditor` (+ `scholar-evaluation`) | by name |
 | Clean and validate a `.bib` | `bib-cleaner` | `/bibclean` |
 | Respond to peer reviewers | `reviewer-response` | `/replyreviewer` |
 | Check submission readiness | `submit-checker` | `/submitcheck` |
@@ -117,6 +118,7 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
 | Validate TiKZ code, diagnose LaTeX errors | - | `/tikz`, `/latex` |
 | Cross-model debate before finalizing | `deliberation` skill | inside auditors/researchers |
+| Audit a paper/thesis's own statistics, or mine corpus statistics for the next project | `extract-statistic` skill | inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine) |
 | Generate documentation | - | `/doc` |
 | Run tests | - | `/test` |
 | Control token usage | - | `/concis`, `/slim`, `/focus`, `/ctx` |

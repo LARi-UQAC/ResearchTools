@@ -33,6 +33,9 @@ Commandes autorisées : `obsidian read`, `obsidian create`, `obsidian append`, `
 
 RTK et caveman sont obligatoires dans le chat ; la documentation canonique de RTK vit dans `OutilsLogiciels/CLAUDE.md` et n'est pas reprise ici.
 
+## Fin de chaque exécution d'un PROMPT
+Écrire: Est-ce que cela vous convient TITRE_PROFESSIONNEL MON_PRENOM ?
+
 ## Status de session obligatoire
 
 Au tout début de la PREMIÈRE réponse de chaque session (avant tout autre contenu), afficher cette ligne exacte basée sur les messages des hooks SessionStart dans le contexte :

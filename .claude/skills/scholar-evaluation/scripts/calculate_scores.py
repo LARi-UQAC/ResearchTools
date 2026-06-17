@@ -230,10 +230,12 @@ def generate_report(scores: Dict[str, float], weights: Dict[str, float],
 
     report = '\n'.join(report_lines)
 
-    # Write to file if specified
+    # Write to file if specified.
+    # encoding='utf-8' is mandatory: the report's bar chart uses box-drawing characters
+    # (U+2502, U+2588) that crash the default cp1252 codec on Windows.
     if output_file:
         try:
-            with open(output_file, 'w') as f:
+            with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(report)
             print(f"\nReport saved to: {output_file}")
         except IOError as e:

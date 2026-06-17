@@ -1,0 +1,25 @@
+# Dependencies for the extract-statistic skill's parser (extract_text.py).
+#
+# extract_text.py : pymupdf4llm  (LLM-ready Markdown extraction; tables inline)
+#                   pymupdf       (PyMuPDF; structured find_tables + plain text)
+#
+# LICENCE NOTE: PyMuPDF and pymupdf4llm are AGPL-3.0 (or a paid commercial
+# licence from Artifex). This is acceptable for local/private use of this
+# toolkit. If the repository is ever distributed or exposed as a network
+# service, AGPL-3.0 copyleft obligations apply - revisit the choice then (the
+# read_pdf() backend is isolated, so an MIT parser like pdfplumber can be
+# swapped back in by editing one function).
+#
+# The bib mode reuses .claude/skills/scopus/scripts/download_pdf.py for
+# retrieval, so it inherits that skill's `requests` dependency - no extra pin is
+# needed here. Both packages are optional for local-only runs: when absent, the
+# skill degrades to abstract-level statistics and flags the missing parser.
+#
+# Validate per CLAUDE.md before use. Audit with full dependency resolution:
+#   pip-audit -r <(echo "pymupdf4llm==1.27.2.3"; echo "pymupdf==1.27.2.3")
+# Audited clean 2026-06-17. pymupdf4llm tracks the pymupdf version (both
+# 1.27.2.3) and pulls pymupdf transitively; the explicit pymupdf floor keeps the
+# audited backend version pinned.
+
+pymupdf4llm>=1.27.2.3
+pymupdf>=1.27.2.3

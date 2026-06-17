@@ -1,5 +1,14 @@
 # Citation Styles Guide
 
+> **Project override (ResearchTools).** In this repo, citations are LaTeX `\cite{}` with BibTeX
+> (separate `.bib`) or inline `\bibitem`, IEEE-style by default (engineering). Each label is
+> `firstauthor-year-keyword`; each entry carries a DOI written with `http` and made clickable via
+> `hyperref` `\href`. Every reference is validated against Scopus with the `scopus` skill, and is
+> limited to the approved publishers (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley,
+> IET, IOP, ACM, MDPI, ASME, ACME, BMC) — any other publisher is cleared with the professor before
+> inclusion. Manage references in the `.bib`/`\bibitem` source, not in Zotero/Mendeley/EndNote. The
+> generic AMA/Vancouver/APA/Chicago tables below remain a reference for other venues.
+
 ## Overview
 
 Citation styles provide standardized formats for acknowledging sources in scientific writing. Different disciplines prefer different styles, and journals typically specify which style to use. The five most common citation styles in science are AMA, Vancouver, APA, Chicago, and IEEE.

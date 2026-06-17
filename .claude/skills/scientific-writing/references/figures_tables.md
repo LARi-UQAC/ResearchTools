@@ -1,5 +1,13 @@
 # Figures and Tables Best Practices
 
+> **Project override (ResearchTools / LaTeX).** When the output is LaTeX (the default in this repo),
+> figures are authored in TiKZ (`.tikz`, for TiKZiT) and tables follow
+> `references/float_authoring_rules.md`: rows = parameters, columns = concepts; first row and first
+> column bold; first row 10% grey; `fig:three-words` / `tab:three-words` labels; each float cited in
+> the prose with at least two sentences. The generic PNG/TIFF/dpi/CMYK/software guidance below applies
+> only to non-LaTeX media (or AI-generated raster figures when that medium has been chosen). AI figures
+> are optional; when the medium is unclear, ask the user (AskUserQuestion) before generating.
+
 ## Overview
 
 Figures and tables are essential components of scientific papers, serving to display data patterns, summarize results, and provide evidence for conclusions. Effective visual displays enhance comprehension and can sustain reader interest while illustrating trends, patterns, and relationships not easily conveyed through text alone.
@@ -328,7 +336,7 @@ differences in age, BMI, or blood pressure (all p > 0.15)."
 - Align decimal points in columns
 - Use consistent decimal places (usually 1-2 for means)
 - Report same precision across rows/columns
-- Use en-dash (–) for "not applicable"
+- Use a hyphen (-) for "not applicable" in ResearchTools LaTeX output; the en-dash (–) is a non-LaTeX fallback only (per the CLAUDE.md style-hygiene ban on en/em dashes)
 - Use appropriate precision (don't over-report)
 
 **Statistical annotations:**

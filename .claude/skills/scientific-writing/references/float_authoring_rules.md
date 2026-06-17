@@ -74,6 +74,9 @@ the largest overshoot, whereas MPC trades computation for the best tracking.
 
 ## Figures
 
+- TiKZ (`.tikz`, for TiKZiT) is the default authoring medium. AI-generated schematics are optional;
+  when it is unclear whether a figure should be hand-authored in TiKZ or AI-generated, ASK the user
+  (AskUserQuestion) before generating.
 - Cited with at least two sentences.
 - Label (`\label{fig:...}`).
 - TikZ figures additionally follow the TikZ rules in `CLAUDE.md` (relative positioning, perpendicular

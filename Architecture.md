@@ -4,7 +4,7 @@ This document maps the academic tooling layer under [.claude/](.). Three layers 
 
 ## Layer 1 — Component architecture
 
-The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper/AGENT.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing).
+The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper/AGENT.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing). The [extract-statistic](skills/extract-statistic) skill is consumed by [paper-auditor](agents/paper-auditor/AGENT.md) and [thesis-auditor](agents/thesis-auditor/AGENT.md) (mode `audit`, to review a manuscript's own statistics) and by [scopus-researcher](agents/scopus-researcher/AGENT.md) (mode `mine`, to extract the reported statistics of the corpus PDFs). The [latex-writer](agents/latex-writer/AGENT.md) authoring agent — invoked by context to draft LaTeX, Beamer, and TiKZ — enters the [scientific-writing](skills/scientific-writing) skill through its LaTeX-authoritative entry point and consumes the skill in full (see the Notes).
 
 ```mermaid
 graph TD
@@ -28,6 +28,7 @@ graph TD
     a7["reviewer-response"]
     a8["submit-checker"]
     a9["cover-paper"]
+    a10["latex-writer<br/>LaTeX/Beamer/TiKZ authoring"]
   end
 
   subgraph SK["Skills — skills/"]
@@ -35,6 +36,7 @@ graph TD
     s2["deliberation<br/>deliberate.py"]
     s3["scholar-evaluation<br/>calculate_scores.py"]
     s4["scientific-writing<br/>float / writing rules"]
+    s5["extract-statistic<br/>extract_text.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -53,34 +55,37 @@ graph TD
   c7 --> a8
   a4 -.->|"invoked by name<br/>(no command)"| a4
   a9 -.->|"invoked by name<br/>(no command)"| a9
+  a10 -.->|"invoked by context<br/>(no command)"| a10
 
-  a1 --> s1 & s2 & s3 & s4
+  a1 --> s1 & s2 & s3 & s4 & s5
   a2 --> s1 & s2 & s3 & s4
-  a3 --> s1 & s2 & s3 & s4
+  a3 --> s1 & s2 & s3 & s4 & s5
   a4 --> s1 & s2 & s3 & s4
-  a6 --> s1 & s2 & s4
+  a6 --> s1 & s2 & s4 & s5
   a7 --> s1 & s2 & s4
   a8 --> s1 & s3
   a5 --> s1
   a9 --> s1
+  a10 --> s4
 
   s1 --> e1
   s2 --> e2 & e3 & e4 & e1
+  s5 --> e1
 ```
 
 ### Command → agent → skill matrix
 
-| Command | Agent | scopus | deliberation | scholar-evaluation | scientific-writing |
-| --- | --- | --- | --- | --- | --- |
-| `/auditpaper` | [paper-auditor](agents/paper-auditor/AGENT.md) | yes | yes | yes | yes |
-| `/auditreview` | [scopus-auditor](agents/scopus-auditor/AGENT.md) | yes | yes | yes | yes |
-| `/auditthesis` | [thesis-auditor](agents/thesis-auditor/AGENT.md) | yes | yes | yes | yes |
-| *(by name)* | [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md) | yes | yes | yes | yes |
-| `/bibclean` | [bib-cleaner](agents/bib-cleaner/AGENT.md) | yes | no | no | no |
-| `/litreview` | [scopus-researcher](agents/scopus-researcher/AGENT.md) | yes | yes | no | yes |
-| `/replyreviewer` | [reviewer-response](agents/reviewer-response/AGENT.md) | yes | yes | no | yes |
-| `/submitcheck` | [submit-checker](agents/submit-checker/AGENT.md) | yes | no | yes | no |
-| *(by name)* | [cover-paper](agents/cover-paper/AGENT.md) | yes | no | no | no |
+| Command | Agent | scopus | deliberation | scholar-evaluation | scientific-writing | extract-statistic |
+| --- | --- | --- | --- | --- | --- | --- |
+| `/auditpaper` | [paper-auditor](agents/paper-auditor/AGENT.md) | yes | mandatory | yes | yes | audit |
+| `/auditreview` | [scopus-auditor](agents/scopus-auditor/AGENT.md) | yes | mandatory | yes | yes | no |
+| `/auditthesis` | [thesis-auditor](agents/thesis-auditor/AGENT.md) | yes | mandatory | yes | yes | audit |
+| *(by name)* | [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md) | yes | mandatory | yes | yes | no |
+| `/bibclean` | [bib-cleaner](agents/bib-cleaner/AGENT.md) | yes | no | no | no | no |
+| `/litreview` | [scopus-researcher](agents/scopus-researcher/AGENT.md) | yes | mandatory | no | yes | mine |
+| `/replyreviewer` | [reviewer-response](agents/reviewer-response/AGENT.md) | yes | mandatory | no | yes | no |
+| `/submitcheck` | [submit-checker](agents/submit-checker/AGENT.md) | yes | no | yes | no | no |
+| *(by name)* | [cover-paper](agents/cover-paper/AGENT.md) | yes | no | no | no | no |
 
 ## Layer 2 — Execution flowchart
 
@@ -101,7 +106,7 @@ flowchart TD
   PARSE --> VAL["Reference validation loop<br/>skills/scopus/scripts/scopus_api.py<br/>cite · validate · verify"]
   VAL --> SOTA["State-of-art search<br/>scopus_api.py search"]
   SOTA --> AUDIT["Section / content audits<br/>emit [FLAG] markers"]
-  AUDIT --> FLOAT["Float compliance check<br/>skills/scientific-writing/references/<br/>float_authoring_rules.md"]
+  AUDIT --> FLOAT["scientific-writing compliance check<br/>read SKILL.md (LaTeX section) +<br/>references/ loaded on demand"]
 
   FLOAT --> DELIB["Deliberation panel<br/>skills/deliberation/scripts/deliberate.py<br/>Gemini + Copilot + Consensus, 2 rounds"]
   DELIB --> GATE{"New references<br/>proposed?"}
@@ -109,13 +114,17 @@ flowchart TD
   GATE -->|"no"| SCORE
   REVAL --> SCORE
 
-  SCORE["ScholarEval scoring<br/>skills/scholar-evaluation/scripts/<br/>calculate_scores.py"]
-  SCORE --> PLAN[("Executable plan .md<br/>+ Deliberation Log")]
+  SCORE["ScholarEval baseline scoring (before plan write)<br/>skills/scholar-evaluation/scripts/calculate_scores.py<br/>emits _scholareval_scores.json + _scholareval_report.txt"]
+  SCORE --> PLAN[("Executable plan .md<br/>+ embedded ScholarEval section<br/>(baseline + Score Improvement Tracking table)<br/>+ Deliberation Log")]
+  PLAN --> GATE2{"ScholarEval artifacts<br/>present? (json + report<br/>+ plan section)"}
 
-  PLAN --> EXEC{"User edits,<br/>then executes?"}
+  GATE2 --> EXEC{"User edits,<br/>then executes?"}
   EXEC -->|"yes"| APPLY["Apply changes-package markup<br/>added · replaced · deleted<br/>(id = author / reviewer)"]
   EXEC -->|"no — review only"| END([End])
-  APPLY --> END
+  APPLY --> RESCORE["Re-run ScholarEval on revised source<br/>calculate_scores.py<br/>emits _scholareval_scores_post.json + _scholareval_report_post.txt"]
+  RESCORE --> GATE3{"post overall ><br/>baseline overall?"}
+  GATE3 -->|"no — regression"| APPLY
+  GATE3 -->|"yes"| END
 ```
 
 ## Layer 3 — Scopus skill internals
@@ -187,7 +196,7 @@ flowchart TD
 
 ## Layer 4 — Deliberation process
 
-The [deliberation](skills/deliberation) skill runs a two-round Gemini + Copilot debate, then hands the merged suggestions to Claude for arbitration. Two hard boundaries shape it ([deliberation-protocol.md](skills/deliberation/references/deliberation-protocol.md)): there is no nested-agent dispatch (it is a skill module, not an agent), and a subprocess cannot reach MCP, so `deliberate.py` runs only the two model APIs while the agent gathers Consensus (and, for [scopus-researcher](agents/scopus-researcher/AGENT.md) only, Scopus.AI) evidence itself and passes it in as a file. The script never accepts, validates, or scores anything — it emits evidence; Claude judges. The deliberation step itself is fully autonomous (no user pause); the one manual checkpoint is the Scopus.AI loop, which belongs to [scopus-researcher](agents/scopus-researcher/AGENT.md) Step 1a upstream — the agent generates a copy-paste prompt menu, HALTs for the user to run it in the Scopus.AI web UI and paste the result back, then folds that output into the same evidence file. The other five agents have no Scopus.AI branch.
+The [deliberation](skills/deliberation) skill runs a two-round Gemini + Copilot debate, then hands the merged suggestions to Claude for arbitration. The step is **MANDATORY** in every host agent and enforced by a completion gate (the four auditors and [scopus-researcher](agents/scopus-researcher/AGENT.md) refuse "done" until a populated `## Deliberation Log` exists; [reviewer-response](agents/reviewer-response/AGENT.md) does the same on its Step 8 summary): the model does not skip it on usefulness, length, or confidence grounds, and the only sanctioned skip is genuinely missing model keys, which still records a `[REVIEWER UNAVAILABLE: ...]` marker. Beyond critiquing the draft, the panel actively probes for **missing references to add** — at least one Consensus query per run is a gap probe, and each accepted `coverage_gap` is Scopus-validated, turned into a BibTeX entry with a one-sentence introduction and an insertion point, and routed into the host agent's gap section. Two hard boundaries shape it ([deliberation-protocol.md](skills/deliberation/references/deliberation-protocol.md)): there is no nested-agent dispatch (it is a skill module, not an agent), and a subprocess cannot reach MCP, so `deliberate.py` runs only the two model APIs while the agent gathers Consensus (and, for [scopus-researcher](agents/scopus-researcher/AGENT.md) only, Scopus.AI) evidence itself and passes it in as a file. The script never accepts, validates, or scores anything — it emits evidence; Claude judges. The deliberation step itself is fully autonomous (no user pause); the one manual checkpoint is the Scopus.AI loop, which belongs to [scopus-researcher](agents/scopus-researcher/AGENT.md) Step 1a upstream — the agent generates a copy-paste prompt menu, HALTs for the user to run it in the Scopus.AI web UI and paste the result back, then folds that output into the same evidence file. The other five agents have no Scopus.AI branch.
 
 ```mermaid
 flowchart TD
@@ -195,7 +204,7 @@ flowchart TD
 
   subgraph EVG["Evidence gathering — agent side"]
     direction TB
-    CONS["Consensus search ≤4 · 1/s<br/>(MCP, all agents)"]
+    CONS["Consensus search ≤4 · 1/s<br/>(MCP, all agents)<br/>≥1 = gap probe: papers missing?"]
     subgraph SAI["Scopus.AI MANUAL loop — scopus-researcher Step 1a ONLY"]
       direction TB
       SAGEN["Generate prompt menu P1–P5<br/>natural language, one question each"] --> SAPRES["Present prompts to user<br/>for copy-paste"]
@@ -241,13 +250,20 @@ flowchart TD
   CONF --> LOG
   REJ --> LOG
   SKIP --> LOG
-  LOG["Append ## Deliberation Log<br/>(Accepted / Flagged / Conflicts / Rejected)"] --> SCORE["scholar-evaluation scoring next<br/>(auditors + researcher;<br/>reviewer-response skips)"]
+  LOG["Append ## Deliberation Log (MANDATORY)<br/>(Accepted / Flagged / Conflicts / Rejected<br/>+ coverage_gap papers added)"] --> GATEC{"Completion gate:<br/>Deliberation Log present?"}
+  GATEC -->|"no"| START
+  GATEC -->|"yes"| SCORE["scholar-evaluation scoring next<br/>(auditors + researcher;<br/>reviewer-response skips)"]
 ```
 
-The arbitration table maps each merged item's `agreement` (`consensus`, `gemini_only`, `copilot_only`, `conflict`) to one of eight provenance markers. Any item proposing a specific paper passes the Scopus gate first — `verify` (accept on `valid: true`) when full fields exist, else `search`/`validate` (accept on ≥1 result). [reviewer-response](agents/reviewer-response/AGENT.md) is host-stricter: a panel-proposed reference there runs its own decision tree instead of this generic gate. Graceful skips never abort the host pipeline: one model down → debate with the survivor; both down → empty `merged[]`, step is a no-op; Consensus unreachable → empty evidence file, debate runs on the draft alone.
+The arbitration table maps each merged item's `agreement` (`consensus`, `gemini_only`, `copilot_only`, `conflict`) to one of eight provenance markers. Any item proposing a specific paper passes the Scopus gate first — `verify` (accept on `valid: true`) when full fields exist, else `search`/`validate` (accept on ≥1 result). An accepted `coverage_gap` becomes a Scopus-validated BibTeX entry with a one-sentence introduction and an insertion point, routed into the host agent's gap section (paper-auditor Section N, scopus-auditor Section C/G, the thesis auditors' coverage/novelty section, or the researcher synthesis). [reviewer-response](agents/reviewer-response/AGENT.md) is host-stricter: a panel-proposed reference there runs its own decision tree instead of this generic gate. Graceful skips never abort the host pipeline but are still gated to a logged `[REVIEWER UNAVAILABLE: ...]` marker: one model down → debate with the survivor; both down → empty `merged[]`, step is a no-op; Consensus unreachable → empty evidence file, debate runs on the draft alone.
 
 ## Notes
 
-- The [deliberation](skills/deliberation) skill is itself a composite step: it runs a two-round Gemini + GitHub Copilot debate, enriches with Consensus and optional Scopus.AI evidence, then re-validates every newly proposed reference through the [scopus](skills/scopus) gate before any suggestion is merged into the plan.
+- The [deliberation](skills/deliberation) skill is itself a composite step: it runs a two-round Gemini + GitHub Copilot debate, enriches with Consensus and optional Scopus.AI evidence, then re-validates every newly proposed reference through the [scopus](skills/scopus) gate before any suggestion is merged into the plan. It is MANDATORY in all six academic agents and enforced by a completion gate that blocks "done" until a populated `## Deliberation Log` exists; it also actively surfaces missing references to add (gap probe + Scopus-validated `coverage_gap` routing), not only counter-evidence on existing claims.
 - Reference enrichment and PDF retrieval share one script set under [skills/scopus/scripts/](skills/scopus/scripts): `scopus_api.py` (Elsevier API first) and `download_pdf.py` (Elsevier, then Semantic Scholar open-access fallback).
-- The non-academic agents in [agents/](agents) (analysis-engine, blazor-dev, cost-tester, flask-api, react-dev, latex-writer, security-auditor, word-to-latex) serve the CostEstimator software project and are out of scope for this diagram.
+- The [extract-statistic](skills/extract-statistic) skill has two modes. `audit` ([paper-auditor](agents/paper-auditor/AGENT.md) Step 5.7, [thesis-auditor](agents/thesis-auditor/AGENT.md) Step 8b) reviews a manuscript's own statistics and routes `[STATS …]` flags into the host plan's Results section. `mine` ([scopus-researcher](agents/scopus-researcher/AGENT.md) Step 3b-stats) extracts the reported statistics of the corpus PDFs and feeds a corpus statistics table plus an improvement-opportunity list into the gap map (9b), Pareto matrix (9d), and hypotheses (10). Its `extract_text.py` is the first text-extraction consumer of `download_pdf.py` output (which it reuses for retrieval rather than reimplementing); it adds PyMuPDF (`pymupdf4llm` for LLM-ready Markdown with tables inline, `pymupdf` for structured `find_tables`), which are AGPL-3.0 and isolated in `read_pdf()` so an MIT parser can be swapped back if the repo is ever distributed. The skill never runs a deliberation panel itself — its findings are critiqued by the host agent's single mandatory [deliberation](skills/deliberation) step, keeping one panel per run. It has engineering-default domain checks with a selectable cosmetic profile ([domain-profiles.md](skills/extract-statistic/references/domain-profiles.md)).
+- ScholarEval scoring is standardized across the three auditors ([paper-auditor](agents/paper-auditor/AGENT.md), [thesis-auditor](agents/thesis-auditor/AGENT.md), [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md)): each invokes `calculate_scores.py` **before** writing its plan, embeds the score section in the plan, and emits a standalone `_scholareval_report.txt` plus the `_scholareval_scores.json` it was computed from. A final completion gate blocks "done" until all three artifacts exist. The `thesis-proposal-auditor` passes a custom `--weights` file (proposal weights differ); the script defaults already match `thesis-auditor`/`paper-auditor`, so only the proposal needs one.
+- The [latex-writer](agents/latex-writer/AGENT.md) agent is the academic LaTeX authoring helper (papers, Beamer slides, TiKZ figures, theses), invoked by context from the top-level session — when it authors a section fresh or executes an auditor's improvement plan — rather than by a slash command. Its definition carries no inline rule copies: on every authoring or revision task it reads [skills/scientific-writing/SKILL.md](skills/scientific-writing/SKILL.md) in full, treats that skill's **"LaTeX Academic Writing (ResearchTools)"** section as authoritative (the LaTeX option), and loads all six `references/` files on demand — `float_authoring_rules.md`, `citation_styles.md`, `imrad_structure.md`, `figures_tables.md`, `reporting_guidelines.md`, `writing_principles.md`. The skill is therefore the single source of truth; the agent never relies on a memorized subset.
+- **How every academic agent consumes `scientific-writing` (single source of truth).** The four auditors ([scopus-auditor](agents/scopus-auditor/AGENT.md), [paper-auditor](agents/paper-auditor/AGENT.md), [thesis-auditor](agents/thesis-auditor/AGENT.md), [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md)) and the two author agents ([scopus-researcher](agents/scopus-researcher/AGENT.md), [reviewer-response](agents/reviewer-response/AGENT.md)) each open with a **"Skill consultation (mandatory first step)"** that reads `SKILL.md` in full, treats the LaTeX Academic Writing section as authoritative, and loads the six `references/` files on demand — not just `float_authoring_rules.md` as before. The inline float checklist each agent keeps is now explicitly the float slice of that skill, and the anti-AI-style reminders point to `writing_principles.md` as canonical.
+- **Where authoring happens — the rule that avoids nested-subagent spawning.** Top-level authoring (writing a section, or *executing* an auditor's plan) delegates to [latex-writer](agents/latex-writer/AGENT.md), which loads the full skill; a top-level spawn is reliable. The six academic agents above run as subagents, so they cannot reliably spawn another subagent — they read `SKILL.md` directly and author/check themselves, and must not call `latex-writer`. Accordingly, each auditor's plan footer and execution mode route plan execution through `latex-writer` so every `\added`/`\replaced` float and paragraph follows the full skill.
+- The non-academic agents in [agents/](agents) (analysis-engine, blazor-dev, cost-tester, flask-api, react-dev, security-auditor, word-to-latex) serve the CostEstimator software project and are out of scope for this diagram.

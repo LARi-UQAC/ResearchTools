@@ -8,11 +8,11 @@ allowed-tools: [Read, Write, Edit, Bash]
 
 ## Overview
 
-**This is the core skill for the deep research and writing tool**—combining AI-driven deep research with well-formatted written outputs. Every document produced is backed by comprehensive literature search and verified citations through the research-lookup skill.
+**This is the core skill for the deep research and writing tool**—combining AI-driven deep research with well-formatted written outputs. Every document produced is backed by comprehensive literature search and verified citations through the research-lookup skill (in ResearchTools, use the `scopus` skill for this role).
 
 Scientific writing is a process for communicating research with precision and clarity. Write manuscripts using IMRAD structure, citations (IEEE/APA/AMA/Vancouver), figures/tables, and reporting guidelines (CONSORT/STROBE/PRISMA). Apply this skill for research papers and journal submissions.
 
-**Critical Principle: Always write in full paragraphs with flowing prose. Never submit bullet points in the final manuscript.** Use a two-stage process: first create section outlines with key points using research-lookup, then convert those outlines into complete paragraphs.
+**Critical Principle: Always write in full paragraphs with flowing prose. Never submit bullet points in the final manuscript.** Use a two-stage process: first create section outlines with key points using research-lookup (the `scopus` skill in ResearchTools), then convert those outlines into complete paragraphs.
 
 ## When to Use This Skill
 
@@ -28,12 +28,48 @@ This skill should be used when:
 - Ensuring proper use of field-specific terminology and nomenclature
 - Addressing reviewer comments and revising manuscripts
 
+## LaTeX Academic Writing (ResearchTools)
+
+**This is the authoritative case whenever the output is LaTeX (the default in this repo).** It mirrors
+the project `.claude/CLAUDE.md`. Where this section and the generic guidance below disagree, this
+section wins; the generic biomedical/journal-PDF material that follows is a fallback for non-LaTeX work.
+
+- **Language**: French by default for a UQAC thesis, English for a scientific paper. LaTeX for all
+  documents; Beamer for slides.
+- **Figures**: TiKZ (`.tikz`, for TiKZiT) is the default. The float rules and the 9 TiKZ geometry
+  rules are canonical in `references/float_authoring_rules.md` and `.claude/CLAUDE.md` (relative
+  positioning, perpendicular arrows, 3-character minimum spacing, no overlaps, simple TiKZiT-parsable
+  code, `fig:three-words` label, cited with >= 2 sentences). AI-generated schematics (the
+  `scientific-schematics` skill, if available) are **optional**. When it is unclear whether a figure
+  should be hand-authored in TiKZ or AI-generated, **use AskUserQuestion before generating**.
+- **Tables, equations, all floats**: defer to `references/float_authoring_rules.md` (canonical). In
+  short: tables have rows = parameters / columns = concepts, first row and first column bold, first
+  row 10% grey, `tab:three-words`, >= 2 sentences; equations are cited BEFORE the equation via
+  `\eqref`, labelled `eq:three-words`, every variable defined directly under, `\text{,}`/`\text{.}`
+  punctuation. Do not restate these here — follow that file.
+- **Citations**: `\cite{}` with `firstauthor-year-keyword` labels; DOI written with `http` and made
+  clickable via `hyperref` `\href`; every reference validated against Scopus with the `scopus` skill;
+  references limited to the approved publishers (IEEE, Springer, Elsevier, Taylor & Francis,
+  Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BMC) — any other publisher is cleared with the
+  professor first; BibTeX (separate `.bib`) or inline `\bibitem`. See the override in
+  `references/citation_styles.md`.
+- **Style hygiene**: keep the AI-usage score under 20%. Avoid the banned elements from `.claude/CLAUDE.md`:
+  zero-width characters (U+200B/200C/200D), Unicode tag characters, "smart" curly quotes, the ellipsis
+  character (use `...`), em dash and double/triple dash and en dash (prefer a simple hyphen `-` or
+  parentheses), stray `*`/`#` markup, and overly perfect hierarchical lists.
+- **Tooling**: `scopus` for references, `latex-writer` (with this skill) for authoring, `deliberation`
+  for cross-model debate. The generic guidance below names a `research-lookup` skill; in this repo that
+  role is filled by the `scopus` skill.
+
 ## Visual Enhancement with Scientific Schematics
 
-**⚠️ MANDATORY: Every scientific paper MUST include at least 1-2 AI-generated figures using the scientific-schematics skill.**
+**Optional — and only when LaTeX/TiKZ is not the chosen medium.** Under the LaTeX Academic Writing case
+above, TiKZ is the default figure medium and AI-generated schematics are not required. The guidance
+below applies when AI-generated figures have been chosen for a document; when the medium is unclear,
+use AskUserQuestion before generating.
 
-This is not optional. Scientific papers without visual elements are incomplete. Before finalizing any document:
-1. Generate at minimum ONE schematic or diagram using scientific-schematics
+For a non-LaTeX document that uses AI-generated figures:
+1. Generate at least ONE schematic or diagram using scientific-schematics (if the skill is available)
 2. Prefer 2-3 figures for comprehensive papers (methods flowchart, results visualization, conceptual diagram)
 
 **How to generate figures:**
@@ -211,7 +247,7 @@ Scientific papers must be written in complete, flowing prose. Use this two-stage
 **Stage 1: Create Section Outlines with Key Points**
 
 When starting a new section:
-1. Use the research-lookup skill to gather relevant literature and data
+1. Use the research-lookup skill (the `scopus` skill in ResearchTools) to gather relevant literature and data
 2. Create a structured outline with bullet points marking:
    - Main arguments or findings to present
    - Key studies to cite
@@ -293,7 +329,7 @@ Lists may appear in scientific papers only in specific contexts:
 
 **Integration with Research Lookup:**
 
-The research-lookup skill is essential for Stage 1 (creating outlines):
+The research-lookup skill (the `scopus` skill in ResearchTools) is essential for Stage 1 (creating outlines):
 1. Search for relevant papers using research-lookup
 2. Extract key findings, methods, and data
 3. Organize findings as bullet points in your outline
@@ -435,7 +471,7 @@ Adapt language, terminology, and conventions to match the specific scientific di
 **Stage 2: Drafting** (Use two-stage writing process for each section)
 1. Start with figures and tables (the core data story)
 2. For each section below, follow the two-stage process:
-   - **First**: Create outline with bullet points using research-lookup
+   - **First**: Create outline with bullet points using research-lookup (the `scopus` skill in ResearchTools)
    - **Second**: Convert bullet points to full paragraphs with flowing prose
 3. Write Methods (often easiest to draft first)
 4. Draft Results (describing figures/tables objectively)
@@ -474,9 +510,10 @@ This skill works effectively with:
 
 This skill includes comprehensive reference files covering specific aspects of scientific writing:
 
+- `references/float_authoring_rules.md`: Canonical ResearchTools rules for every figure, table, and equation (label, citation, explanation, table orientation/bold/grey, equation citation-before/variables/punctuation). Authoritative for LaTeX floats — follow this over the generic figure/table guidance.
 - `references/imrad_structure.md`: Detailed guide to IMRAD format and section-specific content
-- `references/citation_styles.md`: Complete citation style guides (APA, AMA, Vancouver, Chicago, IEEE)
-- `references/figures_tables.md`: Best practices for creating effective data visualizations
+- `references/citation_styles.md`: Complete citation style guides (APA, AMA, Vancouver, Chicago, IEEE); see the ResearchTools override at the top for the LaTeX `\cite`/BibTeX policy
+- `references/figures_tables.md`: Best practices for creating effective data visualizations; see the ResearchTools/LaTeX override at the top
 - `references/reporting_guidelines.md`: Study-specific reporting standards and checklists
 - `references/writing_principles.md`: Core principles of effective scientific communication
 

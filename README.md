@@ -22,6 +22,7 @@ Follow these steps on any machine after cloning the repository.
 | [Node.js](https://nodejs.org/) | Caveman-mode hooks (`caveman-activate.js`, etc.) |
 | Python 3.x | Scopus skill scripts + security hooks (`betterleaks`, `pip-audit`, `prompt-injection-defender`) |
 | `pip install requests google-genai openai` | Scopus skill + Gemini/Copilot cross-review |
+| `pip install pymupdf4llm pymupdf` *(optional, AGPL-3.0)* | `extract-statistic` skill PDF parsing (`mine` mode), LLM-ready Markdown + table extraction; reuses `SCOPUS_API_KEY` via `download_pdf.py`, needs no key of its own |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
 | Obsidian Desktop *(optional)* | Obsidian vault integration in `CLAUDE.md` |
 
@@ -159,6 +160,7 @@ Skills bundle scripts and references the agents reuse. Five ship in this repo.
 | `scientific-writing` | Core writing skill: scientific manuscripts in flowing IMRAD prose with verified citations (IEEE/APA/AMA/Vancouver) and reporting guidelines (CONSORT/STROBE/PRISMA). | `.claude/skills/scientific-writing/SKILL.md` |
 | `scholar-evaluation` | ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations. | `.claude/skills/scholar-evaluation/SKILL.md` |
 | `deliberation` | Two-round Gemini ↔ GitHub Copilot debate over a near-final draft; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |
+| `extract-statistic` | Statistical analysis. Mode `audit`: review a manuscript's own statistics (test selection, assumptions, effect size, presentation, cross-validation). Mode `mine`: extract the reported statistics of a corpus's full-text PDFs and synthesize a corpus statistics table plus an improvement-opportunity list. Engineering-default domain profiles. Used inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine). | `.claude/skills/extract-statistic/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
@@ -356,14 +358,19 @@ command.
 | `scopus-researcher` | Autonomous literature review: search, validate, summarize, PRISMA + gap/coverage/Pareto matrices, hypotheses, LaTeX output | `/litreview` | `.claude/agents/scopus-researcher/AGENT.md` |
 | `scopus-auditor` | Audit an existing review; validate every reference; executable improvement plan | `/auditreview` | `.claude/agents/scopus-auditor/AGENT.md` |
 | `paper-auditor` | Full paper content audit (intro→future works) + Scopus validation + ScholarEval score + improvement plan | `/auditpaper` | `.claude/agents/paper-auditor/AGENT.md` |
-| `thesis-auditor` | Full UQAC thesis audit (front matter, hypothesis flow, chapter structure, bilingual consistency, UQAC compliance) | `/auditthesis` | `.claude/agents/thesis-auditor/AGENT.md` |
-| `thesis-proposal-auditor` | Audit a UQAC thesis **proposal** (≤35 pages body, testable hypotheses, suggested methodology, no full results) | thesis-proposal audit / by name | `.claude/agents/thesis-proposal-auditor/AGENT.md` |
+| `thesis-auditor` | Full UQAC thesis audit (front matter, hypothesis flow, chapter structure, bilingual consistency, UQAC compliance) + ScholarEval score | `/auditthesis` | `.claude/agents/thesis-auditor/AGENT.md` |
+| `thesis-proposal-auditor` | Audit a UQAC thesis **proposal** (≤35 pages body, testable hypotheses, suggested methodology, no full results) + ScholarEval score | thesis-proposal audit / by name | `.claude/agents/thesis-proposal-auditor/AGENT.md` |
 | `reviewer-response` | Point-by-point response letters + traceable `changes`-package markup in the paper | `/replyreviewer` | `.claude/agents/reviewer-response/AGENT.md` |
 | `bib-cleaner` | Validate, deduplicate, normalize and DOI-enrich a `.bib` file | `/bibclean` | `.claude/agents/bib-cleaner/AGENT.md` |
 | `submit-checker` | Pass/fail submission checklist against a target journal's requirements | `/submitcheck` | `.claude/agents/submit-checker/AGENT.md` |
 | `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex/AGENT.md` |
 | `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus) | by name (at submission) | `.claude/agents/cover-paper/AGENT.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer/AGENT.md` |
+
+The four ScholarEval auditors (`scopus-auditor`, `paper-auditor`, `thesis-auditor`,
+`thesis-proposal-auditor`) score the document before writing the plan; after the plan is
+executed they re-run the scoring on the revised source and report a before/after ScholarEval
+comparison (baseline vs post), hard-gated so execution only completes when the score improves.
 
 ### `latex-writer` key rules
 
@@ -427,7 +434,7 @@ ResearchTools\
     │   ├── bibclean.md ├── submitcheck.md           ├── replyreviewer.md
     │   └── word2latex.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (5 skills)
+    └── skills\                              (6 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -435,5 +442,7 @@ ResearchTools\
         ├── scientific-writing\SKILL.md
         ├── scholar-evaluation\SKILL.md      (+ scripts\calculate_scores.py)
         ├── deliberation\SKILL.md            (+ scripts\deliberate.py)
+        ├── extract-statistic\SKILL.md       (+ scripts\extract_text.py;
+        │                  references\statistical-audit-protocol.md, domain-profiles.md)
         └── word2latex\SKILL.md              (+ scripts\docx_inspect.py, manuscript_bib.py)
 ```

@@ -18,10 +18,20 @@ this skill. This file is the entry point and contract.
 - You want Gemini and Copilot to debate each other (not just review in isolation) and to react to
   fresh literature evidence from Consensus (and Scopus.AI for the researcher).
 
+## Active mandate: find missing references
+
+Beyond critiquing the draft, the panel actively probes for references that should be added to the
+specific paper, thesis, or review under audit. The Consensus queries ask what key papers on the
+draft's topics and claims are missing; the Gemini and Copilot reviewers return `coverage_gap`
+suggestions. Every accepted `coverage_gap` is validated against Scopus, turned into a BibTeX entry
+plus a one-sentence introduction and an insertion point, and routed into the host agent's gap
+section. Gap-filling on the audited draft is in scope here.
+
 ## When NOT to use
 
-- For literature discovery. Consensus discovery stays at scopus-researcher Step 1d. Here Consensus
-  is used only for counter-evidence on the finished claims.
+- For broad, open-ended topic discovery unanchored to a draft. The initial literature sweep that
+  predates any hypothesis stays at scopus-researcher Step 1d. This skill fills gaps on a specific,
+  near-final draft; it does not replace that sweep.
 - As a standalone command typed by the user. The skill is invoked by the agents at their
   deliberation step, not directly.
 

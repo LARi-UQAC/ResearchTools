@@ -5,7 +5,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **5 skills**, **11 agents**, and **17 commands**.
+The repo ships **8 skills**, **11 agents**, and **17 commands**.
 
 ---
 
@@ -23,6 +23,7 @@ Follow these steps on any machine after cloning the repository.
 | Python 3.x | Scopus skill scripts + security hooks (`betterleaks`, `pip-audit`, `prompt-injection-defender`) |
 | `pip install requests google-genai openai` | Scopus skill + Gemini/Copilot cross-review |
 | `pip install pymupdf4llm pymupdf` *(optional, AGPL-3.0)* | `extract-statistic` skill PDF parsing (`mine` mode), LLM-ready Markdown + table extraction; reuses `SCOPUS_API_KEY` via `download_pdf.py`, needs no key of its own |
+| `pip install docling markitdown[pdf]` *(optional, MIT; Docling pulls torch)* | Pluggable Markdown backend for `extract_text.py` (`--stats-scan` / `--section-scan`) and HTML conversion in the any-format retrieval path. Docling is the default (best tables/layout), MarkItDown the light fallback; absent both, the parser uses pymupdf4llm + a tag-strip |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
 | Obsidian Desktop *(optional)* | Obsidian vault integration in `CLAUDE.md` |
 
@@ -106,6 +107,7 @@ Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
 |---|---|---|
 | `SCOPUS_API_KEY` | **Required** — all `/scopus`, `/auditreview`, `/auditpaper`, `/auditthesis`, `/litreview`, `/bibclean`, `/replyreviewer`, and PDF retrieval | [Elsevier Developer Portal](https://dev.elsevier.com/) |
 | `.scopus_key` file | Fallback for `SCOPUS_API_KEY` — place the key in `.claude/skills/scopus/.scopus_key` (gitignored) | same key as above |
+| `UNPAYWALL_EMAIL` | *Optional* — enables the Unpaywall open-access tier in `download_pdf.py` (HTML/PDF fallback when no publisher PDF); a plain contact email, or pass `--email` | any institutional email |
 | `GEMINI_API_KEY` | *Optional* — Gemini 2.0 Flash cross-review and table enrichment (deliberation panel) | [Google AI Studio](https://aistudio.google.com/apikey) |
 | `GITHUB_TOKEN` | *Optional* — GPT-4o cross-review via GitHub Models (deliberation panel) | GitHub → Settings → Developer settings → Personal access token |
 | `S2_API_KEY` *(or `SEMANTIC_SCHOLAR_API_KEY`)* | *Optional* — Semantic Scholar author/PDF backfill; without it the throttled public pool is used | [Semantic Scholar API key request](https://www.semanticscholar.org/product/api) |
@@ -161,6 +163,7 @@ Skills bundle scripts and references the agents reuse. Seven ship in this repo.
 | `scholar-evaluation` | ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations. | `.claude/skills/scholar-evaluation/SKILL.md` |
 | `deliberation` | Two-round Gemini ↔ GitHub Copilot debate over a near-final draft; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |
 | `extract-statistic` | Statistical analysis. Mode `audit`: review a manuscript's own statistics (test selection, assumptions, effect size, presentation, cross-validation). Mode `mine`: extract the reported statistics of a corpus's full-text PDFs and synthesize a corpus statistics table plus an improvement-opportunity list. Engineering-default domain profiles. Used inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine). | `.claude/skills/extract-statistic/SKILL.md` |
+| `extract-futureworks` | Future-works analysis (reuses `extract_text.py --section-scan`). Mode `audit`: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode `mine`: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and `scopus-researcher` (mine), where it is a hard gate: no hypothesis/project without it. | `.claude/skills/extract-futureworks/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
 
@@ -183,7 +186,7 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 - `.claude/skills/scopus/SKILL.md`
 - `.claude/skills/scopus/scripts/scopus_api.py` — Scopus REST client
 - `.claude/skills/scopus/scripts/semantic_scholar_api.py` — Semantic Scholar fallback
-- `.claude/skills/scopus/scripts/download_pdf.py` — full-text PDF retrieval
+- `.claude/skills/scopus/scripts/download_pdf.py` — any-format full-text retrieval (PDF, else HTML/Markdown via Unpaywall, arXiv, PMC, validated DOI landing)
 - `.claude/skills/scopus/scripts/gemini_reviewer.py` · `github_reviewer.py` · `gemini_table.py` — cross-review cores
 
 ---
@@ -438,7 +441,7 @@ ResearchTools\
     │   ├── bibclean.md ├── submitcheck.md           ├── replyreviewer.md
     │   └── word2latex.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (7 skills)
+    └── skills\                              (8 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -446,8 +449,10 @@ ResearchTools\
         ├── scientific-writing\SKILL.md
         ├── scholar-evaluation\SKILL.md      (+ scripts\calculate_scores.py)
         ├── deliberation\SKILL.md            (+ scripts\deliberate.py)
-        ├── extract-statistic\SKILL.md       (+ scripts\extract_text.py;
+        ├── extract-statistic\SKILL.md       (+ scripts\extract_text.py [--stats-scan / --section-scan];
         │                  references\statistical-audit-protocol.md, domain-profiles.md)
+        ├── extract-futureworks\SKILL.md     (no script; reuses extract_text.py --section-scan;
+        │                  references\futureworks-protocol.md, section-cues.md)
         ├── word2latex\SKILL.md              (+ scripts\docx_inspect.py, manuscript_bib.py)
         └── drawio2tikz\SKILL.md             (+ scripts\drawio2tikz.py;
                            references\conversion-rules.md)

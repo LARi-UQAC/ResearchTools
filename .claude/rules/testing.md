@@ -25,16 +25,32 @@ The runnable code in this repo is the skill scripts under `.claude/skills/*/scri
 exercise them, set the required environment variables, then dry-run the entry points:
 
 - `scopus` skill: `scopus_api.py` (Scopus REST client), `semantic_scholar_api.py`
-  (fallback), `download_pdf.py` (full-text retrieval), and the cross-review cores
+  (fallback + `external_ids_for_doi`), `download_pdf.py` (any-format full-text retrieval:
+  Elsevier/S2 PDF, then Unpaywall/arXiv/PMC/landing HTML), and the cross-review cores
   (`gemini_reviewer.py`, `github_reviewer.py`, `gemini_table.py`).
+- `extract-statistic` skill: `extract_text.py` (`--stats-scan` and `--section-scan`; pluggable
+  Markdown backend Docling -> pymupdf4llm/MarkItDown -> tag-strip). The `extract-futureworks`
+  skill ships no script of its own and reuses `extract_text.py --section-scan`.
 - `deliberation` skill: `deliberate.py` (two-round Gemini/Copilot debate).
 - `word2latex` skill: `docx_inspect.py`, `manuscript_bib.py`.
+
+Offline unit tests (no network, no API key, no model load; run with the project Python):
+
+```powershell
+python .claude/skills/scopus/scripts/Test/test_download_pdf.py            # any-format tiers, HTML validation
+python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py # scan_sections / section-scan
+```
+
+The `test_download_pdf.py` suite patches `requests.get`, so the Unpaywall/arXiv/PMC tiers and the
+HTML fetch are exercised with no network. The section-scan suite works on plain strings, so the
+heavy Docling/MarkItDown imports never load.
 
 ### Required / optional environment variables
 
 | Variable | Status | Used for |
 |---|---|---|
 | `SCOPUS_API_KEY` (or `.claude/skills/scopus/.scopus_key`) | Required | All Scopus search, validation, and PDF retrieval |
+| `UNPAYWALL_EMAIL` (or `--email`) | Optional | Unpaywall open-access tier in `download_pdf.py` (HTML/PDF fallback) |
 | `GEMINI_API_KEY` | Optional | Gemini cross-review and table enrichment |
 | `GITHUB_TOKEN` | Optional | GPT cross-review via GitHub Models |
 | `S2_API_KEY` (or `SEMANTIC_SCHOLAR_API_KEY`) | Optional | Semantic Scholar backfill (else throttled public pool) |

@@ -250,6 +250,16 @@ Flag `[HYPOTHESIS NOT CONCLUDED: H_N]` if the conclusion does not address H_N.
 
 Record all hypothesis flow findings in Section B of the plan. Any `[HYPOTHESIS NOT TESTED]` or `[HYPOTHESIS NOT VALIDATED]` is a **High-priority** item — these represent fundamental thesis failures.
 
+**Step 3e — Validate each hypothesis against the cited-corpus future works (extract-futureworks, mine) — MANDATORY**
+
+After the PDFs/full text of the cited references are retrieved (Step 5b), mine the cited corpus' stated future works and use them to validate the thesis hypotheses and propose stronger ones. Read `.claude/skills/extract-futureworks/SKILL.md`, then run the shared parser over the thesis `.bib`:
+
+```
+python ".claude/skills/extract-statistic/scripts/extract_text.py" bib "<.bib path>" --latex "<main .tex path>" --section-scan
+```
+
+Build the cited-corpus future-works table (paper, stated future work, category, fit to the thesis theme, effort 1-5, impact 1-5), Pareto-ordered. For each thesis hypothesis H_N: if the corpus repeatedly lists it as an open problem it is well-grounded; if the corpus shows it is already closed, flag `[FW HYPOTHESIS ALREADY CLOSED: H_N]` with the DOI. Then propose at least one stronger hypothesis drawn from the top-Pareto corpus future works, testable by a named method and novelty-checked (`scopus_api.py search`). A paper whose full text could not be retrieved is flagged `[FW FULLTEXT-MISSING]` (abstract-level only) and never blocks the pipeline. Record this in Section B (hypothesis validation + corpus-derived candidate hypotheses); it is **High-priority** and the Step 16 completion gate verifies it. Do NOT run a deliberation panel here: Step 14 runs the single mandatory `deliberation`.
+
 ---
 
 ### Step 4 — Chapter structure audit (sujet amené / posé / divisé)
@@ -347,10 +357,14 @@ reference whose `refs/<citekey>.pdf` already exists, so reruns do not re-fetch.
 python ".claude/skills/scopus/scripts/download_pdf.py" bib "<.bib path>" --latex "<main .tex path>"
 ```
 
-Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access fallback;
-the `%PDF` magic bytes are validated and `refs/_manifest.json` + `refs/_failed.md` written.
-Note `_failed.md` DOIs in the plan for manual UQAC-network retrieval; a download failure is
-never a reference-validation failure.
+Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access PDF, then the
+any-format tiers (Unpaywall, arXiv, PMC, content-validated DOI-landing scrape), so a cited paper
+with no downloadable PDF is still retrieved as HTML or Markdown. PDF bytes are validated by the
+`%PDF` magic number and HTML by a content check; `refs/_manifest.json` (with each file's `format`
+and `tier`) + `refs/_failed.md` written. Set `UNPAYWALL_EMAIL` (or pass `--email`) for the
+Unpaywall tier. Note `_failed.md` DOIs in the plan for manual UQAC-network retrieval (save the page
+as `.pdf`/`.html`/`.md`); a retrieval failure is never a reference-validation failure. This corpus
+feeds the Step 3e hypothesis validation (extract-futureworks, mine).
 
 ---
 
@@ -957,9 +971,14 @@ user:
 5. **Section G** contains the **Statistical audit** subsection populated from Step 8b (one entry per
    `[STATS …]` flag, with the active profile noted), or an explicit "no statistical issues found" line
    when the skill raised none. An empty or missing subsection means Step 8b did not run; return to it.
+6. **Section B** contains the **future-works hypothesis validation** from Step 3e: each hypothesis
+   marked well-grounded or `[FW HYPOTHESIS ALREADY CLOSED]` against the cited-corpus future works, AND
+   at least one corpus-derived stronger hypothesis. An empty or missing Step 3e block means it did not
+   run; return to Step 3e (and Step 5b if the corpus was never retrieved). A `[FW FULLTEXT-MISSING]`
+   note is acceptable content; an empty hypothesis validation is not.
 
-If any of the five is missing, return to the matching step (8b, 14, or 14.5), produce it, and re-write
-the section before declaring done. Finally, **report to the user** the overall score, the quality level,
+If any of the six is missing, return to the matching step (3e, 8b, 14, or 14.5), produce it, and
+re-write the section before declaring done. Finally, **report to the user** the overall score, the quality level,
 and the two output paths (`..._scholareval_scores.json`, `..._scholareval_report.txt`).
 
 ---

@@ -282,10 +282,32 @@ download is presence-gated: skip any reference whose `refs/<citekey>.pdf` alread
 python ".claude/skills/scopus/scripts/download_pdf.py" bib "<.bib path>" --latex "<main .tex path>"
 ```
 
-Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access fallback;
-the `%PDF` magic bytes are validated and `refs/_manifest.json` + `refs/_failed.md` are
-written. Note `_failed.md` DOIs in the plan for manual UQAC-network retrieval; a download
-failure is never a reference-validation failure.
+Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access PDF, then the
+any-format tiers (Unpaywall, arXiv, PMC, content-validated DOI-landing scrape), so a cited paper
+with no downloadable PDF is still retrieved as HTML or Markdown. PDF bytes are validated by the
+`%PDF` magic number and HTML by a content check; `refs/_manifest.json` (with each file's `format`
+and `tier`) + `refs/_failed.md` are written. Set `UNPAYWALL_EMAIL` (or pass `--email`) for the
+Unpaywall tier. Note `_failed.md` DOIs in the plan for manual UQAC-network retrieval (save the page
+as `.pdf`/`.html`/`.md`); a retrieval failure is never a reference-validation failure.
+
+### Step 2.7 — Cited-corpus mining (extract-statistic + extract-futureworks, mine mode)
+
+When `refs/` is populated (Step 2.6 retrieved at least one cited paper's full text), mine the cited
+corpus so the audit can position the paper against what its own references actually report and propose.
+Read `.claude/skills/extract-futureworks/SKILL.md`, then run the shared parser over the paper's `.bib`
+(combine the scans in one pass):
+
+```
+python ".claude/skills/extract-statistic/scripts/extract_text.py" bib "<.bib path>" --latex "<main .tex path>" --stats-scan --section-scan
+```
+
+From the per-paper output, build the **cited-corpus future-works table** (paper, stated future work,
+category, fit to this paper's contribution, effort 1-5, impact 1-5) and the corpus statistics view. Use
+them to detect positioning issues — for example a cited paper whose stated future work is silently
+claimed as this paper's own contribution, or a "future work" this paper proposes that a cited paper has
+already completed. Route findings into Section N (coverage), the Section C statistical subsection, and
+the Step 7 future-works audit below. A paper whose full text could not be retrieved is flagged
+`[FW FULLTEXT-MISSING]` and contributes abstract-level future works only; it never blocks the pipeline.
 
 ### Step 3 — State-of-the-art positioning
 
@@ -460,19 +482,33 @@ Examine the Discussion section. For each paragraph:
 | Conclusions are directly supported by the reported results | `[UNSUPPORTED CONCLUSION]` |
 | Contribution is positioned vs. related work (shows advancement) | `[NOT POSITIONED]` |
 
-### Step 7 — Future works audit
+### Step 7 — Future works audit (extract-futureworks skill) — hypothesis gate
 
-For each future work statement or research direction mentioned in the Conclusion/Future Works section:
+Audit the paper's own future works with the `extract-futureworks` skill in `audit` mode, then use the
+cited-corpus future works from Step 2.7 to validate the paper's hypotheses and propose stronger ones.
+Read `.claude/skills/extract-futureworks/SKILL.md` and apply
+`.claude/skills/extract-futureworks/references/futureworks-protocol.md` over the merged manuscript:
 
-1. Run: `python ".claude/skills/scopus/scripts/scopus_api.py" search "<future work topic>" --count 5`
-2. Apply novelty flags:
+```
+python ".claude/skills/extract-statistic/scripts/extract_text.py" text "<main.tex>" --section-scan
+```
 
-| Flag | Condition |
-|---|---|
-| `[ALREADY EXISTS IN LITERATURE]` | A Scopus paper demonstrating this exact contribution is found — propose rephrasing as a refinement |
-| `[NOT TESTABLE]` | The statement does not name a method, metric, or experiment by which it could be confirmed |
-| `[GENERAL KNOWLEDGE]` | The statement describes a well-known principle with no novel angle |
-| `[PASSES H1–H5]` | Novel, testable, and not covered by existing literature |
+1. **Audit the paper's own future works.** Emit the skill flags for each statement: `[FW MISSING]`,
+   `[FW NOT TESTABLE]`, `[FW VAGUE]`, `[FW GENERAL KNOWLEDGE]`, `[FW NOT LINKED TO LIMITATION]`. For
+   novelty, run `python ".claude/skills/scopus/scripts/scopus_api.py" search "<future work topic>" --count 5`
+   and flag `[FW ALREADY EXISTS]` (with the DOI) when a Scopus paper already demonstrates it; otherwise
+   the statement is a valid open direction.
+2. **Validate the paper's hypotheses against the cited-corpus future works (Step 2.7).** For each
+   hypothesis or claimed contribution: if the corpus repeatedly lists it as an open problem it is
+   well-grounded; if the corpus shows it is already closed, flag `[FW HYPOTHESIS ALREADY CLOSED]` with
+   the DOI.
+3. **Propose at least one stronger hypothesis** drawn from the top cited-corpus future works that the
+   paper does not yet pursue, each testable by a named method and novelty-checked (step 1).
+
+Route everything into **Section E**. Do NOT run a deliberation panel here: Step 8 runs the single
+mandatory `deliberation`. **Hard gate:** Section E is not complete until it contains the hypothesis
+validation (step 2) and at least one corpus-derived improved hypothesis (step 3); the completion gate
+(Step 10) verifies this.
 
 ### Step 7.5 — LLM usage evaluation
 
@@ -657,14 +693,22 @@ profile (`engineering` / `cosmetic`) in the subsection header.
 
 ### D2 — ...
 
-## Section E — Future Works Issues
+## Section E — Future Works and Hypothesis Issues (MANDATORY — plan is not final without E-Hyp)
 
 ### E1 — [Future work statement (first 10 words)]
-**Issue:** [flag]
+**Issue:** [FW MISSING / FW NOT TESTABLE / FW VAGUE / FW GENERAL KNOWLEDGE / FW NOT LINKED TO LIMITATION / FW ALREADY EXISTS]
 **Proposed fix:** [rephrase as refinement, or add testability criterion]
-**Novelty check:** [ALREADY EXISTS / PASSES H1–H5]
+**Novelty check:** [FW ALREADY EXISTS (DOI) / valid open direction]
 
 ### E2 — ...
+
+### E-Hyp — Hypothesis validation against the cited-corpus future works (Step 7) — MANDATORY
+For each hypothesis or claimed contribution of the paper:
+- **H_N:** [stated hypothesis] — **Verdict:** [well-grounded (corpus lists it as open) / `[FW HYPOTHESIS ALREADY CLOSED]` (DOI)] — **Action:** [keep / reframe as refinement]
+
+### E-NewHyp — Stronger hypotheses drawn from the cited-corpus future works — MANDATORY (>= 1)
+- [testable statement] | testable by [named method] | answers corpus open problem [paper(s)] | target journal
+*(At least one corpus-derived improved hypothesis is required; the Step 10 completion gate checks this.)*
 
 ## Section F — Missing Sections
 
@@ -830,8 +874,12 @@ user:
    (one entry per `[STATS …]` flag, with the active profile noted), or an explicit "no statistical
    issues found" line when the skill raised none. An empty or missing subsection means Step 5.7 did
    not run; return to it.
+6. The plan file contains **Section E — E-Hyp and E-NewHyp** populated from Step 7: the hypothesis
+   validation against the cited-corpus future works AND at least one corpus-derived improved
+   hypothesis. An empty or missing E-Hyp / E-NewHyp means Step 7 did not run its hypothesis gate;
+   return to Step 7 (and Step 2.7 if `refs/` was never mined).
 
-If any of the five is missing, return to the matching step (5.7, 8, or 8.5), produce it, and re-write
+If any of the six is missing, return to the matching step (2.7/5.7/7/8/8.5), produce it, and re-write
 the section before declaring done. Finally, **report to the user** the overall score, the quality level,
 and the two output paths (`..._scholareval_scores.json`, `..._scholareval_report.txt`).
 

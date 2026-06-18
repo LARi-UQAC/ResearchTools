@@ -23,3 +23,24 @@
 
 pymupdf4llm>=1.27.2.3
 pymupdf>=1.27.2.3
+
+# Markdown backends for read_pdf / read_textlike (the any-format path). Both are
+# OPTIONAL and PLUGGABLE: extract_text.py probes availability with find_spec and
+# falls back Docling -> pymupdf4llm/MarkItDown -> tag-strip, so neither line is
+# required for a PDF-only run.
+#
+# Docling (default, highest fidelity: table structure, layout, reading order,
+# HTML+PDF -> Markdown). LICENCE: MIT (verified 2026-06-18, docling-project,
+# v2.103.0). WEIGHT: pulls torch and downloads layout/table models on first run -
+# heavy on Windows; drop this line and keep MarkItDown if torch is unacceptable.
+#
+# MarkItDown (light fallback, HTML + PDF text layer -> Markdown). LICENCE: MIT
+# (verified 2026-06-18, microsoft, v0.1.6). The [pdf] extra adds local PDF text
+# extraction (pdfminer.six); no torch.
+#
+# Validate per CLAUDE.md before use (resolve the full tree, torch included):
+#   pip-audit -r <(echo "docling>=2.103.0"; echo "markitdown[pdf]>=0.1.6")
+# Re-run pip-audit after install and report any CVE.
+
+docling>=2.103.0
+markitdown[pdf]>=0.1.6

@@ -245,6 +245,16 @@ Flag `[HYPOTHESIS NOT RECAPPED: H_N]` if the proposal Conclusion does not list o
 
 Record all hypothesis flow findings in Section B of the plan. Any `[HYPOTHESIS NOT TESTED]`, `[HYPOTHESIS NOT TESTABLE]`, `[HYPOTHESIS ALREADY DEMONSTRATED]`, or `[HYPOTHESIS COUNT INSUFFICIENT]` is **High-priority** — these are fundamental proposal failures.
 
+**Step 3e — Validate each hypothesis against the cited-corpus future works (extract-futureworks, mine) — MANDATORY**
+
+A proposal is fundamentally a claim about future contributions, so the future works of its cited references are the sharpest test of whether its hypotheses are open and worth pursuing. (`extract-statistic` is skipped for proposals because they carry no results, but `extract-futureworks` applies.) After the cited references' full text is retrieved (Step 5b), read `.claude/skills/extract-futureworks/SKILL.md`, then run the shared parser over the proposal `.bib`:
+
+```
+python ".claude/skills/extract-statistic/scripts/extract_text.py" bib "<.bib path>" --latex "<main .tex path>" --section-scan
+```
+
+Build the cited-corpus future-works table (paper, stated future work, category, fit to the proposal theme, effort 1-5, impact 1-5), Pareto-ordered. For each of the proposal's >= 3 hypotheses H_N: if the corpus repeatedly lists it as an open problem it is well-grounded; if the corpus shows it is already closed, flag `[FW HYPOTHESIS ALREADY CLOSED: H_N]` with the DOI (for a proposal this is a fundamental failure, like `[HYPOTHESIS ALREADY DEMONSTRATED]`). Then propose at least one stronger hypothesis drawn from the top-Pareto corpus future works, testable by a named method and novelty-checked (`scopus_api.py search`), to strengthen the >= 3 requirement. A paper whose full text could not be retrieved is flagged `[FW FULLTEXT-MISSING]` (abstract-level only) and never blocks the pipeline. Record this in Section B; it is **High-priority** and the Step 18 completion gate verifies it. Do NOT run a deliberation panel here: Step 15 runs the single mandatory `deliberation`.
+
 ---
 
 ### Step 4 — Chapter structure audit (sujet amené / posé / divisé)
@@ -294,10 +304,14 @@ reference whose `refs/<citekey>.pdf` already exists.
 python ".claude/skills/scopus/scripts/download_pdf.py" bib "<.bib path>" --latex "<main .tex path>"
 ```
 
-Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access fallback;
-the `%PDF` magic bytes are validated and `refs/_manifest.json` + `refs/_failed.md` written.
-Note `_failed.md` DOIs in the plan for manual UQAC-network retrieval; a download failure is
-never a reference-validation failure.
+Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access PDF, then the
+any-format tiers (Unpaywall, arXiv, PMC, content-validated DOI-landing scrape), so a cited paper
+with no downloadable PDF is still retrieved as HTML or Markdown. PDF bytes are validated by the
+`%PDF` magic number and HTML by a content check; `refs/_manifest.json` (with each file's `format`
+and `tier`) + `refs/_failed.md` written. Set `UNPAYWALL_EMAIL` (or pass `--email`) for the
+Unpaywall tier. Note `_failed.md` DOIs in the plan for manual UQAC-network retrieval (save the page
+as `.pdf`/`.html`/`.md`); a retrieval failure is never a reference-validation failure. This corpus
+feeds the Step 3e hypothesis validation (extract-futureworks, mine).
 
 ---
 
@@ -832,8 +846,13 @@ user:
    lists. If absent, return to **Step 15**, run the deliberation panel, and write Section N before
    declaring done. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content; an empty or missing
    Section N is not.
+5. **Section B** contains the **future-works hypothesis validation** from Step 3e: each of the >= 3
+   hypotheses marked well-grounded or `[FW HYPOTHESIS ALREADY CLOSED]` against the cited-corpus future
+   works, AND at least one corpus-derived stronger hypothesis. An empty or missing Step 3e block means
+   it did not run; return to Step 3e (and Step 5b if the corpus was never retrieved). A
+   `[FW FULLTEXT-MISSING]` note is acceptable content; an empty hypothesis validation is not.
 
-If any artifact is missing, return to the matching step (15 or 16), produce it, and re-write the
+If any artifact is missing, return to the matching step (3e, 15, or 16), produce it, and re-write the
 section before declaring done. Finally, **report to the user** the overall score, the quality level,
 and the output paths (`..._scholareval_scores.json`, `..._scholareval_weights.json`,
 `..._scholareval_report.txt`).

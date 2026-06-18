@@ -35,13 +35,20 @@ the project `.claude/CLAUDE.md`. Where this section and the generic guidance bel
 section wins; the generic biomedical/journal-PDF material that follows is a fallback for non-LaTeX work.
 
 - **Language**: French by default for a UQAC thesis, English for a scientific paper. LaTeX for all
-  documents; Beamer for slides.
+  documents; Beamer for slides. When revising or auditing an existing document, respect its original
+  language (a French document stays in French, an English document stays in English); the FR/EN
+  default applies only to a new document.
 - **Figures**: TiKZ (`.tikz`, for TiKZiT) is the default. The float rules and the 9 TiKZ geometry
-  rules are canonical in `references/float_authoring_rules.md` and `.claude/CLAUDE.md` (relative
-  positioning, perpendicular arrows, 3-character minimum spacing, no overlaps, simple TiKZiT-parsable
-  code, `fig:three-words` label, cited with >= 2 sentences). AI-generated schematics (the
-  `scientific-schematics` skill, if available) are **optional**. When it is unclear whether a figure
-  should be hand-authored in TiKZ or AI-generated, **use AskUserQuestion before generating**.
+  rules are now **enumerated** in `references/float_authoring_rules.md` (mirroring `.claude/CLAUDE.md`),
+  not merely linked: relative positioning, perpendicular arrows, 3-character minimum spacing, no
+  overlaps, simple TiKZiT-parsable code, `fig:three-words` label, cited with >= 2 sentences. That file
+  also carries the overlap-prevention procedure and the mandatory `/tikz` + TiKZiT-render gates that
+  confirm no arrow, box, or label superposes, the required `\usetikzlibrary` list (`positioning`,
+  `arrows.meta`, `decorations.pathreplacing`, `backgrounds`), and the **drawio2tikz exception** for
+  coordinate-exact converted figures (absolute coordinates, exempt from the relative / TiKZiT-simple /
+  perpendicular rules but still labelled, cited, and captioned). AI-generated schematics (the
+  `scientific-schematics` skill, if available) are **optional**. When it is unclear whether a figure should be hand-authored
+  in TiKZ or AI-generated, **use AskUserQuestion before generating**.
 - **Tables, equations, all floats**: defer to `references/float_authoring_rules.md` (canonical). In
   short: tables have rows = parameters / columns = concepts, first row and first column bold, first
   row 10% grey, `tab:three-words`, >= 2 sentences; equations are cited BEFORE the equation via
@@ -53,7 +60,14 @@ section wins; the generic biomedical/journal-PDF material that follows is a fall
   Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BMC) — any other publisher is cleared with the
   professor first; BibTeX (separate `.bib`) or inline `\bibitem`. See the override in
   `references/citation_styles.md`.
-- **Style hygiene**: keep the AI-usage score under 20%. Avoid the banned elements from `.claude/CLAUDE.md`:
+- **Abstract**: carries no citation. Never use `\cite{}` (or any other reference) inside the abstract;
+  introduce every reference later, in the body.
+- **Section flow**: no section is left without text, and every section links to its neighbours. Follow
+  the "Inter-section linking" rules in `references/writing_principles.md` — open each section (except
+  the Introduction) with a backward link to the previous section's conclusion and a presentation of
+  its subsections via `\ref{}`, and close each section (except the Conclusion / Future Works) with a
+  short conclusion then a forward opening onto the next section.
+- **Style hygiene**: keep the AI-usage score under 10%. Avoid the banned elements from `.claude/CLAUDE.md`:
   zero-width characters (U+200B/200C/200D), Unicode tag characters, "smart" curly quotes, the ellipsis
   character (use `...`), em dash and double/triple dash and en dash (prefer a simple hyphen `-` or
   parentheses), stray `*`/`#` markup, and overly perfect hierarchical lists.

@@ -79,7 +79,7 @@ Most journals now require **structured abstracts** with labeled sections:
 ### Key Rules
 - Write the abstract **last** (after completing all other sections)
 - Make it fully understandable without reading the paper
-- Do not cite references in the abstract
+- Do not cite references in the abstract (hard rule): never use `\cite{}` or any other reference inside the abstract; introduce every reference later, in the body
 - Avoid abbreviations or define them at first use
 - Use past tense for methods and results, present tense for conclusions
 - Include key quantitative results with statistical measures
@@ -132,6 +132,9 @@ Convince readers that the research addresses an important question using an appr
 - Describe the overall approach briefly
 - Explain how this study addresses the gap
 - Optional: Preview key findings (some journals discourage this)
+- End by presenting the paper. The contribution-oriented style is preferred: state the contributions
+  explicitly, then describe how the paper is organized around them. The old-school sequential listing
+  ("Section 2 presents... Section 3 details...") is acceptable but secondary.
 
 ### Length
 - Typically 1.5-2 pages (depending on journal)

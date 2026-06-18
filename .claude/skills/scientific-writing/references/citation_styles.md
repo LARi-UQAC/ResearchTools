@@ -6,8 +6,12 @@
 > `hyperref` `\href`. Every reference is validated against Scopus with the `scopus` skill, and is
 > limited to the approved publishers (IEEE, Springer, Elsevier, Taylor & Francis, Cambridge, Wiley,
 > IET, IOP, ACM, MDPI, ASME, ACME, BMC) — any other publisher is cleared with the professor before
-> inclusion. Manage references in the `.bib`/`\bibitem` source, not in Zotero/Mendeley/EndNote. The
-> generic AMA/Vancouver/APA/Chicago tables below remain a reference for other venues.
+> inclusion. Manage references in the `.bib`/`\bibitem` source, not in Zotero/Mendeley/EndNote. Every
+> cited reference is introduced by at least one descriptive sentence in the prose; a bare `\cite{}`
+> with no sentence presenting what the reference contributes is non-compliant. Keep the paper's
+> original bibliography format: inline `\bibitem` (`thebibliography`) or a separate BibTeX `.bib` file,
+> and do not convert one format to the other. The generic AMA/Vancouver/APA/Chicago tables below
+> remain a reference for other venues.
 
 ## Overview
 

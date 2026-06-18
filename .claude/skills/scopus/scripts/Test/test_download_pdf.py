@@ -46,6 +46,23 @@ class FakeResponse:
 PDF_CHUNKS = [b"%PDF-1.7\n", b"body-bytes", b"%%EOF"]
 HTML_CHUNKS = [b"<!DOCTYPE html><html>Access denied</html>"]
 
+# A long, marker-free HTML article body (clears MIN_HTML_BYTES, no block markers).
+_ARTICLE_BODY = (
+    b"<!DOCTYPE html><html><head><title>An Engineering Paper</title></head><body>"
+    + b"<h1>Introduction</h1><p>" + (b"This is the article body text. " * 200)
+    + b"</p><h2>Future Work</h2><p>We will extend the controller.</p></body></html>"
+)
+HTML_ARTICLE_CHUNKS = [_ARTICLE_BODY[i:i + 64] for i in range(0, len(_ARTICLE_BODY), 64)]
+
+# A paywall/login stub: long enough to pass the length floor, but a block marker
+# sits in the head window so it must be rejected.
+_STUB_BODY = (
+    b"<!DOCTYPE html><html><head><title>Sign in</title></head><body>"
+    + b"Please sign in to view this article. " + (b"padding text. " * 200)
+    + b"</body></html>"
+)
+HTML_STUB_CHUNKS = [_STUB_BODY[i:i + 64] for i in range(0, len(_STUB_BODY), 64)]
+
 
 class TestHelpers(unittest.TestCase):
 
@@ -212,6 +229,188 @@ class TestDownloadOne(unittest.TestCase):
                  mock.patch.object(download_pdf, "try_semantic_scholar", return_value=False):
                 res = download_pdf.download_one(self.ENTRY, tmp, "KEY", None)
         self.assertEqual(res["status"], "failed")
+
+
+class TestTargetFilename(unittest.TestCase):
+
+    def test_extension_is_applied(self):
+        entry = {"citekey": "Smith2024"}
+        self.assertEqual(download_pdf.target_filename(entry, "html"), "smith2024.html")
+        self.assertEqual(download_pdf.target_filename(entry, "md"), "smith2024.md")
+        self.assertEqual(download_pdf.target_filename(entry), "smith2024.pdf")
+
+    def test_extension_normalized(self):
+        entry = {"citekey": "Smith2024"}
+        self.assertEqual(download_pdf.target_filename(entry, ".HTML"), "smith2024.html")
+
+
+class TestWriteValidatedHtml(unittest.TestCase):
+
+    def test_accepts_article_html(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "ok.html")
+            resp = FakeResponse(headers={"Content-Type": "text/html; charset=utf-8"},
+                                chunks=HTML_ARTICLE_CHUNKS)
+            ok = download_pdf._write_validated_html(resp, dest)
+        self.assertTrue(ok)
+
+    def test_rejects_non_html_content_type(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "bad.html")
+            resp = FakeResponse(headers={"Content-Type": "application/json"},
+                                chunks=HTML_ARTICLE_CHUNKS)
+            ok = download_pdf._write_validated_html(resp, dest)
+            self.assertFalse(ok)
+            self.assertFalse(os.path.exists(dest))
+
+    def test_rejects_paywall_stub_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "stub.html")
+            resp = FakeResponse(headers={"Content-Type": "text/html"}, chunks=HTML_STUB_CHUNKS)
+            ok = download_pdf._write_validated_html(resp, dest)
+            self.assertFalse(ok)
+            self.assertFalse(os.path.exists(dest))
+
+    def test_rejects_too_thin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "thin.html")
+            resp = FakeResponse(headers={"Content-Type": "text/html"},
+                                chunks=[b"<html>tiny</html>"])
+            ok = download_pdf._write_validated_html(resp, dest)
+            self.assertFalse(ok)
+
+    def test_size_cap_aborts(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "MAX_HTML_BYTES", 50):
+            dest = os.path.join(tmp, "big.html")
+            resp = FakeResponse(headers={"Content-Type": "text/html"},
+                                chunks=[b"<html>", b"x" * 100])
+            ok = download_pdf._write_validated_html(resp, dest)
+            self.assertFalse(ok)
+            self.assertFalse(os.path.exists(dest))
+
+
+class TestFetchHtml(unittest.TestCase):
+
+    def test_refuses_non_https(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ok = download_pdf._fetch_html("http://x/y", os.path.join(tmp, "f.html"))
+        self.assertFalse(ok)
+
+    def test_follows_redirect_to_html(self):
+        seq = [
+            FakeResponse(status_code=302, location="https://final/article"),
+            FakeResponse(status_code=200, headers={"Content-Type": "text/html"},
+                         chunks=HTML_ARTICLE_CHUNKS),
+        ]
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf.requests, "get", side_effect=seq) as g:
+            ok = download_pdf._fetch_html("https://start/x", os.path.join(tmp, "f.html"))
+        self.assertTrue(ok)
+        self.assertEqual(g.call_count, 2)
+
+
+class TestAnyFormatTiers(unittest.TestCase):
+
+    ENTRY = {"citekey": "Smith2024", "doi": "10.1/x"}
+
+    def test_unpaywall_pdf_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_pdf(url, dest):
+                Path(dest).write_bytes(b"%PDF-1.7 x")
+                return True
+            with mock.patch.object(download_pdf, "_http_json",
+                                   return_value={"best_oa_location": {"url_for_pdf": "https://h/p.pdf"}}), \
+                 mock.patch.object(download_pdf, "_fetch_pdf", side_effect=fake_pdf):
+                res = download_pdf.try_unpaywall("10.1/x", tmp, self.ENTRY, "a@b.ca", True)
+        self.assertEqual(res["format"], "pdf")
+        self.assertEqual(res["source"], "unpaywall")
+
+    def test_unpaywall_html_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_html(url, dest):
+                Path(dest).write_text("<html>article</html>", encoding="utf-8")
+                return True
+            with mock.patch.object(download_pdf, "_http_json",
+                                   return_value={"best_oa_location": {"url": "https://h/landing"}}), \
+                 mock.patch.object(download_pdf, "_fetch_html", side_effect=fake_html):
+                res = download_pdf.try_unpaywall("10.1/x", tmp, self.ENTRY, "a@b.ca", True)
+        self.assertEqual(res["format"], "html")
+
+    def test_unpaywall_skipped_without_email(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = download_pdf.try_unpaywall("10.1/x", tmp, self.ENTRY, None, True)
+        self.assertIsNone(res)
+
+    def test_arxiv_pdf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_pdf(url, dest):
+                Path(dest).write_bytes(b"%PDF-1.7 x")
+                return True
+            with mock.patch.object(download_pdf, "_fetch_pdf", side_effect=fake_pdf):
+                res = download_pdf.try_arxiv("10.1/x", tmp, self.ENTRY,
+                                             {"ArXiv": "2401.00001"}, True)
+        self.assertEqual(res["format"], "pdf")
+        self.assertEqual(res["source"], "arxiv")
+
+    def test_arxiv_skipped_without_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = download_pdf.try_arxiv("10.1/x", tmp, self.ENTRY, {}, True)
+        self.assertIsNone(res)
+
+    def test_pmc_html(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_html(url, dest):
+                Path(dest).write_text("<html>article</html>", encoding="utf-8")
+                return True
+            with mock.patch.object(download_pdf, "_fetch_html", side_effect=fake_html):
+                res = download_pdf.try_pmc("10.1/x", tmp, self.ENTRY,
+                                           {"PubMedCentral": "123456"}, True)
+        self.assertEqual(res["format"], "html")
+        self.assertEqual(res["source"], "pmc")
+
+    def test_html_tiers_skipped_when_disallowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(download_pdf.try_pmc("10.1/x", tmp, self.ENTRY,
+                                                   {"PubMedCentral": "123456"}, False))
+            self.assertIsNone(download_pdf.try_landing_html("10.1/x", tmp, self.ENTRY, False))
+
+
+class TestDownloadOneTiers(unittest.TestCase):
+
+    ENTRY = {"citekey": "Smith2024", "doi": "10.1/x"}
+
+    def test_unpaywall_tier_when_pdf_sources_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_unpaywall(doi, out_dir, entry, email, allow_html):
+                Path(os.path.join(out_dir, "smith2024.html")).write_text("<html>x</html>", encoding="utf-8")
+                return {"format": "html", "source": "unpaywall", "file": "smith2024.html"}
+            with mock.patch.object(download_pdf, "try_elsevier", return_value=False), \
+                 mock.patch.object(download_pdf, "try_semantic_scholar", return_value=False), \
+                 mock.patch.object(download_pdf, "try_unpaywall", side_effect=fake_unpaywall):
+                res = download_pdf.download_one(self.ENTRY, tmp, "KEY", None, email="a@b.ca")
+        self.assertEqual(res["status"], "unpaywall")
+        self.assertEqual(res["format"], "html")
+        self.assertEqual(res["tier"], 3)
+
+    def test_present_detects_html(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(os.path.join(tmp, "smith2024.html")).write_text("<html>x</html>", encoding="utf-8")
+            res = download_pdf.download_one(self.ENTRY, tmp, "KEY", None)
+        self.assertEqual(res["status"], "present")
+        self.assertEqual(res["format"], "html")
+
+    def test_failed_when_all_tiers_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(download_pdf, "try_elsevier", return_value=False), \
+                 mock.patch.object(download_pdf, "try_semantic_scholar", return_value=False), \
+                 mock.patch.object(download_pdf, "try_unpaywall", return_value=None), \
+                 mock.patch.object(download_pdf, "try_arxiv", return_value=None), \
+                 mock.patch.object(download_pdf, "try_pmc", return_value=None), \
+                 mock.patch.object(download_pdf, "try_landing_html", return_value=None):
+                res = download_pdf.download_one(self.ENTRY, tmp, "KEY", None, email="a@b.ca")
+        self.assertEqual(res["status"], "failed")
+        self.assertIsNone(res["format"])
 
 
 class TestReports(unittest.TestCase):

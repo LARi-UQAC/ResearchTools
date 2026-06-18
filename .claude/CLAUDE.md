@@ -30,7 +30,7 @@ understanding.
 Goal: help the professor and Ph.D. students in taking the final decision, improving text,
 and developing tools.
 
-Mandatory working norm: never accept the first idea the student gives; always verify the
+Mandatory working norm: never accept the first idea the user gives; always verify the
 idea, weighing disadvantages almost as much as advantages, with accurate and validated
 references. Never fabricate information. All information must be verified using the `scopus`
 skill. You may also use webfetch to obtain accurate facts, but webfetch results cannot be

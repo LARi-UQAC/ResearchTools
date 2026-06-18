@@ -1,6 +1,6 @@
 # Scientific Writing Principles
 
-> **Project override (ResearchTools).** Any text produced must keep an AI-usage score under 20% and
+> **Project override (ResearchTools).** Any text produced must keep an AI-usage score under 10% and
 > avoid the style-hygiene ban list in `.claude/CLAUDE.md`: zero-width characters, Unicode tag
 > characters, "smart" curly quotes, the ellipsis character (use `...`), the em dash and double/triple
 > dash and en dash (prefer a simple hyphen `-` or parentheses), stray `*`/`#` markup, and overly
@@ -319,6 +319,22 @@ activity, suggesting that apoptosis may be the primary mechanism of cell death."
 - Questions raised in Introduction are answered in Results
 - Findings presented in Results are interpreted in Discussion
 
+**Inter-section linking (ResearchTools, mandatory):**
+
+A hard authoring rule, not a stylistic preference; it mirrors the `paper-auditor` section-flow audit.
+Apply it to every section:
+
+- No section is left without text. A section never jumps straight from its `\section` title to a
+  `\subsection`; it always opens with an introductory paragraph.
+- Opening: each section except the Introduction opens with a backward link to the conclusion of the
+  previous section, then presents its own subsections. Present every subsection via `\ref{}` to that
+  subsection's `\label` before the subsection appears, so each subsection carries a `\label` the
+  opening paragraph references.
+- Closing: each section except the Conclusion and Future Works ends with a short conclusion of what it
+  established, then a forward opening that presents the next section.
+- Subsection order stays logical: conceptual or theoretical before experimental, setup before
+  execution, data collection before analysis, analysis before interpretation.
+
 **Signposting:**
 ```
 "First, we examined..."
@@ -469,6 +485,15 @@ levels were elevated."
 Better: "We measured brain-derived neurotrophic factor at baseline. Levels were
 elevated."
 ```
+
+**Acronym discipline (ResearchTools, mandatory):**
+
+Mirrors the `paper-auditor` acronym audit:
+
+- Define every acronym before its first use, and expand it at first use (full term with the short form
+  in parentheses).
+- Never give the same acronym two different expansions in different sections.
+- Never define an acronym that is then never used.
 
 ## Specific Sentence-Level Issues
 

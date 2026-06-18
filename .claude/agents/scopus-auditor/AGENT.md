@@ -232,10 +232,30 @@ or per reference when finer control is needed:
 python ".claude/skills/scopus/scripts/download_pdf.py" doi "<DOI>" --citekey "<key>" --latex "<main .tex path>"
 ```
 
-The script tries Elsevier (`SCOPUS_API_KEY`) first, then the Semantic Scholar open-access
-fallback, validates the `%PDF` magic bytes, and writes `refs/_manifest.json` plus
-`refs/_failed.md`. List any `_failed.md` DOIs in the plan for manual UQAC-network
-retrieval, but never treat a download failure as a reference-validation failure.
+The script tries Elsevier (`SCOPUS_API_KEY`) first, then the Semantic Scholar open-access PDF,
+then the any-format tiers (Unpaywall, arXiv, PMC, content-validated DOI-landing scrape), so a
+cited paper with no downloadable PDF is still retrieved as HTML or Markdown. PDF bytes are
+validated by the `%PDF` magic number and HTML by a content check; `refs/_manifest.json` (with
+each file's `format` and `tier`) plus `refs/_failed.md` are written. Set `UNPAYWALL_EMAIL` (or
+pass `--email`) for the Unpaywall tier. List any `_failed.md` DOIs in the plan for manual
+UQAC-network retrieval (save the page as `.pdf`/`.html`/`.md`), but never treat a retrieval
+failure as a reference-validation failure.
+
+### Step 2d — Cited-corpus future-works mining (extract-futureworks, mine mode) — MANDATORY
+
+Mine the stated future works of the cited corpus so the review's hypotheses (Section F1) can be
+validated against what the field declares open, and stronger hypotheses proposed. Read
+`.claude/skills/extract-futureworks/SKILL.md`, then run the shared parser over the `.bib`:
+
+```
+python ".claude/skills/extract-statistic/scripts/extract_text.py" bib "<.bib path>" --latex "<main .tex path>" --section-scan
+```
+
+Build the cited-corpus future-works table (paper, stated future work, category, fit to the review
+theme, effort 1-5, impact 1-5) and rank it by a Pareto 80/20 score. A paper whose full text could
+not be retrieved is flagged `[FW FULLTEXT-MISSING]` (abstract-level only) and never blocks the
+pipeline. Feed the ranked table into Section F1 (below). Do NOT run a deliberation panel here:
+Step 6b runs the single mandatory `deliberation`.
 
 ### Step 3 — Analyze coverage
 
@@ -398,6 +418,12 @@ complete, until the assembled plan contains a populated `## Deliberation Log` bl
 line, Rounds, Reviewers-unavailable, Evidence counts, and the four outcome lists. If absent, rerun
 this step first. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content; an empty or missing
 Deliberation Log is not.
+
+**Completion gate (future works).** Do not report the audit complete until Section F1 contains FW1
+(every hypothesis validated against the cited-corpus future works of Step 2d) and FW2 (at least one
+stronger hypothesis proposed from the top-Pareto future works). If either is missing, return to
+Step 2d / Section F1 before declaring done. A `[FW FULLTEXT-MISSING]` note is acceptable content; an
+empty FW1/FW2 is not.
 
 ### Step 6 — Write the improvement plan file
 
@@ -563,6 +589,8 @@ Run Scopus searches to validate H3, H5, and C3 before filling this section.
 - [ ] H3: Hypothesis not already demonstrated — Scopus-verified (`scopus_api.py search "<hypothesis>"`)
 - [ ] H4: Hypothesis not covered by general knowledge
 - [ ] H5: Hypothesis tests a principle never implemented — Scopus-verified
+- [ ] FW1: Each hypothesis validated against the cited-corpus future works (Step 2d) — well-grounded (the corpus lists it as an open problem) or flagged `[FW HYPOTHESIS ALREADY CLOSED]` (DOI) and reframed. **MANDATORY**
+- [ ] FW2: At least one stronger hypothesis proposed from the top-Pareto cited-corpus future works (testable by a named method, novelty-checked). **MANDATORY** — F1 is not complete without it
 
 ### F2 — Contributions
 - [ ] C1: Each hypothesis has one main contribution highlighted in **bold**

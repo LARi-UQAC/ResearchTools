@@ -286,10 +286,13 @@ download is presence-gated: skip any paper whose `refs/<citekey>.pdf` already ex
 python ".claude/skills/scopus/scripts/download_pdf.py" bib "<generated .bib>" --latex "<output .tex>"
 ```
 
-Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access fallback;
-bytes are validated by the `%PDF` magic number and `refs/_manifest.json` + `refs/_failed.md`
-are written. A download failure never excludes a paper from the corpus — list its DOI in
-`_failed.md` for manual UQAC-network retrieval.
+Elsevier (`SCOPUS_API_KEY`) is tried first, then the Semantic Scholar open-access PDF, then the
+any-format tiers (Unpaywall, arXiv, PMC, and a content-validated DOI-landing scrape), so a paper
+with no downloadable PDF is still retrieved as HTML or Markdown. PDF bytes are validated by the
+`%PDF` magic number and HTML by a content check; `refs/_manifest.json` (with each file's `format`
+and `tier`) + `refs/_failed.md` are written. Set `UNPAYWALL_EMAIL` (or pass `--email`) to enable
+the Unpaywall tier. A retrieval failure never excludes a paper from the corpus — list its DOI in
+`_failed.md` for manual UQAC-network retrieval (save the page as `.pdf`/`.html`/`.md`).
 
 ### Step 3b-stats — Corpus statistics mining (extract-statistic skill)
 
@@ -322,6 +325,44 @@ against the corpus before keeping it), the corpus statistics table feeds the con
 **Pareto matrix (Step 9d)**, and the opportunities anchor **Hypothesis generation (Step 10)** (a
 hypothesis may target a statistical-rigor gap, not only a methodological one). Do NOT run a deliberation
 panel here: Step 17 runs the single mandatory `deliberation` over the finished review.
+
+### Step 3b-FW — Corpus future-works mining (extract-futureworks skill) — MANDATORY
+
+Mine the stated future works of the retained corpus so the gap map, the Pareto matrix, and the
+hypotheses target real, author-declared open problems for the next project. Authors literally state
+where their work goes next; this is the highest-value seed for a new research project. Read
+`.claude/skills/extract-futureworks/SKILL.md`, then run the shared parser in `--section-scan` mode on
+the corpus `.bib` already retrieved in Step 3b-PDF (combine with `--stats-scan` to mine both in one
+pass):
+
+```
+python ".claude/skills/extract-statistic/scripts/extract_text.py" bib "<generated .bib>" --latex "<output .tex>" --section-scan
+```
+
+From the per-paper `sections` output, synthesize the two artifacts of the skill's `mine` mode
+(`.claude/skills/extract-futureworks/references/futureworks-protocol.md`):
+
+- a **corpus future-works table** — one row per (paper, stated future-work item) with columns
+  `Paper [cite] | Stated future work | Category | Fit to the review | Effort (1-5) | Impact (1-5)`.
+  Map every row to a literature-review theme (Step 5) and, where it applies, to a gap G[N] (Step 9b) —
+  this is the explicit "fit to the review";
+- a **research-opportunity list** — future works stated by several papers (recurring open problems),
+  the highest-value author-declared gaps.
+
+Then **rank the table by a Pareto 80/20 score** (high impact, low effort first), so the cheapest 20%
+of work that yields about 80% of the impact rises to the top quartile. Write
+`<basename>_corpus_futurework.md` and `.json`.
+
+Presence-gated: a paper whose full text could not be retrieved (`pdf-missing`) contributes
+title/abstract-level future works only and is flagged `[FW FULLTEXT-MISSING]`; it never blocks the
+pipeline.
+
+Route downstream: each top-Pareto opportunity becomes a candidate gap in **Step 9b** (cross-check
+against the corpus before keeping it), feeds the **Pareto matrix (Step 9d)**, and is a first-class seed
+for **Hypothesis generation (Step 10)**. **Hard gate:** the review is not complete until at least one
+proposed hypothesis AND one research-project title are derived from the top-Pareto future-works rows
+(checklist FW1/FW2, Step 16). Do NOT run a deliberation panel here: Step 17 runs the single mandatory
+`deliberation` over the finished review.
 
 ### Step 3c — PRISMA-style TikZ flow diagram
 
@@ -497,7 +538,7 @@ Cite the table with two sentences: the first introduces the Pareto principle as 
 
 ### Step 10 — Hypothesis generation
 
-Scan the gap map (Step 9b) and the Pareto matrix (Step 9d) for research opportunities not covered by any retrieved paper. For each opportunity propose one hypothesis using this format:
+Scan the gap map (Step 9b), the Pareto matrix (Step 9d), and the ranked corpus future-works table (Step 3b-FW) for research opportunities not covered by any retrieved paper. The top-Pareto future-works rows are first-class seeds: a hypothesis may directly target an author-declared open problem stated across several papers. At least one proposed hypothesis and one research-project title MUST derive from the top-Pareto future-works rows (checklist FW2). For each opportunity propose one hypothesis using this format:
 
 ```
 Hypothesis N: [Testable statement]
@@ -717,10 +758,12 @@ Print the full checklist with ✓ or ✗ for each item:
 [ ] G1 — General context written with problem statement
 [ ] G2 — Explicit link: context → objectives → literature review
 [ ] ST1 — Corpus statistics mining run (Step 3b-stats, extract-statistic skill): corpus statistics table + statistical-improvement opportunity list produced and routed into the gap map (9b), Pareto matrix (9d), and hypotheses (10). PDFs absent → [STATS PDF-MISSING] noted; PyMuPDF absent → abstract-level fallback recorded
+[ ] FW1 — Corpus future-works mining run (Step 3b-FW, extract-futureworks skill): the corpus future-works table is built, every row mapped to a review theme/gap (fit to the review), and the table Pareto-ordered (effort vs impact). Full text absent → [FW FULLTEXT-MISSING] noted; backend absent → abstract-level fallback recorded
+[ ] FW2 — At least one proposed hypothesis AND one research-project title are derived from the top-Pareto future-works rows (Step 10). This gate is mandatory: the review is not complete without a hypothesis and a research-project title grounded in the corpus future works
 [ ] DL1 — Deliberation panel run (Step 17) and `## Deliberation Log` block appended to the final review, with Panel line, Rounds, Reviewers-unavailable, Evidence counts, and the four outcome lists
 ```
 
-Do not mark the document complete if any IC, SA, CS, SL, EC, PR, QG, GM, CV, PC, PH, TR, LM, RP, H, C, O, G, ST, or DL item is ✗. List what must be fixed. ST1 may be checked as "abstract-level fallback" only when `pdfplumber` is unavailable, or with `[STATS PDF-MISSING]` notes when some corpus PDFs could not be retrieved. SA1 may be checked as "skipped by user" only if the user explicitly declined the Scopus.AI step. CS1 may be checked as "MCP unavailable" only if the Consensus tool could not be reached. DL1 is MANDATORY: Step 17 always runs before the document is marked complete, so this checklist is only final after Step 17. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content for DL1; an empty or missing Deliberation Log is not.
+Do not mark the document complete if any IC, SA, CS, SL, EC, PR, QG, GM, CV, PC, PH, TR, LM, RP, H, C, O, G, ST, FW, or DL item is ✗. List what must be fixed. FW1/FW2 are MANDATORY: the review cannot be declared complete without the corpus future-works table and at least one hypothesis + research-project title derived from its top-Pareto rows. ST1 may be checked as "abstract-level fallback" only when `pdfplumber` is unavailable, or with `[STATS PDF-MISSING]` notes when some corpus PDFs could not be retrieved. SA1 may be checked as "skipped by user" only if the user explicitly declined the Scopus.AI step. CS1 may be checked as "MCP unavailable" only if the Consensus tool could not be reached. DL1 is MANDATORY: Step 17 always runs before the document is marked complete, so this checklist is only final after Step 17. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content for DL1; an empty or missing Deliberation Log is not.
 
 ### Step 17 — Deliberation (MANDATORY)
 

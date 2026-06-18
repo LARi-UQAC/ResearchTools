@@ -36,8 +36,9 @@ graph TD
     s2["deliberation<br/>deliberate.py"]
     s3["scholar-evaluation<br/>calculate_scores.py"]
     s4["scientific-writing<br/>float / writing rules"]
-    s5["extract-statistic<br/>extract_text.py"]
+    s5["extract-statistic<br/>extract_text.py (--stats-scan)"]
     s6["drawio2tikz<br/>drawio2tikz.py"]
+    s7["extract-futureworks<br/>extract_text.py (--section-scan)"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -77,17 +78,17 @@ graph TD
 
 ### Command → agent → skill matrix
 
-| Command | Agent | scopus | deliberation | scholar-evaluation | scientific-writing | extract-statistic |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/auditpaper` | [paper-auditor](agents/paper-auditor/AGENT.md) | yes | mandatory | yes | yes | audit |
-| `/auditreview` | [scopus-auditor](agents/scopus-auditor/AGENT.md) | yes | mandatory | yes | yes | no |
-| `/auditthesis` | [thesis-auditor](agents/thesis-auditor/AGENT.md) | yes | mandatory | yes | yes | audit |
-| *(by name)* | [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md) | yes | mandatory | yes | yes | no |
-| `/bibclean` | [bib-cleaner](agents/bib-cleaner/AGENT.md) | yes | no | no | no | no |
-| `/litreview` | [scopus-researcher](agents/scopus-researcher/AGENT.md) | yes | mandatory | no | yes | mine |
-| `/replyreviewer` | [reviewer-response](agents/reviewer-response/AGENT.md) | yes | mandatory | no | yes | no |
-| `/submitcheck` | [submit-checker](agents/submit-checker/AGENT.md) | yes | no | yes | no | no |
-| *(by name)* | [cover-paper](agents/cover-paper/AGENT.md) | yes | no | no | no | no |
+| Command | Agent | scopus | deliberation | scholar-evaluation | scientific-writing | extract-statistic | extract-futureworks |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `/auditpaper` | [paper-auditor](agents/paper-auditor/AGENT.md) | yes | mandatory | yes | yes | audit | audit |
+| `/auditreview` | [scopus-auditor](agents/scopus-auditor/AGENT.md) | yes | mandatory | yes | yes | no | audit |
+| `/auditthesis` | [thesis-auditor](agents/thesis-auditor/AGENT.md) | yes | mandatory | yes | yes | audit | audit |
+| *(by name)* | [thesis-proposal-auditor](agents/thesis-proposal-auditor/AGENT.md) | yes | mandatory | yes | yes | no | audit |
+| `/bibclean` | [bib-cleaner](agents/bib-cleaner/AGENT.md) | yes | no | no | no | no | no |
+| `/litreview` | [scopus-researcher](agents/scopus-researcher/AGENT.md) | yes | mandatory | no | yes | mine | mine |
+| `/replyreviewer` | [reviewer-response](agents/reviewer-response/AGENT.md) | yes | mandatory | no | yes | no | no |
+| `/submitcheck` | [submit-checker](agents/submit-checker/AGENT.md) | yes | no | yes | no | no | no |
+| *(by name)* | [cover-paper](agents/cover-paper/AGENT.md) | yes | no | no | no | no | no |
 
 ## Layer 2 — Execution flowchart
 
@@ -160,13 +161,15 @@ flowchart TD
   S2["semantic_scholar_api.py<br/>authors · paper<br/>1 req/s throttle"] --> S2EP[("Semantic Scholar<br/>Academic Graph")]
   S2 -.->|"ordered authors backfill"| API
 
-  subgraph D["download_pdf.py — full-text PDF"]
+  subgraph D["download_pdf.py — any-format full text"]
     DL["download_pdf.py<br/>doi · bib"]
-    DL --> DLE["Elsevier Full-Text API"]
-    DL -.->|"OA fallback"| DLS["S2 openAccessPdf"]
-    DLE --> CHK{"%PDF magic-byte<br/>+ HTTPS + size cap"}
+    DL --> DLE["Elsevier Full-Text (PDF)"]
+    DL -.->|"OA fallback"| DLS["S2 openAccessPdf (PDF)"]
+    DL -.->|"OA tiers"| DLO["Unpaywall · arXiv · PMC ·<br/>landing (PDF / HTML)"]
+    DLE --> CHK{"%PDF magic-byte (PDF)<br/>or text/html + length +<br/>no paywall markers (HTML)<br/>+ HTTPS + size cap"}
     DLS --> CHK
-    CHK -->|"ok"| REFS[("refs/*.pdf<br/>_manifest.json")]
+    DLO --> CHK
+    CHK -->|"ok"| REFS[("refs/*.pdf|html|md<br/>_manifest.json (format · tier)")]
     CHK -->|"reject"| FAIL[("refs/_failed.md")]
   end
   DLE --> ELS
@@ -190,8 +193,8 @@ flowchart TD
 | Script | Modes / subcommands | External endpoint | Env var |
 | --- | --- | --- | --- |
 | [scopus_api.py](skills/scopus/scripts/scopus_api.py) | search · cite · validate · verify · author · journal | Elsevier Search / Abstract Retrieval / Author Search / Serial Title | `SCOPUS_API_KEY` |
-| [semantic_scholar_api.py](skills/scopus/scripts/semantic_scholar_api.py) | authors · paper | Semantic Scholar Academic Graph | `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` (optional) |
-| [download_pdf.py](skills/scopus/scripts/download_pdf.py) | doi · bib | Elsevier Full-Text → S2 openAccessPdf | `SCOPUS_API_KEY` |
+| [semantic_scholar_api.py](skills/scopus/scripts/semantic_scholar_api.py) | authors · paper · external_ids_for_doi | Semantic Scholar Academic Graph | `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` (optional) |
+| [download_pdf.py](skills/scopus/scripts/download_pdf.py) | doi · bib (any format: pdf/html/md) | Elsevier → S2 → Unpaywall → arXiv → PMC → DOI landing | `SCOPUS_API_KEY`, `UNPAYWALL_EMAIL` (optional) |
 | [gemini_table.py](skills/scopus/scripts/gemini_table.py) | table-cell enrichment | Google Gemini 2.0 Flash | `GEMINI_API_KEY` |
 | [gemini_reviewer.py](skills/scopus/scripts/gemini_reviewer.py) | peer-review (deliberation) | Google Gemini 2.0 Flash | `GEMINI_API_KEY` |
 | [github_reviewer.py](skills/scopus/scripts/github_reviewer.py) | peer-review (deliberation) | GitHub Models (Azure inference) | GitHub token |

@@ -119,6 +119,7 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Validate TiKZ code, diagnose LaTeX errors | - | `/tikz`, `/latex` |
 | Cross-model debate before finalizing | `deliberation` skill | inside auditors/researchers |
 | Audit a paper/thesis's own statistics, or mine corpus statistics for the next project | `extract-statistic` skill | inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine) |
+| Audit a work's own future works / validate its hypotheses, or mine corpus future works for new hypotheses and projects | `extract-futureworks` skill | inside the four auditors (audit) and `scopus-researcher` (mine) |
 | Generate documentation | - | `/doc` |
 | Run tests | - | `/test` |
 | Control token usage | - | `/concis`, `/slim`, `/focus`, `/ctx` |

@@ -249,6 +249,28 @@ def authors_for_doi(doi: str) -> list[dict[str, str]]:
     return [_split_name(a.get("name", "")) for a in raw_authors if a.get("name")]
 
 
+def external_ids_for_doi(doi: str) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Return the Semantic Scholar externalIds map for a DOI (ArXiv,
+        PubMedCentral, PubMed, DOI, etc.). download_pdf.py uses it to route the
+        arXiv and PMC open-access full-text tiers without re-querying raw JSON.
+
+    Inputs:
+        doi (str): the paper DOI, with or without a leading "https://doi.org/"
+
+    Outputs:
+        ids (dict): the externalIds object, or an empty dict when S2 has no
+        record for the DOI. Never raises; never exits the process.
+    --------------------------------------------------------------------------
+    """
+    record = paper_for_doi(doi, fields="externalIds")
+    if not record:
+        return {}
+    return record.get("externalIds") or {}
+
+
 def oa_pdf_for_doi(doi: str) -> str | None:
     """
     --------------------------------------------------------------------------

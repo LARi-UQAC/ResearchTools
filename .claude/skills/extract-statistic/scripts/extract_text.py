@@ -64,10 +64,37 @@ try:
 except ImportError:  # pragma: no cover
     pymupdf4llm = None
 
+# Markdown backends (Part 1 of the plan), pluggable and optional. Docling is the
+# default high-fidelity converter (PDF + HTML -> structured Markdown with tables,
+# layout, reading order); MarkItDown is the light fallback for HTML/Markdown.
+# When neither is installed the parser degrades to PyMuPDF (PDF) or the tag-strip
+# (HTML). Availability is probed cheaply with find_spec; the (heavy) import of
+# Docling/torch is deferred to the moment a conversion is actually requested, so
+# a plain stats/section run that never converts a file pays no import cost.
+import importlib.util  # noqa: E402
+
+_HAS_DOCLING = importlib.util.find_spec("docling") is not None
+_HAS_MARKITDOWN = importlib.util.find_spec("markitdown") is not None
+
 # Cap parsed input so a malformed or oversized file cannot exhaust memory.
 MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
 MAX_TABLE_ROWS = 40                # rows kept per table preview
 CONTEXT_CHARS = 60                 # chars of context around each stats match
+MAX_SECTION_CHARS = 4000           # excerpt cap per detected section
+
+# Heading cues for section detection (mode section-scan / the future-works skill).
+# Each (label, pattern) maps a normalized heading to a category. Patterns are
+# matched case-insensitively against the heading text only (English + French).
+_SECTION_CUES: list[tuple[str, "re.Pattern[str]"]] = [
+    ("future_work", re.compile(
+        r"\b(future works?|future directions?|future research|travaux futurs?|"
+        r"perspectives?|recommandations?|recommendations?|further works?)\b", re.IGNORECASE)),
+    ("open_problems", re.compile(
+        r"\b(open problems?|open questions?|open challenges?|challenges?|"
+        r"problemes? ouverts?|defis?)\b", re.IGNORECASE)),
+    ("limitations", re.compile(r"\b(limitations?|limites?)\b", re.IGNORECASE)),
+    ("conclusion", re.compile(r"\b(conclusions?|concluding remarks?)\b", re.IGNORECASE)),
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -131,6 +158,120 @@ def scan_stats(text: str) -> list[dict[str, str]]:
 
 
 # --------------------------------------------------------------------------- #
+# Section scanner (mode section-scan; consumed by the future-works skill)
+# --------------------------------------------------------------------------- #
+def _heading_lines(text: str) -> list[tuple[int, str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Find every heading in the document and return (line_index, heading_text)
+        pairs. A heading is a Markdown ATX line (``# ... ######``), a LaTeX
+        ``\\section``/``\\subsection`` macro, or a short standalone line (under 80
+        chars, no terminal period) that reads like a title. These bound the
+        section excerpts in scan_sections.
+
+    Inputs:
+        text (str): extracted document text (Markdown, LaTeX, or plain)
+
+    Outputs:
+        headings (list[tuple[int, str]]): line index and cleaned heading text,
+        in document order.
+    --------------------------------------------------------------------------
+    """
+    md_re = re.compile(r"^\s{0,3}#{1,6}\s+(?P<t>.+?)\s*#*\s*$")
+    tex_re = re.compile(r"^\s*\\(?:sub)*section\*?\{(?P<t>[^}]+)\}")
+    headings: list[tuple[int, str]] = []
+    for i, line in enumerate(text.splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = md_re.match(line) or tex_re.match(line)
+        if m:
+            headings.append((i, m.group("t").strip()))
+            continue
+        # Plain-text heading heuristic: a short line, no terminal sentence
+        # punctuation, optionally numbered (e.g. "5. Conclusion", "VI Future Work").
+        if len(stripped) <= 79 and not stripped.endswith((".", ",", ";", ":")):
+            candidate = re.sub(r"^\s*(?:\d+(?:\.\d+)*|[IVXLC]+)[.)]?\s+", "", stripped)
+            if candidate and candidate[0].isalpha() and len(candidate.split()) <= 8:
+                headings.append((i, candidate.strip()))
+    return headings
+
+
+def scan_sections(text: str) -> list[dict[str, str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Locate the future-work / conclusion / limitations / open-problems
+        sections of a document and return each as a labeled excerpt. The excerpt
+        runs from a matching heading to the next heading of any kind, capped at
+        MAX_SECTION_CHARS. This is the section analogue of scan_stats: a
+        candidate finder for the future-works skill, not a semantic parser.
+
+    Inputs:
+        text (str): extracted document text
+
+    Outputs:
+        sections (list[dict]): each {label, heading, excerpt}, where label is one
+        of the _SECTION_CUES categories. De-duplicated on (label, heading).
+    --------------------------------------------------------------------------
+    """
+    lines = text.splitlines()
+    headings = _heading_lines(text)
+    seen: set[tuple[str, str]] = set()
+    sections: list[dict[str, str]] = []
+    for pos, (line_idx, heading) in enumerate(headings):
+        label = None
+        for cue_label, pattern in _SECTION_CUES:
+            if pattern.search(heading):
+                label = cue_label
+                break
+        if not label:
+            continue
+        end_idx = headings[pos + 1][0] if pos + 1 < len(headings) else len(lines)
+        excerpt = "\n".join(lines[line_idx + 1:end_idx]).strip()
+        excerpt = re.sub(r"\n{3,}", "\n\n", excerpt)[:MAX_SECTION_CHARS]
+        key = (label, heading.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        sections.append({"label": label, "heading": heading, "excerpt": excerpt})
+    return sections
+
+
+# --------------------------------------------------------------------------- #
+# Markdown backends (pluggable, optional; see the imports above)
+# --------------------------------------------------------------------------- #
+def _docling_markdown(path: str) -> str | None:
+    """Convert any supported file to Markdown via Docling, or None on failure.
+    The heavy import is deferred to here (first actual conversion)."""
+    if not _HAS_DOCLING:
+        return None
+    try:
+        from docling.document_converter import DocumentConverter
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = DocumentConverter().convert(path)
+            return result.document.export_to_markdown()
+    except Exception as exc:  # pragma: no cover - backend is best-effort
+        logger.warning("[EXTRACT-STAT] Docling failed for %s: %s", path, exc)
+        return None
+
+
+def _markitdown_markdown(path: str) -> str | None:
+    """Convert any supported file to Markdown via MarkItDown, or None on failure.
+    The import is deferred to here (first actual conversion)."""
+    if not _HAS_MARKITDOWN:
+        return None
+    try:
+        from markitdown import MarkItDown
+        with contextlib.redirect_stdout(io.StringIO()):
+            return MarkItDown().convert(path).text_content
+    except Exception as exc:  # pragma: no cover - backend is best-effort
+        logger.warning("[EXTRACT-STAT] MarkItDown failed for %s: %s", path, exc)
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Per-format extraction
 # --------------------------------------------------------------------------- #
 def _check_size(path: str) -> None:
@@ -146,11 +287,12 @@ def read_pdf(path: str) -> tuple[str, list[list[list[str]]]]:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Extract text and tables from a local PDF with PyMuPDF. The text is
-        LLM-ready Markdown via pymupdf4llm (tables preserved inline) when
-        available, else plain page text via PyMuPDF. Tables are also returned as
-        structured row lists (PyMuPDF find_tables) so numeric values can be
-        cross-validated against the prose.
+        Extract text and tables from a local PDF. The text is structured Markdown
+        via Docling when installed (best table/layout/reading-order fidelity),
+        else LLM-ready Markdown via pymupdf4llm, else plain page text via PyMuPDF.
+        Tables are also returned as structured row lists (PyMuPDF find_tables)
+        whenever PyMuPDF is available, so numeric values can be cross-validated
+        against the prose regardless of which backend produced the text.
 
     Inputs:
         path (str): path to a local .pdf file
@@ -161,24 +303,31 @@ def read_pdf(path: str) -> tuple[str, list[list[list[str]]]]:
         truncated to MAX_TABLE_ROWS rows.
 
     Raises:
-        RuntimeError if PyMuPDF is not importable.
+        RuntimeError if no PDF backend (Docling, pymupdf4llm, PyMuPDF) is
+        importable.
     --------------------------------------------------------------------------
     """
-    if pymupdf is None and pymupdf4llm is None:
-        raise RuntimeError("PyMuPDF not installed - run: pip install -r requirements.txt")
+    if not _HAS_DOCLING and pymupdf is None and pymupdf4llm is None:
+        raise RuntimeError(
+            "no PDF backend installed - run: pip install -r requirements.txt "
+            "(docling, or pymupdf4llm + pymupdf)")
     _check_size(path)
 
-    # LLM-ready Markdown when pymupdf4llm is present. Capture stdout so its
-    # progress output can never corrupt the JSON this script prints.
-    if pymupdf4llm is not None:
+    # Backend order: Docling (default) -> pymupdf4llm -> PyMuPDF plain text.
+    # Capture stdout so any backend progress output cannot corrupt the JSON this
+    # script prints.
+    text = _docling_markdown(path)
+    if text is None and pymupdf4llm is not None:
         with contextlib.redirect_stdout(io.StringIO()):
             text = pymupdf4llm.to_markdown(path)
-    else:
+    if text is None and pymupdf is not None:
         parts: list[str] = []
         with pymupdf.open(path) as doc:
             for page in doc:
                 parts.append(page.get_text())
         text = "\n".join(parts)
+    if text is None:
+        text = ""
 
     # Structured tables (row lists) via PyMuPDF find_tables, when available.
     tables: list[list[list[str]]] = []
@@ -195,29 +344,38 @@ def read_textlike(path: str) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Read an HTML, plaintext, LaTeX, or Markdown full-text file as plain
-        text. HTML is reduced to text by stripping script/style blocks and
-        tags; other formats are read verbatim.
+        Read an HTML, plaintext, LaTeX, or Markdown full-text file as text. For
+        HTML, the Markdown backends are tried first (Docling, then MarkItDown)
+        because they preserve headings and tables that the section and statistics
+        scanners rely on; when neither is installed, HTML falls back to a
+        tag-strip. LaTeX, Markdown, and plain text are read verbatim.
 
     Inputs:
         path (str): path to a .html/.htm/.txt/.tex/.md file
 
     Outputs:
-        text (str): plain text content
+        text (str): text content (Markdown when a backend handled the HTML)
     --------------------------------------------------------------------------
     """
     _check_size(path)
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        raw = handle.read()
     if path.lower().endswith((".html", ".htm")):
+        # Backend order mirrors read_pdf: Docling -> MarkItDown -> tag-strip.
+        converted = _docling_markdown(path) or _markitdown_markdown(path)
+        if converted is not None:
+            return converted
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            raw = handle.read()
         raw = re.sub(r"(?is)<(script|style)\b.*?>.*?</\1>", " ", raw)
         raw = re.sub(r"(?s)<[^>]+>", " ", raw)
         raw = re.sub(r"&nbsp;", " ", raw)
         raw = re.sub(r"[ \t]+", " ", raw)
-    return raw
+        return raw
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        return handle.read()
 
 
-def parse_one(path: str, stats_scan: bool, include_text: bool) -> dict[str, Any]:
+def parse_one(path: str, stats_scan: bool, include_text: bool,
+              section_scan: bool = False) -> dict[str, Any]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -227,10 +385,13 @@ def parse_one(path: str, stats_scan: bool, include_text: bool) -> dict[str, Any]
         path (str): file to parse
         stats_scan (bool): run scan_stats over the extracted text
         include_text (bool): emit the full text (else only a char count)
+        section_scan (bool): run scan_sections (future-work / conclusion /
+            limitations / open-problems excerpts) over the extracted text
 
     Outputs:
         record (dict): {file, status, text_chars, n_tables, tables,
-        stats_candidates[, text]} or {file, status:'error', error} on failure.
+        stats_candidates, sections[, text]} or {file, status:'error', error} on
+        failure.
     --------------------------------------------------------------------------
     """
     record: dict[str, Any] = {"file": os.path.basename(path)}
@@ -248,6 +409,7 @@ def parse_one(path: str, stats_scan: bool, include_text: bool) -> dict[str, Any]
     record["n_tables"] = len(tables)
     record["tables"] = tables
     record["stats_candidates"] = scan_stats(text) if stats_scan else []
+    record["sections"] = scan_sections(text) if section_scan else []
     if include_text:
         record["text"] = text
     return record
@@ -266,8 +428,8 @@ def _ensure_and_parse_bib(args: argparse.Namespace) -> list[dict[str, Any]]:
         skill can flag it without aborting.
 
     Inputs:
-        args (Namespace): query (.bib path), latex, out_dir, insttoken,
-        stats_scan, include_text
+        args (Namespace): query (.bib path), latex, out_dir, insttoken, email,
+        no_html, stats_scan, section_scan, include_text
 
     Outputs:
         records (list[dict]): one record per bib entry.
@@ -284,21 +446,30 @@ def _ensure_and_parse_bib(args: argparse.Namespace) -> list[dict[str, Any]]:
 
     out_dir = dl.resolve_out_dir(args.out_dir, args.latex)
     api_key = dl._scopus_key_optional()
+    email = getattr(args, "email", None) or dl._unpaywall_email_optional()
+    allow_html = not getattr(args, "no_html", False)
     entries = dl.extract_bib_entries(bib_path)
 
     records: list[dict[str, Any]] = []
     for entry in entries:
-        result = dl.download_one(entry, out_dir, api_key, args.insttoken)
-        dest = os.path.join(out_dir, dl.target_filename(entry))
+        result = dl.download_one(entry, out_dir, api_key, args.insttoken,
+                                 email=email, allow_html=allow_html)
         citekey = entry.get("citekey", "")
-        if result.get("status") in ("present", "elsevier", "semantic_scholar") and os.path.exists(dest):
-            rec = parse_one(dest, args.stats_scan, args.include_text)
+        # download_one now returns the actual written file in any format
+        # (pdf/html/md); parse whatever was retrieved.
+        fname = result.get("file") or ""
+        dest = os.path.join(out_dir, fname) if fname else ""
+        retrieved = result.get("status") not in ("failed", "no-doi")
+        if retrieved and dest and os.path.exists(dest):
+            rec = parse_one(dest, args.stats_scan, args.include_text,
+                            getattr(args, "section_scan", False))
             rec["citekey"] = citekey
-            rec["pdf_source"] = result.get("source") or result.get("status")
+            rec["fulltext_source"] = result.get("source") or result.get("status")
+            rec["format"] = result.get("format")
             records.append(rec)
         else:
             records.append({
-                "file": dl.target_filename(entry), "citekey": citekey,
+                "file": fname or dl.target_filename(entry), "citekey": citekey,
                 "status": "pdf-missing", "doi": entry.get("doi", ""),
             })
     return records
@@ -320,7 +491,8 @@ def _emit(records: list[dict[str, Any]], mode: str) -> None:
 
 
 def _run_single(args: argparse.Namespace, mode: str) -> None:
-    record = parse_one(args.query, args.stats_scan, args.include_text)
+    record = parse_one(args.query, args.stats_scan, args.include_text,
+                       getattr(args, "section_scan", False))
     _emit([record], mode)
 
 
@@ -335,10 +507,13 @@ def main() -> None:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--stats-scan", action="store_true",
                         help="tag p-values, sample sizes, tests, effect sizes, ML metrics")
+    common.add_argument("--section-scan", action="store_true",
+                        help="extract future-work / conclusion / limitations / open-problems sections")
     common.add_argument("--include-text", action="store_true",
                         help="emit the full extracted text (default: char count only)")
 
-    parser = argparse.ArgumentParser(description="Extract full text and statistics candidates")
+    parser = argparse.ArgumentParser(
+        description="Extract full text, statistics candidates, and section excerpts")
     sub = parser.add_subparsers(dest="mode", required=True)
 
     p_pdf = sub.add_parser("pdf", parents=[common], help="parse one local PDF")
@@ -349,12 +524,17 @@ def main() -> None:
     p_text.add_argument("query", help="path to a .html/.txt/.tex/.md file")
     p_text.set_defaults(func=lambda a: _run_single(a, "text"))
 
-    p_bib = sub.add_parser("bib", parents=[common], help="ensure each DOI's PDF then parse every present PDF")
+    p_bib = sub.add_parser("bib", parents=[common],
+                           help="ensure each DOI's full text then parse every retrieved file")
     p_bib.add_argument("query", nargs="?", default=None,
                        help="path to the .bib file (omit to auto-discover from --latex)")
     p_bib.add_argument("--latex", default=None, help="main .tex file; refs/ is next to it")
     p_bib.add_argument("--out-dir", default=None, help="explicit refs/ directory")
     p_bib.add_argument("--insttoken", default=None, help="Elsevier institutional token (off-campus)")
+    p_bib.add_argument("--email", default=None,
+                       help="Unpaywall contact email (else the UNPAYWALL_EMAIL env var)")
+    p_bib.add_argument("--no-html", action="store_true",
+                       help="restrict retrieval to PDF only (skip the HTML/landing tiers)")
     p_bib.set_defaults(func=_run_bib)
 
     args = parser.parse_args()

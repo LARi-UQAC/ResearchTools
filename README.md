@@ -191,6 +191,40 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 
 ---
 
+## Security audit (SkillSpector)
+
+All eight skills under `.claude/skills/` were scanned with **SkillSpector v2.2.3** in
+static-only mode (`skillspector scan <skill> --no-llm`) on **2026-06-18**, every dependency
+finding cross-checked against `pip-audit`.
+
+**True positives — corrected**
+
+- **LP3 (missing permission declaration):** added to the frontmatter of `scopus`, `deliberation`,
+  `extract-statistic`, `scholar-evaluation`, `word2latex`, and `drawio2tikz` a per-skill
+  `permissions:` list declaring exactly the capabilities each skill's scripts use (e.g. `scopus`
+  → `[env, read, write, network]`), plus an `allowed-tools: [Read, Write, Edit, Bash]` runtime
+  restriction. Re-scan confirms LP3 cleared with no LP1/LP4 regression.
+- **SC1 (unpinned dependencies):** pinned `>=` to exact `==` versions in
+  `scopus/scripts/requirements.txt` (requests, google-genai, openai) and
+  `extract-statistic/scripts/requirements.txt` (pymupdf4llm, pymupdf, docling, markitdown),
+  using versions confirmed clean by `pip-audit`.
+
+**False positives — reviewed and ignored**
+
+- **SC4 (vulnerable dependency):** flagged by package name only; `pip-audit` resolves every
+  declared `>=` floor to a patched release (`No known vulnerabilities found`).
+- **E1 / E2 (external transmission / env harvesting):** skills reading their own configured API
+  keys and querying their own research APIs (Elsevier, Unpaywall, Semantic Scholar).
+- **TT2 (taint flow):** the https-only, redirect-disabled PDF download in `download_pdf.py`.
+- **PE3 / RA2 / EA1 / EA2 / P6:** keyword matches inside docstrings/markdown (e.g. `SNIPList`,
+  the `GITHUB_TOKEN` doc line, a `**…tool:**` bullet, a DOI-workflow description, a returned
+  local prompt string).
+- **AST4 (subprocess):** the test harness invoking the skill script with a fixed argument list.
+
+`scientific-writing` and `extract-futureworks` required no changes.
+
+---
+
 ## Commands (Slash Commands)
 
 Invoked with `/command-name [arguments]` in any Claude Code session. All files live in

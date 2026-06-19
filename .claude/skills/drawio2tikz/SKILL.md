@@ -1,6 +1,8 @@
 ---
 name: drawio2tikz
 description: "Convert one sheet of a .drawio file into a coordinate-exact TikZ fragment for embedding in LaTeX. Use when the user asks to turn a draw.io diagram/figure into TikZ, when a LaTeX figure must reproduce a draw.io sheet exactly (mechanical drawings, flowcharts, module layouts), or for /drawio2tikz. Drives scripts/drawio2tikz.py (absolute coordinates, group-offset resolution, edge anchoring to shape perimeters, waypoints, braces, FR->EN translation)."
+allowed-tools: [Read, Write, Edit, Bash]
+permissions: [write]
 ---
 
 # drawio2tikz Skill

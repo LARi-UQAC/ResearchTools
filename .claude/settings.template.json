@@ -5,6 +5,7 @@
   },
   "permissions": {
     "allow": [
+      "mcp__pcbparts__*",
       "Bash(npx:*)",
       "Bash(node:*)",
       "Bash(echo *)",
@@ -170,6 +171,18 @@
       "source": {
         "source": "github",
         "repo": "anthropics/claude-plugins-official"
+      }
+    },
+    "knowledge-work-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/knowledge-work-plugins"
+      }
+    },
+    "techwolf-ai-first": {
+      "source": {
+        "source": "github",
+        "repo": "techwolf-ai/ai-first-toolkit"
       }
     }
   }

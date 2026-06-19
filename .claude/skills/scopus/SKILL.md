@@ -1,6 +1,8 @@
 ---
 name: scopus
 description: "Use this skill to search Scopus for academic references, validate existing references, or produce literature reviews. Trigger on: /scopus, mentions of Scopus search, reference validation requests, finding papers on a topic."
+allowed-tools: [Read, Write, Edit, Bash]
+permissions: [env, read, write, network]
 ---
 
 # Scopus Skill

@@ -21,8 +21,8 @@
 # 1.27.2.3) and pulls pymupdf transitively; the explicit pymupdf floor keeps the
 # audited backend version pinned.
 
-pymupdf4llm>=1.27.2.3
-pymupdf>=1.27.2.3
+pymupdf4llm==1.27.2.3
+pymupdf==1.27.2.3
 
 # Markdown backends for read_pdf / read_textlike (the any-format path). Both are
 # OPTIONAL and PLUGGABLE: extract_text.py probes availability with find_spec and
@@ -42,5 +42,5 @@ pymupdf>=1.27.2.3
 #   pip-audit -r <(echo "docling>=2.103.0"; echo "markitdown[pdf]>=0.1.6")
 # Re-run pip-audit after install and report any CVE.
 
-docling>=2.103.0
-markitdown[pdf]>=0.1.6
+docling==2.103.0
+markitdown[pdf]==0.1.6

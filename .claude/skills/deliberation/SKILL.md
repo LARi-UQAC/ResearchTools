@@ -1,6 +1,8 @@
 ---
 name: deliberation
 description: "Two-round multi-model deliberation panel: Gemini and GitHub Copilot debate a near-final draft (via deliberate.py), enriched with Consensus and optional Scopus.AI evidence, after which Claude arbitrates per the canonical protocol, validates new references against Scopus, and writes a Deliberation Log. Used as the standardized Deliberation step inside the academic auditor and researcher agents (scopus-auditor, paper-auditor, thesis-auditor, thesis-proposal-auditor, scopus-researcher, reviewer-response) before the final plan, review, or response is written. Trigger when an agent reaches its deliberation/cross-review step."
+allowed-tools: [Read, Write, Edit, Bash]
+permissions: [env, read, write, shell]
 ---
 
 # Deliberation panel

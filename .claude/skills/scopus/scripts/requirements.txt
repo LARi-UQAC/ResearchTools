@@ -14,6 +14,6 @@
 # google-genai and openai degrade gracefully if absent (the reviewer is marked
 # unavailable), so installing them is optional for local-only runs.
 
-requests>=2.33.0
-google-genai>=1.0.0
-openai>=1.50.0
+requests==2.34.2
+google-genai==2.8.0
+openai==2.43.0

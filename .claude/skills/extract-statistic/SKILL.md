@@ -1,6 +1,8 @@
 ---
 name: extract-statistic
 description: "Statistical analysis skill with two modes. Mode audit: review the statistics of one manuscript (.tex/.md) — test selection, assumptions, effect size, presentation, and cross-validation between text, tables, and figures — and emit flagged findings for the host agent's plan. Mode mine: extract the reported statistics from the full-text PDFs of a corpus (download via download_pdf.py, parse via extract_text.py) and synthesize a corpus statistics table plus a statistical-improvement opportunity list. Used inside paper-auditor and thesis-auditor (audit) and scopus-researcher (mine). Engineering-default domain profiles with a selectable cosmetic profile. Trigger when an agent reaches its statistical-audit or corpus-statistics step."
+allowed-tools: [Read, Write, Edit, Bash]
+permissions: [read]
 ---
 
 # Statistical analysis (audit + corpus mining)

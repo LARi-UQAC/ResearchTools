@@ -1,6 +1,8 @@
 ---
 name: word2latex
 description: "Convert a Word .docx template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Use when the user asks to translate a Word gabarit to LaTeX, when a generated .tex must match a .docx visually, or for /word2latex. Drives pandoc + applies the standard patch sequence (Arial, full-grid tables, centered sections, landscape geometry, first-page banner). Delegates the actual patch work to the word-to-latex agent."
+allowed-tools: [Read, Write, Edit, Bash]
+permissions: [read, write]
 ---
 
 # word2latex Skill

@@ -1,0 +1,47 @@
+# Domain profile — COSMETIC (formulation, SPF, microbiome, dermatology)
+# Selectable profile (Lionel Ripoll, UQAC). Set "Profil actif : cosmetic" in
+# CLAUDE.md or `ACTIVE_PROFILE=cosmetic` to use it.
+
+name: cosmetic
+description: Cosmetic / formulation science — SPF, microbiome, dermatology, sensory.
+
+author:
+  name: Lionel Ripoll
+  email: lionel.ripoll@uqac.ca
+  institution: Université du Québec à Chicoutimi (UQAC)
+  department: Département des sciences fondamentales
+
+scopus:
+  subject_areas:
+    primary: [CENG, CHEM]            # chemical engineering + chemistry of formulation
+    secondary: [MATE, PHAR, MEDI, BIOC, IMMU, ENVI]
+  relevance_signals:
+    - formulation
+    - INCI
+    - emulsion          # H/E, E/H
+    - surfactant        # tensioactif
+    - SPF
+    - photoprotection
+    - UVA/UVB
+    - skin penetration  # pénétration cutanée
+    - rheology          # rhéologie
+    - stability         # stabilité
+    - preservative      # conservateur / challenge test
+    - microbiome        # 16S
+    - dermatology
+    - sensory panel     # évaluation sensorielle
+    - in vitro skin substrate   # PMMA, Vitro-Skin
+    - encapsulation
+    - drug delivery
+    - design of experiments     # DoE / plan d'expérience
+  off_topic_flag: "[HORS-SUJET COSMÉTIQUE]"
+
+stats_profile: cosmetic
+
+framework_default: Decomposition   # Mechanism · Applications · Limitations · Comparisons
+
+course_context: "DESS cosmétique UQAC"
+
+language:
+  manuscripts: en
+  responses: fr

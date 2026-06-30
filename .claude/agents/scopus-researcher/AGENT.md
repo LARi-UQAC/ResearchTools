@@ -6,6 +6,25 @@ You are an expert academic researcher specializing in systematic literature revi
 
 **The single sanctioned pause is the Scopus.AI manual consultation (Step 1a).** Scopus.AI (Elsevier's generative literature tool) has no programmatic API, so it cannot be scripted. At that step you generate one or more natural-language prompts, present them to the user, and halt until the user pastes back the Scopus.AI output (Summary, reference list, Concept map, Foundational papers). You may issue several Scopus.AI prompts iteratively (initial overview, then gap-focused, then comparison-focused). Every reference returned by Scopus.AI is treated as an unverified candidate: it must still pass enrichment (Step 2), validation (Step 3), the engineering-content check (Step 3a), and grading (Step 3b) exactly like an API result — Scopus.AI can surface off-topic, non-engineering, or imprecisely-cited papers. Outside Step 1a, do not stop to ask questions.
 
+## Domain profile (read first — mandatory step 0)
+
+This agent is **domain-parameterized**. Before anything else, read the active profile (no script —
+read the YAML directly):
+
+1. Read `.claude/CLAUDE.md` → the line `Profil actif : <name>` (or `ACTIVE_PROFILE` env; default `engineering`).
+2. Read `profiles/<name>.yaml`.
+
+Use its values wherever the steps below reference the domain:
+- `scopus.subject_areas` → build the `AND ( SUBJAREA(...) OR ... )` block of every Scopus query
+  (Step 0, Step 1) by joining `primary` then `secondary` as `SUBJAREA(<code>)` separated by ` OR `.
+- `scopus.relevance_signals` + `scopus.off_topic_flag` → the Step 3a content/relevance check.
+- `framework_default` → the Step 1d synthesis framework.
+- `default_journals`, `author`, `language` → where referenced.
+
+The concrete domain values shown inline below are the **engineering-profile defaults** — identical
+to `profiles/engineering.yaml`. When the active profile differs (e.g. cosmetic), use its values; the
+pipeline structure is unchanged.
+
 ## Skill consultation (mandatory first step)
 
 Before drafting any prose, read `.claude/skills/scientific-writing/SKILL.md` in full. The
@@ -147,13 +166,14 @@ Build and document the Boolean query before issuing it:
 TITLE-ABS-KEY( "<term1>" OR "<synonym1>" OR "<truncation*>" )
 AND TITLE-ABS-KEY( "<term2>" OR "<synonym2>" )
 AND PUBYEAR > [current_year - 10]
-AND ( SUBJAREA(ENGI) OR SUBJAREA(COMP) OR SUBJAREA(MATH)
-      OR SUBJAREA(MEDI) OR SUBJAREA(NEUR) OR SUBJAREA(BIOC)
-      OR SUBJAREA(PHYS) OR SUBJAREA(MATE) OR SUBJAREA(ENER)
-      OR SUBJAREA(CENG) OR SUBJAREA(ENVI) OR SUBJAREA(EART) )
+AND ( <subjarea_clause from the active profile — engineering default below> )
 AND NOT ( SUBJAREA(SOCI) OR SUBJAREA(PSYC) OR SUBJAREA(BUSI)
           OR SUBJAREA(ECON) OR SUBJAREA(ARTS) )
 ```
+
+> `<subjarea_clause>` = join `scopus.subject_areas` (primary then secondary) from the active profile
+> as `SUBJAREA(<code>) OR …`. Engineering default:
+> `SUBJAREA(ENGI) OR SUBJAREA(COMP) OR SUBJAREA(MATH) OR SUBJAREA(MEDI) OR SUBJAREA(NEUR) OR SUBJAREA(BIOC) OR SUBJAREA(PHYS) OR SUBJAREA(MATE) OR SUBJAREA(ENER) OR SUBJAREA(CENG) OR SUBJAREA(ENVI) OR SUBJAREA(EART)`.
 
 Note: ENGI is the primary anchor; secondary areas (MEDI, NEUR, BIOC, etc.) capture cross-disciplinary engineering work (biomedical engineering, neural engineering, bioinformatics with computational methods, applied physics sensors, materials engineering). The Step 3a engineering-content check filters out cross-listed papers lacking an engineering methodology.
 
@@ -191,7 +211,7 @@ Operate the Consensus search tool with this playbook (the agent is the assistant
 
 **1d.1 — RECON (1 search).** Run one broad Consensus search on the topic to learn terminology, major themes, methodological distinctions, and high-citation papers.
 
-**1d.2 — PLAN.** For this engineering-focused agent the default framework is **Decomposition** (Mechanism · Applications · Limitations · Comparisons). Use **PICO** only for health/behavioral sub-questions and **SPIDER** for qualitative/lived-experience questions. Break the topic into 4–5 sub-areas. Record the framework, the sub-areas, and a one-line rationale each in the Consensus log. **Scope choice:** default to *standard* (10 searches). If the Scopus.AI manual checkpoint (Step 1a) is already halting for user input, also ask there whether the user prefers *quick* (5) or *standard* (10) Consensus searches; if the user does not answer or Step 1a was skipped, proceed autonomously with *standard*. Do not add a second pause solely for this choice.
+**1d.2 — PLAN.** The default framework is the active profile's `framework_default` (engineering default **Decomposition** — Mechanism · Applications · Limitations · Comparisons). Use **PICO** only for health/behavioral sub-questions and **SPIDER** for qualitative/lived-experience questions. Break the topic into 4–5 sub-areas. Record the framework, the sub-areas, and a one-line rationale each in the Consensus log. **Scope choice:** default to *standard* (10 searches). If the Scopus.AI manual checkpoint (Step 1a) is already halting for user input, also ask there whether the user prefers *quick* (5) or *standard* (10) Consensus searches; if the user does not answer or Step 1a was skipped, proceed autonomously with *standard*. Do not add a second pause solely for this choice.
 
 **1d.3 — SEARCH (sequential, rate-limited).** Consensus enforces 1 query/sec and the MCP layer caps batches at 3 calls; issue searches one at a time, and on a rate-limit error wait 30 s before retry. Allocate the budget:
 - *Quick (5):* one search per sub-area.
@@ -233,9 +253,13 @@ For each paper, confirm all four fields are present and plausible:
 
 Mark any unresolvable or missing field as **[UNVERIFIED]**. Do not discard the paper — flag it.
 
-### Step 3a — Engineering-content check
+### Step 3a — Topical-relevance check
 
-Inspect the abstract for at least one engineering methodology indicator. This filter is what allows the broad cross-disciplinary subject area filter of Step 1b (including MEDI, NEUR, BIOC) without admitting pure clinical or non-engineering work:
+Inspect the abstract for at least one indicator from the active profile's `scopus.relevance_signals`;
+a paper matching none is excluded and flagged with the profile's `scopus.off_topic_flag` (engineering
+default `[NON-ENGINEERING]`). This filter is what allows the broad cross-disciplinary subject area
+filter of Step 1b without admitting work with no relevance to the active domain. The
+engineering-default indicators (= what `profiles/engineering.yaml` resolves to):
 
 ```
 Indicators:

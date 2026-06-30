@@ -1,0 +1,52 @@
+# Domain profile — ENGINEERING (mechanical / electrical / ML / control / systems)
+# Default profile for this repo (LARi-UQAC). Mirrors the values the agents
+# currently hardcode; reading it (active = engineering) changes nothing.
+
+name: engineering
+description: Mechanical / electrical / ML / control / systems engineering.
+
+# --- Author / institution (used by cover-paper, submit-checker) ---
+author:
+  name: Martin Otis
+  email: m3otis@uqac.ca
+  institution: Université du Québec à Chicoutimi (UQAC)
+  department: Département des sciences appliquées
+
+# --- Scopus literature scope (scopus-researcher, scopus-auditor) ---
+scopus:
+  subject_areas:
+    primary: [ENGI]
+    secondary: [COMP, MATH, MEDI, NEUR, BIOC, PHYS, MATE, ENER, CENG, ENVI, EART]
+  # A paper must show ≥1 of these to pass the Step 3a content check.
+  relevance_signals:
+    - convolutional neural network   # CNN
+    - transformer
+    - Kalman filter
+    - PID
+    - model predictive control       # MPC
+    - reinforcement learning         # RL
+    - SVM
+    - FPGA
+    - actuator
+    - sensor array
+    - embedded controller
+    - robotic platform
+    - exoskeleton
+    - accuracy / F1 / AUC / RMSE / mAP / IoU
+    - train/test split
+    - cross-validation
+  off_topic_flag: "[NON-ENGINEERING]"
+
+# --- Statistical audit profile (extract-statistic) ---
+stats_profile: engineering
+
+# --- Literature-review synthesis framework default (scopus-researcher) ---
+framework_default: Decomposition   # Mechanism · Applications · Limitations · Comparisons
+
+# --- Teaching context; null if no course authored here ---
+course_context: null
+
+# --- Language defaults ---
+language:
+  manuscripts: en
+  responses: en

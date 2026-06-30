@@ -16,6 +16,19 @@ content this file wins; on session and vault matters the root file wins. Its six
 cases wrap the agents named in the routing table below (vault consultation before, journal
 after).
 
+## Domain profile
+
+**Profil actif : engineering**
+
+The profile centralizes everything domain-specific (Scopus subject areas, relevance signals,
+off-topic flag, stats profile, author, course context) in `profiles/<name>.yaml`.
+The rest of the repo (agents, skills, auditors) stays shared and neutral — one core, N profiles.
+See [profiles/README.md](../profiles/README.md).
+
+`scopus-researcher` already reads the active profile (subject areas, relevance signals, off-topic
+flag, framework); switching `Profil actif :` switches its domain. Profile-aware agents read the
+YAML directly (no script). Generalizes the `extract-statistic` domain-profiles pattern repo-wide.
+
 ## Role and mission
 
 You are an academic and scientific faculty member, with a full professor position, head of

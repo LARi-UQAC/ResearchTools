@@ -5,7 +5,20 @@
     so that Claude Code loads all agents, skills, rules, and commands globally.
 
 .DESCRIPTION
-    For agents/ and skills/ sub-directories, one Junction is created per entry.
+    LAYOUT ASYMMETRY (do not "fix" one to match the other):
+      skills/ are FOLDER-based  (skills/<name>/SKILL.md)  -> one Junction per sub-folder.
+      agents/ are FILE-based    (agents/<name>.md, YAML frontmatter) -> one link per FILE.
+    Claude Code discovers agents by scanning flat *.md files in .claude/agents/;
+    a directory junction there is invisible to discovery.
+
+    For agents/, one per-file link is created per *.md (SymbolicLink; HardLink
+    fallback when symlink privilege is missing - enable Windows Developer Mode
+    for true symlinks; hardlinks detach when git pull rewrites a file, so re-run
+    this script after pulls that change agents). Stale directory junctions from
+    the old per-folder layout are removed automatically when they point into
+    this repository.
+
+    For skills/ sub-directories, one Junction is created per entry.
 
     For rules/ and commands/, the strategy adapts to what already exists in
     ~/.claude:
@@ -77,7 +90,7 @@ function New-JunctionSafe([string]$linkPath, [string]$target) {
 function New-SymlinkSafe([string]$linkPath, [string]$target) {
     if (Test-Path $linkPath -PathType Leaf) {
         $item = Get-Item $linkPath -Force
-        if ($item.LinkType -eq "SymbolicLink") {
+        if ($item.LinkType -eq "SymbolicLink" -or $item.LinkType -eq "HardLink") {
             Write-Exists "$linkPath  ->  $target"
             $stats.AlreadyExists++
         } else {
@@ -91,8 +104,16 @@ function New-SymlinkSafe([string]$linkPath, [string]$target) {
         $stats.Created++
         return
     }
-    New-Item -ItemType SymbolicLink -Path $linkPath -Target $target | Out-Null
-    Write-Created "Symlink:  $linkPath"
+    $parent = Split-Path $linkPath -Parent
+    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    try {
+        New-Item -ItemType SymbolicLink -Path $linkPath -Target $target -ErrorAction Stop | Out-Null
+        Write-Created "Symlink:  $linkPath"
+    } catch {
+        # No symlink privilege (Developer Mode off, not elevated): hard link on same volume
+        New-Item -ItemType HardLink -Path $linkPath -Target $target -ErrorAction Stop | Out-Null
+        Write-Created "Hardlink: $linkPath  (enable Developer Mode for symlinks; re-run after git pull)"
+    }
     $stats.Created++
 }
 
@@ -147,8 +168,26 @@ if ($WhatIf) { Write-Host "  Mode: WhatIf (no changes will be made)" -Foreground
 Write-Header "Agents"
 $agentsSource = Join-Path $repoClaudeDir "agents"
 if (Test-Path $agentsSource) {
-    Get-ChildItem $agentsSource -Directory | ForEach-Object {
-        New-JunctionSafe (Join-Path $homeClaude "agents\$($_.Name)") $_.FullName
+    # Cleanup pass: remove stale per-FOLDER junctions from the old layout.
+    # Only junctions whose target is inside this repo's agents dir; real
+    # directories are never touched.
+    $homeAgents = Join-Path $homeClaude "agents"
+    if (Test-Path $homeAgents) {
+        Get-ChildItem $homeAgents -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSIsContainer -and $_.LinkType -eq "Junction" -and $_.Target -like "$agentsSource*" } |
+            ForEach-Object {
+                if ($WhatIf) { Write-WhatIf "Would remove stale junction: $($_.FullName)" }
+                else { $_.Delete(); Write-Info "Removed stale junction: $($_.FullName)" }
+            }
+    }
+    $testJunction = Join-Path $homeClaude "__test_junction__"
+    if (Test-Path $testJunction) {
+        Write-Skipped "$testJunction still present — remove manually if unwanted"
+    }
+
+    # Agents are FILE-based: one link per flat <name>.md (see header note).
+    Get-ChildItem $agentsSource -File -Filter *.md | ForEach-Object {
+        New-SymlinkSafe (Join-Path $homeClaude "agents\$($_.Name)") $_.FullName
     }
 } else {
     Write-Skipped "agents/ not found in repo"

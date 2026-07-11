@@ -456,7 +456,9 @@ explicit agent names when you need finer control or want to chain agents in one 
 ### Using the agents outside Claude Code
 
 `install-agents.ps1` regenerates per-tool mirrors from the canonical `.claude/agents/*.md`
-files. Run it after adding or editing an agent, then commit the regenerated output.
+files. Run it after adding or editing an agent, then commit the regenerated output. Add
+`-Personal` to also copy the Copilot agent profiles to `~/.copilot/agents/`, which makes
+them available to Copilot CLI in every project (re-run after agent edits to refresh).
 
 | Tool | Generated target | Notes |
 | --- | --- | --- |

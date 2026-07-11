@@ -38,9 +38,12 @@
 
 .EXAMPLE
     .\install-agents.ps1
+    .\install-agents.ps1 -Personal   # also copy Copilot agents to ~/.copilot/agents
+                                     # (available in every project via Copilot CLI)
 #>
 param(
-    [int]$CopilotStubThreshold = 28000   # keep margin under the 30k hard limit
+    [int]$CopilotStubThreshold = 28000,  # keep margin under the 30k hard limit
+    [switch]$Personal
 )
 
 Set-StrictMode -Version Latest
@@ -104,6 +107,17 @@ Hard constraints carried over from the full definition:
     if ($out.Length -gt 30000) { throw "$($a.Name): generated Copilot profile exceeds 30k" }
     [System.IO.File]::WriteAllText((Join-Path $ghDir "$($a.Name).agent.md"), $out, $utf8NoBom)
     Write-Ok (".github/agents/{0}.agent.md  ({1}, {2} chars)" -f $a.Name, $mode, $out.Length)
+}
+
+# --- GitHub Copilot personal level: ~/.copilot/agents (optional) ------------
+
+if ($Personal) {
+    $personalDir = Join-Path $env:USERPROFILE ".copilot\agents"
+    New-Item -ItemType Directory -Path $personalDir -Force | Out-Null
+    Get-ChildItem $ghDir -File -Filter *.agent.md | ForEach-Object {
+        Copy-Item $_.FullName (Join-Path $personalDir $_.Name) -Force
+        Write-Ok ("~/.copilot/agents/{0}" -f $_.Name)
+    }
 }
 
 # --- GitHub Copilot: .github/prompts/<name>.prompt.md (from commands) -------

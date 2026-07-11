@@ -153,7 +153,7 @@ Final response to the user lists:
 
 ## See also
 
-- Agent: `.claude/agents/word-to-latex/AGENT.md`
+- Agent: `.claude/agents/word-to-latex.md`
 - Patch reference: `.claude/skills/word2latex/references/preamble_patches.md`
 - Manuscript bibliography reference: `.claude/skills/word2latex/references/manuscript_bibliography.md`
 - Inspector script: `.claude/skills/word2latex/scripts/docx_inspect.py`

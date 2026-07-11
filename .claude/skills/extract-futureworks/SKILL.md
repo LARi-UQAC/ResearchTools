@@ -15,13 +15,13 @@ is the entry point and contract.
 
 ## When to use
 
-- **Mode `audit`** — a host auditor ([paper-auditor](../../agents/paper-auditor/AGENT.md),
-  [scopus-auditor](../../agents/scopus-auditor/AGENT.md),
-  [thesis-auditor](../../agents/thesis-auditor/AGENT.md),
-  [thesis-proposal-auditor](../../agents/thesis-proposal-auditor/AGENT.md)) reaches its
+- **Mode `audit`** — a host auditor ([paper-auditor](../../agents/paper-auditor.md),
+  [scopus-auditor](../../agents/scopus-auditor.md),
+  [thesis-auditor](../../agents/thesis-auditor.md),
+  [thesis-proposal-auditor](../../agents/thesis-proposal-auditor.md)) reaches its
   future-works / hypothesis step. The skill audits the work's own stated future works and is then used
   to validate the work's hypotheses and to propose stronger ones drawn from the cited corpus.
-- **Mode `mine`** — [scopus-researcher](../../agents/scopus-researcher/AGENT.md) has downloaded the
+- **Mode `mine`** — [scopus-researcher](../../agents/scopus-researcher.md) has downloaded the
   corpus full text and wants every paper's stated future works extracted and synthesized, so the gap
   map, the Pareto matrix, and the hypotheses target real, author-declared open problems for the next
   research project.

@@ -394,19 +394,26 @@ Agents are specialists Claude delegates to automatically based on context, or ex
 request ("use the `scopus-auditor` agent to…"). Eleven ship in this repo; most back a slash
 command.
 
+Format (repo convention): one flat markdown file per agent at `.claude/agents/<name>.md`,
+opening with YAML frontmatter (`name:`, `description:`). This is what Claude Code's subagent
+discovery scans; a sub-folder layout is invisible to it. Note the asymmetry with skills,
+which ARE folder-based (`skills/<name>/SKILL.md`). The canonical `.claude/agents/` files are
+the single source of truth; per-tool mirrors are generated from them (see
+"Using the agents outside Claude Code" below).
+
 | Agent | Purpose | Command / trigger | Path |
 | --- | --- | --- | --- |
-| `scopus-researcher` | Autonomous literature review: search, validate, summarize, PRISMA + gap/coverage/Pareto matrices, hypotheses, LaTeX output | `/litreview` | `.claude/agents/scopus-researcher/AGENT.md` |
-| `scopus-auditor` | Audit an existing review; validate every reference; executable improvement plan | `/auditreview` | `.claude/agents/scopus-auditor/AGENT.md` |
-| `paper-auditor` | Full paper content audit (intro→future works) + Scopus validation + ScholarEval score + improvement plan | `/auditpaper` | `.claude/agents/paper-auditor/AGENT.md` |
-| `thesis-auditor` | Full UQAC thesis audit (front matter, hypothesis flow, chapter structure, bilingual consistency, UQAC compliance) + ScholarEval score | `/auditthesis` | `.claude/agents/thesis-auditor/AGENT.md` |
-| `thesis-proposal-auditor` | Audit a UQAC thesis **proposal** (≤35 pages body, testable hypotheses, suggested methodology, no full results) + ScholarEval score | thesis-proposal audit / by name | `.claude/agents/thesis-proposal-auditor/AGENT.md` |
-| `reviewer-response` | Point-by-point response letters + traceable `changes`-package markup in the paper | `/replyreviewer` | `.claude/agents/reviewer-response/AGENT.md` |
-| `bib-cleaner` | Validate, deduplicate, normalize and DOI-enrich a `.bib` file | `/bibclean` | `.claude/agents/bib-cleaner/AGENT.md` |
-| `submit-checker` | Pass/fail submission checklist against a target journal's requirements | `/submitcheck` | `.claude/agents/submit-checker/AGENT.md` |
-| `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex/AGENT.md` |
-| `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt) | by name (at submission) | `.claude/agents/cover-paper/AGENT.md` |
-| `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer/AGENT.md` |
+| `scopus-researcher` | Autonomous literature review: search, validate, summarize, PRISMA + gap/coverage/Pareto matrices, hypotheses, LaTeX output | `/litreview` | `.claude/agents/scopus-researcher.md` |
+| `scopus-auditor` | Audit an existing review; validate every reference; executable improvement plan | `/auditreview` | `.claude/agents/scopus-auditor.md` |
+| `paper-auditor` | Full paper content audit (intro→future works) + Scopus validation + ScholarEval score + improvement plan | `/auditpaper` | `.claude/agents/paper-auditor.md` |
+| `thesis-auditor` | Full UQAC thesis audit (front matter, hypothesis flow, chapter structure, bilingual consistency, UQAC compliance) + ScholarEval score | `/auditthesis` | `.claude/agents/thesis-auditor.md` |
+| `thesis-proposal-auditor` | Audit a UQAC thesis **proposal** (≤35 pages body, testable hypotheses, suggested methodology, no full results) + ScholarEval score | thesis-proposal audit / by name | `.claude/agents/thesis-proposal-auditor.md` |
+| `reviewer-response` | Point-by-point response letters + traceable `changes`-package markup in the paper | `/replyreviewer` | `.claude/agents/reviewer-response.md` |
+| `bib-cleaner` | Validate, deduplicate, normalize and DOI-enrich a `.bib` file | `/bibclean` | `.claude/agents/bib-cleaner.md` |
+| `submit-checker` | Pass/fail submission checklist against a target journal's requirements | `/submitcheck` | `.claude/agents/submit-checker.md` |
+| `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex.md` |
+| `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt) | by name (at submission) | `.claude/agents/cover-paper.md` |
+| `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
 
 The four ScholarEval auditors (`scopus-auditor`, `paper-auditor`, `thesis-auditor`,
 `thesis-proposal-auditor`) score the document before writing the plan; after the plan is
@@ -446,6 +453,26 @@ The slash commands `/auditreview`, `/replyreviewer`, `/litreview`, etc. are thin
 call these agents with the same argument syntax — use the commands for convenience and the
 explicit agent names when you need finer control or want to chain agents in one message.
 
+### Using the agents outside Claude Code
+
+`install-agents.ps1` regenerates per-tool mirrors from the canonical `.claude/agents/*.md`
+files. Run it after adding or editing an agent, then commit the regenerated output.
+
+| Tool | Generated target | Notes |
+| --- | --- | --- |
+| GitHub Copilot (agents) | `.github/agents/<name>.agent.md` | Auto-discovered once on the default branch (GitHub.com agents panel, coding agent, VS Code, Copilot CLI `/agent` or `copilot --agent <name>`). Copilot caps agent prompts at 30,000 characters, so the five large agents ship as stubs that read the canonical file first. |
+| GitHub Copilot (commands) | `.github/prompts/<name>.prompt.md` | One prompt file per task command (13); invoke as `/<name>` in Copilot Chat. The Claude session modes (`concis`, `slim`, `focus`, `ctx`) are skipped. |
+| GitHub Copilot (rules) | `.github/instructions/<name>.instructions.md` | One per `.claude/rules/*.md`, applied to all files (`applyTo: "**"`), plus the master `.github/copilot-instructions.md` (mission, agent routing, skills pointer). |
+| GitHub Copilot (skills) | none needed | Skills are plain repo folders (`.claude/skills/<name>/SKILL.md`); Copilot agents read them directly, and the master instructions point there. |
+| OpenCode | `.opencode/agent/<name>.md` | Full body, `description` frontmatter. |
+| Continue | `.continue/rules/researchtools.md` | One rule pointing at the canonical files and routing table. |
+| Aider | `CONVENTIONS.md` | Pointer paragraph (created once, never overwritten). |
+
+For global availability in Claude Code (any working directory), `install-junctions.ps1`
+links each `.claude/agents/<name>.md` into `~/.claude/agents/` per file (symlink; hard-link
+fallback when Developer Mode is off — re-run after a `git pull` that changes agents).
+Skills keep their per-folder junctions.
+
 ---
 
 ## File Locations Summary
@@ -456,17 +483,17 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ResearchTools\
 └── .claude\
     ├── agents\                              (11 agents)
-    │   ├── scopus-researcher\AGENT.md       ← /litreview
-    │   ├── scopus-auditor\AGENT.md          ← /auditreview
-    │   ├── paper-auditor\AGENT.md           ← /auditpaper
-    │   ├── thesis-auditor\AGENT.md          ← /auditthesis
-    │   ├── thesis-proposal-auditor\AGENT.md ← thesis-proposal audit
-    │   ├── reviewer-response\AGENT.md       ← /replyreviewer
-    │   ├── bib-cleaner\AGENT.md             ← /bibclean
-    │   ├── submit-checker\AGENT.md          ← /submitcheck
-    │   ├── word-to-latex\AGENT.md           ← /word2latex
-    │   ├── cover-paper\AGENT.md             ← submission package
-    │   └── latex-writer\AGENT.md            ← LaTeX authoring
+    │   ├── scopus-researcher.md       ← /litreview
+    │   ├── scopus-auditor.md          ← /auditreview
+    │   ├── paper-auditor.md           ← /auditpaper
+    │   ├── thesis-auditor.md          ← /auditthesis
+    │   ├── thesis-proposal-auditor.md ← thesis-proposal audit
+    │   ├── reviewer-response.md       ← /replyreviewer
+    │   ├── bib-cleaner.md             ← /bibclean
+    │   ├── submit-checker.md          ← /submitcheck
+    │   ├── word-to-latex.md           ← /word2latex
+    │   ├── cover-paper.md             ← submission package
+    │   └── latex-writer.md            ← LaTeX authoring
     ├── commands\                            (17 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md

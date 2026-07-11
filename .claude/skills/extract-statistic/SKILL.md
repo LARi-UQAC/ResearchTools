@@ -16,10 +16,10 @@ this skill. This file is the entry point and contract.
 
 ## When to use
 
-- **Mode `audit`** — a host auditor ([paper-auditor](../../agents/paper-auditor/AGENT.md),
-  [thesis-auditor](../../agents/thesis-auditor/AGENT.md)) has parsed a manuscript and reaches its
+- **Mode `audit`** — a host auditor ([paper-auditor](../../agents/paper-auditor.md),
+  [thesis-auditor](../../agents/thesis-auditor.md)) has parsed a manuscript and reaches its
   statistical-audit step. The skill audits every statistical claim already in that manuscript.
-- **Mode `mine`** — [scopus-researcher](../../agents/scopus-researcher/AGENT.md) has downloaded the
+- **Mode `mine`** — [scopus-researcher](../../agents/scopus-researcher.md) has downloaded the
   corpus PDFs (Step 3b-PDF) and wants the reported statistics of those papers extracted and
   synthesized, so the gap map, Pareto matrix, and hypotheses target real statistical and
   methodological improvement opportunities for the next research project.

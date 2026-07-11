@@ -1,0 +1,34 @@
+# Domain profile - TEMPLATE. Copy to profiles/<your-domain>.yaml and fill in.
+# A profile centralizes everything domain-specific so the rest of the repo stays
+# shared across users. See profiles/README.md.
+#
+# The YAML is the single source of truth: profile-aware agents read it directly
+# (no script). If the active profile file is missing or malformed, agents fall
+# back to profiles/engineering.yaml; if that also fails, they stop with an error.
+
+name: "<short-slug>"            # e.g. engineering, cosmetic, pharma
+description: "<one line: the discipline this profile targets>"
+
+author:
+  name: "<your name>"
+  email: "<email>"
+  institution: "<university / org>"
+  department: "<department>"
+
+scopus:
+  subject_areas:
+    primary: []                # 1-2 Scopus SUBJAREA codes that anchor your field
+    secondary: []              # cross-disciplinary codes to include
+  exclude_areas: []            # SUBJAREA codes excluded via AND NOT (...) in every query
+  relevance_signals: []        # terms a paper must show to pass the topical-relevance check
+  off_topic_flag: "[OFF-TOPIC]" # marker for cross-listed papers lacking your field's component
+
+stats_profile: "<name>"        # extract-statistic profile (add it to that skill's domain-profiles.md)
+
+framework_default: Decomposition  # Decomposition | PICO | SPIDER
+
+course_context: null           # string if you author courses in this domain, else null
+
+language:
+  manuscripts: en
+  responses: en

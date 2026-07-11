@@ -36,14 +36,21 @@
     .github/agents/ are auto-discovered (GitHub.com agents panel, coding agent,
     VS Code, Copilot CLI /agent or --agent <name>).
 
+    The script also records the active domain profile (profiles/<name>.yaml) in
+    .claude/CLAUDE.md: pass -Profile <name>, or answer the interactive prompt
+    (non-interactive runs keep the default, engineering).
+
 .EXAMPLE
     .\install.ps1
     .\install.ps1 -Personal   # also copy Copilot agents to ~/.copilot/agents
                                      # (available in every project via Copilot CLI)
+    .\install.ps1 -Profile cosmetic   # select the active domain profile
 #>
 param(
     [int]$CopilotStubThreshold = 28000,  # keep margin under the 30k hard limit
-    [switch]$Personal
+    [switch]$Personal,
+    # -Profile also works ($PROFILE is a PowerShell automatic variable, hence the alias)
+    [Alias('Profile')][string]$DomainProfile
 )
 
 Set-StrictMode -Version Latest
@@ -74,6 +81,35 @@ function Read-AgentFile([string]$path) {
 
 $agents = Get-ChildItem $agentsDir -File -Filter *.md | ForEach-Object { Read-AgentFile $_.FullName }
 Write-Host "Canonical agents found: $($agents.Count)"
+
+# --- Active domain profile: select and record in .claude/CLAUDE.md ----------
+
+$profilesDir  = Join-Path $repoRoot "profiles"
+$profileNames = @()
+foreach ($pf in (Get-ChildItem $profilesDir -File -Filter *.yaml | Where-Object { $_.Name -ne "_template.yaml" })) {
+    foreach ($line in (Get-Content $pf.FullName)) {
+        if ($line -match '^name:\s*(\S+)') { $profileNames += $Matches[1]; break }
+    }
+}
+if ($profileNames.Count -eq 0) { throw "No profiles found under profiles/ (expected profiles/<name>.yaml with a name: key)" }
+
+$activeProfile = $DomainProfile
+if (-not $activeProfile) {
+    # Read-Host throws under -NonInteractive; fall back to the default silently.
+    $answer = $null
+    try { $answer = Read-Host "Active domain profile [engineering] (available: $($profileNames -join ', '))" } catch { $answer = $null }
+    if ($answer) { $activeProfile = $answer.Trim() } else { $activeProfile = "engineering" }
+}
+if ($profileNames -notcontains $activeProfile) {
+    throw "Unknown profile '$activeProfile'. Valid profiles: $($profileNames -join ', ')"
+}
+
+$claudeMdPath = Join-Path $repoRoot ".claude\CLAUDE.md"
+$claudeMd     = [System.IO.File]::ReadAllText($claudeMdPath, [System.Text.Encoding]::UTF8)
+$claudeMd     = $claudeMd -replace '(?m)^active_profile:\s*\S+', "active_profile: $activeProfile"
+$claudeMd     = $claudeMd -replace '(?m)^Profil actif : \S+', "Profil actif : $activeProfile"
+[System.IO.File]::WriteAllText($claudeMdPath, $claudeMd, $utf8NoBom)
+Write-Ok "active profile: $activeProfile (recorded in .claude/CLAUDE.md)"
 
 # --- GitHub Copilot: .github/agents/<name>.agent.md -------------------------
 

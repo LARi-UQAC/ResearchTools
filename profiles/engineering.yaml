@@ -1,0 +1,80 @@
+# Domain profile - ENGINEERING (mechanical / electrical / ML / control / systems)
+# Default profile for this repo (LARi-UQAC).
+#
+# Non-regression: the SUBJAREA inclusion and exclusion sets mirror the values the
+# agents previously hardcoded, and relevance_signals is a SUPERSET of the previous
+# inline Step 3a indicator list (all former indicators kept, ML-evaluation terms
+# added). A paper kept before is still kept; the superset can only add inclusions.
+# This YAML is the single source of truth; agents must not use remembered defaults.
+
+name: engineering
+description: Mechanical / electrical / ML / control / systems engineering.
+
+# --- Author / institution (planned consumers: cover-paper, submit-checker) ---
+author:
+  name: Martin Otis
+  email: m3otis@uqac.ca
+  institution: Universite du Quebec a Chicoutimi (UQAC)
+  department: Departement des sciences appliquees
+
+# --- Scopus literature scope (scopus-researcher) ---
+scopus:
+  subject_areas:
+    primary: [ENGI]
+    secondary: [COMP, MATH, MEDI, NEUR, BIOC, PHYS, MATE, ENER, CENG, ENVI, EART]
+  # Excluded via AND NOT (...) in every Scopus query.
+  exclude_areas: [SOCI, PSYC, BUSI, ECON, ARTS]
+  # A paper must show >=1 of these in its abstract to pass the Step 3a
+  # topical-relevance check. Grouped by indicator category.
+  relevance_signals:
+    # Named algorithms
+    - convolutional neural network   # CNN
+    - transformer
+    - Kalman filter
+    - particle swarm optimization
+    - reinforcement learning         # RL
+    - SVM
+    # Hardware or system design
+    - FPGA
+    - actuator
+    - sensor array
+    - embedded controller
+    - robotic platform
+    - exoskeleton
+    # Signal / image / data processing
+    - EMG signal
+    - MRI segmentation
+    - spectrogram
+    - feature extraction
+    # Control or modeling
+    - PID
+    - model predictive control       # MPC
+    - state-space
+    - finite element
+    # Methodology catch-alls
+    - optimization
+    - simulation
+    - instrumentation
+    - materials characterization
+    - mechatronics
+    - mechanism design
+    # ML evaluation evidence
+    - accuracy / F1 / AUC / RMSE / mAP / IoU
+    - train/test split
+    - cross-validation
+  # Verbatim flag string previously hardcoded in the agent (kept for downstream grep).
+  off_topic_flag: "[NON-ENGINEERING — abstract lacks methodology indicator]"
+
+# --- Statistical audit profile (extract-statistic) ---
+stats_profile: engineering
+
+# --- Literature-review synthesis framework default (scopus-researcher) ---
+framework_default: Decomposition   # Mechanism / Applications / Limitations / Comparisons
+
+# --- Teaching context; null if no course authored here ---
+course_context: null
+
+# --- Language defaults ---
+language:
+  manuscripts: en
+  responses: en

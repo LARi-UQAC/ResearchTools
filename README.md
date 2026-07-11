@@ -1,5 +1,30 @@
 # ResearchTools — Manual
 
+## Purpose
+
+ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
+who want to find and fix the issues hiding in their academic writing before a reviewer,
+a thesis committee, or a grant panel does. It covers the whole writing process: starting
+a literature review from scratch, auditing an existing review, a complete paper, a UQAC
+thesis or thesis proposal, cleaning a BibTeX file, responding to peer reviewers,
+checking submission readiness against a target journal, building the submission package,
+and converting Word grant templates to LaTeX.
+
+Every check is grounded in the same working norms: no reference enters a document
+without being validated against Scopus (no fabricated citations, no invented DOIs),
+weaknesses are reported as actionable findings with an executable improvement plan
+rather than vague encouragement, and drafts pass a multi-model deliberation (Gemini +
+GitHub Copilot debate, arbitrated) before a plan or review is finalized. The audits also
+flag AI-generated style patterns so the final text reads as human academic writing.
+
+The toolbox is built as agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
+with generated mirrors for GitHub Copilot, OpenCode, Continue, and Aider (see
+[Installation](#installation)). Typical entry points: `/litreview` for a new topic,
+`/auditpaper` before submitting, `/auditthesis` before a defense, `/bibclean` on any
+`.bib` file, `/replyreviewer` when the reviews come back.
+
+## About this manual
+
 Reference for the skills, agents and commands shipped in this repository. Everything
 documented here lives under `.claude/` in **this** repo (academic research tooling for
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template

@@ -12,14 +12,26 @@
         .claude\settings.json
         CLAUDE.md
 
+    Entry point for the two installers as well:
+        -InstallJunctions  -> install-junctions.ps1 (Claude Code links in ~/.claude)
+        -InstallTools      -> install.ps1 (Copilot/OpenCode/Continue/Aider mirrors;
+                              -Personal adds the user-level Copilot install)
+        -All               -> config generation + junctions + tools in one pass
+
 .EXAMPLE
     .\setup.ps1
     .\setup.ps1 -ObsidianVault "D:\MyVault" -Force
+    .\setup.ps1 -InstallJunctions            # Claude Code global links only
+    .\setup.ps1 -InstallTools -Personal      # multi-tool mirrors only (Copilot/OpenCode/...)
+    .\setup.ps1 -All -Personal               # config + junctions + tools in one pass
 #>
 param(
     [string]$ObsidianVault = "",
     [switch]$Force,
     [switch]$InstallJunctions,
+    [switch]$InstallTools,
+    [switch]$All,
+    [switch]$Personal,
     [switch]$Preview
 )
 
@@ -57,13 +69,32 @@ Write-Host "  User      : $env:USERNAME"
 
 # ─── InstallJunctions mode ────────────────────────────────────────────────────
 
-if ($InstallJunctions) {
+function Invoke-JunctionsScript {
     $junctionsScript = Join-Path $WorkspaceRoot "install-junctions.ps1"
     if (-not (Test-Path $junctionsScript)) {
         Write-Err "install-junctions.ps1 not found at: $junctionsScript"
         exit 1
     }
     if ($Preview) { & $junctionsScript -WhatIf } else { & $junctionsScript }
+}
+
+function Invoke-ToolsScript {
+    $toolsScript = Join-Path $WorkspaceRoot "install.ps1"
+    if (-not (Test-Path $toolsScript)) {
+        Write-Err "install.ps1 not found at: $toolsScript"
+        exit 1
+    }
+    if ($Personal) { & $toolsScript -Personal } else { & $toolsScript }
+}
+
+if ($InstallJunctions -and -not $All) {
+    Invoke-JunctionsScript
+    if ($InstallTools) { Invoke-ToolsScript }
+    exit 0
+}
+
+if ($InstallTools -and -not $All) {
+    Invoke-ToolsScript
     exit 0
 }
 
@@ -219,14 +250,26 @@ if ($remaining) {
 
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
-Write-Host ""
-Write-Host "Next steps:"
-Write-Host "  1. Make agents/skills available globally in Claude Code:"
-Write-Host "       .\setup.ps1 -InstallJunctions           # skills: junctions; agents: per-file links"
-Write-Host "       .\setup.ps1 -InstallJunctions -Preview  # preview without making changes"
-Write-Host "     Agent links are SymbolicLinks (needs Developer Mode or admin); the script"
-Write-Host "     falls back to HardLinks - re-run it after a git pull that changes agents."
-Write-Host "  2. Regenerate the multi-tool agent mirrors (GitHub Copilot, OpenCode,"
-Write-Host "     Continue, Aider) after adding or editing an agent, then commit:"
-Write-Host "       .\install.ps1            (add -Personal for user-level Copilot install)"
-Write-Host ""
+
+if ($All) {
+    Write-Header "Claude Code global links (install-junctions.ps1)"
+    Invoke-JunctionsScript
+    Write-Header "Multi-tool mirrors (install.ps1)"
+    Invoke-ToolsScript
+    Write-Host ""
+    Write-Host "All install steps done." -ForegroundColor Green
+    Write-Host ""
+} else {
+    Write-Host ""
+    Write-Host "Next steps:"
+    Write-Host "  1. Make agents/skills available globally in Claude Code:"
+    Write-Host "       .\setup.ps1 -InstallJunctions           # skills: junctions; agents: per-file links"
+    Write-Host "       .\setup.ps1 -InstallJunctions -Preview  # preview without making changes"
+    Write-Host "     Agent links are SymbolicLinks (needs Developer Mode or admin); the script"
+    Write-Host "     falls back to HardLinks - re-run it after a git pull that changes agents."
+    Write-Host "  2. Regenerate the multi-tool mirrors (GitHub Copilot, OpenCode, Continue,"
+    Write-Host "     Aider) after adding or editing an agent/command/rule, then commit:"
+    Write-Host "       .\setup.ps1 -InstallTools    (add -Personal for user-level Copilot)"
+    Write-Host "  Or run everything in one pass next time: .\setup.ps1 -All -Personal"
+    Write-Host ""
+}

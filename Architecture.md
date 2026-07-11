@@ -90,6 +90,18 @@ graph TD
 | `/submitcheck` | [submit-checker](agents/submit-checker.md) | yes | no | yes | no | no | no |
 | *(by name)* | [cover-paper](agents/cover-paper.md) | yes | no | no | no | no | no |
 
+### Domain profiles
+
+Domain-specific values live outside the agents, in `profiles/<name>.yaml` at the repo root
+(`engineering` default, `cosmetic`, plus `_template.yaml`). The active profile is selected
+by the `active_profile:` line in [.claude/CLAUDE.md](CLAUDE.md), written by
+`install.ps1 -Profile <name>`. Wired consumer today: [scopus-researcher](agents/scopus-researcher.md)
+reads `scopus.subject_areas` / `scopus.exclude_areas` (query clauses),
+`scopus.relevance_signals` / `off_topic_flag` (Step 3a topical-relevance check), and
+`framework_default` (synthesis framework). The remaining fields (`author`, `stats_profile`,
+`course_context`, `language`) are schema-ready for the other agents. Spec and fallback
+rules: [profiles/README.md](../profiles/README.md).
+
 ## Layer 2 — Execution flowchart
 
 The auditors ([paper-auditor](agents/paper-auditor.md), [scopus-auditor](agents/scopus-auditor.md), [thesis-auditor](agents/thesis-auditor.md), [thesis-proposal-auditor](agents/thesis-proposal-auditor.md)) share one canonical pipeline. This flowchart traces a request from the slash command through input resolution, Scopus validation, the multi-model deliberation panel, ScholarEval scoring, and the executable improvement plan, then to optional execution with `changes`-package markup. The skill script invoked at each stage is labelled on the node. Agents with a narrower scope ([bib-cleaner](agents/bib-cleaner.md), [submit-checker](agents/submit-checker.md), [cover-paper](agents/cover-paper.md), [reviewer-response](agents/reviewer-response.md), [scopus-researcher](agents/scopus-researcher.md)) enter the same path but skip the stages their matrix row marks "no".

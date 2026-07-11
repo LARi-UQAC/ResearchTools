@@ -141,8 +141,13 @@ the VS Code user profile, making them available in every workspace:
 ```powershell
 .\install.ps1                     # repo-level mirrors only (commit the output)
 .\install.ps1 -Personal           # + user-level Copilot install
+.\install.ps1 -Profile cosmetic   # + select the active domain profile
 .\setup.ps1 -InstallTools -Personal   # same, via the setup entry point
 ```
+
+`install.ps1` also records the active domain profile (see [Profiles](#profiles)): pass
+`-Profile <name>` or answer the interactive prompt; non-interactive runs keep the
+current default (`engineering`).
 
 Details in [Using the agents outside Claude Code](#using-the-agents-outside-claude-code).
 
@@ -151,6 +156,29 @@ Details in [Using the agents outside Claude Code](#using-the-agents-outside-clau
 Fork the repository, improve an agent or skill on a feature branch, and open a
 pull request against `main`. The repository owner reviews and merges; a `git pull`
 on their machine immediately updates the linked entries via the junctions.
+
+---
+
+## Profiles
+
+A domain profile centralizes everything domain-specific (Scopus subject areas and
+exclusions, topical-relevance signals, off-topic flag, stats profile, author, course
+context, language) in one YAML file under `profiles/`, so the agents and skills stay
+shared across users and labs: one maintained core, N profiles.
+
+| Profile | Domain | Author | Default |
+|---|---|---|---|
+| `engineering.yaml` | Mechanical / electrical / ML / control / systems engineering | Martin Otis (UQAC) | yes |
+| `cosmetic.yaml` | Cosmetic / formulation science (SPF, microbiome, dermatology, sensory) | Lionel Ripoll (UQAC) | no |
+| `_template.yaml` | Copy it to `profiles/<domain>.yaml` to add a new domain | - | - |
+
+The active profile is recorded in `.claude/CLAUDE.md` as the machine-readable line
+`active_profile: <name>`. Select it at install time (`.\install.ps1 -Profile <name>`, or
+the interactive prompt) or edit that line directly. Currently wired consumer:
+`scopus-researcher` (search clauses, Step 3a relevance check, synthesis framework); the
+remaining fields (`author`, `stats_profile`, `course_context`, `language`) are schema-ready
+and will be wired incrementally. Field-by-field spec, fallback rules, and the add-a-profile
+procedure: [profiles/README.md](profiles/README.md).
 
 ---
 

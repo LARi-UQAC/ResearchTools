@@ -1,6 +1,6 @@
 ---
 name: scopus-researcher
-description: "Use for autonomous literature reviews: finding, validating, and summarizing academic papers from Scopus on a given topic. Engineering scope with cross-disciplinary inclusion (biomedical engineering, neural engineering, materials, energy, etc.). LaTeX output."
+description: "Use for autonomous literature reviews: finding, validating, and summarizing academic papers from Scopus on a given topic. Domain scope set by the active profile in profiles/<name>.yaml (engineering default), with cross-disciplinary inclusion. LaTeX output."
 ---
 
 This is a compact profile. The complete, authoritative instructions live in

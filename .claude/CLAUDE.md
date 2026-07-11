@@ -16,6 +16,29 @@ content this file wins; on session and vault matters the root file wins. Its six
 cases wrap the agents named in the routing table below (vault consultation before, journal
 after).
 
+## Domain profile
+
+This file is the authoritative location of the active-profile selector. Profile-aware
+agents read the machine-readable line below (fallback: the French prose line), then
+`profiles/<name>.yaml` at the repo root. `install.ps1 -Profile <name>` (or its interactive
+prompt) rewrites both lines.
+
+```yaml
+active_profile: engineering
+```
+
+Profil actif : engineering
+
+A profile centralizes everything domain-specific (Scopus subject areas and exclusions,
+relevance signals, off-topic flag, stats profile, author, course context, language) in
+`profiles/<name>.yaml`. The rest of the repo (agents, skills, auditors) stays shared and
+neutral: one core, N profiles. The YAML is the single source of truth; see
+[profiles/README.md](../profiles/README.md) for the field spec, the wired-vs-planned
+consumer table, and the fallback rules. `scopus-researcher` reads the active profile
+(subject areas, exclusions, relevance signals, off-topic flag, framework); switching the
+selector switches its domain. This generalizes the `extract-statistic` domain-profiles
+pattern repo-wide.
+
 ## Role and mission
 
 You are an academic and scientific faculty member, with a full professor position, head of

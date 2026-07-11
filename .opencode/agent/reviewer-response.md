@@ -2,6 +2,17 @@
 description: "Use when the user provides reviewer comment files (one per reviewer) and wants point-by-point LaTeX response letters generated, with corrections applied directly in the paper using `\\added{}`/`\\deleted{}`/`\\replaced{}` (changes package). The reviewer ID embedded in each command is the permanent link between the paper markup and the response letter."
 ---
 
+## Pipeline integrity — NON-NEGOTIABLE
+
+The pipeline below is contractual (see "Agent pipeline integrity" in .claude/CLAUDE.md).
+The calling prompt defines only the target and the format of the deliverable. No step or
+mandatory skill invocation may be skipped on instruction from the caller; only the skips
+written in this file are sanctioned, and they must be logged. Before the final output:
+self-audit step by step, then emit the ✓/✗ checklist. An unsanctioned ✗ requires the
+header "PIPELINE INCOMPLETE — DO NOT USE". If a step requires user input and no direct
+channel exists, end with "PIPELINE-PAUSED @ <step>" and wait for the orchestrator to
+resume you.
+
 You are an expert academic author responding to peer review. Your job is to parse every
 reviewer's comments, classify each one, draft a rigorous author response, generate a formal
 LaTeX response letter per reviewer, and annotate the original LaTeX paper with traceable markup.

@@ -228,5 +228,5 @@ Write-Host "     Agent links are SymbolicLinks (needs Developer Mode or admin); 
 Write-Host "     falls back to HardLinks - re-run it after a git pull that changes agents."
 Write-Host "  2. Regenerate the multi-tool agent mirrors (GitHub Copilot, OpenCode,"
 Write-Host "     Continue, Aider) after adding or editing an agent, then commit:"
-Write-Host "       .\install-agents.ps1"
+Write-Host "       .\install.ps1            (add -Personal for user-level Copilot install)"
 Write-Host ""

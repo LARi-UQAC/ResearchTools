@@ -13,6 +13,25 @@ The repo ships **8 skills**, **11 agents**, and **17 commands**.
 
 Follow these steps on any machine after cloning the repository.
 
+### Install scripts overview
+
+Three scripts, three different jobs and lifecycles. `setup.ps1` is the single entry point:
+it wraps the other two via `-InstallJunctions` / `-InstallTools`, and `-All` runs the full
+sequence (config, then junctions, then tools) in one pass.
+
+| | `setup.ps1` | `install-junctions.ps1` | `install.ps1` |
+|---|---|---|---|
+| Job | Generate machine-local config: `.claude\settings.json` + `CLAUDE.md` from templates (detects Git Bash, Node, Obsidian paths of THIS machine) | Link the repo into `~/.claude` so Claude Code loads agents/skills/rules/commands in every workspace | Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider (`-Personal` adds the user-level Copilot install) |
+| Output | 2 machine-specific files (paths differ per PC) | Links in `C:\Users\<you>\.claude\` | Generated files committed in the repo (`.github\`, `.opencode\`, `.continue\`, `CONVENTIONS.md`) + optional user copies |
+| When to run | Once after clone (or when machine paths change) | Once after clone; re-run when an agent or skill is ADDED (or a hardlink detached after a pull) | After every agent/command/rule EDIT, then commit the output |
+| Privilege | none | symlinks want Developer Mode (automatic hardlink fallback) | none |
+| Interactive | yes (asks vault path, confirms) | no | no |
+| Via `setup.ps1` | - | `-InstallJunctions` | `-InstallTools` |
+
+```powershell
+.\setup.ps1 -All -Personal   # new machine: config + Claude links + all tool mirrors
+```
+
 ### Prerequisites
 
 | Tool | Required for |
@@ -95,8 +114,9 @@ installs the Copilot agents to `~/.copilot/agents/` and the prompt/instruction f
 the VS Code user profile, making them available in every workspace:
 
 ```powershell
-.\install.ps1            # repo-level mirrors only (commit the output)
-.\install.ps1 -Personal  # + user-level Copilot install
+.\install.ps1                     # repo-level mirrors only (commit the output)
+.\install.ps1 -Personal           # + user-level Copilot install
+.\setup.ps1 -InstallTools -Personal   # same, via the setup entry point
 ```
 
 Details in [Using the agents outside Claude Code](#using-the-agents-outside-claude-code).

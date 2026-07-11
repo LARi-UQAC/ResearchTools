@@ -113,7 +113,7 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Clean and validate a `.bib` | `bib-cleaner` | `/bibclean` |
 | Respond to peer reviewers | `reviewer-response` | `/replyreviewer` |
 | Check submission readiness | `submit-checker` | `/submitcheck` |
-| Build the submission package (cover, title page, author profile) | `cover-paper` | by name |
+| Build the submission package (cover, title page, author profile, graphical abstract) | `cover-paper` | by name |
 | Author LaTeX, Beamer, or TiKZ | `latex-writer` (+ `scientific-writing`) | by context |
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
 | Validate TiKZ code, diagnose LaTeX errors | - | `/tikz`, `/latex` |

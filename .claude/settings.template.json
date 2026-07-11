@@ -164,7 +164,9 @@
     "pyright-lsp@claude-plugins-official": true,
     "cloud-sql-postgresql@claude-plugins-official": true,
     "vercel@claude-plugins-official": true,
-    "figma@claude-plugins-official": true
+    "figma@claude-plugins-official": true,
+    "engineering@knowledge-work-plugins": true,
+    "ai-firstify@techwolf-ai-first": true
   },
   "extraKnownMarketplaces": {
     "claude-plugins-official": {

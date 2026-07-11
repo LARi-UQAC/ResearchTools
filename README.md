@@ -49,12 +49,11 @@ unreplaced values in the validation step.
 
 ### Step 3 — Make agents available globally (optional, recommended)
 
-This step creates directory junctions from `~/.claude/agents/`, `~/.claude/skills/`,
-`~/.claude/rules/`, and `~/.claude/commands/` into this repository, so that Claude Code
-loads these agents and skills in **every** workspace, not only when you open this folder.
+This step links `~/.claude/agents/`, `~/.claude/skills/`, `~/.claude/rules/`, and
+`~/.claude/commands/` into this repository, so that Claude Code loads these agents and
+skills in **every** workspace, not only when you open this folder.
 
-All links are directory junctions — no Administrator privileges required. Only missing
-junctions are created; existing ones are never overwritten.
+Only missing links are created; existing ones are never overwritten.
 
 ```powershell
 # Preview what will be created without making changes
@@ -66,18 +65,19 @@ junctions are created; existing ones are never overwritten.
 
 > **Alternative (direct):** `.\install-junctions.ps1` (or `.\install-junctions.ps1 -WhatIf` to preview).
 
-**How linking works by directory type:**
+**How linking works by directory type** (skills are folder-based, agents are file-based —
+see the Agents section):
 
 | Directory | Link type | One link per… | New file/folder after `git pull` |
 |---|---|---|---|
-| `agents/` | Junction per sub-folder | Agent (e.g. `scopus-researcher/`) | Re-run `.\setup.ps1 -InstallJunctions` — existing agents show `[EXISTS]`, only the new one is created |
-| `skills/` | Junction per sub-folder | Skill (e.g. `scopus/`) | Same as above |
+| `agents/` | SymbolicLink per FILE (HardLink fallback when Developer Mode is off) | Agent file (e.g. `scopus-researcher.md`) | Re-run `.\setup.ps1 -InstallJunctions` — existing agents show `[EXISTS]`, only the new one is created. With HardLinks, also re-run after a pull that EDITS an agent (git rewrites detach hardlinks) |
+| `skills/` | Junction per sub-folder | Skill (e.g. `scopus/`) | Re-run — only the new skill is created |
 | `rules/` | Junction on the whole directory | Entire `rules/` folder | Automatic — new `.md` files are visible immediately through the existing junction, no re-run needed |
 | `commands/` | Junction on the whole directory | Entire `commands/` folder | Same as above |
 
-Re-running `.\setup.ps1 -InstallJunctions` is therefore only needed when a **new agent or
-skill sub-directory** is added to the repository. For new rules or commands files, the
-existing junctions already expose them.
+Junctions need no Administrator privileges. Agent file links prefer SymbolicLinks (enable
+Windows Developer Mode, or run elevated); without that privilege the script falls back to
+HardLinks automatically.
 
 **Fallback when `rules/` or `commands/` already exists as a real directory** (another
 project previously created it): the script automatically switches to per-file symbolic
@@ -86,6 +86,20 @@ the script re-launches itself elevated.
 
 Because the links point directly into this repository, a `git pull` is all that is
 needed to propagate rule and command improvements contributed by any collaborator.
+
+### Step 4 — Install for other coding tools (optional)
+
+`install.ps1` regenerates the GitHub Copilot, OpenCode, Continue, and Aider mirrors from
+the canonical `.claude/` sources (agents, task commands, rules). With `-Personal` it also
+installs the Copilot agents to `~/.copilot/agents/` and the prompt/instruction files to
+the VS Code user profile, making them available in every workspace:
+
+```powershell
+.\install.ps1            # repo-level mirrors only (commit the output)
+.\install.ps1 -Personal  # + user-level Copilot install
+```
+
+Details in [Using the agents outside Claude Code](#using-the-agents-outside-claude-code).
 
 ### Contributing improvements
 
@@ -455,7 +469,7 @@ explicit agent names when you need finer control or want to chain agents in one 
 
 ### Using the agents outside Claude Code
 
-`install-agents.ps1` regenerates per-tool mirrors from the canonical `.claude/agents/*.md`
+`install.ps1` regenerates per-tool mirrors from the canonical `.claude/agents/*.md`
 files. Run it after adding or editing an agent, then commit the regenerated output. Add
 `-Personal` to also copy the Copilot agent profiles to `~/.copilot/agents/`, which makes
 them available to Copilot CLI in every project (re-run after agent edits to refresh).

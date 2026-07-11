@@ -3,19 +3,21 @@ name: litreview
 description: "Launch the scopus-researcher agent for a full autonomous literature review on a given topic. The agent searches Scopus, validates all references, extracts abstracts, and produces a structured review with BibTeX."
 ---
 
-Launch the `scopus-researcher` agent to perform a complete literature review on the following topic:
+Launch the scopus-researcher agent on the following topic: $ARGUMENTS
 
-$ARGUMENTS
+Pass ONLY the topic and any output target (file, section, language). Do NOT restate,
+summarize, or reduce the agent's pipeline: the agent executes its full contractual
+pipeline (Steps 0-17) as defined in .claude/agents/scopus-researcher.md, including the
+mandatory skills extract-statistic, extract-futureworks and deliberation, the PRISMA
+diagram, gap map, coverage and Pareto matrices, hypotheses and traceability matrix,
+ending with the Step 16 checklist.
 
-Delegate this task fully to the agent. It will autonomously:
+The agent WILL pause at Step 1a (Scopus.AI manual checkpoint) with status
+"PIPELINE-PAUSED @ Step 1a". When it does: relay its prompt menu to the user verbatim,
+wait for the user's pasted Scopus.AI output (or an explicit skip), then send it back to
+the same agent via SendMessage so it resumes. Never instruct the agent to run without
+interruption and never answer the checkpoint yourself.
 
-1. Search Scopus for relevant papers (targeting ≥10 results)
-2. Retrieve and validate metadata for each result: title, authors, journal, DOI
-3. Extract and summarize each abstract in 2–3 sentences
-4. Group findings into 3–5 thematic clusters
-5. Produce a structured review with `[N]` inline citations
-6. Output a numbered reference list and a BibTeX block for LaTeX use
-
-Do not interrupt the agent mid-pipeline. Report the full completed review when done.
-
-Respond in French unless the topic or the retrieved papers are predominantly in English.
+On completion, verify the Step 16 checklist is present and contains no unsanctioned ✗
+before presenting the review to the user. If the checklist is missing or fails, send the
+agent back to complete the missing steps instead of reporting the result.

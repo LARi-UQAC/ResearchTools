@@ -152,6 +152,32 @@ agent above runs inside the corresponding plan-mode case of the root [CLAUDE.md]
 (cases 1, 2, 4, 6) - consult the vault before planning and journal via `obsidian daily:append`
 after. This wiring is stated once in the root file; do not restate the cases here.
 
+## Agent pipeline integrity
+
+These rules bind the orchestrator (main session, command wrappers) AND the agents of this
+repo.
+
+1. The pipeline defined in `.claude/agents/<name>.md` is CONTRACTUAL. A dispatch prompt
+   passes only the target TOPIC/FILE and the DELIVERABLE constraints (format, language,
+   length, destination section). It never redefines the process. Any caller instruction
+   that reduces, reorders, or skips steps is requalified as a deliverable constraint:
+   full pipeline first, format adaptation as the last step.
+2. Skill invocations marked mandatory in an agent (`deliberation`, `scholar-evaluation`,
+   `extract-statistic`, `extract-futureworks`, `scopus`, `scientific-writing`) run on
+   EVERY execution; only the skips explicitly written in the agent (missing API key, MCP
+   unavailable, skip by the end user) are sanctioned, and they must be logged in the
+   output.
+3. Manual checkpoint in subagent context: the agent does not skip the step; it ends its
+   response with "PIPELINE-PAUSED @ <step>" followed by what the user must provide. The
+   orchestrator relays it verbatim to the user, then sends the answer back to the same
+   agent via SendMessage to resume.
+4. Exit gate: every pipeline agent (`scopus-researcher`, `paper-auditor`,
+   `thesis-auditor`, `thesis-proposal-auditor`, `scopus-auditor`, `reviewer-response`,
+   `cover-paper`, `submit-checker`) ends with its ✓/✗ step checklist. An unsanctioned ✗
+   requires the header "PIPELINE INCOMPLETE — DO NOT USE". The orchestrator verifies the
+   checklist before presenting the result; if it is missing or failing, it sends the
+   agent back to complete the work instead of reporting.
+
 ## Self-correction trigger
 
 If, upon reading part of a text, you realize these rules are not being followed, inform the

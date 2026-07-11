@@ -11,17 +11,18 @@ Provide both the source file path and the target journal name, separated by a sp
 
 If no journal is specified, the agent will ask for it before proceeding.
 
-The agent will autonomously:
+The agent executes its FULL contractual pipeline as defined in
+.claude/agents/submit-checker.md, including every mandatory skill invocation
+(deliberation, scholar-evaluation, extract-statistic, extract-futureworks, scopus where
+applicable). Do not restate or reduce that pipeline here. If the agent returns
+"PIPELINE-PAUSED @ ...", relay its request to the user verbatim, then resume the same
+agent via SendMessage with the user's answer. On completion, verify the agent's final
+checklist before presenting the result; if it is missing or contains an unsanctioned ✗,
+send the agent back to complete the missing steps.
 
-1. Look up the target journal via Scopus to obtain publisher, SJR quartile, CiteScore, and reference style
-2. Estimate the compiled page count and flag `[EXCEEDS PAGE LIMIT]` or `[BELOW MINIMUM LENGTH]`
-3. Check all required sections for the target publisher (Abstract, Keywords, Data Availability Statement, Ethics Statement, etc.) — flag `[REQUIRED SECTION MISSING: X]`
-4. Verify reference style compliance (`\bibliographystyle{...}` vs. expected style) — flag `[REFERENCE STYLE MISMATCH]`
-5. Check figure and table count — flag `[HIGH FIGURE COUNT]` if above typical limits
-6. Verify author anonymization if the journal uses double-blind review — flag `[ANONYMIZATION INCOMPLETE]`
-7. Check abstract word count against venue limits — flag `[ABSTRACT TOO LONG]` or `[ABSTRACT TOO SHORT]`
-8. Validate keywords: count, separator style, no title duplication — flag `[TOO FEW KEYWORDS]`, `[KEYWORD SEPARATOR WRONG]`
-9. Save `<basename>_submit_<journal-slug>.md` with a detailed pass/fail checklist and a prioritized action list
+Deliverable: `<basename>_submit_<journal-slug>.md` saved alongside the source file, with
+the journal profile (publisher, SJR quartile, CiteScore), a detailed pass/fail checklist,
+a lightweight ScholarEval readiness score, and prioritized "Actions Required" /
+"Actions Recommended" lists.
 
 Respond in French unless the source paper is predominantly in English.
-

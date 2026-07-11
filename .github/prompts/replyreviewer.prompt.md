@@ -17,16 +17,21 @@ Arguments:
 - `--title "..."` : paper title for the letter header (optional; extracted from `\title{}` if omitted)
 - `--editor "..."` : editor name for the salutation (optional; defaults to `[EDITOR NAME]`)
 
-The agent will autonomously:
+The agent executes its FULL contractual pipeline as defined in
+.claude/agents/reviewer-response.md, including every mandatory skill invocation
+(deliberation, scholar-evaluation, extract-statistic, extract-futureworks, scopus where
+applicable). Do not restate or reduce that pipeline here. If the agent returns
+"PIPELINE-PAUSED @ ...", relay its request to the user verbatim, then resume the same
+agent via SendMessage with the user's answer. On completion, verify the agent's final
+checklist before presenting the result; if it is missing or contains an unsanctioned ✗,
+send the agent back to complete the missing steps.
 
-1. Parse the original paper structure and build a section map for correction targeting
-2. Extract and classify all reviewer comments (G grammar, S style, SC scientific, M methodology, R results, D discussion, FT figures/tables, EQ equations, REF references, Q quality, MAJ major revision)
-3. Draft a one-paragraph author response for each comment (academic style, AI risk < 10%)
-4. Check the paper preamble and add `\usepackage{changes}` with `\definechangesauthor` declarations for each reviewer (R1 blue, R2 red, R3 orange, R4+ purple) if missing
-5. Apply corrections directly in the paper: grammar fixes without markup; all other changes with `\added[id=RN]{new}`, `\replaced[id=RN]{new}{old}`, or `\deleted[id=RN]{old}` — the reviewer ID in each command is the direct link between the paper modification and the response letter item
-6. Validate every reference proposed for any comment via Scopus (including DOI validation): found with DOI = auto-approved, add to paper and response letter; found without DOI = auto-approved, add everywhere, flag `[NO DOI]`; not found = remove, search for a validated alternative; for every approved reference assign a confidence level (`[HIGH/MEDIUM/LOW CONFIDENCE]`) based on how well the Scopus abstract matches the reviewer's comment context, write a one-sentence justification as a LaTeX comment after each `\bibitem` entry in the response letter (`% [CONFIDENCE: HIGH] — ...`) and after each BibTeX entry in the `.bib` file, and ensure the author response paragraph presents the reference's contribution with at least one sentence
-7. Generate one `.tex` response letter per reviewer as `<basename>_response_R<N>.tex`; each specific comment item includes the section reference where the change appears in the paper (e.g., "Section 3.2, paragraph 2 — marked in blue [R1]")
-8. Output a summary of all files created, changes applied, and any comments requiring manual review
+Deliverables: one `.tex` response letter per reviewer, saved as
+`<basename>_response_R<N>.tex`, plus the paper annotated with traceable track-change
+markup (`\added[id=RN]{...}`, `\replaced[id=RN]{new}{old}`, `\deleted[id=RN]{...}`) — the
+reviewer ID in each command is the direct link between the paper modification and the
+response letter item — and a summary of all files created, changes applied, and any
+comments requiring manual review.
 
 Response letter structure:
 
@@ -38,4 +43,3 @@ Response letter structure:
 After generation, review the `.tex` letter files and edit the author responses as needed.
 Once satisfied, remove `\added{}`/`\deleted{}`/`\replaced{}` markup before final submission,
 then run `/auditpaper` to verify the cleaned paper.
-

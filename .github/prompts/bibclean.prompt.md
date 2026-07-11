@@ -8,19 +8,18 @@ the file(s) or topic given after the command in the chat message (if none was gi
 
 If no argument is provided, use the `.bib` file currently open in the IDE.
 
-The agent will autonomously:
+The agent executes its FULL contractual pipeline as defined in
+.claude/agents/bib-cleaner.md, including every mandatory skill invocation
+(deliberation, scholar-evaluation, extract-statistic, extract-futureworks, scopus where
+applicable). Do not restate or reduce that pipeline here. If the agent returns
+"PIPELINE-PAUSED @ ...", relay its request to the user verbatim, then resume the same
+agent via SendMessage with the user's answer. On completion, verify the agent's final
+checklist before presenting the result; if it is missing or contains an unsanctioned ✗,
+send the agent back to complete the missing steps.
 
-1. Parse all entries and check required fields per entry type (`@article`, `@inproceedings`, `@book`, etc.) — flags `[MISSING FIELD: X]`, `[MISSING DOI]`
-2. Normalize author name formatting — flag `[AUTHOR FORMAT INCONSISTENT]` with suggested corrections
-3. Detect duplicate entries by matching DOIs and titles — flag `[DUPLICATE: key1, key2]`
-4. Validate all DOIs against Scopus — flag `[DOI INVALID]` or `[DOI MISMATCH]`; propose missing DOIs for entries without one
-5. Annotate each journal with SJR quartile and CiteScore — flag `[LOW IMPACT — Q3/Q4]`
-6. Flag entries from non-approved publishers — `[PUBLISHER NOT APPROVED]` (requires professor approval)
-7. Check journal name abbreviation consistency — flag `[ABBREVIATION INCONSISTENT]`
-8. Save `<basename>_clean.bib` with inline `% [FLAG]` and `% SUGGESTED:` comments
-9. Save `<basename>_bib_report.md` with a full audit summary and temporal distribution histogram
-
-All original entries are preserved — duplicates are commented out, never deleted.
+Deliverables: `<basename>_clean.bib` saved alongside the source, with inline `% [FLAG]`
+and `% SUGGESTED:` comments, high-confidence DOIs added, and duplicates commented out
+(all original entries preserved — never deleted); plus `<basename>_bib_report.md` with
+the full audit summary and temporal distribution histogram.
 
 Respond in French unless the `.bib` file contains predominantly English titles.
-

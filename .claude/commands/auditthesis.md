@@ -11,26 +11,19 @@ If no argument is provided, use the file currently open in the IDE (should be `m
 If a directory path is provided, the agent looks for `src/main.tex` inside it.
 If a file path is provided, the agent reads that file and follows all `\input{}`/`\include{}` macros recursively to merge the full thesis.
 
-The agent will autonomously run 16 steps:
+The agent executes its FULL contractual pipeline as defined in
+.claude/agents/thesis-auditor.md, including every mandatory skill invocation
+(deliberation, scholar-evaluation, extract-statistic, extract-futureworks, scopus where
+applicable). Do not restate or reduce that pipeline here. If the agent returns
+"PIPELINE-PAUSED @ ...", relay its request to the user verbatim, then resume the same
+agent via SendMessage with the user's answer. On completion, verify the agent's final
+checklist before presenting the result; if it is missing or contains an unsanctioned ✗,
+send the agent back to complete the missing steps.
 
-1. Parse the full thesis structure by merging all chapter files via `\input{}`/`\include{}` (up to 4 levels deep)
-1b. Detect the thesis form — classic monograph or article-based (3 accepted papers as chapters) — and record it in the plan header as `[THESIS FORM: MONOGRAPH]` or `[THESIS FORM: ARTICLE-BASED]`; this controls how step 6 runs
-2. Audit all front matter elements: title page, jury composition (4–5 members required), French résumé (6 structural components, 250–350 words), English abstract (same), dédicace, remerciements, avant-propos, keywords
-3. **Hypothesis flow validation** — the central UQAC check: extract all hypotheses from Chapter 2, trace each one through Chapter 3 (methodology), Chapters 4+ (results), and the Conclusion — flags: `[HYPOTHESIS SECTION MISSING]`, `[HYPOTHESIS NOT TESTABLE]`, `[HYPOTHESIS NOT TESTED: H_N]`, `[HYPOTHESIS NOT VALIDATED: H_N]`, `[HYPOTHESIS NOT CONCLUDED: H_N]`
-4. Chapter structure audit — "sujet amené / sujet posé / sujet divisé" and chapter conclusion — flags: `[SUJET AMENE WEAK]`, `[SUJET POSE MISSING]`, `[SUJET DIVISE MISSING]`, `[CHAPTER CONCLUSION MISSING]`, `[CHAPTER TRANSITION MISSING]`
-5. Reference audit (all chapters) via Scopus — flags: `[DOI INVALID]`, `[NOT FOUND]`, `[PUBLISHER NOT APPROVED]`, `[LOW IMPACT — Q3/Q4]`, `[REFERENCE NOT INTRODUCED]` (cited paper with no presentation sentence in text), `[INSUFFICIENT REFERENCES]` (< 30 for a mémoire); assigns confidence levels (`[HIGH/MEDIUM/LOW CONFIDENCE]`) with a one-sentence justification written as a LaTeX comment after each entry in the `.bib` file (`% [CONFIDENCE: HIGH] — ...`); temporal distribution histogram; self-citation rate
-6. Literature review audit — two branches driven by the thesis form detected in step 1b: (A) monograph: runs the full `scopus-auditor` pipeline (reference validation, coverage-gap analysis, comparison table) on Chapter 2 (Revue de littérature); (B) article-based: runs the same pipeline independently on each paper chapter's "Related Works" section, then generates a cross-paper literature synthesis table that maps thematic clusters across all three papers
-7. Methodology audit (Chapter 3) — reproducibility, hypothesis linkage, algorithm French keywords, theorem proofs
-8. Results audit (Chapters 4+) — metrics, baselines, hypothesis validation statements, multi-chapter differentiation
-9. Figure and table audit — citation, proximity (120-line threshold), 2-sentence description, UQAC chapter-based numbering (Figure N-M), image resolution (≥ 300 DPI for rasters)
-10. Equation and acronym audit — every labeled equation referenced and explained, acronym package (`\ac{}`) consistency, undefined/unused/redefined acronyms
-11. Abstract consistency check — abstract and résumé quantitative claims cross-checked against the Results chapters; bilingual consistency between French résumé and English abstract
-12. LLM usage evaluation — per-chapter and overall AI-style risk score (target < 10 %); detects em dashes, smart quotes, zero-width spaces, AI transition phrases, sentence-length uniformity
-13. UQAC formatting compliance — `uqac.cls`, font size, bibliography style (`apa-uqac-fr` etc.), `\opening`/`\maincontent` markers, `soul` package
-14. Cross-review via Gemini 2.0 Flash and GitHub Copilot with consensus arbitration
-15. Executable improvement plan saved as `<basename>_thesis_audit_plan.md` alongside `main.tex`
+Deliverable: an executable improvement plan saved as `<basename>_thesis_audit_plan.md`
+alongside `main.tex`, with the thesis form recorded in the header as
+`[THESIS FORM: MONOGRAPH]` or `[THESIS FORM: ARTICLE-BASED]`. The plan has sections:
 
-The plan has sections:
 - Hypothesis flow summary table (H_N × chapters)
 - Strengths / Weaknesses
 - Section A: Front Matter Issues

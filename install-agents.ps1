@@ -120,6 +120,22 @@ if ($Personal) {
     }
 }
 
+# VS Code user profile: prompt + instruction files usable in ANY workspace
+# (%APPDATA%\Code\User\prompts holds both *.prompt.md and *.instructions.md).
+# Copied AFTER generation below via Install-VSCodeUserFiles.
+function Install-VSCodeUserFiles([string]$promptsDir, [string]$instructionsDir) {
+    $vsUserPrompts = Join-Path $env:APPDATA "Code\User\prompts"
+    New-Item -ItemType Directory -Path $vsUserPrompts -Force | Out-Null
+    Get-ChildItem $promptsDir -File -Filter *.prompt.md | ForEach-Object {
+        Copy-Item $_.FullName (Join-Path $vsUserPrompts $_.Name) -Force
+        Write-Ok ("VSCode user prompts/{0}" -f $_.Name)
+    }
+    Get-ChildItem $instructionsDir -File -Filter *.instructions.md | ForEach-Object {
+        Copy-Item $_.FullName (Join-Path $vsUserPrompts $_.Name) -Force
+        Write-Ok ("VSCode user prompts/{0}" -f $_.Name)
+    }
+}
+
 # --- GitHub Copilot: .github/prompts/<name>.prompt.md (from commands) -------
 
 $SessionModeCommands = @("concis", "slim", "focus", "ctx")   # Claude-only output modes
@@ -194,6 +210,8 @@ not this mirror.
 "@
 [System.IO.File]::WriteAllText((Join-Path $repoRoot ".github\copilot-instructions.md"), "$masterOut`n", $utf8NoBom)
 Write-Ok ".github/copilot-instructions.md"
+
+if ($Personal) { Install-VSCodeUserFiles $prDir $insDir }
 
 # --- OpenCode: .opencode/agent/<name>.md (full body, no size limit) ---------
 

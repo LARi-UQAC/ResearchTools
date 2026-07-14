@@ -1,0 +1,19 @@
+# geolocalisation skill - runtime dependencies
+# Stage 1 (extract_locations.py) uses the standard library only and reuses the
+# sibling scopus skill's scopus_api.py via subprocess.
+# Stage 3 (generate_geomap.py) needs matplotlib for the PNG figure; folium is
+# optional and only required for the interactive HTML map.
+
+matplotlib==3.9.2
+# Security floor: matplotlib pulls Pillow transitively; < 12.3.0 carries
+# PYSEC-2026-2253..2257 (image-decoder CVEs). This skill only writes PNGs, so the
+# realistic exposure is low, but pin the fixed version anyway.
+pillow>=12.3.0
+
+# Optional - interactive HTML map (generate_geomap.py --formats ...,html):
+# folium==0.17.0
+
+# Optional - full-text study-site fallback (extract_locations.py --full-text).
+# Reads downloaded PDFs; the download itself reuses the scopus skill's
+# download_pdf.py (which needs `requests`, already required by that skill).
+# PyMuPDF==1.27.2

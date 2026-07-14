@@ -30,7 +30,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **8 skills**, **11 agents**, and **17 commands**.
+The repo ships **9 skills**, **11 agents**, and **17 commands**.
 
 ---
 
@@ -68,6 +68,7 @@ sequence (config, then junctions, then tools) in one pass.
 | `pip install requests google-genai openai` | Scopus skill + Gemini/Copilot cross-review |
 | `pip install pymupdf4llm pymupdf` *(optional, AGPL-3.0)* | `extract-statistic` skill PDF parsing (`mine` mode), LLM-ready Markdown + table extraction; reuses `SCOPUS_API_KEY` via `download_pdf.py`, needs no key of its own |
 | `pip install docling markitdown[pdf]` *(optional, MIT; Docling pulls torch)* | Pluggable Markdown backend for `extract_text.py` (`--stats-scan` / `--section-scan`) and HTML conversion in the any-format retrieval path. Docling is the default (best tables/layout), MarkItDown the light fallback; absent both, the parser uses pymupdf4llm + a tag-strip |
+| `pip install matplotlib` *(+ optional `folium`)* | `geolocalisation` skill: world-map PNG figure (`matplotlib`) and interactive HTML map (`folium`). No geopandas/GDAL. The `--full-text` study-site scan additionally reuses `pymupdf` + `download_pdf.py` |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
 | Obsidian Desktop *(optional)* | Obsidian vault integration in `CLAUDE.md` |
 
@@ -241,7 +242,7 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Seven ship in this repo.
+Skills bundle scripts and references the agents reuse. Nine ship in this repo.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -253,6 +254,7 @@ Skills bundle scripts and references the agents reuse. Seven ship in this repo.
 | `extract-futureworks` | Future-works analysis (reuses `extract_text.py --section-scan`). Mode `audit`: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode `mine`: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and `scopus-researcher` (mine), where it is a hard gate: no hypothesis/project without it. | `.claude/skills/extract-futureworks/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
+| `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `.claude/skills/geolocalisation/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -275,6 +277,41 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 - `.claude/skills/scopus/scripts/semantic_scholar_api.py` — Semantic Scholar fallback
 - `.claude/skills/scopus/scripts/download_pdf.py` — any-format full-text retrieval (PDF, else HTML/Markdown via Unpaywall, arXiv, PMC, validated DOI landing)
 - `.claude/skills/scopus/scripts/gemini_reviewer.py` · `github_reviewer.py` · `gemini_table.py` — cross-review cores
+
+### `geolocalisation` — corpus study-location mapping
+
+Turns a corpus `.bib` into a spatial map of where each paper's empirical study was conducted.
+A case-study site is not a bibliographic field (no API returns it — it lives in the text), so
+the skill is deliberately human-in-the-loop: it emits a **draft** with a `confidence` column and
+a per-paper provenance note, a human reviews it, and a manual **override CSV always wins** before
+rendering. Requires `SCOPUS_API_KEY` (campus network or VPN), or run `--no-scopus` for a
+manual-entry template.
+
+| Stage | Command | Output |
+|---|---|---|
+| 1 — extract | `extract_locations.py --bib <corpus.bib> --out <dir> [--full-text] [--override <curated.csv>]` | `study_locations.csv` (with `confidence`, `evidence_field`, `evidence`, `provenance`) + `provenance/<citekey>.md` audit notes |
+| 2 — review | *(human)* | curate / confirm; correct every `low`/`none` row via the override CSV |
+| 3 — render | `generate_geomap.py --csv <dir>/study_locations.csv --out <dir> [--formats …] [--min-confidence …]` | CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), world-map PNG, interactive HTML, `country_counts.csv` |
+
+- **Extraction:** per-DOI Scopus abstract + title + keywords; place names matched against an
+  offline Natural Earth gazetteer, with capitalization + a population floor + a common-word
+  stoplist for precision (separates the city `Mobile` from the word `mobile`).
+- **`--full-text`:** for `none`/`low` results, downloads the PDF via the scopus skill's
+  `download_pdf.py`, reads it with PyMuPDF, and scans **only study-cue sentences with
+  affiliation lines rejected** — an unfiltered full-text scan maps author affiliations, not
+  study sites. Adopted only when it beats the abstract; PDFs cached in `refs/`.
+- **Auditability:** every mapped point carries `evidence_field` + the verbatim `evidence`
+  sentence in the CSV, a `provenance/<citekey>.md` note, and the same surfaced in the HTML
+  popup, GeoJSON properties, and KML description.
+- No geopandas/GDAL — the basemap is drawn from raw GeoJSON. Deps: `matplotlib` (PNG),
+  optional `folium` (HTML) and `PyMuPDF` (`--full-text`).
+
+**Files:**
+- `.claude/skills/geolocalisation/SKILL.md`
+- `.claude/skills/geolocalisation/scripts/extract_locations.py` — bib + Scopus/full-text → draft CSV + provenance notes
+- `.claude/skills/geolocalisation/scripts/generate_geomap.py` — reviewed CSV → CSV/KML/GeoJSON/PNG/HTML + per-country table (no geopandas)
+- `.claude/skills/geolocalisation/references/geocoding-protocol.md` — extraction method, confidence rubric, override format, full-text pipeline
+- `.claude/skills/geolocalisation/scripts/Test/test_extract_locations.py` — offline unit tests (bib parse, matcher, evidence, full-text)
 
 ---
 
@@ -309,6 +346,14 @@ finding cross-checked against `pip-audit`.
 - **AST4 (subprocess):** the test harness invoking the skill script with a fixed argument list.
 
 `scientific-writing` and `extract-futureworks` required no changes.
+
+The `geolocalisation` skill was added after this scan (2026-07) and should be scanned on the
+next pass. Its declared dependencies pin exact/floor versions verified with `pip-audit`:
+`matplotlib==3.9.2`, `pillow>=12.3.0` (fixes PYSEC-2026-2253..2257), and the optional
+`folium==0.17.0` / `PyMuPDF==1.27.2`. It declares `permissions: [read]` and
+`allowed-tools: [Read, Write, Edit, Bash]`, reuses the scopus skill's network I/O through
+`download_pdf.py` rather than opening its own, and fetches only public-domain Natural Earth
+basemaps (TLS-verified, cached).
 
 ---
 
@@ -591,7 +636,7 @@ ResearchTools\
     │   ├── bibclean.md ├── submitcheck.md           ├── replyreviewer.md
     │   └── word2latex.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (8 skills)
+    └── skills\                              (9 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -604,6 +649,9 @@ ResearchTools\
         ├── extract-futureworks\SKILL.md     (no script; reuses extract_text.py --section-scan;
         │                  references\futureworks-protocol.md, section-cues.md)
         ├── word2latex\SKILL.md              (+ scripts\docx_inspect.py, manuscript_bib.py)
-        └── drawio2tikz\SKILL.md             (+ scripts\drawio2tikz.py;
-                           references\conversion-rules.md)
+        ├── drawio2tikz\SKILL.md             (+ scripts\drawio2tikz.py;
+        │                  references\conversion-rules.md)
+        └── geolocalisation\SKILL.md         (+ scripts\extract_locations.py, generate_geomap.py,
+                           Test\test_extract_locations.py; references\geocoding-protocol.md;
+                           data\ Natural Earth gazetteer cache)
 ```

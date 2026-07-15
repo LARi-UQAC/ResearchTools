@@ -2,24 +2,23 @@
 
 ## Purpose
 
-ASk for my book: Vibe Design, 300 pages. 10$ contribution via PayPal.
-[![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
+Ask for my book (French version): Vibe Design. 13$ contribution via:
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/s/89b1e1cc6c)
+
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
 
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
 who want to find and fix the issues hiding in their academic writing before a reviewer,
-a thesis committee, or a grant panel does. It covers the whole writing process: starting
-a literature review from scratch, auditing an existing review, a complete paper, a UQAC
-thesis or thesis proposal, cleaning a BibTeX file, responding to peer reviewers,
-checking submission readiness against a target journal, building the submission package,
-and converting Word grant templates to LaTeX.
+a thesis committee, or a grant panel does. It covers the whole process: starting
+a literature review, auditing an existing review, a complete paper, a UQAC
+thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy.
 
 Every check is grounded in the same working norms: no reference enters a document
 without being validated against Scopus (no fabricated citations, no invented DOIs),
 weaknesses are reported as actionable findings with an executable improvement plan
 rather than vague encouragement, and drafts pass a multi-model deliberation (Gemini +
-GitHub Copilot debate, arbitrated) before a plan or review is finalized. The audits also
-flag AI-generated style patterns so the final text reads as human academic writing.
+GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
 
 The toolbox is built as agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
 with generated mirrors for GitHub Copilot, OpenCode, Continue, and Aider (see

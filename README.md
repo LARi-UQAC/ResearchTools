@@ -2,6 +2,10 @@
 
 ## Purpose
 
+ASk for my book: Vibe Design, 300 pages. 10$ contribution via PayPal.
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
+
+
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
 who want to find and fix the issues hiding in their academic writing before a reviewer,
 a thesis committee, or a grant panel does. It covers the whole writing process: starting

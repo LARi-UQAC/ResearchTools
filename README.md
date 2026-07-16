@@ -33,7 +33,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **9 skills**, **11 agents**, and **17 commands**.
+The repo ships **9 skills**, **11 agents**, and **18 commands**.
 
 ---
 
@@ -257,7 +257,7 @@ Skills bundle scripts and references the agents reuse. Nine ship in this repo.
 | `extract-futureworks` | Future-works analysis (reuses `extract_text.py --section-scan`). Mode `audit`: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode `mine`: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and `scopus-researcher` (mine), where it is a hard gate: no hypothesis/project without it. | `.claude/skills/extract-futureworks/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
-| `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `.claude/skills/geolocalisation/SKILL.md` |
+| `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `/geolocalisation`, `.claude/skills/geolocalisation/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -384,6 +384,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/submitcheck <file.tex> <journal>` | Check submission readiness for a target journal: page count, sections, reference style, abstract length, keywords, anonymization | Yes — `.tex` file + journal |
 | `/replyreviewer` | Point-by-point LaTeX response letters + track-change markup in the paper via the `changes` package (one letter per reviewer file) | Yes — see below |
 | `/word2latex` | Convert a Word `.docx` template to a faithful LaTeX source (pandoc + standard patch sequence) | Yes — `.docx` path |
+| `/geolocalisation` | Map a review corpus's study locations from its `.bib`: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional `--full-text` PDF scan. | Optional — `.bib` file/dir/IDE file |
 
 ### `/concis` — Concise mode
 
@@ -631,13 +632,13 @@ ResearchTools\
     │   ├── word-to-latex.md           ← /word2latex
     │   ├── cover-paper.md             ← submission package
     │   └── latex-writer.md            ← LaTeX authoring
-    ├── commands\                            (17 commands)
+    ├── commands\                            (18 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
     │   ├── ref.md      ├── litreview.md             ├── auditreview.md
     │   ├── auditpaper.md               ├── auditthesis.md
     │   ├── bibclean.md ├── submitcheck.md           ├── replyreviewer.md
-    │   └── word2latex.md
+    │   ├── word2latex.md               └── geolocalisation.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
     └── skills\                              (9 skills)
         ├── scopus\

@@ -22,8 +22,9 @@ CLI, or `copilot --agent <name>`):
 
 Task prompt files are available as slash commands in Copilot Chat (see
 `.github/prompts/`). Helper skills (Scopus API scripts, statistics extraction,
-scientific-writing rules) are plain repo folders under `.claude/skills/` - read
-the relevant `SKILL.md` when an agent or prompt refers to it.
+scientific-writing rules, corpus study-location mapping) are plain repo folders
+under `.claude/skills/` - read the relevant `SKILL.md` when a task calls for
+it (e.g. `geolocalisation` to map where a corpus's studies were conducted).
 
 Hard rules: validate every reference against Scopus (scripts in
 `.claude/skills/scopus/scripts/`); never fabricate references or DOIs; LaTeX

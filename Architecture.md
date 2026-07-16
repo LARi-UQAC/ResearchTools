@@ -4,7 +4,7 @@ This document maps the academic tooling layer under [.claude/](.). Three layers 
 
 ## Layer 1 — Component architecture
 
-The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing). The [extract-statistic](skills/extract-statistic) skill is consumed by [paper-auditor](agents/paper-auditor.md) and [thesis-auditor](agents/thesis-auditor.md) (mode `audit`, to review a manuscript's own statistics) and by [scopus-researcher](agents/scopus-researcher.md) (mode `mine`, to extract the reported statistics of the corpus PDFs). The [latex-writer](agents/latex-writer.md) authoring agent — invoked by context to draft LaTeX, Beamer, and TiKZ — enters the [scientific-writing](skills/scientific-writing) skill through its LaTeX-authoritative entry point and consumes the skill in full (see the Notes). The same agent converts draw.io sheets to TiKZ through the [drawio2tikz](skills/drawio2tikz) skill, whose absolute-coordinate output is the documented exception to the relative-positioning rule.
+The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing). The [extract-statistic](skills/extract-statistic) skill is consumed by [paper-auditor](agents/paper-auditor.md) and [thesis-auditor](agents/thesis-auditor.md) (mode `audit`, to review a manuscript's own statistics) and by [scopus-researcher](agents/scopus-researcher.md) (mode `mine`, to extract the reported statistics of the corpus PDFs). The [latex-writer](agents/latex-writer.md) authoring agent — invoked by context to draft LaTeX, Beamer, and TiKZ — enters the [scientific-writing](skills/scientific-writing) skill through its LaTeX-authoritative entry point and consumes the skill in full (see the Notes). The same agent converts draw.io sheets to TiKZ through the [drawio2tikz](skills/drawio2tikz) skill, whose absolute-coordinate output is the documented exception to the relative-positioning rule. The [geolocalisation](skills/geolocalisation) skill is the one skill a command drives directly rather than through an agent: `/geolocalisation` maps a review corpus's study locations from its `.bib` (draft table + per-paper provenance note, override CSV wins, optional `--full-text` PDF scan), consuming no agent and none of the shared skills.
 
 ```mermaid
 graph TD
@@ -16,6 +16,7 @@ graph TD
     c5["/litreview"]
     c6["/replyreviewer"]
     c7["/submitcheck"]
+    c8["/geolocalisation"]
   end
 
   subgraph AG["Agents — agents/"]
@@ -39,6 +40,7 @@ graph TD
     s5["extract-statistic<br/>extract_text.py (--stats-scan)"]
     s6["drawio2tikz<br/>drawio2tikz.py"]
     s7["extract-futureworks<br/>extract_text.py (--section-scan)"]
+    s8["geolocalisation<br/>extract_locations.py · generate_geomap.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -55,6 +57,7 @@ graph TD
   c5 --> a6
   c6 --> a7
   c7 --> a8
+  c8 --> s8
   a4 -.->|"invoked by name<br/>(no command)"| a4
   a9 -.->|"invoked by name<br/>(no command)"| a9
   a10 -.->|"invoked by context<br/>(no command)"| a10
@@ -89,6 +92,8 @@ graph TD
 | `/replyreviewer` | [reviewer-response](agents/reviewer-response.md) | yes | mandatory | no | yes | no | no |
 | `/submitcheck` | [submit-checker](agents/submit-checker.md) | yes | no | yes | no | no | no |
 | *(by name)* | [cover-paper](agents/cover-paper.md) | yes | no | no | no | no | no |
+
+`/geolocalisation` invokes the [geolocalisation](skills/geolocalisation) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix; it reuses only the [scopus](skills/scopus) skill's `download_pdf.py` for the optional `--full-text` scan.
 
 ### Domain profiles
 

@@ -33,7 +33,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **10 skills**, **14 agents**, and **19 commands**.
+The repo ships **10 skills**, **15 agents**, and **19 commands**.
 
 ---
 
@@ -528,9 +528,11 @@ Example:
 ## Agents
 
 Agents are specialists Claude delegates to automatically based on context, or explicitly on
-request ("use the `scopus-auditor` agent to…"). Fourteen ship in this repo; most back a slash
+request ("use the `scopus-auditor` agent to…"). Fifteen ship in this repo; most back a slash
 command. Two of them (`local-writer`, `local-coder`) are local-delegation agents: a cheap
 cloud wrapper that drives a local Ollama model over a Bash bridge (see "Local delegation").
+Two are loop orchestrators: `authoring-loop` (ScholarEval-gated writing loop) and the
+code loop in the `loop-engineer` skill (see "Loop engineering").
 
 Format (repo convention): one flat markdown file per agent at `.claude/agents/<name>.md`,
 opening with YAML frontmatter (`name:`, `description:`). This is what Claude Code's subagent
@@ -552,6 +554,7 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex.md` |
 | `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt) | by name (at submission) | `.claude/agents/cover-paper.md` |
 | `thesis-to-paper` | Integrate a thesis + its conference papers into one submission-ready journal manuscript (invited extension); pandoc reference conversion, figure pipeline, content-delta matrix, then `/litreview` + `scientific-writing` + `/bibclean` + `/submitcheck` + `/auditpaper` inline, with a multi-session checkpoint protocol | by name / "extend this paper to a journal version" | `.claude/agents/thesis-to-paper.md` |
+| `authoring-loop` | ScholarEval-gated authoring loop: define subject -> author (Fable 5) -> audit with `scholar-evaluation` (Sonnet/Haiku) -> loop to `min_score` or `max_budget` -> record learnings to memory via `local-writer`. Authoring counterpart of the `loop-engineer` code loop | by name / "improve this to a ScholarEval target under a budget" | `.claude/agents/authoring-loop.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
 | `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via local `ornith:9b` over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
 | `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via local `qwen3.5:9b` over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
@@ -613,6 +616,13 @@ branch is human-gated: the loop stops at "ready to merge" and waits for your con
 The loop diagram and the use-case diagram are in [Architecture.md](Architecture.md)
 ("Layer 5 — Loop engineering").
 
+The same loop applies to writing through the `authoring-loop` agent (the ScholarEval-gated
+variant): define a subject, author with an authoring agent (`/litreview`, `latex-writer`,
+`/replyreviewer`, …) on Fable 5, audit with the `scholar-evaluation` skill on Sonnet or Haiku
+to get a score, loop until the ScholarEval target or the budget is reached, then record the
+learnings to memory via `local-writer`. The five steps are documented in the loop-engineer
+[SKILL.md](.claude/skills/loop-engineer/SKILL.md).
+
 ### Calling an agent explicitly
 
 Agents are normally triggered automatically by context. To invoke one directly, address it
@@ -661,7 +671,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (14 agents)
+    ├── agents\                              (15 agents)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── scopus-auditor.md          ← /auditreview
     │   ├── paper-auditor.md           ← /auditpaper
@@ -673,6 +683,7 @@ ResearchTools\
     │   ├── word-to-latex.md           ← /word2latex
     │   ├── cover-paper.md             ← submission package
     │   ├── thesis-to-paper.md         ← thesis + conf papers -> journal manuscript
+    │   ├── authoring-loop.md          ← ScholarEval-gated authoring loop
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (ornith:9b bridge)
     │   └── local-coder.md             ← local code gen (qwen3.5:9b bridge)

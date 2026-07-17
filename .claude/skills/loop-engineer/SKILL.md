@@ -69,6 +69,35 @@ Installed / first-party only: `/code-review`, `/security-guidance`, `pr-review-t
 audit-only inside the loop so it scores rather than restructures code); they are off by
 default.
 
+## Authoring loop (ScholarEval-gated variant)
+
+The same loop applies to writing, not just code. Instead of the code reviewers and
+`loop_audit.py`, the score comes from the `scholar-evaluation` skill (prose quality), and the
+actors are the authoring agents. This variant is driven by the `authoring-loop` agent (run it
+by name at the top level of a session). Use it to iterate a review, paper section, thesis
+chapter, or reviewer response up to a target ScholarEval score under a budget.
+
+The five steps:
+
+1. **Define the subject** - the topic (new review) or the draft to improve, the target `.tex`,
+   `min_score` (ScholarEval overall), and `max_budget`.
+2. **Author** - dispatch the matching authoring agent (`/litreview` / `scopus-researcher`,
+   `latex-writer`, `/replyreviewer` / `reviewer-response`, etc.) on the best cloud model
+   (**Fable 5**) to write or revise against the current improvement plan.
+3. **Audit** - run the `scholar-evaluation` skill on the draft on a cheap model (**Sonnet** or
+   **Haiku**) to get the ScholarEval overall score and the improvement plan.
+4. **Loop** - go back to step 2 until the overall reaches `min_score`, the spend reaches
+   `max_budget`, or the score plateaus. A revision that lowers the score is discarded (keep the
+   previous draft) rather than carried forward.
+5. **Memory** - `local-writer` (Haiku wrapper + local `ornith:9b`) records what was learned
+   (what raised the score, what plateaued, residual weaknesses) to the project memory.
+
+Differences from the code loop: the gate is the single ScholarEval overall (plus a regression
+guard) rather than the multi-axis code score with a security hard floor; the budget is advisory
+(the orchestrator tracks `/usage` and the ledger and stops) unless the run is wrapped in this
+skill's SDK driver, which is the way to get a hard `max_budget_usd` cap. See
+`.claude/agents/authoring-loop.md` for the full pipeline, routing, and session-resilience rules.
+
 ## Environment and safety
 
 - Standalone Agent SDK program; runs on the user's subscription auth (no gateway, no API key).

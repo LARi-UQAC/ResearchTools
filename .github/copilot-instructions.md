@@ -8,6 +8,7 @@ in `.claude/CLAUDE.md` - read it before producing academic content.
 Specialized custom agents (invoke from the agents panel, `/agent` in Copilot
 CLI, or `copilot --agent <name>`):
 
+- `authoring-loop`: see `.github/agents/authoring-loop.agent.md` (full definition in `.claude/agents/authoring-loop.md`)
 - `bib-cleaner`: see `.github/agents/bib-cleaner.agent.md` (full definition in `.claude/agents/bib-cleaner.md`)
 - `cover-paper`: see `.github/agents/cover-paper.agent.md` (full definition in `.claude/agents/cover-paper.md`)
 - `latex-writer`: see `.github/agents/latex-writer.agent.md` (full definition in `.claude/agents/latex-writer.md`)

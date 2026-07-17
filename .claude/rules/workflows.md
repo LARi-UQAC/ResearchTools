@@ -17,6 +17,7 @@ and the output produced. Full arguments are in `README.md`.
 | Respond to reviewers | `/replyreviewer ...` | `reviewer-response` | One letter per reviewer + traceable `changes` markup |
 | Check submission readiness | `/submitcheck <tex> <journal>` | `submit-checker` | Pass/fail submission checklist |
 | Build a submission package | by name | `cover-paper` | Hidden cover letter, title page PDF, author profile PDF, graphical abstract (Canva MCP + FigureLabs prompt) |
+| Integrate a thesis + conference papers into one journal manuscript | by name / "extend this paper to a journal version" | `thesis-to-paper` | Submission-ready journal `.tex` (+ sections, refs, PDF), content-delta matrix, disclosure letter; multi-session checkpoint protocol |
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 
 ## Local delegation flows

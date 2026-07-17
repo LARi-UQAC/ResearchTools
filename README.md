@@ -10,7 +10,7 @@ Ask for my book (French version): Vibe Design. 30$ contribution via:
 
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
 who want to find and fix the issues hiding in their academic writing before a reviewer,
-a thesis committee, or a grant panel does. It covers the whole process: starting
+a thesis committee, or a grant panel does. It contains two loop for authoring and coding. It covers the whole process: starting
 a literature review, auditing an existing review, a complete paper, a UQAC
 thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy.
 

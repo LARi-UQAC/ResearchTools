@@ -1,0 +1,10 @@
+# loop-engineer skill dependencies.
+# Install into this skill's own .venv (see testing.md); validate with pip-audit before use:
+#   python -m venv .venv && .venv\Scripts\Activate.ps1
+#   pip install -r requirements.txt
+#   pip-audit -r requirements.txt
+#
+# Only loop_engineer.py's live --loop path needs the SDK; loop_audit.py and the offline
+# tests use the standard library only. Pin the exact resolved version after the first
+# install (security.md prefers exact pins over a range).
+claude-agent-sdk>=0.1.0

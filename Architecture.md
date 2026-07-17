@@ -4,7 +4,7 @@ This document maps the academic tooling layer under [.claude/](.). Three layers 
 
 ## Layer 1 — Component architecture
 
-The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing). The [extract-statistic](skills/extract-statistic) skill is consumed by [paper-auditor](agents/paper-auditor.md) and [thesis-auditor](agents/thesis-auditor.md) (mode `audit`, to review a manuscript's own statistics) and by [scopus-researcher](agents/scopus-researcher.md) (mode `mine`, to extract the reported statistics of the corpus PDFs). The [latex-writer](agents/latex-writer.md) authoring agent — invoked by context to draft LaTeX, Beamer, and TiKZ — enters the [scientific-writing](skills/scientific-writing) skill through its LaTeX-authoritative entry point and consumes the skill in full (see the Notes). The same agent converts draw.io sheets to TiKZ through the [drawio2tikz](skills/drawio2tikz) skill, whose absolute-coordinate output is the documented exception to the relative-positioning rule. The [geolocalisation](skills/geolocalisation) skill is the one skill a command drives directly rather than through an agent: `/geolocalisation` maps a review corpus's study locations from its `.bib` (draft table + per-paper provenance note, override CSV wins, optional `--full-text` PDF scan), consuming no agent and none of the shared skills.
+The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing). The [extract-statistic](skills/extract-statistic) skill is consumed by [paper-auditor](agents/paper-auditor.md) and [thesis-auditor](agents/thesis-auditor.md) (mode `audit`, to review a manuscript's own statistics) and by [scopus-researcher](agents/scopus-researcher.md) (mode `mine`, to extract the reported statistics of the corpus PDFs). The [latex-writer](agents/latex-writer.md) authoring agent — invoked by context to draft LaTeX, Beamer, and TiKZ — enters the [scientific-writing](skills/scientific-writing) skill through its LaTeX-authoritative entry point and consumes the skill in full (see the Notes). The same agent converts draw.io sheets to TiKZ through the [drawio2tikz](skills/drawio2tikz) skill, whose absolute-coordinate output is the documented exception to the relative-positioning rule. The [geolocalisation](skills/geolocalisation) skill is the one skill a command drives directly rather than through an agent: `/geolocalisation` maps a review corpus's study locations from its `.bib` (draft table + per-paper provenance note, override CSV wins, optional `--full-text` PDF scan), consuming no agent and none of the shared skills. Two further agents — [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) — sit outside this academic flow: they are local-delegation agents (a Haiku wrapper driving a local Ollama model over a Bash bridge) used for documentation, comments, and code generation, and they are orchestrated by the [loop-engineer](skills/loop-engineer) skill. Both are documented in "Layer 5 — Loop engineering" below rather than in the diagram above.
 
 ```mermaid
 graph TD
@@ -279,6 +279,86 @@ flowchart TD
 
 The arbitration table maps each merged item's `agreement` (`consensus`, `gemini_only`, `copilot_only`, `conflict`) to one of eight provenance markers. Any item proposing a specific paper passes the Scopus gate first — `verify` (accept on `valid: true`) when full fields exist, else `search`/`validate` (accept on ≥1 result). An accepted `coverage_gap` becomes a Scopus-validated BibTeX entry with a one-sentence introduction and an insertion point, routed into the host agent's gap section (paper-auditor Section N, scopus-auditor Section C/G, the thesis auditors' coverage/novelty section, or the researcher synthesis). [reviewer-response](agents/reviewer-response.md) is host-stricter: a panel-proposed reference there runs its own decision tree instead of this generic gate. Graceful skips never abort the host pipeline but are still gated to a logged `[REVIEWER UNAVAILABLE: ...]` marker: one model down → debate with the survivor; both down → empty `merged[]`, step is a no-op; Consensus unreachable → empty evidence file, debate runs on the draft alone.
 
+## Layer 5 — Loop engineering (local-model loop)
+
+The [loop-engineer](skills/loop-engineer) skill is a standalone Agent SDK program
+(`scripts/loop_engineer.py`) that runs a budget-bounded develop-and-improve loop while
+minimizing cloud cost. The best cloud model (Fable 5) stays orchestrator and judge; cheaper
+tiers act (Opus plans, Sonnet executes tests, runs the review panel, and applies
+corrections); and code and comments are generated by the local-delegation agents
+([local-coder](agents/local-coder.md) on `qwen3.5:9b`, [local-writer](agents/local-writer.md)
+on `ornith:9b`) over the Bash bridge, so the bulk generation is free. The score is computed
+by `scripts/loop_audit.py`, a deterministic aggregator over the installed reviewers
+(`/code-review`, `/security-guidance`, `pr-review-toolkit`, `systematic-debugging`) and the
+betterleaks / pip-audit hooks; it is distinct from the referenced loop-audit tool, which
+scores loop *readiness* rather than code quality. Cloud runs on the user's subscription auth
+and local via the bridge; no gateway and no separate API key are involved.
+
+The loop wraps the evaluate → correct → rescore sub-cycle. It stops on the composite gate
+(tests green AND no CRITICAL/HIGH finding AND aggregate score `>=` min_score, default 90), or
+on any hard stop: the budget cap (`--budget`), the max-iteration cap, or a no-progress
+plateau. Security is a hard floor — any CRITICAL finding fails the gate regardless of the
+aggregate — and the merge to a protected branch is human-gated, so the loop ends at
+"ready to merge" and waits for confirmation.
+
+```mermaid
+flowchart TD
+  S([--loop --budget B --score min]) --> A["Design<br/>brainstorming - Fable 5"]
+  A --> P["Plan<br/>writing-plans - Opus"]
+  P --> BR["Branch feat/slug<br/>Sonnet (write git)"]
+  BR --> T["TDD: failing tests first<br/>Sonnet"]
+  T --> C["Code<br/>local-coder qwen3.5:9b (bridge)"]
+  C --> D["Comment + doc<br/>local-writer ornith:9b (bridge)"]
+  D --> RUN["Run tests + review panel<br/>code-review · security-guidance ·<br/>pr-review-toolkit · systematic-debugging<br/>Sonnet"]
+  RUN --> SC["Score aggregate<br/>loop_audit.py - local-coder"]
+  SC --> G{"Composite gate?<br/>tests green AND<br/>no CRITICAL/HIGH AND<br/>score >= min"}
+  G -->|"pass"| RM["Ready to merge<br/>local-coder: commit + push + PR"]
+  RM --> HM{"Human confirms<br/>merge to main?"}
+  HM -->|"yes"| MRG([Merge - human gated])
+  HM -->|"no"| STOP([Stop: branch left for review])
+  G -->|"fail"| B1{"Budget or<br/>max-iters hit?"}
+  B1 -->|"yes"| STOP2([Stop: report best state + ledger])
+  B1 -->|"no"| B2{"No progress<br/>N iters?"}
+  B2 -->|"yes"| STOP2
+  B2 -->|"no"| COR["Correct<br/>writing-plans + executing-plans<br/>Sonnet + local-coder"]
+  COR --> RUN
+```
+
+Mermaid has no native use-case diagram type, so the actor / use-case view is emulated with a
+`flowchart LR`: actors sit outside a system-boundary subgraph, and the oval nodes are the use
+cases. The professor sets the budget and threshold and approves the merge; the cloud
+orchestrator and tiers plan, review, and correct; the local models generate.
+
+```mermaid
+flowchart LR
+  prof([Professor / PhD student]):::actor
+  orch([Orchestrator - Fable 5]):::actor
+  cloud([Cloud tiers - Opus/Sonnet/Haiku]):::actor
+  local([Local models - Ornith/Qwen3.5 via Ollama]):::actor
+
+  subgraph SYS["Loop-engineering system"]
+    u1(("Set budget and min_score"))
+    u2(("Design and plan feature"))
+    u3(("Generate code locally"))
+    u4(("Comment and document"))
+    u5(("Review and score"))
+    u6(("Correct until gate"))
+    u7(("Approve merge to main"))
+  end
+
+  prof --- u1
+  prof --- u7
+  orch --- u2
+  orch --- u5
+  cloud --- u2
+  cloud --- u5
+  cloud --- u6
+  local --- u3
+  local --- u4
+  local --- u6
+  classDef actor fill:#eef,stroke:#333,stroke-width:1px;
+```
+
 ## Notes
 
 - **Agent file format.** Each agent is one flat markdown file [agents/](agents)`<name>.md` whose line 1 opens YAML frontmatter (`name:`, `description:`) — the layout Claude Code's subagent discovery scans. Skills are the opposite: folder-based (`skills/<name>/SKILL.md`). The `.claude/agents/` files are canonical; `install.ps1` (repo root) regenerates the GitHub Copilot (`.github/agents/*.agent.md`), OpenCode, Continue, and Aider mirrors from them, and `install-junctions.ps1` links them per-file into `~/.claude/agents/` for global availability.
@@ -289,4 +369,5 @@ The arbitration table maps each merged item's `agreement` (`consensus`, `gemini_
 - The [latex-writer](agents/latex-writer.md) agent is the academic LaTeX authoring helper (papers, Beamer slides, TiKZ figures, theses), invoked by context from the top-level session — when it authors a section fresh or executes an auditor's improvement plan — rather than by a slash command. Its definition carries no inline rule copies: on every authoring or revision task it reads [skills/scientific-writing/SKILL.md](skills/scientific-writing/SKILL.md) in full, treats that skill's **"LaTeX Academic Writing (ResearchTools)"** section as authoritative (the LaTeX option), and loads all six `references/` files on demand — `float_authoring_rules.md`, `citation_styles.md`, `imrad_structure.md`, `figures_tables.md`, `reporting_guidelines.md`, `writing_principles.md`. The skill is therefore the single source of truth; the agent never relies on a memorized subset. Figure conversion from draw.io routes through the [drawio2tikz](skills/drawio2tikz) skill; its absolute-coordinate, non-TiKZiT output is the sanctioned exception to the relative-positioning rule and still obeys the float citation/label/caption rules.
 - **How every academic agent consumes `scientific-writing` (single source of truth).** The four auditors ([scopus-auditor](agents/scopus-auditor.md), [paper-auditor](agents/paper-auditor.md), [thesis-auditor](agents/thesis-auditor.md), [thesis-proposal-auditor](agents/thesis-proposal-auditor.md)) and the two author agents ([scopus-researcher](agents/scopus-researcher.md), [reviewer-response](agents/reviewer-response.md)) each open with a **"Skill consultation (mandatory first step)"** that reads `SKILL.md` in full, treats the LaTeX Academic Writing section as authoritative, and loads the six `references/` files on demand — not just `float_authoring_rules.md` as before. The inline float checklist each agent keeps is now explicitly the float slice of that skill, and the anti-AI-style reminders point to `writing_principles.md` as canonical.
 - **Where authoring happens — the rule that avoids nested-subagent spawning.** Top-level authoring (writing a section, or *executing* an auditor's plan) delegates to [latex-writer](agents/latex-writer.md), which loads the full skill; a top-level spawn is reliable. The six academic agents above run as subagents, so they cannot reliably spawn another subagent — they read `SKILL.md` directly and author/check themselves, and must not call `latex-writer`. Accordingly, each auditor's plan footer and execution mode route plan execution through `latex-writer` so every `\added`/`\replaced` float and paragraph follows the full skill.
+- **Local-delegation agents.** [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) each run on a Haiku wrapper whose `model:`, `tools:`, and `skills:` live in YAML frontmatter (Claude Code honours them; `install.ps1` reads only `name`/`description`, so the extra keys are ignored by the mirror generation). Their sole cloud cost is the wrapper framing the task; the heavy generation runs on the local Ollama model via the Bash bridge. They are consumed by the [loop-engineer](skills/loop-engineer) skill (Layer 5). `local-writer` never authors LaTeX prose — `%` comments only — so LaTeX authoring stays with [latex-writer](agents/latex-writer.md) on the latest cloud model.
 - The non-academic agents in [agents/](agents) (analysis-engine, blazor-dev, cost-tester, flask-api, react-dev, security-auditor, word-to-latex) serve the CostEstimator software project and are out of scope for this diagram.

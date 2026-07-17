@@ -68,6 +68,11 @@ and constantly seek the best and most optimal solution in both theory and practi
 author text, use the `latex-writer` agent together with the `scientific-writing` skill.
 LaTEX output files are located in sub-directory out/.
 
+`latex-writer` and `scientific-writing` run ONLY on the latest cloud Claude model, never on
+a local model. The local agents (`local-writer`, `local-coder`) are for code comments,
+documentation, Obsidian notes, and code generation; `local-writer` may add `%` comments in
+a `.tex` file but never authors LaTeX or scientific prose.
+
 ## References
 
 Use the `scopus` skill to find and validate references. References are limited to
@@ -138,6 +143,9 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Check submission readiness | `submit-checker` | `/submitcheck` |
 | Build the submission package (cover, title page, author profile, graphical abstract) | `cover-paper` | by name |
 | Author LaTeX, Beamer, or TiKZ | `latex-writer` (+ `scientific-writing`) | by context |
+| High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries; NOT LaTeX text authoring) | `local-writer` agent (haiku wrapper + local `ornith:9b`) | by context / by name |
+| Local code generation against a spec/failing test, refactor snippets, scaffolds | `local-coder` agent (haiku wrapper + local `qwen3.5:9b`) | by context / by name |
+| Budget-bounded develop-and-improve loop (design→code→review→score→correct until a composite gate or budget cap) | `loop-engineer` skill (Agent SDK; Fable 5 orchestrates, Opus/Sonnet act, local agents generate) | `/loopdev` |
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
 | Validate TiKZ code, diagnose LaTeX errors | - | `/tikz`, `/latex` |
 | Cross-model debate before finalizing | `deliberation` skill | inside auditors/researchers |

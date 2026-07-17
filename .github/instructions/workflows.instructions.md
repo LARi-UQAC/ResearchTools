@@ -23,6 +23,36 @@ and the output produced. Full arguments are in `README.md`.
 | Build a submission package | by name | `cover-paper` | Hidden cover letter, title page PDF, author profile PDF, graphical abstract (Canva MCP + FigureLabs prompt) |
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 
+## Local delegation flows
+
+Keep the top cloud model as orchestrator and push token-heavy generation to local models on
+the GPU. Each local agent runs on a cheap cloud model (Haiku) that frames the task and drives
+a local model over a Bash bridge (`ollama run`); the bulk output is generated locally and
+free. No gateway; cloud stays on the normal subscription auth.
+
+| Goal | Agent | Model | Output |
+|---|---|---|---|
+| Docstrings, code comments, Markdown docs, CHANGELOG, Obsidian summaries | `local-writer` | haiku wrapper + local `ornith:9b` (bridge) | Rule-compliant text written to the target file |
+| Code against a spec/failing test, refactor snippets, scaffolds | `local-coder` | haiku wrapper + local `qwen3.5:9b` (bridge) | Minimal, style-matched code edits |
+| Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
+
+Bridge rule: the local model sees only the prompt (no repo, no conversation), so every rule
+constraint and input must be in the prompt; write it to a scratchpad file and run
+`rtk ollama run <model> "$(cat <file>)"`. Until the 9B models are imported the bridge falls
+back to `qwen2.5-coder:7b`. LiteLLM (`~/.litellm/ollama.yaml`) is optional (keep-alive /
+context tuning only).
+
+LaTeX boundary: `local-writer` may add `%` comments in a `.tex` file but never authors
+LaTeX or scientific prose - that stays with `latex-writer` + `scientific-writing` on the
+latest cloud Claude model.
+
+Loop-engineering stop gate (default, composite): tests green AND no CRITICAL/HIGH review
+finding AND aggregate score `>=` min_score (default 90). Hard stops: budget cap
+(`--budget`), max iterations, or a no-progress plateau. Security is a hard floor (any
+CRITICAL fails the gate). Merge to a protected branch is human-gated; local agents never
+merge on their own. See `Architecture.md` "Layer 5 - Loop engineering" for the loop and
+use-case diagrams.
+
 ## LaTeX maintenance
 
 - Validate TiKZ figures with `/tikz` before committing them (anchoring, perpendicular

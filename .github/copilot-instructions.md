@@ -11,6 +11,8 @@ CLI, or `copilot --agent <name>`):
 - `bib-cleaner`: see `.github/agents/bib-cleaner.agent.md` (full definition in `.claude/agents/bib-cleaner.md`)
 - `cover-paper`: see `.github/agents/cover-paper.agent.md` (full definition in `.claude/agents/cover-paper.md`)
 - `latex-writer`: see `.github/agents/latex-writer.agent.md` (full definition in `.claude/agents/latex-writer.md`)
+- `local-coder`: see `.github/agents/local-coder.agent.md` (full definition in `.claude/agents/local-coder.md`)
+- `local-writer`: see `.github/agents/local-writer.agent.md` (full definition in `.claude/agents/local-writer.md`)
 - `paper-auditor`: see `.github/agents/paper-auditor.agent.md` (full definition in `.claude/agents/paper-auditor.md`)
 - `reviewer-response`: see `.github/agents/reviewer-response.agent.md` (full definition in `.claude/agents/reviewer-response.md`)
 - `scopus-auditor`: see `.github/agents/scopus-auditor.agent.md` (full definition in `.claude/agents/scopus-auditor.md`)
@@ -18,6 +20,7 @@ CLI, or `copilot --agent <name>`):
 - `submit-checker`: see `.github/agents/submit-checker.agent.md` (full definition in `.claude/agents/submit-checker.md`)
 - `thesis-auditor`: see `.github/agents/thesis-auditor.agent.md` (full definition in `.claude/agents/thesis-auditor.md`)
 - `thesis-proposal-auditor`: see `.github/agents/thesis-proposal-auditor.agent.md` (full definition in `.claude/agents/thesis-proposal-auditor.md`)
+- `thesis-to-paper`: see `.github/agents/thesis-to-paper.agent.md` (full definition in `.claude/agents/thesis-to-paper.md`)
 - `word-to-latex`: see `.github/agents/word-to-latex.agent.md` (full definition in `.claude/agents/word-to-latex.md`)
 
 Task prompt files are available as slash commands in Copilot Chat (see

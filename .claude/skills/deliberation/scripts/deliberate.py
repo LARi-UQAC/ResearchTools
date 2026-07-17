@@ -27,9 +27,13 @@ if str(_SCOPUS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCOPUS_SCRIPTS))
 
 try:
-    from gemini_reviewer import run_gemini, gemini_available, count_gemini_tokens
+    from gemini_reviewer import (run_gemini, gemini_available, count_gemini_tokens,
+                                 resolve_gemini_model)
 except Exception:  # pragma: no cover - defensive: missing file/dep must not crash the panel
     run_gemini = None
+
+    def resolve_gemini_model(preference: str = "pro") -> str:
+        return "gemini-flash-latest"
 
     def gemini_available() -> bool:
         return False
@@ -445,7 +449,7 @@ def _fit_round1_prompt(draft: str, topic: str, evidence: str, schema_hint: str, 
 def deliberate(draft: str, topic: str, evidence: str, rounds: int,
                gemini_model: str, copilot_model: str, temperature: float,
                plan_schema: str, *,
-               max_input_tokens: int = 12000, max_output_tokens: int = 2048,
+               max_input_tokens: int = 12000, max_output_tokens: int = 4096,
                max_suggestions: int = 10, max_evidence_items: int = 6,
                round2_include_draft: bool = False, terse: bool = True,
                coded_schema: bool = True, report_tokens: bool = False) -> dict:
@@ -478,6 +482,13 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
     --------------------------------------------------------------------------
     """
     schema_hint = _SCHEMA_HINTS.get(plan_schema, _SCHEMA_HINTS["generic"])
+
+    # 'auto' resolves to the most recent PRO model via ListModels, so the retired
+    # hardcoded default failure mode (gemini-2.0-flash, 404 NOT_FOUND) cannot recur;
+    # resolving here (not only inside run_gemini) keeps token counting and the
+    # envelope log on the same concrete model id.
+    if gemini_model in ("", "auto", None):
+        gemini_model = resolve_gemini_model()
 
     available = {"gemini": gemini_available() and run_gemini is not None,
                  "copilot": copilot_available() and run_copilot is not None}
@@ -597,7 +608,9 @@ def main() -> None:
     parser.add_argument("--evidence-context", default=None,
                         help="Inline evidence blob (prefer --evidence-file for large text)")
     parser.add_argument("--rounds", type=int, default=2, help="1 (independent) or 2 (debate)")
-    parser.add_argument("--gemini-model", default="gemini-2.0-flash")
+    parser.add_argument("--gemini-model", default="auto",
+                    help="Gemini model id, or 'auto' (default) to resolve the most "
+                         "recent PRO model via ListModels at run time")
     parser.add_argument("--copilot-model", default="gpt-4o")
     parser.add_argument("--temperature", type=float, default=0.3)
     parser.add_argument("--plan-schema", default="generic",
@@ -606,7 +619,7 @@ def main() -> None:
     # Token budget (free-tier safe defaults)
     parser.add_argument("--max-input-tokens", type=int, default=12000,
                         help="Trim the prompt below this many tokens")
-    parser.add_argument("--max-output-tokens", type=int, default=2048,
+    parser.add_argument("--max-output-tokens", type=int, default=4096,
                         help="Hard cap on each model's response")
     parser.add_argument("--max-suggestions", type=int, default=10,
                         help="Cap on suggestions requested per model")

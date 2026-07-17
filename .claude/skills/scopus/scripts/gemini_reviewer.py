@@ -1,12 +1,13 @@
 """
 gemini_reviewer.py — Gemini AI cross-reviewer for the scopus-auditor pipeline.
 
-Sends a draft improvement plan to Gemini 2.0 Flash and returns structured
+Sends a draft improvement plan to Gemini (latest PRO by default, resolved via
+ListModels) and returns structured
 peer-review suggestions that Claude arbitrates before writing the final plan.
 
 Usage:
-  python gemini_reviewer.py "<draft text>" [--topic "<topic>"] [--model gemini-2.0-flash]
-  python gemini_reviewer.py --stdin [--topic "<topic>"] [--model gemini-2.0-flash]
+  python gemini_reviewer.py "<draft text>" [--topic "<topic>"] [--model auto]
+  python gemini_reviewer.py --stdin [--topic "<topic>"] [--model auto]
 
 Output: JSON to stdout. Errors to stderr.
 Requires: GEMINI_API_KEY env var.
@@ -15,6 +16,7 @@ Requires: GEMINI_API_KEY env var.
 import argparse
 import json
 import os
+import re
 import sys
 
 try:
@@ -68,6 +70,60 @@ def gemini_available() -> bool:
     return _GENAI_OK and bool(os.environ.get("GEMINI_API_KEY", "").strip())
 
 
+# Variant suffixes that are not text-reviewer models even when the name says "pro".
+_NON_TEXT_MARKERS = ("image", "tts", "live", "audio", "embedding", "computer-use",
+                     "customtools", "translate", "omni")
+
+_RESOLVED_MODEL: str | None = None  # per-process cache; ListModels is one API call
+
+
+def resolve_gemini_model(preference: str = "pro") -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Pick the most recent usable Gemini model of the requested family by
+        querying ListModels, so a retired hardcoded default (the fate of
+        gemini-2.0-flash) can never break the pipeline again. Among text
+        generation models named gemini-<version>-<family>*, the highest version
+        wins; at equal version a stable name beats a -preview one. Falls back
+        to 'gemini-flash-latest' when listing fails, and caches the result for
+        the process lifetime.
+
+    Inputs:
+        preference (str): model family, 'pro' (default) or 'flash'.
+
+    Outputs:
+        model (str): a concrete model id usable with generate_content.
+    --------------------------------------------------------------------------
+    """
+    global _RESOLVED_MODEL
+    if _RESOLVED_MODEL:
+        return _RESOLVED_MODEL
+    fallback = "gemini-flash-latest"
+    if not _GENAI_OK:
+        return fallback
+    try:
+        client = genai.Client(api_key=_require_api_key())
+        best: tuple[float, int, str] | None = None
+        for model in client.models.list():
+            name = (getattr(model, "name", "") or "").split("/")[-1]
+            match = re.match(
+                rf"^gemini-(\d+(?:\.\d+)?)-{preference}(?:$|-)", name)
+            if not match:
+                continue
+            if any(marker in name for marker in _NON_TEXT_MARKERS):
+                continue
+            version = float(match.group(1))
+            stable = 0 if name.endswith("-preview") or "-preview-" in name else 1
+            candidate = (version, stable, name)
+            if best is None or candidate > best:
+                best = candidate
+        _RESOLVED_MODEL = best[2] if best else fallback
+    except Exception:  # listing failure: degrade to the alias, never crash
+        _RESOLVED_MODEL = fallback
+    return _RESOLVED_MODEL
+
+
 def _require_api_key() -> str:
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
@@ -78,7 +134,7 @@ def _require_api_key() -> str:
     return key
 
 
-def count_gemini_tokens(prompt: str, model: str = "gemini-2.0-flash") -> int:
+def count_gemini_tokens(prompt: str, model: str = "auto") -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -99,6 +155,8 @@ def count_gemini_tokens(prompt: str, model: str = "gemini-2.0-flash") -> int:
     if not _GENAI_OK:
         return -1
     try:
+        if model in ("", "auto", None):
+            model = resolve_gemini_model()
         client = genai.Client(api_key=_require_api_key())
         result = client.models.count_tokens(model=model, contents=prompt)
         return int(getattr(result, "total_tokens", -1) or -1)
@@ -113,6 +171,17 @@ def _salvage_json(raw: str) -> dict:
     complete object and re-balance the brackets once. Raises ReviewerError only
     when even the repair fails.
     """
+    raw = raw.strip()
+    # Some models wrap the JSON in a markdown fence despite the JSON mime type.
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1]
+        if raw.rstrip().endswith("```"):
+            raw = raw.rstrip()[:-3]
+        raw = raw.strip()
+    # Trim any preamble before the first JSON opener.
+    first = min((i for i in (raw.find("{"), raw.find("[")) if i >= 0), default=0)
+    raw = raw[first:]
+
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -131,23 +200,26 @@ def _salvage_json(raw: str) -> dict:
     raise ReviewerError(f"Gemini returned non-JSON response: {raw[:200]}")
 
 
-def run_gemini(prompt: str, model: str = "gemini-2.0-flash", temperature: float = 0.3,
-               max_output_tokens: int = 2048) -> dict:
+def run_gemini(prompt: str, model: str = "auto", temperature: float = 0.3,
+               max_output_tokens: int = 8192) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
         Send a fully-formed prompt to Gemini and return the parsed JSON object.
         Pure core shared by the standalone CLI and deliberate.py. Never prints and
         never calls sys.exit; raises ReviewerError on any failure so callers can
-        mark the reviewer unavailable and continue.
+        mark the reviewer unavailable and continue. With model='auto' the most
+        recent PRO model is resolved via ListModels, and a NOT_FOUND on an
+        explicit model id triggers one retry on the resolved model, so a retired
+        id degrades instead of failing the panel.
 
     Inputs:
         prompt (str): complete prompt text (the caller does all formatting).
-        model (str): Gemini model id.
+        model (str): Gemini model id, or 'auto' for the latest PRO.
         temperature (float): sampling temperature.
-        max_output_tokens (int): hard cap on the response so a free-tier call
-            finishes instead of overrunning the budget; pair with a terse,
-            bounded prompt so the JSON completes within it.
+        max_output_tokens (int): response cap; sized so a structured review
+            finishes without truncation (truncated JSON was the historical
+            'Gemini returned non-JSON response' failure).
 
     Outputs:
         result (dict): parsed JSON response following the reviewer schema.
@@ -157,10 +229,12 @@ def run_gemini(prompt: str, model: str = "gemini-2.0-flash", temperature: float 
         raise ReviewerError("google-genai not installed. Run: pip install google-genai")
     api_key = _require_api_key()
     client = genai.Client(api_key=api_key)
+    if model in ("", "auto", None):
+        model = resolve_gemini_model()
 
-    try:
-        response = client.models.generate_content(
-            model=model,
+    def _call(model_id: str):
+        return client.models.generate_content(
+            model=model_id,
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -168,8 +242,19 @@ def run_gemini(prompt: str, model: str = "gemini-2.0-flash", temperature: float 
                 max_output_tokens=max_output_tokens,
             ),
         )
+
+    try:
+        response = _call(model)
     except Exception as exc:
-        raise ReviewerError(f"Gemini API call failed: {exc}") from exc
+        # Retired/typoed explicit id: retry once on the freshest PRO before giving up.
+        resolved = resolve_gemini_model()
+        if "NOT_FOUND" in str(exc) and resolved != model:
+            try:
+                response = _call(resolved)
+            except Exception as exc2:
+                raise ReviewerError(f"Gemini API call failed: {exc2}") from exc2
+        else:
+            raise ReviewerError(f"Gemini API call failed: {exc}") from exc
 
     raw = (response.text or "").strip()
     return _salvage_json(raw)
@@ -187,7 +272,7 @@ def main() -> None:
     parser.add_argument("draft", nargs="?", default=None, help="Draft plan text")
     parser.add_argument("--stdin", action="store_true", help="Read draft from stdin")
     parser.add_argument("--topic", default="", help="Research topic for context")
-    parser.add_argument("--model", default="gemini-2.0-flash", help="Gemini model ID")
+    parser.add_argument("--model", default="auto", help="Gemini model ID, or 'auto' for the latest PRO")
     args = parser.parse_args()
 
     if args.stdin:

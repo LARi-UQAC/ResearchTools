@@ -387,11 +387,116 @@ class TestDownloadOneTiers(unittest.TestCase):
                 return {"format": "html", "source": "unpaywall", "file": "smith2024.html"}
             with mock.patch.object(download_pdf, "try_elsevier", return_value=False), \
                  mock.patch.object(download_pdf, "try_semantic_scholar", return_value=False), \
+                 mock.patch.object(download_pdf, "try_publisher_pdf", return_value=False), \
                  mock.patch.object(download_pdf, "try_unpaywall", side_effect=fake_unpaywall):
                 res = download_pdf.download_one(self.ENTRY, tmp, "KEY", None, email="a@b.ca")
         self.assertEqual(res["status"], "unpaywall")
         self.assertEqual(res["format"], "html")
-        self.assertEqual(res["tier"], 3)
+        self.assertEqual(res["tier"], 4)
+
+    def test_publisher_tier_mdpi_pdf_url(self):
+        """MDPI landing URL is reconstructed to <landing>/pdf and fetched with
+        browser headers; validates the anti-bot bypass path (no network: both
+        requests.get and _fetch_pdf are patched)."""
+        seen = {}
+
+        class FakeResponse:
+            url = "https://www.mdpi.com/2411-9660/9/5/122"
+            headers = {"Content-Type": "text/html"}
+            text = "<html><body>article</body></html>"
+
+        def fake_fetch_pdf(url, dest, headers=None):
+            seen["url"] = url
+            seen["ua"] = (headers or {}).get("User-Agent", "")
+            Path(dest).write_bytes(b"%PDF-1.4 fake")
+            return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "smith2024.pdf")
+            # Pin the requests fallback path (curl_cffi tier tested separately).
+            with mock.patch.object(download_pdf, "_CFFI_OK", False), \
+                 mock.patch.object(download_pdf.requests, "get", return_value=FakeResponse()), \
+                 mock.patch.object(download_pdf, "_fetch_pdf", side_effect=fake_fetch_pdf):
+                ok = download_pdf.try_publisher_pdf("10.3390/designs9050122", dest)
+        self.assertTrue(ok)
+        self.assertEqual(seen["url"], "https://www.mdpi.com/2411-9660/9/5/122/pdf")
+        self.assertIn("Chrome", seen["ua"])
+
+    def test_publisher_tier_citation_pdf_meta(self):
+        """Generic path: the citation_pdf_url meta tag on the landing page gives
+        the direct PDF URL for non-MDPI publishers."""
+        seen = {}
+
+        class FakeResponse:
+            url = "https://link.springer.com/article/10.1007/x"
+            headers = {"Content-Type": "text/html"}
+            text = ('<html><head><meta name="citation_pdf_url" '
+                    'content="https://link.springer.com/content/pdf/10.1007/x.pdf">'
+                    "</head></html>")
+
+        def fake_fetch_pdf(url, dest, headers=None):
+            seen["url"] = url
+            Path(dest).write_bytes(b"%PDF-1.4 fake")
+            return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "smith2024.pdf")
+            with mock.patch.object(download_pdf, "_CFFI_OK", False), \
+                 mock.patch.object(download_pdf.requests, "get", return_value=FakeResponse()), \
+                 mock.patch.object(download_pdf, "_fetch_pdf", side_effect=fake_fetch_pdf):
+                ok = download_pdf.try_publisher_pdf("10.1007/x", dest)
+        self.assertTrue(ok)
+        self.assertEqual(seen["url"], "https://link.springer.com/content/pdf/10.1007/x.pdf")
+
+    def test_akamai_interstitial_solver(self):
+        """The bm-verify PoW is parsed and posted to /_sec/verify; a 200 there
+        means the session cookie is cleared for the retry."""
+        challenge = ('<html><script> var i = 1000; '
+                     'var j = i + Number("2501" + "60305"); </script>'
+                     'xhr.open("POST", "/_sec/verify?provider=interstitial");'
+                     'xhr.send(JSON.stringify({"bm-verify": "TOKEN123", "pow": j}));</html>')
+        posted = {}
+
+        class FakeSession:
+            def post(self, url, json=None, headers=None, timeout=None):
+                posted.update(url=url, json=json)
+                return mock.Mock(status_code=200)
+
+        resp = mock.Mock(text=challenge)
+        ok = download_pdf._solve_akamai_interstitial(
+            FakeSession(), resp, "https://www.mdpi.com")
+        self.assertTrue(ok)
+        self.assertIn("/_sec/verify", posted["url"])
+        self.assertEqual(posted["json"]["bm-verify"], "TOKEN123")
+        self.assertEqual(posted["json"]["pow"], 1000 + 250160305)
+
+    def test_akamai_solver_noop_without_challenge(self):
+        """A normal page (no bm-verify) is not treated as a challenge."""
+        resp = mock.Mock(text="<html>real article</html>")
+        self.assertFalse(download_pdf._solve_akamai_interstitial(
+            mock.Mock(), resp, "https://host"))
+
+    def test_cffi_get_pdf_disabled_when_lib_absent(self):
+        """With curl_cffi unavailable the tier degrades to False, never raises."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(download_pdf, "_CFFI_OK", False):
+                self.assertFalse(download_pdf._cffi_get_pdf(
+                    "https://host/x.pdf", os.path.join(tmp, "x.pdf"), "https://host/x"))
+
+    def test_curl_fallback_rejects_non_pdf(self):
+        """The curl fallback never keeps a payload that fails the %PDF magic
+        check (an HTML error page must be deleted, not stored as .pdf)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, "x.pdf")
+
+            def fake_run(cmd, capture_output, timeout):
+                Path(dest).write_bytes(b"<html>blocked</html>")
+                return mock.Mock(returncode=0)
+
+            with mock.patch("subprocess.run", side_effect=fake_run):
+                ok = download_pdf._curl_pdf_fallback("https://host/x.pdf", dest)
+        self.assertFalse(ok)
+        self.assertFalse(os.path.exists(dest))
 
     def test_present_detects_html(self):
         with tempfile.TemporaryDirectory() as tmp:

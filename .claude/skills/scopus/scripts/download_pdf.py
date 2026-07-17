@@ -64,6 +64,18 @@ try:
 except ImportError:  # pragma: no cover - defensive: fallback simply disabled
     s2 = None
 
+# curl_cffi impersonates a real browser's TLS/JA3 fingerprint, which defeats the
+# Akamai / Cloudflare bot managers that 403 a plain requests or curl User-Agent
+# even on fully open-access content (MDPI is the canonical case). Optional: the
+# tier is skipped with a one-line hint when the library is absent, so the base
+# pipeline keeps working without it.
+try:
+    from curl_cffi import requests as _cffi_requests
+    _CFFI_OK = True
+except ImportError:  # pragma: no cover - optional dependency
+    _cffi_requests = None
+    _CFFI_OK = False
+
 logger = logging.getLogger(__name__)
 
 ELSEVIER_FULLTEXT_URL = "https://api.elsevier.com/content/article/doi/{doi}"
@@ -87,6 +99,30 @@ REQUEST_TIMEOUT_S = 60
 HTML_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) ResearchToolsBot/1.0 Safari/537.36"
+)
+
+# Full browser header set for the publisher-PDF tier: several OA publishers
+# (MDPI notably) serve the PDF to a real browser but 403 a bare requests UA.
+# Presenting a complete desktop profile is enough for these hosts; no cookie or
+# JavaScript execution is involved (paywalled content still fails and falls
+# through to the later tiers / _failed.md).
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
+              "image/webp,*/*;q=0.8",
+    "Accept-Language": "fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3",
+}
+
+# citation_pdf_url is the Highwire meta tag most publishers (MDPI, Springer,
+# Frontiers, Wiley OA, T&F OA) embed on the article landing page; scraping it is
+# the generic way to reconstruct the direct PDF URL from a DOI.
+_CITATION_PDF_RE = re.compile(
+    r'<meta[^>]+name=["\']citation_pdf_url["\'][^>]+content=["\']([^"\']+)["\']'
+    r'|<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']citation_pdf_url["\']',
+    re.IGNORECASE,
 )
 
 # Markers that betray a paywall, login wall, or bot challenge rather than the
@@ -627,12 +663,19 @@ def try_unpaywall(doi: str, out_dir: str, entry: dict[str, str],
     body = _http_json(UNPAYWALL_URL.format(doi=_clean_doi(doi)), params={"email": email})
     if not body:
         return None
-    loc = body.get("best_oa_location") or {}
-    pdf_url = (loc.get("url_for_pdf") or "").strip()
-    if pdf_url:
+    # Try every OA location, not just the best one: a bronze/hybrid PDF often
+    # sits behind a publisher bot manager (Taylor & Francis) that only the
+    # browser-TLS path clears, while a repository copy may be plainly fetchable.
+    locations = [body.get("best_oa_location") or {}] + list(body.get("oa_locations") or [])
+    for loc in locations:
+        pdf_url = (loc.get("url_for_pdf") or "").strip()
+        if not pdf_url:
+            continue
         pdf_dest = os.path.join(out_dir, target_filename(entry, "pdf"))
-        if _fetch_pdf(pdf_url, pdf_dest):
+        landing = (loc.get("url_for_landing_page") or loc.get("url") or pdf_url).strip()
+        if _cffi_get_pdf(pdf_url, pdf_dest, landing) or _fetch_pdf(pdf_url, pdf_dest):
             return {"format": "pdf", "source": "unpaywall", "file": os.path.basename(pdf_dest)}
+    loc = body.get("best_oa_location") or {}
     if allow_html:
         page_url = (loc.get("url_for_landing_page") or loc.get("url") or "").strip()
         if page_url:
@@ -736,6 +779,194 @@ def try_landing_html(doi: str, out_dir: str, entry: dict[str, str],
     return None
 
 
+def _curl_pdf_fallback(url: str, dest: str) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Last-chance fetch of a candidate PDF URL through the system curl binary
+        with a browser User-Agent. Some hosts fingerprint the TLS/HTTP stack and
+        403 python-requests while accepting curl; this mirrors the manual
+        command that works in practice:
+        curl -L -A "Mozilla/5.0 (...)" <url> -o <dest>
+        The downloaded bytes are validated with the %PDF magic number before the
+        file is kept, so an HTML error page is never stored as a PDF.
+
+    Inputs:
+        url (str): direct PDF candidate URL
+        dest (str): target file path
+
+    Outputs:
+        ok (bool): True when a validated PDF was written to dest.
+    --------------------------------------------------------------------------
+    """
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["curl", "-sL", "-A", BROWSER_HEADERS["User-Agent"],
+             "--max-time", str(REQUEST_TIMEOUT_S), "-o", dest, url],
+            capture_output=True, timeout=REQUEST_TIMEOUT_S + 15)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    if proc.returncode != 0 or not os.path.exists(dest):
+        return False
+    try:
+        with open(dest, "rb") as handle:
+            magic = handle.read(5)
+        if magic.startswith(b"%PDF"):
+            return True
+    except OSError:
+        pass
+    try:
+        os.remove(dest)  # invalid payload: never keep a non-PDF under .pdf
+    except OSError:
+        pass
+    return False
+
+
+def _solve_akamai_interstitial(session: Any, resp: Any, origin: str) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Solve the Akamai Bot Manager "bm-verify" interstitial that MDPI (and
+        other Akamai-fronted OA publishers) serve before the PDF. The challenge
+        page embeds a trivial proof-of-work (var i = N; j = i + Number("A"+"B"))
+        and a bm-verify token; posting {bm-verify, pow} to /_sec/verify sets the
+        valid _abck cookie on the session so the next request returns the PDF.
+        This only clears the bot gate on already-open-access content; it never
+        touches a paywall or authentication.
+
+    Inputs:
+        session: a curl_cffi Session (carries the cookie jar).
+        resp: the challenge response whose .text holds the interstitial.
+        origin (str): scheme+host for the /_sec/verify POST.
+
+    Outputs:
+        solved (bool): True when the verify POST returned 200.
+    --------------------------------------------------------------------------
+    """
+    text = getattr(resp, "text", "") or ""
+    if "bm-verify" not in text or "_sec/verify" not in text:
+        return False
+    m_i = re.search(r'var\s+i\s*=\s*(\d+)', text)
+    m_num = re.search(r'Number\("(\d+)"\s*\+\s*"(\d+)"\)', text)
+    # The xhr.send JSON body carries the un-encoded token (the meta URL one is URL-encoded).
+    m_tok = re.search(r'"bm-verify":\s*"([^"]+)"', text)
+    if not (m_i and m_num and m_tok):
+        return False
+    pow_val = int(m_i.group(1)) + int(m_num.group(1) + m_num.group(2))
+    try:
+        verify = session.post(
+            f"{origin}/_sec/verify?provider=interstitial",
+            json={"bm-verify": m_tok.group(1), "pow": pow_val},
+            headers={"Content-Type": "application/json"}, timeout=REQUEST_TIMEOUT_S)
+        return int(getattr(verify, "status_code", 0)) == 200
+    except Exception:
+        return False
+
+
+def _cffi_get_pdf(url: str, dest: str, referer: str) -> bool:
+    """Fetch a candidate PDF URL through a curl_cffi Chrome-impersonated session,
+    solving an Akamai interstitial once if it appears, and keep the bytes only
+    when they pass the %PDF magic check. Returns False (never raises) if the
+    library is absent or any step fails."""
+    if not _CFFI_OK:
+        return False
+    origin = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+    try:
+        session = _cffi_requests.Session(impersonate="chrome")
+        if referer:  # seed cookies + clear any landing-page interstitial first
+            seed = session.get(referer, timeout=REQUEST_TIMEOUT_S)
+            _solve_akamai_interstitial(session, seed, origin)
+        resp = session.get(url, timeout=REQUEST_TIMEOUT_S,
+                           headers={"Referer": referer} if referer else {})
+        if resp.content[:4] != b"%PDF" and _solve_akamai_interstitial(session, resp, origin):
+            resp = session.get(url, timeout=REQUEST_TIMEOUT_S,
+                               headers={"Referer": referer} if referer else {})
+        if resp.content[:4] == b"%PDF":
+            with open(dest, "wb") as handle:
+                handle.write(resp.content)
+            return True
+    except Exception as exc:  # pragma: no cover - network path
+        logger.info("[PUBLISHER] curl_cffi failed for %s: %s", url, exc)
+    return False
+
+
+def try_publisher_pdf(doi: str, dest: str) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Reconstruct the publisher's direct PDF URL from the DOI and fetch it,
+        bypassing the anti-bot checks that reject the plain requests UA (MDPI is
+        the main case). Strategy:
+        (1) resolve the DOI landing page with curl_cffi (browser TLS) when
+            available, else BROWSER_HEADERS via requests;
+        (2) publisher pattern: an mdpi.com landing URL becomes <landing>/pdf;
+        (3) generic pattern: scrape the citation_pdf_url meta tag from the
+            landing HTML (standard on MDPI, Springer, Frontiers, Wiley OA);
+        (4) each candidate is fetched first through curl_cffi with the Akamai
+            interstitial solver, then requests + BROWSER_HEADERS, then the
+            system curl fallback.
+        Content is validated by the %PDF magic number in every path, so a
+        paywall or challenge stub is never stored.
+
+    Inputs:
+        doi (str): the paper DOI
+        dest (str): target .pdf path
+
+    Outputs:
+        ok (bool): True when a validated publisher PDF was written to dest.
+    --------------------------------------------------------------------------
+    """
+    clean = _clean_doi(doi)
+    landing_url, html = "", ""
+
+    # Prefer curl_cffi for the landing resolve too: Akamai 403s plain requests.
+    if _CFFI_OK:
+        try:
+            session = _cffi_requests.Session(impersonate="chrome")
+            resp = session.get(DOI_RESOLVER_URL.format(doi=clean), timeout=REQUEST_TIMEOUT_S)
+            origin = f"{urlparse(str(resp.url)).scheme}://{urlparse(str(resp.url)).netloc}"
+            if "bm-verify" in (resp.text or ""):
+                _solve_akamai_interstitial(session, resp, origin)
+                resp = session.get(str(resp.url), timeout=REQUEST_TIMEOUT_S)
+            landing_url = str(resp.url or "")
+            html = (resp.text or "")[:200_000]
+        except Exception as exc:
+            logger.info("[PUBLISHER] curl_cffi landing failed for %s: %s", doi, exc)
+
+    if not landing_url:
+        try:
+            response = requests.get(
+                DOI_RESOLVER_URL.format(doi=clean), headers=BROWSER_HEADERS,
+                allow_redirects=True, timeout=REQUEST_TIMEOUT_S)
+            landing_url = str(response.url or "")
+            if "text/html" in response.headers.get("Content-Type", "").lower():
+                html = response.text[:200_000]
+        except Exception as exc:  # network or TLS refusal: curl may still succeed below
+            logger.info("[PUBLISHER] landing resolve failed for %s: %s", doi, exc)
+
+    candidates: list[str] = []
+    if "mdpi.com" in landing_url:
+        candidates.append(landing_url.rstrip("/") + "/pdf")
+    if html:
+        match = _CITATION_PDF_RE.search(html)
+        if match:
+            pdf_url = (match.group(1) or match.group(2) or "").strip()
+            if pdf_url:
+                candidates.append(urljoin(landing_url, pdf_url))
+
+    for url in candidates:
+        if _cffi_get_pdf(url, dest, landing_url):
+            logger.info("[PUBLISHER] curl_cffi OK: %s", url)
+            return True
+        if _fetch_pdf(url, dest, headers=BROWSER_HEADERS):
+            return True
+        if _curl_pdf_fallback(url, dest):
+            logger.info("[PUBLISHER] curl fallback OK: %s", url)
+            return True
+    return False
+
+
 def _result(base: dict[str, Any], out_dir: str, file: str, fmt: str,
             source: str, tier: int) -> dict[str, Any]:
     """Assemble a success result dict, attaching the written file's byte size."""
@@ -757,6 +988,7 @@ def download_one(entry: dict[str, str], out_dir: str,
         out_dir, presence-gated: if refs/<key>.{pdf,html,md} already exists it is
         skipped (no network call). Otherwise the tiers run in order and the first
         validated artifact wins: Elsevier PDF -> Semantic Scholar PDF ->
+        publisher PDF (browser headers + curl fallback, DOI-reconstructed URL) ->
         Unpaywall (PDF then HTML) -> arXiv (PDF then HTML) -> PMC HTML ->
         validated landing HTML.
 
@@ -770,9 +1002,10 @@ def download_one(entry: dict[str, str], out_dir: str,
 
     Outputs:
         result (dict): {citekey, doi, file, format, source, tier, status} where
-        status is one of 'present', 'elsevier', 'semantic_scholar', 'unpaywall',
-        'arxiv', 'pmc', 'landing', 'failed', 'no-doi'. 'format' is 'pdf'/'html'
-        (or 'md' for a pre-existing file), and 'tier' is the source tier number.
+        status is one of 'present', 'elsevier', 'semantic_scholar', 'publisher',
+        'unpaywall', 'arxiv', 'pmc', 'landing', 'failed', 'no-doi'. 'format' is
+        'pdf'/'html' (or 'md' for a pre-existing file), and 'tier' is the source
+        tier number.
     --------------------------------------------------------------------------
     """
     doi = _clean_doi(entry.get("doi", ""))
@@ -801,11 +1034,15 @@ def download_one(entry: dict[str, str], out_dir: str,
     if try_semantic_scholar(doi, pdf_dest):
         logger.info("[FULLTEXT] Semantic Scholar PDF OK: %s", os.path.basename(pdf_dest))
         return _result(base, out_dir, os.path.basename(pdf_dest), "pdf", "semantic_scholar", 2)
-    # Tier 3 - Unpaywall (PDF then landing HTML).
+    # Tier 3 - publisher PDF reconstructed from the DOI (browser headers + curl).
+    if try_publisher_pdf(doi, pdf_dest):
+        logger.info("[FULLTEXT] publisher PDF OK: %s", os.path.basename(pdf_dest))
+        return _result(base, out_dir, os.path.basename(pdf_dest), "pdf", "publisher", 3)
+    # Tier 4 - Unpaywall (PDF then landing HTML).
     res = try_unpaywall(doi, out_dir, entry, email, allow_html)
     if res:
         logger.info("[FULLTEXT] Unpaywall %s OK: %s", res["format"], res["file"])
-        return _result(base, out_dir, res["file"], res["format"], "unpaywall", 3)
+        return _result(base, out_dir, res["file"], res["format"], "unpaywall", 4)
 
     # arXiv / PMC tiers need the S2 externalIds map.
     ext_ids: dict[str, Any] = {}
@@ -816,21 +1053,21 @@ def download_one(entry: dict[str, str], out_dir: str,
             logger.warning("[FULLTEXT] externalIds lookup failed for %s: %s", doi, exc)
             ext_ids = {}
 
-    # Tier 4 - arXiv (PDF then native/ar5iv HTML).
+    # Tier 5 - arXiv (PDF then native/ar5iv HTML).
     res = try_arxiv(doi, out_dir, entry, ext_ids, allow_html)
     if res:
         logger.info("[FULLTEXT] arXiv %s OK: %s", res["format"], res["file"])
-        return _result(base, out_dir, res["file"], res["format"], "arxiv", 4)
-    # Tier 5 - PubMed Central article HTML.
+        return _result(base, out_dir, res["file"], res["format"], "arxiv", 5)
+    # Tier 6 - PubMed Central article HTML.
     res = try_pmc(doi, out_dir, entry, ext_ids, allow_html)
     if res:
         logger.info("[FULLTEXT] PMC HTML OK: %s", res["file"])
-        return _result(base, out_dir, res["file"], res["format"], "pmc", 5)
-    # Tier 6 - validated DOI landing-page HTML (last resort).
+        return _result(base, out_dir, res["file"], res["format"], "pmc", 6)
+    # Tier 7 - validated DOI landing-page HTML (last resort).
     res = try_landing_html(doi, out_dir, entry, allow_html)
     if res:
         logger.info("[FULLTEXT] landing HTML OK: %s", res["file"])
-        return _result(base, out_dir, res["file"], res["format"], "landing", 6)
+        return _result(base, out_dir, res["file"], res["format"], "landing", 7)
 
     logger.info("[FULLTEXT] failed (no open-access full text found): %s", doi)
     return {**base, "file": target_filename(entry, "pdf"), "format": None,

@@ -47,7 +47,8 @@ cd ".claude/skills/scopus"
 | `author ` | Author profile | `python scripts/scopus_api.py author "<name>"` |
 | `journal ` | Venue metadata — journal, conference proceeding, book series, trade journal (SJR, CiteScore, publisher, ISSN/ISBN, venue type) | `python scripts/scopus_api.py journal "<venue name or ISSN>" [--fallback-doi "<DOI>"]` |
 | `review ` | Literature review | `python scripts/scopus_api.py search "<rest>" --count 15` then synthesize |
-| `download ` | **Full-text PDF retrieval** into a project `refs/` dir (Elsevier primary, Semantic Scholar OA fallback) | `python scripts/download_pdf.py doi "<DOI>" --latex "<main.tex>"` or `python scripts/download_pdf.py bib "<refs.bib>" --latex "<main.tex>"` |
+| `download ` | **Full-text retrieval** into a project `refs/` dir (Elsevier -> Semantic Scholar -> publisher PDF with browser-TLS (curl_cffi) + Akamai interstitial solver + curl fallback -> Unpaywall -> arXiv -> PMC -> validated landing HTML) | `python scripts/download_pdf.py doi "<DOI>" --latex "<main.tex>"` or `python scripts/download_pdf.py bib "<refs.bib>" --latex "<main.tex>"` |
+| `batch ` | **Batch corpus pipeline** — strict TITLE() title-to-DOI resolution (no weak-hit fallback), cite enrichment, venue grading A-D, BibTeX generation (doi + clickable url, at-free excluded blocks, forbidden-char normalization) | `python scripts/bib_batch.py all candidates.json --corpus corpus.json --bib review.bib` (modes: `resolve`, `enrich`, `bib`, `all`) |
 | anything else | Search (optional `--year_min YYYY` to constrain to recent papers) | `python scripts/scopus_api.py search "<all args>" --count 10` |
 
 ---

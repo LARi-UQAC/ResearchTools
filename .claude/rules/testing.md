@@ -24,7 +24,8 @@ so tests are run manually.
 The runnable code in this repo is the skill scripts under `.claude/skills/*/scripts/`. To
 exercise them, set the required environment variables, then dry-run the entry points:
 
-- `scopus` skill: `scopus_api.py` (Scopus REST client), `semantic_scholar_api.py`
+- `scopus` skill: `scopus_api.py` (Scopus REST client), `bib_batch.py` (batch
+  title-to-DOI resolution, enrichment, grading, BibTeX generation), `semantic_scholar_api.py`
   (fallback + `external_ids_for_doi`), `download_pdf.py` (any-format full-text retrieval:
   Elsevier/S2 PDF, then Unpaywall/arXiv/PMC/landing HTML), and the cross-review cores
   (`gemini_reviewer.py`, `github_reviewer.py`, `gemini_table.py`).
@@ -37,7 +38,8 @@ exercise them, set the required environment variables, then dry-run the entry po
 Offline unit tests (no network, no API key, no model load; run with the project Python):
 
 ```powershell
-python .claude/skills/scopus/scripts/Test/test_download_pdf.py            # any-format tiers, HTML validation
+python .claude/skills/scopus/scripts/Test/test_download_pdf.py            # any-format tiers (incl. publisher/curl), HTML validation
+python .claude/skills/scopus/scripts/Test/test_bib_batch.py               # title match, venue grading, BibTeX invariants
 python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py # scan_sections / section-scan
 ```
 

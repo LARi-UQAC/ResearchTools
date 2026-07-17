@@ -7,6 +7,7 @@ This repository defines specialized academic agents as flat markdown files under
 `.claude/agents/` (canonical source of truth). When a task matches one of them,
 read the corresponding file in full and follow it exactly:
 
+- `authoring-loop` - see `.claude/agents/authoring-loop.md`
 - `bib-cleaner` - see `.claude/agents/bib-cleaner.md`
 - `cover-paper` - see `.claude/agents/cover-paper.md`
 - `latex-writer` - see `.claude/agents/latex-writer.md`

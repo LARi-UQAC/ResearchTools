@@ -147,6 +147,7 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries; NOT LaTeX text authoring) | `local-writer` agent (haiku wrapper + local `ornith:9b`) | by context / by name |
 | Local code generation against a spec/failing test, refactor snippets, scaffolds | `local-coder` agent (haiku wrapper + local `qwen3.5:9b`) | by context / by name |
 | Budget-bounded develop-and-improve loop (design→code→review→score→correct until a composite gate or budget cap) | `loop-engineer` skill (Agent SDK; Fable 5 orchestrates, Opus/Sonnet act, local agents generate) | `/loopdev` |
+| ScholarEval-gated authoring loop (define→author→audit→loop→memory until min_score or max_budget) | `authoring-loop` agent (author on Fable 5, `scholar-evaluation` on Sonnet/Haiku, memory via `local-writer`) | by name |
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
 | Validate TiKZ code, diagnose LaTeX errors | - | `/tikz`, `/latex` |
 | Cross-model debate before finalizing | `deliberation` skill | inside auditors/researchers |

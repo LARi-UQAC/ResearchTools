@@ -359,6 +359,31 @@ flowchart LR
   classDef actor fill:#eef,stroke:#333,stroke-width:1px;
 ```
 
+### Authoring loop (ScholarEval-gated variant)
+
+The same loop applies to writing, driven by the [authoring-loop](agents/authoring-loop.md)
+agent. The score comes from the `scholar-evaluation` skill (prose quality) instead of the code
+reviewers, and the actors are the authoring agents. Define a subject, author with the matching
+agent on Fable 5, audit with `scholar-evaluation` on a cheap model to get the ScholarEval
+overall score, loop until the score reaches `min_score` or the spend reaches `max_budget`, then
+record the learnings to the project memory with `local-writer`. The gate is the single
+ScholarEval overall plus a regression guard (a revision that lowers the score is discarded), and
+the budget is advisory unless the run is wrapped in the loop-engineer SDK driver. The five steps
+are the contract in the loop-engineer [SKILL.md](skills/loop-engineer/SKILL.md).
+
+```mermaid
+flowchart TD
+  S([subject + min_score + max_budget]) --> A["Author / revise<br/>authoring agent - Fable 5<br/>(litreview / latex-writer / reviewer-response)"]
+  A --> AU["Audit<br/>scholar-evaluation - Sonnet/Haiku<br/>ScholarEval overall + improvement plan"]
+  AU --> G{"overall >= min_score?"}
+  G -->|"yes"| M["Record learnings to memory<br/>local-writer (Haiku + ornith:9b)"]
+  M --> DONE([Done])
+  G -->|"no"| B{"budget reached<br/>or no progress?"}
+  B -->|"yes"| M
+  B -->|"no"| R["Feed improvement plan back<br/>(discard a score regression)"]
+  R --> A
+```
+
 ## Notes
 
 - **Agent file format.** Each agent is one flat markdown file [agents/](agents)`<name>.md` whose line 1 opens YAML frontmatter (`name:`, `description:`) — the layout Claude Code's subagent discovery scans. Skills are the opposite: folder-based (`skills/<name>/SKILL.md`). The `.claude/agents/` files are canonical; `install.ps1` (repo root) regenerates the GitHub Copilot (`.github/agents/*.agent.md`), OpenCode, Continue, and Aider mirrors from them, and `install-junctions.ps1` links them per-file into `~/.claude/agents/` for global availability.
@@ -371,4 +396,5 @@ flowchart LR
 - **Where authoring happens — the rule that avoids nested-subagent spawning.** Top-level authoring (writing a section, or *executing* an auditor's plan) delegates to [latex-writer](agents/latex-writer.md), which loads the full skill; a top-level spawn is reliable. The six academic agents above run as subagents, so they cannot reliably spawn another subagent — they read `SKILL.md` directly and author/check themselves, and must not call `latex-writer`. Accordingly, each auditor's plan footer and execution mode route plan execution through `latex-writer` so every `\added`/`\replaced` float and paragraph follows the full skill.
 - **thesis-to-paper orchestrator.** [thesis-to-paper](agents/thesis-to-paper.md) integrates a thesis and its conference papers into one journal manuscript through a 12-task pipeline (pandoc reference conversion into a read-only `reference_latex/`, a figure pipeline, a content-delta matrix measured against the published baseline, then `/litreview`, `scientific-writing`, `/bibclean`, `/submitcheck`, and `/auditpaper`). Because it runs as a top-level workflow, it executes those deliberation-dependent pipelines INLINE (a subagent cannot reliably spawn another), including their sanctioned pauses and exit checklists. It survives usage limits via a `PROGRESS.md` + plan-doc checkpoint protocol and journals to Obsidian (global CLAUDE.md Case 1). Invoked by name.
 - **Local-delegation agents.** [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) each run on a Haiku wrapper whose `model:`, `tools:`, and `skills:` live in YAML frontmatter (Claude Code honours them; `install.ps1` reads only `name`/`description`, so the extra keys are ignored by the mirror generation). Their sole cloud cost is the wrapper framing the task; the heavy generation runs on the local Ollama model via the Bash bridge. They are consumed by the [loop-engineer](skills/loop-engineer) skill (Layer 5). `local-writer` never authors LaTeX prose — `%` comments only — so LaTeX authoring stays with [latex-writer](agents/latex-writer.md) on the latest cloud model.
+- **authoring-loop orchestrator.** [authoring-loop](agents/authoring-loop.md) is the ScholarEval-gated writing counterpart of the code loop (Layer 5, "Authoring loop"): it runs author (Fable 5) -> `scholar-evaluation` audit (Sonnet/Haiku) -> loop to `min_score`/`max_budget` -> memory via `local-writer`. Like [thesis-to-paper](agents/thesis-to-paper.md) it runs at the top level (inline execution of the authoring/audit pipelines) and keeps a `PROGRESS.md` + ledger; its budget is advisory unless wrapped in the loop-engineer SDK driver. Invoked by name.
 - The non-academic agents in [agents/](agents) (analysis-engine, blazor-dev, cost-tester, flask-api, react-dev, security-auditor, word-to-latex) serve the CostEstimator software project and are out of scope for this diagram.

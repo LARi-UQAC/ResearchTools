@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Ask for my book (French version): Vibe Design. 13$ contribution via:
+Ask for my book (French version): Vibe Design. 30$ contribution via:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/s/89b1e1cc6c)
 

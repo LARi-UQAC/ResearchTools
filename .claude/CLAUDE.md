@@ -142,6 +142,7 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Respond to peer reviewers | `reviewer-response` | `/replyreviewer` |
 | Check submission readiness | `submit-checker` | `/submitcheck` |
 | Build the submission package (cover, title page, author profile, graphical abstract) | `cover-paper` | by name |
+| Integrate a thesis + its conference papers into one journal manuscript (invited extension; delta matrix, disclosure letter) | `thesis-to-paper` | by name |
 | Author LaTeX, Beamer, or TiKZ | `latex-writer` (+ `scientific-writing`) | by context |
 | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries; NOT LaTeX text authoring) | `local-writer` agent (haiku wrapper + local `ornith:9b`) | by context / by name |
 | Local code generation against a spec/failing test, refactor snippets, scaffolds | `local-coder` agent (haiku wrapper + local `qwen3.5:9b`) | by context / by name |

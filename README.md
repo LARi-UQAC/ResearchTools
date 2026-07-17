@@ -33,7 +33,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **10 skills**, **13 agents**, and **19 commands**.
+The repo ships **10 skills**, **14 agents**, and **19 commands**.
 
 ---
 
@@ -528,7 +528,7 @@ Example:
 ## Agents
 
 Agents are specialists Claude delegates to automatically based on context, or explicitly on
-request ("use the `scopus-auditor` agent to…"). Thirteen ship in this repo; most back a slash
+request ("use the `scopus-auditor` agent to…"). Fourteen ship in this repo; most back a slash
 command. Two of them (`local-writer`, `local-coder`) are local-delegation agents: a cheap
 cloud wrapper that drives a local Ollama model over a Bash bridge (see "Local delegation").
 
@@ -551,6 +551,7 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `submit-checker` | Pass/fail submission checklist against a target journal's requirements | `/submitcheck` | `.claude/agents/submit-checker.md` |
 | `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex.md` |
 | `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt) | by name (at submission) | `.claude/agents/cover-paper.md` |
+| `thesis-to-paper` | Integrate a thesis + its conference papers into one submission-ready journal manuscript (invited extension); pandoc reference conversion, figure pipeline, content-delta matrix, then `/litreview` + `scientific-writing` + `/bibclean` + `/submitcheck` + `/auditpaper` inline, with a multi-session checkpoint protocol | by name / "extend this paper to a journal version" | `.claude/agents/thesis-to-paper.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
 | `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via local `ornith:9b` over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
 | `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via local `qwen3.5:9b` over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
@@ -660,7 +661,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (13 agents)
+    ├── agents\                              (14 agents)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── scopus-auditor.md          ← /auditreview
     │   ├── paper-auditor.md           ← /auditpaper
@@ -671,6 +672,7 @@ ResearchTools\
     │   ├── submit-checker.md          ← /submitcheck
     │   ├── word-to-latex.md           ← /word2latex
     │   ├── cover-paper.md             ← submission package
+    │   ├── thesis-to-paper.md         ← thesis + conf papers -> journal manuscript
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (ornith:9b bridge)
     │   └── local-coder.md             ← local code gen (qwen3.5:9b bridge)

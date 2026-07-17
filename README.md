@@ -33,7 +33,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **9 skills**, **11 agents**, and **18 commands**.
+The repo ships **10 skills**, **13 agents**, and **19 commands**.
 
 ---
 
@@ -245,7 +245,7 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Nine ship in this repo.
+Skills bundle scripts and references the agents reuse. Ten ship in this repo.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -258,6 +258,7 @@ Skills bundle scripts and references the agents reuse. Nine ship in this repo.
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
 | `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `/geolocalisation`, `.claude/skills/geolocalisation/SKILL.md` |
+| `loop-engineer` | Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score `>=` min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; `local-coder`/`local-writer` do local generation. `loop_audit.py` aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated. | `/loopdev`, `.claude/skills/loop-engineer/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -527,8 +528,9 @@ Example:
 ## Agents
 
 Agents are specialists Claude delegates to automatically based on context, or explicitly on
-request ("use the `scopus-auditor` agent to…"). Eleven ship in this repo; most back a slash
-command.
+request ("use the `scopus-auditor` agent to…"). Thirteen ship in this repo; most back a slash
+command. Two of them (`local-writer`, `local-coder`) are local-delegation agents: a cheap
+cloud wrapper that drives a local Ollama model over a Bash bridge (see "Local delegation").
 
 Format (repo convention): one flat markdown file per agent at `.claude/agents/<name>.md`,
 opening with YAML frontmatter (`name:`, `description:`). This is what Claude Code's subagent
@@ -550,6 +552,8 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex.md` |
 | `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt) | by name (at submission) | `.claude/agents/cover-paper.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
+| `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via local `ornith:9b` over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
+| `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via local `qwen3.5:9b` over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
 
 The four ScholarEval auditors (`scopus-auditor`, `paper-auditor`, `thesis-auditor`,
 `thesis-proposal-auditor`) score the document before writing the plan; after the plan is
@@ -571,6 +575,42 @@ comparison (baseline vs post), hard-gated so execution only completes when the s
 - Additions `\added[id=RN]{}`, deletions `\deleted[id=RN]{}`, rewrites `\replaced[id=RN]{}{}` (changes package)
 - Reviewer colors: R1 blue, R2 red, R3 orange, R4+ purple (`\definechangesauthor`)
 - Every proposed reference validated via Scopus; `[NO DOI]` flagged in the summary when applicable
+
+### Local delegation (Ollama subagents)
+
+`local-writer` and `local-coder` cut cloud cost by keeping the top model as orchestrator and
+pushing token-heavy generation to local models on the GPU. Each agent runs on a cheap cloud
+model (Haiku) that only frames the task and drives a local model over a Bash bridge
+(`ollama run ornith:9b` for writing, `ollama run qwen3.5:9b` for code); the bulk text or code
+is generated locally and free. No gateway is used and cloud stays on your normal
+subscription auth, so only the small Haiku wrapper spends cloud tokens.
+
+Requirements: Ollama running with the two models pulled (`ollama list`). Until the 9B models
+are imported, the bridge falls back to `qwen2.5-coder:7b`. LiteLLM
+(`~/.litellm/ollama.yaml`) is optional and only gives the bridge its keep-alive / context
+tuning. `local-writer` never authors LaTeX prose (it may add `%` comments only); all
+scientific and LaTeX redaction stays with `latex-writer` + `scientific-writing` on the
+latest cloud Claude model.
+
+### Loop engineering (local-model dev loop)
+
+The `loop-engineer` skill runs a budget-bounded develop-and-improve loop: design → plan →
+code → comment → test → review → score → correct, repeating until a composite quality gate
+is met or a hard budget cap is hit. It keeps the best cloud model (Fable 5) as
+orchestrator/judge, uses cheaper cloud tiers (Opus for plans, Sonnet for execution and
+review) for the actions, and delegates code and comments to the local `local-coder` /
+`local-writer` agents so the heavy generation is free.
+
+Option contract: `--loop --budget <max_usd> --score <min_score> [--max-iters N]`. The default
+stop gate is composite: tests green AND no CRITICAL/HIGH review findings AND aggregate score
+`>=` min_score (default 90); a literal 100 is opt-in. The loop also stops on the hard budget
+cap, the max-iterations cap, or a no-progress plateau. The score aggregates findings from the
+installed reviewers (`/code-review`, `/security-guidance`, `pr-review-toolkit`,
+`systematic-debugging`) plus the betterleaks / pip-audit hooks, with security as a hard floor
+(any CRITICAL fails the gate regardless of the aggregate). The final merge to a protected
+branch is human-gated: the loop stops at "ready to merge" and waits for your confirmation.
+The loop diagram and the use-case diagram are in [Architecture.md](Architecture.md)
+("Layer 5 — Loop engineering").
 
 ### Calling an agent explicitly
 
@@ -620,7 +660,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (11 agents)
+    ├── agents\                              (13 agents)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── scopus-auditor.md          ← /auditreview
     │   ├── paper-auditor.md           ← /auditpaper
@@ -631,16 +671,19 @@ ResearchTools\
     │   ├── submit-checker.md          ← /submitcheck
     │   ├── word-to-latex.md           ← /word2latex
     │   ├── cover-paper.md             ← submission package
-    │   └── latex-writer.md            ← LaTeX authoring
-    ├── commands\                            (18 commands)
+    │   ├── latex-writer.md            ← LaTeX authoring
+    │   ├── local-writer.md            ← local docs/comments (ornith:9b bridge)
+    │   └── local-coder.md             ← local code gen (qwen3.5:9b bridge)
+    ├── commands\                            (19 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
     │   ├── ref.md      ├── litreview.md             ├── auditreview.md
     │   ├── auditpaper.md               ├── auditthesis.md
     │   ├── bibclean.md ├── submitcheck.md           ├── replyreviewer.md
-    │   ├── word2latex.md               └── geolocalisation.md
+    │   ├── word2latex.md               ├── geolocalisation.md
+    │   └── loopdev.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (9 skills)
+    └── skills\                              (10 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -655,7 +698,10 @@ ResearchTools\
         ├── word2latex\SKILL.md              (+ scripts\docx_inspect.py, manuscript_bib.py)
         ├── drawio2tikz\SKILL.md             (+ scripts\drawio2tikz.py;
         │                  references\conversion-rules.md)
-        └── geolocalisation\SKILL.md         (+ scripts\extract_locations.py, generate_geomap.py,
-                           Test\test_extract_locations.py; references\geocoding-protocol.md;
-                           data\ Natural Earth gazetteer cache)
+        ├── geolocalisation\SKILL.md         (+ scripts\extract_locations.py, generate_geomap.py,
+        │                  Test\test_extract_locations.py; references\geocoding-protocol.md;
+        │                  data\ Natural Earth gazetteer cache)
+        └── loop-engineer\SKILL.md           (+ scripts\loop_engineer.py [Agent SDK driver],
+                           loop_audit.py [code-quality scorer], Test\test_loop_audit.py;
+                           references\ LOOP/STATE/PROCESS/ledger templates; requirements.txt)
 ```

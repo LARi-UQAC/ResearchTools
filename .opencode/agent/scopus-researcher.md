@@ -19,7 +19,9 @@ It NEVER defines the process. Absolute rules:
    degraded only when GEMINI_API_KEY AND GITHUB_TOKEN are both absent, the script still
    executed. No other step has a skip clause. extract-statistic (3b-stats),
    extract-futureworks (3b-FW) and deliberation (17) are MANDATORY skill invocations on
-   every run.
+   every run. The pipeline has TWO sanctioned pauses: the Scopus.AI checkpoint (Step 1a)
+   and the saturation checkpoint (Step 1c: AskUserQuestion for more iterations when the
+   budget is exhausted while the new-paper rate is still >= 10 %).
 3. Scopus.AI checkpoint in subagent context: if you are executed as a subagent (no direct
    channel to the user), do NOT skip Step 1a. End your response with the status
    "PIPELINE-PAUSED @ Step 1a", the Scopus.AI prompt menu, and the exact list of what the
@@ -228,7 +230,15 @@ Refer to `LitteratureReviewSkill/Sciences/references/search-strategies.md` for B
 **Iterative refinement (saturation criterion):**
 - If the initial search returns < 15 papers, broaden with one synonym expansion per key concept and rerun Step 1
 - Continue expanding until each new iteration yields < 10 % papers not already in the corpus
-- Maximum 5 iterations; record iteration count in the final checklist (SL2)
+- Default budget: 5 iterations; record iteration count in the final checklist (SL2)
+- **Saturation checkpoint (second sanctioned pause):** if the 5-iteration budget is
+  exhausted while the new-paper rate is still >= 10 %, do NOT silently stop. Use
+  AskUserQuestion to ask the user how to proceed, with options such as: continue for
+  N more iterations (e.g. +3 / +5), accept the cap and continue the pipeline, or
+  narrow the query scope. Record the user's answer in the search log ("Saturation:
+  cap reached at 87/100/67/60 % new; user granted +N iterations" or "user accepted
+  cap"). Only when the user cannot be reached (fully autonomous run) may the cap
+  stand on its own, logged as "cap accepted autonomously".
 - After each iteration: `python "LitteratureReviewSkill/Sciences/scripts/search_analyzer.py" --convergence <results_iter_N.json>`
 
 **Citation mining (mandatory for top papers):**
@@ -268,6 +278,12 @@ Record the consultation, output as `\subsection*{Consultation Consensus}` inside
 If the Consensus MCP tool is unavailable to the agent, record `Consensus : MCP indisponible` in the log and continue; do not invent results.
 
 ### Step 2 — Enrich
+
+For large candidate sets (Scopus.AI paste-backs, Consensus lists, title-only seeds), use the
+batch driver instead of one call at a time:
+`python ".claude/skills/scopus/scripts/bib_batch.py" all candidates.json --corpus corpus.json --bib review.bib`
+(strict TITLE() resolution with no weak-hit fallback, cite enrichment, venue grading, and
+BibTeX generation with clickable DOIs in one pass; see the script docstring).
 
 For every paper that has a DOI in the search results, run:
 
@@ -771,7 +787,7 @@ Print the full checklist with ✓ or ✗ for each item:
 [ ] CS1 — Consensus MCP consultation run (RECON → PLAN → SEARCH); framework + sub-areas logged; every [CONSENSUS] reference validated (or MCP marked unavailable)
 [ ] CS2 — Consensus references with no DOI / no Scopus match flagged [UNVERIFIED — Consensus only] and excluded; Consensus gaps cross-checked before entering the gap map
 [ ] SL1 — Search strategy documented (Boolean query + field qualifiers + multi-SUBJAREA inclusion/exclusion clauses resolved from the active profile)
-[ ] SL2 — Iterative refinement completed (saturation < 10 % or 5 iterations; iteration count: N)
+[ ] SL2 — Iterative refinement completed (saturation < 10 %, or iteration budget exhausted WITH the Step 1c AskUserQuestion checkpoint answered/logged; iteration count: N)
 [ ] EC1 — Topical-relevance check applied to every validated paper (Step 3a, profile relevance_signals); excluded papers logged with reason
 [ ] PR1 — PRISMA-style TikZ flow diagram present (Identified → Screened → Eligible → Included)
 [ ] QG1 — All retained papers assigned Engineering quality grade (A/B/C/D); IEEE T-BME / JBHI / EMBC etc. graded appropriately
@@ -836,6 +852,15 @@ lives in `.claude/skills/deliberation/references/deliberation-protocol.md`.
 echo "<full review output>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<topic>" --rounds 2 --plan-schema researcher --evidence-file "<evidence.txt>"
 ```
 
+The script resolves the Gemini model automatically (`--gemini-model auto` default: most
+recent PRO via ListModels, NOT_FOUND retry, fence/truncation-tolerant JSON salvage), so a
+retired model id can no longer disable the Gemini leg. Keep the piped draft under ~8k
+tokens for the Copilot leg (gpt-4o hard cap); pipe a digest (objectives + gaps +
+hypotheses + theme gap sentences) rather than the full document when needed.
+
+```
+```
+
 3. Consume `merged[]` and arbitrate with the canonical table and markers (`consensus` ->
    `[✓ GEMINI + COPILOT]`, `gemini_only` -> `[✓ GEMINI]`, `copilot_only` -> `[✓ COPILOT]`, `conflict`
    -> `[✓ GEMINI — COPILOT DISAGREED]`, Claude resolving). Any new paper a reviewer proposes is an
@@ -864,7 +889,7 @@ echo "<full review output>" | python ".claude/skills/deliberation/scripts/delibe
 - Excluded: subject areas in the profile's `scopus.exclude_areas`; work with no topical relevance to the active domain; do not apply health-specific quality tools (Cochrane RoB, CASP, ROBINS-I, Newcastle-Ottawa) — use the venue-based Grade A–D scale of Step 3b instead
 - Never use PubMed, bioRxiv, or medRxiv as primary databases; Scopus already indexes IEEE T-BME and other biomedical engineering venues
 - Inclusion / exclusion criteria documented before any search (Step 0)
-- Saturation: continue iterative refinement until < 10 % new papers per iteration or 5 iterations maximum (Step 1c)
+- Saturation: continue iterative refinement until < 10 % new papers per iteration; at budget exhaustion above the threshold, the Step 1c AskUserQuestion checkpoint decides (more iterations / accept cap / narrow scope)
 - Quality grading: every paper receives a Grade A–D based on venue; only A/B papers feed hypothesis generation (Step 10) by default
 - Scopus.AI consultation (Step 1a) is the only manual checkpoint: generate natural-language prompts (never Boolean), present them, HALT until the user pastes the output, and iterate on demand; every [SCOPUS.AI] reference is an unverified candidate that must clear Step 2/3/3a/3b before entering synthesis; its Summary is orientation only, never a source of claims; record the consultation in the Consultation Scopus.AI log
 - Consensus consultation (Step 1d) is automated via the `mcp__claude_ai_Consensus__search` MCP tool — no HALT: run RECON → PLAN (Decomposition framework for engineering, PICO/SPIDER otherwise) → SEARCH (sequential, 1 query/sec, 30 s backoff on rate limit, default standard 10 / quick 5); every [CONSENSUS] paper is an unverified candidate that must clear Step 2/3/3a/3b; route its findings into the existing artifacts (no second review); never let a Consensus summary become a synthesis claim; reproduce the Consensus usage notice only in the chat-level log, never in the LaTeX body; if the MCP tool is unreachable, log `Consensus : MCP indisponible` and continue without inventing results
@@ -1053,7 +1078,7 @@ Revue cible : [Journal name]
 [✓/✗] CS1 — Consensus MCP consultation run (or MCP unavailable)
 [✓/✗] CS2 — Unverifiable Consensus refs flagged; Consensus gaps cross-checked
 [✓/✗] SL1 — Search strategy documented (Boolean + profile SUBJAREA clauses)
-[✓/✗] SL2 — Iterative refinement completed (saturation < 10 % or 5 iter)
+[✓/✗] SL2 — Iterative refinement completed (saturation < 10 %, or budget cap + Step 1c checkpoint logged)
 [✓/✗] EC1 — Topical-relevance check applied (profile signals)
 [✓/✗] PR1 — PRISMA TikZ flow diagram present
 [✓/✗] QG1 — Quality grade A/B/C/D assigned to all papers

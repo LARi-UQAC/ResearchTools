@@ -10,6 +10,7 @@ Run:
     python -m pytest Test/test_download_pdf.py -v
 """
 
+import contextlib
 import json
 import os
 import sys
@@ -534,6 +535,106 @@ class TestReports(unittest.TestCase):
         self.assertIn("B", manifest)
         self.assertIn("https://doi.org/10.1/b", failed)
         self.assertNotIn("10.1/a", failed)
+
+
+class TestBrowserTier(unittest.TestCase):
+    """Tier 8 wiring: skip rules, invocation, and override forwarding.
+    browser_fetch is replaced by a mock so no real browser is launched."""
+
+    ENTRY = {"citekey": "cong2022firework", "doi": "10.1115/1.4056572",
+             "author": "Cong", "year": "2022", "title": "firework"}
+
+    def _lower_tiers_fail(self):
+        """Context managers forcing tiers 1-7 (and the S2 id lookup) to yield
+        nothing, so control reaches tier 8."""
+        return [
+            mock.patch.object(download_pdf, "try_elsevier", return_value=False),
+            mock.patch.object(download_pdf, "try_semantic_scholar", return_value=False),
+            mock.patch.object(download_pdf, "try_publisher_pdf", return_value=False),
+            mock.patch.object(download_pdf, "try_unpaywall", return_value=None),
+            mock.patch.object(download_pdf, "try_arxiv", return_value=None),
+            mock.patch.object(download_pdf, "try_pmc", return_value=None),
+            mock.patch.object(download_pdf, "try_landing_html", return_value=None),
+            mock.patch.object(download_pdf, "s2", None),
+        ]
+
+    def _run(self, fake_bf, **kwargs):
+        with contextlib.ExitStack() as stack, tempfile.TemporaryDirectory() as tmp:
+            for cm in self._lower_tiers_fail():
+                stack.enter_context(cm)
+            stack.enter_context(mock.patch.object(download_pdf, "browser_fetch", fake_bf))
+            return download_pdf.download_one(self.ENTRY, tmp, "KEY", None, **kwargs)
+
+    def test_tier8_skipped_when_browser_disabled(self):
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        res = self._run(fake_bf, use_browser=False)
+        self.assertEqual(res["status"], "failed")
+        fake_bf.fetch_pdf_via_browser.assert_not_called()
+
+    def test_tier8_skipped_when_unavailable(self):
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = False
+        res = self._run(fake_bf, use_browser=True)
+        self.assertEqual(res["status"], "failed")
+        fake_bf.fetch_pdf_via_browser.assert_not_called()
+
+    def test_tier8_invoked_returns_browser(self):
+        def fake_fetch(doi, dest, override_url=None, headed=True):
+            Path(dest).write_bytes(b"%PDF-1.7 x")
+            return {"format": "pdf", "source": "browser", "file": os.path.basename(dest)}
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.side_effect = fake_fetch
+        res = self._run(fake_bf, use_browser=True)
+        self.assertEqual(res["status"], "browser")
+        self.assertEqual(res["tier"], 8)
+        self.assertEqual(res["format"], "pdf")
+
+    def test_tier8_override_forwarded_and_marked(self):
+        captured = {}
+        def fake_fetch(doi, dest, override_url=None, headed=True):
+            captured["override_url"] = override_url
+            Path(dest).write_bytes(b"%PDF-1.7 x")
+            return {"format": "pdf", "source": "override", "file": os.path.basename(dest)}
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.side_effect = fake_fetch
+        url = "https://www.researchgate.net/publication/366555290_x"
+        res = self._run(fake_bf, use_browser=True, override_url=url)
+        self.assertEqual(captured["override_url"], url)
+        self.assertEqual(res["status"], "override")
+        self.assertEqual(res["tier"], 8)
+
+
+class TestLoadSources(unittest.TestCase):
+
+    def test_missing_file_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(download_pdf._load_sources(tmp), {})
+
+    def test_object_and_string_forms(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = {
+                "a": {"url": "https://x/a.pdf", "note": "n"},
+                "b": "https://y/b.pdf",
+            }
+            Path(os.path.join(tmp, "_sources.json")).write_text(
+                json.dumps(data), encoding="utf-8")
+            self.assertEqual(download_pdf._load_sources(tmp),
+                             {"a": "https://x/a.pdf", "b": "https://y/b.pdf"})
+
+    def test_non_https_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(os.path.join(tmp, "_sources.json")).write_text(
+                json.dumps({"a": "http://x/a.pdf"}), encoding="utf-8")
+            self.assertEqual(download_pdf._load_sources(tmp), {})
+
+    def test_malformed_json_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(os.path.join(tmp, "_sources.json")).write_text(
+                "{ not valid json", encoding="utf-8")
+            self.assertEqual(download_pdf._load_sources(tmp), {})
 
 
 if __name__ == "__main__":

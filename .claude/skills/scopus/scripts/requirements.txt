@@ -25,3 +25,5 @@ requests==2.34.2
 google-genai==2.8.0
 openai==2.43.0
 curl_cffi==0.15.0  # optional: browser-TLS PDF retrieval (download_pdf.py publisher tier)
+playwright==1.61.0  # optional: browser_fetch.py tier 8; also run `playwright install chromium`
+#   pip-audit clean 2026-07-18 at playwright 1.61.0 (+ greenlet, pyee); no CVE in the chain.

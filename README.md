@@ -164,7 +164,10 @@ on their machine immediately updates the linked entries via the junctions.
 To **add or edit an agent, skill, or command** (and propagate it to Copilot,
 OpenCode, Continue, and Aider), follow the turnkey guide
 [docs/authoring-and-mirrors.md](docs/authoring-and-mirrors.md): canonical sources,
-per-type checklist, and the `install.ps1` mirror regeneration.
+per-type checklist, and the `install.ps1` mirror regeneration. Shared project
+conventions and environment facts (English-only definition files, agent/skill
+layout, local-model routing, git/GitHub workflow) live in
+[docs/contributor-notes.md](docs/contributor-notes.md).
 
 ---
 

@@ -218,6 +218,10 @@ those docs are not mirrored).
 
 ## 11. See also
 
+- [contributor-notes.md](contributor-notes.md) - shared project conventions and environment
+  facts (English-only definition files, agent/skill layout, local-model routing, git/GitHub
+  workflow), distilled from per-contributor Claude Code memories into version control.
+
 - The project memory `adding-a-skill-checklist` records the skill + command mirror flow;
   this document supersedes and generalizes it to agents as well. Keep both pointing at the
   same routing table. It lives in the Claude Code project memory directory

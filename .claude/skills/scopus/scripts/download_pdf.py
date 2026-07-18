@@ -9,26 +9,36 @@ manuscript that cites them. The goal is a readable full paper in any format, not
 a PDF specifically.
 
 Source chain (stop at the first byte/content-validated artifact):
+  0. Presence check — skip if refs/<key>.{pdf,html,md} already exists (no network)
   1. Elsevier Full-Text API  — PDF, primary, uses SCOPUS_API_KEY (+ optional insttoken)
   2. Semantic Scholar openAccessPdf — PDF, only when Scopus cannot deliver
-  3. Unpaywall best_oa_location — PDF then landing HTML (needs UNPAYWALL_EMAIL / --email)
-  4. arXiv — PDF then native/ar5iv HTML, when the paper has an arXiv id
-  5. PubMed Central — OA article HTML, when the paper has a PMCID
-  6. Validated landing scrape — the DOI landing page HTML, content-gated
+  3. Publisher PDF — DOI-reconstructed URL, browser headers + curl_cffi / curl (MDPI etc.)
+  4. Unpaywall best_oa_location — PDF then landing HTML (needs UNPAYWALL_EMAIL / --email)
+  5. arXiv — PDF then native/ar5iv HTML, when the paper has an arXiv id
+  6. PubMed Central — OA article HTML, when the paper has a PMCID
+  7. Validated landing scrape — the DOI landing page HTML, content-gated
+  8. Browser (opt-in, --browser) — a real Chromium for the paywalled/challenge-gated
+     publishers no HTTP client can reach (Akamai/Cloudflare JS challenges); also
+     follows a per-paper override URL read from refs/_sources.json (citekey -> https
+     URL, e.g. a ResearchGate page for a paper the institution does not subscribe
+     to). Needs the optional `playwright` package + `playwright install chromium`;
+     skipped with a hint when absent. See browser_fetch.py.
 
 PDF fetches are validated by the PDF magic bytes (%PDF); HTML fetches are
 validated by a text/html content type, a minimum body length, and a rejection of
 known paywall/login/captcha markers (the HTML analogue of the %PDF check). Both
 share an HTTPS-only scheme check, a redirect-hop limit, and a size cap, so a
-publisher "access denied" page is never stored as full text. Tiers 3-6 fetch only
+publisher "access denied" page is never stored as full text. Tiers 3-7 fetch only
 open-access-declared or content-validated locations; no paywall is bypassed.
+Tier 8 uses a real browser on the caller's own IP-entitled institutional network
+(or a user-supplied source URL) and persists no credentials, cookies, or session.
 
 Usage:
   python download_pdf.py doi "<DOI>" --out-dir "<.../refs>" \\
       [--citekey KEY] [--author A] [--year Y] [--title T] [--insttoken TOK] \\
-      [--email you@inst.edu] [--no-html]
+      [--email you@inst.edu] [--no-html] [--browser] [--headless]
   python download_pdf.py bib "<references.bib>" --latex "<.../src/main.tex>"
-  python download_pdf.py bib "<references.bib>" --out-dir "<.../src/refs>"
+  python download_pdf.py bib "<references.bib>" --out-dir "<.../src/refs>" [--browser]
   python download_pdf.py bib --latex "<.../src/main.tex>"   # auto-discovers the .bib
 
 Requires: SCOPUS_API_KEY (Windows user env var) for the Elsevier source; the
@@ -75,6 +85,15 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     _cffi_requests = None
     _CFFI_OK = False
+
+# browser_fetch (tier 8) drives a real Chromium for the paywalled / challenge-gated
+# publishers no HTTP client can reach, and follows a per-paper override URL. It is
+# self-contained (does not import this module) so there is no circular import.
+# Optional: the tier is skipped when Playwright is absent.
+try:
+    import browser_fetch
+except ImportError:  # pragma: no cover - optional dependency
+    browser_fetch = None
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +231,55 @@ def _unpaywall_email_optional() -> str | None:
     --------------------------------------------------------------------------
     """
     return os.environ.get("UNPAYWALL_EMAIL", "").strip() or None
+
+
+def _load_sources(out_dir: str) -> dict[str, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Load the optional, user-curated override map refs/_sources.json, which
+        points selected cite keys at an external full-text URL (ResearchGate,
+        author page, repository, preprint) for papers the institution has no
+        subscription to. Consumed only by the browser tier (tier 8).
+
+    Inputs:
+        out_dir (str): the refs/ directory that may contain _sources.json.
+
+    Outputs:
+        sources (dict[str, str]): {citekey: https_url}. Empty when the file is
+        missing or malformed; non-https entries are skipped with a warning.
+        Accepted value shapes per key: a bare URL string, or an object with a
+        "url" field (and an optional free-text "note").
+    --------------------------------------------------------------------------
+    """
+    path = os.path.join(out_dir, "_sources.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("[SOURCES] could not read %s: %s", path, exc)
+        return {}
+    if not isinstance(raw, dict):
+        logger.warning("[SOURCES] %s is not a JSON object — ignored", path)
+        return {}
+
+    sources: dict[str, str] = {}
+    for key, value in raw.items():
+        if isinstance(value, dict):
+            url = value.get("url")
+        elif isinstance(value, str):
+            url = value
+        else:
+            url = None
+        if not url:
+            continue
+        if urlparse(url).scheme != "https":
+            logger.warning("[SOURCES] skipping non-https override for %s: %s", key, url)
+            continue
+        sources[key] = url
+    return sources
 
 
 def target_filename(entry: dict[str, str], ext: str = "pdf") -> str:
@@ -980,7 +1048,9 @@ def _result(base: dict[str, Any], out_dir: str, file: str, fmt: str,
 
 def download_one(entry: dict[str, str], out_dir: str,
                  api_key: str | None, insttoken: str | None, *,
-                 email: str | None = None, allow_html: bool = True) -> dict[str, Any]:
+                 email: str | None = None, allow_html: bool = True,
+                 use_browser: bool = False, headed: bool = True,
+                 override_url: str | None = None) -> dict[str, Any]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -999,13 +1069,18 @@ def download_one(entry: dict[str, str], out_dir: str,
         insttoken (str | None): institutional token for off-campus Elsevier
         email (str | None): Unpaywall contact email (its tier is skipped if None)
         allow_html (bool): permit the HTML/landing tiers (default True)
+        use_browser (bool): enable the last-resort browser tier (tier 8); it is
+            still a no-op when Playwright is absent
+        headed (bool): run the browser tier visibly (default True)
+        override_url (str | None): a user-supplied full-text URL the browser tier
+            fetches instead of the DOI (from refs/_sources.json)
 
     Outputs:
         result (dict): {citekey, doi, file, format, source, tier, status} where
         status is one of 'present', 'elsevier', 'semantic_scholar', 'publisher',
-        'unpaywall', 'arxiv', 'pmc', 'landing', 'failed', 'no-doi'. 'format' is
-        'pdf'/'html' (or 'md' for a pre-existing file), and 'tier' is the source
-        tier number.
+        'unpaywall', 'arxiv', 'pmc', 'landing', 'browser', 'browser-print',
+        'override', 'failed', 'no-doi'. 'format' is 'pdf'/'html' (or 'md' for a
+        pre-existing file), and 'tier' is the source tier number.
     --------------------------------------------------------------------------
     """
     doi = _clean_doi(entry.get("doi", ""))
@@ -1069,6 +1144,15 @@ def download_one(entry: dict[str, str], out_dir: str,
         logger.info("[FULLTEXT] landing HTML OK: %s", res["file"])
         return _result(base, out_dir, res["file"], res["format"], "landing", 7)
 
+    # Tier 8 - real browser (opt-in, last resort): passes the JS/SSO challenges an
+    # HTTP client cannot, and follows a per-paper override URL when supplied.
+    if use_browser and browser_fetch is not None and browser_fetch.browser_available():
+        res = browser_fetch.fetch_pdf_via_browser(
+            doi, pdf_dest, override_url=override_url, headed=headed)
+        if res:
+            logger.info("[FULLTEXT] browser %s OK: %s", res["source"], res["file"])
+            return _result(base, out_dir, res["file"], res["format"], res["source"], 8)
+
     logger.info("[FULLTEXT] failed (no open-access full text found): %s", doi)
     return {**base, "file": target_filename(entry, "pdf"), "format": None,
             "source": None, "tier": None, "status": "failed"}
@@ -1131,6 +1215,7 @@ def _run_doi(args: argparse.Namespace) -> None:
     api_key = _scopus_key_optional()
     email = args.email or _unpaywall_email_optional()
     allow_html = not args.no_html
+    sources = _load_sources(out_dir)
     entry = {
         "citekey": args.citekey or "",
         "doi": args.query,
@@ -1138,8 +1223,11 @@ def _run_doi(args: argparse.Namespace) -> None:
         "year": args.year or "",
         "title": args.title or "",
     }
+    override_url = sources.get(entry["citekey"]) if entry["citekey"] else None
     result = download_one(entry, out_dir, api_key, args.insttoken,
-                          email=email, allow_html=allow_html)
+                          email=email, allow_html=allow_html,
+                          use_browser=args.browser, headed=not args.headless,
+                          override_url=override_url)
     write_manifest(out_dir, [result])
     write_failed(out_dir, [result])
     _summarize([result], out_dir)
@@ -1165,8 +1253,12 @@ def _run_bib(args: argparse.Namespace) -> None:
                           "note": "no entries with a DOI found"}, indent=2))
         return
 
+    sources = _load_sources(out_dir)
     results = [download_one(e, out_dir, api_key, args.insttoken,
-                            email=email, allow_html=allow_html) for e in entries]
+                            email=email, allow_html=allow_html,
+                            use_browser=args.browser, headed=not args.headless,
+                            override_url=sources.get(e.get("citekey") or ""))
+               for e in entries]
     write_manifest(out_dir, results)
     write_failed(out_dir, results)
     _summarize(results, out_dir)
@@ -1191,6 +1283,11 @@ def main() -> None:
                        help="Unpaywall contact email (else the UNPAYWALL_EMAIL env var)")
     p_doi.add_argument("--no-html", action="store_true",
                        help="restrict retrieval to PDF only (skip the HTML/landing tiers)")
+    p_doi.add_argument("--browser", action="store_true",
+                       help="enable the last-resort browser tier (tier 8; needs the "
+                            "optional playwright package + `playwright install chromium`)")
+    p_doi.add_argument("--headless", action="store_true",
+                       help="run the browser tier headless (default is a visible window)")
     p_doi.set_defaults(func=_run_doi)
 
     p_bib = sub.add_parser("bib", help="retrieve full text for every DOI in a .bib file")
@@ -1204,6 +1301,11 @@ def main() -> None:
                        help="Unpaywall contact email (else the UNPAYWALL_EMAIL env var)")
     p_bib.add_argument("--no-html", action="store_true",
                        help="restrict retrieval to PDF only (skip the HTML/landing tiers)")
+    p_bib.add_argument("--browser", action="store_true",
+                       help="enable the last-resort browser tier (tier 8; needs the "
+                            "optional playwright package + `playwright install chromium`)")
+    p_bib.add_argument("--headless", action="store_true",
+                       help="run the browser tier headless (default is a visible window)")
     p_bib.set_defaults(func=_run_bib)
 
     args = parser.parse_args()

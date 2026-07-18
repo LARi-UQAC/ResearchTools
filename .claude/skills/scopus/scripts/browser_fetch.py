@@ -486,7 +486,10 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                     except _PWError:
                         pass
                     _settle()
-                    if captured["data"] is None:
+                    # DOM-based PDF discovery is for a DOI landing page; skip it
+                    # for an override host (already the target page) so we do not
+                    # re-navigate and re-trigger its challenge.
+                    if captured["data"] is None and not override_url:
                         page_url = _discover_pdf_url(page, doi, override_url)
                         if page_url and page_url != pattern_url:
                             try:

@@ -27,24 +27,58 @@ import browser_fetch  # noqa: E402
 # Playwright fakes - only the surface browser_fetch actually touches.
 # --------------------------------------------------------------------------- #
 class FakeResponse:
-    def __init__(self, content_type, body):
+    def __init__(self, content_type, body, url="https://host/stream.pdf"):
         self.headers = {"content-type": content_type}
+        self.url = url
         self._body = body
 
     def body(self):
         return self._body
 
 
-class FakePage:
-    """Drives the registered 'response' callback on goto to simulate a PDF (or
-    not), and returns configurable content()/pdf()/meta for the fallback paths."""
+class _FakeElement:
+    """A clickable control; a 'pdf' action streams a PDF response on click."""
 
-    def __init__(self, *, pdf_body=None, html="", pdf_method=None, meta=None):
+    def __init__(self, page, action):
+        self._page = page
+        self._action = action
+
+    def click(self):
+        if self._action == "pdf":
+            self._page._emit_pdf()
+
+    def get_attribute(self, name):
+        return None
+
+
+class _RaiseOnExit:
+    """Stand-in for page.expect_popup()/expect_download(): raises a Playwright
+    error on exit so the caller's `except _PWError` treats it as 'no popup'."""
+
+    class _Info:
+        @property
+        def value(self):
+            raise browser_fetch._PWError("none")
+
+    def __enter__(self):
+        return _RaiseOnExit._Info()
+
+    def __exit__(self, *exc):
+        raise browser_fetch._PWError("timeout")
+
+
+class FakePage:
+    """Drives the registered 'response' callback on goto (or on a control click)
+    to simulate a PDF, and returns configurable content()/pdf()/meta/controls."""
+
+    def __init__(self, *, pdf_body=None, html="", pdf_method=None, meta=None,
+                 controls=None):
         self._cbs = {}
         self._pdf_body = pdf_body      # served as an application/pdf response on goto
         self._html = html
         self._pdf_method = pdf_method  # bytes returned by page.pdf(), or None to raise
         self._meta = meta
+        self._controls = controls or {}  # {selector: "pdf"} clickable controls
         self.goto_urls = []
 
     def set_default_timeout(self, ms):
@@ -53,11 +87,14 @@ class FakePage:
     def on(self, event, cb):
         self._cbs.setdefault(event, []).append(cb)
 
+    def _emit_pdf(self):
+        for cb in self._cbs.get("response", []):
+            cb(FakeResponse("application/pdf", self._pdf_body or PDF_BYTES))
+
     def goto(self, url, wait_until=None, **kw):
         self.goto_urls.append(url)
         if self._pdf_body is not None:
-            for cb in self._cbs.get("response", []):
-                cb(FakeResponse("application/pdf", self._pdf_body))
+            self._emit_pdf()
         return None
 
     def wait_for_load_state(self, *a, **k):
@@ -66,12 +103,20 @@ class FakePage:
     def wait_for_timeout(self, *a, **k):
         pass
 
+    def expect_popup(self, timeout=None):
+        return _RaiseOnExit()
+
+    def expect_download(self, timeout=None):
+        return _RaiseOnExit()
+
     def get_attribute(self, selector, attr):
         if "citation_pdf_url" in selector:
             return self._meta
         return None
 
     def query_selector(self, selector):
+        if selector in self._controls:
+            return _FakeElement(self, self._controls[selector])
         return None
 
     @property
@@ -112,6 +157,12 @@ class _FakeBrowser:
 class _FakeContext:
     def __init__(self, page):
         self._page = page
+
+    def on(self, event, cb):
+        pass  # no popups in the offline fakes
+
+    def add_init_script(self, script):
+        pass
 
     def new_page(self):
         return self._page
@@ -171,19 +222,30 @@ class TestBrowserFetch(unittest.TestCase):
         self.assertEqual(res["source"], "browser")
         self.assertTrue(on_disk.startswith(b"%PDF"))
 
-    def test_html_only_prints_to_pdf_headless(self):
-        # headed=False -> headless -> page.pdf() available.
+    def test_html_only_never_saves_print(self):
+        # No real PDF captured -> the tier must NOT print the page to PDF (that
+        # produced blank/landing-page false positives). Even a page that could be
+        # printed yields None and writes nothing.
         page = FakePage(html=ARTICLE_HTML, pdf_method=PRINT_BYTES)
-        res, on_disk = self._run(page, headed=False)
-        self.assertIsNotNone(res)
-        self.assertEqual(res["source"], "browser-print")
-        self.assertTrue(on_disk.startswith(b"%PDF"))
-
-    def test_paywall_page_returns_none(self):
-        page = FakePage(html=PAYWALL_HTML, pdf_method=PRINT_BYTES)
         res, on_disk = self._run(page, headed=False)
         self.assertIsNone(res)
         self.assertIsNone(on_disk)
+
+    def test_paywall_page_returns_none(self):
+        page = FakePage(html=PAYWALL_HTML)
+        res, on_disk = self._run(page, headed=False)
+        self.assertIsNone(res)
+        self.assertIsNone(on_disk)
+
+    def test_click_through_view_pdf_captures(self):
+        # No PDF on initial load; a "View PDF" control click streams the PDF
+        # (the Taylor & Francis flow). Click-through must capture it.
+        page = FakePage(html=ARTICLE_HTML,
+                        controls={'a:has-text("View PDF")': "pdf"})
+        res, on_disk = self._run(page, headed=True)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["source"], "browser")
+        self.assertTrue(on_disk.startswith(b"%PDF"))
 
     def test_override_url_used_and_marked(self):
         page = FakePage(pdf_body=PDF_BYTES)
@@ -193,13 +255,6 @@ class TestBrowserFetch(unittest.TestCase):
         self.assertEqual(res["source"], "override")
         self.assertEqual(page.goto_urls[0], override)  # went to override, not doi.org
         self.assertTrue(on_disk.startswith(b"%PDF"))
-
-    def test_print_unavailable_when_headed(self):
-        # headed=True -> page.pdf() raises -> no save, returns None.
-        page = FakePage(html=ARTICLE_HTML, pdf_method=None)
-        res, on_disk = self._run(page, headed=True)
-        self.assertIsNone(res)
-        self.assertIsNone(on_disk)
 
     def test_non_https_override_rejected(self):
         page = FakePage(pdf_body=PDF_BYTES)

@@ -8,8 +8,15 @@ handshake that a scripted client drops, even from an IP-entitled institutional
 network. A real browser passes these automatically, so this module drives a
 Playwright Chromium: it navigates to the article (or to a user-supplied override
 URL such as a ResearchGate page for a paper the institution has no subscription
-to), lets the challenge resolve, captures the entitled PDF, and falls back to
-print-to-PDF for an HTML-only article.
+to), lets the challenge resolve, and captures the entitled publisher PDF (network
+response or download).
+
+The tier only ever saves a byte-validated %PDF. It does NOT print the rendered
+page to PDF: on challenge-gated publishers the reachable page is a blank
+challenge shell or a landing/abstract page, and a print-to-PDF of it is
+indistinguishable junk that would pollute the corpus (observed in practice -
+blank 1-page prints and Springer landing pages were saved as "papers"). A paper
+with no capturable real PDF is left failed / for manual retrieval.
 
 Design notes:
     - Optional dependency: Playwright is imported defensively (mirrors curl_cffi
@@ -19,16 +26,11 @@ Design notes:
     - No credentials, cookies, or session state are persisted. Institutional
       access here is IP-based; the browser only needs to reach the entitled IP
       and pass the JS challenge. ResearchGate (and any override host) is
-      best-effort: a login wall or captcha trips the block-marker guard and the
-      paper is left for manual retrieval.
+      best-effort: a login wall or captcha simply yields no PDF and the paper is
+      left for manual retrieval.
     - Self-contained: this module does NOT import download_pdf (that would be a
       circular import), so it re-declares the small set of constants and the
-      atomic PDF writer it needs. The block-marker list parallels
-      download_pdf.HTML_BLOCK_MARKERS with a few ResearchGate-specific additions.
-    - print-to-PDF (page.pdf()) is only supported by Chromium in headless mode.
-      Because the default run is headed (more reliable against challenge managers),
-      the print fallback is effectively available only under --headless; the
-      primary real-PDF capture path works in both modes.
+      atomic PDF writer it needs.
 
 See .claude/rules/security.md for the file-write and input-validation rules this
 script follows.
@@ -56,25 +58,16 @@ PDF_MAGIC = b"%PDF"
 MAX_PDF_BYTES = 100 * 1024 * 1024  # 100 MB cap, matching download_pdf.py
 NAV_TIMEOUT_S = 60                 # per-navigation timeout
 IDLE_TIMEOUT_S = 20                # extra wait for the JS challenge to settle
+ASSIST_WAIT_S = 45                 # headed: time for a human to accept cookies /
+#                                    solve a visible challenge; polled, breaks
+#                                    the instant a PDF is captured
+POLL_S = 1.5                       # poll interval while waiting for the PDF
 
 # A desktop Chrome profile string; a genuine engine drives it, so this only sets
 # the advertised UA.
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-)
-
-# Markers that betray a paywall, login wall, or bot challenge instead of the
-# article body: their presence forbids the print-to-PDF fallback (the HTML
-# analogue of the %PDF magic check). Parallels download_pdf.HTML_BLOCK_MARKERS
-# with ResearchGate's author-gated "request full-text" wording added.
-BLOCK_MARKERS = (
-    "access denied", "acces refuse", "please sign in", "sign in to",
-    "log in to", "purchase pdf", "buy this article", "get access",
-    "subscribe to", "institutional login", "captcha", "are you a robot",
-    "enable javascript", "cloudflare", "just a moment", "403 forbidden",
-    "404 not found", "page not found", "request unsuccessful",
-    "request full-text", "request full text",
 )
 
 
@@ -197,18 +190,123 @@ def _discover_pdf_url(page, doi: str, override_url: str | None) -> str | None:
                     return hit
         return None
 
-    # 3. Per-publisher pattern reconstructed from the DOI / current URL.
-    d = _clean_doi(doi)
+    # 3. IEEE: the article URL carries the arnumber; the stamp page embeds the PDF.
     if "ieeexplore.ieee.org" in cur:
         match = re.search(r"/document/(\d+)", cur)
         if match:
             return ("https://ieeexplore.ieee.org/stamp/stamp.jsp"
                     f"?tp=&arnumber={match.group(1)}")
+    return None
+
+
+def _doi_pattern_url(doi: str) -> str | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        A direct PDF / reader URL derivable from the DOI alone, with no page
+        loaded. Navigating straight to it avoids the extra article-page hop, and
+        every hop can re-trigger a Cloudflare/Akamai challenge.
+
+    Inputs:
+        doi (str): the DOI.
+
+    Outputs:
+        url (str | None): the reader/PDF URL, or None when no pattern applies.
+    --------------------------------------------------------------------------
+    """
+    d = _clean_doi(doi)
     if d.startswith("10.1080/"):
-        return f"https://www.tandfonline.com/doi/pdf/{d}"
+        # The Taylor & Francis /doi/pdf direct link is Cloudflare-403'd, but the
+        # /doi/epdf reader streams the file as an application/pdf response
+        # (/doi/pdfdirect) on load, which the response listener catches.
+        return f"https://www.tandfonline.com/doi/epdf/{d}?needAccess=true"
     if d.startswith("10.1007/"):
         return f"https://link.springer.com/content/pdf/{d}.pdf"
     return None
+
+
+def _click_download_button(pg, captured: dict) -> None:
+    """In a viewer/reader page, click an explicit Download control and keep the
+    downloaded file if it is a PDF. Used after a 'View PDF' click opens a reader
+    (e.g. Taylor & Francis /doi/epdf) that streams the file only on Download."""
+    for sel in ('a:has-text("Download PDF")', 'button:has-text("Download PDF")',
+                'a:has-text("Download")', 'button:has-text("Download")',
+                '[aria-label*="Download" i]', 'a[download]', 'a[href*="/doi/pdf"]'):
+        if captured["data"] is not None:
+            return
+        try:
+            el = pg.query_selector(sel)
+        except _PWError:
+            el = None
+        if not el:
+            continue
+        try:
+            with pg.expect_download(timeout=15000) as info:
+                el.click()
+            download = info.value
+            path = download.path()
+            if path and os.path.exists(path):
+                with open(path, "rb") as handle:
+                    body = handle.read()
+                if body.startswith(PDF_MAGIC):
+                    captured["data"] = body
+                    return
+        except _PWError:
+            # The click may instead stream the PDF as a response (caught by the
+            # context listener); give it a moment, then move on.
+            try:
+                pg.wait_for_timeout(1500)
+            except _PWError:
+                pass
+
+
+def _try_click_through(page, captured: dict) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Reproduce the human "View PDF / Download PDF" flow from an article page:
+        click the PDF control, follow a viewer that opens in a popup tab, and
+        click its Download button. This carries the passed-challenge session that
+        a direct GET of /doi/pdf lacks (the Taylor & Francis case: a direct
+        /doi/pdf is Cloudflare-403'd, but the click-through succeeds). Any PDF
+        that results is stored in captured["data"] by the context/page response
+        and download listeners, or by _click_download_button.
+
+    Inputs:
+        page: the loaded Playwright article page.
+        captured (dict): shared {"data": bytes | None} sink.
+
+    Outputs:
+        none (mutates captured in place).
+    --------------------------------------------------------------------------
+    """
+    for sel in ('a[href*="/doi/epdf"]', 'a:has-text("View PDF")',
+                'button:has-text("View PDF")', 'a:has-text("Download PDF")',
+                'button:has-text("Download PDF")', 'a:has-text("Full Text PDF")'):
+        if captured["data"] is not None:
+            return
+        try:
+            el = page.query_selector(sel)
+        except _PWError:
+            el = None
+        if not el:
+            continue
+        popup = None
+        try:
+            with page.expect_popup(timeout=8000) as info:
+                el.click()
+            popup = info.value
+        except _PWError:
+            popup = None  # click navigated the same tab, or opened nothing
+        target = popup or page
+        try:
+            target.wait_for_load_state("domcontentloaded")
+            target.wait_for_timeout(2500)  # let the viewer stream its PDF
+        except _PWError:
+            pass
+        if captured["data"] is not None:
+            return
+        _click_download_button(target, captured)
 
 
 def browser_available() -> bool:
@@ -225,8 +323,8 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
         Retrieve a paper's full-text PDF with a real Chromium. Navigates to the
         override URL when supplied, else to the DOI; passes the JS/SSO challenge
         a plain HTTP client cannot; captures the publisher PDF (network response
-        or download) and, for an HTML-only article with no paywall markers, falls
-        back to print-to-PDF (headless only).
+        or download). Saves only a byte-validated %PDF - never a print-to-PDF of
+        the rendered page (that produced blank/landing-page false positives).
 
     Inputs:
         doi (str): the DOI (used to build the doi.org entry URL and publisher
@@ -235,14 +333,13 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
         override_url (str | None): a user-supplied full-text URL to fetch instead
             of the DOI (ResearchGate, author page, repository, preprint).
         headed (bool): run a visible browser (default True, more reliable against
-            challenge managers). print-to-PDF fallback needs headless.
+            challenge managers).
         timeout_s (int): per-navigation timeout in seconds.
 
     Outputs:
         result (dict | None): {"format": "pdf", "source": <s>, "file": <name>}
-        where <s> is "override" (override URL used), "browser" (DOI real PDF), or
-        "browser-print" (HTML print fallback); None when nothing usable was
-        obtained (paper stays failed / manual).
+        where <s> is "override" (override URL used) or "browser" (DOI real PDF);
+        None when no real PDF was captured (paper stays failed / manual).
     --------------------------------------------------------------------------
     """
     if not _PW_OK:
@@ -256,20 +353,29 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
         return None
     source = "override" if override_url else "browser"
     captured: dict[str, bytes | None] = {"data": None}
+    pdf_responses: list = []       # responses whose content-type is application/pdf
+    pdf_urls: list = []            # their URLs, for a full (non-ranged) re-fetch
 
-    def _on_response(resp) -> None:
-        if captured["data"] is not None:
-            return
+    def _complete(data) -> bool:
+        # A whole PDF starts with %PDF and carries an %%EOF trailer near the end.
+        # Readers stream the file in HTTP ranges, so a single response body can be
+        # a valid-looking but truncated chunk; require the trailer to reject it.
+        return bool(data) and data.startswith(PDF_MAGIC) and b"%%EOF" in data[-4096:]
+
+    def _note_response(resp) -> None:
+        # Do NOT read the body inside the event handler: in the sync API
+        # Response.body() there is unreliable. Collect the response and its URL
+        # and read them once the page has settled (see _drain).
         try:
             ctype = (resp.headers or {}).get("content-type", "").lower()
-            if "application/pdf" in ctype:
-                body = resp.body()
-                if body and body.startswith(PDF_MAGIC):
-                    captured["data"] = body
-        except _PWError:
-            pass
         except Exception:  # pragma: no cover - listener must never raise
-            pass
+            return
+        if "application/pdf" in ctype:
+            pdf_responses.append(resp)
+            try:
+                pdf_urls.append(resp.url)
+            except Exception:  # pragma: no cover
+                pass
 
     def _on_download(download) -> None:
         if captured["data"] is not None:
@@ -279,7 +385,7 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
             if path and os.path.exists(path):
                 with open(path, "rb") as handle:
                     body = handle.read()
-                if body.startswith(PDF_MAGIC):
+                if _complete(body):
                     captured["data"] = body
         except _PWError:
             pass
@@ -288,54 +394,122 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=not headed)
+            browser = pw.chromium.launch(
+                headless=not headed,
+                args=["--disable-blink-features=AutomationControlled"])
             try:
                 context = browser.new_context(accept_downloads=True, user_agent=BROWSER_UA)
+                # Reduce the automation fingerprint: Cloudflare/Akamai re-challenge
+                # every navigation when navigator.webdriver is true.
+                try:
+                    context.add_init_script(
+                        "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
+                except _PWError:  # pragma: no cover
+                    pass
                 page = context.new_page()
                 page.set_default_timeout(timeout_s * 1000)
-                page.on("response", _on_response)
+                page.on("response", _note_response)
                 page.on("download", _on_download)
 
-                page.goto(entry_url, wait_until="domcontentloaded")
-                try:
-                    page.wait_for_load_state("networkidle", timeout=IDLE_TIMEOUT_S * 1000)
-                except _PWError:
-                    pass  # challenge pages often never reach full idle
+                # A "View PDF" click often opens the reader in a popup tab; wire
+                # the same listeners onto any page the context opens.
+                def _wire_popup(popup) -> None:
+                    popup.on("response", _note_response)
+                    popup.on("download", _on_download)
+                context.on("page", _wire_popup)
 
-                # If the entry navigation did not itself deliver a PDF, resolve a
-                # direct PDF URL and navigate to it (the response listener catches
-                # the resulting application/pdf, including an embedded viewer's).
-                if captured["data"] is None:
-                    pdf_url = _discover_pdf_url(page, doi, override_url)
-                    if pdf_url:
+                def _drain() -> bool:
+                    """Keep the first COMPLETE PDF. First try each collected
+                    response body; if all are partial (ranged), re-fetch the URL
+                    in full through the context request API, which reuses the
+                    solved-challenge cookies and sends no Range header."""
+                    if captured["data"] is not None:
+                        return True
+                    for resp in list(pdf_responses):
                         try:
-                            page.goto(pdf_url, wait_until="domcontentloaded")
-                            page.wait_for_timeout(1500)
+                            body = resp.body()
+                        except Exception:  # pragma: no cover - evicted body
+                            body = None
+                        if _complete(body):
+                            captured["data"] = body
+                            return True
+                    for url in list(dict.fromkeys(pdf_urls)):
+                        try:
+                            api = context.request.get(url, timeout=timeout_s * 1000)
+                            body = api.body() if api.ok else None
+                        except Exception:
+                            body = None
+                        if _complete(body):
+                            captured["data"] = body
+                            return True
+                    return False
+
+                def _settle() -> None:
+                    # Wait for the network to settle, then poll for the streamed
+                    # PDF. In headed mode the budget is generous so a user can
+                    # accept cookies / solve a visible challenge once; returns the
+                    # instant a PDF is captured.
+                    try:
+                        page.wait_for_load_state("networkidle",
+                                                 timeout=IDLE_TIMEOUT_S * 1000)
+                    except _PWError:
+                        pass  # challenge / reader pages often never fully idle
+                    budget_s = ASSIST_WAIT_S if headed else 3
+                    for _ in range(max(1, int(budget_s / POLL_S))):
+                        if _drain():
+                            return
+                        try:
+                            page.wait_for_timeout(int(POLL_S * 1000))
                         except _PWError:
-                            pass
+                            return
+
+                # 1. Minimise navigations - each hop can re-trigger a challenge.
+                #    For a publisher whose reader/PDF URL is known from the DOI
+                #    alone (T&F /doi/epdf, Springer /content/pdf), go straight
+                #    there; the streamed /doi/pdfdirect (or the PDF) is drained.
+                pattern_url = None if override_url else _doi_pattern_url(doi)
+                if pattern_url:
+                    try:
+                        page.goto(pattern_url, wait_until="domcontentloaded")
+                    except _PWError:
+                        pass
+                    _settle()
+
+                # 2. Otherwise (or if that missed) load the entry page, discover a
+                #    PDF link from its DOM (citation_pdf_url, override download
+                #    link, IEEE stamp), and finally click the human "View PDF"
+                #    control. The generous waits let a headed user solve a
+                #    visible "verify you are human" challenge.
+                if captured["data"] is None:
+                    try:
+                        page.goto(entry_url, wait_until="domcontentloaded")
+                    except _PWError:
+                        pass
+                    _settle()
+                    if captured["data"] is None:
+                        page_url = _discover_pdf_url(page, doi, override_url)
+                        if page_url and page_url != pattern_url:
+                            try:
+                                page.goto(page_url, wait_until="domcontentloaded")
+                            except _PWError:
+                                pass
+                            _settle()
+                    if captured["data"] is None:
+                        _try_click_through(page, captured)
+                        _settle()
 
                 if captured["data"] is not None:
                     ok = _save_pdf_bytes(captured["data"], dest)
                     return ({"format": "pdf", "source": source,
                              "file": os.path.basename(dest)} if ok else None)
 
-                # HTML-only fallback: print-to-PDF unless the page is a
-                # paywall/login/challenge stub. Chromium only supports page.pdf()
-                # in headless mode, so this path is inert under --headed.
-                try:
-                    html = (page.content() or "").lower()
-                except _PWError:
-                    html = ""
-                if html and not any(marker in html for marker in BLOCK_MARKERS):
-                    try:
-                        pdf_bytes = page.pdf()
-                    except _PWError as exc:
-                        logger.info("[BROWSER] print-to-PDF unavailable "
-                                    "(headed mode?): %s", exc)
-                        pdf_bytes = None
-                    if pdf_bytes and _save_pdf_bytes(pdf_bytes, dest):
-                        return {"format": "pdf", "source": "browser-print",
-                                "file": os.path.basename(dest)}
+                # No real publisher PDF was captured. We deliberately do NOT print
+                # the rendered page to PDF: on challenge-gated publishers the
+                # reachable page is a blank challenge shell or a landing/abstract
+                # page, and a print-to-PDF of it is indistinguishable junk that
+                # would pollute the corpus. Leave the paper failed / for manual.
+                logger.info("[BROWSER] no capturable PDF at %s - left for manual",
+                            override_url or doi)
                 return None
             finally:
                 browser.close()

@@ -1078,9 +1078,9 @@ def download_one(entry: dict[str, str], out_dir: str,
     Outputs:
         result (dict): {citekey, doi, file, format, source, tier, status} where
         status is one of 'present', 'elsevier', 'semantic_scholar', 'publisher',
-        'unpaywall', 'arxiv', 'pmc', 'landing', 'browser', 'browser-print',
-        'override', 'failed', 'no-doi'. 'format' is 'pdf'/'html' (or 'md' for a
-        pre-existing file), and 'tier' is the source tier number.
+        'unpaywall', 'arxiv', 'pmc', 'landing', 'browser', 'override', 'failed',
+        'no-doi'. 'format' is 'pdf'/'html' (or 'md' for a pre-existing file), and
+        'tier' is the source tier number.
     --------------------------------------------------------------------------
     """
     doi = _clean_doi(entry.get("doi", ""))

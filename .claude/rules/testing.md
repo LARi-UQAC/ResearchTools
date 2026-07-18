@@ -41,7 +41,7 @@ Offline unit tests (no network, no API key, no model load; run with the project 
 
 ```powershell
 python .claude/skills/scopus/scripts/Test/test_download_pdf.py            # any-format tiers (incl. publisher/curl), tier-8 wiring, _sources.json, HTML validation
-python .claude/skills/scopus/scripts/Test/test_browser_fetch.py           # tier 8: capture/print/paywall/override with Playwright mocked
+python .claude/skills/scopus/scripts/Test/test_browser_fetch.py           # tier 8: real-PDF capture / no-print / paywall / override with Playwright mocked
 python .claude/skills/scopus/scripts/Test/test_bib_batch.py               # title match, venue grading, BibTeX invariants
 python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py # scan_sections / section-scan
 ```

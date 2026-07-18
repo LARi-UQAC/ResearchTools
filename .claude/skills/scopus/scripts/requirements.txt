@@ -4,6 +4,10 @@
 # download_pdf.py                          : requests; curl_cffi (OPTIONAL, browser
 #   TLS impersonation to clear Akamai/Cloudflare bot gates on OA content, e.g. MDPI,
 #   Taylor & Francis OA); the publisher tier degrades to requests+curl when absent
+# browser_fetch.py (download_pdf tier 8)   : playwright (OPTIONAL, a real Chromium for
+#   challenge-gated publishers + a refs/_sources.json override URL). Needs the browser
+#   binary too: `playwright install chromium`. Tier 8 is skipped when absent (--browser
+#   opt-in). pip-audit the pin before adding it below.
 # gemini_reviewer.py                       : google-genai   (latest PRO, auto-resolved)
 # github_reviewer.py                       : openai          (GPT-4o via GitHub Models)
 # deliberate.py (.claude/skills/deliberation/scripts) imports the two reviewers,

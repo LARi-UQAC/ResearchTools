@@ -279,7 +279,8 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 - `.claude/skills/scopus/SKILL.md`
 - `.claude/skills/scopus/scripts/scopus_api.py` — Scopus REST client
 - `.claude/skills/scopus/scripts/semantic_scholar_api.py` — Semantic Scholar fallback
-- `.claude/skills/scopus/scripts/download_pdf.py` — any-format full-text retrieval (PDF, else HTML/Markdown via Unpaywall, arXiv, PMC, validated DOI landing)
+- `.claude/skills/scopus/scripts/download_pdf.py` — any-format full-text retrieval (PDF, else HTML/Markdown via Unpaywall, arXiv, PMC, validated DOI landing), plus an opt-in `--browser` tier
+- `.claude/skills/scopus/scripts/browser_fetch.py` — tier 8: a real Playwright Chromium for challenge-gated publishers (Akamai/Cloudflare), with a per-paper `refs/_sources.json` override URL (e.g. ResearchGate) for papers with no institutional access; optional (needs `playwright` + `playwright install chromium`)
 - `.claude/skills/scopus/scripts/gemini_reviewer.py` · `github_reviewer.py` · `gemini_table.py` — cross-review cores
 
 ### `geolocalisation` — corpus study-location mapping

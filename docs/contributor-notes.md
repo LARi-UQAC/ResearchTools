@@ -76,3 +76,5 @@ environment constraint, a gotcha - record it **here**, in the repo, not only in 
 Claude Code memory. Personal memories still help within a single contributor's sessions, but
 this file is what the whole team and every assistant (Copilot, OpenCode, Continue, Aider)
 can read. Prefer genericized paths (`~/...`) over machine-specific absolute paths.
+
+Martin Otis

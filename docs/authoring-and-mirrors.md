@@ -230,3 +230,5 @@ those docs are not mirrored).
   `C:\Users\m3otis\.claude\projects\c--Martin-Otis-OutilsLogiciels-ResearchTools\memory\adding-a-skill-checklist.md`
   (indexed in that directory's `MEMORY.md`).
 - `install.ps1` header comment is the authoritative description of each generated file.
+
+Martin Otis

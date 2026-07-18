@@ -74,6 +74,16 @@ After a substantive change, update the relevant doc and verify that links resolv
 `README.md` and `Architecture.md` as the authoritative inventory; do not duplicate their
 tables into `.claude/CLAUDE.md`.
 
+## Adding or editing an agent, skill, or command
+
+Follow the turnkey guide `docs/authoring-and-mirrors.md`: it names the canonical source
+for each kind (`.claude/agents|skills|commands/`), the per-type doc-update checklist
+(README, Architecture, the `.claude/CLAUDE.md` routing table, this file), and the mirror
+regeneration. After editing any agent, command, or rule, re-run `.\install.ps1 -Profile
+<active>` and commit the regenerated `.github/`, `.opencode/`, `.continue/`, and
+`CONVENTIONS.md` mirrors together with the canonical change. Skills have no mirror, so a
+user-invoked skill is discoverable elsewhere only via the routing table.
+
 ## Environments
 
 Use the correct virtual environment for the layer you are working in, and run the relevant

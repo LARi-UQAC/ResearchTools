@@ -163,6 +163,31 @@ agent above runs inside the corresponding plan-mode case of the root [CLAUDE.md]
 (cases 1, 2, 4, 6) - consult the vault before planning and journal via `obsidian daily:append`
 after. This wiring is stated once in the root file; do not restate the cases here.
 
+### Obsidian knowledge-capture loop (local agents)
+
+The vault (`C:\<UserName>\Vault`, PARA) is the broad cross-project memory Claude Code lacks
+natively (its auto-memory is siloed per working directory). During a `loop-engineer` /
+`authoring-loop` run the local agents read and write it so learnings persist and feed the next
+iteration. The general policy is in the root [CLAUDE.md](../CLAUDE.md) ("Capture de
+connaissances" + "Lecture du coffre"); the ResearchTools specifics:
+
+- **Writer**: `local-writer` is the single vault writer - it drafts and runs `obsidian
+  create`/`append` (serialized; outbox fallback when Obsidian is closed). `local-coder` reads
+  only and hands any learning to `local-writer`.
+- **Readers**: `local-coder` / `local-writer` consult the vault at task start, checkpoints, and
+  error recovery. Plan-time reads (superpowers `brainstorming` on Fable 5, `writing-plans` on
+  Opus) are orchestrator-mediated and baked into the plan; `executing-plans` does not read.
+- **Where**: project logs in `10_Projets/<domaine>/<projet>/` (`Decisions.md`, `CodeReview.md`,
+  `Revisions.md`); reusable atomic notes in `30_Ressources/<cat>/`; the daily note is a pointer
+  only.
+- **Transport**: the `~/bin/obsidian` wrapper (redirects to `Obsidian.com`; bare `obsidian`
+  hangs under Git Bash). The `obsidian-outbox-flush.py` hook (SessionStart/SessionEnd, in
+  [.claude/settings.template.json](settings.template.json)) delivers deferred notes.
+- **Prerequisite**: Obsidian open with the CLI enabled during a run, for the capture-to-read
+  loop to close within the session.
+
+Full design and rationale: [docs/contributor-notes.md](../docs/contributor-notes.md) section 6.
+
 ## Agent pipeline integrity
 
 These rules bind the orchestrator (main session, command wrappers) AND the agents of this

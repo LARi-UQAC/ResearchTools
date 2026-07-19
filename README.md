@@ -632,6 +632,19 @@ to get a score, loop until the ScholarEval target or the budget is reached, then
 learnings to memory via `local-writer`. The five steps are documented in the loop-engineer
 [SKILL.md](.claude/skills/loop-engineer/SKILL.md).
 
+### Obsidian knowledge-capture loop
+
+Both loops read and write the Obsidian vault so learnings persist across iterations and projects
+(Claude Code has no cross-project memory of its own; the vault is that broad memory).
+`local-writer` is the single, serialized vault writer; `local-coder` reads only and hands it any
+learning. Reads happen at plan time (baked into the plan by `brainstorming` / `writing-plans` on
+the cloud tiers) and, during a run, only by the local agents (task start, checkpoints, error
+recovery); `executing-plans` does not read. Writes land in `10_Projets/<projet>/` logs and
+reusable `30_Ressources/` atomic notes through the `~/bin/obsidian` wrapper, with a
+SessionStart/SessionEnd outbox-flush hook as fallback when Obsidian is closed. Requires Obsidian
+open with the CLI enabled. Full design in [docs/contributor-notes.md](docs/contributor-notes.md)
+section 5; routing in [.claude/CLAUDE.md](.claude/CLAUDE.md).
+
 ### Calling an agent explicitly
 
 Agents are normally triggered automatically by context. To invoke one directly, address it

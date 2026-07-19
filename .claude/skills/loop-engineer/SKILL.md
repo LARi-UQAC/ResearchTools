@@ -39,7 +39,10 @@ the contract for the pipeline, the model tiering, and the safety gates.
 4. TDD - `test-driven-development` on **Sonnet**: write the failing tests for the acceptance
    criteria first.
 5. Code - the **local-coder** agent (`qwen3.5:9b` over the bridge) implements against the tests.
-6. Comment / doc - the **local-writer** agent (`ornith:9b` over the bridge).
+   At task start it consults the vault (GardeFous / Apprentissages for the module, the project
+   `Decisions.md` / `CodeReview.md`) and folds the constraints into the bridge prompt.
+6. Comment / doc - the **local-writer** agent (`ornith:9b` over the bridge). It consults the
+   vault's `Methodes` and prior writing decisions the same way.
 7. Run tests + review panel - **Sonnet** runs `rtk pytest` (deterministic green/red) and the
    installed reviewers on the diff: `/code-review`, `/security-guidance`, `pr-review-toolkit`
    (silent-failure-hunter, type-design-analyzer), `systematic-debugging`. Each emits findings.
@@ -47,12 +50,34 @@ the contract for the pipeline, the model tiering, and the safety gates.
    findings + test result + betterleaks/pip-audit hook status into per-axis sub-scores, an
    aggregate 0-100, and the gate booleans; appends to the ledger.
 9. Correct - `writing-plans` then `executing-plans` on the findings (**Sonnet** + local-coder).
-10. Doc / journal - **local-writer** updates `/doc` output, `PROCESS.md`, memory, and Obsidian
-    (if the CLI is enabled).
+   On error recovery / at the checkpoint, local-coder re-consults the vault so the learning
+   captured last iteration is not repeated. `executing-plans` itself never reads the vault.
+10. Doc / journal - **local-writer** is the single vault writer: it captures learnings,
+    `Decisions.md`, `CodeReview.md`, and the daily pointer to Obsidian (via `~/bin/obsidian`,
+    with the outbox fallback when the CLI is unreachable), and updates `/doc` output,
+    `PROCESS.md`, and memory. `local-coder` never writes to the vault - it hands any learning to
+    local-writer. Captures also fire at the error/checkpoint (step 9) and gate (step 12), not
+    only here.
 11. Convergence check - the loop wraps steps 7 -> 9 -> 8. Stop on the composite gate, the
     budget cap, the max-iterations cap, a no-progress plateau, or a security regression.
 12. Human-gated finish - on a gate pass, local-coder commits + pushes the branch and opens a
     PR (token permitting); the merge to a protected branch waits for explicit user confirmation.
+
+## Vault reads and writes (who does what, when)
+
+- **Reads.** Steps 1-2 (Design / Plan, on Fable 5 / Opus) consult the vault and bake the
+  learnings into the plan (orchestrator-mediated). Once the loop is executing, vault reads are
+  done ONLY by the local agents (steps 5, 6, 9); `executing-plans` and the Sonnet review panel
+  do not read.
+- **Writes.** `local-writer` is the single vault writer (drafts + serialized `obsidian
+  create`/`append`, outbox fallback). `local-coder` reads only and hands learnings to
+  local-writer. No two agents write concurrently, and no external tool writes the same vault.
+- **Loop closure.** For a capture at iteration N to be readable at iteration N+1 within the same
+  session, **Obsidian must be open** during the run (direct writes land immediately). If it is
+  closed, writes defer to the outbox and flush at the session boundary; local-coder's outbox
+  scan (see its definition) bridges the intra-session gap.
+
+See the "Capture de connaissances" and "Lecture du coffre" sections of the global `CLAUDE.md`.
 
 ## Stop gate
 

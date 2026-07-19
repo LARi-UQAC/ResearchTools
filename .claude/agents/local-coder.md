@@ -19,6 +19,49 @@ files you are about to change and enough of their neighbours to match the surrou
 patterns; reuse existing utilities before adding new code. The local model does not know any
 of this unless you put it in the prompt.
 
+## Vault consultation (only inside a loop-engineer run)
+
+Read the Obsidian vault ONLY when this agent runs inside a `loop-engineer` process, at three
+moments: task start (when you receive the plan), each iteration checkpoint, and error
+recovery. Outside a loop (a plain `executing-plans` task, a one-off edit), do NOT read the
+vault; the plan already carries the knowledge and the read would only cost tokens.
+
+The local model is blind, so YOU (the Haiku wrapper) do the reading and fold the result into
+the bridge prompt, exactly as you fold in the rule files.
+
+1. Put the wrapper on PATH: `export PATH="$HOME/bin:$PATH"` (bare `obsidian` resolves to the
+   GUI under Git Bash and hangs).
+2. Query for prior knowledge on the target, bounded to a few hits:
+
+   ```bash
+   obsidian search query="<module or error signature>" limit=5
+   obsidian search query="[[<projet>]]"   # all notes linked to this project, in one call
+   ```
+
+   Then `obsidian read` the retained hits: `30_Ressources/GardeFous/...`,
+   `.../Apprentissages/...`, and the project `Decisions.md` / `CodeReview.md`.
+3. Distill them into a short "Contraintes tirées du coffre" block (guardrails to respect,
+   past error patterns to avoid, prior design decisions) and add it to the prompt file
+   alongside the rules and the code context.
+4. If Obsidian is unreachable, skip silently and proceed - never block on the vault.
+
+Keep it cheap: one or two searches, top-N hits, cap the injected block at a few hundred
+tokens. Only the allowed READ commands (`search`, `read`, `list`, `tags`); never `eval` or
+`dev:*`.
+
+**You never write to the vault.** Reading is your only vault interaction. When you find a code
+learning worth keeping (a root cause, a guardrail), hand the text to `local-writer` - the single
+vault writer - instead of running `obsidian create` / `append` yourself.
+
+To close the learning loop within a session even when Obsidian is momentarily closed, also scan
+the outbox for notes captured this run but not yet flushed:
+
+```bash
+cat ~/.claude/obsidian-outbox/*.md 2>/dev/null
+```
+
+Fold any relevant pending learning into the bridge prompt alongside the vault hits.
+
 ## The bridge protocol (how you generate)
 
 You do NOT write the heavy code yourself. For every generation task:

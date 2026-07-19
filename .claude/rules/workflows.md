@@ -33,6 +33,7 @@ free. No gateway; cloud stays on the normal subscription auth.
 | Docstrings, code comments, Markdown docs, CHANGELOG, Obsidian summaries | `local-writer` | haiku wrapper + local `ornith:9b` (bridge) | Rule-compliant text written to the target file |
 | Code against a spec/failing test, refactor snippets, scaffolds | `local-coder` | haiku wrapper + local `qwen3.5:9b` (bridge) | Minimal, style-matched code edits |
 | Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
+| Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, daily pointer; single serialized writer, outbox fallback |
 
 Bridge rule: the local model sees only the prompt (no repo, no conversation), so every rule
 constraint and input must be in the prompt; write it to a scratchpad file and run
@@ -43,6 +44,12 @@ context tuning only).
 LaTeX boundary: `local-writer` may add `%` comments in a `.tex` file but never authors
 LaTeX or scientific prose - that stays with `latex-writer` + `scientific-writing` on the
 latest cloud Claude model.
+
+Obsidian rule: during a loop, `local-writer` is the single serialized vault writer and
+`local-coder` reads only (task start, checkpoints, error recovery); plan-time reads are baked in
+by `brainstorming` / `writing-plans`. Requires Obsidian open with the CLI on; deferred writes
+flush via the outbox hook. Full design in [../../docs/contributor-notes.md](../../docs/contributor-notes.md)
+section 5.
 
 Loop-engineering stop gate (default, composite): tests green AND no CRITICAL/HIGH review
 finding AND aggregate score `>=` min_score (default 90). Hard stops: budget cap

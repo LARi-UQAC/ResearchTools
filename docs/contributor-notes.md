@@ -69,7 +69,71 @@ These agents push token-heavy generation to a local Ollama model to save cloud t
   non-admins); rely on `git push` (credential-manager auth) for write operations rather than
   API calls to comment on or patch issues/PRs.
 
-## 5. Keeping this file alive
+## 5. Obsidian knowledge-capture loop
+
+The Obsidian vault (`~/...Vault`, PARA layout `10_Projets` / `20_Domaines` / `30_Ressources` /
+`90_Archives`) is the broad, cross-project memory Claude Code lacks natively: its auto-memory is
+siloed per working directory (`~/.claude/projects/<slug>/memory/`), so no single Claude memory
+spans grants, students, papers, and software. The vault fills that role. The `loop-engineer` and
+`authoring-loop` flows read and write it so a lesson learned in one iteration (or project) is not
+re-learned later.
+
+**Roles (single serialized writer, read-many).**
+
+- `local-writer` is the only agent that writes to the vault: it drafts the note body locally and
+  runs `obsidian create` / `append` itself. Writes are serialized - never two agents at once, and
+  never an external concurrent tool (Claudian, a second IDE agent) on the same vault. That is what
+  the root `CLAUDE.md` "single writer" rule protects.
+- `local-coder` reads only; if it finds a code learning it hands the text to `local-writer`.
+- Plan-time cloud reads (superpowers `brainstorming` on Fable 5, `writing-plans` on Opus) are
+  orchestrator-mediated: the planner reads the vault and bakes the learnings into the plan.
+  `executing-plans` and the Sonnet review panel do not read.
+
+**Where things go (PARA).**
+
+- Project-chronological logs -> `10_Projets/<domaine>/<projet>/`: `Decisions.md` (ADR),
+  `CodeReview.md` (findings), `Revisions.md` (article/content corrections). Append.
+- Reusable cross-project knowledge -> `30_Ressources/<cat>/` (`Apprentissages/`, `Methodes/`,
+  `GardeFous/`): one atomic note per learning, with frontmatter (`type`, `projet: "[[...]]"`,
+  `domaine`, `date`, `tags`) and a back-link. Retrieve all of a project's notes in one call with
+  `obsidian search query="[[<projet>]]"`.
+- The daily note gets a pointer only, never the full note.
+
+**Triggers.** Error root-cause, loop iteration checkpoint, review finding (code-review /
+tech-debt / ai-firstify), gate reached, article/content correction, new method type.
+
+**Transport and reliability.**
+
+- Bare `obsidian` under Git Bash resolves to the GUI `Obsidian.exe` and hangs. Use a
+  `~/bin/obsidian` wrapper that execs `Obsidian.com`, with `export PATH="$HOME/bin:$PATH"`.
+  Requires Obsidian open + CLI enabled (`Settings > General > Advanced > Command line
+  interface = ON`).
+- If Obsidian is unreachable, `local-writer` drops the note into
+  `~/.claude/obsidian-outbox/<slug>.md` (first line `<!-- obsidian: create|append path="..." -->`,
+  the rest is the content). The `obsidian-outbox-flush.py` hook (SessionStart + SessionEnd, wired
+  in `.claude/settings.template.json`, script under `.claude/hooks/`) delivers it later.
+- For the capture-to-read loop to close within one session, Obsidian must be open during the run.
+  Otherwise the note waits in the outbox until the session boundary; `local-coder` also scans the
+  outbox (`cat ~/.claude/obsidian-outbox/*.md`) to pick up not-yet-flushed learnings intra-session.
+
+**Setup (per machine).**
+
+```bash
+mkdir -p ~/bin
+printf '#!/bin/bash\nexec "/c/Users/<you>/AppData/Local/Programs/Obsidian/Obsidian.com" "$@"\n' > ~/bin/obsidian
+chmod +x ~/bin/obsidian
+grep -q 'HOME/bin' ~/.bashrc || printf '\nexport PATH="$HOME/bin:$PATH"\n' >> ~/.bashrc
+cp .claude/hooks/obsidian-outbox-flush.py ~/.claude/hooks/   # if not junction-linked
+```
+
+Keep the `settings.template.json` SessionStart / SessionEnd entries that call the flush hook.
+
+**Plugin decision.** Do not install Claudian / obsidian-claude-code-plugin (they embed a second
+agent = a concurrent writer, breaking the single-writer rule) nor the Claude Code IDE / IDE Pro
+MCP-over-WebSocket plugins (this integration is deliberately the local CLI, not MCP). Stay
+CLI-only.
+
+## 6. Keeping this file alive
 
 When you (or an assistant) learn a durable, non-obvious project fact - a convention, an
 environment constraint, a gotcha - record it **here**, in the repo, not only in a personal

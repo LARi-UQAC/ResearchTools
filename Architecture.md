@@ -302,6 +302,13 @@ plateau. Security is a hard floor — any CRITICAL finding fails the gate regard
 aggregate — and the merge to a protected branch is human-gated, so the loop ends at
 "ready to merge" and waits for confirmation.
 
+Vault knowledge loop: throughout the run, `local-writer` writes learnings, decisions, and review
+findings to the Obsidian vault (single serialized writer; outbox fallback when Obsidian is
+closed), and the local agents read the vault at task start, checkpoints, and error recovery so a
+lesson captured in one iteration feeds the next. Plan-time reads (Design/Plan steps) are baked
+into the plan; `executing-plans` does not read. Requires Obsidian open with the CLI enabled. See
+[docs/contributor-notes.md](docs/contributor-notes.md) section 5.
+
 ```mermaid
 flowchart TD
   S([--loop --budget B --score min]) --> A["Design<br/>brainstorming - Fable 5"]

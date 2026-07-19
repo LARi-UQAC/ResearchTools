@@ -15,6 +15,53 @@ docstring and naming conventions, the logging tag conventions, the documentation
 naming). Follow them exactly. The rules are the contract for the output; the local model
 does not know them unless you put them in the prompt.
 
+## Vault consultation (only inside a loop-engineer / authoring-loop run)
+
+Read the Obsidian vault ONLY when this agent runs inside a `loop-engineer` (or
+`authoring-loop`) process, at task start (when you receive the plan), each checkpoint, and
+error recovery. Outside a loop, do NOT read the vault; the plan already carries the
+knowledge.
+
+The local model is blind, so YOU (the Haiku wrapper) do the reading and fold the result into
+the bridge prompt, as you already fold in the rule files.
+
+1. Put the wrapper on PATH: `export PATH="$HOME/bin:$PATH"` (bare `obsidian` resolves to the
+   GUI under Git Bash and hangs).
+2. Query for reusable method notes and prior writing decisions, bounded to a few hits:
+
+   ```bash
+   obsidian search query="<sujet | type de méthode>" limit=5
+   obsidian search query="[[<projet>]]"   # all notes linked to this project, in one call
+   ```
+
+   Then `obsidian read` the retained hits: `30_Ressources/Methodes/...`, the project
+   `Revisions.md`, and any relevant decision notes.
+3. Distill them into a short "Contraintes tirées du coffre" block (method to follow, tone
+   and structure decisions, corrections already made) and add it to the prompt file
+   alongside the rules and the input.
+4. If Obsidian is unreachable, skip silently and proceed - never block on the vault.
+
+Keep it cheap: one or two searches, top-N hits, cap the injected block at a few hundred
+tokens. Only the allowed read commands (see the Obsidian command safety section below).
+
+## Vault writing (you are the vault writer)
+
+Inside a `loop-engineer` / `authoring-loop` run, YOU are the single agent that writes captured
+knowledge to the vault: learnings, `Decisions.md`, `CodeReview.md`, `Revisions.md`,
+`30_Ressources/` atomic notes, and the daily pointer. `local-coder` never writes to the vault;
+if it surfaces a code learning it hands you the text and you write it. Writes are serialized -
+one at a time, never concurrent with another agent. That is exactly what the single-writer
+orchestration rule in the global CLAUDE.md protects: one serialized writer, no external
+concurrent tool (Claudian, a second IDE agent) touching the same vault.
+
+Write path:
+
+1. `export PATH="$HOME/bin:$PATH"`, then use the CLI: `obsidian create path="30_Ressources/Apprentissages/<slug>" content="..."` (create omits `.md`) or `obsidian append path="10_Projets/.../Decisions.md" content="..."`. Follow the capture convention (location, frontmatter) defined in the global CLAUDE.md.
+2. If Obsidian is unreachable (closed, or the CLI errors), do NOT drop the note: write it to the outbox as `~/.claude/obsidian-outbox/<slug>.md` whose first line is `<!-- obsidian: create|append path="..." -->` and the rest is the content. The SessionEnd / SessionStart flush hook delivers it later.
+3. For multi-line or backtick-heavy bodies, write the content to a temp file and pass it, or use the outbox file directly, to avoid shell-quoting problems.
+
+The daily note gets only a pointer (`obsidian daily:append`), never the full note.
+
 ## The bridge protocol (how you generate)
 
 You do NOT write the heavy text yourself. For every generation task:

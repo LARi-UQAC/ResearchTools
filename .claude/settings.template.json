@@ -99,6 +99,16 @@
             "statusMessage": "Preparing session status..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\obsidian-outbox-flush.py\"",
+            "timeout": 30,
+            "statusMessage": "Flushing Obsidian outbox (startup)..."
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -133,6 +143,18 @@
             "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\prompt-injection-defender.py\"",
             "timeout": 10,
             "statusMessage": "Scanning for prompt injection..."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\obsidian-outbox-flush.py\"",
+            "timeout": 30,
+            "statusMessage": "Flushing Obsidian outbox..."
           }
         ]
       }

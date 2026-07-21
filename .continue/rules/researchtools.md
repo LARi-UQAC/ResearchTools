@@ -11,6 +11,7 @@ read the corresponding file in full and follow it exactly:
 - `bib-cleaner` - see `.claude/agents/bib-cleaner.md`
 - `cover-paper` - see `.claude/agents/cover-paper.md`
 - `latex-writer` - see `.claude/agents/latex-writer.md`
+- `litreview-updater` - see `.claude/agents/litreview-updater.md`
 - `local-coder` - see `.claude/agents/local-coder.md`
 - `local-writer` - see `.claude/agents/local-writer.md`
 - `paper-auditor` - see `.claude/agents/paper-auditor.md`

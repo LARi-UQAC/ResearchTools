@@ -1,5 +1,9 @@
 # ResearchTools — Manual
 
+<p align="center">
+  <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="220">
+</p>
+
 ## Purpose
 
 Ask for my book (French version): Vibe Design. 30$ contribution via:
@@ -33,7 +37,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **10 skills**, **15 agents**, and **19 commands**.
+The repo ships **11 skills**, **16 agents**, and **21 commands**.
 
 ---
 
@@ -73,6 +77,7 @@ sequence (config, then junctions, then tools) in one pass.
 | `pip install docling markitdown[pdf]` *(optional, MIT; Docling pulls torch)* | Pluggable Markdown backend for `extract_text.py` (`--stats-scan` / `--section-scan`) and HTML conversion in the any-format retrieval path. Docling is the default (best tables/layout), MarkItDown the light fallback; absent both, the parser uses pymupdf4llm + a tag-strip |
 | `pip install matplotlib` *(+ optional `folium`)* | `geolocalisation` skill: world-map PNG figure (`matplotlib`) and interactive HTML map (`folium`). No geopandas/GDAL. The `--full-text` study-site scan additionally reuses `pymupdf` + `download_pdf.py` |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
+| `pdflatex` (TeX Live / MiKTeX) | `recommendation-letter` skill: compile letters to PDF (degrades to `.tex` only if absent) |
 | Obsidian Desktop *(optional)* | Obsidian vault integration in `CLAUDE.md` |
 
 ### Step 1 — Clone the repository
@@ -253,7 +258,7 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Ten ship in this repo.
+Skills bundle scripts and references the agents reuse. Eleven ship in this repo.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -267,6 +272,7 @@ Skills bundle scripts and references the agents reuse. Ten ship in this repo.
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
 | `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `/geolocalisation`, `.claude/skills/geolocalisation/SKILL.md` |
 | `loop-engineer` | Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score `>=` min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; `local-coder`/`local-writer` do local generation. `loop_audit.py` aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated. | `/loopdev`, `.claude/skills/loop-engineer/SKILL.md` |
+| `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -289,6 +295,7 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 - `.claude/skills/scopus/scripts/semantic_scholar_api.py` — Semantic Scholar fallback
 - `.claude/skills/scopus/scripts/download_pdf.py` — any-format full-text retrieval (PDF, else HTML/Markdown via Unpaywall, arXiv, PMC, validated DOI landing), plus an opt-in `--browser` tier
 - `.claude/skills/scopus/scripts/browser_fetch.py` — tier 8: a real Playwright Chromium for challenge-gated publishers (Akamai/Cloudflare), with a per-paper `refs/_sources.json` override URL (e.g. ResearchGate) for papers with no institutional access; optional (needs `playwright` + `playwright install chromium`)
+- `.claude/skills/scopus/scripts/litreview_update.py` — incremental-update bookkeeping for `/litupdate` (baseline fingerprint, delta dedup via `bib_batch.title_match`, dated output paths, CHANGELOG scaffold)
 - `.claude/skills/scopus/scripts/gemini_reviewer.py` · `github_reviewer.py` · `gemini_table.py` — cross-review cores
 
 ### `geolocalisation` — corpus study-location mapping
@@ -325,6 +332,26 @@ manual-entry template.
 - `.claude/skills/geolocalisation/scripts/generate_geomap.py` — reviewed CSV → CSV/KML/GeoJSON/PNG/HTML + per-country table (no geopandas)
 - `.claude/skills/geolocalisation/references/geocoding-protocol.md` — extraction method, confidence rubric, override format, full-text pipeline
 - `.claude/skills/geolocalisation/scripts/Test/test_extract_locations.py` — offline unit tests (bib parse, matcher, evidence, full-text)
+
+### recommendation-letter — support / recommendation / acceptance / dispense letters
+
+Generates letters in LaTeX → PDF for Prof. Otis / LAR.i from a candidate's own files. Two
+tracks: Claude authors the four persuasive types (scholarship, academic_position,
+industry_position, appreciation; French or English), while a standard-library-only Python
+script fills the fixed French **acceptance** and **dispense** forms. `candidate_status`
+(applicant / current_student / graduated) sets how the candidate is named; `funding_provider`
+(supervisor / candidate / combination) branches the funding paragraph; the dispense letter
+carries the < 120-day work-permit exemption paragraph and warns when a stay exceeds it;
+`invitation_pair=both` emits the acceptance and dispense letters together. A style-hygiene
+linter enforces the AI-usage rules. All shipped sample data is synthetic.
+
+**Files:**
+- `.claude/skills/recommendation-letter/SKILL.md`
+- `.claude/skills/recommendation-letter/scripts/generate_letter.py` — two-track assembler, validator, `pdflatex` compile
+- `.claude/skills/recommendation-letter/scripts/letter_templates.py` — preamble, letterhead/signature, acceptance/dispense French templates
+- `.claude/skills/recommendation-letter/scripts/Test/test_generate_letter.py` — offline unit tests (53 cases)
+- `.claude/skills/recommendation-letter/references/quality-patterns.md` — authored-track quality patterns
+- `.claude/skills/recommendation-letter/evals/` — synthetic sample configs
 
 ---
 
@@ -387,6 +414,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/latex [args]` | Diagnoses and fixes LaTeX errors from the `.log` or open file | Optional — specific error |
 | `/ref <citation>` | Formats and validates an academic reference (UQAC/LAR.i style) | Yes — reference |
 | `/litreview <topic>` | Full autonomous literature review: search → validate → synthesize → comparison table → hypotheses + contributions → objectives → context → novelty checklist | Yes — research topic |
+| `/litupdate <review.tex>` | Incrementally update an existing review with new papers: windowed search → delta dedup → validate/grade → preemption check (deliberation + scholar-evaluation) → dated `\added{}` copy `_up_YYYYMMDD.tex` + CHANGELOG. Schedulable (draft + REVIEW REQUIRED when unattended) | Yes — existing review `.tex` |
 | `/auditreview [file or text]` | Audit an existing review: validate references, flag errors, novelty checklist, executable improvement plan | Optional — file/text/IDE file |
 | `/auditpaper [file or text]` | Audit a complete paper: references, methodology, results, discussion, future works — Scopus validation + cross-review + improvement plan | Optional — file/text/IDE file |
 | `/auditthesis [main.tex or dir]` | Full UQAC thesis audit: front matter, jury, hypothesis flow, chapter structure, references, figures, equations, acronyms, LLM-style, bilingual résumé/abstract, UQAC formatting | Optional — path/dir/IDE file |
@@ -395,6 +423,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/replyreviewer` | Point-by-point LaTeX response letters + track-change markup in the paper via the `changes` package (one letter per reviewer file) | Yes — see below |
 | `/word2latex` | Convert a Word `.docx` template to a faithful LaTeX source (pandoc + standard patch sequence) | Yes — `.docx` path |
 | `/geolocalisation` | Map a review corpus's study locations from its `.bib`: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional `--full-text` PDF scan. | Optional — `.bib` file/dir/IDE file |
+| `/recommendation-letter` | Generate a support / recommendation / appreciation / acceptance / dispense letter in LaTeX → PDF from a candidate's files (two tracks; candidate status + funding provider; paired invitation). | Optional — folder / paths / IDE file |
 
 ### `/concis` — Concise mode
 
@@ -553,6 +582,7 @@ the single source of truth; per-tool mirrors are generated from them (see
 | Agent | Purpose | Command / trigger | Path |
 | --- | --- | --- | --- |
 | `scopus-researcher` | Autonomous literature review: search, validate, summarize, PRISMA + gap/coverage/Pareto matrices, hypotheses, LaTeX output | `/litreview` | `.claude/agents/scopus-researcher.md` |
+| `litreview-updater` | Incrementally refresh an existing review with new papers: windowed Scopus + Consensus search, delta dedup, validation/grading, preemption check (deliberation + scholar-evaluation), dated `\added{}` copy `_up_YYYYMMDD.tex` + CHANGELOG; unattended draft + REVIEW REQUIRED | `/litupdate` | `.claude/agents/litreview-updater.md` |
 | `scopus-auditor` | Audit an existing review; validate every reference; executable improvement plan | `/auditreview` | `.claude/agents/scopus-auditor.md` |
 | `paper-auditor` | Full paper content audit (intro→future works) + Scopus validation + ScholarEval score + improvement plan | `/auditpaper` | `.claude/agents/paper-auditor.md` |
 | `thesis-auditor` | Full UQAC thesis audit (front matter, hypothesis flow, chapter structure, bilingual consistency, UQAC compliance) + ScholarEval score | `/auditthesis` | `.claude/agents/thesis-auditor.md` |
@@ -693,8 +723,9 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (15 agents)
+    ├── agents\                              (16 agents)
     │   ├── scopus-researcher.md       ← /litreview
+    │   ├── litreview-updater.md       ← /litupdate
     │   ├── scopus-auditor.md          ← /auditreview
     │   ├── paper-auditor.md           ← /auditpaper
     │   ├── thesis-auditor.md          ← /auditthesis
@@ -709,19 +740,22 @@ ResearchTools\
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (ornith:9b bridge)
     │   └── local-coder.md             ← local code gen (qwen3.5:9b bridge)
-    ├── commands\                            (19 commands)
+    ├── commands\                            (21 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
-    │   ├── ref.md      ├── litreview.md             ├── auditreview.md
-    │   ├── auditpaper.md               ├── auditthesis.md
-    │   ├── bibclean.md ├── submitcheck.md           ├── replyreviewer.md
+    │   ├── ref.md      ├── litreview.md             ├── litupdate.md
+    │   ├── auditreview.md              ├── auditpaper.md
+    │   ├── auditthesis.md              ├── bibclean.md
+    │   ├── submitcheck.md              ├── replyreviewer.md
     │   ├── word2latex.md               ├── geolocalisation.md
-    │   └── loopdev.md
+    │   ├── loopdev.md
+    │   └── recommendation-letter.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (10 skills)
+    └── skills\                              (11 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
+        │                  bib_batch.py, litreview_update.py,
         │                  gemini_reviewer.py, github_reviewer.py, gemini_table.py)
         ├── scientific-writing\SKILL.md
         ├── scholar-evaluation\SKILL.md      (+ scripts\calculate_scores.py)
@@ -736,7 +770,9 @@ ResearchTools\
         ├── geolocalisation\SKILL.md         (+ scripts\extract_locations.py, generate_geomap.py,
         │                  Test\test_extract_locations.py; references\geocoding-protocol.md;
         │                  data\ Natural Earth gazetteer cache)
-        └── loop-engineer\SKILL.md           (+ scripts\loop_engineer.py [Agent SDK driver],
+        ├── loop-engineer\SKILL.md           (+ scripts\loop_engineer.py [Agent SDK driver],
                            loop_audit.py [code-quality scorer], Test\test_loop_audit.py;
                            references\ LOOP/STATE/PROCESS/ledger templates; requirements.txt)
+        └── recommendation-letter\SKILL.md   (+ scripts\generate_letter.py, letter_templates.py,
+                           Test\test_generate_letter.py; references\quality-patterns.md; evals\)
 ```

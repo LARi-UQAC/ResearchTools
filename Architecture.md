@@ -17,6 +17,8 @@ graph TD
     c6["/replyreviewer"]
     c7["/submitcheck"]
     c8["/geolocalisation"]
+    c9["/recommendation-letter"]
+    c10["/litupdate"]
   end
 
   subgraph AG["Agents — agents/"]
@@ -30,6 +32,7 @@ graph TD
     a8["submit-checker"]
     a9["cover-paper"]
     a10["latex-writer<br/>LaTeX/Beamer/TiKZ authoring"]
+    a11["litreview-updater<br/>incremental review refresh"]
   end
 
   subgraph SK["Skills — skills/"]
@@ -41,6 +44,7 @@ graph TD
     s6["drawio2tikz<br/>drawio2tikz.py"]
     s7["extract-futureworks<br/>extract_text.py (--section-scan)"]
     s8["geolocalisation<br/>extract_locations.py · generate_geomap.py"]
+    s9["recommendation-letter<br/>generate_letter.py · letter_templates.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -58,6 +62,8 @@ graph TD
   c6 --> a7
   c7 --> a8
   c8 --> s8
+  c9 --> s9
+  c10 --> a11
   a4 -.->|"invoked by name<br/>(no command)"| a4
   a9 -.->|"invoked by name<br/>(no command)"| a9
   a10 -.->|"invoked by context<br/>(no command)"| a10
@@ -67,6 +73,7 @@ graph TD
   a3 --> s1 & s2 & s3 & s4 & s5
   a4 --> s1 & s2 & s3 & s4
   a6 --> s1 & s2 & s4 & s5
+  a11 --> s1 & s2 & s3 & s4 & s5 & s7
   a7 --> s1 & s2 & s4
   a8 --> s1 & s3
   a5 --> s1
@@ -89,11 +96,14 @@ graph TD
 | *(by name)* | [thesis-proposal-auditor](agents/thesis-proposal-auditor.md) | yes | mandatory | yes | yes | no | audit |
 | `/bibclean` | [bib-cleaner](agents/bib-cleaner.md) | yes | no | no | no | no | no |
 | `/litreview` | [scopus-researcher](agents/scopus-researcher.md) | yes | mandatory | no | yes | mine | mine |
+| `/litupdate` | [litreview-updater](agents/litreview-updater.md) | yes | mandatory | yes | yes | mine | mine |
 | `/replyreviewer` | [reviewer-response](agents/reviewer-response.md) | yes | mandatory | no | yes | no | no |
 | `/submitcheck` | [submit-checker](agents/submit-checker.md) | yes | no | yes | no | no | no |
 | *(by name)* | [cover-paper](agents/cover-paper.md) | yes | no | no | no | no | no |
 
 `/geolocalisation` invokes the [geolocalisation](skills/geolocalisation) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix; it reuses only the [scopus](skills/scopus) skill's `download_pdf.py` for the optional `--full-text` scan.
+
+`/recommendation-letter` likewise invokes the [recommendation-letter](skills/recommendation-letter) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix; its `generate_letter.py` is standard-library only and compiles the letter with `pdflatex`.
 
 ### Domain profiles
 
@@ -213,6 +223,8 @@ flowchart TD
 | [semantic_scholar_api.py](skills/scopus/scripts/semantic_scholar_api.py) | authors · paper · external_ids_for_doi | Semantic Scholar Academic Graph | `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` (optional) |
 | [download_pdf.py](skills/scopus/scripts/download_pdf.py) | doi · bib (any format: pdf/html/md) | Elsevier → S2 → publisher → Unpaywall → arXiv → PMC → DOI landing → browser (`--browser`) | `SCOPUS_API_KEY`, `UNPAYWALL_EMAIL` (optional) |
 | [browser_fetch.py](skills/scopus/scripts/browser_fetch.py) | tier 8 for download_pdf.py (opt-in) | real Playwright Chromium; per-paper `refs/_sources.json` override URL (e.g. ResearchGate) | optional: `playwright` + `playwright install chromium` |
+| [bib_batch.py](skills/scopus/scripts/bib_batch.py) | resolve · enrich · bib · all (title→DOI, grade A–D, BibTeX) | wraps `scopus_api.py` | `SCOPUS_API_KEY` |
+| [litreview_update.py](skills/scopus/scripts/litreview_update.py) | baseline · delta · changelog (incremental `/litupdate` bookkeeping; reuses `bib_batch.title_match`) | none (offline) | — |
 | [gemini_table.py](skills/scopus/scripts/gemini_table.py) | table-cell enrichment | Google Gemini 2.0 Flash | `GEMINI_API_KEY` |
 | [gemini_reviewer.py](skills/scopus/scripts/gemini_reviewer.py) | peer-review (deliberation) | Google Gemini 2.0 Flash | `GEMINI_API_KEY` |
 | [github_reviewer.py](skills/scopus/scripts/github_reviewer.py) | peer-review (deliberation) | GitHub Models (Azure inference) | GitHub token |

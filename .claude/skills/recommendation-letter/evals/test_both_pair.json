@@ -1,0 +1,15 @@
+{
+  "letter_type": "acceptance", "language": "fr", "invitation_pair": "both",
+  "date": "2025-12-28", "candidate_name": "Candidate Exemple India", "candidate_gender": "F",
+  "candidate_status": "applicant", "candidate_title": "Mme",
+  "candidate_address": "12 rue de l'Exemple, Ville-Test, Pays-Exemple",
+  "degree_level": "research_stay",
+  "project_description": "la conception d'un modèle Vision-Langage-Action (VLA) en robotique agricole",
+  "funding_provider": "supervisor", "funding_model": "mitacs_gra",
+  "funding_amount": "6000", "mitacs_reference": "IT00002",
+  "stay_start": "2026/04/01", "stay_end": "2026/06/24",
+  "remuneration": "Offerte par MITACS programme GRA, IT00002, 6000$",
+  "weekly_hours": "40", "home_institution": "Université Exemple C",
+  "tasks_description": "Conception d'un modèle Vision-Langage-Action (VLA) en robotique agricole",
+  "conditional_scholarship": "false"
+}

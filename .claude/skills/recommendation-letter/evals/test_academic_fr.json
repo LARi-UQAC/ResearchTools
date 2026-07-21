@@ -1,0 +1,9 @@
+{
+  "letter_type": "academic_position", "language": "fr",
+  "target": "Poste de professeur", "target_institution": "Université de Moncton",
+  "limit": "2 pages", "reference_number": "REF-2025-001", "date": "2025-02-14",
+  "candidate_name": "Candidat Exemple Charlie", "candidate_gender": "M",
+  "candidate_status": "graduated", "candidate_title": "Dr.",
+  "candidate_program": "Doctorat en ingénierie, UQAC",
+  "body_tex": "Je recommande le Dr Candidat Exemple Charlie pour un poste de professeur. Sous ma direction de 2020 à 2024, il a publié trois revues (Elsevier, IF 3; Springer, IF 9,1). Il s'est impliqué dans les Commissions de l'UQAC et a géré un projet industriel difficile dont la solution sert encore dans trois autres projets. Nous prévoyons collaborer sur des subventions CRSNG et MITACS. Je demeure disponible pour tout complément."
+}

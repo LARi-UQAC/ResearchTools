@@ -1,0 +1,14 @@
+{
+  "letter_type": "acceptance", "language": "fr", "invitation_pair": "acceptance_only",
+  "date": "2026-05-12", "candidate_name": "Candidat Exemple Echo",
+  "candidate_gender": "M", "candidate_status": "applicant", "candidate_title": "M.",
+  "degree_level": "phd_eng",
+  "project_description": "la conception d'un jumeau numérique des cuves d'aluminium",
+  "lab_collaborators": "un autre étudiant au doctorat déjà en place",
+  "funding_provider": "supervisor", "funding_model": "combination",
+  "funding_amount": "35000",
+  "funding_source_details": "Bourse de 35 000$CAN/an sur trois ans, conditionnelle à la réussite de l'examen doctoral et de deux cours.",
+  "project_end_date": "janvier 2029",
+  "tools_technologies": "capteurs virtuels et modèles d'analyse du flux tendu",
+  "prerequisites": "l'examen doctoral et deux cours"
+}

@@ -1,0 +1,9 @@
+{
+  "letter_type": "academic_position", "language": "en",
+  "target": "Professor position", "target_institution": "University of Sherbrooke",
+  "limit": "2 pages", "date": "2023-06-03",
+  "candidate_name": "Candidat Exemple Bravo", "candidate_gender": "M",
+  "candidate_status": "graduated", "candidate_title": "Dr.",
+  "candidate_program": "Ph.D. in Engineering, UQAC",
+  "body_tex": "I recommend Dr. Candidat Exemple Bravo without reservation for a faculty position. Over three years as his research director, he published first-author papers in journals with impact factors above 3 and contributed to MITACS Acceleration and NSERC projects. He taught Human-Robot Interaction at the graduate level and Industrial Automation to undergraduates. I remain available to provide further information."
+}

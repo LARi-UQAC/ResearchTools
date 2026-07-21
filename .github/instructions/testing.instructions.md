@@ -29,7 +29,9 @@ The runnable code in this repo is the skill scripts under `.claude/skills/*/scri
 exercise them, set the required environment variables, then dry-run the entry points:
 
 - `scopus` skill: `scopus_api.py` (Scopus REST client), `bib_batch.py` (batch
-  title-to-DOI resolution, enrichment, grading, BibTeX generation), `semantic_scholar_api.py`
+  title-to-DOI resolution, enrichment, grading, BibTeX generation), `litreview_update.py`
+  (incremental `/litupdate` bookkeeping: baseline fingerprint, delta dedup, dated paths,
+  CHANGELOG scaffold; offline), `semantic_scholar_api.py`
   (fallback + `external_ids_for_doi`), `download_pdf.py` (any-format full-text retrieval:
   Elsevier/S2 PDF, then Unpaywall/arXiv/PMC/landing HTML, then an opt-in browser tier),
   `browser_fetch.py` (tier 8: a real Playwright Chromium for challenge-gated publishers,
@@ -47,6 +49,7 @@ Offline unit tests (no network, no API key, no model load; run with the project 
 python .claude/skills/scopus/scripts/Test/test_download_pdf.py            # any-format tiers (incl. publisher/curl), tier-8 wiring, _sources.json, HTML validation
 python .claude/skills/scopus/scripts/Test/test_browser_fetch.py           # tier 8: real-PDF capture / no-print / paywall / override with Playwright mocked
 python .claude/skills/scopus/scripts/Test/test_bib_batch.py               # title match, venue grading, BibTeX invariants
+python .claude/skills/scopus/scripts/Test/test_litreview_update.py        # baseline parse, delta dedup (DOI + title Jaccard), changelog scaffold
 python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py # scan_sections / section-scan
 ```
 

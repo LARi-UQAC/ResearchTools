@@ -12,6 +12,7 @@ CLI, or `copilot --agent <name>`):
 - `bib-cleaner`: see `.github/agents/bib-cleaner.agent.md` (full definition in `.claude/agents/bib-cleaner.md`)
 - `cover-paper`: see `.github/agents/cover-paper.agent.md` (full definition in `.claude/agents/cover-paper.md`)
 - `latex-writer`: see `.github/agents/latex-writer.agent.md` (full definition in `.claude/agents/latex-writer.md`)
+- `litreview-updater`: see `.github/agents/litreview-updater.agent.md` (full definition in `.claude/agents/litreview-updater.md`)
 - `local-coder`: see `.github/agents/local-coder.agent.md` (full definition in `.claude/agents/local-coder.md`)
 - `local-writer`: see `.github/agents/local-writer.agent.md` (full definition in `.claude/agents/local-writer.md`)
 - `paper-auditor`: see `.github/agents/paper-auditor.agent.md` (full definition in `.claude/agents/paper-auditor.md`)
@@ -26,9 +27,11 @@ CLI, or `copilot --agent <name>`):
 
 Task prompt files are available as slash commands in Copilot Chat (see
 `.github/prompts/`). Helper skills (Scopus API scripts, statistics extraction,
-scientific-writing rules, corpus study-location mapping) are plain repo folders
-under `.claude/skills/` - read the relevant `SKILL.md` when a task calls for
-it (e.g. `geolocalisation` to map where a corpus's studies were conducted).
+scientific-writing rules, corpus study-location mapping, recommendation/support/
+acceptance letters) are plain repo folders under `.claude/skills/` - read the
+relevant `SKILL.md` when a task calls for it (e.g. `geolocalisation` to map
+where a corpus's studies were conducted, or `recommendation-letter` to draft a
+support/recommendation/acceptance letter from a candidate's files).
 
 Hard rules: validate every reference against Scopus (scripts in
 `.claude/skills/scopus/scripts/`); never fabricate references or DOIs; LaTeX

@@ -234,9 +234,11 @@ $agentRouting
 
 Task prompt files are available as slash commands in Copilot Chat (see
 ``.github/prompts/``). Helper skills (Scopus API scripts, statistics extraction,
-scientific-writing rules, corpus study-location mapping) are plain repo folders
-under ``.claude/skills/`` - read the relevant ``SKILL.md`` when a task calls for
-it (e.g. ``geolocalisation`` to map where a corpus's studies were conducted).
+scientific-writing rules, corpus study-location mapping, recommendation/support/
+acceptance letters) are plain repo folders under ``.claude/skills/`` - read the
+relevant ``SKILL.md`` when a task calls for it (e.g. ``geolocalisation`` to map
+where a corpus's studies were conducted, or ``recommendation-letter`` to draft a
+support/recommendation/acceptance letter from a candidate's files).
 
 Hard rules: validate every reference against Scopus (scripts in
 ``.claude/skills/scopus/scripts/``); never fabricate references or DOIs; LaTeX

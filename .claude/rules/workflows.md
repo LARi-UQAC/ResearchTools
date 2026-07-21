@@ -8,6 +8,7 @@ and the output produced. Full arguments are in `README.md`.
 | Goal | Command | Agent / skill | Output |
 |---|---|---|---|
 | Literature review on a topic | `/litreview <topic>` | `scopus-researcher` | Structured review, PRISMA + gap/coverage/Pareto matrices, hypotheses, BibTeX |
+| Incrementally update an existing review with new papers | `/litupdate <review.tex>` | `litreview-updater` | Dated `\added{}` copy `_up_YYYYMMDD.tex` + CHANGELOG; preemption verdict (gaps/hypotheses still novel?); schedulable (draft + REVIEW REQUIRED unattended) |
 | Find or validate one reference | `/scopus`, `/ref` | `scopus` skill | Validated metadata, formatted reference, clickable DOI |
 | Audit an existing review | `/auditreview [file]` | `scopus-auditor` | Reference validation + executable improvement plan |
 | Audit a complete paper | `/auditpaper [file]` | `paper-auditor` (+ `scholar-evaluation`) | Track-change markup plan + ScholarEval score |
@@ -20,6 +21,7 @@ and the output produced. Full arguments are in `README.md`.
 | Integrate a thesis + conference papers into one journal manuscript | by name / "extend this paper to a journal version" | `thesis-to-paper` | Submission-ready journal `.tex` (+ sections, refs, PDF), content-delta matrix, disclosure letter; multi-session checkpoint protocol |
 | Iterate a manuscript/review to a target ScholarEval score under a budget | by name / "improve this to a ScholarEval target" | `authoring-loop` (author on Fable 5, audit with `scholar-evaluation` on Sonnet/Haiku) | Improved `.tex` + per-iteration ScholarEval scores, `authoring-loop-log.md`, learnings written to memory by `local-writer` |
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
+| Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
 
 ## Local delegation flows
 

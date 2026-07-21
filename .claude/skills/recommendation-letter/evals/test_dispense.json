@@ -1,0 +1,9 @@
+{
+  "letter_type": "dispense", "language": "fr", "invitation_pair": "dispense_only",
+  "date": "2026-03-04", "candidate_name": "Candidat Exemple Golf", "candidate_gender": "M",
+  "candidate_address": "12 rue de l'Exemple, 00000 Villeneuve, France",
+  "stay_start": "2026/05/01", "stay_end": "2026/07/31", "remuneration": "aucune",
+  "weekly_hours": "40", "home_institution": "Institut Exemple B",
+  "tasks_description": "Conception d'un modèle Large de Comportements (LBM) en système robotique autonome au format ONNX dans PyTorch",
+  "conditional_scholarship": "false"
+}

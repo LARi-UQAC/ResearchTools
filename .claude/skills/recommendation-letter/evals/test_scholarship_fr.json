@@ -1,0 +1,11 @@
+{
+  "letter_type": "scholarship", "language": "fr",
+  "target": "Programme des futurs leaders dans les Amériques (PFLA)",
+  "target_institution": "Université du Québec à Chicoutimi",
+  "limit": "350 words", "date": "2026-03-27",
+  "candidate_name": "Candidat Exemple Alpha", "candidate_gender": "M",
+  "candidate_status": "applicant", "candidate_title": "M.",
+  "candidate_program": "Baccalauréat en génie de maintenance industrielle",
+  "funding_provider": "candidate", "funding_model": "scholarship",
+  "body_tex": "Par la présente, j'appuie sans réserve la candidature de le candidat (Candidat Exemple Alpha) au Programme des futurs leaders dans les Amériques. Son dossier montre une moyenne de 8,9 sur 10 et une expertise en systèmes pneumatiques et hydrauliques. Il sera intégré au projet IndustrialDiagnosis au LAR.i et au CURAL, sur la maintenance prédictive des cuves d'électrolyse par intelligence artificielle. Je demeure disponible pour tout complément d'information."
+}

@@ -1,0 +1,23 @@
+{
+  "skill_name": "recommendation-letter",
+  "evals": [
+    {"id": 1, "config": "test_scholarship_fr.json",
+     "assert": ["exit 0", "no %%", "word count <= 350", "mentions PFLA"]},
+    {"id": 2, "config": "test_academic_en.json",
+     "assert": ["exit 0", "babel english", "mentions MITACS/NSERC"]},
+    {"id": 3, "config": "test_academic_fr.json",
+     "assert": ["exit 0", "contains REF-2025-001", "mentions Elsevier and Springer"]},
+    {"id": 4, "config": "test_acceptance_msc.json",
+     "assert": ["exit 0", "no %%", "maîtrise de recherche", "RoboDK"]},
+    {"id": 5, "config": "test_acceptance_phd.json",
+     "assert": ["exit 0", "no %%", "doctorat en ingénierie", "propédeutique"]},
+    {"id": 6, "config": "test_acceptance_female.json",
+     "assert": ["exit 0", "no %%", "acceptée", "heureuse", "Entreprise Exemple inc."]},
+    {"id": 7, "config": "test_dispense.json",
+     "assert": ["exit 0", "no %%", "dispense de permis de travail", "aucune"]},
+    {"id": 8, "config": "test_dispense_conditional.json",
+     "assert": ["exit 0", "conditionnelle à l'obtention", "PFLA (ELAP)"]},
+    {"id": 9, "config": "test_both_pair.json",
+     "assert": ["exit 0", "two tex files", "acceptance + dispense", "invitée"]}
+  ]
+}

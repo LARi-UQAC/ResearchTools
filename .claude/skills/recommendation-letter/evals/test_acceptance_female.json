@@ -1,0 +1,12 @@
+{
+  "letter_type": "acceptance", "language": "fr", "invitation_pair": "acceptance_only",
+  "date": "2023-12-15", "candidate_name": "Candidate Exemple Foxtrot",
+  "candidate_gender": "F", "candidate_status": "applicant", "candidate_title": "Mme",
+  "degree_level": "msc",
+  "project_description": "la conception d'un robot hybride pour opérer des sous-stations électriques en réalité étendue",
+  "lab_collaborators": "une équipe déjà en place",
+  "funding_provider": "supervisor", "funding_model": "mitacs_acceleration",
+  "mitacs_reference": "IT00001", "partner_company": "Entreprise Exemple inc.",
+  "partner_description": "Entreprise Exemple inc. est une entreprise en démarrage en conception et mise en service d'installations robotiques.",
+  "prerequisites": ""
+}

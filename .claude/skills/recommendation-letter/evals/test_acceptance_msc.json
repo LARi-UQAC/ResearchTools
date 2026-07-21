@@ -1,0 +1,11 @@
+{
+  "letter_type": "acceptance", "language": "fr", "invitation_pair": "acceptance_only",
+  "date": "2023-05-23", "candidate_name": "Candidat Exemple Delta",
+  "candidate_gender": "M", "candidate_status": "applicant", "candidate_title": "M.",
+  "degree_level": "msc",
+  "project_description": "le diagnostic des systèmes hybrides dans les systèmes manufacturiers flexibles liés à l'industrie 5.0",
+  "lab_collaborators": "un étudiant au doctorat déjà en place",
+  "funding_provider": "supervisor", "funding_model": "mitacs_acceleration",
+  "funding_amount": "12500", "project_end_date": "décembre 2025",
+  "tools_technologies": "RoboDK et CodeSys, XCOS avec Python/FBD", "prerequisites": ""
+}

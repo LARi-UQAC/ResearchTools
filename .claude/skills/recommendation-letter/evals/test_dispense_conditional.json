@@ -1,0 +1,11 @@
+{
+  "letter_type": "dispense", "language": "fr", "invitation_pair": "dispense_only",
+  "date": "2026-03-13", "candidate_name": "Candidat Exemple Alpha",
+  "candidate_gender": "M",
+  "candidate_address": "avenue de l'Exemple 11, Quartier Modele, 00000 Ville-Test, Pays-Exemple",
+  "stay_start": "2027/01/04", "stay_end": "2027/04/30",
+  "remuneration": "Offerte par la bourse PFLA (ELAP), 8600$ pour 4 mois",
+  "weekly_hours": "40", "home_institution": "Université Exemple A",
+  "tasks_description": "Système d'optimisation et de maintenance d'une cuve par intelligence artificielle (LLM) dans la production primaire de l'aluminium",
+  "conditional_scholarship": "true", "conditional_scholarship_name": "PFLA (ELAP)"
+}

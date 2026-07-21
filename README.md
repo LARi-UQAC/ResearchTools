@@ -26,7 +26,7 @@ GitHub Copilot debate, arbitrated with Claude) before a plan or review is finali
 
 The toolbox is built as agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
 with generated mirrors for GitHub Copilot, OpenCode, Continue, and Aider (see
-[Installation](#installation)). Typical entry points: `/litreview` for a new topic,
+[Installation](#installation)). Typical entry points: `/litreview` for a new topic (review update using `\litreview-updater`),
 `/auditpaper` before submitting, `/auditthesis` before a defense, `/bibclean` on any
 `.bib` file, `/replyreviewer` when the reviews come back.
 
@@ -209,7 +209,7 @@ Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
 
 | Variable / source | Required for | Where to get it |
 |---|---|---|
-| `SCOPUS_API_KEY` | **Required** — all `/scopus`, `/auditreview`, `/auditpaper`, `/auditthesis`, `/litreview`, `/bibclean`, `/replyreviewer`, and PDF retrieval | [Elsevier Developer Portal](https://dev.elsevier.com/) |
+| `SCOPUS_API_KEY` | **Required** — all `/scopus`, `/auditreview`, `/auditpaper`, `/auditthesis`, `/litreview`, `\litreview-updater`, `/bibclean`, `/replyreviewer`, and PDF retrieval | [Elsevier Developer Portal](https://dev.elsevier.com/) |
 | `.scopus_key` file | Fallback for `SCOPUS_API_KEY` — place the key in `.claude/skills/scopus/.scopus_key` (gitignored) | same key as above |
 | `UNPAYWALL_EMAIL` | *Optional* — enables the Unpaywall open-access tier in `download_pdf.py` (HTML/PDF fallback when no publisher PDF); a plain contact email, or pass `--email` | any institutional email |
 | `GEMINI_API_KEY` | *Optional* — Gemini 2.0 Flash cross-review and table enrichment (deliberation panel) | [Google AI Studio](https://aistudio.google.com/apikey) |

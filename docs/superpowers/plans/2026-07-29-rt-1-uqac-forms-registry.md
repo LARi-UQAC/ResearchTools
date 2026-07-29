@@ -1490,3 +1490,136 @@ pip-audit -r .claude/skills/uqac-forms/scripts/requirements.txt --strict
 ```
 
 Plus the five existing offline suites listed in `.claude/rules/testing.md`, which must stay green.
+
+---
+
+## Task 6: Documentation and the pull request
+
+Run this after the acceptance block above passes. It is the last task of the unit,
+and it is what makes the work reviewable by someone who was not here.
+
+**Files:**
+
+- Modify: `README.md`
+- Modify: `Architecture.md`
+- Modify: `NEW_ARCHITECTURE.md`
+
+**Interfaces:**
+
+- Consumes: the finished implementation of every task above.
+- Produces: the inventories a reader needs, and one pull request per unit so nothing
+  reaches `main` unreviewed.
+
+- [ ] **Step 1: Update `README.md`**
+
+Task 5 already covers the whole README change for this unit: the skill count in
+three places, the skills-table row, the `### uqac-forms` subsection, the
+Prerequisites rows, the File-Locations tree entry, the command count, the
+`/uqacform` row, and the TODO item 3 decision note.
+
+Here, only verify it: re-read the six edits of Task 5 Step 4 and confirm each
+landed. Do not duplicate them.
+
+```bash
+rtk grep -c "12 skills\|22 commands\|uqac-forms\|uqacform" README.md
+```
+
+Expected: a non-zero count for each. A zero means Task 5 Step 4 was skipped.
+
+- [ ] **Step 2: Update `Architecture.md`**
+
+Task 5 Step 5 already covers it: the `s10` node in the `SK` subgraph, the `c11`
+node in `CMD`, the direct `c11 --> s10` command-to-skill edge, the inventory
+counts, and the prose naming `uqac-forms` as the second skill a command drives
+directly.
+
+Here, only verify: render the Layer 1 mermaid graph and confirm the new nodes and
+the edge appear, and that the counts match the README.
+
+- [ ] **Step 3: Update `NEW_ARCHITECTURE.md`**
+
+`NEW_ARCHITECTURE.md` is committed identically to `main` in both ResearchTools and
+ThesisTracker. Edit only what this unit owns, and keep the wording identical in both
+checkouts so the two copies never drift.
+
+1. In the section 9 unit table, append ` Delivered <YYYY-MM-DD>.` to the **RT-1** row's
+   deliverable cell.
+2. Section 6 (the drift guard state diagram) describes what this unit implements. Read it
+   against the delivered `form_registry.py` and correct the diagram if the states or the
+   transitions differ. The diagram is the contract RT-2 and RT-3 rely on.
+3. The file opens with `**Status: planned, not implemented.**` That line stops being true
+   the moment any unit lands. Replace it with
+   `**Status: in progress. <n> of 14 units delivered.**` and keep the count correct.
+
+The change must land in both repositories. After committing it here, copy the same file
+into the other checkout and open a second, documentation-only pull request there, or fold
+it into that repository's next unit pull request. Verify the two copies match:
+
+```bash
+git -C "<path to ResearchTools>" show main:NEW_ARCHITECTURE.md | sha256sum
+git -C "<path to ThesisTracker>" show main:NEW_ARCHITECTURE.md | sha256sum
+```
+
+Expected: the two digests are equal.
+
+- [ ] **Step 4: Verify every relative link resolves**
+
+```bash
+grep -ohE "\]\([^)#][^)]*\)" README.md Architecture.md NEW_ARCHITECTURE.md \
+  | sed 's/.*](//; s/)$//' | grep -v "^http" | sort -u \
+  | while read -r f; do [ -e "$f" ] || echo "BROKEN: $f"; done
+```
+
+Expected: no output.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add README.md Architecture.md NEW_ARCHITECTURE.md
+git commit -m "docs(uqac-forms): record RT-1 in the inventories"
+```
+
+- [ ] **Step 6: Open the pull request**
+
+`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only,
+so neither the CLI nor that token can open a pull request. Do not try to install `gh`.
+The OAuth token in the Windows Credential Manager has `repo` scope and is sufficient.
+Retrieve it per command: never write it to a file, never echo it, never commit it.
+
+```bash
+git push -u origin feat/uqac-forms-registry
+
+TOK=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
+curl -s -X POST https://api.github.com/repos/LARi-UQAC/ResearchTools/pulls \
+  -H "Authorization: Bearer $TOK" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  --data-binary @pr-body.json
+```
+
+Write `pr-body.json` to the scratchpad first, never into the repository:
+
+```json
+{
+  "title": "[RT-1] uqac-forms skill: registry and drift detection",
+  "head": "feat/uqac-forms-registry",
+  "base": "main",
+  "body": "Closes #4\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** nothing. This is the first unit of the ResearchTools chain.\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary>\n\n**Reviewer must check by hand.** <the manual verification steps of this plan, or 'none'>"
+}
+```
+
+If a permission classifier blocks the command that reads the token, open the pull request
+in the browser instead and paste the same title and body:
+
+```
+https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/uqac-forms-registry?expand=1
+```
+
+Then delete `pr-body.json` from the scratchpad.
+
+**Do not merge your own pull request.** Merging to `main` is the human gate. RT-2 is blocked behind this unit; say so in the body.
+
+- [ ] **Step 7: Report**
+
+State the pull request URL, the acceptance commands you ran with their real output, and
+anything you could not verify. A test you did not run is not a test that passed.

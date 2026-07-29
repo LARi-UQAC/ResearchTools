@@ -30,6 +30,12 @@ with generated mirrors for GitHub Copilot, OpenCode, Continue, and Aider (see
 `/auditpaper` before submitting, `/auditthesis` before a defense, `/bibclean` on any
 `.bib` file, `/replyreviewer` when the reviews come back.
 
+## TODO in 2026
+
+1- Agent paper2talk (latex paper to a talk for a conference using some parameters such as time 10 to 12 minutes) for conference (september 2026).
+2- Agent thesis2defence (latex thesis to defence talk in Beamer, 30 to 45 minutes), october 2026.
+3- Thesis-Tracker: full UI/UX with user login, database, to fill paperworks, forms, track paper submission process, manage mindmap to create new paper ideas, end of 2026. We need to investigate if we use n8n, or other agents over a cloud or local on a server.
+
 ## About this manual
 
 Reference for the skills, agents and commands shipped in this repository. Everything
@@ -209,7 +215,7 @@ Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
 
 | Variable / source | Required for | Where to get it |
 |---|---|---|
-| `SCOPUS_API_KEY` | **Required** — all `/scopus`, `/auditreview`, `/auditpaper`, `/auditthesis`, `/litreview`, `\litreview-updater`, `/bibclean`, `/replyreviewer`, and PDF retrieval | [Elsevier Developer Portal](https://dev.elsevier.com/) |
+| `SCOPUS_API_KEY` | **Required** — all `/scopus`, `/auditreview`, `/auditpaper`, `/auditthesis`, `/litreview`, `/litreview-updater`, `/bibclean`, `/replyreviewer`, and PDF retrieval | [Elsevier Developer Portal](https://dev.elsevier.com/) |
 | `.scopus_key` file | Fallback for `SCOPUS_API_KEY` — place the key in `.claude/skills/scopus/.scopus_key` (gitignored) | same key as above |
 | `UNPAYWALL_EMAIL` | *Optional* — enables the Unpaywall open-access tier in `download_pdf.py` (HTML/PDF fallback when no publisher PDF); a plain contact email, or pass `--email` | any institutional email |
 | `GEMINI_API_KEY` | *Optional* — Gemini 2.0 Flash cross-review and table enrichment (deliberation panel) | [Google AI Studio](https://aistudio.google.com/apikey) |

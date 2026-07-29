@@ -1421,3 +1421,149 @@ With the stack running, the five store tests must also pass:
 $env:CORPUS_INDEX_DSN = "postgresql://uqac:<password>@127.0.0.1:5433/uqac"
 python .claude/skills/extract-statistic/scripts/Test/test_corpus_index.py
 ```
+
+---
+
+## Task 5: Documentation and the pull request
+
+Run this after the acceptance block above passes. It is the last task of the unit,
+and it is what makes the work reviewable by someone who was not here.
+
+**Files:**
+
+- Modify: `README.md`
+- Modify: `Architecture.md`
+- Modify: `NEW_ARCHITECTURE.md`
+
+**Interfaces:**
+
+- Consumes: the finished implementation of every task above.
+- Produces: the inventories a reader needs, and one pull request per unit so nothing
+  reaches `main` unreviewed.
+
+- [ ] **Step 1: Update `README.md`**
+
+In the `extract-statistic` section, add the two new scripts and, more importantly,
+the four rules that keep the index safe. A reader who takes only the scripts and
+not the rules will misuse it.
+
+```markdown
+- `.claude/skills/extract-statistic/scripts/parse_cache.py` - content-addressed parse cache, additive
+- `.claude/skills/extract-statistic/scripts/corpus_index.py` - opt-in chunk, embed, pgvector store
+```
+
+State, in the README and not only in `SKILL.md`:
+
+1. Strictly additive. `scan_sections()` and `scan_stats()` are unmodified and remain
+   the sole source for the statistics and future-works pipelines.
+2. Every hit returns citekey, page, and the verbatim passage, so a human verifies
+   before use. Same provenance contract as `geolocalisation`.
+3. The build is opt-in and never runs implicitly inside another skill.
+4. **A retrieval hit is never a citation.** A passage surfaced by similarity still
+   passes the normal Scopus validation gate before entering any document.
+
+In the Prerequisites table, add the optional `psycopg` and `pgvector` pins and note
+that both degrade gracefully: the parse cache and the chunker work without them.
+
+- [ ] **Step 2: Update `Architecture.md`**
+
+Extend the `s5` and `s7` node labels so the parse cache is visible, since both the
+statistics and the future-works skills now read through it.
+
+In the Notes, extend the existing `extract-statistic` bullet: the parse cache is
+content-addressed on the source SHA-256 and is additive, so a cache miss behaves
+exactly as before. Add a separate bullet for the index carrying the four rules
+above in one sentence each, with the fourth stated as a hard constraint rather than
+a recommendation.
+
+Note the embedder seam: the default is the local Ollama endpoint on `127.0.0.1`, so
+no corpus text leaves the machine, and there is no cloud embedding vendor.
+
+- [ ] **Step 3: Update `NEW_ARCHITECTURE.md`**
+
+`NEW_ARCHITECTURE.md` is committed identically to `main` in both ResearchTools and
+ThesisTracker. Edit only what this unit owns, and keep the wording identical in both
+checkouts so the two copies never drift.
+
+1. In the section 9 unit table, append ` Delivered <YYYY-MM-DD>.` to the **RT-7** row's
+   deliverable cell.
+2. Section 8's ResearchTools artifact table does not yet list the parse-cache artifacts. Add
+   rows for `refs/<key>.parsed.md` and `refs/<key>.parsed.meta.json`, both gitignored. Add
+   one line to section 3 stating that the pgvector store rides the Postgres of RT-5's
+   compose, so no vector vendor is introduced.
+3. The file opens with `**Status: planned, not implemented.**` That line stops being true
+   the moment any unit lands. Replace it with
+   `**Status: in progress. <n> of 14 units delivered.**` and keep the count correct.
+
+The change must land in both repositories. After committing it here, copy the same file
+into the other checkout and open a second, documentation-only pull request there, or fold
+it into that repository's next unit pull request. Verify the two copies match:
+
+```bash
+git -C "<path to ResearchTools>" show main:NEW_ARCHITECTURE.md | sha256sum
+git -C "<path to ThesisTracker>" show main:NEW_ARCHITECTURE.md | sha256sum
+```
+
+Expected: the two digests are equal.
+
+- [ ] **Step 4: Verify every relative link resolves**
+
+```bash
+grep -ohE "\]\([^)#][^)]*\)" README.md Architecture.md NEW_ARCHITECTURE.md \
+  | sed 's/.*](//; s/)$//' | grep -v "^http" | sort -u \
+  | while read -r f; do [ -e "$f" ] || echo "BROKEN: $f"; done
+```
+
+Expected: no output.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add README.md Architecture.md NEW_ARCHITECTURE.md
+git commit -m "docs(extract-statistic): record RT-7 in the inventories"
+```
+
+- [ ] **Step 6: Open the pull request**
+
+`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only,
+so neither the CLI nor that token can open a pull request. Do not try to install `gh`.
+The OAuth token in the Windows Credential Manager has `repo` scope and is sufficient.
+Retrieve it per command: never write it to a file, never echo it, never commit it.
+
+```bash
+git push -u origin feat/corpus-index
+
+TOK=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
+curl -s -X POST https://api.github.com/repos/LARi-UQAC/ResearchTools/pulls \
+  -H "Authorization: Bearer $TOK" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  --data-binary @pr-body.json
+```
+
+Write `pr-body.json` to the scratchpad first, never into the repository:
+
+```json
+{
+  "title": "[RT-7] Corpus parse cache and opt-in semantic index",
+  "head": "feat/corpus-index",
+  "base": "main",
+  "body": "Closes #10\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** RT-5 (`feat/uqac-forms-service`), for the pgvector Postgres. Independent of RT-6.\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary>\n\n**Reviewer must check by hand.** <the manual verification steps of this plan, or 'none'>"
+}
+```
+
+If a permission classifier blocks the command that reads the token, open the pull request
+in the browser instead and paste the same title and body:
+
+```
+https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/corpus-index?expand=1
+```
+
+Then delete `pr-body.json` from the scratchpad.
+
+**Do not merge your own pull request.** Merging to `main` is the human gate. Nothing is blocked behind this unit: it is on no critical path.
+
+- [ ] **Step 7: Report**
+
+State the pull request URL, the acceptance commands you ran with their real output, and
+anything you could not verify. A test you did not run is not a test that passed.

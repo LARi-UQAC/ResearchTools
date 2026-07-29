@@ -33,7 +33,9 @@ with generated mirrors for GitHub Copilot, OpenCode, Continue, and Aider (see
 ## TODO in 2026
 
 1- Agent paper2talk (latex paper to a talk for a conference using some parameters such as time 10 to 12 minutes) for conference (september 2026).
+
 2- Agent thesis2defence (latex thesis to defence talk in Beamer, 30 to 45 minutes), october 2026.
+
 3- Thesis-Tracker: full UI/UX with user login, database, to fill paperworks, forms, track paper submission process, manage mindmap to create new paper ideas, end of 2026. We need to investigate if we use n8n, or other agents over a cloud or local on a server.
 
 ## About this manual

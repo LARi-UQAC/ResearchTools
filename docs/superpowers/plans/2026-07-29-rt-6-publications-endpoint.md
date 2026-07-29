@@ -1088,3 +1088,135 @@ pip-audit -r deploy/form-service/requirements.txt --strict
 ```
 
 Plus the RT-1 through RT-5 suites and the five existing offline suites in `.claude/rules/testing.md`, which must stay green.
+
+---
+
+## Task 4: Documentation and the pull request
+
+Run this after the acceptance block above passes. It is the last task of the unit,
+and it is what makes the work reviewable by someone who was not here.
+
+**Files:**
+
+- Modify: `README.md`
+- Modify: `Architecture.md`
+- Modify: `NEW_ARCHITECTURE.md`
+
+**Interfaces:**
+
+- Consumes: the finished implementation of every task above.
+- Produces: the inventories a reader needs, and one pull request per unit so nothing
+  reaches `main` unreviewed.
+
+- [ ] **Step 1: Update `README.md`**
+
+Task 7 Step 4 of this plan already covers the seven-mode change to `scopus_api.py`.
+Verify it landed, then add what Task 7 does not cover:
+
+1. In the `scopus` skill section, one sentence on the policy boundary, because it is
+   the reason this endpoint exists: the Scopus key, the throttling, and the
+   approved-publisher list stay in this repository, and a consumer receives plain
+   JSON with a per-entry `approved_publisher` flag.
+2. One sentence stating that a venue outside the approved publisher list is
+   **flagged, never dropped**, because a silent drop would hide a real publication
+   from a cohort report.
+3. One sentence stating that an unreachable Scopus is reported as `503`, never as an
+   empty list, because an empty list reads as "this person has never published".
+
+- [ ] **Step 2: Update `Architecture.md`**
+
+Task 7 Step 4 updates the `scopus_api.py` row of the script table to seven modes.
+Verify it, then add to the deployment section RT-5 created: the service also exposes
+`GET /publications`, cached on disk with a TTL and rate limited with a token bucket,
+so a cohort report over an already seen roster makes no Scopus call at all.
+
+State the quota reasoning explicitly: the limiter is a property of the key, not of
+the caller, so it is shared per process.
+
+- [ ] **Step 3: Update `NEW_ARCHITECTURE.md`**
+
+`NEW_ARCHITECTURE.md` is committed identically to `main` in both ResearchTools and
+ThesisTracker. Edit only what this unit owns, and keep the wording identical in both
+checkouts so the two copies never drift.
+
+1. In the section 9 unit table, append ` Delivered <YYYY-MM-DD>.` to the **RT-6** row's
+   deliverable cell.
+2. Section 5.3 (the cohort report sequence) describes this endpoint's cache and quota
+   behaviour. Verify the cache-hit branch against the delivered code, in particular that a
+   cache hit consumes no token.
+3. The file opens with `**Status: planned, not implemented.**` That line stops being true
+   the moment any unit lands. Replace it with
+   `**Status: in progress. <n> of 14 units delivered.**` and keep the count correct.
+
+The change must land in both repositories. After committing it here, copy the same file
+into the other checkout and open a second, documentation-only pull request there, or fold
+it into that repository's next unit pull request. Verify the two copies match:
+
+```bash
+git -C "<path to ResearchTools>" show main:NEW_ARCHITECTURE.md | sha256sum
+git -C "<path to ThesisTracker>" show main:NEW_ARCHITECTURE.md | sha256sum
+```
+
+Expected: the two digests are equal.
+
+- [ ] **Step 4: Verify every relative link resolves**
+
+```bash
+grep -ohE "\]\([^)#][^)]*\)" README.md Architecture.md NEW_ARCHITECTURE.md \
+  | sed 's/.*](//; s/)$//' | grep -v "^http" | sort -u \
+  | while read -r f; do [ -e "$f" ] || echo "BROKEN: $f"; done
+```
+
+Expected: no output.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add README.md Architecture.md NEW_ARCHITECTURE.md
+git commit -m "docs(scopus): record RT-6 in the inventories"
+```
+
+- [ ] **Step 6: Open the pull request**
+
+`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only,
+so neither the CLI nor that token can open a pull request. Do not try to install `gh`.
+The OAuth token in the Windows Credential Manager has `repo` scope and is sufficient.
+Retrieve it per command: never write it to a file, never echo it, never commit it.
+
+```bash
+git push -u origin feat/publications-endpoint
+
+TOK=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
+curl -s -X POST https://api.github.com/repos/LARi-UQAC/ResearchTools/pulls \
+  -H "Authorization: Bearer $TOK" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  --data-binary @pr-body.json
+```
+
+Write `pr-body.json` to the scratchpad first, never into the repository:
+
+```json
+{
+  "title": "[RT-6] Publications endpoint on the form service",
+  "head": "feat/publications-endpoint",
+  "base": "main",
+  "body": "Closes #9\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** RT-5 (`feat/uqac-forms-service`).\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary>\n\n**Reviewer must check by hand.** <the manual verification steps of this plan, or 'none'>"
+}
+```
+
+If a permission classifier blocks the command that reads the token, open the pull request
+in the browser instead and paste the same title and body:
+
+```
+https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/publications-endpoint?expand=1
+```
+
+Then delete `pr-body.json` from the scratchpad.
+
+**Do not merge your own pull request.** Merging to `main` is the human gate. TT-6 is blocked behind this unit; say so in the body.
+
+- [ ] **Step 7: Report**
+
+State the pull request URL, the acceptance commands you ran with their real output, and
+anything you could not verify. A test you did not run is not a test that passed.

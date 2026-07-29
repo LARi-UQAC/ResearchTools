@@ -1293,3 +1293,142 @@ curl -s http://127.0.0.1:8081/health
 ```
 
 Plus the RT-1 through RT-4 suites and the five existing offline suites in `.claude/rules/testing.md`, which must stay green.
+
+---
+
+## Task 5: Documentation and the pull request
+
+Run this after the acceptance block above passes. It is the last task of the unit,
+and it is what makes the work reviewable by someone who was not here.
+
+**Files:**
+
+- Modify: `README.md`
+- Modify: `Architecture.md`
+- Modify: `NEW_ARCHITECTURE.md`
+
+**Interfaces:**
+
+- Consumes: the finished implementation of every task above.
+- Produces: the inventories a reader needs, and one pull request per unit so nothing
+  reaches `main` unreviewed.
+
+- [ ] **Step 1: Update `README.md`**
+
+Task 6 of this plan updates `SKILL.md` and the rules but not the README. Add here:
+
+1. A `### Deployment` subsection, or a paragraph in the existing deployment area,
+   naming `deploy/form-service/` as the containerized transport over the
+   `uqac-forms` skill, and pointing at `deploy/form-service/README.md` for the
+   endpoint table and the run commands.
+2. In the Prerequisites table, a row for Docker and Docker Compose, needed only for
+   the service, never for the skill itself.
+3. In the File-Locations tree, a `deploy/` branch listing `form-service/` (app,
+   Dockerfile, requirements, tests), `docker-compose.yml`, `Caddyfile`,
+   `initdb/01-pgvector.sql`, and `.env.example`.
+4. One sentence on the security posture, because it is the part a reader is most
+   likely to get wrong: every route requires a shared-secret header, the service
+   refuses to start without one, there is no CORS middleware, and no profile or
+   field value is ever logged or persisted.
+
+- [ ] **Step 2: Update `Architecture.md`**
+
+This unit adds a deployment layer the document does not yet describe. Add a short
+section after the existing layers, with its own mermaid diagram, showing the
+service, the `pgvector` Postgres, and the Caddy front door, and stating the two
+properties that matter: the service is reached over a private network with a shared
+secret, and the image carries no AGPL dependency because PyMuPDF stays isolated in
+the `extract-statistic` skill.
+
+Add one line naming the consumer: ThesisTracker calls this service, and the
+dependency runs one way only. Do not draw ThesisTracker into the Layer 1 graph; it
+is a separate system, and `NEW_ARCHITECTURE.md` is where the two meet.
+
+- [ ] **Step 3: Update `NEW_ARCHITECTURE.md`**
+
+`NEW_ARCHITECTURE.md` is committed identically to `main` in both ResearchTools and
+ThesisTracker. Edit only what this unit owns, and keep the wording identical in both
+checkouts so the two copies never drift.
+
+1. In the section 9 unit table, append ` Delivered <YYYY-MM-DD>.` to the **RT-5** row's
+   deliverable cell.
+2. Section 4 (the runtime topology diagram) describes what this unit builds. Verify the
+   service name, the port, the volume, and the statement that the service has no published
+   host port, all against the delivered compose file. Section 10's security table names
+   `config.load_settings` and `security.keys_match`: confirm both exist and behave as stated.
+3. The file opens with `**Status: planned, not implemented.**` That line stops being true
+   the moment any unit lands. Replace it with
+   `**Status: in progress. <n> of 14 units delivered.**` and keep the count correct.
+
+The change must land in both repositories. After committing it here, copy the same file
+into the other checkout and open a second, documentation-only pull request there, or fold
+it into that repository's next unit pull request. Verify the two copies match:
+
+```bash
+git -C "<path to ResearchTools>" show main:NEW_ARCHITECTURE.md | sha256sum
+git -C "<path to ThesisTracker>" show main:NEW_ARCHITECTURE.md | sha256sum
+```
+
+Expected: the two digests are equal.
+
+- [ ] **Step 4: Verify every relative link resolves**
+
+```bash
+grep -ohE "\]\([^)#][^)]*\)" README.md Architecture.md NEW_ARCHITECTURE.md \
+  | sed 's/.*](//; s/)$//' | grep -v "^http" | sort -u \
+  | while read -r f; do [ -e "$f" ] || echo "BROKEN: $f"; done
+```
+
+Expected: no output.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add README.md Architecture.md NEW_ARCHITECTURE.md
+git commit -m "docs(form-service): record RT-5 in the inventories"
+```
+
+- [ ] **Step 6: Open the pull request**
+
+`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only,
+so neither the CLI nor that token can open a pull request. Do not try to install `gh`.
+The OAuth token in the Windows Credential Manager has `repo` scope and is sufficient.
+Retrieve it per command: never write it to a file, never echo it, never commit it.
+
+```bash
+git push -u origin feat/uqac-forms-service
+
+TOK=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
+curl -s -X POST https://api.github.com/repos/LARi-UQAC/ResearchTools/pulls \
+  -H "Authorization: Bearer $TOK" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  --data-binary @pr-body.json
+```
+
+Write `pr-body.json` to the scratchpad first, never into the repository:
+
+```json
+{
+  "title": "[RT-5] uqac-forms: containerized HTTP service",
+  "head": "feat/uqac-forms-service",
+  "base": "main",
+  "body": "Closes #8\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** RT-4 (`feat/uqac-forms-signer`), and the whole RT-1 to RT-4 chain behind it.\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary>\n\n**Reviewer must check by hand.** <the manual verification steps of this plan, or 'none'>"
+}
+```
+
+If a permission classifier blocks the command that reads the token, open the pull request
+in the browser instead and paste the same title and body:
+
+```
+https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/uqac-forms-service?expand=1
+```
+
+Then delete `pr-body.json` from the scratchpad.
+
+**Do not merge your own pull request.** Merging to `main` is the human gate. RT-6, RT-7, TT-3 and TT-5 are all blocked behind this unit. It is the widest dependency of the project; say so in the body.
+
+- [ ] **Step 7: Report**
+
+State the pull request URL, the acceptance commands you ran with their real output, and
+anything you could not verify. A test you did not run is not a test that passed.

@@ -1275,3 +1275,144 @@ pip-audit -r .claude/skills/uqac-forms/scripts/requirements.txt --strict
 ```
 
 Plus the five existing offline suites in `.claude/rules/testing.md`, which must stay green.
+
+---
+
+## Task 6: Documentation and the pull request
+
+Run this after the acceptance block above passes. It is the last task of the unit,
+and it is what makes the work reviewable by someone who was not here.
+
+**Files:**
+
+- Modify: `README.md`
+- Modify: `Architecture.md`
+- Modify: `NEW_ARCHITECTURE.md`
+
+**Interfaces:**
+
+- Consumes: the finished implementation of every task above.
+- Produces: the inventories a reader needs, and one pull request per unit so nothing
+  reaches `main` unreviewed.
+
+- [ ] **Step 1: Update `README.md`**
+
+In the `### uqac-forms` subsection, add the two new files to the file list:
+
+```markdown
+- `.claude/skills/uqac-forms/scripts/field_map.py` - widget dump, map scaffold, validation, drift diff
+- `.claude/skills/uqac-forms/registry/schema.yaml` - the shared profile vocabulary
+```
+
+In the same subsection, add one sentence stating the two rules a reader must not
+guess at: field names are opaque byte-exact keys and are never normalized, and
+checkbox on-states are read from each widget's `/AP /N` dictionary rather than
+assumed to be `/Yes`.
+
+In the Prerequisites table, extend the `uqac-forms` row to name `pypdf` (BSD-3),
+and state why it is not PyMuPDF: the skill ships inside a deployable container and
+must carry no AGPL dependency.
+
+In the File-Locations tree, extend the `uqac-forms` entry with `field_map.py`,
+`Test\test_field_map.py`, and `registry\schema.yaml`.
+
+- [ ] **Step 2: Update `Architecture.md`**
+
+Extend the `s10` node label in the Layer 1 `SK` subgraph so it names both scripts:
+
+```
+    s10["uqac-forms<br/>form_registry.py . field_map.py"]
+```
+
+In the Notes, add one bullet: the `uqac-forms` field map is a human-reviewed draft
+carrying per-field provenance and a status, the same contract `geolocalisation`
+uses for its study-location table, and a stale map blocks the filler rather than
+producing a wrong-looking official document.
+
+- [ ] **Step 3: Update `NEW_ARCHITECTURE.md`**
+
+`NEW_ARCHITECTURE.md` is committed identically to `main` in both ResearchTools and
+ThesisTracker. Edit only what this unit owns, and keep the wording identical in both
+checkouts so the two copies never drift.
+
+1. In the section 9 unit table, append ` Delivered <YYYY-MM-DD>.` to the **RT-2** row's
+   deliverable cell.
+2. Section 8 lists `registry/maps/<form_id>.json` and `registry/schema.yaml` in the
+   ResearchTools artifact table. Confirm both rows match what this unit actually writes,
+   including whether each is committed.
+3. The file opens with `**Status: planned, not implemented.**` That line stops being true
+   the moment any unit lands. Replace it with
+   `**Status: in progress. <n> of 14 units delivered.**` and keep the count correct.
+
+The change must land in both repositories. After committing it here, copy the same file
+into the other checkout and open a second, documentation-only pull request there, or fold
+it into that repository's next unit pull request. Verify the two copies match:
+
+```bash
+git -C "<path to ResearchTools>" show main:NEW_ARCHITECTURE.md | sha256sum
+git -C "<path to ThesisTracker>" show main:NEW_ARCHITECTURE.md | sha256sum
+```
+
+Expected: the two digests are equal.
+
+- [ ] **Step 4: Verify every relative link resolves**
+
+```bash
+grep -ohE "\]\([^)#][^)]*\)" README.md Architecture.md NEW_ARCHITECTURE.md \
+  | sed 's/.*](//; s/)$//' | grep -v "^http" | sort -u \
+  | while read -r f; do [ -e "$f" ] || echo "BROKEN: $f"; done
+```
+
+Expected: no output.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add README.md Architecture.md NEW_ARCHITECTURE.md
+git commit -m "docs(uqac-forms): record RT-2 in the inventories"
+```
+
+- [ ] **Step 6: Open the pull request**
+
+`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only,
+so neither the CLI nor that token can open a pull request. Do not try to install `gh`.
+The OAuth token in the Windows Credential Manager has `repo` scope and is sufficient.
+Retrieve it per command: never write it to a file, never echo it, never commit it.
+
+```bash
+git push -u origin feat/uqac-forms-field-map
+
+TOK=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
+curl -s -X POST https://api.github.com/repos/LARi-UQAC/ResearchTools/pulls \
+  -H "Authorization: Bearer $TOK" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  --data-binary @pr-body.json
+```
+
+Write `pr-body.json` to the scratchpad first, never into the repository:
+
+```json
+{
+  "title": "[RT-2] uqac-forms: field map and profile vocabulary",
+  "head": "feat/uqac-forms-field-map",
+  "base": "main",
+  "body": "Closes #5\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** RT-1 (`feat/uqac-forms-registry`), which must be merged first.\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary>\n\n**Reviewer must check by hand.** <the manual verification steps of this plan, or 'none'>"
+}
+```
+
+If a permission classifier blocks the command that reads the token, open the pull request
+in the browser instead and paste the same title and body:
+
+```
+https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/uqac-forms-field-map?expand=1
+```
+
+Then delete `pr-body.json` from the scratchpad.
+
+**Do not merge your own pull request.** Merging to `main` is the human gate. RT-3 is blocked behind this unit; say so in the body.
+
+- [ ] **Step 7: Report**
+
+State the pull request URL, the acceptance commands you ran with their real output, and
+anything you could not verify. A test you did not run is not a test that passed.

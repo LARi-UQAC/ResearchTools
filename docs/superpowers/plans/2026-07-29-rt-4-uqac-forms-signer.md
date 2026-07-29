@@ -925,3 +925,145 @@ Plus the RT-1, RT-2, and RT-3 suites and the five existing offline suites in `.c
 ## Open item carried forward
 
 The PAdES acceptance question is recorded here and again in TT-5. It blocks nothing in this unit: the pipeline is complete and testable with the development signer. Someone must ask the Decanat des etudes and the Service des ressources financieres whether a cryptographic signature is accepted and, if so, which certificate authority they recognize.
+
+---
+
+## Task 4: Documentation and the pull request
+
+Run this after the acceptance block above passes. It is the last task of the unit,
+and it is what makes the work reviewable by someone who was not here.
+
+**Files:**
+
+- Modify: `README.md`
+- Modify: `Architecture.md`
+- Modify: `NEW_ARCHITECTURE.md`
+
+**Interfaces:**
+
+- Consumes: the finished implementation of every task above.
+- Produces: the inventories a reader needs, and one pull request per unit so nothing
+  reaches `main` unreviewed.
+
+- [ ] **Step 1: Update `README.md`**
+
+In the `### uqac-forms` subsection, add:
+
+```markdown
+- `.claude/skills/uqac-forms/scripts/sign_form.py` - `Signer` protocol, self-signed development signer, PAdES incremental update
+```
+
+Add the disclosure in the README itself, not only in `SKILL.md`, because the README
+is what a reader opens first: whether the Decanat des etudes and the Service des
+ressources financieres accept a PAdES cryptographic signature is **unverified**. The
+shipped signer is a self-signed development default, `pyhanko sign validate` will
+correctly report its root as untrusted, and the production certificate decision
+(UQAC PKI, or Notarius / ConsignO) is open.
+
+In the Prerequisites table, extend the `uqac-forms` row with `pyhanko` (MIT) and
+`cryptography`, and state that the development certificate is generated on demand
+and gitignored, never committed.
+
+In the File-Locations tree, add `sign_form.py` and `Test\test_sign_form.py`.
+
+- [ ] **Step 2: Update `Architecture.md`**
+
+Extend the `s10` node label:
+
+```
+    s10["uqac-forms<br/>registry . map . fill . sign"]
+```
+
+In the Notes, add one bullet: the signer is pluggable behind a one-method protocol,
+`build_signer(provider, **options)` is the only place a credential is chosen, and a
+production authority drops in as a configuration change rather than a code change.
+State in the same bullet that institutional acceptance of a PAdES signature is
+unverified, so a reader of the architecture is not misled into thinking it is settled.
+
+- [ ] **Step 3: Update `NEW_ARCHITECTURE.md`**
+
+`NEW_ARCHITECTURE.md` is committed identically to `main` in both ResearchTools and
+ThesisTracker. Edit only what this unit owns, and keep the wording identical in both
+checkouts so the two copies never drift.
+
+1. In the section 9 unit table, append ` Delivered <YYYY-MM-DD>.` to the **RT-4** row's
+   deliverable cell.
+2. Section 5.2 (the sign sequence diagram) and the PAdES rows of the section 11 open-items
+   table both describe this unit. Verify the diagram against the delivered `sign_form.py`,
+   and leave the open items open unless an office has actually answered.
+3. The file opens with `**Status: planned, not implemented.**` That line stops being true
+   the moment any unit lands. Replace it with
+   `**Status: in progress. <n> of 14 units delivered.**` and keep the count correct.
+
+The change must land in both repositories. After committing it here, copy the same file
+into the other checkout and open a second, documentation-only pull request there, or fold
+it into that repository's next unit pull request. Verify the two copies match:
+
+```bash
+git -C "<path to ResearchTools>" show main:NEW_ARCHITECTURE.md | sha256sum
+git -C "<path to ThesisTracker>" show main:NEW_ARCHITECTURE.md | sha256sum
+```
+
+Expected: the two digests are equal.
+
+- [ ] **Step 4: Verify every relative link resolves**
+
+```bash
+grep -ohE "\]\([^)#][^)]*\)" README.md Architecture.md NEW_ARCHITECTURE.md \
+  | sed 's/.*](//; s/)$//' | grep -v "^http" | sort -u \
+  | while read -r f; do [ -e "$f" ] || echo "BROKEN: $f"; done
+```
+
+Expected: no output.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add README.md Architecture.md NEW_ARCHITECTURE.md
+git commit -m "docs(uqac-forms): record RT-4 in the inventories"
+```
+
+- [ ] **Step 6: Open the pull request**
+
+`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only,
+so neither the CLI nor that token can open a pull request. Do not try to install `gh`.
+The OAuth token in the Windows Credential Manager has `repo` scope and is sufficient.
+Retrieve it per command: never write it to a file, never echo it, never commit it.
+
+```bash
+git push -u origin feat/uqac-forms-signer
+
+TOK=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
+curl -s -X POST https://api.github.com/repos/LARi-UQAC/ResearchTools/pulls \
+  -H "Authorization: Bearer $TOK" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  --data-binary @pr-body.json
+```
+
+Write `pr-body.json` to the scratchpad first, never into the repository:
+
+```json
+{
+  "title": "[RT-4] uqac-forms: PAdES signer",
+  "head": "feat/uqac-forms-signer",
+  "base": "main",
+  "body": "Closes #7\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** RT-3 (`feat/uqac-forms-filler`), which depends on RT-2 and RT-1.\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary>\n\n**Reviewer must check by hand.** <the manual verification steps of this plan, or 'none'>"
+}
+```
+
+If a permission classifier blocks the command that reads the token, open the pull request
+in the browser instead and paste the same title and body:
+
+```
+https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/uqac-forms-signer?expand=1
+```
+
+Then delete `pr-body.json` from the scratchpad.
+
+**Do not merge your own pull request.** Merging to `main` is the human gate. RT-5 is blocked behind this unit, and TT-3 and TT-5 behind that; say so in the body.
+
+- [ ] **Step 7: Report**
+
+State the pull request URL, the acceptance commands you ran with their real output, and
+anything you could not verify. A test you did not run is not a test that passed.

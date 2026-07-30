@@ -4,6 +4,34 @@
 
 **Goal:** Turn each registered UQAC PDF into a reviewable field map: dump every AcroForm widget with its type, page, and checkbox on-states, let a human bind each widget to one key of a shared profile vocabulary, and validate that the binding still holds.
 
+> ## SCOPE CHANGE, 2026-07-29 - read before anything else
+>
+> Two decisions changed after this plan was written, and `NEW_ARCHITECTURE.md` on `main`
+> is the authority on both. **Read its sections 1, 3 and 10 before starting.**
+>
+> **The repository boundary moved.** ResearchTools cannot track a form and cannot know the information that fills one: it is skills, agents and commands for a thesis, a paper, a review or a report, and only ThesisTracker writes the database. The form catalogue, the workflow rules, the field maps, the profile store and the drift check therefore live in **ThesisTracker**, edited in the UI by an `owner` or the `direction`. The ResearchTools service is reduced to **stateless PDF mechanics**: hand it a PDF and a set of values, it hands back a PDF. It is a function, not a system, and holds no data.
+>
+> > **What this means for RT-2.** The field **map** and the profile **vocabulary** move to
+> **TT-8** and **TT-9**: they are rows a superuser edits in the UI, not YAML and JSON in
+> this repository. What remains is the mechanical part TT-8 calls:
+>
+> - `dump_widgets(pdf_path_or_bytes)`, with **byte-exact names** and checkbox on-states
+>   read from each widget's `/AP /N` dictionary. Both constraints matter more than
+>   before, because TT-8 stores what this returns,
+> - `diff_widgets(before, after)` returning added, removed, relocated and retyped, which
+>   TT-8's drift check consumes to report what changed,
+> - the offline tests that build their own AcroForm PDFs with `pypdf`.
+>
+> Do **not** build `registry/schema.yaml`, `build_scaffold`, `write_map`, `load_map`,
+> `validate_map`, `TODO_TARGET` or `UNMAPPED_TARGET`. Task 1 stands and is now the core
+> of the unit; Task 4's `diff_against_map` becomes `diff_widgets` and takes two widget
+> lists rather than reading a stored map; Tasks 2, 3 and 5 are superseded.
+>
+> Everything below that this block does not contradict still stands. Where the plan and
+> `NEW_ARCHITECTURE.md` disagree, the architecture document wins, and your first commit
+> should be the correction to this plan.
+
+
 **Architecture:** `field_map.py` reads the cached PDF with `pypdf`, walks the page annotations rather than the flat field dictionary so page numbers, rectangles, and per-widget appearance streams are available, and writes `registry/maps/<form_id>.json` in the contract RT-1 published (`form_id`, `status`, `fields`, optional `stale_reason`). Every entry carries `target: "TODO"` until a human completes it. One profile vocabulary (`registry/schema.yaml`, namespaces `student`, `professor`, `project`, `trip`) is written once and reused by every form, so `student.code_permanent` lands in `code permanent` on a Decanat form and `no_matricule` on an SRF form. `diff_against_map` is exported and injected into RT-1's `check_drift`, closing the drift loop with a field-level report.
 
 **Tech Stack:** Python 3.13, `pypdf` (BSD-3), `PyYAML`, standard library. No PyMuPDF: it is AGPL-3.0 and this skill ships inside a deployable container.

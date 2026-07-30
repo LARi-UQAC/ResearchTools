@@ -4,6 +4,35 @@
 
 **Goal:** Turn a profile plus a reviewed field map into a filled official UQAC PDF, with appearances requested, non-signature fields locked, the signature field left intact for RT-4, and a hard refusal to run against a stale map.
 
+> ## SCOPE CHANGE, 2026-07-29 - read before anything else
+>
+> Two decisions changed after this plan was written, and `NEW_ARCHITECTURE.md` on `main`
+> is the authority on both. **Read its sections 1, 3 and 10 before starting.**
+>
+> **The repository boundary moved.** ResearchTools cannot track a form and cannot know the information that fills one: it is skills, agents and commands for a thesis, a paper, a review or a report, and only ThesisTracker writes the database. The form catalogue, the workflow rules, the field maps, the profile store and the drift check therefore live in **ThesisTracker**, edited in the UI by an `owner` or the `direction`. The ResearchTools service is reduced to **stateless PDF mechanics**: hand it a PDF and a set of values, it hands back a PDF. It is a function, not a system, and holds no data.
+>
+> > **What this means for RT-3.** The filler becomes **stateless**. Its signature is
+> `fill(pdf_bytes, values, flatten_fields=None) -> bytes`, where `values` maps a
+> byte-exact PDF field name to a string that ThesisTracker already resolved.
+>
+> - Keep: the write itself, `NeedAppearances`, the per-widget checkbox on-state handling,
+>   the ordering rule (fill, appearances, lock, sign last), and the honest statement that
+>   `pypdf` has no appearance-burning flatten.
+> - Drop: `load_profile`, `resolve_values`, the field map, the profile vocabulary and
+>   `require_fresh_map`. TT-9 resolves the values and TT-10 decides which fields a step
+>   may write; this function is handed the result.
+> - `flatten_fields` becomes a **list of field names to lock**, not a boolean, because
+>   only the fields of completed steps are locked while later steps still have to write.
+>   That is a real behavioural change and its own test.
+>
+> Task 1 is superseded, Task 2 stands with the selective-locking change, Task 3 becomes
+> the stateless entry point with no stale gate.
+>
+> Everything below that this block does not contradict still stands. Where the plan and
+> `NEW_ARCHITECTURE.md` disagree, the architecture document wins, and your first commit
+> should be the correction to this plan.
+
+
 **Architecture:** `fill_form.py` loads the reviewed map (RT-2), resolves every bound target against a profile document, and writes the values back with `pypdf`. Text and choice widgets take a string; checkbox and radio widgets take the widget's own on-state read from the map, never an assumed `/Yes`. After filling, `NeedAppearances` is set so a viewer regenerates the visible text, then every non-signature widget is locked read-only. Signature widgets are deliberately untouched: flattening destroys them, and RT-4 signs last as an incremental update. The whole path is gated on `form_registry.require_fresh_map`, so a form UQAC silently replaced can never be filled.
 
 **Tech Stack:** Python 3.13, `pypdf` (BSD-3), `PyYAML`, standard library. No PyMuPDF (AGPL-3.0).

@@ -4,10 +4,11 @@ Shared architecture document for the two repositories that make up the UQAC form
 **ResearchTools** (`LARi-UQAC/ResearchTools`) and **ThesisTracker** (`JdUmuhoza/ThesisTracker`).
 The same file is committed to `main` in both, so either checkout tells the whole story.
 
-**Status: planned, not implemented.** Fourteen branches carry one plan document each, and
-fifteen issues track them. No implementation code exists yet. Written 2026-07-29.
+**Status: planned, not implemented.** Fifteen branches carry one plan document each, and
+sixteen issues track them. No implementation code exists yet. Written 2026-07-29.
 
-Outcome when all fourteen units land: a student fills a registered UQAC form from their
+Outcome when all fifteen units land: a student signs in with a one-time code sent to their
+institutional email address, fills a registered UQAC form from their
 ThesisTracker profile, flags it, the professor signs it cryptographically, and the signed PDF is
 stored against the student record, running on institutional Docker infrastructure, with automatic
 detection when UQAC silently replaces a form at the same URL.
@@ -26,6 +27,9 @@ ThesisTracker. Investigation rejected that shape.
 | Plane as system of record | **Rejected** | ThesisTracker already has tested per-row RBAC that Plane Community cannot express. Migrating would trade it for one project per student and discard the nine-status domain semantics. Plane granular access control is Enterprise-only, and Plane webhooks do not cover Pages, which kills the "Pages edit triggers the mindmap" design. |
 | Graphify for mindmaps | **Rejected** | Code-first knowledge-graph tool, not a research-notes concept extractor. The need is already served by the markmap view, the Obsidian vault, and `extract-futureworks` mine mode. |
 | n8n now | **Deferred to Phase 3** | Every automation currently wanted is one cron and one script. Entry criteria in section 10. |
+| GitHub OAuth for sign-in | **Replaced by an email one-time code (TT-7)** | It required every user to hold a GitHub account, a handle is not an identity a supervisor recognizes, and the OAuth callback was the one step of the Vercel retirement that could not be rolled back instantly. The institutional email address becomes the username; `users.login` stays the primary key, so no data row moves. |
+| Personal email (gmail, hotmail) | **Recovery and security notices only, never a login** | Rebinding an institutional address is an `owner` action, so a compromised personal mailbox alone cannot take over an account. |
+| Which domains may sign in | **A configurable allowlist with no default** | `ALLOWED_EMAIL_DOMAINS`, and the application refuses to start when it is empty. A wrong default would silently admit a domain nobody vetted. |
 | Runtime | **Dual-target, converging to Docker** | Vercel sat at 12 of 12 Hobby functions, is licensed for personal non-commercial use, and would place matricules and signed expense claims on United States infrastructure under Quebec Law 25. |
 | Form service language | **Python** | `pypdf` plus `pyhanko`. Node has no PAdES equivalent. |
 | PDF library | **`pypdf`, BSD-3** | PyMuPDF is AGPL-3.0 and stays isolated in the `extract-statistic` skill. The deployable container carries no AGPL. |
@@ -58,7 +62,7 @@ flowchart TB
   subgraph Outside["Outside"]
     UQAC[("www.uqac.ca<br/>official PDF forms")]
     ELS[("Elsevier Scopus API")]
-    GH[("GitHub OAuth")]
+    MAIL[("Institutional SMTP relay")]
   end
 
   STU --> APP
@@ -70,14 +74,14 @@ flowchart TB
   SVC --> SCOPUS
   SKILL -->|"download, fingerprint, drift check"| UQAC
   SCOPUS -->|"validated metadata, DOI"| ELS
-  APP --> GH
+  APP -->|"one-time sign-in code"| MAIL
 
   classDef tt fill:#DBEAFE,stroke:#1E40AF,color:#14181F
   classDef rt fill:#D1FAE5,stroke:#065F46,color:#14181F
   classDef out fill:#F3F4F6,stroke:#6B7280,color:#14181F
   class APP,DB tt
   class SVC,SKILL,SCOPUS rt
-  class UQAC,ELS,GH out
+  class UQAC,ELS,MAIL out
 ```
 
 **Dependency direction is one way: ThesisTracker depends on ResearchTools, never the reverse.**
@@ -93,13 +97,17 @@ the approved-publisher policy stay in ResearchTools.
 | Role | Domain engine and academic toolbox | System of record and user interface |
 | Stack | Python 3.13, FastAPI, `pypdf`, `pyhanko` | Node 20 ESM, React 19, Vite 8, Postgres |
 | Visibility | Public | Private |
-| Knows about | UQAC forms, Scopus, PDF semantics | Students, papers, ownership, roles |
-| Does not know | Who a student is | What a PDF field is |
-| New surface | `.claude/skills/uqac-forms/`, `deploy/form-service/` | `api/_lib/routes/`, `server/`, the `forms` entity |
+| Knows about | UQAC forms, Scopus, PDF semantics | Students, papers, ownership, roles, identity |
+| Does not know | Who a student is, how anyone signs in | What a PDF field is |
+| New surface | `.claude/skills/uqac-forms/`, `deploy/form-service/` | `api/_lib/routes/`, `server/`, the `forms` entity, email-code sign-in |
 
 The boundary rule: **ResearchTools knows forms, ThesisTracker knows people.** A field name, a
 checkbox on-state, and a signature field never appear in ThesisTracker code. A student login, a
-role, and an ownership guard never appear in ResearchTools code.
+role, an email address, and an ownership guard never appear in ResearchTools code.
+
+Identity is entirely ThesisTracker's: the form service authenticates a **machine** with a shared
+secret and never sees a user, a session, or an email address. Nothing in the sign-in path touches
+ResearchTools.
 
 ---
 
@@ -365,7 +373,7 @@ On the ResearchTools side the state is files, not rows:
 
 ---
 
-## 9. The fourteen units
+## 9. The fifteen units
 
 One plan document, one branch, one issue each. Every branch is cut from its repository's `main`
 and its only commit is its own plan file.
@@ -390,6 +398,7 @@ flowchart LR
     TT4["TT-4 forms UI"]
     TT5["TT-5 integration"]
     TT6["TT-6 cohort report"]
+    TT7["TT-7 email-code<br/>authentication"]
   end
 
   RT1 --> RT2 --> RT3 --> RT4 --> RT5
@@ -397,6 +406,8 @@ flowchart LR
   RT5 --> RT7
   TT0 --> TT1 --> TT2 --> TT3 --> TT4 --> TT5
   TT0 --> TT6
+  TT0 --> TT7
+  TT7 -.->|"deletes a step of the<br/>retirement checklist"| TT5
   RT5 --> TT3
   RT5 --> TT5
   RT6 --> TT6
@@ -409,8 +420,13 @@ flowchart LR
 
 **Execution order:** TT-0 first, it unblocks every ThesisTracker unit and frees the function
 budget. RT-1 through RT-5 run in parallel with TT-0 through TT-2. TT-3 needs RT-5. RT-6 and RT-7
-both branch off RT-5 and are independent of each other. TT-6 needs RT-6. RT-7 is on no critical
-path and can land last.
+both branch off RT-5 and are independent of each other. TT-6 needs RT-6. RT-7 needs only TT-0 and
+is independent of the forms chain, so it can run in parallel with TT-1 onward; do it early anyway,
+because until it lands every new user needs a GitHub account. RT-7 is on no critical path and can
+land last.
+
+The dashed edge is not a dependency: TT-7 removes the GitHub OAuth callback, which is a step in
+the retirement checklist TT-5 writes. Whichever lands second updates the other's text.
 
 | Unit | Branch | Issue | Deliverable |
 |---|---|---|---|
@@ -428,6 +444,7 @@ path and can land last.
 | TT-4 | `feat/forms-ui` | ThesisTracker #5 | Pure state machine, schema-driven profile editor, Forms view, professor signing queue |
 | TT-5 | `feat/forms-integration` | ThesisTracker #6 | Combined compose, executable acceptance checklist, Vercel retirement checklist |
 | TT-6 | `feat/cohort-report` | ThesisTracker #7 | Publications client method, staff-only roster walk, printable cohort report |
+| TT-7 | `feat/email-code-auth` | ThesisTracker #9 | Email one-time code replaces GitHub OAuth; institutional-domain allowlist with no default; personal address for recovery only; `users.login` unchanged, so no data row moves |
 
 Plans live at `docs/superpowers/plans/2026-07-29-<unit>.md` on each unit's own branch.
 
@@ -446,15 +463,18 @@ flowchart TB
     F["Form service<br/>no host port,<br/>constant-time secret compare"]
   end
   subgraph SEC["Secrets, environment only"]
-    K1["SESSION_SECRET"]
+    K1["SESSION_SECRET<br/>also keys the sign-in code HMAC"]
     K2["FORM_SERVICE_KEY"]
     K3["SCOPUS_API_KEY"]
-    K4["GITHUB_CLIENT_SECRET"]
+    K4["SMTP_PASSWORD"]
   end
+  MAIL[("Institutional SMTP relay")]
 
   B -->|"HTTPS, bearer token"| A
+  B -->|"email address only,<br/>no credential"| A
   A --> D
   A -->|"private network"| F
+  A -->|"one-time code"| MAIL
   K1 -.-> A
   K2 -.-> A
   K2 -.-> F
@@ -480,10 +500,17 @@ Binding rules, each enforced by a test or a startup check:
 | No AGPL dependency in the deployable image | `deploy/form-service/requirements.txt` |
 | Dependencies pinned exactly, `pip-audit --strict` before use | both requirements files |
 | TLS verified against the system trust store for any remote database host | `api/_lib/db.js` |
+| Only an address on an approved institutional domain may sign in; the allowlist has **no default** and the app refuses to start when it is empty | `email-policy.allowedDomains`, called in `createApp()` |
+| A sign-in code is stored only as `HMAC-SHA256(code, SESSION_SECRET)`, is single use, expires in 10 minutes, allows 5 attempts, and is rate limited per address | `login-codes.js` |
+| The code request answers identically whether or not the account exists, and all four invalid-code reasons return one body | `routes/auth.js`, asserted by test |
+| A personal address can never sign in; rebinding an institutional address is an `owner` action | `email-policy.assertLoginAddress`, `scripts/set-email.mjs` |
+| No email address, code, or session token is ever logged | asserted by tests in TT-7 |
 
 Law 25 drives the runtime decision: matricules, addresses, and signed expense claims stay on the
 institutional host. Retiring Vercel removes the last location of student personal information
-outside the institution.
+outside the institution. The same reasoning chooses the mail relay: a transactional HTTP provider
+would carry institutional sign-in codes and student addresses through a third party, so the UQAC
+SMTP relay is preferred over one.
 
 ---
 
@@ -507,9 +534,15 @@ Full rationale in ThesisTracker issue #8.
 ### Vercel retirement
 
 Planned, not urgent, checklist written in TT-5. Order: choose the host, provision Postgres,
-migrate with row-count verification, repoint the GitHub OAuth callback, set DNS, run the
-acceptance checklist, keep Vercel read-only for two weeks, delete. The OAuth callback is the
-rollback pivot, which is why it is late and adjacent to DNS.
+migrate with row-count verification, set DNS, run the acceptance checklist, keep Vercel read-only
+for two weeks, delete.
+
+The checklist originally had one more step, repointing the GitHub OAuth callback, and that step was
+the rollback pivot: everything before it was free to undo, everything after it was not. **TT-7
+removes it.** With an email one-time code there is no callback URL registered anywhere, so the
+retirement is reversible at every step, and the ordering constraint that forced DNS and the
+callback change into the same window is gone. Whichever of TT-5 and TT-7 lands second must correct
+the other's text.
 
 ### Open items
 

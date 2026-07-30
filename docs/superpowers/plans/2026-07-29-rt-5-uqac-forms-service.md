@@ -4,6 +4,41 @@
 
 **Goal:** Expose the fill and sign pipeline as a small containerized HTTP service that ThesisTracker can call server to server, authenticated by a shared secret, logging no field value, and shipped with a compose file whose Postgres carries the `pgvector` extension RT-7 needs.
 
+> ## SCOPE CHANGE, 2026-07-29 - read before anything else
+>
+> Two decisions changed after this plan was written, and `NEW_ARCHITECTURE.md` on `main`
+> is the authority on both. **Read its sections 1, 3, 4 and 10 before starting.**
+>
+> **The repository boundary moved.** ResearchTools cannot track a form and cannot know the information that fills one: it is skills, agents and commands for a thesis, a paper, a review or a report, and only ThesisTracker writes the database. The form catalogue, the workflow rules, the field maps, the profile store and the drift check therefore live in **ThesisTracker**, edited in the UI by an `owner` or the `direction`. The ResearchTools service is reduced to **stateless PDF mechanics**: hand it a PDF and a set of values, it hands back a PDF. It is a function, not a system, and holds no data.
+>
+> > **What this means for RT-5.** The service becomes stateless, and its endpoints change
+> shape: they take a PDF in the request body rather than a form id.
+>
+> | Was | Becomes |
+> |---|---|
+> | `GET /forms` | **gone.** TT-8 owns the catalogue |
+> | `GET /schema` | **gone.** TT-9 owns the vocabulary |
+> | `POST /forms/{id}/fill` | `POST /pdf/fill`, multipart or JSON with the PDF and the values |
+> | `POST /forms/{id}/signature-fields` | `POST /pdf/widgets`, returning every widget, not only signatures |
+> | `POST /forms/{id}/sign` | `POST /pdf/sign`, query `field` and `reason` |
+> | - | `POST /pdf/validate`, returning a signature report |
+>
+> - The `form-data` volume for the cache and the maps is **gone**. The service keeps one
+>   volume, for signing material.
+> - Everything else stands and matters more: the fail-fast shared secret, the constant-time
+>   compare, no CORS, the `127.0.0.1` development bind, no AGPL in the image, and the
+>   test asserting that no field value is logged and nothing is persisted between requests.
+> - The `pgvector` Postgres in the compose file is needed by RT-7 only; it is no longer
+>   part of the form path at all.
+>
+> **TT-3's client is written against this contract**, so the endpoint names and the
+> `X-Uqac-*` headers must be agreed before either unit ships.
+>
+> Everything below that this block does not contradict still stands. Where the plan and
+> `NEW_ARCHITECTURE.md` disagree, the architecture document wins, and your first commit
+> should be the correction to this plan.
+
+
 **Architecture:** `deploy/form-service/` is a FastAPI application that imports the skill scripts as a library and adds nothing but transport. Every route requires a constant-time-compared `X-Form-Service-Key` header; the service refuses to start when the secret is unset, so there is no accidental open deployment. `POST /forms/{form_id}/fill` returns `application/pdf` with the counts in response headers, and `POST /sign` takes a PDF body and returns the signed PDF. The image carries no AGPL dependency. `deploy/docker-compose.yml` runs the service plus a `pgvector/pgvector` Postgres and a Caddy front door whose hostname comes from the environment, so the final host stays undecided by choice.
 
 **Tech Stack:** Python 3.13, FastAPI, Uvicorn, `pypdf`, `pyhanko`, `PyYAML`, Docker, Docker Compose, Caddy. `httpx` in the test extra for the Starlette test client.

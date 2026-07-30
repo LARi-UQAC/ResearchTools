@@ -4,6 +4,37 @@
 
 **Goal:** Sign a filled UQAC form cryptographically as a PAdES incremental update, behind a pluggable `Signer` protocol whose shipped implementation is a self-signed development signer, so the whole pipeline is usable while the question of what UQAC actually accepts stays open.
 
+> ## SCOPE CHANGE, 2026-07-29 - read before anything else
+>
+> Two decisions changed after this plan was written, and `NEW_ARCHITECTURE.md` on `main`
+> is the authority on both. **Read its sections 1, 3, 8 and 10 before starting.**
+>
+> **The repository boundary moved.** ResearchTools cannot track a form and cannot know the information that fills one: it is skills, agents and commands for a thesis, a paper, a review or a report, and only ThesisTracker writes the database. The form catalogue, the workflow rules, the field maps, the profile store and the drift check therefore live in **ThesisTracker**, edited in the UI by an `owner` or the `direction`. The ResearchTools service is reduced to **stateless PDF mechanics**: hand it a PDF and a set of values, it hands back a PDF. It is a function, not a system, and holds no data.
+>
+> **Every form now carries its own workflow rules.** An ordered list of steps, each naming one actor role (`student`, `professor`, `direction`) and granting a subset of three capabilities: `fill` writes an empty field, `modify` overwrites a value to correct an error, `sign` signs a named signature field. The student fills and signs; the professor fills, modifies and signs; the Direction signs only and can never write. Fields repeated across forms are pre-filled from a profile store and written back on every edit.
+>
+> > **What this means for RT-4.** The signer was already nearly stateless, so it changes
+> least, but the workflow adds one requirement that is now the most important thing in
+> the unit:
+>
+> - **A new signature must preserve every previous one.** A form can carry three
+>   signatures (student, professor, Direction), applied in separate requests hours or
+>   days apart. Each is a PAdES incremental update appended to the last. Add a test that
+>   signs the same document three times on three different fields and asserts that
+>   `pyhanko` validates **all three** afterwards, in order. The existing
+>   "output starts with the input bytes" assertion is necessary but not sufficient.
+> - `sign_pdf` takes bytes and returns bytes; it does not read a registry and does not
+>   look up a map. The signature field name is supplied by the caller, because TT-8's
+>   step definition names it.
+>
+> Every task stands. Add the three-signature chain test to Task 3, and keep the
+> certificate the service's only piece of state.
+>
+> Everything below that this block does not contradict still stands. Where the plan and
+> `NEW_ARCHITECTURE.md` disagree, the architecture document wins, and your first commit
+> should be the correction to this plan.
+
+
 **Architecture:** `sign_form.py` defines a one-method `Signer` protocol, `sign(pdf_bytes, field_name, reason) -> bytes`. The shipped `SelfSignedSigner` builds a throwaway certificate with `pyhanko` plus `cryptography` at test time, into the scratchpad, and signs with PAdES. Configuration selects the provider, so a UQAC PKI or a Notarius provider drops in later without touching any caller. The ordering rule of the whole engine is enforced here rather than documented: signing refuses a document with no signature field, and refuses a document already carrying a signature it would invalidate. The certificate is never committed, and no key material ever reaches a log.
 
 **Tech Stack:** Python 3.13, `pyhanko` (MIT), `cryptography`, `pypdf` (BSD-3, for the pre-flight inspection), standard library.

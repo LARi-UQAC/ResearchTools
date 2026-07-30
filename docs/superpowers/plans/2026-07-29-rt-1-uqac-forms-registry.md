@@ -4,6 +4,35 @@
 
 **Goal:** Ship the `uqac-forms` skill scaffold with a declarative registry of UQAC PDF forms, a validated downloader, a SHA-256 baseline, and a drift check that refuses to let downstream tooling run against a form UQAC has silently replaced.
 
+> ## SCOPE CHANGE, 2026-07-29 - read before anything else
+>
+> Two decisions changed after this plan was written, and `NEW_ARCHITECTURE.md` on `main`
+> is the authority on both. **Read its sections 1, 3 and 10 before starting.**
+>
+> **The repository boundary moved.** ResearchTools cannot track a form and cannot know the information that fills one: it is skills, agents and commands for a thesis, a paper, a review or a report, and only ThesisTracker writes the database. The form catalogue, the workflow rules, the field maps, the profile store and the drift check therefore live in **ThesisTracker**, edited in the UI by an `owner` or the `direction`. The ResearchTools service is reduced to **stateless PDF mechanics**: hand it a PDF and a set of values, it hands back a PDF. It is a function, not a system, and holds no data.
+>
+> > **What this means for RT-1.** The `registry/forms.yaml` catalogue, the SHA-256
+> baseline, the drift check and the stale-map gate all move to **TT-8**, where they
+> become rows in the ThesisTracker database and a `fetch` in Node. What remains here is
+> the part only Python can do:
+>
+> - the `uqac-forms` skill scaffold and its `SKILL.md`,
+> - the **validated PDF-ingest contract**: `%PDF` magic bytes, the size cap, https
+>   only, capped redirects, atomic write. TT-8 reuses the same contract in Node, so
+>   keep it documented as a contract and not only as code,
+> - the offline test suite and the repo wiring (README, `Architecture.md`, the routing
+>   row, `install.ps1`).
+>
+> Do **not** build `registry/forms.yaml`, `registry/baseline.json`, `require_fresh_map`
+> or the `check` subcommand. Tasks 1, 3 and 4 below are superseded; Task 2 (the
+> validated downloader) and Task 5 (the wiring) stand, with the registry references in
+> Task 5 rewritten to describe a stateless service.
+>
+> Everything below that this block does not contradict still stands. Where the plan and
+> `NEW_ARCHITECTURE.md` disagree, the architecture document wins, and your first commit
+> should be the correction to this plan.
+
+
 **Architecture:** A new skill folder `.claude/skills/uqac-forms/` holds a human-curated `registry/forms.yaml` (one entry per official form), a generated `registry/baseline.json` (per-form SHA-256 fingerprint), and per-form field maps under `registry/maps/<form_id>.json` (populated later by RT-2). `form_registry.py` downloads each form over HTTPS with the same validation contract as the `scopus` skill's `download_pdf.py` (PDF magic bytes, size cap, manual redirect handling, atomic write), records the fingerprint, and on a later mismatch marks the form's field map `stale` so the filler refuses to run. The field-level diff is injected as a callable so RT-1 stays offline-testable and RT-2 wires the real differ in without touching this file.
 
 **Tech Stack:** Python 3.13, `requests` (HTTP), `PyYAML` (registry parsing), standard library `hashlib` / `json` / `argparse` / `logging`. No PDF library in this unit: RT-1 is byte fidelity only, field-level knowledge starts at RT-2.

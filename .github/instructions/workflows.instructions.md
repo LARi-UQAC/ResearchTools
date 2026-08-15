@@ -24,6 +24,7 @@ and the output produced. Full arguments are in `README.md`.
 | Build a submission package | by name | `cover-paper` | Hidden cover letter, title page PDF, author profile PDF, graphical abstract (Canva MCP + FigureLabs prompt) |
 | Integrate a thesis + conference papers into one journal manuscript | by name / "extend this paper to a journal version" | `thesis-to-paper` | Submission-ready journal `.tex` (+ sections, refs, PDF), content-delta matrix, disclosure letter; multi-session checkpoint protocol |
 | Iterate a manuscript/review to a target ScholarEval score under a budget | by name / "improve this to a ScholarEval target" | `authoring-loop` (author on Fable 5, audit with `scholar-evaluation` on Sonnet/Haiku) | Improved `.tex` + per-iteration ScholarEval scores, `authoring-loop-log.md`, learnings written to memory by `local-writer` |
+| Build the conference talk from an accepted paper | `/talk <paper>` | `paper2talk` skill / `talk-builder` | Deck (PowerPoint, Beamer, or self-contained web) on the lab gabarit + timed speaker notes, projector-grade figures, slide-size and paper PDFs |
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 | Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
 
@@ -31,21 +32,32 @@ and the output produced. Full arguments are in `README.md`.
 
 Keep the top cloud model as orchestrator and push token-heavy generation to local models on
 the GPU. Each local agent runs on a cheap cloud model (Haiku) that frames the task and drives
-a local model over a Bash bridge (`ollama run`); the bulk output is generated locally and
-free. No gateway; cloud stays on the normal subscription auth.
+a local model over `ollama_bridge.py` (Ollama's HTTP API); the bulk output is generated
+locally and free. No gateway; cloud stays on the normal subscription auth.
 
 | Goal | Agent | Model | Output |
 |---|---|---|---|
 | Docstrings, code comments, Markdown docs, CHANGELOG, Obsidian summaries | `local-writer` | haiku wrapper + local `ornith:9b` (bridge) | Rule-compliant text written to the target file |
 | Code against a spec/failing test, refactor snippets, scaffolds | `local-coder` | haiku wrapper + local `qwen3.5:9b` (bridge) | Minimal, style-matched code edits |
 | Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
-| Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, daily pointer; single serialized writer, outbox fallback |
+| Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, no daily note; single serialized writer, the outbox is the write path, not a fallback |
 
 Bridge rule: the local model sees only the prompt (no repo, no conversation), so every rule
-constraint and input must be in the prompt; write it to a scratchpad file and run
-`rtk ollama run <model> "$(cat <file>)"`. Until the 9B models are imported the bridge falls
-back to `qwen2.5-coder:7b`. LiteLLM (`~/.litellm/ollama.yaml`) is optional (keep-alive /
-context tuning only).
+constraint and input must be in the prompt; write it to a scratchpad file and hand that file
+to `ollama_bridge.py --prompt-file <file> --role <writer|coder>`, which speaks Ollama's HTTP
+API. Never `ollama run`, and never a model name: the bridge asks `model_resolver.py`, the
+only thing that names a tag, and a resolver naming no qualified model is an explicit stop -
+there is NO fallback tag. `--role` decides which qualified tag comes back, so the coder
+agent stops being served the writer model. LiteLLM (`~/.litellm/ollama.yaml`) is optional
+(keep-alive / context tuning only).
+
+Restarting the daemon (after any `OLLAMA_*` change, since it reads them once at start):
+`.\scripts\dev\restart-ollama.ps1`. Never `Stop-Process -Name "ollama*"` by hand - Ollama
+runs the model in a CHILD process named `llama-server.exe`, which that pattern does not
+match, so the child survives and keeps its slice of VRAM. Up to three orphaned instances
+were seen this way, and they produced a false throughput measurement before anyone noticed
+the card was shared. The script kills both names, verifies against `nvidia-smi` that the
+memory actually came back, and prints the `OLLAMA_*` values the restarted daemon now has.
 
 LaTeX boundary: `local-writer` may add `%` comments in a `.tex` file but never authors
 LaTeX or scientific prose - that stays with `latex-writer` + `scientific-writing` on the
@@ -63,6 +75,12 @@ finding AND aggregate score `>=` min_score (default 90). Hard stops: budget cap
 CRITICAL fails the gate). Merge to a protected branch is human-gated; local agents never
 merge on their own. See `Architecture.md` "Layer 5 - Loop engineering" for the loop and
 use-case diagrams.
+
+Talk rendering on Windows: `paper2talk` converts a deck to PDF through **PowerPoint COM**
+(`SaveAs(..., 32)`), not LibreOffice. The `document-skills:pptx` wrapper
+(`scripts/office/soffice.py`) assumes a POSIX socket and fails here with
+`module 'socket' has no attribute 'AF_UNIX'`; `soffice` is tried first only when it is on
+`PATH`. Page images come from Poppler's `pdftoppm`, which ships with the MiKTeX install.
 
 ## LaTeX maintenance
 

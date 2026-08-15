@@ -36,6 +36,22 @@ sections apply to all academic work.
 - TikZ figures: simple code for the TiKZiT parser, named styles in `.tikzstyles`,
   `positioning` and node distance only (no absolute coordinates)
 
+### File size ceiling
+
+No source file exceeds 4096 tokens, a quarter of the local model's measured 16384-token
+context window. The constraint comes from the local model, not the cloud one: the local
+bridge (`.claude/skills/loop-engineer/scripts/ollama_bridge.py`) works inside a window an
+order of magnitude smaller than a cloud model's, and Ollama does not raise an error when a
+prompt exceeds it - it silently truncates to `num_ctx // 2 + 2` tokens and reports success,
+so an oversized file handed whole to a local task loses exactly the instruction most likely
+to sit at the end. It is good practice independent of that origin: a file a quarter of a
+16384-token window still holds is a file a reviewer, human or model, can hold in mind
+without paging. This number is derived from a measurement that can change - the retained
+window lives in `.claude/local-model-config.json` (`models["ornith:9b-gpu"].retained_num_ctx`,
+written by `optimize_ollama.py --sweep`), machine-local and gitignored - so treat 4096 as
+that measurement's current quarter, not a fixed constant. `context_budget.py --scan <path>`
+reads the live window and names every file above the threshold; it does not split them.
+
 ## Docstrings
 
 ### Python

@@ -69,13 +69,39 @@ Write-Host "  User      : $env:USERNAME"
 
 # ─── InstallJunctions mode ────────────────────────────────────────────────────
 
+# Worst exit code seen from a called installer. install-junctions.ps1 returns 1 when a real
+# directory or a real file in ~/.claude shadows this repository, which is a genuine failure:
+# the repository version is NOT loaded. This wrapper used to end its installer branches with
+# a hardcoded "exit 0", so that conflict was invisible to anyone who reached the installer
+# through setup.ps1 instead of running it directly. Every branch below now exits with the
+# worst code any installer returned.
+$script:InstallerExit = 0
+
+# Recorded in a script-scoped variable rather than returned by the Invoke-* functions: the
+# called installer writes through Write-Host, but any stray object it left on the pipeline
+# would be indistinguishable from a return value and would silently become the "exit code".
+function Set-InstallerExit([string]$label, [int]$code) {
+    if ($code -ne 0) {
+        Write-Err "$label exited with code $code"
+        if ($code -gt $script:InstallerExit) { $script:InstallerExit = $code }
+    }
+}
+
 function Invoke-JunctionsScript {
     $junctionsScript = Join-Path $WorkspaceRoot "install-junctions.ps1"
     if (-not (Test-Path $junctionsScript)) {
         Write-Err "install-junctions.ps1 not found at: $junctionsScript"
         exit 1
     }
+    # Pre-set it: a script that falls off its end without an explicit "exit" leaves
+    # $LASTEXITCODE at whatever the previous command set, and Set-StrictMode makes an
+    # undefined $LASTEXITCODE a terminating error on the very first read.
+    # The two calls stay written out rather than splatted from an array: array splatting
+    # passes "-WhatIf" as a positional VALUE, not as a switch (measured here), so a
+    # forwarded flag would be silently dropped.
+    $global:LASTEXITCODE = 0
     if ($Preview) { & $junctionsScript -WhatIf } else { & $junctionsScript }
+    Set-InstallerExit "install-junctions.ps1" $LASTEXITCODE
 }
 
 function Invoke-ToolsScript {
@@ -84,18 +110,20 @@ function Invoke-ToolsScript {
         Write-Err "install.ps1 not found at: $toolsScript"
         exit 1
     }
+    $global:LASTEXITCODE = 0
     if ($Personal) { & $toolsScript -Personal } else { & $toolsScript }
+    Set-InstallerExit "install.ps1" $LASTEXITCODE
 }
 
 if ($InstallJunctions -and -not $All) {
     Invoke-JunctionsScript
     if ($InstallTools) { Invoke-ToolsScript }
-    exit 0
+    exit $script:InstallerExit
 }
 
 if ($InstallTools -and -not $All) {
     Invoke-ToolsScript
-    exit 0
+    exit $script:InstallerExit
 }
 
 # ─── Detect Git Bash ──────────────────────────────────────────────────────────
@@ -257,6 +285,13 @@ if ($All) {
     Write-Header "Multi-tool mirrors (install.ps1)"
     Invoke-ToolsScript
     Write-Host ""
+    if ($script:InstallerExit -ne 0) {
+        # Both installers still ran: a junction conflict must not stop the mirrors from
+        # being regenerated. Only the final verdict changes, and it says so out loud.
+        Write-Err "One or more install steps failed (worst exit code $script:InstallerExit)."
+        Write-Host ""
+        exit $script:InstallerExit
+    }
     Write-Host "All install steps done." -ForegroundColor Green
     Write-Host ""
 } else {

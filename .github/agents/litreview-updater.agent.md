@@ -55,7 +55,7 @@ All paths are relative to the repo root. `SK` = `.claude/skills/scopus/scripts`.
 | Purpose | Reuse |
 |---|---|
 | Baseline fingerprint, delta dedup, dated paths, CHANGELOG | `python SK/litreview_update.py {baseline,delta,changelog}` |
-| Scopus search / cite | `python SK/scopus_api.py search "<query>" --count 15` |
+| Scopus search / cite | `python SK/scopus_api.py search "<query>" --count 15 --sort recent` (`--sort recent` is required: search orders by citations by default, and a delta hunts NEW papers) |
 | Title→DOI resolve, enrich, grade, BibTeX | `python SK/bib_batch.py {resolve,enrich,bib,all}` |
 | Full-text retrieval (presence-gated) | `python SK/download_pdf.py bib "<delta.bib>" --out-dir "<refs>"` |
 | Corpus future-works mining (mine mode) | `extract-futureworks` skill |
@@ -88,7 +88,7 @@ Run the same search the review used, restricted to the window. Build the Boolean
 review's search strategy section + the profile subject areas, adding `PUBYEAR AFT <window-start-year>`:
 
 ```
-python SK/scopus_api.py search "<boolean query> AND PUBYEAR AFT <YYYY>" --count 15
+python SK/scopus_api.py search "<boolean query> AND PUBYEAR AFT <YYYY>" --count 15 --sort recent
 ```
 
 **Step 1a — Scopus.AI (attended pause / unattended skip).** Attended: present the Scopus.AI

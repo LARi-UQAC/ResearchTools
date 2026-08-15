@@ -1,0 +1,47 @@
+{
+  "_header": {
+    "purpose": "Declared candidate model tags and the qualification policy for the loop-engineer local bridge (P4 Task 3, model_resolver.py). --list cross-references 'ollama list' (installed tags) against the 'candidates' array below: an installed tag absent here is reported ineligible, with that reason printed. --qualify additionally requires the tag to be installed. Declaration here is necessary but never sufficient to become 'current': that only happens by beating the incumbent's last recorded score on the frozen task set in qualification/tasks.json.",
+    "no_hardcoded_tag_in_code": "model_resolver.py contains no model tag literal anywhere in its source. Every tag the resolver can ever return or compare lives in exactly three places: this file (declared candidates), local-model-state.json (the qualified 'current' tag, gitignored, machine-local), or the LARI_LOCAL_MODEL environment override.",
+    "incumbent_seed_exception": "The one deliberate named-tag exception in the whole P4 plan is the entry below for ornith:9b-gpu: the variant already built and GPU-tuned in P4 Task 1/2 from ~/.litellm/Modelfile.ornith-9b-gpu (FROM ornith:9b, PARAMETER num_ctx 8192, PARAMETER num_gpu 99). Its Modelfile keeps the FROM tag; local-model-state.json records which variant was actually qualified from it. Naming it here, in a JSON 'notes' field, is data, not code."
+  },
+  "policy": {
+    "_fix_round_1_note": "Fix round 1 (F2): every bare key below is now actually READ and ENFORCED by model_resolver.py's cmd_qualify / _load_policy. Each *_description sibling is documentation only - it is never parsed - kept separate from the enforced key precisely so it cannot be mistaken for live policy. Before this round the whole 'policy' object was declared but never read at all.",
+    "qualification_mode": "beat_incumbent",
+    "qualification_mode_description": "the only mode model_resolver.py implements (_SUPPORTED_QUALIFICATION_MODES); --qualify refuses explicitly if this is changed to anything else.",
+    "require_declared": true,
+    "require_declared_description": "when true, --qualify refuses a tag absent from the 'candidates' array below; when false, that check is skipped (require_installed, if also true, still applies).",
+    "require_installed": true,
+    "require_installed_description": "when true, --qualify refuses a tag absent from 'ollama list'; when false, that check is skipped.",
+    "win_rule": "no_regression_strict_gain_by_role",
+    "win_rule_description": "a challenger must not regress (fewer tasks passed) in ANY task kind (coder, writer, ...) present in either side's per-kind breakdown, and must strictly gain in at least one kind; a tie everywhere is not a win. Looked up in model_resolver.py's _WIN_RULES dispatch table - --qualify refuses explicitly if this names an unrecognised key. Replaces the fix-round-0 rule that summed coder and writer passes into one scalar, which let a challenger win by gaining in one role while regressing the other (fix round 1, F3).",
+    "bootstrap_rule": true,
+    "bootstrap_rule_description": "when true, --qualify of a declared+installed candidate seeds local-model-state.json unconditionally when no incumbent exists yet (missing or empty state file); when false, --qualify refuses until the state is seeded some other way.",
+    "writer_evidence_weight": "a writer-task pass only proves the candidate followed format instructions (hygiene, structure, language, length, frontmatter); it is weaker evidence than a coder-task pass, which is graded by a real assertion against real behaviour. See qualification/tasks.json's own header. (Documentation only, like the *_description fields above - not parsed by model_resolver.py.)"
+  },
+  "candidates": [
+    {
+      "tag": "ornith:9b-gpu",
+      "role": "writer",
+      "declared": "2026-08-14",
+      "notes": "GPU-tuned variant built in P4 Task 1/2 from Modelfile.ornith-9b-gpu (FROM ornith:9b, num_ctx 8192, num_gpu 99). This is the plan's one deliberate named-tag exception (see _header.incumbent_seed_exception); it is recorded here as data, never in model_resolver.py."
+    },
+    {
+      "tag": "qwen3.5:9b-gpu",
+      "role": "coder",
+      "declared": "2026-08-14",
+      "notes": "GPU-tuned variant built alongside ornith:9b-gpu from Modelfile.qwen35-9b-gpu (FROM qwen3.5:9b, same num_ctx/num_gpu tuning)."
+    },
+    {
+      "tag": "ornith:9b",
+      "role": "writer",
+      "declared": "2026-08-14",
+      "notes": "Untuned base tag ornith:9b-gpu is built FROM. Declared so it remains eligible on its own if the tuned variant is ever removed; ordinarily superseded by ornith:9b-gpu, which pays the same VRAM cost with a bounded KV cache."
+    },
+    {
+      "tag": "qwen3.5:9b",
+      "role": "coder",
+      "declared": "2026-08-14",
+      "notes": "Untuned base tag qwen3.5:9b-gpu is built FROM. Same relationship as ornith:9b to ornith:9b-gpu."
+    }
+  ]
+}

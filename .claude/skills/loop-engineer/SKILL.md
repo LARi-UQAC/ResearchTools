@@ -52,12 +52,18 @@ the contract for the pipeline, the model tiering, and the safety gates.
 9. Correct - `writing-plans` then `executing-plans` on the findings (**Sonnet** + local-coder).
    On error recovery / at the checkpoint, local-coder re-consults the vault so the learning
    captured last iteration is not repeated. `executing-plans` itself never reads the vault.
-10. Doc / journal - **local-writer** is the single vault writer: it captures learnings,
-    `Decisions.md`, `CodeReview.md`, and the daily pointer to Obsidian (via `~/bin/obsidian`,
-    with the outbox fallback when the CLI is unreachable), and updates `/doc` output,
-    `PROCESS.md`, and memory. `local-coder` never writes to the vault - it hands any learning to
-    local-writer. Captures also fire at the error/checkpoint (step 9) and gate (step 12), not
-    only here.
+10. Doc / journal - **local-writer** is the single vault writer: it captures a project log as
+    an appended dated section in the project's own `Decisions.md` (and `CodeReview.md`) under
+    `10_Projets/<nature>/<projet>/`, and any reusable learning as an atomic note under
+    `30_Ressources/<Technology>/`. There is no daily note. It drafts the note and deposits it in
+    `~/.claude/obsidian-outbox/` with a first-line directive; the `obsidian-outbox-flush.py` hook
+    is the only write path for that new or appended content - it writes through the filesystem
+    and verifies the effect by file size, never a fallback. The one sanctioned exception is
+    `vault_consolidate.py --apply --yes`, an in-place maintenance edit of links in notes that
+    already exist, run by this same writer through the filesystem and verified by re-reading the
+    file. It also updates `/doc` output, `PROCESS.md`, and memory.
+    `local-coder` never writes to the vault - it hands any learning to local-writer. Captures
+    also fire at the error/checkpoint (step 9) and gate (step 12), not only here.
 11. Convergence check - the loop wraps steps 7 -> 9 -> 8. Stop on the composite gate, the
     budget cap, the max-iterations cap, a no-progress plateau, or a security regression.
 12. Human-gated finish - on a gate pass, local-coder commits + pushes the branch and opens a
@@ -69,13 +75,21 @@ the contract for the pipeline, the model tiering, and the safety gates.
   learnings into the plan (orchestrator-mediated). Once the loop is executing, vault reads are
   done ONLY by the local agents (steps 5, 6, 9); `executing-plans` and the Sonnet review panel
   do not read.
-- **Writes.** `local-writer` is the single vault writer (drafts + serialized `obsidian
-  create`/`append`, outbox fallback). `local-coder` reads only and hands learnings to
-  local-writer. No two agents write concurrently, and no external tool writes the same vault.
-- **Loop closure.** For a capture at iteration N to be readable at iteration N+1 within the same
-  session, **Obsidian must be open** during the run (direct writes land immediately). If it is
-  closed, writes defer to the outbox and flush at the session boundary; local-coder's outbox
-  scan (see its definition) bridges the intra-session gap.
+- **Writes.** `local-writer` is the single vault writer: it drafts the note and deposits it in
+  `~/.claude/obsidian-outbox/` with a first-line directive; the `obsidian-outbox-flush.py` hook
+  is the only write path for creating or appending content - it writes through the filesystem and
+  verifies the effect by file size, never a fallback. The one sanctioned exception is
+  `vault_consolidate.py --apply --yes`, an in-place maintenance edit of existing links, run by
+  this same writer through the filesystem and verified by re-reading the file, never through the
+  Obsidian CLI. `local-coder` reads only and hands learnings to local-writer. No two agents write
+  concurrently, and no external tool writes the same vault.
+- **Loop closure.** A capture always lands first in the outbox, not directly in the vault; the
+  `obsidian-outbox-flush.py` hook only runs at SessionStart and SessionEnd, so within a running
+  session a note written at iteration N would otherwise sit unflushed. `local-coder`'s outbox
+  scan (see its definition) closes that gap by reading pending outbox files directly at the next
+  iteration. **The hook writes through the filesystem and verifies the effect by file size, with
+  no dependency on the Obsidian process; the note lands regardless of whether Obsidian is running,
+  and Obsidian will reload it the next time it runs.**
 
 See the "Capture de connaissances" and "Lecture du coffre" sections of the global `CLAUDE.md`.
 
@@ -126,9 +140,12 @@ skill's SDK driver, which is the way to get a hard `max_budget_usd` cap. See
 ## Environment and safety
 
 - Standalone Agent SDK program; runs on the user's subscription auth (no gateway, no API key).
-- The local models are reached via the Bash bridge inside the local-coder / local-writer
-  agents (`ollama run`); until the 9B models are imported the bridge falls back to
-  `qwen2.5-coder:7b`.
+- The local models are reached through `ollama_bridge.py` (the Ollama HTTP API, not
+  `ollama run`) inside the local-coder / local-writer agents. There is NO fallback tag: the
+  bridge asks `model_resolver.py`, and a resolver that names no qualified model is an
+  explicit stop. Each agent passes its own `--role` (`coder` / `writer`), so the two roles
+  can be served by different tags; without it both get the single overall `current` tag,
+  which is how the coder side was being served a writer model scoring 0/3 on coder tasks.
 - State-changing git (merge, branch delete) is never done by the local model; the merge is
   human-gated.
 - Install the SDK in this skill's own `.venv` and validate `requirements.txt` with

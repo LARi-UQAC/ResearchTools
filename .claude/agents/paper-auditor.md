@@ -25,7 +25,9 @@ generic biomedical / journal-PDF guidance disagree, the LaTeX section wins.
 
 Load each `references/*.md` on demand for the dimension being audited (the skill's own "load as
 needed" pattern):
-- `float_authoring_rules.md` — figures, tables, equations (canonical; the float checklist below is its quick-reference slice).
+- `composition_rules.md` — sentence composition (passive default R1.1/R1.2, `I` banned everywhere R1.4, `we` confined to Contributions and Conclusion R1.5, no informal language R1.6), lists and prose (R2.1-R2.9, contributions as prose R2.7), section structure (R3.1-R3.3), abstract format (R4.1-R4.4), journal-target protocol (R5.1-R5.4). CANONICAL over `writing_principles.md` and `imrad_structure.md` on every one of those dimensions.
+- `float_authoring_rules.md` — figures, tables, equations, captions (canonical; the float checklist below is its quick-reference slice). Captions: exactly one short meaningful sentence (C1, C2), all explanation in the main text beside the first `\ref{}` (C3), table details in a `threeparttable` `tablenotes` block with `\tnote{}` anchors (C4).
+- `llm_usage_declaration.md` — the four UQAC IAg usage levels, their pictograms, and the recommended level per production type.
 - `citation_styles.md` — `\cite`/BibTeX/`\href` DOI policy and approved-publisher checks.
 - `writing_principles.md` — verb-tense consistency, common pitfalls, AI-style hygiene (score < 20%).
 - `imrad_structure.md` — section structure and length proportions.
@@ -49,11 +51,32 @@ Per float, non-negotiable:
 - Equation: every variable defined directly under the equation if not already defined earlier.
 - Table: rows = parameters analyzed, columns = concepts; first row and first column bold; first row
   shaded 10% grey (`\rowcolor[gray]{0.9}`).
+- Caption: `\caption{}` holds exactly ONE short meaningful sentence, for a figure, a table, and each
+  subfigure alike (C1). That sentence states the content and links it to the main-text argument (C2).
+- No explanation inside the caption: every explanatory sentence goes in the main text beside the
+  first `\ref{}` (C3).
+- Table qualifications go in a `threeparttable` `tablenotes` block with `\tnote{a}` anchors, in
+  `\footnotesize`, never appended to the caption (C4). The preamble must load `threeparttable`.
 
 When the plan corrects a flagged float, the plan entry must contain the full compliant replacement
 snippet (float + the prose citation sentence to insert + variable definitions), not a bare note to
 "add a citation". Run the float self-check in the rules doc before finalizing and resolve every
 `[FLOAT NON-COMPLIANT]` item.
+
+Per prose passage, non-negotiable (`composition_rules.md`):
+- Passive voice or an impersonal form by default (R1.1). Active voice only where the passive obscures
+  the agent or produces an ambiguous sentence, and the reason must be defensible (R1.2).
+- The pronoun `I` never appears, in any payload, in any document (R1.4). `we`, `our`, and `us` appear
+  only in the Contributions paragraph of the Introduction and in the Conclusion (R1.5).
+- No informal language, no contraction, no vague quantifier standing in for a value (R1.6).
+- No bullet or `itemize` / `enumerate` block is emitted into the Abstract, Introduction, Results,
+  Discussion, or Conclusions (R2.6). A contribution statement is prose with inline enumeration (R2.7).
+- A section opening presents every subsection through `\ref{}` (R3.1); a section closing is exactly
+  one sentence of conclusion plus exactly one sentence presenting the next section (R3.2).
+- Abstract payloads carry no label, no `\cite{}`, no acronym, and no equation (R4.1-R4.4).
+
+A payload that violates any of the above is NON-COMPLIANT and must be rewritten before it is written
+into the plan.
 
 ## Input Resolution
 
@@ -367,6 +390,27 @@ Find the line number of the `\begin{figure}` or `\begin{table}` and the line num
 
 Locate the paragraph containing the `\ref{}` call. Count the number of full sentences that mention or describe the figure or table. Flag `[INSUFFICIENT DESCRIPTION]` if fewer than 2 sentences are present (CLAUDE.md requires at least 2 explanatory sentences per figure and per table).
 
+**Caption check (C1-C4)**
+
+Extract the `\caption{...}` argument of the environment, and the `\caption{...}` of every
+`\subfloat` / `\subcaptionbox` / `subfigure` inside it.
+
+- Count the sentences in the caption argument. A sentence ends at `.`, `!`, or `?` that is not part of
+  an abbreviation, a decimal number, or a `\cite`. Flag `[CAPTION MULTI-SENTENCE: <label>]` when the
+  count exceeds 1, for the main caption or for any subfigure caption.
+- Flag `[CAPTION NOT A SENTENCE: <label>]` when the caption carries no finite verb and is a bare noun
+  phrase ("Results", "Comparison table", "System architecture"). The fix supplies the one-sentence
+  caption that states the content and links it to the main-text argument.
+- Flag `[CAPTION CARRIES EXPLANATION: <label>]` when the caption contains an explanatory clause that
+  belongs in the main text: a definition ("where X denotes"), a statistical annotation ("error bars
+  represent"), a sample size ("n = 42"), a significance key ("*p < 0.05"), or a qualification of a
+  cell or column. The fix moves that material to the main text beside the first `\ref{}`, or into a
+  `tablenotes` block for a table.
+- For a table whose cells carry a qualifying term that is defined nowhere ("constant rate",
+  "partial", "rare"), flag `[TABLE DETAIL NOT IN TABLENOTES: <label>]`. The fix wraps the tabular in
+  `threeparttable`, anchors the term with `\tnote{a}`, and supplies the `tablenotes` item text in
+  `\footnotesize`.
+
 **Image resolution check**
 
 For `\begin{figure}` blocks: extract the file path from `\includegraphics[...]{path}`. If the file has a raster extension (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`, `.tiff`):
@@ -388,6 +432,10 @@ Apply these flags:
 | `[INSUFFICIENT DESCRIPTION]` | Fewer than 2 sentences in the citing paragraph describe the element |
 | `[LOW RESOLUTION]` | Raster image DPI < 300 on either axis |
 | `[IMAGE FILE MISSING]` | `\includegraphics` path does not resolve to an existing file |
+| `[CAPTION MULTI-SENTENCE]` | Caption argument holds more than one sentence |
+| `[CAPTION NOT A SENTENCE]` | Caption is a bare noun phrase with no finite verb |
+| `[CAPTION CARRIES EXPLANATION]` | Caption holds material that belongs in the main text |
+| `[TABLE DETAIL NOT IN TABLENOTES]` | Qualifying term needs a `threeparttable` `tablenotes` entry |
 
 Record all flagged figures and tables for Section I of the plan.
 
@@ -429,11 +477,97 @@ Flag `[SECTION OPENING MISSING TRANSITION: section name]` if the section opens d
 Examine the last 10–15 lines of the section. Each section except the Conclusion and Future Works must close with a forward reference to the next section. Examples: "The following section details the experimental validation.", "Section 4 presents the results obtained using this protocol.", "These findings are interpreted in the Discussion."
 Flag `[SECTION CLOSING MISSING PREVIEW: section name]` if the section ends without any forward reference.
 
+**Subsection presentation check (R3.1):**
+A section never jumps from its `\section` title straight to a `\subsection`. Verify that an
+introductory paragraph exists between the two, and that this paragraph presents every subsection of
+the section through a `\ref{}` to that subsection's `\label`. Flag
+`[SUBSECTIONS NOT PRESENTED: <section>]` when the opening paragraph is absent, when a subsection is
+never referenced in it, or when a subsection carries no `\label` to reference. The fix supplies the
+opening paragraph, with one clause per subsection and the `\label` commands to add.
+
+**Closing sentence-count check (R3.2):**
+The closing of each section, except the Conclusion and the Future works, is EXACTLY one sentence
+stating what the section established, followed by EXACTLY one sentence presenting the next section.
+Count the sentences of the closing paragraph after the last substantive claim. Flag
+`[SECTION CLOSING NOT TWO SENTENCES: <section>]` when the closing is missing, is a single sentence
+that does both jobs, or runs to three or more sentences. The fix supplies the exact two sentences.
+This check subsumes `[SECTION CLOSING MISSING PREVIEW]`; emit whichever is more precise, never both
+for the same section.
+
 **Subsection ordering check:**
 For sections that contain multiple subsections (`\subsection`), verify that their order is logically consistent: conceptual or theoretical subsections before experimental ones; setup before execution; data collection before analysis; analysis before interpretation.
 Flag `[SUBSECTION ORDER SUSPECT: section name — subsection title]` if a subsection appears at a position that is logically inconsistent with the subsections surrounding it (e.g., a Results subsection appearing before the Experimental Setup subsection within Methodology).
 
 Record all findings in Section M of the plan.
+
+### Step 4.8 — Composition and register audit
+
+Audit the prose against `composition_rules.md`. Scan every prose section (Abstract, Introduction,
+Literature review, Methodology, Results, Discussion, Conclusion, Future works) and every `\caption{}`.
+Exclude math environments, `verbatim` / `lstlisting` bodies, the bibliography, and LaTeX comments.
+
+**Voice check (R1.1, R1.2).** For each sentence, determine whether it is passive or impersonal.
+Passive markers: a form of *to be* or *to become* plus a past participle; French equivalents with
+*être* plus participle, or a pronominal *se* construction. Impersonal markers: a non-agentive subject
+("This paper presents", "The results show", "Table~\ref{} compares"). A sentence whose grammatical
+subject is a human agent, and which is neither passive nor impersonal, is active. For each active
+sentence, judge whether the passive would obscure who acted or produce an ambiguous sentence. Flag
+`[ACTIVE VOICE UNJUSTIFIED: line N]` when it would not, and give the passive rewrite. Report the
+active-sentence ratio per section in the Section P header. Do not flag an active sentence inside a
+quotation of another author.
+
+**Pronoun check (R1.4, R1.5).** Search the prose for the first-person tokens `I`, `my`, `me`, `mine`,
+`we`, `our`, `us`, and their French equivalents `je`, `mon`, `ma`, `mes`, `moi`, `nous`, `notre`,
+`nos`. Skip matches inside a `\cite{}` key, a label, a file path, a URL, or a quotation.
+
+- Flag `[PRONOUN I FORBIDDEN: line N]` for every occurrence of `I` / `my` / `me` / `mine` / `je` /
+  `mon` / `ma` / `mes` / `moi` as a first-person pronoun. There is no sanctioned exception, in any
+  section, in any document type. Priority High.
+- Flag `[PRONOUN WE OUT OF SCOPE: <section>, line N]` for every occurrence of `we` / `our` / `us` /
+  `nous` / `notre` / `nos` outside the Contributions paragraph of the Introduction and outside the
+  Conclusion. Priority High.
+
+For each flag, supply the impersonal rewrite, using the substitutes table of `composition_rules.md`.
+
+**Register check (R1.3, R1.6).** Flag `[INFORMAL LANGUAGE: "<term>", line N]` for a contraction
+("don't", "it's", "can't"), a colloquialism ("a lot of", "got", "showed up", "pretty much", "kind
+of"), or a vague quantifier standing in for a measured value ("some participants", "often",
+"recently") where a number or a date is available. Give the precise replacement.
+
+**Fragment check (R2.4).** Flag `[SENTENCE FRAGMENT: line N]` for a prose line that carries no finite
+verb and is not a caption, a heading, a table cell, or a list item in a sanctioned list.
+
+**List check (R2.1-R2.6).** Locate every `\begin{itemize}`, `\begin{enumerate}`, `\begin{description}`,
+and every run of three or more lines starting with `-`, `*`, or `\item` outside a float. Determine
+which section each belongs to.
+
+- Flag `[LIST IN PROSE SECTION: <section>, line N]` when the list sits in the Abstract, Introduction,
+  Results, Discussion, or Conclusions. Priority High. The fix is the paragraph rewrite, supplied in
+  full in Section P.
+- A list in the Methodology (inclusion and exclusion criteria, materials, participant
+  characteristics) or in Supplementary Materials is compliant; record it as sanctioned and do not
+  flag it.
+
+**Contribution style check (R2.7).** If Step 1.2 labelled the paper
+`[PRESENTATION STYLE: CONTRIBUTION-ORIENTED]`, locate the contribution statement at the end of the
+Introduction. Flag `[CONTRIBUTIONS AS LIST: line N]` when it is rendered as `itemize`, `enumerate`, or
+bullets, and supply the full prose replacement paragraph with inline enumeration ("Three contributions
+are made. First, ... Second, ... Third, ..."). The contribution-oriented style itself remains valid;
+only its list rendering is banned.
+
+**Journal-target check (R5.1-R5.4).** Determine the target journal from the `\documentclass`, the
+template comments, the cover letter, or the user's dispatch prompt.
+
+- If a target journal is identified and its information-for-authors page has not been supplied, read
+  it with `WebFetch`; when the page is script-rendered and `WebFetch` returns an empty or partial
+  body, read it with the `playwright` MCP tools. If neither is reachable, flag
+  `[JOURNAL GUIDELINES NOT CONSULTED]` and, in Section P, state that the user must supply the link
+  and the editor's template.
+- Record in Section P every journal requirement that overrides a default rule of `composition_rules.md`
+  (R5.4). A journal that explicitly requires a structured abstract is the common case and neutralises
+  the `[ABSTRACT LABELED SECTIONS]` flag of Step 5.5.
+
+Route every flag of this step into **Section P** of the plan.
 
 ### Step 5 — Results audit
 
@@ -456,6 +590,22 @@ Using the quantitative claims extracted in Step 1.5, verify each one against the
 - Search the Results section for any number, percentage, or comparative statement that matches or contradicts the abstract claim.
 - Flag `[ABSTRACT CLAIM UNVERIFIED]` if no matching figure, table, or sentence is found in the Results section.
 - Flag `[ABSTRACT CLAIM CONTRADICTED]` if a number in the abstract differs from the value reported in the Results (allowing a rounding tolerance of 1%).
+
+**Abstract format check (R4.1-R4.4).** Independently of the claim verification above, audit the
+abstract environment itself:
+
+- Flag `[ABSTRACT LABELED SECTIONS]` when the abstract carries labels such as `Background:`,
+  `Methods:`, `Results:`, `Conclusions:`, `Objective:`, `Purpose:`, or their French equivalents,
+  whether in bold, in `\textbf{}`, or as plain text followed by a colon at the start of a sentence.
+  Priority High. **Neutralised** when Step 4.8 recorded that the target journal explicitly requires a
+  structured abstract (R5.4); in that case record the exception in Section L instead of the flag.
+- Flag `[ABSTRACT CITATION: line N]` for every `\cite`, `\citep`, `\citet`, `\citeauthor`, `\bibitem`
+  pointer, or bare bracketed numeric reference marker inside the abstract. Priority High.
+- Flag `[ABSTRACT ACRONYM: XXX]` for every acronym inside the abstract, whether defined there or not.
+  Detect a token of two or more consecutive uppercase letters that is not a proper noun, a unit, or a
+  chemical formula. The fix replaces it with the full name of the concept. Priority High.
+- Flag `[ABSTRACT EQUATION: line N]` for any `$...$`, `\(...\)`, `\begin{equation}`, `\begin{align}`,
+  or `\[...\]` inside the abstract. The fix states the quantity in words and digits. Priority High.
 
 Record all findings in Section L of the plan.
 
@@ -552,7 +702,29 @@ Report:
 - For each detected signal: quote the offending passage (first 15 words), the signal type, and the line number.
 - For sentence-length uniformity: report the window with the lowest standard deviation.
 
-Record all findings for Section J of the plan. Every flagged passage becomes a Medium-priority item in Section J with a suggested human-style rewrite that removes the AI signal while preserving the scientific content.
+**IAg declaration check.** Read `.claude/skills/scientific-writing/references/llm_usage_declaration.md`.
+The AI-style risk score above measures how much the prose LOOKS model-generated; the IAg declaration
+states how much the model actually CONTRIBUTED. The two are independent and must not be conflated:
+a paper can score 4% risk and still owe an "Assistance partagée" declaration.
+
+1. Search the source for an existing declaration: an IAg pictogram (`IAg_aucune`, `IAg_limitee`,
+   `IAg_partagee`, `IAg_majeure` in an `\includegraphics` path), a link to
+   `uqac.ca/ressourcespedago/iag`, or an explicit AI-disclosure statement required by the target
+   journal.
+2. Determine the level the generation path implies, from the recommendation table of
+   `llm_usage_declaration.md`. A paper drafted with `latex-writer` and `scientific-writing` implies
+   level 3, "Production partagée / Assistance partagée".
+3. Flag `[IAG DECLARATION MISSING]` when no declaration is present. In Section J, recommend the level,
+   name the pictogram, give the download link from the reference file, and supply the LaTeX
+   title-page skeleton. Priority Medium; raise to High when the target journal mandates an
+   AI-disclosure statement.
+4. Flag `[IAG LEVEL UNDERSTATED: declared <level>, generation path implies <level>]` when a
+   declaration exists but sits below what the generation path implies. Priority High: an understated
+   declaration is an integrity issue, not a style issue.
+5. If the audit measures level 4 ("Assistance majeure") material, do NOT recommend declaring it. The
+   fix is human review and rewriting of that material; state that in Section J.
+
+Record all findings for Section J of the plan. Every flagged passage becomes a Medium-priority item in Section J with a suggested human-style rewrite that removes the AI signal while preserving the scientific content. The IAg items go in a `### J-IAg` subsection.
 
 ### Step 8 — Deliberation (MANDATORY)
 
@@ -739,7 +911,7 @@ For each hypothesis or claimed contribution of the paper:
 ## Section I — Figure and Table Issues
 
 ### I1 — [Figure or table label]
-**Issue:** [NOT CITED / CITATION FAR / INSUFFICIENT DESCRIPTION / LOW RESOLUTION / IMAGE FILE MISSING]
+**Issue:** [NOT CITED / CITATION FAR / INSUFFICIENT DESCRIPTION / LOW RESOLUTION / IMAGE FILE MISSING / CAPTION MULTI-SENTENCE / CAPTION NOT A SENTENCE / CAPTION CARRIES EXPLANATION / TABLE DETAIL NOT IN TABLENOTES]
 **Location:** Line N (environment start) — nearest \ref{} at line M (distance: X lines)
 **Proposed fix:** [concrete instruction]
 **Priority:** High / Medium / Low
@@ -750,6 +922,14 @@ For each hypothesis or claimed contribution of the paper:
 
 **Overall AI-style risk score:** [0–100 %] — [AI RISK HIGH / AI RISK LOW]
 **Total prose sentences scanned:** N
+
+### J-IAg — UQAC IAg declaration
+**Declared level:** [level found in the source, or "none found"]
+**Level implied by the generation path:** [1 Aucune / 2 Assistance limitée / 3 Assistance partagée / 4 Assistance majeure]
+**Issue:** [IAG DECLARATION MISSING / IAG LEVEL UNDERSTATED / compliant]
+**Recommended pictogram:** [pictogram name + download link from llm_usage_declaration.md]
+**Proposed fix:** [LaTeX title-page declaration skeleton, or the review-and-rewrite instruction for level-4 material]
+**Priority:** Medium / High
 
 ### J1 — [Signal type] at line N
 **Passage:** "[first 15 words of offending text...]"
@@ -772,7 +952,7 @@ For each hypothesis or claimed contribution of the paper:
 ## Section L — Abstract Consistency
 
 ### L1 — Abstract claim: "[first 12 words of claim]"
-**Issue:** [ABSTRACT CLAIM UNVERIFIED / ABSTRACT CLAIM CONTRADICTED]
+**Issue:** [ABSTRACT CLAIM UNVERIFIED / ABSTRACT CLAIM CONTRADICTED / ABSTRACT LABELED SECTIONS / ABSTRACT CITATION / ABSTRACT ACRONYM / ABSTRACT EQUATION]
 **Abstract states:** [exact quantitative claim]
 **Results section shows:** [matching value found, or "no matching value found"]
 **Proposed fix:** [align abstract wording with Results, or add missing result]
@@ -783,7 +963,7 @@ For each hypothesis or claimed contribution of the paper:
 ## Section M — Section Flow Issues
 
 ### M1 — [Section name]: Opening / Closing / Subsection order
-**Issue:** [SECTION OPENING MISSING TRANSITION / SECTION CLOSING MISSING PREVIEW / SUBSECTION ORDER SUSPECT]
+**Issue:** [SECTION OPENING MISSING TRANSITION / SECTION CLOSING MISSING PREVIEW / SECTION CLOSING NOT TWO SENTENCES / SUBSECTIONS NOT PRESENTED / SUBSECTION ORDER SUSPECT]
 **Location:** [section title, approx. line]
 **Proposed fix:** [concrete 1–2 sentence transition or preview text to add]
 **Priority:** Medium
@@ -809,6 +989,29 @@ Introductory sentences: [2 sentences to place immediately before the table]
 
 ### N-Assessment — Coverage quality
 [2–3 sentences: overall coverage assessment, thematic gaps, balance of recent vs. foundational work]
+
+## Section P — Composition and Register (MANDATORY — plan is not final without it)
+
+**Active-sentence ratio:** [per section, e.g. "Introduction 12/48 (25%), Methodology 3/61 (5%)"]
+**First-person occurrences:** `I`-family N, `we`-family M (of which K are inside the sanctioned Contributions paragraph or Conclusion)
+**Sanctioned lists retained:** [list them, with section and line, or "none"]
+
+### P1 — [Flag] at line N
+**Issue:** [ACTIVE VOICE UNJUSTIFIED / PRONOUN I FORBIDDEN / PRONOUN WE OUT OF SCOPE / INFORMAL LANGUAGE / SENTENCE FRAGMENT / LIST IN PROSE SECTION / CONTRIBUTIONS AS LIST]
+**Passage:** "[the offending sentence, or the first 15 words of the list]"
+**Rule:** [R1.1 / R1.2 / R1.3 / R1.4 / R1.5 / R1.6 / R2.4 / R2.6 / R2.7]
+**Proposed fix:** [the full compliant replacement text, ready for `\replaced[id=AU]{}{}` — never a bare instruction]
+**Priority:** High (pronouns, lists in prose sections, contribution lists) / Medium (voice, register, fragments)
+
+### P2 — ...
+
+### P-Journal — Journal target protocol
+**Target journal:** [name, or "not identified"]
+**Information for authors:** [URL read, or "NOT CONSULTED — user must supply the link"]
+**Editor template:** [path read, or "not supplied"]
+**Requirements that override a default rule (R5.4):** [one line per override, e.g. "structured abstract required — neutralises ABSTRACT LABELED SECTIONS"; or "none"]
+**Issue:** [JOURNAL GUIDELINES NOT CONSULTED / compliant]
+**Priority:** High when the paper is being prepared for submission
 
 ## Section O — ScholarEval Score (MANDATORY — plan is not final without it)
 
@@ -891,7 +1094,12 @@ user:
    hypothesis. An empty or missing E-Hyp / E-NewHyp means Step 7 did not run its hypothesis gate;
    return to Step 7 (and Step 2.7 if `refs/` was never mined).
 
-If any of the six is missing, return to the matching step (2.7/5.7/7/8/8.5), produce it, and re-write
+7. The plan file contains a populated **Section P — Composition and Register**, with the
+   active-sentence ratio line, the first-person occurrence counts, and the **P-Journal** subsection.
+   An empty or missing Section P means Step 4.8 did not run; return to it. "No composition issues
+   found" is acceptable content only when the three header lines are still filled in.
+
+If any of the seven is missing, return to the matching step (2.7/4.8/5.7/7/8/8.5), produce it, and re-write
 the section before declaring done. Finally, **report to the user** the overall score, the quality level,
 and the two output paths (`..._scholareval_scores.json`, `..._scholareval_report.txt`).
 
@@ -919,6 +1127,11 @@ full-skill-compliant markup.
 | New `\begin{figure}...\end{figure}` block | `\added[id=AU]{\begin{figure}...\end{figure}}` |
 | Section I (figure/table): added descriptive sentences near `\ref{}` | `\added[id=AU]{new sentence(s)}` inserted immediately after the existing `\ref{...}` mention |
 | Section J (LLM style): em dash, smart quote, AI phrase replaced | `\replaced[id=AU]{corrected passage}{old passage}` |
+| Section P (composition): active sentence, pronoun, informal term rewritten | `\replaced[id=AU]{compliant sentence}{old sentence}` |
+| Section P (list in a prose section): list converted to a paragraph | `\replaced[id=AU]{paragraph prose}{\begin{itemize}...\end{itemize}}` |
+| Section P (contributions as list): list converted to prose with inline enumeration | `\replaced[id=AU]{Three contributions are made. First, ...}{\begin{itemize}...\end{itemize}}` |
+| Section I (caption): caption shortened to one sentence, remainder moved to the main text | `\replaced[id=AU]{\caption{One sentence.}}{\caption{Old multi-sentence caption.}}` plus `\added[id=AU]{moved explanation}` beside the first `\ref{}` |
+| Section J-IAg: declaration added | `\added[id=AU]{declaration block}` on the title page |
 | Grammar correction (isolated spelling / punctuation fix, no structural change) | Apply directly — no markup |
 
 4. **For Section I — image resolution issues:** do not alter the image file itself. Instead add a LaTeX comment on the `\includegraphics` line: `% [LOW RESOLUTION — replace with 300 DPI version]`. Note that the changes package markup is not applicable to LaTeX comments; instead append the comment on the same line and note it in the confirm log.
@@ -940,6 +1153,9 @@ full-skill-compliant markup.
 - Never rewrite the user's text in this step — the plan proposes changes; execution applies them
 - Mark `[UNVERIFIED]` on network errors rather than false negatives
 - Respect the anti-AI-style rules in all written text (canonical list in `writing_principles.md`): no em dashes, no smart quotes, no zero-width spaces, no perfect parallel lists
+- Every proposed rewrite obeys `composition_rules.md`: passive by default (R1.1), no `I` anywhere (R1.4), `we` only in the Contributions paragraph and the Conclusion (R1.5), no list in the Abstract, Introduction, Results, Discussion, or Conclusions (R2.6), contributions as prose (R2.7)
+- Every caption written or proposed is exactly one short meaningful sentence (C1); explanation goes in the main text (C3) and table details in `tablenotes` (C4)
+- A paper prepared for a named journal is never judged compliant before its information for authors has been read (R5.1-R5.3)
 - Section G must be genuinely critical — not encouraging
 - Respond in French unless the source paper is predominantly in English
 

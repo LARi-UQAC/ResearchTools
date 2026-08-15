@@ -1,0 +1,234 @@
+{# supported-blocks: bullets figure takeaway cards chips stats table matrix zoneband chart equation #}
+<!doctype html>
+<html lang="{{ meta.notes_lang | default('en') }}">
+<head>
+<meta charset="utf-8">
+<title>{{ meta.title }}</title>
+<!--
+  Web render of talk_model.json. Rendered by:
+    python talk_model.py <model.json> --render web_skeleton.html.j2 --out out/deck.html
+
+  ONE self-contained file is the whole point of this target: inline CSS and JS,
+  images as data: URIs, no CDN, no build step. A conference laptop has no network,
+  and talk_validate.py --web fails the file on any external http(s) reference in
+  src, href or url(). That is also why the fonts below are the safe-list faces
+  rather than a webfont: the reference skill this target borrows from loads faces
+  from a CDN while promising self-containment, and that promise is the one that
+  matters in the room.
+
+  Print: the @media print block lays each slide out as its own page, so printing to
+  PDF through headless Chromium gives one page per slide with selectable vector
+  text. Never screenshot the slides and stitch them - that rasterises the text.
+  Hand the printed PDF to to_a4.py when paper output was asked for.
+-->
+<style>
+  :root {
+    /* The stage is fixed and scaled as a whole; changing these two values is the
+       only thing an aspect-ratio change touches. */
+    --slide-w: {{ 1080 if meta.aspect == "9:16" else 1920 }}px;
+    --slide-h: {{ 1920 if meta.aspect == "9:16" else (1080 if meta.aspect == "16:9" else 1440) }}px;
+    --brand: #{{ palette.brand | default('5A7210') }};
+    --ink: #{{ palette.ink | default('23262A') }};
+    --muted: #6B6F63;
+    --card: #F1F2EC;
+    --card-dk: #E4E7DA;
+    --s1: #{{ palette.s1 | default('2E7D32') }};
+    --s2: #{{ palette.s2 | default('C57A00') }};
+    --s3: #{{ palette.s3 | default('B3221F') }};
+    /* Body floor from the audience answer, in px at stage scale. */
+    --body: {{ 34 if meta.audience == "public" else 28 }}px;
+    --caption: {{ 30 if meta.audience == "public" else 24 }}px;
+  }
+  html, body { margin: 0; padding: 0; background: #111; color: var(--ink);
+               font-family: Calibri, Carlito, "Segoe UI", sans-serif; overflow: hidden; }
+  #viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+  #stage { width: var(--slide-w); height: var(--slide-h); position: relative;
+           transform-origin: center center; background: #fff; }
+
+  /* Slide switching. Never display:none / display:block here: a later
+     .slide-content { display: flex } overrides the none and every slide becomes
+     visible at once. Visibility, opacity and pointer-events do the job and keep
+     the layout stable. */
+  .slide { position: absolute; inset: 0; visibility: hidden; opacity: 0;
+           pointer-events: none; transition: opacity .18s ease; padding: 90px 110px;
+           box-sizing: border-box; display: flex; flex-direction: column; gap: 28px; }
+  .slide.active { visibility: visible; opacity: 1; pointer-events: auto; }
+
+  .eyebrow { font-size: var(--caption); letter-spacing: 2px; font-weight: 700;
+             text-transform: uppercase; color: var(--brand); }
+  h1 { font-family: Cambria, Caladea, Georgia, serif; font-size: 60px; margin: 0;
+       color: var(--ink); }
+  h2 { font-family: Cambria, Caladea, Georgia, serif; font-size: 46px; margin: 0; }
+  ul { font-size: var(--body); line-height: 1.35; margin: 0; padding-left: 1.2em; }
+  figure { margin: 0; }
+  figure img { max-width: 100%; max-height: 620px; object-fit: contain; }
+  figcaption { font-size: var(--caption); font-style: italic; color: var(--muted); }
+  .takeaway { background: var(--card-dk); border-radius: 12px; padding: 22px 26px;
+              font-family: Cambria, Caladea, Georgia, serif; font-size: calc(var(--body) + 4px);
+              font-weight: 700; color: var(--brand); }
+  .cards { display: flex; gap: 20px; }
+  .card { background: var(--card); border-radius: 12px; padding: 20px;
+          box-shadow: 0 2px 8px rgba(0,0,0,.14); flex: 1; font-size: var(--body); }
+  .card h3 { margin: 0 0 8px; font-size: var(--body); color: var(--brand); }
+  .chips { display: flex; gap: 34px; align-items: center; font-size: var(--body); }
+  .chip .disc { width: 46px; height: 46px; border-radius: 50%; display: inline-grid;
+                place-items: center; color: #fff; font-weight: 700; margin-right: 12px; }
+  .stats { display: flex; gap: 30px; text-align: center; }
+  .stats .value { font-family: Cambria, Caladea, Georgia, serif; font-size: 64px;
+                  font-weight: 700; color: var(--brand); }
+  table { border-collapse: collapse; font-size: var(--body); width: 100%; }
+  th, td { border: 1px solid #C9CDBE; padding: 10px 12px; text-align: left; }
+  thead th { background: var(--card-dk); font-weight: 700; }
+  tbody td:first-child { font-weight: 700; }
+  .matrix { display: grid; gap: 2px; }
+  .matrix .cell { display: grid; place-items: center; width: 96px; height: 96px;
+                  font-size: var(--caption); }
+  .band { display: flex; height: 64px; border-radius: 6px; overflow: hidden;
+          font-size: var(--caption); }
+  .band > div { display: grid; place-items: center; color: #fff; font-weight: 700; }
+  .equation { font-family: Cambria, Caladea, Georgia, serif;
+              font-size: calc(var(--body) + 6px); text-align: center; }
+  .cite { font-size: var(--caption); color: var(--muted); }
+
+  /* A negated CSS function is silently ignored: -clamp(...) does nothing. Write
+     the negation as calc(-1 * clamp(...)) when a negative offset is needed. */
+  .notes { position: fixed; right: 0; top: 0; width: 32vw; height: 100vh;
+           background: #fff; color: #222; padding: 24px; overflow: auto;
+           font-size: 16px; line-height: 1.45; display: none; }
+  body.presenting .notes { display: block; }
+  body.presenting #viewport { right: 32vw; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slide { transition: none; }
+  }
+
+  /* One page per slide, vector text, no extra tooling. */
+  @media print {
+    @page { size: {{ '1080px 1920px' if meta.aspect == "9:16" else ('1920px 1080px' if meta.aspect == "16:9" else '1920px 1440px') }}; margin: 0; }
+    html, body { background: #fff; overflow: visible; }
+    #viewport { position: static; display: block; }
+    #stage { transform: none !important; width: auto; height: auto; }
+    .slide { position: relative; visibility: visible; opacity: 1; page-break-after: always;
+             width: var(--slide-w); height: var(--slide-h); }
+    .notes { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+{% for s in slides %}
+    <section class="slide" data-n="{{ s.n }}" data-kind="{{ s.kind | default('content') }}">
+{% if s.kind == "title" %}
+      <h1>{{ s.title }}</h1>
+      <div class="cite">{{ meta.authors | join(' &middot; ') }}</div>
+      <div class="cite">{{ meta.venue | default('') }}</div>
+{% elif s.kind == "divider" %}
+      <h1 style="margin:auto; text-align:center; color:var(--brand)">{{ s.title }}</h1>
+{% else %}
+{% if s.section %}      <div class="eyebrow">{{ s.section }}</div>
+{% endif %}      <h2>{{ s.title }}</h2>
+{% for b in s.blocks %}
+{% if b.kind == "bullets" %}
+      <ul>
+{% for item in b['items'] %}        <li>{{ item }}</li>
+{% endfor %}      </ul>
+{% elif b.kind == "figure" %}
+      <figure>
+        <!-- data: URI, so the deck stays one file. talk_validate.py --web fails
+             the deck on an http(s) src. -->
+        <img src="{{ b.data_uri | default(b.asset) }}" alt="{{ b.caption | default('figure') }}">
+{% if b.caption %}        <figcaption>{{ b.caption }}{% if b.cite %} <span class="cite">{{ b.cite }}</span>{% endif %}</figcaption>
+{% endif %}      </figure>
+{% elif b.kind == "takeaway" %}
+      <div class="takeaway">{{ b.text }}{% if b.support %}<div style="font-family:Calibri,sans-serif;font-weight:400;color:var(--ink);font-size:var(--body);margin-top:8px">{{ b.support }}</div>{% endif %}</div>
+{% elif b.kind == "cards" %}
+      <div class="cards">
+{% for c in b['items'] %}        <div class="card"><h3>{{ c.title | default('') }}</h3>{{ c.text | default('') }}</div>
+{% endfor %}      </div>
+{% elif b.kind == "chips" %}
+      <div class="chips">
+{% for c in b['items'] %}        <div class="chip"><span class="disc" style="background:#{{ c.color | default('5A7210') }}">{{ c.glyph | default('') }}</span>{{ c.label }}{% if c.sub %} <span class="cite">{{ c.sub }}</span>{% endif %}</div>
+{% endfor %}      </div>
+{% elif b.kind == "stats" %}
+      <div class="stats">
+{% for st in b['items'] %}        <div><div class="value">{{ st.value }}</div><div>{{ st.label }}</div></div>
+{% endfor %}      </div>
+{% elif b.kind == "table" %}
+      <table>
+{% for row in b.rows %}{% if loop.first %}        <thead><tr>{% for cell in row %}<th>{{ cell }}</th>{% endfor %}</tr></thead>
+        <tbody>
+{% else %}          <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+{% endif %}{% endfor %}        </tbody>
+      </table>
+{% elif b.kind == "matrix" %}
+      <div class="matrix" style="grid-template-columns: repeat({{ b.rows[0] | length }}, 96px)">
+{% for row in b.rows %}{% for v in row %}        <div class="cell" style="background: color-mix(in srgb, var(--brand) {{ (v | float * 100) | round | int }}%, #fff)">{{ v }}</div>
+{% endfor %}{% endfor %}      </div>
+{% elif b.kind == "zoneband" %}
+      <div class="band">
+{% for z in b.zones %}        <div style="flex: {{ z.fraction }}; background:#{{ z.color | default('5A7210') }}">{{ z.label }}</div>
+{% endfor %}      </div>
+{% elif b.kind == "chart" %}
+      <!-- Inline SVG: no chart library, no CDN, and the curve stays vector in the
+           printed PDF. Axis limits are declared, as in the other two targets. -->
+      <svg viewBox="0 0 900 460" width="100%" height="460" role="img"
+           aria-label="{{ b.title | default('chart') }}">
+        <line x1="70" y1="410" x2="880" y2="410" stroke="#999" />
+        <line x1="70" y1="20" x2="70" y2="410" stroke="#999" />
+{% for serie in b.series %}        <polyline fill="none" stroke-width="3"
+          stroke="{{ serie.color | default('#2E7D32') }}"
+          points="{% for pt in serie.points %}{{ 70 + loop.index0 * (810 / ((serie.points | length) - 1 if (serie.points | length) > 1 else 1)) }},{{ 410 - ((pt[1] | float - (b.min | default(0) | float)) / ((b.max | default(1) | float) - (b.min | default(0) | float)) * 390) }} {% endfor %}" />
+{% endfor %}      </svg>
+{% elif b.kind == "equation" %}
+      <div class="equation">{{ b.plain | default(b.tex) }}</div>
+{% if b.where %}      <div class="cite">{{ b.where }}</div>
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}
+    </section>
+{% endfor %}
+  </div>
+</div>
+
+<aside class="notes" id="notes"></aside>
+
+<script>
+// Speaker notes travel with the deck, exactly as they do in the PowerPoint notes
+// pane and in Beamer's \note{}. Press N for the presenter view.
+const NOTES = {{ slides | map(attribute='notes') | list | tojson }};
+const slides = Array.from(document.querySelectorAll('.slide'));
+const stage = document.getElementById('stage');
+const notesEl = document.getElementById('notes');
+let index = 0;
+
+function fit() {
+  // One transform on the whole stage. Nothing inside a slide ever re-lays out, so
+  // a projector at an unexpected resolution letterboxes instead of reflowing.
+  const vw = window.innerWidth * (document.body.classList.contains('presenting') ? 0.68 : 1);
+  const vh = window.innerHeight;
+  const sw = stage.offsetWidth, sh = stage.offsetHeight;
+  stage.style.transform = 'scale(' + Math.min(vw / sw, vh / sh) + ')';
+}
+
+function show(i) {
+  index = Math.max(0, Math.min(slides.length - 1, i));
+  slides.forEach((s, k) => s.classList.toggle('active', k === index));
+  notesEl.textContent = NOTES[index] || '';
+}
+
+window.addEventListener('resize', fit);
+document.addEventListener('keydown', (e) => {
+  if (['ArrowRight', 'PageDown', ' '].includes(e.key)) show(index + 1);
+  else if (['ArrowLeft', 'PageUp'].includes(e.key)) show(index - 1);
+  else if (e.key === 'Home') show(0);
+  else if (e.key === 'End') show(slides.length - 1);
+  else if (e.key.toLowerCase() === 'n') { document.body.classList.toggle('presenting'); fit(); }
+});
+
+show(0);
+fit();
+</script>
+</body>
+</html>

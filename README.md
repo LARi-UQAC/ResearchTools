@@ -14,7 +14,16 @@ Ask for my book (French version): Vibe Design. 30$ contribution via:
 
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
 who want to find and fix the issues hiding in their academic writing before a reviewer,
-a thesis committee, or a grant panel does. It contains two loop for authoring and coding. It covers the whole process: starting
+a thesis committee, or a grant panel does. 
+
+**Never let an LLM do your work for you. Use it to improve your work, find your weaknesses, and help you improve yourself.**
+**Never use these tools to conduct a formal or professional assessment, and do not let the tool make decisions for you. Use at your own risk.**
+
+**Always uses a logo when using these tools, such as:**
+https://www.uqac.ca/ressourcespedago/iag/
+
+
+ResearchTools contains two loop for authoring and coding. It covers the whole process: starting
 a literature review, auditing an existing review, a complete paper, a UQAC
 thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy.
 
@@ -32,11 +41,13 @@ with generated mirrors for GitHub Copilot, OpenCode, Continue, and Aider (see
 
 ## TODO in 2026
 
-1- Agent paper2talk (latex paper to a talk for a conference using some parameters such as time 10 to 12 minutes) for conference (september 2026).
+1- ~~Agent paper2talk (latex paper to a talk for a conference using some parameters such as time 10 to 12 minutes) for conference (september 2026).~~ **Done 2026-08-12**: the `paper2talk` skill, the `talk-builder` agent, and `/talk`.
 
 2- Agent thesis2defence (latex thesis to defence talk in Beamer, 30 to 45 minutes), october 2026.
 
-3- Thesis-Tracker: full UI/UX with user login, database, to fill paperworks, forms, track paper submission process, manage mindmap to create new paper ideas, end of 2026. We need to investigate if we use n8n, or other agents over a cloud or local on a server.
+3- Thesis-Tracker: full UI/UX with user login, database, to fill paperworks, forms, track paper submission process, manage mindmap to create new paper ideas, end of 2026. We need to investigate if we use n8n/OpenClaw/Hermes/OpenHands/?, or other agents over a cloud or local on a server.
+
+4- plugin in marketplace with automatic update.
 
 ## About this manual
 
@@ -45,7 +56,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **11 skills**, **16 agents**, and **21 commands**.
+The repo ships **13 skills**, **17 agents**, and **22 commands**.
 
 ---
 
@@ -85,6 +96,10 @@ sequence (config, then junctions, then tools) in one pass.
 | `pip install docling markitdown[pdf]` *(optional, MIT; Docling pulls torch)* | Pluggable Markdown backend for `extract_text.py` (`--stats-scan` / `--section-scan`) and HTML conversion in the any-format retrieval path. Docling is the default (best tables/layout), MarkItDown the light fallback; absent both, the parser uses pymupdf4llm + a tag-strip |
 | `pip install matplotlib` *(+ optional `folium`)* | `geolocalisation` skill: world-map PNG figure (`matplotlib`) and interactive HTML map (`folium`). No geopandas/GDAL. The `--full-text` study-site scan additionally reuses `pymupdf` + `download_pdf.py` |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
+| `pip install pypdf python-pptx jinja2 defusedxml` | `paper2talk` skill: paper-size PDF reflow (`pypdf`), the gabarit-based PowerPoint renderer (`python-pptx`), the Beamer/web renderers (`jinja2`), OOXML reading (`defusedxml`). Pinned in `.claude/skills/paper2talk/scripts/requirements.txt` |
+| `npm install pptxgenjs` *(optional)* | `paper2talk` fallback for a PowerPoint deck with no gabarit at all. Set `NODE_PATH` when building outside the tree that holds the install |
+| PowerPoint (Office 16+) **or** LibreOffice, plus Poppler `pdftoppm` | `paper2talk` render loop: deck → PDF → page images. On Windows the working path is PowerPoint COM `SaveAs(..., 32)`; the `document-skills` `soffice.py` wrapper fails here with `AF_UNIX`. Poppler ships with MiKTeX |
+| draw.io Desktop *(optional)* | `paper2talk` figure re-export at scale 3 (`fig_export.py`); locate it with `--drawio` or `DRAWIO_EXE` |
 | `pdflatex` (TeX Live / MiKTeX) | `recommendation-letter` skill: compile letters to PDF (degrades to `.tex` only if absent) |
 | Obsidian Desktop *(optional)* | Obsidian vault integration in `CLAUDE.md` |
 
@@ -266,21 +281,23 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Eleven ship in this repo.
+Skills bundle scripts and references the agents reuse. Thirteen ship in this repo.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
-| `scopus` | Search Scopus, validate references, fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback). | `/scopus`, `.claude/skills/scopus/SKILL.md` |
+| `scopus` | Search Scopus (citation-ordered, title/abstract/keyword scoped), validate references (ambiguity-flagged), fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback). | `/scopus`, `.claude/skills/scopus/SKILL.md` |
 | `scientific-writing` | Core writing skill: scientific manuscripts in flowing IMRAD prose with verified citations (IEEE/APA/AMA/Vancouver) and reporting guidelines (CONSORT/STROBE/PRISMA). | `.claude/skills/scientific-writing/SKILL.md` |
 | `scholar-evaluation` | ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations. | `.claude/skills/scholar-evaluation/SKILL.md` |
 | `deliberation` | Two-round Gemini ↔ GitHub Copilot debate over a near-final draft; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |
 | `extract-statistic` | Statistical analysis. Mode `audit`: review a manuscript's own statistics (test selection, assumptions, effect size, presentation, cross-validation). Mode `mine`: extract the reported statistics of a corpus's full-text PDFs and synthesize a corpus statistics table plus an improvement-opportunity list. Engineering-default domain profiles. Used inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine). | `.claude/skills/extract-statistic/SKILL.md` |
 | `extract-futureworks` | Future-works analysis (reuses `extract_text.py --section-scan`). Mode `audit`: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode `mine`: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and `scopus-researcher` (mine), where it is a hard gate: no hypothesis/project without it. | `.claude/skills/extract-futureworks/SKILL.md` |
+| `paper2talk` | Accepted paper -> conference talk. Asks six questions before reading the paper (audience, duration, output target, aspect ratio, PDF format, deck ending), echoes a build contract, then builds ONE `talk_model.json` and renders it to PowerPoint (pptxgenjs), LaTeX Beamer on the lab gabarit, or a self-contained web page. Speaker notes budgeted at 130 wpm aiming under the slot, figures re-exported through the draw.io CLI at scale 3, and a visual QA loop (PowerPoint COM -> `pdftoppm`) with a legibility gate and a no-text-only-slide rule. Delegates the loop to the `talk-builder` agent. | `/talk`, `.claude/skills/paper2talk/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
 | `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `/geolocalisation`, `.claude/skills/geolocalisation/SKILL.md` |
 | `loop-engineer` | Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score `>=` min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; `local-coder`/`local-writer` do local generation. `loop_audit.py` aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated. | `/loopdev`, `.claude/skills/loop-engineer/SKILL.md` |
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
+| `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -290,16 +307,20 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 
 | Command | What it does |
 |---------|-------------|
-| `/scopus <topic>` | Search top papers on a topic |
+| `/scopus <topic>` | Search top papers on a topic — **ordered by citation count**, and bare keywords are scoped to title/abstract/keywords. Add `--sort recent` when you want the newest papers instead |
 | `/scopus review <topic>` | Structured literature review with inline citations |
-| `/scopus validate <DOI or title>` | Confirm a reference exists and return full metadata |
+| `/scopus validate <DOI or title>` | Confirm a reference exists. Flags `ambiguous` when several records share the title, so `results[0]` is never taken on faith |
 | `/scopus cite <DOI>` | Citation count + full metadata for one paper |
-| `/scopus author <name>` | Author h-index and top publications |
+| `/scopus author AU-ID(<digits>)` | Author profile: document count, affiliation, computed h-index, top papers. Works on a Search-only key |
+| `/scopus author <name>` | Same, when the key is entitled for the Author Search API; otherwise degrades to Semantic Scholar candidates and says so (no Scopus AU-ID can be resolved from a name without that entitlement) |
 | `/scopus journal <name or ISSN>` | Journal SJR quartile, CiteScore, subject areas |
 
 **Files:**
 - `.claude/skills/scopus/SKILL.md`
-- `.claude/skills/scopus/scripts/scopus_api.py` — Scopus REST client
+- `.claude/skills/scopus/scripts/scopus_api.py` — Scopus REST client. `search` orders by `-citedby-count` (`--sort recent` for date order; the alias is required because argparse refuses a value starting with a dash) and wraps a query naming no Scopus field in `TITLE-ABS-KEY()`; without both, a search answered only this year's least-cited papers, and citation ordering on an unqualified query answered the most-cited papers of all science. `validate` queries the title as a quoted phrase and publishes `title_similarity` plus an `ambiguous` flag. `journal --issn` is the reliable venue lookup: it resolves print and electronic ISSNs in turn and returns the best CiteScore subject percentile with the quartile derived from it (a lookup by title, or an ISSN lookup combined with `field=`, answers a stub)
+- `.claude/skills/scopus/scripts/doi_publisher.py` — DOI prefix → publisher. `search`, `validate` and `cite` all carry `doi_prefix` and `publisher_by_prefix`; the prefix is assigned by the registration agency, whereas Scopus `prism:publisher` was measured naming a learned society for a Springer DOI and an imprint for an Elsevier one
+- `.claude/skills/scopus/scripts/bib_batch.py` — **candidates → `.bib`**: strict `TITLE()` title-to-DOI resolution, cite enrichment, venue grading, BibTeX generation
+- `.claude/skills/scopus/scripts/bib_audit.py` — **`.bib` → audit**, the opposite direction: required fields, duplicates, DOI validation against Scopus, venue metrics by ISSN, publisher approval, then an annotated pass-through copy (`<base>_clean.bib`) and a measured report (`<base>_bib_report.md`). Drives the `bib-cleaner` agent; `--no-network` replays from its cache
 - `.claude/skills/scopus/scripts/semantic_scholar_api.py` — Semantic Scholar fallback
 - `.claude/skills/scopus/scripts/download_pdf.py` — any-format full-text retrieval (PDF, else HTML/Markdown via Unpaywall, arXiv, PMC, validated DOI landing), plus an opt-in `--browser` tier
 - `.claude/skills/scopus/scripts/browser_fetch.py` — tier 8: a real Playwright Chromium for challenge-gated publishers (Akamai/Cloudflare), with a per-paper `refs/_sources.json` override URL (e.g. ResearchGate) for papers with no institutional access; optional (needs `playwright` + `playwright install chromium`)
@@ -360,6 +381,91 @@ linter enforces the AI-usage rules. All shipped sample data is synthetic.
 - `.claude/skills/recommendation-letter/scripts/Test/test_generate_letter.py` — offline unit tests (53 cases)
 - `.claude/skills/recommendation-letter/references/quality-patterns.md` — authored-track quality patterns
 - `.claude/skills/recommendation-letter/evals/` — synthetic sample configs
+
+### `paper2talk` — accepted paper to conference talk
+
+Starts where `submit-checker` and `cover-paper` stop: the paper is accepted, the talk is the
+next deliverable. The skill asks **six questions before reading the paper** — audience,
+duration and conference, output target, aspect ratio, PDF format, and how the deck ends —
+because every one of them is an input to a number the build cannot invent, then echoes a build
+contract (`n_content`, word budget, font floor, preferred form, deliverables) before a single
+slide is authored.
+
+| Stage | Command | Output |
+|---|---|---|
+| 0 — preflight | `talk_doctor.py --target pptx` | per-dependency state, which targets are buildable here, what degrades without each missing tool |
+| 0b — read | `paper_extract.py main.tex --out inventory.json` | `\input`-flattened sections, floats with labels/captions/assets, equations, citation keys, and the number inventory the deck is checked against |
+| 1 — brand | `talk_template.py <gabarit.pptx> --out brand.json --extract-media assets/` | canvas, layouts, master background, every object in inches with `srcRect` as a keep-fraction |
+| 2 — figures | `fig_export.py <fig.svg> --out <fig.png> --scale 3 [--fix-text map.json]` | projector-grade PNG + implied-DPI report (warns below 150) |
+| 3 — model | `talk_model.py <talk_model.json>` | block-vocabulary check, no-text-only-slide rule, exhibit coverage, budget aggregation |
+| 4 — render | `talk_pptx.py --template <gabarit.pptx>` · `talk_model.py --render …tex.j2` (Beamer) · `…html.j2` (web) | `.pptx` built on the gabarit's own layouts, `.tex`, or one self-contained `.html`, all from the same model |
+| 5 — gates | `talk_validate.py` · `talk_notes.py` · `talk_render.py [--paper a4]` | package + legibility checks, spoken budget and cadence, PDF + page images, A4/Letter reflow |
+
+- **Cadence.** One slide per minute counts **content** slides only:
+  `n_content = floor(minutes - 0.5*(title+thanks) - 0.33*dividers)`. A 13-minute talk is 12
+  content slides and 15 in all, or 10 and 18 with five dividers.
+- **Rate.** 130 words per minute for a technical talk (not the 150 wpm of conversational
+  speech), aimed at `(minutes - 1.5) x 130` so the talk lands under the slot.
+- **Audience-parameterised typography.** 16 pt body floor in the field (14 pt for captions and
+  references), 20 pt for a general-public talk; no bullet cap for a scientific audience, since a
+  slide may legitimately carry seven or eight equations. The cap is replaced by a mechanical
+  legibility gate.
+- **Content hierarchy.** figure > table > equation > prose. Prose, bullets included, is the last
+  resort; a content slide with no exhibit is a defect, and every exhibit must be discussed in
+  its own speaker notes (matched on subject keywords, never filenames).
+- **Gabarits.** `../gabarit_these_maitrise_DSA_UQAC/src/slides/`: `Gabarit169.pptx` (16:9, 18
+  named layouts), `Gabarit43.pptx` (4:3, preferred when an A4 handout is the deliverable),
+  `main.tex` for Beamer. The deck is built **on** the gabarit with python-pptx rather than
+  imitated, so the lab branding, layouts and placeholders are used as designed.
+- **Nothing invented.** `talk_model.py --check-numbers inventory.json` compares every number
+  on every slide against the numbers the paper states, on normalised values (a French decimal
+  comma and an English point are one number), so a figure that entered the deck from nowhere is
+  caught before the room catches it.
+- **Windows render path.** PowerPoint COM `SaveAs(..., 32)` then `pdftoppm`; the
+  `document-skills` `soffice.py` wrapper fails here with `AF_UNIX`. `soffice` is used when it is
+  on `PATH`. A legacy `.ppt` gabarit is converted with `talk_template.py --convert`
+  (`SaveAs(..., 24)`), leaving the original untouched.
+
+**Files:**
+- `.claude/skills/paper2talk/SKILL.md`
+- `.claude/skills/paper2talk/scripts/talk_rules.py` — audience profiles, tier costs, cadence, budget, build contract
+- `.claude/skills/paper2talk/scripts/talk_model.py` — deck-as-data validation + Jinja render of the Beamer/web targets
+- `.claude/skills/paper2talk/scripts/talk_doctor.py` — preflight: buildable targets, per-tool degradation
+- `.claude/skills/paper2talk/scripts/paper_extract.py` — paper → inventory (`\input` flattening, floats, equations, numbers)
+- `.claude/skills/paper2talk/scripts/talk_pptx.py` — PowerPoint renderer: opens the lab gabarit, drops its sample slides, builds on its own layouts and placeholders
+- `.claude/skills/paper2talk/scripts/talk_template.py` · `fig_export.py` · `talk_render.py` · `talk_notes.py` · `to_a4.py` · `talk_validate.py`
+- `.claude/skills/paper2talk/assets/deck_skeleton.js` (no-gabarit fallback) · `beamer_skeleton.tex.j2` · `web_skeleton.html.j2`
+- `.claude/skills/paper2talk/references/renderer-contracts.md` · `qa-loop.md`
+- `.claude/skills/paper2talk/scripts/Test/` — thirteen offline suites, 182 tests (fixtures built in the test; no Office, no network)
+- Harvest and licence findings: `docs/superpowers/notes/2026-08-11-reference-skill-harvest.md`
+
+### `obsidian-cli` - Obsidian vault operations
+
+Gives Claude the vault's allowed read/search command surface (`read`, `search`, `list`,
+`property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`) and the single
+sanctioned write path: a captured learning is drafted, dropped in
+`~/.claude/obsidian-outbox/` with a `create|append path="..."` directive on its first line,
+and the `obsidian-outbox-flush.py` hook (SessionStart/SessionEnd) writes it into the vault
+through the filesystem, verifying the effect by file size before and after rather than
+trusting the CLI's return code.
+
+`create`, `append`, and `prepend` (plus `eval`, `dev:*`, `plugin:install`, `theme:install`,
+and every `sync*` except read-only `sync:history`) are forbidden commands. The measured
+reasons: the write fails on the whole JSON header size (content, path, `tty`/`cwd`), not
+the content alone - a 3850-byte header passes, a 4343-byte header does not, and 4096 bytes,
+a Windows named-pipe buffer, falls in between; the CLI exits 0 even when the write failed,
+so a script checking the return code archives notes that were never written; and `create`
+on an existing file silently writes a numbered duplicate (`Decisions 1.md`) instead of
+failing.
+
+**Files:**
+- `.claude/skills/obsidian-cli/SKILL.md`
+- `.claude/skills/obsidian-cli/references/command-reference.md` - full command syntax
+- `.claude/skills/obsidian-cli/scripts/vault_consolidate.py` - deterministic half of
+  consolidation: measures shared tags/`domaine`/term overlap and proposes links, decides
+  nothing; `--mode links` reports dead wiki-links read-only, and `--apply <map.json> --yes`
+  is the one guarded, map-validated, single-pass rewrite of existing links exempted from the
+  outbox-only write rule
 
 ---
 
@@ -429,6 +535,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/bibclean [file.bib]` | Clean and validate a BibTeX file: required fields, author normalization, duplicates, DOI enrichment, SJR quartile, publisher approval check | Optional — `.bib` file/IDE file |
 | `/submitcheck <file.tex> <journal>` | Check submission readiness for a target journal: page count, sections, reference style, abstract length, keywords, anonymization | Yes — `.tex` file + journal |
 | `/replyreviewer` | Point-by-point LaTeX response letters + track-change markup in the paper via the `changes` package (one letter per reviewer file) | Yes — see below |
+| `/talk <paper>` | Accepted paper → conference talk: six opening questions (audience, duration, target, aspect, PDF format, ending), build contract, one deck model rendered to PowerPoint / Beamer / self-contained web, timed speaker notes at 130 wpm, visual QA loop | Yes — paper path + optional flags |
 | `/word2latex` | Convert a Word `.docx` template to a faithful LaTeX source (pandoc + standard patch sequence) | Yes — `.docx` path |
 | `/geolocalisation` | Map a review corpus's study locations from its `.bib`: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional `--full-text` PDF scan. | Optional — `.bib` file/dir/IDE file |
 | `/recommendation-letter` | Generate a support / recommendation / appreciation / acceptance / dispense letter in LaTeX → PDF from a candidate's files (two tracks; candidate status + funding provider; paired invitation). | Optional — folder / paths / IDE file |
@@ -598,6 +705,7 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `reviewer-response` | Point-by-point response letters + traceable `changes`-package markup in the paper | `/replyreviewer` | `.claude/agents/reviewer-response.md` |
 | `bib-cleaner` | Validate, deduplicate, normalize and DOI-enrich a `.bib` file | `/bibclean` | `.claude/agents/bib-cleaner.md` |
 | `submit-checker` | Pass/fail submission checklist against a target journal's requirements | `/submitcheck` | `.claude/agents/submit-checker.md` |
+| `talk-builder` | Accepted paper → conference talk: six opening questions first, build contract, `talk_model.json`, render (PowerPoint / Beamer / web), then the validate → notes → render → inspect loop until every page is clean | `/talk` | `.claude/agents/talk-builder.md` |
 | `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex.md` |
 | `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt) | by name (at submission) | `.claude/agents/cover-paper.md` |
 | `thesis-to-paper` | Integrate a thesis + its conference papers into one submission-ready journal manuscript (invited extension); pandoc reference conversion, figure pipeline, content-delta matrix, then `/litreview` + `scientific-writing` + `/bibclean` + `/submitcheck` + `/auditpaper` inline, with a multi-session checkpoint protocol | by name / "extend this paper to a journal version" | `.claude/agents/thesis-to-paper.md` |
@@ -631,13 +739,14 @@ comparison (baseline vs post), hard-gated so execution only completes when the s
 
 `local-writer` and `local-coder` cut cloud cost by keeping the top model as orchestrator and
 pushing token-heavy generation to local models on the GPU. Each agent runs on a cheap cloud
-model (Haiku) that only frames the task and drives a local model over a Bash bridge
-(`ollama run ornith:9b` for writing, `ollama run qwen3.5:9b` for code); the bulk text or code
-is generated locally and free. No gateway is used and cloud stays on your normal
-subscription auth, so only the small Haiku wrapper spends cloud tokens.
+model (Haiku) that only frames the task and drives a local model over `ollama_bridge.py`,
+which speaks Ollama's HTTP API and takes `--role writer` or `--role coder` instead of a model
+name; the bulk text or code is generated locally and free. No gateway is used and cloud stays
+on your normal subscription auth, so only the small Haiku wrapper spends cloud tokens.
 
-Requirements: Ollama running with the two models pulled (`ollama list`). Until the 9B models
-are imported, the bridge falls back to `qwen2.5-coder:7b`. LiteLLM
+Requirements: Ollama running, and a qualified tag for the role you are about to use
+(`model_resolver.py --resolve --role coder`). There is no fallback tag: an unqualified role
+is an explicit stop, never a silent substitution of a weaker model. LiteLLM
 (`~/.litellm/ollama.yaml`) is optional and only gives the bridge its keep-alive / context
 tuning. `local-writer` never authors LaTeX prose (it may add `%` comments only); all
 scientific and LaTeX redaction stays with `latex-writer` + `scientific-writing` on the
@@ -678,9 +787,9 @@ Both loops read and write the Obsidian vault so learnings persist across iterati
 learning. Reads happen at plan time (baked into the plan by `brainstorming` / `writing-plans` on
 the cloud tiers) and, during a run, only by the local agents (task start, checkpoints, error
 recovery); `executing-plans` does not read. Writes land in `10_Projets/<projet>/` logs and
-reusable `30_Ressources/` atomic notes through the `~/bin/obsidian` wrapper, with a
-SessionStart/SessionEnd outbox-flush hook as fallback when Obsidian is closed. Requires Obsidian
-open with the CLI enabled. Full design in [docs/contributor-notes.md](docs/contributor-notes.md)
+reusable `30_Ressources/` atomic notes through the outbox only - the SessionStart/SessionEnd
+`obsidian-outbox-flush.py` hook is the sole write path, never a fallback. The `~/bin/obsidian`
+wrapper is for reads. Requires Obsidian open with the CLI enabled. Full design in [docs/contributor-notes.md](docs/contributor-notes.md)
 section 5; routing in [.claude/CLAUDE.md](.claude/CLAUDE.md).
 
 ### Calling an agent explicitly
@@ -742,13 +851,14 @@ ResearchTools\
     │   ├── bib-cleaner.md             ← /bibclean
     │   ├── submit-checker.md          ← /submitcheck
     │   ├── word-to-latex.md           ← /word2latex
+    │   ├── talk-builder.md           ← /talk
     │   ├── cover-paper.md             ← submission package
     │   ├── thesis-to-paper.md         ← thesis + conf papers -> journal manuscript
     │   ├── authoring-loop.md          ← ScholarEval-gated authoring loop
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (ornith:9b bridge)
     │   └── local-coder.md             ← local code gen (qwen3.5:9b bridge)
-    ├── commands\                            (21 commands)
+    ├── commands\                            (22 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
     │   ├── ref.md      ├── litreview.md             ├── litupdate.md
@@ -756,10 +866,10 @@ ResearchTools\
     │   ├── auditthesis.md              ├── bibclean.md
     │   ├── submitcheck.md              ├── replyreviewer.md
     │   ├── word2latex.md               ├── geolocalisation.md
-    │   ├── loopdev.md
+    │   ├── loopdev.md                  ├── talk.md
     │   └── recommendation-letter.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (11 skills)
+    └── skills\                              (13 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -781,6 +891,12 @@ ResearchTools\
         ├── loop-engineer\SKILL.md           (+ scripts\loop_engineer.py [Agent SDK driver],
                            loop_audit.py [code-quality scorer], Test\test_loop_audit.py;
                            references\ LOOP/STATE/PROCESS/ledger templates; requirements.txt)
-        └── recommendation-letter\SKILL.md   (+ scripts\generate_letter.py, letter_templates.py,
-                           Test\test_generate_letter.py; references\quality-patterns.md; evals\)
+        ├── recommendation-letter\SKILL.md   (+ scripts\generate_letter.py, letter_templates.py,
+        │                  Test\test_generate_letter.py; references\quality-patterns.md; evals\)
+        └── paper2talk\SKILL.md              (+ scripts\talk_rules.py, talk_model.py, talk_template.py,
+                           fig_export.py, talk_render.py, talk_notes.py, to_a4.py, talk_validate.py,
+                           talk_pptx.py, paper_extract.py, talk_doctor.py,
+                           requirements.txt, Test\ [13 offline suites];
+                           assets\deck_skeleton.js, beamer_skeleton.tex.j2, web_skeleton.html.j2;
+                           references\renderer-contracts.md, qa-loop.md)
 ```

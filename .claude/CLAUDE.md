@@ -132,21 +132,23 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 
 | Situation | Agent / skill | Command |
 |---|---|---|
-| Find or validate references, single reference | `scopus` skill | `/scopus`, `/ref` |
+| Find or validate references, single reference (search is citation-ordered and title/abstract/keyword scoped; `--sort recent` for the newest, and `validate` flags an ambiguous title instead of designating one record) | `scopus` skill | `/scopus`, `/ref` |
 | Autonomous literature review | `scopus-researcher` | `/litreview` |
 | Incrementally update an existing review with new papers (delta search, preemption check, dated track-changed `_up_` copy; schedulable) | `litreview-updater` | `/litupdate` |
 | Audit an existing review | `scopus-auditor` | `/auditreview` |
 | Audit a complete paper | `paper-auditor` (+ `scholar-evaluation`) | `/auditpaper` |
 | Audit a UQAC thesis | `thesis-auditor` (+ `scholar-evaluation`) | `/auditthesis` |
 | Audit a UQAC thesis proposal | `thesis-proposal-auditor` (+ `scholar-evaluation`) | by name |
-| Clean and validate a `.bib` | `bib-cleaner` | `/bibclean` |
+| Clean and validate a `.bib` (scripted audit via `bib_audit.py`: required fields, duplicates, DOI validation, venue metrics by ISSN, publisher approval, annotated pass-through copy + measured report; the agent adds the judgment) | `bib-cleaner` | `/bibclean` |
 | Respond to peer reviewers | `reviewer-response` | `/replyreviewer` |
 | Check submission readiness | `submit-checker` | `/submitcheck` |
 | Build the submission package (cover, title page, author profile, graphical abstract) | `cover-paper` | by name |
 | Integrate a thesis + its conference papers into one journal manuscript (invited extension; delta matrix, disclosure letter) | `thesis-to-paper` | by name |
+| Build the conference talk from an accepted paper (deck + timed speaker notes on the lab gabarit, PowerPoint / Beamer / web; six opening questions, 130 wpm budget, visual QA loop) | `paper2talk` skill / `talk-builder` agent | `/talk` |
 | Author LaTeX, Beamer, or TiKZ | `latex-writer` (+ `scientific-writing`) | by context |
 | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries; NOT LaTeX text authoring) | `local-writer` agent (haiku wrapper + local `ornith:9b`) | by context / by name |
 | Local code generation against a spec/failing test, refactor snippets, scaffolds | `local-coder` agent (haiku wrapper + local `qwen3.5:9b`) | by context / by name |
+| Read or search the Obsidian vault (notes, tags, tasks, links, properties), or deposit a captured learning for it (new/appended content routes through the outbox only; `--apply --yes` link maintenance is the one exception, run by the same serialized writer) | `obsidian-cli` skill | by context / by name |
 | Budget-bounded develop-and-improve loop (design→code→review→score→correct until a composite gate or budget cap) | `loop-engineer` skill (Agent SDK; Fable 5 orchestrates, Opus/Sonnet act, local agents generate) | `/loopdev` |
 | ScholarEval-gated authoring loop (define→author→audit→loop→memory until min_score or max_budget) | `authoring-loop` agent (author on Fable 5, `scholar-evaluation` on Sonnet/Haiku, memory via `local-writer`) | by name |
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
@@ -162,33 +164,51 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 
 Obsidian touch-point: for paper writing, reviewer responses, and grant work, the matching
 agent above runs inside the corresponding plan-mode case of the root [CLAUDE.md](../CLAUDE.md)
-(cases 1, 2, 4, 6) - consult the vault before planning and journal via `obsidian daily:append`
-after. This wiring is stated once in the root file; do not restate the cases here.
+(cases 1, 2, 4, 6) - consult the vault before planning and journal by appending to the project
+`Decisions.md` after. This wiring is stated once in the root file; do not restate the cases
+here.
 
 ### Obsidian knowledge-capture loop (local agents)
 
-The vault (`C:\<UserName>\Vault`, PARA) is the broad cross-project memory Claude Code lacks
-natively (its auto-memory is siloed per working directory). During a `loop-engineer` /
-`authoring-loop` run the local agents read and write it so learnings persist and feed the next
-iteration. The general policy is in the root [CLAUDE.md](../CLAUDE.md) ("Capture de
-connaissances" + "Lecture du coffre"); the ResearchTools specifics:
+The vault path is authoritative from the `OBSIDIAN_VAULT` environment variable; the documented
+default is `C:\Martin Otis\Vault`, and `CLAUDE.template.md` carries `{{OBSIDIAN_VAULT}}` for
+`setup.ps1` to substitute at install time. The vault (PARA) is the broad cross-project memory
+Claude Code lacks natively (its auto-memory is siloed per working directory). During a
+`loop-engineer` / `authoring-loop` run the local agents read and write it so learnings persist
+and feed the next iteration. The general policy is in the root [CLAUDE.md](../CLAUDE.md)
+("Capture de connaissances" + "Lecture du coffre"); the ResearchTools specifics:
 
-- **Writer**: `local-writer` is the single vault writer - it drafts and runs `obsidian
-  create`/`append` (serialized; outbox fallback when Obsidian is closed). `local-coder` reads
-  only and hands any learning to `local-writer`.
+- **Writer**: `local-writer` is the single vault writer - it drafts the body locally and
+  deposits the note in `~/.claude/obsidian-outbox/` with a first-line directive; the
+  `obsidian-outbox-flush.py` hook writes it into the vault through the filesystem and verifies
+  the effect by file size. The outbox is the only write path for creating or appending note
+  content, not a fallback. The one sanctioned exception is `vault_consolidate.py --apply --yes`,
+  an in-place maintenance edit of links in notes that already exist, run by this same writer
+  through the filesystem and verified by re-reading the file, never through the Obsidian CLI.
+  `local-coder` reads only and hands any learning to `local-writer`.
 - **Readers**: `local-coder` / `local-writer` consult the vault at task start, checkpoints, and
   error recovery. Plan-time reads (superpowers `brainstorming` on Fable 5, `writing-plans` on
   Opus) are orchestrator-mediated and baked into the plan; `executing-plans` does not read.
-- **Where**: project logs in `10_Projets/<domaine>/<projet>/` (`Decisions.md`, `CodeReview.md`,
-  `Revisions.md`); reusable atomic notes in `30_Ressources/<cat>/`; the daily note is a pointer
-  only.
+- **Where**: project logs live in `10_Projets/<nature>/<projet>/`, with the four natures
+  `Articles`, `Subventions`, `Livres`, `Logiciels`; reusable atomic notes live in
+  `30_Ressources/<Technology>/`, with `LaTEX`, `Python`, `PowerShell`, `Obsidian`,
+  `ResearchTools`, `Publication` as current folders; there is no daily note.
 - **Transport**: the `~/bin/obsidian` wrapper (redirects to `Obsidian.com`; bare `obsidian`
   hangs under Git Bash). The `obsidian-outbox-flush.py` hook (SessionStart/SessionEnd, in
   [.claude/settings.template.json](settings.template.json)) delivers deferred notes.
 - **Prerequisite**: Obsidian open with the CLI enabled during a run, for the capture-to-read
   loop to close within the session.
 
-Full design and rationale: [docs/contributor-notes.md](../docs/contributor-notes.md) section 6.
+The CLI write path is retired for three measured reasons. The threshold sits on the whole JSON
+header, not the content alone: a 3850-byte header is accepted, a 4343-byte header is refused,
+and 4096 bytes, a Windows named-pipe buffer, falls in between. The CLI also exits 0 even when
+the write fails, so a script that checks the return code archives notes that were never
+written. And `create` on an existing file writes a numbered duplicate (`Decisions 1.md`)
+instead of failing or appending. Consequence: `create`, `append`, and `prepend` are forbidden
+commands (decision D3), at the same level as `eval`, `dev:*`, `plugin:install`,
+`theme:install`, and `sync*` (except the read-only `sync:history`).
+
+Full design and rationale: [docs/contributor-notes.md](../docs/contributor-notes.md) section 5.
 
 ## Agent pipeline integrity
 

@@ -62,6 +62,7 @@ function Write-WhatIf([string]$text)   { Write-Host "  [WHATIF]   $text" -Foregr
 function Write-Info([string]$text)     { Write-Host "  [INFO]     $text" -ForegroundColor Cyan }
 
 $stats = @{ Created = 0; AlreadyExists = 0; Conflicts = 0; Skipped = 0 }
+$script:conflictPaths = @()
 
 function New-JunctionSafe([string]$linkPath, [string]$target) {
     if (Test-Path $linkPath) {
@@ -72,6 +73,7 @@ function New-JunctionSafe([string]$linkPath, [string]$target) {
         } else {
             Write-Conflict "$linkPath exists as a real directory — skipping (remove manually to replace)"
             $stats.Conflicts++
+            $script:conflictPaths += $linkPath
         }
         return
     }
@@ -96,6 +98,7 @@ function New-SymlinkSafe([string]$linkPath, [string]$target) {
         } else {
             Write-Conflict "$linkPath exists as a real file — skipping (remove manually to replace)"
             $stats.Conflicts++
+            $script:conflictPaths += $linkPath
         }
         return
     }
@@ -236,9 +239,10 @@ Write-Host "  Conflicts    : $($stats.Conflicts)"  $(if ($stats.Conflicts -gt 0)
 
 if ($stats.Conflicts -gt 0) {
     Write-Host ""
-    Write-Host "  To resolve a conflict, remove the item and re-run:" -ForegroundColor Yellow
-    Write-Host "    Remove-Item -Path <conflicting-path> -Recurse -Force" -ForegroundColor Yellow
-    Write-Host "    .\install-junctions.ps1" -ForegroundColor Yellow
+    Write-Host "  CONFLICTING ENTRIES (shadowing this repository):" -ForegroundColor Red
+    $script:conflictPaths | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+    Write-Host "  A real directory here means the repository version is NOT loaded." -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""

@@ -7,6 +7,7 @@ credentials/
 
 # LaTEX
 out/
+docs/superpowers/
 
 # Python
 __pycache__/
@@ -36,3 +37,12 @@ logs/
 .ipynb_checkpoints/
 
 post-media/
+
+# Local model resolver (P4 Task 3): machine-local qualification state and bridge log, never
+# committed. loop-bridge-log.jsonl already defaults outside the repo
+# (~/.claude/loop-bridge-log.jsonl, ollama_bridge.py fix round 1 I4); this entry is belt and
+# braces for a --log override that lands inside the repo, not the primary control.
+.claude/local-model-state.json
+.claude/local-model-config.json
+.claude/.maintenance.lock
+loop-bridge-log.jsonl

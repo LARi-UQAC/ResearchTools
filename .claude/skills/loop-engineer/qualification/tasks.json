@@ -1,0 +1,86 @@
+{
+  "_header": {
+    "purpose": "The frozen task set model_resolver.py's --qualify runs against a candidate tag. Every task mirrors a REAL, already-tested contract from this repository (see each task's source_reference), so a candidate is graded on work this repository actually needed, not a synthetic benchmark.",
+    "coder_vs_writer_evidence": "A coder task is graded by run_qualification_tasks executing a real assertion against the candidate's generated code (see model_resolver.py, _build_coder_verify_command): the candidate either reproduces the mirrored function's observable behaviour on every case, or it does not. A writer task has no such oracle for whether the prose is GOOD - it can only be gated on deterministic, mechanical properties (structure, language, length, frontmatter keys; hygiene is enforced upstream by ollama_bridge.run_bridge before either gate ever runs). Passing every writer task in this set proves the candidate follows format instructions; it does not prove its prose is good. A --qualify win driven mostly by writer-task passes is weaker evidence than one driven by coder-task passes, and should be read that way.",
+    "structure_gate_parameterisation": "Measured earlier in this plan: a FIXED five-heading structure gate wrongly failed a good generation whose brief had deliberately asked for two sections only. Every writer task below therefore carries its OWN required_sections list (two for writer-vault-two-section, four for writer-atomic-resource-note, one for writer-changelog-entry); model_resolver.py's writer check reads that list per task and never falls back to a constant heading list. This file's shape is itself the fix: the requirement lives with the task, not with the checker.",
+    "frozen_since": "2026-08-14",
+    "changing_this_file": "Adding, removing, or editing a task changes what 'beating the incumbent' means. A change here should be a deliberate, reviewed edit, not an incidental one; it does not retroactively change local-model-state.json's history, which records the task set's outcome at the time each qualification ran."
+  },
+  "tasks": [
+    {
+      "id": "coder-norm-doi",
+      "kind": "coder",
+      "source_reference": ".claude/skills/scopus/scripts/litreview_update.py:_norm_doi (mirrored contract; verified against Test/test_litreview_update.py:TestNormDoi).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef norm_doi(doi):\n    # Canonicalize a DOI for comparison: strip a leading resolver prefix\n    # (https://doi.org/ or http://dx.doi.org/, case-insensitive), strip\n    # surrounding whitespace, and lowercase the result. A None or empty\n    # input returns an empty string.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "norm_doi",
+      "cases": [
+        {"args": ["https://doi.org/10.1109/ABC.2020.123"], "expect": "10.1109/abc.2020.123"},
+        {"args": ["HTTP://DX.DOI.ORG/10.1000/XYZ"], "expect": "10.1000/xyz"},
+        {"args": ["10.1109/ABC.2020.123"], "expect": "10.1109/abc.2020.123"},
+        {"args": [null], "expect": ""},
+        {"args": [""], "expect": ""}
+      ]
+    },
+    {
+      "id": "coder-split-author-name",
+      "kind": "coder",
+      "source_reference": ".claude/skills/scopus/scripts/scopus_api.py:_split_author_name (mirrored contract; verified against Test/test_author_name_split.py).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef split_author_name(name):\n    # Split a person name into (surname, initial), accepting both\n    # conventions. If name contains a comma, everything before the comma\n    # (stripped) is the surname, and initial is the first character of the\n    # text after the comma (stripped), or '' if that text is empty. If\n    # name has no comma and splits into two or more whitespace-separated\n    # words, the LAST word is the surname and initial is the first\n    # character of the FIRST word. Otherwise (a single word, no comma),\n    # return (name.strip(), '').\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "split_author_name",
+      "cases": [
+        {"args": ["Otis, Martin"], "expect": ["Otis", "M"]},
+        {"args": ["Otis, Martin J.-D."], "expect": ["Otis", "M"]},
+        {"args": ["Martin Otis"], "expect": ["Otis", "M"]},
+        {"args": ["Otis"], "expect": ["Otis", ""]},
+        {"args": ["Otis,"], "expect": ["Otis", ""]}
+      ]
+    },
+    {
+      "id": "coder-doi-prefix",
+      "kind": "coder",
+      "source_reference": ".claude/skills/scopus/scripts/doi_publisher.py:doi_prefix (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef doi_prefix(doi):\n    # Extract the DOI registrant prefix: a substring matching 10.NNNN\n    # (4 to 9 digits after '10.') that is immediately followed by '/' or\n    # is at the end of the string. Return that prefix (without the\n    # trailing slash). If doi is None, empty, or no such prefix is found,\n    # return an empty string.\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "doi_prefix",
+      "cases": [
+        {"args": ["10.1109/ABC.2020"], "expect": "10.1109"},
+        {"args": ["10.1186/xyz"], "expect": "10.1186"},
+        {"args": ["10.1109"], "expect": "10.1109"},
+        {"args": [null], "expect": ""},
+        {"args": ["noslash"], "expect": ""}
+      ]
+    },
+    {
+      "id": "writer-vault-two-section",
+      "kind": "writer",
+      "source_reference": "root CLAUDE.md, 'Cas 1 - Redaction d'un article scientifique' (Decisions.md append convention). Deliberately asks for TWO sections to exercise the parameterised structure gate (see this file's own header).",
+      "prompt": "Ecris, en francais, le corps d'une entree de journal Decisions.md pour un defaut de code deja corrige. Deux sections seulement, avec ces titres Markdown exacts, dans cet ordre : '## Contexte' puis '## Probleme'. Contexte : une phrase situant le module concerne. Probleme : une phrase decrivant le defaut observe. N'ajoute PAS de section Cause racine, Correctif, ou Reutilisation. Sortie : uniquement le texte Markdown demande, sans balise de code, sans explication.",
+      "required_sections": ["Contexte", "Probleme"],
+      "language": "fr",
+      "min_length_chars": 80,
+      "max_length_chars": 900,
+      "frontmatter_keys": []
+    },
+    {
+      "id": "writer-atomic-resource-note",
+      "kind": "writer",
+      "source_reference": "root CLAUDE.md, 'Frontmatter d'une note atomique (30_Ressources)'.",
+      "prompt": "Ecris, en francais, une note atomique complete pour 30_Ressources : un frontmatter YAML puis le corps. Frontmatter : exactement les cles 'type', 'projet', 'domaine', 'date', 'tags', chacune sur sa propre ligne, entre deux lignes '---'. type doit valoir apprentissage. domaine doit valoir logiciel. date doit etre au format AAAA-MM-JJ. Corps : quatre sections Markdown exactes, dans cet ordre : '## Contexte', '## Probleme', '## Cause racine', '## Correctif'. Sortie : uniquement le texte demande, sans balise de code, sans explication.",
+      "required_sections": ["Contexte", "Probleme", "Cause racine", "Correctif"],
+      "language": "fr",
+      "min_length_chars": 150,
+      "max_length_chars": 1500,
+      "frontmatter_keys": ["type", "projet", "domaine", "date", "tags"]
+    },
+    {
+      "id": "writer-changelog-entry",
+      "kind": "writer",
+      "source_reference": ".claude/skills/scopus/scripts/litreview_update.py:build_changelog (CHANGELOG scaffold convention).",
+      "prompt": "Ecris, en francais, une entree de CHANGELOG pour une mise a jour de revue de litterature. Une seule section, avec ce titre Markdown exact : '## Ajouts'. Une liste a puces de deux a quatre references ajoutees, chaque ligne sous la forme '- Auteur (annee) : titre court'. Sortie : uniquement le texte Markdown demande, sans balise de code, sans explication.",
+      "required_sections": ["Ajouts"],
+      "language": "fr",
+      "min_length_chars": 60,
+      "max_length_chars": 700,
+      "frontmatter_keys": []
+    }
+  ]
+}

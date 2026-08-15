@@ -24,7 +24,9 @@ generic biomedical / journal-PDF guidance disagree, the LaTeX section wins.
 
 Load each `references/*.md` on demand for the dimension being audited (the skill's own "load as
 needed" pattern):
-- `float_authoring_rules.md` — figures, tables, equations (canonical; the float checklist below is its quick-reference slice).
+- `composition_rules.md` — sentence composition (passive default R1.1/R1.2, `I` banned everywhere R1.4, `we` confined to Contributions and Conclusion R1.5, no informal language R1.6), lists and prose (R2.1-R2.9, contributions as prose R2.7), section structure (R3.1-R3.3), abstract format (R4.1-R4.4), journal-target protocol (R5.1-R5.4). CANONICAL over `writing_principles.md` and `imrad_structure.md` on every one of those dimensions.
+- `float_authoring_rules.md` — figures, tables, equations, captions (canonical; the float checklist below is its quick-reference slice). Captions: exactly one short meaningful sentence (C1, C2), all explanation in the main text beside the first `\ref{}` (C3), table details in a `threeparttable` `tablenotes` block with `\tnote{}` anchors (C4).
+- `llm_usage_declaration.md` — the four UQAC IAg usage levels, their pictograms, and the recommended level per production type.
 - `citation_styles.md` — `\cite`/BibTeX/`\href` DOI policy and approved-publisher checks.
 - `writing_principles.md` — verb-tense consistency, common pitfalls, AI-style hygiene (score < 20%).
 - `imrad_structure.md` — section structure and length proportions.
@@ -48,11 +50,36 @@ Per float, non-negotiable:
 - Equation: every variable defined directly under the equation if not already defined earlier.
 - Table: rows = parameters analyzed, columns = concepts; first row and first column bold; first row
   shaded 10% grey (`\rowcolor[gray]{0.9}`).
+- Caption: `\caption{}` holds exactly ONE short meaningful sentence, for a figure, a table, and each
+  subfigure alike (C1). That sentence states the content and links it to the main-text argument (C2).
+- No explanation inside the caption: every explanatory sentence goes in the main text beside the
+  first `\ref{}` (C3).
+- Table qualifications go in a `threeparttable` `tablenotes` block with `\tnote{a}` anchors, in
+  `\footnotesize`, never appended to the caption (C4). The preamble must load `threeparttable`. The
+  Chapter 2 comparison table required of every proposal is the usual place this applies.
 
 When the plan corrects a flagged float, the plan entry must contain the full compliant replacement
 snippet (float + the prose citation sentence to insert + variable definitions), not a bare note to
 "add a citation". Run the float self-check in the rules doc before finalizing and resolve every
 `[FLOAT NON-COMPLIANT]` item.
+
+Per prose passage, non-negotiable (`composition_rules.md`):
+- Passive voice or an impersonal form by default (R1.1). Active voice only where the passive obscures
+  the agent or produces an ambiguous sentence, and the reason must be defensible (R1.2).
+- The pronoun `I` never appears, in any payload, in any document (R1.4). The French `je` is covered by
+  the same ban. `we` / `nous` appear only in the Contributions paragraph of the Introduction and in
+  the Conclusion (R1.5).
+- No informal language, no contraction, no vague quantifier standing in for a value (R1.6).
+- No bullet or `itemize` / `enumerate` block is emitted into the Résumé, Abstract, Introduction,
+  feasibility results, or Conclusion (R2.6). A contribution statement is prose with inline
+  enumeration (R2.7).
+- A section opening presents every subsection through `\ref{}` (R3.1); a section closing is exactly
+  one sentence of conclusion plus exactly one sentence presenting the next section (R3.2).
+- Résumé and Abstract payloads carry no label, no `\cite{}`, no acronym, and no equation (R4.1-R4.4).
+
+A payload that violates any of the above is NON-COMPLIANT and must be rewritten before it is written
+into the plan. Every rewrite is written in the language of the chapter it targets, and every rewrite
+that lengthens the body states its effect on the 35-page budget.
 
 ## Differences with `thesis-auditor`
 
@@ -289,7 +316,13 @@ Each chapter (1, 2, 3, and Conclusion) must begin with the UQAC three-part intro
 | `[CH1 OBJECTIVES MISSING]` | No paragraph or sub-section states the proposal objectives (main + secondary) |
 | `[CH1 CLOSING MISSING]` | Chapter 1 ends without a short conclusion paragraph |
 
-**Section-level flow checks (within each chapter):** identical to `thesis-auditor` Step 4 — section opening transition, section closing preview, subsection ordering.
+**Section-level flow checks (within each chapter):** identical to `thesis-auditor` Step 4 — section opening transition, section closing preview, subsection ordering — plus the two structure checks below.
+
+*Subsection presentation (R3.1):* a section never jumps from its `\section{}` title straight to a `\subsection{}`. Verify that an introductory paragraph exists between the two, and that this paragraph presents every subsection of the section through a `\ref{}` to that subsection's `\label`.
+Flag `[SUBSECTIONS NOT PRESENTED: Ch.N — section title]` when the opening paragraph is absent, when a subsection is never referenced in it, or when a subsection carries no `\label` to reference. The fix supplies the opening paragraph, with one clause per subsection, and the `\label` commands to add. State the page-budget effect: this fix adds lines.
+
+*Closing sentence count (R3.2):* the closing of each section, except the Conclusion, is EXACTLY one sentence stating what the section established, followed by EXACTLY one sentence presenting the next section. Count the sentences of the closing paragraph after the last substantive claim.
+Flag `[SECTION CLOSING NOT TWO SENTENCES: Ch.N — section title]` when the closing is missing, is a single sentence that does both jobs, or runs to three or more sentences. The fix supplies the exact two sentences. This check subsumes `[SECTION CLOSING MISSING PREVIEW]`; emit whichever is more precise, never both for the same section. In a proposal, trimming an over-long closing to two sentences is a page-budget gain worth recording.
 
 Record in Section C of the plan.
 
@@ -433,6 +466,25 @@ Record in Section G of the plan. If no feasibility section is present, write `Se
 
 Identical to `thesis-auditor` Step 9: `[NOT CITED]`, `[CITATION FAR]` (>120 lines for a thesis-scale document, but for a proposal use **>80 lines** since the document is shorter), `[INSUFFICIENT DESCRIPTION]`, `[FIGURE NUMBERING WRONG]`, `[LOW RESOLUTION]` (< 300 DPI), `[IMAGE FILE MISSING]`. Skip vector formats.
 
+**Caption check (C1-C4):** Extract the `\caption{...}` argument of the environment, and the
+`\caption{...}` of every `\subfloat` / `\subcaptionbox` / `subfigure` inside it.
+
+- Count the sentences in the caption argument. A sentence ends at `.`, `!`, or `?` that is not part of
+  an abbreviation, a decimal number, or a `\cite`. Flag `[CAPTION MULTI-SENTENCE: <label>]` when the
+  count exceeds 1, for the main caption or for any subfigure caption.
+- Flag `[CAPTION NOT A SENTENCE: <label>]` when the caption carries no finite verb and is a bare noun
+  phrase ("Résultats", "Tableau comparatif", "Échéancier"). The fix supplies the one-sentence caption
+  that states the content and links it to the main-text argument.
+- Flag `[CAPTION CARRIES EXPLANATION: <label>]` when the caption contains an explanatory clause that
+  belongs in the main text: a definition ("où X désigne"), a statistical annotation, a sample size, a
+  significance key, or a qualification of a cell or column. The fix moves that material to the main
+  text beside the first `\ref{}`, or into a `tablenotes` block for a table.
+- For a table whose cells carry a qualifying term that is defined nowhere, flag
+  `[TABLE DETAIL NOT IN TABLENOTES: <label>]`. The fix wraps the tabular in `threeparttable`, anchors
+  the term with `\tnote{a}`, and supplies the `tablenotes` item text in `\footnotesize`. The Chapter 2
+  comparison table required of every proposal is the usual place this applies, and moving its
+  qualifications out of the caption into `tablenotes` is page-budget neutral.
+
 Record in Section H of the plan.
 
 ---
@@ -466,6 +518,21 @@ Check that the résumé / abstract align with the body of the proposal:
 - The methodology described in the résumé must match the high-level approach of Chapter 3. Flag `[ABSTRACT METHOD MISMATCH BODY]`.
 - The expected contributions in the résumé must align with the objectives in Chapter 1 / Chapter 2. Flag `[ABSTRACT CONTRIBUTIONS MISMATCH BODY]`.
 
+**Step 11d — Format check (R4.1-R4.4):** run on the French résumé AND on the English abstract.
+
+- Flag `[ABSTRACT LABELED SECTIONS]` when the résumé or abstract carries labels such as `Contexte:`,
+  `Méthodes:`, `Résultats:`, `Conclusions:`, `Background:`, `Methods:`, `Objective:`, whether in bold,
+  in `\textbf{}`, or as plain text followed by a colon at the start of a sentence. Priority High. A
+  proposal has no journal author guidelines, so the R4.1 exception does not apply and the flag is
+  never neutralised.
+- Flag `[ABSTRACT CITATION: line N]` for every `\cite`, `\citep`, `\citet`, `\citeauthor`, `\bibitem`
+  pointer, or bare bracketed numeric reference marker inside the résumé or the abstract. Priority High.
+- Flag `[ABSTRACT ACRONYM: XXX]` for every acronym inside the résumé or the abstract, whether defined
+  there or not. Detect a token of two or more consecutive uppercase letters that is not a proper noun,
+  a unit, or a chemical formula. The fix writes the full name of the concept. Priority High.
+- Flag `[ABSTRACT EQUATION: line N]` for any `$...$`, `\(...\)`, `\begin{equation}`, `\begin{align}`,
+  or `\[...\]` inside the résumé or the abstract. Priority High.
+
 Record in Section K of the plan.
 
 ---
@@ -474,7 +541,110 @@ Record in Section K of the plan.
 
 Identical to `thesis-auditor` Step 12. Scan all prose, compute per-chapter and overall AI-style risk score. Flag `[AI RISK HIGH]` if overall >= 10%, `[AI RISK LOW]` if < 10%. For each flagged passage: quote first 15 words, signal type, source file, line number, and a human-style rewrite.
 
-Record in Section J of the plan.
+**IAg declaration check.** Read `.claude/skills/scientific-writing/references/llm_usage_declaration.md`.
+The risk score above measures how much the prose LOOKS model-generated; the IAg declaration states how
+much the model actually CONTRIBUTED. The two are independent: a proposal can score 4% risk and still
+owe an "Assistance partagée" declaration. The UQAC pictogram system is the institution's own, so a
+proposal submitted to a UQAC jury is the case where the declaration matters most.
+
+1. Search the front matter and the whole source for an existing declaration: an IAg pictogram
+   (`IAg_aucune`, `IAg_limitee`, `IAg_partagee`, `IAg_majeure` in an `\includegraphics` path), a link
+   to `uqac.ca/ressourcespedago/iag`, or an explicit AI-usage statement.
+2. Determine the level the generation path implies, from the recommendation table of that file. A
+   proposal drafted with `latex-writer` and `scientific-writing` implies level 3, "Production partagée
+   / Assistance partagée".
+3. Flag `[IAG DECLARATION MISSING]` when no declaration is present. Recommend the level, name the
+   pictogram, give its download link, and supply the LaTeX declaration skeleton for the title page or
+   the front matter. Priority Medium; raise to High when the department or the jury requires a
+   declaration. Note that the declaration sits in the front matter and therefore does not consume the
+   35-page body budget.
+4. Flag `[IAG LEVEL UNDERSTATED: declared <level>, generation path implies <level>]` when a
+   declaration exists but sits below what the generation path implies. Priority High: an understated
+   declaration is an integrity issue, not a style issue.
+5. If the audit measures level 4 ("Assistance majeure") material, do NOT recommend declaring it. The
+   fix is human review and rewriting of that material; state that in Section J.
+
+Record in Section J of the plan. The IAg items go in a `### J-IAg` subsection.
+
+---
+
+### Step 12.5 — Composition and register audit (all prose chapters)
+
+Audit the prose against `composition_rules.md`. Process chapter by chapter and report a per-chapter
+count plus a proposal-wide total. Scan every prose paragraph and every `\caption{}`; exclude math
+environments, `verbatim` / `lstlisting` / algorithm bodies, the bibliography, and LaTeX comments.
+
+The proposal is normally in French: run every token check on the French forms as well as the English
+ones, and write every proposed rewrite in the language of the chapter.
+
+**Voice check (R1.1, R1.2).** For each sentence, determine whether it is passive or impersonal.
+Passive markers: *être* plus past participle, a pronominal *se* construction, or in English a form of
+*to be* or *to become* plus a past participle. Impersonal markers: a non-agentive subject ("Ce projet
+propose", "La revue montre", "Le tableau~\ref{} compare"). A sentence whose grammatical subject is a
+human agent, and which is neither passive nor impersonal, is active. For each active sentence, judge
+whether the passive would obscure who acted or produce an ambiguous sentence. Flag
+`[ACTIVE VOICE UNJUSTIFIED: Ch.N line M]` when it would not, and give the passive rewrite. Report the
+active-sentence ratio per chapter in the Section Q header. Do not flag an active sentence inside a
+quotation of another author.
+
+A proposal states future work in the future or conditional tense (Step 11a). The passive default holds
+there too: "les essais seront réalisés" rather than "nous réaliserons les essais".
+
+**Pronoun check (R1.4, R1.5).** Search the prose for `je`, `mon`, `ma`, `mes`, `moi`, `nous`, `notre`,
+`nos`, and the English `I`, `my`, `me`, `mine`, `we`, `our`, `us`. Skip matches inside a `\cite{}` key,
+a label, a file path, a URL, or a quotation. Skip the acknowledgements section when the proposal has
+one, and record that skip explicitly in Section Q.
+
+- Flag `[PRONOUN I FORBIDDEN: Ch.N line M]` for every occurrence of `je` / `mon` / `ma` / `mes` /
+  `moi` / `I` / `my` / `me` / `mine` as a first-person singular pronoun in the body chapters, the
+  résumé, or the abstract. Priority High.
+- Flag `[PRONOUN WE OUT OF SCOPE: Ch.N line M]` for every occurrence of `nous` / `notre` / `nos` /
+  `we` / `our` / `us` outside the Contributions paragraph of the Introduction chapter and outside the
+  Conclusion. Priority High. This is the most frequent violation in a proposal, where the forward-
+  looking register invites "nous proposons" and "nous chercherons à"; the impersonal form replaces
+  every one of them.
+
+For each flag, supply the impersonal rewrite in the chapter's language, using the substitutes table of
+`composition_rules.md`.
+
+**Register check (R1.3, R1.6).** Flag `[INFORMAL LANGUAGE: "<term>", Ch.N line M]` for a contraction,
+a colloquialism ("beaucoup de", "pas mal de", "a lot of", "got"), or a vague quantifier standing in
+for a measured value ("certains travaux", "souvent", "récemment") where a count or a date range is
+available from the corpus. Give the precise replacement.
+
+**Fragment check (R2.4).** Flag `[SENTENCE FRAGMENT: Ch.N line M]` for a prose line that carries no
+finite verb and is not a caption, a heading, a table cell, or a list item in a sanctioned list.
+
+**List check (R2.1-R2.6).** Locate every `\begin{itemize}`, `\begin{enumerate}`,
+`\begin{description}`, and every run of three or more lines starting with `-`, `*`, or `\item`
+outside a float. Determine which chapter and which section each belongs to.
+
+- Flag `[LIST IN PROSE SECTION: Ch.N <section>, line M]` when the list sits in the Résumé, the
+  Abstract, the Introduction chapter, the feasibility or preliminary-results chapter, or the
+  Conclusion. Priority High. Supply the full paragraph rewrite in Section Q, and state its effect on
+  the 35-page budget of Section B-Budget: a paragraph rewrite of a list normally adds lines.
+- A list in the Methodology chapter (inclusion and exclusion criteria, materials, experimental
+  parameters, timeline milestones) or in an Annexe is compliant; record it as sanctioned and do not
+  flag it.
+- The numbered hypothesis list (`H1`, `H2`, `H3`) required at the end of Chapter 2 is a sanctioned
+  exception under R2.5 and is NEVER flagged. Record it as sanctioned, with its location.
+
+**Contribution style check (R2.7).** Locate the contribution or objective statement at the end of the
+Introduction chapter. Flag `[CONTRIBUTIONS AS LIST: Ch.N line M]` when it is rendered as `itemize`,
+`enumerate`, or bullets, and supply the full prose replacement paragraph with inline enumeration
+("Trois contributions sont visees. Premierement, ... Deuxiemement, ... Troisiemement, ...").
+
+**Journal-target check (R5.1-R5.4).** A proposal has no target journal of its own. Run this check only
+when the user names a venue for a paper the proposal plans to submit.
+
+- When a venue is named and its information-for-authors page has not been supplied, read it with
+  `WebFetch`; when the page is script-rendered and `WebFetch` returns an empty or partial body, read
+  it with the `playwright` MCP tools. If neither is reachable, flag
+  `[JOURNAL GUIDELINES NOT CONSULTED]` and state in Section Q that the user must supply the link.
+- Record every requirement that overrides a default rule of `composition_rules.md` (R5.4).
+- When no venue is named, record "no journal target — proposal" and skip; do not flag.
+
+Route every flag of this step into **Section Q** of the plan.
 
 ---
 
@@ -685,7 +855,7 @@ Number of hypotheses found: N (minimum required: 3)
 
 ## Section C — Chapter Structure Issues
 ### C1 — Chapter N: [chapter title] / Section N.M: [section title]
-**Issue:** [SUJET AMENE WEAK / SUJET POSE MISSING / SUJET DIVISE MISSING / CHAPTER CONCLUSION MISSING / CHAPTER TRANSITION MISSING / SECTION OPENING MISSING TRANSITION / SECTION CLOSING MISSING PREVIEW / SUBSECTION ORDER SUSPECT / CH1 CONTEXT MISSING / CH1 PROBLEMATIC MISSING / CH1 OBJECTIVES MISSING / CH1 CLOSING MISSING / PRESENTATION PARAGRAPH MISSING]
+**Issue:** [SUJET AMENE WEAK / SUJET POSE MISSING / SUJET DIVISE MISSING / CHAPTER CONCLUSION MISSING / CHAPTER TRANSITION MISSING / SECTION OPENING MISSING TRANSITION / SECTION CLOSING MISSING PREVIEW / SECTION CLOSING NOT TWO SENTENCES / SUBSECTIONS NOT PRESENTED / SUBSECTION ORDER SUSPECT / CH1 CONTEXT MISSING / CH1 PROBLEMATIC MISSING / CH1 OBJECTIVES MISSING / CH1 CLOSING MISSING / PRESENTATION PARAGRAPH MISSING]
 **Location:** [source file, approx. line]
 **Proposed fix:** [concrete instruction or 1–2 sentence transition/preview text to add]
 **Priority:** Medium
@@ -733,7 +903,7 @@ BibTeX entries to add to the .bib file:
 
 ## Section H — Figure and Table Issues
 ### H1 — [label]
-**Issue:** [NOT CITED / CITATION FAR / INSUFFICIENT DESCRIPTION / LOW RESOLUTION / IMAGE FILE MISSING / FIGURE NUMBERING WRONG]
+**Issue:** [NOT CITED / CITATION FAR / INSUFFICIENT DESCRIPTION / LOW RESOLUTION / IMAGE FILE MISSING / FIGURE NUMBERING WRONG / CAPTION MULTI-SENTENCE / CAPTION NOT A SENTENCE / CAPTION CARRIES EXPLANATION / TABLE DETAIL NOT IN TABLENOTES]
 **Location:** [source file] line N — nearest \ref{} at line M (distance: X lines)
 **Proposed fix:** [...]  **Priority:** High / Medium / Low
 
@@ -748,6 +918,15 @@ BibTeX entries to add to the .bib file:
 **Per-chapter scores:** Ch.1: X%  Ch.2: X%  Ch.3: X%  (Ch.4: X%)  Conclusion: X%
 **Total prose sentences scanned:** N
 
+### J-IAg — UQAC IAg declaration
+**Declared level:** [level found in the source, or "none found"]
+**Level implied by the generation path:** [1 Aucune / 2 Assistance limitée / 3 Assistance partagée / 4 Assistance majeure]
+**Issue:** [IAG DECLARATION MISSING / IAG LEVEL UNDERSTATED / compliant]
+**Recommended pictogram:** [pictogram name + download link from llm_usage_declaration.md]
+**Proposed fix:** [LaTeX front-matter declaration skeleton, or the review-and-rewrite instruction for level-4 material]
+**Page-budget effect:** front matter — does not consume the 35-page body budget
+**Priority:** Medium / High
+
 ### J1 — [Signal type] at [source file] line N
 **Passage:** "[first 15 words...]"
 **Signal:** [type]
@@ -756,7 +935,7 @@ BibTeX entries to add to the .bib file:
 
 ## Section K — Résumé / Abstract Consistency (proposal version)
 ### K1 — [component]
-**Issue:** [BILINGUAL MISMATCH / ABSTRACT PAST RESULTS IN PROPOSAL / ABSTRACT HYPOTHESES MISMATCH BODY / ABSTRACT METHOD MISMATCH BODY / ABSTRACT CONTRIBUTIONS MISMATCH BODY / LENGTH MISMATCH]
+**Issue:** [BILINGUAL MISMATCH / ABSTRACT PAST RESULTS IN PROPOSAL / ABSTRACT HYPOTHESES MISMATCH BODY / ABSTRACT METHOD MISMATCH BODY / ABSTRACT CONTRIBUTIONS MISMATCH BODY / LENGTH MISMATCH / ABSTRACT LABELED SECTIONS / ABSTRACT CITATION / ABSTRACT ACRONYM / ABSTRACT EQUATION]
 **Résumé states:** [...]
 **Abstract states:** [...]
 **Body states:** [...]
@@ -782,6 +961,31 @@ BibTeX entries to add to the .bib file:
 **Issue:** [CONCLUSION GAP MISSING / CONCLUSION HYPOTHESES MISSING / CONCLUSION METHOD LINK MISSING / CONCLUSION CLAIMS RESULTS / CONCLUSION OVERLENGTH / CONCLUSION UNDERLENGTH]
 **Proposed fix:** [concrete sentences or paragraph to add/remove]
 **Priority:** High / Medium
+
+## Section Q — Composition and Register (MANDATORY — plan is not final without it)
+
+**Active-sentence ratio per chapter:** [e.g. "Ch.1 6/38 (16%), Ch.2 3/95 (3%), Ch.3 ..."]
+**First-person occurrences:** `je`-family N, `nous`-family M (of which K are inside the sanctioned Contributions paragraph or Conclusion; acknowledgements excluded from the scan)
+**Sanctioned lists retained:** [chapter, section, and line for each, or "none"]
+**Sanctioned hypothesis list (Chapter 2):** [location, or "MISSING — see Section B"]
+**Journal target:** [venue named by the user, or "no journal target — proposal"]
+**Net page-budget effect of this section's fixes:** [+N / -N lines, cross-checked against Section B-Budget]
+
+### Q1 — [Flag] at Ch.N line M
+**Issue:** [ACTIVE VOICE UNJUSTIFIED / PRONOUN I FORBIDDEN / PRONOUN WE OUT OF SCOPE / INFORMAL LANGUAGE / SENTENCE FRAGMENT / LIST IN PROSE SECTION / CONTRIBUTIONS AS LIST]
+**Passage:** "[the offending sentence, or the first 15 words of the list]"
+**Rule:** [R1.1 / R1.2 / R1.3 / R1.4 / R1.5 / R1.6 / R2.4 / R2.6 / R2.7]
+**Proposed fix:** [the full compliant replacement text in the chapter's language, ready for `\replaced[id=AU]{}{}` — never a bare instruction]
+**Page-budget effect:** [+N / -N lines, or neutral]
+**Priority:** High (pronouns, lists in prose sections, contribution lists) / Medium (voice, register, fragments)
+
+### Q2 — ...
+
+### Q-Journal — Journal target protocol (only when the user names a venue)
+**Venue:** [name, or "no journal target — proposal"]
+**Information for authors:** [URL read, or "NOT CONSULTED — user must supply the link"]
+**Requirements that override a default rule (R5.4):** [one line per override, or "none"]
+**Issue:** [JOURNAL GUIDELINES NOT CONSULTED / compliant / not applicable]
 
 ## Section P — ScholarEval Score (proposal weights) (MANDATORY — plan is not final without it)
 
@@ -863,7 +1067,15 @@ user:
    it did not run; return to Step 3e (and Step 5b if the corpus was never retrieved). A
    `[FW FULLTEXT-MISSING]` note is acceptable content; an empty hypothesis validation is not.
 
-If any artifact is missing, return to the matching step (3e, 15, or 16), produce it, and re-write the
+6. The plan file contains a populated **Section Q — Composition and Register**, with the per-chapter
+   active-sentence ratios, the first-person occurrence counts, the sanctioned-list lines, the
+   sanctioned hypothesis-list line, the journal-target line, the net page-budget effect, and the
+   **Q-Journal** subsection. An empty or missing Section Q means Step 12.5 did not run; return to it.
+   "No composition issues found" is acceptable content only when the six header lines and the
+   subsection are still filled in. When the net page-budget effect is positive, re-check Section
+   B-Budget against the 35-page limit before declaring done.
+
+If any artifact is missing, return to the matching step (3e, 12.5, 15, or 16), produce it, and re-write the
 section before declaring done. Finally, **report to the user** the overall score, the quality level,
 and the output paths (`..._scholareval_scores.json`, `..._scholareval_weights.json`,
 `..._scholareval_report.txt`).
@@ -894,6 +1106,11 @@ full-skill-compliant markup.
 | New figure | `\added[id=AU]{\begin{figure}...\end{figure}}` |
 | Section J (LLM style fix) | `\replaced[id=AU]{corrected passage}{old passage}` |
 | Section L (formatting fix) | Applied in `main.tex` preamble or class options |
+| Section Q (composition): active sentence, pronoun, informal term rewritten | `\replaced[id=AU]{compliant sentence}{old sentence}` |
+| Section Q (list in a prose section): list converted to a paragraph | `\replaced[id=AU]{paragraph prose}{\begin{itemize}...\end{itemize}}` |
+| Section C (subsections not presented): opening paragraph added | `\added[id=AU]{opening paragraph presenting the subsections}` plus the `\label` commands |
+| Section H (caption): caption shortened to one sentence, remainder moved to the main text | `\replaced[id=AU]{\caption{One sentence.}}{\caption{Old multi-sentence caption.}}` plus `\added[id=AU]{moved explanation}` beside the first `\ref{}` |
+| Section J-IAg: declaration added | `\added[id=AU]{declaration block}` in the front matter |
 
 4. **Never delete** original text — always preserve with `\deleted{}` or `\replaced{}{}`.
 5. **Confirm each applied section:** `✓ B1 applied — chapitre2.tex \replaced{}/\added{} at line N`
@@ -916,6 +1133,10 @@ full-skill-compliant markup.
 - Section M must be genuinely critical — assess proposal maturity explicitly (major revision / minor revision / ready for proposal defence)
 - Respond in French unless the proposal text is predominantly in English
 - The anti-AI-style rules apply to all text written in the plan (canonical list in `writing_principles.md`): no em dashes, no smart quotes, no zero-width spaces, no perfect parallel lists
+- Every proposed rewrite obeys `composition_rules.md`: passive by default (R1.1), no `je` or `I` anywhere (R1.4), `nous` / `we` only in the Contributions paragraph and the Conclusion (R1.5), no list in the Résumé, Abstract, Introduction, feasibility chapter, or Conclusion (R2.6), contributions as prose (R2.7)
+- The numbered hypothesis list at the end of Chapter 2 is a sanctioned list and is never flagged under R2.6
+- Every caption written or proposed is exactly one short meaningful sentence (C1); explanation goes in the main text (C3) and table details in `tablenotes` (C4)
+- Every Section Q fix states its page-budget effect, and a positive net effect forces a re-check of Section B-Budget against the 35-page limit
 
 **Tools:** `Bash`, `Read`, `Write`, `Edit`, `mcp__claude_ai_Consensus__search`
 **Model:** `sonnet`

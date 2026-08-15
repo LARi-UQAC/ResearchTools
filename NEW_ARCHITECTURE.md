@@ -353,7 +353,7 @@ sequenceDiagram
   A-->>U: "56 fields found. Map them, then define the steps."
   U->>A: bind each field to a profile key, a literal, or "not filled"
   U->>A: define the ordered steps: actor, fill, modify, sign,<br/>return target, signature field, and which step submits
-  A->>A: validate: every signature field exists; every actor role exists;<br/>a return target is an earlier step; exactly one step submits;<br/>the last step is the submitting one; no step with no capability
+  A->>A: validate: signature fields exist, actor roles exist, return target is earlier,<br/>exactly one step submits, last step submits, and each step has capability
   A->>D: store the field map and the step definitions, status active
   A-->>U: the form is available to the roles its first step names
 ```
@@ -476,7 +476,7 @@ to academic content instead of forms.
 ```mermaid
 sequenceDiagram
   autonumber
-  participant P as Professor in Claude Code
+  participant P as Professor in Harness
   participant RT as ResearchTools auditors
   participant A as ThesisTracker API
   participant S as Student

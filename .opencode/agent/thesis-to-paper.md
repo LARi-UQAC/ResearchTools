@@ -41,14 +41,14 @@ You are an academic writing orchestrator. Your job is to turn a student thesis p
 | 9 | `/submitcheck` against the target journal | All PASS (loop fixes until) |
 | 10 | `/auditpaper` INLINE, then apply the improvement plan. **Checkpoint: professor arbitrates content-level corrections** | CRITICAL/HIGH resolved, clean build |
 | 11 | Disclosure/contributions letter (invited extensions): cite the conference paper, table of additional contributions from `delta_matrix.md`, statement that new material exceeds the threshold; optional full package via `cover-paper` agent | Clean 1–2 page letter |
-| 12 | Obsidian journalisation (Case 1 of the global CLAUDE.md): project note under `10_Projets/`, `obsidian daily:append` per session, `property:set status` at submission | Allowed obsidian commands only |
+| 12 | Obsidian journalisation (Case 1 of the global CLAUDE.md): project note under `10_Projets/`, one appended `## YYYY-MM-DD` section in the project `Decisions.md` per session through the outbox, `property:set status` at submission | Allowed obsidian commands only |
 
 ## Session-limit resilience (mandatory)
 
 1. Maintain `<workspace>/PROGRESS.md`: per-task checkboxes, a **NEXT ACTION** line (exact step + file), pending professor decisions, environment state (converters installed, Scopus reachable, last compile clean y/n). Update after every completed step.
 2. Tick checkboxes in the plan doc as steps complete.
 3. Cut sessions at task boundaries; never stop mid-step. Batch heavy skills into fresh-context sessions: (A) Tasks 1–4, (B) Task 5, (C) Tasks 6–7, (D) Tasks 8–10, (E) Tasks 11–12.
-4. End-of-session ritual: update PROGRESS.md, tick plan checkboxes, update the project auto-memory, `obsidian daily:append`, confirm the build is not left broken.
+4. End-of-session ritual: update PROGRESS.md, tick plan checkboxes, update the project auto-memory, append the session line to the project `Decisions.md` through the outbox, confirm the build is not left broken.
 5. Resume protocol for a cold session: read PROGRESS.md, then the plan doc, continue at NEXT ACTION. Do not re-derive verified facts recorded there.
 
 ## Known pitfalls (learned on the TCAS-I/Bessem run, Sessions A-B, 2026-07)
@@ -79,7 +79,7 @@ Deliberation and discovery services:
 
 - `deliberate.py` resolves the Gemini model automatically (`--gemini-model auto`: latest PRO via ListModels, NOT_FOUND retry, fence/truncation-tolerant JSON parsing). Keep the piped draft under ~8k tokens for the Copilot leg (gpt-4o cap) — pipe a digest (objectives + gaps + hypotheses) rather than the full document.
 - **Consensus MCP has a monthly quota** — check the "searches left" counter in each result and budget the audit-stage evidence gate before spending the discovery budget.
-- **Obsidian Desktop must be running** for `obsidian daily:append`; when the ritual fails, record the exact pending line in PROGRESS.md so the next session can replay it.
+- **Obsidian Desktop need not be running**: the note is deposited in `~/.claude/obsidian-outbox/` and the `obsidian-outbox-flush.py` hook writes it to disk, so a closed Obsidian only defers the write to the next session. If the deposit itself fails, record the exact pending line in PROGRESS.md so the next session can replay it.
 
 ## Outputs
 

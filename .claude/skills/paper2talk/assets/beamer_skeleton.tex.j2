@@ -1,0 +1,217 @@
+((# supported-blocks: bullets figure takeaway cards chips stats table matrix zoneband chart equation #))
+%% ---------------------------------------------------------------------------
+%% Beamer render of talk_model.json, on the canonical lab gabarit
+%%   gabarit_these_maitrise_DSA_UQAC/src/slides/main.tex
+%% Rendered by:
+%%   python talk_model.py <model.json> --render beamer_skeleton.tex.j2 --out out/main.tex
+%%
+%% Jinja delimiters are LaTeX-safe here, because the defaults collide with braces.
+%% Blocks are wrapped in double-paren-star, variables in triple-paren, comments in
+%% double-paren-hash, as used throughout this file.
+%% `\titlegraphic{%` would otherwise read as a Jinja block start and the template
+%% would never compile. talk_model.render_template switches delimiters on a .tex
+%% output automatically.
+%%
+%% This target is the right one when the talk is equation-dense: LaTeX is the only
+%% renderer of the three that types an equation natively. pptxgenjs has none, so
+%% seven numbered equations there have to be faked with superscript runs or dropped
+%% in as images.
+%%
+%% The prose in a Beamer deck is still scientific prose: it follows .claude/rules/
+%% and the scientific-writing skill, and authored passages belong to latex-writer,
+%% not to this template.
+%%
+%% Colours are the gabarit's own. uqacgreen is RGB(0,99,65) = #006341, while the
+%% CASE PowerPoint master background measures #5A7210 - two greens for one
+%% laboratory. talk_model.json.palette.brand carries whichever the professor picks
+%% and overrides uqacgreen below.
+%% ---------------------------------------------------------------------------
+((* if meta.aspect == "4:3" *))
+\documentclass[aspectratio=43]{beamer}
+((* elif meta.aspect == "9:16" *))
+\documentclass{beamer}
+%% Portrait is not a Beamer aspectratio option, and no lab gabarit ships a portrait
+%% background asset - supply one before using this branch.
+\geometry{papersize={7.5in,13.333in}}
+((* else *))
+\documentclass[aspectratio=169]{beamer}
+((* endif *))
+\usepackage{pgfgantt}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning,fit,backgrounds,calc,decorations.pathreplacing,patterns,shadows,3d,matrix}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.17}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{colortbl}
+\usepackage{graphicx}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+
+%% UQAC institutional green, overriding Madrid's blue.
+\definecolor{uqacgreen}{RGB}{0,99,65}
+((* if palette and palette.brand *))
+\definecolor{brandcolor}{HTML}{((( palette.brand | raw_tex )))}
+((* else *))
+\colorlet{brandcolor}{uqacgreen}
+((* endif *))
+
+\setbeamercolor{structure}{fg=brandcolor}
+\setbeamercolor{palette primary}{bg=brandcolor,fg=white}
+\setbeamercolor{palette secondary}{bg=brandcolor!80!black,fg=white}
+\setbeamercolor{palette tertiary}{bg=brandcolor!60!black,fg=white}
+\setbeamercolor{palette quaternary}{bg=brandcolor!40!black,fg=white}
+\setbeamercolor{frametitle}{bg=brandcolor,fg=white}
+\setbeamercolor{title}{bg=brandcolor,fg=white}
+\setbeamercolor{block title}{bg=brandcolor,fg=white}
+\setbeamercolor{section in head/foot}{bg=brandcolor!80!black,fg=white}
+\setbeamercolor{subsection in head/foot}{bg=brandcolor!60!black,fg=white}
+
+%% The gabarit's own semantic triad. Reusing it keeps a Beamer render visually
+%% related to the lab's other decks instead of inventing a fourth palette.
+\definecolor{risklow}{RGB}{144,238,144}
+\definecolor{riskmed}{RGB}{255,255,150}
+\definecolor{riskhigh}{RGB}{255,200,100}
+\definecolor{riskcrit}{RGB}{255,120,120}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamerfont{frametitle}{size=\large}
+
+%% Speaker notes on the second screen. Notes, never a text box on the slide, in
+%% every one of the three targets.
+\setbeameroption{show notes on second screen=right}
+
+\titlegraphic{\includegraphics[width=\paperwidth]{en-tete1260.jpg}}
+\logo{\includegraphics[height=0.8cm]{LogoLARI_FINAL.png}}
+
+\title{((( meta.title )))}
+\author{((( meta.authors | join(' \\and ') | raw_tex )))}
+\institute{((( meta.institute | default('LAR.i, Universite du Quebec a Chicoutimi') )))}
+\date{((( meta.venue | default('') )))}
+
+\begin{document}
+
+((* for s in slides *))
+((* if s.kind == "title" *))
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+((* if s.notes *))\note{((( s.notes )))}
+((* endif *))
+((* elif s.kind == "divider" *))
+\begin{frame}[plain]
+  \begin{center}
+    {\usebeamercolor[fg]{structure}\Huge ((( s.title )))}
+  \end{center}
+\end{frame}
+((* if s.notes *))\note{((( s.notes )))}
+((* endif *))
+((* else *))
+%% Slide ((( s.n ))) - ((( s.section | default('') )))
+\begin{frame}{((( s.title )))}
+((* for b in s.blocks *))
+((* if b.kind == "bullets" *))
+  \begin{itemize}
+((* for item in b['items'] *))    \item ((( item )))
+((* endfor *))  \end{itemize}
+((* elif b.kind == "figure" *))
+  \begin{figure}
+    \centering
+    \includegraphics[width=((( b.width | default('0.8') | raw_tex )))\linewidth]{((( b.asset | raw_tex )))}
+((* if b.caption *))    \caption{((( b.caption )))((* if b.cite *)) \cite{((( b.cite | raw_tex )))}((* endif *))}
+((* endif *))((* if b.label *))    \label{((( b.label | raw_tex )))}
+((* endif *))  \end{figure}
+((* elif b.kind == "takeaway" *))
+  \begin{block}{Takeaway}
+    ((( b.text )))((* if b.support *)) \\[2pt] ((( b.support )))((* endif *))
+  \end{block}
+((* elif b.kind == "cards" *))
+  \begin{columns}[t]
+((* for c in b['items'] *))    \begin{column}{((( (0.98 / b['items'] | length) | round(3) )))\textwidth}
+      \begin{block}{((( c.title | default('') )))}
+        ((( c.text | default('') )))
+      \end{block}
+    \end{column}
+((* endfor *))  \end{columns}
+((* elif b.kind == "chips" *))
+  %% Semantic chips: the colour carries the class, so the disc stays. Drop any chip
+  %% whose colour means nothing.
+  \begin{center}
+  \begin{tikzpicture}[node distance=1.6cm]
+((* for c in b['items'] *))    \node[circle, fill=((( c.color | default('brandcolor') | raw_tex ))), text=white, minimum size=0.8cm((* if not loop.first *)), right=of chip((( loop.index0 - 1 )))((* endif *))] (chip((( loop.index0 )))) {((( c.glyph | default('') )))};
+    \node[right=2mm of chip((( loop.index0 )))] {\small ((( c.label )))};
+((* endfor *))  \end{tikzpicture}
+  \end{center}
+((* elif b.kind == "stats" *))
+  \begin{columns}[c]
+((* for st in b['items'] *))    \begin{column}{((( (0.98 / b['items'] | length) | round(3) )))\textwidth}
+      \begin{center}
+        {\usebeamercolor[fg]{structure}\Large\textbf{((( st.value )))}}\\
+        \small ((( st.label )))
+      \end{center}
+    \end{column}
+((* endfor *))  \end{columns}
+((* elif b.kind == "table" *))
+  %% House style: bold header row on a 10 percent grey, bold first column.
+  \begin{table}
+    \centering
+    \begin{tabular}{((* for _ in b.rows[0] *))l((* endfor *))}
+      \toprule
+((* for row in b.rows *))((* if loop.first *))      \rowcolor{black!10} ((* for cell in row *))\textbf{((( cell )))}((* if not loop.last *)) & ((* endif *))((* endfor *)) \\
+      \midrule
+((* else *))      ((* for cell in row *))((* if loop.first *))\textbf{((( cell )))}((* else *))((( cell )))((* endif *))((* if not loop.last *)) & ((* endif *))((* endfor *)) \\
+((* endif *))((* endfor *))      \bottomrule
+    \end{tabular}
+((* if b.caption *))    \caption{((( b.caption )))}
+((* endif *))((* if b.label *))    \label{((( b.label | raw_tex )))}
+((* endif *))  \end{table}
+((* elif b.kind == "matrix" *))
+  \begin{center}
+  \begin{tikzpicture}[x=1.1cm, y=1.1cm]
+((* for row in b.rows *))((* set rowloop = loop *))((* for v in row *))    \node[draw=white, fill=brandcolor!((( (v | float * 100) | round | int ))), minimum size=1.05cm] at ( ((( loop.index0 ))), ((( -rowloop.index0 ))) ) {\small ((( v )))};
+((* endfor *))((* endfor *))  \end{tikzpicture}
+  \end{center}
+((* elif b.kind == "zoneband" *))
+  \begin{center}
+  \begin{tikzpicture}
+((* set ns = namespace(x=0.0) *))
+((* for z in b.zones *))    \fill[((( z.color | default('riskmed') | raw_tex )))] ( ((( ns.x | round(3) ))), 0 ) rectangle ( ((( (ns.x + z.fraction | float * 10) | round(3) ))), 0.7 );
+    \node at ( ((( (ns.x + z.fraction | float * 5) | round(3) ))), 0.35 ) {\small ((( z.label )))};
+((* set ns.x = ns.x + z.fraction | float * 10 *))
+((* endfor *))  \end{tikzpicture}
+  \end{center}
+((* elif b.kind == "chart" *))
+  %% pgfplots rather than an exported raster: the curve stays vector and the axis
+  %% limits are declared, which is the same contract the PowerPoint target enforces.
+  \begin{center}
+  \begin{tikzpicture}
+    \begin{axis}[width=0.85\linewidth, height=0.5\textheight,
+                 ymin=((( b.min | default(0) ))), ymax=((( b.max | default(1) ))),
+                 xlabel={((( b.xlabel | default('') )))},
+                 ylabel={((( b.ylabel | default('') )))},
+                 legend pos=south east, grid=none]
+((* for serie in b.series *))      \addplot+[mark=none] coordinates {((* for pt in serie.points *)) ( ((( pt[0] ))), ((( pt[1] ))) )((* endfor *)) };
+      \addlegendentry{((( serie.name )))}
+((* endfor *))    \end{axis}
+  \end{tikzpicture}
+  \end{center}
+((* elif b.kind == "equation" *))
+  %% Every equation is labelled and is cited in the text before it appears
+  %% (.claude/CLAUDE.md). Variables not already introduced are defined right below.
+  \begin{equation}\label{((( b.label | default('eq:unlabelled') | raw_tex )))}
+    ((( b.tex | raw_tex )))
+  \end{equation}
+((* if b.where *))  {\small ((( b.where )))}
+((* endif *))((* endif *))
+((* endfor *))
+\end{frame}
+((* if s.notes *))\note{((( s.notes )))}
+((* endif *))
+((* endif *))
+((* endfor *))
+
+\end{document}

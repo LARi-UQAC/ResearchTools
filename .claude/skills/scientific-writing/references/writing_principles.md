@@ -5,6 +5,15 @@
 > characters, "smart" curly quotes, the ellipsis character (use `...`), the em dash and double/triple
 > dash and en dash (prefer a simple hyphen `-` or parentheses), stray `*`/`#` markup, and overly
 > perfect hierarchical lists.
+>
+> **Voice and pronouns are governed by `composition_rules.md`, not by this file.** Passive voice is
+> the ResearchTools default (R1.1); the active-voice strategy below is a sanctioned FALLBACK, used
+> only where the passive obscures the agent or produces an ambiguous sentence (R1.2). The pronoun
+> `I` is absolutely forbidden (R1.4) and `we` is confined to the Contributions paragraph and the
+> Conclusion (R1.5). Many examples in this file use `we` to illustrate an unrelated point (tense,
+> hedging, parallelism); read them for the point being illustrated, and apply the impersonal
+> substitutes table of `composition_rules.md` when authoring. Contributions are prose, never a
+> bulleted list (R2.7). No acronym appears in an abstract (R4.3).
 
 ## Overview
 
@@ -38,13 +47,14 @@ neuronal survival and plasticity."
 - Supporting sentences develop that focus
 - Transition sentences connect paragraphs
 
-**Use active voice when it improves clarity:**
+**Use active voice only as a fallback (R1.2 — passive is the default):**
 ```
 Passive (less clear): "The samples were analyzed by the researchers."
 Active (clearer): "Researchers analyzed the samples."
 ```
 
-However, passive voice is acceptable and often preferred in Methods when the action is more important than the actor:
+In ResearchTools the ordering is reversed: passive voice is the default everywhere, and the Methods
+case below is simply the clearest illustration of it.
 ```
 "Blood samples were collected at baseline and after 6 weeks."
 ```
@@ -330,8 +340,9 @@ Apply it to every section:
   previous section, then presents its own subsections. Present every subsection via `\ref{}` to that
   subsection's `\label` before the subsection appears, so each subsection carries a `\label` the
   opening paragraph references.
-- Closing: each section except the Conclusion and Future Works ends with a short conclusion of what it
-  established, then a forward opening that presents the next section.
+- Closing: each section except the Conclusion and Future Works ends with EXACTLY ONE sentence stating
+  what it established, followed by EXACTLY ONE sentence presenting the next section (R3.2). Two
+  sentences, no more.
 - Subsection order stays logical: conceptual or theoretical before experimental, setup before
   execution, data collection before analysis, analysis before interpretation.
 
@@ -456,7 +467,7 @@ suggesting it may be effective for treating mild to moderate depression."
 
 | Anthropomorphic | Scientific |
 |----------------|-----------|
-| "The study wanted to examine..." | "We aimed to examine..." or "The study examined..." |
+| "The study wanted to examine..." | "The study aimed to examine..." or "The study examined..." (never "We aimed to examine", banned by R1.5) |
 | "The data suggest they want..." | "The data suggest that..." |
 | "This paper will prove..." | "This paper demonstrates..." |
 | "Table 1 tells us..." | "Table 1 shows..." |
@@ -470,7 +481,8 @@ suggesting it may be effective for treating mild to moderate depression."
 
 **Guidelines:**
 - Only abbreviate terms used ≥3-4 times
-- Define at first use in abstract (if used in abstract)
+- Never use an acronym in the abstract at all: write the full name of the concept (R4.3). The
+  first definition therefore always happens in the main text.
 - Define at first use in main text
 - Don't abbreviate in title
 - Limit to 3-4 new abbreviations per paper when possible
@@ -770,7 +782,7 @@ Most research universities offer:
 
 **Characteristics:**
 - Direct, technical language with mathematical notation
-- Contribution-focused (numbered lists common)
+- Contribution-focused (in ResearchTools the contributions are a prose paragraph with inline enumeration, never a bulleted or numbered list — R2.7)
 - Assumes ML expertise (CNNs, transformers, SGD, etc.)
 - Emphasizes novelty and performance gains
 - Pseudocode and equations expected
@@ -784,6 +796,15 @@ contributions are: (1) a novel sparse attention mechanism, (2) theoretical analy
 showing preserved expressive power, and (3) empirical validation on ImageNet showing
 15% speedup with comparable accuracy.
 ```
+
+That example is shown in its native venue form. Under R1.5 and R2.7 the ResearchTools rendering is
+impersonal and fully in prose: "Vision transformers have achieved state-of-the-art performance on
+image classification, but their quadratic complexity limits their applicability to high-resolution
+images. Efficient-ViT is proposed, in which the complexity is reduced to O(n log n) while accuracy is
+maintained. Three contributions are made. First, a sparse attention mechanism is introduced. Second,
+a theoretical analysis is derived that shows the expressive power is preserved. Third, an empirical
+validation on ImageNet is reported, in which a 15% speedup is obtained at comparable accuracy."
+
 - Problem stated with technical context
 - Solution previewed
 - Numbered contributions

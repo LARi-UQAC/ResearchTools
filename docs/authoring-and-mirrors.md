@@ -41,6 +41,16 @@ The first row (bold) and first column of any table you add follow the repo table
 | Continue | `.continue/rules/researchtools.md` | agent list | one rule file that points at the `.claude/CLAUDE.md` routing table |
 | Aider | `CONVENTIONS.md` | static pointer | generated **only if absent**; never overwritten (see section 4) |
 
+**One file under `.github/instructions/` is NOT generated.**
+`.github/instructions/mermaid.instructions.md` is hand-maintained and has no source rule.
+It documents the Mermaid Chart VS Code extension (its LM tools, its command IDs, its
+`@mermaid-chart` slash commands), which is Copilot-and-VS-Code-specific: promoting it to
+`.claude/rules/mermaid.md` would push those command IDs into the OpenCode, Continue and
+Aider mirrors, where nothing can act on them. `install.ps1` writes one instructions file
+per rule and never deletes an extra one, so the file survives every regeneration untouched
+and must be edited in place. It carries a header saying so; do not "restore" it by running
+the installer, and do not read its presence as drift.
+
 **Skills have no per-tool mirror.** They are plain repo folders every tool can read. A
 skill becomes discoverable in Copilot/OpenCode/Continue **only** through (a) an agent that
 calls it, or (b) the routing table in `.claude/CLAUDE.md`. A user-invoked skill with no

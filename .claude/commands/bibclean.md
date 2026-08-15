@@ -18,9 +18,15 @@ agent via SendMessage with the user's answer. On completion, verify the agent's 
 checklist before presenting the result; if it is missing or contains an unsanctioned ✗,
 send the agent back to complete the missing steps.
 
-Deliverables: `<basename>_clean.bib` saved alongside the source, with inline `% [FLAG]`
-and `% SUGGESTED:` comments, high-confidence DOIs added, and duplicates commented out
-(all original entries preserved — never deleted); plus `<basename>_bib_report.md` with
-the full audit summary and temporal distribution histogram.
+The measurement is scripted (`.claude/skills/scopus/scripts/bib_audit.py`); the judgment is
+the agent's. Do not ask it to re-check entries by hand.
 
-Respond in French unless the `.bib` file contains predominantly English titles.
+Deliverables: `<basename>_clean.bib` saved alongside the source, with inline `% [FLAG]`,
+`% Journal:` and `% SUGGESTED:` comments and high-confidence DOIs added (all original
+entries preserved in their original order — never deleted, never reordered); plus
+`<basename>_bib_report.md` carrying the measured audit (summary, temporal distribution,
+per-entry flags, venue-metrics table) followed by the agent's verdict, fix list, and the
+entries to submit to the professor.
+
+Respond in the language the audit reports as `corpus_language` (French unless the `.bib`
+contains predominantly English titles).

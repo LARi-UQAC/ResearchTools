@@ -26,6 +26,8 @@ _SCOPUS_SCRIPTS = Path(__file__).resolve().parents[2] / "scopus" / "scripts"
 if str(_SCOPUS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCOPUS_SCRIPTS))
 
+from reviewer_schema import error_object, expand_schema
+
 try:
     from gemini_reviewer import (run_gemini, gemini_available, count_gemini_tokens,
                                  resolve_gemini_model)
@@ -43,11 +45,15 @@ except Exception:  # pragma: no cover - defensive: missing file/dep must not cra
 
 try:
     from github_reviewer import run_copilot, copilot_available
+    from copilot_providers import resolve_latest_model as resolve_copilot_model
 except Exception:  # pragma: no cover
     run_copilot = None
 
     def copilot_available() -> bool:
         return False
+
+    def resolve_copilot_model(publisher: str = "openai") -> tuple:
+        return ("gpt-4o", "")
 
 
 _CONF_RANK = {"high": 3, "medium": 2, "low": 1}
@@ -103,49 +109,10 @@ _R2_EXTRA_CODED = """Also add a top-level array "r" (responses_to_other):
   "r": [ { "s": "<id>", "st": "<a|d|p>", "rs": "<short>" } ]
 Legend: r=responses_to_other st=stance(a=agree d=disagree p=partial) rs=reason."""
 
-# coded-key -> canonical-key (applied to dict keys at any level; canonical keys pass through)
-_KEY_FROM_CODE = {
-    "a": "overall_assessment", "x": "suggestions", "s": "target_section", "t": "type",
-    "m": "suggestion", "c": "confidence", "v": "requires_scopus_validation",
-    "r": "responses_to_other", "st": "stance", "rs": "reason",
-}
-# coded-value -> canonical-value, applied only to the named fields after key expansion
-_TYPE_FROM_CODE = {"ti": "text_improvement", "ri": "reference_issue", "cg": "coverage_gap",
-                   "sy": "style", "sc": "structure"}
-_CONF_FROM_CODE = {"h": "high", "m": "medium", "l": "low"}
-_STANCE_FROM_CODE = {"a": "agree", "d": "disagree", "p": "partial"}
-
-
-def _expand_schema(obj):
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Map a coded-key model response back to the canonical reviewer schema so
-        the merge/arbitration logic is unchanged. Idempotent and safe on already-
-        canonical input (the standalone CLIs and the offline test fixtures emit
-        full keys), so it can run unconditionally after every model call.
-
-    Inputs:
-        obj (dict | list | scalar): a parsed model response (coded or canonical).
-
-    Outputs:
-        expanded (same shape): canonical keys and enum values.
-    --------------------------------------------------------------------------
-    """
-    if isinstance(obj, list):
-        return [_expand_schema(i) for i in obj]
-    if not isinstance(obj, dict):
-        return obj
-    out = {}
-    for k, v in obj.items():
-        out[_KEY_FROM_CODE.get(k, k)] = _expand_schema(v) if isinstance(v, (dict, list)) else v
-    if isinstance(out.get("type"), str):
-        out["type"] = _TYPE_FROM_CODE.get(out["type"], out["type"])
-    if isinstance(out.get("confidence"), str):
-        out["confidence"] = _CONF_FROM_CODE.get(out["confidence"], out["confidence"])
-    if isinstance(out.get("stance"), str):
-        out["stance"] = _STANCE_FROM_CODE.get(out["stance"], out["stance"])
-    return out
+# The expansion itself lives in reviewer_schema.py alongside the two reviewer cores, because
+# both cores now run it on every response and importing it from here would make them import
+# their own caller. This alias keeps the module-local name the panel and its tests use.
+_expand_schema = expand_schema
 
 
 # --- Input compression: format-aware strip, structural digest, evidence trim -----------------
@@ -381,11 +348,20 @@ def _merge(gem_final: dict, cop_final: dict) -> list:
 
 
 def _safe_call(fn, *args):
-    """Call a reviewer core; return (result_dict_or_None, error_str_or_None). Never raises."""
+    """Call a reviewer core; return (result_dict_or_None, error_or_None). Never raises. The
+    exception object is returned rather than its text so the caller can read the `raw`
+    attribute a parse failure carries."""
     try:
         return fn(*args), None
     except Exception as exc:  # ReviewerError or any API/runtime failure
-        return None, str(exc)
+        return None, exc
+
+
+def _failure_log(err) -> dict:
+    """Schema-shaped record of a failed leg, carrying the model's unparsable text under `_raw`
+    when there was one. A panel that silently drops a critique reads as agreement, which is
+    worse than a panel that says the critique could not be read."""
+    return error_object(str(err), getattr(err, "raw", "") or "")
 
 
 def _synthesis(merged: list) -> str:
@@ -483,12 +459,16 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
     """
     schema_hint = _SCHEMA_HINTS.get(plan_schema, _SCHEMA_HINTS["generic"])
 
-    # 'auto' resolves to the most recent PRO model via ListModels, so the retired
-    # hardcoded default failure mode (gemini-2.0-flash, 404 NOT_FOUND) cannot recur;
-    # resolving here (not only inside run_gemini) keeps token counting and the
-    # envelope log on the same concrete model id.
+    # Both legs resolve 'auto' at run time, from the provider's own live catalog: Gemini via
+    # ListModels, GitHub via the provider chain in copilot_providers.py. A hardcoded default is
+    # what retired the Gemini leg (gemini-2.0-flash, 404 NOT_FOUND) and what froze the GitHub
+    # leg on gpt-4o long after newer models shipped. Resolving here, not only inside the cores,
+    # keeps token counting and the envelope log on the same concrete ids.
     if gemini_model in ("", "auto", None):
         gemini_model = resolve_gemini_model()
+    copilot_source = ""
+    if copilot_model in ("", "auto", None):
+        copilot_model, copilot_source = resolve_copilot_model()
 
     available = {"gemini": gemini_available() and run_gemini is not None,
                  "copilot": copilot_available() and run_copilot is not None}
@@ -505,6 +485,10 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
         "reviewers_available": [],
         "reviewers_unavailable": [],
         "unavailable_markers": unavailable_markers,
+        # The concrete ids that ran, so a log shows which models produced the critique instead
+        # of leaving 'auto' to be guessed at afterwards.
+        "models": {"gemini": gemini_model, "copilot": copilot_model,
+                   "copilot_provider": copilot_source},
         "overall_assessment": "",
         "round1": {"gemini": None, "copilot": None},
         "round2": {"gemini": None, "copilot": None},
@@ -521,27 +505,33 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
         draft, topic, evidence, schema_hint, gemini_model, max_input_tokens,
         max_evidence_items, terse, coded_schema, max_suggestions, report_tokens)
     gem_r1 = cop_r1 = None
+    # Logged separately from the working values: a failed leg contributes nothing to the merge
+    # (so the variable stays None) but its error and raw text still belong in the envelope.
+    gem_r1_log = cop_r1_log = None
 
     if available["gemini"]:
         gem_r1, err = _safe_call(run_gemini, r1_prompt, gemini_model, temperature, max_output_tokens)
         if gem_r1 is None:
             available["gemini"] = False
             unavailable_markers.append("[REVIEWER UNAVAILABLE: Gemini]")
+            gem_r1_log = _failure_log(err)
             print(f"WARN: Gemini round 1 failed: {err}", file=sys.stderr)
         else:
-            gem_r1 = _expand_schema(gem_r1)
+            gem_r1 = gem_r1_log = _expand_schema(gem_r1)
     if available["copilot"]:
         cop_r1, err = _safe_call(run_copilot, r1_prompt, copilot_model, temperature, max_output_tokens)
         if cop_r1 is None:
             available["copilot"] = False
             unavailable_markers.append("[REVIEWER UNAVAILABLE: Copilot]")
+            cop_r1_log = _failure_log(err)
             print(f"WARN: Copilot round 1 failed: {err}", file=sys.stderr)
         else:
-            cop_r1 = _expand_schema(cop_r1)
+            cop_r1 = cop_r1_log = _expand_schema(cop_r1)
 
-    envelope["round1"] = {"gemini": gem_r1, "copilot": cop_r1}
+    envelope["round1"] = {"gemini": gem_r1_log, "copilot": cop_r1_log}
 
     gem_r2 = cop_r2 = None
+    gem_r2_log = cop_r2_log = None
     if rounds >= 2:
         empty = {"overall_assessment": "(other reviewer unavailable)", "suggestions": []}
         # Slim round 2 by default: send the two critiques only, not the draft again.
@@ -553,20 +543,22 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
                                draft=r2_draft, evidence=r2_ev)
             gem_r2, err = _safe_call(run_gemini, p, gemini_model, temperature, max_output_tokens)
             if gem_r2 is None:
+                gem_r2_log = _failure_log(err)
                 print(f"WARN: Gemini round 2 failed, keeping round 1: {err}", file=sys.stderr)
             else:
-                gem_r2 = _expand_schema(gem_r2)
+                gem_r2 = gem_r2_log = _expand_schema(gem_r2)
         if cop_r1 is not None:
             p = _round2_prompt(topic, schema_hint, cop_r1, gem_r1 or empty, "Gemini",
                                terse=terse, coded=coded_schema, max_suggestions=max_suggestions,
                                draft=r2_draft, evidence=r2_ev)
             cop_r2, err = _safe_call(run_copilot, p, copilot_model, temperature, max_output_tokens)
             if cop_r2 is None:
+                cop_r2_log = _failure_log(err)
                 print(f"WARN: Copilot round 2 failed, keeping round 1: {err}", file=sys.stderr)
             else:
-                cop_r2 = _expand_schema(cop_r2)
+                cop_r2 = cop_r2_log = _expand_schema(cop_r2)
 
-    envelope["round2"] = {"gemini": gem_r2, "copilot": cop_r2}
+    envelope["round2"] = {"gemini": gem_r2_log, "copilot": cop_r2_log}
     envelope["rounds_executed"] = 2 if (rounds >= 2 and (gem_r2 or cop_r2)) else 1
 
     gem_final = gem_r2 or gem_r1
@@ -611,7 +603,9 @@ def main() -> None:
     parser.add_argument("--gemini-model", default="auto",
                     help="Gemini model id, or 'auto' (default) to resolve the most "
                          "recent PRO model via ListModels at run time")
-    parser.add_argument("--copilot-model", default="gpt-4o")
+    parser.add_argument("--copilot-model", default="auto",
+                        help="GitHub model id, or 'auto' (default) to resolve the newest entry "
+                             "of the first answering provider catalog at run time")
     parser.add_argument("--temperature", type=float, default=0.3)
     parser.add_argument("--plan-schema", default="generic",
                         choices=["auditor", "researcher", "reviewer-response", "generic"])

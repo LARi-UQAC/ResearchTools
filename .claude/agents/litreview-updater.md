@@ -140,6 +140,17 @@ then `.claude/skills/extract-statistic/SKILL.md` in **mine** mode. Both reuse
 record its stated CONTRIBUTION (from abstract + full text). Missing full text degrades to
 abstract-level, flagged `[FW FULLTEXT-MISSING]` / `[STATS PDF-MISSING]`, and never blocks.
 
+### Step 5b — Terminology coverage gate (delta corpus → review)
+Same mechanism as scopus-researcher Step 15b, scoped to the delta: over the extracted full texts
+of the delta `refs/`, build the dominant technical-term list (top ~15, frequency count via
+`grep -ci` per paper), and cross-check each term against the baseline review `.tex`. A term
+present in **>= 2 delta papers** with substantial frequency (>= 10 occurrences in one paper) but
+absent from the review → flag `[CORPUS TERM NOT COVERED: <term>, <max occ.>/<n papers>]` and
+route it into the Step 6 deliberation (a dominant new term the review never mentions is prima
+facie evidence of an emerging theme or of an ontology blind spot in the original review).
+Arbitrate every flag: covered by the merge (Step 9), or exclusion justified in the CHANGELOG.
+Never silent.
+
 ### Step 6 — Preemption / sufficiency deliberation (MANDATORY)
 This is the core judgment. For each new paper against each existing gap `G` and hypothesis `H`,
 classify: **closes the gap**, **preempts the hypothesis / planned contribution**, **strengthens
@@ -198,6 +209,7 @@ this block is the handoff to the human finalize pass.
 [ ] PD1 — Delta PDFs retrieved (Step 4, presence-gated); _manifest.json updated; misses flagged, not blocking
 [ ] FW1 — extract-futureworks mine run on the delta (Step 5); contributions + future-works rows extracted
 [ ] ST1 — extract-statistic mine run on the delta (Step 5); corpus-stats rows extracted (abstract-level fallback logged if PDFs missing)
+[ ] TC1 — Terminology coverage gate run on the delta (Step 5b): dominant delta terms cross-checked against the review .tex; every [CORPUS TERM NOT COVERED] flag arbitrated (merged or justified in CHANGELOG)
 [ ] PE1 — Preemption deliberation run (Step 6): each new paper x each G*/H* classified; ## Deliberation Log appended (or both keys absent, logged)
 [ ] QE1 — Quantitative score computed (Step 7): contribution-still-novel x/5 + per-gap preemption-risk
 [ ] SY1 — <=200-word synthesis authored (Step 8) via scientific-writing; every new paper \cite{}d with clickable DOI; AI-usage < 20%
@@ -207,7 +219,7 @@ this block is the handoff to the human finalize pass.
 [ ] CL1 — CHANGELOG written; REVIEW REQUIRED block lists new papers, flagged publishers, possibly-preempted gaps/hypotheses
 ```
 
-Do not mark the update complete if any mandatory item is ✗. FW1, ST1, PE1, QE1 are MANDATORY
+Do not mark the update complete if any mandatory item is ✗. FW1, ST1, TC1, PE1, QE1 are MANDATORY
 (the same rule as scopus-researcher's mining + deliberation gates). SA1 may be "skipped by
 user"/"skipped (unattended)"; CS1 "MCP unavailable"; PE1 degraded only when both deliberation
 keys are absent — each must be logged.

@@ -163,18 +163,20 @@ freezing the Step 1 queries.
    (e.g. materials science vs control engineering vs the profile's own field).
 2. **Read them in full text** — download with the Step 3b-PDF tooling (`download_pdf.py`, into the
    same `refs/`), extract with `extract_text.py`. Abstracts are not sufficient for this step.
+   These canonical reviews ARE part of the coverage corpus (they count as corpus papers in the
+   Step 15b frequency list and `>= 3 papers` denominator) and MUST be cited in the review `.bib`.
 3. **Extract the ontology**: constituents/components, structural architecture, taxonomy and the
    terminology EACH community uses for them (the same object is often framed differently across
    fields — record the divergent framings, they are future query terms and potential gaps).
 4. **Hard rule — brief enumerations are hypotheses, never perimeter.** Any list of constituents,
    mechanisms, or sub-topics supplied in the user brief, the repo CLAUDE.md, or the orchestrating
    prompt MUST be checked against the extracted ontology. Divergence → flag
-   `[ONTOLOGY ≠ BRIEF: <missing/extra element>]`, report it to the user in the final document,
+   `[ONTOLOGY != BRIEF: <missing/extra element>]`, report it to the user in the final document,
    and broaden the Step 1 queries with the ontology terms. Never silently narrow the search to
    the brief's enumeration.
 5. **Output**: a `\subsection*{Ontologie du sujet}` block in the search strategy log (Step 1b):
    source reviews (cited), constituent list, per-community terminology table, and any
-   `[ONTOLOGY ≠ BRIEF]` flags. The ontology terms also feed the Step 15b coverage gate.
+   `[ONTOLOGY != BRIEF]` flags. The ontology terms also feed the Step 15b coverage gate.
 
 ### Step 1 — Search
 
@@ -819,10 +821,16 @@ initial ontology was correct.
 
 1. **Candidate terms** = (a) every constituent/term of the Step 0b ontology, plus (b) the dominant
    technical terms of the corpus itself: over the extracted full texts (`refs/*.txt` — extract any
-   missing ones with `extract_text.py`), build a frequency list of content words/bigrams (e.g.
-   `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | sort | uniq -c | sort -rn`, manually
-   filtered to technical terms), keep the top ~30.
-2. **Count per paper**: for each candidate term, `grep -ci "<term>"` on each extracted text.
+   missing ones with `extract_text.py`), build a frequency list of content words AND bigrams —
+   multi-word technical terms are the likeliest blind spots. Unigrams:
+   `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | sort | uniq -c | sort -rn`; bigrams
+   (sliding window): `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | grep -v '^$' |
+   awk 'prev{print prev" "$0} {prev=$0}' | sort | uniq -c | sort -rn`. Manually filter both
+   lists to technical terms, keep the top ~30 overall.
+2. **Count per paper**: for each candidate term, `grep -oi "<term>" <paper>.txt | wc -l` on each
+   extracted text — a TRUE occurrence count. Never `grep -c`: it counts matching lines, and on
+   line-wrapped extracted text (paragraph-long lines) it undercounts by an order of magnitude,
+   silently sinking a term below the >= 10 floor.
 3. **Gate**: any term present in **>= 3 corpus papers** with substantial frequency (>= 10
    occurrences in at least one paper) but **absent from the review `.tex`** → flag
    `[CORPUS TERM NOT COVERED: <term>, <max occ.>/<n papers>]`.
@@ -831,6 +839,10 @@ initial ontology was correct.
    (Step 14b) with one sentence. A silent absence is a checklist failure (TC1).
 5. Log the term table (term | corpus occurrences | papers | covered/excluded-justified) in the
    reproducibility metadata (Step 15).
+6. **Sequencing**: this gate necessarily runs on the assembled `.tex` (it greps the review), so it
+   sits after Step 15 by design. A `[CORPUS TERM NOT COVERED]` flag RE-OPENS Step 15 (final
+   assembly) and Step 14b (Limitations): apply the amendment to the assembled document, then
+   re-log the metadata. Step 16 is not reached until every flag is arbitrated.
 
 ### Step 16 — Checklist report
 
@@ -838,7 +850,7 @@ Print the full checklist with ✓ or ✗ for each item:
 
 ```
 [ ] IC1 — Inclusion / exclusion criteria documented (Step 0), cross-disciplinary scope from the active profile
-[ ] ON1 — Subject ontology established from full-text canonical reviews BEFORE queries (Step 0b); brief enumerations treated as hypotheses; every [ONTOLOGY ≠ BRIEF] flag reported and queries broadened accordingly
+[ ] ON1 — Subject ontology established from full-text canonical reviews BEFORE queries (Step 0b); brief enumerations treated as hypotheses; every [ONTOLOGY != BRIEF] flag reported and queries broadened accordingly
 [ ] TC1 — Terminology coverage gate run (Step 15b): ontology + dominant corpus terms cross-checked against the review .tex; every [CORPUS TERM NOT COVERED] flag arbitrated (covered, or exclusion justified in Limitations); term table logged in reproducibility metadata
 [ ] SA1 — Scopus.AI manual consultation performed (Step 1a): prompt menu presented, user output ingested, every [SCOPUS.AI] reference validated (or marked skipped by user)
 [ ] SA2 — Scopus.AI references with no resolvable DOI / no API match flagged [UNVERIFIED — Scopus.AI only] and excluded from synthesis

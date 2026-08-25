@@ -1,0 +1,362 @@
+{
+  "/Users/lripoll/Programmation/ResearchTools/.claude/settings.template.json": {
+    "mtime": 1781538965.1170983,
+    "ast_hash": "af3d5c014054d1ff9300416cf59f85e7",
+    "semantic_hash": "af3d5c014054d1ff9300416cf59f85e7"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/deliberation/Test/test_deliberate.py": {
+    "mtime": 1781538965.1179178,
+    "ast_hash": "c0cf8d5fa4f22bfff0cdb4a1e597c3e4",
+    "semantic_hash": "c0cf8d5fa4f22bfff0cdb4a1e597c3e4"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/deliberation/scripts/deliberate.py": {
+    "mtime": 1781538965.1187134,
+    "ast_hash": "c6fd78e3aa0c087a476de278a7e0b321",
+    "semantic_hash": "c6fd78e3aa0c087a476de278a7e0b321"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scholar-evaluation/scripts/calculate_scores.py": {
+    "mtime": 1781538965.12001,
+    "ast_hash": "df6f0841bccefb89c605d9746c2cbd75",
+    "semantic_hash": "df6f0841bccefb89c605d9746c2cbd75"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/Test/test_download_pdf.py": {
+    "mtime": 1781538965.1242456,
+    "ast_hash": "3ef9e9d34309a1d63793756c5bf0e1e8",
+    "semantic_hash": "3ef9e9d34309a1d63793756c5bf0e1e8"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/Test/test_gemini_table.py": {
+    "mtime": 1781538965.124451,
+    "ast_hash": "0d38c0899ac07ba6a460872f1b4d80f4",
+    "semantic_hash": "0d38c0899ac07ba6a460872f1b4d80f4"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/download_pdf.py": {
+    "mtime": 1781538965.124662,
+    "ast_hash": "ba0fc46552315dcdbc2dea54fcc5e42a",
+    "semantic_hash": "ba0fc46552315dcdbc2dea54fcc5e42a"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/gemini_reviewer.py": {
+    "mtime": 1781538965.125299,
+    "ast_hash": "9162741157eaacfa8a15df818905de34",
+    "semantic_hash": "9162741157eaacfa8a15df818905de34"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/gemini_table.py": {
+    "mtime": 1781538965.1256654,
+    "ast_hash": "a9159e667243a63882ac19c6c0ba1048",
+    "semantic_hash": "a9159e667243a63882ac19c6c0ba1048"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/github_reviewer.py": {
+    "mtime": 1781538965.1258934,
+    "ast_hash": "7b7ecae1136a750f29039e07f98f98ac",
+    "semantic_hash": "7b7ecae1136a750f29039e07f98f98ac"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/scopus_api.py": {
+    "mtime": 1781538965.1264806,
+    "ast_hash": "3d2e36335a2621beafc49689c0b974d6",
+    "semantic_hash": "3d2e36335a2621beafc49689c0b974d6"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/semantic_scholar_api.py": {
+    "mtime": 1781538965.126855,
+    "ast_hash": "63a114c2992d8dda2a96ce1fedd48b14",
+    "semantic_hash": "63a114c2992d8dda2a96ce1fedd48b14"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/word2latex/scripts/docx_inspect.py": {
+    "mtime": 1781538965.1283875,
+    "ast_hash": "f42ad36369d75cb637f30067a96d587d",
+    "semantic_hash": "f42ad36369d75cb637f30067a96d587d"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/word2latex/scripts/manuscript_bib.py": {
+    "mtime": 1781538965.128694,
+    "ast_hash": "971f1bb176b02701668b768687097d19",
+    "semantic_hash": "971f1bb176b02701668b768687097d19"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/word2latex/scripts/test_manuscript_bib.py": {
+    "mtime": 1781538965.128935,
+    "ast_hash": "418e94e0aeb93daaa0dadc28bfb37a7f",
+    "semantic_hash": "418e94e0aeb93daaa0dadc28bfb37a7f"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.vscode/settings.json": {
+    "mtime": 1781538965.1294117,
+    "ast_hash": "a3ad7f0b190334b9798727d574ae3864",
+    "semantic_hash": "a3ad7f0b190334b9798727d574ae3864"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/install-junctions.ps1": {
+    "mtime": 1781538965.130789,
+    "ast_hash": "10f76ce73a51fd9042b384732ffdfc5d",
+    "semantic_hash": "10f76ce73a51fd9042b384732ffdfc5d"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/setup.ps1": {
+    "mtime": 1781538965.131028,
+    "ast_hash": "d07122804306b012b58ac9604f9caff3",
+    "semantic_hash": "d07122804306b012b58ac9604f9caff3"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/CLAUDE.md": {
+    "mtime": 1781538965.1047394,
+    "ast_hash": "4fb61936f576b471b9b735617c41477e",
+    "semantic_hash": "4fb61936f576b471b9b735617c41477e"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/bib-cleaner/AGENT.md": {
+    "mtime": 1781538965.1051865,
+    "ast_hash": "d7bf258fa2ad094edb6f5100392bc5b2",
+    "semantic_hash": "d7bf258fa2ad094edb6f5100392bc5b2"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/cover-paper/AGENT.md": {
+    "mtime": 1781538965.105555,
+    "ast_hash": "71e54899144bf8c1d13ae84b8dc4c78d",
+    "semantic_hash": "71e54899144bf8c1d13ae84b8dc4c78d"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/latex-writer/AGENT.md": {
+    "mtime": 1781538965.1059735,
+    "ast_hash": "04380b5ff89ad46191cbcdf44eac0854",
+    "semantic_hash": "04380b5ff89ad46191cbcdf44eac0854"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/paper-auditor/AGENT.md": {
+    "mtime": 1781538965.1067047,
+    "ast_hash": "fb37309a13a5da26490f8b976501c2e9",
+    "semantic_hash": "fb37309a13a5da26490f8b976501c2e9"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/reviewer-response/AGENT.md": {
+    "mtime": 1781538965.1074007,
+    "ast_hash": "4750bd3754a1ef567e480611b3f8aadd",
+    "semantic_hash": "4750bd3754a1ef567e480611b3f8aadd"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/scopus-auditor/AGENT.md": {
+    "mtime": 1781538965.1078413,
+    "ast_hash": "697091e614f830c891941fd8540e1c38",
+    "semantic_hash": "697091e614f830c891941fd8540e1c38"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/scopus-researcher/AGENT.md": {
+    "mtime": 1781538965.1084516,
+    "ast_hash": "8234cdfece91c4d6bf99b1bb8ba366ec",
+    "semantic_hash": "8234cdfece91c4d6bf99b1bb8ba366ec"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/submit-checker/AGENT.md": {
+    "mtime": 1781538965.1090267,
+    "ast_hash": "8a3657e2ff18a2aea46b80e9dd951c36",
+    "semantic_hash": "8a3657e2ff18a2aea46b80e9dd951c36"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/thesis-auditor/AGENT.md": {
+    "mtime": 1781538965.109453,
+    "ast_hash": "f94531c8638865135eb635b19f524d14",
+    "semantic_hash": "f94531c8638865135eb635b19f524d14"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/thesis-proposal-auditor/AGENT.md": {
+    "mtime": 1781538965.1100545,
+    "ast_hash": "6f82abeef5728d2d37098aaafd41278c",
+    "semantic_hash": "6f82abeef5728d2d37098aaafd41278c"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/agents/word-to-latex/AGENT.md": {
+    "mtime": 1781538965.1105032,
+    "ast_hash": "4d42b1ea94a417e438f96560650c0e17",
+    "semantic_hash": "4d42b1ea94a417e438f96560650c0e17"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/auditreview.md": {
+    "mtime": 1781538965.1111817,
+    "ast_hash": "1ca00d00d2f81f9c3cbb4b2a137b521d",
+    "semantic_hash": "1ca00d00d2f81f9c3cbb4b2a137b521d"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/auditthesis.md": {
+    "mtime": 1781538965.1114411,
+    "ast_hash": "6b383e0d162b50a554408cb80e0a03ae",
+    "semantic_hash": "6b383e0d162b50a554408cb80e0a03ae"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/bibclean.md": {
+    "mtime": 1781538965.111705,
+    "ast_hash": "d36dadde33f30de9700f9b02f6d471ca",
+    "semantic_hash": "d36dadde33f30de9700f9b02f6d471ca"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/concis.md": {
+    "mtime": 1781538965.1119561,
+    "ast_hash": "10d28ca2c0b8a6d0bf62ad23447cfeeb",
+    "semantic_hash": "10d28ca2c0b8a6d0bf62ad23447cfeeb"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/ctx.md": {
+    "mtime": 1781538965.1121798,
+    "ast_hash": "ba7b60968eae22e0ea8bc701899673d5",
+    "semantic_hash": "ba7b60968eae22e0ea8bc701899673d5"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/doc.md": {
+    "mtime": 1781538965.1125019,
+    "ast_hash": "10fe8e9aa29a5d5bdea1c9bf5762558d",
+    "semantic_hash": "10fe8e9aa29a5d5bdea1c9bf5762558d"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/focus.md": {
+    "mtime": 1781538965.112809,
+    "ast_hash": "f9a686acf1f295b9c027988ec25dcd05",
+    "semantic_hash": "f9a686acf1f295b9c027988ec25dcd05"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/latex.md": {
+    "mtime": 1781538965.1131008,
+    "ast_hash": "d5e985437e8063e72100bf92d3aa6a80",
+    "semantic_hash": "d5e985437e8063e72100bf92d3aa6a80"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/ref.md": {
+    "mtime": 1781538965.1136737,
+    "ast_hash": "1c909b545b70c9fb06dad1057bdca277",
+    "semantic_hash": "1c909b545b70c9fb06dad1057bdca277"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/replyreviewer.md": {
+    "mtime": 1781538965.1139343,
+    "ast_hash": "89049a4d181104e9c49cc38846370ea0",
+    "semantic_hash": "89049a4d181104e9c49cc38846370ea0"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/slim.md": {
+    "mtime": 1781538965.1142972,
+    "ast_hash": "c7fc3f06c596fc744a1cf4317c34d04c",
+    "semantic_hash": "c7fc3f06c596fc744a1cf4317c34d04c"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/submitcheck.md": {
+    "mtime": 1781538965.1145873,
+    "ast_hash": "b43f7182ea58d74c74cb22e8058494ca",
+    "semantic_hash": "b43f7182ea58d74c74cb22e8058494ca"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/test.md": {
+    "mtime": 1781538965.114797,
+    "ast_hash": "ee122d95b1fcf2cb719aa91756a248a0",
+    "semantic_hash": "ee122d95b1fcf2cb719aa91756a248a0"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/tikz.md": {
+    "mtime": 1781538965.1150758,
+    "ast_hash": "c1b65c08dd7a1f49ef2582771e578cb0",
+    "semantic_hash": "c1b65c08dd7a1f49ef2582771e578cb0"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/word2latex.md": {
+    "mtime": 1781538965.1153884,
+    "ast_hash": "2c223c1197fb5714f9248a80d12f3620",
+    "semantic_hash": "2c223c1197fb5714f9248a80d12f3620"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/rules/code-style.md": {
+    "mtime": 1781538965.1159406,
+    "ast_hash": "e1c7b9ba66d0697eeeedec191d12ebb9",
+    "semantic_hash": "e1c7b9ba66d0697eeeedec191d12ebb9"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/rules/preferences.md": {
+    "mtime": 1781538965.1161592,
+    "ast_hash": "dd384c3b5b896376c0f93a34f85da000",
+    "semantic_hash": "dd384c3b5b896376c0f93a34f85da000"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/rules/security.md": {
+    "mtime": 1781538965.1164584,
+    "ast_hash": "5bd90d3b8e164411d9de0538276b29b7",
+    "semantic_hash": "5bd90d3b8e164411d9de0538276b29b7"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/rules/testing.md": {
+    "mtime": 1781538965.1166358,
+    "ast_hash": "87d58a686aa22bfc637aad2d533cb5ac",
+    "semantic_hash": "87d58a686aa22bfc637aad2d533cb5ac"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/rules/workflows.md": {
+    "mtime": 1781538965.1168175,
+    "ast_hash": "e1d6a34783d24964ee407ea05a5654b9",
+    "semantic_hash": "e1d6a34783d24964ee407ea05a5654b9"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/deliberation/SKILL.md": {
+    "mtime": 1781538965.1175652,
+    "ast_hash": "71fdf692d4f952666c667a3d72a01ca5",
+    "semantic_hash": "71fdf692d4f952666c667a3d72a01ca5"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/deliberation/references/deliberation-protocol.md": {
+    "mtime": 1781538965.1183584,
+    "ast_hash": "81b3546173c5e048b7d1d546eee419fb",
+    "semantic_hash": "81b3546173c5e048b7d1d546eee419fb"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scholar-evaluation/SKILL.md": {
+    "mtime": 1781538965.1191745,
+    "ast_hash": "9035f67eab5949254f65323a2e6444aa",
+    "semantic_hash": "9035f67eab5949254f65323a2e6444aa"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scholar-evaluation/references/evaluation_framework.md": {
+    "mtime": 1781538965.1195683,
+    "ast_hash": "b4cee20eb26e6058f9680e83b4679717",
+    "semantic_hash": "b4cee20eb26e6058f9680e83b4679717"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scientific-writing/references/figures_tables.md": {
+    "mtime": 1781538965.1211758,
+    "ast_hash": "23610e9a704ae6bc81fa3070b7fd742c",
+    "semantic_hash": "23610e9a704ae6bc81fa3070b7fd742c"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scientific-writing/references/float_authoring_rules.md": {
+    "mtime": 1781538965.121508,
+    "ast_hash": "f932c024436913532a71786d7b67de39",
+    "semantic_hash": "f932c024436913532a71786d7b67de39"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scientific-writing/references/imrad_structure.md": {
+    "mtime": 1781538965.1218357,
+    "ast_hash": "02e2e79c4b5242517c4bbc47a612bc61",
+    "semantic_hash": "02e2e79c4b5242517c4bbc47a612bc61"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scientific-writing/references/reporting_guidelines.md": {
+    "mtime": 1781538965.1223655,
+    "ast_hash": "1da4bda9744ad9ee24fcd12b4c8f5d86",
+    "semantic_hash": "1da4bda9744ad9ee24fcd12b4c8f5d86"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scientific-writing/references/writing_principles.md": {
+    "mtime": 1781538965.1226256,
+    "ast_hash": "e1c7f7fc698265456200cade7eb5558d",
+    "semantic_hash": "e1c7f7fc698265456200cade7eb5558d"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/references/table-enrichment.md": {
+    "mtime": 1781538965.1234431,
+    "ast_hash": "0b57c28567929ad6a823294fbd9213d0",
+    "semantic_hash": "0b57c28567929ad6a823294fbd9213d0"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/scripts/requirements.txt": {
+    "mtime": 1781538965.1261637,
+    "ast_hash": "7c591b76522adc3c6b5aabfae233616c",
+    "semantic_hash": "7c591b76522adc3c6b5aabfae233616c"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/word2latex/SKILL.md": {
+    "mtime": 1781538965.1271923,
+    "ast_hash": "81bb74f72c6428840b6c36a99a03ea12",
+    "semantic_hash": "81bb74f72c6428840b6c36a99a03ea12"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/word2latex/references/manuscript_bibliography.md": {
+    "mtime": 1781538965.1276178,
+    "ast_hash": "654f087b6d72636ce4ac50c97617422a",
+    "semantic_hash": "654f087b6d72636ce4ac50c97617422a"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/word2latex/references/preamble_patches.md": {
+    "mtime": 1781538965.1279464,
+    "ast_hash": "dad02e6eefc0972af15c5c55b1b4baeb",
+    "semantic_hash": "dad02e6eefc0972af15c5c55b1b4baeb"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/Architecture.md": {
+    "mtime": 1781538965.1296613,
+    "ast_hash": "633b9e207bc832fb43f85e4f298a2041",
+    "semantic_hash": "633b9e207bc832fb43f85e4f298a2041"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/CLAUDE.template.md": {
+    "mtime": 1781538965.1299658,
+    "ast_hash": "ef2c4cfb76261827d0c838b411db3773",
+    "semantic_hash": "ef2c4cfb76261827d0c838b411db3773"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/README.md": {
+    "mtime": 1781538965.130425,
+    "ast_hash": "cad5e9cbfab57ba30c6645bfe4e0ac7f",
+    "semantic_hash": "cad5e9cbfab57ba30c6645bfe4e0ac7f"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/auditpaper.md": {
+    "mtime": 1781538965.1109278,
+    "ast_hash": "8e7944694a5a7beaf73eaa5d00e7972f",
+    "semantic_hash": "8e7944694a5a7beaf73eaa5d00e7972f"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/commands/litreview.md": {
+    "mtime": 1781538965.113402,
+    "ast_hash": "3500e2adef096fa16046ba3f7b11b437",
+    "semantic_hash": "3500e2adef096fa16046ba3f7b11b437"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scientific-writing/SKILL.md": {
+    "mtime": 1781538965.1204233,
+    "ast_hash": "907c1d9170d54eb931c27b4b7af77374",
+    "semantic_hash": "907c1d9170d54eb931c27b4b7af77374"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scientific-writing/references/citation_styles.md": {
+    "mtime": 1781538965.1208353,
+    "ast_hash": "1b43b16e22d8ba8935f05b6a10135255",
+    "semantic_hash": "1b43b16e22d8ba8935f05b6a10135255"
+  },
+  "/Users/lripoll/Programmation/ResearchTools/.claude/skills/scopus/SKILL.md": {
+    "mtime": 1781538965.1230314,
+    "ast_hash": "71477b3f0a3294e6839174ac15da9e39",
+    "semantic_hash": "71477b3f0a3294e6839174ac15da9e39"
+  }
+}

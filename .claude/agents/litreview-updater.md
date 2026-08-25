@@ -142,8 +142,10 @@ abstract-level, flagged `[FW FULLTEXT-MISSING]` / `[STATS PDF-MISSING]`, and nev
 
 ### Step 5b — Terminology coverage gate (delta corpus → review)
 Same mechanism as scopus-researcher Step 15b, scoped to the delta: over the extracted full texts
-of the delta `refs/`, build the dominant technical-term list (top ~15, frequency count via
-`grep -ci` per paper), and cross-check each term against the baseline review `.tex`. A term
+of the delta `refs/`, build the dominant technical-term list (top ~15, unigrams AND bigrams,
+occurrence count via `grep -oi "<term>" <paper>.txt | wc -l` per paper — never `grep -c`, which
+counts lines and undercounts on line-wrapped extracted text), and cross-check each term against
+the baseline review `.tex`. A term
 present in **>= 2 delta papers** with substantial frequency (>= 10 occurrences in one paper) but
 absent from the review → flag `[CORPUS TERM NOT COVERED: <term>, <max occ.>/<n papers>]` and
 route it into the Step 6 deliberation (a dominant new term the review never mentions is prima

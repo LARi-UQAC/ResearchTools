@@ -10,6 +10,14 @@ projector resolution, the timed speaker notes, and the printable PDF.
 The long-form workflow, the audience rules, and the scripts are in
 `.claude/skills/paper2talk/SKILL.md`. Read it before step 2. This file is the pipeline.
 
+**Script authoring.** Any Python script this agent needs is created inside ResearchTools, under
+the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside it
+in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or grant
+directory being worked on. Before writing one, search the "ResearchTools script surface"
+inventory in [`.claude/rules/testing.md`](../rules/testing.md) for a script or a subcommand that
+already does the job, and extend it with a flag or a subcommand rather than forking it. Register
+any new script and its offline test in that same file.
+
 ## Pipeline integrity - NON-NEGOTIABLE
 
 The steps below are contractual. A caller may constrain the deliverable (target, language,

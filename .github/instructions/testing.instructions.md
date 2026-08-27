@@ -82,6 +82,25 @@ exercise them, set the required environment variables, then dry-run the entry po
   `_error` and truncated `_raw` rather than dropped, since a silently missing critique reads as
   agreement in the merge.
 - `word2latex` skill: `docx_inspect.py`, `manuscript_bib.py`.
+- `latex-hygiene` skill: `tex_check.py` (thin CLI dispatching to sibling modules `tex_common.py`,
+  `tex_chars.py`, `tex_braces.py`, `tex_par.py`, `tex_citecov.py`, `tex_abstract.py`, `tex_wc.py`,
+  `tex_aiscan.py`, `tex_aiscan_text.py`; `chars` answers which forbidden characters and where,
+  `aiscan` answers the AI-usage risk score reproducing `paper-auditor.md` Step 7.5's signal
+  weights and formula, `wc`/`wc --accepted` answer prose and accepted-text word counts with an
+  optional before/after table, `abstract` answers abstract word and keyword counts, `braces`
+  answers brace depth and `\begin`/`\end` balance, `par` answers whether a `changes` macro
+  argument crosses a blank line, `citecov` answers cite-key coverage against a `.bib`, `refcov`
+  answers uncited labels, dangling refs, and duplicate labels, and `all` aggregates every
+  subcommand). Pure Python standard library, so it adds no `requirements.txt` and no
+  `pip-audit` surface. The write side adds `tex_patch.py` (applies an audit plan's
+  `\added`/`\deleted`/`\replaced` edits by exact-match substitution, one occurrence required, a
+  `FAILS:` list on any 0- or 2+-match), `tex_scan.py` (post-write guard: control characters,
+  damaged control-sequence residue, a `changes` macro crossing a table or float boundary, a `%`
+  comment that swallowed a row-terminating `\\`, a retracted `\cite` still resolved inside a
+  deleted span, and live `\hl{}`/`\todo{}` markers), and `tex_build.py` (`accept` resolves
+  `changes` markup to `[final]{changes}`/`[disable]{todonotes}`; `build` runs
+  pdflatex/bibtex/pdflatex/pdflatex with mandatory `BIBINPUTS=".."`, refusing a `.bib` inside the
+  output directory).
 
 Offline unit tests (no network, no API key, no model load; run with the project Python):
 
@@ -95,6 +114,9 @@ python .claude/skills/scopus/scripts/Test/test_litreview_update.py        # base
 python .claude/skills/scopus/scripts/Test/test_author_name_split.py       # author-name parsing: "Lastname, Firstname" and "Firstname Lastname" must resolve to the same query
 python .claude/skills/scopus/scripts/Test/test_search_sort_and_publisher.py  # search sort default + aliases, TITLE-ABS-KEY scoping vs field pass-through, DOI-prefix publisher, validate ambiguity guard
 python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py # scan_sections / section-scan
+python .claude/skills/latex-hygiene/scripts/Test/test_tex_check.py        # chars/aiscan/wc/abstract/braces/par/citecov/refcov: forbidden chars, AI-usage score, accepted-text word count, brace/begin-end balance, changes-macro corruption, cite<->bib and label<->ref coverage
+python .claude/skills/latex-hygiene/scripts/Test/test_tex_patch.py        # 10 tests: exact-match plan application, occurrence-count gate, FAILS: list, --author override, --init preamble emission, colour-only deleted markup
+python .claude/skills/latex-hygiene/scripts/Test/test_tex_build.py        # 7 tests: accept resolution, pdflatex/bibtex/pdflatex/pdflatex sequence, BIBINPUTS, output-dir .bib refusal
 
 python .claude/skills/paper2talk/scripts/Test/test_talk_template.py      # EMU->inch, srcRect keep-fraction, object extraction
 python .claude/skills/paper2talk/scripts/Test/test_talk_notes.py         # slide-number strip, rels-based notes mapping, tolerance exit
@@ -125,9 +147,11 @@ The `test_download_pdf.py` suite patches `requests.get`, so the Unpaywall/arXiv/
 HTML fetch are exercised with no network. `test_browser_fetch.py` replaces the Playwright sync API
 with fakes and forces `_PW_OK`, so the browser tier's four branches run without installing Chromium.
 The section-scan suite works on plain strings, so the
-heavy Docling/MarkItDown imports never load.
+heavy Docling/MarkItDown imports never load. `test_tex_build.py` patches `subprocess` and
+`shutil.which`, so no LaTeX installation is needed.
 
 ```powershell
+python .claude/hooks/Test/test_vault_access_guard.py      # 15 tests: every path form of the vault refused (Windows, drive-relative, Git Bash, the $OBSIDIAN_VAULT token), local-writer exempt and every other agent not, the PowerShell tool guarded as its own tool name, file CONTENT carrying the vault path NOT treated as an access, malformed payload never blocking
 python .claude/hooks/Test/test_obsidian_outbox_flush.py   # 8 tests: vault write path (threshold, replay, escape, missing vault), the setUp precondition that PROVES the vault redirection took effect before a byte is written, and the unresolved-link warning
 python .claude/skills/obsidian-cli/scripts/Test/test_vault_consolidate.py   # 35 tests: phantom detection, alias, fence, archives, why labels, dry-run, junction escape, LF endings, non-regression, map-entry validation, no-cascade, code-span/archive exclusion, cross-drive refusal, CLI dry-run gate, path-suffix resolution, aliased/heading link repair, phantom provenance
 .\scripts\audit\check-claude-template.ps1                 # template vs live global, plus the write-path invariants

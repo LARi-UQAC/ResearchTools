@@ -41,3 +41,6 @@ conventions take precedence where they exist.
 - Prefer existing agents, skills, and commands (see the routing table in `.claude/CLAUDE.md`)
   over ad hoc scripts.
 - Reuse existing utilities and patterns in a project before adding new code.
+- Search the "ResearchTools script surface" inventory in `.claude/rules/testing.md` before
+  writing any new script, and extend an existing script with a flag or a subcommand rather
+  than forking it.

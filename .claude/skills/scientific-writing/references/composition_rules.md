@@ -30,6 +30,27 @@ Where this file and the generic biomedical / journal-PDF guidance in `writing_pr
   every caption, and every letter.
 - **R1.6 No informal language.** No contractions, no colloquialisms, no vague quantifiers standing
   in for a measured value ("a lot of", "got", "showed up", "pretty much").
+- **R1.7 The semicolon is avoided in prose.** Two independent clauses joined by a semicolon are
+  written as two sentences instead. Where the second clause explains or introduces the first, a
+  colon is used. Where the clauses are genuinely coordinate and short, a comma plus a coordinating
+  conjunction is used. The semicolon remains legitimate outside the prose itself: inside a LaTeX or
+  code listing, inside a BibTeX field or a `\bibitem`, inside a keyword list whose separator the
+  venue imposes (IEEE and Elsevier separate keywords with semicolons), and inside a citation string
+  in a style that separates authors with semicolons.
+- **R1.8 Short sentences are the norm.** Aim for 15 to 20 words per sentence, and never let a
+  sentence run past roughly 30 words. One idea per sentence. A sentence that needs a semicolon, a
+  third comma-delimited subordinate clause, or a chain of "which ... that ... where" is a sentence
+  that should have been two or three. Long sentences are what make a manuscript read as machine
+  written, so this rule also serves the AI-usage score.
+
+### Splitting a semicolon
+
+| Semicolon form | Compliant form |
+|---|---|
+| "The torque was measured at each joint; the results are given in Table 3." | "The torque was measured at each joint. The results are given in Table~\ref{tab:joint-torque}." |
+| "Three planners were compared; only one met the cycle-time budget." | "Three planners were compared. Only one met the cycle-time budget." |
+| "The model failed on the test set; the training distribution was too narrow." | "The model failed on the test set: the training distribution was too narrow." |
+| "The sensor drifted; the estimate diverged." | "The sensor drifted, and the estimate diverged." |
 
 ### Impersonal substitutes
 
@@ -146,6 +167,9 @@ For the document being authored or the plan being written, verify and resolve ev
 - [ ] R1.4: zero occurrences of `I`, `my`, `me`, `mine` as first-person pronouns
 - [ ] R1.5: `we` / `our` / `us` occur only in the Contributions paragraph and in the Conclusion
 - [ ] R1.6: no informal term, no contraction, no vague quantifier standing in for a value
+- [ ] R1.7: no semicolon in the prose; the ones that remain are in a listing, a bib field, a
+      venue-imposed keyword list, or a citation string
+- [ ] R1.8: sentences average 15 to 20 words, none runs past roughly 30, one idea per sentence
 - [ ] R2.6: no list in Abstract, Introduction, Results, Discussion, Conclusions
 - [ ] R2.7: contributions are a prose paragraph, not an `itemize` / `enumerate` block
 - [ ] R3.1: every section opens on a paragraph that `\ref{}`s each of its subsections

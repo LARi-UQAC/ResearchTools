@@ -66,6 +66,9 @@ Academic, human style, without AI-generated style. Validate output with an AI-us
 the score needs to be lower than 20% for any text you produce. Remain highly self-critical
 and constantly seek the best and most optimal solution in both theory and practice. To
 author text, use the `latex-writer` agent together with the `scientific-writing` skill.
+Sentence composition is governed by `composition_rules.md` of that skill. Two rules bind every
+document type: no semicolon in the prose (R1.7), and short sentences of 15 to 20 words that never
+run past roughly 30, one idea each (R1.8).
 LaTEX output files are located in sub-directory out/.
 
 `latex-writer` and `scientific-writing` run ONLY on the latest cloud Claude model, never on
@@ -148,11 +151,12 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Author LaTeX, Beamer, or TiKZ | `latex-writer` (+ `scientific-writing`) | by context |
 | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries; NOT LaTeX text authoring) | `local-writer` agent (haiku wrapper + local `ornith:9b`) | by context / by name |
 | Local code generation against a spec/failing test, refactor snippets, scaffolds | `local-coder` agent (haiku wrapper + local `qwen3.5:9b`) | by context / by name |
-| Read or search the Obsidian vault (notes, tags, tasks, links, properties), or deposit a captured learning for it (new/appended content routes through the outbox only; `--apply --yes` link maintenance is the one exception, run by the same serialized writer) | `obsidian-cli` skill | by context / by name |
+| Read or search the Obsidian vault (notes, tags, tasks, links, properties), or deposit a captured learning for it (new or appended content routes through the outbox only, and `--apply --yes` link maintenance is the one in-place exception, run by the same serialized writer) | `obsidian-cli` skill, reached ONLY through the `local-writer` agent, which is the sole agent with vault access, reading included. `vault-access-guard.py` refuses every other caller at the tool boundary | dispatch `local-writer` |
 | Budget-bounded develop-and-improve loop (design→code→review→score→correct until a composite gate or budget cap) | `loop-engineer` skill (Agent SDK; Fable 5 orchestrates, Opus/Sonnet act, local agents generate) | `/loopdev` |
 | ScholarEval-gated authoring loop (define→author→audit→loop→memory until min_score or max_budget) | `authoring-loop` agent (author on Fable 5, `scholar-evaluation` on Sonnet/Haiku, memory via `local-writer`) | by name |
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
 | Validate TiKZ code, diagnose LaTeX errors | - | `/tikz`, `/latex` |
+| Measure LaTeX manuscript hygiene mechanically (forbidden characters, AI-usage risk score, prose/accepted word counts, abstract length, brace balance, citation-key coverage), apply a machine-readable audit plan to a `.tex`, post-write scan, resolve to accepted text, and build the PDF | `latex-hygiene` skill | `/texcheck` |
 | Cross-model debate before finalizing | `deliberation` skill | inside auditors/researchers |
 | Audit a paper/thesis's own statistics, or mine corpus statistics for the next project | `extract-statistic` skill | inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine) |
 | Audit a work's own future works / validate its hypotheses, or mine corpus future works for new hypotheses and projects | `extract-futureworks` skill | inside the four auditors (audit) and `scopus-researcher` (mine) |
@@ -185,9 +189,12 @@ and feed the next iteration. The general policy is in the root [CLAUDE.md](../CL
   content, not a fallback. The one sanctioned exception is `vault_consolidate.py --apply --yes`,
   an in-place maintenance edit of links in notes that already exist, run by this same writer
   through the filesystem and verified by re-reading the file, never through the Obsidian CLI.
-  `local-coder` reads only and hands any learning to `local-writer`.
-- **Readers**: `local-coder` / `local-writer` consult the vault at task start, checkpoints, and
-  error recovery. Plan-time reads (superpowers `brainstorming` on Fable 5, `writing-plans` on
+  `local-coder` does not touch the vault at all, reading included. A `PreToolUse` guard
+  (`vault-access-guard.py`) refuses any tool call whose path lands in the vault unless it
+  carries `agent_type == "local-writer"`, so the rule holds mechanically rather than by
+  discipline. Any learning `local-coder` finds is reported back and written by `local-writer`.
+- **Reader**: `local-writer` alone consults the vault, at task start, checkpoints, and error
+  recovery. The orchestrator never reads it directly, filesystem included. Plan-time reads (superpowers `brainstorming` on Fable 5, `writing-plans` on
   Opus) are orchestrator-mediated and baked into the plan; `executing-plans` does not read.
 - **Where**: project logs live in `10_Projets/<nature>/<projet>/`, with the four natures
   `Articles`, `Subventions`, `Livres`, `Logiciels`; reusable atomic notes live in

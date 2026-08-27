@@ -2,8 +2,9 @@
 
 This is the single, turnkey reference for adding or editing an **agent**, **skill**,
 or **command** in ResearchTools and propagating it to every assistant (Claude Code,
-GitHub Copilot, OpenCode, Continue, Aider). Follow the matching section; you should not
-need to re-investigate the mirror machinery.
+GitHub Copilot, OpenCode, Continue, Aider) plus any tool that reads the `AGENTS.md`
+convention (OpenHuman, Hermes Agent, Codex, and others). Follow the matching section;
+you should not need to re-investigate the mirror machinery.
 
 Related: [README.md](../README.md) and [Architecture.md](../Architecture.md) are the
 authoritative inventories; [.claude/CLAUDE.md](../.claude/CLAUDE.md) holds the routing
@@ -40,6 +41,31 @@ The first row (bold) and first column of any table you add follow the repo table
 | OpenCode | `.opencode/agent/<name>.md` | each agent | full body, no size limit |
 | Continue | `.continue/rules/researchtools.md` | agent list | one rule file that points at the `.claude/CLAUDE.md` routing table |
 | Aider | `CONVENTIONS.md` | static pointer | generated **only if absent**; never overwritten (see section 4) |
+| AGENTS.md readers | `AGENTS.md` | agent list | static master, regenerated on every run; serves any harness reading the `AGENTS.md` convention |
+
+### Why `AGENTS.md` covers more than one harness
+
+Two actively maintained agent harnesses converge on the same file, which is why
+`AGENTS.md` is one new mirror target, not several. **OpenHuman**
+(`tinyhumansai/openhuman`, GPL-3.0) loads a project-level `AGENTS.md`:
+`src/openhuman/agent/prompts/agents_md.rs` line 26 sets
+`pub const AGENTS_MD_FILENAME: &str = "AGENTS.md";`, and `load_agents_md` (line 69)
+reads `dir.join(AGENTS_MD_FILENAME)`. **Hermes Agent** (`nousresearch/hermes-agent`,
+MIT) reads, per directory from the git root down to the working directory, the first
+of `AGENTS.override.md`, `AGENTS.md`, or `agents.md` (`agent/prompt_builder.py` line
+2281). Codex and any other tool that follows the same `AGENTS.md` convention are
+covered by the same file at no extra cost. Neither harness supports per-agent
+definition files, so `AGENTS.md` is a distilled master, the same class as
+`.continue/rules/researchtools.md` and `CONVENTIONS.md`, not a per-agent mirror.
+
+`AGENTS.md` at the repo root is a **shared namespace**: any tool that reads it now
+receives this content, which is the point, but it is also a fact a contributor must
+know before editing it - a change here reaches every harness that follows the
+convention, not just one.
+
+Hermes Agent additionally reads `CLAUDE.md` from the current working directory
+(`agent/prompt_builder.py` line 2323). This repo has none at its root, so
+`AGENTS.md` is the operative file for Hermes here, not an optional parity extra.
 
 **One file under `.github/instructions/` is NOT generated.**
 `.github/instructions/mermaid.instructions.md` is hand-maintained and has no source rule.
@@ -128,7 +154,11 @@ A skill and its command wrapper commonly coexist (`/geolocalisation` -> the
    mirrors automatically.
 
 Agent bodies over ~28k chars become a Copilot **stub** that points back at the canonical
-file - keep hard constraints early in the body so the stub carries them.
+file - keep hard constraints early in the body so the stub carries them. A stub does not
+carry the rest of the body, so a cross-cutting rule added to agent bodies (not just this
+one) must ALSO be distilled into the three master files (`.github/copilot-instructions.md`,
+`.continue/rules/researchtools.md`, `CONVENTIONS.md`), the way the Obsidian outbox and
+`ollama_bridge.py` rules already are.
 
 ## 7. Add a new SKILL
 
@@ -149,6 +179,11 @@ file - keep hard constraints early in the body so the stub carries them.
    Put runnable code in `.claude/skills/<name>/scripts/` and offline tests in
    `.../scripts/Test/`. Pin dependencies in the skill's `requirements.txt`, run
    `pip-audit`, and add a security-floor comment for any transitive CVE.
+
+   A script produced while operating on an EXTERNAL project — a manuscript, thesis, or
+   grant tree outside this repo — is authored in ResearchTools, under the owning skill's
+   `scripts/` directory, and is called from there by path; it is never left behind in
+   that project's own directory.
 2. **Register it (critical - a skill has no mirror):**
    - `.claude/CLAUDE.md` "Tooling" table: add a routing row. This is the ONLY thing that
      makes a user-invoked skill discoverable in Copilot/OpenCode/Continue.

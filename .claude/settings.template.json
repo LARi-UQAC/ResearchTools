@@ -54,6 +54,17 @@
             "statusMessage": "Scanning for secrets (betterleaks)..."
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\vault-access-guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking vault access (local-writer only)..."
+          }
+        ]
       }
     ],
     "SessionStart": [

@@ -28,6 +28,35 @@ Notes:
 - French cues are matched without relying on accents (the parser lower-cases and the cue list uses
   unaccented forms) so `Perspectives` and `Limites` are caught regardless of encoding.
 
+## Sentence-level cues (in-prose signals)
+
+The categories above match a heading. Prose does not always carry one: a future-work statement
+can sit inside a paragraph of the Conclusion, the Discussion, or anywhere else with no heading of
+its own to catch it. The cues below match at the sentence level instead, for a scan of running text
+rather than section titles.
+
+| Label | English cue phrases |
+|---|---|
+| `plan_stated` | we plan to, plan to extend |
+| `next_step` | next step |
+| `temporal_marker` | in the future |
+| `open_ended` | remain(s) open, remain(s) an open |
+| `deferred_scope` | leave(s/d) to future, leave(s/d) for future |
+| `further_variant` | further research, further study, further investigation |
+
+Notes:
+- These extend, not duplicate, the heading table: future work(s), future research, future
+  direction(s), open problem(s)/challenge(s), limitation(s), and further work(s) already have a
+  heading-level equivalent above and are not repeated here.
+- `further_variant` generalizes the heading table's "further work(s)" to the other nouns the same
+  construction takes.
+- No French sentence-level cues are listed here; the source below worked from English full text
+  only, so a French set would need its own validation before use.
+- Cues are salvaged from a throwaway extraction script written during the 2026-08-25
+  Penelope_Allan audit session
+  (`docs/superpowers/todo/2026-08-27-audit-scripts-src/fw_extract2.py`); they exist to match a
+  future-work statement inside running prose, when no dedicated section heading exists.
+
 ## Extending the cues
 
 Add a new `(label, pattern)` entry to `_SECTION_CUES` in `extract_text.py` and a row here. Keep the

@@ -5,6 +5,8 @@
 secrets/
 credentials/
 
+*.bak
+
 # LaTEX
 out/
 docs/superpowers/

@@ -34,6 +34,14 @@ single question that matters: **do the new papers still leave the review's gaps 
 hypotheses / planned contribution novel, or has someone preempted them?** You reuse every
 existing script and skill; you add no new search logic of your own.
 
+**Script authoring.** Any Python script this agent needs is created inside ResearchTools, under
+the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside it
+in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or grant
+directory being worked on. Before writing one, search the "ResearchTools script surface"
+inventory in [`.claude/rules/testing.md`](../rules/testing.md) for a script or a subcommand that
+already does the job, and extend it with a flag or a subcommand rather than forking it. Register
+any new script and its offline test in that same file.
+
 ## Run mode (attended vs unattended)
 
 Detect the mode from the invocation:

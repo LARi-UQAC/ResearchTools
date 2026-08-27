@@ -113,7 +113,7 @@ Claude n'a **pas** de mémoire inter-projets : la mémoire automatique est clois
 ### Qui écrit (pipeline d'écriture unique et sérialisé)
 
 - L'agent `local-writer` est l'**écrivain du coffre** : il rédige le corps (génération locale, tokens gratuits) **et** dépose la note dans `~/.claude/obsidian-outbox/` avec sa directive `<!-- obsidian: create|append path="..." -->`. Le hook `obsidian-outbox-flush.py` fait l'écriture.
-- `local-coder` **ne fait que lire** ; s'il découvre un apprentissage, il le transmet à `local-writer`, qui l'écrit. Aucun autre agent, ni outil externe concurrent (Claudian, second agent IDE), n'écrit dans le même coffre. « Écrivain unique » signifie un pipeline **sérialisé** (pas d'écritures simultanées), pas que seul l'orchestrateur touche la CLI (cf. Règle d'orchestration).
+- `local-coder` **ne touche pas au coffre**, ni en lecture ni en écriture. La connaissance du coffre lui parvient par le prompt, après que l'orchestrateur a fait lire `local-writer`. S'il découvre un apprentissage, il le remonte dans sa réponse et `local-writer` l'écrit. Aucun autre agent, ni outil externe concurrent (Claudian, second agent IDE), n'écrit dans le même coffre. « Écrivain unique » signifie un pipeline **sérialisé** (pas d'écritures simultanées), pas que seul l'orchestrateur touche la CLI (cf. Règle d'orchestration).
 - **NE JAMAIS écrire une note par `obsidian create` ou `obsidian append`.** Mesuré le 2026-08-03 sur Obsidian 1.13.4, et retrouvé le 2026-08-13 sur Obsidian 1.13.7 (`obsidian-1.13.7.asar\main.js:64:136`, contre `main.js:80:136` sur la version 1.13.4) : la CLI transmet la commande au processus principal par un socket, en JSON, et au-delà d'un seuil le `JSON.parse` du processus principal reçoit un en-tête tronqué et lève une exception non rattrapée. Fenêtre « A JavaScript error occurred in the main process », et l'écriture n'a pas lieu. Le seuil porte sur l'**en-tête JSON complet** (contenu, chemin, métadonnées `tty` et `cwd`) : un en-tête de 3850 octets passe, un de 4343 non, et 4096 — le tampon d'un pipe nommé Windows — tombe entre les deux. La cause exacte reste ouverte : le code du serveur, lu dans l'archive `.asar`, réassemble bien les chunks et délimite par un saut de ligne, donc le défaut n'est pas là ; l'hypothèse d'une séquence UTF-8 coupée a été écartée par la mesure ; reste une hypothèse non prouvée, un client qui n'attend pas l'événement `drain` avant de sortir. Le seuil suffit à décider. Deux défauts aggravants du même jour : la CLI rend **0 même en échec**, donc un script qui teste le code de retour archive des notes jamais écrites ; et `create` sur un fichier existant écrit un **doublon numéroté** (`Decisions 1.md`) au lieu d'échouer, ce qui est l'origine des doublons stricts trouvés dans le coffre.
 - L'écriture passe donc par le **système de fichiers**, ce que fait le hook : Obsidian surveille le disque et recharge de lui-même. Le hook vérifie l'**effet** (taille du fichier avant et après) et non le code de retour, dégrade un `create` sur fichier existant en `append` sans doubler, et refuse un chemin qui sort du coffre. Vérifié sur une note de 5443 octets, sans un avertissement.
 - La CLI reste bonne pour la **lecture** (`obsidian read`, `search`, `list`) et les opérations courtes (`move`, `rename`), où le message reste sous le seuil. Elle exige `path=`, `to=` et `content=` sans tirets, et `create --help` **crée un fichier** nommé `Untitled.md` au lieu d'afficher une aide : passer par `obsidian help <commande>`.
@@ -135,13 +135,31 @@ Corps structuré : Contexte, Problème, Cause racine, Correctif, Réutilisation.
 
 ### Lecture du coffre (consultation)
 
-Symétrique de l'écriture : le coffre ne sert que si les agents le relisent. Architecture **hybride** — l'orchestrateur injecte au plan-time, les agents locaux auto-consultent en boucle.
+Symétrique de l'écriture : le coffre ne sert que si les agents le relisent.
+
+**Règle d'accès, sans exception.** Tout accès au coffre passe par l'agent `local-writer`, en lecture
+comme en écriture. L'orchestrateur ne lit jamais le coffre par lui-même. L'interdiction ne porte pas
+sur la commande employée, elle porte sur le chemin touché : un `cat`, un `ls`, un `grep`, un `Read`
+ou un script Python pointé sur `OBSIDIAN_VAULT` est un accès direct, donc interdit, exactement comme
+un `obsidian read`. Formuler la règle par la commande était le défaut de la version précédente, qui
+laissait le système de fichiers hors du champ. Deux motifs. Un pilote unique et sérialisé, le même
+que pour l'écriture. Et la distillation : `local-writer` rend les acquis pertinents, il ne déverse
+pas le contenu brut des notes dans le contexte de l'orchestrateur.
+
+Consultation en pratique : outil Agent, `subagent_type: local-writer`, avec les termes de recherche
+et la question posée. L'agent rend les hits retenus et leur substance. Si Obsidian est injoignable,
+il le dit et la tâche continue sans le coffre.
 
 Politique par contexte :
 
-- **Plan mode Cloud** (superpowers `brainstorming` sur Fable 5, `writing-plans` sur Opus 4.8) : consulter le coffre et **incorporer** les acquis dans le plan (orchestrateur-médié). C'est le rôle du « Avant de planifier » des six cas.
-- **`executing-plans` (wrapper Haiku) et revue Cloud** : **aucune** lecture, le plan porte déjà la connaissance.
-- **`loop-engineer` une fois lancé** : lecture **réservée aux agents locaux** (`local-coder`, `local-writer`), à trois moments : début de tâche (réception du plan), checkpoints, récupération d'erreur.
+- **Plan mode Cloud** (superpowers `brainstorming` sur Fable 5, `writing-plans` sur Opus 4.8) :
+  consulter le coffre **via `local-writer`** et **incorporer** les acquis dans le plan. C'est le rôle
+  du « Avant de planifier » des six cas. « Orchestrateur-médié » désigne qui commande la lecture, pas
+  qui la fait.
+- **`executing-plans` (wrapper Haiku) et revue Cloud** : **aucune** lecture, le plan porte déjà la
+  connaissance.
+- **`loop-engineer` une fois lancé** : lecture **réservée à `local-writer`**, à trois moments :
+  début de tâche (réception du plan), checkpoints, récupération d'erreur.
 
 Contrainte : le modèle local est aveugle. « Lire le coffre » signifie que le wrapper Haiku lance `obsidian search` / `read` (via `~/bin/obsidian`), distille les hits pertinents (borne top-N) et les **injecte dans le prompt bridge**, comme il injecte déjà les règles.
 

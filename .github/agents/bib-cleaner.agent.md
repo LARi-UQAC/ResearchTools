@@ -25,6 +25,14 @@ what the author must fix, and what has to go to the professor. Do not re-impleme
 checks by hand and do not loop `scopus_api.py cite` per entry — that is what the script
 does, with a cache, in one pass.
 
+**Script authoring.** Any Python script this agent needs is created inside ResearchTools, under
+the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside it
+in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or grant
+directory being worked on. Before writing one, search the "ResearchTools script surface"
+inventory in [`.claude/rules/testing.md`](../rules/testing.md) for a script or a subcommand that
+already does the job, and extend it with a flag or a subcommand rather than forking it. Register
+any new script and its offline test in that same file.
+
 ## Input Resolution
 
 1. If `$ARGUMENTS` is a file path ending in `.bib`: use that file.

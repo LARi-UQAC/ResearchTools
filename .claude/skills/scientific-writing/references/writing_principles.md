@@ -706,6 +706,7 @@ provided to the third group.")
 - [ ] Are commas used correctly?
 - [ ] Do pronouns agree with antecedents?
 - [ ] Is punctuation correct?
+- [ ] Is the prose free of semicolons? (R1.7: split into two sentences, or use a colon)
 - [ ] Is spelling correct (including technical terms)?
 
 ## Tools for Improving Writing
@@ -850,7 +851,8 @@ validation on ImageNet is reported, in which a 15% speedup is obtained at compar
 
 **All venues:**
 - [ ] Writing style matches 3-5 recent papers from venue
-- [ ] Sentence length appropriate
+- [ ] Sentence length appropriate (R1.8: 15-20 words, never past roughly 30, one idea each)
+- [ ] No semicolon left in the prose (R1.7)
 - [ ] Technical vocabulary level correct
 - [ ] Tone consistent with venue
 - [ ] No overstated claims

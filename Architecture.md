@@ -48,6 +48,7 @@ graph TD
     s8["geolocalisation<br/>extract_locations.py · generate_geomap.py"]
     s9["recommendation-letter<br/>generate_letter.py · letter_templates.py"]
     s10["paper2talk<br/>talk_model.py · talk_render.py · talk_notes.py"]
+    s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -74,18 +75,19 @@ graph TD
   a9 -.->|"invoked by name<br/>(no command)"| a9
   a10 -.->|"invoked by context<br/>(no command)"| a10
 
-  a1 --> s1 & s2 & s3 & s4 & s5
+  a1 --> s1 & s2 & s3 & s4 & s5 & s11
   a2 --> s1 & s2 & s3 & s4
-  a3 --> s1 & s2 & s3 & s4 & s5
+  a3 --> s1 & s2 & s3 & s4 & s5 & s11
   a4 --> s1 & s2 & s3 & s4
   a6 --> s1 & s2 & s4 & s5
   a11 --> s1 & s2 & s3 & s4 & s5 & s7
-  a7 --> s1 & s2 & s4
-  a8 --> s1 & s3
+  a7 --> s1 & s2 & s4 & s11
+  a8 --> s1 & s3 & s11
   a5 --> s1
   a9 --> s1
   a10 --> s4
   a10 --> s6
+  a10 --> s11
 
   s1 --> e1
   s2 --> e2 & e3 & e4 & e1

@@ -22,12 +22,14 @@ this skill touches: journal and conference papers, theses, thesis proposals, lit
 reviewer response letters, cover letters, recommendation and support letters, and Beamer slides.
 There is no exempt document type.
 
-The four rules that most often surprise a writer:
+The five rules that most often surprise a writer:
 
-- Passive voice is the default; active voice is a fallback used only where the passive obscures the
+- Passive voice is the default. Active voice is a fallback used only where the passive obscures the
   agent (R1.1, R1.2).
 - `I` is absolutely forbidden everywhere, and `we` is confined to the Contributions paragraph of the
   Introduction and to the Conclusion (R1.4, R1.5).
+- The semicolon is avoided in prose, and sentences stay short: 15 to 20 words, never past roughly 30,
+  one idea each (R1.7, R1.8). A semicolon marks a sentence that should have been two.
 - Contributions are written as a prose paragraph with inline enumeration, never as a bulleted or
   numbered list (R2.7).
 - The abstract carries no labels, no citation, no acronym, and no equation (R4.1-R4.4).
@@ -276,7 +278,9 @@ Apply fundamental scientific writing principles. For detailed guidance, refer to
 
 **Conciseness**:
 - Eliminate redundant words and phrases
-- Favor shorter sentences (15-20 words average)
+- Favor shorter sentences (15-20 words average, never past roughly 30) — one idea per sentence (R1.8)
+- Avoid the semicolon in prose: split the two clauses into two sentences, or use a colon when the
+  second explains the first, or a comma plus a conjunction when they are short and coordinate (R1.7)
 - Remove unnecessary qualifiers
 - Respect word limits strictly
 
@@ -511,6 +515,7 @@ Adapt language, terminology, and conventions to match the specific scientific di
 8. Failure to follow reporting guidelines
 
 **Writing Quality Issues:**
+- Long sentences carrying two or three ideas, usually spliced with a semicolon (R1.7, R1.8)
 - Mixing tenses inappropriately (use past tense for methods/results, present for established facts)
 - Excessive jargon or undefined acronyms
 - Paragraph breaks that disrupt logical flow

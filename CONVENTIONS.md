@@ -48,3 +48,12 @@ returns the tag qualified for that role; without it both roles share one tag.
 exits 2 when neither it nor `--no-vault-context` is given, because a local model asked a
 documented question with no context answers with a fluent invention that passes every
 structural gate.
+
+Any Python script an auditing or authoring agent needs is created inside
+ResearchTools, under `.claude/skills/<skill>/scripts/`, with an offline test
+beside it in `Test/` - never in the session scratchpad and never in the
+manuscript, thesis, or grant directory being worked on. Search the
+"ResearchTools script surface" inventory in `.claude/rules/testing.md` first,
+and extend an existing script with a flag or a subcommand rather than forking
+one. The manuscript directory may hold a thin wrapper that calls the
+ResearchTools script by path; it holds no logic of its own.

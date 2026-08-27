@@ -23,6 +23,8 @@ and the output produced. Full arguments are in `README.md`.
 | Build the conference talk from an accepted paper | `/talk <paper>` | `paper2talk` skill / `talk-builder` | Deck (PowerPoint, Beamer, or self-contained web) on the lab gabarit + timed speaker notes, projector-grade figures, slide-size and paper PDFs |
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 | Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
+| Measure LaTeX manuscript hygiene (forbidden characters, AI-usage score, word count, brace balance, citation coverage) | `/texcheck` | `latex-hygiene` skill | Hygiene report / AI-usage score / word count |
+| Apply an audit plan to a `.tex`, post-write scan, resolve and build the PDF | `/texcheck patch` / `scan` / `accept` / `build` | `latex-hygiene` skill | Patched `.tex` + `FAILS:` list, scan report, accepted `[final]` source, build report (`errors= undefined= doi_links= pages`) |
 
 ## Local delegation flows
 
@@ -97,15 +99,56 @@ After a substantive change, update the relevant doc and verify that links resolv
 `README.md` and `Architecture.md` as the authoritative inventory; do not duplicate their
 tables into `.claude/CLAUDE.md`.
 
+## Where a script belongs
+
+Any Python script written while operating on this repo belongs inside ResearchTools, under
+the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside
+it in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or
+grant directory being worked on. Before writing one, search the "ResearchTools script
+surface" inventory in `.claude/rules/testing.md` for a script or a subcommand that already
+does the job, and extend it with a flag or a subcommand rather than forking it.
+
+1. **Look before writing.** Search `.claude/skills/*/scripts/` for an existing script or
+   subcommand. `.claude/rules/testing.md` carries the full inventory of the script surface,
+   one line per script, and is the fastest way to check.
+
+2. **Extend before creating.** Add a subcommand to a neighbouring skill's script rather than
+   a second script. A new skill needs a reason beyond convenience.
+
+3. **Write it in ResearchTools, with a test.** English names, a module docstring stating
+   purpose and pipeline stage, type hints in signatures, and at least one offline test under
+   `scripts/Test/` needing no network, no API key and no model load. Add the test to the
+   offline-test block of `.claude/rules/testing.md` in the same commit.
+
+4. **Register it.** A skill has no mirror, so the routing table in `.claude/CLAUDE.md` plus
+   `README.md`, `Architecture.md` and this file are the only discovery paths. Follow
+   `docs/authoring-and-mirrors.md`.
+
+5. **Then call it from the project directory.** A manuscript directory may hold a thin shell
+   wrapper that calls the ResearchTools script with project-specific paths. It must hold no
+   logic.
+
+Exemption test: genuine one-off exploration (a count, a grep, a shape check that will never
+be re-run) stays in the session scratchpad and is deleted. The test is whether a second
+paper would want it; if yes, or even probably, promote it before the session closes. A
+session that ends with a script that should have been promoted deposits it in
+`docs/superpowers/todo/<date>-<name>-src/` with a TODO so the debt is recorded rather than
+lost.
+
+Anti-pattern to name explicitly: a patch script whose body is one long list of literal
+find-and-replace pairs for a single manuscript. That is data wearing a script's clothes. The
+harness goes to ResearchTools; the pairs belong in the audit plan the agent already emits,
+in a form the harness can read.
+
 ## Adding or editing an agent, skill, or command
 
 Follow the turnkey guide `docs/authoring-and-mirrors.md`: it names the canonical source
 for each kind (`.claude/agents|skills|commands/`), the per-type doc-update checklist
 (README, Architecture, the `.claude/CLAUDE.md` routing table, this file), and the mirror
 regeneration. After editing any agent, command, or rule, re-run `.\install.ps1 -Profile
-<active>` and commit the regenerated `.github/`, `.opencode/`, `.continue/`, and
-`CONVENTIONS.md` mirrors together with the canonical change. Skills have no mirror, so a
-user-invoked skill is discoverable elsewhere only via the routing table.
+<active>` and commit the regenerated `.github/`, `.opencode/`, `.continue/`,
+`CONVENTIONS.md`, and `AGENTS.md` mirrors together with the canonical change. Skills have
+no mirror, so a user-invoked skill is discoverable elsewhere only via the routing table.
 
 ## Environments
 

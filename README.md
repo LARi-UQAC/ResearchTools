@@ -34,8 +34,8 @@ rather than vague encouragement, and drafts pass a multi-model deliberation (Gem
 GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
 
 The toolbox is built as agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
-with generated mirrors for GitHub Copilot, OpenCode, Continue, and Aider (see
-[Installation](#installation)). Typical entry points: `/litreview` for a new topic (review update using `\litreview-updater`),
+with generated mirrors for GitHub Copilot, OpenCode, Continue, Aider, and `AGENTS.md`
+readers (see [Installation](#installation)). Typical entry points: `/litreview` for a new topic (review update using `\litreview-updater`),
 `/auditpaper` before submitting, `/auditthesis` before a defense, `/bibclean` on any
 `.bib` file, `/replyreviewer` when the reviews come back.
 
@@ -56,7 +56,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **13 skills**, **17 agents**, and **22 commands**.
+The repo ships **14 skills**, **17 agents**, and **22 commands**.
 
 ---
 
@@ -72,8 +72,8 @@ sequence (config, then junctions, then tools) in one pass.
 
 | | `setup.ps1` | `install-junctions.ps1` | `install.ps1` |
 |---|---|---|---|
-| Job | Generate machine-local config: `.claude\settings.json` + `CLAUDE.md` from templates (detects Git Bash, Node, Obsidian paths of THIS machine) | Link the repo into `~/.claude` so Claude Code loads agents/skills/rules/commands in every workspace | Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider (`-Personal` adds the user-level Copilot install) |
-| Output | 2 machine-specific files (paths differ per PC) | Links in `C:\Users\<you>\.claude\` | Generated files committed in the repo (`.github\`, `.opencode\`, `.continue\`, `CONVENTIONS.md`) + optional user copies |
+| Job | Generate machine-local config: `.claude\settings.json` + `CLAUDE.md` from templates (detects Git Bash, Node, Obsidian paths of THIS machine) | Link the repo into `~/.claude` so Claude Code loads agents/skills/rules/commands in every workspace | Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider, `AGENTS.md` readers (`-Personal` adds the user-level Copilot install) |
+| Output | 2 machine-specific files (paths differ per PC) | Links in `C:\Users\<you>\.claude\` | Generated files committed in the repo (`.github\`, `.opencode\`, `.continue\`, `CONVENTIONS.md`, `AGENTS.md`) + optional user copies |
 | When to run | Once after clone (or when machine paths change) | Once after clone; re-run when an agent or skill is ADDED (or a hardlink detached after a pull) | After every agent/command/rule EDIT, then commit the output |
 | Privilege | none | symlinks want Developer Mode (automatic hardlink fallback) | none |
 | Interactive | yes (asks vault path, confirms) | no | no |
@@ -165,8 +165,8 @@ needed to propagate rule and command improvements contributed by any collaborato
 
 ### Step 4 — Install for other coding tools (optional)
 
-`install.ps1` regenerates the GitHub Copilot, OpenCode, Continue, and Aider mirrors from
-the canonical `.claude/` sources (agents, task commands, rules). With `-Personal` it also
+`install.ps1` regenerates the GitHub Copilot, OpenCode, Continue, Aider, and `AGENTS.md`
+mirrors from the canonical `.claude/` sources (agents, task commands, rules). With `-Personal` it also
 installs the Copilot agents to `~/.copilot/agents/` and the prompt/instruction files to
 the VS Code user profile, making them available in every workspace:
 
@@ -190,7 +190,7 @@ pull request against `main`. The repository owner reviews and merges; a `git pul
 on their machine immediately updates the linked entries via the junctions.
 
 To **add or edit an agent, skill, or command** (and propagate it to Copilot,
-OpenCode, Continue, and Aider), follow the turnkey guide
+OpenCode, Continue, Aider, and `AGENTS.md` readers), follow the turnkey guide
 [docs/authoring-and-mirrors.md](docs/authoring-and-mirrors.md): canonical sources,
 per-type checklist, and the `install.ps1` mirror regeneration. Shared project
 conventions and environment facts (English-only definition files, agent/skill
@@ -281,7 +281,7 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Thirteen ship in this repo.
+Skills bundle scripts and references the agents reuse. Fourteen ship in this repo.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -298,6 +298,7 @@ Skills bundle scripts and references the agents reuse. Thirteen ship in this rep
 | `loop-engineer` | Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score `>=` min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; `local-coder`/`local-writer` do local generation. `loop_audit.py` aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated. | `/loopdev`, `.claude/skills/loop-engineer/SKILL.md` |
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
+| `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -466,6 +467,47 @@ failing.
   nothing; `--mode links` reports dead wiki-links read-only, and `--apply <map.json> --yes`
   is the one guarded, map-validated, single-pass rewrite of existing links exempted from the
   outbox-only write rule
+
+### `latex-hygiene` - mechanical LaTeX manuscript hygiene
+
+Turns the hygiene checks `paper-auditor`, `submit-checker`, and `thesis-auditor` already describe
+in prose into one script with subcommands, so the AI-usage score, the word count, and the brace
+balance are computed the same way every session instead of by hand. One script, `tex_check.py`;
+every subcommand takes paths or globs, never a hardcoded manuscript path, and accepts `--json`.
+
+| Subcommand | Input | Output |
+|---|---|---|
+| `chars` | `.tex` files/globs | per-file forbidden-character hits (line + name) and a total count |
+| `aiscan` | `.tex` files/globs | `risk_score`, weighted count per signal, lowest-deviation sentence window, a 15-word excerpt per hit |
+| `wc` | `.tex` files/globs | prose word count per file (floats and comments excluded), float count, total, page estimate |
+| `wc --accepted` | `.tex` files/globs, optional `--before <dir>` | word count of the accepted text (`changes` macros resolved); with `--before`, a before/after/delta/percent table |
+| `abstract` | main `.tex` | abstract word count, keyword count |
+| `braces` | `.tex` files/globs | final brace depth per file, the line of the first negative dip, and `\begin`/`\end` environment balance |
+| `par` | `.tex` files/globs | occurrences of `\added`/`\deleted`/`\replaced` whose argument crosses a blank line (the macros are not `\long`, so this breaks a build) |
+| `citecov` | `--tex <globs> --bib <file>` | cited keys absent from the `.bib` (dangling), and `.bib` entries never cited |
+| `refcov` | `.tex` files/globs | uncited labels, dangling `\ref`/`\eqref`/`\cref` targets, and duplicate labels |
+| `patch` | `--plan <audit_plan.md> --target <file.tex>`, optional `--author <id>`, `--dry-run`, `--init` | applies an audit plan by exact-match substitution, one occurrence required per edit; a `FAILS:` list and non-zero exit on any 0-match or 2+-match edit |
+| `scan` | `.tex` files/globs, optional `--bib <file>`, `--fail-on-markers` | post-write guard for control characters, damaged control-sequence residue, `changes` macros crossing a table/float boundary, a `%` comment that swallowed a row-terminating `\\`, a stale `\cite` inside a deleted span, and live `\hl{}`/`\todo{}` markers |
+| `accept` | `--target <file.tex>`, optional `--out <path>`, `--resolve` | the accepted source, `[final]{changes}`/`[disable]{todonotes}`, generated from the tracked source |
+| `build` | `--target <file>`, optional `--outdir out`, `--both` | pdflatex/bibtex/pdflatex/pdflatex with mandatory `BIBINPUTS=".."`, refusing a `.bib` inside the output directory |
+| `all` | files/globs | the aggregate of the read-side subcommands above |
+
+`aiscan` reproduces the High/Medium signal weights and the `risk_score` formula stated in
+`paper-auditor.md` Step 7.5 (a High signal counts 2, a Medium signal counts 1, toward `raw_count`).
+The script is pure Python standard library, so it needs no `requirements.txt` and adds no
+`pip-audit` surface.
+
+**Files:**
+- `.claude/skills/latex-hygiene/SKILL.md`
+- `.claude/skills/latex-hygiene/scripts/tex_check.py` - thin CLI dispatching to the subcommand modules
+- `.claude/skills/latex-hygiene/scripts/tex_common.py`, `tex_chars.py`, `tex_braces.py`, `tex_par.py`,
+  `tex_citecov.py`, `tex_abstract.py`, `tex_wc.py`, `tex_aiscan.py`, `tex_aiscan_text.py`
+- `.claude/skills/latex-hygiene/scripts/tex_patch.py`, `tex_scan.py`, `tex_build.py` - the four
+  write-side subcommands (`patch`, `scan`, `accept`, `build`)
+- `.claude/skills/latex-hygiene/scripts/Test/test_tex_check.py` - offline synthetic-string tests
+- `.claude/skills/latex-hygiene/scripts/Test/test_tex_patch.py`, `test_tex_build.py` - offline
+  tests for the write side (10 + 7 tests); `test_tex_build.py` patches `subprocess` and
+  `shutil.which`, no LaTeX installation needed
 
 ---
 
@@ -825,6 +867,7 @@ them available to Copilot CLI in every project (re-run after agent edits to refr
 | OpenCode | `.opencode/agent/<name>.md` | Full body, `description` frontmatter. |
 | Continue | `.continue/rules/researchtools.md` | One rule pointing at the canonical files and routing table. |
 | Aider | `CONVENTIONS.md` | Pointer paragraph (created once, never overwritten). |
+| `AGENTS.md` readers (OpenHuman, Hermes Agent, Codex, and others) | `AGENTS.md` | Distilled master, regenerated on every run; agent list, routing pointer, skills examples, and the cross-cutting rules. |
 
 For global availability in Claude Code (any working directory), `install-junctions.ps1`
 links each `.claude/agents/<name>.md` into `~/.claude/agents/` per file (symlink; hard-link
@@ -869,7 +912,7 @@ ResearchTools\
     │   ├── loopdev.md                  ├── talk.md
     │   └── recommendation-letter.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (13 skills)
+    └── skills\                              (14 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -893,10 +936,14 @@ ResearchTools\
                            references\ LOOP/STATE/PROCESS/ledger templates; requirements.txt)
         ├── recommendation-letter\SKILL.md   (+ scripts\generate_letter.py, letter_templates.py,
         │                  Test\test_generate_letter.py; references\quality-patterns.md; evals\)
-        └── paper2talk\SKILL.md              (+ scripts\talk_rules.py, talk_model.py, talk_template.py,
+        ├── paper2talk\SKILL.md              (+ scripts\talk_rules.py, talk_model.py, talk_template.py,
                            fig_export.py, talk_render.py, talk_notes.py, to_a4.py, talk_validate.py,
                            talk_pptx.py, paper_extract.py, talk_doctor.py,
                            requirements.txt, Test\ [13 offline suites];
                            assets\deck_skeleton.js, beamer_skeleton.tex.j2, web_skeleton.html.j2;
                            references\renderer-contracts.md, qa-loop.md)
+        └── latex-hygiene\SKILL.md           (+ scripts\tex_check.py, tex_common.py, tex_chars.py,
+                           tex_braces.py, tex_par.py, tex_citecov.py, tex_abstract.py, tex_wc.py,
+                           tex_aiscan.py, tex_aiscan_text.py, tex_patch.py, tex_scan.py, tex_build.py,
+                           Test\test_tex_check.py, Test\test_tex_patch.py, Test\test_tex_build.py)
 ```

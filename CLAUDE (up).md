@@ -148,3 +148,28 @@ pip-audit
 pip-audit -r requirements.txt
 pip-audit --fix
 Report any vulnerabilities
+## Active hooks
+
+The authoritative inventory is **printed at every session start**, not transcribed here.
+`session-hooks-inventory.py` (SessionStart) reads `~/.claude/settings.json` and emits, on
+stdout, a header line, one line per event, and a `[HOOKS ALERT]` line naming any hook that
+is declared but whose script is absent from disk. Read that, not a table.
+
+Measured 2026-08-28 by that hook on this machine: fourteen entries over six events -
+SessionStart 7, PreToolUse 2, PostToolUse 2, UserPromptSubmit 1, SessionEnd 1, Stop 1.
+Zero LLM tokens consumed. Three families:
+
+| Family | Hooks | What they guard |
+|---|---|---|
+| Security | `betterleaks-hook.py`, `vault-access-guard.py` (PreToolUse); `prompt-injection-defender.py`, `pip-audit-hook.py` (PostToolUse) | Secrets in a write, vault paths outside `local-writer`, injection in **tool output**, CVEs in a modified `requirements.txt` |
+| Session | `caveman-activate.js`, auto-sync git, RTK notice, session status, `session-hooks-inventory.py`, `install-junctions.ps1 -Sync` (SessionStart); `caveman-mode-tracker.js` (UserPromptSubmit) | Mode, git divergence, tooling availability, the hook inventory itself |
+| Memory | `obsidian-outbox-flush.py` (SessionStart + SessionEnd), memory upkeep (Stop) | Vault delivery, and routing learnings to `local-writer` |
+
+Two facts that decide how to read a quiet startup:
+
+1. `prompt-injection-defender.py` scans **tool output only** (`Read|Bash|WebFetch|Grep|Task`,
+   PostToolUse). It never sees chat: neither what you type nor what the assistant writes.
+   Nothing scans the conversation itself.
+2. Only a SessionStart hook's **stdout** reaches the session context. A hook writing to
+   stderr (`obsidian-outbox-flush.py`) or running `-Quiet` (`install-junctions.ps1 -Sync`)
+   is silent by design and is not broken. Check the stream before suspecting the file.

@@ -1,0 +1,10 @@
+{
+  "_about": "Configuration for the vault write path: the outbox flush hook and the vault event daemon. No numeric value belongs in the code that uses it (R0); every key states its unit in its name and its provenance below (R4).",
+  "lock": {
+    "_provenance": "chosen 2026-08-28 by M. Otis's implementing session, bounded by the shape of a lock hold rather than by a benchmark: the lock is taken around a filesystem write only (milliseconds), never around a model call, whose measured median is 36.991 s (.claude/local-model-config.json). Revise by measuring a real hold with the daemon's REPORT line.",
+    "acquire_timeout_s": 30,
+    "hook_acquire_timeout_s": 10,
+    "stale_after_s": 300,
+    "poll_interval_s": 0.1
+  }
+}

@@ -249,14 +249,25 @@ pas laisser un contournement dans le dossier du projet comme seule trace.
 
 ## Hooks globaux
 
-Douze entrées de hook réparties sur six événements, toutes déclarées dans
-`~/.claude/settings.json`. Zéro token LLM consommé. Trois familles : sécurité, session,
-mémoire. Les tables ci-dessous comptent onze lignes pour douze entrées, parce que
-`obsidian-outbox-flush.py` est déclaré deux fois, sur SessionStart et sur SessionEnd, et
-tient une seule ligne. Par événement : PreToolUse 2, PostToolUse 2, SessionStart 5,
-UserPromptSubmit 1, SessionEnd 1, Stop 1. L'inventaire est celui de `settings.json` au
-2026-08-27 ; il remplace l'ancienne mention de « trois hooks », qui n'en couvrait que la
-famille sécurité et omettait `vault-access-guard.py`.
+**L'inventaire qui fait foi est imprimé à chaque démarrage de session**, pas recopié ici.
+`session-hooks-inventory.py` lit `~/.claude/settings.json` et émet sur **stdout** une ligne
+d'en-tête puis une ligne par événement, plus une ligne `[HOOKS ALERT]` nommant tout hook
+déclaré dont le script est absent du disque. Les tables ci-dessous décrivent le **rôle** de
+chaque hook ; elles ne sont pas le compte de référence, et ne doivent plus être lues comme
+tel.
+
+Ce choix vient de deux mesures. Le 2026-08-27, `vault-access-guard.py` avait disparu de
+`~/.claude/hooks/` alors que `settings.json` le déclarait toujours, et neuf outils ont été
+refusés pendant quatre tours sans qu'aucune ligne de démarrage ne le signale. Le
+2026-08-28, la table de ce fichier annonçait onze entrées quand `settings.json` en
+déclarait treize : une table tenue à la main dérive, un hook qui lit le fichier ne le peut
+pas. Zéro token LLM consommé dans les deux cas.
+
+Compté le 2026-08-28 par `session-hooks-inventory.py` sur cette machine : quatorze entrées
+sur six événements (SessionStart 7, PreToolUse 2, PostToolUse 2, UserPromptSubmit 1,
+SessionEnd 1, Stop 1). `settings.template.json`, lui, n'en distribue que douze : il ne
+porte ni l'entrée `install-junctions.ps1 -Sync`, ni le hook `Stop` d'entretien mémoire, qui
+sont propres à cette machine. Trois familles : sécurité, session, mémoire.
 
 ### Sécurité
 
@@ -276,6 +287,8 @@ famille sécurité et omettait `vault-access-guard.py`.
 | auto-sync git (inline) | SessionStart | Émet `[AUTO-SYNC CHECK]` : branche, fichiers sales, retard et avance sur le distant. Se limite aux chemins `*OutilsLogiciels*` et rend 0 ailleurs |
 | notice RTK (inline) | SessionStart | Émet `[RTK ACTIVE]`, seulement si `rtk` est sur le PATH |
 | statut de session (inline) | SessionStart | Fournit la ligne `Session: RTK=... \| Caveman=... \| git-sync=on` exigée par « Status de session obligatoire » |
+| `session-hooks-inventory.py` | SessionStart | Émet `[HOOKS ACTIVE]` : une ligne d'en-tête, une ligne par événement, et `[HOOKS ALERT]` nommant tout script déclaré mais absent du disque. C'est l'inventaire qui fait foi |
+| `install-junctions.ps1 -Sync` (inline) | SessionStart | Propage les fichiers prouvés verts de ResearchTools vers `~/.claude`. Muet par construction (`-Quiet`), donc invisible dans le contexte de session. Propre à cette machine, non distribué par `settings.template.json` |
 
 ### Mémoire
 
@@ -303,6 +316,15 @@ ailleurs :
   outils, donc sa panne couvre la session entière.
 - Après toute modification de `settings.json`, vérifier que chaque `command` pointe vers un
   fichier qui existe. Un chemin périmé ne se signale qu'au premier appel d'outil concerné.
+  `session-hooks-inventory.py` fait désormais cette vérification à chaque démarrage et
+  nomme le fichier manquant, au lieu de laisser le premier appel d'outil la découvrir.
+- **Un hook dont le message doit être vu écrit sur `stdout`.** Seul le `stdout` d'un hook
+  SessionStart parvient au contexte de session : `stderr` et un lancement `-Quiet` sont
+  invisibles. Mesuré le 2026-08-28, avant l'ajout de l'inventaire : sur six entrées
+  SessionStart, quatre se voyaient, tandis que `obsidian-outbox-flush.py` (qui n'écrit ses
+  lignes `[OUTBOX]` que sur `stderr`) et `install-junctions.ps1 -Sync -Quiet` ne
+  produisaient rien. Le silence a été lu comme une panne de hooks alors que les six
+  tournaient. Avant de soupçonner un fichier manquant, vérifier le flux.
 
 ### Distribution des hooks hors de cette machine
 

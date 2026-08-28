@@ -51,6 +51,15 @@ _CANDIDATES_PATH = _CLAUDE_DIR / "local-models.json"
 # losing a tenth of the speed is kept; one that halves the speed is not.
 DEFAULT_THROUGHPUT_FLOOR = 0.90
 
+# What one step down the KV fidelity ladder (f16 -> q8_0 -> q4_0) must BUY to be worth
+# taking, as a multiple of the context window. At 2.0 a quantised cache is chosen only when
+# it at least doubles the window per step; a cache that quantises the model's own recall to
+# win a few thousand tokens is not a bargain. Before this existed the objective ranked on
+# raw window size, so the cheapest cache won by construction on every model whose weights
+# left room to grow - the search was silently trading answer quality for context and
+# reporting it as a bigger window.
+DEFAULT_FIDELITY_EXCHANGE_RATE = 2.0
+
 KV_CACHE_TYPES = vram_daemon.KV_CACHE_TYPES
 
 
@@ -58,9 +67,36 @@ class OptimizerError(Exception):
     """Raised when the search cannot proceed. Never degrades quietly."""
 
 
+def effective_window(record: dict[str, Any], exchange_rate: float) -> float:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Discount a measured context window by the fidelity its KV cache gave
+        up to reach it, so windows bought at different cache precisions are
+        comparable. A quantised cache costs nothing in VRAM terms and is
+        therefore free in raw token counts, which is exactly why the raw count
+        must not be what decides.
+
+    Inputs:
+        record (dict): one measured configuration, carrying num_ctx and
+            kv_cache_type.
+        exchange_rate (float): window multiplier one fidelity step must buy.
+
+    Outputs:
+        result (float): the window in tokens, divided by the exchange rate
+        raised to the number of fidelity steps below the most faithful cache.
+    --------------------------------------------------------------------------
+    """
+    ranks = vram_daemon.KV_FIDELITY_RANK
+    top = max(ranks.values())
+    steps = top - ranks.get(record.get("kv_cache_type", ""), top)
+    return record["num_ctx"] / (exchange_rate ** steps)
+
+
 def select_configuration(
     records: list[dict[str, Any]],
     throughput_floor: float = DEFAULT_THROUGHPUT_FLOOR,
+    fidelity_exchange_rate: float = DEFAULT_FIDELITY_EXCHANGE_RATE,
 ) -> dict[str, Any]:
     """
     --------------------------------------------------------------------------
@@ -74,8 +110,18 @@ def select_configuration(
         configuration is refused however fast it measured, because that speed
         stops being reproducible the moment anything else touches the card.
         Among the admissible, throughput must reach a fraction of the best
-        observed. Among those, the largest window wins, ties breaking on
-        throughput.
+        observed. Among those, the largest EFFECTIVE window wins, ties
+        breaking on fidelity first and throughput second.
+
+        Effective, not raw, and that is the whole point of the third rule. A
+        quantised KV cache makes the cache smaller, so it buys context for
+        free in VRAM terms while degrading what the model recalls from that
+        context. Ranking on the raw token count therefore handed the win to
+        the cheapest cache on every model with room to grow, and reported the
+        result as a bigger window rather than as the trade it was. The window
+        is now discounted by the exchange rate for each fidelity step below
+        f16, so a quantised cache must earn its place by buying a materially
+        larger window rather than merely a larger one.
 
     Inputs:
         records (list[dict]): one per measured (num_ctx, kv_cache_type) pair,
@@ -83,6 +129,8 @@ def select_configuration(
             and decode_tps.
         throughput_floor (float): fraction of the best observed decode
             throughput a configuration must still reach.
+        fidelity_exchange_rate (float): window multiplier one step down the
+            KV fidelity ladder must buy to be preferred.
 
     Outputs:
         result (dict): {"retained": dict | None, "dropped": list of
@@ -139,7 +187,22 @@ def select_configuration(
         else:
             eligible.append(record)
 
-    retained = max(eligible, key=lambda r: (r["num_ctx"], r["decode_tps"])) if eligible else None
+    ranks = vram_daemon.KV_FIDELITY_RANK
+    retained = max(
+        eligible,
+        key=lambda r: (effective_window(r, fidelity_exchange_rate),
+                       ranks.get(r.get("kv_cache_type", ""), 0),
+                       r["decode_tps"]),
+    ) if eligible else None
+    for record in eligible:
+        if record is retained:
+            continue
+        dropped.append((record, (
+            f"effective window {effective_window(record, fidelity_exchange_rate):.0f} tokens "
+            f"({record['num_ctx']} discounted for a {record.get('kv_cache_type', '?')} cache) "
+            f"below the retained "
+            f"{effective_window(retained, fidelity_exchange_rate):.0f}"
+        )))
     return {"retained": retained, "dropped": dropped, "best_decode_tps": best_decode_tps}
 
 
@@ -188,7 +251,8 @@ def ollama_create(tag: str, modelfile_path: Path) -> None:
 
     try:
         done = subprocess.run(["ollama", "create", tag, "-f", str(modelfile_path)],
-                              capture_output=True, text=True, timeout=600)
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=600)
     except (OSError, subprocess.SubprocessError) as exc:
         raise OptimizerError(f"[VRAM-OPT] `ollama create {tag}` could not run: {exc}") from exc
     if done.returncode != 0:
@@ -267,6 +331,108 @@ def declare_candidate(tag: str, role: str, retained: dict[str, Any], card: dict)
     _CANDIDATES_PATH.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
 
+# The manifest layer size is the GGUF file on disk. What the daemon actually pins in VRAM is
+# a different number, and on this machine the two disagreed by about a gigabyte for a 9B tag
+# (6289 MiB on disk, 5248 MiB resident, 100 percent GPU). Refusing on the disk figure alone
+# therefore turns away models that fit. The disk figure stays as the cheap first filter; when
+# it trips, the model is loaded once at a deliberately small window and the refusal is decided
+# on what the daemon reports instead of on what the file weighs.
+SMALL_CTX_FOR_WEIGHT_PROBE = optimize_ollama.SMALL_CTX_FOR_ISOLATION
+
+
+def measure_resident_weights(tag: str) -> dict[str, Any] | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Load `tag` at a deliberately small window and report what the daemon
+        actually pins in VRAM, so a refusal rests on a measurement rather than
+        on the size of the file on disk. At this window the KV cache is
+        negligible, so the resident total approximates the weight cost.
+
+    Inputs:
+        tag (str): the model tag to load.
+
+    Outputs:
+        result (dict | None): {"resident_mib", "residency_ratio", "free_mib"}
+        once the tag is resident, or None when the daemon reports it absent
+        from /api/ps right after the priming call, which is the one case where
+        no measurement can be made.
+    --------------------------------------------------------------------------
+    """
+    payload = optimize_ollama.build_payload(
+        optimize_ollama.DEFAULT_SWEEP_PROMPT, tag, SMALL_CTX_FOR_WEIGHT_PROBE, num_predict=1)
+    # The probe must load the model the way the TUNED tag will run it, and the tuned
+    # Modelfile pins num_gpu 99. Without the pin Ollama decides for itself how many layers
+    # to offload and holds some back, so the probe reads a partial residency that says
+    # nothing about the tuned tag. Measured 2026-08-28: a base tag probed without the pin
+    # reported 59.1 percent resident and was refused, while the same weights with the pin
+    # sit entirely on the card.
+    payload["options"]["num_gpu"] = vram_modelfile.NUM_GPU_ALL_LAYERS
+    optimize_ollama.post_generate(payload)
+    row = optimize_ollama.api_ps_row(tag)
+    if row is None:
+        return None
+    _used_mib, free_mib = optimize_ollama.gpu_memory_mib()
+    return {
+        "resident_mib": row["size_vram"] / _MIB,
+        "residency_ratio": row["residency_ratio"],
+        "free_mib": free_mib,
+    }
+
+
+def weights_refused(base_tag: str, weights_mib: float, card_mib: int) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide whether a model whose manifest layer is at or above the card can
+        still be tuned, by measuring it rather than trusting the file size.
+        Logs the reason either way, so a surprising outcome is auditable.
+
+    Inputs:
+        base_tag (str): the model tag being considered.
+        weights_mib (float): the manifest model-layer size in MiB.
+        card_mib (int): total VRAM on this card in MiB.
+
+    Outputs:
+        result (bool): True when the run must refuse before building anything.
+    --------------------------------------------------------------------------
+    """
+    logger.info(
+        "[VRAM-OPT] %s weighs %.0f MiB on disk, at or above the card's %d MiB. Measuring what "
+        "the daemon actually pins before refusing.", base_tag, weights_mib, card_mib)
+    try:
+        measured = measure_resident_weights(base_tag)
+    except optimize_ollama.OptimizeError as exc:
+        logger.error("[VRAM-OPT] could not measure %s on this card: %s", base_tag, exc)
+        return True
+    if measured is None:
+        logger.error(
+            "[VRAM-OPT] %s never became resident after a priming call, so nothing can be "
+            "measured. Refusing before building anything.", base_tag)
+        return True
+    if measured["residency_ratio"] < optimize_ollama.GPU_RESIDENCY_MIN_RATIO:
+        logger.error(
+            "[VRAM-OPT] %s loads at %.0f MiB with only %.1f percent of it in VRAM at a %d-token "
+            "window, so it spills before any context is granted. No context window can make it "
+            "fit. Refusing before building anything.",
+            base_tag, measured["resident_mib"], measured["residency_ratio"] * 100,
+            SMALL_CTX_FOR_WEIGHT_PROBE)
+        return True
+    if measured["free_mib"] < optimize_ollama.MIN_FREE_MIB:
+        logger.error(
+            "[VRAM-OPT] %s is fully resident at a %d-token window but leaves only %d MiB free, "
+            "under the %d MiB floor, so every context window above it is already refused. "
+            "Refusing before building anything.",
+            base_tag, SMALL_CTX_FOR_WEIGHT_PROBE, measured["free_mib"],
+            optimize_ollama.MIN_FREE_MIB)
+        return True
+    logger.info(
+        "[VRAM-OPT] the disk figure overstates %s: it is fully resident at %.0f MiB with %d MiB "
+        "free at a %d-token window. Proceeding on the measurement.",
+        base_tag, measured["resident_mib"], measured["free_mib"], SMALL_CTX_FOR_WEIGHT_PROBE)
+    return False
+
+
 def _today() -> str:
     """Return today's date as YYYY-MM-DD."""
     return _datetime.date.today().isoformat()
@@ -282,6 +448,7 @@ def run(
     base_tag: str,
     role: str,
     throughput_floor: float,
+    fidelity_exchange_rate: float,
     kv_types: tuple[str, ...],
     keep_vision: bool,
     dry_run: bool,
@@ -297,6 +464,8 @@ def run(
         base_tag (str): the model tag to tune.
         role (str): "writer" or "coder".
         throughput_floor (float): fraction of the best observed decode rate.
+        fidelity_exchange_rate (float): window multiplier one step down the KV
+            fidelity ladder must buy to be preferred.
         kv_types (tuple[str, ...]): axis values to try, in order.
         keep_vision (bool): keep a separate projector layer instead of dropping.
         dry_run (bool): probe and print the Modelfile, touch nothing else.
@@ -314,11 +483,7 @@ def run(
     model = vram_probe.model_layer(facts["layers"])
     weights_mib = model["size"] / _MIB
     card_mib = facts["card"]["memory_total_mib"]
-    if weights_mib >= card_mib:
-        logger.error(
-            "[VRAM-OPT] %s weighs %.0f MiB, at or above the card's %d MiB; no context window "
-            "can make it fit. Refusing before building anything.",
-            base_tag, weights_mib, card_mib)
+    if weights_mib >= card_mib and weights_refused(base_tag, weights_mib, card_mib):
         return 1
 
     projector = vram_probe.projector_layer(facts["layers"])
@@ -364,7 +529,7 @@ def run(
         logger.error("%s", exc)
         return 1
 
-    selection = select_configuration(records, throughput_floor)
+    selection = select_configuration(records, throughput_floor, fidelity_exchange_rate)
     for record, reason in selection["dropped"]:
         logger.info("[VRAM-OPT] dropped num_ctx=%d kv=%s: %s",
                     record["num_ctx"], record["kv_cache_type"], reason)
@@ -417,6 +582,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("base_tag", help="the model tag to tune")
     parser.add_argument("--role", required=True, choices=("writer", "coder"))
     parser.add_argument("--throughput-floor", type=float, default=DEFAULT_THROUGHPUT_FLOOR)
+    parser.add_argument("--fidelity-exchange-rate", type=float,
+                        default=DEFAULT_FIDELITY_EXCHANGE_RATE,
+                        help="window multiplier one step down the KV fidelity ladder "
+                             "(f16 -> q8_0 -> q4_0) must buy to be preferred; 1.0 ranks on "
+                             "the raw window and treats a quantised cache as free")
     parser.add_argument("--kv", default=",".join(KV_CACHE_TYPES),
                         help="comma-separated KV cache types to try, in order")
     parser.add_argument("--keep-vision", action="store_true",
@@ -437,7 +607,8 @@ def main(argv: list[str] | None = None) -> int:
                      unknown, ", ".join(KV_CACHE_TYPES))
         return 1
     return run(base_tag=args.base_tag, role=args.role,
-               throughput_floor=args.throughput_floor, kv_types=kv_types,
+               throughput_floor=args.throughput_floor,
+               fidelity_exchange_rate=args.fidelity_exchange_rate, kv_types=kv_types,
                keep_vision=args.keep_vision, dry_run=args.dry_run)
 
 

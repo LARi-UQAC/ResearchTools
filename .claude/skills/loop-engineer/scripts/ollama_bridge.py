@@ -250,6 +250,12 @@ MAX_GENERATION_RETRIES = 3      # finite retry budget for hygiene/verify failure
 REQUEST_TIMEOUT_S = 300.0
 VERIFY_TIMEOUT_S = 60.0
 
+# How much of a failing oracle's output is kept. The log gets enough to hold a full Python
+# traceback; the warning line gets one line, so a run stays readable while still naming the
+# cause. Both exist because the output used to be discarded entirely.
+_VERIFY_OUTPUT_LOG_CHARS = 2000
+_VERIFY_CAUSE_CHARS = 200
+
 # Fix round 1 (I4): a machine-local artefact must default OUTSIDE the repository, so it
 # never needs a .gitignore entry to stay out of a commit. Same home the outbox already
 # uses. --log overrides this.
@@ -742,6 +748,50 @@ def strip_reasoning(text: str) -> str:
     return "".join(kept).strip()
 
 
+_FENCE_LINE_RE = re.compile(r"^\s*```[A-Za-z0-9_+.-]*\s*$")
+
+
+def unwrap_sole_code_fence(text: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Remove the fence when a response IS one fenced block and nothing else,
+        so a model that presents its module for display does not fail on
+        punctuation.
+
+        Measured 2026-08-28 on a coder candidate that scored 0 of 3. It wrapped
+        its module in a fence despite a prompt forbidding one, the bridge wrote
+        that text verbatim to a .py file, and every attempt died with
+        "SyntaxError: invalid syntax" on line 1, before a single case ran. The
+        oracle was grading punctuation rather than code, and it did so for any
+        model with that habit, which is most instruction-tuned ones.
+        strip_reasoning deliberately PROTECTS fences (defect I3), so nothing
+        else in the pipeline could ever remove an outer one.
+
+        Deliberately narrow. Only a body whose first and last lines are the
+        ONLY two fence lines in it is unwrapped. Prose around a fence is a
+        Markdown deliverable and unwrapping it would delete the document; two
+        blocks are a document as well; an unterminated fence is truncated
+        output, and dropping its opening marker would turn a broken response
+        into one that merely looks plausible.
+
+    Inputs:
+        text (str): the response body, after reasoning has been stripped.
+
+    Outputs:
+        result (str): the fenced block's contents when the body is exactly one
+        fenced block, otherwise `text` unchanged.
+    --------------------------------------------------------------------------
+    """
+    lines = text.strip().splitlines()
+    if len(lines) < 2:
+        return text
+    fence_lines = [i for i, line in enumerate(lines) if _FENCE_LINE_RE.match(line)]
+    if fence_lines != [0, len(lines) - 1]:
+        return text
+    return "\n".join(lines[1:-1]).strip()
+
+
 def scan_hygiene(text: str) -> list[str]:
     """
     --------------------------------------------------------------------------
@@ -1163,7 +1213,7 @@ def run_bridge(
         raw_text = response.get("response", "")
         reasoning_anomaly: str | None = None
         try:
-            body = strip_reasoning(raw_text)
+            body = unwrap_sole_code_fence(strip_reasoning(raw_text))
         except ReasoningAnomalyError as exc:
             body = ""
             reasoning_anomaly = str(exc)
@@ -1172,13 +1222,14 @@ def run_bridge(
         violations: list[str] = [] if (empty_body or reasoning_anomaly) else scan_hygiene(body)
 
         verify_ok: bool | None = None
+        verify_output = ""
         verify_s = 0.0
         if reasoning_anomaly is None and not empty_body and not violations:
             if target_path is not None:
                 write_target(target_path, body)
             if verify_command:
                 t1 = time.monotonic()
-                verify_ok, _output = run_verify(verify_command, target_path)
+                verify_ok, verify_output = run_verify(verify_command, target_path)
                 verify_s = time.monotonic() - t1
                 if not verify_ok and target_path is not None:
                     restore_target(target_path, previous_target)
@@ -1201,6 +1252,11 @@ def run_bridge(
             "reasoning_anomaly": reasoning_anomaly,
             "hygiene_violations": violations,
             "verify_ok": verify_ok,
+            # The oracle's own output, not just its verdict. Measured 2026-08-28: a
+            # candidate scored 0 of 3 for two weeks and nothing recorded WHY, because this
+            # string was read into a discarded variable. The cause was one line long
+            # ("SyntaxError: invalid syntax") and would have been obvious the first time.
+            "verify_output": verify_output[:_VERIFY_OUTPUT_LOG_CHARS],
             "accepted": accepted,
             "generation_s": round(generation_s, 3),
             "verify_s": round(verify_s, 3),
@@ -1217,6 +1273,13 @@ def run_bridge(
         # thinking 4259 chars, response 0). A rejection that does not name its cause
         # sends the reader looking at the model instead of at the request.
         cause = ""
+        if verify_ok is False and verify_output.strip():
+            # Same reasoning as the empty-body cause below: a rejection that does not name
+            # its cause sends the reader looking at the model instead of at the request.
+            # The last non-empty line of an oracle's output is where a traceback puts its
+            # exception, which is the one line that identifies the failure.
+            last = [ln for ln in verify_output.strip().splitlines() if ln.strip()][-1]
+            cause = f" [verify: {last.strip()[:_VERIFY_CAUSE_CHARS]}]"
         if empty_body:
             cause = (
                 f" [done_reason={response.get('done_reason')!r}"

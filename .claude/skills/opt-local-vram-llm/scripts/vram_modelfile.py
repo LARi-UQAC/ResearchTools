@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 # identifiers repeat by construction. Never emitted, and never copied from a base tag.
 FORBIDDEN_PARAMETERS = frozenset({"presence_penalty", "frequency_penalty", "repeat_penalty"})
 
+# Every layer on the GPU. Not an axis: anything less breaks full residency by construction,
+# since what Ollama holds back is layer offload rather than KV cache. Named here rather than
+# written twice, because the weight probe in vram_optimizer.py must load a model under the
+# same pin the tuned Modelfile applies, or it measures a configuration nobody will run.
+NUM_GPU_ALL_LAYERS = 99
+
 # Emitted for HUMAN callers (`ollama run`). Inert for the bridge, which pins its own.
 _TEMPERATURE_BY_ROLE = {"coder": "0.1", "writer": "0.3"}
 
@@ -187,7 +193,7 @@ def render(
     lines.append("")
     lines.append("# Forces every layer onto the GPU. Without it Ollama holds layers back even")
     lines.append("# when the weights fit: one untuned base measured 79 percent GPU at 16384.")
-    lines.append("PARAMETER num_gpu 99")
+    lines.append(f"PARAMETER num_gpu {NUM_GPU_ALL_LAYERS}")
     return "\n".join(lines) + "\n"
 
 

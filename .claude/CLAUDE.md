@@ -244,6 +244,21 @@ repo.
    checklist before presenting the result; if it is missing or failing, it sends the
    agent back to complete the work instead of reporting.
 
+## Where code belongs
+
+Any code written while operating on this repo lives inside ResearchTools, whatever its
+language and however small: scripts, modules, helper libraries, hooks, fixtures, generators.
+Never in the session scratchpad, and never in the manuscript, thesis, or grant directory
+being worked on. That is what lets the toolkit improve itself instead of the same work being
+redone next session in a directory that gets archived. The default home is the owning
+skill's `.claude/skills/<skill>/scripts/` with an offline test beside it in `Test/`; code the
+whole repo owns keeps its established home instead. Ownership is decided by who calls it.
+
+The full rule, its exemption test for genuine one-off exploration, and the registration
+checklist are in [.claude/rules/workflows.md](rules/workflows.md) under "Where code belongs".
+It is stated here as well, and only here among the sections above, because it governs what
+this session is allowed to leave behind rather than how a document is written.
+
 ## Self-correction trigger
 
 If, upon reading part of a text, you realize these rules are not being followed, inform the

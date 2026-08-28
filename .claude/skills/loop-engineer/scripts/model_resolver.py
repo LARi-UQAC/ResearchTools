@@ -157,6 +157,10 @@ QUALIFICATION_DIR = LOOP_ENGINEER_DIR / "qualification"
 # touching the real repository files.
 LOCAL_MODELS_PATH = CLAUDE_DIR / "local-models.json"
 STATE_PATH = CLAUDE_DIR / "local-model-state.json"
+# Written by optimize_ollama.py --sweep and by the opt-local-vram-llm skill. The resolver
+# reads it only to break an exact tie: task passes measure code quality, this file measures
+# what the card can actually hold, and the two answer different questions.
+MODEL_CONFIG_PATH = CLAUDE_DIR / "local-model-config.json"
 TASKS_PATH = QUALIFICATION_DIR / "tasks.json"
 
 # Forces a tag without touching local-model-state.json (module docstring, resolve()).
@@ -1208,6 +1212,7 @@ _SUPPORTED_QUALIFICATION_MODES = frozenset({"beat_incumbent"})
 def _win_rule_no_regression_strict_gain(
     challenger_by_kind: dict[str, dict[str, int]],
     incumbent_by_kind: dict[str, dict[str, int]],
+    **_context: Any,
 ) -> tuple[bool, str]:
     """
     --------------------------------------------------------------------------
@@ -1268,12 +1273,116 @@ def _win_rule_no_regression_strict_gain(
     return True, f"no regression in any role, strict gain in at least one ({'; '.join(per_role_notes)})"
 
 
+def measured_budget(tag: str, config_path: Path = MODEL_CONFIG_PATH) -> dict[str, Any] | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Report the retained VRAM measurement for a tag, or None when the tag
+        has none. A tag with no entry has no configuration that was ever found
+        admissible on this card, which is a fact about the card and not a
+        missing file to work around.
+
+    Inputs:
+        tag (str): the model tag to look up.
+        config_path (Path): the measurement document (default MODEL_CONFIG_PATH).
+
+    Outputs:
+        result (dict | None): {"num_ctx", "decode_tps"} for the retained rung,
+        or None when the tag is absent or its entry names no retained window.
+    --------------------------------------------------------------------------
+    """
+    try:
+        document = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    entry = document.get("models", {}).get(tag)
+    if not entry or not entry.get("retained_num_ctx"):
+        return None
+    rung = entry.get("retained_rung_measurement", {})
+    decode_tps = rung.get("decode_tps")
+    if decode_tps is None:
+        rates = sorted(rung.get("throughputs_tok_s", []))
+        decode_tps = rates[len(rates) // 2] if rates else 0.0
+    return {"num_ctx": entry["retained_num_ctx"], "decode_tps": decode_tps}
+
+
+def _win_rule_tie_broken_by_measured_budget(
+    challenger_by_kind: dict[str, dict[str, int]],
+    incumbent_by_kind: dict[str, dict[str, int]],
+    *,
+    challenger_tag: str = "",
+    incumbent_tag: str = "",
+    config_path: Path = MODEL_CONFIG_PATH,
+    **_context: Any,
+) -> tuple[bool, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The base rule, with one addition: when the two models pass exactly the
+        same tasks in every role, break the tie on the measured VRAM budget
+        rather than declaring no winner.
+
+        Why a tie deserves a tie-break at all. The task set grades code
+        quality, and equal scores mean it cannot separate the two. The
+        measurement document grades what the card can hold, which is a
+        different question and was never asked here. Leaving the incumbent in
+        place on a tie is only defensible while the incumbent is itself a
+        configuration this repository would accept, and it need not be: a tag
+        can be the incumbent and still have NO admissible measured
+        configuration, because it was adopted before the sweep existed.
+        Measured 2026-08-28: the coder incumbent is fully resident only at a
+        512-token window, where it leaves 83 MiB free against a 300 MiB floor,
+        so its sweep retained nothing and wrote no entry.
+
+        Regression and strict gain are unchanged - the tie-break never
+        overrides a task-set verdict, it only decides the case the task set
+        declared even.
+
+    Inputs:
+        challenger_by_kind (dict): the candidate's per-role breakdown.
+        incumbent_by_kind (dict): the incumbent's recorded per-role breakdown.
+        challenger_tag (str): the candidate's tag, for the measurement lookup.
+        incumbent_tag (str): the incumbent's tag, for the same.
+        config_path (Path): the measurement document.
+
+    Outputs:
+        result (tuple[bool, str]): (win, human-readable reason).
+    --------------------------------------------------------------------------
+    """
+    win, reason = _win_rule_no_regression_strict_gain(challenger_by_kind, incumbent_by_kind)
+    if win or "no strict gain in any role" not in reason:
+        return win, reason
+
+    challenger = measured_budget(challenger_tag, config_path)
+    incumbent = measured_budget(incumbent_tag, config_path)
+    if challenger is None:
+        return False, (
+            f"{reason}, and the challenger has no retained VRAM measurement to break it on")
+    if incumbent is None:
+        return True, (
+            f"{reason}, but the incumbent has NO admissible measured configuration on this "
+            f"card while the challenger retains {challenger['num_ctx']} tokens at "
+            f"{challenger['decode_tps']:.2f} tok/s")
+    if (challenger["num_ctx"] > incumbent["num_ctx"]
+            and challenger["decode_tps"] >= incumbent["decode_tps"]):
+        return True, (
+            f"{reason}, broken on the measured budget: {challenger['num_ctx']} tokens at "
+            f"{challenger['decode_tps']:.2f} tok/s against the incumbent's "
+            f"{incumbent['num_ctx']} at {incumbent['decode_tps']:.2f}")
+    return False, (
+        f"{reason}, and the measured budget does not favour the challenger either "
+        f"({challenger['num_ctx']} tokens at {challenger['decode_tps']:.2f} tok/s against "
+        f"{incumbent['num_ctx']} at {incumbent['decode_tps']:.2f})")
+
+
 # Fix round 1 (F2): dispatch table so policy.win_rule genuinely selects the comparison
 # function - changing it to an unrecognized key is an explicit refusal (see cmd_qualify),
 # not a silently ignored string. Only one strategy is implemented today; the table exists so
 # a second one can be added later without another round of "policy nobody reads".
 _WIN_RULES = {
     "no_regression_strict_gain_by_role": _win_rule_no_regression_strict_gain,
+    "no_regression_strict_gain_by_role_tie_broken_by_measured_budget":
+        _win_rule_tie_broken_by_measured_budget,
 }
 
 
@@ -1298,11 +1407,15 @@ def _format_by_kind(by_kind: dict[str, dict[str, int]]) -> str:
     return ", ".join(f"{kind} {v.get('passed', 0)}/{v.get('total', 0)}" for kind, v in sorted(by_kind.items()))
 
 
+TIE_BREAK_WIN_RULE = "no_regression_strict_gain_by_role_tie_broken_by_measured_budget"
+
+
 def _adopt_role(
     tag: str,
     role: str,
     result: dict[str, Any],
     incumbent: dict[str, Any] | None,
+    win_rule_key: str = "",
 ) -> int:
     """
     --------------------------------------------------------------------------
@@ -1361,7 +1474,11 @@ def _adopt_role(
         if isinstance(incumbent_entry, dict) else "no recorded score"
     )
 
-    if _role_ratio(challenger) <= _role_ratio(incumbent_entry):
+    challenger_ratio = _role_ratio(challenger)
+    incumbent_ratio = _role_ratio(incumbent_entry)
+    tie_break_reason = ""
+    if challenger_ratio < incumbent_ratio or (
+            challenger_ratio == incumbent_ratio and win_rule_key != TIE_BREAK_WIN_RULE):
         print(
             f"[RESOLVER] {tag} did not qualify for role {role!r} against {incumbent_tag}: "
             f"{summary} vs {incumbent_summary}, which is not a strict gain; {STATE_PATH} "
@@ -1369,14 +1486,98 @@ def _adopt_role(
             file=sys.stderr,
         )
         return 1
+    if challenger_ratio == incumbent_ratio:
+        # The task set graded the two even, so it has said all it can. Under this policy the
+        # tie goes to the measured VRAM budget, which answers a different question and was
+        # never asked here. A tie is only broken, never a regression.
+        won, tie_break_reason = _win_rule_tie_broken_by_measured_budget(
+            {role: challenger}, {role: incumbent_entry if isinstance(incumbent_entry, dict) else {}},
+            challenger_tag=tag, incumbent_tag=incumbent_tag or "")
+        if not won:
+            print(
+                f"[RESOLVER] {tag} did not qualify for role {role!r} against {incumbent_tag}: "
+                f"{tie_break_reason}; {STATE_PATH} left unchanged.",
+                file=sys.stderr,
+            )
+            return 1
 
     today = datetime.now(timezone.utc).date().isoformat()
     _write_role_state(role, tag, challenger, incumbent, today)
     print(
         f"[RESOLVER] {tag} qualified for role {role!r}, beating {incumbent_tag}: "
-        f"{summary} vs {incumbent_summary}; now current for that role in {STATE_PATH} "
+        f"{summary} vs {incumbent_summary}"
+        + (f" ({tie_break_reason})" if tie_break_reason else "")
+        + f"; now current for that role in {STATE_PATH} "
         f"(the overall 'current' tag is unchanged)."
     )
+    return 0
+
+
+def cmd_score(tag: str, role: str | None, record: bool = False, as_json: bool = False) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Run the frozen task set against `tag` and report what it scored,
+        writing nothing. Measuring a field of candidates previously required
+        --qualify, whose whole purpose is to change the adopted tag, so the
+        only way to read a number for a candidate you did not want to adopt
+        was to read it out of a refusal message.
+
+        Reports per task, not only the totals, because a ten-task set exists
+        precisely so that two candidates on the same total can still be told
+        apart by WHICH tasks each failed.
+
+    Inputs:
+        tag (str): the model tag to score.
+        role (str | None): restrict to one task kind, or None for all.
+
+    Outputs:
+        result (int): 0 when the run completed, 1 when the task set could not
+        be loaded or the role names no task.
+
+    Raises:
+        ResolverError: the task set is missing or malformed.
+    --------------------------------------------------------------------------
+    """
+    tasks = _load_tasks()
+    if role:
+        tasks = [t for t in tasks if t.get("kind") == role]
+        if not tasks:
+            print(f"[RESOLVER] no task of kind {role!r} in {TASKS_PATH}.", file=sys.stderr)
+            return 1
+
+    result = run_qualification_tasks(tag, tasks)
+    if as_json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+        if not record:
+            return 0
+    else:
+        for entry in result["results"]:
+            print(f"  {'PASS' if entry['passed'] else 'FAIL'}  {entry['kind']:6} {entry['id']}")
+    summary = (f"[RESOLVER] {tag} scored {result['passed']}/{result['total']} "
+               f"({_format_by_kind(result['by_kind'])})")
+    if not record:
+        print(summary + "; nothing written.")
+        return 0
+
+    if not role:
+        print(f"{summary}; --record needs --role: a refreshed score belongs to one role's "
+              f"entry, and there is no whole-set record to refresh.", file=sys.stderr)
+        return 1
+    state = _load_state_for_qualify() or {}
+    entry = (state.get("current_by_role") or {}).get(role) or {}
+    if entry.get("tag") != tag:
+        print(f"{summary}; refusing --record: {tag} is not the current tag for role {role!r} "
+              f"({entry.get('tag') or 'none'} is). --record refreshes an incumbent's stale "
+              f"number, it never changes which tag is current - use --qualify for that.",
+              file=sys.stderr)
+        return 1
+
+    role_score = {"passed": int(result["by_kind"].get(role, {}).get("passed", 0)),
+                  "total": int(result["by_kind"].get(role, {}).get("total", 0))}
+    _write_role_state(role, tag, role_score, state,
+                      datetime.now(timezone.utc).date().isoformat())
+    print(f"{summary}; recorded for role {role!r} in {STATE_PATH} (same tag, refreshed score).")
     return 0
 
 
@@ -1501,7 +1702,7 @@ def cmd_qualify(tag: str, role: str | None = None) -> int:
     incumbent = _load_state_for_qualify()
 
     if role:
-        return _adopt_role(tag, role, result, incumbent)
+        return _adopt_role(tag, role, result, incumbent, win_rule_key)
 
     if incumbent is None:
         if not allow_bootstrap:
@@ -1559,6 +1760,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group.add_argument("--list", action="store_true", help="list installed tags with eligibility and reason")
     group.add_argument("--resolve", action="store_true", help="print the current tag, nothing else")
     group.add_argument("--qualify", type=str, metavar="TAG", help="qualify TAG against the frozen task set")
+    group.add_argument(
+        "--score", type=str, metavar="TAG",
+        help="run the frozen task set against TAG and report the result, changing NOTHING. "
+             "Comparing candidates used to require --qualify, which writes state as a side "
+             "effect, so measuring a field of candidates meant either adopting one or reading "
+             "a refusal message for the number.")
+    parser.add_argument(
+        "--json", action="store_true",
+        help="with --score, print the result as JSON on stdout instead of a per-task list, so "
+             "a comparison across candidates is assembled from data rather than by parsing a "
+             "human-readable log.")
+    parser.add_argument(
+        "--record", action="store_true",
+        help="with --score, write the measured score into local-model-state.json for a tag "
+             "that is ALREADY current for that role. Refreshes a stale record; it can never "
+             "change which tag is current. Needed because an incumbent's recorded score is "
+             "frozen at whatever task set existed when it was adopted, and a later challenger "
+             "is then compared against a number from a different set.")
     parser.add_argument(
         "--role", type=str, default=None, metavar="KIND",
         help="task kind (as declared by qualification/tasks.json, e.g. writer or coder). "
@@ -1598,6 +1817,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_resolve(args.role)
         if args.qualify:
             return cmd_qualify(args.qualify, args.role)
+        if args.score:
+            return cmd_score(args.score, args.role, args.record, args.json)
     except ResolverError as exc:
         print(str(exc), file=sys.stderr)
         return 1

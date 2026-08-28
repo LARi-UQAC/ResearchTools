@@ -1001,5 +1001,80 @@ class TestPerRoleCurrentTag(unittest.TestCase):
         self.assertIn("--role", err.getvalue())
 
 
+
+class TestMeasuredBudgetTieBreak(unittest.TestCase):
+    """
+    The task set grades code quality; local-model-config.json grades what the card holds.
+    When the first says "even", the second is allowed to decide - and only then. Measured
+    2026-08-28: a challenger and the coder incumbent both passed 2 of 3 coder tasks, while
+    the incumbent had no admissible measured configuration at all on this card.
+    """
+
+    def _config(self, models):
+        path = Path(tempfile.mkdtemp()) / "local-model-config.json"
+        path.write_text(json.dumps({"models": models}), encoding="utf-8")
+        return path
+
+    def test_a_tie_goes_to_the_challenger_when_the_incumbent_has_no_measurement(self):
+        config = self._config({"chal": {"retained_num_ctx": 65536,
+                                        "retained_rung_measurement": {"decode_tps": 38.99}}})
+        win, reason = mr._win_rule_tie_broken_by_measured_budget(
+            {"coder": {"passed": 2, "total": 3}}, {"coder": {"passed": 2, "total": 3}},
+            challenger_tag="chal", incumbent_tag="inc", config_path=config)
+
+        self.assertTrue(win)
+        self.assertIn("NO admissible measured configuration", reason)
+
+    def test_a_tie_stands_when_the_challenger_itself_has_no_measurement(self):
+        config = self._config({"inc": {"retained_num_ctx": 8192,
+                                       "retained_rung_measurement": {"decode_tps": 22.9}}})
+        win, reason = mr._win_rule_tie_broken_by_measured_budget(
+            {"coder": {"passed": 2, "total": 3}}, {"coder": {"passed": 2, "total": 3}},
+            challenger_tag="chal", incumbent_tag="inc", config_path=config)
+
+        self.assertFalse(win)
+        self.assertIn("no retained VRAM measurement", reason)
+
+    def test_a_bigger_window_wins_only_when_throughput_does_not_drop(self):
+        config = self._config({
+            "chal": {"retained_num_ctx": 65536,
+                     "retained_rung_measurement": {"decode_tps": 20.0}},
+            "inc": {"retained_num_ctx": 8192,
+                    "retained_rung_measurement": {"decode_tps": 30.0}}})
+        win, _reason = mr._win_rule_tie_broken_by_measured_budget(
+            {"coder": {"passed": 2, "total": 3}}, {"coder": {"passed": 2, "total": 3}},
+            challenger_tag="chal", incumbent_tag="inc", config_path=config)
+
+        self.assertFalse(win)
+
+    def test_the_tie_break_never_rescues_a_regression(self):
+        config = self._config({"chal": {"retained_num_ctx": 65536,
+                                        "retained_rung_measurement": {"decode_tps": 99.0}}})
+        win, reason = mr._win_rule_tie_broken_by_measured_budget(
+            {"coder": {"passed": 1, "total": 3}}, {"coder": {"passed": 3, "total": 3}},
+            challenger_tag="chal", incumbent_tag="inc", config_path=config)
+
+        self.assertFalse(win)
+        self.assertIn("regressed in role", reason)
+
+    def test_a_strict_gain_never_reaches_the_tie_break(self):
+        win, reason = mr._win_rule_tie_broken_by_measured_budget(
+            {"coder": {"passed": 3, "total": 3}}, {"coder": {"passed": 2, "total": 3}},
+            challenger_tag="chal", incumbent_tag="inc",
+            config_path=Path("no-such-config.json"))
+
+        self.assertTrue(win)
+        self.assertIn("strict gain", reason)
+
+    def test_the_median_throughput_stands_in_when_no_decode_rate_was_recorded(self):
+        config = self._config({"chal": {"retained_num_ctx": 16384,
+                                        "retained_rung_measurement": {
+                                            "throughputs_tok_s": [27.26, 27.92, 27.8]}}})
+        self.assertAlmostEqual(mr.measured_budget("chal", config)["decode_tps"], 27.8, places=2)
+
+    def test_a_tag_absent_from_the_document_has_no_budget(self):
+        self.assertIsNone(mr.measured_budget("absent", self._config({})))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -107,6 +107,13 @@ FIXED_TOP_P = 0.9
 FIXED_TOP_K = 40
 RESPONSE_RESERVE_TOKENS = 1024  # num_predict cap for every timed generation in the sweep
 
+# Issue #12 T3's own protocol. A fixed, SHORT reply is what makes decode throughput
+# comparable across model families: with a 1024-token reserve a reasoning model spends the
+# whole of it while a coder answers in about 150, so elapsed time then measures verbosity
+# rather than speed. Measured 2026-08-27: 36.991 s versus 4.918 s at decode throughputs of
+# 27.3 and 30.1 tokens per second.
+DEFAULT_NUM_PREDICT = 160
+
 # Acceptance thresholds for a sweep rung (brief, Step 2): all three required on every one
 # of the 3 timed runs at that rung, not just the median.
 MIN_FREE_MIB = 300
@@ -407,6 +414,69 @@ def parse_ollama_ps_row(raw: str, tag: str) -> dict[str, Any] | None:
     return None
 
 
+GPU_RESIDENCY_MIN_RATIO = 0.999
+
+
+def _api_ps_body(timeout: float = OLLAMA_PS_TIMEOUT_S) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Fetch the daemon's own /api/ps document. Split from api_ps_row so a
+        test can replace the transport without touching the parsing.
+
+    Inputs:
+        timeout (float): socket timeout in seconds.
+
+    Outputs:
+        result (dict): the decoded response body.
+
+    Raises:
+        OptimizeError: the daemon is unreachable or answered non-JSON. No
+        silent fallback - an unmeasurable card is a stop, not a default.
+    --------------------------------------------------------------------------
+    """
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_HOST}/api/ps", timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise OptimizeError(f"[OPTIMIZE] /api/ps unreachable or unreadable: {exc}") from exc
+
+
+def api_ps_row(tag: str, timeout: float = OLLAMA_PS_TIMEOUT_S) -> dict[str, Any] | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Report one resident model's memory split and granted window from
+        /api/ps. Replaces parsing the PROCESSOR text column of `ollama ps`:
+        the API returns size, size_vram and context_length as numbers, so
+        residency is a ratio rather than an integer recovered from a string
+        such as "21%/79% CPU/GPU", and the granted window is read rather
+        than inferred.
+
+    Inputs:
+        tag (str): the model tag to look for.
+        timeout (float): socket timeout in seconds.
+
+    Outputs:
+        result (dict | None): {"size", "size_vram", "context_length",
+        "residency_ratio"} for the tag, or None when it is not resident at
+        this instant (a normal condition mid-load, not an error).
+    --------------------------------------------------------------------------
+    """
+    for model in _api_ps_body(timeout).get("models", []):
+        if tag not in (model.get("name"), model.get("model")):
+            continue
+        size = model.get("size") or 0
+        size_vram = model.get("size_vram") or 0
+        return {
+            "size": size,
+            "size_vram": size_vram,
+            "context_length": model.get("context_length"),
+            "residency_ratio": round(size_vram / size, 6) if size else 0.0,
+        }
+    return None
+
+
 def build_payload(prompt: str, model: str, num_ctx: int, num_predict: int, seed: int = FIXED_SEED) -> dict[str, Any]:
     """
     --------------------------------------------------------------------------
@@ -540,9 +610,17 @@ def timed_generate_with_sample(
     sample: dict[str, Any] | None = None
     try:
         ps_row = parse_ollama_ps_row(ollama_ps_raw(), tag)
+        api_row = api_ps_row(tag)
         used_mib, free_mib = gpu_memory_mib()
         if ps_row is not None:
-            sample = {**ps_row, "used_mib": used_mib, "free_mib": free_mib}
+            # The text row still supplies gpu_percent and the human-readable size for the
+            # report; the API row supplies the two numbers the objective function ranks on.
+            sample = {
+                **ps_row,
+                "used_mib": used_mib,
+                "free_mib": free_mib,
+                "residency_ratio": (api_row or {}).get("residency_ratio", 0.0),
+            }
         else:
             logger.warning("[OPTIMIZE] mid-run sample: %r not resident yet at the sample instant.", tag)
     except OptimizeError as exc:
@@ -610,7 +688,9 @@ def evaluate_rung(
 
     Outputs:
         result (dict): {"num_ctx", "median_s", "runs_s", "throughputs_tok_s",
-        "min_gpu_percent", "min_free_mib", "samples", "accepted"}.
+        "min_gpu_percent", "min_free_mib", "residency_ratio" (the WORST
+        run's size_vram/size ratio, from /api/ps), "decode_tps" (the MEDIAN
+        run's eval_count/eval_duration throughput), "samples", "accepted"}.
 
     Raises:
         OptimizeError: no mid-run sample was captured on ANY of the runs at
@@ -635,14 +715,33 @@ def evaluate_rung(
 
     min_gpu_percent = min(s["gpu_percent"] for s in samples)
     min_free_mib = min(s["free_mib"] for s in samples)
+    residency_ratios = [s["residency_ratio"] for s in samples if "residency_ratio" in s]
+    min_residency_ratio = min(residency_ratios) if residency_ratios else 0.0
+    decode_sorted = sorted(throughputs)
+    median_decode_tps = decode_sorted[len(decode_sorted) // 2] if decode_sorted else 0.0
     regressed = (
         baseline_median_s is not None
         and median_s > baseline_median_s * REGRESSION_TOLERANCE_FACTOR
     )
+    # Fix (2026-08-27): a rung above the model's OWN native context maximum was being
+    # accepted. Ollama does not error on options.num_ctx past that maximum - it silently
+    # clamps, so the request costs exactly the memory of the clamped window and the whole
+    # acceptance predicate above passes on numbers that describe a DIFFERENT, smaller
+    # window. Measured on qwen2.5-coder:7b-gpu (native max 32768): rung 65536 reported
+    # min_free_mib 617 and 100 percent GPU, byte-identical to rung 32768, and 'ollama ps'
+    # reported CONTEXT 32768 on all three runs - so the sweep retained 65536, a window the
+    # daemon will never grant. That number then feeds the bridge's budget gate, which would
+    # pass a ~64k-token prompt straight into the num_ctx // 2 + 2 truncation this repository
+    # keeps a measured signature for. The residency samples already carry the daemon's own
+    # CONTEXT field, so the clamp is detectable with no extra call: a rung is honest only
+    # when every sample reports the window that was actually asked for.
+    observed_contexts = sorted({s["context"] for s in samples if s.get("context") is not None})
+    clamped = bool(observed_contexts) and observed_contexts != [num_ctx]
     accepted = (
         min_gpu_percent >= GPU_RESIDENCY_FULL_PERCENT
         and min_free_mib >= MIN_FREE_MIB
         and not regressed
+        and not clamped
     )
     return {
         "num_ctx": num_ctx,
@@ -651,8 +750,12 @@ def evaluate_rung(
         "throughputs_tok_s": [round(t, 2) for t in throughputs],
         "min_gpu_percent": min_gpu_percent,
         "min_free_mib": min_free_mib,
+        "residency_ratio": min_residency_ratio,
+        "decode_tps": round(median_decode_tps, 2),
         "samples": samples,
         "regressed_past_baseline": regressed,
+        "observed_contexts": observed_contexts,
+        "clamped_by_model_maximum": clamped,
         "accepted": accepted,
     }
 
@@ -905,6 +1008,14 @@ def cmd_sweep(
         records.append(record)
 
         if not record["accepted"]:
+            if record["clamped_by_model_maximum"]:
+                logger.info(
+                    "[OPTIMIZE] num_ctx=%d REJECTED (clamped by the model's own maximum: "
+                    "the daemon reported CONTEXT %s, not %d); keeping num_ctx=%s",
+                    num_ctx, record["observed_contexts"], num_ctx,
+                    last_accepted["num_ctx"] if last_accepted else "none",
+                )
+                break
             logger.info(
                 "[OPTIMIZE] num_ctx=%d REJECTED (min_gpu_percent=%d min_free_mib=%d "
                 "median_s=%.3f regressed=%s); stopping the ladder, keeping num_ctx=%s.",
@@ -971,8 +1082,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
              "p4-measurements.md to keep the two comparable)",
     )
     parser.add_argument(
-        "--num-predict", type=int, default=RESPONSE_RESERVE_TOKENS, dest="num_predict",
-        help=f"reply-length cap for every timed run in --sweep (default {RESPONSE_RESERVE_TOKENS})",
+        "--num-predict", type=int, default=DEFAULT_NUM_PREDICT, dest="num_predict",
+        help=f"reply-length cap for every timed run in --sweep (default {DEFAULT_NUM_PREDICT})",
     )
     parser.add_argument(
         "--kv-cache-type-label", type=str, default=None, dest="kv_cache_type_label",

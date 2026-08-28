@@ -35,10 +35,18 @@ locally and free. No gateway; cloud stays on the normal subscription auth.
 
 | Goal | Agent | Model | Output |
 |---|---|---|---|
-| Docstrings, code comments, Markdown docs, CHANGELOG, Obsidian summaries | `local-writer` | haiku wrapper + local `ornith:9b` (bridge) | Rule-compliant text written to the target file |
-| Code against a spec/failing test, refactor snippets, scaffolds | `local-coder` | haiku wrapper + local `qwen3.5:9b` (bridge) | Minimal, style-matched code edits |
+| Docstrings, code comments, Markdown docs, CHANGELOG, Obsidian summaries | `local-writer` | haiku wrapper + the resolver's writer-role model (bridge) | Rule-compliant text written to the target file |
+| Code against a spec/failing test, refactor snippets, scaffolds | `local-coder` | haiku wrapper + the resolver's coder-role model (bridge) | Minimal, style-matched code edits |
+| Tune a local Ollama model's context window and KV cache type for this GPU | `opt-local-vram-llm` skill (`/opt-local-vram-llm`) | measured sweep against `optimize_ollama.evaluate_rung` | Tuned `-gpu` tag, `local-model-config.json` measurement, candidate declared in `local-models.json` |
 | Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
 | Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, no daily note; single serialized writer, the outbox is the write path, not a fallback |
+
+The KV cache type is a daemon-wide environment variable that Ollama reads only at daemon
+start, not per request. `opt-local-vram-llm` therefore restarts the daemon once for each
+value it sweeps, proves the restart actually took the new value by reading `server.log`
+rather than trusting the restart script's exit code, and restores the original value if the
+sweep fails or is interrupted, so the machine is never left on a value chosen by a search
+that did not complete.
 
 Bridge rule: the local model sees only the prompt (no repo, no conversation), so every rule
 constraint and input must be in the prompt; write it to a scratchpad file and hand that file

@@ -62,8 +62,8 @@ import model_resolver as mr  # noqa: E402
 # included, exactly as _ollama_list_raw would return it from subprocess stdout.
 FAKE_OLLAMA_LIST = (
     "NAME                  ID              SIZE      MODIFIED    \n"
-    "ornith:9b-gpu         b283934ba10f    5.6 GB    10 days ago    \n"
-    "qwen3.5:9b-gpu        d5ae64a751a0    6.6 GB    10 days ago    \n"
+    "vendor-a:9b         b283934ba10f    5.6 GB    10 days ago    \n"
+    "vendor:7b        d5ae64a751a0    6.6 GB    10 days ago    \n"
     "random-model:latest   deadbeefcafe    1.0 GB    2 days ago    \n"
 )
 
@@ -87,8 +87,8 @@ _DECLARED_CANDIDATES = {
     "_header": {"purpose": "test fixture, not the real local-models.json"},
     "policy": _full_policy(),
     "candidates": [
-        {"tag": "ornith:9b-gpu", "role": "writer", "declared": "2026-08-14", "notes": "fixture"},
-        {"tag": "qwen3.5:9b-gpu", "role": "coder", "declared": "2026-08-14", "notes": "fixture"},
+        {"tag": "vendor-a:9b", "role": "writer", "declared": "2026-08-14", "notes": "fixture"},
+        {"tag": "vendor:7b", "role": "coder", "declared": "2026-08-14", "notes": "fixture"},
         {"tag": "challenger:tag", "role": "writer", "declared": "2026-08-14", "notes": "fixture"},
     ],
 }
@@ -147,7 +147,7 @@ class TestListMarksUndeclaredModelIneligible(unittest.TestCase):
         self.assertIn("ineligible", undeclared_lines[0])
         self.assertIn("not declared", undeclared_lines[0])
 
-        declared_lines = [ln for ln in lines if "ornith:9b-gpu" in ln]
+        declared_lines = [ln for ln in lines if "vendor-a:9b" in ln]
         self.assertEqual(len(declared_lines), 1, out.getvalue())
         self.assertIn("eligible", declared_lines[0])
         self.assertNotIn("ineligible", declared_lines[0])
@@ -160,7 +160,7 @@ class TestResolvePrintsExactlyOneTag(unittest.TestCase):
             d = Path(d)
             state_path = d / "local-model-state.json"
             _write_json(state_path, {
-                "current": "ornith:9b-gpu",
+                "current": "vendor-a:9b",
                 "score": {"passed": 6, "total": 6, "ratio": 1.0, "by_kind": _by_kind(3, 3, 3, 3)},
                 "qualified_at": "2026-08-14T00:00:00+00:00",
                 "history": [],
@@ -180,8 +180,8 @@ class TestResolvePrintsExactlyOneTag(unittest.TestCase):
         # Exactly one tag: the whole capture is the tag plus a single trailing newline, no
         # other line, no leading/trailing whitespace decoration - safe for $(...) shell
         # substitution, which strips one trailing newline and nothing else.
-        self.assertEqual(raw, "ornith:9b-gpu\n")
-        self.assertEqual(raw.strip(), "ornith:9b-gpu")
+        self.assertEqual(raw, "vendor-a:9b\n")
+        self.assertEqual(raw.strip(), "vendor-a:9b")
         self.assertNotIn("\n", raw.strip())
 
 
@@ -247,10 +247,10 @@ class TestQualifyLosingCandidate(unittest.TestCase):
             _write_json(tasks_path, _FROZEN_TASKS)
             incumbent_by_kind = _by_kind(coder_passed=2, coder_total=3, writer_passed=3, writer_total=3)
             incumbent_state = {
-                "current": "ornith:9b-gpu",
+                "current": "vendor-a:9b",
                 "score": _score_from_by_kind(incumbent_by_kind),
                 "qualified_at": "2026-08-14T00:00:00+00:00",
-                "history": [{"date": "2026-08-14", "tag": "ornith:9b-gpu", "action": "seed",
+                "history": [{"date": "2026-08-14", "tag": "vendor-a:9b", "action": "seed",
                               "score": _score_from_by_kind(incumbent_by_kind), "previous": None}],
             }
             _write_json(state_path, incumbent_state)
@@ -295,10 +295,10 @@ class TestQualifyLosingCandidate(unittest.TestCase):
             _write_json(tasks_path, _FROZEN_TASKS)
             incumbent_by_kind = _by_kind(coder_passed=1, coder_total=3, writer_passed=1, writer_total=3)
             incumbent_state = {
-                "current": "ornith:9b-gpu",
+                "current": "vendor-a:9b",
                 "score": _score_from_by_kind(incumbent_by_kind),
                 "qualified_at": "2026-08-14T00:00:00+00:00",
-                "history": [{"date": "2026-08-14", "tag": "ornith:9b-gpu", "action": "seed",
+                "history": [{"date": "2026-08-14", "tag": "vendor-a:9b", "action": "seed",
                               "score": _score_from_by_kind(incumbent_by_kind), "previous": None}],
             }
             _write_json(state_path, incumbent_state)
@@ -343,10 +343,10 @@ class TestQualifyWinnerUpdatesState(unittest.TestCase):
             _write_json(tasks_path, _FROZEN_TASKS)
             incumbent_by_kind = _by_kind(coder_passed=1, coder_total=3, writer_passed=3, writer_total=3)
             incumbent_state = {
-                "current": "ornith:9b-gpu",
+                "current": "vendor-a:9b",
                 "score": _score_from_by_kind(incumbent_by_kind),
                 "qualified_at": "2026-08-14T00:00:00+00:00",
-                "history": [{"date": "2026-08-14", "tag": "ornith:9b-gpu", "action": "seed",
+                "history": [{"date": "2026-08-14", "tag": "vendor-a:9b", "action": "seed",
                               "score": _score_from_by_kind(incumbent_by_kind), "previous": None}],
             }
             _write_json(state_path, incumbent_state)
@@ -373,7 +373,7 @@ class TestQualifyWinnerUpdatesState(unittest.TestCase):
         self.assertEqual(new_state["score"]["passed"], 6)
         self.assertEqual(new_state["score"]["by_kind"]["coder"]["passed"], 3)
         self.assertEqual(len(new_state["history"]), 2)  # seed entry preserved, new one appended
-        self.assertEqual(new_state["history"][0]["tag"], "ornith:9b-gpu")
+        self.assertEqual(new_state["history"][0]["tag"], "vendor-a:9b")
         new_entry = new_state["history"][-1]
         self.assertEqual(new_entry["tag"], "challenger:tag")
         self.assertRegex(new_entry["date"], r"^\d{4}-\d{2}-\d{2}$")
@@ -455,7 +455,7 @@ class TestPolicyIsWired(unittest.TestCase):
         candidates_doc = {
             "_header": {"purpose": "fixture"},
             "policy": policy,
-            "candidates": [{"tag": "ornith:9b-gpu", "role": "writer", "declared": "2026-08-14", "notes": "fixture"}],
+            "candidates": [{"tag": "vendor-a:9b", "role": "writer", "declared": "2026-08-14", "notes": "fixture"}],
         }
         _write_json(local_models, candidates_doc)
         _write_json(tasks_path, _FROZEN_TASKS)
@@ -508,7 +508,7 @@ class TestPolicyIsWired(unittest.TestCase):
             os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
             d = Path(d)
             local_models, tasks_path, state_path = self._setup(
-                d, _full_policy(win_rule="totally_unknown_rule"), tag="ornith:9b-gpu"
+                d, _full_policy(win_rule="totally_unknown_rule"), tag="vendor-a:9b"
             )
             err = io.StringIO()
             with mock.patch.object(mr, "LOCAL_MODELS_PATH", local_models), \
@@ -516,7 +516,7 @@ class TestPolicyIsWired(unittest.TestCase):
                  mock.patch.object(mr, "STATE_PATH", state_path), \
                  mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
                  redirect_stderr(err):
-                rc = mr.main(["--qualify", "ornith:9b-gpu"])
+                rc = mr.main(["--qualify", "vendor-a:9b"])
 
         self.assertNotEqual(rc, 0)
         self.assertIn("win_rule", err.getvalue())
@@ -659,7 +659,7 @@ class TestAtomicWrite(unittest.TestCase):
                  mock.patch.object(mr, "STATE_PATH", state_path), \
                  mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
                  mock.patch.object(mr, "run_qualification_tasks", side_effect=bootstrap_result):
-                rc = mr.main(["--qualify", "ornith:9b-gpu"])
+                rc = mr.main(["--qualify", "vendor-a:9b"])
 
             tmp_sibling = state_path.with_name(state_path.name + ".tmp")
 
@@ -802,14 +802,14 @@ def _role_fixture(d: Path, state: dict | None) -> tuple[Path, Path, Path]:
 
 
 def _state_with_role_map(**by_role) -> dict:
-    """An incumbent state document: ornith:9b-gpu overall, writer-strong and coder-weak,
+    """An incumbent state document: vendor-a:9b overall, writer-strong and coder-weak,
     which is this machine's real measured shape (writer 3/3, coder 0/3)."""
     by_kind = _by_kind(coder_passed=0, coder_total=3, writer_passed=3, writer_total=3)
     state = {
-        "current": "ornith:9b-gpu",
+        "current": "vendor-a:9b",
         "score": _score_from_by_kind(by_kind),
         "qualified_at": "2026-08-14T00:00:00+00:00",
-        "history": [{"date": "2026-08-14", "tag": "ornith:9b-gpu", "action": "seed",
+        "history": [{"date": "2026-08-14", "tag": "vendor-a:9b", "action": "seed",
                       "score": _score_from_by_kind(by_kind), "previous": None}],
     }
     if by_role:
@@ -830,14 +830,14 @@ class TestPerRoleCurrentTag(unittest.TestCase):
             os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
             d = Path(d)
             _, _, state_path = _role_fixture(d, _state_with_role_map(
-                coder={"tag": "qwen3.5:9b-gpu", "passed": 2, "total": 2, "adopted": "2026-08-14"}))
+                coder={"tag": "vendor:7b", "passed": 2, "total": 2, "adopted": "2026-08-14"}))
             out = io.StringIO()
             with mock.patch.object(mr, "STATE_PATH", state_path), \
                  mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
                  redirect_stdout(out):
                 rc = mr.main(["--resolve", "--role", "coder"])
         self.assertEqual(rc, 0)
-        self.assertEqual(out.getvalue().strip(), "qwen3.5:9b-gpu")
+        self.assertEqual(out.getvalue().strip(), "vendor:7b")
 
     def test_resolve_role_without_an_entry_falls_back_to_current(self):
         """The fallback is not a D7 downgrade: it returns the very tag the bridge would
@@ -846,14 +846,14 @@ class TestPerRoleCurrentTag(unittest.TestCase):
             os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
             d = Path(d)
             _, _, state_path = _role_fixture(d, _state_with_role_map(
-                coder={"tag": "qwen3.5:9b-gpu", "passed": 2, "total": 2, "adopted": "2026-08-14"}))
+                coder={"tag": "vendor:7b", "passed": 2, "total": 2, "adopted": "2026-08-14"}))
             out = io.StringIO()
             with mock.patch.object(mr, "STATE_PATH", state_path), \
                  mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
                  redirect_stdout(out):
                 rc = mr.main(["--resolve", "--role", "writer"])
         self.assertEqual(rc, 0)
-        self.assertEqual(out.getvalue().strip(), "ornith:9b-gpu")
+        self.assertEqual(out.getvalue().strip(), "vendor-a:9b")
 
     def test_qualify_role_adopts_that_role_only_and_leaves_current_alone(self):
         with tempfile.TemporaryDirectory() as d, _pop_override():
@@ -873,16 +873,16 @@ class TestPerRoleCurrentTag(unittest.TestCase):
                  mock.patch.object(mr, "STATE_PATH", state_path), \
                  mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
                  mock.patch.object(mr, "run_qualification_tasks", side_effect=coder_result):
-                rc = mr.main(["--qualify", "qwen3.5:9b-gpu", "--role", "coder"])
+                rc = mr.main(["--qualify", "vendor:7b", "--role", "coder"])
             new_state = json.loads(state_path.read_text(encoding="utf-8"))
 
         self.assertEqual(rc, 0)
         # Only that role's slice of the frozen set was executed.
         self.assertEqual([t["kind"] for t in seen_tasks], ["coder", "coder"])
-        self.assertEqual(new_state["current_by_role"]["coder"]["tag"], "qwen3.5:9b-gpu")
+        self.assertEqual(new_state["current_by_role"]["coder"]["tag"], "vendor:7b")
         # The overall tag and the full-run score are untouched: a partial task set cannot
         # speak for the whole frozen set.
-        self.assertEqual(new_state["current"], "ornith:9b-gpu")
+        self.assertEqual(new_state["current"], "vendor-a:9b")
         self.assertEqual(new_state["score"]["by_kind"]["writer"]["passed"], 3)
         self.assertEqual(new_state["qualified_at"], "2026-08-14T00:00:00+00:00")
         self.assertEqual(new_state["history"][-1]["action"], "promote-role:coder")
@@ -892,7 +892,7 @@ class TestPerRoleCurrentTag(unittest.TestCase):
             os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
             d = Path(d)
             local_models, tasks_path, state_path = _role_fixture(d, _state_with_role_map(
-                coder={"tag": "qwen3.5:9b-gpu", "passed": 1, "total": 2, "adopted": "2026-08-14"}))
+                coder={"tag": "vendor:7b", "passed": 1, "total": 2, "adopted": "2026-08-14"}))
             before_bytes = state_path.read_bytes()
 
             def tying_result(tag, tasks):
@@ -954,7 +954,7 @@ class TestPerRoleCurrentTag(unittest.TestCase):
                  mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
                  mock.patch.object(mr, "run_qualification_tasks", side_effect=coder_result), \
                  redirect_stderr(err):
-                rc = mr.main(["--qualify", "qwen3.5:9b-gpu", "--role", "coder"])
+                rc = mr.main(["--qualify", "vendor:7b", "--role", "coder"])
             state_written = state_path.exists()
 
         self.assertEqual(rc, 1)
@@ -968,8 +968,8 @@ class TestPerRoleCurrentTag(unittest.TestCase):
             os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
             d = Path(d)
             local_models, tasks_path, state_path = _role_fixture(d, _state_with_role_map(
-                writer={"tag": "ornith:9b-gpu", "passed": 3, "total": 3, "adopted": "2026-08-14"},
-                coder={"tag": "qwen3.5:9b-gpu", "passed": 1, "total": 3, "adopted": "2026-08-14"}))
+                writer={"tag": "vendor-a:9b", "passed": 3, "total": 3, "adopted": "2026-08-14"},
+                coder={"tag": "vendor:7b", "passed": 1, "total": 3, "adopted": "2026-08-14"}))
 
             # Gains in coder (0 -> 3 against the incumbent's own by_kind), ties in writer.
             challenger_by_kind = _by_kind(coder_passed=3, coder_total=3, writer_passed=3, writer_total=3)
@@ -991,7 +991,7 @@ class TestPerRoleCurrentTag(unittest.TestCase):
         # 3/3 beats 1/3 -> the coder role changes hands.
         self.assertEqual(new_state["current_by_role"]["coder"]["tag"], "challenger:tag")
         # 3/3 ties 3/3 -> the writer role does NOT.
-        self.assertEqual(new_state["current_by_role"]["writer"]["tag"], "ornith:9b-gpu")
+        self.assertEqual(new_state["current_by_role"]["writer"]["tag"], "vendor-a:9b")
 
     def test_role_flag_is_refused_with_list(self):
         err = io.StringIO()

@@ -322,6 +322,15 @@ betterleaks / pip-audit hooks; it is distinct from the referenced loop-audit too
 scores loop *readiness* rather than code quality. Cloud runs on the user's subscription auth
 and local via the bridge; no gateway and no separate API key are involved.
 
+Before a local model can be qualified for a role it first needs a tuned tag, which is what the
+[opt-local-vram-llm](skills/opt-local-vram-llm) skill produces: it reads the base tag's manifest
+and the daemon's own settings, renders a Modelfile with `num_gpu` pinned at 99, then sweeps
+`num_ctx` against `OLLAMA_KV_CACHE_TYPE` to find the largest context window that stays fully
+resident in VRAM among configurations whose decode throughput clears a floor. It stops at
+declaring the tuned tag a role candidate in `local-models.json` and prints the
+`model_resolver.py --qualify` command; qualification, which grades code quality against a
+frozen task set rather than memory or speed, stays a separate step run on purpose.
+
 The loop wraps the evaluate → correct → rescore sub-cycle. It stops on the composite gate
 (tests green AND no CRITICAL/HIGH finding AND aggregate score `>=` min_score, default 90), or
 on any hard stop: the budget cap (`--budget`), the max-iteration cap, or a no-progress
@@ -348,8 +357,8 @@ flowchart TD
   A --> P["Plan<br/>writing-plans - Opus"]
   P --> BR["Branch feat/slug<br/>Sonnet (write git)"]
   BR --> T["TDD: failing tests first<br/>Sonnet"]
-  T --> C["Code<br/>local-coder qwen3.5:9b (bridge)"]
-  C --> D["Comment + doc<br/>local-writer ornith:9b (bridge)"]
+  T --> C["Code<br/>local-coder (bridge)"]
+  C --> D["Comment + doc<br/>local-writer (bridge)"]
   D --> RUN["Run tests + review panel<br/>code-review · security-guidance ·<br/>pr-review-toolkit · systematic-debugging<br/>Sonnet"]
   RUN --> SC["Score aggregate<br/>loop_audit.py - local-coder"]
   SC --> G{"Composite gate?<br/>tests green AND<br/>no CRITICAL/HIGH AND<br/>score >= min"}
@@ -417,7 +426,7 @@ flowchart TD
   S([subject + min_score + max_budget]) --> A["Author / revise<br/>authoring agent - Fable 5<br/>(litreview / latex-writer / reviewer-response)"]
   A --> AU["Audit<br/>scholar-evaluation - Sonnet/Haiku<br/>ScholarEval overall + improvement plan"]
   AU --> G{"overall >= min_score?"}
-  G -->|"yes"| M["Record learnings to memory<br/>local-writer (Haiku + ornith:9b)"]
+  G -->|"yes"| M["Record learnings to memory<br/>local-writer (Haiku + local model)"]
   M --> DONE([Done])
   G -->|"no"| B{"budget reached<br/>or no progress?"}
   B -->|"yes"| M
@@ -438,6 +447,17 @@ flowchart TD
 - **thesis-to-paper orchestrator.** [thesis-to-paper](agents/thesis-to-paper.md) integrates a thesis and its conference papers into one journal manuscript through a 12-task pipeline (pandoc reference conversion into a read-only `reference_latex/`, a figure pipeline, a content-delta matrix measured against the published baseline, then `/litreview`, `scientific-writing`, `/bibclean`, `/submitcheck`, and `/auditpaper`). Because it runs as a top-level workflow, it executes those deliberation-dependent pipelines INLINE (a subagent cannot reliably spawn another), including their sanctioned pauses and exit checklists. It survives usage limits via a `PROGRESS.md` + plan-doc checkpoint protocol and journals to Obsidian (global CLAUDE.md Case 1). Invoked by name.
 - **paper2talk / talk-builder — the deliverable after acceptance.** [talk-builder](agents/talk-builder.md) is the one academic agent whose input is an accepted paper rather than a draft, so it consumes none of the audit skills. Its pipeline is fixed by [skills/paper2talk/SKILL.md](skills/paper2talk/SKILL.md): six opening questions as the first two actions (audience, duration, output target, aspect ratio, PDF format, deck ending), an echoed build contract, one `talk_model.json`, then a renderer chosen by the target — `talk_pptx.py`, which opens the lab gabarit (`gabarit_these_maitrise_DSA_UQAC/src/slides/Gabarit169.pptx` for 16:9, `Gabarit43.pptx` for 4:3 and for an A4 handout) and adds slides on ITS eighteen named layouts rather than imitating them, `beamer_skeleton.tex.j2` on the `main.tex` theme in the same folder, or a self-contained `web_skeleton.html.j2` (`assets/deck_skeleton.js` remains the pptxgenjs fallback when there is no gabarit at all). The model exists so that the action titles, the numbers and the speaker notes are written once instead of three times; a renderer that cannot draw a block raises rather than dropping it. Three rules are mechanical rather than advisory: the cadence formula `n_content = floor(minutes - 0.5*(title+thanks) - 0.33*dividers)`, the 130 wpm budget aimed at `(minutes - 1.5) x 130`, and the audience font floor (16 / 16 / 20 pt) that replaces the reference skills' bullet cap. On Windows the render loop is PowerPoint COM `SaveAs(..., 32)` then `pdftoppm`, because the `document-skills` `soffice.py` wrapper assumes a POSIX socket and fails with `AF_UNIX`.
 - **Local-delegation agents.** [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) each run on a Haiku wrapper whose `model:`, `tools:`, and `skills:` live in YAML frontmatter (Claude Code honours them; `install.ps1` reads only `name`/`description`, so the extra keys are ignored by the mirror generation). Their sole cloud cost is the wrapper framing the task; the heavy generation runs on the local Ollama model via the Bash bridge. They are consumed by the [loop-engineer](skills/loop-engineer) skill (Layer 5). `local-writer` never authors LaTeX prose — `%` comments only — so LaTeX authoring stays with [latex-writer](agents/latex-writer.md) on the latest cloud model.
+- **opt-local-vram-llm.** The [opt-local-vram-llm](skills/opt-local-vram-llm) skill tunes a base
+  Ollama tag for the machine's own GPU before it is ever handed to `local-writer` or
+  `local-coder`: `vram_probe.py` reads the manifest and the daemon's current settings read-only,
+  `vram_modelfile.py` renders the tuned Modelfile, `vram_daemon.py` owns the
+  `OLLAMA_KV_CACHE_TYPE` axis (a daemon-wide variable read only at start, so each swept value
+  costs a restart, verified from `server.log` and reverted on failure), and
+  `vram_optimizer.py` drives the search and calls `optimize_ollama.evaluate_rung`, imported
+  from [loop-engineer](skills/loop-engineer) rather than reimplemented, so the two skills never
+  measure a rung two different ways. It declares the tuned tag a role candidate in
+  `local-models.json` and stops there; qualification stays a separate, deliberate step run
+  through `model_resolver.py --qualify`.
 - **obsidian-cli.** The skill behind every vault touch in Layer 5's knowledge-capture loop: it names the allowed read command surface (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`) and the outbox as the single write path, and forbids `create`/`append`/`prepend` (with `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*` except read-only `sync:history`) for a measured reason: the write fails on the whole JSON header size, not the content, between a 3850-byte header that passes and a 4343-byte one that does not (4096, a Windows named-pipe buffer, falls between the two), the CLI exits 0 on that failure too, and `create` on an existing file writes a numbered duplicate instead of failing. `scripts/vault_consolidate.py` is the deterministic half of note consolidation (shared tags/`domaine`/term overlap, proposed links, no decisions); `--mode links` reports dead wiki-links read-only, and `--apply <map.json> --yes` is the one guarded exception to the outbox-only write rule, a dry-run-by-default, map-validated, single-pass rewrite of existing links that refuses any entry not shaped `[[...]]` and any path outside the vault, run only by `local-writer`. No dedicated agent or command; consumed by [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) wherever they touch the vault.
 - **authoring-loop orchestrator.** [authoring-loop](agents/authoring-loop.md) is the ScholarEval-gated writing counterpart of the code loop (Layer 5, "Authoring loop"): it runs author (Fable 5) -> `scholar-evaluation` audit (Sonnet/Haiku) -> loop to `min_score`/`max_budget` -> memory via `local-writer`. Like [thesis-to-paper](agents/thesis-to-paper.md) it runs at the top level (inline execution of the authoring/audit pipelines) and keeps a `PROGRESS.md` + ledger; its budget is advisory unless wrapped in the loop-engineer SDK driver. Invoked by name.
 - The non-academic agents in [agents/](agents) (analysis-engine, blazor-dev, cost-tester, flask-api, react-dev, security-auditor, word-to-latex) serve the CostEstimator software project and are out of scope for this diagram.

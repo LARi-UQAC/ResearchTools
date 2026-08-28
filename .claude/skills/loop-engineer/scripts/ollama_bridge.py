@@ -206,7 +206,15 @@ GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
 # local-model-config.json is missing: a silent fallback here would be the same defect this
 # whole module exists to remove (D7's own lesson - no default when the source of truth is
 # absent), applied to the window instead of the model tag.
-DEFAULT_NUM_CTX = context_budget.read_retained_num_ctx(context_budget.DEFAULT_CONFIG_PATH)
+# Fix round 3 (2026-08-27): this was an EAGER, module-level read with NO tag, and it broke
+# the moment local-model-config.json described a second model. read_retained_num_ctx
+# refuses to guess which of several entries a caller means, so sweeping a second tag
+# (qwen2.5-coder:7b-gpu, for the coder role) made `import ollama_bridge` raise ConfigError
+# and took BOTH local agents down with it - a defect triggered by measuring one more model,
+# which is exactly the thing this file exists to encourage. The window is a property of the
+# MODEL, not of the module, so it is now resolved inside run_bridge once the role has picked
+# a tag (D7 resolves the tag, this resolves that tag's measured window). The refusal to
+# substitute a default when the measurement is absent is unchanged.
 RESPONSE_RESERVE_TOKENS = 1024  # tokens reserved for the reply inside num_ctx
 
 # Fix round 1 (I1): kept ONLY as a cheap, deliberately OVER-estimating character pre-filter
@@ -1025,6 +1033,32 @@ def restore_target(path: Path, previous: bytes | None) -> None:
         path.write_bytes(previous)
 
 
+def _resolve_num_ctx(model: str) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the measured context window of ONE resolved tag. Split out of
+        run_bridge so the lookup has a single name to patch: the tests must
+        not depend on which models this particular machine has swept, which
+        is precisely what the removed module-level DEFAULT_NUM_CTX constant
+        made them do.
+
+    Inputs:
+        model (str): the tag resolve_model returned for this run.
+
+    Outputs:
+        result (int): models[<model>].retained_num_ctx from
+        local-model-config.json.
+
+    Raises:
+        context_budget.ConfigError: the config, the entry, or the field is
+        missing. Never substitutes a default - the same refusal the
+        planning-time gate makes.
+    --------------------------------------------------------------------------
+    """
+    return context_budget.read_retained_num_ctx(context_budget.DEFAULT_CONFIG_PATH, model)
+
+
 def run_bridge(
     prompt_path: Path,
     verify_command: str | Sequence[str] | None,
@@ -1032,7 +1066,7 @@ def run_bridge(
     seed: int,
     log_path: Path | None = None,
     max_retries: int = MAX_GENERATION_RETRIES,
-    num_ctx: int = DEFAULT_NUM_CTX,
+    num_ctx: int | None = None,
     role: str | None = None,
 ) -> int:
     """
@@ -1069,7 +1103,11 @@ def run_bridge(
             (~/.claude/loop-bridge-log.jsonl, fix round 1 I4) - never a path
             inside this repository.
         max_retries (int): finite retry budget (D5).
-        num_ctx (int): context window to request and to budget against (D2).
+        num_ctx (int | None): context window to request and to budget
+            against (D2). None, the default, means "read the measured
+            retained_num_ctx of whichever tag the role resolves to"; an
+            explicit value overrides that measurement and is what the tests
+            pass. Resolution happens after resolve_model, never at import.
         role (str | None): task kind forwarded to resolve_model, so the
             coder role can be served by a different tag than the writer role
             (P4). None keeps the pre-P4 single-tag behaviour.
@@ -1092,6 +1130,13 @@ def run_bridge(
     except BridgeError as exc:
         logger.error("%s", exc)
         return 1
+
+    if num_ctx is None:
+        try:
+            num_ctx = _resolve_num_ctx(model)
+        except context_budget.ConfigError as exc:
+            logger.error("%s", exc)
+            return 1
 
     try:
         check_budget(prompt, model, num_ctx)

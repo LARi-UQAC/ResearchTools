@@ -43,7 +43,7 @@ from the main session. Same rule and reason as `thesis-to-paper`.
 |---|---|---|
 | Loop orchestration + authoring (step 2) | Fable 5 | best model does the writing and judgment |
 | Audit / scoring (step 3) | Sonnet or Haiku | cheap; scholar-evaluation is largely script-driven |
-| Memory update (step 5) | local-writer (Haiku wrapper + local ornith:9b) | free local generation |
+| Memory update (step 5) | local-writer (Haiku wrapper + the resolver's writer-role model) | free local generation |
 
 Budget here is ADVISORY: this is an agent-driven loop, so track spend with `/usage` and the
 ledger below and stop when `max_budget` is reached. For a HARD budget cap, run the loop through

@@ -56,7 +56,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **14 skills**, **17 agents**, and **22 commands**.
+The repo ships **15 skills**, **17 agents**, and **22 commands**.
 
 ---
 
@@ -281,7 +281,7 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Fourteen ship in this repo.
+Skills bundle scripts and references the agents reuse. Fifteen ship in this repo.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -299,6 +299,7 @@ Skills bundle scripts and references the agents reuse. Fourteen ship in this rep
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 | `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
+| `opt-local-vram-llm` | Tune a local Ollama model for this GPU: retain the largest `num_ctx` that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps `num_ctx` against `OLLAMA_KV_CACHE_TYPE` (restarting the daemon per value and proving the restart took effect from `server.log`, restoring the original value on failure), then declares the tuned tag as a role candidate in `local-models.json`. Stops before qualification, which stays with `model_resolver.py --qualify`. | `/opt-local-vram-llm`, `.claude/skills/opt-local-vram-llm/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -508,6 +509,35 @@ The script is pure Python standard library, so it needs no `requirements.txt` an
 - `.claude/skills/latex-hygiene/scripts/Test/test_tex_patch.py`, `test_tex_build.py` - offline
   tests for the write side (10 + 7 tests); `test_tex_build.py` patches `subprocess` and
   `shutil.which`, no LaTeX installation needed
+
+### `opt-local-vram-llm` - measured VRAM tuning for the local agents
+
+Replaces six manual steps with one command when a newer model arrives for `local-writer` or
+`local-coder`: read the manifest, write a Modelfile, create the tag, sweep, declare the
+candidate, qualify. Every number it writes is measured on this card, none copied from a model
+card or inferred from a parameter count. The objective, in order: admissible (`size_vram / size
+>= 0.999` from `/api/ps`, 300 MiB free, the rung not clamped by the model's own context
+maximum), fast enough (decode throughput at or above `--throughput-floor`, default 0.90, of the
+best admissible throughput), then largest window wins, ties broken on throughput. `num_ctx`
+climbs the existing ladder; `kv_cache_type` (`f16`, `q8_0`, `q4_0`) is a daemon-wide variable
+read only at start, so each value costs a restart through `restart-ollama.ps1`, verified against
+`server.log` before anything is measured. `num_gpu` is pinned at 99, not swept. The rung
+measurement itself is `optimize_ollama.evaluate_rung`, imported from `loop-engineer` rather than
+duplicated. It stops at declaration: it writes `local-model-config.json`, declares the tag as a
+role candidate in `local-models.json`, and prints the `model_resolver.py --qualify` command
+without running it.
+
+**Files:**
+- `.claude/skills/opt-local-vram-llm/SKILL.md`
+- `.claude/skills/opt-local-vram-llm/scripts/vram_probe.py` - read-only manifest and daemon facts
+- `.claude/skills/opt-local-vram-llm/scripts/vram_modelfile.py` - pure Modelfile render
+- `.claude/skills/opt-local-vram-llm/scripts/vram_daemon.py` - KV cache axis: write, restart,
+  verify, restore
+- `.claude/skills/opt-local-vram-llm/scripts/vram_optimizer.py` - the driver: search, objective
+  function, report, declaration
+- `.claude/skills/opt-local-vram-llm/scripts/Test/test_vram_probe.py`,
+  `test_vram_modelfile.py`, `test_vram_daemon.py`, `test_vram_optimizer.py` - four offline
+  suites (11 + 9 + 5 + 13 tests), no network, no GPU, no Ollama daemon
 
 ---
 
@@ -753,8 +783,8 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `thesis-to-paper` | Integrate a thesis + its conference papers into one submission-ready journal manuscript (invited extension); pandoc reference conversion, figure pipeline, content-delta matrix, then `/litreview` + `scientific-writing` + `/bibclean` + `/submitcheck` + `/auditpaper` inline, with a multi-session checkpoint protocol | by name / "extend this paper to a journal version" | `.claude/agents/thesis-to-paper.md` |
 | `authoring-loop` | ScholarEval-gated authoring loop: define subject -> author (Fable 5) -> audit with `scholar-evaluation` (Sonnet/Haiku) -> loop to `min_score` or `max_budget` -> record learnings to memory via `local-writer`. Authoring counterpart of the `loop-engineer` code loop | by name / "improve this to a ScholarEval target under a budget" | `.claude/agents/authoring-loop.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
-| `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via local `ornith:9b` over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
-| `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via local `qwen3.5:9b` over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
+| `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via the resolver's writer-role model over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
+| `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via the resolver's coder-role model over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
 
 The four ScholarEval auditors (`scopus-auditor`, `paper-auditor`, `thesis-auditor`,
 `thesis-proposal-auditor`) score the document before writing the plan; after the plan is
@@ -899,8 +929,8 @@ ResearchTools\
     │   ├── thesis-to-paper.md         ← thesis + conf papers -> journal manuscript
     │   ├── authoring-loop.md          ← ScholarEval-gated authoring loop
     │   ├── latex-writer.md            ← LaTeX authoring
-    │   ├── local-writer.md            ← local docs/comments (ornith:9b bridge)
-    │   └── local-coder.md             ← local code gen (qwen3.5:9b bridge)
+    │   ├── local-writer.md            ← local docs/comments (bridge)
+    │   └── local-coder.md             ← local code gen (bridge)
     ├── commands\                            (22 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
@@ -912,7 +942,7 @@ ResearchTools\
     │   ├── loopdev.md                  ├── talk.md
     │   └── recommendation-letter.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (14 skills)
+    └── skills\                              (15 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -942,8 +972,12 @@ ResearchTools\
                            requirements.txt, Test\ [13 offline suites];
                            assets\deck_skeleton.js, beamer_skeleton.tex.j2, web_skeleton.html.j2;
                            references\renderer-contracts.md, qa-loop.md)
-        └── latex-hygiene\SKILL.md           (+ scripts\tex_check.py, tex_common.py, tex_chars.py,
+        ├── latex-hygiene\SKILL.md           (+ scripts\tex_check.py, tex_common.py, tex_chars.py,
                            tex_braces.py, tex_par.py, tex_citecov.py, tex_abstract.py, tex_wc.py,
                            tex_aiscan.py, tex_aiscan_text.py, tex_patch.py, tex_scan.py, tex_build.py,
                            Test\test_tex_check.py, Test\test_tex_patch.py, Test\test_tex_build.py)
+        └── opt-local-vram-llm\SKILL.md      (+ scripts\vram_probe.py, vram_modelfile.py,
+                           vram_daemon.py, vram_optimizer.py, Test\test_vram_probe.py,
+                           Test\test_vram_modelfile.py, Test\test_vram_daemon.py,
+                           Test\test_vram_optimizer.py)
 ```

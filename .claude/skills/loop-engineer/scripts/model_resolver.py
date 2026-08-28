@@ -1581,6 +1581,142 @@ def cmd_score(tag: str, role: str | None, record: bool = False, as_json: bool = 
     return 0
 
 
+def build_matrix(tags: list[str], tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Score every tag on EVERY task and return the per-task grid plus each
+        tag's measured GPU budget, so a comparison is computed rather than
+        transcribed.
+
+        Scoring a candidate only on the role it is declared for is how, on
+        2026-08-28, a tag passing 18 of 20 held the coder role while a tag
+        passing 20 of 20 sat unscored on coder tasks. The comparison must
+        cover the whole set for every candidate or it measures the choice of
+        what to measure.
+
+        A tag with no entry in local-model-config.json is reported as NOT
+        RUNNABLE rather than as zero. The bridge refuses such a tag because
+        there is no measured context window to run against, so no task
+        executes; counting those as failures reads a harness refusal as a
+        capability, which is the defect class this repository has now hit
+        three times.
+
+    Inputs:
+        tags (list[str]): the tags to score, in report order.
+        tasks (list[dict]): the frozen task set.
+
+    Outputs:
+        result (dict): {"task_ids": [...], "rows": {tag: {"runnable": bool,
+        "why": str, "per_task": {id: bool}, "by_kind": {...},
+        "passed": int, "total": int, "budget": dict | None}}}.
+    --------------------------------------------------------------------------
+    """
+    task_ids = [t.get("id", "?") for t in tasks]
+    rows: dict[str, Any] = {}
+    for tag in tags:
+        budget = measured_budget(tag)
+        if budget is None:
+            rows[tag] = {
+                "runnable": False, "budget": None, "per_task": {}, "by_kind": {},
+                "passed": 0, "total": 0,
+                "why": "no measured context window in local-model-config.json, so the bridge "
+                       "refuses the tag and no task executes; this is not a score of zero",
+            }
+            continue
+        result = run_qualification_tasks(tag, tasks)
+        rows[tag] = {
+            "runnable": True, "budget": budget, "why": "",
+            "per_task": {r["id"]: bool(r["passed"]) for r in result["results"]},
+            "by_kind": result["by_kind"],
+            "passed": result["passed"], "total": result["total"],
+        }
+    return {"task_ids": task_ids, "rows": rows}
+
+
+def _render_matrix(matrix: dict[str, Any], kinds: list[str]) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Render the per-task grid and the comparative summary as text.
+
+    Inputs:
+        matrix (dict): the output of build_matrix.
+        kinds (list[str]): task kinds to summarise, in column order.
+
+    Outputs:
+        result (str): the two tables, ready to print.
+    --------------------------------------------------------------------------
+    """
+    tags = list(matrix["rows"])
+    width = max((len(t) for t in tags), default=10) + 2
+    lines = ["", "Per-task matrix (PASS / FAIL / n-r = not runnable)", ""]
+    lines.append("task".ljust(34) + "".join(t.ljust(width) for t in tags))
+    for task_id in matrix["task_ids"]:
+        cells = ""
+        for tag in tags:
+            row = matrix["rows"][tag]
+            cells += ("n-r" if not row["runnable"]
+                      else ("PASS" if row["per_task"].get(task_id) else "FAIL")).ljust(width)
+        lines.append(task_id.ljust(34) + cells)
+
+    header = ("model".ljust(24) + "".join(k.ljust(10) for k in kinds)
+              + "total".ljust(10) + "num_ctx".ljust(10) + "tok/s".ljust(10))
+    lines += ["", "Comparative summary", "", header]
+    order = sorted(tags, key=lambda t: (-matrix["rows"][t]["passed"], t))
+    for tag in order:
+        row = matrix["rows"][tag]
+        if not row["runnable"]:
+            lines.append(tag.ljust(24) + "NOT RUNNABLE: " + row["why"])
+            continue
+        cells = "".join(
+            f"{row['by_kind'].get(k, {}).get('passed', 0)}/"
+            f"{row['by_kind'].get(k, {}).get('total', 0)}".ljust(10) for k in kinds)
+        lines.append(
+            tag.ljust(24) + cells
+            + f"{row['passed']}/{row['total']}".ljust(10)
+            + str(row["budget"]["num_ctx"]).ljust(10)
+            + f"{row['budget']['decode_tps']:.2f}".ljust(10))
+    return "\n".join(lines)
+
+
+def cmd_matrix(as_json: bool = False) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Implement --matrix: score every declared AND installed candidate on
+        every task, then print the per-task grid and the comparative summary.
+        Writes nothing.
+
+    Inputs:
+        as_json (bool): emit the raw structure instead of the tables.
+
+    Outputs:
+        result (int): 0 when the run completed, 1 when no candidate is both
+        declared and installed.
+
+    Raises:
+        ResolverError: the task set or the declaration file is unreadable.
+    --------------------------------------------------------------------------
+    """
+    tasks = _load_tasks()
+    declared = _load_local_models()
+    installed = set(list_installed_models())
+    tags = [t for t in declared if t in installed]
+    if not tags:
+        print(f"[RESOLVER] no tag in {LOCAL_MODELS_PATH} is installed; nothing to compare.",
+              file=sys.stderr)
+        return 1
+
+    matrix = build_matrix(tags, tasks)
+    if as_json:
+        print(json.dumps(matrix, indent=2, sort_keys=True))
+        return 0
+    print(_render_matrix(matrix, _known_task_kinds(tasks)))
+    print("\n[RESOLVER] nothing written; --matrix only measures.")
+    return 0
+
+
 def _known_task_kinds(tasks: list[dict[str, Any]]) -> list[str]:
     """
     --------------------------------------------------------------------------
@@ -1761,6 +1897,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group.add_argument("--resolve", action="store_true", help="print the current tag, nothing else")
     group.add_argument("--qualify", type=str, metavar="TAG", help="qualify TAG against the frozen task set")
     group.add_argument(
+        "--matrix", action="store_true",
+        help="score EVERY declared and installed candidate on EVERY task, then print the "
+             "per-task grid and the comparative summary. Writes nothing. Exists because a "
+             "candidate scored only on its declared role is not comparable: an 18/20 tag held "
+             "the coder role while a 20/20 tag sat unscored on coder tasks.")
+    group.add_argument(
         "--score", type=str, metavar="TAG",
         help="run the frozen task set against TAG and report the result, changing NOTHING. "
              "Comparing candidates used to require --qualify, which writes state as a side "
@@ -1819,6 +1961,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_qualify(args.qualify, args.role)
         if args.score:
             return cmd_score(args.score, args.role, args.record, args.json)
+        if args.matrix:
+            return cmd_matrix(args.json)
     except ResolverError as exc:
         print(str(exc), file=sys.stderr)
         return 1

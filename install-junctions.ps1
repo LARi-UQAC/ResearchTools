@@ -35,18 +35,42 @@
     SAFETY:
     - Never overwrites an existing real directory or real file.
     - Warns and skips on conflict; nothing is deleted automatically.
-    - Does NOT link settings.json or CLAUDE.md (machine-local files).
+    - Does NOT LINK settings.json or CLAUDE.md (machine-local files). -Sync does
+      WRITE to both, narrowly and idempotently: it refreshes the marker-delimited
+      RT-CONTRACT block inside CLAUDE.md, and appends one SessionStart entry to
+      settings.json if that entry is absent. Both are backed up to .bak first, both
+      are validated before and after, and the env block is never touched.
 
 .EXAMPLE
     .\install-junctions.ps1
     .\install-junctions.ps1 -WhatIf
 #>
 param(
-    [switch]$WhatIf
+    [switch]$WhatIf,
+    [switch]$Sync,
+    [switch]$Quiet
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# --- -Sync -------------------------------------------------------------------
+# A distinct code path from the legacy junction flow below, which is left as it was.
+# The engine lives in scripts\lib\rt-sync.ps1 so it can be loaded by a test without
+# running that legacy flow (and thus writing to the real ~/.claude) as a side effect.
+if ($Sync) {
+    . (Join-Path $PSScriptRoot "scripts\lib\rt-sync.ps1")
+    $script:RtQuiet = $Quiet.IsPresent
+    $rtHomeClaude = Join-Path $env:USERPROFILE ".claude"
+    if (-not (Test-Path $rtHomeClaude)) { exit 0 }
+    try { Invoke-RtSync $PSScriptRoot $rtHomeClaude } catch {
+        # Never non-zero: this runs as a SessionStart hook, and a failing hook refuses
+        # every tool of its matcher for the rest of the session.
+        if (-not $script:RtQuiet) { Write-Host "  [RT-SYNC] $($_.Exception.Message)" -ForegroundColor Red }
+    }
+    exit 0
+
+}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 

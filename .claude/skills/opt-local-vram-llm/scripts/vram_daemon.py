@@ -30,11 +30,21 @@ KV_CACHE_VARIABLE = "OLLAMA_KV_CACHE_TYPE"
 # adds dequantisation work on every cache access; which one wins is measured, not assumed.
 KV_CACHE_TYPES: tuple[str, ...] = ("f16", "q8_0", "q4_0")
 
+# Fidelity rank of each KV cache type, highest first. This is an ORDERING, not a quality
+# measurement: f16 stores the cache at full half precision, q8_0 and q4_0 quantise it, and
+# quantising the cache degrades what the model recalls from its own context. The search
+# cannot measure that degradation - decode throughput and VRAM say nothing about it, and the
+# frozen task set is the resolver's oracle, not this tool's - so the ordering is declared and
+# the objective function is made to PAY for a step down it, rather than taking the larger
+# window a cheaper cache buys as if it were free.
+KV_FIDELITY_RANK: dict[str, int] = {"f16": 2, "q8_0": 1, "q4_0": 0}
+
 _RESTART_TIMEOUT_S = 300.0
 
-# scripts/dev/restart-ollama.ps1, five levels up from
-# .claude/skills/opt-local-vram-llm/scripts/vram_daemon.py.
-RESTART_SCRIPT = Path(__file__).resolve().parents[4] / "scripts" / "dev" / "restart-ollama.ps1"
+# The restart script sits beside this module. It is the only consumer of it, and a script
+# this module cannot run is a broken skill rather than a broken repository layout, so it
+# belongs inside the skill and not in a repository-wide scripts/ directory.
+RESTART_SCRIPT = Path(__file__).resolve().parent / "restart-ollama.ps1"
 
 
 class DaemonError(Exception):
@@ -65,7 +75,8 @@ def _write_user_env(name: str, value: str) -> None:
     try:
         done = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=_RESTART_TIMEOUT_S)
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=_RESTART_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as exc:
         raise DaemonError(f"[VRAM-DAEMON] could not set {name}: {exc}") from exc
     if done.returncode != 0:
@@ -83,7 +94,7 @@ def _run_restart_script(restart_script: Path) -> None:
         false throughput measurement on this machine on 2026-08-14.
 
     Inputs:
-        restart_script (Path): path to scripts/dev/restart-ollama.ps1.
+        restart_script (Path): path to restart-ollama.ps1.
 
     Outputs:
         None.
@@ -97,7 +108,8 @@ def _run_restart_script(restart_script: Path) -> None:
     try:
         done = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-File", str(restart_script)],
-            capture_output=True, text=True, timeout=_RESTART_TIMEOUT_S)
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=_RESTART_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as exc:
         raise DaemonError(f"[VRAM-DAEMON] restart could not run: {exc}") from exc
     if done.returncode != 0:

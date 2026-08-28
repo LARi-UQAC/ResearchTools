@@ -58,7 +58,8 @@ def _ollama_show(tag: str, modelfile: bool = False) -> str:
     """
     cmd = ["ollama", "show", tag] + (["--modelfile"] if modelfile else [])
     try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=_OLLAMA_TIMEOUT_S)
+        done = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=_OLLAMA_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ProbeError(f"[VRAM-PROBE] `{' '.join(cmd)}` could not run: {exc}") from exc
     if done.returncode != 0:

@@ -62,7 +62,9 @@ agent stops being served the writer model. LiteLLM (`~/.litellm/ollama.yaml`) is
 (keep-alive / context tuning only).
 
 Restarting the daemon (after any `OLLAMA_*` change, since it reads them once at start):
-`.\scripts\dev\restart-ollama.ps1`. Never `Stop-Process -Name "ollama*"` by hand - Ollama
+`.\.claude\skills\opt-local-vram-llm\scripts
+estart-ollama.ps1`, which lives inside the
+skill that owns the daemon axis. Never `Stop-Process -Name "ollama*"` by hand - Ollama
 runs the model in a CHILD process named `llama-server.exe`, which that pattern does not
 match, so the child survives and keeps its slice of VRAM. Up to three orphaned instances
 were seen this way, and they produced a false throughput measurement before anyone noticed
@@ -111,14 +113,33 @@ After a substantive change, update the relevant doc and verify that links resolv
 `README.md` and `Architecture.md` as the authoritative inventory; do not duplicate their
 tables into `.claude/CLAUDE.md`.
 
-## Where a script belongs
+## Where code belongs
 
-Any Python script written while operating on this repo belongs inside ResearchTools, under
-the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside
-it in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or
-grant directory being worked on. Before writing one, search the "ResearchTools script
-surface" inventory in `.claude/rules/testing.md` for a script or a subcommand that already
-does the job, and extend it with a flag or a subcommand rather than forking it.
+Any code written while operating on this repo lives inside ResearchTools. Not only scripts:
+modules, helper libraries, hooks, test fixtures, generators, and the small pieces of glue
+that end up mattering. Never in the session scratchpad, and never in the manuscript, thesis,
+or grant directory being worked on. This is what makes the repository improve itself rather
+than the same work being redone next session in a directory that gets archived.
+
+Language is not a criterion, and neither is size. Python, PowerShell, shell, and anything
+else follow the same rule. The default home is the owning skill's
+`.claude/skills/<skill>/scripts/` directory, with an offline test beside it in `Test/`. Code
+the whole repo owns rather than one skill has its own established homes - `.claude/hooks/`
+for hooks, `profiles/` for domain profiles, `install.ps1` and `setup.ps1` at the root - and
+belongs there instead; a repository-wide `scripts/` directory is not a home for code that
+exactly one skill drives.
+
+The test of ownership is who calls it. Measured 2026-08-28: a PowerShell script restarting a
+local daemon sat in `scripts/dev/` although exactly one module called it, and the earlier
+wording of this rule said "Python script", so nothing flagged it; it now lives beside its
+only caller. A skill that cannot find the code it drives is a broken skill, not a broken
+repository layout. Before writing any of it, search the "ResearchTools script
+surface" inventory in `.claude/rules/testing.md` for code or a subcommand that already does
+the job, and extend it with a flag or a subcommand rather than forking it.
+
+Stated as a citable rule: **R18** - a script lives beside its only caller. One caller means
+the owning skill's `scripts/` directory; several callers mean one of the repository-wide homes
+named above.
 
 1. **Look before writing.** Search `.claude/skills/*/scripts/` for an existing script or
    subcommand. `.claude/rules/testing.md` carries the full inventory of the script surface,
@@ -127,9 +148,12 @@ does the job, and extend it with a flag or a subcommand rather than forking it.
 2. **Extend before creating.** Add a subcommand to a neighbouring skill's script rather than
    a second script. A new skill needs a reason beyond convenience.
 
-3. **Write it in ResearchTools, with a test.** English names, a module docstring stating
-   purpose and pipeline stage, type hints in signatures, and at least one offline test under
-   `scripts/Test/` needing no network, no API key and no model load. Add the test to the
+3. **Write it in ResearchTools, with a test.** English names, a module or header docstring
+   stating purpose and pipeline stage, type hints in signatures where the language has them,
+   and at least one offline test under `scripts/Test/` needing no network, no API key and no
+   model load. A script whose effect is a machine state change (a daemon restart, an
+   environment variable) is tested through the module that drives it, with the process call
+   patched, rather than left untested because it is not Python. Add the test to the
    offline-test block of `.claude/rules/testing.md` in the same commit.
 
 4. **Register it.** A skill has no mirror, so the routing table in `.claude/CLAUDE.md` plus
@@ -141,9 +165,11 @@ does the job, and extend it with a flag or a subcommand rather than forking it.
    logic.
 
 Exemption test: genuine one-off exploration (a count, a grep, a shape check that will never
-be re-run) stays in the session scratchpad and is deleted. The test is whether a second
-paper would want it; if yes, or even probably, promote it before the session closes. A
-session that ends with a script that should have been promoted deposits it in
+be re-run) stays in the session scratchpad and is deleted. A one-off edit applied through an
+interpreter counts as exploration; a function or a rule someone would want again does not,
+however few lines it is. The test is whether a second paper, or a second session, would want
+it; if yes, or even probably, promote it before the session closes. A
+session that ends with code that should have been promoted deposits it in
 `docs/superpowers/todo/<date>-<name>-src/` with a TODO so the debt is recorded rather than
 lost.
 

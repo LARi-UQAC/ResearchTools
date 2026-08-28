@@ -14,11 +14,36 @@
       "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef norm_doi(doi):\n    # Canonicalize a DOI for comparison: strip a leading resolver prefix\n    # (https://doi.org/ or http://dx.doi.org/, case-insensitive), strip\n    # surrounding whitespace, and lowercase the result. A None or empty\n    # input returns an empty string.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
       "entrypoint": "norm_doi",
       "cases": [
-        {"args": ["https://doi.org/10.1109/ABC.2020.123"], "expect": "10.1109/abc.2020.123"},
-        {"args": ["HTTP://DX.DOI.ORG/10.1000/XYZ"], "expect": "10.1000/xyz"},
-        {"args": ["10.1109/ABC.2020.123"], "expect": "10.1109/abc.2020.123"},
-        {"args": [null], "expect": ""},
-        {"args": [""], "expect": ""}
+        {
+          "args": [
+            "https://doi.org/10.1109/ABC.2020.123"
+          ],
+          "expect": "10.1109/abc.2020.123"
+        },
+        {
+          "args": [
+            "HTTP://DX.DOI.ORG/10.1000/XYZ"
+          ],
+          "expect": "10.1000/xyz"
+        },
+        {
+          "args": [
+            "10.1109/ABC.2020.123"
+          ],
+          "expect": "10.1109/abc.2020.123"
+        },
+        {
+          "args": [
+            null
+          ],
+          "expect": ""
+        },
+        {
+          "args": [
+            ""
+          ],
+          "expect": ""
+        }
       ]
     },
     {
@@ -28,11 +53,51 @@
       "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef split_author_name(name):\n    # Split a person name into (surname, initial), accepting both\n    # conventions. If name contains a comma, everything before the comma\n    # (stripped) is the surname, and initial is the first character of the\n    # text after the comma (stripped), or '' if that text is empty. If\n    # name has no comma and splits into two or more whitespace-separated\n    # words, the LAST word is the surname and initial is the first\n    # character of the FIRST word. Otherwise (a single word, no comma),\n    # return (name.strip(), '').\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
       "entrypoint": "split_author_name",
       "cases": [
-        {"args": ["Otis, Martin"], "expect": ["Otis", "M"]},
-        {"args": ["Otis, Martin J.-D."], "expect": ["Otis", "M"]},
-        {"args": ["Martin Otis"], "expect": ["Otis", "M"]},
-        {"args": ["Otis"], "expect": ["Otis", ""]},
-        {"args": ["Otis,"], "expect": ["Otis", ""]}
+        {
+          "args": [
+            "Otis, Martin"
+          ],
+          "expect": [
+            "Otis",
+            "M"
+          ]
+        },
+        {
+          "args": [
+            "Otis, Martin J.-D."
+          ],
+          "expect": [
+            "Otis",
+            "M"
+          ]
+        },
+        {
+          "args": [
+            "Martin Otis"
+          ],
+          "expect": [
+            "Otis",
+            "M"
+          ]
+        },
+        {
+          "args": [
+            "Otis"
+          ],
+          "expect": [
+            "Otis",
+            ""
+          ]
+        },
+        {
+          "args": [
+            "Otis,"
+          ],
+          "expect": [
+            "Otis",
+            ""
+          ]
+        }
       ]
     },
     {
@@ -42,11 +107,36 @@
       "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef doi_prefix(doi):\n    # Extract the DOI registrant prefix: a substring matching 10.NNNN\n    # (4 to 9 digits after '10.') that is immediately followed by '/' or\n    # is at the end of the string. Return that prefix (without the\n    # trailing slash). If doi is None, empty, or no such prefix is found,\n    # return an empty string.\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
       "entrypoint": "doi_prefix",
       "cases": [
-        {"args": ["10.1109/ABC.2020"], "expect": "10.1109"},
-        {"args": ["10.1186/xyz"], "expect": "10.1186"},
-        {"args": ["10.1109"], "expect": "10.1109"},
-        {"args": [null], "expect": ""},
-        {"args": ["noslash"], "expect": ""}
+        {
+          "args": [
+            "10.1109/ABC.2020"
+          ],
+          "expect": "10.1109"
+        },
+        {
+          "args": [
+            "10.1186/xyz"
+          ],
+          "expect": "10.1186"
+        },
+        {
+          "args": [
+            "10.1109"
+          ],
+          "expect": "10.1109"
+        },
+        {
+          "args": [
+            null
+          ],
+          "expect": ""
+        },
+        {
+          "args": [
+            "noslash"
+          ],
+          "expect": ""
+        }
       ]
     },
     {
@@ -54,7 +144,10 @@
       "kind": "writer",
       "source_reference": "root CLAUDE.md, 'Cas 1 - Redaction d'un article scientifique' (Decisions.md append convention). Deliberately asks for TWO sections to exercise the parameterised structure gate (see this file's own header).",
       "prompt": "Ecris, en francais, le corps d'une entree de journal Decisions.md pour un defaut de code deja corrige. Deux sections seulement, avec ces titres Markdown exacts, dans cet ordre : '## Contexte' puis '## Probleme'. Contexte : une phrase situant le module concerne. Probleme : une phrase decrivant le defaut observe. N'ajoute PAS de section Cause racine, Correctif, ou Reutilisation. Sortie : uniquement le texte Markdown demande, sans balise de code, sans explication.",
-      "required_sections": ["Contexte", "Probleme"],
+      "required_sections": [
+        "Contexte",
+        "Probleme"
+      ],
       "language": "fr",
       "min_length_chars": 80,
       "max_length_chars": 900,
@@ -65,21 +158,460 @@
       "kind": "writer",
       "source_reference": "root CLAUDE.md, 'Frontmatter d'une note atomique (30_Ressources)'.",
       "prompt": "Ecris, en francais, une note atomique complete pour 30_Ressources : un frontmatter YAML puis le corps. Frontmatter : exactement les cles 'type', 'projet', 'domaine', 'date', 'tags', chacune sur sa propre ligne, entre deux lignes '---'. type doit valoir apprentissage. domaine doit valoir logiciel. date doit etre au format AAAA-MM-JJ. Corps : quatre sections Markdown exactes, dans cet ordre : '## Contexte', '## Probleme', '## Cause racine', '## Correctif'. Sortie : uniquement le texte demande, sans balise de code, sans explication.",
-      "required_sections": ["Contexte", "Probleme", "Cause racine", "Correctif"],
+      "required_sections": [
+        "Contexte",
+        "Probleme",
+        "Cause racine",
+        "Correctif"
+      ],
       "language": "fr",
       "min_length_chars": 150,
       "max_length_chars": 1500,
-      "frontmatter_keys": ["type", "projet", "domaine", "date", "tags"]
+      "frontmatter_keys": [
+        "type",
+        "projet",
+        "domaine",
+        "date",
+        "tags"
+      ]
     },
     {
       "id": "writer-changelog-entry",
       "kind": "writer",
       "source_reference": ".claude/skills/scopus/scripts/litreview_update.py:build_changelog (CHANGELOG scaffold convention).",
       "prompt": "Ecris, en francais, une entree de CHANGELOG pour une mise a jour de revue de litterature. Une seule section, avec ce titre Markdown exact : '## Ajouts'. Une liste a puces de deux a quatre references ajoutees, chaque ligne sous la forme '- Auteur (annee) : titre court'. Sortie : uniquement le texte Markdown demande, sans balise de code, sans explication.",
-      "required_sections": ["Ajouts"],
+      "required_sections": [
+        "Ajouts"
+      ],
       "language": "fr",
       "min_length_chars": 60,
       "max_length_chars": 700,
+      "frontmatter_keys": []
+    },
+    {
+      "id": "coder-effective-window",
+      "kind": "coder",
+      "source_reference": ".claude/skills/opt-local-vram-llm/scripts/vram_optimizer.py:effective_window (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef effective_window(num_ctx, kv_cache_type, exchange_rate):\n    # Discount a context window by the KV cache fidelity given up to reach it.\n    # Fidelity steps below the most faithful cache: 'f16' is 0 steps, 'q8_0' is\n    # 1 step, 'q4_0' is 2 steps. Any other cache name counts as 0 steps.\n    # Return num_ctx divided by exchange_rate raised to the number of steps.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "effective_window",
+      "cases": [
+        {
+          "args": [
+            16384,
+            "f16",
+            2.0
+          ],
+          "expect": 16384
+        },
+        {
+          "args": [
+            16384,
+            "q8_0",
+            2.0
+          ],
+          "expect": 8192
+        },
+        {
+          "args": [
+            32768,
+            "q4_0",
+            2.0
+          ],
+          "expect": 8192
+        },
+        {
+          "args": [
+            16384,
+            "q4_0",
+            1.0
+          ],
+          "expect": 16384
+        },
+        {
+          "args": [
+            8192,
+            "zzz",
+            2.0
+          ],
+          "expect": 8192
+        }
+      ]
+    },
+    {
+      "id": "coder-admissible",
+      "kind": "coder",
+      "source_reference": ".claude/skills/opt-local-vram-llm/scripts/vram_optimizer.py:select_configuration admissibility pass (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef admissible(residency_ratio, free_mib, clamped):\n    # Decide whether a measured GPU configuration may be retained. It is\n    # admissible only when residency_ratio is at least 0.999, free_mib is at\n    # least 300, and clamped is false. Return True or False.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "admissible",
+      "cases": [
+        {
+          "args": [
+            1.0,
+            617,
+            false
+          ],
+          "expect": true
+        },
+        {
+          "args": [
+            0.71,
+            900,
+            false
+          ],
+          "expect": false
+        },
+        {
+          "args": [
+            1.0,
+            69,
+            false
+          ],
+          "expect": false
+        },
+        {
+          "args": [
+            1.0,
+            617,
+            true
+          ],
+          "expect": false
+        },
+        {
+          "args": [
+            0.999,
+            300,
+            false
+          ],
+          "expect": true
+        }
+      ]
+    },
+    {
+      "id": "coder-quartile",
+      "kind": "coder",
+      "source_reference": ".claude/skills/scopus/scripts/bib_audit.py venue grading (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef quartile(percentile):\n    # Map a journal CiteScore percentile to its quartile label. 75 or above is\n    # 'Q1', 50 or above is 'Q2', 25 or above is 'Q3', below 25 is 'Q4'. A None\n    # input returns an empty string.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "quartile",
+      "cases": [
+        {
+          "args": [
+            99
+          ],
+          "expect": "Q1"
+        },
+        {
+          "args": [
+            75
+          ],
+          "expect": "Q1"
+        },
+        {
+          "args": [
+            74.9
+          ],
+          "expect": "Q2"
+        },
+        {
+          "args": [
+            25
+          ],
+          "expect": "Q3"
+        },
+        {
+          "args": [
+            0
+          ],
+          "expect": "Q4"
+        },
+        {
+          "args": [
+            null
+          ],
+          "expect": ""
+        }
+      ]
+    },
+    {
+      "id": "coder-normalize-issn",
+      "kind": "coder",
+      "source_reference": ".claude/skills/scopus/scripts/bib_audit.py ISSN lookup key (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef normalize_issn(raw):\n    # Canonicalize an ISSN: remove surrounding whitespace and any hyphens,\n    # uppercase it, and return it as eight characters with a hyphen after the\n    # fourth. Anything that is not exactly eight characters after cleaning,\n    # including None, returns an empty string.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "normalize_issn",
+      "cases": [
+        {
+          "args": [
+            "2079-9292"
+          ],
+          "expect": "2079-9292"
+        },
+        {
+          "args": [
+            "20799292"
+          ],
+          "expect": "2079-9292"
+        },
+        {
+          "args": [
+            " 1234-567x "
+          ],
+          "expect": "1234-567X"
+        },
+        {
+          "args": [
+            "123"
+          ],
+          "expect": ""
+        },
+        {
+          "args": [
+            null
+          ],
+          "expect": ""
+        }
+      ]
+    },
+    {
+      "id": "coder-context-ladder",
+      "kind": "coder",
+      "source_reference": ".claude/skills/loop-engineer/scripts/optimize_ollama.py sweep ladder (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef context_ladder(maximum):\n    # Build the context-window ladder a sweep climbs: start at 8192 and double,\n    # keeping every value that is less than or equal to maximum. Return the\n    # values in ascending order as a list. A maximum below 8192 returns an\n    # empty list.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "context_ladder",
+      "cases": [
+        {
+          "args": [
+            65536
+          ],
+          "expect": [
+            8192,
+            16384,
+            32768,
+            65536
+          ]
+        },
+        {
+          "args": [
+            32768
+          ],
+          "expect": [
+            8192,
+            16384,
+            32768
+          ]
+        },
+        {
+          "args": [
+            16384
+          ],
+          "expect": [
+            8192,
+            16384
+          ]
+        },
+        {
+          "args": [
+            8192
+          ],
+          "expect": [
+            8192
+          ]
+        },
+        {
+          "args": [
+            4096
+          ],
+          "expect": []
+        }
+      ]
+    },
+    {
+      "id": "coder-jaccard",
+      "kind": "coder",
+      "source_reference": ".claude/skills/scopus/scripts/litreview_update.py title dedup (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef jaccard(a, b):\n    # Similarity of two titles: lowercase each, split on whitespace into a set\n    # of words, and return the size of the intersection divided by the size of\n    # the union. When both sets are empty, return 0.0.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "jaccard",
+      "cases": [
+        {
+          "args": [
+            "A B",
+            "a b"
+          ],
+          "expect": 1.0
+        },
+        {
+          "args": [
+            "a b",
+            "b c"
+          ],
+          "expect": 0.3333333333333333
+        },
+        {
+          "args": [
+            "",
+            ""
+          ],
+          "expect": 0.0
+        },
+        {
+          "args": [
+            "a",
+            "b"
+          ],
+          "expect": 0.0
+        },
+        {
+          "args": [
+            "a b c",
+            "c b a"
+          ],
+          "expect": 1.0
+        }
+      ]
+    },
+    {
+      "id": "coder-slugify",
+      "kind": "coder",
+      "source_reference": "memory file naming convention, short kebab-case slug (mirrored contract).",
+      "prompt": "Write a single self-contained Python module. Use only the Python standard library. Define exactly one function:\n\ndef slugify(title):\n    # Turn a title into a file slug: lowercase it, replace every run of\n    # characters that are not letters or digits with a single hyphen, and strip\n    # any leading or trailing hyphen. A None or empty input returns an empty\n    # string.\n    ...\n\nOutput ONLY the raw Python source of this module. Do not wrap it in triple backticks or any markdown fence. Do not add any explanation before or after the code.",
+      "entrypoint": "slugify",
+      "cases": [
+        {
+          "args": [
+            "Where Code Belongs"
+          ],
+          "expect": "where-code-belongs"
+        },
+        {
+          "args": [
+            "  KV cache: q8_0!  "
+          ],
+          "expect": "kv-cache-q8-0"
+        },
+        {
+          "args": [
+            "A -- B"
+          ],
+          "expect": "a-b"
+        },
+        {
+          "args": [
+            ""
+          ],
+          "expect": ""
+        },
+        {
+          "args": [
+            "2026-08-28 Notes"
+          ],
+          "expect": "2026-08-28-notes"
+        }
+      ]
+    },
+    {
+      "id": "writer-readme-section",
+      "kind": "writer",
+      "source_reference": "README.md section conventions.",
+      "prompt": "Write, in English, a short README fragment for a command line script. Exactly two sections, with these exact Markdown headings, in this order: '## Installation' then '## Usage'. Installation: one sentence naming the package manager. Usage: one sentence and one example command line. Do NOT add any other section. Output: only the requested Markdown, with no code fence around the whole answer and no explanation.",
+      "required_sections": [
+        "Installation",
+        "Usage"
+      ],
+      "language": "en",
+      "min_length_chars": 120,
+      "max_length_chars": 800,
+      "frontmatter_keys": []
+    },
+    {
+      "id": "writer-atomic-note-frontmatter",
+      "kind": "writer",
+      "source_reference": "root CLAUDE.md, frontmatter d'une note atomique de 30_Ressources.",
+      "prompt": "Ecris, en francais, une note atomique courte. Commence par un frontmatter YAML delimite par --- avec exactement ces cles : type, projet, domaine, date, tags. Ensuite deux sections, avec ces titres Markdown exacts, dans cet ordre : '## Contexte' puis '## Cause racine'. Une phrase par section. N'ajoute aucune autre section. Sortie : uniquement la note, sans balise de code autour de la reponse, sans explication.",
+      "required_sections": [
+        "Contexte",
+        "Cause racine"
+      ],
+      "language": "fr",
+      "min_length_chars": 150,
+      "max_length_chars": 900,
+      "frontmatter_keys": [
+        "type",
+        "projet",
+        "domaine",
+        "date",
+        "tags"
+      ]
+    },
+    {
+      "id": "writer-changelog-added-fixed",
+      "kind": "writer",
+      "source_reference": "CHANGELOG conventions (Keep a Changelog).",
+      "prompt": "Write, in English, a CHANGELOG entry body. Exactly two sections, with these exact Markdown headings, in this order: '## Added' then '## Fixed'. One bullet under each. Do NOT add a version heading, a date, or any other section. Output: only the requested Markdown, with no code fence around the whole answer and no explanation.",
+      "required_sections": [
+        "Added",
+        "Fixed"
+      ],
+      "language": "en",
+      "min_length_chars": 80,
+      "max_length_chars": 600,
+      "frontmatter_keys": []
+    },
+    {
+      "id": "writer-decision-record",
+      "kind": "writer",
+      "source_reference": "Decisions.md, journal ADR d'un projet.",
+      "prompt": "Ecris, en francais, une entree de journal de decision. Exactement trois sections, avec ces titres Markdown exacts, dans cet ordre : '## Decision', '## Motif', '## Consequence'. Une phrase par section. N'ajoute aucune autre section. Sortie : uniquement le Markdown demande, sans balise de code autour de la reponse, sans explication.",
+      "required_sections": [
+        "Decision",
+        "Motif",
+        "Consequence"
+      ],
+      "language": "fr",
+      "min_length_chars": 120,
+      "max_length_chars": 700,
+      "frontmatter_keys": []
+    },
+    {
+      "id": "writer-docstring-contract",
+      "kind": "writer",
+      "source_reference": ".claude/rules/code-style.md, the extended function docstring format.",
+      "prompt": "Write, in English, the body of a function docstring for a function that reads a measurement file. Exactly three sections, with these exact Markdown headings, in this order: '## Purpose', '## Inputs', '## Outputs'. One sentence under Purpose, one parameter line under Inputs, one return line under Outputs. Do NOT add any other section. Output: only the requested Markdown, with no code fence around the whole answer and no explanation.",
+      "required_sections": [
+        "Purpose",
+        "Inputs",
+        "Outputs"
+      ],
+      "language": "en",
+      "min_length_chars": 100,
+      "max_length_chars": 600,
+      "frontmatter_keys": []
+    },
+    {
+      "id": "writer-status-frontmatter",
+      "kind": "writer",
+      "source_reference": "root CLAUDE.md, property:set status sur un index de projet.",
+      "prompt": "Ecris, en francais, une fiche de suivi tres courte. Commence par un frontmatter YAML delimite par --- avec exactement ces cles : status, date. Ensuite une seule section, avec ce titre Markdown exact : '## Resume'. Deux phrases sous ce titre. N'ajoute aucune autre section. Sortie : uniquement la fiche, sans balise de code autour de la reponse, sans explication.",
+      "required_sections": [
+        "Resume"
+      ],
+      "language": "fr",
+      "min_length_chars": 90,
+      "max_length_chars": 500,
+      "frontmatter_keys": [
+        "status",
+        "date"
+      ]
+    },
+    {
+      "id": "writer-context-consequence",
+      "kind": "writer",
+      "source_reference": "CodeReview.md finding format.",
+      "prompt": "Write, in English, a short code review finding. Exactly two sections, with these exact Markdown headings, in this order: '## Context' then '## Consequence'. One sentence under each. Do NOT add a severity heading or any other section. Output: only the requested Markdown, with no code fence around the whole answer and no explanation.",
+      "required_sections": [
+        "Context",
+        "Consequence"
+      ],
+      "language": "en",
+      "min_length_chars": 100,
+      "max_length_chars": 500,
       "frontmatter_keys": []
     }
   ]

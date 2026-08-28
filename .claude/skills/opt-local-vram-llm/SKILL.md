@@ -24,7 +24,20 @@ configurations whose decode throughput clears a floor.** Three rules, in order:
 2. **Fast enough.** Decode throughput at least `--throughput-floor` (default 0.90) of the best
    throughput observed among the ADMISSIBLE configurations. An inadmissible configuration
    never gets a vote on what counts as fast.
-3. **Largest window wins.** Ties break on throughput.
+3. **Largest EFFECTIVE window wins.** Ties break on cache fidelity first, throughput
+   second.
+
+Effective, not raw, and this is the rule that changed on 2026-08-28. A quantised KV cache
+makes the cache smaller, so it buys context for nothing in VRAM terms while degrading what
+the model recalls from that context. Ranking on the raw token count therefore handed the win
+to the cheapest cache on every model with room to grow, and reported the outcome as a bigger
+window rather than as the trade it was. The window is now divided by
+`--fidelity-exchange-rate` (default 2.0) for each step below `f16` on the declared ladder
+`f16 > q8_0 > q4_0`, so `q8_0` must double the window to be preferred and `q4_0` must
+quadruple it. `--fidelity-exchange-rate 1.0` restores the raw ranking and treats a quantised
+cache as free, which is the honest way to ask for that behaviour rather than getting it by
+default. The ordering itself is declared, not measured: throughput and VRAM say nothing
+about recall quality, and the frozen task set is the resolver's oracle, not this tool's.
 
 The report names every dropped configuration and which rule dropped it, so a surprising
 result is auditable rather than merely announced.
@@ -43,7 +56,7 @@ identically to the honest one and be retained as a window the daemon never grant
 
 `kv_cache_type` tries `f16`, `q8_0`, `q4_0`. This one is a daemon-wide environment variable
 read only at daemon start, so **each value costs a restart of Ollama**, which evicts the
-resident model. The tool writes the variable, restarts through `scripts/dev/restart-ollama.ps1`
+resident model. The tool writes the variable, restarts through `scripts/restart-ollama.ps1`
 (which kills the `llama-server.exe` child a naive pattern misses), then reads `server.log` to
 prove the daemon actually took the value before measuring anything.
 
@@ -59,8 +72,8 @@ card, because what Ollama held back was layer offload rather than KV cache.
 
 ```
 /opt-local-vram-llm <base-tag> --role <writer|coder>
-                    [--throughput-floor 0.90] [--kv f16,q8_0,q4_0]
-                    [--keep-vision] [--dry-run]
+                    [--throughput-floor 0.90] [--fidelity-exchange-rate 2.0]
+                    [--kv f16,q8_0,q4_0] [--keep-vision] [--dry-run]
 ```
 
 `--dry-run` probes and prints the Modelfile it would write, touching neither Ollama nor the
@@ -75,6 +88,7 @@ even has a separate projector is read from its manifest, not assumed.
 | `scripts/vram_probe.py` | Read-only facts: manifest layers, native context maximum, daemon settings from `server.log`. Changes nothing. |
 | `scripts/vram_modelfile.py` | Render the tuned Modelfile. Pure function; opens no file. |
 | `scripts/vram_daemon.py` | The KV cache axis: write, restart, verify, restore. |
+| `scripts/restart-ollama.ps1` | The restart itself: kills the daemon AND its `llama-server.exe` child, re-reads the user environment so the relaunched daemon sees the value just written, verifies the card released its memory. |
 | `scripts/vram_optimizer.py` | The driver: search, objective function, report, declaration. |
 
 The rung measurement itself is `optimize_ollama.evaluate_rung`, imported from the
@@ -94,10 +108,16 @@ changes what the local agents execute.
 
 A model whose weights nearly fill the card retains nothing, at any rung of any axis value.
 That is a correct answer about this card, reported with the numbers behind it, not an error to
-work around. A model whose weights alone exceed the card is refused before anything is built.
+work around. A model whose weights alone exceed the card is refused before anything is built, but that
+refusal rests on a measurement, not on the size of the file on disk. The manifest layer size
+is the cheap first filter; when it trips, the model is loaded once at a 512-token window and
+the decision is made on what the daemon reports pinning. The two disagree by a lot: measured
+2026-08-28 on a 6144 MiB card, one tag weighing 9163 MiB on disk is fully resident at 3057
+MiB, and another weighing 6289 MiB is fully resident at 5248 MiB. Refusing on the file size
+alone turned both away.
 
 ## Tests
 
 Four offline suites under `scripts/Test/`, no network, no GPU, no Ollama daemon:
 `test_vram_probe.py` (11), `test_vram_modelfile.py` (11), `test_vram_daemon.py` (5),
-`test_vram_optimizer.py` (13). Forty in total.
+`test_vram_optimizer.py` (24). Fifty-one in total.

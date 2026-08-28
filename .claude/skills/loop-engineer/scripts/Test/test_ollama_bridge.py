@@ -918,5 +918,53 @@ class TestMissingMeasuredWindowIsRefusedNotDefaulted(unittest.TestCase):
         transport.assert_not_called()
 
 
+
+class TestSoleCodeFenceIsUnwrapped(unittest.TestCase):
+    """
+    Measured 2026-08-28 while investigating a coder candidate that scored 0/3. The model
+    wrapped its module in a ```python fence despite the prompt forbidding one, the bridge
+    wrote that text verbatim to a .py file, and every attempt died with "SyntaxError:
+    invalid syntax" on line 1 - before a single test case ran. The oracle was grading
+    punctuation, not code. strip_reasoning deliberately PROTECTS fences, so nothing in the
+    pipeline ever removed an outer one.
+    """
+
+    def test_a_body_that_is_one_fenced_block_is_unwrapped(self):
+        body = "```python\ndef f():\n    return 1\n```"
+
+        self.assertEqual(ob.unwrap_sole_code_fence(body), "def f():\n    return 1")
+
+    def test_the_language_tag_is_optional(self):
+        self.assertEqual(ob.unwrap_sole_code_fence("```\nx = 1\n```"), "x = 1")
+
+    def test_surrounding_whitespace_does_not_hide_the_fence(self):
+        self.assertEqual(ob.unwrap_sole_code_fence("\n\n```py\nx = 1\n```\n\n"), "x = 1")
+
+    def test_an_unfenced_body_is_returned_unchanged(self):
+        body = "def f():\n    return 1\n"
+
+        self.assertEqual(ob.unwrap_sole_code_fence(body), body)
+
+    def test_prose_around_a_fence_is_left_alone(self):
+        # A writer deliverable legitimately carries fenced code inside Markdown. Unwrapping
+        # there would delete the prose, which is the whole document.
+        body = "Here is the helper:\n\n```python\nx = 1\n```\n\nCall it once."
+
+        self.assertEqual(ob.unwrap_sole_code_fence(body), body)
+
+    def test_two_fenced_blocks_are_left_alone(self):
+        # Two blocks are a document, not a module wrapped for display.
+        body = "```python\nx = 1\n```\n\n```python\ny = 2\n```"
+
+        self.assertEqual(ob.unwrap_sole_code_fence(body), body)
+
+    def test_an_unterminated_fence_is_left_alone(self):
+        # Truncated output. Silently dropping the opening marker would turn a broken
+        # response into one that merely looks syntactically plausible.
+        body = "```python\ndef f():\n    return 1"
+
+        self.assertEqual(ob.unwrap_sole_code_fence(body), body)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

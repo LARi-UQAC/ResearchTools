@@ -104,6 +104,23 @@ exercise them, set the required environment variables, then dry-run the entry po
   `changes` markup to `[final]{changes}`/`[disable]{todonotes}`; `build` runs
   pdflatex/bibtex/pdflatex/pdflatex with mandatory `BIBINPUTS=".."`, refusing a `.bib` inside the
   output directory).
+- **Self-improvement loop** (repo-wide, owned by no single skill): `scripts/test/run-offline-tests.ps1`
+  is the single runner behind "every previous test still passes". It DISCOVERS every
+  `.claude/**/Test/test_*.py` rather than reading a list, so a suite added later is picked up with
+  nothing to update; it resolves and reports one interpreter (`.venv-skills` first), because a suite
+  silently run under the wrong Python is worse than one not run at all; and it grades each suite into
+  THREE outcomes, not two - PASSED, FAILED, and NOT RUN. NOT RUN covers a suite that cannot import a
+  third-party package, decided by looking for the missing module INSIDE the repository rather than
+  against a hardcoded package list that would rot; a missing module that does resolve in-repo is
+  first-party, so it is a real defect and counts as FAILED. Without that third outcome one uninstalled
+  package (`pypdf`, today) would block every future self-improvement permanently. Green means every
+  suite that COULD run passed, and writes `.rt-green.json` carrying a hash PER CODE FILE; any FAILED
+  deletes it. `install-junctions.ps1 -Sync` reads those per-file hashes to decide, file by file,
+  whether what is on disk is what the suite actually passed - per file rather than one repo-wide hash,
+  which would freeze all propagation whenever any edit was in progress. `scripts/lib/rt-sync.ps1`
+  holds the -Sync engine in its own file for one reason: `scripts/test/verify-sync-writes.ps1` must be
+  able to load it WITHOUT executing the installer's legacy junction flow, which would write to the
+  real `~/.claude` just by being tested.
 - `opt-local-vram-llm` skill: `vram_probe.py` (read-only manifest and daemon facts: projector
   layer present or baked in, native context maximum from `ollama show`, current KV cache type
   and other settings from the last `server config` line of `server.log`), `vram_modelfile.py`
@@ -171,6 +188,8 @@ python .claude/hooks/Test/test_vault_access_guard.py      # 15 tests: every path
 python .claude/hooks/Test/test_obsidian_outbox_flush.py   # 8 tests: vault write path (threshold, replay, escape, missing vault), the setUp precondition that PROVES the vault redirection took effect before a byte is written, and the unresolved-link warning
 python .claude/skills/obsidian-cli/scripts/Test/test_vault_consolidate.py   # 35 tests: phantom detection, alias, fence, archives, why labels, dry-run, junction escape, LF endings, non-regression, map-entry validation, no-cascade, code-span/archive exclusion, cross-drive refusal, CLI dry-run gate, path-suffix resolution, aliased/heading link repair, phantom provenance
 .\scripts\audit\check-claude-template.ps1                 # template vs live global, plus the write-path invariants
+.\scripts\test\run-offline-tests.ps1                       # runs EVERY Python suite above; writes .rt-green.json on a full pass, deletes it on any failure
+.\scripts\test\verify-sync-writes.ps1                      # 13 checks on the two irreversible -Sync writes, driven against temp copies, proving the live ~/.claude is never opened for writing
 ```
 
 The first offline-tests the `obsidian-outbox-flush.py` hook itself (no Obsidian process, no
@@ -201,6 +220,7 @@ Scopus access needs a campus network or active VPN unless an `--insttoken` is su
 python .claude/skills/loop-engineer/scripts/Test/test_ollama_bridge.py    # 31 tests: transport, budget probe, truncation signature, reasoning stripper, hygiene, seed, no fallback, empty body, mandatory vault consultation, --role forwarded to the resolver, think=false so a reasoning model does not eat the reply reserve, and a response that IS one fenced code block unwrapped so a model presenting its module for display is not failed on punctuation (measured 2026-08-28: a candidate scored 0/3 because every attempt was written verbatim to a .py and died with SyntaxError on line 1 before a single case ran, while prose around a fence, two blocks, and an unterminated fence are all left alone), the context window read PER RESOLVED TAG rather than from an import-time constant (a tag with no swept measurement fails the run and names itself instead of borrowing another model's window)
 python .claude/skills/loop-engineer/scripts/Test/test_model_resolver.py   # 39 tests: eligibility, per-role win rule, qualification, LARI_LOCAL_MODEL override, no-fallback states, per-role current tag (resolve/qualify/adopt/refuse-to-seed), language-gate thresholds injected from one constant, coder target named .py so importlib can load it, plus the seven measured-budget tie-break cases: an exact tie in every role now goes to local-model-config.json, where the challenger wins if the incumbent has NO admissible measured configuration on this card or if the challenger retains a strictly larger window without losing decode throughput, while a regression is never rescued and a strict gain never reaches the tie-break; the per-role adoption path honours policy.win_rule, which it silently ignored before 2026-08-28
 python .claude/skills/loop-engineer/scripts/Test/test_qualification_tasks.py  # 9 tests: grades the GRADER - a reference implementation of every coder contract, written from the task's own prompt rather than copied from the function it mirrors, must pass every case through the REAL oracle, so a wrong expected value fails here instead of silently mis-scoring every candidate forever; plus a negative control proving the check can fail, the ten-per-role floor, unique ids, and writer-side consistency (every required heading and frontmatter key actually named in its prompt, length window able to hold the sections)
+python .claude/skills/loop-engineer/scripts/Test/test_matrix_command.py       # 8 tests: --matrix scores EVERY declared and installed candidate on EVERY task, including roles it is not declared for (a candidate graded only on its own role is not comparable - an 18/20 tag held the coder role while a 20/20 tag sat unscored on coder tasks), a tag with no measured context window is reported NOT RUNNABLE and is never even asked to run a task rather than printing 0/20, the summary ranks by total and carries num_ctx and decode rate, --json emits the whole structure, and no installed candidate is an explicit refusal
 python .claude/skills/loop-engineer/scripts/Test/test_score_command.py        # 6 tests: --score reports per task and leaves the state document byte-identical, a role naming no task is refused, and --record refreshes ONLY an incumbent's stale number - a tag that is not current for that role is refused and nothing is written, so --record can never be a back door to adoption
 python .claude/skills/loop-engineer/scripts/Test/test_context_budget.py   # 13 tests: task gate, descending scan, missing config is an explicit error
 python .claude/skills/loop-engineer/scripts/Test/test_optimize_ollama.py  # 8 tests: a sweep rung ABOVE the model's own native context maximum is rejected instead of retained - Ollama clamps options.num_ctx silently rather than erroring, so the rung costs the memory of the smaller window and passes every threshold on numbers describing a window the daemon never granted; the honest rung still passes, one deviating run out of three is enough to reject, and the 300 MiB free-VRAM floor still rejects on its own; plus api_ps_row's residency_ratio from /api/ps size/size_vram (full, partial-offload, absent-tag), and the rung record carrying residency_ratio (worst run) and decode_tps (median run) alongside the existing acceptance predicate

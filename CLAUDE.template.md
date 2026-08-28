@@ -182,6 +182,71 @@ Claude Code reste le pilote **unique** des écritures dans le coffre. Ne pas inv
 - Pour les opérations Obsidian, ce fichier est la source de vérité globale.
 - Les `CLAUDE.md` de projet (par exemple `C:\Martin Otis\OutilsLogiciels\.claude\CLAUDE.md`) peuvent restreindre davantage ou ajouter des cas d'usage spécifiques, mais ne doivent jamais lever une interdiction de la liste de sécurité ci-dessus.
 
+<!-- RT-CONTRACT:BEGIN -->
+## Amélioration de ResearchTools depuis un autre dossier
+
+Ce bloc est recopié tel quel depuis `CLAUDE.template.md` par
+`install-junctions.ps1 -Sync`. Ne pas l'éditer ici : la source est le dépôt.
+
+Du code écrit pour contourner une faiblesse de ResearchTools (script de rattrapage,
+correctif, utilitaire) s'écrit **dans ResearchTools**, au niveau du skill, de l'agent ou
+de la commande qui porte la faiblesse. Jamais dans le dossier d'article, de thèse ou de
+subvention en cours, quel que soit le langage et si petit soit-il.
+
+1. **Trouver le propriétaire** dans la table de routage
+   `C:\Martin Otis\OutilsLogiciels\ResearchTools\.claude\CLAUDE.md` et l'inventaire des
+   scripts `...\.claude\rules\testing.md`, puis **étendre le code existant** par un
+   drapeau ou une sous-commande. Demander à l'utilisateur d'abord si le propriétaire est
+   incertain, ou si le correctif exigerait un script ou un skill entièrement nouveau
+   n'appartenant à aucun existant : un correctif sans propriétaire est en général
+   spécifique à l'article en cours et n'a pas sa place dans la boîte à outils. Si la
+   question ne peut pas être posée, journaliser `OWNER UNKNOWN` dans `IMPROVEMENTS.md`,
+   faire le minimum pour débloquer le travail, et le dire.
+
+2. **Lire `...\ResearchTools\.rt-green.json`.** Absent, le dépôt n'était pas dans un état
+   prouvé : le signaler et s'arrêter, plutôt que de bâtir sur un échec qu'on n'a pas causé.
+
+3. **Avant de modifier un fichier**, le copier dans
+   `...\ResearchTools\.rt-undo\<AAAA-MM-JJ-hhmm>-<nom>`, et noter tout fichier créé, pour
+   qu'un retour arrière sache ce qui était nouveau.
+
+4. **Prouver le correctif avant de l'annoncer.** Tout code nouveau ou modifié arrive avec
+   un test, puis `...\ResearchTools\scripts\test\run-offline-tests.ps1` doit passer en
+   entier : le nouveau test et tous les précédents. Un seul échec, même dans un skill non
+   touché, signifie non terminé. Pour un agent ou de la prose, rejouer en plus l'opération
+   fautive sur la même entrée et vérifier que la sortie est correcte ; un fichier bien
+   formé n'est pas une preuve.
+
+5. **En cas d'échec, boucler : trois tentatives, pas plus.** Lire l'échec, corriger,
+   relancer. Compter les tentatives. Ne pas en commencer une quatrième.
+
+6. **Après la troisième tentative ratée, arrêter et revenir en arrière.** Restaurer depuis
+   `.rt-undo\` tout fichier modifié. Ne rien supprimer de ce qui a été créé : si un test
+   ajouté est celui qui échoue, le marquer
+   `@unittest.skip("ABANDONED <date> - voir IMPROVEMENTS.md")` et le laisser en place, pour
+   que la preuve subsiste et que la suite redevienne verte. Relancer la suite pour
+   confirmer, puis ajouter à `IMPROVEMENTS.md` une entrée d'abandon nommant le test en
+   échec, son assertion ou son erreur, ce qui était tenté, et tout fichier laissé derrière.
+   Dire ensuite à l'utilisateur ce qui a été tenté, que c'est annulé, que le problème
+   d'origine reste non résolu, et poursuivre son vrai travail. Ne jamais laisser le dépôt
+   rouge, ne jamais annoncer un correctif non prouvé.
+
+7. **Rendre le correctif actif :** lancer
+   `...\ResearchTools\install-junctions.ps1 -Sync`. Un correctif à une **commande** ou à
+   une **règle** est déjà actif dès l'enregistrement du fichier, car ce sont des jonctions
+   de répertoire entier : aucune synchronisation et aucun garde-fou entre l'édition et tous
+   les projets de la machine. Y être d'autant plus prudent.
+
+8. **Journaliser** une ligne dans `...\ResearchTools\IMPROVEMENTS.md`, et terminer la
+   réponse par une ou deux lignes disant ce qui a changé et où.
+
+**Aucune commande git.** Des fichiers sont écrits ; rien n'est commité, branché ou poussé.
+
+Si la faiblesse ne peut pas être corrigée sur le moment, l'inscrire comme limitation connue
+dans le `SKILL.md` du skill propriétaire, la journaliser de la même façon, et le dire. Ne
+pas laisser un contournement dans le dossier du projet comme seule trace.
+<!-- RT-CONTRACT:END -->
+
 ## Hooks globaux
 
 Douze entrées de hook réparties sur six événements, toutes déclarées dans

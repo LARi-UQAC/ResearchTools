@@ -48,3 +48,9 @@ post-media/
 .claude/local-model-config.json
 .claude/.maintenance.lock
 loop-bridge-log.jsonl
+
+# Self-improvement loop: machine-local state, never repository content.
+# .rt-green.json is the proof that the offline suite passed, with a hash per code file;
+# .rt-undo/ holds the previous version of any file the loop changed, pruned to 20.
+.rt-green.json
+.rt-undo/

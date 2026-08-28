@@ -108,6 +108,23 @@ exercise them, set the required environment variables, then dry-run the entry po
   `changes` markup to `[final]{changes}`/`[disable]{todonotes}`; `build` runs
   pdflatex/bibtex/pdflatex/pdflatex with mandatory `BIBINPUTS=".."`, refusing a `.bib` inside the
   output directory).
+- **Self-improvement loop** (repo-wide, owned by no single skill): `scripts/test/run-offline-tests.ps1`
+  is the single runner behind "every previous test still passes". It DISCOVERS every
+  `.claude/**/Test/test_*.py` rather than reading a list, so a suite added later is picked up with
+  nothing to update; it resolves and reports one interpreter (`.venv-skills` first), because a suite
+  silently run under the wrong Python is worse than one not run at all; and it grades each suite into
+  THREE outcomes, not two - PASSED, FAILED, and NOT RUN. NOT RUN covers a suite that cannot import a
+  third-party package, decided by looking for the missing module INSIDE the repository rather than
+  against a hardcoded package list that would rot; a missing module that does resolve in-repo is
+  first-party, so it is a real defect and counts as FAILED. Without that third outcome one uninstalled
+  package (`pypdf`, today) would block every future self-improvement permanently. Green means every
+  suite that COULD run passed, and writes `.rt-green.json` carrying a hash PER CODE FILE; any FAILED
+  deletes it. `install-junctions.ps1 -Sync` reads those per-file hashes to decide, file by file,
+  whether what is on disk is what the suite actually passed - per file rather than one repo-wide hash,
+  which would freeze all propagation whenever any edit was in progress. `scripts/lib/rt-sync.ps1`
+  holds the -Sync engine in its own file for one reason: `scripts/test/verify-sync-writes.ps1` must be
+  able to load it WITHOUT executing the installer's legacy junction flow, which would write to the
+  real `~/.claude` just by being tested.
 - `opt-local-vram-llm` skill: `vram_probe.py` (read-only manifest and daemon facts: projector
   layer present or baked in, native context maximum from `ollama show`, current KV cache type
   and other settings from the last `server config` line of `server.log`), `vram_modelfile.py`
@@ -175,6 +192,9 @@ python .claude/hooks/Test/test_vault_access_guard.py      # 15 tests: every path
 python .claude/hooks/Test/test_obsidian_outbox_flush.py   # 8 tests: vault write path (threshold, replay, escape, missing vault), the setUp precondition that PROVES the vault redirection took effect before a byte is written, and the unresolved-link warning
 python .claude/skills/obsidian-cli/scripts/Test/test_vault_consolidate.py   # 35 tests: phantom detection, alias, fence, archives, why labels, dry-run, junction escape, LF endings, non-regression, map-entry validation, no-cascade, code-span/archive exclusion, cross-drive refusal, CLI dry-run gate, path-suffix resolution, aliased/heading link repair, phantom provenance
 .\scripts\audit\check-claude-template.ps1                 # template vs live global, plus the write-path invariants
+.\scripts\test\run-offline-tests.ps1                       # runs EVERY Python suite above; writes .rt-green.json on a full pass, deletes it on any failure
+.\scripts\test\verify-sync-writes.ps1                      # 13 checks on the two irreversible -Sync writes, driven against temp copies, proving the live ~/.claude is never opened for writing
+.\scripts\audit\check-deployment.ps1                       # read-only: does live ~/.claude actually MATCH the repo (agents by hash, skill junctions, hooks, contract block, settings entry, green stamp)
 ```
 
 The first offline-tests the `obsidian-outbox-flush.py` hook itself (no Obsidian process, no

@@ -190,6 +190,7 @@ python .claude/skills/obsidian-cli/scripts/Test/test_vault_consolidate.py   # 35
 .\scripts\audit\check-claude-template.ps1                 # template vs live global, plus the write-path invariants
 .\scripts\test\run-offline-tests.ps1                       # runs EVERY Python suite above; writes .rt-green.json on a full pass, deletes it on any failure
 .\scripts\test\verify-sync-writes.ps1                      # 13 checks on the two irreversible -Sync writes, driven against temp copies, proving the live ~/.claude is never opened for writing
+.\scripts\audit\check-deployment.ps1                       # read-only: does live ~/.claude actually MATCH the repo (agents by hash, skill junctions, hooks, contract block, settings entry, green stamp)
 ```
 
 The first offline-tests the `obsidian-outbox-flush.py` hook itself (no Obsidian process, no

@@ -43,7 +43,7 @@ so an oversized file handed whole to a local task loses exactly the instruction 
 to sit at the end. It is good practice independent of that origin: a file a quarter of a
 16384-token window still holds is a file a reviewer, human or model, can hold in mind
 without paging. This number is derived from a measurement that can change - the retained
-window lives in `.claude/local-model-config.json` (`models["ornith:9b-gpu"].retained_num_ctx`,
+window lives in `.claude/local-model-config.json` (`models["<the tag the resolver returns>"].retained_num_ctx`,
 written by `optimize_ollama.py --sweep`), machine-local and gitignored - so treat 4096 as
 that measurement's current quarter, not a fixed constant. `context_budget.py --scan <path>`
 reads the live window and names every file above the threshold; it does not split them.

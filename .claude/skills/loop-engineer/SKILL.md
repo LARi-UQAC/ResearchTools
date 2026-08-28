@@ -38,10 +38,10 @@ the contract for the pipeline, the model tiering, and the safety gates.
 3. Branch `feat/<slug>` - a **Sonnet** subagent with write-capable git (never the local model).
 4. TDD - `test-driven-development` on **Sonnet**: write the failing tests for the acceptance
    criteria first.
-5. Code - the **local-coder** agent (`qwen3.5:9b` over the bridge) implements against the tests.
+5. Code - the **local-coder** agent (the resolver's coder-role model over the bridge) implements against the tests.
    At task start it consults the vault (GardeFous / Apprentissages for the module, the project
    `Decisions.md` / `CodeReview.md`) and folds the constraints into the bridge prompt.
-6. Comment / doc - the **local-writer** agent (`ornith:9b` over the bridge). It consults the
+6. Comment / doc - the **local-writer** agent (the resolver's writer-role model over the bridge). It consults the
    vault's `Methodes` and prior writing decisions the same way.
 7. Run tests + review panel - **Sonnet** runs `rtk pytest` (deterministic green/red) and the
    installed reviewers on the diff: `/code-review`, `/security-guidance`, `pr-review-toolkit`
@@ -128,7 +128,7 @@ The five steps:
 4. **Loop** - go back to step 2 until the overall reaches `min_score`, the spend reaches
    `max_budget`, or the score plateaus. A revision that lowers the score is discarded (keep the
    previous draft) rather than carried forward.
-5. **Memory** - `local-writer` (Haiku wrapper + local `ornith:9b`) records what was learned
+5. **Memory** - `local-writer` (Haiku wrapper + the resolver's writer-role model) records what was learned
    (what raised the score, what plateaued, residual weaknesses) to the project memory.
 
 Differences from the code loop: the gate is the single ScholarEval overall (plus a regression

@@ -45,7 +45,7 @@ sys.path.insert(0, str(_SCRIPTS))
 import context_budget as cb  # noqa: E402
 
 
-def _write_config(dir_path: Path, retained_num_ctx: int, tag: str = "ornith:9b-gpu") -> Path:
+def _write_config(dir_path: Path, retained_num_ctx: int, tag: str = "vendor-a:9b") -> Path:
     """Shared fixture: a minimal, valid local-model-config.json with one declared model."""
     config_path = dir_path / "local-model-config.json"
     config_path.write_text(
@@ -207,8 +207,8 @@ class TestReadRetainedNumCtxAmbiguous(unittest.TestCase):
             config_path = d / "local-model-config.json"
             config_path.write_text(json.dumps({
                 "models": {
-                    "ornith:9b-gpu": {"retained_num_ctx": 16384},
-                    "qwen3.5:9b-gpu": {"retained_num_ctx": 8192},
+                    "vendor-a:9b": {"retained_num_ctx": 16384},
+                    "vendor:7b": {"retained_num_ctx": 8192},
                 }
             }), encoding="utf-8")
 
@@ -216,7 +216,7 @@ class TestReadRetainedNumCtxAmbiguous(unittest.TestCase):
                 cb.read_retained_num_ctx(config_path)
 
             # An explicit tag resolves the ambiguity cleanly.
-            self.assertEqual(cb.read_retained_num_ctx(config_path, model_tag="qwen3.5:9b-gpu"), 8192)
+            self.assertEqual(cb.read_retained_num_ctx(config_path, model_tag="vendor:7b"), 8192)
 
 
 class TestReadRetainedNumCtxMissingField(unittest.TestCase):
@@ -225,7 +225,7 @@ class TestReadRetainedNumCtxMissingField(unittest.TestCase):
             d = Path(d)
             config_path = d / "local-model-config.json"
             config_path.write_text(json.dumps({
-                "models": {"ornith:9b-gpu": {"kv_cache_type": "q8_0"}}
+                "models": {"vendor-a:9b": {"kv_cache_type": "q8_0"}}
             }), encoding="utf-8")
             with self.assertRaises(cb.ConfigError):
                 cb.read_retained_num_ctx(config_path)

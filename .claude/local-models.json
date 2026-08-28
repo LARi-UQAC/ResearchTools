@@ -1,7 +1,7 @@
 {
   "_header": {
     "purpose": "Declared candidate model tags and the qualification policy for the loop-engineer local bridge (P4 Task 3, model_resolver.py). --list cross-references 'ollama list' (installed tags) against the 'candidates' array below: an installed tag absent here is reported ineligible, with that reason printed. --qualify additionally requires the tag to be installed. Declaration here is necessary but never sufficient to become 'current': that only happens by beating the incumbent's last recorded score on the frozen task set in qualification/tasks.json.",
-    "no_hardcoded_tag_in_code": "model_resolver.py contains no model tag literal anywhere in its source. Every tag the resolver can ever return or compare lives in exactly three places: this file (declared candidates), local-model-state.json (the qualified 'current' tag, gitignored, machine-local), or the LARI_LOCAL_MODEL environment override.",
+    "no_hardcoded_tag_in_code": "model_resolver.py contains no model tag literal in its EXECUTABLE code. Every tag the resolver can ever return or compare lives in exactly three places: this file (declared candidates), local-model-state.json (the qualified 'current' tag, gitignored, machine-local), or the LARI_LOCAL_MODEL environment override. Narrowed 2026-08-27: the previous wording said 'anywhere in its source', which a grep disproves - three of its docstrings name a tag while recording WHERE a measurement was taken. That is historical provenance, not a value the resolver can return, and removing it would destroy the record of what was measured on what. The rule that matters is the staleness one: a model update renames the tag, so no file that tells a reader which model to USE today may name one. A comment saying which tag a past measurement came from is dated by construction and does not go stale.",
     "incumbent_seed_exception": "The one deliberate named-tag exception in the whole P4 plan is the entry below for ornith:9b-gpu: the variant already built and GPU-tuned in P4 Task 1/2 from ~/.litellm/Modelfile.ornith-9b-gpu (FROM ornith:9b, PARAMETER num_ctx 8192, PARAMETER num_gpu 99). Its Modelfile keeps the FROM tag; local-model-state.json records which variant was actually qualified from it. Naming it here, in a JSON 'notes' field, is data, not code."
   },
   "policy": {
@@ -20,10 +20,16 @@
   },
   "candidates": [
     {
+      "tag": "ornith-1.5:9b-gpu",
+      "role": "writer",
+      "declared": "2026-08-27",
+      "notes": "GPU-tuned TEXT-ONLY variant of ornith-1.5:9b, built from ~/.litellm/Modelfile.ornith-1.5-9b-gpu to replace ornith:9b-gpu, whose config it copies line for line (SYSTEM, RENDERER/PARSER ornith, stop <|im_end|>, temperature 0.6, top_k 20, top_p 0.95, num_ctx 16384, num_gpu 99). Two measured departures from a plain FROM of the base tag: the base was imported bare, with no SYSTEM, RENDERER/PARSER or sampling parameters, so those are restated in the Modelfile rather than inherited; and the Modelfile names the 5368 MiB language layer directly instead of the tag, because the tag also ships an 879 MiB clip projector that leaves 53 MiB free at num_ctx 8192 and 9 MiB at 16384 on this 6144 MiB card, under the 300 MiB acceptance floor, which made optimize_ollama.py --sweep reject every rung. Text-only, the sweep retains num_ctx 16384 at 629 MiB free, 100 percent GPU, median 36.991 s against the incumbent 46.235 s. The vision-capable base tag ornith-1.5:9b stays installed for any task that needs a projector."
+    },
+    {
       "tag": "ornith:9b-gpu",
       "role": "writer",
       "declared": "2026-08-14",
-      "notes": "GPU-tuned variant built in P4 Task 1/2 from Modelfile.ornith-9b-gpu (FROM ornith:9b, num_ctx 8192, num_gpu 99). This is the plan's one deliberate named-tag exception (see _header.incumbent_seed_exception); it is recorded here as data, never in model_resolver.py."
+      "notes": "GPU-tuned variant built in P4 Task 1/2 from Modelfile.ornith-9b-gpu (FROM ornith:9b, num_ctx 8192, num_gpu 99). This is the plan's one deliberate named-tag exception (see _header.incumbent_seed_exception); it is recorded here as data, never in model_resolver.py. Removed from the machine on 2026-08-27 and superseded by ornith-1.5:9b-gpu; the entry stays declared so the historical incumbent in local-model-state.json still resolves to a declared tag."
     },
     {
       "tag": "qwen3.5:9b-gpu",

@@ -97,6 +97,18 @@ exercise them, set the required environment variables, then dry-run the entry po
   `changes` markup to `[final]{changes}`/`[disable]{todonotes}`; `build` runs
   pdflatex/bibtex/pdflatex/pdflatex with mandatory `BIBINPUTS=".."`, refusing a `.bib` inside the
   output directory).
+- `opt-local-vram-llm` skill: `vram_probe.py` (read-only manifest and daemon facts: projector
+  layer present or baked in, native context maximum from `ollama show`, current KV cache type
+  and other settings from the last `server config` line of `server.log`), `vram_modelfile.py`
+  (pure render of the tuned Modelfile: `num_gpu` pinned at 99, `num_ctx` from the swept rung, no
+  repetition penalty, TEMPLATE and per-role SYSTEM carried through, measurement provenance in
+  comments), `vram_daemon.py` (the KV cache axis: writes `OLLAMA_KV_CACHE_TYPE`, restarts through
+  `scripts/dev/restart-ollama.ps1`, verifies the value took effect in `server.log`, restores the
+  original value on failure), and `vram_optimizer.py` (the driver: sweeps `num_ctx` against the
+  KV cache axis, applies the admissible/fast-enough/largest-window objective by calling
+  `optimize_ollama.evaluate_rung` from `loop-engineer` rather than re-measuring a rung itself,
+  writes the report, and declares the tuned tag as a role candidate in `local-models.json`
+  without qualifying it).
 
 Offline unit tests (no network, no API key, no model load; run with the project Python):
 
@@ -178,9 +190,14 @@ what it does not cover (one machine's global file, not every contributor's).
 Scopus access needs a campus network or active VPN unless an `--insttoken` is supplied.
 
 ```powershell
-python .claude/skills/loop-engineer/scripts/Test/test_ollama_bridge.py    # 22 tests: transport, budget probe, truncation signature, reasoning stripper, hygiene, seed, no fallback, empty body, mandatory vault consultation, --role forwarded to the resolver, think=false so a reasoning model does not eat the reply reserve
+python .claude/skills/loop-engineer/scripts/Test/test_ollama_bridge.py    # 24 tests: transport, budget probe, truncation signature, reasoning stripper, hygiene, seed, no fallback, empty body, mandatory vault consultation, --role forwarded to the resolver, think=false so a reasoning model does not eat the reply reserve, and the context window read PER RESOLVED TAG rather than from an import-time constant (a tag with no swept measurement fails the run and names itself instead of borrowing another model's window)
 python .claude/skills/loop-engineer/scripts/Test/test_model_resolver.py   # 32 tests: eligibility, per-role win rule, qualification, LARI_LOCAL_MODEL override, no-fallback states, per-role current tag (resolve/qualify/adopt/refuse-to-seed), language-gate thresholds injected from one constant, coder target named .py so importlib can load it
 python .claude/skills/loop-engineer/scripts/Test/test_context_budget.py   # 13 tests: task gate, descending scan, missing config is an explicit error
+python .claude/skills/loop-engineer/scripts/Test/test_optimize_ollama.py  # 8 tests: a sweep rung ABOVE the model's own native context maximum is rejected instead of retained - Ollama clamps options.num_ctx silently rather than erroring, so the rung costs the memory of the smaller window and passes every threshold on numbers describing a window the daemon never granted; the honest rung still passes, one deviating run out of three is enough to reject, and the 300 MiB free-VRAM floor still rejects on its own; plus api_ps_row's residency_ratio from /api/ps size/size_vram (full, partial-offload, absent-tag), and the rung record carrying residency_ratio (worst run) and decode_tps (median run) alongside the existing acceptance predicate
+python .claude/skills/opt-local-vram-llm/scripts/Test/test_vram_probe.py      # 11 tests: projector present vs baked into a single layer, registry-nested and locally-created manifest layouts, bare name resolves to :latest, unknown tag raises rather than returning empty, native context maximum from `ollama show`, LAST 'server config' line wins so a restart is not read as stale
+python .claude/skills/opt-local-vram-llm/scripts/Test/test_vram_modelfile.py  # 9 tests: num_gpu/num_ctx always emitted, no repetition penalty ever emitted or copied, TEMPLATE inherited from a tag FROM but restated from a blob FROM, a multi-line template triple-quoted rather than flattened, triple-quoted directive parsed whole, per-role SYSTEM, measurement provenance in the comments
+python .claude/skills/opt-local-vram-llm/scripts/Test/test_vram_daemon.py     # 5 tests: the variable written BEFORE the restart (after is a no-op the daemon never reads), a daemon that came back on another value stops the run, missing restart script named, the axis restored when the search aborts, no redundant restart when the search ends on the original value
+python .claude/skills/opt-local-vram-llm/scripts/Test/test_vram_optimizer.py  # 13 tests: objective function (context wins when throughput is flat, floor rejects a slow large window, residency outranks speed, the floor references the best ADMISSIBLE throughput so a spilled rung cannot veto a usable one, free-VRAM floor, clamped rung, nothing admissible, tie-break, empty input raises), dry run touches nothing, oversized weights refused early, unknown KV type refused, role required
 ```
 
 The bridge suite's mandatory-vault cases are the ones to keep an eye on: the bridge REFUSES

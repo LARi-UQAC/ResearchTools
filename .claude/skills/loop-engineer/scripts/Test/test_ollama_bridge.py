@@ -43,6 +43,7 @@ Run:
 """
 
 import io
+import logging
 import json
 import sys
 import os
@@ -58,6 +59,24 @@ _SCRIPTS = _HERE.parent
 sys.path.insert(0, str(_SCRIPTS))
 
 import ollama_bridge as ob  # noqa: E402
+
+
+# The context window is a property of the MODEL, so run_bridge reads it for whichever tag
+# resolve_model returns (ollama_bridge._resolve_num_ctx). Every test below patches
+# resolve_model to a fixed tag, which is deliberately NOT one this machine has necessarily
+# swept, so the lookup is patched here once for the whole module rather than in each test.
+# This also removes a latent machine dependency: before 2026-08-27 the window came from a
+# module-level constant that read this machine's own local-model-config.json at import
+# time, so the suite quietly passed or failed according to what happened to be measured
+# locally. Tests that care about a specific window still pass num_ctx explicitly, and that
+# explicit value always wins over this patch.
+_TEST_NUM_CTX = 16384
+
+
+def setUpModule():
+    patcher = mock.patch.object(ob, "_resolve_num_ctx", return_value=_TEST_NUM_CTX)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 def _is_probe(payload):
@@ -108,7 +127,7 @@ class TestFullPromptReachesTransport(unittest.TestCase):
                     return {"prompt_eval_count": _plausible_probe_count(big_prompt)}
                 return {"response": "Reponse breve et propre."}
 
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=capture_transport):
                 rc = ob.run_bridge(
                     prompt_path=prompt_path,
@@ -156,7 +175,7 @@ class TestOverBudgetPromptRefused(unittest.TestCase):
                 return {"response": "Ne devrait jamais etre accepte."}
 
             buf = io.StringIO()
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=transport), \
                  redirect_stdout(buf):
                 rc = ob.run_bridge(
@@ -282,7 +301,7 @@ class TestVerifyRestoresTarget(unittest.TestCase):
                     return {"prompt_eval_count": _plausible_probe_count(prompt_text)}
                 return {"response": "Note propre generee."}
 
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=transport):
                 rc = ob.run_bridge(
                     prompt_path=prompt_path,
@@ -331,7 +350,7 @@ class TestDirtyResponseRetriesFinitely(unittest.TestCase):
             prompt_path = d / "prompt.txt"
             prompt_path.write_text(dirty_prompt_text, encoding="utf-8")
 
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=always_dirty):
                 rc = ob.run_bridge(
                     prompt_path=prompt_path,
@@ -366,7 +385,7 @@ class TestSeedDeterminesRequest(unittest.TestCase):
                 generation_payloads.append(payload)
                 return {"response": "Reponse propre."}
 
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=capture):
                 rc1 = ob.run_bridge(prompt_path, None, None, seed=7, log_path=d / "log1.jsonl")
                 rc2 = ob.run_bridge(prompt_path, None, None, seed=7, log_path=d / "log2.jsonl")
@@ -427,7 +446,7 @@ class TestLogFileFormat(unittest.TestCase):
                     return {"response": "Sale \u2014 ici."}
                 return {"response": "Propre maintenant."}
 
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=flaky):
                 rc = ob.run_bridge(prompt_path, None, None, seed=11, log_path=log_path, max_retries=3)
 
@@ -477,7 +496,7 @@ class TestEmptyBodyNeverOverwritesTarget(unittest.TestCase):
                         call_count["n"] += 1
                         return _mk()
 
-                    with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+                    with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                          mock.patch.object(ob, "_post_generate", side_effect=transport):
                         rc = ob.run_bridge(
                             prompt_path=prompt_path,
@@ -516,7 +535,7 @@ class TestDefaultLogPathOutsideRepository(unittest.TestCase):
                     return {"prompt_eval_count": _plausible_probe_count(prompt_text)}
                 return {"response": "Reponse propre."}
 
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=transport):
                 rc = ob.main([
                     "--prompt-file", str(prompt_path), "--no-vault-context",
@@ -552,7 +571,7 @@ class TestTruncationSignatureRefusesExactMatch(unittest.TestCase):
                         return_value={"prompt_eval_count": signature}):
                     with self.assertRaises(ob.BridgeError) as ctx:
                         ob.probe_prompt_tokens(
-                            "un prompt hex-dense quelconque", "ornith:9b-gpu", num_ctx,
+                            "un prompt hex-dense quelconque", "vendor-a:9b", num_ctx,
                         )
                 self.assertIn("truncation signature", str(ctx.exception))
 
@@ -563,7 +582,7 @@ class TestTruncationSignatureRefusesExactMatch(unittest.TestCase):
                         ob, "_post_generate",
                         return_value={"prompt_eval_count": legitimate_count}):
                     result = ob.probe_prompt_tokens(
-                        "un prompt legitime et court", "ornith:9b-gpu", num_ctx,
+                        "un prompt legitime et court", "vendor-a:9b", num_ctx,
                     )
                 self.assertEqual(result, legitimate_count)
 
@@ -584,7 +603,11 @@ class TestProbeSendsNumPredictOne(unittest.TestCase):
         with mock.patch.object(ob, "_post_generate", side_effect=transport):
             count = ob.probe_prompt_tokens(
                 "Un prompt de test pour verifier num_predict.",
-"ornith:9b-gpu", ob.DEFAULT_NUM_CTX,
+                # A literal, not the former module constant ob.DEFAULT_NUM_CTX: that
+                # constant was an eager import-time read of local-model-config.json and
+                # was removed on 2026-08-27, when a second measured model made it raise.
+                # This test only needs SOME window; 16384 is the writer tag's measured one.
+                "vendor-a:9b", 16384,
             )
 
         self.assertEqual(count, 50)
@@ -622,13 +645,13 @@ class TestNearSignatureCountIsAcceptedNotAFalsePositive(unittest.TestCase):
                         return_value={"prompt_eval_count": count}):
                     if should_accept:
                         result = ob.probe_prompt_tokens(
-                            "un prompt legitime de test", "ornith:9b-gpu", num_ctx,
+                            "un prompt legitime de test", "vendor-a:9b", num_ctx,
                         )
                         self.assertEqual(result, count)
                     else:
                         with self.assertRaises(ob.BridgeError) as ctx:
                             ob.probe_prompt_tokens(
-                                "un prompt legitime de test", "ornith:9b-gpu", num_ctx,
+                                "un prompt legitime de test", "vendor-a:9b", num_ctx,
                             )
                         self.assertIn("truncation signature", str(ctx.exception))
 
@@ -739,7 +762,7 @@ class TestThinkingDoesNotEatTheReplyReserve(unittest.TestCase):
                 return {"response": "", "done_reason": "length",
                          "thinking": "x" * 4259, "eval_count": 1024}
 
-            with mock.patch.object(ob, "resolve_model", return_value="ornith:9b-gpu"), \
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
                  mock.patch.object(ob, "_post_generate", side_effect=transport), \
                  self.assertLogs(ob.logger, level="WARNING") as logged:
                 rc = ob.run_bridge(
@@ -766,7 +789,7 @@ class TestRoleReachesTheResolver(unittest.TestCase):
             @staticmethod
             def resolve(role=None):
                 seen.append(role)
-                return "qwen3.5:9b-gpu"
+                return "vendor:7b"
 
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
@@ -797,7 +820,7 @@ class TestRoleReachesTheResolver(unittest.TestCase):
             @staticmethod
             def resolve(role=None):
                 seen.append(role)
-                return "ornith:9b-gpu"
+                return "vendor-a:9b"
 
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
@@ -819,6 +842,80 @@ class TestRoleReachesTheResolver(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         self.assertEqual(seen, [None])
+
+
+class TestNumCtxIsResolvedPerResolvedTag(unittest.TestCase):
+    def test_window_is_read_for_the_tag_the_role_resolved_to(self):
+        # 2026-08-27: the window used to come from a module-level constant read at
+        # import time with NO tag, so every role shared one number and a config
+        # describing two measured models made the import itself raise. run_bridge now
+        # resolves the tag first (D7) and reads THAT tag's measured window, which is
+        # what makes a writer at 16384 and a coder at 32768 coexist in one config.
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            prompt_path = d / "prompt.txt"
+            prompt_path.write_text("Petit prompt.", encoding="utf-8")
+
+            captured = []
+
+            def transport(payload, timeout):
+                captured.append(payload)
+                if _is_probe(payload):
+                    return {"prompt_eval_count": 12}
+                return {"response": "Reponse propre."}
+
+            lookup = mock.Mock(return_value=32768)
+            with mock.patch.object(ob, "resolve_model", return_value="qwen2.5-coder:7b-gpu"), \
+                 mock.patch.object(ob, "_resolve_num_ctx", lookup), \
+                 mock.patch.object(ob, "_post_generate", side_effect=transport):
+                rc = ob.run_bridge(
+                    prompt_path=prompt_path,
+                    verify_command=None,
+                    target_path=None,
+                    seed=ob.DEFAULT_SEED,
+                    log_path=d / "log.jsonl",
+                )
+
+        self.assertEqual(rc, 0)
+        lookup.assert_called_once_with("qwen2.5-coder:7b-gpu")
+        self.assertTrue(captured)
+        for payload in captured:
+            self.assertEqual(payload["options"]["num_ctx"], 32768)
+
+
+class TestMissingMeasuredWindowIsRefusedNotDefaulted(unittest.TestCase):
+    def test_no_config_entry_for_the_resolved_tag_fails_the_run(self):
+        # The no-silent-fallback rule (D7's lesson applied to the window): a tag with
+        # no swept measurement must stop the run and name itself, never borrow another
+        # model's number.
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            prompt_path = d / "prompt.txt"
+            prompt_path.write_text("Petit prompt.", encoding="utf-8")
+
+            stderr = io.StringIO()
+            error = ob.context_budget.ConfigError(
+                "[CONTEXT-BUDGET] config has no entry for model 'never-swept:9b'."
+            )
+            handler = logging.StreamHandler(stderr)
+            ob.logger.addHandler(handler)
+            try:
+                with mock.patch.object(ob, "resolve_model", return_value="never-swept:9b"), \
+                     mock.patch.object(ob, "_resolve_num_ctx", side_effect=error), \
+                     mock.patch.object(ob, "_post_generate") as transport:
+                    rc = ob.run_bridge(
+                        prompt_path=prompt_path,
+                        verify_command=None,
+                        target_path=None,
+                        seed=ob.DEFAULT_SEED,
+                        log_path=d / "log.jsonl",
+                    )
+            finally:
+                ob.logger.removeHandler(handler)
+
+        self.assertEqual(rc, 1)
+        self.assertIn("never-swept:9b", stderr.getvalue())
+        transport.assert_not_called()
 
 
 if __name__ == "__main__":

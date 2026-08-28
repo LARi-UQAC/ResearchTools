@@ -182,15 +182,72 @@ Claude Code reste le pilote **unique** des écritures dans le coffre. Ne pas inv
 - Pour les opérations Obsidian, ce fichier est la source de vérité globale.
 - Les `CLAUDE.md` de projet (par exemple `C:\Martin Otis\OutilsLogiciels\.claude\CLAUDE.md`) peuvent restreindre davantage ou ajouter des cas d'usage spécifiques, mais ne doivent jamais lever une interdiction de la liste de sécurité ci-dessus.
 
-## Hooks de sécurité globaux
+## Hooks globaux
 
-Trois hooks Python globaux actifs dans toutes les sessions. Zéro token LLM consommé.
+Douze entrées de hook réparties sur six événements, toutes déclarées dans
+`~/.claude/settings.json`. Zéro token LLM consommé. Trois familles : sécurité, session,
+mémoire. Les tables ci-dessous comptent onze lignes pour douze entrées, parce que
+`obsidian-outbox-flush.py` est déclaré deux fois, sur SessionStart et sur SessionEnd, et
+tient une seule ligne. Par événement : PreToolUse 2, PostToolUse 2, SessionStart 5,
+UserPromptSubmit 1, SessionEnd 1, Stop 1. L'inventaire est celui de `settings.json` au
+2026-08-27 ; il remplace l'ancienne mention de « trois hooks », qui n'en couvrait que la
+famille sécurité et omettait `vault-access-guard.py`.
+
+### Sécurité
 
 | Hook | Événement | Matcher | Rôle |
 |---|---|---|---|
 | `betterleaks-hook.py` | PreToolUse | `Write\|Edit\|MultiEdit` | Bloque (exit 2) si secret/API key détecté dans le contenu à écrire |
+| `vault-access-guard.py` | PreToolUse | `Bash\|PowerShell\|Read\|Grep\|Glob\|Edit\|Write\|MultiEdit\|NotebookEdit` | Refuse tout appel dont le chemin tombe dans le coffre sauf si `agent_type` vaut `local-writer` |
 | `prompt-injection-defender.py` | PostToolUse | `Read\|Bash\|WebFetch\|Grep\|Task` | Avertit (exit 2) si injection de prompt détectée dans les sorties d'outils |
 | `pip-audit-hook.py` | PostToolUse | `Edit\|Write\|MultiEdit` | Avertit (exit 2) si vulnérabilité CVE dans un `requirements.txt` modifié |
+
+### Session
+
+| Hook | Événement | Rôle |
+|---|---|---|
+| `caveman-activate.js` | SessionStart | Active le mode caveman et annonce son niveau |
+| `caveman-mode-tracker.js` | UserPromptSubmit | Rappelle le niveau caveman à chaque tour |
+| auto-sync git (inline) | SessionStart | Émet `[AUTO-SYNC CHECK]` : branche, fichiers sales, retard et avance sur le distant. Se limite aux chemins `*OutilsLogiciels*` et rend 0 ailleurs |
+| notice RTK (inline) | SessionStart | Émet `[RTK ACTIVE]`, seulement si `rtk` est sur le PATH |
+| statut de session (inline) | SessionStart | Fournit la ligne `Session: RTK=... \| Caveman=... \| git-sync=on` exigée par « Status de session obligatoire » |
+
+### Mémoire
+
+| Hook | Événement | Rôle |
+|---|---|---|
+| `obsidian-outbox-flush.py` | SessionStart + SessionEnd | Vide `~/.claude/obsidian-outbox/` vers le coffre |
+| entretien mémoire (inline) | Stop | Bloque la fin de tour et route l'entretien des deux mémoires vers `local-writer` |
+
+### Règle de sûreté — un hook doit échouer en silence
+
+**Un hook dont le script est absent refuse tous les outils de son matcher.** Mesuré le
+2026-08-27 : `vault-access-guard.py` avait disparu de `~/.claude/hooks/` alors que
+`settings.json` le déclarait toujours. L'interpréteur rendait `[Errno 2] No such file or
+directory` avec un code de retour non nul, et Read, Grep et Bash ont été refusés pendant
+quatre tours. Le message nommait le chemin manquant et l'interpréteur utilisé, donc le
+diagnostic était immédiat, mais la session restait inutilisable en lecture ; seul Write, hors
+matcher, répondait encore.
+
+Conséquences, contraignantes pour tout hook ajouté ici comme pour tout hook distribué
+ailleurs :
+
+- Une dépendance absente (binaire, coffre, interpréteur, variable d'environnement) rend
+  **exit 0**, jamais un code non nul. Un hook qui ne peut pas faire son travail se tait.
+- Plus le matcher est large, plus la règle est critique. `vault-access-guard.py` couvre neuf
+  outils, donc sa panne couvre la session entière.
+- Après toute modification de `settings.json`, vérifier que chaque `command` pointe vers un
+  fichier qui existe. Un chemin périmé ne se signale qu'au premier appel d'outil concerné.
+
+### Distribution des hooks hors de cette machine
+
+Ces hooks valent pour **cette** machine. Un hook qui suppose le coffre, `rtk`, Node à un
+chemin figé, ou l'agent `local-writer` n'a pas de sens sur la machine d'un membre du
+laboratoire, et la règle de sûreté ci-dessus explique ce qu'il y casse. Si ResearchTools les
+distribue un jour par son plugin, seuls les hooks génériques (`betterleaks-hook.py`,
+`pip-audit-hook.py`, `prompt-injection-defender.py`) partent par défaut ; les autres restent
+derrière une option `userConfig` explicite, et chacun se tait quand sa dépendance manque. Le
+détail vit dans le plan de distribution du plugin, pas ici.
 
 ### Hook utilitaire — capture Obsidian (SessionStart / SessionEnd)
 

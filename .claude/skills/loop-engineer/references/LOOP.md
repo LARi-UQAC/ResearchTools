@@ -15,7 +15,7 @@ down, and generate locally.
 | Plan (writing-plans) | Opus | high | structured planning |
 | Execute, TDD, review panel, correct | Sonnet | high | routine agentic work |
 | Local agents' cloud wrapper | Haiku | medium | frames the task, drives the bridge |
-| Code / comments / scoring arithmetic | local (qwen3.5:9b / ornith:9b) | - | free, on the GPU |
+| Code / comments / scoring arithmetic | local (the resolver's coder and writer models) | - | free, on the GPU |
 
 Routing: cloud runs on the user's subscription auth (no gateway, no API key). Local models are
 reached only through `ollama_bridge.py` inside the `local-coder` / `local-writer` agents,

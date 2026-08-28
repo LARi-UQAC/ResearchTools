@@ -235,6 +235,16 @@ and verifies the effect:
 5. For multi-line or backtick-heavy bodies, always use the outbox file - never shell-quote the
    content.
 
+Since 2026-08-28 the flush is serialized and recorded. It takes a lock file beside the outbox
+before writing, because the outbox is machine-global and a daemon is a separate OS process that
+`vault-access-guard.py` never sees, and it appends a PENDING then a WRITE record to a journal
+beside the outbox, carrying the byte size before the write so a write can be undone
+(`vault_journal.py --undo last --vault <root> --yes`). Two consequences for you. A run ending in
+"Notes kept for the next run" means another writer held the lock, not that a note was lost; the
+note is still in the outbox and the next flush delivers it. And when you stage a note from a
+script rather than with the Write tool, use `outbox_io.stage()`, which writes a `.tmp` and
+renames it into place, so a reader that globs `*.md` never sees a half-written note.
+
 ## Consolidation pass (this is what makes the vault a memory rather than a pile)
 
 **Run this after EVERY vault write, in the same run.** Writing a note is only half the job: a note

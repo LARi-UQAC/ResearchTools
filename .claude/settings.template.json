@@ -120,6 +120,16 @@
             "statusMessage": "Flushing Obsidian outbox (startup)..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\session-hooks-inventory.py\"",
+            "timeout": 10,
+            "statusMessage": "Listing active hooks..."
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

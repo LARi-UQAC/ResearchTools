@@ -87,6 +87,7 @@ OUTBOX = Path.home() / ".claude" / "obsidian-outbox"
 SENT = OUTBOX / "sent"
 JOURNAL_NAME = "vault-journal.jsonl"
 LOCK_NAME = "obsidian-outbox.lock"
+DAEMON_LOCK_NAME = "vault-daemon.lock"
 
 
 def _journal_path():
@@ -98,6 +99,13 @@ def _journal_path():
 
 def _lock_path():
     return OUTBOX.parent / LOCK_NAME
+
+
+def _daemon_lock_path():
+    """The daemon's SINGLETON lock, not the write lock: daemon_outbox.py puts it
+    beside the outbox under this name, and holding it is what proves a daemon is
+    alive. Derived at call time for the same reason as the journal path."""
+    return OUTBOX.parent / DAEMON_LOCK_NAME
 
 
 def _skills_dir():
@@ -137,13 +145,83 @@ def resolve_vault():
     return modules[0].resolve_vault(VAULT_DEFAULT)
 
 
+def _report_parked() -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Say out loud how many raw drops the vault daemon could not file. They
+        sit in outbox/needs-review/ waiting for a session to dispatch
+        local-writer, and nothing else in the system mentions them: a drop the
+        local model was not confident about would otherwise disappear into a
+        folder nobody opens, which is the one failure that quietly breaks the
+        unattended path.
+
+    Inputs:
+        none (reads outbox/needs-review/)
+
+    Outputs:
+        None. Prints one line to stderr when the folder is not empty.
+    --------------------------------------------------------------------------
+    """
+    parked = sorted((OUTBOX / "needs-review").glob("*.md"))
+    if not parked:
+        return
+    names = ", ".join(p.name for p in parked[:5])
+    more = f" and {len(parked) - 5} more" if len(parked) > 5 else ""
+    print(f"[OUTBOX] {len(parked)} drop(s) parked in needs-review/: {names}{more}. "
+          "Dispatch local-writer to file them; the daemon will not retry them.",
+          file=sys.stderr)
+
+
+def _report_raw_waiting(outbox_io, vault_lock) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Say out loud that raw drops are waiting with no daemon to consume them.
+        local-writer hands an unrouted learning to outbox/raw/ and stops there;
+        nothing starts the daemon, so without this line the drops pile up in a
+        folder nobody opens. That is the same silence already fixed for
+        needs-review/, one step earlier in the pipeline.
+
+        Liveness is asked of vault_lock rather than inferred from the lock file
+        existing: a daemon killed mid-run leaves its singleton lock behind, and
+        reading that as "a daemon is running" reports exactly backwards.
+
+    Inputs:
+        outbox_io (module): for load_config / require
+        vault_lock (module): for its own reclamation rules
+
+    Outputs:
+        None. Prints one line to stderr when raw/ is not empty and no daemon
+        holds the singleton lock. Silent on a missing or unusable config, since
+        this hook never turns a report into a refusal (R11).
+    --------------------------------------------------------------------------
+    """
+    waiting = sorted((OUTBOX / "raw").glob("*.md"))
+    if not waiting:
+        return
+    try:
+        config = outbox_io.load_config()
+        stale_after_s = outbox_io.require(config, "lock", "stale_after_s")
+    except outbox_io.ConfigError:
+        return
+    if vault_lock.held_by_live_holder(_daemon_lock_path(), stale_after_s):
+        return
+    scripts = _skills_dir()
+    start = f"python {scripts / 'vault_daemon.py'}" if scripts else "vault_daemon.py"
+    print(f"[OUTBOX] {len(waiting)} raw drop(s) waiting in raw/ and no daemon is "
+          f"running. Start one with: {start}", file=sys.stderr)
+
+
 def main() -> int:
     if not OUTBOX.is_dir():
         return 0
+    _report_parked()
     modules = _load()
     if modules is None:
         return 0
     outbox_io, vault_lock = modules
+    _report_raw_waiting(outbox_io, vault_lock)
     pending = sorted(p for p in OUTBOX.glob("*.md") if p.is_file())
     if not pending:
         return 0

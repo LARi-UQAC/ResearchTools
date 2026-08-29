@@ -4,15 +4,16 @@ Offline tests for the session-hooks-inventory SessionStart hook.
 No settings file of this machine is ever read: every case injects its own dict, and the
 existence predicate is injected too, so the suite passes on a machine with no ~/.claude at
 all (R21). What is pinned here is the reason the hook exists - a declared hook whose script
-is gone must be NAMED, since that is the 2026-08-27 failure that cost four turns - plus the
-determinism the inventory needs to be trustworthy across two consecutive sessions.
+is gone must be NAMED, since that is the 2026-08-27 failure that cost four turns - the
+per-hook status a reader needs to act on it, the display directive without which the block
+reaches the model and never the person, and the determinism the inventory needs to be
+trustworthy across two consecutive sessions.
 """
 
 import importlib.util
 import io
 import json
 import os
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -45,29 +46,42 @@ def group(*hooks, **kwargs):
     return out
 
 
-class BuildInventoryTest(unittest.TestCase):
-    def test_header_counts_entries_and_events(self):
+def alert_lines(lines):
+    return [line for line in lines if line.startswith("[HOOKS ALERT]")]
+
+
+def event_lines(lines):
+    return [
+        line
+        for line in lines
+        if not line.startswith("[HOOKS ACTIVE]")
+        and not line.startswith("[HOOKS ALERT]")
+        and not line.startswith("[HOOKS DISPLAY]")
+    ]
+
+
+class HeaderAndShapeTest(unittest.TestCase):
+    def test_header_counts_entries_events_and_statuses(self):
         data = settings(
-            SessionStart=[group(entry('python "C:/h/a.py"'), entry('python "C:/h/b.py"'))],
+            SessionStart=[group(entry('python "C:/h/a.py"'), entry('echo "[RTK ACTIVE] x"'))],
             SessionEnd=[group(entry('python "C:/h/a.py"'))],
         )
         lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertEqual(lines[0], "[HOOKS ACTIVE] 3 entries / 2 events")
-
-    def test_one_line_per_event_with_labels(self):
-        data = settings(
-            PreToolUse=[
-                group(entry('python "C:/h/betterleaks-hook.py"'), matcher="Write|Edit"),
-                group(entry('python "C:/h/vault-access-guard.py"'), matcher="Bash|Read"),
-            ]
-        )
-        lines = inv.build_inventory(data, script_exists=PRESENT)
         self.assertEqual(
-            lines[1], "PreToolUse(2): betterleaks-hook.py | vault-access-guard.py"
+            lines[0], "[HOOKS ACTIVE] 3 entries / 2 events | 2 ok | 0 missing | 1 inline"
         )
+
+    def test_unsubstituted_placeholders_counted_separately(self):
+        data = settings(PreToolUse=[group(entry('python "{{USERPROFILE}}/.claude/hooks/a.py"'))])
+        lines = inv.build_inventory(data, script_exists=ABSENT)
+        self.assertIn("1 unsubstituted", lines[0])
+
+    def test_no_unsubstituted_segment_when_there_are_none(self):
+        data = settings(PreToolUse=[group(entry('python "C:/h/a.py"'))])
+        lines = inv.build_inventory(data, script_exists=PRESENT)
+        self.assertNotIn("unsubstituted", lines[0])
 
     def test_canonical_event_order_is_not_declaration_order(self):
-        # SessionEnd is declared first but must be rendered last.
         data = {
             "hooks": {
                 "SessionEnd": [group(entry('python "C:/h/z.py"'))],
@@ -75,27 +89,92 @@ class BuildInventoryTest(unittest.TestCase):
             }
         }
         lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertTrue(lines[1].startswith("SessionStart("))
-        self.assertTrue(lines[2].startswith("SessionEnd("))
+        events = event_lines(lines)
+        self.assertTrue(events[0].startswith("SessionStart("))
+        self.assertTrue(events[1].startswith("SessionEnd("))
 
     def test_unknown_event_is_reported_not_dropped(self):
         data = settings(ZzzFutureEvent=[group(entry('python "C:/h/a.py"'))])
         lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertEqual(lines[1], "ZzzFutureEvent(1): a.py")
+        self.assertEqual(event_lines(lines)[0], "ZzzFutureEvent(1): a.py [ok]")
 
-    def test_inline_hook_labelled_by_its_bracket_tag(self):
+
+class StatusTest(unittest.TestCase):
+    def test_present_script_is_ok(self):
+        data = settings(SessionStart=[group(entry('python "C:/h/a.py"'))])
+        lines = inv.build_inventory(data, script_exists=PRESENT)
+        self.assertEqual(event_lines(lines)[0], "SessionStart(1): a.py [ok]")
+
+    def test_absent_script_is_missing_and_alerts(self):
+        data = settings(PreToolUse=[group(entry('python "C:/h/vault-access-guard.py"'))])
+        lines = inv.build_inventory(data, script_exists=ABSENT)
+        self.assertIn("vault-access-guard.py [MISSING", event_lines(lines)[0])
+        alerts = alert_lines(lines)
+        self.assertEqual(len(alerts), 1)
+        self.assertIn("vault-access-guard.py (PreToolUse)", alerts[0])
+        self.assertIn("REFUSED", alerts[0])
+
+    def test_inline_hook_is_inline_never_missing(self):
+        data = settings(SessionStart=[group(entry('echo "[RTK ACTIVE] ok"'))])
+        lines = inv.build_inventory(data, script_exists=ABSENT)
+        self.assertEqual(event_lines(lines)[0], "SessionStart(1): rtk-active [inline]")
+        self.assertEqual(alert_lines(lines), [])
+
+    def test_placeholder_path_is_template_never_missing(self):
+        data = settings(PreToolUse=[group(entry('python "{{USERPROFILE}}/.claude/hooks/a.py"'))])
+        lines = inv.build_inventory(data, script_exists=ABSENT)
+        self.assertIn("a.py [template", event_lines(lines)[0])
+        self.assertEqual(alert_lines(lines), [])
+
+    def test_matcher_is_shown_for_a_tool_gated_hook(self):
         data = settings(
-            SessionStart=[group(entry('echo "[AUTO-SYNC CHECK] branch=main"'))]
+            PreToolUse=[
+                group(entry('python "C:/h/vault-access-guard.py"'), matcher="Bash|Read|Grep")
+            ]
         )
         lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertEqual(lines[1], "SessionStart(1): auto-sync-check")
+        self.assertEqual(
+            event_lines(lines)[0],
+            "PreToolUse(1): vault-access-guard.py [ok, Bash|Read|Grep]",
+        )
+
+    def test_no_matcher_segment_when_the_event_is_not_tool_gated(self):
+        data = settings(SessionStart=[group(entry('python "C:/h/a.py"'))])
+        lines = inv.build_inventory(data, script_exists=PRESENT)
+        self.assertEqual(event_lines(lines)[0], "SessionStart(1): a.py [ok]")
+
+
+class DisplayDirectiveTest(unittest.TestCase):
+    def test_directive_is_present_and_last(self):
+        # Without it the block reaches the model's context and never the user's pane,
+        # which is the whole reason the Session: status line has its own hook.
+        data = settings(SessionStart=[group(entry('python "C:/h/a.py"'))])
+        lines = inv.build_inventory(data, script_exists=PRESENT)
+        self.assertTrue(lines[-1].startswith("[HOOKS DISPLAY]"))
+        self.assertIn("verbatim", lines[-1])
+
+    def test_directive_follows_the_alert_rather_than_preceding_it(self):
+        data = settings(PreToolUse=[group(entry('python "C:/h/gone.py"'))])
+        lines = inv.build_inventory(data, script_exists=ABSENT)
+        self.assertTrue(lines[-2].startswith("[HOOKS ALERT]"))
+        self.assertTrue(lines[-1].startswith("[HOOKS DISPLAY]"))
+
+    def test_no_directive_when_there_is_nothing_to_show(self):
+        self.assertEqual(inv.build_inventory({"hooks": {}}, script_exists=PRESENT), [])
+
+
+class LabelTest(unittest.TestCase):
+    def test_inline_hook_labelled_by_its_bracket_tag(self):
+        data = settings(SessionStart=[group(entry('echo "[AUTO-SYNC CHECK] branch=main"'))])
+        lines = inv.build_inventory(data, script_exists=PRESENT)
+        self.assertIn("auto-sync-check", event_lines(lines)[0])
 
     def test_inline_hook_falls_back_to_status_message(self):
         data = settings(
             SessionStart=[group(entry("rtk_st=$(command -v rtk)", statusMessage="Checking RTK..."))]
         )
         lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertEqual(lines[1], "SessionStart(1): checking-rtk")
+        self.assertIn("checking-rtk", event_lines(lines)[0])
 
     def test_interpreter_exe_is_not_taken_for_the_script(self):
         data = settings(
@@ -104,7 +183,7 @@ class BuildInventoryTest(unittest.TestCase):
             ]
         )
         lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertEqual(lines[1], "UserPromptSubmit(1): caveman-mode-tracker.js")
+        self.assertEqual(event_lines(lines)[0], "UserPromptSubmit(1): caveman-mode-tracker.js [ok]")
 
     def test_prose_filename_after_a_statement_break_is_not_the_script(self):
         # The real Stop hook: an inline shell command whose echoed reason mentions
@@ -117,12 +196,10 @@ class BuildInventoryTest(unittest.TestCase):
         )
         data = settings(Stop=[group(entry(command))])
         lines = inv.build_inventory(data, script_exists=ABSENT)
-        self.assertEqual(lines[1], "Stop(1): memory-upkeep")
-        self.assertFalse(any("[HOOKS ALERT]" in line for line in lines))
+        self.assertEqual(event_lines(lines)[0], "Stop(1): memory-upkeep [inline]")
+        self.assertEqual(alert_lines(lines), [])
 
     def test_quoted_semicolon_after_the_script_still_yields_the_script(self):
-        # The install-junctions entry: its ';' sits inside the quoted -Command string,
-        # after the .ps1, so the head still carries the real path.
         command = (
             "powershell -NoProfile -Command \"if (Test-Path "
             "'C:/Martin Otis/ResearchTools/install-junctions.ps1') "
@@ -130,39 +207,16 @@ class BuildInventoryTest(unittest.TestCase):
         )
         data = settings(SessionStart=[group(entry(command))])
         lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertEqual(lines[1], "SessionStart(1): install-junctions.ps1")
+        self.assertEqual(event_lines(lines)[0], "SessionStart(1): install-junctions.ps1 [ok]")
 
     def test_bare_relative_script_name_is_treated_as_inline(self):
-        data = settings(SessionStart=[group(entry('python hook.py', statusMessage="Local..."))])
+        data = settings(SessionStart=[group(entry("python hook.py", statusMessage="Local..."))])
         lines = inv.build_inventory(data, script_exists=ABSENT)
-        self.assertEqual(lines[1], "SessionStart(1): local")
-        self.assertFalse(any("[HOOKS ALERT]" in line for line in lines))
+        self.assertEqual(event_lines(lines)[0], "SessionStart(1): local [inline]")
+        self.assertEqual(alert_lines(lines), [])
 
-    # --- failure paths (R20) -------------------------------------------------
 
-    def test_missing_script_produces_the_alert_line(self):
-        data = settings(PreToolUse=[group(entry('python "C:/h/vault-access-guard.py"'))])
-        lines = inv.build_inventory(data, script_exists=ABSENT)
-        self.assertIn("[HOOKS ALERT]", lines[-1])
-        self.assertIn("vault-access-guard.py (PreToolUse)", lines[-1])
-        self.assertIn("REFUSED", lines[-1])
-
-    def test_no_alert_line_when_every_script_is_present(self):
-        data = settings(PreToolUse=[group(entry('python "C:/h/a.py"'))])
-        lines = inv.build_inventory(data, script_exists=PRESENT)
-        self.assertFalse(any("[HOOKS ALERT]" in line for line in lines))
-
-    def test_unsubstituted_template_placeholder_is_not_reported_missing(self):
-        # settings.template.json ships {{USERPROFILE}}; its absence on disk proves nothing.
-        data = settings(PreToolUse=[group(entry('python "{{USERPROFILE}}/.claude/hooks/a.py"'))])
-        lines = inv.build_inventory(data, script_exists=ABSENT)
-        self.assertFalse(any("[HOOKS ALERT]" in line for line in lines))
-
-    def test_inline_hook_never_reported_missing(self):
-        data = settings(SessionStart=[group(entry('echo "[RTK ACTIVE] ok"'))])
-        lines = inv.build_inventory(data, script_exists=ABSENT)
-        self.assertFalse(any("[HOOKS ALERT]" in line for line in lines))
-
+class RobustnessTest(unittest.TestCase):
     def test_malformed_settings_yield_no_output_and_no_exception(self):
         for bad in (None, [], "hooks", 7, {}, {"hooks": None}, {"hooks": {}}):
             self.assertEqual(inv.build_inventory(bad, script_exists=PRESENT), [])
@@ -219,7 +273,8 @@ class MainTest(unittest.TestCase):
             code, out = self._run_main(path)
         self.assertEqual(code, 0)
         self.assertIn("[HOOKS ACTIVE] 1 entries / 1 events", out)
-        self.assertIn("SessionStart(1): rtk-active", out)
+        self.assertIn("SessionStart(1): rtk-active [inline]", out)
+        self.assertIn("[HOOKS DISPLAY]", out)
 
 
 if __name__ == "__main__":

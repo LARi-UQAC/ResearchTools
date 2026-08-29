@@ -44,6 +44,14 @@ SCRIPT_SUFFIXES = (".py", ".js", ".ps1", ".sh", ".cmd", ".bat")
 # Environment override, so a test never reads this machine's real settings file (R21).
 SETTINGS_ENV_VAR = "CLAUDE_HOOKS_SETTINGS_PATH"
 
+# R5: the per-hook status vocabulary, defined once. "ok" and "MISSING" are the two
+# that matter; "inline" means there is no script file to check, and "template" means
+# the path still carries an unsubstituted placeholder.
+STATUS_OK = "ok"
+STATUS_MISSING = "MISSING"
+STATUS_INLINE = "inline"
+STATUS_TEMPLATE = "template"
+
 _BRACKET_TAG = re.compile(r"\[([A-Za-z][A-Za-z0-9 _-]{2,30})\]")
 _SCRIPT_PATH = re.compile(
     r"([^\"'|;&<>]*?(?:" + "|".join(re.escape(s) for s in SCRIPT_SUFFIXES) + r"))",
@@ -172,37 +180,60 @@ def build_inventory(settings, script_exists=None):
 
     per_event = {}
     missing = []
+    tally = {STATUS_OK: 0, STATUS_MISSING: 0, STATUS_INLINE: 0, STATUS_TEMPLATE: 0}
     total = 0
 
     for event in _ordered_events(hooks.keys()):
         groups = hooks.get(event)
         if not isinstance(groups, list):
             continue
-        labels = []
+        rendered = []
         for group in groups:
             if not isinstance(group, dict):
                 continue
+            matcher = str(group.get("matcher", "")).strip()
             for hook in group.get("hooks", []):
                 if not isinstance(hook, dict):
                     continue
                 command = str(hook.get("command", ""))
-                labels.append(label_for(hook, command))
+                label = label_for(hook, command)
                 total += 1
 
                 script = script_in_command(command)
-                # "{{PLACEHOLDER}}" means a template that setup has not substituted
-                # yet, so its absence on disk proves nothing.
-                if script and "{{" not in script and not script_exists(script):
-                    missing.append("%s (%s)" % (labels[-1], event))
-        if labels:
-            per_event[event] = labels
+                if not script:
+                    status = STATUS_INLINE
+                elif "{{" in script:
+                    # A template setup has not substituted yet; its absence on
+                    # disk proves nothing either way.
+                    status = STATUS_TEMPLATE
+                elif script_exists(script):
+                    status = STATUS_OK
+                else:
+                    status = STATUS_MISSING
+                    missing.append("%s (%s)" % (label, event))
+                tally[status] += 1
+
+                detail = status if not matcher else "%s, %s" % (status, matcher)
+                rendered.append("%s [%s]" % (label, detail))
+        if rendered:
+            per_event[event] = rendered
 
     if not per_event:
         return []
 
-    lines = ["[HOOKS ACTIVE] %d entries / %d events" % (total, len(per_event))]
-    for event, labels in per_event.items():
-        lines.append("%s(%d): %s" % (event, len(labels), " | ".join(labels)))
+    header = "[HOOKS ACTIVE] %d entries / %d events | %d ok | %d missing | %d inline" % (
+        total,
+        len(per_event),
+        tally[STATUS_OK],
+        tally[STATUS_MISSING],
+        tally[STATUS_INLINE],
+    )
+    if tally[STATUS_TEMPLATE]:
+        header += " | %d unsubstituted" % tally[STATUS_TEMPLATE]
+
+    lines = [header]
+    for event, rendered in per_event.items():
+        lines.append("%s(%d): %s" % (event, len(rendered), " | ".join(rendered)))
     if missing:
         lines.append(
             "[HOOKS ALERT] declared but script absent from disk: "
@@ -210,6 +241,15 @@ def build_inventory(settings, script_exists=None):
             + " - the matched tools will be REFUSED until the file is restored "
             "or the entry is removed from settings.json."
         )
+    # A hook's stdout reaches the model's context, never the user's pane. The
+    # Session: status line is seen only because its hook asks for it to be
+    # printed; this asks for the same, so the inventory is visible to a person
+    # and not only to the assistant reading it.
+    lines.append(
+        "[HOOKS DISPLAY] Output every [HOOKS ACTIVE], event and [HOOKS ALERT] line above "
+        "to the user verbatim, in a code block, immediately after the Session: status line "
+        "at the start of your first response. Do not summarise or re-order them."
+    )
     return lines
 
 

@@ -140,6 +140,10 @@ $exitCode = 0
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $templateSrc = if ($TemplatePath) { $TemplatePath } else { Join-Path $RepoRoot "CLAUDE.template.md" }
 $hook = if ($HookPath) { $HookPath } else { Join-Path $RepoRoot ".claude\hooks\obsidian-outbox-flush.py" }
+# Where the write actually happens since the Stage 0 extraction. The hook keeps
+# the vault default, the outbox location and the promise never to block a
+# session; the byte-size verification lives here, shared with the daemon.
+$writeModule = Join-Path $RepoRoot ".claude\skills\obsidian-cli\scripts\outbox_io.py"
 
 if (-not (Test-Path $templateSrc)) {
     Write-Fail "Template not found: $templateSrc"
@@ -209,7 +213,14 @@ $allowedDivergences = @(
     @{ Name = "D3 allowed-commands line (create/append/prepend removed in template)"
        Anchor = 'obsidian move`, `obsidian rename' },
     @{ Name = "paragraph carrying the two Obsidian versions (1.13.4 and 1.13.7)"
-       Anchor = 'obsidian create` ou `obsidian append' }
+       Anchor = 'obsidian create` ou `obsidian append' },
+    # Added 2026-08-28 with the graphify sections. restart-ollama.ps1 moved out
+    # of scripts\dev\ to sit beside its only caller (R18), so the template
+    # carries the new path and the live file still carries the old one. The
+    # anchor is the part BOTH lines share, since this check tests each differing
+    # line on its own and the pair must classify together.
+    @{ Name = "restart-ollama.ps1 path (moved beside its only caller in the template)"
+       Anchor = 'restart-ollama.ps1`, jamais par `Stop-Process -Name "ollama*"' }
 )
 
 $unclassified = @()
@@ -287,7 +298,14 @@ Write-Header "Invariants"
 # .continue/rules is not among them.
 $sanctionedLines = @(
     '`PowerShell/`, `Publication/`, and one folder per technology followed). `30_Ressources/Methodes/`',
-    'and `Apprentissages/` no longer exist - they were renamed away on 2026-08-03.'
+    'and `Apprentissages/` no longer exist - they were renamed away on 2026-08-03.',
+    # Added 2026-08-28. local-writer.md was rewritten around the live folder
+    # counts, and this line names both retired folders for the one reason the
+    # invariant exists to protect: to say they are retired. Naming a folder to
+    # forbid it is the opposite of using it as a live location, and an exact
+    # line is the only safe way to say so - a nearby-words exemption is what
+    # this allow-list was built to replace.
+    'technology - not the retired plural `Methodes/`. `Apprentissages/` is gone.'
 )
 
 function Test-NoLiveRemovedFolder {
@@ -376,8 +394,18 @@ $invariants = @(
         Offenses = { @(Test-NoLiveRemovedFolder -Paths $defPaths) }
     },
     @{
-        Name = "shipped hook verifies writes via st_size"
-        Test = { Select-String -Path $hook -Pattern 'st_size' -Quiet }
+        # The property is "the write is verified by reading the size back",
+        # never "this file contains the string st_size". Stage 0 of the vault
+        # daemon moved the write into outbox_io.py so the hook and the daemon
+        # share ONE implementation, and this check went red on 2026-08-28 while
+        # the property it guards held perfectly. Both halves are asserted: the
+        # module still verifies, and the hook still routes through it.
+        Name = "the shipped write path verifies by st_size, and the hook uses it"
+        Test = {
+            (Test-Path $writeModule) -and
+            (Select-String -Path $writeModule -Pattern 'st_size' -Quiet) -and
+            (Select-String -Path $hook -Pattern 'outbox_io' -Quiet)
+        }
         Offenses = { @() }  # absence failure; nothing to enumerate by line
     },
     @{

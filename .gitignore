@@ -54,3 +54,9 @@ loop-bridge-log.jsonl
 # .rt-undo/ holds the previous version of any file the loop changed, pruned to 20.
 .rt-green.json
 .rt-undo/
+.claude/local-capability-probe.json
+
+# graphify: derived from the files, regenerable and disposable. One graph per repo,
+# built from the repo root; a graph under a subdirectory is a partial graph (see
+# local-writer.md, "Updating the graph").
+graphify-out/

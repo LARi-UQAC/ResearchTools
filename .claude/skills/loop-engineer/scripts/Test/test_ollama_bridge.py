@@ -707,6 +707,35 @@ class TestVaultConsultationIsMandatory(unittest.TestCase):
                       "a note NAMED for the subject must beat one that wins on volume")
 
 
+class TestStructuredOutputConstraint(unittest.TestCase):
+    """The vault event daemon asks the model for a JSON object whose shape is
+    constrained at the sampler, not merely validated afterwards. The constraint
+    travels in the top-level "format" field of the same request body, so the
+    daemon keeps every decision this builder carries instead of assembling a
+    second one of its own."""
+
+    SCHEMA = {
+        "type": "object",
+        "properties": {"scope": {"type": "string", "enum": ["reusable", "project"]}},
+        "required": ["scope"],
+    }
+
+    def test_a_schema_is_passed_through_untouched(self):
+        payload = ob.build_payload("prompt", "some:tag", 7, 8192, fmt=self.SCHEMA)
+        self.assertEqual(payload["format"], self.SCHEMA)
+        self.assertIs(payload["think"], False)
+        self.assertEqual(payload["options"]["num_ctx"], 8192)
+
+    def test_omitting_the_schema_leaves_the_body_byte_identical(self):
+        """The failure this guards: a new optional parameter that silently
+        changes what every existing caller sends would invalidate every
+        measurement taken with this builder."""
+        before = ob.build_payload("prompt", "some:tag", 7, 8192)
+        after = ob.build_payload("prompt", "some:tag", 7, 8192, fmt=None)
+        self.assertEqual(before, after)
+        self.assertNotIn("format", before)
+
+
 class TestThinkingDoesNotEatTheReplyReserve(unittest.TestCase):
     """Measured 2026-08-14 on Ollama 0.32.9: a reasoning model spent the whole 1024-token
     num_predict reserve inside its "thinking" field (done_reason "length") and returned an

@@ -74,6 +74,39 @@ $liveSettingsHash = (Get-FileHash $liveSettings -Algorithm SHA256).Hash
 $liveClaudeHash   = (Get-FileHash $liveClaude   -Algorithm SHA256).Hash
 Check "redirection target is the temp copy, not ~/.claude" ($Fake -ne (Split-Path $liveSettings -Parent))
 
+# The fixture must start NOT YET INSTALLED, or both functions correctly do
+# nothing and the "adds one entry" and "backs up" checks can only pass on a
+# machine that has never run -Sync. Measured 2026-08-28 on this machine: they
+# failed for exactly that reason, 14 hooks in and 14 out with no .bak, while
+# -Sync itself was working perfectly. A check whose verdict depends on the
+# host's install state is not a check.
+#
+# Both edits are surgical, so the copies keep the real files' shape and
+# formatting, which is the whole point of driving the functions against them
+# rather than against a synthetic sample. No-BOM writes throughout: Windows
+# PowerShell's Set-Content -Encoding utf8 prepends a BOM, and ConvertFrom-Json
+# throws on a leading U+FEFF.
+$utf8NoBom    = New-Object System.Text.UTF8Encoding $false
+$fakeSettings = Join-Path $Fake "settings.json"
+$fakeClaude   = Join-Path $Fake "CLAUDE.md"
+
+# Update-RtSettings returns early on the literal "install-junctions.ps1".
+# Renaming the token leaves the JSON valid and every other byte in place.
+$settingsRaw = [System.IO.File]::ReadAllText($fakeSettings)
+[System.IO.File]::WriteAllText($fakeSettings, $settingsRaw.Replace(
+    "install-junctions.ps1", "install-junctions-NOT-INSTALLED.ps1"), $utf8NoBom)
+
+# Update-RtClaudeMd returns early when the contract block is already identical.
+$claudeRaw = [System.IO.File]::ReadAllText($fakeClaude)
+$cBegin = "<!-- RT-CONTRACT:BEGIN -->"
+$cEnd   = "<!-- RT-CONTRACT:END -->"
+$cbi = $claudeRaw.IndexOf($cBegin)
+$cei = $claudeRaw.IndexOf($cEnd)
+if ($cbi -ge 0 -and $cei -gt $cbi) {
+    $claudeRaw = $claudeRaw.Remove($cbi, $cei - $cbi + $cEnd.Length)
+    [System.IO.File]::WriteAllText($fakeClaude, $claudeRaw, $utf8NoBom)
+}
+
 . (Join-Path $RepoRoot "scripts\lib\rt-sync.ps1")
 $script:RtQuiet = $true
 

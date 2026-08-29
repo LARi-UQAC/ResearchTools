@@ -1,0 +1,18 @@
+{
+  "_about": "One line per 30_Ressources technology folder, saying what belongs in it. Injected into the daemon's CLASSIFY prompt beside the folder names. This is data, not code (R6): the classifier holds the harness, the taxonomy lives here.",
+  "_provenance": "Written 2026-08-28 after the first live drill of vault_daemon_e2e.py. The model was shown bare folder NAMES and put three notes in Docker, a two-note folder, including one about an outbox lock and one about a drop with no content at all: with nothing but a name to go on, a 9B model matches on surface association, and 'lock, daemon, container' reads as Docker. A folder absent from this file is still offered to the model, by name alone, so an unglossed folder degrades to the previous behaviour rather than disappearing.",
+  "folders": {
+    "Docker": "container images, Dockerfiles, devcontainers. Not the word for any daemon or background service.",
+    "Git": "git and GitHub: credentials, remotes, authentication, repository access.",
+    "Graphify": "the graphify knowledge graph: extraction, queries, updates, its output directory.",
+    "LaTEX": "LaTeX and BibTeX: document compilation, packages, markup, build output.",
+    "Logiciel": "retired catch-all. Never choose it; pick the real technology instead.",
+    "Methode": "a cross-cutting principle or working rule that belongs to no single technology.",
+    "Obsidian": "the vault itself: notes, wiki links, the Obsidian app and its CLI, the outbox write path, locks over the vault.",
+    "Ollama": "the local model daemon: model loading, VRAM residency, context window, KV cache, prompt caching, generation settings.",
+    "PowerShell": "the PowerShell language and its cmdlets, and Windows shell behaviour.",
+    "Publication": "journals, publishers, DOIs, reference metadata, figures and slides for papers.",
+    "Python": "the Python language and its standard library.",
+    "ResearchTools": "this toolkit: its skills, agents, hooks, installer, mirrors and test suite."
+  }
+}

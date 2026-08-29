@@ -7,7 +7,9 @@ is the only recovery path the vault has, since it is not under version control,
 so the cases that matter are the ones where undo must REFUSE: a path leaving the
 vault, and a file already smaller than the size the record claims.
 """
+import contextlib
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
@@ -112,6 +114,78 @@ class VaultJournalTest(unittest.TestCase):
         entry = {"path": "30_Ressources/Ollama/gone.md", "before": 5, "after": 9,
                  "source": "s", "state": vj.STATE_WRITE, "at": STAMP}
         self.assertEqual(vj.undo(self.vault, entry, write=True)["action"], "noop")
+
+    def _drill_like_history(self):
+        """A baseline of one earlier write, then two the 'drill' added: an
+        append onto the earlier note and a fresh create."""
+        kept = self._note("30_Ressources/Ollama/kept.md", "older learning\n")
+        vj.record(self.journal, "30_Ressources/Ollama/kept.md", 0,
+                  kept.stat().st_size, "raw/kept.md", vj.STATE_WRITE, at=STAMP)
+        baseline = len(vj.read_records(self.journal))
+
+        before = kept.stat().st_size
+        kept.write_text("older learning\nappended by the drill\n",
+                        encoding="utf-8", newline="")
+        vj.record(self.journal, "30_Ressources/Ollama/kept.md", before,
+                  kept.stat().st_size, "raw/d1.md", vj.STATE_WRITE, at=STAMP)
+
+        made = self._note("30_Ressources/Ollama/drill.md", "drill note\n")
+        vj.record(self.journal, "30_Ressources/Ollama/drill.md", 0,
+                  made.stat().st_size, "raw/d2.md", vj.STATE_WRITE, at=STAMP)
+        return kept, made, baseline
+
+    def test_undo_since_removes_only_what_came_after_the_baseline(self):
+        """The teardown the drill never had. Everything at or after the
+        baseline index goes; the note that existed before it is returned to its
+        earlier size, not deleted."""
+        kept, made, baseline = self._drill_like_history()
+        report = vj.undo_since(self.vault, vj.read_records(self.journal),
+                               baseline, write=True)
+        self.assertEqual(report["refused"], 0)
+        self.assertFalse(made.exists(), "a note the drill created must go")
+        self.assertEqual(kept.read_text(encoding="utf-8"), "older learning\n")
+
+    def test_undo_since_walks_newest_first(self):
+        """Not a preference. An append is undone by truncating to a journalled
+        size, so undoing an older record first leaves the file shorter than the
+        newer record's baseline and that newer undo is then refused. The order
+        is what lets a run of undos compose."""
+        _, _, baseline = self._drill_like_history()
+        report = vj.undo_since(self.vault, vj.read_records(self.journal),
+                               baseline, write=True)
+        self.assertEqual([r["index"] for r in report["undone"]], [2, 1])
+
+    def test_undo_since_is_dry_run_without_write(self):
+        kept, made, baseline = self._drill_like_history()
+        report = vj.undo_since(self.vault, vj.read_records(self.journal),
+                               baseline, write=False)
+        self.assertFalse(report["applied"])
+        self.assertTrue(made.exists(), "a preview must touch nothing")
+        self.assertIn("appended by the drill", kept.read_text(encoding="utf-8"))
+
+    def test_undo_since_at_the_end_is_a_clean_no_op(self):
+        """A drill that filed nothing must not make the teardown do anything."""
+        _, _, _ = self._drill_like_history()
+        total = len(vj.read_records(self.journal))
+        report = vj.undo_since(self.vault, vj.read_records(self.journal),
+                               total, write=True)
+        self.assertEqual(report["undone"], [])
+        self.assertEqual(report["refused"], 0)
+
+    def test_cli_count_prints_the_undoable_baseline(self):
+        """What the launcher captures before the drill runs. Printed bare so a
+        shell can read it without parsing JSON."""
+        self._drill_like_history()
+        with io.StringIO() as out, contextlib.redirect_stdout(out):
+            code = vj.main(["--journal", str(self.journal), "--count"])
+            printed = out.getvalue().strip()
+        self.assertEqual(code, 0)
+        self.assertEqual(printed, "3")
+
+    def test_cli_undo_since_needs_a_vault(self):
+        self._drill_like_history()
+        self.assertEqual(
+            vj.main(["--journal", str(self.journal), "--undo-since", "1"]), 1)
 
     def test_cli_undo_is_dry_run_without_yes(self):
         rel = "30_Ressources/Ollama/x.md"

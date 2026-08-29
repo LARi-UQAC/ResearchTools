@@ -832,7 +832,8 @@ def scan_hygiene(text: str) -> list[str]:
     return sorted(found)
 
 
-def build_payload(prompt: str, model: str, seed: int, num_ctx: int) -> dict[str, Any]:
+def build_payload(prompt: str, model: str, seed: int, num_ctx: int,
+                  fmt: "dict[str, Any] | str | None" = None) -> dict[str, Any]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -848,6 +849,16 @@ def build_payload(prompt: str, model: str, seed: int, num_ctx: int) -> dict[str,
         model (str): the resolved Ollama tag (see resolve_model).
         seed (int): the fixed sampling seed for this attempt.
         num_ctx (int): the context window to request explicitly (D2).
+        fmt (dict | str | None): an Ollama structured-output constraint - a
+            JSON schema object, or the string "json". Omitted from the body
+            entirely when None, so every existing caller keeps a byte-identical
+            request and this parameter cannot change what they measure. Added
+            2026-08-28 for the vault event daemon, whose CLASSIFY and
+            JUDGE_EDGE calls must be grammar-constrained at the sampler rather
+            than validated after the fact; without it a caller needing a schema
+            would have to build a second request body and would lose the
+            decisions this one carries (think=false, the num_predict reserve,
+            the fixed seed, the explicit window).
 
     Outputs:
         result (dict): the request body, ready for json.dumps. options.
@@ -856,7 +867,7 @@ def build_payload(prompt: str, model: str, seed: int, num_ctx: int) -> dict[str,
         the daemon, not merely assumed by check_budget's arithmetic.
     --------------------------------------------------------------------------
     """
-    return {
+    payload: dict[str, Any] = {
         "model": model,
         "prompt": prompt,
         "stream": False,
@@ -880,6 +891,9 @@ def build_payload(prompt: str, model: str, seed: int, num_ctx: int) -> dict[str,
             "top_k": FIXED_TOP_K,
         },
     }
+    if fmt is not None:
+        payload["format"] = fmt
+    return payload
 
 
 def _post_generate(payload: dict[str, Any], timeout: float) -> dict[str, Any]:

@@ -34,8 +34,8 @@ rather than vague encouragement, and drafts pass a multi-model deliberation (Gem
 GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
 
 The toolbox is built as agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
-with generated mirrors for GitHub Copilot, OpenCode, Continue, Aider, and `AGENTS.md`
-readers (see [Installation](#installation)). Typical entry points: `/litreview` for a new topic (review update using `\litreview-updater`),
+with generated mirrors for GitHub Copilot, OpenCode, Continue, Aider, Codex, and other
+`AGENTS.md` readers (see [Installation](#installation)). Typical entry points: `/litreview` for a new topic (review update using `\litreview-updater`),
 `/auditpaper` before submitting, `/auditthesis` before a defense, `/bibclean` on any
 `.bib` file, `/replyreviewer` when the reviews come back.
 
@@ -468,6 +468,31 @@ failing.
   nothing; `--mode links` reports dead wiki-links read-only, and `--apply <map.json> --yes`
   is the one guarded, map-validated, single-pass rewrite of existing links exempted from the
   outbox-only write rule
+- `.claude/skills/obsidian-cli/scripts/vault_daemon.py` - the unattended path. A raw drop
+  (unrouted text in `~/.claude/obsidian-outbox/raw/`, three frontmatter keys, no directive)
+  is classified, drafted, filed, journalled and queued for consolidation without a session:
+  the cloud wrapper pushes, the local model decides. `--once` handles what is pending,
+  `--drain` runs the deferred work by hand, `--dry-run` lists and touches nothing. Anything
+  it is not confident about is parked in `needs-review/` with its reason, for `local-writer`
+  to file with the whole reusable layer in context
+- `.claude/skills/obsidian-cli/scripts/daemon_outbox.py` - the outbox layout that IS the
+  queue (`raw`, `working`, `raw/sent`, `needs-review`, `state`, `queue`), plus the write
+  lock, the one-daemon-per-machine singleton lock, the atomic claim by rename, and the sweep
+  that recovers a drop stranded by a crash
+- `.claude/skills/obsidian-cli/scripts/daemon_states.py` - the per-state handlers; both
+  model calls are constrained by a JSON schema, and every refusal parks the event
+- `.claude/skills/obsidian-cli/scripts/daemon_drains.py` - the deferred half: candidate
+  pairs judged one per call on the strict mechanism test, accepted edges appended
+  reciprocally with their sentence and journalled. Phantom repair stays human-gated
+- `.claude/skills/obsidian-cli/scripts/local_capability_probe.py` - the gate that measured,
+  before any of this was written, that the daemon honours a JSON schema and re-uses a
+  prompt prefix
+- `.claude/skills/obsidian-cli/scripts/vault_lock.py`, `vault_journal.py`, `outbox_io.py` -
+  the shared write path: one lock across sessions and processes, an append-only record of
+  every vault write with an `--undo`, and the single implementation the flush hook and the
+  daemon both call
+- `.claude/skills/obsidian-cli/daemon-config.json` - every timeout, ceiling and threshold,
+  with its provenance; no such value is written in the code that uses it
 
 ### `latex-hygiene` - mechanical LaTeX manuscript hygiene
 
@@ -898,6 +923,8 @@ them available to Copilot CLI in every project (re-run after agent edits to refr
 | Continue | `.continue/rules/researchtools.md` | One rule pointing at the canonical files and routing table. |
 | Aider | `CONVENTIONS.md` | Pointer paragraph (created once, never overwritten). |
 | `AGENTS.md` readers (OpenHuman, Hermes Agent, Codex, and others) | `AGENTS.md` | Distilled master, regenerated on every run; agent list, routing pointer, skills examples, and the cross-cutting rules. |
+| Codex (skills) | `.agents/skills/<name>/SKILL.md` | Codex is the one harness with a native skill convention: it scans `.agents/skills` from the working directory up to the repo root. Each mirror is a **pointer** carrying only the frontmatter, since the description is the whole trigger surface and the body it then reads is the canonical file. Descriptions are trimmed to whole sentences to fit Codex's skill-list budget (8000 chars when the context window is unknown); over budget Codex shortens and then omits entries, so the trim is deliberate rather than left to chance. |
+| Codex (nested instructions) | `.claude/skills/AGENTS.md` | Codex concatenates one `AGENTS.md` per directory from the git root down to the working directory, later files overriding earlier ones, capped by `project_doc_max_bytes` (32 KiB default). This one adds the script-surface rule for sessions working inside the skills tree. |
 
 For global availability in Claude Code (any working directory), `install-junctions.ps1`
 links each `.claude/agents/<name>.md` into `~/.claude/agents/` per file (symlink; hard-link

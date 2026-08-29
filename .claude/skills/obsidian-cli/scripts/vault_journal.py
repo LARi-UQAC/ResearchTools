@@ -28,6 +28,7 @@ from pathlib import Path
 STATE_PENDING = "PENDING"
 STATE_WRITE = "WRITE"
 STATE_EDGE = "EDGE"       # consolidation edge appended to an existing note
+STATE_SNAPSHOT = "SNAPSHOT"   # full text kept before an in-place substitution
 
 
 def utc_now_iso() -> str:
@@ -60,6 +61,42 @@ def record(journal_path, path: str, before: int, after, source: str,
         "after": None if after is None else int(after),
         "source": source, "state": state, "at": at or utc_now_iso(),
     }
+    journal = Path(journal_path)
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    with journal.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
+
+
+def snapshot(journal_path, path: str, content: str, source: str,
+             at: "str | None" = None) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Keep a note's FULL text before an in-place substitution, so the edit can
+        be undone.
+
+        A size is enough to undo an append, since the addition sits at the end
+        and truncating removes exactly it. A link rewrite replaces text in the
+        middle and can leave the file the same length, so size says nothing and
+        truncation would corrupt. That asymmetry is why phantom repair was
+        judged irreversible and kept out of the daemon; this record is what
+        makes it reversible, and therefore allowed.
+
+    Inputs:
+        journal_path (Path | str): the .jsonl journal
+        path (str): the note's vault-relative path
+        content (str): the note's text BEFORE the edit
+        source (str): what is about to edit it
+        at (str | None): ISO timestamp; generated when the caller passes none
+
+    Outputs:
+        entry (dict): the record as written
+    --------------------------------------------------------------------------
+    """
+    entry = {"path": path, "before": len(content.encode("utf-8")), "after": None,
+             "source": source, "state": STATE_SNAPSHOT, "at": at or utc_now_iso(),
+             "content": content}
     journal = Path(journal_path)
     journal.parent.mkdir(parents=True, exist_ok=True)
     with journal.open("a", encoding="utf-8", newline="\n") as handle:
@@ -110,6 +147,15 @@ def undo(vault, entry: dict, write: bool = False) -> dict:
     if root != target and root not in target.parents:
         return {"action": "refused", "path": str(target),
                 "reason": "resolves outside the vault"}
+    if entry.get("state") == STATE_SNAPSHOT and "content" in entry:
+        # A substitution is undone by restoring the text, never by truncating:
+        # the edit sat in the middle and may not have changed the length at all.
+        report = {"action": "restore", "path": str(target),
+                  "before": entry.get("before")}
+        if write:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(entry["content"], encoding="utf-8", newline="")
+        return report
     before = int(entry.get("before", 0))
     if not target.exists():
         return {"action": "noop", "path": str(target),
@@ -133,6 +179,49 @@ def undo(vault, entry: dict, write: bool = False) -> dict:
     return report
 
 
+def undo_since(vault, records: list, since: int, write: bool = False) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Undo every undoable record from the end of the journal back down to
+        `since`, NEWEST FIRST, and report what each one did.
+
+        Newest first is not a preference. An append is undone by truncating to
+        a journalled size, so undoing an older record before a newer one leaves
+        the file shorter than the newer record's baseline, and that newer undo
+        is then correctly refused. Walking backwards is what makes a run of
+        undos compose.
+
+        This is the teardown the e2e drill never had: the drill files notes into
+        the real vault and stops, so `since` is the undoable-record count taken
+        BEFORE it ran, and everything after that index is the drill's.
+
+    Inputs:
+        vault (Path | str): the vault root
+        records (list): every record, from read_records
+        since (int): index into the UNDOABLE subset; records below it are left
+        write (bool): False previews, True performs (R16)
+
+    Outputs:
+        report (dict): undone (list of per-record reports), refused (int),
+        and the range that was considered.
+    --------------------------------------------------------------------------
+    """
+    undoable = [r for r in records
+                if r.get("state") in (STATE_WRITE, STATE_EDGE, STATE_SNAPSHOT)]
+    since = max(0, int(since))
+    targets = list(range(since, len(undoable)))
+    done = []
+    for index in reversed(targets):
+        report = undo(vault, undoable[index], write=write)
+        report["index"] = index
+        done.append(report)
+    return {"considered": {"from": since, "to": len(undoable)},
+            "undone": done,
+            "refused": sum(1 for r in done if r["action"] == "refused"),
+            "applied": bool(write)}
+
+
 def main(argv: "list[str] | None" = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--journal", required=True)
@@ -141,16 +230,42 @@ def main(argv: "list[str] | None" = None) -> int:
                         help="print every record as JSON, newest last")
     parser.add_argument("--undo", metavar="INDEX", default=None,
                         help="index into --list, or 'last'; dry-run without --yes")
+    parser.add_argument("--undo-since", metavar="INDEX", type=int, default=None,
+                        dest="undo_since",
+                        help="undo every record from INDEX to the end, newest "
+                             "first; the teardown for a drill run. Dry-run "
+                             "without --yes")
+    parser.add_argument("--count", action="store_true",
+                        help="print the number of undoable records and exit, "
+                             "so a caller can record a baseline before a run")
     parser.add_argument("--yes", action="store_true",
                         help="authorise the undo; without it nothing is written")
     args = parser.parse_args(argv)
 
     records = read_records(args.journal)
+
+    if args.count:
+        # The baseline a drill takes before it runs. Printed bare, so a shell
+        # can capture it without parsing JSON.
+        print(len([r for r in records if r.get("state")
+                   in (STATE_WRITE, STATE_EDGE, STATE_SNAPSHOT)]))
+        return 0
+
+    if args.undo_since is not None:
+        if not args.vault:
+            print("[JOURNAL] --vault is required to undo", file=sys.stderr)
+            return 1
+        report = undo_since(args.vault, records, args.undo_since,
+                            write=args.yes)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if report["refused"] else 0
+
     if args.undo is None or args.list:
         print(json.dumps({"records": records}, ensure_ascii=False, indent=2))
         if args.undo is None:
             return 0
-    writes = [r for r in records if r.get("state") in (STATE_WRITE, STATE_EDGE)]
+    writes = [r for r in records
+              if r.get("state") in (STATE_WRITE, STATE_EDGE, STATE_SNAPSHOT)]
     if not writes:
         print("[JOURNAL] no completed write to undo", file=sys.stderr)
         return 1

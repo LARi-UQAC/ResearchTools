@@ -194,3 +194,29 @@ class VaultLock:
     def __exit__(self, exc_type, exc, tb) -> bool:
         self.release()
         return False
+
+
+def held_by_live_holder(lock_path, stale_after_s) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Answer whether a lock file represents a holder that is still running,
+        applying the same rules acquire() uses to decide it may reclaim one.
+        A reader that merely tests for the file would call a crashed daemon
+        alive, which is the exact case the outbox flush hook has to report on:
+        drops waiting in raw/ with nothing left to consume them.
+
+    Inputs:
+        lock_path (Path | str): the lock file to inspect
+        stale_after_s (float): age past which a holder is judged gone
+
+    Outputs:
+        live (bool): True only when a holder exists and is neither dead nor
+        past the staleness ceiling. Never mutates the lock file.
+    --------------------------------------------------------------------------
+    """
+    probe = VaultLock(lock_path, acquire_timeout_s=0, stale_after_s=stale_after_s,
+                      poll_interval_s=0)
+    if not probe.lock_path.exists():
+        return False
+    return probe._stale_reason(probe._read_holder()) is None

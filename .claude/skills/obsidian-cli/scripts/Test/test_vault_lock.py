@@ -117,6 +117,27 @@ class VaultLockTest(unittest.TestCase):
         self.assertTrue(vl.pid_alive(os.getpid()))
         self.assertFalse(vl.pid_alive(0))
 
+    def test_held_by_live_holder_reads_a_running_holder_and_never_mutates(self):
+        """The read-only question the outbox flush hook asks about the daemon's
+        singleton lock. It must answer without touching the file: a reader that
+        reclaimed what it inspects would evict the very daemon it found."""
+        self._write_holder(os.getpid())
+        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+        self.assertTrue(self.lock_path.exists())
+
+    def test_held_by_live_holder_says_no_when_there_is_no_lock(self):
+        self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_held_by_live_holder_says_no_for_a_dead_or_over_age_holder(self):
+        """Both reclamation rules, in the direction the hook depends on: a
+        crashed daemon leaves its lock behind, and reading the file's mere
+        presence as a running daemon reports exactly backwards."""
+        self._write_holder(424242)
+        with patch.object(vl, "pid_alive", return_value=False):
+            self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+        self._write_holder(os.getpid(), age_s=STALE_AFTER_S + 30)
+        self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

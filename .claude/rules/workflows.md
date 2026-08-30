@@ -77,7 +77,8 @@ vault AND the single caller allowed to consult or refresh the graphify graph, bo
 `local-coder` reads only (task start, checkpoints, error recovery); plan-time reads are baked in
 by `brainstorming` / `writing-plans`. Requires Obsidian open with the CLI on; deferred writes
 flush via the outbox hook. Full design in [../../docs/contributor-notes.md](../../docs/contributor-notes.md)
-section 5.
+section 5 for the vault and section 6 for the code graph, which is governed identically and by the
+same guard.
 
 Loop-engineering stop gate (default, composite): tests green AND no CRITICAL/HIGH review
 finding AND aggregate score `>=` min_score (default 90). Hard stops: budget cap

@@ -89,11 +89,43 @@ even has a separate projector is read from its manifest, not assumed.
 | `scripts/vram_modelfile.py` | Render the tuned Modelfile. Pure function; opens no file. |
 | `scripts/vram_daemon.py` | The KV cache axis: write, restart, verify, restore. |
 | `scripts/restart-ollama.ps1` | The restart itself: kills the daemon AND its `llama-server.exe` child, re-reads the user environment so the relaunched daemon sees the value just written, verifies the card released its memory. |
-| `scripts/vram_optimizer.py` | The driver: search, objective function, report, declaration. |
+| `scripts/vram_optimizer.py` | The driver: search, objective function, report, declaration. Owns the tuned tag's NAME (`tuned_tag_for`), so nothing else spells the suffix. |
+| `scripts/tune_preflight.py` | The refusals and the comparison behind the runbook below: what stops a run before it starts, and how the measured field is put to the person who has to choose. Adopts nothing. |
+| `scripts/tune-new-model.ps1` | The runbook itself, steps 1 to 3 plus the comparison. Sequencing only; everything that decides lives in `tune_preflight.py`, where the offline suite reaches it. |
 
 The rung measurement itself is `optimize_ollama.evaluate_rung`, imported from the
 `loop-engineer` skill rather than copied. Two implementations of "measure a rung" would drift,
 and the drift would stay invisible until they disagreed about a model.
+
+## From "it is on disk" to "the resolver serves it"
+
+Five steps, and only the first is this skill's own. They were written down because the pieces
+all existed and were tested while the SEQUENCE lived nowhere, so a new model got tuned and
+then either adopted without being compared or left declared and forgotten.
+
+1. **Tune it for this card.**
+   `python .claude\skills\opt-local-vram-llm\scripts\vram_optimizer.py <base-tag> --role <writer|coder>`
+   (`--dry-run` first). Sweeps the two axes, writes the measurement, declares the tuned tag as
+   a candidate. Stops before qualification on purpose.
+2. **Measure it against the frozen task set, writing nothing.**
+   `python .claude\skills\loop-engineer\scripts\model_resolver.py --score <TUNED-TAG> --role <role> --json`
+3. **Compare it against every other candidate.**
+   `model_resolver.py --matrix` scores every declared and installed candidate on every task,
+   including roles a candidate is not declared for. That exists because a candidate scored
+   only on its own role is not comparable: an 18/20 tag once held the coder role while a 20/20
+   tag sat unscored on coder tasks.
+4. **Adopt it, or do not.** `model_resolver.py --qualify <TUNED-TAG> --role <role>` is the only
+   step that changes which tag is current. It is a decision, so it stays a command a human
+   runs.
+5. **Confirm what is now served.** `model_resolver.py --resolve --role <role>`.
+
+`scripts/tune-new-model.ps1 <base-tag> -Role <writer|coder>` is the harness for steps 1 to 3
+plus the comparison, and it **stops before step 4**. It refuses up front rather than half way
+(no such tag installed, a tag that is already tuned, Ollama unreachable, and after the sweep,
+a tuned tag with no measured window), dry-runs before it acts, confirms before a sweep that
+will restart the daemon, writes `score.json` and `matrix.json` for the record (R17), and ends
+by printing the two commands the operator has to run. It names no model tag: the tag is an
+argument, and a resolver naming no qualified model is an explicit stop, never a fallback.
 
 ## Where it stops
 
@@ -118,6 +150,11 @@ alone turned both away.
 
 ## Tests
 
-Four offline suites under `scripts/Test/`, no network, no GPU, no Ollama daemon:
+Five offline suites under `scripts/Test/`, no network, no GPU, no Ollama daemon:
 `test_vram_probe.py` (11), `test_vram_modelfile.py` (11), `test_vram_daemon.py` (5),
-`test_vram_optimizer.py` (24). Fifty-one in total.
+`test_vram_optimizer.py` (24), `test_tune_preflight.py` (30). Eighty-one in total.
+
+The last one covers the runbook, since the PowerShell cannot be run offline: every refusal,
+the ranking, the summary, and three guards read off the `.ps1` as text - it must never hand
+`--qualify` to the resolver, never shell out to `ollama run`, and never name a model tag, that
+last check carrying a negative control so a broken pattern cannot pass silently.

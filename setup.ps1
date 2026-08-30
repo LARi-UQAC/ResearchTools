@@ -12,24 +12,35 @@
         .claude\settings.json
         CLAUDE.md
 
-    Entry point for the two installers as well:
+    Entry point for the three installers as well:
         -InstallJunctions  -> install-junctions.ps1 (Claude Code links in ~/.claude)
         -InstallTools      -> install.ps1 (Copilot/OpenCode/Continue/Aider mirrors;
                               -Personal adds the user-level Copilot install)
-        -All               -> config generation + junctions + tools in one pass
+        -InstallDaemon     -> .claude\skills\obsidian-cli\scripts\vault-daemon-autostart.ps1
+                              -Install (one shortcut in the Startup folder, so the
+                              vault event daemon is running at login and raw drops in
+                              ~/.claude/obsidian-outbox/raw are consumed instead of
+                              piling up)
+        -All               -> config generation + junctions + tools, plus the daemon
+                              WHEN a vault is configured; with no vault it is skipped
+                              with a stated reason, since a login daemon with no vault
+                              starts, finds nothing and exits invisibly
 
 .EXAMPLE
     .\setup.ps1
     .\setup.ps1 -ObsidianVault "D:\MyVault" -Force
     .\setup.ps1 -InstallJunctions            # Claude Code global links only
     .\setup.ps1 -InstallTools -Personal      # multi-tool mirrors only (Copilot/OpenCode/...)
-    .\setup.ps1 -All -Personal               # config + junctions + tools in one pass
+    .\setup.ps1 -InstallDaemon               # vault daemon at login only
+    .\setup.ps1 -InstallDaemon -Preview      # say what it would install, install nothing
+    .\setup.ps1 -All -Personal               # config + junctions + tools + daemon in one pass
 #>
 param(
     [string]$ObsidianVault = "",
     [switch]$Force,
     [switch]$InstallJunctions,
     [switch]$InstallTools,
+    [switch]$InstallDaemon,
     [switch]$All,
     [switch]$Personal,
     [switch]$Preview
@@ -62,6 +73,11 @@ $WorkspaceRoot = $PSScriptRoot
 if (-not $WorkspaceRoot) {
     $WorkspaceRoot = (Get-Location).Path
 }
+
+# The daemon decision and its delegation live in their own file so a test can load
+# them without executing this script's interactive flow. Same reason rt-sync.ps1 is
+# separate from install-junctions.ps1.
+. (Join-Path $WorkspaceRoot "scripts\lib\rt-daemon-install.ps1")
 
 Write-Header "ResearchTools — Setup"
 Write-Host "  Workspace : $WorkspaceRoot"
@@ -115,14 +131,36 @@ function Invoke-ToolsScript {
     Set-InstallerExit "install.ps1" $LASTEXITCODE
 }
 
+function Invoke-DaemonScript {
+    # Read at call time rather than at parse time: -All calls this after the vault
+    # prompt, so $ObsidianVault may have been filled in by then.
+    $userScope = [Environment]::GetEnvironmentVariable("OBSIDIAN_VAULT", "User")
+    if ($null -eq $userScope) { $userScope = "" }
+    $vault = Get-RtDaemonVault -ObsidianVault $ObsidianVault -UserScopeVault $userScope
+    $code = Install-RtVaultDaemon `
+        -RepoRoot $WorkspaceRoot `
+        -Vault $vault `
+        -UserScopeSet:(-not [string]::IsNullOrWhiteSpace($userScope)) `
+        -Preview:$Preview
+    Set-InstallerExit "vault-daemon-autostart.ps1 -Install" $code
+}
+
 if ($InstallJunctions -and -not $All) {
     Invoke-JunctionsScript
-    if ($InstallTools) { Invoke-ToolsScript }
+    if ($InstallTools)  { Invoke-ToolsScript }
+    if ($InstallDaemon) { Invoke-DaemonScript }
     exit $script:InstallerExit
 }
 
 if ($InstallTools -and -not $All) {
     Invoke-ToolsScript
+    if ($InstallDaemon) { Invoke-DaemonScript }
+    exit $script:InstallerExit
+}
+
+if ($InstallDaemon -and -not $All) {
+    Write-Header "Vault event daemon at login"
+    Invoke-DaemonScript
     exit $script:InstallerExit
 }
 
@@ -284,6 +322,8 @@ if ($All) {
     Invoke-JunctionsScript
     Write-Header "Multi-tool mirrors (install.ps1)"
     Invoke-ToolsScript
+    Write-Header "Vault event daemon at login"
+    Invoke-DaemonScript
     Write-Host ""
     if ($script:InstallerExit -ne 0) {
         # Both installers still ran: a junction conflict must not stop the mirrors from
@@ -305,6 +345,9 @@ if ($All) {
     Write-Host "  2. Regenerate the multi-tool mirrors (GitHub Copilot, OpenCode, Continue,"
     Write-Host "     Aider) after adding or editing an agent/command/rule, then commit:"
     Write-Host "       .\setup.ps1 -InstallTools    (add -Personal for user-level Copilot)"
+    Write-Host "  3. Have the vault event daemon running at login, so raw drops in"
+    Write-Host "     ~/.claude/obsidian-outbox/raw are filed instead of piling up:"
+    Write-Host "       .\setup.ps1 -InstallDaemon   (needs OBSIDIAN_VAULT at user scope)"
     Write-Host "  Or run everything in one pass next time: .\setup.ps1 -All -Personal"
     Write-Host ""
 }

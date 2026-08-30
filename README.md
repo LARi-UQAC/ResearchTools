@@ -70,6 +70,16 @@ Three scripts, three different jobs and lifecycles. `setup.ps1` is the single en
 it wraps the other two via `-InstallJunctions` / `-InstallTools`, and `-All` runs the full
 sequence (config, then junctions, then tools) in one pass.
 
+`setup.ps1 -InstallDaemon` is the fourth job, and it belongs here rather than in the two
+installers: it delegates to
+`.claude\skills\obsidian-cli\scripts\vault-daemon-autostart.ps1 -Install`, which puts one
+shortcut in the Startup folder so the vault event daemon is running at login and raw drops
+in `~/.claude/obsidian-outbox/raw` get filed instead of piling up. `-All` includes it only
+when a vault is configured, and says so in one line when it skips: a login daemon with no
+vault starts, finds nothing and exits invisibly. `install.ps1` runs many times a day and
+`install-junctions.ps1 -Sync` runs at every session start, so a Startup write in either
+would come back after the user deliberately removed it.
+
 | | `setup.ps1` | `install-junctions.ps1` | `install.ps1` |
 |---|---|---|---|
 | Job | Generate machine-local config: `.claude\settings.json` + `CLAUDE.md` from templates (detects Git Bash, Node, Obsidian paths of THIS machine) | Link the repo into `~/.claude` so Claude Code loads agents/skills/rules/commands in every workspace | Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider, `AGENTS.md` readers (`-Personal` adds the user-level Copilot install) |

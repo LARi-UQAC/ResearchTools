@@ -36,10 +36,21 @@ REPO = Path(__file__).resolve().parents[3]
 TEMPLATE = REPO / ".claude" / "settings.template.json"
 SKILLS = REPO / ".claude" / "skills"
 
-# Skills that were hand-installed on one machine and are now vendored. Named
-# rather than discovered: their ABSENCE is the defect, and a discovered list
-# cannot report something that is not there.
-VENDORED = ("graphify", "tech-debt")
+# Skills this repository must NOT ship, because each already has its own delivery
+# path. Both were vendored here on 2026-08-30 and removed the same day.
+#
+#   tech-debt  comes from engineering@knowledge-work-plugins, declared in
+#              enabledPlugins by both settings files and served by Claude Code from
+#              ~/.claude/plugins/cache. The vendored file was byte-identical to the
+#              plugin's own, so the copy added nothing, carried no provenance for
+#              someone else's file, and would have drifted as the plugin versioned.
+#   graphify   ships with the graphify tool (uv tool install graphifyy). The skill
+#              belongs to that installation, not to this repository, and a copy of a
+#              CLI's skill without the CLI is instructions for an absent tool.
+#
+# Named rather than discovered, for the same reason the old list was: their PRESENCE
+# is the defect now, and only a named list can assert an absence.
+EXTERNALLY_DELIVERED = ("graphify", "tech-debt")
 
 FRONTMATTER = re.compile(r"(?s)\A---\r?\n(.*?)\r?\n---")
 KEY = re.compile(r"(?m)^(name|description)\s*:")
@@ -74,27 +85,55 @@ def find_git_bash():
     return None
 
 
-class TestVendoredSkillsAreInTheRepository(unittest.TestCase):
-    def test_each_vendored_skill_is_present(self):
-        for name in VENDORED:
+class TestExternallyDeliveredSkillsAreNotVendored(unittest.TestCase):
+    """
+    The inverse of what this class asserted until 2026-08-30.
+
+    It used to require that graphify and tech-debt be PRESENT here, on the reading
+    that a skill missing from a clone is a defect. That was wrong about both: each
+    has its own delivery path, and copying it in produced a second source that would
+    drift from the first while looking authoritative.
+    """
+
+    def test_no_externally_delivered_skill_is_vendored(self):
+        for name in EXTERNALLY_DELIVERED:
             with self.subTest(skill=name):
-                self.assertTrue(
-                    (SKILLS / name / "SKILL.md").is_file(),
-                    f"{name} exists only in one machine's ~/.claude/skills; a clone "
-                    "gets instructions to use it and no way to reach it",
+                self.assertFalse(
+                    (SKILLS / name).exists(),
+                    f".claude/skills/{name} must not exist: that skill is delivered by "
+                    "its plugin or by its own tool installation, and a copy here is a "
+                    "second source that drifts silently",
                 )
 
-    def test_each_vendored_skill_declares_name_and_description(self):
-        # install-junctions.ps1 and the Codex mirror both read these two keys.
-        # A skill whose frontmatter does not parse is installed and unusable.
-        for name in VENDORED:
+    def test_no_externally_delivered_skill_reaches_the_codex_mirror(self):
+        # The mirror is generated from .claude/skills, so a copy sneaking back in
+        # would be republished to Codex under this repository's name.
+        mirror = REPO / ".agents" / "skills"
+        for name in EXTERNALLY_DELIVERED:
             with self.subTest(skill=name):
-                text = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
-                m = FRONTMATTER.match(text)
-                self.assertIsNotNone(m, f"{name}/SKILL.md has no frontmatter block")
-                keys = set(KEY.findall(m.group(1)))
-                self.assertEqual({"name", "description"}, keys,
-                                 f"{name}/SKILL.md must declare name and description")
+                self.assertFalse((mirror / name).exists(),
+                                 f".agents/skills/{name} must not exist either")
+
+    def test_the_plugin_that_delivers_tech_debt_is_still_declared(self):
+        # Removing the copy is only correct while the plugin is actually declared.
+        # If that declaration ever goes, the skill stops being reachable at all and
+        # the removal above becomes the defect rather than the fix.
+        plugins = template().get("enabledPlugins", {})
+        self.assertIn("engineering@knowledge-work-plugins", plugins,
+                      "the template must keep declaring the plugin that delivers "
+                      "tech-debt, or removing the vendored copy leaves nothing")
+        self.assertTrue(plugins.get("engineering@knowledge-work-plugins"),
+                        "the plugin is declared but not enabled, which delivers nothing")
+
+    def test_the_absence_check_can_fail(self):
+        # Negative control: a check that cannot fail is not a check. The predicate is
+        # .exists() on a skills root, so point it at a root where the name IS present
+        # and assert it reports so.
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_skills = Path(tmp) / "skills"
+            (fake_skills / "tech-debt").mkdir(parents=True)
+            self.assertTrue((fake_skills / "tech-debt").exists(),
+                            "the fixture did not plant, so this control proves nothing")
 
     def test_every_skill_directory_carries_a_skill_file(self):
         # The general form of the same rule, so the next vendoring cannot land

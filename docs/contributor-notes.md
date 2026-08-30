@@ -250,6 +250,66 @@ template against ONE machine's global file, so a second contributor's own drifte
 invisible to it; a clean exit here is not a claim that every contributor's `~/.claude/CLAUDE.md`
 is in sync.
 
+### The vault event daemon (unattended filing)
+
+Everything above describes the ATTENDED path: a session runs, `local-writer` judges, the note
+is filed. The daemon is the unattended one, added 2026-08-28 on branch
+`feat/vault-event-daemon`. Its point is that the cloud wrapper should not be the thing that
+decides where a learning goes. Haiku pushes a raw drop; the LOCAL model classifies it, drafts
+it, and the vault organises itself, at no cloud generation cost.
+
+**The event contract.** A raw drop is unrouted text in `~/.claude/obsidian-outbox/raw/`, with
+three frontmatter keys (`source`, `subject`, optional `project`) and no directive line, because
+deciding the destination IS the daemon's job. Pre-routed notes carrying a directive keep
+working exactly as before; only the unrouted form is new.
+
+**The path.** `CLASSIFY` and `DRAFT` call the local model. `ROUTE`, `WRITE` and `ENQUEUE` are
+Python. Two model calls, roughly 1.2 minutes. Whatever `ROUTE` refuses lands in
+`needs-review/` with the reason on its first line, and a session picks it up by dispatching
+`local-writer`, which classifies with the whole reusable layer in context. The daemon never
+retries a parked event: re-running a judgment the model already failed produces the same
+answer more slowly.
+
+**The filesystem is the queue**, so `obsidian-cli` still ships no `requirements.txt` and adds
+no `pip-audit` surface: `raw/` inbound, `working/` claimed, `raw/sent/` delivered,
+`needs-review/` parked, `state/` in flight, `queue/*` deferred. Three distinct mechanisms hold
+it together, and confusing them is the mistake to avoid. The WRITE lock serializes writers so
+a file is never corrupted. The SINGLETON lock admits one daemon per machine: without it two
+daemons classify and draft every drop twice, paying two model calls for one result, which
+serializing the writes does not prevent. The CLAIM is a rename out of `raw/`, atomic, so the
+winner owns the drop and the loser gets `FileNotFoundError`. Producers are unlimited and
+parallel; the consumer is one, deliberately, because the card holds one resident model and two
+consumers would only thrash VRAM.
+
+**Two signals designed to mean something.** A `state/` file exists only while an event is in
+flight, so one that survives IS the crash signal, and the startup sweep names them: that is the
+list of notes to check against the journal. A deferred queue is cleared only on the branch that
+actually did the work, so a skipped drain never silently discards what it did not process.
+
+**Deferred drains.** Consolidation and graphify are off the event path on purpose: at the
+measured 36.991 s median call, judging fifteen candidate pairs inline would pin the GPU for
+about ten minutes per drop. The drain asks `vault_consolidate.py` for the candidates, judges
+one pair per model call on the strict mechanism test, and appends accepted edges reciprocally
+with the sentence saying what they share. Phantom-link repair is deliberately NOT here: adding
+an edge appends a sentence and is reversible from the journal, while rewriting `[[Old]]` to
+`[[New]]` substitutes text across many notes at once, is not reversible from an append-only
+record, and rests on a truth judgment the writer-role evidence does not support.
+
+**What the gates cannot do.** They are structural, and none of them looks at whether an answer
+is true - the 2026-08-14 `\endminitoc` incident is the standing reminder. The confidence
+threshold (`daemon.classify_confidence_min`, 0.7 to start) is a dial, not a measurement: a
+model's self-reported confidence is not a probability, so the daemon logs its own accept and
+park counts per event and the value is meant to be revised from that log. The journal makes a
+wrong filing recoverable and the report makes it visible; neither makes it correct.
+
+**Measured before it was built** (`.claude/local-capability-probe.json`, 2026-08-28, Ollama
+0.33.0): a JSON schema sent in the request's `format` field is honoured, enum included, so the
+two judgment calls are constrained at the sampler rather than validated hopefully. And a shared
+prompt prefix is re-used - but the verdict cannot be taken on token count, since the daemon
+bills the full `prompt_eval_count` either way (2186 on both calls); prefill duration is the
+only exposed signal, and it needs a CONTROL call on a prefix never seen to separate it from
+machine load. Measured ratio 0.23, 635 ms against 2741 ms.
+
 ## 6. Keeping this file alive
 
 When you (or an assistant) learn a durable, non-obvious project fact - a convention, an

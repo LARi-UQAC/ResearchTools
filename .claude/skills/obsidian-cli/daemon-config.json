@@ -1,0 +1,29 @@
+{
+  "_about": "Configuration for the vault write path: the outbox flush hook and the vault event daemon. No numeric value belongs in the code that uses it (R0); every key states its unit in its name and its provenance below (R4).",
+  "lock": {
+    "_provenance": "chosen 2026-08-28 by the repository owner's implementing session, bounded by the shape of a lock hold rather than by a benchmark: the lock is taken around a filesystem write only (milliseconds), never around a model call, whose measured median is 36.991 s (.claude/local-model-config.json). Revise by measuring a real hold with the daemon's REPORT line.",
+    "acquire_timeout_s": 30,
+    "hook_acquire_timeout_s": 10,
+    "stale_after_s": 300,
+    "poll_interval_s": 0.1
+  },
+  "probe": {
+    "_provenance": "chosen 2026-08-28 by the Stage 1 implementing session. prefix_paragraph_repeat sizes the fixed prefix so a cache effect stands above measurement noise while staying far below the measured window; request_timeout_s matches ollama_bridge.REQUEST_TIMEOUT_S, whose own basis is the 36.991 s median call in .claude/local-model-config.json. prefix_cache_duration_ratio_max added 2026-08-28 after the first live run: Ollama 0.33.0 reports the FULL prompt_eval_count even on a cache hit (2186 both calls), so a count rule can never be true; the signal it does expose is prompt_eval_duration, 2612 ms then 634 ms for the same count. The ratio ceiling is set at half the control call's prefill, far outside measurement noise at a 4.1x observed collapse.",
+    "prefix_paragraph_repeat": 40,
+    "request_timeout_s": 300,
+    "prefix_cache_duration_ratio_max": 0.5
+  },
+  "daemon": {
+    "_provenance": "classify_confidence_min MEASURED 2026-08-28 on the first live drill of vault_daemon_e2e.py, raised 0.7 -> 0.85. Six classified events: the one content-free drop, whose whole point is that it cannot be filed, self-reported exactly 0.70 and was filed rather than parked, because the gate is a strict `<`. The five drops carrying a real subject reported 0.90, 0.90, 0.95, 0.95 and 0.95. 0.85 sits in the empty band between the two, above the junk sample and below every good one. Sample size is one negative and five positive, so treat it as a first measurement, not a converged one, and revise it from the daemon's per-event log the same way. phantom_max_per_drain is KEPT at 10 on the same drill: the first drain judged exactly 10, so the bound bit once on the accumulated backlog, and every later drain found only 2, so raising it would buy nothing on a vault already swept. log_max_bytes is CHOSEN, not measured, and it exists because a daemon started at Windows login writes to a log nobody opens: one event report is a few hundred bytes and a drain report a few thousand, so two megabytes is months of ordinary use and small enough to open in an editor when something has gone wrong. The autostart rotates to a single .1 file at that size rather than deleting, since the run you want to read is usually the one that just ended. The rest were chosen 2026-08-28 with the repository owner. The others follow the design: the event path must react in seconds, and the drains are batched precisely because a model call costs a measured 36.991 s median (.claude/local-model-config.json). graphify_repo_root is null on purpose, and REVIEWED 2026-08-29 with the repository owner, who named the reason the first wording missed: the vault is cross-project and a graphify graph is per-project, so one repository path on a machine-global daemon is the wrong shape whatever value it holds. The queue makes it concrete - enqueue() files VAULT-RELATIVE note paths, which drain_graphify would hand to `graphify update` with cwd set to a code repository, where they name nothing. Setting this key therefore buys a drain that clears its queue on paths that do not exist; leaving it null skips with a stated reason, which is correct rather than merely honest. The queueing itself is the defect, logged in IMPROVEMENTS.md; a code graph is refreshed by local-writer pointing `graphify update` at the code it just wrote, not by the vault daemon. The daemon must never infer this from its own working directory either, since it is started by hand from wherever the operator happens to stand and would then refresh the wrong graph, or none.",
+    "poll_interval_s": 5,
+    "classify_confidence_min": 0.85,
+    "draft_max_attempts": 3,
+    "drain_idle_s": 900,
+    "consolidate_top_n": 15,
+    "judge_edge_max_pairs": 15,
+    "graphify_repo_root": null,
+    "queue_max_entries": 500,
+    "phantom_max_per_drain": 10,
+    "log_max_bytes": 2000000
+  }
+}

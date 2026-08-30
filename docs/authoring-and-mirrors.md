@@ -42,6 +42,8 @@ The first row (bold) and first column of any table you add follow the repo table
 | Continue | `.continue/rules/researchtools.md` | agent list | one rule file that points at the `.claude/CLAUDE.md` routing table |
 | Aider | `CONVENTIONS.md` | static pointer | generated **only if absent**; never overwritten (see section 4) |
 | AGENTS.md readers | `AGENTS.md` | agent list | static master, regenerated on every run; serves any harness reading the `AGENTS.md` convention |
+| Codex | `.agents/skills/<name>/SKILL.md` | each skill | **pointer** mirror: frontmatter only, description trimmed to whole sentences to fit Codex's skill-list budget, body points at the canonical skill |
+| Codex | `.claude/skills/AGENTS.md` | static | nested `AGENTS.md`, appended to the root one when the working directory is inside the skills tree |
 
 ### Why `AGENTS.md` covers more than one harness
 
@@ -77,11 +79,45 @@ per rule and never deletes an extra one, so the file survives every regeneration
 and must be edited in place. It carries a header saying so; do not "restore" it by running
 the installer, and do not read its presence as drift.
 
-**Skills have no per-tool mirror.** They are plain repo folders every tool can read. A
-skill becomes discoverable in Copilot/OpenCode/Continue **only** through (a) an agent that
-calls it, or (b) the routing table in `.claude/CLAUDE.md`. A user-invoked skill with no
-calling agent (e.g. `geolocalisation`) is invisible to the other tools unless it is in the
-routing table (and, ideally, has a command wrapper -> Copilot prompt).
+**Skills have no per-tool mirror, except for Codex.** They are plain repo folders every
+tool can read. A skill becomes discoverable in Copilot/OpenCode/Continue **only** through
+(a) an agent that calls it, or (b) the routing table in `.claude/CLAUDE.md`. A user-invoked
+skill with no calling agent (e.g. `geolocalisation`) is invisible to those tools unless it
+is in the routing table (and, ideally, has a command wrapper -> Copilot prompt).
+
+Codex is the exception, because it is the one harness with a **native skill convention**:
+it scans `.agents/skills` in every directory from the working directory up to the
+repository root, reads each `SKILL.md` (that exact casing) for `name:` and `description:`,
+and offers the skill by name. So `install.ps1` generates `.agents/skills/<name>/SKILL.md`
+for all 15 skills, and a user-invoked skill needs neither an agent nor the routing table to
+be reachable there.
+
+Three properties of that mirror are deliberate:
+
+- **It is a pointer, never a copy.** Only the frontmatter is reproduced; the body says to
+  read `.claude/skills/<name>/SKILL.md` first. Duplicating skill bodies would create the
+  second truth the whole generated-mirror model exists to prevent.
+- **Descriptions are trimmed to whole sentences.** Codex caps the skill list at 2% of the
+  model's context window, or 8000 characters when the window is unknown, then shortens
+  descriptions and finally omits skills with a warning. Measured 2026-08-28, the untrimmed
+  list for this repo is 9417 characters, already over. The trim keeps the first sentence
+  unconditionally because it carries the trigger, and `test_codex_mirror.py` proves the
+  result fits. The choice is only whether the shortening is ours or Codex's.
+- **The description is emitted as a single-quoted YAML scalar.** Eleven of the canonical
+  descriptions are double-quoted at the source, and the first generated set carried those
+  quotes through and then trimmed mid-scalar, shipping eleven mirrors whose frontmatter did
+  not parse while the installer printed a green `[OK]` for each. One skill also opens its
+  description with a `>` block indicator, which is syntax and not text. Both are parsed out
+  now, and both have a test.
+
+`AGENTS.md` nesting is the same story from the other side: Codex concatenates one file per
+directory from the git root down to the working directory, later files overriding earlier
+ones, and stops once the combined size reaches `project_doc_max_bytes` (32 KiB default).
+`.claude/skills/AGENTS.md` therefore reaches a session whose cwd is inside the skills tree,
+carrying the script-surface rule that is easiest to break from exactly there. Note that
+Codex checks `AGENTS.override.md` **before** `AGENTS.md` in each directory - the same
+precedence Hermes Agent uses - so a hand-written override silently replaces the generated
+file for both harnesses.
 
 ## 3. The two install scripts (different jobs)
 
@@ -184,9 +220,12 @@ one) must ALSO be distilled into the three master files (`.github/copilot-instru
    grant tree outside this repo — is authored in ResearchTools, under the owning skill's
    `scripts/` directory, and is called from there by path; it is never left behind in
    that project's own directory.
-2. **Register it (critical - a skill has no mirror):**
+2. **Register it (critical - a skill has no mirror outside Codex):**
    - `.claude/CLAUDE.md` "Tooling" table: add a routing row. This is the ONLY thing that
-     makes a user-invoked skill discoverable in Copilot/OpenCode/Continue.
+     makes a user-invoked skill discoverable in Copilot/OpenCode/Continue. Codex gets a
+     generated `.agents/skills/<name>/SKILL.md` pointer instead, so keep the canonical
+     `description` trigger-rich AND reasonably short: it is the whole trigger surface there,
+     and every skill added tightens the shared list budget the others must fit in.
    - [README.md](../README.md): bump the skill count in the three places it appears
      (header "N skills", the "N ship" sentence, the File-Locations "(N skills)"); add the
      skills-table row, a `### <name>` subsection, a Prerequisites row for new deps, and the
@@ -271,8 +310,9 @@ those docs are not mirrored).
   this document supersedes and generalizes it to agents as well. Keep both pointing at the
   same routing table. It lives in the Claude Code project memory directory
   (`~/.claude/projects/<project-slug>/memory/`, where `<project-slug>` is the working
-  directory with path separators replaced by `-`); on this machine that is
-  `C:\Users\m3otis\.claude\projects\c--Martin-Otis-OutilsLogiciels-ResearchTools\memory\adding-a-skill-checklist.md`
+  directory with path separators replaced by `-`); for a clone at `C:\work\ResearchTools`
+  that is
+  `%USERPROFILE%\.claude\projects\c--work-ResearchTools\memory\adding-a-skill-checklist.md`
   (indexed in that directory's `MEMORY.md`).
 - `install.ps1` header comment is the authoritative description of each generated file.
 

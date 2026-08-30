@@ -100,7 +100,15 @@ if (Test-Path $skillsRepo) {
             Problem "MISSING  skills\$($skill.Name)  (works in the repo, absent everywhere else)"
         }
         elseif ((Get-Item $live -Force).LinkType -ne "Junction") {
+            # -Sync does NOT fix this one, so the general remedy printed at the
+            # end would send the reader in a circle: New-JunctionSafe refuses to
+            # replace a real directory on purpose, reports a CONFLICT and moves
+            # on, precisely so a hand-installed folder is never destroyed by an
+            # installer run. The remedy is therefore a deliberate removal, and
+            # it is safe only because the repository now carries the content.
             Problem "NOTLINK  skills\$($skill.Name)  (real directory shadowing the repo)"
+            Say     "           the installer will not replace it (by design). Remove it, then re-run:" "Yellow"
+            Say     "           Remove-Item '$live' -Recurse -Force ; .\install-junctions.ps1" "Yellow"
         }
     }
 }

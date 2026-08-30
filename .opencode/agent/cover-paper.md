@@ -306,7 +306,7 @@ cd .claude/skills/scopus/scripts
 
 # Step 1 - resolve the AU-ID. Verify the AFFILIATION of the hit, not just the surname:
 # common surnames return several real people, and a same-institution homonym is possible.
-python scopus_api.py author "Otis, Martin"          # both name orders accepted
+python scopus_api.py author "Curie, Marie"          # both name orders accepted
 # -> reads back "scopus_query", "source" and the author_id
 
 # READ THE `source` FIELD. If it is "semantic-scholar-fallback", this key is not entitled for
@@ -448,18 +448,26 @@ Rules for the profile:
 - If the author has fewer than 10 indexed journal papers, fill the remaining slots with conference papers explicitly labelled `[Conference]` at the start of the entry, and document the gap in your final report to the user.
 - No em-dashes, curly quotes, or unicode bullets.
 
-#### Reference example (the project's existing `Profil Martin Otis.tex` in the `paper_review/` folder is a valid concrete instance of this template)
+#### Reference shape
+
+The identity is not written here, because it is true of exactly one person and
+therefore profile data (R7). Read `name`, `email`, `institution` and `department`
+from the `author` block of the active profile (`profiles/<active>.yaml`; the
+selector is the `active_profile` line in `.claude/CLAUDE.md`). ORCID, the
+laboratory, the faculty page and the Google Scholar link are not in that schema:
+ask the user for them, and drop the line rather than guessing a URL. A profile
+carrying no `author` block is a question for the user, not a value to invent.
 
 ```text
-Martin J.-D. Otis  ORCID 0000-0002-8763-0536  martin_otis@uqac.ca
-Universite du Quebec a Chicoutimi          https://www.uqac.ca/
-Laboratoire d'Automatique et de Robotique interactive (LAR.i)
-https://lari.uqac.ca/
-Faculty page: https://portfolio.uqac.ca/martinotis/
-Google Scholar: https://scholar.google.com/citations?user=zOscKBoAAAAJ&hl=en
-Head of LAR.i Laboratory
-Departement des sciences appliquees
-Saguenay (Quebec), Canada
+<<FULL NAME>>  ORCID <<ORCID>>  <<EMAIL>>
+<<INSTITUTION>>          <<INSTITUTION URL>>
+<<LABORATORY, full name and acronym>>
+<<LABORATORY URL>>
+Faculty page: <<FACULTY PAGE URL>>
+Google Scholar: <<SCHOLAR URL>>
+<<ROLE, e.g. Head of the ... Laboratory>>
+<<DEPARTMENT>>
+<<CITY (PROVINCE), COUNTRY>>
 ```
 
 ### Artifact 4 — Graphical Abstract (separate image next to the main manuscript)

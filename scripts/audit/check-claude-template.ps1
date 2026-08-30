@@ -18,7 +18,7 @@
     1. Diffs the generated copy against the live global CLAUDE.md and
        classifies every differing line against a documented, content-exact
        allowed-divergence list (see ALLOWED DIVERGENCES below).
-    2. Asserts four explicit invariants (see INVARIANTS below).
+    2. Asserts five explicit invariants (see INVARIANTS below).
 
     Exit code is 1 if any invariant fails, or if any template/live difference
     is NOT on the allowed-divergence list. Exit code is 0 only when every
@@ -59,6 +59,8 @@
        code).
     4. The shipped hook does NOT contain `OBSIDIAN_COM` (writes go through
        the filesystem, never through the Obsidian CLI binary).
+    5. The template states the standing permission for memory upkeep AND its
+       bound (one local-writer, never a parallel fan-out of agents).
 
 .ALLOWED DIVERGENCES (today, content-exact, not a pattern)
     Task 5 advanced CLAUDE.template.md with a correction the live global file
@@ -105,7 +107,7 @@
     a differently-shaped digest file; a future edit that copies the removed-
     folder text into that file would be invisible to this check. A check
     believed to cover everything is more dangerous than no check; this one
-    covers one machine, one file, two mirror trees, and four invariants, and
+    covers one machine, one file, two mirror trees, and five invariants, and
     says so.
 
 .EXAMPLE
@@ -140,6 +142,10 @@ $exitCode = 0
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $templateSrc = if ($TemplatePath) { $TemplatePath } else { Join-Path $RepoRoot "CLAUDE.template.md" }
 $hook = if ($HookPath) { $HookPath } else { Join-Path $RepoRoot ".claude\hooks\obsidian-outbox-flush.py" }
+# Where the write actually happens since the Stage 0 extraction. The hook keeps
+# the vault default, the outbox location and the promise never to block a
+# session; the byte-size verification lives here, shared with the daemon.
+$writeModule = Join-Path $RepoRoot ".claude\skills\obsidian-cli\scripts\outbox_io.py"
 
 if (-not (Test-Path $templateSrc)) {
     Write-Fail "Template not found: $templateSrc"
@@ -185,6 +191,7 @@ Write-Host "  OBSIDIAN_EXE   = $obsidianExe"
 Write-Header "Template vs live global CLAUDE.md ($GlobalClaudeMd)"
 
 $diffEntries = @()
+$script:TitlesDiffer = $false
 if (-not (Test-Path $GlobalClaudeMd)) {
     Write-Warn "Live global file not found: $GlobalClaudeMd (nothing to compare)"
 } else {
@@ -193,8 +200,32 @@ if (-not (Test-Path $GlobalClaudeMd)) {
     # ENCODING NOTE in the header comment (R15).
     $genLines = Get-Content -Path $generated -Encoding UTF8
     $liveLines = Get-Content -Path $GlobalClaudeMd -Encoding UTF8
-    $diffEntries = @(Compare-Object -ReferenceObject $liveLines -DifferenceObject $genLines)
-    Write-Host "  Differing line(s): $($diffEntries.Count)"
+    # U5 (2026-08-30) made the template English while the live global file stays
+    # French until the operator installs it deliberately. Comparing them line by
+    # line then reports the whole file, which is noise, not drift. The H1 is the
+    # deterministic signal for "these are not the same document": no threshold,
+    # no language detection, nothing to tune (R0).
+    $genTitle  = ($genLines  | Where-Object { $_ -like '# *' } | Select-Object -First 1)
+    $liveTitle = ($liveLines | Where-Object { $_ -like '# *' } | Select-Object -First 1)
+    $script:TitlesDiffer = ($genTitle -ne $liveTitle)
+    if ($script:TitlesDiffer) {
+        Write-Warn "Template and live global file have DIFFERENT top-level titles:"
+        Write-Host "    template : $genTitle"
+        Write-Host "    live     : $liveTitle"
+        Write-Warn "Line classification skipped: the whole file differs by construction until"
+        Write-Warn "the operator installs the translated template (U5). Invariants still run."
+    }
+    $allDiff = @(Compare-Object -ReferenceObject $liveLines -DifferenceObject $genLines)
+    # A blank line carries no content, so it cannot be classified: an anchor for
+    # it would have to be the empty string, and .Contains("") is true of EVERY
+    # line, which would classify the whole file. Compare-Object counts
+    # duplicates, so adding one paragraph to the template also "adds" the blank
+    # lines around it. They are dropped here and counted, never silently.
+    # Measured 2026-08-30: the standing-permission block produced two such
+    # entries and nothing else about them was reportable.
+    $diffEntries = @($allDiff | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.InputObject) })
+    $blankDiff = $allDiff.Count - $diffEntries.Count
+    Write-Host "  Differing line(s): $($diffEntries.Count)$(if ($blankDiff -gt 0) { " (plus $blankDiff blank line(s), not classifiable)" })"
 }
 
 # Content-exact allowed-divergence anchors (R17). Each Anchor is a literal,
@@ -204,12 +235,15 @@ if (-not (Test-Path $GlobalClaudeMd)) {
 # read back in the system code page, not UTF-8, so an accented literal here
 # would risk a silent mismatch (verified while building this check).
 $allowedDivergences = @(
-    @{ Name = "D3 forbidden-table row for obsidian create/append/prepend (added in template)"
-       Anchor = 'obsidian create` / `append` / `prepend' },
-    @{ Name = "D3 allowed-commands line (create/append/prepend removed in template)"
-       Anchor = 'obsidian move`, `obsidian rename' },
-    @{ Name = "paragraph carrying the two Obsidian versions (1.13.4 and 1.13.7)"
-       Anchor = 'obsidian create` ou `obsidian append' }
+    # EMPTY BY DESIGN since U5 (2026-08-30) translated CLAUDE.template.md to
+    # English. Every anchor here was an ASCII run of a FRENCH line, so the
+    # translation retired all twelve entry groups at once rather than one by
+    # one. Nothing is lost: while the template is English and the live global
+    # file is still French, EVERY line differs and line-by-line classification
+    # is meaningless, so the diff step below skips it and says so. Once the
+    # operator installs the translated template the two files agree and there
+    # is nothing to classify either. A genuinely new, deliberate divergence is
+    # added back here, in English, when one appears.
 )
 
 $unclassified = @()
@@ -237,14 +271,22 @@ foreach ($entry in $diffEntries) {
     }
 }
 
-if ($pending.Count -gt 0) {
-    Write-Warn "Pending propagation (on the allowed-divergence list; remedy: run setup.ps1 once, by hand):"
+if ($pending.Count -gt 0 -and -not $script:TitlesDiffer) {
+    # Two different remedies, so neither is named as THE one: a line inside the
+    # RT-CONTRACT markers propagates by itself at the next session start, since
+    # install-junctions.ps1 -Sync copies that block marker to marker. A line
+    # outside them reaches the live file only when the operator refreshes it
+    # deliberately, which is the whole point of the additive contract.
+    Write-Warn "Pending propagation (on the allowed-divergence list; inside RT-CONTRACT: -Sync does it, outside: the operator does it deliberately):"
     foreach ($p in ($pending | Sort-Object Name -Unique)) {
         Write-Host "    - $($p.Name)"
     }
 }
 
-if ($unclassified.Count -gt 0) {
+if ($script:TitlesDiffer) {
+    Write-Ok "Classification skipped (different documents); nothing to classify."
+}
+elseif ($unclassified.Count -gt 0) {
     Write-Fail "Unclassified difference(s) between template and live global file:"
     foreach ($u in $unclassified) {
         $preview = $u.Text
@@ -256,7 +298,7 @@ if ($unclassified.Count -gt 0) {
     Write-Ok "No unclassified difference: every line that differs is on the allowed-divergence list."
 }
 
-# --- Step 3: the four invariants --------------------------------------------
+# --- Step 3: the five invariants --------------------------------------------
 Write-Header "Invariants"
 
 # Content-exact allow-list for invariant 2 (fix round 1, replacing a bag-of-
@@ -287,7 +329,14 @@ Write-Header "Invariants"
 # .continue/rules is not among them.
 $sanctionedLines = @(
     '`PowerShell/`, `Publication/`, and one folder per technology followed). `30_Ressources/Methodes/`',
-    'and `Apprentissages/` no longer exist - they were renamed away on 2026-08-03.'
+    'and `Apprentissages/` no longer exist - they were renamed away on 2026-08-03.',
+    # Added 2026-08-28. local-writer.md was rewritten around the live folder
+    # counts, and this line names both retired folders for the one reason the
+    # invariant exists to protect: to say they are retired. Naming a folder to
+    # forbid it is the opposite of using it as a live location, and an exact
+    # line is the only safe way to say so - a nearby-words exemption is what
+    # this allow-list was built to replace.
+    'technology - not the retired plural `Methodes/`. `Apprentissages/` is gone.'
 )
 
 function Test-NoLiveRemovedFolder {
@@ -376,14 +425,41 @@ $invariants = @(
         Offenses = { @(Test-NoLiveRemovedFolder -Paths $defPaths) }
     },
     @{
-        Name = "shipped hook verifies writes via st_size"
-        Test = { Select-String -Path $hook -Pattern 'st_size' -Quiet }
+        # The property is "the write is verified by reading the size back",
+        # never "this file contains the string st_size". Stage 0 of the vault
+        # daemon moved the write into outbox_io.py so the hook and the daemon
+        # share ONE implementation, and this check went red on 2026-08-28 while
+        # the property it guards held perfectly. Both halves are asserted: the
+        # module still verifies, and the hook still routes through it.
+        Name = "the shipped write path verifies by st_size, and the hook uses it"
+        Test = {
+            (Test-Path $writeModule) -and
+            (Select-String -Path $writeModule -Pattern 'st_size' -Quiet) -and
+            (Select-String -Path $hook -Pattern 'outbox_io' -Quiet)
+        }
         Offenses = { @() }  # absence failure; nothing to enumerate by line
     },
     @{
         Name = "shipped hook has no OBSIDIAN_COM"
         Test = { -not (Select-String -Path $hook -Pattern 'OBSIDIAN_COM' -Quiet) }
         Offenses = { @(Select-String -Path $hook -Pattern 'OBSIDIAN_COM' -AllMatches) | ConvertTo-Offense }
+    },
+    @{
+        # Added 2026-08-30. The Stop hook orders a local-writer dispatch and a
+        # plan-execution brief routinely forbids subagents, so the hook fired
+        # five times in one session with nothing lawful to do and both learnings
+        # were lost. The template answers that once, and BOTH halves have to
+        # survive an edit: the permission itself, and the narrowness that keeps
+        # it from being read as licence for a parallel fan-out of agents. A
+        # permission with no stated bound is the more expensive defect of the
+        # two, which is why it is asserted rather than assumed (R15).
+        Name = "template states the standing permission for memory upkeep, and its bound"
+        Test = {
+            (Select-String -Path $templateSrc -Pattern 'Permanent permission for memory upkeep' -Quiet) -and
+            (Select-String -Path $templateSrc -Pattern 'always permitted' -Quiet) -and
+            (Select-String -Path $templateSrc -Pattern 'parallel fan-out' -Quiet)
+        }
+        Offenses = { @() }  # absence failure; nothing to enumerate by line
     }
 )
 

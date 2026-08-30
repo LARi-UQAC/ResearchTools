@@ -447,5 +447,52 @@ class PhantomProvenanceTest(VaultTestBase):
         self.assertEqual(report["provenance"]["inherited"], ["Nowhere"])
 
 
+class CliEntryPointTest(VaultTestBase):
+    """The CLI's own main(), which every other case in this file bypasses by calling
+    the functions directly.
+
+    Measured 2026-08-30 on the live drill: `--mode candidates` died with
+    `NameError: name 'collections' is not defined` at the line that counts term
+    rarity. The import had left with the code moved out during the 2026-08-28 split
+    while the usage stayed behind, and this 35-case suite stayed green throughout,
+    because none of it ran main(). The daemon's consolidation drain is the ONLY
+    caller of that entry point, so the defect was invisible until a drill that costs
+    ten minutes and writes to the real vault.
+
+    These cases run main() in-process on a fixture vault and assert its stdout
+    parses. They are smoke tests on purpose: the behaviour is covered above, what is
+    missing is proof that the entry point executes at all."""
+
+    def setUp(self):
+        super().setUp()
+        self.write("30_Ressources/Python/lock-note.md",
+                   "---\ntype: apprentissage\n---\n\nLocks and the outbox. See [[timeout-note]].\n")
+        self.write("30_Ressources/Python/timeout-note.md",
+                   "---\ntype: apprentissage\n---\n\nLocks and timeouts, another note.\n")
+        self.write("10_Projets/Logiciels/Demo/Decisions.md",
+                   "# Decisions\n\n- 2026-08-30 - something happened\n")
+
+    def _run(self, *args) -> dict:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = vc.main(["--vault", str(self.vault), *args])
+        self.assertEqual(code, 0)
+        return __import__("json").loads(buffer.getvalue())
+
+    def test_mode_candidates_runs_and_emits_its_report(self):
+        report = self._run("--mode", "candidates", "--top", "15")
+        self.assertIn("candidates", report)
+        self.assertEqual(report["notes"], 3)
+
+    def test_mode_links_runs_and_emits_its_report(self):
+        report = self._run("--mode", "links")
+        self.assertIn("phantoms", report)
+
+    def test_the_default_mode_runs(self):
+        # The mode the agent uses by hand, and the one a --mode typo falls back to.
+        report = self._run()
+        self.assertIn("candidates", report)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

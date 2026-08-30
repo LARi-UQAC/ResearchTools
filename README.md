@@ -389,11 +389,27 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Seventeen ship in this repo. Fifteen are
-written here; the last two, `graphify` and `tech-debt`, are **vendored** copies of skills that
-were previously hand-installed into one machine's `~/.claude/skills/` and therefore existed
-nowhere else. A clone that had `local-writer` telling it to consult the code graph, and no
-graphify skill to consult, is the defect that vendoring removes.
+Skills bundle scripts and references the agents reuse. Fifteen ship in this repo, and every one
+of them is written here.
+
+**This repository vendors no skill it did not write.** Two were vendored on 2026-08-30 and both
+were removed the same day, because each already had its own delivery path and the copy only
+created a second one that would drift:
+
+- `tech-debt` is delivered by the `engineering@knowledge-work-plugins` plugin, which both
+  `.claude/settings.template.json` and `.claude/settings.json` declare in `enabledPlugins`. The
+  vendored file was byte-identical to the plugin's own, which Claude Code serves from
+  `~/.claude/plugins/cache/`. A plugin declaration is the delivery mechanism; a copy is not.
+- `graphify` ships with the graphify tool, installed on the machine with
+  `uv tool install graphifyy`. The skill is a property of that installation, not of this
+  repository.
+
+The consequence is stated rather than hidden: a clone whose machine has neither the plugin
+enabled nor the graphify tool installed gets `local-writer` referring to a code graph it cannot
+reach. That is a machine-setup gap, answered by the Prerequisites table above, and not something
+a copied `SKILL.md` fixes - a vendored copy of a CLI's skill without the CLI is instructions for a
+tool that is still absent. `test_settings_template_distribution.py` asserts that neither name
+reappears under `.claude/skills/`.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -411,8 +427,7 @@ graphify skill to consult, is the defect that vendoring removes.
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 | `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
-| `graphify` *(vendored, graphify 0.9.50)* | The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. `query`, `path` and `explain` are deterministic traversals of `graphify-out/graph.json` and cost no model at all, which is why one graph query beats grepping file by file. Reached only through `local-writer`, like the vault. The CLI itself is a separate install (`uv tool install graphifyy`); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. `.graphify_version` records the version it was generated from - refresh the copy after upgrading the CLI. | `/graphify`, `.claude/skills/graphify/SKILL.md` |
-| `tech-debt` *(vendored)* | Identify, categorize and prioritize technical debt: what to refactor next, code health, the maintenance backlog. Triggered by "tech debt", "technical debt audit", "what should we refactor". Vendored for the same reason as `graphify`: it existed on one machine and in no clone. | `.claude/skills/tech-debt/SKILL.md` |
+| `graphify` *(external: `uv tool install graphifyy`, not shipped here)* | The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. `query`, `path` and `explain` are deterministic traversals of `graphify-out/graph.json` and cost no model at all, which is why one graph query beats grepping file by file. Reached only through `local-writer`, like the vault. The CLI itself is a separate install (`uv tool install graphifyy`); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. `.graphify_version` records the version it was generated from - refresh the copy after upgrading the CLI. | `/graphify`, `.claude/skills/graphify/SKILL.md` |
 | `opt-local-vram-llm` | Tune a local Ollama model for this GPU: retain the largest `num_ctx` that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps `num_ctx` against `OLLAMA_KV_CACHE_TYPE` (restarting the daemon per value and proving the restart took effect from `server.log`, restoring the original value on failure), then declares the tuned tag as a role candidate in `local-models.json`. Stops before qualification, which stays with `model_resolver.py --qualify`. | `/opt-local-vram-llm`, `.claude/skills/opt-local-vram-llm/SKILL.md` |
 
 ### `/scopus` — Scopus academic search

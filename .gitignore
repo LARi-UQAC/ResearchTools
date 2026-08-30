@@ -54,3 +54,35 @@ loop-bridge-log.jsonl
 # .rt-undo/ holds the previous version of any file the loop changed, pruned to 20.
 .rt-green.json
 .rt-undo/
+.claude/local-capability-probe.json
+
+# Machine-local configuration generated from a versioned template. A file a script generates
+# is never a tracked file: this one carries THIS machine's vault path and Obsidian executable,
+# and the real one lives in ~/.claude/CLAUDE.md, which setup.ps1 writes additively.
+#   CLAUDE.md  <- CLAUDE.template.md, destination ~/.claude/CLAUDE.md
+# ROOT-ANCHORED with a leading slash: a bare "CLAUDE.md" would match at any depth and would
+# ignore .claude/CLAUDE.md, which is hand-written and must stay tracked.
+/CLAUDE.md
+
+# .claude/settings.json is deliberately NOT ignored. It is the SHARED project scope and it has
+# to reach GitHub: a routine running on the web clones this repository and has no ~/.claude of
+# ours, so a committed project file is the only way it learns which plugin marketplaces to
+# trust when it reviews a pull request. It was ignored for a while because setup.ps1 used to
+# GENERATE it - 8324 bytes carrying twelve absolute paths through one user profile. THAT file
+# was unpublishable. The one here is hand-written: marketplace and plugin declarations only,
+# no path, no account name, no secret.
+#
+# What must never go into it, because a cloud runner is not this machine:
+#   - hooks. The global file already declares them; a project copy makes every hook run TWICE,
+#     which on 2026-08-30 pushed session-hooks-inventory.py past its timeout and made a healthy
+#     session report no inventory at all. Their commands are also C:\Users\... paths that do
+#     not exist on a Linux runner.
+#   - env, permissions or statusLine carrying an absolute path.
+#   - any token: GITHUB_TOKEN and friends stay in the environment.
+# The machine-specific counterpart is settings.local.json, which is personal and stays ignored.
+/.claude/settings.local.json
+
+# graphify: derived from the files, regenerable and disposable. One graph per repo,
+# built from the repo root; a graph under a subdirectory is a partial graph (see
+# local-writer.md, "Updating the graph").
+graphify-out/

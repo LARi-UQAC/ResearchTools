@@ -6,9 +6,9 @@ sections apply to all academic work.
 
 ## Rule identifiers
 
-The numbered rules `R0` to `R24` are workspace-wide and stable; cite them by number in a
+The numbered rules `R0` to `R25` are workspace-wide and stable; cite them by number in a
 review, a commit message, or an audit plan. Each lives in the file that enforces it: `R0`
-to `R13`, `R16`, `R17` and `R19` in this file, `R14`, `R15`, `R22` and `R23` in
+to `R13`, `R16`, `R17` and `R19` in this file, `R14`, `R15`, `R22`, `R23` and `R25` in
 `preferences.md`, `R18` in `workflows.md`, `R20` and `R21` in `testing.md`, `R24` in
 `security.md`. They are unrelated to the `R1.x` sentence rules of the `scientific-writing`
 skill's `composition_rules.md`, which govern prose rather than code.
@@ -41,21 +41,40 @@ skill's `composition_rules.md`, which govern prose rather than code.
 - TikZ figures: simple code for the TiKZiT parser, named styles in `.tikzstyles`,
   `positioning` and node distance only (no absolute coordinates)
 
-### File size ceiling
+### Size limits, and what they actually bind
 
-No source file exceeds 4096 tokens, a quarter of the local model's measured 16384-token
-context window. The constraint comes from the local model, not the cloud one: the local
-bridge (`.claude/skills/loop-engineer/scripts/ollama_bridge.py`) works inside a window an
-order of magnitude smaller than a cloud model's, and Ollama does not raise an error when a
-prompt exceeds it - it silently truncates to `num_ctx // 2 + 2` tokens and reports success,
-so an oversized file handed whole to a local task loses exactly the instruction most likely
-to sit at the end. It is good practice independent of that origin: a file a quarter of a
-16384-token window still holds is a file a reviewer, human or model, can hold in mind
-without paging. This number is derived from a measurement that can change - the retained
-window lives in `.claude/local-model-config.json` (`models["<the tag the resolver returns>"].retained_num_ctx`,
-written by `optimize_ollama.py --sweep`), machine-local and gitignored - so treat 4096 as
-that measurement's current quarter, not a fixed constant. `context_budget.py --scan <path>`
-reads the live window and names every file above the threshold; it does not split them.
+The limit is on what a local model is GIVEN, never on how large a source file may be. A
+script invoked as a tool is executed, not read into a prompt, so its size costs a local
+model nothing. Two things are given to a local model, and each is bounded for its own
+reason.
+
+**The plan handed to `local-coder`.** The plan and the code it dictates share one window, so
+the plan has to leave room for the answer. That budget is not a property of the repository,
+it is part of the plan's design: it is specified by the user when `superpowers:writing-plans`
+is invoked, alongside the rest of the specification. **Without that specification, do not use
+`local-coder` at all.** There is no default to fall back on, because the right split between
+instruction and output depends on what is being built, and guessing it is how a task silently
+loses its ending: Ollama does not error when a prompt exceeds the window, it truncates to
+`num_ctx // 2 + 2` tokens and reports success, so the instruction most likely to be lost is
+the last one.
+
+**The note `local-writer` stages for the vault.** A formal limit, because every write it
+makes passes through the same window, and a truncated note is written to the vault as though
+it were whole. This is separate from, and stricter than, the Obsidian CLI's own ~4096-byte
+header threshold, which is why the outbox exists at all (see `security.md`).
+
+Both numbers are quarters of a measured window, not constants. The retained window lives in
+`.claude/local-model-config.json` (`models["<the tag the resolver returns>"].retained_num_ctx`,
+written by `optimize_ollama.py --sweep`), machine-local and gitignored. Measured 2026-08-29:
+the tags currently adopted for both roles retain 16384, so the working quarter is 4096, while
+the same file holds a 65536 measurement on a tag that is not adopted - the number therefore
+moves with adoption, and reading it from the file is the only correct way to know it.
+
+`context_budget.py --task <prompt file>` is the check that matters: it measures the ASSEMBLED
+prompt against the live window and exits non-zero, at the moment the prompt is built.
+`context_budget.py --scan <path>` reports files larger than that quarter; it is a review aid
+for deciding what could be handed to a local model, not a gate on the repository, and it
+splits nothing.
 
 ## Constants and configuration
 
@@ -104,8 +123,9 @@ typo waiting to become a silent no-op.
 **R13 - a measured number written into a rule, a document or a comment carries its date and
 what measured it.** This is the counterpart of R0 and resolves its apparent tension: a
 number in code comes from configuration, a number in prose comes with provenance. The
-4096-token ceiling above is the model, since it states the window it is a quarter of, the
-file that holds that window, and the script that wrote it; the dated measurement notes in
+4096-token quarter above is the model, since it states the window it is a quarter of, the
+file that holds that window, the script that wrote it, and the date it was read; the dated
+measurement notes in
 the repo-root `CLAUDE.md` are the same discipline. A bare number in prose is unrevisable,
 because nobody can tell whether it was measured, specified or invented.
 

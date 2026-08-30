@@ -80,18 +80,56 @@ vault starts, finds nothing and exits invisibly. `install.ps1` runs many times a
 `install-junctions.ps1 -Sync` runs at every session start, so a Startup write in either
 would come back after the user deliberately removed it.
 
+Nothing installs that shortcut on its own, and no tool here should: the Startup folder is the
+operator's. **The daemon is therefore started by the operator**, either by running
+`setup.ps1 -InstallDaemon` once so it comes up at every login, or by launching
+`vault-daemon-autostart.bat` when it is wanted. Until one of those happens, raw drops simply
+accumulate in `~/.claude/obsidian-outbox/raw/` and are filed the first time the daemon runs;
+they are not lost. `vault-daemon-autostart.ps1 -Status` is read-only and answers the three
+questions that matter - whether a daemon holds the lock right now, what the log's tail says,
+and whether the login shortcut exists at all.
+
 | | `setup.ps1` | `install-junctions.ps1` | `install.ps1` |
 |---|---|---|---|
-| Job | Generate machine-local config: `.claude\settings.json` + `CLAUDE.md` from templates (detects Git Bash, Node, Obsidian paths of THIS machine) | Link the repo into `~/.claude` so Claude Code loads agents/skills/rules/commands in every workspace | Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider, `AGENTS.md` readers (`-Personal` adds the user-level Copilot install) |
-| Output | 2 machine-specific files (paths differ per PC) | Links in `C:\Users\<you>\.claude\` | Generated files committed in the repo (`.github\`, `.opencode\`, `.continue\`, `CONVENTIONS.md`, `AGENTS.md`) + optional user copies |
+| Job | Detect this machine's paths (Git Bash, Node, Obsidian) and fill the gaps in the GLOBAL Claude Code configuration from the two templates | Link the repo into `~/.claude` so Claude Code loads agents/skills/rules/commands in every workspace | Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider, `AGENTS.md` readers (`-Personal` adds the user-level Copilot install) |
+| Output | Nothing inside the repository. Additively: `~/.claude/CLAUDE.md` (whole file only when absent), `~/.claude/settings.json` (only the hook entries the template declares and the live file lacks), `OBSIDIAN_VAULT` at USER scope (only when unset), and `.venv-skills/` in the clone with `-InstallPython` | Links in `C:\Users\<you>\.claude\` | Generated files committed in the repo (`.github\`, `.opencode\`, `.continue\`, `CONVENTIONS.md`, `AGENTS.md`) + optional user copies |
 | When to run | Once after clone (or when machine paths change) | Once after clone; re-run when an agent or skill is ADDED (or a hardlink detached after a pull) | After every agent/command/rule EDIT, then commit the output |
 | Privilege | none | symlinks want Developer Mode (automatic hardlink fallback) | none |
-| Interactive | yes (asks vault path, confirms) | no | no |
+| Interactive | yes (asks vault path, confirms) - `-NonInteractive` refuses with exit 2 instead of assuming a default, and `-Preview` writes nothing at all | no | no |
 | Via `setup.ps1` | - | `-InstallJunctions` | `-InstallTools` |
+| Other switches | `-InstallDaemon` (vault daemon at login), `-InstallPython` (`.venv-skills` for the offline suite) | - | - |
 
 ```powershell
 .\setup.ps1 -All -Personal   # new machine: config + Claude links + all tool mirrors
 ```
+
+### The `CLAUDE*.md` family
+
+Two files, both hand-written, both English, neither carrying a machine path or a person's
+name. A file a script generates is never a tracked file, so anything derived from these
+lands in `~/.claude/` or in the mirrors, which are regenerated wholesale and reviewed as
+output.
+
+| File | What it is | Written by | Where its content lands |
+|---|---|---|---|
+| `CLAUDE.template.md` | Source of the GLOBAL instructions: session rules, Obsidian vault integration, git-sync, plan-mode workflow, hooks. Carries the `{{OBSIDIAN_VAULT}}` / `{{OBSIDIAN_EXE}}` placeholders and the only copy of the `RT-CONTRACT` block | a human | `~/.claude/CLAUDE.md` — the whole substituted file when that file does not exist, the `RT-CONTRACT` block alone when it does (`install-junctions.ps1 -Sync`, `Update-RtClaudeMd`) |
+| `.claude/CLAUDE.md` | The repository's own authority: mission, writing standard, references, figures/tables/equations, the routing table, pipeline integrity, where code belongs | a human | loaded by Claude Code when working inside this repository |
+
+Two files that used to sit beside them are gone: a root `CLAUDE.md`, which was a generated
+copy of the template carrying this machine's vault and Obsidian paths, and `CLAUDE (up).md`,
+a stale copy of the parent directory's file that nothing read. Only the root `CLAUDE.md` is
+gitignored.
+
+`.claude/settings.json` is a different case and **is committed**. It is the shared project
+scope, and it has to reach GitHub: a routine running on the web clones this repository and has
+no `~/.claude` of yours, so this committed file is the only way it learns which plugin
+marketplaces to trust when it reviews a pull request. It holds marketplace and plugin
+declarations only — no absolute path, no account name, no secret. It must never declare
+`hooks`: the global file already does, a project copy makes every hook run twice, and their
+commands are Windows paths that do not exist on a Linux runner. Anything machine-specific goes
+in `settings.local.json`, which is gitignored. `.claude/settings.template.json` remains the
+declaration of the GLOBAL `~/.claude/settings.json`, which is a separate file with a separate
+job.
 
 ### Prerequisites
 
@@ -112,6 +150,37 @@ would come back after the user deliberately removed it.
 | draw.io Desktop *(optional)* | `paper2talk` figure re-export at scale 3 (`fig_export.py`); locate it with `--drawio` or `DRAWIO_EXE` |
 | `pdflatex` (TeX Live / MiKTeX) | `recommendation-letter` skill: compile letters to PDF (degrades to `.tex` only if absent) |
 | Obsidian Desktop *(optional)* | Obsidian vault integration in `CLAUDE.md` |
+| `uv tool install graphifyy` *(optional)* | The graphify CLI behind the code-graph memory. The SKILL is vendored here (`.claude/skills/graphify/`, from graphify 0.9.50) so a clone is never left with instructions to consult a graph and no way to reach one; the CLI itself is not, and without it `query`, `path`, `explain` and `update` are simply unavailable |
+| Ollama *(optional)* | The local model behind `local-writer` and `local-coder` |
+
+Two Ollama settings are the operator's own step, and the scope is not interchangeable. The
+`GRAPHIFY_*` pair ships in `.claude/settings.template.json`, because graphify runs as a child of
+Claude Code and sends its own `keep_alive` in every request body, which overrides the daemon
+default. The `OLLAMA_*` values cannot ship there at all and belong in the Windows user registry
+(`HKCU:\Environment`), because the Ollama daemon is started by its own tray application at login
+and never sees Claude Code's environment. Setting only one of the two leaves the model being
+unloaded on a timer that nothing in this repository controls:
+
+```powershell
+# operator step, once, then restart the daemon and confirm with `ollama ps`
+[Environment]::SetEnvironmentVariable('OLLAMA_KEEP_ALIVE',        '-1', 'User')
+[Environment]::SetEnvironmentVariable('OLLAMA_MAX_LOADED_MODELS', '1',  'User')
+[Environment]::SetEnvironmentVariable('OLLAMA_NUM_PARALLEL',      '1',  'User')
+[Environment]::SetEnvironmentVariable('OLLAMA_FLASH_ATTENTION',   '1',  'User')
+```
+
+`OBSIDIAN_VAULT` is the third value of this kind, and `setup.ps1` now offers to set it at
+USER scope when you give it a vault path. It is add-only: a variable that already holds a
+value is printed and left alone unless you pass `-Force`, and a path that does not exist is
+refused rather than stored. USER scope rather than the current shell is deliberate — the
+Startup shortcut passes no argument, so a login-started daemon reads the user environment
+block and nothing a shell exported. An already-open terminal keeps its old block, and VS Code
+has to be restarted before a session sees the new one.
+
+`ollama ps` must then show `Forever` in the `UNTIL` column. Restart the daemon with
+`.claude\skills\opt-local-vram-llm\scripts\restart-ollama.ps1`, never by killing `ollama*` by
+name: the model runs in a child process called `llama-server.exe`, which that pattern does not
+match, so it survives and keeps its slice of VRAM.
 
 ### Step 1 — Clone the repository
 
@@ -120,18 +189,18 @@ git clone https://github.com/LARi-UQAC/ResearchTools.git
 cd ResearchTools
 ```
 
-### Step 2 — Generate machine-local configuration
+### Step 2 — Detect this machine's paths
 
-Run the setup script from the repository root. It auto-detects Git Bash and Node.js,
-asks for your Obsidian vault path (optional), and generates two gitignored files:
-`.claude/settings.json` and `CLAUDE.md`.
+Run the setup script from the repository root. It auto-detects Git Bash and Node.js and
+asks for your Obsidian vault path (optional).
 
 ```powershell
 .\setup.ps1
 ```
 
-Verify that no `{{placeholder}}` remains after the script completes — it reports any
-unreplaced values in the validation step.
+It writes nothing into the repository. The two templates
+(`.claude/settings.template.json`, `CLAUDE.template.md`) are the hand-written sources, and
+the configuration they describe belongs in your global Claude Code folder, `~/.claude/`.
 
 ### Step 3 — Make agents available globally (optional, recommended)
 
@@ -192,6 +261,35 @@ the VS Code user profile, making them available in every workspace:
 current default (`engineering`).
 
 Details in [Using the agents outside Claude Code](#using-the-agents-outside-claude-code).
+
+### Step 5 — Python environment for the offline test suite (optional)
+
+`scripts/test/run-offline-tests.ps1` resolves `.venv-skills\Scripts\python.exe` first, then
+`.venv`, then whatever `python` is on `PATH`. Without that environment several suites cannot
+import what they need and are reported **NOT RUN** — which is honest, and means the suite is
+not actually proving what it looks like it is proving.
+
+```powershell
+.\setup.ps1 -InstallPython            # creates .venv-skills, installs, then pip-audits
+.\setup.ps1 -InstallPython -Preview   # say what it would install, install nothing
+```
+
+It installs only what the offline suite imports: `pypdf`, `python-pptx`, `jinja2` and
+`defusedxml` for the thirteen `paper2talk` suites, and `PyYAML` for
+`test_letter_identity.py`. Everything else in the Prerequisites table above stays a manual
+step on purpose — `docling` alone pulls `torch`, and a CVE in a skill you never run should
+not block the environment your tests need.
+
+By hand, if you would rather not use the switch:
+
+```powershell
+python -m venv .venv-skills
+.\.venv-skills\Scripts\python.exe -m pip install -r .claude\skills\paper2talk\scripts\requirements.txt
+.\.venv-skills\Scripts\python.exe -m pip install -r .claude\skills\recommendation-letter\scripts\requirements.txt
+.\.venv-skills\Scripts\python.exe -m pip_audit --strict -r .claude\skills\paper2talk\scripts\requirements.txt
+```
+
+The directory name matters: name it anything else and the runner will not look there.
 
 ### Contributing improvements
 
@@ -291,7 +389,11 @@ Use these tools together to keep sessions fast and cheap.
 
 ## Skills
 
-Skills bundle scripts and references the agents reuse. Fifteen ship in this repo.
+Skills bundle scripts and references the agents reuse. Seventeen ship in this repo. Fifteen are
+written here; the last two, `graphify` and `tech-debt`, are **vendored** copies of skills that
+were previously hand-installed into one machine's `~/.claude/skills/` and therefore existed
+nowhere else. A clone that had `local-writer` telling it to consult the code graph, and no
+graphify skill to consult, is the defect that vendoring removes.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -309,6 +411,8 @@ Skills bundle scripts and references the agents reuse. Fifteen ship in this repo
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 | `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
+| `graphify` *(vendored, graphify 0.9.50)* | The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. `query`, `path` and `explain` are deterministic traversals of `graphify-out/graph.json` and cost no model at all, which is why one graph query beats grepping file by file. Reached only through `local-writer`, like the vault. The CLI itself is a separate install (`uv tool install graphifyy`); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. `.graphify_version` records the version it was generated from - refresh the copy after upgrading the CLI. | `/graphify`, `.claude/skills/graphify/SKILL.md` |
+| `tech-debt` *(vendored)* | Identify, categorize and prioritize technical debt: what to refactor next, code health, the maintenance backlog. Triggered by "tech debt", "technical debt audit", "what should we refactor". Vendored for the same reason as `graphify`: it existed on one machine and in no clone. | `.claude/skills/tech-debt/SKILL.md` |
 | `opt-local-vram-llm` | Tune a local Ollama model for this GPU: retain the largest `num_ctx` that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps `num_ctx` against `OLLAMA_KV_CACHE_TYPE` (restarting the daemon per value and proving the restart took effect from `server.log`, restoring the original value on failure), then declares the tuned tag as a role candidate in `local-models.json`. Stops before qualification, which stays with `model_resolver.py --qualify`. | `/opt-local-vram-llm`, `.claude/skills/opt-local-vram-llm/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
@@ -376,9 +480,11 @@ manual-entry template.
 
 ### recommendation-letter — support / recommendation / acceptance / dispense letters
 
-Generates letters in LaTeX → PDF for Prof. Otis / LAR.i from a candidate's own files. Two
+Generates supervisor letters in LaTeX → PDF from a candidate's own files, signed by the
+active profile's author (`profiles/<active>.yaml`, `author.letter`; a profile with no such
+block is a stated refusal, never a letter signed with someone else's name). Two
 tracks: Claude authors the four persuasive types (scholarship, academic_position,
-industry_position, appreciation; French or English), while a standard-library-only Python
+industry_position, appreciation; French or English), while a Python
 script fills the fixed French **acceptance** and **dispense** forms. `candidate_status`
 (applicant / current_student / graduated) sets how the candidate is named; `funding_provider`
 (supervisor / candidate / combination) branches the funding paragraph; the dispense letter
@@ -450,6 +556,48 @@ slide is authored.
 - `.claude/skills/paper2talk/references/renderer-contracts.md` · `qa-loop.md`
 - `.claude/skills/paper2talk/scripts/Test/` — thirteen offline suites, 182 tests (fixtures built in the test; no Office, no network)
 - Harvest and licence findings: `docs/superpowers/notes/2026-08-11-reference-skill-harvest.md`
+
+### The two memories - the vault and the code graph
+
+Two memories back this toolkit, and they do not overlap. The Obsidian vault holds what was
+LEARNED, across every project: a failure and its root cause, a decision and why, a tool that
+misbehaves. The graphify knowledge graph in `graphify-out/` holds what this repository's code
+IS right now: which function calls which, how one module reaches another, where a symbol
+lives. The vault is permanent and hand-curated; the graph is derived from the files and
+therefore rebuildable and disposable.
+
+The routing rule follows from that. A question about **this code** goes to the graph first,
+and `query`, `path` and `explain` are deterministic traversals that cost no model at all, so
+one graph query beats grepping file by file. A question about a failure mode, a misbehaving
+tool or a past decision goes to the **vault** first. Many tasks want both, in that order.
+
+Both are reached the same way and only that way: **dispatch the `local-writer` agent**. It is
+the single reader and the single writer of both memories. Consulting or refreshing the graph
+by hand is the same breach as reading the vault by hand, and since 2026-08-30 the
+`vault-access-guard.py` hook enforces BOTH at the tool boundary rather than only the vault. For the
+vault it matches by PATH rather than by command; for the graph it matches the `graphify-out/` path,
+the `graphify` CLI, and the two graph audit scripts by name, because running a read-only health
+check to learn the graph's state is a consultation in which the graph's path never appears.
+The graph is refreshed by writing a file and then pointing `graphify update <path>` at it,
+never by editing `graph.json`.
+
+**What the graph does not answer.** Measured 2026-08-30 through a `local-writer` consultation:
+every node carries `_origin: ast`, so the graph holds the code and the *structure* of each `.md`
+file - headings, names, where things live - and no layer that read what those files say. Asked
+"why is the Obsidian CLI write path forbidden", it returned 109 nodes of file names, command
+names and test-class names, and none of the three measured reasons (the header-size threshold,
+the CLI exiting 0 on a failed write, `create` making a numbered duplicate). Those reasons live in
+this file and in the vault. So the graph is asked *what calls what*, and the vault is asked *why*.
+Asking the graph for intent is the failure that hurts, because it returns names that read like an
+answer. Adding the missing layer is possible and needs no API key - the graphify skill's own flow
+has the host agent read the documents - but it is a deliberate, token-costing run, so
+`check-graph-health.ps1` reports the state as a note and does not fail on it.
+
+The graph's own state is the one thing a session may read directly, because it is metadata
+rather than content: `.\scripts\audit\check-graph-health.ps1` is read-only and reports what is
+in the graph, which files it claims to cover and never produced a node for, and whether any
+covered file is newer than the graph itself. It exits 0 where there is no `graphify-out/` at
+all, so it is harmless in a project that has no graph.
 
 ### `obsidian-cli` - Obsidian vault operations
 

@@ -53,6 +53,36 @@ def load_config(config_path=None) -> dict:
         raise ConfigError(f"[OUTBOX] {path} is not valid JSON: {exc}") from exc
 
 
+def tail(text: str, limit: int = 700) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Keep the END of a captured stderr, never its beginning, for every
+        caller in this skill that quotes a failed subprocess.
+
+        A Python traceback names its exception on the LAST line and opens with
+        frames that are identical on every failure, so truncating from the
+        front keeps the noise and discards the fact. Measured 2026-08-30 on
+        the live drill: three nested layers each truncated from the front
+        (300, then 200 characters), and two full drill runs were needed to
+        reach a one-line NameError that had been in the discarded tail all
+        along.
+
+    Inputs:
+        text (str): captured stderr, possibly empty or None.
+        limit (int): characters to keep from the end.
+
+    Outputs:
+        result (str): the last `limit` characters, marked when anything was
+            dropped so a reader knows the head is missing.
+    --------------------------------------------------------------------------
+    """
+    stripped = (text or "").strip()
+    if len(stripped) <= limit:
+        return stripped
+    return "...(truncated, showing the end)...\n" + stripped[-limit:]
+
+
 def require(config: dict, section: str, key: str):
     """Fetch one configured value, naming the key and the file when absent."""
     value = config.get(section, {}).get(key)

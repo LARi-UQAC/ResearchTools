@@ -283,9 +283,13 @@ function Invoke-RtSync([string]$repoRoot, [string]$homeClaude) {
         # Hooks: per-file only. ~/.claude/hooks holds six hooks that are not in this
         # repo, and a directory junction would shadow them - a hook whose script is
         # absent refuses every tool of its matcher. Gated on the green stamp.
+        # .json as well as .py since 2026-08-30: a hook may ship a configuration file beside
+        # itself (R0 keeps thresholds out of code), and askuserquestion-clarity.json is the
+        # first. A .py that arrived without its .json would find no config and, per R11,
+        # disable itself in silence - a gate that looks installed and never fires.
         $hooksSrc = Join-Path $repoClaude "hooks"
         if (Test-Path $hooksSrc) {
-            Get-ChildItem $hooksSrc -File -Filter *.py | ForEach-Object {
+            Get-ChildItem $hooksSrc -File | Where-Object { $_.Extension -eq ".py" -or $_.Extension -eq ".json" } | ForEach-Object {
                 if (Test-RtProven $stamp $repoRoot $_.FullName) {
                     Sync-RtFile $_.FullName (Join-Path $homeClaude "hooks\$($_.Name)") "hooks\$($_.Name)"
                 } else {

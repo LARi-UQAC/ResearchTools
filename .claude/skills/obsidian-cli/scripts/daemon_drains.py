@@ -37,6 +37,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import daemon_states as ds  # noqa: E402
+import outbox_io  # noqa: E402
 import vault_journal  # noqa: E402
 from daemon_states import ob  # noqa: E402
 
@@ -88,7 +89,7 @@ def candidate_pairs(vault: Path, top_n: int, timeout_s: float) -> list:
         capture_output=True, text=True, timeout=timeout_s)
     if result.returncode != 0:
         raise ds.EventRefused(
-            f"candidate computation failed: {result.stderr.strip()[:200]}")
+            f"candidate computation failed: {outbox_io.tail(result.stderr)}")
     try:
         return json.loads(result.stdout).get("candidates", [])
     except ValueError as exc:
@@ -245,7 +246,7 @@ def drain_graphify(paths: list, repo_root: Path, timeout_s: float) -> dict:
                             capture_output=True, text=True, timeout=timeout_s,
                             cwd=str(repo_root))
     return {"returncode": result.returncode,
-            "stderr": result.stderr.strip()[:400]}
+            "stderr": outbox_io.tail(result.stderr)}
 
 
 class _null_context:

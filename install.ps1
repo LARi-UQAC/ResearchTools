@@ -128,6 +128,23 @@ $claudeMd     = $claudeMd -replace '(?m)^Profil actif : \S+', "Profil actif : $a
 [System.IO.File]::WriteAllText($claudeMdPath, $claudeMd, $utf8NoBom)
 Write-Ok "active profile: $activeProfile (recorded in .claude/CLAUDE.md)"
 
+# --- U6: regenerate the RT-CONTRACT block from .claude/CLAUDE.md -------------
+# It must run BEFORE the mirrors below, because the mirrors are generated from
+# the same source and a stale contract block would be published alongside a
+# fresh mirror. The engine lives in scripts/lib/rt-contract.ps1 so its test can
+# load it without running this installer.
+. (Join-Path $repoRoot "scripts\lib\rt-contract.ps1")
+try {
+    $rtContract = Update-RtContractBlock -RepoRoot $repoRoot
+    if ($rtContract.Changed) { Write-Ok "RT-CONTRACT block regenerated ($($rtContract.Lines) lines) from .claude/CLAUDE.md" }
+    else                     { Write-Ok "RT-CONTRACT block already in step with .claude/CLAUDE.md" }
+} catch {
+    # A refusal here is deliberate and must stop the run: publishing mirrors
+    # from a source whose export region is broken would spread the damage.
+    Write-Host "  [ERR] RT-CONTRACT generation refused: $($_.Exception.Message)" -ForegroundColor Red
+    exit 2
+}
+
 # --- GitHub Copilot: .github/agents/<name>.agent.md -------------------------
 
 $ghDir = Join-Path $repoRoot ".github\agents"

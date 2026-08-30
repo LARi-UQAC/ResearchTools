@@ -152,6 +152,29 @@ $jHash = (Get-FileHash (Join-Path $Fake "settings.json") -Algorithm SHA256).Hash
 Update-RtSettings $RepoRoot $Fake
 Check "unparseable settings.json refused, untouched" ((Get-FileHash (Join-Path $Fake "settings.json") -Algorithm SHA256).Hash -eq $jHash)
 
+# --- what -Sync SELECTS out of .claude\hooks ---------------------------------
+# Read off rt-sync.ps1 itself rather than driven, because the copy loop walks the real
+# repository and writes into ~/.claude\hooks; the two writes this script drives are the
+# only ones it can safely execute. Behavioural proof of the same rule lives in
+# verify-setup-writes.ps1, where Install-RtGlobalHooks IS driven against temp copies.
+#
+# Widened 2026-08-30 from "-Filter *.py" to .py plus .json. A hook may now ship a
+# configuration file beside itself (R0 keeps thresholds out of code), and a .py that
+# arrived without its .json finds no config and, per R11, disables itself IN SILENCE -
+# a gate that looks installed and never fires, which is worse than one that is absent.
+$syncText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\lib\rt-sync.ps1"))
+$hookLine = ($syncText -split "`n" | Where-Object { $_ -match 'Get-ChildItem \$hooksSrc' })
+Check "the hook copy loop was found in rt-sync.ps1" (@($hookLine).Count -eq 1)
+Check "-Sync still carries .py hooks"   ($hookLine -match '\.py')
+Check "-Sync now carries .json configs" ($hookLine -match '\.json')
+Check "the old .py-only filter is gone" (-not ($hookLine -match '-Filter\s+\*\.py'))
+
+# Negative control: the same two tests applied to the line as it read BEFORE the change
+# must fail, or these checks pass on any text at all and prove nothing.
+$oldLine = 'Get-ChildItem $hooksSrc -File -Filter *.py | ForEach-Object {'
+Check "the control line is correctly judged .py-only" `
+    (($oldLine -match '\.py') -and (-not ($oldLine -match '\.json')))
+
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)
 Check "live ~/.claude/CLAUDE.md never written"      ((Get-FileHash $liveClaude   -Algorithm SHA256).Hash -eq $liveClaudeHash)
 

@@ -310,8 +310,9 @@ those docs are not mirrored).
   this document supersedes and generalizes it to agents as well. Keep both pointing at the
   same routing table. It lives in the Claude Code project memory directory
   (`~/.claude/projects/<project-slug>/memory/`, where `<project-slug>` is the working
-  directory with path separators replaced by `-`); on this machine that is
-  `C:\Users\m3otis\.claude\projects\c--Martin-Otis-OutilsLogiciels-ResearchTools\memory\adding-a-skill-checklist.md`
+  directory with path separators replaced by `-`); for a clone at `C:\work\ResearchTools`
+  that is
+  `%USERPROFILE%\.claude\projects\c--work-ResearchTools\memory\adding-a-skill-checklist.md`
   (indexed in that directory's `MEMORY.md`).
 - `install.ps1` header comment is the authoritative description of each generated file.
 

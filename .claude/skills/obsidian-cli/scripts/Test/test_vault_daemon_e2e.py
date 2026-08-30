@@ -133,5 +133,107 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(report["created_outside_vault"], [])
 
 
+class TestDrainDistinguishesEmptyFromJudged(unittest.TestCase):
+    """A drain judges what FILING enqueued. With an empty queue the daemon returns a
+    null consolidation and has done nothing wrong.
+
+    Measured 2026-08-30: `run-drill.ps1 -Only drain` reported zero accepted, zero
+    rejected and pass false, which reads as a broken drain when the real answer is
+    that no step had enqueued anything. The collision step already answers null for
+    the same reason; this step now does too."""
+
+    def _drain(self, payload):
+        import subprocess
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(payload), stderr="")
+        with mock.patch("subprocess.run", return_value=completed):
+            return e2e.check_drain(vault=None)
+
+    def test_an_empty_queue_is_not_a_failure(self):
+        report = self._drain({"consolidation": None, "phantoms": None})
+        self.assertIsNone(report["pass"])
+        self.assertIn("nothing was queued", report["why"])
+
+    def test_a_null_pass_is_not_counted_as_failed(self):
+        # The drill's exit code counts `pass is False`, so a null must not raise it.
+        self.assertIs(self._drain({"consolidation": None})["pass"], None)
+
+    def test_a_drain_that_judged_nothing_still_fails(self):
+        # The hairball warning must keep its teeth: a NON-empty queue that produced
+        # neither an acceptance nor a rejection is a real defect.
+        report = self._drain({"consolidation": {"accepted": [], "rejected": []}})
+        self.assertFalse(report["pass"])
+
+    def test_a_drain_that_rejected_with_a_reason_passes(self):
+        report = self._drain({"consolidation": {
+            "accepted": [], "rejected": [{"pair": ["a", "b"], "why": "topic only"}]}})
+        self.assertTrue(report["pass"])
+        self.assertTrue(report["rejections_carry_reasons"])
+        self.assertEqual(report["rejected"], 1)
+
+
+class TestRunDrillAcceptsTheDocumentedStepList(unittest.TestCase):
+    """`run-drill.ps1 -Only filed,drain` must bind. Measured 2026-08-30: it did not.
+    PowerShell's comma is the ARRAY operator, so the documented spelling produced a
+    String[] and a [string] parameter refused it with a transformation error before
+    a single line of the script ran. The .ps1 cannot be exercised offline - it spawns
+    processes and writes to the real vault - so it is read as text, the way
+    test_tune_preflight.py reads its own harness."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (Path(e2e.__file__).resolve().parent
+                    / "run-drill.ps1").read_text(encoding="utf-8")
+
+    def test_only_is_typed_as_an_array(self):
+        self.assertIn("[string[]]$Only", self.text)
+
+    def test_the_array_is_joined_before_reaching_the_drill(self):
+        # argparse wants one comma-separated string; passing the array unjoined
+        # would hand `--only filed drain` and make `drain` a positional argument.
+        self.assertIn('$Only -join ","', self.text)
+
+    def test_the_help_documents_a_dependent_step(self):
+        self.assertIn("filed,drain", self.text)
+
+
+class TestFailureReportKeepsTheException(unittest.TestCase):
+    """A step that fails reports the END of the traceback. Measured 2026-08-30 on the
+    live drill: the drain step reported `sys.exit(main())` and the first frame, cut
+    mid-path, while the exception that named the fault was in the discarded tail. The
+    run had to be repeated to learn what had broken."""
+
+    def _traceback(self, depth=40):
+        frames = "".join(
+            f'  File "C:\\repo\\module_{i}.py", line {i}, in frame_{i}\n'
+            f"    call_number_{i}()\n" for i in range(depth))
+        return "Traceback (most recent call last):\n" + frames + \
+            "KeyError: 'the fact that matters'\n"
+
+    def test_the_exception_line_survives_truncation(self):
+        kept = e2e.tail(self._traceback())
+        self.assertIn("KeyError: 'the fact that matters'", kept)
+
+    def test_a_short_stderr_is_returned_whole_and_unmarked(self):
+        self.assertEqual(e2e.tail("ValueError: short"), "ValueError: short")
+        self.assertNotIn("truncated", e2e.tail("ValueError: short"))
+
+    def test_truncation_says_it_truncated(self):
+        kept = e2e.tail(self._traceback(), limit=80)
+        self.assertTrue(kept.startswith("...(truncated"))
+        self.assertLessEqual(len(kept.split("\n", 1)[1]), 80)
+
+    def test_empty_stderr_does_not_raise(self):
+        self.assertEqual(e2e.tail(""), "")
+        self.assertEqual(e2e.tail(None), "")
+
+    def test_the_old_behaviour_would_have_lost_it(self):
+        # Negative control: keeping the head is what hid the fault, so prove the head
+        # of this same fixture does NOT carry the exception. Without it the test above
+        # passes on any implementation that returns the whole string.
+        head = self._traceback()[:300]
+        self.assertNotIn("KeyError", head)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

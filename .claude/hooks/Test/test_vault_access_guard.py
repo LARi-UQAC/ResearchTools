@@ -180,5 +180,158 @@ class PowerShellToolTest(unittest.TestCase):
         })
         self.assertEqual(code, 0)
 
+
+
+class GraphAccessGuardTest(unittest.TestCase):
+    """
+    The graph arm, added 2026-08-30 after local-writer was bypassed in three separate sessions.
+
+    The vault half of this guard was enforced from 2026-08-27; the graph half was prose in
+    .claude/CLAUDE.md and was not. What makes the graph different, and what these cases pin, is
+    that a bypass does not have to name the graph at all: the last one ran a read-only audit
+    script twice to learn the graph's state, and `graphify-out` never appeared in the command.
+    So the script names are guarded too - but in an executed COMMAND only, never in a path
+    argument, or maintaining those scripts would become impossible for everyone but local-writer.
+    """
+
+    def test_reading_graph_json_is_blocked(self):
+        code, err = run_hook({
+            "tool_name": "Read",
+            "tool_input": {"file_path": "graphify-out/graph.json"},
+        })
+        self.assertEqual(code, 2)
+        self.assertIn("GRAPH GUARD", err)
+
+    def test_windows_form_of_the_graph_path_is_blocked(self):
+        code, _ = run_hook({
+            "tool_name": "Bash",
+            "tool_input": {"command": "type C:" + BACKSLASH + "repo" + BACKSLASH +
+                                      "graphify-out" + BACKSLASH + "graph.json"},
+        })
+        self.assertEqual(code, 2)
+
+    def test_graphify_cli_is_blocked(self):
+        code, err = run_hook({
+            "tool_name": "Bash",
+            "tool_input": {"command": "graphify update ."},
+        })
+        self.assertEqual(code, 2)
+        self.assertIn("graphify (CLI)", err)
+
+    def test_graphify_cli_after_a_chain_operator_is_blocked(self):
+        # The bypass is trivial otherwise: prefix the call with a cd and it sails through.
+        for command in ("cd /repo && graphify update scripts/lib",
+                        "ls | graphify query foo",
+                        "echo hi; graphify explain bar"):
+            with self.subTest(command=command):
+                code, _ = run_hook({"tool_name": "Bash", "tool_input": {"command": command}})
+                self.assertEqual(code, 2)
+
+    def test_the_word_graphify_in_prose_is_not_an_access(self):
+        # The negative control that keeps the guard usable. Matching the bare word would refuse
+        # every grep of the documentation, and a guard that fires on prose gets switched off.
+        for command in ("grep -n 'graphify' .gitignore",
+                        "rtk grep graphify README.md",
+                        "echo 'the graphify skill is vendored here'"):
+            with self.subTest(command=command):
+                code, _ = run_hook({"tool_name": "Bash", "tool_input": {"command": command}})
+                self.assertEqual(code, 0)
+
+    def test_reading_the_vendored_skill_is_not_an_access(self):
+        # .claude/skills/graphify/ is the SKILL, not the graph. Guarding the bare word would
+        # make the instructions for using the graph unreadable, which is self-defeating.
+        code, _ = run_hook({
+            "tool_name": "Read",
+            "tool_input": {"file_path": ".claude/skills/graphify/SKILL.md"},
+        })
+        self.assertEqual(code, 0)
+
+    def test_running_check_graph_health_is_blocked(self):
+        # The actual 2026-08-30 bypass, in both spellings that were used.
+        for command in (r"& .\scripts\audit\check-graph-health.ps1",
+                        r"powershell -File .\scripts\audit\check-graph-health.ps1"):
+            with self.subTest(command=command):
+                code, err = run_hook({"tool_name": "PowerShell",
+                                      "tool_input": {"command": command}})
+                self.assertEqual(code, 2)
+                self.assertIn("check-graph-health.ps1", err)
+
+    def test_running_verify_graph_health_is_blocked(self):
+        code, _ = run_hook({
+            "tool_name": "PowerShell",
+            "tool_input": {"command": r".\scripts\test\verify-graph-health.ps1"},
+        })
+        self.assertEqual(code, 2)
+
+    def test_editing_an_audit_script_is_not_an_access(self):
+        # The asymmetry that makes the script names safe to guard: running one reads the graph,
+        # maintaining one does not. Guarding the path key too would lock the repository's own
+        # audit scripts behind an agent that has no business owning them.
+        for tool in ("Edit", "Read", "Write"):
+            with self.subTest(tool=tool):
+                code, _ = run_hook({
+                    "tool_name": tool,
+                    "tool_input": {"file_path": "scripts/audit/check-graph-health.ps1"},
+                })
+                self.assertEqual(code, 0)
+
+    def test_local_writer_is_exempt_from_the_graph_arm(self):
+        code, _ = run_hook({
+            "tool_name": "Bash",
+            "tool_input": {"command": "graphify update ."},
+            "agent_type": "local-writer",
+        })
+        self.assertEqual(code, 0)
+
+    def test_another_subagent_is_not_exempt_from_the_graph_arm(self):
+        code, _ = run_hook({
+            "tool_name": "Bash",
+            "tool_input": {"command": "graphify query foo"},
+            "agent_type": "local-coder",
+        })
+        self.assertEqual(code, 2)
+
+    def test_graph_path_in_file_content_is_not_an_access(self):
+        # Same contract as the vault arm: content is never scanned, so documenting the graph
+        # stays possible with Write and Edit.
+        code, _ = run_hook({
+            "tool_name": "Write",
+            "tool_input": {"file_path": "docs/notes.md",
+                           "content": "The graph lives in graphify-out/graph.json."},
+        })
+        self.assertEqual(code, 0)
+
+    def test_unrelated_command_passes(self):
+        code, _ = run_hook({
+            "tool_name": "Bash",
+            "tool_input": {"command": "python -m pytest"},
+        })
+        self.assertEqual(code, 0)
+
+    def test_the_two_arms_report_separately(self):
+        # A vault hit and a graph hit must not print the same message, or the reader is sent to
+        # the wrong remedy. Both route to local-writer, but for different reasons.
+        saved = os.environ.get("OBSIDIAN_VAULT")
+        os.environ["OBSIDIAN_VAULT"] = VAULT
+        try:
+            _, vault_err = run_hook({
+                "tool_name": "Read",
+                "tool_input": {"file_path": VAULT + "/note.md"},
+            })
+            _, graph_err = run_hook({
+                "tool_name": "Read",
+                "tool_input": {"file_path": "graphify-out/graph.json"},
+            })
+        finally:
+            if saved is None:
+                os.environ.pop("OBSIDIAN_VAULT", None)
+            else:
+                os.environ["OBSIDIAN_VAULT"] = saved
+        self.assertIn("VAULT GUARD", vault_err)
+        self.assertNotIn("GRAPH GUARD", vault_err)
+        self.assertIn("GRAPH GUARD", graph_err)
+        self.assertNotIn("VAULT GUARD", graph_err)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

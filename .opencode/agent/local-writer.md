@@ -190,8 +190,7 @@ as arguments, and let the one graph at the root absorb them.
 
 `graphify-out/` is gitignored: it is derived data, so it is rebuilt rather than committed. If
 the repository has no graph yet, say that a build is needed and what it will cost rather than
-starting one silently, since Markdown needs the semantic extractor and that is a real model
-call, unlike the AST-only path for pure code.
+starting one silently.
 
 If every changed file is code, this is AST only and free. If a document, paper or image changed,
 it needs a semantic pass, which is a model call and is NOT free - say so rather than running it

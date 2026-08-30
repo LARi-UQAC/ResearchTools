@@ -104,3 +104,63 @@ Budgets are parsed from `install.ps1` so the test cannot outlive a threshold cha
 **Not done:** Codex custom prompts (`$CODEX_HOME/prompts/`) were considered as the analogue
 of the `-Personal` Copilot install and deliberately skipped - they are deprecated upstream in
 favour of skills, which this change already covers.
+
+## 2026-08-29 - setup.ps1 -InstallDaemon, and the graphify drain's queue named as a defect
+
+**Gap:** `vault-daemon-autostart.ps1 -Install` existed and nothing called it, so a new user
+who ran `setup.ps1` got skills, mirrors and hooks but no daemon: raw drops landed in
+`~/.claude/obsidian-outbox/raw/` and waited for someone to notice. The flush hook reports
+them at SessionStart, which is the alarm, not the fix.
+
+**Change:** `setup.ps1 -InstallDaemon` delegates to that script, and `-All` includes it only
+when a vault is configured, skipping with a stated reason otherwise. The decision and the
+delegation live in `scripts/lib/rt-daemon-install.ps1` for the same reason `rt-sync.ps1`
+exists: dot-sourcing `setup.ps1` to test it would run its whole interactive flow. `setup.ps1`
+is the home rather than `install.ps1`, which regenerates mirrors many times a day and runs at
+every session start through `-Sync`; a Startup-folder write there would come back after the
+user deliberately removed it.
+
+**Proven:** `scripts/test/verify-daemon-install.ps1`, 22 checks, including -Preview invoking
+nothing (R16), a non-zero autostart code propagating rather than being swallowed, and the
+professor's real Startup folder listed before and after so the test cannot create the shortcut
+it is meant to be reasoning about.
+
+**OWNER UNKNOWN, left undone:** `daemon_outbox.enqueue()` files vault-relative note paths into
+a `graphify` queue that `drain_graphify` would hand to `graphify update` with cwd set to a code
+repository, where those paths name nothing. Reviewed 2026-08-29 with M. Otis: the vault is
+cross-project and a graphify graph is per-project, so a machine-global daemon holding one
+`graphify_repo_root` is the wrong shape at any value. `graphify_repo_root` therefore stays
+null, its provenance in `daemon-config.json` now says why, and the queueing itself wants
+removing - a code graph is refreshed by `local-writer` pointing `graphify update` at the code
+it just wrote. Not done here because it is a behaviour change to the daemon with its own test,
+outside this session's scope.
+
+## 2026-08-29 - tune-new-model.ps1: the runbook from a downloaded model to the adoption gate
+
+**Gap:** every piece between "a model is on disk" and "the resolver serves it" existed and was
+tested, but the SEQUENCE lived nowhere. A new model was therefore either adopted without being
+compared against the field, or tuned, declared and forgotten.
+
+**Change:** `.claude/skills/opt-local-vram-llm/scripts/tune-new-model.ps1` runs steps 1 to 3 -
+sweep for this card, score against the frozen task set writing nothing, then `--matrix` the
+whole field - prints the comparison and STOPS. Step 4, `model_resolver.py --qualify`, is the
+only step that changes which tag every local agent executes, so it stays a command a person
+types: a harness that adopted on its own would make measuring and taking effect the same
+event, and nobody would see the numbers before they applied. The decisions live in
+`tune_preflight.py` beside it, where the offline suite reaches them, exactly as `run-drill.ps1`
+keeps its teardown in `vault_journal.py`. `vram_optimizer.py` gained `tuned_tag_for()` and
+`TUNED_TAG_SUFFIX` so the harness that scores the tuned tag does not spell the suffix a second
+time (R2).
+
+**Proven:** `test_tune_preflight.py`, 30 tests. Refusals: a tag not installed, a tag that is
+ALREADY tuned, an unreachable daemon, an empty tag refused without even consulting Ollama, and
+after the sweep a tuned tag that is absent or has no measured window - that last one is the
+state the resolver reports as NOT RUNNABLE, where scoring anyway prints zeros that read as the
+model's failure rather than the sweep's. Plus three static guards on the `.ps1`: it must never
+hand `--qualify` to the resolver, never shell out to `ollama run`, and never name a model tag,
+that one carrying a negative control so a broken pattern cannot pass silently.
+`scripts/test/run-offline-tests.ps1` green end to end: 57 PASSED, 0 FAILED, 0 NOT RUN.
+
+**Not done:** the harness's happy path is not covered offline and cannot be - it spawns the
+sweep, which restarts the Ollama daemon. It was exercised by hand only as far as its first
+refusal (an uninstalled tag: stop, exit 1, no report directory created).

@@ -62,9 +62,34 @@ DEFAULT_FIDELITY_EXCHANGE_RATE = 2.0
 
 KV_CACHE_TYPES = vram_daemon.KV_CACHE_TYPES
 
+# What the tuned variant of a base tag is called. One owner for the name (R2/R5): the
+# harness that scores what this module just built has to name the same tag, and a second
+# spelling of "-gpu" in another file is two truths that drift apart in silence.
+TUNED_TAG_SUFFIX = "-gpu"
+
 
 class OptimizerError(Exception):
     """Raised when the search cannot proceed. Never degrades quietly."""
+
+
+def tuned_tag_for(base_tag: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Name the tuned variant this module builds from a base tag.
+
+    Inputs:
+        base_tag (str): the tag as installed, e.g. "<family>:<size>".
+
+    Outputs:
+        result (str): the tuned tag, suffixed once. Applying it twice is a
+            no-op, so a caller that passes an already-tuned tag gets the same
+            tag back rather than a doubly suffixed one that names nothing.
+    --------------------------------------------------------------------------
+    """
+    if base_tag.endswith(TUNED_TAG_SUFFIX):
+        return base_tag
+    return f"{base_tag}{TUNED_TAG_SUFFIX}"
 
 
 def effective_window(record: dict[str, Any], exchange_rate: float) -> float:
@@ -496,7 +521,7 @@ def run(
     else:
         from_reference = base_tag
 
-    tuned_tag = f"{base_tag}-gpu"
+    tuned_tag = tuned_tag_for(base_tag)
     provenance = {
         "card": facts["card"]["name"], "vram_mib": card_mib,
         "kv_cache_type": facts["daemon_kv_cache_type"], "free_mib": 0,

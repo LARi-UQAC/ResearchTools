@@ -29,30 +29,18 @@ PREAMBLE = r"""\documentclass[11pt, letterpaper]{article}
 \renewcommand{\footrulewidth}{0pt}
 """
 
-LETTERHEAD_FR = r"""\begin{document}
-\noindent
-\IfFileExists{uqac_logo.png}{\includegraphics[width=5cm]{uqac_logo.png}\hfill}{}%
-\begin{minipage}[t]{0.55\textwidth}
-\raggedleft\small
-Professeur Martin Otis\\
-Département des sciences appliquées\\
-Université du Québec à Chicoutimi (UQAC)\\
-555, boul.\ de l'Université, Chicoutimi (QC)\\
-Canada, G7H 2B1
-\end{minipage}
-\vspace{12pt}\hrule\vspace{12pt}
-"""
+# Who signs is NOT here: it is true of exactly one person, so it lives in the
+# active profile's author.letter block and reaches these scaffolds through
+# letter_identity.py (R7). %%LETTERHEAD_LINES%%, %%SIGNATURE_NAME%% and
+# %%SIGNATURE_LINES%% are filled by generate_letter.py, which renders each list
+# entry on its own line.
 
-LETTERHEAD_EN = r"""\begin{document}
+LETTERHEAD = r"""\begin{document}
 \noindent
 \IfFileExists{uqac_logo.png}{\includegraphics[width=5cm]{uqac_logo.png}\hfill}{}%
 \begin{minipage}[t]{0.55\textwidth}
 \raggedleft\small
-Professor Martin Otis\\
-Department of Applied Sciences\\
-Université du Québec à Chicoutimi (UQAC)\\
-555, boul.\ de l'Université, Chicoutimi (QC)\\
-Canada, G7H 2B1
+%%LETTERHEAD_LINES%%
 \end{minipage}
 \vspace{12pt}\hrule\vspace{12pt}
 """
@@ -61,13 +49,8 @@ SIGNATURE_FR = r"""\vspace{18pt}
 Cordialement,
 
 \vspace{24pt}
-\textbf{Martin J.-D. Otis, ing. M.Sc.A. Ph.D.}\\
-{\small Professeur titulaire en génie électrique et informatique de l'UQAC}\\
-{\small Membre RISUQ, Centre CISD \& Regroupement ReSMIQ}\\
-{\small Responsable du Laboratoire d'Automatique et de Robotique interactive (LAR.i)}\\
-{\small Tél.~: (418) 545-5011 (poste 2577)}\\
-{\small Courriel~: \href{mailto:Martin_Otis@uqac.ca}{Martin\_Otis@uqac.ca}}\\
-{\small Site Web~: \href{https://lari.uqac.ca}{lari.uqac.ca}}
+\textbf{%%SIGNATURE_NAME%%}\\
+%%SIGNATURE_LINES%%
 \end{document}
 """
 
@@ -75,13 +58,8 @@ SIGNATURE_EN = r"""\vspace{18pt}
 Best regards,
 
 \vspace{24pt}
-\textbf{Martin J.-D. Otis, P.Eng., M.Sc.A., Ph.D.}\\
-{\small Full Professor in Electrical and Computer Engineering, UQAC}\\
-{\small Member RISUQ, CISD Centre \& ReSMIQ Group}\\
-{\small Director, Interactive Automation and Robotics Laboratory (LAR.i)}\\
-{\small Tel.: (418) 545-5011 (ext.\ 2577)}\\
-{\small Email: \href{mailto:Martin_Otis@uqac.ca}{Martin\_Otis@uqac.ca}}\\
-{\small Web: \href{https://lari.uqac.ca}{lari.uqac.ca}}
+\textbf{%%SIGNATURE_NAME%%}\\
+%%SIGNATURE_LINES%%
 \end{document}
 """
 
@@ -110,13 +88,13 @@ TEMPLATE_ACCEPTANCE_FR = r"""%%LETTERHEAD_FR%%
 
 %%DATE%%
 
-\textbf{Objet~: Confirmation d'acceptation de %%CANDIDATE_NAME%% au sein du Laboratoire LAR.i de l'Université du Québec à Chicoutimi (UQAC).}
+\textbf{Objet~: Confirmation d'acceptation de %%CANDIDATE_NAME%% au sein du Laboratoire %%LAB_ACRONYM%% de l'Université du Québec à Chicoutimi (UQAC).}
 
 \vspace{6pt}
 
 %%SALUTATION%%
 
-En tant que futur directeur de recherche de l'étudiant%%GENDER_E%%, je confirme que %%GENDER_CELUI%% a été accepté%%GENDER_E%% pour réaliser %%DEGREE_DESCRIPTION%% au sein du laboratoire LAR.i de l'Université du Québec à Chicoutimi (UQAC). L'équipe du LAR.i est très %%GENDER_HEUREUX%% de recevoir %%CANDIDATE_NAME%%. Son projet de recherche porte sur %%PROJECT_DESCRIPTION%%. %%LAB_COLLABORATORS_SENTENCE%% %%MITACS_OPPORTUNITY_SENTENCE%%
+En tant que futur directeur de recherche de l'étudiant%%GENDER_E%%, je confirme que %%GENDER_CELUI%% a été accepté%%GENDER_E%% pour réaliser %%DEGREE_DESCRIPTION%% au sein du laboratoire %%LAB_ACRONYM%% de l'Université du Québec à Chicoutimi (UQAC). L'équipe du %%LAB_ACRONYM%% est très %%GENDER_HEUREUX%% de recevoir %%CANDIDATE_NAME%%. Son projet de recherche porte sur %%PROJECT_DESCRIPTION%%. %%LAB_COLLABORATORS_SENTENCE%% %%MITACS_OPPORTUNITY_SENTENCE%%
 
 %%PROJECT_DETAILS_PARAGRAPH%%
 
@@ -187,7 +165,7 @@ J'ai le plaisir de vous inviter à effectuer un séjour de recherche à l'Univer
 \textbf{Lieu de séjour~:} & Université du Québec à Chicoutimi\\
   & 555, boul.\ de l'Université\\
   & Chicoutimi, Québec, Canada\\[6pt]
-\textbf{Responsable~:} & Martin Otis\\[6pt]
+\textbf{Responsable~:} & %%RESPONSIBLE_NAME%%\\[6pt]
 \textbf{Dates~:} & Du %%STAY_START%% au %%STAY_END%% inclusivement.\\[6pt]
 \textbf{Rémunération~:} & %%REMUNERATION%%\\[6pt]
 \textbf{Nombre d'heures hebdomadaires~:} & %%WEEKLY_HOURS%%\\[6pt]
@@ -210,9 +188,8 @@ Sincères salutations,
 
 \vspace{24pt}
 
-\noindent\textbf{Martin J.-D. Otis, ing. M.Sc.A. Ph.D.}\\
-{\small Professeur titulaire -- Université du Québec à Chicoutimi}\\
-{\small \href{https://lari.uqac.ca}{lari.uqac.ca}}
+\noindent\textbf{%%SIGNATURE_NAME%%}\\
+%%DISPENSE_LINES%%
 
 \end{document}
 """

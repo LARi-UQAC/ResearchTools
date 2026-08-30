@@ -199,6 +199,12 @@ def check_collision(vault, outbox, timeout_s) -> dict:
             "original_untouched": existing.read_text(encoding="utf-8") == before}
 
 
+# One implementation of "quote a failed subprocess", in the module every caller in
+# this skill already imports. Measured 2026-08-30: three layers each truncated from
+# the FRONT, so two full drill runs were spent reaching a one-line NameError.
+tail = outbox_io.tail
+
+
 def check_drain(vault) -> dict:
     """Step 6: the deferred drain links a real pair and rejects a topic-only one
     WITH its reason. A drain that rejects nothing is the hairball warning."""
@@ -209,8 +215,20 @@ def check_drain(vault) -> dict:
     try:
         report = json.loads(result.stdout)
     except ValueError:
-        return {"step": "drain", "pass": False, "why": result.stderr.strip()[:300]}
-    consolidation = report.get("consolidation") or {}
+        return {"step": "drain", "pass": False, "why": tail(result.stderr)}
+
+    # A drain judges what FILING enqueued, so with an empty consolidate queue the
+    # daemon correctly does nothing and returns a null consolidation. That is not a
+    # failure of the drain, and reporting it as one is what `--only drain` did on
+    # 2026-08-30: zero accepted, zero rejected, pass false, and nothing to fix.
+    # Same answer as the collision step, which is null until the filing step has run.
+    consolidation = report.get("consolidation")
+    if consolidation is None:
+        return {"step": "drain", "pass": None,
+                "why": "nothing was queued for consolidation, so the drain had "
+                       "nothing to judge. Run the `filed` step first: a drain "
+                       "consumes what filing enqueued.",
+                "phantoms": report.get("phantoms")}
     accepted = consolidation.get("accepted", [])
     rejected = consolidation.get("rejected", [])
     return {"step": "drain", "pass": bool(accepted or rejected),

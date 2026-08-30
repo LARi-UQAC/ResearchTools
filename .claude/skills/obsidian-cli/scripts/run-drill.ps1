@@ -29,7 +29,11 @@
 .PARAMETER Only
     Comma-separated step names, passed through to the drill. Step names:
     filed, parked, containment, collision, drain, undo, lock, residency.
-    Run `filed` before `collision`; a collision needs a note to collide with.
+
+    Two steps depend on `filed` and answer `pass: null` without it, rather
+    than failing: `collision` needs a note to collide with, and `drain`
+    consumes what filing enqueued, so on an empty queue the daemon correctly
+    judges nothing. Use `-Only filed,drain` to exercise the drain for real.
 
 .PARAMETER WithEviction
     Let step 9 load the coder-role model. It evicts the writer from the card
@@ -62,7 +66,12 @@
 [CmdletBinding()]
 param(
     [string]$Vault = $env:OBSIDIAN_VAULT,
-    [string]$Only,
+    # [string[]], not [string]: PowerShell's comma IS the array operator, so the
+    # documented `-Only filed,drain` binds an array and a [string] parameter refuses
+    # it with a transformation error before the script runs. Measured 2026-08-30.
+    # Both spellings now work, and the drill's own --only wants one comma-separated
+    # string, so the join happens at the call site.
+    [string[]]$Only,
     [switch]$WithEviction,
     [switch]$SkipTests,
     [switch]$KeepVaultChanges,
@@ -193,7 +202,7 @@ try {
     # Not $args: that is an automatic variable, and shadowing it in a script
     # that also has a param block is how a later reader loses an afternoon.
     $drillArgs = @($Drill, "--timeout", $StepTimeout)
-    if ($Only) { $drillArgs += @("--only", $Only) }
+    if ($Only) { $drillArgs += @("--only", ($Only -join ",")) }
     if ($WithEviction) { $drillArgs += "--with-eviction" }
 
     Say "  dry run first: writes nothing, proves the vault resolved"

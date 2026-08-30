@@ -170,6 +170,35 @@ class OutboxFlushTest(unittest.TestCase):
         self.mod.main()
         self.assertTrue(drop.exists())
 
+    def test_the_flush_never_creates_a_sent_folder_inside_raw(self):
+        """raw/ is the daemon's INPUT queue and holds drops, nothing else.
+
+        Measured 2026-08-30: an empty ~/.claude/obsidian-outbox/raw/sent/ existed,
+        created 2026-08-28. Nothing in the design puts one there, so something ran
+        the flush with raw/ as its outbox root, and an archive folder appeared one
+        level too deep. Harmless that day, because it was empty; not harmless in
+        general, since a note archived into raw/sent/ is filed nowhere and is also
+        no longer a drop the daemon will see.
+
+        Both directions are asserted. A sent/ must NOT appear inside raw/, and a
+        sent/ MUST appear where it belongs for a routed note, or the first
+        assertion would pass simply because the flush archives nothing at all.
+        """
+        drop = self._raw_drop()
+        routed = self._note("routed.md", DIRECTIVE_N, "payload")
+
+        self.assertEqual(self.mod.main(), 0)
+
+        raw = self.outbox / "raw"
+        self.assertFalse((raw / "sent").exists(),
+                         "the flush created a sent/ inside the daemon's input queue")
+        self.assertEqual([], [p.name for p in raw.iterdir() if p.is_dir()],
+                         "raw/ holds drops only; no directory belongs in it")
+        self.assertTrue(drop.exists(), "the raw drop must survive untouched")
+        self.assertTrue((self.outbox / "sent" / routed.name).exists(),
+                        "the routed note was not archived, so the negative "
+                        "assertion above proves nothing")
+
     # Injected, never read from the shipped daemon-config.json, so the staleness
     # ceiling a case relies on cannot change under it (R21 in spirit).
     LOCK_FIXTURE = {"lock": {"stale_after_s": 300.0,

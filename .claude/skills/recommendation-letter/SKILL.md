@@ -2,8 +2,9 @@
 name: recommendation-letter
 description: >
   Generate support, recommendation, appreciation, acceptance, and dispense
-  (short-stay invitation) letters for students and candidates of Prof. Martin
-  Otis / LAR.i, in LaTeX compiled to PDF. Ingests the candidate's own files
+  (short-stay invitation) letters for a supervisor's students and candidates,
+  in LaTeX compiled to PDF, signed by the active profile's author. Ingests the
+  candidate's own files
   (CV, transcript, project description, motivation letter) and highlights both
   the candidate's dossier and the professor's own experience with the
   candidate. Trigger on: recommendation letter, support letter, appreciation

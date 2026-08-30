@@ -46,12 +46,13 @@ Wired now:
 | `scopus.exclude_areas` | scopus-researcher: `AND NOT ( SUBJAREA(...) )` exclusion clause |
 | `scopus.relevance_signals` + `off_topic_flag` | scopus-researcher Step 3a topical-relevance check |
 | `framework_default` | scopus-researcher Step 1d.2 synthesis framework |
+| `author.letter` | recommendation-letter: WHO signs the letter. Read by `letter_identity.py`, which refuses by name when the block or one of its keys is absent rather than borrowing another profile's identity - signing a letter with someone else's name, laboratory and telephone number is a wrong answer that reads exactly like a right one. `profiles/_template.yaml` carries the full key list; a profile that never generates letters simply omits the block |
 
 Planned (fields exist in the schema, consumers not wired yet):
 
 | Field | Planned consumer |
 |---|---|
-| `author.*` | cover-paper, submit-checker |
+| `author.name` / `email` / `institution` / `department` | cover-paper, submit-checker (`author.letter` is wired, see above) |
 | `stats_profile` | extract-statistic (audit + mine) |
 | `course_context` | course authoring (null = none) |
 | `language` | manuscript + response language defaults |

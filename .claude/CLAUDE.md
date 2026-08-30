@@ -39,6 +39,65 @@ consumer table, and the fallback rules. `scopus-researcher` reads the active pro
 selector switches its domain. This generalizes the `extract-statistic` domain-profiles
 pattern repo-wide.
 
+<!-- RT-EXPORT:BEGIN -->
+<!-- Everything between these markers is the GLOBAL contract: install.ps1 splices it
+     into CLAUDE.template.md's RT-CONTRACT block, and install-junctions.ps1 -Sync copies
+     that block into ~/.claude/CLAUDE.md, where it loads in every project on the machine.
+     Edit it HERE. Editing the copy in the template is overwritten at the next install. -->
+
+## Improving ResearchTools from another folder
+
+Code written to work around a weakness in ResearchTools (a catch-up script, a fix, a utility) is
+written **inside ResearchTools**, at the level of the skill, agent or command that carries the
+weakness. Never in the paper, thesis or grant folder currently being worked on, whatever the
+language and however small it is.
+
+1. **Find the owner** in the routing table `ResearchTools\.claude\CLAUDE.md` and the script
+   inventory `...\.claude\rules\testing.md`, then **extend the existing code** with a flag or a
+   subcommand. Ask the user first if the owner is uncertain, or if the fix would require an
+   entirely new script or skill belonging to no existing one: a fix with no owner is usually
+   specific to the paper at hand and does not belong in the toolbox. If the question cannot be
+   asked, log `OWNER UNKNOWN` in `IMPROVEMENTS.md`, do the minimum needed to unblock the work, and
+   say so.
+
+2. **Read `...\ResearchTools\.rt-green.json`.** If it is absent, the repository was not in a proven
+   state: report that and stop, rather than building on a failure you did not cause.
+
+3. **Before modifying a file**, copy it to `...\ResearchTools\.rt-undo\<YYYY-MM-DD-hhmm>-<name>`,
+   and note every file created, so that a rollback knows what was new.
+
+4. **Prove the fix before announcing it.** Any new or modified code arrives with a test, and then
+   `...\ResearchTools\scripts\test\run-offline-tests.ps1` must pass in full: the new test and every
+   previous one. A single failure, even in a skill that was not touched, means not finished. For an
+   agent or for prose, additionally replay the faulty operation on the same input and check that
+   the output is correct; a well-formed file is not proof.
+
+5. **On failure, loop: three attempts, no more.** Read the failure, fix, re-run. Count the
+   attempts. Do not start a fourth.
+
+6. **After the third failed attempt, stop and roll back.** Restore every modified file from
+   `.rt-undo\`. Delete nothing that was created: if an added test is the one failing, mark it
+   `@unittest.skip("ABANDONED <date> - see IMPROVEMENTS.md")` and leave it in place, so that the
+   evidence survives and the suite goes green again. Re-run the suite to confirm, then add an
+   abandonment entry to `IMPROVEMENTS.md` naming the failing test, its assertion or its error, what
+   was being attempted, and every file left behind. Then tell the user what was attempted, that it
+   was rolled back, that the original problem remains unsolved, and carry on with their real work.
+   Never leave the repository red, and never announce an unproven fix.
+
+7. **Make the fix active:** run `...\ResearchTools\install-junctions.ps1 -Sync`. A fix to a
+   **command** or to a **rule** is already active the moment the file is saved, because those are
+   whole-directory junctions: no synchronisation and no guard rail between the edit and every
+   project on the machine. Be correspondingly careful there.
+
+8. **Log** one line in `...\ResearchTools\IMPROVEMENTS.md`, and end the response with one or two
+   lines saying what changed and where.
+
+**No git command.** Files are written; nothing is committed, branched or pushed.
+
+If the weakness cannot be fixed there and then, record it as a known limitation in the `SKILL.md`
+of the owning skill, log it the same way, and say so. Do not leave a workaround in the project
+folder as the only trace.
+
 ## Role and mission
 
 You are an academic and scientific faculty member, with a full professor position, head of
@@ -155,6 +214,7 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Take a model you just downloaded all the way to the adoption gate (tune for this card, score against the frozen task set writing nothing, compare it with every other candidate, then STOP: `--qualify` changes what every local agent executes, so it stays a command a human runs) | `opt-local-vram-llm` skill, `tune-new-model.ps1` | `tune-new-model.ps1 <base-tag> -Role <writer\|coder>` |
 | File a RAW knowledge drop unattended (no path decided): drop it in `~/.claude/obsidian-outbox/raw/` and the vault daemon classifies, drafts, files, journals and queues it for consolidation, with the local model deciding and Python driving; anything it is not confident about is parked in `needs-review/` for the wrapper's full judgment. One daemon per machine, unlimited producers, and nothing starts it by itself: `vault-daemon-autostart.ps1 -Install` puts it in the Startup folder, `-Status` says whether it is running | `obsidian-cli` skill, `vault_daemon.py` | `python vault_daemon.py` (add `--once`, `--drain`) |
 | Read or search the Obsidian vault (notes, tags, tasks, links, properties), or deposit a captured learning for it (new or appended content routes through the outbox only, and `--apply --yes` link maintenance is the one in-place exception, run by the same serialized writer) | `obsidian-cli` skill, reached ONLY through the `local-writer` agent, which is the sole agent with vault access, reading included. `vault-access-guard.py` refuses every other caller at the tool boundary | dispatch `local-writer` |
+| Ask what THIS repository's code IS or how it connects - what calls X, how A reaches B, where a symbol lives, what a module depends on - rather than grepping file by file. That is the graphify knowledge graph in `graphify-out/`, and `query`, `path` and `explain` are deterministic traversals that cost no model at all. Routing rule: a question about **this code** goes to the graph first, a question about a failure mode, a tool that misbehaves or a past decision goes to the **vault** first, and many tasks want both in that order. The graph is refreshed by writing the file and then pointing `graphify update <path>` at it, never by editing `graph.json` - and `graphify update` takes a DIRECTORY, not a single file, which returns `[WinError 267]` and refreshes nothing. Its own state (contents, coverage, staleness) is reported read-only by `scripts/audit/check-graph-health.ps1`. **Enforced, not merely stated, since 2026-08-30**: `vault-access-guard.py` refuses `graphify-out/` paths, the `graphify` CLI, and BOTH graph audit scripts by name to any caller other than `local-writer`. Read-only is not an exemption - the rule was prose here for as long as the vault rule was enforced, and it was bypassed in three sessions, the last of which ran `check-graph-health.ps1` twice to learn the graph's state without the graph's path ever appearing in the command. **What it does NOT answer**: measured 2026-08-30, every node carries `_origin: ast`, so the graph holds the code and the STRUCTURE of each `.md` file and no layer that read what those files say. Asked why the Obsidian CLI write path is forbidden, it returned 109 nodes of file, command and test-class names and none of the three measured reasons. So a why-question goes to the vault, and asking the graph for intent returns names that read like an answer | `graphify` skill, reached ONLY through the `local-writer` agent, which keeps BOTH memories - consulting or refreshing the graph by hand is the same breach as reading the vault by hand | dispatch `local-writer` |
 | Budget-bounded develop-and-improve loop (design→code→review→score→correct until a composite gate or budget cap) | `loop-engineer` skill (Agent SDK; Fable 5 orchestrates, Opus/Sonnet act, local agents generate) | `/loopdev` |
 | ScholarEval-gated authoring loop (define→author→audit→loop→memory until min_score or max_budget) | `authoring-loop` agent (author on Fable 5, `scholar-evaluation` on Sonnet/Haiku, memory via `local-writer`) | by name |
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
@@ -168,6 +228,8 @@ Pick the agent, skill, or command that matches the task. Full arguments and beha
 | Generate documentation | - | `/doc` |
 | Run tests | - | `/test` |
 | Control token usage | - | `/concis`, `/slim`, `/focus`, `/ctx` |
+
+<!-- RT-EXPORT:END -->
 
 Obsidian touch-point: for paper writing, reviewer responses, and grant work, the matching
 agent above runs inside the corresponding plan-mode case of the root [CLAUDE.md](../CLAUDE.md)

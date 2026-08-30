@@ -47,6 +47,8 @@ Write-Host "=== setup.ps1 -InstallDaemon ===" -ForegroundColor Cyan
 # The real Startup folder, recorded BEFORE anything runs. Two incidents in this
 # repository's history came from a test that reached the real target it was meant
 # to be protecting, so the precondition is captured first and asserted last.
+$vaultVarBefore = [Environment]::GetEnvironmentVariable("OBSIDIAN_VAULT", "User")
+
 $Startup      = [Environment]::GetFolderPath("Startup")
 $RealShortcut = Join-Path $Startup "ResearchTools vault daemon.lnk"
 $startupBefore = @(Get-ChildItem $Startup -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join "|"
@@ -125,6 +127,55 @@ $warned = Install-RtVaultDaemon -RepoRoot $Fake -Vault "D:\MyVault" 6>&1 | Out-S
 Check "user scope unset: warns about USER scope" ($warned -match "USER scope")
 Check "user scope unset: still installs"         (Test-Path $markerFile)
 
+
+# --------------------------------------------- U8: OBSIDIAN_VAULT at USER scope ---
+# Resolve-RtVaultEnvironmentAction is pure: injected values only, no environment
+# read and no environment write. Set-RtVaultEnvironment is the one function that
+# can write, and this file never calls it - which is why the two are separate.
+$dNone = Resolve-RtVaultEnvironmentAction -Vault "" -CurrentUserScope "" -PathExists $false
+Check "U8 no vault is not an error"              ($dNone.Action -eq "no-vault")
+
+# Validation comes BEFORE the comparison: a stored path to nothing produces a daemon
+# that starts at login, finds nothing and exits invisibly.
+$dMissing = Resolve-RtVaultEnvironmentAction -Vault "D:\Gone" -CurrentUserScope "" -PathExists $false
+Check "U8 a path that does not exist is refused" ($dMissing.Action -eq "missing-path")
+Check "U8 the refusal names the path"            ($dMissing.Message -match ([regex]::Escape("D:\Gone")))
+
+# A missing path is refused even when the variable is unset, so the refusal cannot be
+# read as "there was nothing there anyway".
+$dMissingSet = Resolve-RtVaultEnvironmentAction -Vault "D:\Gone" -CurrentUserScope "D:\Old" -PathExists $false
+Check "U8 missing path beats a stored value"     ($dMissingSet.Action -eq "missing-path")
+
+$dSet = Resolve-RtVaultEnvironmentAction -Vault "D:\MyVault" -CurrentUserScope "" -PathExists $true
+Check "U8 unset + valid path means set"          ($dSet.Action -eq "set")
+
+# Add-only. This is the branch this machine takes, and the one that matters: a value
+# already stored is REPORTED and left alone.
+$dKeep = Resolve-RtVaultEnvironmentAction -Vault "D:\New" -CurrentUserScope "D:\Old" -PathExists $true
+Check "U8 an existing value is kept"             ($dKeep.Action -eq "keep")
+Check "U8 the keep names the stored value"       ($dKeep.Message -match ([regex]::Escape("D:\Old")))
+Check "U8 the keep names how to override"        ($dKeep.Message -match "-Force")
+
+$dSame = Resolve-RtVaultEnvironmentAction -Vault "D:\Same" -CurrentUserScope "D:\Same" -PathExists $true
+Check "U8 an identical value is a no-op"         ($dSame.Action -eq "same")
+
+# Confirmation is the ONLY way a stored value is repointed, and only with a real path.
+$dRepl = Resolve-RtVaultEnvironmentAction -Vault "D:\New" -CurrentUserScope "D:\Old" -PathExists $true -Confirmed
+Check "U8 confirmed replaces"                    ($dRepl.Action -eq "replace")
+$dReplBad = Resolve-RtVaultEnvironmentAction -Vault "D:\Gone" -CurrentUserScope "D:\Old" -PathExists $false -Confirmed
+Check "U8 confirmation cannot store a bad path"  ($dReplBad.Action -eq "missing-path")
+
+# Whitespace is not a value in either position.
+$dBlank = Resolve-RtVaultEnvironmentAction -Vault "   " -CurrentUserScope "" -PathExists $true
+Check "U8 whitespace is not a vault"             ($dBlank.Action -eq "no-vault")
+$dWsCur = Resolve-RtVaultEnvironmentAction -Vault "D:\MyVault" -CurrentUserScope "   " -PathExists $true
+Check "U8 whitespace stored value counts unset"  ($dWsCur.Action -eq "set")
+
+# -Preview must write nothing even on the branch that would.
+$prev = Set-RtVaultEnvironment -Decision $dSet -Vault "D:\MyVault" -Preview 6>&1 | Out-String
+Check "U8 -Preview says it would set"            ($prev -match "Would set")
+Check "U8 -Preview did not write"                ([Environment]::GetEnvironmentVariable("OBSIDIAN_VAULT", "User") -eq $vaultVarBefore)
+
 # ------------------------------------------------------- setup.ps1 wiring ------
 # Static, because running setup.ps1 means prompts and template writes. These guard
 # the four points where the switch could be silently dropped.
@@ -135,10 +186,39 @@ Check "setup.ps1 documents the switch"           ($setup -match ([regex]::Escape
 $allBlock = $setup.Substring($setup.IndexOf('if ($All) {'))
 Check "-All calls the daemon step"               ($allBlock -match "Invoke-DaemonScript")
 
+# U8: the offer has to happen BEFORE the Startup entry is created, or the warning
+# fires on a machine this very run just fixed.
+Check "setup.ps1 offers the vault variable"      ($setup -match "Invoke-VaultEnvironment")
+$daemonFn = $setup.Substring($setup.IndexOf("function Invoke-DaemonScript {"))
+$daemonFn = $daemonFn.Substring(0, $daemonFn.IndexOf("Set-InstallerExit"))
+Check "the offer precedes the daemon install"    ($daemonFn.IndexOf("Invoke-VaultEnvironment") -lt $daemonFn.IndexOf("Install-RtVaultDaemon"))
+
+# U9
+Check "setup.ps1 declares -InstallPython"        ($setup -match '\[switch\]\$InstallPython')
+Check "setup.ps1 loads rt-python-env.ps1"        ($setup -match ([regex]::Escape("rt-python-env.ps1")))
+Check "-All creates the Python environment"      ($allBlock -match "Invoke-PythonEnvironment")
+
+# U13: no Read-Host may survive, or -NonInteractive is decorative.
+Check "setup.ps1 declares -NonInteractive"       ($setup -match '\[switch\]\$NonInteractive')
+# Exactly ONE Read-Host may remain, inside the wrapper. Asserting zero would fail on
+# the wrapper itself; asserting "contains Read-RtAnswer" would pass while a bare
+# prompt sat beside it. The count is what actually binds.
+# Comment lines are excluded: the wrapper's own header explains the defect by name,
+# and counting raw text occurrences would make that explanation fail the check.
+$readHosts = @(Get-Content (Join-Path $RepoRoot "setup.ps1") -Encoding UTF8 |
+    Where-Object { $_ -match 'Read-Host' -and $_.TrimStart() -notmatch '^#' }).Count
+Check "exactly one Read-Host call, in the wrapper" ($readHosts -eq 1)
+$wrapper = $setup.Substring($setup.IndexOf("function Read-RtAnswer {"))
+$wrapper = $wrapper.Substring(0, $wrapper.IndexOf("function Invoke-PythonEnvironment"))
+Check "the one Read-Host is inside Read-RtAnswer" ($wrapper -match 'Read-Host')
+Check "every prompt goes through the wrapper"    (([regex]::Matches($setup, 'Read-RtAnswer ')).Count -ge 4)
+Check "the wrapper refuses with exit 2"          ($setup -match ([regex]::Escape("exit 2")))
+
 # ------------------------------------------------- the professor's own profile ---
 $startupAfter = @(Get-ChildItem $Startup -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join "|"
 Check "real Startup folder unchanged"            ($startupAfter -eq $startupBefore)
 Check "no real Startup shortcut created"         ((Test-Path $RealShortcut) -eq $shortcutBefore)
+Check "live OBSIDIAN_VAULT untouched"            ([Environment]::GetEnvironmentVariable("OBSIDIAN_VAULT", "User") -eq $vaultVarBefore)
 
 Remove-Item $Fake -Recurse -Force -ErrorAction SilentlyContinue
 

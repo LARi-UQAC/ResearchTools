@@ -6,9 +6,9 @@ sections apply to all academic work.
 
 ## Rule identifiers
 
-The numbered rules `R0` to `R24` are workspace-wide and stable; cite them by number in a
+The numbered rules `R0` to `R25` are workspace-wide and stable; cite them by number in a
 review, a commit message, or an audit plan. Each lives in the file that enforces it: `R0`
-to `R13`, `R16`, `R17` and `R19` in this file, `R14`, `R15`, `R22` and `R23` in
+to `R13`, `R16`, `R17` and `R19` in this file, `R14`, `R15`, `R22`, `R23` and `R25` in
 `preferences.md`, `R18` in `workflows.md`, `R20` and `R21` in `testing.md`, `R24` in
 `security.md`. They are unrelated to the `R1.x` sentence rules of the `scientific-writing`
 skill's `composition_rules.md`, which govern prose rather than code.

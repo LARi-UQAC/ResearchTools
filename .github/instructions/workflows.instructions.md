@@ -75,7 +75,9 @@ LaTeX boundary: `local-writer` may add `%` comments in a `.tex` file but never a
 LaTeX or scientific prose - that stays with `latex-writer` + `scientific-writing` on the
 latest cloud Claude model.
 
-Obsidian rule: during a loop, `local-writer` is the single serialized vault writer and
+Memory rule, both memories: during a loop, `local-writer` is the single serialized writer of the
+vault AND the single caller allowed to consult or refresh the graphify graph, both enforced by
+`vault-access-guard.py` at the tool boundary. For the vault specifically, `local-writer` and
 `local-coder` reads only (task start, checkpoints, error recovery); plan-time reads are baked in
 by `brainstorming` / `writing-plans`. Requires Obsidian open with the CLI on; deferred writes
 flush via the outbox hook. Full design in [../../docs/contributor-notes.md](../../docs/contributor-notes.md)

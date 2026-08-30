@@ -33,6 +33,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import daemon_states as ds  # noqa: E402
+import outbox_io  # noqa: E402
 import vault_journal  # noqa: E402
 from daemon_states import ob  # noqa: E402
 
@@ -78,7 +79,7 @@ def phantom_report(vault: Path, timeout_s: float) -> dict:
         [sys.executable, str(CONSOLIDATE), "--vault", str(vault), "--mode", "links"],
         capture_output=True, text=True, timeout=timeout_s)
     if result.returncode != 0:
-        raise ds.EventRefused(f"link audit failed: {result.stderr.strip()[:200]}")
+        raise ds.EventRefused(f"link audit failed: {outbox_io.tail(result.stderr)}")
     try:
         return json.loads(result.stdout).get("phantoms", {})
     except ValueError as exc:

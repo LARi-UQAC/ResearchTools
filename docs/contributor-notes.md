@@ -310,7 +310,92 @@ bills the full `prompt_eval_count` either way (2186 on both calls); prefill dura
 only exposed signal, and it needs a CONTROL call on a prefix never seen to separate it from
 machine load. Measured ratio 0.23, 635 ms against 2741 ms.
 
-## 6. Keeping this file alive
+## 6. The graphify code graph (the second memory)
+
+Section 5 covers the vault, which holds what has been **learned**. This section covers the graph,
+which holds what this repository's code **is**. They are governed identically and they answer
+different questions; the parity is deliberate, and until 2026-08-30 only the vault half of it was
+enforced.
+
+| | graphify graph | Obsidian vault |
+|---|---|---|
+| Holds | the structure of this repository, as its files are now | what has been learned, across every project |
+| Derives from | the files, so it is regenerable and disposable | experience, not derivable from any repository |
+| Scope | one project, `graphify-out/graph.json` | the whole machine, the PARA tree |
+| Answers | "what calls X", "how does A reach B", "where does this symbol live" | "have I hit this before", "why was this decided" |
+| Lifetime | rebuilt whenever files change | permanent, consolidated, curated |
+
+**Routing.** A question about *this code* goes to the graph first. A question about a failure
+mode, a tool that misbehaves, or a past decision goes to the vault first. Many tasks want both, in
+that order.
+
+**Who may touch it: `local-writer`, and nobody else.** Same rule as the vault, same agent, and
+since 2026-08-30 the same hook. `vault-access-guard.py` refuses three things to every other
+caller:
+
+| Refused | Why |
+|---|---|
+| a `graphify-out/` path | the graph's storage, matched wherever it appears, exactly like the vault root |
+| the `graphify` CLI **at command position** | a chained `cd ... && graphify update` is an access; `grep graphify` is not, and matching the bare word would refuse every search of the documentation |
+| `check-graph-health.ps1` and `verify-graph-health.ps1` **by name** | they read `graph.json` on the caller's behalf, so the graph's own path never appears in the command |
+
+That third row is the one worth understanding, because it is the case that actually happened. The
+rule was prose here while the vault's was mechanical, and it was bypassed in three sessions; in
+the last, a session ran a *read-only health check* twice to learn the graph's state. A guard
+matching only the path would have caught none of the three. This is the 2026-08-27 vault lesson
+one level up: back then the rule was phrased per COMMAND and `cat`, `grep` and a Python script
+walked through it, so it was rephrased per PATH - and a per-path rule is then walked through by a
+wrapper. Name the resource, its tools, **and** the scripts that read it for you.
+
+The script names are matched inside an executed command only, never against a path argument, so
+editing or reading those scripts stays open to everyone. Running one is a consultation;
+maintaining one is not. Four negative controls in
+`.claude/hooks/Test/test_vault_access_guard.py` keep the guard from firing on prose, because one
+that does gets switched off, after which nothing is enforced at all.
+
+**Consulting costs no model.** `graphify query "<question>" --budget 7000`, and `path` and
+`explain`, are deterministic traversals of `graph.json`. Prefer one query to a `grep` file by
+file. Respect the CLI's truncation warning: it says how many nodes were cut, and the answer is
+often among them.
+
+**Refreshing takes a DIRECTORY, not a file.** Write the file, then point `graphify update` at the
+directory that contains it, or at the repository root. Measured 2026-08-30: a single file path
+returns `[WinError 267] Nom de répertoire non valide` and refreshes nothing while appearing to
+succeed. That failure was twice mis-diagnosed the same day, once as "PowerShell is not supported"
+and once as "spaces in the repository path break the CLI"; both were wrong, and the graph itself
+disproved the first - it already held 127 nodes extracted from `.ps1` files. Verify a refresh by
+its effect, the node and link counts and the file's timestamp, never by the exit code. Never edit
+`graph.json` directly.
+
+Pointing the CLI at a subdirectory builds a *separate* graph there, which is how
+`scripts/lib/graphify-out/` and `scripts/test/graphify-out/` came to exist. They are gitignored
+and harmless, but the convention is one graph per repository, and a later `graphify query` aimed
+at such a subdirectory would silently read a partial graph.
+
+**An AST refresh over code is free; a semantic pass is a model call.** Say so rather than starting
+one silently. Measured 2026-08-30: every node in this repository's graph carries `_origin: ast`
+and always has, so there is no semantic layer to keep current - building one is a deliberate,
+token-costing decision, not a debt this repository is carrying.
+
+**What the graph does not answer.** Because it is AST-only, it holds the code and the *structure*
+of each `.md` file - headings, names, where things live - and no layer that read what those files
+say. Asked why the Obsidian CLI write path is forbidden, it returned 109 nodes of file, command
+and test-class names and none of the three measured reasons. A why-question goes to the vault. The
+failure mode that actually hurts here is not an empty answer, it is a confident one.
+
+**The skill is not shipped here.** `graphify` is installed per machine
+(`uv tool install graphifyy`) and its skill belongs to that installation. A copy was vendored into
+`.claude/skills/` on 2026-08-30 and removed the same day: a copy of a CLI's skill without the CLI
+is instructions for an absent tool, and it creates a second source that drifts. The same applies
+to any skill an enabled plugin delivers.
+
+**Its own state is reported, read-only, by** `scripts/audit/check-graph-health.ps1`: contents,
+what it claims to cover and produced no node for, and whether any covered file is newer than the
+graph. Staleness is the one finding that exits non-zero; AST-only is a note, not a failure,
+because that is the intended shape here and a check permanently red for a reason nobody intends to
+fix gets switched off. Dispatch `local-writer` to run it.
+
+## 7. Keeping this file alive
 
 When you (or an assistant) learn a durable, non-obvious project fact - a convention, an
 environment constraint, a gotcha - record it **here**, in the repo, not only in a personal

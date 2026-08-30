@@ -280,7 +280,9 @@ instead of failing or appending. Consequence: `create`, `append`, and `prepend` 
 commands (decision D3), at the same level as `eval`, `dev:*`, `plugin:install`,
 `theme:install`, and `sync*` (except the read-only `sync:history`).
 
-Full design and rationale: [docs/contributor-notes.md](../docs/contributor-notes.md) section 5.
+Full design and rationale: [docs/contributor-notes.md](../docs/contributor-notes.md) section 5
+for the vault, and section 6 for the graphify code graph, which is governed identically and
+guarded by the same hook.
 
 ## Agent pipeline integrity
 

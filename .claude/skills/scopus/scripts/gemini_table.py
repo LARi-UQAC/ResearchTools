@@ -124,7 +124,9 @@ def enrich(axes: dict, model: str, temperature: float, max_input_tokens: int) ->
     if over_budget(prompt):  # then drop free-text context
         prompt = _build_prompt(axes, terse=True, refs_detail=False, include_context=False)
 
-    return run_gemini(prompt, model, temperature, max_output_tokens)
+    # expand=False: the reviewer key map must not touch this schema. The `cells` keys are the
+    # table's own concept names, so a column named 'c', 'm' or 'type' would be renamed.
+    return run_gemini(prompt, model, temperature, max_output_tokens, expand=False)
 
 
 def _load_axes(args) -> dict:

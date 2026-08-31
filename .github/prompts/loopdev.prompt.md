@@ -20,8 +20,9 @@ Procedure:
 1. Parse `the file(s) or topic given after the command in the chat message (if none was given, use the file currently open in the editor)` for the flags and the feature request. `--budget` is required; refuse to
    start without it (no silent unbounded spend). Defaults: `--score 90`, `--max-iters 10`,
    `--patience 2`.
-2. Confirm the environment: Ollama running with the local models (`ollama list`; falls back to
-   `qwen2.5-coder:7b` until the 9B models are imported), and the review plugins installed. The
+2. Confirm the environment: Ollama running with the local models (`ollama list`, and
+   `model_resolver.py --resolve --role <writer|coder>` naming a qualified tag for each role -
+   there is no fallback tag, an unqualified role is a stop), and the review plugins installed. The
    Agent SDK runs on your subscription auth - no gateway, no API key.
 3. Run the driver:
    ```

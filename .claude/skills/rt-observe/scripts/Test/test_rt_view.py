@@ -321,6 +321,150 @@ class PageContract(unittest.TestCase):
                     self.assertGreaterEqual(int(literal.group(1)), 10)
 
 
+class TabbedLayout(unittest.TestCase):
+    """Phase 9. The sheet became two independent tab strips and stopped
+    scrolling, and both claims are checked here as cannot-disagree comparisons
+    between the markup and the script beside it.
+
+    What a browser proves - that nothing actually overflows at 385, 768, 1080,
+    1440 and 1920 - was measured with Playwright when the phase landed. What it
+    cannot prove is that a later edit will not quietly drop a panel out of every
+    strip, which is the failure this class exists to catch: a panel with no tab
+    is not a smaller dashboard, it is a dashboard that answers a question it no
+    longer asks."""
+
+    def setUp(self):
+        self.page = read(PAGE)
+        # The BODY only. Cutting at <body> keeps a CSS selector such as
+        # .tab[aria-selected="true"] out of the element count, and cutting at
+        # the config block keeps an id mentioned in a JS string from being read
+        # as an element that exists.
+        self.markup = self.page.split("<body>")[1].split(
+            '<script id="rt-view-config"')[0]
+        self.script = re.search(r"<script>\n(.*?)</script>",
+                                self.page, re.S).group(1)
+
+    def _ids(self):
+        return set(re.findall(r'\bid="([a-z0-9-]+)"', self.markup))
+
+    def test_every_view_tab_has_a_pane_and_every_pane_a_tab(self):
+        tabs = re.findall(r'data-view="([a-z]+)"', self.markup)
+        panes = re.findall(r'id="pane-([a-z]+)"', self.markup)
+        self.assertTrue(tabs, "no view tab found; the finder is broken")
+        self.assertEqual(tabs, panes,
+                         "the view strip and the panes disagree, in content or "
+                         "in order")
+        listed = re.search(r"var VIEW_TABS = \[(.*?)\];", self.script)
+        self.assertIsNotNone(listed, "VIEW_TABS is not declared")
+        self.assertEqual(tabs, re.findall(r'"([a-z]+)"', listed.group(1)),
+                         "the script switches tabs the markup does not carry")
+
+    def test_the_rail_strip_and_the_rail_renderer_name_the_same_panels(self):
+        """The rail's six panels are named in two places - the static buttons
+        and the renderer list. A third copy is how a tab starts pointing at a
+        panel nobody builds, so the two that remain are compared."""
+        buttons = re.findall(r'data-rail-tab="([a-z]+)"', self.markup)
+        self.assertEqual(6, len(buttons), "expected six rail tabs")
+        declared = re.findall(r'\{ id: "([a-z]+)", label:', self.script)
+        self.assertEqual(buttons, declared,
+                         "the rail strip and RAIL_TABS disagree")
+        for name in buttons:
+            with self.subTest(tab=name):
+                self.assertIn('id="rtab-%s"' % name, self.markup,
+                              "the script looks up rtab-%s by id" % name)
+
+    def test_no_panel_was_dropped_in_the_move_to_tabs(self):
+        """Every host the renderers write into still exists. A missing one is a
+        silent panel: `getElementById` returns null, the render returns early,
+        and the tab shows an empty box with no error anywhere."""
+        hosts = ["mx-scroll", "mx-legend", "mx-detail", "mx-receipt", "mx-note",
+                 "mx-filter", "fanout", "fleet", "fleet-note", "rail", "foot",
+                 "head-id", "head-verdict", "theme", "theme-now", "tip"]
+        present = self._ids()
+        for host in hosts:
+            with self.subTest(host=host):
+                self.assertIn(host, present,
+                              "%s no longer exists in the markup" % host)
+
+    def test_the_finder_for_a_dropped_panel_can_actually_fail(self):
+        """The negative control. Without it the case above passes on a page
+        whose ids it never managed to read."""
+        self.assertNotIn("mx-scroll-that-never-existed", self._ids())
+        self.assertTrue(self._ids(), "no ids parsed at all")
+
+    def test_the_tab_strips_are_wired_for_a_screen_reader(self):
+        for strip in ("view-tabs", "rail-tabs"):
+            with self.subTest(strip=strip):
+                self.assertRegex(self.markup,
+                                 r'role="tablist"[^>]*id="%s"' % strip)
+        self.assertEqual(len(re.findall(r'role="tab"', self.markup)),
+                         len(re.findall(r'aria-selected=', self.markup)),
+                         "every tab carries aria-selected and nothing else does")
+        ids = self._ids()
+        for target in re.findall(r'aria-controls="([a-z0-9-]+)"', self.markup):
+            with self.subTest(target=target):
+                self.assertIn(target, ids,
+                              "aria-controls points at %s, which does not exist"
+                              % target)
+        panels = re.findall(r'role="tabpanel"', self.markup)
+        self.assertEqual(5, len(panels),
+                         "four view panes plus the rail are tab panels")
+
+    def test_which_tab_is_in_front_is_a_wrapped_per_viewer_convenience(self):
+        """Same contract as the theme control: a browser that blocks storage
+        THROWS on read, and a tab strip must never break the page it sits on."""
+        for key in ('VIEW_KEY = "rt-observe-view"',
+                    'RAIL_KEY = "rt-observe-rail"'):
+            with self.subTest(key=key):
+                self.assertIn(key, self.script)
+        for name in ("storedChoice", "remember"):
+            body = re.search(r"function %s\(.*?\n\}" % name, self.script, re.S)
+            self.assertIsNotNone(body, "%s is not declared" % name)
+            with self.subTest(name=name):
+                self.assertIn("try {", body.group(0))
+                self.assertIn("catch (error)", body.group(0))
+                self.assertIn("localStorage", body.group(0))
+
+    def test_the_tab_state_never_lives_in_the_morphed_markup(self):
+        """The rail is rebuilt on every poll. The active panel is stamped on the
+        STAGED node inside renderRail, so the morph carries it; an attribute
+        written after the morph would survive exactly one poll."""
+        body = re.search(r"function renderRail\(state\) \{(.*?)\n\}",
+                         self.script, re.S).group(1)
+        self.assertLess(body.index("panel.dataset.active"),
+                        body.index("morph(document.getElementById"),
+                        "the active panel must be stamped before the morph")
+        self.assertIn("railPlaceholder", self.script)
+
+    def test_the_page_itself_cannot_scroll(self):
+        """The acceptance test of this phase, in its structural half: the sheet
+        is the viewport and every overflow is handed to a pane. Measured in a
+        browser as well - this is what keeps it true after the next edit."""
+        self.assertIn("html, body { height: 100%; overflow: hidden; }",
+                      self.page)
+        for rule in (".pane .panel-body { flex: 1; min-height: 0; overflow: auto; }",
+                     "#rail { flex: 1; min-height: 0; overflow-y: auto; }"):
+            with self.subTest(rule=rule[:28]):
+                self.assertIn(rule, self.page)
+        self.assertNotIn("max-height: calc(100vh", self.page,
+                         "a viewport-height cap inside a bounded pane can only "
+                         "disagree with the pane")
+
+    def test_the_canvas_is_never_solved_for_a_pane_that_is_not_on_screen(self):
+        """A hidden element measures zero wide. Solved there, the layout would
+        be cached under a shape describing no width and reused when the tab came
+        back, which is a diagram drawn for a window that never existed."""
+        canvas = re.search(r"function renderCanvas\(state\) \{(.*?)\n\}",
+                           self.script, re.S).group(1)
+        self.assertLess(canvas.index("getClientRects"),
+                        canvas.index("getBoundingClientRect"),
+                        "the visibility guard must come before any measurement")
+        apply_view = re.search(r"function applyViewTab\(\) \{(.*?)\n\}",
+                               self.script, re.S).group(1)
+        self.assertIn("sim.shape = null", apply_view)
+        self.assertIn("renderCanvas(lastState)", apply_view)
+
+
 class ServedPage(unittest.TestCase):
     """The server's own handling of the page, with no socket involved."""
 

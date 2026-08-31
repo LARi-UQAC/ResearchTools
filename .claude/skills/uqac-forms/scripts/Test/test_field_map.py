@@ -13,6 +13,7 @@ Run with the project Python:
     python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
 """
 
+import copy
 import os
 import sys
 import tempfile
@@ -264,7 +265,8 @@ class TestDiffWidgets(unittest.TestCase):
         before = [self.w("Nom"), self.w("Date")]
         self.assertEqual(
             field_map.diff_widgets(before, list(before)),
-            {"added": [], "removed": [], "relocated": [], "retyped": []})
+            {"added": [], "removed": [], "relocated": [], "retyped": [],
+             "restated": []})
 
     def test_added_and_removed(self) -> None:
         result = field_map.diff_widgets([self.w("Nom")], [self.w("Date")])
@@ -299,12 +301,41 @@ class TestDiffWidgets(unittest.TestCase):
     def test_empty_inputs_are_handled(self) -> None:
         self.assertEqual(
             field_map.diff_widgets([], []),
-            {"added": [], "removed": [], "relocated": [], "retyped": []})
+            {"added": [], "removed": [], "relocated": [], "retyped": [],
+             "restated": []})
 
     def test_names_differing_only_by_a_trailing_space_are_two_fields(self) -> None:
         result = field_map.diff_widgets([self.w("Nom")], [self.w("Nom ")])
         self.assertEqual(result["added"], ["Nom "])
         self.assertEqual(result["removed"], ["Nom"])
+
+
+    def test_a_renamed_on_state_is_restated(self) -> None:
+        # Without this, /Oui becoming /Yes changes no name, page or type, so the
+        # drift check passes it and every later fill leaves the box unchecked.
+        before = [{**self.w("accepte", "checkbox"), "on_states": ["Oui"]}]
+        after = [{**self.w("accepte", "checkbox"), "on_states": ["Yes"]}]
+        result = field_map.diff_widgets(before, after)
+        self.assertEqual(result["restated"], ["accepte"])
+        self.assertEqual(result["added"], [])
+        self.assertEqual(result["removed"], [])
+
+    def test_an_unchanged_on_state_is_not_restated(self) -> None:
+        before = [{**self.w("accepte", "checkbox"), "on_states": ["Oui"]}]
+        self.assertEqual(
+            field_map.diff_widgets(before, copy.deepcopy(before))["restated"], [])
+
+    def test_on_state_order_is_not_a_rename(self) -> None:
+        before = [{**self.w("t", "radio"), "on_states": ["Avion", "Train"]}]
+        after = [{**self.w("t", "radio"), "on_states": ["Train", "Avion"]}]
+        self.assertEqual(field_map.diff_widgets(before, after)["restated"], [])
+
+    def test_the_stored_text_column_compares_equal_to_the_widget_list(self) -> None:
+        # TT-8 stores on_states as a text column; RT-2 returns a list. The same
+        # states in either shape must not read as a rename.
+        before = [{**self.w("t", "radio"), "on_states": "Avion, Train"}]
+        after = [{**self.w("t", "radio"), "on_states": ["Train", "Avion"]}]
+        self.assertEqual(field_map.diff_widgets(before, after)["restated"], [])
 
 
 if __name__ == "__main__":

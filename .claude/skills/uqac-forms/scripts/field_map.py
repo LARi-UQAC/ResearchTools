@@ -22,10 +22,9 @@ official form goes wrong:
   /Yes to a box whose on-state is /Oui leaves it silently unchecked on a
   document that then looks complete.
 
-diff_widgets returns the four keys TT-8's diffWidgets returns in Node
+diff_widgets returns the five keys TT-8's diffWidgets returns in Node
 (api/_lib/drift.js), with the same meanings, so a drift report reads the same
-whichever side computed it. Neither side diffs on_states today; see the plan's
-Open items.
+whichever side computed it.
 """
 
 import io
@@ -207,6 +206,28 @@ def dump_widgets(pdf: str | bytes) -> list[dict[str, Any]]:
     return widgets
 
 
+def _canonical_states(value: Any) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Reduce on-states to one comparable form. They arrive either as the list
+        this module returns or as the comma-separated text column TT-8 stores,
+        so comparing them directly would report a rename that is only a
+        difference of representation.
+
+    Inputs:
+        value (Any): a list of state names, a comma-separated string, or None
+
+    Outputs:
+        canonical (str): the state names, trimmed, sorted and comma-joined
+    --------------------------------------------------------------------------
+    """
+    if value is None:
+        return ""
+    items = value if isinstance(value, (list, tuple)) else str(value).split(",")
+    return ",".join(sorted(s for s in (str(i).strip() for i in items) if s))
+
+
 def diff_widgets(before: list[dict[str, Any]],
                  after: list[dict[str, Any]]) -> dict[str, list[str]]:
     """
@@ -238,4 +259,13 @@ def diff_widgets(before: list[dict[str, Any]],
             n for n in both if int(new[n].get("page") or 0) != int(old[n].get("page") or 0)),
         "retyped": sorted(
             n for n in both if str(new[n].get("type")) != str(old[n].get("type"))),
+        # A checkbox is checked by writing its own on-state. If UQAC renames
+        # that state from /Oui to /Yes, nothing above notices: name, page and
+        # type are unchanged. Every later fill would then write a value the
+        # widget does not accept and leave the box unchecked on a form that
+        # looks complete.
+        "restated": sorted(
+            n for n in both
+            if _canonical_states(new[n].get("on_states"))
+            != _canonical_states(old[n].get("on_states"))),
     }

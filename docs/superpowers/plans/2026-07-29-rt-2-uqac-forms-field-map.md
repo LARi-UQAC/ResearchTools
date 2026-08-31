@@ -120,12 +120,13 @@ One asymmetry is deliberate. Node compares stored rows (`fieldName`,
 lists, so both sides use `name` and `type`. The four output keys are identical,
 which is the part any consumer sees.
 
-**Known gap, recorded not fixed here.** Neither implementation diffs
-`on_states`, although TT-8 stores the column. A checkbox whose on-state is
-renamed from `/Oui` to `/Yes` therefore passes the drift check untouched, and
-every later fill leaves it unchecked on a form that looks complete. Extending
-the diff would change a contract TT-8 already consumes, so it is listed in Open
-items rather than added here on one side only.
+**Gap closed 2026-08-31, on both sides at once.** Neither implementation diffed
+`on_states`, although TT-8 stores the column, so a checkbox renamed from `/Oui`
+to `/Yes` passed the drift check untouched and every later fill left it
+unchecked on a form that looks complete. A fifth key, `restated`, was added here
+and in `api/_lib/drift.js` in the same session, and the two were checked against
+one another on identical input. Adding it to one side only would have recreated
+the divergence this section exists to prevent.
 
 ---
 

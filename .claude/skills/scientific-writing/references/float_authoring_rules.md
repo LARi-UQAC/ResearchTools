@@ -1,6 +1,6 @@
 # Float authoring rules (equations, tables, figures)
 
-Canonical, project-wide rules for every figure, table, and equation that the academic agents
+Canonical, project-wide rules for every figure, table, equation, and caption that the academic agents
 (scopus-auditor, paper-auditor, thesis-auditor, thesis-proposal-auditor, scopus-researcher,
 reviewer-response) ADD to a document or PRESCRIBE as a fix in an improvement plan. Source: the
 project `CLAUDE.md`.
@@ -18,6 +18,56 @@ explanation) is NON-COMPLIANT.
    prose is non-compliant. Place the float near its first mention: keep the environment within about
    100 lines of its `\ref{}` so it floats close to where it is introduced.
 3. Explanation — at least two sentences in the prose explain what the float shows and why it matters.
+
+## Captions (every figure, table, subfigure)
+
+- **C1 One sentence.** The `\caption{}` command contains exactly ONE short, meaningful sentence.
+  When subfigures are used, each subfigure `\caption{}` is likewise exactly one short, meaningful
+  sentence.
+- **C2 The sentence links the float to the text.** That single sentence states what the table or the
+  figure contains, in terms that connect it to the argument being made in the main text. A caption
+  that is only a noun phrase ("Results", "Comparison table") is non-compliant.
+- **C3 All explanation lives in the main text.** Every explanatory sentence about a figure or a table
+  is placed in the main text, next to the first `\ref{}` to that float. Explanation is never migrated
+  into the caption to shorten the prose. This supersedes the "comprehensive, self-explanatory caption"
+  guidance in `figures_tables.md`, which remains valid only for non-LaTeX media.
+- **C4 Details go in `tablenotes`.** When a cell, a column, or a claim of a table needs a
+  qualification, that qualification is placed in a `threeparttable` `tablenotes` block and anchored
+  with `\tnote{a}`, `\tnote{b}`, and so on, in `\footnotesize`. It is never appended to the caption.
+
+Compliant skeleton (the reference pattern for a wide comparison table):
+
+```latex
+\begin{table*}[!t]
+  \centering
+  \caption{Comparison of approach families against the proposed framework}
+  \label{tab:approach-comparison}
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{threeparttable}
+  \begin{tabular}{|p{4.5cm}|p{1.2cm}|p{2.4cm}|p{1.4cm}|p{2.7cm}|p{3.8cm}|}
+    \hline
+    \rowcolor[gray]{0.9}
+    \textbf{Approach family} & \textbf{Seq. planning} & \textbf{Energy model} & \textbf{Speed variability} & \textbf{Human factors / fatigue} & \textbf{Representative works} \\
+    \hline
+    \textbf{GA / metaheuristic DSP-DLB (battery)} & yes & constant rate\tnote{a} & no & partial (hazard, workload) & \cite{zhan2023goshawk, cong2022firework} \\
+    \hline
+    \textbf{Proposed (this work)\tnote{b}} & yes & dynamic $e_d(v,m)$ in objective & yes & fatigue-speed map, stations per operator & this work (variable-speed GA) \\
+    \hline
+  \end{tabular}
+  \begin{tablenotes}
+      \footnotesize
+      \item[a] Constant rate means the energy term enters the objective as a fixed per-task or per-time coefficient, whereas dynamic means the coefficient depends on the robot speed $v$ and the displaced mass $m$.
+      \item[b] Only the proposed framework combines a dynamics-integrated energy objective, mode-dependent variable speeds, fatigue-aware safety, and station-sizing statistics.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table*}
+```
+
+The preamble must load `\usepackage{threeparttable}` (and `\usepackage{xcolor}` plus
+`\usepackage{colortbl}` for `\rowcolor`). Note that in the skeleton the caption is one sentence, the
+two qualifications live in `tablenotes`, and the two explanatory sentences required by the Universal
+rules sit in the main text beside `\ref{tab:approach-comparison}`.
 
 ## Equations
 
@@ -157,6 +207,10 @@ For each float added or fixed, verify and resolve every miss, flagged
 - [ ] has `\label` using the naming convention (`fig:` / `tab:` / `eq:` + three hyphenated words)
 - [ ] cited in prose (equation: the citation appears BEFORE the equation), near its first mention
 - [ ] >= 2 explanatory sentences in prose
+- [ ] C1: `\caption{}` is exactly one short meaningful sentence (each subfigure caption likewise)
+- [ ] C2: the caption sentence states the content and links it to the main text argument
+- [ ] C3: no explanatory sentence was moved into the caption; all explanation sits beside the first `\ref{}`
+- [ ] C4: table qualifications are in a `threeparttable` `tablenotes` block with `\tnote{}` anchors, in `\footnotesize`
 - [ ] equation: numbered (no `equation*` / `align*` / `eqnarray*` / `\[ \]` for a referenced equation)
 - [ ] equation: every variable defined directly under it (or already defined earlier)
 - [ ] equation: `\text{,}` after the expression if a "where"/sentence continues, `\text{.}` if the sentence ends (amsmath, not a bare math-mode `,`/`.`)

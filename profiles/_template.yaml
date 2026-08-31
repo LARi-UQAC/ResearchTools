@@ -15,6 +15,23 @@ author:
   institution: "<university / org>"
   department: "<department>"
 
+  # Who signs a letter (wired consumer: recommendation-letter). Every value is
+  # written into the .tex AS IS, so escape &, %, _ and # yourself, and write a
+  # literal backslash as "\\" inside a double-quoted scalar. Lists render one
+  # line per entry, in order. Drop the whole block if you never generate
+  # letters: the skill then refuses to run rather than borrowing the identity
+  # of another profile.
+  letter:
+    letterhead_fr: ["<title + name>", "<department>", "<institution>", "<street>", "<city, postcode>"]
+    letterhead_en: ["<title + name>", "<department>", "<institution>", "<street>", "<city, postcode>"]
+    signature_name_fr: "<name, credentials>"
+    signature_name_en: "<name, credentials>"
+    signature_lines_fr: ["<rank>", "<memberships>", "<laboratory>", "<phone>", "<email>", "<web>"]
+    signature_lines_en: ["<rank>", "<memberships>", "<laboratory>", "<phone>", "<email>", "<web>"]
+    dispense_lines_fr: ["<rank, institution>", "<web>"]
+    responsible_name: "<name as it appears in a form field>"
+    lab_acronym: "<LAB>"
+
 scopus:
   subject_areas:
     primary: []                # 1-2 Scopus SUBJAREA codes that anchor your field

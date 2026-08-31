@@ -1,0 +1,10 @@
+# recommendation-letter skill.
+#
+# The generator is otherwise standard library. PyYAML is here because the
+# signatory of a letter is profile data (R7) and profiles are YAML, so
+# letter_identity.py reads profiles/<active>.yaml with yaml.safe_load - never
+# yaml.load, which can construct Python objects out of a data file.
+#
+# Audited 2026-08-29 with `pip-audit -r requirements.txt --strict`:
+# no known vulnerabilities.
+PyYAML==6.0.3

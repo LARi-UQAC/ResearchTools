@@ -1,0 +1,29 @@
+{
+  "extraKnownMarketplaces": {
+    "knowledge-work-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/knowledge-work-plugins"
+      }
+    },
+    "techwolf-ai-first": {
+      "source": {
+        "source": "github",
+        "repo": "techwolf-ai/ai-first-toolkit"
+      }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "ai-firstify@techwolf-ai-first": true,
+    "engineering@knowledge-work-plugins": true
+  }
+}

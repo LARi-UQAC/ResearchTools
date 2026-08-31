@@ -469,3 +469,42 @@ lock)`.
 **Unrelated and not a defect:** the same output says `log : none yet`. That daemon was not started
 by `vault-daemon-autostart.ps1`, and only that script redirects output to
 `~/.claude/vault-daemon.log`. Started by hand or by the drill, it writes to its own console.
+
+## 2026-08-30 - rt-observe: generator intent left install.ps1, and the fan-out became observable
+
+`install.ps1` decided a verdict for every mirror it generated, printed it, and threw it away.
+Nothing observed whether the fan-out stayed intact, and two of its three intent values - the
+Copilot stub threshold, both Codex ceilings, the session-mode skip list - lived as literals
+inside PowerShell, which made the toolkit's own intent unreadable to anyone who cannot run
+PowerShell. That is most of the people who clone this repository.
+
+Those values now live in `mirror-policy.json` at the repository root, read by `install.ps1` AND
+by the new `rt-observe` skill's collector. The extraction was proven inert by hashing the 83
+generated files before and after: byte-identical. `install.ps1 -Manifest` additionally records
+the verdicts it already computed into a gitignored `.rt-mirrors.json`. Both ceiling suites now
+read the policy rather than parsing the installer, and each gained a negative control proving a
+restated literal would be caught.
+
+What the instrument found on its first run, beyond the six missing Copilot CLI agents it was
+built to expose: a SECOND lost column nobody had noticed - seven commands had never reached the
+VS Code user profile, under the same `-Personal` gate - and 23 mirrors that exist but are stale
+rather than absent, so drift was never only about absence. Adding `rt-observe` as the 16th skill
+then shrank the Codex per-skill description cap enough to cut `geolocalisation`'s mirrored
+description from 1019 characters to 69, losing its trigger vocabulary in that harness: working
+exactly as designed, and a real loss worth a decision.
+
+Three defects in the new code were caught by its own fixtures rather than in use: a column root
+derived from a probe path's parent reported a whole installed dialect as absent, a multi-source
+column silently produced zero rows, and "not installed" was applied to repo-scoped columns where
+absence is the loss. Two more were caught against reality: the daemon check asked the WRITE lock
+instead of the singleton and called a running daemon dead, and `subprocess` was given a bare
+binary name, which fails `[WinError 2]` on Windows and silently demoted a machine that has
+`claude` to the configured-roster tier.
+
+Files: `mirror-policy.json`, `PROGRESS.md`, `.claude/skills/rt-observe/**` (SKILL.md,
+observe-config.json, harnesses.json, six collectors, the adapter contract and two adapters,
+three offline suites totalling 79 tests), `install.ps1`, `.gitignore`, both ceiling suites,
+README.md, Architecture.md (new Layer 6), `.claude/CLAUDE.md`, `.claude/rules/workflows.md`
+(including the two stale "skills have no mirror" sentences, which contradicted README, and the
+missing `-Personal` step), `.claude/rules/testing.md`.
+

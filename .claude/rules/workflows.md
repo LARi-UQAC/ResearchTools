@@ -24,6 +24,7 @@ and the output produced. Full arguments are in `README.md`.
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 | Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
 | Measure LaTeX manuscript hygiene (forbidden characters, AI-usage score, word count, brace balance, citation coverage) | `/texcheck` | `latex-hygiene` skill | Hygiene report / AI-usage score / word count |
+| Ask whether the toolkit is correctly deployed to every harness, and which empty mirror cells are deliberate | `python .claude/skills/rt-observe/scripts/rt_state.py` | `rt-observe` skill | Mirror matrix (canonical definitions x harness dialects, eight states), registry integrity, repo green stamp and profile, plan progression, MCP roster, local models, vault daemon, sessions |
 | Apply an audit plan to a `.tex`, post-write scan, resolve and build the PDF | `/texcheck patch` / `scan` / `accept` / `build` | `latex-hygiene` skill | Patched `.tex` + `FAILS:` list, scan report, accepted `[final]` source, build report (`errors= undefined= doi_links= pages`) |
 
 ## Local delegation flows
@@ -155,9 +156,13 @@ named above.
    patched, rather than left untested because it is not Python. Add the test to the
    offline-test block of `.claude/rules/testing.md` in the same commit.
 
-4. **Register it.** A skill has no mirror, so the routing table in `.claude/CLAUDE.md` plus
-   `README.md`, `Architecture.md` and this file are the only discovery paths. Follow
-   `docs/authoring-and-mirrors.md`.
+4. **Register it.** Codex is the ONE harness with a native skill convention, so a skill
+   does get a mirror there: `install.ps1` writes a frontmatter-only pointer to
+   `.agents/skills/<name>/SKILL.md`, with the description trimmed to whole sentences against
+   Codex's list budget. For every OTHER harness a skill has no mirror, so the routing table in
+   `.claude/CLAUDE.md` plus `README.md`, `Architecture.md` and this file are the only discovery
+   paths. Because that Codex description is trimmed, a skill's trigger vocabulary must sit in
+   its FIRST sentence, the one guaranteed to survive. Follow `docs/authoring-and-mirrors.md`.
 
 5. **Then call it from the project directory.** A manuscript directory may hold a thin shell
    wrapper that calls the ResearchTools script with project-specific paths. It must hold no
@@ -184,8 +189,17 @@ for each kind (`.claude/agents|skills|commands/`), the per-type doc-update check
 (README, Architecture, the `.claude/CLAUDE.md` routing table, this file), and the mirror
 regeneration. After editing any agent, command, or rule, re-run `.\install.ps1 -Profile
 <active>` and commit the regenerated `.github/`, `.opencode/`, `.continue/`,
-`CONVENTIONS.md`, and `AGENTS.md` mirrors together with the canonical change. Skills have
-no mirror, so a user-invoked skill is discoverable elsewhere only via the routing table.
+`CONVENTIONS.md`, and `AGENTS.md` mirrors together with the canonical change.
+
+**`-Personal` is not optional when an agent was added.** The ordinary run never touches
+`~/.copilot/agents`; only `.\install.ps1 -Personal` does, and it also copies the generated
+prompt and instruction files into the VS Code user profile. Every agent or command added since
+the last such run is invisible to those two targets. Measured 2026-08-30: six agents had no
+Copilot CLI mirror and seven commands had never reached the VS Code user profile, with nothing
+reporting either gap. `rt-observe` reports both as `lost`.
+
+Skills have a mirror in exactly one harness - Codex, at `.agents/skills/<name>/SKILL.md`. In
+every other harness a user-invoked skill is discoverable only via the routing table.
 
 ## Environments
 

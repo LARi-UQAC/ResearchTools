@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "purpose": "Every port, timeout, cap and exclusion rt-observe uses. No literal of any of these lives in the code (R0). Values are grouped by the collector that reads them, so a reader can see what one panel costs.",
+  "provenance": {
+    "written_on": "2026-08-30",
+    "note": "A value here is chosen unless its own 'provenance' says measured or specified. A missing key is an explicit error naming the key and this file (R3), never a silent default."
+  },
+  "server": {
+    "bind_host": {
+      "value": "127.0.0.1",
+      "provenance": "specified - .claude/rules/security.md, bind a service to a specific interface and never 0.0.0.0",
+      "note": "Loopback is shared by every process on the machine, so the bind is not an authorization boundary on its own. The session token is."
+    },
+    "port": {
+      "value": 8787,
+      "unit": "TCP port",
+      "provenance": "chosen - outside the ranges this workspace already uses (5000 Flask, 5246 Blazor, 11434 Ollama)"
+    },
+    "token_bytes": {
+      "value": 32,
+      "unit": "bytes of secrets.token_urlsafe entropy",
+      "provenance": "chosen"
+    }
+  },
+  "ttl_seconds": {
+    "mirrors": {
+      "value": 15,
+      "unit": "seconds",
+      "provenance": "chosen - a filesystem walk of a few hundred small files; cheap enough to refresh often"
+    },
+    "repo": {
+      "value": 30,
+      "unit": "seconds",
+      "provenance": "chosen"
+    },
+    "services": {
+      "value": 60,
+      "unit": "seconds",
+      "provenance": "chosen - the local daemon and Ollama probes are cheap but not free"
+    },
+    "mcp_live": {
+      "value": 300,
+      "unit": "seconds",
+      "provenance": "chosen - `claude mcp list` reaches the network for 28 servers, so a 2-second page poll must never trigger it"
+    },
+    "sessions": {
+      "value": 10,
+      "unit": "seconds",
+      "provenance": "chosen"
+    },
+    "graph": {
+      "value": 60,
+      "unit": "seconds",
+      "provenance": "chosen - the snapshot only changes when local-writer refreshes it, so polling it hard buys nothing"
+    }
+  },
+  "timeouts_seconds": {
+    "subprocess_default": {
+      "value": 20,
+      "unit": "seconds",
+      "provenance": "chosen - R10, every subprocess call carries an explicit timeout"
+    },
+    "mcp_list": {
+      "value": 45,
+      "unit": "seconds",
+      "provenance": "chosen - it reaches 28 servers over the network; a timeout is reported as unavailable with the reason, never as an empty roster"
+    },
+    "action_default": {
+      "value": 600,
+      "unit": "seconds",
+      "provenance": "chosen - install.ps1 and the offline suite both run for minutes"
+    }
+  },
+  "caps": {
+    "prompt_chars": {
+      "value": 160,
+      "unit": "characters of a session's current prompt",
+      "provenance": "chosen - the fleet reads sessions across every project on this machine, one of them a litigation matter, so prompts are truncated before they reach the page"
+    },
+    "summary_chars": {
+      "value": 200,
+      "unit": "characters of a session summary",
+      "provenance": "chosen"
+    },
+    "sessions_shown": {
+      "value": 12,
+      "unit": "sessions per adapter",
+      "provenance": "chosen"
+    },
+    "transcript_tail_bytes": {
+      "value": 262144,
+      "unit": "bytes read from the end of a session transcript",
+      "provenance": "chosen - a transcript grows without bound and only its tail carries current state"
+    }
+  },
+  "staleness_seconds": {
+    "graph_snapshot": {
+      "value": 86400,
+      "unit": "seconds",
+      "provenance": "chosen - a graph snapshot older than a day is rendered stale rather than current, because refreshing it costs a local-writer dispatch and nobody does it hourly"
+    },
+    "green_stamp": {
+      "value": 604800,
+      "unit": "seconds",
+      "provenance": "chosen - a week-old green stamp is still green, but it is shown as aged so 'green from three days ago' is never read as 'green now'"
+    },
+    "daemon_lock": {
+      "value": 900,
+      "unit": "seconds",
+      "provenance": "chosen - passed to vault_lock.held_by_live_holder as its staleness ceiling; a lock older than this with a dead holder is reported not-running"
+    }
+  },
+  "privacy": {
+    "excluded_projects": {
+      "value": [],
+      "provenance": "chosen - empty by default; add a project directory name here and no session from it reaches the page at all",
+      "note": "Exclusion is applied before truncation, not after, so an excluded project contributes nothing rather than a shortened something."
+    }
+  },
+  "paths": {
+    "action_log": {
+      "value": "~/.claude/rt-state-actions.jsonl",
+      "provenance": "chosen - append-only, the same shape as vault_journal.py, outside the repository so it is never committed"
+    },
+    "inbox_root": {
+      "value": "~/.claude/rt-inbox",
+      "provenance": "chosen - beside the obsidian outbox, under ~/.claude and therefore outside the vault, so vault-access-guard.py is not involved"
+    },
+    "graph_snapshot": {
+      "value": "~/.claude/rt-graph-snapshot.json",
+      "provenance": "chosen - written by local-writer, read by the dashboard. Deliberately NOT inside graphify-out/, which vault-access-guard.py refuses to every caller but local-writer"
+    },
+    "obsidian_outbox": {
+      "value": "~/.claude/obsidian-outbox",
+      "provenance": "specified - the outbox layout owned by the obsidian-cli skill; its singleton lock sits beside it as obsidian-outbox.lock",
+      "note": "Read for liveness and queue DEPTH only, never for note content. It is under the Claude home and therefore outside the vault, so vault-access-guard.py is not involved and the single-writer rule is untouched."
+    },
+    "daemon_singleton_lock": {
+      "value": "~/.claude/vault-daemon.lock",
+      "provenance": "specified - daemon_outbox.py singleton_lock(), which names vault-daemon.lock beside the outbox",
+      "note": "This is the SINGLETON lock and it is NOT the write lock. obsidian-outbox.lock, in the same directory, serializes writers and is held only for the instant of a write, so asking IT whether a daemon is running answers no on a healthy machine. Measured 2026-08-30: this collector asked the write lock first and reported a running daemon as dead, which is the exact backwards reading the obsidian-cli suite warns about."
+    }
+  }
+}

@@ -13,8 +13,8 @@ Ask for my book (French version): Vibe Design. 30$ contribution via:
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
 
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
-who want to find and fix the issues hiding in their academic writing before a reviewer,
-a thesis committee, or a grant panel does. 
+who want to design, find and fix the issues hiding in their academic design, writing before a reviewer,
+a thesis committee, or a grant panel does. It offers a Dashboard to follow the work-in-progress and has self-learning functions. 
 
 **Never let an LLM do your work for you. Use it to improve your work, find your weaknesses, and help you improve yourself.**
 **Never use these tools to conduct a formal or professional assessment, and do not let the tool make decisions for you. Use at your own risk.**
@@ -25,7 +25,7 @@ https://www.uqac.ca/ressourcespedago/iag/
 
 ResearchTools contains two loop for authoring and coding. It covers the whole process: starting
 a literature review, auditing an existing review, a complete paper, a UQAC
-thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy.
+thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy. Moreover, it offers the process to design the code, PCB and 3D CAD with a full Dashboard to see the agents working in background including some controls.
 
 Every check is grounded in the same working norms: no reference enters a document
 without being validated against Scopus (no fabricated citations, no invented DOIs),
@@ -33,7 +33,9 @@ weaknesses are reported as actionable findings with an executable improvement pl
 rather than vague encouragement, and drafts pass a multi-model deliberation (Gemini +
 GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
 
-The toolbox is built as agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
+An agent, `\local-writer`, manage the memories with a Daemon: Obsidian Vault and Graphify. The Harness cannot access to the memories directly. A control is applied on the Harness for the code generation: when the harness needs to generate a code to overcome a weakness in ResearchTools, it is integrated in the ResearchTools clone with an auto-update in your system. Then, ResearchTools will change over time and with your specific usage.
+
+The toolbox is built as software, agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
 with generated mirrors for GitHub Copilot, OpenCode, Continue, Aider, Codex, and other
 `AGENTS.md` readers (see [Installation](#installation)). Typical entry points: `/litreview` for a new topic (review update using `\litreview-updater`),
 `/auditpaper` before submitting, `/auditthesis` before a defense, `/bibclean` on any
@@ -56,7 +58,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **15 skills**, **17 agents**, and **22 commands**.
+The repo ships **16 skills**, **17 agents**, and **24 commands**.
 
 ---
 
@@ -739,6 +741,57 @@ without running it.
 
 ---
 
+### rt-observe - harness-neutral toolkit state and mirror matrix
+
+Answers one question: is this toolkit correctly deployed to every harness in use, and which
+empty cells are deliberate. `install.ps1` computes a verdict for every mirror it generates,
+prints it, and throws it away, so drift stays invisible until an agent behaves like an older
+version of itself.
+
+The centrepiece is the **mirror matrix**: every canonical agent, skill, command and rule down
+the page, every harness dialect across it. Eight states, and the two that matter most are the
+two that look identical on disk:
+
+| State | Meaning |
+|---|---|
+| `ok` | present, and nothing says it is degraded |
+| `by-design` | the generator deliberately skips it, per `mirror-policy.json` |
+| `stubbed` | present but reduced to a pointer, body over the Copilot ceiling |
+| `trimmed` | present with a shortened description, Codex list budget |
+| `stale` | present, but the canonical source is newer than the mirror |
+| `lost` | absent with **no** design reason |
+| `orphan` | present in a dialect with no canonical source |
+| `unknown` | that dialect is not installed here, so nothing can be said about it |
+
+Intent comes from [mirror-policy.json](mirror-policy.json) at the repository root, which
+`install.ps1` reads as well: one declaration, two consumers, and the `by-design` / `lost`
+distinction becomes readable on any OS from a fresh clone by someone who cannot run PowerShell.
+
+```bash
+python .claude/skills/rt-observe/scripts/rt_state.py            # human summary
+python .claude/skills/rt-observe/scripts/rt_state.py --json     # the whole snapshot
+```
+
+Standard library only: no pip install, no npm, no Docker, no build step, and the core never
+shells out to a `.ps1`. Exit 0 is clean, 1 means something is `lost` or `stale`, 2 is a refusal
+by design. **Zero harnesses is a supported configuration** - with no adapter present the
+matrix, the registry check, the repository panel and the plan progression are all still
+complete, which is the majority of the value and the whole of it for a lab member on Codex or
+Continue. Point `--home` at an empty directory to reproduce that case.
+
+Beyond the matrix it reports: the canonical definition set's own integrity, the green stamp
+and active profile, plan progression read from `PROGRESS.md` and cross-checked against the
+plan's own phase headings, the MCP roster (live when the `claude` binary is present, otherwise
+the declared roster with liveness stated as unavailable), local model residency, the vault
+daemon and its queue depth, and recent sessions from two adapters - Claude Code and GitHub
+Copilot Chat. Adding a harness is a new module plus one line in `harnesses.json`, with no core
+edit, and a test asserts exactly that.
+
+It never reads the Obsidian vault, and it never reads the code graph: the graph panel renders
+a snapshot that `local-writer` produced, because `vault-access-guard.py` refuses the graph to
+every other caller and a server reading it on your behalf is the bypass that guard exists to
+stop.
+
 ## Security audit (SkillSpector)
 
 All eight skills under `.claude/skills/` were scanned with **SkillSpector v2.2.3** in
@@ -1113,7 +1166,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (16 agents)
+    ├── agents\                              (17 agents)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── litreview-updater.md       ← /litupdate
     │   ├── scopus-auditor.md          ← /auditreview
@@ -1131,7 +1184,7 @@ ResearchTools\
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (bridge)
     │   └── local-coder.md             ← local code gen (bridge)
-    ├── commands\                            (22 commands)
+    ├── commands\                            (24 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
     │   ├── ref.md      ├── litreview.md             ├── litupdate.md
@@ -1142,7 +1195,7 @@ ResearchTools\
     │   ├── loopdev.md                  ├── talk.md
     │   └── recommendation-letter.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (15 skills)
+    └── skills\                              (16 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,

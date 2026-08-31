@@ -475,6 +475,48 @@ code graph either: the graph panel renders a snapshot `local-writer` wrote outsi
 own storage, since the access guard refuses the graph to every other caller and a server
 reading it on a caller's behalf is precisely what that guard stops.
 
+**Three entry points, one of them a page.** `rt_state.py` prints the snapshot or dumps it as
+JSON; `rt_state.py --serve`, reached through the `rt-dashboard` launchers, serves the same
+snapshot at `127.0.0.1` and renders it. The server and the one-shot dump share one definition of
+what the state is - `section_builders()` returns a callable per section, used by the blocking
+assembly and by the server's per-section TTL cache alike, so the page and the file cannot
+disagree. The cache has a second, non-blocking mode for serving: a section that has never been
+collected reads `collecting` and refreshes on a background thread, because the first
+`/api/state` otherwise waits on tier-1 `claude mcp list` reaching 28 servers.
+
+The launchers do the one thing Python cannot do for itself, which is find an interpreter;
+everything else - the port probe, the two refusals about a port already in use, the bind, the
+session token - lives in Python where the offline suite reaches it. That is the same split
+`run-drill.ps1` and `tune-new-model.ps1` already use, and it is why `rt-dashboard.ps1`,
+`rt-dashboard.sh`, `rt-dashboard.bat` and the VS Code task can all be thin.
+
+**The write half.** One route, `POST /api/action`, gated on the session token, behind a closed
+whitelist held as data in `actions.json`: an id maps to a fixed argv, and no field of the request
+ever reaches a command line, so there is no injection surface to review. A `{token}` inside an
+argv entry resolves from a closed server-side table - the interpreter through `shutil.which`, the
+repository root, the active profile read from `.claude/CLAUDE.md` - and an unknown token is a
+refusal rather than a passthrough. Availability is decided before anything is offered, so an
+action whose interpreter is absent renders as a reason rather than a button. Judgement is by
+effect (R9): the runner drops the section the action claims to change from the TTL cache and
+collects it again through the same builders the page reads, so an action that exits 0 while the
+matrix still reports three lost mirrors is reported failed. Every attempt appends a JSON record
+to `~/.claude/rt-state-actions.jsonl` (R17), which is the vault journal's shape one layer up.
+
+Session messaging is deliberately three separate mechanisms rather than one: an inbox the page
+writes atomically, a `UserPromptSubmit` hook that drains it at the target's next turn, and one
+whitelisted action that spawns a NEW headless session. Nothing injects into a running session,
+because no mechanism for that exists. A target with no delivery hook is reported unreachable
+rather than delivered, and the hook exits 0 in silence whenever its config, its inbox or its
+skill is absent - a `UserPromptSubmit` hook that exits non-zero refuses the prompt itself, which
+is the 2026-08-27 hook failure with a wider blast radius than the one that caused it.
+
+The page itself is one self-contained file: no CDN, no npm, no build step, both themes
+first-class, and every number it uses injected from `observe-config.json` so the markup carries
+no configured value. Its tokens are extracted to `assets/rt-tokens.css`, the first shared token
+file in this repository, which the three other HTML emitters here (`paper2talk`'s web deck,
+`geolocalisation`'s map, and the graph page graphify writes) may adopt later; a test asserts the
+page and that file cannot drift apart.
+
 ## Notes
 
 - **Agent file format.** Each agent is one flat markdown file [agents/](agents)`<name>.md` whose line 1 opens YAML frontmatter (`name:`, `description:`) — the layout Claude Code's subagent discovery scans. Skills are the opposite: folder-based (`skills/<name>/SKILL.md`). The `.claude/agents/` files are canonical; `install.ps1` (repo root) regenerates the GitHub Copilot (`.github/agents/*.agent.md`), OpenCode, Continue, and Aider mirrors from them, and `install-junctions.ps1` links them per-file into `~/.claude/agents/` for global availability. Skills additionally get a Codex mirror, `.agents/skills/<name>/SKILL.md` — a pointer carrying only the frontmatter, since Codex is the sole harness that discovers skills natively (it scans `.agents/skills` from the working directory up to the repo root); its description is trimmed to whole sentences to fit Codex's skill-list budget, and `.claude/skills/AGENTS.md` is the nested instruction file Codex appends to the root `AGENTS.md` when the working directory sits inside that tree.

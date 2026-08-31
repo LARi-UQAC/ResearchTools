@@ -1,0 +1,65 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "rt-dashboard",
+            "detail": "Start the rt-observe dashboard on loopback and open it.",
+            "type": "shell",
+            "command": "${workspaceFolder}/rt-dashboard.ps1",
+            "args": ["-Open"],
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", "${workspaceFolder}\\rt-dashboard.ps1",
+                    "-Open"
+                ]
+            },
+            "linux": {
+                "command": "sh",
+                "args": ["${workspaceFolder}/rt-dashboard.sh", "--open"]
+            },
+            "osx": {
+                "command": "sh",
+                "args": ["${workspaceFolder}/rt-dashboard.sh", "--open"]
+            },
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            }
+        },
+        {
+            "label": "rt-dashboard (dry run)",
+            "detail": "Print what the dashboard would do and start nothing.",
+            "type": "shell",
+            "command": "${workspaceFolder}/rt-dashboard.ps1",
+            "args": ["-DryRun"],
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", "${workspaceFolder}\\rt-dashboard.ps1",
+                    "-DryRun"
+                ]
+            },
+            "linux": {
+                "command": "sh",
+                "args": ["${workspaceFolder}/rt-dashboard.sh", "--dry-run"]
+            },
+            "osx": {
+                "command": "sh",
+                "args": ["${workspaceFolder}/rt-dashboard.sh", "--dry-run"]
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ]
+}

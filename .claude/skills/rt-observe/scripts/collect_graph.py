@@ -21,7 +21,12 @@ cannot call an agent tool.
 """
 import io
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from rt_redact import home_tilde  # noqa: E402
 
 # What local-writer is asked to put in the snapshot. Named here so the panel can
 # say which fields are missing rather than rendering blanks.
@@ -61,10 +66,14 @@ def collect(snapshot_path, home, now, stale_after_s):
     if not path.exists():
         return {
             "status": "unavailable",
+            # home_tilde, not str(path): this reason NAMES the snapshot's
+            # location, and the panel that renders it gets screenshotted, so an
+            # absolute path here carries the account name off the machine.
             "reason": "no graph snapshot at %s. The dashboard never reads the "
                       "graph itself: the access guard refuses it to every caller "
                       "but local-writer, and a server reading it on your behalf is "
-                      "the exact bypass that guard exists to stop." % path,
+                      "the exact bypass that guard exists to stop."
+                      % home_tilde(str(path), home),
             "refresh": REFRESH_INSTRUCTION,
         }
 

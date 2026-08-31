@@ -29,6 +29,7 @@ and the output produced. Full arguments are in `README.md`.
 | Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
 | Measure LaTeX manuscript hygiene (forbidden characters, AI-usage score, word count, brace balance, citation coverage) | `/texcheck` | `latex-hygiene` skill | Hygiene report / AI-usage score / word count |
 | Ask whether the toolkit is correctly deployed to every harness, and which empty mirror cells are deliberate | `python .claude/skills/rt-observe/scripts/rt_state.py` | `rt-observe` skill | Mirror matrix (canonical definitions x harness dialects, eight states), registry integrity, repo green stamp and profile, plan progression, MCP roster, local models, vault daemon, sessions |
+| Watch that state on a page instead of reading a dump | `/rt-dashboard`, `.\rt-dashboard.ps1 -Open`, `sh ./rt-dashboard.sh --open`, `rt-dashboard.bat`, or the VS Code task | `rt-observe` skill | A loopback dashboard: the matrix as one grid per definition kind, the fan-out diagram, the plan timeline, the receipt rail and the session strip. `-DryRun` names the interpreter, the bind address and every TTL and starts nothing |
 | Apply an audit plan to a `.tex`, post-write scan, resolve and build the PDF | `/texcheck patch` / `scan` / `accept` / `build` | `latex-hygiene` skill | Patched `.tex` + `FAILS:` list, scan report, accepted `[final]` source, build report (`errors= undefined= doi_links= pages`) |
 
 ## Local delegation flows

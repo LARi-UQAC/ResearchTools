@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "purpose": "The closed whitelist of everything the dashboard may RUN. An id maps to a FIXED argv list, so nothing from an HTTP request ever reaches a command line and there is no injection surface to review. Every id points at a script that already exists in this repository and is already tested; this file adds no capability, it only makes an existing one reachable from the page.",
+  "argv_tokens": {
+    "note": "A token in {braces} is resolved by rt_actions from a CLOSED table of server-side values (R5). A token the table does not name is a refusal, and no value from the request is ever substituted - the request carries an id, a token and a confirm flag, and nothing else.",
+    "binaries": {
+      "note": "argv[0] only. Resolved through shutil.which, so an action whose interpreter is not on PATH is reported unavailable WITH its reason instead of being offered and failing on click. On Windows the launcher is claude.CMD, and passing a bare name to subprocess without a shell fails [WinError 2] - measured 2026-08-30 in collect_services.",
+      "powershell": ["pwsh", "powershell"],
+      "python": ["python", "python3"],
+      "claude": ["claude"]
+    }
+  },
+  "verifiers": {
+    "note": "R9: an action is judged by its EFFECT, not by its exit code. restart-ollama.ps1 is the documented case of a script exiting 0 while an orphaned child keeps its VRAM. A null verifier is a deliberate 'this action claims no verifiable effect' and is reported as such, never as success."
+  },
+  "actions": [
+    {
+      "id": "mirrors.personal",
+      "label": "Repair the personal mirrors",
+      "what": "install.ps1 -Profile <active> -Manifest -Personal: regenerates every harness mirror AND the two targets the ordinary run never touches, ~/.copilot/agents and the VS Code user profile. This is the fix for the 6 agents and 7 commands the matrix reports lost.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/install.ps1",
+               "-Profile", "{profile}", "-Manifest", "-Personal"],
+      "destructive": true,
+      "confirm": "This rewrites every generated mirror in the clone and in your VS Code and Copilot CLI user profiles. Run it?",
+      "verify": "mirrors_no_lost",
+      "invalidate": ["mirrors", "registry"]
+    },
+    {
+      "id": "mirrors.manifest",
+      "label": "Regenerate the mirrors",
+      "what": "install.ps1 -Profile <active> -Manifest: regenerates the in-clone mirrors and writes .rt-mirrors.json, the manifest the matrix reads for drift-since-install. Does NOT touch the user profiles; that is mirrors.personal.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/install.ps1",
+               "-Profile", "{profile}", "-Manifest"],
+      "destructive": true,
+      "confirm": "This rewrites every generated mirror in the clone. Run it?",
+      "verify": "mirrors_no_lost",
+      "invalidate": ["mirrors", "registry"]
+    },
+    {
+      "id": "mirrors.sync",
+      "label": "Sync the proven files to ~/.claude",
+      "what": "install-junctions.ps1 -Sync: copies the files the offline suite proved green into the live ~/.claude, per code-file hash from .rt-green.json.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/install-junctions.ps1", "-Sync"],
+      "destructive": true,
+      "confirm": "This writes into your live ~/.claude, which every project on this machine reads. Run it?",
+      "verify": null,
+      "invalidate": ["mirrors"]
+    },
+    {
+      "id": "check.deployment",
+      "label": "Check the deployment",
+      "what": "scripts/audit/check-deployment.ps1: read-only comparison of the live ~/.claude against this clone.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/scripts/audit/check-deployment.ps1"],
+      "destructive": false,
+      "confirm": null,
+      "verify": null,
+      "invalidate": []
+    },
+    {
+      "id": "tests.offline",
+      "label": "Run the offline suite",
+      "what": "scripts/test/run-offline-tests.ps1: every Python suite in the clone. Writes .rt-green.json on a full pass and DELETES it on any failure, which is why the repository panel goes red rather than stale when this fails.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/scripts/test/run-offline-tests.ps1"],
+      "destructive": false,
+      "confirm": null,
+      "verify": "green_stamp",
+      "invalidate": ["repo_state"],
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "ollama.restart",
+      "label": "Restart the Ollama daemon",
+      "what": "opt-local-vram-llm/scripts/restart-ollama.ps1: kills BOTH ollama and its llama-server child, which a Stop-Process -Name 'ollama*' does not, then verifies the VRAM actually came back.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/.claude/skills/opt-local-vram-llm/scripts/restart-ollama.ps1"],
+      "destructive": true,
+      "confirm": "This stops the local model daemon and every model resident on the card. Any agent mid-generation fails. Run it?",
+      "verify": "ollama_resident",
+      "invalidate": ["services"]
+    },
+    {
+      "id": "daemon.status",
+      "label": "Vault daemon status",
+      "what": "vault-daemon-autostart.ps1 -Status: read-only. Prints whether the singleton lock is held, the log tail, and whether the Startup shortcut exists.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/.claude/skills/obsidian-cli/scripts/vault-daemon-autostart.ps1",
+               "-Status"],
+      "destructive": false,
+      "confirm": null,
+      "verify": null,
+      "invalidate": ["services"]
+    },
+    {
+      "id": "daemon.start",
+      "label": "Start the vault daemon",
+      "what": "vault-daemon-autostart.ps1: starts the daemon hidden, with its output appended to ~/.claude/vault-daemon.log. It is a no-op when a live daemon already holds the singleton lock.",
+      "argv": ["{powershell}", "-NoProfile", "-ExecutionPolicy", "Bypass",
+               "-File", "{repo_root}/.claude/skills/obsidian-cli/scripts/vault-daemon-autostart.ps1"],
+      "destructive": true,
+      "confirm": "This starts a process that files knowledge drops into your Obsidian vault unattended. Run it?",
+      "verify": "daemon_running",
+      "invalidate": ["services"]
+    },
+    {
+      "id": "session.spawn",
+      "label": "Spawn a headless session on the inbox",
+      "what": "Starts a NEW headless Claude Code session whose fixed prompt is to drain this machine's rt-inbox. It cannot inject anything into a session that is already running - no mechanism for that exists - so this starts a fresh one instead.",
+      "argv": ["{claude}", "-p",
+               "Read every pending message in ~/.claude/rt-inbox/, act on what it asks, then delete the message files you handled. If the inbox is empty, say so and stop without doing anything else."],
+      "destructive": true,
+      "confirm": "This starts a new headless Claude Code session, which SPENDS MONEY on your subscription or API balance. Start it?",
+      "verify": null,
+      "invalidate": ["fleet"]
+    },
+    {
+      "id": "inbox.send",
+      "label": "Send a message to a session",
+      "what": "Writes one message file into ~/.claude/rt-inbox/<target>/, atomically through a .tmp and os.replace. Nothing executes. The target's next turn picks it up ONLY if the delivery hook is installed, and the result says unreachable rather than delivered when it is not.",
+      "kind": "inbox",
+      "destructive": false,
+      "confirm": null,
+      "verify": null,
+      "invalidate": ["fleet"]
+    }
+  ]
+}

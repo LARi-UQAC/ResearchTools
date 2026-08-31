@@ -71,6 +71,14 @@ def _green_stamp(repo_root, now, stale_after_s):
     }
 
 
+def active_profile(repo_root):
+    """Public since 2026-08-31: rt_actions substitutes {profile} into
+    install.ps1's argv from here, rather than spelling a profile name of its
+    own. install.ps1 with no -Profile PROMPTS, and a prompt in a headless run
+    hangs until the timeout, so this is the one reader (R2)."""
+    return _active_profile(repo_root)
+
+
 def _active_profile(repo_root):
     path = Path(repo_root) / ".claude" / "CLAUDE.md"
     if not path.exists():

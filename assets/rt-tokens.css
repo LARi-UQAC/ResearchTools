@@ -1,0 +1,141 @@
+/*
+ * rt-tokens.css - the design tokens for HTML this repository emits.
+ *
+ * Extracted from the rt-observe dashboard, which is their first and, today,
+ * their only consumer. Three other places in this repository emit HTML and each
+ * styles itself independently: paper2talk's self-contained web deck,
+ * geolocalisation's interactive map, and graphify-out/graph.html. Converting
+ * those is a later change with its own verification; this file exists so the
+ * next one has something to adopt rather than inventing a fourth convention.
+ *
+ * THE DIRECTION, so a later editor changes it deliberately rather than by taste.
+ * The subject is an inspection instrument for a laboratory whose own domain is
+ * industrial automation and diagnosis, so the vernacular is the engineering
+ * drawing rather than the analytics dashboard. Light mode is a diazo whiteprint:
+ * blue-black ink and structural blue on grey-green vellum. Dark mode is the
+ * cyanotype it descends from: pale lines on Prussian blue. Neither is a tint of
+ * the other; both are selected.
+ *
+ * ONE alarm hue, and that is a measurement rather than a preference. A second
+ * status hue was tried and dropped: on this vellum surface every amber step dark
+ * enough to clear 3:1 contrast landed within normal-vision Delta E 13.6 of the
+ * alarm red (dataviz validate_palette.js, 2026-08-31, floor 15), and under
+ * deuteranopia the pair collapsed to 3.9. So severity is not carried by hue at
+ * all: colour marks the ONE state that must never be missed, and every other
+ * state is carried by a two-letter code, a texture and an edge weight. That is
+ * also why the good case is silent - 104 of 134 cells were `ok` when this was
+ * written, and an instrument should show nothing when nothing is wrong.
+ *
+ * Measured contrasts, light / dark, against each mode's own ground
+ * (dataviz validate_palette.js contrast(), 2026-08-31):
+ *   ink       12.43 / 13.02      muted      4.81 / 6.32
+ *   blueprint  5.40 /  8.12      alarm      4.46 / 5.01
+ *   ground-on-alarm (the code inside a lost cell)  4.46 / 5.01
+ * --rt-line is a hairline at 1.73 / 1.96 and never carries text or meaning on
+ * its own; where a texture has to be read, --rt-hatch is used instead.
+ *
+ * No webfont. The page is served from a loopback socket with no network at
+ * render time, so a remote face is not an option and a data URI would cost more
+ * than it buys. The utility face is therefore a stack of condensed grotesques in
+ * the DIN 1451 lineage that ship with the platform, which is the lettering of
+ * the engineering drawing this page is imitating; the body face is the platform
+ * humanist sans, which is correct at 12px; and the receipt face is monospace
+ * used ONLY for values a machine emitted - a timestamp, a path, a hash, a pid.
+ * Monospace as a shorthand for "technical" is an anti-pattern; monospace to say
+ * "this string came from the system, not from us" is a distinction.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Ground and ink */
+  --rt-ground: #e3e6e2;
+  --rt-ink: #1b2430;
+  --rt-muted: #5a6560;
+  --rt-line: #a9b2ac;
+  --rt-hatch: #8b968f;
+
+  /* The two inks that carry meaning */
+  --rt-blueprint: #2b5f87;
+  --rt-alarm: #c0322f;
+
+  /* Derived surfaces. Panels differ from the ground by a whisper, because a
+     drawing sheet has no cards - it has rules. */
+  --rt-panel: color-mix(in oklab, var(--rt-ground) 97%, var(--rt-ink));
+  --rt-sunken: color-mix(in oklab, var(--rt-ground) 93%, var(--rt-ink));
+  --rt-wash: color-mix(in oklab, var(--rt-ground) 88%, var(--rt-blueprint));
+  --rt-alarm-wash: color-mix(in oklab, var(--rt-ground) 82%, var(--rt-alarm));
+
+  /* Faces */
+  --rt-face-utility: "Bahnschrift SemiCondensed", "Bahnschrift",
+    "DIN Alternate", "Avenir Next Condensed", "Roboto Condensed",
+    "DejaVu Sans Condensed", system-ui, sans-serif;
+  --rt-face-body: "Segoe UI", -apple-system, "Cantarell", "Helvetica Neue",
+    sans-serif;
+  --rt-face-receipt: "Cascadia Mono", "Cascadia Code", ui-monospace, "SF Mono",
+    "DejaVu Sans Mono", monospace;
+
+  /* Type scale. Dense on purpose: the audience reads this mid-task in a narrow
+     side panel, so the working sizes are 11 and 12. */
+  /* 10px, not 9: an audit of the rendered page measured a 9px floor, and this
+     is read mid-task in a narrow column. t9 and t10 share a value today and
+     differ in ROLE - t9 is a micro label inside a title block, t10 is small UI
+     text - so they can diverge later without a rename. */
+  --rt-t9: 10px;
+  --rt-t10: 10px;
+  --rt-t11: 11px;
+  --rt-t12: 12px;
+  --rt-t13: 13px;
+  --rt-t15: clamp(14px, 1.1vw, 15px);
+  --rt-t19: clamp(17px, 1.6vw, 19px);
+  --rt-t26: clamp(21px, 2.4vw, 26px);
+
+  /* Rhythm. Not one padding everywhere: tight inside a title block, generous
+     between panels. */
+  --rt-s1: 3px;
+  --rt-s2: 6px;
+  --rt-s3: 10px;
+  --rt-s4: 16px;
+  --rt-s5: 24px;
+  --rt-s6: 36px;
+
+  /* Motion. Exponential deceleration only; no bounce, no elastic. */
+  --rt-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --rt-ease-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --rt-ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --rt-dur-tap: 120ms;
+  --rt-dur-state: 220ms;
+  --rt-dur-enter: 420ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --rt-ground: #101f2b;
+    --rt-ink: #dde4e6;
+    --rt-muted: #8fa2ab;
+    --rt-line: #33505f;
+    --rt-hatch: #52707f;
+    --rt-blueprint: #86bbde;
+    --rt-alarm: #e4645e;
+    --rt-panel: color-mix(in oklab, var(--rt-ground) 94%, var(--rt-ink));
+    --rt-sunken: color-mix(in oklab, var(--rt-ground) 88%, #000);
+    --rt-wash: color-mix(in oklab, var(--rt-ground) 86%, var(--rt-blueprint));
+    --rt-alarm-wash: color-mix(in oklab, var(--rt-ground) 78%, var(--rt-alarm));
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --rt-ground: #101f2b;
+  --rt-ink: #dde4e6;
+  --rt-muted: #8fa2ab;
+  --rt-line: #33505f;
+  --rt-hatch: #52707f;
+  --rt-blueprint: #86bbde;
+  --rt-alarm: #e4645e;
+  --rt-panel: color-mix(in oklab, var(--rt-ground) 94%, var(--rt-ink));
+  --rt-sunken: color-mix(in oklab, var(--rt-ground) 88%, #000);
+  --rt-wash: color-mix(in oklab, var(--rt-ground) 86%, var(--rt-blueprint));
+  --rt-alarm-wash: color-mix(in oklab, var(--rt-ground) 78%, var(--rt-alarm));
+}

@@ -11,6 +11,9 @@ requests.get is patched, so no test reaches the network.
 Run with the project Python: python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py
 """
 
+import contextlib
+import io
+import json
 import os
 import sys
 import tempfile
@@ -242,6 +245,38 @@ class TestDigests(_IngestTestCase):
         self.assertEqual(
             pdf_ingest.sha256_bytes(PDF_BODY),
             "c8e838a61303dddd519d1171802bc781f371d1307a811d4aa86632c7aa577745")
+
+
+class TestCommandLine(_IngestTestCase):
+
+    def run_main(self, argv: list) -> tuple:
+        """Run main(argv) and return (exit code, parsed JSON on stdout)."""
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = pdf_ingest.main(argv)
+        return code, json.loads(buffer.getvalue())
+
+    def test_reports_the_digest_on_success(self) -> None:
+        self.serve(_FakeResponse(PDF_BODY))
+        code, payload = self.run_main(["https://www.uqac.ca/f.pdf", self.dest])
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["sha256"], pdf_ingest.sha256_bytes(PDF_BODY))
+
+    def test_a_refusal_is_machine_readable_and_exits_nonzero(self) -> None:
+        # A caller parsing stdout should not have to scrape the log to learn
+        # that nothing was written.
+        self.serve(_FakeResponse(b"<html>Acces refuse</html>"))
+        code, payload = self.run_main(["https://www.uqac.ca/f.pdf", self.dest])
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["ok"])
+        self.assertFalse(os.path.exists(self.dest))
+
+    def test_the_cap_can_be_lowered_from_the_command_line(self) -> None:
+        self.serve(_FakeResponse(b"%PDF-1.7" + b"x" * 4096))
+        code, _ = self.run_main(
+            ["https://www.uqac.ca/f.pdf", self.dest, "--max-bytes", "64"])
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":

@@ -75,13 +75,35 @@ class VaultLockTest(unittest.TestCase):
             self.assertEqual(len(lock.reclaimed), 1)
             self.assertIn("424242", lock.reclaimed[0])
 
-    def test_an_old_lock_is_reclaimed_even_with_a_live_holder(self):
+    def test_an_old_lock_with_a_LIVE_holder_is_NOT_reclaimed(self):
+        """Inverted on 2026-08-30. This asserted the opposite, and the opposite
+        was the defect: the daemon's singleton lock is held for the daemon's
+        whole life, so age alone called a healthy daemon dead. Measured that
+        day - a daemon running since 13:19 held a 6h36m-old lock, -Status said
+        "not running", and acquire() would have deleted it and started a second
+        daemon on the same outbox. On this host the pid decides."""
         self._write_holder(os.getpid(), age_s=STALE_AFTER_S + 30)
-        lock = self._lock()
-        with lock:
-            pass
-        self.assertEqual(len(lock.reclaimed), 1)
-        self.assertIn("ceiling", lock.reclaimed[0])
+        with self.assertRaises(vl.LockError):
+            self._lock().acquire()
+        self.assertTrue(self.lock_path.exists(), "a live holder's lock must survive")
+
+    def test_a_very_old_lock_with_a_live_holder_still_survives(self):
+        """The real scale of the case, not just one tick over the ceiling: the
+        measured lock was 6h36m old against a 300s ceiling."""
+        self._write_holder(os.getpid(), age_s=6 * 3600 + 36 * 60)
+        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S),
+                        "a running daemon must not be reported dead by age alone")
+
+    def test_an_old_lock_whose_holder_is_DEAD_is_still_reclaimed(self):
+        """The reorder must not cost the reclamation that matters: a crashed
+        daemon leaves its lock behind and something has to take it."""
+        self._write_holder(424242, age_s=STALE_AFTER_S + 30)
+        with patch.object(vl, "pid_alive", return_value=False):
+            lock = self._lock()
+            with lock:
+                pass
+            self.assertEqual(len(lock.reclaimed), 1)
+            self.assertIn("424242", lock.reclaimed[0])
 
     def test_another_host_is_judged_by_age_only(self):
         """A pid from another machine means nothing here, so a fresh foreign
@@ -135,8 +157,13 @@ class VaultLockTest(unittest.TestCase):
         self._write_holder(424242)
         with patch.object(vl, "pid_alive", return_value=False):
             self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
-        self._write_holder(os.getpid(), age_s=STALE_AFTER_S + 30)
+        # Age still decides for a FOREIGN host, where a local pid means nothing.
+        self._write_holder(424242, age_s=STALE_AFTER_S + 30, host="some-other-machine")
         self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+        # ...and a dead holder is reported dead however fresh its timestamp is.
+        self._write_holder(424242, age_s=0)
+        with patch.object(vl, "pid_alive", return_value=False):
+            self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
 
 
 if __name__ == "__main__":

@@ -130,8 +130,44 @@ class VaultLock:
             return None
 
     def _stale_reason(self, holder) -> "str | None":
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Say why a holder may be reclaimed, or None when it may not.
+
+            ON THIS HOST, LIVENESS DECIDES AND AGE DOES NOT. The order was the
+            other way until 2026-08-30, and it was wrong for the singleton lock:
+            age was tested first, so a holder past the ceiling was declared
+            stale before the pid check could find it alive. The write lock is
+            held around a filesystem write for milliseconds, which is what the
+            300s ceiling was measured for; the daemon's singleton lock is held
+            for the daemon's whole life. Measured that day: a daemon running
+            since 13:19 held a 6h36m-old lock, `-Status` reported "not running",
+            and acquire() would have DELETED that lock and started a second
+            daemon on the same outbox - exactly what the singleton prevents.
+
+            Age still decides for a foreign host, where a pid means nothing
+            locally, and for a holder carrying no usable pid.
+
+            The cost, stated: a wedged holder whose process is alive but doing
+            no work is never reclaimed here. That is a different failure, and
+            the log tail plus `-Status` are what surface it; silently evicting a
+            live process to cover for it is the worse trade.
+        ----------------------------------------------------------------------
+        """
         if not isinstance(holder, dict):
             return "lock file is unreadable or malformed"
+
+        pid = holder.get("pid")
+        same_host = holder.get("host") == socket.gethostname()
+
+        if same_host and isinstance(pid, int):
+            # Whatever the timestamp says. A live pid on this machine IS the holder.
+            if pid_alive(pid):
+                return None
+            return f"holder pid {pid} is gone"
+
+        # Foreign host, or no usable pid: age is the only thing that can reclaim.
         stamp = holder.get("at")
         try:
             age = (datetime.now(timezone.utc)
@@ -140,12 +176,6 @@ class VaultLock:
             return "lock file carries no usable timestamp"
         if age > self.stale_after_s:
             return f"lock is {int(age)}s old, past the {int(self.stale_after_s)}s ceiling"
-        if holder.get("host") != socket.gethostname():
-            # Another machine's pid means nothing here; only age can reclaim it.
-            return None
-        pid = holder.get("pid")
-        if isinstance(pid, int) and not pid_alive(pid):
-            return f"holder pid {pid} is gone"
         return None
 
     def _reclaim(self, holder, reason: str) -> None:

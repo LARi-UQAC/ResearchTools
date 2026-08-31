@@ -2,119 +2,257 @@
 """
 obsidian-outbox-flush.py - SessionStart / SessionEnd hook.
 
-Flushes deferred Obsidian notes from the outbox into the vault via the Obsidian
-CLI (Obsidian.com). Safety net of the two-part knowledge-capture method:
-instruction-driven writes by local-writer during a loop-engineer run, plus this
-session-boundary flush for notes deferred while Obsidian was closed.
+Flushes deferred Obsidian notes from the outbox into the vault. Acts as the
+automatic safety net of the two-part capture method (instruction-driven writes
+at checkpoints + this session-end flush).
 
 Each *.md file in the outbox begins with a directive line, e.g.:
 
-    <!-- obsidian: create path="30_Ressources/Apprentissages/foo" -->
-    <!-- obsidian: append path="10_Projets/Logiciels/Bar/Decisions.md" -->
+    <!-- obsidian: create path="30_Ressources/LaTEX/foo.md" -->
+    <!-- obsidian: append path="10_Projets/LaTEX/Bar/Decisions.md" -->
 
 The remaining lines are the note content. On success the file is moved to
-outbox/sent/; on failure (Obsidian closed, timeout) it is left in place for the
-next run. Zero LLM tokens. Never blocks the session: always exits 0.
+outbox/sent/; on failure it is left in place for the next run. Zero LLM tokens.
+Never blocks the session: always exits 0.
 
-Obsidian.com is resolved from the OBSIDIAN_COM environment variable, else the
-default per-user install path (LOCALAPPDATA on Windows). If it cannot be found
-the outbox is left intact.
+WHY THIS WRITES TO DISK INSTEAD OF CALLING THE OBSIDIAN CLI
+-----------------------------------------------------------
+Measured on 2026-08-03 with Obsidian 1.13.4. The CLI hands the command to the
+main process over a socket, as JSON. Past a threshold the main process's
+JSON.parse receives a truncated header and throws an uncaught exception, popping
+a "A JavaScript error occurred in the main process" dialog, and the write never
+happens:
+
+    SyntaxError: Unexpected token ']', ..."eview.md"],"tty":"fa"... is not valid
+      at JSON.parse (<anonymous>)
+      at Socket.n (obsidian-1.13.4.asar\\main.js:80:136)
+      at addChunk (node:internal/streams/readable:561:12)
+
+The threshold is on the whole JSON header (content plus path plus tty/cwd
+metadata), not on the content alone: a 3850-byte header goes through, a
+4343-byte one does not, and 4096 -- a Windows named-pipe buffer -- falls between
+the two.
+
+Reproduced on 2026-08-13 with Obsidian 1.13.7: same trace shape, same truncated
+header, at obsidian-1.13.7.asar\\main.js:64:136 instead of 80:136. The defect is
+therefore not confined to 1.13.4 and was not fixed upstream between the two.
+
+The exact cause is deliberately left open. The server code, read out of the
+.asar, does reassemble chunks and does frame on a newline, so the defect is not
+there:
+
+    let n = s => { r += s.toString();
+                   let d = r.indexOf("\\n");
+                   if (d !== -1) { ... y(JSON.parse(r.slice(0, d))) } };
+
+A UTF-8 sequence split across a chunk boundary was ruled out by measurement (the
+only non-ASCII bytes of the failing note sit at offsets 1156-1184, far from the
+boundary). What remains, unproven, is a client that does not wait for the socket
+'drain' event before exiting and so loses the tail of the message. Verifying it
+would mean reproducing the crash. The threshold alone is enough to decide.
+
+Two further CLI defects, both measured, which this hook used to inherit:
+
+  1. it exits 0 even when the command fails, so `returncode != 0` never fired
+     and notes were archived to sent/ without ever reaching the vault;
+  2. `create` on an existing file silently writes a numbered duplicate
+     ("Decisions 1.md") instead of failing, which is how the vault accumulated
+     strict md5-identical duplicates.
+
+Writing to disk avoids the socket entirely. Obsidian watches the filesystem and
+reloads on its own, so the note appears just the same. The single-serialised-
+writer rule of the global CLAUDE.md is preserved: this hook stays the only
+writer of the outbox path.
+
+STAGE 0 EXTRACTION (vault event daemon)
+---------------------------------------
+The write logic itself now lives in the obsidian-cli skill, in outbox_io.py, so
+this hook and the daemon share ONE implementation rather than two that drift.
+The hook keeps three things of its own: the documented default vault root, the
+outbox location, and the promise that it never blocks a session. It now also
+takes vault_lock around the flush, because the outbox is machine-global and a
+daemon is a separate OS process that vault-access-guard.py never sees, and it
+records every write through vault_journal so a write can be undone.
+
+The skill is a dependency this hook may not have. A copy installed without it
+exits 0 and says nothing (R11): a hook whose dependency is missing must never
+refuse the tools in its matcher, which is what cost four unusable turns on
+2026-08-27.
 """
-import os
-import re
-import subprocess
 import sys
 from pathlib import Path
 
-
-def _resolve_obsidian_com() -> Path:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Locate the Obsidian CLI launcher portably across contributor machines.
-
-    Inputs:
-        none (reads OBSIDIAN_COM / LOCALAPPDATA from the environment)
-
-    Outputs:
-        path (Path): candidate path to Obsidian.com (may not exist).
-    --------------------------------------------------------------------------
-    """
-    override = os.environ.get("OBSIDIAN_COM")
-    if override:
-        return Path(override)
-    local_appdata = os.environ.get("LOCALAPPDATA", "")
-    return Path(local_appdata) / "Programs" / "Obsidian" / "Obsidian.com"
-
-
-OBSIDIAN_COM = _resolve_obsidian_com()
+VAULT_DEFAULT = Path(r"C:\Martin Otis\Vault")
 OUTBOX = Path.home() / ".claude" / "obsidian-outbox"
 SENT = OUTBOX / "sent"
-CALL_TIMEOUT = 15  # seconds; guards against a hang when Obsidian is closed
-
-_DIRECTIVE = re.compile(
-    r'^<!--\s*obsidian:\s*(create|append)\s+path="([^"]+)"\s*-->\s*$'
-)
+JOURNAL_NAME = "vault-journal.jsonl"
+LOCK_NAME = "obsidian-outbox.lock"
+DAEMON_LOCK_NAME = "vault-daemon.lock"
 
 
-def _flush_one(md_file: Path) -> bool:
+def _journal_path():
+    """Beside the outbox, never inside the vault: a recovery record must survive
+    a vault this machine does not have. Derived at call time so a test pointing
+    OUTBOX at a temporary tree redirects the journal with it."""
+    return OUTBOX.parent / JOURNAL_NAME
+
+
+def _lock_path():
+    return OUTBOX.parent / LOCK_NAME
+
+
+def _daemon_lock_path():
+    """The daemon's SINGLETON lock, not the write lock: daemon_outbox.py puts it
+    beside the outbox under this name, and holding it is what proves a daemon is
+    alive. Derived at call time for the same reason as the journal path."""
+    return OUTBOX.parent / DAEMON_LOCK_NAME
+
+
+def _skills_dir():
+    """The obsidian-cli scripts directory: the repository copy when this hook
+    runs inside ResearchTools, otherwise the machine-wide install. Returns None
+    when neither exists, which is a silent no-op, never a refusal."""
+    for candidate in (Path(__file__).resolve().parents[1] / "skills",
+                      Path.home() / ".claude" / "skills"):
+        scripts = candidate / "obsidian-cli" / "scripts"
+        if (scripts / "outbox_io.py").exists():
+            return scripts
+    return None
+
+
+def _load():
+    """Import the shared write path. Returns (outbox_io, vault_lock) or None."""
+    scripts = _skills_dir()
+    if scripts is None:
+        return None
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    try:
+        import outbox_io
+        import vault_lock
+    except ImportError:
+        return None
+    return outbox_io, vault_lock
+
+
+def resolve_vault():
+    """Kept as a module-level name because it is this hook's public surface:
+    the offline suite asserts, before writing a byte, that the redirection to a
+    temporary vault actually took effect."""
+    modules = _load()
+    if modules is None:
+        return None
+    return modules[0].resolve_vault(VAULT_DEFAULT)
+
+
+def _report_parked() -> None:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Push a single outbox note into the vault via the Obsidian CLI.
+        Say out loud how many raw drops the vault daemon could not file. They
+        sit in outbox/needs-review/ waiting for a session to dispatch
+        local-writer, and nothing else in the system mentions them: a drop the
+        local model was not confident about would otherwise disappear into a
+        folder nobody opens, which is the one failure that quietly breaks the
+        unattended path.
 
     Inputs:
-        md_file (Path): outbox .md file whose first line is the directive.
+        none (reads outbox/needs-review/)
 
     Outputs:
-        ok (bool): True if the note was written and archived, else False.
+        None. Prints one line to stderr when the folder is not empty.
     --------------------------------------------------------------------------
     """
-    lines = md_file.read_text(encoding="utf-8").splitlines()
-    if not lines:
-        return False
-    directive = _DIRECTIVE.match(lines[0])
-    if not directive:
-        print(f"[OUTBOX] skip (no directive): {md_file.name}", file=sys.stderr)
-        return False
-    action, path = directive.group(1), directive.group(2)
-    content = "\n".join(lines[1:]).lstrip("\n")
+    parked = sorted((OUTBOX / "needs-review").glob("*.md"))
+    if not parked:
+        return
+    names = ", ".join(p.name for p in parked[:5])
+    more = f" and {len(parked) - 5} more" if len(parked) > 5 else ""
+    print(f"[OUTBOX] {len(parked)} drop(s) parked in needs-review/: {names}{more}. "
+          "Dispatch local-writer to file them; the daemon will not retry them.",
+          file=sys.stderr)
+
+
+def _report_raw_waiting(outbox_io, vault_lock) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Say out loud that raw drops are waiting with no daemon to consume them.
+        local-writer hands an unrouted learning to outbox/raw/ and stops there;
+        nothing starts the daemon, so without this line the drops pile up in a
+        folder nobody opens. That is the same silence already fixed for
+        needs-review/, one step earlier in the pipeline.
+
+        Liveness is asked of vault_lock rather than inferred from the lock file
+        existing: a daemon killed mid-run leaves its singleton lock behind, and
+        reading that as "a daemon is running" reports exactly backwards.
+
+    Inputs:
+        outbox_io (module): for load_config / require
+        vault_lock (module): for its own reclamation rules
+
+    Outputs:
+        None. Prints one line to stderr when raw/ is not empty and no daemon
+        holds the singleton lock. Silent on a missing or unusable config, since
+        this hook never turns a report into a refusal (R11).
+    --------------------------------------------------------------------------
+    """
+    waiting = sorted((OUTBOX / "raw").glob("*.md"))
+    if not waiting:
+        return
     try:
-        # No shell: args are passed as a list, so newlines in content are safe.
-        result = subprocess.run(
-            [str(OBSIDIAN_COM), action, f"path={path}", f"content={content}"],
-            capture_output=True,
-            text=True,
-            timeout=CALL_TIMEOUT,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        print(f"[OUTBOX] Obsidian unreachable, keep {md_file.name}: {exc}",
-              file=sys.stderr)
-        return False
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip()
-        print(f"[OUTBOX] CLI error on {md_file.name}: {detail}",
-              file=sys.stderr)
-        return False
-    SENT.mkdir(parents=True, exist_ok=True)
-    md_file.replace(SENT / md_file.name)
-    print(f"[OUTBOX] flushed {action} -> {path}", file=sys.stderr)
-    return True
+        config = outbox_io.load_config()
+        stale_after_s = outbox_io.require(config, "lock", "stale_after_s")
+    except outbox_io.ConfigError:
+        return
+    if vault_lock.held_by_live_holder(_daemon_lock_path(), stale_after_s):
+        return
+    scripts = _skills_dir()
+    start = f"python {scripts / 'vault_daemon.py'}" if scripts else "vault_daemon.py"
+    print(f"[OUTBOX] {len(waiting)} raw drop(s) waiting in raw/ and no daemon is "
+          f"running. Start one with: {start}", file=sys.stderr)
 
 
 def main() -> int:
     if not OUTBOX.is_dir():
         return 0
+    _report_parked()
+    modules = _load()
+    if modules is None:
+        return 0
+    outbox_io, vault_lock = modules
+    _report_raw_waiting(outbox_io, vault_lock)
     pending = sorted(p for p in OUTBOX.glob("*.md") if p.is_file())
     if not pending:
         return 0
-    if not OBSIDIAN_COM.exists():
-        print("[OUTBOX] Obsidian.com not found; leaving outbox intact",
+    vault = outbox_io.resolve_vault(VAULT_DEFAULT)
+    if vault is None:
+        print("[OUTBOX] no vault (set OBSIDIAN_VAULT); leaving outbox intact",
               file=sys.stderr)
         return 0
-    flushed = sum(_flush_one(md) for md in pending)
-    print(f"[OUTBOX] {flushed}/{len(pending)} note(s) flushed to vault",
-          file=sys.stderr)
+    try:
+        config = outbox_io.load_config()
+        lock = vault_lock.VaultLock(
+            _lock_path(),
+            acquire_timeout_s=outbox_io.require(config, "lock", "hook_acquire_timeout_s"),
+            stale_after_s=outbox_io.require(config, "lock", "stale_after_s"),
+            poll_interval_s=outbox_io.require(config, "lock", "poll_interval_s"),
+        )
+    except outbox_io.ConfigError as exc:
+        print(f"[OUTBOX] {exc}; leaving outbox intact", file=sys.stderr)
+        return 0
+    try:
+        with lock:
+            for reason in lock.reclaimed:
+                print(f"[OUTBOX] reclaimed a stale lock: {reason}", file=sys.stderr)
+            flushed, total = outbox_io.flush_outbox(
+                OUTBOX, SENT, vault, _journal_path())
+    except vault_lock.LockError as exc:
+        # Another writer holds the lock. The notes stay in the outbox and the
+        # next SessionStart flushes them; blocking the session is never an option.
+        print(f"[OUTBOX] {exc} Notes kept for the next run.", file=sys.stderr)
+        return 0
+    print(f"[OUTBOX] {flushed}/{total} note(s) flushed to vault", file=sys.stderr)
     return 0
 
 

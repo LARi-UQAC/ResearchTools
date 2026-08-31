@@ -1,5 +1,12 @@
 # IMRAD Structure Guide
 
+> **Project override (ResearchTools).** The abstract is governed by `composition_rules.md` section 4:
+> no labeled sections (R4.1), no citation (R4.2), no acronym (R4.3), no equation (R4.4). The
+> structured abstract described below is used ONLY when the target journal explicitly requires it in
+> its author guidelines, and that requirement is recorded under R5.4. Section openings and closings
+> follow R3.1-R3.3: each section presents its own subsections through `\ref{}`, and closes on exactly
+> one conclusion sentence plus exactly one announcement sentence.
+
 ## Overview
 
 IMRAD (Introduction, Methods, Results, And Discussion) is the predominant organizational structure for scientific journal articles of original research. Adopted as the majority format since the 1970s, it is now the standard in medical, health, biological, chemical, engineering, and computer sciences.
@@ -52,7 +59,14 @@ Attract readers and accurately represent the paper's content.
 Provide a complete, standalone summary enabling readers to decide if the full paper is relevant to them.
 
 ### Structure
-Most journals now require **structured abstracts** with labeled sections:
+
+**Default (ResearchTools, R4.1): an unstructured abstract.** The abstract is written as flowing
+paragraph or paragraphs with natural transitions, with no `Background:` / `Methods:` / `Results:` /
+`Conclusions:` labels, no `\cite{}`, no acronym, and no equation.
+
+**Exception only:** when the target journal explicitly requires a structured abstract in its author
+guidelines, the labeled form below is used and the requirement is recorded under R5.4. Some journals
+require **structured abstracts** with labeled sections:
 
 **Background/Objective**: Why was the study needed? What was the aim?
 - 1-2 sentences

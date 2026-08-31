@@ -14,6 +14,30 @@ Scientific writing is a process for communicating research with precision and cl
 
 **Critical Principle: Always write in full paragraphs with flowing prose. Never submit bullet points in the final manuscript.** Use a two-stage process: first create section outlines with key points using research-lookup (the `scopus` skill in ResearchTools), then convert those outlines into complete paragraphs.
 
+## Applicability of the composition rules
+
+`references/composition_rules.md` is the canonical source for sentence composition, list policy,
+section structure, abstract format, and the journal-target protocol. Its rules bind EVERY document
+this skill touches: journal and conference papers, theses, thesis proposals, literature reviews,
+reviewer response letters, cover letters, recommendation and support letters, and Beamer slides.
+There is no exempt document type.
+
+The five rules that most often surprise a writer:
+
+- Passive voice is the default. Active voice is a fallback used only where the passive obscures the
+  agent (R1.1, R1.2).
+- `I` is absolutely forbidden everywhere, and `we` is confined to the Contributions paragraph of the
+  Introduction and to the Conclusion (R1.4, R1.5).
+- The semicolon is avoided in prose, and sentences stay short: 15 to 20 words, never past roughly 30,
+  one idea each (R1.7, R1.8). A semicolon marks a sentence that should have been two.
+- Contributions are written as a prose paragraph with inline enumeration, never as a bulleted or
+  numbered list (R2.7).
+- The abstract carries no labels, no citation, no acronym, and no equation (R4.1-R4.4).
+
+Consequence to flag, not to silently work around: a letter produced by the `recommendation-letter`
+skill or by `cover-paper` may not open with "I am pleased to recommend". Use the impersonal
+substitutes table in `composition_rules.md`.
+
 ## When to Use This Skill
 
 This skill should be used when:
@@ -60,13 +84,31 @@ section wins; the generic biomedical/journal-PDF material that follows is a fall
   Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BMC) — any other publisher is cleared with the
   professor first; BibTeX (separate `.bib`) or inline `\bibitem`. See the override in
   `references/citation_styles.md`.
-- **Abstract**: carries no citation. Never use `\cite{}` (or any other reference) inside the abstract;
-  introduce every reference later, in the body.
+- **Sentence composition**: defer to `references/composition_rules.md` (canonical). Passive by
+  default with active as a defensible fallback (R1.1, R1.2), academic register (R1.3), `I` forbidden
+  everywhere and `we` confined to the Contributions paragraph and the Conclusion (R1.4, R1.5), no
+  informal language (R1.6).
+- **Lists**: no bullet survives into the final manuscript; lists are confined to the Methods and to
+  Supplementary Materials, and never appear in the Abstract, Introduction, Results, Discussion, or
+  Conclusions (R2.1-R2.6). Contributions are prose with inline enumeration (R2.7).
+- **Captions**: `\caption{}` is exactly one short meaningful sentence, for a figure, a table, and
+  each subfigure alike (C1, C2). All explanation lives in the main text beside the first `\ref{}`
+  (C3), and table qualifications go in a `threeparttable` `tablenotes` block with `\tnote{}` anchors
+  in `\footnotesize` (C4). See `references/float_authoring_rules.md`.
+- **Abstract**: carries no labeled sections (R4.1), no citation (R4.2), no acronym (R4.3), and no
+  equation (R4.4). Never use `\cite{}` (or any other reference) inside the abstract; introduce every
+  reference later, in the body. The structured abstract is used only when the target journal
+  explicitly requires it.
+- **Journal target**: read the information for authors and the editor's template before authoring or
+  judging compliance; ask the user for the link when neither is supplied (R5.1-R5.4).
+- **LLM usage declaration**: recommend the matching UQAC IAg pictogram for the production, per
+  `references/llm_usage_declaration.md`.
 - **Section flow**: no section is left without text, and every section links to its neighbours. Follow
   the "Inter-section linking" rules in `references/writing_principles.md` — open each section (except
   the Introduction) with a backward link to the previous section's conclusion and a presentation of
-  its subsections via `\ref{}`, and close each section (except the Conclusion / Future Works) with a
-  short conclusion then a forward opening onto the next section.
+  its subsections via `\ref{}` (R3.1, R3.3), and close each section (except the Conclusion / Future
+  Works) with EXACTLY ONE sentence of conclusion followed by EXACTLY ONE sentence presenting the next
+  section (R3.2).
 - **Style hygiene**: keep the AI-usage score under 10%. Avoid the banned elements from `.claude/CLAUDE.md`:
   zero-width characters (U+200B/200C/200D), Unicode tag characters, "smart" curly quotes, the ellipsis
   character (use `...`), em dash and double/triple dash and en dash (prefer a simple hyphen `-` or
@@ -136,7 +178,7 @@ For detailed guidance on IMRAD structure, refer to `references/imrad_structure.m
 
 ### 2. Section-Specific Writing Guidance
 
-**Abstract Composition**: Craft concise, standalone summaries (100-250 words) that capture the paper's purpose, methods, results, and conclusions. Support both structured abstracts (with labeled sections) and unstructured single-paragraph formats.
+**Abstract Composition**: Craft concise, standalone summaries (100-250 words) that capture the paper's purpose, methods, results, and conclusions. The unstructured flowing-paragraph format is the default (R4.1); the structured format with labeled sections is used only when the target journal explicitly requires it in its author guidelines. The abstract carries no citation, no acronym, and no equation (R4.2-R4.4).
 
 **Introduction Development**: Build compelling introductions that:
 - Establish the research problem's importance
@@ -192,7 +234,7 @@ Create effective data visualizations that enhance comprehension. For detailed be
 - **Figures**: Trends, patterns, relationships, comparisons best understood visually
 
 **Design Principles:**
-- Make each table/figure self-explanatory with complete captions
+- In LaTeX output, keep `\caption{}` to exactly one short meaningful sentence and put the explanation in the main text beside the first `\ref{}` (C1, C3); the "self-explanatory complete caption" pattern applies only to non-LaTeX media
 - Use consistent formatting and terminology across all display items
 - Label all axes, columns, and rows with units
 - Include sample sizes (n) and statistical annotations
@@ -236,7 +278,9 @@ Apply fundamental scientific writing principles. For detailed guidance, refer to
 
 **Conciseness**:
 - Eliminate redundant words and phrases
-- Favor shorter sentences (15-20 words average)
+- Favor shorter sentences (15-20 words average, never past roughly 30) — one idea per sentence (R1.8)
+- Avoid the semicolon in prose: split the two clauses into two sentences, or use a colon when the
+  second explains the first, or a comma plus a conjunction when they are short and coordinate (R1.7)
 - Remove unnecessary qualifiers
 - Respect word limits strictly
 
@@ -333,6 +377,9 @@ interpretability of the results.
 - ✅ **Do** use occasional lists only in Methods (e.g., inclusion/exclusion criteria, materials lists)
 - ✅ **Do** ensure every section flows as connected prose
 - ✅ **Do** read paragraphs aloud to check for natural flow
+- ✅ **Do** present every subsection of a section in that section's opening paragraph, via `\ref{}` (R3.1)
+- ✅ **Do** close every section, except the Conclusion and Future Works, with exactly one conclusion sentence and exactly one sentence presenting the next section (R3.2)
+- ❌ **Never** write a contribution list as bullets; contributions are prose with inline enumeration (R2.7)
 
 **When Lists ARE Acceptable (Limited Cases):**
 
@@ -468,6 +515,7 @@ Adapt language, terminology, and conventions to match the specific scientific di
 8. Failure to follow reporting guidelines
 
 **Writing Quality Issues:**
+- Long sentences carrying two or three ideas, usually spliced with a semicolon (R1.7, R1.8)
 - Mixing tenses inappropriately (use past tense for methods/results, present for established facts)
 - Excessive jargon or undefined acronyms
 - Paragraph breaks that disrupt logical flow
@@ -524,7 +572,9 @@ This skill works effectively with:
 
 This skill includes comprehensive reference files covering specific aspects of scientific writing:
 
-- `references/float_authoring_rules.md`: Canonical ResearchTools rules for every figure, table, and equation (label, citation, explanation, table orientation/bold/grey, equation citation-before/variables/punctuation). Authoritative for LaTeX floats — follow this over the generic figure/table guidance.
+- `references/composition_rules.md`: Canonical ResearchTools rules for sentence composition (passive default, pronoun ban), lists and prose, section structure, abstract format, and the journal-target protocol. Authoritative over the generic guidance in `writing_principles.md` and `imrad_structure.md`.
+- `references/llm_usage_declaration.md`: The four UQAC IAg usage levels, their pictograms, and the recommended level per ResearchTools production type.
+- `references/float_authoring_rules.md`: Canonical ResearchTools rules for every figure, table, equation, and caption (label, citation, explanation, one-sentence caption, `threeparttable` notes, table orientation/bold/grey, equation citation-before/variables/punctuation). Authoritative for LaTeX floats — follow this over the generic figure/table guidance.
 - `references/imrad_structure.md`: Detailed guide to IMRAD format and section-specific content
 - `references/citation_styles.md`: Complete citation style guides (APA, AMA, Vancouver, Chicago, IEEE); see the ResearchTools override at the top for the LaTeX `\cite`/BibTeX policy
 - `references/figures_tables.md`: Best practices for creating effective data visualizations; see the ResearchTools/LaTeX override at the top

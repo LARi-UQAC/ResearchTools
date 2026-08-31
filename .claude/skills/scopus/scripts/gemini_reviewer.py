@@ -19,6 +19,8 @@ import os
 import re
 import sys
 
+from reviewer_schema import error_object, expand_schema
+
 try:
     from google import genai
     from google.genai import types
@@ -33,7 +35,13 @@ class ReviewerError(Exception):
     """Raised when the Gemini reviewer cannot return a result (missing dependency, missing
     GEMINI_API_KEY, API failure, or non-JSON response). Never prints and never calls sys.exit,
     so callers such as deliberate.py can mark the reviewer unavailable and keep going instead
-    of aborting the host pipeline."""
+    of aborting the host pipeline. `raw` carries the model's unparsable text when the failure
+    was a parse failure, so the caller can surface it under `_raw` rather than lose the
+    critique silently."""
+
+    def __init__(self, message: str, raw: str = ""):
+        super().__init__(message)
+        self.raw = raw
 
 _REVIEW_PROMPT = """\
 You are a senior academic peer reviewer with expertise in IEEE and Elsevier journals.
@@ -197,11 +205,11 @@ def _salvage_json(raw: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    raise ReviewerError(f"Gemini returned non-JSON response: {raw[:200]}")
+    raise ReviewerError(f"Gemini returned non-JSON response: {raw[:200]}", raw=raw)
 
 
 def run_gemini(prompt: str, model: str = "auto", temperature: float = 0.3,
-               max_output_tokens: int = 8192) -> dict:
+               max_output_tokens: int = 8192, *, expand: bool = True) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -220,9 +228,15 @@ def run_gemini(prompt: str, model: str = "auto", temperature: float = 0.3,
         max_output_tokens (int): response cap; sized so a structured review
             finishes without truncation (truncated JSON was the historical
             'Gemini returned non-JSON response' failure).
+        expand (bool): map the reviewer schema's coded keys back to canonical
+            form. On for the peer-review callers, which is every caller that
+            asked for that schema. Off for a caller whose own schema uses free
+            dict keys, such as gemini_table.py: its `cells` keys are the table's
+            concept names, so a column named 'c' or 'type' would be silently
+            renamed by the reviewer key map.
 
     Outputs:
-        result (dict): parsed JSON response following the reviewer schema.
+        result (dict): parsed JSON response, canonical when expand is on.
     --------------------------------------------------------------------------
     """
     if not _GENAI_OK:
@@ -257,7 +271,11 @@ def run_gemini(prompt: str, model: str = "auto", temperature: float = 0.3,
             raise ReviewerError(f"Gemini API call failed: {exc}") from exc
 
     raw = (response.text or "").strip()
-    return _salvage_json(raw)
+    parsed = _salvage_json(raw)
+    # Every reviewer response is expanded, not only the ones the panel asked in coded keys: a
+    # model answers in whichever form it likes, and expand_schema is idempotent on canonical
+    # input, so running it by default costs nothing and closes the gap a caller could forget.
+    return expand_schema(parsed) if expand else parsed
 
 
 def review(draft: str, topic: str, model: str) -> None:
@@ -290,6 +308,10 @@ def main() -> None:
         review(draft, args.topic, args.model)
     except ReviewerError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        # A parse failure still carries the model's text; emit it as a schema-shaped error
+        # object so a caller capturing stdout keeps the critique instead of losing it.
+        if getattr(exc, "raw", ""):
+            print(json.dumps(error_object(str(exc), exc.raw), ensure_ascii=False, indent=2))
         sys.exit(1)
 
 

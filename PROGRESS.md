@@ -35,9 +35,16 @@ plan: docs/superpowers/todo/2026-08-30-rt-observe-dashboard.md
 - [ ] Phase 5 - optional agent-flow pane  (NOT ASKED FOR: do not start without the operator)
 - [x] Phase 6 - register and prove | evidence: README counts corrected and rt-observe section added, Architecture Layer 6, routing-table row in .claude/CLAUDE.md, workflows.md flow row plus both stale "skills have no mirror" sentences corrected and -Personal documented, testing.md script surface and three suite entries, IMPROVEMENTS.md entry
 - [x] Phase 7 - mirror to every harness, then let the dashboard prove it | evidence: install.ps1 -Profile engineering -Manifest -Personal, then install-junctions.ps1 -Sync, then check-deployment.ps1 40 items in step; the matrix then reported lost 0, stale 0, orphan 0 and 64 suites green
-- [ ] Phase 8 - write both memories back
+- [x] Phase 8 - write both memories back | evidence: local-writer dispatched, cut off by the account spend limit after one tool call, RESUMED and completed - four atomic notes staged (dead config as a failure class and the bidirectional test that catches it; a UserPromptSubmit hook's session-wide blast radius; transient UI state outside a reconciled DOM; redact-before-truncate) plus one Decisions.md append, with three earlier-phase notes correctly skipped as already staged. Graph refreshed from the REPOSITORY ROOT, AST only: 47/47 files, 6297 nodes, 8874 edges. The notes are STAGED in the outbox and reach the vault at session end through the flush hook, so the write is not proven until that hook runs
+- [ ] Phase 9 - the page becomes tabs and fits one screen  (Amendment 2, Part E)
+- [ ] Phase 10 - the global interaction layer: hover detail, rounded corners, draggable boxes  (Amendment 2, Part G)
+- [ ] Phase 11 - the Real-Time Process tab  (Amendment 2, Part F; read the two VibeDesignBook figures FIRST)
 
-**NEXT ACTION**: Phase 8, write both memories back. Dispatch `local-writer` (the only
+**NEXT ACTION**: Phase 9, 10 and 11 from Amendment 2, in that order: the tabs first because they decide how much any panel may show,
+the interaction layer second because the real-time tab is its heaviest consumer, and the
+Real-Time Process tab last. Phase 5 stays optional and unasked.
+
+Phase 8, write both memories back. Dispatch `local-writer` (the only
 caller allowed at either memory) with the learnings this phase produced - the dead-config
 class the `mcp_live` split belongs to, redaction-before-truncation, the two-step confirm
 living outside a morphed DOM, and a `UserPromptSubmit` hook's blast radius - plus a
@@ -87,6 +94,26 @@ be duplicated. Phase 5 is optional and was NOT asked for; leave it unless the op
   design, not a hole to widen here.
 - The vault daemon was already back up on arrival (`running=True`, 232 sent), so
   the note about this session having killed it is closed.
+
+- **The page is one scrolling sheet and the operator wants tabs.** Recorded as
+  Amendment 2 of the plan on 2026-08-31, with three phases: 9 tabs the fan-out, the
+  rail and a new Real-Time Process tab and proves the whole dashboard fits one
+  screen with no scrolling; 10 defines ONE interaction layer for every object in
+  every tab (hover opens the detail behind a summary - the worked example is the
+  fan-out edge reading `1 lost` whose detail is currently unreachable - plus
+  rounded corners and draggable boxes whose edges follow); 11 builds the
+  Real-Time Process tab itself against the two figures the operator already drew,
+  `
+ef{c2:fig:hooks_states}` and `
+ef{c2:fig:superpowers_collab}` in
+  `docs/chapitres/ch02-agent.tex` of VibeDesignBook, which must be read before
+  anything is designed.
+- **`unreachable` on a session card was questioned and is correct.** It reports the
+  delivery PATH, not whether the session is open: Copilot Chat has no hook that
+  could drain an inbox and says so, and every Claude Code card stays unreachable
+  until `rt-inbox-deliver.py` is deployed to `~/.claude/hooks` and declared in the
+  live `settings.json`. That deployment is the operator's `-Sync` plus the settings
+  merge. Full answer in Part H of Amendment 2.
 
 ## Open, and waiting on the operator rather than on work
 

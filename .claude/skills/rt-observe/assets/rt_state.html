@@ -102,6 +102,11 @@
 /* ---- sheet --------------------------------------------------------------- */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* The dashboard is ONE screen. The page itself never scrolls: the sheet IS the
+   viewport, and anything longer than the pane it sits in scrolls inside that
+   pane. That is Phase 9's acceptance test, and it is enforced here rather than
+   hoped for by keeping content short - content grows, a rule does not. */
+html, body { height: 100%; overflow: hidden; }
 body {
   background-color: var(--rt-ground);
   /* The drafting grid. It sits on the page ground only, never inside a panel,
@@ -121,14 +126,21 @@ body {
 }
 .sheet {
   max-width: 1680px;
+  height: 100%;
   margin: 0 auto;
   padding: var(--rt-s3);
+  display: flex;
+  flex-direction: column;
 }
 .sheet-frame {
   border: 1px solid var(--rt-line);
   /* The drawing sheet's border-in-border, in one shadow rather than a wrapper. */
   box-shadow: inset 0 0 0 3px var(--rt-ground), inset 0 0 0 4px var(--rt-line);
   background: var(--rt-panel);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- head ---------------------------------------------------------------- */
@@ -193,34 +205,96 @@ body {
 }
 
 /* ---- layout -------------------------------------------------------------- */
+/* Two columns, each tabbed independently: the sheet's own views on the left,
+   the rail's six panels on the right. Both columns are min-height 0 all the way
+   down, which is what lets an over-long panel scroll inside itself instead of
+   growing the page. */
 .body {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
-  grid-template-areas:
-    "canvas rail"
-    "matrix rail"
-    "fleet  fleet";
+  grid-template-areas: "main rail";
 }
-.a-canvas { grid-area: canvas; }
-.a-matrix { grid-area: matrix; }
-.a-rail   { grid-area: rail; }
-.a-fleet  { grid-area: fleet; }
+.a-main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.a-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 @media (max-width: 1080px) {
   .body {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "canvas" "matrix" "rail" "fleet";
+    /* The rail keeps a share of the height rather than being pushed off the
+       bottom: one screen means both columns stay on it. */
+    grid-template-rows: minmax(0, 1fr) minmax(0, 38%);
+    grid-template-areas: "main" "rail";
   }
 }
 
+/* ---- tabs ---------------------------------------------------------------
+   One component, two independent strips. The main strip decides what the sheet
+   shows, the rail strip decides what the right column shows, and neither knows
+   about the other. A tab is a button, not a link: nothing here is a document
+   location, and nothing here navigates. */
+.tabs {
+  display: flex;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--rt-line);
+  overflow-x: auto;
+}
+.tab {
+  appearance: none;
+  border: 0;
+  border-right: 1px solid var(--rt-line);
+  background: transparent;
+  color: var(--rt-muted);
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: var(--rt-s2) var(--rt-s4);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--rt-ink); }
+.tab:focus-visible { outline: 2px solid var(--rt-blueprint); outline-offset: -2px; }
+.tab[aria-selected="true"] {
+  color: var(--rt-ink);
+  background: var(--rt-ground);
+  box-shadow: inset 0 -2px 0 var(--rt-blueprint);
+}
+.tabs--rail .tab { padding: var(--rt-s2) var(--rt-s3); }
+
+/* A hidden pane is display:none rather than merely transparent, so nothing in
+   it is measured, tabbed into, or read out. The canvas pays for that - a hidden
+   element has width 0 - and the tab switch re-lays it out for exactly that
+   reason. */
+.pane { display: none; flex: 1; min-height: 0; }
+.pane[data-active="1"] { display: flex; flex-direction: column; }
+.pane .panel-body { flex: 1; min-height: 0; overflow: auto; }
+
 /* ---- panel --------------------------------------------------------------- */
-.panel { border-bottom: 1px solid var(--rt-line); min-width: 0; }
-/* The matrix is the primary panel, so when the rail is taller than the two
-   panels beside it the leftover height goes to the matrix rather than showing
-   as dead space under it. */
-.a-matrix { display: flex; flex-direction: column; }
-.a-matrix .panel-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.a-rail { border-left: 1px solid var(--rt-line); border-bottom: 0; }
-@media (max-width: 1080px) { .a-rail { border-left: 0; } }
+.panel { min-width: 0; }
+/* The matrix is the primary view, so its grid takes the leftover height of its
+   pane and the legend, detail and receipt sit under it at their own size. */
+.a-matrix .panel-body { display: flex; flex-direction: column; }
+.a-rail { border-left: 1px solid var(--rt-line); }
+@media (max-width: 1080px) {
+  .a-rail { border-left: 0; border-top: 1px solid var(--rt-line); }
+}
+#rail { flex: 1; min-height: 0; overflow-y: auto; }
+/* Only the rail tab in front is drawn. The state deciding which lives in a
+   module variable, never in this markup, because the rail is morphed on every
+   poll and anything held here would be reconciled away. */
+.rail-panel[data-active="0"] { display: none; }
 .panel-head {
   display: flex;
   align-items: baseline;
@@ -297,16 +371,15 @@ body {
   font-size: var(--rt-t11);
 }
 .mx-controls label { display: flex; align-items: center; gap: var(--rt-s2); }
-/* Grows into the space the rail leaves, up to a cap: uncapped, 134 rows made
-   the sheet several screens tall and put dead space beside the matrix. */
+/* Grows into its pane and no further. The viewport cap this rule used to carry
+   became redundant when the page stopped scrolling: the pane is already bounded
+   by the sheet, so a second bound expressed in vh could only disagree with it. */
 .mx-scroll {
   overflow-x: auto;
   overflow-y: auto;
   flex: 1;
-  min-height: 200px;
-  max-height: calc(100vh - 300px);
+  min-height: 160px;
 }
-@media (max-width: 1080px) { .mx-scroll { flex: none; max-height: none; } }
 .mx-group + .mx-group { margin-top: var(--rt-s4); }
 .mx-group-head {
   font-family: var(--rt-face-utility);
@@ -490,7 +563,11 @@ table.mx tbody tr:hover th { color: var(--rt-blueprint); }
 .mx-detail-empty { color: var(--rt-muted); font-size: var(--rt-t11); }
 
 /* ---- canvas -------------------------------------------------------------- */
-.canvas-wrap { position: relative; }
+.a-canvas .panel-body { display: flex; flex-direction: column; }
+/* Grows into its tab. Never shrinks below the drawing: turned upright the
+   diagram computes a height of its own that can exceed the pane, and squashing
+   it there would clip the lanes instead of letting the pane scroll. */
+.canvas-wrap { position: relative; flex: 1 0 auto; min-height: 0; }
 svg.fanout { display: block; width: 100%; height: 300px; }
 @media (max-width: 1080px) { svg.fanout { height: 240px; } }
 svg.fanout text {
@@ -804,10 +881,8 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
 .panel, .rail-panel {
   animation: rt-enter var(--rt-dur-enter) var(--rt-ease-expo) both;
 }
-.a-canvas { animation-delay: 0ms; }
-.a-matrix { animation-delay: 60ms; }
-.a-rail   { animation-delay: 120ms; }
-.a-fleet  { animation-delay: 180ms; }
+.pane { animation-delay: 0ms; }
+.a-rail .rail-panel { animation-delay: 60ms; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -832,46 +907,109 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
     </header>
 
     <main class="body">
-      <section class="panel a-canvas" aria-labelledby="t-canvas">
-        <div class="panel-head">
-          <h2 class="panel-title" id="t-canvas">Fan-out</h2>
-          <p class="panel-note">One canonical definition set, six harness
-            dialects, and what consumes them.</p>
+      <div class="a-main">
+        <div class="tabs" role="tablist" id="view-tabs" aria-label="Dashboard views">
+          <button class="tab" type="button" role="tab" id="tab-matrix"
+                  data-view="matrix" aria-controls="pane-matrix"
+                  aria-selected="true">Mirror matrix</button>
+          <button class="tab" type="button" role="tab" id="tab-canvas"
+                  data-view="canvas" aria-controls="pane-canvas"
+                  aria-selected="false" tabindex="-1">Fan-out</button>
+          <button class="tab" type="button" role="tab" id="tab-fleet"
+                  data-view="fleet" aria-controls="pane-fleet"
+                  aria-selected="false" tabindex="-1">Sessions</button>
+          <button class="tab" type="button" role="tab" id="tab-live"
+                  data-view="live" aria-controls="pane-live"
+                  aria-selected="false" tabindex="-1">Real-Time Process</button>
         </div>
-        <div class="panel-body">
-          <div class="canvas-wrap">
-            <svg class="fanout" id="fanout" role="img"
-                 aria-label="Wiring diagram of definitions, harness mirrors, sessions and services."></svg>
+
+        <section class="panel pane a-matrix" id="pane-matrix" role="tabpanel"
+                 aria-labelledby="tab-matrix" data-active="1">
+          <div class="panel-head">
+            <h2 class="panel-title" id="t-matrix">Mirror matrix</h2>
+            <p class="panel-note" id="mx-note"></p>
+            <div class="mx-controls">
+              <label><input type="checkbox" id="mx-filter">
+                Show only lost, stale and orphan</label>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section class="panel a-matrix" aria-labelledby="t-matrix">
-        <div class="panel-head">
-          <h2 class="panel-title" id="t-matrix">Mirror matrix</h2>
-          <p class="panel-note" id="mx-note"></p>
-          <div class="mx-controls">
-            <label><input type="checkbox" id="mx-filter">
-              Show only lost, stale and orphan</label>
+          <div class="panel-body">
+            <div class="mx-scroll" id="mx-scroll"></div>
+            <div class="legend" id="mx-legend"></div>
+            <div class="mx-detail" id="mx-detail"></div>
+            <div class="tblock" id="mx-receipt"></div>
           </div>
-        </div>
-        <div class="panel-body">
-          <div class="mx-scroll" id="mx-scroll"></div>
-          <div class="legend" id="mx-legend"></div>
-          <div class="mx-detail" id="mx-detail"></div>
-          <div class="tblock" id="mx-receipt"></div>
-        </div>
-      </section>
+        </section>
 
-      <aside class="a-rail" id="rail" aria-label="Repository, plan and services"></aside>
+        <section class="panel pane a-canvas" id="pane-canvas" role="tabpanel"
+                 aria-labelledby="tab-canvas" data-active="0">
+          <div class="panel-head">
+            <h2 class="panel-title" id="t-canvas">Fan-out</h2>
+            <p class="panel-note">One canonical definition set, six harness
+              dialects, and what consumes them.</p>
+          </div>
+          <div class="panel-body">
+            <div class="canvas-wrap">
+              <svg class="fanout" id="fanout" role="img"
+                   aria-label="Wiring diagram of definitions, harness mirrors, sessions and services."></svg>
+            </div>
+          </div>
+        </section>
 
-      <section class="panel a-fleet" aria-labelledby="t-fleet">
-        <div class="panel-head">
-          <h2 class="panel-title" id="t-fleet">Sessions</h2>
-          <p class="panel-note" id="fleet-note"></p>
+        <section class="panel pane a-fleet" id="pane-fleet" role="tabpanel"
+                 aria-labelledby="tab-fleet" data-active="0">
+          <div class="panel-head">
+            <h2 class="panel-title" id="t-fleet">Sessions</h2>
+            <p class="panel-note" id="fleet-note"></p>
+          </div>
+          <div class="panel-body">
+            <div id="fleet"></div>
+          </div>
+        </section>
+
+        <section class="panel pane a-live" id="pane-live" role="tabpanel"
+                 aria-labelledby="tab-live" data-active="0">
+          <div class="panel-head">
+            <h2 class="panel-title" id="t-live">Real-Time Process</h2>
+            <p class="panel-note">What the harness is doing right now.</p>
+          </div>
+          <div class="panel-body">
+            <div class="unavail" id="live-empty">
+              <b>not built yet</b>
+              <div>This tab is the next phase of the plan. It stays here, and
+                stays empty, rather than being added the day it works: a tab
+                that appears and disappears between refreshes is a dashboard
+                nobody trusts.</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="a-rail"
+             aria-label="Repository, plan, services, code graph, hooks and actions">
+        <div class="tabs tabs--rail" role="tablist" id="rail-tabs"
+             aria-label="Rail panels">
+          <button class="tab" type="button" role="tab" id="rtab-repo"
+                  data-rail-tab="repo" aria-controls="rail"
+                  aria-selected="true">Repository</button>
+          <button class="tab" type="button" role="tab" id="rtab-plan"
+                  data-rail-tab="plan" aria-controls="rail"
+                  aria-selected="false" tabindex="-1">Plan</button>
+          <button class="tab" type="button" role="tab" id="rtab-services"
+                  data-rail-tab="services" aria-controls="rail"
+                  aria-selected="false" tabindex="-1">Services</button>
+          <button class="tab" type="button" role="tab" id="rtab-graph"
+                  data-rail-tab="graph" aria-controls="rail"
+                  aria-selected="false" tabindex="-1">Graph</button>
+          <button class="tab" type="button" role="tab" id="rtab-hooks"
+                  data-rail-tab="hooks" aria-controls="rail"
+                  aria-selected="false" tabindex="-1">Hooks</button>
+          <button class="tab" type="button" role="tab" id="rtab-actions"
+                  data-rail-tab="actions" aria-controls="rail"
+                  aria-selected="false" tabindex="-1">Actions</button>
         </div>
-        <div id="fleet"></div>
-      </section>
+        <div id="rail" role="tabpanel" aria-labelledby="rtab-repo"></div>
+      </aside>
     </main>
 
     <footer class="foot" id="foot"></footer>
@@ -975,6 +1113,134 @@ function morph(live, next) {
 }
 
 function stage() { return document.createElement("div"); }
+
+/* ---- tabs ----------------------------------------------------------------
+   Two independent strips, one implementation. Which tab is in front is a
+   per-viewer convenience, so it lives in a module variable plus localStorage -
+   never in the markup, which the poll morphs, and never on the server, which
+   serves every viewer the same page.
+
+   The rail list is declared HERE rather than beside its renderers because two
+   places name these six panels - the static buttons in the markup and the
+   renderer that builds them - and a third copy is how a tab starts pointing at
+   a panel nobody builds. The suite compares the two that remain. */
+var VIEW_TABS = ["matrix", "canvas", "fleet", "live"];
+var RAIL_TABS = [
+  { id: "repo", label: "Repository",
+    build: function (state) { return renderRepoPanel(state); } },
+  { id: "plan", label: "Plan",
+    build: function (state) { return renderPlanPanel(state); } },
+  { id: "services", label: "Services",
+    build: function (state) { return renderServicesPanel(state); } },
+  { id: "graph", label: "Code graph",
+    build: function (state) { return renderGraphPanel(state); } },
+  { id: "hooks", label: "Hooks",
+    build: function (state) { return renderHooksPanel(state); } },
+  { id: "actions", label: "Actions",
+    build: function () { return renderActionsPanel(); } }
+];
+var VIEW_KEY = "rt-observe-view";
+var RAIL_KEY = "rt-observe-rail";
+
+function storedChoice(key, allowed, fallback) {
+  try {
+    var saved = window.localStorage.getItem(key);
+    return allowed.indexOf(saved) === -1 ? fallback : saved;
+  } catch (error) {
+    /* Same contract as the theme control: a private window, cleared site data
+       or a browser set to block storage THROWS on read rather than returning
+       null. A tab strip must never be able to break the page it sits on. */
+    return fallback;
+  }
+}
+
+function remember(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (error) {
+    /* Not persisted, still applied for this view. */
+  }
+}
+
+var railIds = RAIL_TABS.map(function (tab) { return tab.id; });
+var viewTab = storedChoice(VIEW_KEY, VIEW_TABS, "matrix");
+var railTab = storedChoice(RAIL_KEY, railIds, "repo");
+
+function applyViewTab() {
+  VIEW_TABS.forEach(function (name) {
+    var pane = document.getElementById("pane-" + name);
+    var button = document.getElementById("tab-" + name);
+    var on = name === viewTab;
+    if (pane) { pane.dataset.active = on ? "1" : "0"; }
+    if (button) {
+      button.setAttribute("aria-selected", on ? "true" : "false");
+      button.tabIndex = on ? 0 : -1;
+    }
+  });
+  /* The canvas is MEASURED, not styled. A pane that is display:none is zero
+     wide, so a diagram solved while hidden would be cached under a shape that
+     describes no width at all and reused the moment its tab came back. Discard
+     the cache and solve again, now that there is a width to solve for. */
+  if (viewTab === "canvas" && lastState) {
+    sim.shape = null;
+    renderCanvas(lastState);
+  }
+}
+
+function setViewTab(name) {
+  if (VIEW_TABS.indexOf(name) === -1) { return; }
+  viewTab = name;
+  remember(VIEW_KEY, name);
+  applyViewTab();
+}
+
+function applyRailTab() {
+  RAIL_TABS.forEach(function (tab) {
+    var button = document.getElementById("rtab-" + tab.id);
+    if (!button) { return; }
+    var on = tab.id === railTab;
+    button.setAttribute("aria-selected", on ? "true" : "false");
+    button.tabIndex = on ? 0 : -1;
+  });
+  var rail = document.getElementById("rail");
+  if (rail) { rail.setAttribute("aria-labelledby", "rtab-" + railTab); }
+  var panels = rail ? rail.querySelectorAll(".rail-panel") : [];
+  for (var i = 0; i < panels.length; i += 1) {
+    panels[i].dataset.active =
+      (panels[i].dataset.rail === railTab) ? "1" : "0";
+  }
+}
+
+function setRailTab(name) {
+  if (railIds.indexOf(name) === -1) { return; }
+  railTab = name;
+  remember(RAIL_KEY, name);
+  applyRailTab();
+}
+
+document.addEventListener("click", function (event) {
+  if (!event.target.closest) { return; }
+  var view = event.target.closest("[data-view]");
+  if (view) { setViewTab(view.dataset.view); return; }
+  var rail = event.target.closest("[data-rail-tab]");
+  if (rail) { setRailTab(rail.dataset.railTab); }
+});
+
+document.addEventListener("keydown", function (event) {
+  /* Arrow keys inside a tablist, which is what role="tablist" promises a
+     screen reader and what a keyboard-only operator reaches for first. */
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") { return; }
+  var button = event.target.closest && event.target.closest(".tab");
+  if (!button) { return; }
+  var tabs = [].slice.call(button.parentNode.querySelectorAll(".tab"));
+  var step = event.key === "ArrowRight" ? 1 : tabs.length - 1;
+  var next = tabs[(tabs.indexOf(button) + step) % tabs.length];
+  if (!next) { return; }
+  event.preventDefault();
+  if (next.dataset.view) { setViewTab(next.dataset.view); }
+  if (next.dataset.railTab) { setRailTab(next.dataset.railTab); }
+  next.focus();
+});
 
 function txt(node, value) {
   var text = (value === null || value === undefined) ? "" : String(value);
@@ -1872,14 +2138,33 @@ document.addEventListener("click", function (event) {
   }
 });
 
+function railPlaceholder(label, section) {
+  /* A panel a collector could not build keeps its tab and says why. Dropping it
+     would leave a tab pointing at nothing, and renumbering the strip between
+     polls is worse than an honest empty panel (R8). */
+  var panel = railPanel(label);
+  unavailable(panel, label + " unavailable", section);
+  return panel;
+}
+
 function renderRail(state) {
   var next = stage();
-  [renderRepoPanel(state), renderPlanPanel(state), renderServicesPanel(state),
-   renderGraphPanel(state), renderHooksPanel(state),
-   renderActionsPanel()].forEach(function (panel) {
-    if (panel) { next.appendChild(panel); }
+  RAIL_TABS.forEach(function (tab) {
+    var panel = tab.build(state);
+    if (!panel) {
+      panel = railPlaceholder(tab.label, {
+        status: "unavailable",
+        reason: "no harness on this machine reports it"
+      });
+    }
+    panel.dataset.rail = tab.id;
+    /* Set on the STAGED node, so the morph carries it: an attribute written
+       afterwards would survive until the next poll and no longer. */
+    panel.dataset.active = (tab.id === railTab) ? "1" : "0";
+    next.appendChild(panel);
   });
   morph(document.getElementById("rail"), next);
+  applyRailTab();
 }
 
 /* ---- fleet --------------------------------------------------------------- */
@@ -1971,12 +2256,13 @@ function renderFleet(state) {
     var box = el("div", "fleet-empty");
     box.appendChild(el("h4", null, "No agent harness installed here"));
     box.appendChild(el("p", null,
-      "The matrix, the registry and the repository panels above are complete "
-      + "without one. They read the files in this clone, so they answer whether "
-      + "your checkout deployed correctly on any machine."));
+      "The matrix tab, and the registry and repository panels in the rail, are "
+      + "complete without one. They read the files in this clone, so they answer "
+      + "whether your checkout deployed correctly on any machine."));
     box.appendChild(el("p", null,
-      "Sessions, hooks and live MCP appear once you run Claude Code or "
-      + "GitHub Copilot Chat on this machine. Nothing here requires either."));
+      "This tab, the hooks panel and live MCP fill in once you run Claude Code "
+      + "or GitHub Copilot Chat on this machine. Nothing else here requires "
+      + "either."));
     var notBuilt = fleet.not_built || [];
     if (notBuilt.length) {
       box.appendChild(el("p", null,
@@ -2451,6 +2737,13 @@ function tweenTo(graph, svg, width, height, vertical, from) {
 
 function renderCanvas(state) {
   var svg = document.getElementById("fanout");
+  if (!svg.getClientRects().length) {
+    /* Its tab is not in front. A hidden element measures zero wide, and a
+       layout solved for no width would be cached under that shape and reused
+       when the tab came back. Draw nothing, cache nothing; the tab switch asks
+       again with a width to work from. */
+    return;
+  }
   var box = svg.getBoundingClientRect();
   var width = Math.max(280, Math.round(box.width));
   var graph = buildGraph(state);
@@ -2464,7 +2757,11 @@ function renderCanvas(state) {
     return;
   }
   var vertical = width < CFG.canvas.vertical_below_px;
-  var height = canvasHeight(graph, vertical, Math.round(box.height), width);
+  /* Measured on the WRAPPER, not on the drawing. The drawing carries the height
+     this function gave it last time, so reading it back would pin the diagram
+     to its first size for ever; the wrapper is what the tab actually offers. */
+  var offered = Math.round(svg.parentNode.getBoundingClientRect().height);
+  var height = canvasHeight(graph, vertical, offered, width);
   svg.style.height = height + "px";
 
   var shape = graphShape(graph, width, height, vertical);
@@ -2685,6 +2982,8 @@ function cycleTheme() {
 
 document.getElementById("theme").addEventListener("click", cycleTheme);
 applyTheme(storedTheme());
+applyViewTab();
+applyRailTab();
 
 /* The whitelist is read ONCE at load and again after each run, never on the
    two-second poll: it costs a PATH lookup per action and it only changes when

@@ -441,6 +441,40 @@ flowchart TD
   R --> A
 ```
 
+## Layer 6 - Observability
+
+Cross-cutting over every layer above: the `rt-observe` skill reports what this toolkit's own
+state IS, rather than what it does.
+
+**Neutral core plus optional adapters.** The core knows no harness name. Each harness is one
+module answering `probe(context)` and `collect(context)`, registered in
+`.claude/skills/rt-observe/harnesses.json` rather than in code, so adding one is a module plus
+a data line with no core edit. Two are built - Claude Code (sessions from the JSONL
+transcripts, plus the hooks inventory reusing `build_inventory` from
+`.claude/hooks/session-hooks-inventory.py`) and GitHub Copilot Chat (sessions over a read-only
+SQLite store, opened `file:...?mode=ro` and never for writing). Copilot CLI, Gemini, Codex,
+opencode and Continue are documented in that same registry as not built, with the reason, so a
+later session does not re-derive it.
+
+**The mirror matrix** is the centrepiece and the part that needs no harness at all: canonical
+definitions against harness dialects, comparing files in a clone. Its intent comes from
+`mirror-policy.json` at the repository root, read by `install.ps1` AND by
+`.claude/skills/rt-observe/scripts/collect_mirrors.py`. `install.ps1 -Manifest` additionally
+records the verdicts it already computed into `.rt-mirrors.json`, which the collector treats as
+an enrichment and never as a prerequisite: with no manifest the matrix is still complete, it
+simply cannot report drift since an install nobody ran.
+
+**Receipts, not status words.** Every value in the snapshot carries its provenance - what
+proved it and when - so a stale receipt renders differently from a fresh one and "green from
+three days ago" can never be misread as "green now". A collector that cannot answer returns an
+explicit unavailable state with its reason; an unavailable panel is stated on screen rather
+than blanked, and never silently omitted.
+
+**Two boundaries it does not cross.** It never reads the Obsidian vault. It never reads the
+code graph either: the graph panel renders a snapshot `local-writer` wrote outside the graph's
+own storage, since the access guard refuses the graph to every other caller and a server
+reading it on a caller's behalf is precisely what that guard stops.
+
 ## Notes
 
 - **Agent file format.** Each agent is one flat markdown file [agents/](agents)`<name>.md` whose line 1 opens YAML frontmatter (`name:`, `description:`) — the layout Claude Code's subagent discovery scans. Skills are the opposite: folder-based (`skills/<name>/SKILL.md`). The `.claude/agents/` files are canonical; `install.ps1` (repo root) regenerates the GitHub Copilot (`.github/agents/*.agent.md`), OpenCode, Continue, and Aider mirrors from them, and `install-junctions.ps1` links them per-file into `~/.claude/agents/` for global availability. Skills additionally get a Codex mirror, `.agents/skills/<name>/SKILL.md` — a pointer carrying only the frontmatter, since Codex is the sole harness that discovers skills natively (it scans `.agents/skills` from the working directory up to the repo root); its description is trimmed to whole sentences to fit Codex's skill-list budget, and `.claude/skills/AGENTS.md` is the nested instruction file Codex appends to the root `AGENTS.md` when the working directory sits inside that tree.

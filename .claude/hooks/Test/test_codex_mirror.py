@@ -26,6 +26,7 @@ Both ceilings are Codex-side defaults a user can raise. They are the conservativ
 case, so passing here means the mirror works on an unconfigured Codex.
 """
 import io
+import json
 import math
 import re
 import unittest
@@ -34,9 +35,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 SKILLS = REPO / ".claude" / "skills"
 INSTALLER = REPO / "install.ps1"
+POLICY = REPO / "mirror-policy.json"
 
-SKILL_BUDGET_LINE = re.compile(r"\$CodexSkillListBudget\s*=\s*(\d+)")
-DOC_BYTES_LINE = re.compile(r"\$CodexDocMaxBytes\s*=\s*(\d+)")
+# Both Codex ceilings moved out of install.ps1 into mirror-policy.json on
+# 2026-08-30, so the rt-observe collector can read the same intent without
+# running PowerShell. This suite reads the policy, and asserts the installer
+# does not restate either value: two declarations of one budget drift, and the
+# drift is silent (R0, R2).
+RESTATED_BUDGET = re.compile(r"\$CodexSkillListBudget\s*=\s*\d")
+RESTATED_DOCBYTES = re.compile(r"\$CodexDocMaxBytes\s*=\s*\d")
 FRONTMATTER = re.compile(r"(?s)\A---\r?\n(.*?)\r?\n---\r?\n")
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
@@ -107,16 +114,13 @@ def limit_description(text: str, cap: int) -> str:
 class CodexMirrorTest(unittest.TestCase):
     def setUp(self):
         self.installer = io.open(INSTALLER, encoding="utf-8").read()
-        budget = SKILL_BUDGET_LINE.search(self.installer)
-        docbytes = DOC_BYTES_LINE.search(self.installer)
-        self.assertIsNotNone(
-            budget, "install.ps1 no longer declares $CodexSkillListBudget, so this "
-                    "test can no longer see the rule it is checking")
-        self.assertIsNotNone(
-            docbytes, "install.ps1 no longer declares $CodexDocMaxBytes, so this "
-                      "test can no longer see the rule it is checking")
-        self.budget = int(budget.group(1))
-        self.doc_max_bytes = int(docbytes.group(1))
+        self.assertTrue(
+            POLICY.exists(),
+            f"mirror-policy.json is missing at {POLICY}. It carries both Codex "
+            "ceilings, and install.ps1 refuses to run without it.")
+        self.policy = json.loads(io.open(POLICY, encoding="utf-8").read())
+        self.budget = self._policy_int("codex_skill_list_budget")
+        self.doc_max_bytes = self._policy_int("codex_doc_max_bytes")
 
         self.skills = {}
         for skill_md in sorted(SKILLS.glob("*/SKILL.md")):
@@ -128,6 +132,45 @@ class CodexMirrorTest(unittest.TestCase):
 
         overhead = sum(len(n) for n in self.skills)
         self.cap = math.floor((self.budget - overhead) / len(self.skills))
+
+    def _policy_int(self, key):
+        thresholds = self.policy.get("thresholds", {})
+        self.assertIn(
+            key, thresholds,
+            "mirror-policy.json declares no thresholds.%s, so this test can no "
+            "longer see the rule it is checking" % key)
+        value = thresholds[key].get("value")
+        self.assertIsInstance(
+            value, int, "thresholds.%s.value is not an integer: %r" % (key, value))
+        return value
+
+    def test_the_installer_reads_both_ceilings_rather_than_restating_them(self):
+        """One budget, one declaration. A restated copy drifts silently: the
+        installer would trim against its own number while the dashboard reported
+        by-design against the policy's."""
+        self.assertIsNone(
+            RESTATED_BUDGET.search(self.installer),
+            "install.ps1 assigns a literal to $CodexSkillListBudget again. It must "
+            "read thresholds.codex_skill_list_budget from mirror-policy.json.")
+        self.assertIsNone(
+            RESTATED_DOCBYTES.search(self.installer),
+            "install.ps1 assigns a literal to $CodexDocMaxBytes again. It must read "
+            "thresholds.codex_doc_max_bytes from mirror-policy.json.")
+        self.assertIn(
+            "mirror-policy.json", self.installer,
+            "install.ps1 no longer mentions mirror-policy.json, so nothing reads the "
+            "policy and the matrix cannot tell by-design from lost.")
+
+    def test_the_restatement_control_can_actually_fail(self):
+        """A check that cannot fail is not a check: both patterns are proven to
+        fire on the exact text they exist to catch, and to stay silent on the
+        parameter form that is now correct."""
+        self.assertIsNotNone(
+            RESTATED_BUDGET.search("    [int]$CodexSkillListBudget = 8000,"))
+        self.assertIsNotNone(
+            RESTATED_DOCBYTES.search("    [int]$CodexDocMaxBytes = 32768,"))
+        self.assertIsNone(RESTATED_BUDGET.search("    [int]$CodexSkillListBudget,"))
+        self.assertIsNone(RESTATED_DOCBYTES.search("    [int]$CodexDocMaxBytes,"))
 
     def trimmed(self):
         return {n: limit_description(d, self.cap) for n, d in self.skills.items()}

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "purpose": "The adapter registry. Adding a harness is a new module in scripts/adapters/ plus one entry here - never a core edit. A test asserts exactly that by registering a fake adapter and checking the snapshot grows, because a design that merely intends to be neutral drifts and one that is tested for it cannot.",
+
+  "adapters": [
+    {
+      "id": "claude_code",
+      "module": "claude_code",
+      "label": "Claude Code",
+      "provides": ["sessions", "hooks", "mcp_live"],
+      "note": "Sessions from the JSONL transcripts under the Claude projects directory, tail-read. Also carries the hooks inventory, which is harness-specific, by loading build_inventory out of .claude/hooks/session-hooks-inventory.py by PATH: that filename contains hyphens, so it cannot be imported by name, and the function has exactly one caller of its own, so it was never an API."
+    },
+    {
+      "id": "copilot_chat",
+      "module": "copilot_chat",
+      "label": "GitHub Copilot Chat",
+      "provides": ["sessions"],
+      "note": "Read-only SQLite over the VS Code extension's session store, opened file:...?mode=ro and never for writing."
+    }
+  ],
+
+  "documented_not_built": [
+    {
+      "id": "copilot_cli",
+      "label": "GitHub Copilot CLI",
+      "where": "~/.copilot/ide/*.lock",
+      "reason": "Those lock files carry an Authorization Nonce header and a named-pipe path. An adapter must read pid, ideName, workspaceFolders and timestamp ONLY, and must never emit the credential. Not built, so the rule is recorded rather than relied on."
+    },
+    {
+      "id": "gemini_cli",
+      "label": "Gemini CLI",
+      "where": "~/.gemini/",
+      "reason": "Not installed on the machine this was written on, so nothing could be verified against a real store."
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "where": "~/.codex/",
+      "reason": "Configured through .agents/skills but never run here: the directory does not exist, so its session shape is unverified."
+    },
+    {
+      "id": "opencode",
+      "label": "opencode",
+      "where": ".opencode/",
+      "reason": "Configuration only. No session state on disk to report, so an adapter would have nothing to add beyond the mirror matrix column that already exists."
+    },
+    {
+      "id": "continue",
+      "label": "Continue",
+      "where": ".continue/",
+      "reason": "Configuration only, same as opencode."
+    }
+  ]
+}

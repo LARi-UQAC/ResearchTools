@@ -1,0 +1,2696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rt-observe</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23e3e6e2'/%3E%3Cpath d='M2.5 13.5h11M2.5 3.5h7M2.5 8.5h9' stroke='%231b2430' stroke-width='1.4'/%3E%3C/svg%3E">
+<!--
+  rt_state.html - the rt-observe dashboard.
+
+  Served from a loopback socket by rt_server.py. No CDN, no npm, no build step,
+  and no network at render time: the type system is a platform stack and the only
+  script is the one below.
+
+  The direction and the token values are documented in assets/rt-tokens.css at
+  the repository root, which is the shared file other emitters can adopt. The
+  :root blocks below are that file, inlined so this page still renders if it is
+  ever opened without its server, and test_rt_view.py asserts the two agree
+  token for token - one truth with a mechanical check rather than two copies.
+
+  Two placeholders are filled in by the server at request time:
+  __RT_SESSION_TOKEN__ and __RT_VIEW_CONFIG__. Every number the page uses
+  arrives in that second one, so the markup carries no configured value (R0).
+-->
+<style>
+/* ---- tokens: mirror of assets/rt-tokens.css ------------------------------ */
+:root {
+  color-scheme: light;
+  --rt-ground: #e3e6e2;
+  --rt-ink: #1b2430;
+  --rt-muted: #5a6560;
+  --rt-line: #a9b2ac;
+  --rt-hatch: #8b968f;
+  --rt-blueprint: #2b5f87;
+  --rt-alarm: #c0322f;
+  --rt-panel: color-mix(in oklab, var(--rt-ground) 97%, var(--rt-ink));
+  --rt-sunken: color-mix(in oklab, var(--rt-ground) 93%, var(--rt-ink));
+  --rt-wash: color-mix(in oklab, var(--rt-ground) 88%, var(--rt-blueprint));
+  --rt-alarm-wash: color-mix(in oklab, var(--rt-ground) 82%, var(--rt-alarm));
+  --rt-face-utility: "Bahnschrift SemiCondensed", "Bahnschrift",
+    "DIN Alternate", "Avenir Next Condensed", "Roboto Condensed",
+    "DejaVu Sans Condensed", system-ui, sans-serif;
+  --rt-face-body: "Segoe UI", -apple-system, "Cantarell", "Helvetica Neue",
+    sans-serif;
+  --rt-face-receipt: "Cascadia Mono", "Cascadia Code", ui-monospace, "SF Mono",
+    "DejaVu Sans Mono", monospace;
+  /* 10px, not 9: the audit measured a 9px rendered floor and this page is
+     read mid-task. t9 and t10 share a value today and differ in ROLE - t9 is a
+     micro label inside a title block, t10 is small UI text. */
+  --rt-t9: 10px;
+  --rt-t10: 10px;
+  --rt-t11: 11px;
+  --rt-t12: 12px;
+  --rt-t13: 13px;
+  --rt-t15: clamp(14px, 1.1vw, 15px);
+  --rt-t19: clamp(17px, 1.6vw, 19px);
+  --rt-t26: clamp(21px, 2.4vw, 26px);
+  --rt-s1: 3px;
+  --rt-s2: 6px;
+  --rt-s3: 10px;
+  --rt-s4: 16px;
+  --rt-s5: 24px;
+  --rt-s6: 36px;
+  --rt-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --rt-ease-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --rt-ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --rt-dur-tap: 120ms;
+  --rt-dur-state: 220ms;
+  --rt-dur-enter: 420ms;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --rt-ground: #101f2b;
+    --rt-ink: #dde4e6;
+    --rt-muted: #8fa2ab;
+    --rt-line: #33505f;
+    --rt-hatch: #52707f;
+    --rt-blueprint: #86bbde;
+    --rt-alarm: #e4645e;
+    --rt-panel: color-mix(in oklab, var(--rt-ground) 94%, var(--rt-ink));
+    --rt-sunken: color-mix(in oklab, var(--rt-ground) 88%, #000);
+    --rt-wash: color-mix(in oklab, var(--rt-ground) 86%, var(--rt-blueprint));
+    --rt-alarm-wash: color-mix(in oklab, var(--rt-ground) 78%, var(--rt-alarm));
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --rt-ground: #101f2b;
+  --rt-ink: #dde4e6;
+  --rt-muted: #8fa2ab;
+  --rt-line: #33505f;
+  --rt-hatch: #52707f;
+  --rt-blueprint: #86bbde;
+  --rt-alarm: #e4645e;
+  --rt-panel: color-mix(in oklab, var(--rt-ground) 94%, var(--rt-ink));
+  --rt-sunken: color-mix(in oklab, var(--rt-ground) 88%, #000);
+  --rt-wash: color-mix(in oklab, var(--rt-ground) 86%, var(--rt-blueprint));
+  --rt-alarm-wash: color-mix(in oklab, var(--rt-ground) 78%, var(--rt-alarm));
+}
+
+/* ---- sheet --------------------------------------------------------------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background-color: var(--rt-ground);
+  /* The drafting grid. It sits on the page ground only, never inside a panel,
+     and at this opacity it reads as paper rather than as a table. */
+  background-image:
+    repeating-linear-gradient(0deg,
+      color-mix(in oklab, var(--rt-ground) 96%, var(--rt-ink)) 0 1px,
+      transparent 1px 8px),
+    repeating-linear-gradient(90deg,
+      color-mix(in oklab, var(--rt-ground) 96%, var(--rt-ink)) 0 1px,
+      transparent 1px 8px);
+  color: var(--rt-ink);
+  font-family: var(--rt-face-body);
+  font-size: var(--rt-t12);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+.sheet {
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: var(--rt-s3);
+}
+.sheet-frame {
+  border: 1px solid var(--rt-line);
+  /* The drawing sheet's border-in-border, in one shadow rather than a wrapper. */
+  box-shadow: inset 0 0 0 3px var(--rt-ground), inset 0 0 0 4px var(--rt-line);
+  background: var(--rt-panel);
+}
+
+/* ---- head ---------------------------------------------------------------- */
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--rt-s4);
+  flex-wrap: wrap;
+  padding: var(--rt-s3) var(--rt-s4);
+  border-bottom: 1px solid var(--rt-line);
+}
+.wordmark {
+  margin: 0;
+  font-weight: 400;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t26);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+}
+.wordmark b { font-weight: 700; }
+.wordmark span { color: var(--rt-muted); font-weight: 400; }
+.head-id {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t12);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+.head-id b { color: var(--rt-ink); font-weight: 600; }
+.head-alarm {
+  margin-left: auto;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t13);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rt-ground);
+  background: var(--rt-alarm);
+  padding: var(--rt-s1) var(--rt-s3);
+}
+.head-ok {
+  margin-left: auto;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t12);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+
+/* Theme control. Quiet by construction: it is a preference, not a finding, so
+   it wears the same hairline as any other secondary control and never competes
+   with the alarm badge beside it. */
+.theme {
+  margin-left: var(--rt-s3);
+  align-self: center;
+  white-space: nowrap;
+}
+.theme b {
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+/* ---- layout -------------------------------------------------------------- */
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-areas:
+    "canvas rail"
+    "matrix rail"
+    "fleet  fleet";
+}
+.a-canvas { grid-area: canvas; }
+.a-matrix { grid-area: matrix; }
+.a-rail   { grid-area: rail; }
+.a-fleet  { grid-area: fleet; }
+@media (max-width: 1080px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "canvas" "matrix" "rail" "fleet";
+  }
+}
+
+/* ---- panel --------------------------------------------------------------- */
+.panel { border-bottom: 1px solid var(--rt-line); min-width: 0; }
+/* The matrix is the primary panel, so when the rail is taller than the two
+   panels beside it the leftover height goes to the matrix rather than showing
+   as dead space under it. */
+.a-matrix { display: flex; flex-direction: column; }
+.a-matrix .panel-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.a-rail { border-left: 1px solid var(--rt-line); border-bottom: 0; }
+@media (max-width: 1080px) { .a-rail { border-left: 0; } }
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--rt-s3);
+  padding: var(--rt-s2) var(--rt-s4);
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--rt-line) 60%, transparent);
+}
+.panel-title {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t11);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.panel-note { font-size: var(--rt-t11); color: var(--rt-muted); }
+.panel-body { padding: var(--rt-s3) var(--rt-s4) var(--rt-s2); }
+
+/* The title block: a drawing's own receipt, and the reason this page can be
+   trusted rather than merely read. Fields, not a badge. */
+.tblock {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-top: 1px solid
+    color-mix(in oklab, var(--rt-line) 60%, transparent);
+  margin-top: var(--rt-s2);
+}
+.tblock div {
+  padding: var(--rt-s1) var(--rt-s3) var(--rt-s1) 0;
+  margin-right: var(--rt-s3);
+  border-right: 1px solid
+    color-mix(in oklab, var(--rt-line) 45%, transparent);
+}
+.tblock div:last-child { border-right: 0; }
+.tblock span {
+  display: block;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+.rc {
+  font-family: var(--rt-face-receipt);
+  font-size: var(--rt-t10);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.tblock--stale span, .tblock--stale .rc { color: var(--rt-alarm); }
+
+.unavail {
+  border-left: 2px solid var(--rt-blueprint);
+  padding-left: var(--rt-s3);
+  color: var(--rt-muted);
+  font-size: var(--rt-t11);
+}
+.unavail b {
+  display: block;
+  font-family: var(--rt-face-utility);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: var(--rt-t10);
+  color: var(--rt-ink);
+}
+
+/* ---- matrix -------------------------------------------------------------- */
+.mx-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--rt-s4);
+  flex-wrap: wrap;
+  margin-left: auto;
+  font-size: var(--rt-t11);
+}
+.mx-controls label { display: flex; align-items: center; gap: var(--rt-s2); }
+/* Grows into the space the rail leaves, up to a cap: uncapped, 134 rows made
+   the sheet several screens tall and put dead space beside the matrix. */
+.mx-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+  max-height: calc(100vh - 300px);
+}
+@media (max-width: 1080px) { .mx-scroll { flex: none; max-height: none; } }
+.mx-group + .mx-group { margin-top: var(--rt-s4); }
+.mx-group-head {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+  padding-bottom: var(--rt-s1);
+}
+table.mx { border-collapse: collapse; width: 100%; }
+table.mx th, table.mx td { padding: 0; text-align: left; }
+table.mx thead th {
+  vertical-align: bottom;
+  padding: 0 var(--rt-s2) var(--rt-s1);
+  border-bottom: 1px solid var(--rt-line);
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--rt-ink);
+  white-space: nowrap;
+}
+table.mx thead th em {
+  display: block;
+  font-style: normal;
+  font-size: var(--rt-t9);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+table.mx thead th i {
+  font-style: normal;
+  color: var(--rt-alarm);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.08em;
+}
+table.mx tbody th {
+  font-weight: 400;
+  font-size: var(--rt-t11);
+  padding: 0 var(--rt-s3) 0 0;
+  white-space: nowrap;
+  color: var(--rt-ink);
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--rt-line) 32%, transparent);
+}
+table.mx tbody td {
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--rt-line) 32%, transparent);
+  width: 34px;
+}
+table.mx tbody tr:hover th { color: var(--rt-blueprint); }
+
+.cell {
+  appearance: none;
+  display: block;
+  width: 28px;
+  height: 20px;
+  margin: 2px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--rt-ink);
+  position: relative;
+  transition: transform var(--rt-dur-tap) var(--rt-ease-quart);
+}
+.cell:hover { transform: scale(1.12); }
+.cell:focus-visible { outline: 2px solid var(--rt-blueprint); outline-offset: 1px; }
+
+/* Eight states. Colour marks exactly ONE of them, because on this surface no
+   second hue cleared the CVD floors against the alarm red. Every state is
+   readable with colour removed: a code, a texture, or an edge. */
+.cell[data-state="ok"]::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 3px; height: 3px;
+  transform: translate(-50%, -50%);
+  background: var(--rt-line);
+}
+.cell[data-state="by-design"] {
+  background-image: repeating-linear-gradient(45deg,
+    var(--rt-hatch) 0 1px, transparent 1px 4px);
+  color: var(--rt-muted);
+}
+.cell[data-state="stubbed"],
+.cell[data-state="trimmed"] {
+  background: var(--rt-wash);
+  border: 1px solid color-mix(in oklab, var(--rt-line) 80%, var(--rt-ink));
+}
+.cell[data-state="stale"] {
+  background: var(--rt-wash);
+  border: 1px solid color-mix(in oklab, var(--rt-line) 80%, var(--rt-ink));
+  border-bottom: 2px solid var(--rt-blueprint);
+}
+.cell[data-state="lost"] {
+  background: var(--rt-alarm);
+  color: var(--rt-ground);
+}
+.cell[data-state="orphan"] {
+  border: 2px solid var(--rt-alarm);
+  color: var(--rt-alarm);
+}
+.cell[data-state="unknown"] {
+  border: 1px dashed var(--rt-line);
+  color: var(--rt-muted);
+}
+@keyframes rt-flash {
+  from { box-shadow: 0 0 0 3px var(--rt-blueprint); }
+  to   { box-shadow: 0 0 0 0 transparent; }
+}
+.cell--changed { animation: rt-flash var(--rt-dur-state) var(--rt-ease-quart); }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rt-s1) var(--rt-s4);
+  padding-top: var(--rt-s3);
+  font-size: var(--rt-t10);
+  color: var(--rt-muted);
+}
+.legend div { display: flex; align-items: center; gap: var(--rt-s2); }
+.legend .cell { cursor: default; flex: 0 0 auto; }
+.legend b {
+  font-family: var(--rt-face-utility);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rt-ink);
+  font-size: var(--rt-t10);
+  font-weight: 600;
+}
+
+.mx-single { margin-top: var(--rt-s4); }
+.mx-single ul { list-style: none; margin: 0; padding: 0; }
+.mx-single li {
+  display: flex;
+  align-items: center;
+  gap: var(--rt-s3);
+  padding: var(--rt-s1) 0;
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--rt-line) 32%, transparent);
+  font-size: var(--rt-t11);
+}
+.mx-single li span { color: var(--rt-muted); }
+
+.mx-detail {
+  margin-top: var(--rt-s3);
+  border-top: 1px solid var(--rt-line);
+  padding-top: var(--rt-s2);
+}
+.mx-detail h3 {
+  margin: 0 0 var(--rt-s2);
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t13);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.mx-detail table { border-collapse: collapse; width: 100%; }
+.mx-detail th, .mx-detail td {
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  padding: var(--rt-s1) var(--rt-s3) var(--rt-s1) 0;
+  font-size: var(--rt-t11);
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--rt-line) 32%, transparent);
+}
+.mx-detail thead th {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+  font-weight: 400;
+}
+.mx-detail .why { color: var(--rt-muted); }
+.mx-detail-empty { color: var(--rt-muted); font-size: var(--rt-t11); }
+
+/* ---- canvas -------------------------------------------------------------- */
+.canvas-wrap { position: relative; }
+svg.fanout { display: block; width: 100%; height: 300px; }
+@media (max-width: 1080px) { svg.fanout { height: 240px; } }
+svg.fanout text {
+  font-family: var(--rt-face-utility);
+  fill: var(--rt-ink);
+  letter-spacing: 0.06em;
+}
+svg.fanout .lane-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  fill: var(--rt-muted);
+}
+svg.fanout .edge {
+  fill: none;
+  stroke: color-mix(in oklab, var(--rt-line) 90%, var(--rt-ink));
+  stroke-width: 1;
+}
+svg.fanout .edge--canonical {
+  stroke: var(--rt-blueprint);
+  stroke-width: 1.5;
+}
+svg.fanout .edge--alarm { stroke: var(--rt-alarm); stroke-width: 2; }
+svg.fanout .node rect {
+  fill: var(--rt-ground);
+  stroke: var(--rt-ink);
+  stroke-width: 1;
+}
+svg.fanout .node--alarm rect { stroke: var(--rt-alarm); stroke-width: 2; }
+svg.fanout .node--absent rect { stroke-dasharray: 3 2; stroke: var(--rt-line); }
+svg.fanout .node text { font-size: 10px; }
+svg.fanout .node .count { fill: var(--rt-muted); font-size: 10px; }
+svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
+
+/* ---- rail ---------------------------------------------------------------- */
+.rail-panel { padding: var(--rt-s3) var(--rt-s4); }
+.rail-panel + .rail-panel { border-top: 1px solid var(--rt-line); }
+.rail-title {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: var(--rt-s2);
+}
+.kv { display: grid; grid-template-columns: auto 1fr; gap: var(--rt-s1) var(--rt-s3); }
+.kv dt {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+.kv dd { margin: 0; font-size: var(--rt-t11); }
+.kv dd.bad { color: var(--rt-alarm); font-weight: 600; }
+.phases { list-style: none; margin: 0; padding: 0; }
+.phases li {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: var(--rt-s2);
+  padding: 1px 0;
+  font-size: var(--rt-t11);
+}
+.phases li > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--rt-s3);
+}
+.phases .st { flex: 0 0 auto; }
+.phases .num {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  color: var(--rt-muted);
+  font-variant-numeric: tabular-nums;
+}
+.phases .st {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+.phases li[data-state="done"] .lbl { color: var(--rt-ink); }
+.phases li[data-state="todo"] .lbl { color: var(--rt-muted); }
+.phases li[data-state="unproven"] .st,
+.phases li[data-state="unreported"] .st { color: var(--rt-alarm); }
+.next {
+  margin-top: var(--rt-s2);
+  padding-top: var(--rt-s2);
+  border-top: 1px solid color-mix(in oklab, var(--rt-line) 60%, transparent);
+  font-size: var(--rt-t11);
+}
+.next span {
+  display: block;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+.srv-list { list-style: none; margin: var(--rt-s2) 0 0; padding: 0; max-height: 148px; overflow-y: auto; }
+.srv-list li {
+  display: flex; justify-content: space-between; gap: var(--rt-s2);
+  font-size: var(--rt-t10); padding: 1px 0;
+}
+.srv-list .s-failed { color: var(--rt-alarm); }
+.srv-list .s-needs-auth { color: var(--rt-muted); }
+.hooks {
+  margin: 0;
+  font-family: var(--rt-face-receipt);
+  font-size: var(--rt-t9);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  color: var(--rt-muted);
+  max-height: 132px;
+  overflow-y: auto;
+}
+.hooks b { color: var(--rt-ink); font-weight: 400; }
+.btn {
+  appearance: none;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rt-ink);
+  background: transparent;
+  border: 1px solid var(--rt-line);
+  padding: var(--rt-s1) var(--rt-s3);
+  cursor: pointer;
+  transition: border-color var(--rt-dur-tap) var(--rt-ease-quart);
+}
+.btn:hover { border-color: var(--rt-ink); }
+.btn:focus-visible { outline: 2px solid var(--rt-blueprint); outline-offset: 1px; }
+.dispatch {
+  font-family: var(--rt-face-receipt);
+  font-size: var(--rt-t9);
+  background: var(--rt-sunken);
+  padding: var(--rt-s2);
+  margin: var(--rt-s2) 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- actions -------------------------------------------------------------
+   The write half. Everything here is a control, so it is the one place on this
+   page where a hover, a focus ring and a disabled state carry meaning; the rest
+   of the surface is a report. A destructive action arms before it runs, and the
+   armed state is spelled out in words rather than only coloured, for the same
+   reason the matrix carries two-letter codes. */
+.act { padding: var(--rt-s2) 0; border-bottom: 1px dotted var(--rt-line); }
+.act:last-of-type { border-bottom: 0; }
+.act-head {
+  display: flex; justify-content: space-between; gap: var(--rt-s2);
+  align-items: baseline;
+}
+.act-name {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t11);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.act-tag {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+  white-space: nowrap;
+}
+.act-what {
+  font-size: var(--rt-t10);
+  color: var(--rt-muted);
+  margin: var(--rt-s1) 0;
+}
+.act-why { font-size: var(--rt-t10); color: var(--rt-muted); margin: var(--rt-s1) 0; }
+.act-row { display: flex; flex-wrap: wrap; gap: var(--rt-s2); margin-top: var(--rt-s1); }
+.act-confirm {
+  font-size: var(--rt-t10);
+  border-left: 2px solid var(--rt-alarm);
+  padding-left: var(--rt-s2);
+  margin: var(--rt-s2) 0 var(--rt-s1);
+}
+.act-result { margin-top: var(--rt-s2); font-size: var(--rt-t10); }
+.act-result .bad { color: var(--rt-alarm); font-weight: 600; }
+.btn[disabled] { color: var(--rt-muted); cursor: progress; }
+.compose {
+  border: 1px solid var(--rt-ink);
+  background: var(--rt-paper);
+  color: var(--rt-ink);
+  padding: var(--rt-s4);
+  max-width: 52ch;
+  width: calc(100vw - 2 * var(--rt-s4));
+}
+.compose::backdrop { background: rgba(0, 0, 0, 0.45); }
+.compose h3 {
+  margin: 0 0 var(--rt-s2);
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t13);
+  letter-spacing: 0.06em;
+}
+.compose textarea {
+  width: 100%;
+  min-height: 7em;
+  font: inherit;
+  font-size: var(--rt-t11);
+  color: var(--rt-ink);
+  background: var(--rt-sunken);
+  border: 1px solid var(--rt-line);
+  padding: var(--rt-s2);
+}
+.compose textarea:focus-visible { outline: 2px solid var(--rt-blueprint); }
+.compose-row { display: flex; gap: var(--rt-s2); margin-top: var(--rt-s3); }
+.compose-note { font-size: var(--rt-t10); color: var(--rt-muted); margin: var(--rt-s2) 0 0; }
+
+/* ---- fleet --------------------------------------------------------------- */
+.fleet { display: flex; gap: 0; overflow-x: auto; }
+.fleet-card {
+  flex: 0 0 268px;
+  padding: var(--rt-s3) var(--rt-s4);
+  border-right: 1px solid var(--rt-line);
+  min-width: 0;
+}
+.fleet-card:last-child { border-right: 0; }
+.fleet-card h4 {
+  margin: 0;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t12);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fleet-meta {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+  margin: var(--rt-s1) 0 var(--rt-s2);
+}
+.fleet-prompt {
+  font-size: var(--rt-t11);
+  color: var(--rt-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fleet-flags { margin-top: var(--rt-s2); font-size: var(--rt-t10); }
+.fleet-flags .bad { color: var(--rt-alarm); font-weight: 600; }
+.fleet-empty { padding: var(--rt-s4); max-width: 62ch; }
+.fleet-empty h4 {
+  margin: 0 0 var(--rt-s2);
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t15);
+  letter-spacing: 0.06em;
+}
+.fleet-empty p { margin: 0 0 var(--rt-s2); color: var(--rt-muted); }
+
+/* ---- sheet block (footer) ------------------------------------------------ */
+.foot {
+  display: flex; flex-wrap: wrap; gap: 0;
+  border-top: 1px solid var(--rt-line);
+}
+.foot div {
+  padding: var(--rt-s2) var(--rt-s4);
+  border-right: 1px solid var(--rt-line);
+}
+.foot div:last-child { border-right: 0; margin-left: auto; }
+.foot span {
+  display: block;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t9);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+
+/* ---- tooltip ------------------------------------------------------------- */
+.tip {
+  position: fixed;
+  z-index: 20;
+  max-width: 34ch;
+  padding: var(--rt-s2) var(--rt-s3);
+  background: var(--rt-ground);
+  border: 1px solid var(--rt-ink);
+  font-size: var(--rt-t11);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--rt-dur-tap) var(--rt-ease-quart);
+}
+.tip[data-show="1"] { opacity: 1; }
+.tip b {
+  display: block;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.tip em { font-style: normal; color: var(--rt-muted); }
+
+/* ---- entrance: one orchestrated moment, then stillness ------------------- */
+@keyframes rt-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.panel, .rail-panel {
+  animation: rt-enter var(--rt-dur-enter) var(--rt-ease-expo) both;
+}
+.a-canvas { animation-delay: 0ms; }
+.a-matrix { animation-delay: 60ms; }
+.a-rail   { animation-delay: 120ms; }
+.a-fleet  { animation-delay: 180ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  .cell:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="sheet-frame">
+    <header class="head">
+      <h1 class="wordmark"><b>rt</b><span>observe</span></h1>
+      <div class="head-id" id="head-id">reading state</div>
+      <div class="head-ok" id="head-verdict"></div>
+      <button class="btn theme" id="theme" type="button">
+        theme <b id="theme-now">system</b>
+      </button>
+    </header>
+
+    <main class="body">
+      <section class="panel a-canvas" aria-labelledby="t-canvas">
+        <div class="panel-head">
+          <h2 class="panel-title" id="t-canvas">Fan-out</h2>
+          <p class="panel-note">One canonical definition set, six harness
+            dialects, and what consumes them.</p>
+        </div>
+        <div class="panel-body">
+          <div class="canvas-wrap">
+            <svg class="fanout" id="fanout" role="img"
+                 aria-label="Wiring diagram of definitions, harness mirrors, sessions and services."></svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel a-matrix" aria-labelledby="t-matrix">
+        <div class="panel-head">
+          <h2 class="panel-title" id="t-matrix">Mirror matrix</h2>
+          <p class="panel-note" id="mx-note"></p>
+          <div class="mx-controls">
+            <label><input type="checkbox" id="mx-filter">
+              Show only lost, stale and orphan</label>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="mx-scroll" id="mx-scroll"></div>
+          <div class="legend" id="mx-legend"></div>
+          <div class="mx-detail" id="mx-detail"></div>
+          <div class="tblock" id="mx-receipt"></div>
+        </div>
+      </section>
+
+      <aside class="a-rail" id="rail" aria-label="Repository, plan and services"></aside>
+
+      <section class="panel a-fleet" aria-labelledby="t-fleet">
+        <div class="panel-head">
+          <h2 class="panel-title" id="t-fleet">Sessions</h2>
+          <p class="panel-note" id="fleet-note"></p>
+        </div>
+        <div id="fleet"></div>
+      </section>
+    </main>
+
+    <footer class="foot" id="foot"></footer>
+  </div>
+</div>
+
+<div class="tip" id="tip" aria-hidden="true"></div>
+
+<script id="rt-view-config" type="application/json">__RT_VIEW_CONFIG__</script>
+<script>
+"use strict";
+/* Every number below that a person might want to change arrives in this block,
+   substituted by the server out of observe-config.json (R0). */
+var CFG = JSON.parse(document.getElementById("rt-view-config").textContent);
+var TOKEN = "__RT_SESSION_TOKEN__";
+var REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---- copy -----------------------------------------------------------------
+   The state vocabulary IS this page's product, so it is written once, here,
+   rather than invented at each call site. Each entry: the two-letter drafting
+   code that carries the state without colour, and what the state means in the
+   reader's terms rather than the generator's. */
+var STATES = {
+  "ok":        { code: "",   label: "ok",        means: "present, and it matches its source" },
+  "by-design": { code: "BD", label: "by design", means: "skipped on purpose, and the policy says which rule skips it" },
+  "stubbed":   { code: "ST", label: "stubbed",   means: "a pointer stands in for the body, which is over this harness's size ceiling" },
+  "trimmed":   { code: "TR", label: "trimmed",   means: "present with a shortened description, to fit this harness's list budget" },
+  "stale":     { code: "SL", label: "stale",     means: "present, but the source changed after it was written" },
+  "lost":      { code: "LO", label: "lost",      means: "missing, with no reason on record. Regenerate the mirrors" },
+  "orphan":    { code: "OR", label: "orphan",    means: "a mirror with no canonical source behind it" },
+  "unknown":   { code: "??", label: "unknown",   means: "this harness is not installed here, so its cells cannot be judged" }
+};
+var STATE_ORDER = ["ok", "by-design", "stubbed", "trimmed", "stale", "lost",
+                   "orphan", "unknown"];
+var PROBLEM_STATES = { "lost": 1, "stale": 1, "orphan": 1 };
+
+var SOURCE_ORDER = ["agents", "skills", "commands", "rules"];
+var SOURCE_LABEL = {
+  agents: "Agents", skills: "Skills", commands: "Commands", rules: "Rules",
+  repo: "Whole-repo files"
+};
+/* Harness names, shortened for a column head that must not wrap. */
+var HARNESS_SHORT = {
+  "GitHub Copilot": "Copilot",
+  "GitHub Copilot CLI": "Copilot CLI",
+  "VS Code user profile": "VS Code user",
+  "any AGENTS.md reader": "AGENTS.md readers"
+};
+
+/* ---- reconciler ----------------------------------------------------------
+   A poll must repaint values, not rebuild the page. Every render function below
+   builds into a DETACHED container and hands it here; this walks the live tree
+   against that and writes only what actually differs.
+
+   What that buys, beyond the flicker: a node that is not replaced keeps its
+   scroll offset, its focus and any text selection inside it. The MCP roster and
+   the hooks pane are both scrollable and were losing their position every two
+   seconds. */
+function morphAttrs(live, next) {
+  var i, attr;
+  for (i = live.attributes.length - 1; i >= 0; i -= 1) {
+    attr = live.attributes[i];
+    if (!next.hasAttribute(attr.name)) { live.removeAttribute(attr.name); }
+  }
+  for (i = 0; i < next.attributes.length; i += 1) {
+    attr = next.attributes[i];
+    if (live.getAttribute(attr.name) !== attr.value) {
+      live.setAttribute(attr.name, attr.value);
+    }
+  }
+}
+
+function morph(live, next) {
+  var a = live.firstChild;
+  var b = next.firstChild;
+  while (a && b) {
+    var afterA = a.nextSibling;
+    var afterB = b.nextSibling;
+    if (a.nodeType !== b.nodeType
+        || (a.nodeType === 1 && a.nodeName !== b.nodeName)) {
+      live.replaceChild(b, a);
+    } else if (a.nodeType === 3) {
+      if (a.nodeValue !== b.nodeValue) { a.nodeValue = b.nodeValue; }
+    } else if (a.nodeType === 1) {
+      morphAttrs(a, b);
+      morph(a, b);
+    }
+    a = afterA;
+    b = afterB;
+  }
+  while (a) {
+    var drop = a;
+    a = a.nextSibling;
+    live.removeChild(drop);
+  }
+  while (b) {
+    var add = b;
+    b = b.nextSibling;
+    live.appendChild(add);
+  }
+}
+
+function stage() { return document.createElement("div"); }
+
+function txt(node, value) {
+  var text = (value === null || value === undefined) ? "" : String(value);
+  if (node.textContent !== text) { node.textContent = text; }
+}
+
+/* ---- small helpers ------------------------------------------------------- */
+function el(tag, cls, text) {
+  var node = document.createElement(tag);
+  if (cls) { node.className = cls; }
+  if (text !== undefined && text !== null) { node.textContent = String(text); }
+  return node;
+}
+function short(name) { return HARNESS_SHORT[name] || name; }
+function firstSentence(text) {
+  var stop = String(text).indexOf(". ");
+  return stop === -1 ? String(text) : String(text).slice(0, stop + 1);
+}
+function clock(stamp) {
+  if (!stamp) { return "never"; }
+  var m = /T(\d\d:\d\d:\d\d)/.exec(stamp);
+  return m ? m[1] : stamp;
+}
+function duration(seconds) {
+  if (seconds === null || seconds === undefined) { return "-"; }
+  var s = Math.round(seconds);
+  if (s < 60) { return s + " s"; }
+  if (s < 3600) { return Math.round(s / 60) + " min"; }
+  if (s < 86400) { return Math.round(s / 3600) + " h"; }
+  return Math.round(s / 86400) + " d";
+}
+function titleBlock(host, fields, stale) {
+  var next = stage();
+  fields.forEach(function (pair) {
+    if (pair[1] === null || pair[1] === undefined) { return; }
+    var box = el("div");
+    box.appendChild(el("span", null, pair[0]));
+    box.appendChild(el("b", "rc", pair[1]));
+    next.appendChild(box);
+  });
+  var name = "tblock" + (stale ? " tblock--stale" : "");
+  if (host.className !== name) { host.className = name; }
+  morph(host, next);
+}
+function receiptFor(state, name) {
+  var r = (state.receipts || {})[name] || {};
+  return [["collected", clock(r.collected_at)],
+          ["age", duration(r.age_seconds)],
+          ["refresh", r.ttl_seconds !== undefined ? r.ttl_seconds + " s" : null]];
+}
+function unavailable(host, title, section) {
+  /* "Collecting" and "unavailable" are different states and must not share a
+     word: the first resolves by itself on the next poll, the second does not.
+     Measured on the first rendering - the services panel said UNAVAILABLE while
+     its first collection was simply still running. */
+  var collecting = section.status === "collecting";
+  var box = el("div", "unavail");
+  box.appendChild(el("b", null, collecting ? "Collecting" : title));
+  box.appendChild(document.createTextNode(
+    section.reason || "no reason was reported, which is itself the defect"));
+  host.appendChild(box);
+}
+
+/* ---- matrix -------------------------------------------------------------- */
+var prevCellState = {};
+var selectedName = null;
+var lastMirrors = null;
+
+function cellButton(row, column) {
+  var state = row ? row.state.value : "unknown";
+  var info = STATES[state] || STATES.unknown;
+  var button = el("button", "cell", info.code);
+  button.type = "button";
+  button.dataset.state = state;
+  button.dataset.name = row ? row.name : "";
+  button.dataset.target = column.id;
+  button.setAttribute("aria-label",
+    (row ? row.name : "unknown") + " in " + short(column.harness) + ": "
+    + info.label + ". " + info.means
+    + (row && row.reason ? " " + row.reason : ""));
+  var key = column.id + "|" + (row ? row.name : "");
+  if (prevCellState[key] !== undefined && prevCellState[key] !== state) {
+    /* Removed by a delegated animationend below rather than a listener on this
+       node, which the reconciler is free to reuse or replace. */
+    button.classList.add("cell--changed");
+  }
+  prevCellState[key] = state;
+  return button;
+}
+
+function columnHead(column, cells) {
+  var th = el("th");
+  th.scope = "col";
+  th.appendChild(document.createTextNode(short(column.harness)));
+  var scope = column.scope + (column.requires_flag
+    ? " . " + column.requires_flag : "");
+  th.appendChild(el("em", null, scope));
+  var bad = {};
+  cells.forEach(function (row) {
+    if (row && PROBLEM_STATES[row.state.value]) {
+      bad[row.state.value] = (bad[row.state.value] || 0) + 1;
+    }
+  });
+  var named = Object.keys(bad).sort().map(function (name) {
+    return bad[name] + " " + name;
+  });
+  if (named.length) {
+    th.appendChild(el("i", null, named.join(", ")));
+  }
+  return th;
+}
+
+function renderMatrix(state) {
+  var liveHost = document.getElementById("mx-scroll");
+  var liveLegend = document.getElementById("mx-legend");
+  var note = document.getElementById("mx-note");
+  var mirrors = state.mirrors || {};
+  var host = stage();
+  var legend = stage();
+  titleBlock(document.getElementById("mx-receipt"), receiptFor(state, "mirrors"),
+             false);
+
+  if (mirrors.status !== "ok") {
+    txt(note, "");
+    unavailable(host, "Matrix unavailable", mirrors);
+    morph(liveHost, host);
+    morph(liveLegend, legend);
+    txt(document.getElementById("mx-detail"), "");
+    return;
+  }
+  lastMirrors = mirrors;
+
+  var totals = mirrors.totals || {};
+  var broken = (totals.lost || 0) + (totals.stale || 0) + (totals.orphan || 0);
+  txt(note, mirrors.rows.length + " mirrors across "
+    + mirrors.columns.length + " dialects. "
+    + (broken
+        ? broken + (broken === 1 ? " mirror needs" : " mirrors need")
+          + " regenerating. Open one to read which command writes it."
+        : "Every cell is accounted for."));
+
+  var onlyProblems = document.getElementById("mx-filter").checked;
+  var byTarget = {};
+  mirrors.rows.forEach(function (row) {
+    (byTarget[row.target] = byTarget[row.target] || {})[row.name] = row;
+  });
+
+  SOURCE_ORDER.forEach(function (source) {
+    var columns = mirrors.columns.filter(function (c) {
+      return c.source === source && c.cardinality === "per-definition";
+    });
+    if (!columns.length) { return; }
+    /* Names come from the rows of THESE columns, not from every row that
+       shares the source. Continue's single pointer file also has source
+       "rules", so taking every rules row put `researchtools.md` in the grid
+       with no cell to fill and it rendered as `unknown`. */
+    var inGrid = {};
+    columns.forEach(function (c) { inGrid[c.id] = 1; });
+    var names = {};
+    mirrors.rows.forEach(function (row) {
+      if (row.source === source && inGrid[row.target]) { names[row.name] = 1; }
+    });
+    names = Object.keys(names).sort();
+    var defined = (mirrors.counts || {})[source];
+    var extra = defined === undefined ? 0 : names.length - defined;
+
+    var visible = names.filter(function (name) {
+      if (!onlyProblems) { return true; }
+      return columns.some(function (c) {
+        var row = (byTarget[c.id] || {})[name];
+        return row && PROBLEM_STATES[row.state.value];
+      });
+    });
+
+    var group = el("div", "mx-group");
+    /* The canonical count, then the surplus named separately. A single number
+       here read as a contradiction of the registry's own count, when what it
+       actually showed was mirrors with no canonical source behind them. */
+    group.appendChild(el("div", "mx-group-head",
+      SOURCE_LABEL[source] + " . " + (defined === undefined ? names.length
+        : defined + " defined")
+      + (extra > 0 ? " . " + extra + " not in the canonical set" : "")));
+    if (!visible.length) {
+      group.appendChild(el("div", "mx-detail-empty",
+        "Nothing lost, stale or orphaned here."));
+      host.appendChild(group);
+      return;
+    }
+    var table = el("table", "mx");
+    var thead = el("thead");
+    var hrow = el("tr");
+    var corner = el("th");
+    corner.scope = "col";
+    hrow.appendChild(corner);
+    columns.forEach(function (c) {
+      var cells = names.map(function (n) { return (byTarget[c.id] || {})[n]; });
+      hrow.appendChild(columnHead(c, cells));
+    });
+    thead.appendChild(hrow);
+    table.appendChild(thead);
+
+    var tbody = el("tbody");
+    visible.forEach(function (name) {
+      var tr = el("tr");
+      var th = el("th", null, name);
+      th.scope = "row";
+      tr.appendChild(th);
+      columns.forEach(function (c) {
+        var td = el("td");
+        td.appendChild(cellButton((byTarget[c.id] || {})[name], c));
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    group.appendChild(table);
+    host.appendChild(group);
+  });
+
+  if (!host.children.length) {
+    /* Rows exist but no group matched a source: a policy that declares no
+       per-definition target at all is a real configuration, and a blank panel
+       would read as a broken page. */
+    host.appendChild(el("div", "mx-detail-empty",
+      "No per-definition dialect is declared in mirror-policy.json, so there "
+      + "is no grid to draw. The single-file targets below still apply."));
+  }
+  var singles = mirrors.columns.filter(function (c) {
+    return c.cardinality === "single-file";
+  });
+  if (singles.length) {
+    var box = el("div", "mx-single");
+    box.appendChild(el("div", "mx-group-head",
+      "Single-file targets . " + singles.length));
+    var list = el("ul");
+    singles.forEach(function (c) {
+      var rows = mirrors.rows.filter(function (r) { return r.target === c.id; });
+      var row = rows[0];
+      var li = el("li");
+      li.appendChild(cellButton(row, c));
+      li.appendChild(el("b", null, short(c.harness)));
+      /* These rows carry `name` and a `note` holding the design rationale, and
+         no `path` at all. Reading path here printed five blank lines. */
+      li.appendChild(el("span", "rc", row ? row.name : "-"));
+      if (row && (row.note || row.reason)) {
+        li.appendChild(el("span", null, firstSentence(row.note || row.reason)));
+      }
+      list.appendChild(li);
+    });
+    box.appendChild(list);
+    host.appendChild(box);
+  }
+
+  STATE_ORDER.forEach(function (name) {
+    var info = STATES[name];
+    var count = totals[name];
+    var item = el("div");
+    var swatch = el("button", "cell", info.code);
+    swatch.type = "button";
+    swatch.tabIndex = -1;
+    swatch.setAttribute("aria-hidden", "true");
+    swatch.dataset.state = name;
+    item.appendChild(swatch);
+    item.appendChild(el("b", null, info.label));
+    item.appendChild(document.createTextNode(
+      count === undefined ? info.means : count + " . " + info.means));
+    legend.appendChild(item);
+  });
+  morph(liveHost, host);
+  morph(liveLegend, legend);
+
+  renderDetail(selectedName);
+}
+
+function renderDetail(name) {
+  var live = document.getElementById("mx-detail");
+  var host = stage();
+  if (!lastMirrors) { return; }
+  if (!name) {
+    host.appendChild(el("div", "mx-detail-empty",
+      "Pick any cell to read its receipt: what proved that state, when, and why."));
+    morph(live, host);
+    return;
+  }
+  var rows = lastMirrors.rows.filter(function (r) { return r.name === name; });
+  if (!rows.length) {
+    host.appendChild(el("div", "mx-detail-empty",
+      name + " has no mirrors on record."));
+    morph(live, host);
+    return;
+  }
+  var byId = {};
+  lastMirrors.columns.forEach(function (c) { byId[c.id] = c; });
+  host.appendChild(el("h3", null, name));
+  var table = el("table");
+  var thead = el("thead");
+  var head = el("tr");
+  ["dialect", "state", "why", "path", "proven"].forEach(function (h) {
+    var th = el("th", null, h);
+    th.scope = "col";
+    head.appendChild(th);
+  });
+  thead.appendChild(head);
+  table.appendChild(thead);
+  var body = el("tbody");
+  rows.forEach(function (row) {
+    var column = byId[row.target] || { harness: row.target, scope: "" };
+    var info = STATES[row.state.value] || STATES.unknown;
+    var tr = el("tr");
+    tr.appendChild(el("td", null, short(column.harness) + " . " + column.scope));
+    tr.appendChild(el("td", null, info.label));
+    tr.appendChild(el("td", "why", row.reason || info.means));
+    var path = el("td");
+    path.appendChild(el("span", "rc", row.path || "-"));
+    tr.appendChild(path);
+    var proven = el("td");
+    proven.appendChild(el("span", "rc",
+      row.state.proven_by + " . " + clock(row.state.proven_at)));
+    tr.appendChild(proven);
+    body.appendChild(tr);
+  });
+  table.appendChild(body);
+  host.appendChild(table);
+  morph(live, host);
+}
+
+/* ---- tooltip ------------------------------------------------------------- */
+var tip = document.getElementById("tip");
+function showTip(button) {
+  var state = button.dataset.state;
+  var info = STATES[state] || STATES.unknown;
+  tip.textContent = "";
+  tip.appendChild(el("b", null, info.label));
+  tip.appendChild(document.createTextNode(info.means));
+  var row = lastMirrors && lastMirrors.rows.filter(function (r) {
+    return r.name === button.dataset.name && r.target === button.dataset.target;
+  })[0];
+  if (row && row.reason) {
+    tip.appendChild(el("em", null, " " + row.reason));
+  }
+  var box = button.getBoundingClientRect();
+  tip.dataset.show = "1";
+  var width = tip.offsetWidth;
+  var left = Math.min(box.left, window.innerWidth - width - 8);
+  var top = box.bottom + 6;
+  if (top + tip.offsetHeight > window.innerHeight) {
+    top = box.top - tip.offsetHeight - 6;
+  }
+  tip.style.left = Math.max(4, left) + "px";
+  tip.style.top = Math.max(4, top) + "px";
+}
+function hideTip() { tip.dataset.show = "0"; }
+
+document.addEventListener("pointerover", function (event) {
+  var button = event.target.closest && event.target.closest(".cell");
+  if (button && !button.hasAttribute("aria-hidden")) { showTip(button); }
+});
+document.addEventListener("pointerout", function (event) {
+  if (event.target.closest && event.target.closest(".cell")) { hideTip(); }
+});
+document.addEventListener("focusin", function (event) {
+  var button = event.target.closest && event.target.closest(".cell");
+  if (button && !button.hasAttribute("aria-hidden")) { showTip(button); }
+});
+document.addEventListener("focusout", hideTip);
+document.addEventListener("click", function (event) {
+  var button = event.target.closest && event.target.closest(".cell");
+  if (!button || button.hasAttribute("aria-hidden")) { return; }
+  selectedName = button.dataset.name || null;
+  renderDetail(selectedName);
+});
+document.addEventListener("animationend", function (event) {
+  var cell = event.target.closest && event.target.closest(".cell--changed");
+  if (cell) { cell.classList.remove("cell--changed"); }
+});
+document.addEventListener("click", function (event) {
+  var button = event.target.closest && event.target.closest("[data-copy]");
+  if (button) { copyText(button.getAttribute("data-copy"), button); }
+});
+document.getElementById("mx-filter").addEventListener("change", function () {
+  if (lastState) { renderMatrix(lastState); }
+});
+
+/* ---- rail ---------------------------------------------------------------- */
+function railPanel(title) {
+  var panel = el("section", "rail-panel");
+  panel.appendChild(el("h2", "rail-title", title));
+  return panel;
+}
+function kv(panel, pairs) {
+  var list = el("dl", "kv");
+  pairs.forEach(function (pair) {
+    if (pair[1] === null || pair[1] === undefined) { return; }
+    list.appendChild(el("dt", null, pair[0]));
+    list.appendChild(el("dd", pair[2] ? "bad" : null, pair[1]));
+  });
+  panel.appendChild(list);
+}
+
+function renderRepoPanel(state) {
+  var panel = railPanel("Repository");
+  var repo = state.repo_state || {};
+  if (repo.status !== "ok") {
+    unavailable(panel, "Repository unavailable", repo);
+    return panel;
+  }
+  var green = repo.green || {};
+  var suites = green.suites || {};
+  var suiteText = green.value === "green"
+    ? "green . " + (suites.passed || 0) + " passed"
+      + (suites.not_run ? ", " + suites.not_run + " not run" : "")
+    : green.value;
+  kv(panel, [
+    ["branch", (repo.branch || {}).value || (repo.branch || {}).reason],
+    ["profile", (repo.profile || {}).value || (repo.profile || {}).reason],
+    ["suite", suiteText, green.value !== "green"],
+    ["stamp age", green.age_seconds !== undefined
+      ? duration(green.age_seconds) + (green.aged ? " . aged" : "") : null,
+     !!green.aged]
+  ]);
+  if (green.status !== "ok" && green.reason) {
+    panel.appendChild(el("div", "unavail", green.reason));
+  }
+  var registry = state.registry || {};
+  if (registry.status === "ok") {
+    var counts = registry.counts || {};
+    kv(panel, [
+      ["definitions", counts.agents + " agents, " + counts.skills + " skills, "
+        + counts.commands + " commands, " + counts.rules + " rules"],
+      ["registry", registry.clean
+        ? "well formed" + (registry.advisory_count
+            ? " . " + registry.advisory_count + " advisories" : "")
+        : registry.problem_count + " malformed", !registry.clean]
+    ]);
+  } else {
+    unavailable(panel, "Registry unavailable", registry);
+  }
+  var block = el("div");
+  titleBlock(block, [["proven by", green.proven_by || "-"],
+                     ["stamped", clock(green.proven_at)]], !!green.aged);
+  panel.appendChild(block);
+  return panel;
+}
+
+function renderPlanPanel(state) {
+  var panel = railPanel("Plan");
+  var progress = state.progress || {};
+  if (progress.status !== "ok") {
+    unavailable(panel, "Plan unavailable", progress);
+    return panel;
+  }
+  var list = el("ul", "phases");
+  (progress.phases || []).forEach(function (phase) {
+    var li = el("li");
+    li.dataset.state = phase.state;
+    li.appendChild(el("span", "num", phase.number));
+    var body = el("div");
+    body.appendChild(el("span", "lbl",
+      phase.label.replace(/^Phase \d+ - /, "")));
+    body.appendChild(el("span", "st", phase.state));
+    li.appendChild(body);
+    list.appendChild(li);
+  });
+  panel.appendChild(list);
+  if (progress.next_action) {
+    var next = el("div", "next");
+    next.appendChild(el("span", null, "next action"));
+    next.appendChild(document.createTextNode(
+      progress.next_action.split(". ")[0] + "."));
+    panel.appendChild(next);
+  }
+  var cross = progress.crosscheck || {};
+  if (cross.status === "ok" && !cross.agrees) {
+    panel.appendChild(el("div", "unavail",
+      "The plan and this file disagree: "
+      + (cross.unreported || []).join(", ")));
+  }
+  var block = el("div");
+  titleBlock(block, [["from", progress.file],
+                     ["against", (cross.plan || "").split("/").pop()]], false);
+  panel.appendChild(block);
+  return panel;
+}
+
+function renderServicesPanel(state) {
+  var panel = railPanel("Services");
+  var services = state.services || {};
+  if (services.status !== "ok") {
+    unavailable(panel, "Services unavailable", services);
+    return panel;
+  }
+  // MCP is its own snapshot section on its own, much longer timer: it is the
+  // only probe here that leaves the machine. It is rendered in this panel
+  // beside the two local daemons because that is where a reader looks for it,
+  // but it arrives with its own receipt and refreshes on ttl_seconds.mcp_live.
+  var mcp = state.mcp || {};
+  if (mcp.status === "ok") {
+    var counts = mcp.counts || {};
+    kv(panel, [
+      ["mcp", "tier " + mcp.tier + " . " + mcp.liveness],
+      ["connected", counts.connected],
+      ["needs auth", counts["needs-auth"]],
+      ["failed", counts.failed, !!counts.failed]
+    ]);
+    if ((mcp.servers || []).length) {
+      var list = el("ul", "srv-list");
+      mcp.servers.forEach(function (server) {
+        var li = el("li");
+        li.appendChild(el("span", null, server.name));
+        li.appendChild(el("span", "s-" + server.state, server.state));
+        list.appendChild(li);
+      });
+      panel.appendChild(list);
+    }
+  } else {
+    unavailable(panel, "MCP unavailable", mcp);
+  }
+  var models = services.local_models || {};
+  var daemon = services.vault_daemon || {};
+  var queue = daemon.queue || {};
+  kv(panel, [
+    ["models", models.status === "ok"
+      ? (models.resident || []).map(function (m) { return m.tag; }).join(", ")
+        || "none resident"
+      : models.reason],
+    ["vault daemon", daemon.status === "ok"
+      ? (daemon.running ? "running" : "not running") : daemon.reason,
+     daemon.status === "ok" && !daemon.running],
+    ["queue", queue.raw !== undefined
+      ? queue.raw + " raw, " + queue.working + " working, "
+        + queue["needs-review"] + " to review" : null,
+     !!queue["needs-review"]]
+  ]);
+  if (daemon.alert) { panel.appendChild(el("div", "unavail", daemon.alert)); }
+  var block = el("div");
+  titleBlock(block, receiptFor(state, "services"), false);
+  panel.appendChild(block);
+  return panel;
+}
+
+function renderGraphPanel(state) {
+  var panel = railPanel("Code graph");
+  var graph = state.graph || {};
+  if (graph.status !== "ok") {
+    unavailable(panel, "No snapshot", graph);
+    if (graph.refresh) {
+      var box = el("div", "dispatch", graph.refresh);
+      panel.appendChild(box);
+      var button = el("button", "btn", "Copy dispatch");
+      button.type = "button";
+      /* The payload rides on the node rather than in a closure: the reconciler
+         may reuse this element between polls, and a listener bound to the node
+         it replaced would either vanish or keep copying a stale string. */
+      button.setAttribute("data-copy", graph.refresh);
+      panel.appendChild(button);
+    }
+    return panel;
+  }
+  kv(panel, [
+    ["nodes", graph.nodes],
+    ["links", graph.links],
+    ["origins", graph.origins ? Object.keys(graph.origins).join(", ") : null],
+    ["freshness", graph.stale ? "stale" : "current", !!graph.stale]
+  ]);
+  var block = el("div");
+  titleBlock(block, receiptFor(state, "graph"), !!graph.stale);
+  panel.appendChild(block);
+  return panel;
+}
+
+function renderHooksPanel(state) {
+  var fleet = state.fleet || {};
+  var claude = (fleet.harnesses || {}).claude_code;
+  if (!claude || claude.status !== "ok" || !claude.hooks) { return null; }
+  var panel = railPanel("Hooks");
+  var hooks = claude.hooks;
+  if (hooks.status !== "ok") {
+    unavailable(panel, "Inventory unavailable", hooks);
+    return panel;
+  }
+  var pre = el("pre", "hooks");
+  (hooks.inventory || []).forEach(function (line) {
+    pre.appendChild(el("b", null, line));
+    pre.appendChild(document.createTextNode("\n"));
+  });
+  panel.appendChild(pre);
+  var block = el("div");
+  titleBlock(block, [["proven by", hooks.proven_by]], false);
+  panel.appendChild(block);
+  return panel;
+}
+
+function copyText(text, button) {
+  var done = function () {
+    var was = button.textContent;
+    button.textContent = "Copied";
+    window.setTimeout(function () { button.textContent = was; }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () {
+      button.textContent = "Copy failed. Select the text above instead.";
+    });
+    return;
+  }
+  button.textContent = "Copy failed. Select the text above instead.";
+}
+
+/* ---- actions -------------------------------------------------------------
+   The write half of the page. Three rules hold it together.
+
+   The whitelist comes from the SERVER, over GET /api/actions, and the page
+   sends back an id and nothing else - never a command, never a path. An action
+   the server reports unavailable renders as a reason and no button at all,
+   because a dead button is worse than an absent one.
+
+   Every piece of transient state lives OUTSIDE the DOM: the catalogue, what is
+   armed, what is running, and the last result per action. The rail is morphed
+   on every poll, so state kept in the markup would be wiped every two seconds
+   or, worse, survive as a stale confirm on a button that now means something
+   else.
+
+   A destructive action arms first and runs second, and the armed step shows the
+   server's own confirm sentence rather than a generic "are you sure". */
+var ACTIONS = { status: "loading", list: [], reason: null };
+var actionArmed = {};
+var actionRunning = {};
+var actionResult = {};
+
+function loadCatalogue() {
+  return window.fetch("/api/actions", { headers: { "Accept": "application/json" } })
+    .then(function (response) {
+      return response.json().then(function (body) {
+        return { ok: response.ok, body: body };
+      });
+    })
+    .then(function (answer) {
+      if (answer.ok && answer.body.status === "ok") {
+        ACTIONS = { status: "ok", list: answer.body.actions || [], reason: null };
+      } else {
+        ACTIONS = { status: "unavailable", list: [],
+                    reason: (answer.body || {}).reason
+                            || "the server did not answer with a whitelist" };
+      }
+      if (lastState) { renderRail(lastState); }
+    })
+    .catch(function (error) {
+      ACTIONS = { status: "unavailable", list: [],
+                  reason: "the whitelist could not be read: " + error };
+      if (lastState) { renderRail(lastState); }
+    });
+}
+
+function postAction(body) {
+  body.token = TOKEN;
+  return window.fetch("/api/action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function (response) {
+    return response.json().then(function (parsed) {
+      /* An HTTP status alone is not the verdict: a refusal and a failed effect
+         are both meaningful answers with a reason attached. */
+      parsed.http = response.status;
+      return parsed;
+    });
+  });
+}
+
+function runAction(id, dryRun) {
+  if (actionRunning[id]) { return; }
+  actionRunning[id] = true;
+  actionArmed[id] = false;
+  if (lastState) { renderRail(lastState); }
+  postAction({ id: id, confirm: true, dry_run: !!dryRun })
+    .then(function (result) { actionResult[id] = result; })
+    .catch(function (error) {
+      actionResult[id] = { status: "failed",
+                           reason: "the request itself failed: " + error };
+    })
+    .then(function () {
+      actionRunning[id] = false;
+      if (lastState) { renderRail(lastState); }
+      /* Availability changes with what just ran - a daemon that is now up, a
+         script that was just regenerated - so the catalogue is re-read rather
+         than assumed to still hold. */
+      loadCatalogue();
+    });
+}
+
+function actionResultBlock(host, result) {
+  var box = el("div", "act-result");
+  var bad = result.status !== "ok";
+  box.appendChild(el("div", bad ? "bad" : null, result.status
+    + (result.dry_run ? " (dry run)" : "")
+    + (result.exit_code === null || result.exit_code === undefined
+       ? "" : ", exit " + result.exit_code)));
+  if (result.reason) { box.appendChild(el("div", null, result.reason)); }
+  if (result.verify_detail) {
+    box.appendChild(el("div", null,
+      (result.verified === true ? "effect confirmed: "
+       : result.verified === false ? "effect NOT confirmed: "
+       : "effect unchecked: ") + result.verify_detail));
+  }
+  if (result.delivery) {
+    box.appendChild(el("div", result.delivery === "unreachable" ? "bad" : null,
+                       "delivery: " + result.delivery));
+  }
+  if (result.argv) {
+    box.appendChild(el("div", "dispatch", [].concat(result.argv).join(" ")));
+  }
+  var tail = result.stderr_tail || result.stdout_tail;
+  if (tail) { box.appendChild(el("div", "dispatch", tail)); }
+  host.appendChild(box);
+}
+
+function actionEntry(entry) {
+  var row = el("div", "act");
+  var head = el("div", "act-head");
+  head.appendChild(el("span", "act-name", entry.label));
+  if (entry.destructive) {
+    head.appendChild(el("span", "act-tag", "confirm"));
+  }
+  row.appendChild(head);
+  row.appendChild(el("div", "act-what", entry.what));
+
+  if (!entry.available) {
+    row.appendChild(el("div", "act-why", "unavailable here: " + entry.reason));
+    return row;
+  }
+  if (actionRunning[entry.id]) {
+    var busy = el("div", "act-row");
+    var waiting = el("button", "btn", "running");
+    waiting.type = "button";
+    waiting.disabled = true;
+    busy.appendChild(waiting);
+    row.appendChild(busy);
+  } else if (actionArmed[entry.id]) {
+    row.appendChild(el("div", "act-confirm", entry.confirm));
+    var armed = el("div", "act-row");
+    var go = el("button", "btn", "Confirm and run");
+    go.type = "button";
+    go.setAttribute("data-act-run", entry.id);
+    var cancel = el("button", "btn", "Cancel");
+    cancel.type = "button";
+    cancel.setAttribute("data-act-cancel", entry.id);
+    armed.appendChild(go);
+    armed.appendChild(cancel);
+    row.appendChild(armed);
+  } else {
+    var controls = el("div", "act-row");
+    var run = el("button", "btn", entry.destructive ? "Run" : "Run now");
+    run.type = "button";
+    run.setAttribute(entry.destructive ? "data-act-arm" : "data-act-run",
+                     entry.id);
+    var dry = el("button", "btn", "Dry run");
+    dry.type = "button";
+    dry.setAttribute("data-act-dry", entry.id);
+    controls.appendChild(run);
+    controls.appendChild(dry);
+    row.appendChild(controls);
+  }
+  if (actionResult[entry.id]) {
+    actionResultBlock(row, actionResult[entry.id]);
+  }
+  return row;
+}
+
+function renderActionsPanel() {
+  var panel = railPanel("Actions");
+  if (ACTIONS.status === "loading") {
+    panel.appendChild(el("div", "act-why", "reading the whitelist"));
+    return panel;
+  }
+  if (ACTIONS.status !== "ok") {
+    unavailable(panel, "No actions offered", ACTIONS);
+    return panel;
+  }
+  ACTIONS.list.forEach(function (entry) {
+    if (entry.kind !== "inbox") { panel.appendChild(actionEntry(entry)); }
+  });
+  var messaging = ACTIONS.list.some(function (entry) {
+    return entry.kind === "inbox";
+  });
+  if (messaging) {
+    panel.appendChild(el("div", "act-why",
+      "To send a session a message, use Send on its card in the fleet strip: "
+      + "a message needs a target, and the strip is where the targets are."));
+  }
+  return panel;
+}
+
+document.addEventListener("click", function (event) {
+  if (!event.target.closest) { return; }
+  var arm = event.target.closest("[data-act-arm]");
+  if (arm) {
+    actionArmed[arm.getAttribute("data-act-arm")] = true;
+    if (lastState) { renderRail(lastState); }
+    return;
+  }
+  var cancel = event.target.closest("[data-act-cancel]");
+  if (cancel) {
+    actionArmed[cancel.getAttribute("data-act-cancel")] = false;
+    if (lastState) { renderRail(lastState); }
+    return;
+  }
+  var dry = event.target.closest("[data-act-dry]");
+  if (dry) { runAction(dry.getAttribute("data-act-dry"), true); return; }
+  var run = event.target.closest("[data-act-run]");
+  if (run) { runAction(run.getAttribute("data-act-run"), false); }
+});
+
+/* ---- compose -------------------------------------------------------------
+   Deliberately a dialog appended to the body rather than a form inside a fleet
+   card: the strip is morphed on every poll, and a textarea living there would
+   have whatever was being typed reconciled away mid-sentence. */
+var compose = null;
+
+function composeDialog() {
+  if (compose) { return compose; }
+  compose = document.createElement("dialog");
+  compose.className = "compose";
+  compose.id = "compose";
+  var who = el("div", "act-what", "");
+  who.id = "compose-who";
+  var area = document.createElement("textarea");
+  area.id = "compose-text";
+  area.setAttribute("aria-label", "Message to send to this session");
+  var row = el("div", "compose-row");
+  var send = el("button", "btn", "Send");
+  send.type = "button";
+  send.id = "compose-send";
+  var close = el("button", "btn", "Close");
+  close.type = "button";
+  var note = el("p", "compose-note", "");
+  note.id = "compose-note";
+  row.appendChild(send);
+  row.appendChild(close);
+  compose.appendChild(el("h3", null, "Send to a session"));
+  compose.appendChild(who);
+  compose.appendChild(area);
+  compose.appendChild(row);
+  compose.appendChild(note);
+  document.body.appendChild(compose);
+  close.addEventListener("click", function () { compose.close(); });
+  send.addEventListener("click", function () {
+    var target = compose.getAttribute("data-target");
+    var noteBox = document.getElementById("compose-note");
+    send.disabled = true;
+    noteBox.className = "compose-note";
+    txt(noteBox, "sending");
+    postAction({ id: "inbox.send", target: target,
+                 text: document.getElementById("compose-text").value })
+      .then(function (result) {
+        send.disabled = false;
+        if (result.status !== "ok") {
+          noteBox.className = "compose-note bad";
+          txt(noteBox, "refused: " + result.reason);
+          return;
+        }
+        /* Never the word "sent". The message is written; whether anything will
+           READ it is a different question, and the server answers it. */
+        txt(noteBox, result.delivery === "queued"
+          ? "written to the inbox. The session picks it up on its next turn."
+          : "written, but this session is unreachable: "
+            + (result.verify_detail || "no delivery hook is installed"));
+        document.getElementById("compose-text").value = "";
+      })
+      .catch(function (error) {
+        send.disabled = false;
+        noteBox.className = "compose-note bad";
+        txt(noteBox, "the request failed: " + error);
+      });
+  });
+  return compose;
+}
+
+function openCompose(target, label) {
+  var box = composeDialog();
+  var note = document.getElementById("compose-note");
+  box.setAttribute("data-target", target);
+  txt(document.getElementById("compose-who"), label);
+  txt(note, "");
+  note.className = "compose-note";
+  document.getElementById("compose-text").value = "";
+  if (box.showModal) { box.showModal(); } else { box.setAttribute("open", ""); }
+  document.getElementById("compose-text").focus();
+}
+
+document.addEventListener("click", function (event) {
+  if (!event.target.closest) { return; }
+  var send = event.target.closest("[data-send-to]");
+  if (send) {
+    openCompose(send.getAttribute("data-send-to"),
+                send.getAttribute("data-send-label") || "");
+  }
+});
+
+function renderRail(state) {
+  var next = stage();
+  [renderRepoPanel(state), renderPlanPanel(state), renderServicesPanel(state),
+   renderGraphPanel(state), renderHooksPanel(state),
+   renderActionsPanel()].forEach(function (panel) {
+    if (panel) { next.appendChild(panel); }
+  });
+  morph(document.getElementById("rail"), next);
+}
+
+/* ---- fleet --------------------------------------------------------------- */
+function claudeCard(session, label) {
+  var card = el("div", "fleet-card");
+  card.appendChild(el("h4", null,
+    (session.cwd || "").split(/[\\/]/).filter(Boolean).pop()
+    || session.project || "session"));
+  var meta = [label];
+  if (session.branch) { meta.push(session.branch); }
+  if (session.mode) { meta.push(session.mode); }
+  if (session.effort) { meta.push(session.effort); }
+  if (session.entrypoint) { meta.push(session.entrypoint); }
+  meta.push(duration(session.age_seconds) + " ago");
+  card.appendChild(el("div", "fleet-meta", meta.join(" . ")));
+  if (session.prompt) {
+    card.appendChild(el("div", "fleet-prompt", session.prompt));
+  }
+  var flags = el("div", "fleet-flags");
+  if (session.subagents) {
+    flags.appendChild(el("span", null, session.subagents + " subagents "));
+  }
+  if ((session.hook_errors || []).length) {
+    flags.appendChild(el("span", "bad",
+      session.hook_errors.length + " stop-hook errors "));
+  }
+  if (session.plan) { flags.appendChild(el("span", null, "plan on file ")); }
+  var inbox = session.inbox || {};
+  if (inbox.pending) {
+    flags.appendChild(el("span", null, inbox.pending + " queued "));
+  }
+  if (!inbox.reachable) {
+    flags.appendChild(el("span", null, "unreachable"));
+    flags.title = inbox.reason || "";
+  }
+  card.appendChild(flags);
+  if (inbox.reachable && session.session_id) {
+    /* Offered only where a message would actually be READ. An unreachable
+       session keeps its flag and no button: a Send that writes into a directory
+       nobody drains is the vault drop that sat unread in working/ for an hour. */
+    var send = el("button", "btn", "Send");
+    send.type = "button";
+    send.setAttribute("data-send-to", session.session_id);
+    send.setAttribute("data-send-label",
+      (session.cwd || session.project || "session") + " . "
+      + session.session_id);
+    card.appendChild(send);
+  }
+  return card;
+}
+
+function copilotCard(session, label) {
+  var card = el("div", "fleet-card");
+  card.appendChild(el("h4", null,
+    (session.cwd || "").split(/[\\/]/).pop() || "session"));
+  var meta = [label];
+  if (session.host_type) { meta.push(session.host_type); }
+  if (session.branch) { meta.push(session.branch); }
+  if (session.agent_name) { meta.push(session.agent_name); }
+  card.appendChild(el("div", "fleet-meta", meta.join(" . ")));
+  if (session.summary) {
+    card.appendChild(el("div", "fleet-prompt", session.summary));
+  }
+  var flags = el("div", "fleet-flags");
+  flags.appendChild(el("span", null, "unreachable"));
+  flags.title = (session.inbox || {}).reason || "";
+  card.appendChild(flags);
+  return card;
+}
+
+function renderFleet(state) {
+  var host = document.getElementById("fleet");
+  var note = document.getElementById("fleet-note");
+  var fleet = state.fleet || {};
+  var next = stage();
+
+  if (fleet.status && fleet.status !== "ok") {
+    txt(note, "");
+    unavailable(next, "Sessions unavailable", fleet);
+    morph(host, next);
+    return;
+  }
+  var installed = fleet.installed || [];
+  if (!installed.length) {
+    /* The zero-harness clone is the FIRST thing a lab member sees, and a blank
+       strip would read as a broken page. It is a supported configuration, so it
+       says so, and it says which panels above do not need a harness at all. */
+    txt(note, "none installed here");
+    var box = el("div", "fleet-empty");
+    box.appendChild(el("h4", null, "No agent harness installed here"));
+    box.appendChild(el("p", null,
+      "The matrix, the registry and the repository panels above are complete "
+      + "without one. They read the files in this clone, so they answer whether "
+      + "your checkout deployed correctly on any machine."));
+    box.appendChild(el("p", null,
+      "Sessions, hooks and live MCP appear once you run Claude Code or "
+      + "GitHub Copilot Chat on this machine. Nothing here requires either."));
+    var notBuilt = fleet.not_built || [];
+    if (notBuilt.length) {
+      box.appendChild(el("p", null,
+        "Documented but not built: "
+        + notBuilt.map(function (n) {
+            return typeof n === "string" ? n : n.id;
+          }).join(", ") + "."));
+    }
+    next.appendChild(box);
+    morph(host, next);
+    return;
+  }
+
+  var cards = 0;
+  var strip = el("div", "fleet");
+  installed.forEach(function (id) {
+    var harness = (fleet.harnesses || {})[id] || {};
+    if (harness.status !== "ok") {
+      var box = el("div", "fleet-card");
+      unavailable(box, (harness.label || id) + " unavailable", harness);
+      strip.appendChild(box);
+      return;
+    }
+    (harness.sessions || []).forEach(function (session) {
+      strip.appendChild(id === "copilot_chat"
+        ? copilotCard(session, harness.label || id)
+        : claudeCard(session, harness.label || id));
+      cards += 1;
+    });
+  });
+  txt(note, cards + " recent across " + installed.length
+      + " harness" + (installed.length === 1 ? "" : "es"));
+  next.appendChild(strip);
+  morph(host, next);
+}
+
+/* ---- fan-out canvas -----------------------------------------------------
+   The signature element, and a wiring diagram rather than a hairball: nodes are
+   pulled toward their own lane, so the drawing reads left to right - what we
+   define, where it is mirrored, and what consumes it. It aggregates on purpose.
+   The per-definition detail is the matrix's job; this answers which harness is
+   in trouble, at a glance. */
+var sim = { raf: 0, positions: null, shape: null, tweening: false,
+            tweenStart: 0 };
+
+function buildGraph(state) {
+  var nodes = [];
+  var edges = [];
+  var mirrors = state.mirrors || {};
+  var byId = {};
+
+  function push(node) {
+    node.index = nodes.length;
+    byId[node.id] = node;
+    nodes.push(node);
+    return node;
+  }
+
+  if (mirrors.status === "ok") {
+    var counts = mirrors.counts || {};
+    SOURCE_ORDER.forEach(function (source) {
+      if (!counts[source]) { return; }
+      push({ id: "src:" + source, lane: 0, label: SOURCE_LABEL[source],
+             count: counts[source], alarm: false });
+    });
+    var harnesses = {};
+    mirrors.columns.forEach(function (column) {
+      (harnesses[column.harness] = harnesses[column.harness] || [])
+        .push(column);
+    });
+    Object.keys(harnesses).forEach(function (harness) {
+      var columns = harnesses[harness];
+      var absent = columns.every(function (c) { return !c.installed; });
+      push({ id: "har:" + harness, lane: 1, label: short(harness),
+             count: null, alarm: false, absent: absent });
+    });
+    mirrors.rows.forEach(function (row) {
+      var column = mirrors.columns.filter(function (c) {
+        return c.id === row.target;
+      })[0];
+      if (!column) { return; }
+      var from = byId["src:" + row.source];
+      var to = byId["har:" + column.harness];
+      if (!from || !to) { return; }
+      var key = from.id + ">" + to.id;
+      var edge = edges.filter(function (e) { return e.key === key; })[0];
+      if (!edge) {
+        edge = { key: key, from: from.index, to: to.index, count: 0,
+                 broken: 0, kind: "mirror" };
+        edges.push(edge);
+      }
+      edge.count += 1;
+      if (PROBLEM_STATES[row.state.value]) {
+        edge.broken += 1;
+        from.alarm = true;
+        to.alarm = true;
+      }
+    });
+  }
+
+  var fleet = state.fleet || {};
+  (fleet.installed || []).forEach(function (id) {
+    var harness = (fleet.harnesses || {})[id] || {};
+    var sessions = (harness.sessions || []).length;
+    var node = push({ id: "run:" + id, lane: 2,
+                      label: harness.label || id, count: sessions,
+                      alarm: false });
+    /* Claude Code consumes the canonical tree directly rather than a mirror of
+       it, which is why it has no column in the matrix. Drawing that edge is the
+       honest way to show it, instead of leaving the node unconnected. */
+    if (id === "claude_code") {
+      SOURCE_ORDER.forEach(function (source) {
+        var from = byId["src:" + source];
+        if (from) {
+          edges.push({ key: from.id + ">" + node.id, from: from.index,
+                       to: node.index, count: 0, broken: 0,
+                       kind: "canonical" });
+        }
+      });
+    } else {
+      var harnessNode = Object.keys(byId).filter(function (key) {
+        return key.indexOf("har:") === 0
+          && key.toLowerCase().indexOf("copilot") > 0;
+      })[0];
+      if (harnessNode) {
+        edges.push({ key: byId[harnessNode].id + ">" + node.id,
+                     from: byId[harnessNode].index, to: node.index,
+                     count: 0, broken: 0, kind: "canonical" });
+      }
+    }
+  });
+
+  var services = state.services || {};
+  if (services.status === "ok") {
+    var runner = byId["run:claude_code"];
+    var mcp = state.mcp || {};
+    var models = services.local_models || {};
+    var daemon = services.vault_daemon || {};
+    [["mcp", "MCP", (mcp.counts || {}).connected,
+      mcp.status === "ok" && !!(mcp.counts || {}).failed],
+     ["models", "Local models", models.resident_count,
+      models.status !== "ok"],
+     ["daemon", "Vault daemon", (daemon.queue || {}).raw,
+      daemon.status === "ok" && !daemon.running]
+    ].forEach(function (spec) {
+      var node = push({ id: "svc:" + spec[0], lane: 3, label: spec[1],
+                        count: spec[2], alarm: spec[3] });
+      if (runner) {
+        edges.push({ key: runner.id + ">" + node.id, from: runner.index,
+                     to: node.index, count: 0, broken: 0, kind: "service" });
+      }
+    });
+  }
+  return { nodes: nodes, edges: edges };
+}
+
+function nodeSize(node) {
+  var extra = (node.count !== null && node.count !== undefined) ? 20 : 12;
+  return { w: Math.max(62, Math.round(node.label.length * 5.7) + extra), h: 20 };
+}
+
+var LANE_GAP = 10;
+var LANE_NAMES = ["defined", "mirrored to", "consumed by", "services"];
+
+function usedLanes(graph) {
+  var seen = {};
+  graph.nodes.forEach(function (node) { seen[node.lane] = 1; });
+  return Object.keys(seen).map(Number).sort(function (a, b) { return a - b; });
+}
+
+/* Lanes are POSITIONS, not a suggestion. The first draft simulated the lane
+   axis too and the drawing came out as overlapping boxes. So the lane axis is
+   pinned, only the free axis is simulated, and a lane whose nodes do not fit
+   along the free axis is split into sub-rows rather than crushed - measured at
+   385px, where eight nodes in one row overlapped four labels.
+   Below a configured width the axes swap entirely: four lanes cannot sit across
+   a narrow panel, and a diagram shrunk to illegibility is worse than a turned
+   one. */
+function planLanes(graph, laneSpan, freeSpan, vertical) {
+  var byLane = {};
+  graph.nodes.forEach(function (node) {
+    var size = nodeSize(node);
+    node.w = size.w;
+    node.h = size.h;
+    (byLane[node.lane] = byLane[node.lane] || []).push(node);
+  });
+
+  var freeOf = function (node) { return vertical ? node.w : node.h; };
+  var laneOf = function (node) { return vertical ? node.h : node.w; };
+  var capacity = Math.max(60, freeSpan - 16);
+  var plan = {};
+  var lanes = usedLanes(graph);
+
+  lanes.forEach(function (lane) {
+    var nodes = byLane[lane];
+    var needed = nodes.reduce(function (sum, node) {
+      return sum + freeOf(node) + LANE_GAP;
+    }, 0);
+    var subRows = Math.max(1, Math.ceil(needed / capacity));
+    var thick = nodes.reduce(function (most, node) {
+      return Math.max(most, laneOf(node));
+    }, 0);
+    /* Fill each sub-row until the next node would not fit, so a wrapped lane
+       reads left to right like the text around it. */
+    var used = 0;
+    var sub = 0;
+    nodes.forEach(function (node) {
+      var extent = freeOf(node) + LANE_GAP;
+      if (used + extent > capacity && sub < subRows - 1) {
+        sub += 1;
+        used = 0;
+      }
+      node.sub = sub;
+      used += extent;
+    });
+    plan[lane] = {
+      subRows: subRows,
+      step: thick + LANE_GAP,
+      extent: thick * subRows + LANE_GAP * (subRows - 1)
+    };
+  });
+
+  var total = lanes.reduce(function (sum, lane) {
+    return sum + plan[lane].extent;
+  }, 0);
+  var gaps = Math.max(1, lanes.length - 1);
+  var slack = Math.max(gaps * 18, laneSpan - total - 24);
+  var step = slack / gaps;
+  var cursor = 12;
+  lanes.forEach(function (lane, index) {
+    plan[lane].centre = cursor + plan[lane].extent / 2;
+    cursor += plan[lane].extent + (index < lanes.length - 1 ? step : 0);
+  });
+  return plan;
+}
+
+function layout(graph, width, height, vertical) {
+  var laneAxis = vertical ? "y" : "x";
+  var freeAxis = vertical ? "x" : "y";
+  var laneSpan = vertical ? height : width;
+  var freeSpan = vertical ? width : height;
+  var plan = planLanes(graph, laneSpan, freeSpan, vertical);
+  graph.plan = plan;
+
+  var seen = {};
+  graph.nodes.forEach(function (node) {
+    var lane = plan[node.lane];
+    var key = node.lane + ":" + node.sub;
+    seen[key] = (seen[key] || 0) + 1;
+  });
+  var placed = {};
+  graph.nodes.forEach(function (node) {
+    var lane = plan[node.lane];
+    var key = node.lane + ":" + node.sub;
+    placed[key] = (placed[key] || 0) + 1;
+    node.lanePos = lane.centre
+      + (node.sub - (lane.subRows - 1) / 2) * lane.step;
+    node[laneAxis] = node.lanePos;
+    node[freeAxis] = freeSpan * (placed[key] / (seen[key] + 1));
+    node.v = 0;
+  });
+}
+
+function tick(graph, width, height, vertical) {
+  var c = CFG.canvas;
+  var freeAxis = vertical ? "x" : "y";
+  var freeSpan = vertical ? width : height;
+  var energy = 0;
+
+  graph.nodes.forEach(function (a) {
+    /* Repulsion is within one sub-row only: with the lane axis pinned, nodes in
+       different lanes or sub-rows can no longer collide at all. */
+    graph.nodes.forEach(function (b) {
+      if (a === b || a.lane !== b.lane || a.sub !== b.sub) { return; }
+      var d = a[freeAxis] - b[freeAxis];
+      var d2 = d * d + 0.01;
+      a.v += (d / Math.sqrt(d2)) * (c.repulsion / d2);
+    });
+    a.v += (freeSpan / 2 - a[freeAxis]) * c.lane_pull * 0.2;
+  });
+  graph.edges.forEach(function (edge) {
+    var a = graph.nodes[edge.from];
+    var b = graph.nodes[edge.to];
+    a.v += (b[freeAxis] - a[freeAxis]) * c.spring;
+    b.v += (a[freeAxis] - b[freeAxis]) * c.spring;
+  });
+  graph.nodes.forEach(function (node) {
+    node.v *= c.damping;
+    node[freeAxis] += node.v;
+    energy += Math.abs(node.v);
+  });
+  separate(graph, vertical, freeSpan);
+  return energy / Math.max(1, graph.nodes.length);
+}
+
+/* The hard constraint the forces only approximate: within one sub-row, no two
+   boxes may overlap along the free axis. One ordered pass, so it converges. */
+function separate(graph, vertical, freeSpan) {
+  var freeAxis = vertical ? "x" : "y";
+  var groups = {};
+  graph.nodes.forEach(function (node) {
+    var key = node.lane + ":" + node.sub;
+    (groups[key] = groups[key] || []).push(node);
+  });
+  var half = function (node) { return (vertical ? node.w : node.h) / 2; };
+  Object.keys(groups).forEach(function (key) {
+    var nodes = groups[key].sort(function (a, b) {
+      return a[freeAxis] - b[freeAxis];
+    });
+    nodes.forEach(function (node, index) {
+      var lowest = index === 0
+        ? half(node) + 2
+        : nodes[index - 1][freeAxis] + half(nodes[index - 1]) + LANE_GAP
+          + half(node);
+      if (node[freeAxis] < lowest) {
+        node[freeAxis] = lowest;
+        node.v = 0;
+      }
+    });
+    var last = nodes[nodes.length - 1];
+    var overflow = last[freeAxis] + half(last) + 2 - freeSpan;
+    if (overflow > 0) {
+      nodes.forEach(function (node) {
+        node[freeAxis] = Math.max(half(node) + 2, node[freeAxis] - overflow);
+      });
+    }
+  });
+}
+
+function drawGraph(graph, svg, width, height, vertical) {
+  var parts = [];
+  usedLanes(graph).forEach(function (lane) {
+    var spec = (graph.plan || {})[lane];
+    if (!spec) { return; }
+    if (vertical) {
+      parts.push('<text class="lane-label" x="2" y="'
+        + (spec.centre - spec.extent / 2 - 5).toFixed(1) + '">'
+        + LANE_NAMES[lane] + "</text>");
+    } else {
+      parts.push('<text class="lane-label" x="' + spec.centre.toFixed(1)
+        + '" y="11" text-anchor="middle">' + LANE_NAMES[lane] + "</text>");
+    }
+  });
+
+  graph.edges.forEach(function (edge) {
+    var a = graph.nodes[edge.from];
+    var b = graph.nodes[edge.to];
+    var cls = "edge";
+    if (edge.broken) { cls += " edge--alarm"; }
+    else if (edge.kind !== "mirror") { cls += " edge--canonical"; }
+    var path;
+    if (vertical) {
+      var my = (a.y + b.y) / 2;
+      path = "M" + a.x.toFixed(1) + "," + a.y.toFixed(1)
+        + " C" + a.x.toFixed(1) + "," + my.toFixed(1) + " "
+        + b.x.toFixed(1) + "," + my.toFixed(1) + " "
+        + b.x.toFixed(1) + "," + b.y.toFixed(1);
+    } else {
+      var mx = (a.x + b.x) / 2;
+      path = "M" + a.x.toFixed(1) + "," + a.y.toFixed(1)
+        + " C" + mx.toFixed(1) + "," + a.y.toFixed(1) + " "
+        + mx.toFixed(1) + "," + b.y.toFixed(1) + " "
+        + b.x.toFixed(1) + "," + b.y.toFixed(1);
+    }
+    parts.push('<path class="' + cls + '" d="' + path + '"/>');
+    if (edge.broken) {
+      parts.push('<text class="edge-label" x="' + ((a.x + b.x) / 2).toFixed(1)
+        + '" y="' + ((a.y + b.y) / 2 - 4).toFixed(1)
+        + '" text-anchor="middle">' + edge.broken + " lost</text>");
+    }
+  });
+
+  graph.nodes.forEach(function (node) {
+    var cls = "node";
+    if (node.alarm) { cls += " node--alarm"; }
+    if (node.absent) { cls += " node--absent"; }
+    parts.push('<g class="' + cls + '">'
+      + '<rect x="' + (node.x - node.w / 2).toFixed(1) + '" y="'
+      + (node.y - node.h / 2).toFixed(1) + '" width="' + node.w
+      + '" height="' + node.h + '"/>'
+      + '<text x="' + node.x.toFixed(1) + '" y="' + (node.y + 3).toFixed(1)
+      + '" text-anchor="middle">' + escapeText(node.label)
+      + (node.count !== null && node.count !== undefined
+          ? ' <tspan class="count">' + node.count + "</tspan>" : "")
+      + "</text></g>");
+  });
+
+  svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+  svg.innerHTML = parts.join("");
+}
+
+function escapeText(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function canvasHeight(graph, vertical, measured, width) {
+  if (!vertical) { return Math.max(180, measured); }
+  /* Turned, the lanes are rows and a wrapped lane is several rows deep, so the
+     height follows the plan rather than a guess. Planned twice on purpose: once
+     to size the drawing, once to lay it out inside that size. */
+  var plan = planLanes(graph, 10000, width, true);
+  var total = usedLanes(graph).reduce(function (sum, lane) {
+    return sum + plan[lane].extent + 34;
+  }, 24);
+  return Math.max(250, Math.round(total));
+}
+
+function graphShape(graph, width, height, vertical) {
+  /* What counts as "the same diagram". Node identity and edge identity only:
+     a colour, a count or an alarm changing must NOT move anything. */
+  return [width, height, vertical,
+          graph.nodes.map(function (n) { return n.id; }).join("|"),
+          graph.edges.map(function (e) { return e.key; }).join("|")].join("//");
+}
+
+function solve(graph, width, height, vertical) {
+  /* Run the whole simulation in one synchronous loop and keep only the result.
+     Watching a solver converge is not information, and it was making the page
+     unreadable. Stops early once the layout stops moving. */
+  for (var i = 0; i < CFG.canvas.settle_ticks; i += 1) {
+    if (tick(graph, width, height, vertical) <= CFG.canvas.min_alpha) {
+      break;
+    }
+  }
+}
+
+function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+
+function tweenTo(graph, svg, width, height, vertical, from) {
+  /* One eased move from the previous positions to the new ones. Exponential
+     deceleration, no bounce, and exactly as long as the configured budget. */
+  var target = {};
+  graph.nodes.forEach(function (node) {
+    target[node.id] = { x: node.x, y: node.y };
+  });
+  var start = null;
+  var duration = CFG.canvas.settle_ms;
+  sim.tweening = true;
+  sim.tweenStart = window.performance.now();
+  var frame = function (now) {
+    if (start === null) { start = now; }
+    var t = Math.min(1, (now - start) / duration);
+    var eased = easeOutQuart(t);
+    graph.nodes.forEach(function (node) {
+      var was = from[node.id];
+      var to = target[node.id];
+      if (!was) {
+        /* A node that did not exist before arrives where it belongs rather
+           than flying in from somewhere it never was. */
+        node.x = to.x;
+        node.y = to.y;
+        return;
+      }
+      node.x = was.x + (to.x - was.x) * eased;
+      node.y = was.y + (to.y - was.y) * eased;
+    });
+    drawGraph(graph, svg, width, height, vertical);
+    if (t < 1) {
+      sim.raf = window.requestAnimationFrame(frame);
+    } else {
+      graph.nodes.forEach(function (node) {
+        node.x = target[node.id].x;
+        node.y = target[node.id].y;
+      });
+      sim.tweening = false;
+      drawGraph(graph, svg, width, height, vertical);
+    }
+  };
+  sim.raf = window.requestAnimationFrame(frame);
+}
+
+function renderCanvas(state) {
+  var svg = document.getElementById("fanout");
+  var box = svg.getBoundingClientRect();
+  var width = Math.max(280, Math.round(box.width));
+  var graph = buildGraph(state);
+  if (!graph.nodes.length) {
+    svg.innerHTML = '<text class="lane-label" x="12" y="24">'
+      + "nothing to draw yet</text>";
+    window.cancelAnimationFrame(sim.raf);
+    sim.positions = null;
+    sim.shape = null;
+    sim.tweening = false;
+    return;
+  }
+  var vertical = width < CFG.canvas.vertical_below_px;
+  var height = canvasHeight(graph, vertical, Math.round(box.height), width);
+  svg.style.height = height + "px";
+
+  var shape = graphShape(graph, width, height, vertical);
+  layout(graph, width, height, vertical);
+
+  if (sim.positions && sim.shape === shape) {
+    /* Same diagram as last poll. Hold every box exactly where it was and repaint
+       only what the state says - which is the whole point: a still page means
+       nothing moved, and a box that moves means something did.
+
+       Unless a move is still in flight, in which case leave it alone. Measured
+       2026-08-31: this function cancelled the pending frame unconditionally at
+       the top, so the 2-second poll killed every tween before its FIRST frame
+       ran and the diagram snapped to its destination instead of travelling
+       there. A poll is not a reason to interrupt a movement it did not cause;
+       the state it carries is at most one frame budget late. */
+    if (sim.tweening
+        && window.performance.now() - sim.tweenStart
+           < CFG.canvas.settle_ms * 3) {
+      return;
+    }
+    /* Bounded, because the flag alone can deadlock the panel. A browser stops
+       serving animation frames to a tab it considers hidden or occluded, and a
+       tween interrupted that way never reaches its final frame - so the flag
+       stays set, every later poll returns here, and the canvas freezes for good
+       while the rest of the page keeps updating. Measured 2026-08-31 in an
+       automation context where an unrelated frame chain advanced once in 700ms.
+       Past three times its own budget a movement is over, however few frames it
+       actually got. */
+    sim.tweening = false;
+    graph.nodes.forEach(function (node) {
+      var held = sim.positions[node.id];
+      if (held) {
+        node.x = held.x;
+        node.y = held.y;
+      }
+    });
+    drawGraph(graph, svg, width, height, vertical);
+    return;
+  }
+
+  /* The shape genuinely changed, so a movement already under way is
+     superseded: THIS is the only place a pending frame may be cancelled. */
+  window.cancelAnimationFrame(sim.raf);
+  sim.tweening = false;
+  solve(graph, width, height, vertical);
+  var from = sim.positions;
+  sim.positions = {};
+  graph.nodes.forEach(function (node) {
+    sim.positions[node.id] = { x: node.x, y: node.y };
+  });
+  sim.shape = shape;
+
+  if (!from || REDUCED) {
+    /* First paint, or reduced motion: draw the settled layout outright. The
+       panel's own entrance carries the arrival, so nothing starts life mid-
+       simulation and reduced motion still gets the graph, settled. */
+    drawGraph(graph, svg, width, height, vertical);
+    return;
+  }
+  tweenTo(graph, svg, width, height, vertical, from);
+}
+
+/* ---- head, foot, poll ---------------------------------------------------- */
+var lastState = null;
+
+function renderHead(state) {
+  var repo = state.repo_state || {};
+  var live = document.getElementById("head-id");
+  var id = stage();
+  var name = (state.repo || {}).name || "repository";
+  id.appendChild(el("b", null, name));
+  var branch = (repo.branch || {}).value;
+  var profile = (repo.profile || {}).value;
+  if (branch) { id.appendChild(document.createTextNode(" . " + branch)); }
+  if (profile) { id.appendChild(document.createTextNode(" . " + profile)); }
+  morph(live, id);
+
+  var verdict = document.getElementById("head-verdict");
+  var mirrors = state.mirrors || {};
+  var totals = mirrors.totals || {};
+  var broken = (totals.lost || 0) + (totals.stale || 0) + (totals.orphan || 0);
+  if (mirrors.status !== "ok") {
+    verdict.className = "head-ok";
+    txt(verdict, "matrix unavailable");
+    return;
+  }
+  if (broken) {
+    verdict.className = "head-alarm";
+    txt(verdict, ["lost", "stale", "orphan"].filter(function (name) {
+      return totals[name];
+    }).map(function (name) {
+      return totals[name] + " " + name;
+    }).join(", "));
+  } else {
+    verdict.className = "head-ok";
+    txt(verdict, "every mirror accounted for");
+  }
+}
+
+function renderFoot(state) {
+  var foot = document.getElementById("foot");
+  var next = stage();
+  var mirrors = state.mirrors || {};
+  var manifest = mirrors.manifest || {};
+  [["drawn by", "rt_state.py"],
+   ["generated", clock(state.generated)],
+   ["policy", (mirrors.policy_hash || "").slice(0, 8) || "-"],
+   ["last install", manifest.status === "ok"
+     ? clock(manifest.generated) + (manifest.personal_run ? " . personal" : "")
+     : "not recorded"],
+   ["root", (state.repo || {}).root || "-"]
+  ].forEach(function (pair) {
+    var box = el("div");
+    box.appendChild(el("span", null, pair[0]));
+    box.appendChild(el("b", "rc", pair[1]));
+    next.appendChild(box);
+  });
+  if (manifest.status === "ok" && manifest.policy_matches === false) {
+    var warn = el("div");
+    warn.appendChild(el("span", null, "manifest"));
+    warn.appendChild(el("b", "rc",
+      "written under a different policy. Re-run install.ps1 -Manifest."));
+    next.appendChild(warn);
+  }
+  morph(foot, next);
+}
+
+function render(state) {
+  lastState = state;
+  renderHead(state);
+  renderMatrix(state);
+  renderRail(state);
+  renderFleet(state);
+  renderCanvas(state);
+  renderFoot(state);
+}
+
+function poll() {
+  window.fetch("/api/state", { headers: { "Accept": "application/json" } })
+    .then(function (response) { return response.json(); })
+    .then(function (state) { render(state); })
+    .catch(function (error) {
+      /* Says what happened AND that it keeps trying, since the next poll is
+         already scheduled below. Replacing the identity line outright made a
+         transient failure look permanent. */
+      var verdict = document.getElementById("head-verdict");
+      verdict.className = "head-alarm";
+      txt(verdict, "no answer from the server. Still polling.");
+      if (window.console && window.console.warn) {
+        window.console.warn("rt-observe poll failed", error);
+      }
+    })
+    .then(function () { window.setTimeout(poll, CFG.poll_ms); });
+}
+
+var resizeTimer = 0;
+window.addEventListener("resize", function () {
+  window.clearTimeout(resizeTimer);
+  resizeTimer = window.setTimeout(function () {
+    if (lastState) { renderCanvas(lastState); }
+  }, 160);
+});
+
+/* ---- theme ---------------------------------------------------------------
+   `system` first, because handing the decision back to the machine has to stay
+   reachable once a viewer has overridden it. Stamped on the root element, which
+   both dark scopes in the token block are written to obey. */
+var THEME_ORDER = ["system", "light", "dark"];
+var THEME_KEY = "rt-observe-theme";
+
+function storedTheme() {
+  try {
+    var saved = window.localStorage.getItem(THEME_KEY);
+    return THEME_ORDER.indexOf(saved) === -1 ? "system" : saved;
+  } catch (error) {
+    /* A private window, cleared site data, or a browser set to block storage:
+       reading throws rather than returning null. Follow the system and carry on
+       - a theme control must never be able to break the page it sits on. */
+    return "system";
+  }
+}
+
+function applyTheme(name) {
+  var root = document.documentElement;
+  if (name === "system") {
+    root.removeAttribute("data-theme");
+  } else {
+    root.setAttribute("data-theme", name);
+  }
+  var label = document.getElementById("theme-now");
+  if (label) { label.textContent = name; }
+  var button = document.getElementById("theme");
+  if (button) {
+    button.setAttribute(
+      "aria-label",
+      "Colour theme: " + name + ". Activate for "
+      + THEME_ORDER[(THEME_ORDER.indexOf(name) + 1) % THEME_ORDER.length] + ".");
+  }
+  /* The canvas is drawn, not styled, so its colours come from the computed
+     tokens at draw time. Redraw it after a switch or it keeps the old ink. */
+  if (typeof lastState !== "undefined" && lastState) {
+    sim.shape = null;
+    renderCanvas(lastState);
+  }
+}
+
+function cycleTheme() {
+  var next = THEME_ORDER[(THEME_ORDER.indexOf(storedTheme()) + 1)
+                         % THEME_ORDER.length];
+  try {
+    window.localStorage.setItem(THEME_KEY, next);
+  } catch (error) {
+    /* Not persisted, but still applied for this view. */
+  }
+  applyTheme(next);
+}
+
+document.getElementById("theme").addEventListener("click", cycleTheme);
+applyTheme(storedTheme());
+
+/* The whitelist is read ONCE at load and again after each run, never on the
+   two-second poll: it costs a PATH lookup per action and it only changes when
+   something on the machine does. */
+loadCatalogue();
+poll();
+</script>
+</body>
+</html>

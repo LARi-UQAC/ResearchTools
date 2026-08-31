@@ -22,6 +22,56 @@
       "provenance": "chosen"
     }
   },
+  "view": {
+    "purpose": "Everything the served page would otherwise hardcode. It is injected as one JSON block, so the markup carries no configured number at all (R0).",
+    "poll_ms": {
+      "value": 2000,
+      "unit": "milliseconds between page polls of /api/state",
+      "provenance": "chosen - the per-section TTLs decide what a poll actually COSTS, so this is only how often the page asks"
+    },
+    "canvas": {
+      "settle_ticks": {
+        "value": 320,
+        "unit": "simulation ticks before the layout is considered settled",
+        "provenance": "chosen - enough for 18 nodes to separate; with prefers-reduced-motion these run before the first paint instead of on a frame timer"
+      },
+      "spring": {
+        "value": 0.045,
+        "unit": "link spring coefficient",
+        "provenance": "chosen"
+      },
+      "repulsion": {
+        "value": 2600,
+        "unit": "node-node repulsion strength, in px^2",
+        "provenance": "chosen"
+      },
+      "damping": {
+        "value": 0.86,
+        "unit": "velocity retained per tick",
+        "provenance": "chosen"
+      },
+      "lane_pull": {
+        "value": 0.09,
+        "unit": "pull toward the node's own lane, which is what keeps this a wiring diagram rather than a hairball",
+        "provenance": "chosen"
+      },
+      "vertical_below_px": {
+        "value": 640,
+        "unit": "CSS pixels of canvas width",
+        "provenance": "chosen - below this the four lanes cannot fit across the panel, so the diagram is TURNED (lanes become rows) rather than shrunk to illegibility"
+      },
+      "settle_ms": {
+        "value": 420,
+        "unit": "milliseconds of eased movement when the diagram's shape changes",
+        "provenance": "chosen - the layout is solved silently and only the MOVE is animated, so this is how long a box takes to travel from where it was to where it now belongs. Reported 2026-08-31: animating the solver itself, and restarting it on every poll, made the diagram impossible to follow"
+      },
+      "min_alpha": {
+        "value": 0.004,
+        "unit": "kinetic energy per node below which the tick loop stops",
+        "provenance": "chosen - the loop stops rather than running forever, so a settled page costs no frames"
+      }
+    }
+  },
   "ttl_seconds": {
     "mirrors": {
       "value": 15,
@@ -32,6 +82,16 @@
       "value": 30,
       "unit": "seconds",
       "provenance": "chosen"
+    },
+    "registry": {
+      "value": 60,
+      "unit": "seconds",
+      "provenance": "chosen - the canonical set only changes when a definition file is edited, so it is the cheapest section to hold"
+    },
+    "progress": {
+      "value": 15,
+      "unit": "seconds",
+      "provenance": "chosen - PROGRESS.md is appended by hand during a phase, and seeing that appear is the point of the panel"
     },
     "services": {
       "value": 60,
@@ -69,6 +129,11 @@
       "value": 600,
       "unit": "seconds",
       "provenance": "chosen - install.ps1 and the offline suite both run for minutes"
+    },
+    "ping": {
+      "value": 2,
+      "unit": "seconds",
+      "provenance": "chosen - the launcher asks /api/ping on loopback before binding; nothing legitimate on 127.0.0.1 takes longer, and a slow answer must not delay the refusal"
     }
   },
   "caps": {
@@ -86,6 +151,16 @@
       "value": 12,
       "unit": "sessions per adapter",
       "provenance": "chosen"
+    },
+    "inbox_message_chars": {
+      "value": 4000,
+      "unit": "characters of one inbox message",
+      "provenance": "chosen - a message longer than this is refused rather than truncated, because a truncated instruction delivered as whole is the failure mode the local-model window rules already legislate against"
+    },
+    "output_tail_chars": {
+      "value": 2000,
+      "unit": "characters kept from the END of an action's stdout and stderr",
+      "provenance": "specified - outbox_io.tail's rule: a Python traceback names its exception on the LAST line while its opening frames are identical on every failure, so truncation keeps the tail"
     },
     "transcript_tail_bytes": {
       "value": 262144,

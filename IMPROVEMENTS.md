@@ -508,3 +508,98 @@ README.md, Architecture.md (new Layer 6), `.claude/CLAUDE.md`, `.claude/rules/wo
 (including the two stale "skills have no mirror" sentences, which contradicted README, and the
 missing `-Personal` step), `.claude/rules/testing.md`.
 
+
+## 2026-08-31 - rt-observe phase 3: the loopback server, the rt-dashboard launcher, the view
+
+The dashboard itself. `rt_state.py --serve` binds `127.0.0.1` only (a non-loopback bind is
+refused before a socket exists), mints a session token that `POST /api/action` requires, and
+serves four routes behind a per-section TTL cache. `rt-dashboard.ps1` / `.sh` / `.bat`, a VS
+Code task and `/rt-dashboard` all reach the same launcher, whose only decision is which Python
+to use: with none found it names every candidate and exits 2. The view is one self-contained
+file with no CDN and no build step, in both themes, from a 400px panel to a wide monitor; its
+tokens are extracted to `assets/rt-tokens.css`, the first shared token file here.
+
+Six defects were found by rendering the page and measuring it, not by reading the code, and all
+six are fixed with a test each: the account name reached `/api/state` twice (a session prompt is
+free text and quotes home paths, and two collectors reported an expanded `~`), five MCP servers
+all displayed as "plugin" because the roster split a name on its first colon, French Windows
+netstat broke a strict cp1252 decode inside subprocess's reader thread so a held port reported
+"no listener", a refused cross-origin POST desynchronised its keep-alive connection, a section
+still collecting rendered under the word "unavailable", and the rendered font floor was 9px.
+The redaction is now one shared `rt_redact.py` rather than four near-copies, two of which did
+not exist where they were needed.
+
+Files: `.claude/skills/rt-observe/` (`rt_server.py`, `rt_redact.py`, the two canonical
+launchers, `assets/rt_state.html`, `observe-config.json`, three more offline suites totalling 89
+tests), `assets/rt-tokens.css`, `rt-dashboard.{ps1,sh,bat}`, `.vscode/tasks.json`,
+`.claude/commands/rt-dashboard.md`, README.md, Architecture.md, `.claude/CLAUDE.md`,
+`.claude/rules/workflows.md`, `.claude/rules/testing.md`.
+
+## 2026-08-31 - six stray graph roots, and the rule that did not prevent them
+
+The refresh takes a directory. Nothing said WHICH directory, and pointed at a subdirectory the
+tool silently treats that subdirectory as its own project root: it writes a second partial graph
+there and leaves the repository graph untouched, with no error, no warning and no flag to
+prevent it. Two sessions did this on consecutive days.
+
+A test now walks the clone and fails when more than one graph root exists. On its FIRST run it
+found four more nobody knew about - six in total across at least three sessions, 1629 nodes of
+derived data, the oldest sitting undetected since the previous day. That is the measure of how
+invisible this was: every one of those runs reported success, and the graph they were meant to
+refresh had not moved.
+
+The missing half of the rule is now written in `.claude/CLAUDE.md` and `.claude/rules/security.md`,
+and `test_graph_routing.py` asserts both the rule and the absence of a second root, so the two
+cannot drift apart. All six strays were removed by `local-writer`, which is the only caller
+permitted to touch graph storage, and the repository graph was refreshed correctly from the root
+(5861 -> 6093 nodes, AST only, no model call). A semantic pass over the changed documents is
+still pending and is the operator's to authorise.
+
+Files: `.claude/hooks/Test/test_graph_routing.py` (13 -> 18 tests), `.claude/CLAUDE.md`,
+`.claude/rules/security.md`, `.claude/rules/testing.md`.
+
+## 2026-08-31 - the dashboard repaints values, not the page
+
+Three defects reported from the live page, all in the render layer.
+
+**Everything was rebuilt on every poll.** Each render function cleared its container and
+recreated it, so fixed labels were destroyed and rebuilt as often as the numbers beside them -
+worst in the right rail and the footer. Beyond the flicker it cost real things: scrollable panes
+lost their position every two seconds, and a text selection or a focus died with it. Fixed by a
+reconciler rather than a rewrite: each function still builds the DOM it always built, but into a
+detached container, and `morph` walks the live tree against it and writes only what differs.
+Measured after: over five polls the rail and the matrix mutate zero times, the footer five (its
+clock) and the fleet once (a session age).
+
+**The fan-out never settled.** `renderCanvas` reset every position and restarted a 320-tick
+animation on each poll, so a 1.8-second settle was relaunched every 2 seconds. The layout is now
+solved silently, positions are held between polls, and a move happens only when the graph's shape
+actually changes. Idle: 65 samples over 13 seconds, one position.
+
+**The view config was serialised once at startup** while the markup was re-read per request, so
+editing `observe-config.json` and refreshing gave a page reading `undefined` for the new key -
+NaN arithmetic and a silently broken animation rather than an error. Now rebuilt per request.
+
+Two things the investigation turned up. A shipped syntax error made the whole script fail to
+parse, and because a dead page mutates no DOM the instrument watching for repaints reported it as
+perfectly stable - a false pass from a blank page, now prevented by a `node --check` test. And
+the tween guard could deadlock: a browser that stops serving animation frames to a hidden tab
+leaves the flag set and freezes the canvas for good, so it is bounded at three times its budget.
+
+Added on request: a theme control cycling system / light / dark, remembered per browser, with the
+storage access wrapped since a private window throws on it.
+
+Files: `.claude/skills/rt-observe/assets/rt_state.html`, `observe-config.json`,
+`scripts/rt_server.py`, `scripts/rt_state.py`, `scripts/Test/test_rt_view.py` (14 -> 16 tests),
+`scripts/Test/test_rt_state.py`.
+
+- 2026-08-31 - `rt-observe` Phase 4, the action layer. `actions.json` (closed whitelist, fixed
+  argv, data not code) + `scripts/rt_actions.py` (dry run, confirm gate, append-only log at
+  `~/.claude/rt-state-actions.jsonl`, judgement by effect rather than exit code) + `GET
+  /api/actions` and the Actions panel in `assets/rt_state.html` + `.claude/hooks/rt-inbox-deliver.py`
+  and its config, declared in `settings.template.json`, for the session inbox. Also split MCP out
+  of the services section onto its own `ttl_seconds.mcp_live` timer: that key was declared at 300s
+  and consumed by nothing, so `claude mcp list` reached 28 servers on the 60s services timer. Two
+  defects found by the new suites and fixed: an action-log path that raises `ValueError` turned a
+  completed action into a 500, and output redaction ran AFTER truncation, so a home path cut in the
+  middle kept the account name in the fragment the page publishes. 69 suites green.

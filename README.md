@@ -58,7 +58,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **16 skills**, **17 agents**, and **24 commands**.
+The repo ships **16 skills**, **17 agents**, and **25 commands**.
 
 ---
 
@@ -772,6 +772,71 @@ python .claude/skills/rt-observe/scripts/rt_state.py            # human summary
 python .claude/skills/rt-observe/scripts/rt_state.py --json     # the whole snapshot
 ```
 
+**The dashboard.** `rt-dashboard` starts a loopback server and opens the page. It is a plain
+command on purpose, in four spellings, because ResearchTools is cloned by people who do not run
+Claude Code:
+
+```powershell
+.\rt-dashboard.ps1 -DryRun        # names the interpreter, the bind and every TTL; starts nothing
+.\rt-dashboard.ps1 -Open          # serve on 127.0.0.1 and hand the URL to the browser
+.\rt-dashboard.bat                # double-click, and cmd
+sh ./rt-dashboard.sh --open        # macOS and Linux
+```
+
+VS Code users get the same two entries under Run Task, and `/rt-dashboard` is the Claude Code
+convenience wrapper. Each root file is a thin forward to the canonical launcher beside its
+module; the only decision any of them makes is which Python to use, and with none found it
+names every candidate it tried and exits 2 rather than guessing.
+
+The server binds `127.0.0.1` only, refuses any other bind address before a socket exists, and
+mints a session token at startup that `POST /api/action` requires. `GET /` serves the page,
+`GET /api/state` the cached snapshot, `GET /api/ping` the identity the launcher probes. Two
+refusals are worth knowing because they protect you from a wrong answer rather than an error: a
+port held by another process is reported **with the holding PID** and the launcher exits
+non-zero rather than binding a second port, since two dashboards showing two different
+snapshots is worse than none; and a dashboard already running is reported with its URL rather
+than started twice.
+
+**Acting on what it reports.** The rail carries an Actions panel, and every button in it runs
+one entry of a closed whitelist held as data in
+[.claude/skills/rt-observe/actions.json](.claude/skills/rt-observe/actions.json): an id maps to
+a FIXED argv, the page posts only that id, and nothing from the request ever reaches a command
+line. Every id points at a script this repository already ships and already tests -
+`install.ps1 -Personal` (the fix for the mirrors the matrix reports lost), `-Manifest`,
+`install-junctions.ps1 -Sync`, `check-deployment.ps1`, `run-offline-tests.ps1`,
+`restart-ollama.ps1`, the vault daemon's status and start, and one action that spawns a fresh
+headless session. Each offers a **dry run** that resolves the argv and executes nothing, a
+destructive one arms first and then shows the action's own confirm sentence rather than a
+generic prompt, and an action whose interpreter is not on this machine renders as a reason
+instead of a button that would fail on click.
+
+An action is judged by its **effect, not its exit code**: after it runs, the section it claims
+to change is collected again and the panel says `effect confirmed`, `effect NOT confirmed` or
+`effect unchecked`. `restart-ollama.ps1` is the reason - it is the documented script that exits
+0 while an orphaned child keeps its VRAM. Every attempt, refusals included, appends one JSON
+line to `~/.claude/rt-state-actions.jsonl`.
+
+**Messaging a session.** A Claude Code session card carries a Send button when, and only when,
+the delivery hook is installed for it. The message is written into `~/.claude/rt-inbox/<session
+id>/` and nothing executes; `rt-inbox-deliver.py`, a `UserPromptSubmit` hook, hands it to that
+session on its next turn and moves it to `delivered/`. A session with no hook is reported
+**unreachable** and never as delivered, because a message written into a directory nobody drains
+is worse than no message at all. This does not replace Claude Code's own cross-session
+messaging, and it cannot: a browser page cannot call an agent tool. What it adds is a durable
+record, a fleet view of who is reachable, and an inbox another harness could read too.
+
+Each section carries its own TTL, so a two-second page poll never re-runs `claude mcp list`,
+and a section that has never been collected reads `collecting` rather than blank - the first
+`/api/state` answers immediately while the slow collectors fill in behind it.
+
+The page is one self-contained file with no CDN, no npm and no build step, in both themes, from
+a 400px side panel to a wide monitor. The eight cell states are distinguishable with colour
+removed, because colour marks only the one state that must never be missed: on this surface no
+second status hue cleared the colour-vision-deficiency floors against the alarm red, so every
+other state is carried by a two-letter code, a texture and an edge weight. Its design tokens
+are extracted to [assets/rt-tokens.css](assets/rt-tokens.css), the first shared token file in
+this repository, and a test asserts the page and that file cannot drift apart.
+
 Standard library only: no pip install, no npm, no Docker, no build step, and the core never
 shells out to a `.ps1`. Exit 0 is clean, 1 means something is `lost` or `stale`, 2 is a refusal
 by design. **Zero harnesses is a supported configuration** - with no adapter present the
@@ -862,6 +927,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/word2latex` | Convert a Word `.docx` template to a faithful LaTeX source (pandoc + standard patch sequence) | Yes — `.docx` path |
 | `/geolocalisation` | Map a review corpus's study locations from its `.bib`: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional `--full-text` PDF scan. | Optional — `.bib` file/dir/IDE file |
 | `/recommendation-letter` | Generate a support / recommendation / appreciation / acceptance / dispense letter in LaTeX → PDF from a candidate's files (two tracks; candidate status + funding provider; paired invitation). | Optional — folder / paths / IDE file |
+| `/rt-dashboard` | Start the rt-observe dashboard on loopback and open it: mirror matrix, fan-out canvas, plan progression, services and sessions. Wraps `rt-dashboard.ps1` / `.sh` / `.bat`, which need no Claude Code. `--dry-run` names the interpreter, the bind address and every TTL and starts nothing | Optional — `--dry-run`, `--open`, `--port <n>`, `--json` |
 
 ### `/concis` — Concise mode
 
@@ -998,6 +1064,23 @@ Example:
 (clean the `.bib` after adding references), `/ref` (format individual references).
 
 **File:** `.claude/commands/replyreviewer.md`
+
+### `/rt-dashboard` — Toolkit state dashboard
+
+Starts the `rt-observe` dashboard on loopback and reports the URL. With no argument it dry-runs
+first, which names the interpreter it resolved, the bind address, the page and every per-section
+TTL, and starts nothing. With `--json` it skips the server entirely and dumps the snapshot,
+which is the right form inside a script or when the only question is whether anything is `lost`.
+
+Its three refusals are read back to you rather than worked around: no interpreter found names
+every candidate tried and exits 2; a port held by something else names the holding PID and exits
+1, because two dashboards showing two different snapshots is worse than none; and a dashboard
+already running is reported with its URL rather than started twice.
+
+The command is a convenience, never the only way in. `rt-dashboard.ps1`, `rt-dashboard.sh`,
+`rt-dashboard.bat` and the VS Code task all reach the same launcher without Claude Code.
+
+**File:** `.claude/commands/rt-dashboard.md`
 
 ---
 

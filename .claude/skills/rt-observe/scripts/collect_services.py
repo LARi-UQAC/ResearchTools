@@ -3,7 +3,10 @@ collect_services - the shared infrastructure every harness leans on.
 
 Three services, deliberately in the CORE rather than in an adapter, because none
 of them belongs to one harness: the MCP roster, the local model daemon, and the
-Obsidian vault daemon.
+Obsidian vault daemon. They are reported as TWO snapshot sections, not one, and
+the seam is cost: `collect()` answers the two local daemons on the services
+timer, while `collect_mcp()` is a section of its own on ttl_seconds.mcp_live,
+because it is the only probe here that leaves the machine.
 
 MCP is reported in two tiers, because the live half is Claude-specific and this
 tool may not have Claude at all.
@@ -35,6 +38,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from rt_redact import home_tilde  # noqa: E402
 
 MCP_STATE_MARKERS = (
     ("connected", ("✔", "connected")),
@@ -92,7 +99,14 @@ def _mcp_tier1(timeout_s):
         state = _classify_mcp_line(text)
         if state is None:
             continue
-        name = text.split(":", 1)[0].strip()
+        # The separator is a colon FOLLOWED BY A SPACE, not the first colon.
+        # Measured 2026-08-31: a plugin server is named `plugin:canva:canva`, so
+        # splitting on the first colon reported five different servers all named
+        # "plugin" - five indistinguishable rows where the roster should name
+        # each one. A URL's `https://` has no space after its colon, so this
+        # separator does not match inside the value either.
+        name = (text.split(": ", 1)[0] if ": " in text
+                else text.split(":", 1)[0]).strip()
         if not name:
             continue
         servers.append({"name": name, "state": state})
@@ -250,7 +264,9 @@ def _vault_daemon(repo_root, home, outbox_root, lock_path_value, stale_after_s):
         "running": running,
         "reason": reason,
         "lock": str(lock_path.name),
-        "outbox": str(root),
+        # The outbox lives under the home directory, so its absolute form
+        # carries the account name into every rendering of this panel.
+        "outbox": home_tilde(str(root), home),
         "queue": queue,
         "alert": ("%d raw drop(s) are waiting and no daemon holds the lock, so "
                   "nothing will consume them" % waiting
@@ -265,36 +281,65 @@ def _expand(value, home):
     return Path(text)
 
 
-def collect(repo_root, home, config_values, now=None):
+def collect_mcp(repo_root, home, config_values, now=None):
     """
     --------------------------------------------------------------------------
     Purpose:
-        Report the shared services: MCP, local models, the vault daemon.
+        The MCP roster on its own, because it is the one probe here that
+        reaches the network. It is a SNAPSHOT SECTION of its own, governed by
+        ttl_seconds.mcp_live, and not part of the services section: measured
+        2026-08-31, mcp_live was declared at 300s and consumed by nothing while
+        MCP rode the 60s services timer, so `claude mcp list` shelled out and
+        reached 28 servers five times more often than the configuration said. A
+        key that looks configured and does nothing is the failure class this
+        repository legislates against, so the section moved rather than the key
+        being deleted.
 
     Inputs:
-        repo_root (Path): repository root
+        repo_root (Path): repository root, for the tier-2 declared roster
         home (Path): home directory, injected (R21)
-        config_values (dict): {"mcp_timeout_s", "subprocess_timeout_s",
-                               "outbox_root", "daemon_lock_path",
-                               "lock_stale_after_s"}
+        config_values (dict): {"mcp_timeout_s"}
         now (datetime): injected clock (R19)
 
     Outputs:
-        state (dict): {"mcp", "local_models", "vault_daemon"}
+        mcp (dict): tier 1 when the binary answered, else the tier-2 roster,
+                    always carrying its own status and reason
     --------------------------------------------------------------------------
     """
-    stamp = now.isoformat(timespec="seconds") if now else None
     mcp = _mcp_tier1(config_values["mcp_timeout_s"])
     if mcp is None or mcp.get("status") != "ok":
         fallback = _mcp_tier2(repo_root, home)
         if mcp is not None and mcp.get("status") != "ok":
             fallback["tier1_reason"] = mcp.get("reason")
         mcp = fallback
+    if now is not None:
+        mcp["collected_at"] = now.isoformat(timespec="seconds")
+    return mcp
 
+
+def collect(repo_root, home, config_values, now=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Report the two LOCAL services: the model daemon and the vault daemon.
+        Both are cheap process-and-file probes, which is why they can afford a
+        60s timer. MCP is deliberately NOT here - see collect_mcp.
+
+    Inputs:
+        repo_root (Path): repository root
+        home (Path): home directory, injected (R21)
+        config_values (dict): {"subprocess_timeout_s", "outbox_root",
+                               "daemon_lock_path", "lock_stale_after_s"}
+        now (datetime): injected clock (R19)
+
+    Outputs:
+        state (dict): {"local_models", "vault_daemon"}
+    --------------------------------------------------------------------------
+    """
+    stamp = now.isoformat(timespec="seconds") if now else None
     return {
         "status": "ok",
         "collected_at": stamp,
-        "mcp": mcp,
         "local_models": _ollama(config_values["subprocess_timeout_s"]),
         "vault_daemon": _vault_daemon(repo_root, home,
                                       config_values["outbox_root"],

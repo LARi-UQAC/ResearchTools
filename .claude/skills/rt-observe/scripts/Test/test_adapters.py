@@ -230,6 +230,22 @@ class ClaudeCodeAdapterTest(AdapterHarness):
         self.assertNotIn(str(self.home), json.dumps(state))
         self.assertTrue(state["sessions"][0]["cwd"].startswith("~"))
 
+    def test_the_account_name_is_redacted_inside_the_prompt_too(self):
+        """The case the test above could not catch, and it was live until
+        2026-08-31: the prompt is FREE TEXT and routinely quotes a path under
+        the home directory. Only `cwd` was being redacted, so a rendered session
+        card carried the account name in full while the older test - which puts
+        the home path only in `cwd` - stayed green."""
+        self._transcript("proj-a", "sess-1", [
+            {"sessionId": "sess-1", "cwd": str(self.home / "work"),
+             "lastPrompt": "read %s and continue"
+                           % (self.home / ".claude" / "plans" / "p.md")}])
+        state = self._collect()
+        card = state["sessions"][0]
+        self.assertNotIn(str(self.home), json.dumps(state))
+        self.assertIn("~", card["prompt"])
+        self.assertIn("continue", card["prompt"])
+
     def test_a_truncated_transcript_does_not_abort_the_fleet(self):
         path = self._transcript("proj-a", "sess-1",
                                 [{"sessionId": "sess-1", "cwd": "x"}])

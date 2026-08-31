@@ -14,7 +14,10 @@ rather than blanked.
 import argparse
 import io
 import json
+import secrets
 import sys
+import webbrowser
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,6 +30,8 @@ import collect_progress  # noqa: E402
 import collect_registry  # noqa: E402
 import collect_repo  # noqa: E402
 import collect_services  # noqa: E402
+import rt_actions  # noqa: E402
+import rt_server  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = SKILL_ROOT.parent.parent.parent
@@ -79,12 +84,102 @@ def _unavailable(reason):
     return {"status": "unavailable", "reason": reason}
 
 
+def _guarded(label, call):
+    """A collector that raises costs its OWN panel and nothing else. An
+    unavailable panel is stated on screen, never blanked and never silently
+    omitted (R3, R8)."""
+    try:
+        return call()
+    except Exception as exc:                            # noqa: BLE001
+        return _unavailable("%s failed: %s: %s"
+                            % (label, type(exc).__name__, exc))
+
+
+def _mirror_section(repo_root, home, now):
+    try:
+        return collect_mirrors.collect(repo_root, home, now=now)
+    except collect_mirrors.PolicyError as exc:
+        # The one collector whose failure is worth stating loudly: with no policy
+        # there is no by-design/lost distinction, which is the product.
+        return _unavailable(str(exc))
+    except OSError as exc:
+        return _unavailable("the mirror matrix could not read the tree: %s" % exc)
+
+
+def section_builders(repo_root=None, home=None, config=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Return one callable per snapshot section, so the one-shot CLI and the
+        server's per-section TTL cache share ONE definition of what the state
+        is. A section rebuilt on its own timer must be the same section the
+        `--json` dump prints, or the page and the file disagree.
+
+    Inputs:
+        repo_root (Path): repository root, injected so a test drives a fixture
+        home (Path): home directory user-scoped dialects resolve against
+        config (dict): parsed observe-config.json, loaded when omitted
+
+    Outputs:
+        builders (OrderedDict): section name -> fn(now) -> section dict
+    --------------------------------------------------------------------------
+    """
+    repo_root = Path(repo_root or REPO_ROOT)
+    home = Path(home if home is not None else Path.home())
+    if config is None:
+        config = load_config()
+
+    def services(now):
+        return collect_services.collect(repo_root, home, {
+            "subprocess_timeout_s": config_value(
+                config, "timeouts_seconds", "subprocess_default"),
+            "outbox_root": config_value(config, "paths", "obsidian_outbox"),
+            "daemon_lock_path": config_value(
+                config, "paths", "daemon_singleton_lock"),
+            "lock_stale_after_s": config_value(
+                config, "staleness_seconds", "daemon_lock"),
+        }, now=now)
+
+    return OrderedDict((
+        ("mirrors", lambda now: _mirror_section(repo_root, home, now)),
+        ("registry", lambda now: _guarded(
+            "the registry check",
+            lambda: collect_registry.collect(repo_root, now=now))),
+        ("repo_state", lambda now: _guarded(
+            "the repository panel",
+            lambda: collect_repo.collect(
+                repo_root, now,
+                config_value(config, "staleness_seconds", "green_stamp")))),
+        ("progress", lambda now: _guarded(
+            "the progression panel",
+            lambda: collect_progress.collect(repo_root, now=now))),
+        ("graph", lambda now: _guarded(
+            "the graph panel",
+            lambda: collect_graph.collect(
+                config_value(config, "paths", "graph_snapshot"), home, now,
+                config_value(config, "staleness_seconds", "graph_snapshot")))),
+        ("mcp", lambda now: _guarded(
+            "the MCP roster",
+            lambda: collect_services.collect_mcp(
+                repo_root, home,
+                {"mcp_timeout_s": config_value(
+                    config, "timeouts_seconds", "mcp_list")},
+                now=now))),
+        ("services", lambda now: _guarded(
+            "the services panel", lambda: services(now))),
+        ("fleet", lambda now: _guarded(
+            "the harness adapters",
+            lambda: adapters.collect_all(
+                adapters.AdapterContext(repo_root, home, config, now)))),
+    ))
+
+
 def build_snapshot(repo_root=None, home=None, now=None, config=None):
     """
     --------------------------------------------------------------------------
     Purpose:
-        Assemble the whole snapshot. Every section is independent: one failing
-        collector degrades its own panel and never the page.
+        Assemble the whole snapshot in one pass. Every section is independent:
+        one failing collector degrades its own panel and never the page.
 
     Inputs:
         repo_root (Path): repository root, injected so a test can drive a fixture
@@ -93,73 +188,18 @@ def build_snapshot(repo_root=None, home=None, now=None, config=None):
         config (dict): parsed observe-config.json, loaded when omitted
 
     Outputs:
-        snapshot (dict): {"generated", "repo", "mirrors"}
+        snapshot (dict): {"generated", "repo", + one key per section}
     --------------------------------------------------------------------------
     """
     repo_root = Path(repo_root or REPO_ROOT)
-    home = Path(home if home is not None else Path.home())
-    stamp = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
-    if config is None:
-        config = load_config()
-
     clock = now or datetime.now(timezone.utc)
-
-    try:
-        mirrors = collect_mirrors.collect(repo_root, home, now=now)
-    except collect_mirrors.PolicyError as exc:
-        # The one collector whose failure is worth stating loudly: with no policy
-        # there is no by-design/lost distinction, which is the product.
-        mirrors = _unavailable(str(exc))
-    except OSError as exc:
-        mirrors = _unavailable("the mirror matrix could not read the tree: %s" % exc)
-
-    # Each section is wrapped independently. A collector that raises costs its own
-    # panel and nothing else: an unavailable panel is STATED on screen, never
-    # blanked and never silently omitted (R3, R8).
-    def guarded(label, call):
-        try:
-            return call()
-        except Exception as exc:                        # noqa: BLE001
-            return _unavailable("%s failed: %s: %s"
-                                % (label, type(exc).__name__, exc))
-
-    registry = guarded("the registry check",
-                       lambda: collect_registry.collect(repo_root, now=clock))
-    repo = guarded("the repository panel", lambda: collect_repo.collect(
-        repo_root, clock, config_value(config, "staleness_seconds", "green_stamp")))
-    progress = guarded("the progression panel",
-                       lambda: collect_progress.collect(repo_root, now=clock))
-    graph = guarded("the graph panel", lambda: collect_graph.collect(
-        config_value(config, "paths", "graph_snapshot"), home, clock,
-        config_value(config, "staleness_seconds", "graph_snapshot")))
-    services = guarded("the services panel", lambda: collect_services.collect(
-        repo_root, home,
-        {
-            "mcp_timeout_s": config_value(config, "timeouts_seconds", "mcp_list"),
-            "subprocess_timeout_s": config_value(
-                config, "timeouts_seconds", "subprocess_default"),
-            "outbox_root": config_value(config, "paths", "obsidian_outbox"),
-            "daemon_lock_path": config_value(
-                config, "paths", "daemon_singleton_lock"),
-            "lock_stale_after_s": config_value(
-                config, "staleness_seconds", "daemon_lock"),
-        }, now=clock))
-
-    context = adapters.AdapterContext(repo_root, home, config, clock)
-    fleet = guarded("the harness adapters",
-                    lambda: adapters.collect_all(context))
-
-    return {
-        "generated": stamp,
+    snapshot = {
+        "generated": clock.isoformat(timespec="seconds"),
         "repo": {"root": str(repo_root), "name": repo_root.name},
-        "mirrors": mirrors,
-        "registry": registry,
-        "repo_state": repo,
-        "progress": progress,
-        "graph": graph,
-        "services": services,
-        "fleet": fleet,
     }
+    for name, build in section_builders(repo_root, home, config).items():
+        snapshot[name] = build(clock)
+    return snapshot
 
 
 def _print_text(snapshot, stream):
@@ -237,13 +277,14 @@ def _print_sections(snapshot, stream):
             graph.get("nodes"), graph.get("links"),
             "  (stale)" if graph.get("stale") else ""))
 
+    mcp = snapshot.get("mcp", {})
+    stream.write("\nmcp          tier %s, %s\n" % (
+        mcp.get("tier"), mcp.get("counts") if mcp.get("status") == "ok"
+        else mcp.get("reason")))
+
     services = snapshot.get("services", {})
     if services.get("status") == "ok":
-        mcp = services.get("mcp", {})
         stream.write("\nservices\n")
-        stream.write("  mcp        tier %s, %s\n" % (
-            mcp.get("tier"), mcp.get("counts") if mcp.get("status") == "ok"
-            else mcp.get("reason")))
         models = services.get("local_models", {})
         stream.write("  models     %s\n" % (
             "%d resident" % models["resident_count"]
@@ -267,11 +308,225 @@ def _print_sections(snapshot, stream):
                          % (adapter_id, len(state.get("sessions", []))))
 
 
+def page_path(skill_root=None):
+    """Where the view lives. It does not exist until the design passes have
+    produced it, and the server states that rather than failing."""
+    return Path(skill_root or SKILL_ROOT) / "assets" / "rt_state.html"
+
+
+def asset_roots(skill_root=None, repo_root=None):
+    return [Path(skill_root or SKILL_ROOT) / "assets",
+            Path(repo_root or REPO_ROOT) / "assets"]
+
+
+def view_config(config):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Every number the served page would otherwise hardcode, as one JSON
+        block injected into the page (R0). The markup carries no configured
+        value of its own, so tuning the poll interval or the canvas physics is
+        an edit to observe-config.json and never to the HTML.
+
+    Inputs:
+        config (dict): the parsed observe-config.json
+
+    Outputs:
+        view (dict): {"poll_ms", "canvas": {...}}
+    --------------------------------------------------------------------------
+    """
+    canvas_keys = ("settle_ticks", "settle_ms", "spring", "repulsion",
+                   "damping", "lane_pull", "min_alpha",
+                   "vertical_below_px")
+    return {
+        "poll_ms": config_value(config, "view", "poll_ms"),
+        "canvas": {key: config_value(config, "view", "canvas", key)
+                   for key in canvas_keys},
+    }
+
+
+def _ttls(config):
+    return {section: config_value(config, "ttl_seconds", key)
+            for section, key in rt_server.SECTION_TTL_KEY.items()}
+
+
+def action_runner(args, config, cache, builders, clock):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the whitelist runner the one write route calls, wired so that an
+        action is judged by its EFFECT (R9): the section it claims to change is
+        dropped from the TTL cache and collected again, through the SAME
+        builders the page reads. There is no second definition of the state,
+        so an action cannot be verified against a view the page never sees.
+
+    Inputs:
+        args (Namespace), config (dict), cache (SnapshotCache),
+        builders (OrderedDict), clock (callable)
+
+    Outputs:
+        runner (rt_actions.Runner) or None when actions.json is missing, which
+        is stated by the route rather than crashing the server
+    --------------------------------------------------------------------------
+    """
+    def section_fn(name):
+        cache.invalidate(name)
+        return builders[name](clock())
+
+    try:
+        return rt_actions.Runner(
+            Path(args.repo_root or REPO_ROOT),
+            Path(args.home) if args.home else Path.home(),
+            rt_actions.runner_values(config, config_value),
+            section_fn=section_fn, clock=clock)
+    except rt_actions.ActionsError:
+        return None
+
+
+def serve(args, config, out=None, err=None, clock=None,
+          decide=None, browse=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Start the loopback server, or refuse. The three refusals are the whole
+        reason this is a function rather than four lines in main(): a port held
+        by something else is named and never worked around, because two
+        dashboards showing two different snapshots is worse than none.
+
+    Inputs:
+        args (Namespace): the parsed CLI
+        config (dict): parsed observe-config.json
+        out, err (stream): stdout and stderr, injected for the suite
+        clock (callable): returns the current time (R19)
+        decide (callable): rt_server.start_decision replacement, for the suite
+        browse (callable): webbrowser.open replacement, for the suite
+
+    Outputs:
+        code (int): 0 serving or already running, 1 refused, 2 refusal by design
+    --------------------------------------------------------------------------
+    """
+    out = out or sys.stdout
+    err = err or sys.stderr
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    repo_root = Path(args.repo_root or REPO_ROOT)
+
+    host = config_value(config, "server", "bind_host")
+    port = int(args.port or config_value(config, "server", "port"))
+    decision = (decide or rt_server.start_decision)(
+        host, port,
+        config_value(config, "timeouts_seconds", "ping"),
+        config_value(config, "timeouts_seconds", "subprocess_default"))
+    page = page_path()
+    url = decision["url"]
+
+    if args.dry_run:
+        # Prints what it would do and touches nothing (R16). It returns the code
+        # the real run WOULD return, so a script can use it as a preflight.
+        out.write("rt-dashboard --dry-run\n")
+        out.write("  interpreter   %s\n" % sys.executable)
+        out.write("  bind          %s:%d  (loopback only)\n" % (host, port))
+        out.write("  url           %s\n" % url)
+        out.write("  page          %s%s\n"
+                  % (page, "" if page.exists() else "   NOT BUILT YET"))
+        out.write("  token         minted at startup, %s bytes of entropy\n"
+                  % config_value(config, "server", "token_bytes"))
+        for section, ttl in sorted(_ttls(config).items()):
+            out.write("  ttl %-12s %ss\n" % (section, ttl))
+        out.write("  would         %s\n" % decision["action"])
+        if decision["action"] == "refuse":
+            out.write("  refusal       %s\n" % decision["reason"])
+        if args.open:
+            out.write("  would open    %s in the default browser\n" % url)
+        out.write("  started       nothing\n")
+        return 1 if decision["action"] == "refuse" else 0
+
+    if decision["action"] == "already-running":
+        out.write("rt-dashboard is already running: %s\n" % url)
+        if decision.get("pid"):
+            out.write("  pid %s, started %s\n"
+                      % (decision["pid"], decision.get("started")))
+        out.write("  not starting a second one. Its token was printed when it "
+                  "started.\n")
+        if args.open:
+            (browse or webbrowser.open)(url)
+        return 0
+
+    if decision["action"] == "refuse":
+        err.write("rt-dashboard refuses to start: %s\n" % decision["reason"])
+        if decision.get("pid"):
+            err.write("  held by pid %s\n" % decision["pid"])
+        else:
+            err.write("  %s\n" % decision.get("pid_unavailable"))
+        err.write("  free the port, or pass --port <n> for a different one. "
+                  "Binding a second port would show two snapshots.\n")
+        return 1
+
+    token = secrets.token_urlsafe(
+        int(config_value(config, "server", "token_bytes")))
+    builders = section_builders(args.repo_root, args.home, config)
+    cache = rt_server.SnapshotCache(
+        builders, _ttls(config),
+        envelope=lambda: {"repo": {"root": str(repo_root),
+                                   "name": repo_root.name}})
+    runner = action_runner(args, config, cache, builders, clock)
+    try:
+        httpd = rt_server.build_server(
+            host, port, cache, token, page,
+            asset_roots(repo_root=repo_root), clock=clock,
+            action_runner=(runner.run if runner else None),
+            catalogue=(runner.catalogue if runner else None),
+            # A callable, so the view block is rebuilt from disk on each
+            # request: editing observe-config.json then refreshing is enough,
+            # exactly as it already was for the markup itself.
+            page_vars=lambda: {rt_server.VIEW_CONFIG_PLACEHOLDER:
+                               json.dumps(view_config(load_config()))})
+    except rt_server.ServerRefusal as exc:
+        err.write("%s\n" % exc)
+        return 2
+    except OSError as exc:
+        # The probe said free and the bind disagreed: something took the port in
+        # between. Report it rather than retrying on another port.
+        err.write("rt-dashboard could not bind %s:%d: %s\n" % (host, port, exc))
+        return 1
+
+    # Start every collector at once rather than making the first page load pay
+    # for the slowest one. Measured 2026-08-31: the services section runs
+    # tier-1 `claude mcp list`, which reaches the network for 28 servers.
+    cache.warm(clock())
+    out.write("rt-dashboard serving  %s\n" % url)
+    out.write("  session token  %s\n" % token)
+    out.write("  state          %sapi/state\n" % url)
+    if not page.exists():
+        out.write("  page           NOT BUILT YET (%s). /api/state answers.\n"
+                  % page)
+    out.write("  Ctrl+C to stop.\n")
+    out.flush()
+    if args.open:
+        (browse or webbrowser.open)(url)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        out.write("\nrt-dashboard stopped.\n")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Report the state of this toolkit: mirror matrix first.")
     parser.add_argument("--json", action="store_true",
                         help="write the whole snapshot to stdout as JSON")
+    parser.add_argument("--serve", action="store_true",
+                        help="serve the dashboard on loopback instead of "
+                             "printing once")
+    parser.add_argument("--open", action="store_true",
+                        help="with --serve, hand the URL to the default browser")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="with --serve, print what would happen and start "
+                             "nothing")
+    parser.add_argument("--port", type=int, default=None,
+                        help="override the configured port for this run")
     parser.add_argument("--repo-root", default=None,
                         help="repository root (default: this skill's own repo)")
     parser.add_argument("--home", default=None,
@@ -281,7 +536,21 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        snapshot = build_snapshot(repo_root=args.repo_root, home=args.home)
+        config = load_config()
+    except ConfigError as exc:
+        sys.stderr.write("%s\n" % exc)
+        return 2
+
+    if args.serve or args.dry_run:
+        try:
+            return serve(args, config)
+        except ConfigError as exc:
+            sys.stderr.write("%s\n" % exc)
+            return 2
+
+    try:
+        snapshot = build_snapshot(repo_root=args.repo_root, home=args.home,
+                                  config=config)
     except ConfigError as exc:
         sys.stderr.write("%s\n" % exc)
         return 2

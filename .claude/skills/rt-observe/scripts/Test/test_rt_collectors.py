@@ -269,6 +269,16 @@ class GraphPanelTest(TempTree):
         self.assertIn("never reads the graph itself", state["reason"])
         self.assertIn("local-writer", state["refresh"])
 
+    def test_the_absent_snapshot_reason_hides_the_home_directory(self):
+        """Measured 2026-08-31 on the live /api/state: this reason named the
+        snapshot's absolute path, so the account name reached the rendered page
+        and every screenshot of it. The adapters redacted; the collectors did
+        not, which is why the redaction is now one shared helper."""
+        state = collect_graph.collect("~/rt-graph-snapshot.json", self.home,
+                                      NOW, 86400)
+        self.assertNotIn(str(self.home), state["reason"])
+        self.assertIn("~", state["reason"])
+
     def test_a_snapshot_is_rendered_with_its_age(self):
         write(self.home / "rt-graph-snapshot.json", json.dumps({
             "generated": "2026-08-30T11:00:00", "nodes": 5683, "links": 7869,
@@ -311,19 +321,57 @@ class GraphPanelTest(TempTree):
 class ServicesTest(TempTree):
 
     def _values(self):
-        return {"mcp_timeout_s": 5, "subprocess_timeout_s": 5,
+        """What the SERVICES section needs. mcp_timeout_s is deliberately
+        absent: since 2026-08-31 MCP is its own section on its own timer, so a
+        services collection that still reached for that key would be the split
+        only half done."""
+        return {"subprocess_timeout_s": 5,
                 "outbox_root": str(self.home / "outbox"),
                 "daemon_lock_path": str(self.home / "vault-daemon.lock"),
                 "lock_stale_after_s": 900}
+
+    def _mcp_values(self):
+        return {"mcp_timeout_s": 5}
+
+    def test_the_reported_outbox_path_hides_the_home_directory(self):
+        """The second of the two leaks measured 2026-08-31 on the live
+        /api/state. The outbox necessarily lives under the home directory, so
+        reporting it verbatim published the account name."""
+        (self.home / "outbox" / "raw").mkdir(parents=True)
+        with no_binaries():
+            state = collect_services.collect(self.repo, self.home,
+                                             self._values(), now=NOW)
+        daemon = state["vault_daemon"]
+        self.assertNotIn(str(self.home), json.dumps(state))
+        self.assertTrue(daemon["outbox"].startswith("~"), daemon["outbox"])
+
+    def test_the_services_section_never_shells_out_to_claude(self):
+        """The point of the 2026-08-31 split. The services section runs on a
+        60s timer; if it still invoked `claude mcp list` it would reach 28
+        servers over the network on that timer, which is what made
+        ttl_seconds.mcp_live dead config in the first place."""
+        seen = []
+
+        def fake_run(argv, **kwargs):
+            seen.append(argv)
+            return mock.Mock(returncode=0, stdout="NAME\n", stderr="")
+
+        with mock.patch.object(collect_services.shutil, "which",
+                               side_effect=lambda n: "C:/fake/%s.CMD" % n),              mock.patch.object(collect_services.subprocess, "run", fake_run):
+            state = collect_services.collect(self.repo, self.home,
+                                             self._values(), now=NOW)
+        self.assertNotIn("mcp", state,
+                         "the services section still carries the MCP roster")
+        for argv in seen:
+            self.assertNotIn("mcp", argv, argv)
 
     def test_without_claude_the_roster_falls_to_tier_two_and_says_so(self):
         write(self.repo / ".mcp.json",
               json.dumps({"mcpServers": {"alpha": {}, "beta": {}}}))
         with mock.patch.object(collect_services.shutil, "which",
                                return_value=None):
-            state = collect_services.collect(self.repo, self.home,
-                                             self._values(), now=NOW)
-        mcp = state["mcp"]
+            mcp = collect_services.collect_mcp(self.repo, self.home,
+                                               self._mcp_values(), now=NOW)
         self.assertEqual(mcp["tier"], 2)
         self.assertEqual(mcp["liveness"], "unavailable")
         self.assertEqual(mcp["counts"]["configured"], 2)
@@ -337,9 +385,8 @@ class ServicesTest(TempTree):
                                side_effect=lambda n: "C:/fake/%s.CMD" % n), \
              mock.patch.object(collect_services.subprocess, "run",
                                side_effect=sp.TimeoutExpired("claude", 5)):
-            state = collect_services.collect(self.repo, self.home,
-                                             self._values(), now=NOW)
-        mcp = state["mcp"]
+            mcp = collect_services.collect_mcp(self.repo, self.home,
+                                               self._mcp_values(), now=NOW)
         self.assertEqual(mcp["tier"], 2)
         self.assertIn("did not answer within", mcp["tier1_reason"])
         self.assertEqual(mcp["counts"]["configured"], 1)
@@ -358,7 +405,8 @@ class ServicesTest(TempTree):
         with mock.patch.object(collect_services.shutil, "which",
                                side_effect=lambda n: "C:/fake/%s.CMD" % n), \
              mock.patch.object(collect_services.subprocess, "run", fake_run):
-            collect_services.collect(self.repo, self.home, self._values(), now=NOW)
+            collect_services.collect_mcp(self.repo, self.home,
+                                         self._mcp_values(), now=NOW)
         self.assertTrue(seen["argv"][0].endswith(".CMD"), seen["argv"])
 
     def test_the_three_live_states_are_parsed(self):
@@ -374,10 +422,37 @@ class ServicesTest(TempTree):
         with mock.patch.object(collect_services.shutil, "which",
                                side_effect=lambda n: "C:/fake/%s.CMD" % n), \
              mock.patch.object(collect_services.subprocess, "run", fake_run):
-            state = collect_services.collect(self.repo, self.home,
-                                             self._values(), now=NOW)
-        self.assertEqual(state["mcp"]["counts"],
+            mcp = collect_services.collect_mcp(self.repo, self.home,
+                                               self._mcp_values(), now=NOW)
+        self.assertEqual(mcp["counts"],
                          {"connected": 1, "needs-auth": 1, "failed": 1})
+
+    def test_a_server_name_containing_colons_keeps_its_whole_name(self):
+        """Measured 2026-08-31 on the rendered page: five plugin servers all
+        appeared as one name, "plugin", because the parser split on the FIRST
+        colon and a plugin server is named `plugin:canva:canva`. Five
+        indistinguishable rows where the roster's whole job is to name each one.
+        The separator is a colon followed by a SPACE, which a URL's `https://`
+        does not contain."""
+        out = ("plugin:canva:canva: npx thing - \u2718 Failed to connect\n"
+               "plugin:linear:linear: npx thing - ! Needs authentication\n"
+               "context7: https://mcp.example/mcp - \u2714 Connected\n")
+
+        def fake_run(argv, **kwargs):
+            if "mcp" in argv:
+                return mock.Mock(returncode=0, stdout=out, stderr="")
+            return mock.Mock(returncode=0, stdout="NAME\n", stderr="")
+
+        with mock.patch.object(collect_services.shutil, "which",
+                               side_effect=lambda n: "C:/fake/%s.CMD" % n), \
+             mock.patch.object(collect_services.subprocess, "run", fake_run):
+            mcp = collect_services.collect_mcp(self.repo, self.home,
+                                               self._mcp_values(), now=NOW)
+        names = [s["name"] for s in mcp["servers"]]
+        self.assertIn("plugin:canva:canva", names)
+        self.assertIn("plugin:linear:linear", names)
+        self.assertIn("context7", names)
+        self.assertEqual(3, len(set(names)), names)
 
     def test_a_leftover_lock_with_a_dead_holder_reports_not_running(self):
         """Reading a leftover lock as 'running' reports exactly backwards: a

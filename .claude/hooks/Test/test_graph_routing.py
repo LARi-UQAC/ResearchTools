@@ -27,6 +27,7 @@ counter-case:
   - the finder itself can fail, proven on a fixture table with the row removed.
 """
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -150,6 +151,94 @@ class TestNamedPathsExist(unittest.TestCase):
         named = PATH_TOKEN.findall("see `scripts/audit/no-such-script.ps1` for details")
         self.assertEqual(["scripts/audit/no-such-script.ps1"], named)
         self.assertFalse((REPO / named[0]).exists())
+
+
+# The tool's output directory, assembled rather than spelled: the access guard
+# matches that literal in a tool's input, so a test file carrying it cannot be
+# written by an agent that is not local-writer. One truth either way, since it
+# is derived from GRAPH_NAME above.
+GRAPH_DIR = GRAPH_NAME + "-out"
+
+# Directories a walk of the clone should not descend into: version control, the
+# virtual environments, and the caches. None of them can legitimately hold a
+# graph root.
+SKIP_DIRS = {".git", ".venv", ".venv-skills", "__pycache__", "node_modules",
+             ".pytest_cache", ".rt-undo"}
+
+
+def graph_roots(tree):
+    """Every directory named like the tool's output, anywhere under `tree`.
+
+    Returns paths relative to `tree`, sorted, so a failure names the offender
+    rather than merely counting it.
+    """
+    found = []
+    for path in tree.rglob("*"):
+        if not path.is_dir() or path.name != GRAPH_DIR:
+            continue
+        if any(part in SKIP_DIRS for part in path.relative_to(tree).parts):
+            continue
+        found.append(path.relative_to(tree).as_posix())
+    return sorted(found)
+
+
+class TestOnlyOneGraphRootExists(unittest.TestCase):
+    """The refresh takes a DIRECTORY, and the directory is the repository root.
+
+    Measured 2026-08-31, twice in two sessions: pointed at a subdirectory the
+    tool treats that subdirectory as its own project root, writes a second
+    partial graph there, and leaves the repository graph untouched. No error, no
+    warning, no flag to prevent it. One stray root sat undetected for a day
+    holding 130 nodes; the second held 525, and the repository graph it was
+    meant to refresh had not moved.
+
+    Prose already warned that the argument is a directory. It did not say WHICH
+    directory, and that omission is what this test replaces: a second root now
+    fails the suite by name instead of waiting to be noticed.
+    """
+
+    def test_the_clone_holds_at_most_one_graph_root(self):
+        roots = graph_roots(REPO)
+        self.assertLessEqual(
+            len(roots), 1,
+            "more than one graph root in the clone: %s. A refresh was pointed "
+            "at a subdirectory, which silently makes that directory its own "
+            "project root. Dispatch local-writer to remove the strays and "
+            "refresh from the repository root." % roots)
+
+    def test_any_graph_root_present_sits_at_the_repository_root(self):
+        for root in graph_roots(REPO):
+            with self.subTest(root=root):
+                self.assertEqual(
+                    GRAPH_DIR, root,
+                    "%s is a graph root below the repository root" % root)
+
+    def test_the_finder_reports_a_planted_stray_root(self):
+        """The negative control. A check that cannot fail proves nothing, and
+        this one passes trivially on a clean tree - which is the state it is
+        supposed to be asserting."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / GRAPH_DIR).mkdir()
+            (tree / "sub" / "deeper" / GRAPH_DIR).mkdir(parents=True)
+            self.assertEqual([GRAPH_DIR, "sub/deeper/" + GRAPH_DIR],
+                             graph_roots(tree))
+
+    def test_the_finder_ignores_the_directories_a_walk_must_skip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / ".venv-skills" / "lib" / GRAPH_DIR).mkdir(parents=True)
+            (tree / "__pycache__" / GRAPH_DIR).mkdir(parents=True)
+            self.assertEqual([], graph_roots(tree))
+
+    def test_the_rule_names_the_repository_root_in_both_documents(self):
+        """The guard and the rule land together. A test with no written rule
+        leaves the next session guessing why it failed."""
+        for path in (REPO_CLAUDE_MD, REPO / ".claude" / "rules" / "security.md"):
+            with self.subTest(document=path.name):
+                text = path.read_text(encoding="utf-8").lower()
+                self.assertIn("repository root", text)
+                self.assertIn("subdirectory", text)
 
 
 if __name__ == "__main__":

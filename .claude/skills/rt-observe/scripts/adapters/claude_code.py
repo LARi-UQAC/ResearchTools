@@ -25,6 +25,10 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from rt_redact import home_tilde  # noqa: E402
+
 
 def _projects_dir(context):
     return context.home / ".claude" / "projects"
@@ -43,15 +47,12 @@ def _cap(context, *keys):
 
 
 def _redact(text, home):
-    """Rewrite any path under the home directory to ~/..., so the snapshot never
-    carries the account name (verify-no-personal-data.ps1 stays green, and the
-    page is safe to screenshot)."""
-    if not text:
-        return text
-    home_text = str(home)
-    out = str(text).replace(home_text, "~")
-    out = out.replace(home_text.replace("\\", "/"), "~")
-    return out
+    """Delegates to rt_redact.home_tilde, which is the single implementation.
+
+    It lived here as one of four near-copies until 2026-08-31, and the two
+    collectors that had no copy were the ones leaking the account name.
+    """
+    return home_tilde(text, home)
 
 
 def _truncate(text, limit):
@@ -231,7 +232,13 @@ def collect(context):
             "mode": card.get("mode"),
             "effort": card.get("effort"),
             "entrypoint": card.get("entrypoint"),
-            "prompt": _truncate(card.get("lastPrompt"), prompt_cap),
+            # Redacted BEFORE truncation: a prompt is free text and routinely
+            # quotes a path under the home directory, which is where the account
+            # name lives. Measured 2026-08-31 on the rendered page: a session
+            # card carried ~/.claude/plans/... spelled out in full, because only
+            # the cwd was being redacted and the prompt was not.
+            "prompt": _truncate(_redact(card.get("lastPrompt"), context.home),
+                                prompt_cap),
             "subagents": card.get("sidechain_records", 0),
             "hook_errors": [_truncate(_redact(e, context.home), prompt_cap)
                             for e in card.get("hook_errors", [])],

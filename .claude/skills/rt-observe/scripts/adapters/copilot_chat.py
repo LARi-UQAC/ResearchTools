@@ -17,7 +17,12 @@ Only session-level metadata is read. Message bodies are never selected: the
 another harness reaches the snapshot at all.
 """
 import sqlite3
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from rt_redact import home_tilde  # noqa: E402
 
 RELATIVE_STORE = ("Code", "User", "globalStorage", "github.copilot-chat",
                   "session-store.db")
@@ -46,11 +51,8 @@ def _truncate(text, limit):
 
 
 def _redact(text, home):
-    if not text:
-        return text
-    home_text = str(home)
-    out = str(text).replace(home_text, "~")
-    return out.replace(home_text.replace("\\", "/"), "~")
+    """Delegates to rt_redact.home_tilde, the single implementation."""
+    return home_tilde(text, home)
 
 
 def collect(context):
@@ -112,7 +114,10 @@ def collect(context):
                 "repository": repository,
                 "host_type": host_type,
                 "branch": branch,
-                "summary": _truncate(summary, summary_cap),
+                # Same reason as the Claude adapter's prompt: a summary is free
+                # text and can quote a path under the home directory.
+                "summary": _truncate(_redact(summary, context.home),
+                                     summary_cap),
                 "agent_name": agent_name,
                 "updated_at": updated_at,
                 "inbox": {

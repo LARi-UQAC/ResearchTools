@@ -1,6 +1,7 @@
 # Recommendation, support, appreciation, acceptance, and dispense letters
 
-Generate a LAR.i / Prof. Otis letter in LaTeX -> PDF. Read the skill at
+Generate a supervisor letter in LaTeX -> PDF, signed by the active profile's
+author. Read the skill at
 `.claude/skills/recommendation-letter/SKILL.md` and follow its workflow.
 
 1. Resolve the candidate files from the arguments (a folder, a list of paths,

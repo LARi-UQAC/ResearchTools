@@ -12,6 +12,14 @@ authoring counterpart of the code-quality loop documented in
 `.claude/skills/loop-engineer/SKILL.md`: the score comes from `scholar-evaluation` (prose
 quality) rather than from the code reviewers, and the actors are the authoring agents.
 
+**Script authoring.** Any Python script this agent needs is created inside ResearchTools, under
+the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside it
+in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or grant
+directory being worked on. Before writing one, search the "ResearchTools script surface"
+inventory in [`.claude/rules/testing.md`](../rules/testing.md) for a script or a subcommand that
+already does the job, and extend it with a flag or a subcommand rather than forking it. Register
+any new script and its offline test in that same file.
+
 ## Top-level execution rule (mandatory)
 
 Run this workflow at the TOP LEVEL of a session, not as a dispatched subagent. A subagent
@@ -37,7 +45,7 @@ from the main session. Same rule and reason as `thesis-to-paper`.
 |---|---|---|
 | Loop orchestration + authoring (step 2) | Fable 5 | best model does the writing and judgment |
 | Audit / scoring (step 3) | Sonnet or Haiku | cheap; scholar-evaluation is largely script-driven |
-| Memory update (step 5) | local-writer (Haiku wrapper + local ornith:9b) | free local generation |
+| Memory update (step 5) | local-writer (Haiku wrapper + the resolver's writer-role model) | free local generation |
 
 Budget here is ADVISORY: this is an agent-driven loop, so track spend with `/usage` and the
 ledger below and stop when `max_budget` is reached. For a HARD budget cap, run the loop through

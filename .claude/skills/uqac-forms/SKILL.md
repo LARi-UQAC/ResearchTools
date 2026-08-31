@@ -95,11 +95,12 @@ Two things it will not do, both because an official document is at stake:
    `1`, `On`, and a jury form uses `Choix1` and `Choix2`. Writing the wrong one
    leaves the box unchecked on a document that then looks complete.
 
-`diff_widgets` mirrors TT-8's `diffWidgets`: same four keys, same meanings. A
+`diff_widgets` mirrors TT-8's `diffWidgets`: same five keys, same meanings. A
 field that moved page is `relocated`, never an add plus a remove, because its
-stored row is still correct. Neither side diffs `on_states` yet, so a checkbox
-renamed from `/Oui` to `/Yes` passes the drift check and then fills as
-unchecked. That gap is recorded in the RT-2 plan's Open items.
+stored row is still correct. A checkbox whose on-state was renamed from `/Oui`
+to `/Yes` is `restated`: nothing else about it changed, so without that key the
+drift check would pass it and every later fill would leave the box unchecked on
+a form that looks complete.
 
 ## Prerequisites
 

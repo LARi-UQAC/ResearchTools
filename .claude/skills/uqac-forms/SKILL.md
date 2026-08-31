@@ -25,7 +25,8 @@ a form and cannot know the information that fills one, so:
 | Concern | Where it lives |
 |---|---|
 | Retrieving a PDF over https, validated | here (RT-1) |
-| Reading a form's widgets, filling it, signing it | here (RT-2, RT-3, RT-4) |
+| Reading a form's widgets, and diffing two reads | here (RT-2) |
+| Filling a form, signing it | here (RT-3, RT-4) |
 | The catalogue of registered forms, and their fingerprints | ThesisTracker (TT-8) |
 | Field maps, workflow rules, the drift check | ThesisTracker (TT-8) |
 | The profile that supplies values | ThesisTracker (TT-9) |
@@ -35,10 +36,11 @@ when UQAC replaced one, it is in ThesisTracker and edited there in the UI by an
 `owner` or the `direction`. This skill will not tell you, because it does not
 know.
 
-## Scope in this unit (RT-1)
+## Scope in this unit (RT-1, RT-2)
 
-The validated PDF-ingest contract only. Widget mapping (RT-2), filling (RT-3),
-signing (RT-4) and the HTTP service (RT-5) land in the following units.
+Retrieval and inspection: fetch a form, read its widgets, and diff two reads.
+Filling (RT-3), signing (RT-4) and the HTTP service (RT-5) land in the
+following units.
 
 ## The ingest contract
 
@@ -65,6 +67,39 @@ Three of those exist because of a specific failure:
    memory cannot prevent the allocation it exists to prevent.
 3. **The magic bytes are checked.** UQAC answers HTTP 200 with an HTML access
    page when a form moves, so a status code never proves a PDF.
+
+## Reading a form's fields
+
+`scripts/field_map.py` reports what a form contains, and what changed between
+two reads of it. It assigns no meaning: which profile key fills which field is a
+TT-8 row edited in the ThesisTracker UI.
+
+```python
+from field_map import dump_widgets, diff_widgets
+
+widgets = dump_widgets('form.pdf')      # a path, or the PDF bytes
+report  = diff_widgets(before, after)   # added, removed, relocated, retyped
+```
+
+Each widget is `{name, name_hex, type, page, rect, on_states, readonly}`, where
+`type` is one of `text`, `checkbox`, `radio`, `choice`, `signature`, `unknown`.
+
+Two things it will not do, both because an official document is at stake:
+
+1. **It never tidies a name.** The name is the PDF's own bytes, trailing spaces
+   and all. TT-8 stores it and RT-3 fills by exactly that key, so a normalized
+   name is a field nobody can fill again. `name_hex` is there because `Nom` and
+   `Nom ` are indistinguishable in a printed report.
+2. **It never guesses an on-state.** A checkbox is checked by writing its own
+   on-state, read from `/AP /N`. Real UQAC forms use `Oui`; others use `Yes`,
+   `1`, `On`, and a jury form uses `Choix1` and `Choix2`. Writing the wrong one
+   leaves the box unchecked on a document that then looks complete.
+
+`diff_widgets` mirrors TT-8's `diffWidgets`: same four keys, same meanings. A
+field that moved page is `relocated`, never an add plus a remove, because its
+stored row is still correct. Neither side diffs `on_states` yet, so a checkbox
+renamed from `/Oui` to `/Yes` passes the drift check and then fills as
+unchecked. That gap is recorded in the RT-2 plan's Open items.
 
 ## Prerequisites
 
@@ -96,6 +131,7 @@ refused download leaves nothing behind, including no `*.part`.
 
 ```
 python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py
+python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
 ```
 
 Offline: `requests.get` is patched, so no test reaches the network. Every rule of

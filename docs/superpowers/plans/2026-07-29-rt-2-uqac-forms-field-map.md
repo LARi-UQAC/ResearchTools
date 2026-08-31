@@ -36,6 +36,99 @@
 
 **Tech Stack:** Python 3.13, `pypdf` (BSD-3), `PyYAML`, standard library. No PyMuPDF: it is AGPL-3.0 and this skill ships inside a deployable container.
 
+## CORRECTION, 2026-08-31 - what this unit actually builds
+
+The scope-change block above is right about what moves, but the sections it does
+not name still describe the withdrawn world. This block replaces them. Where an
+older section below disagrees with this one, this one wins.
+
+**RT-2 consumes nothing from RT-1.** The "Interfaces consumed from RT-1" section
+lists nine names, and RT-1 publishes none of them: `FormSpec`, `load_registry`,
+`fetch_form`, `cache_path`, `map_path`, `map_status`, `mark_map_stale`,
+`MAPS_DIR` and the field-map file contract were all withdrawn when the registry
+moved to TT-8, and `form_registry.py` is now `pdf_ingest.py`. Task 1 already says
+it consumes nothing, and that is now true of the whole unit: reading widgets out
+of a PDF needs no downloader. Anything that has a PDF can call it.
+
+### Corrected file structure
+
+**New files**
+
+- `.claude/skills/uqac-forms/scripts/field_map.py`
+- `.claude/skills/uqac-forms/scripts/Test/test_field_map.py`
+
+**Modified files**
+
+- `.claude/skills/uqac-forms/scripts/requirements.txt` (adds `pypdf`)
+- `.claude/skills/uqac-forms/SKILL.md`, `.claude/rules/testing.md`
+
+**Not built here** (TT-8 and TT-9 rows, edited in the ThesisTracker UI):
+`registry/schema.yaml`, the profile vocabulary, `build_scaffold`, `write_map`,
+`load_map`, `validate_map`, `TODO_TARGET`, `UNMAPPED_TARGET`, and the real map
+files. Tasks 2, 3 and 5 are superseded.
+
+### Corrected interfaces published by RT-2
+
+| Name | Signature |
+|---|---|
+| `dump_widgets` | `dump_widgets(pdf: str \| bytes) -> list[dict]` |
+| `diff_widgets` | `diff_widgets(before: list[dict], after: list[dict]) -> dict[str, list[str]]` |
+
+A widget is `{"name": str, "name_hex": str, "type": str, "page": int, "rect":
+[float, float, float, float], "on_states": list[str], "readonly": bool}`. `type`
+is one of `text`, `checkbox`, `radio`, `choice`, `signature`, `unknown`. `page`
+is 1-based. `on_states` is empty except for a checkbox or radio.
+
+`dump_widgets` accepts bytes as well as a path, because TT-8 holds the PDF as
+`bytea` and RT-5 will be handed a body, not a filename. Requiring a path would
+force both to write a temporary file for no reason.
+
+### Two constraints that carry the unit
+
+**Byte-exact names.** A field name is the PDF's own bytes and is never
+normalized, trimmed, case-folded or re-encoded. UQAC forms carry names with
+trailing spaces, accents in several encodings, and duplicates distinguished only
+by case. TT-8 stores what this returns and RT-3 fills by exactly that key, so a
+name this function tidies is a field that can never be filled again. `name_hex`
+accompanies every name so a human comparing two dumps can see a difference that
+does not survive being printed.
+
+**On-states from `/AP /N`.** A checkbox is checked by writing its own on-state,
+which is whatever the form's author chose: `/Oui`, `/Yes`, `/1`, `/On`. It is
+read from the appearance dictionary of each widget, not guessed, because writing
+`/Yes` to a box whose on-state is `/Oui` leaves it silently unchecked on an
+official document.
+
+### diff_widgets must agree with TT-8
+
+TT-8 ships `diffWidgets` in `api/_lib/drift.js`. This function returns the same
+four keys with the same meanings, so the drift report reads the same whichever
+side computed it:
+
+| Key | Meaning |
+|---|---|
+| `added` | in `after`, not in `before` |
+| `removed` | in `before`, not in `after` |
+| `relocated` | in both, `page` differs |
+| `retyped` | in both, `type` differs |
+
+Each is a sorted list of names. A moved field is `relocated`, never an add plus a
+remove: its stored row is still correct and only its page changed.
+
+One asymmetry is deliberate. Node compares stored rows (`fieldName`,
+`fieldType`) against live widgets (`name`, `type`); Python compares two widget
+lists, so both sides use `name` and `type`. The four output keys are identical,
+which is the part any consumer sees.
+
+**Known gap, recorded not fixed here.** Neither implementation diffs
+`on_states`, although TT-8 stores the column. A checkbox whose on-state is
+renamed from `/Oui` to `/Yes` therefore passes the drift check untouched, and
+every later fill leaves it unchecked on a form that looks complete. Extending
+the diff would change a contract TT-8 already consumes, so it is listed in Open
+items rather than added here on one side only.
+
+---
+
 ## Global Constraints
 
 - Definition files (agents, skills, commands) are **English-only**. French appears only in emitted deliverable strings and the repo-root `CLAUDE.md`.
@@ -71,7 +164,7 @@
 
 ---
 
-## Interfaces consumed from RT-1
+## Interfaces consumed from RT-1 (SUPERSEDED - RT-2 consumes nothing from RT-1)
 
 From `.claude/skills/uqac-forms/scripts/form_registry.py`:
 
@@ -469,7 +562,7 @@ git commit -m "feat(uqac-forms): AcroForm widget dump with byte-exact names and 
 
 ---
 
-## Task 2: Profile vocabulary
+## Task 2: Profile vocabulary (SUPERSEDED - moved to TT-9)
 
 **Files:**
 
@@ -658,7 +751,7 @@ git commit -m "feat(uqac-forms): shared profile vocabulary and dotted target res
 
 ---
 
-## Task 3: Map scaffold and validation
+## Task 3: Map scaffold and validation (SUPERSEDED - moved to TT-8)
 
 **Files:**
 
@@ -934,7 +1027,7 @@ git commit -m "feat(uqac-forms): map scaffold, persistence, and validation"
 
 ---
 
-## Task 4: Field diff wired into the drift check
+## Task 4: Field diff, as diff_widgets over two widget lists (CORRECTED)
 
 **Files:**
 
@@ -1108,7 +1201,7 @@ git commit -m "feat(uqac-forms): field-level drift diff wired into the registry 
 
 ---
 
-## Task 5: Command-line interface and the real maps
+## Task 5: Command-line interface and the real maps (SUPERSEDED - moved to TT-8)
 
 **Files:**
 

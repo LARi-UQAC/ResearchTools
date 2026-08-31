@@ -30,7 +30,9 @@ Test/test_pdf_ingest.py:
 See .claude/rules/security.md for the input-validation rules this script follows.
 """
 
+import argparse
 import hashlib
+import json
 import logging
 import os
 from urllib.parse import urljoin, urlparse
@@ -210,3 +212,44 @@ def fetch_pdf(url: str, dest: str, *,
 
     logger.warning("[UQAC-FORMS] more than %d redirects from %s", max_redirects, url)
     return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Command-line entry point: fetch one PDF and report its path and digest
+        as JSON, so a caller can compare the digest against whatever it stored
+        without this script knowing where that record lives.
+
+    Inputs:
+        argv (list[str] | None): argument vector, defaults to sys.argv[1:]
+
+    Outputs:
+        code (int): 0 when a validated PDF was written, 1 on any refusal
+    --------------------------------------------------------------------------
+    """
+    parser = argparse.ArgumentParser(
+        description="Fetch one official UQAC PDF over https, validated.")
+    parser.add_argument("url", help="https URL of the PDF")
+    parser.add_argument("dest", help="path to write the validated PDF to")
+    parser.add_argument("--max-bytes", type=int, default=MAX_PDF_BYTES,
+                        help=f"size ceiling in bytes (default {MAX_PDF_BYTES})")
+    parser.add_argument("--timeout", type=float, default=REQUEST_TIMEOUT_S,
+                        help=f"per-request timeout in seconds (default {REQUEST_TIMEOUT_S})")
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    path = fetch_pdf(args.url, args.dest,
+                     max_bytes=args.max_bytes, timeout_s=args.timeout)
+    if path is None:
+        # The reason is already logged. Report a machine-readable refusal too,
+        # so a caller parsing stdout does not have to scrape the log.
+        print(json.dumps({"ok": False, "url": args.url}))
+        return 1
+    print(json.dumps({"ok": True, "path": path, "sha256": sha256_file(path)}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

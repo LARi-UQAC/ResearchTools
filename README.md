@@ -56,7 +56,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **15 skills**, **17 agents**, and **22 commands**.
+The repo ships **16 skills**, **17 agents**, and **25 commands**.
 
 ---
 
@@ -427,6 +427,7 @@ reappears under `.claude/skills/`.
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 | `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
+| `uqac-forms` | Stateless mechanics for the official UQAC PDF forms. RT-1 ships the validated ingest contract: https only re-checked on every redirect hop, at most 5 redirects followed manually, a 25 MiB cap enforced during the stream, `%PDF` magic bytes, a 30 s timeout, and an atomic write. The form catalogue, field maps and profile live in ThesisTracker, not here. Filling (RT-3) and PAdES signing (RT-4) follow. | Yes |
 | `graphify` *(external: `uv tool install graphifyy`, not shipped here)* | The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. `query`, `path` and `explain` are deterministic traversals of `graphify-out/graph.json` and cost no model at all, which is why one graph query beats grepping file by file. Reached only through `local-writer`, like the vault. The CLI itself is a separate install (`uv tool install graphifyy`); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. `.graphify_version` records the version it was generated from - refresh the copy after upgrading the CLI. | `/graphify`, `.claude/skills/graphify/SKILL.md` |
 | `opt-local-vram-llm` | Tune a local Ollama model for this GPU: retain the largest `num_ctx` that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps `num_ctx` against `OLLAMA_KV_CACHE_TYPE` (restarting the daemon per value and proving the restart took effect from `server.log`, restoring the original value on failure), then declares the tuned tag as a role candidate in `local-models.json`. Stops before qualification, which stays with `model_resolver.py --qualify`. | `/opt-local-vram-llm`, `.claude/skills/opt-local-vram-llm/SKILL.md` |
 
@@ -807,6 +808,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/replyreviewer` | Point-by-point LaTeX response letters + track-change markup in the paper via the `changes` package (one letter per reviewer file) | Yes — see below |
 | `/talk <paper>` | Accepted paper → conference talk: six opening questions (audience, duration, target, aspect, PDF format, ending), build contract, one deck model rendered to PowerPoint / Beamer / self-contained web, timed speaker notes at 130 wpm, visual QA loop | Yes — paper path + optional flags |
 | `/word2latex` | Convert a Word `.docx` template to a faithful LaTeX source (pandoc + standard patch sequence) | Yes — `.docx` path |
+| `/uqacform <https-url> [dest]` | Fetch one official UQAC form PDF, validated, and report its SHA-256. Refuses anything that is not a PDF served over https, and writes nothing when it refuses | Yes |
 | `/geolocalisation` | Map a review corpus's study locations from its `.bib`: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional `--full-text` PDF scan. | Optional — `.bib` file/dir/IDE file |
 | `/recommendation-letter` | Generate a support / recommendation / appreciation / acceptance / dispense letter in LaTeX → PDF from a candidate's files (two tracks; candidate status + funding provider; paired invitation). | Optional — folder / paths / IDE file |
 
@@ -1142,7 +1144,7 @@ ResearchTools\
     │   ├── loopdev.md                  ├── talk.md
     │   └── recommendation-letter.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (15 skills)
+    └── skills\                              (16 skills)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,

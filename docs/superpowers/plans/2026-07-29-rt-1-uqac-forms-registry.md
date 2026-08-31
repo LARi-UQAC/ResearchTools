@@ -37,6 +37,81 @@
 
 **Tech Stack:** Python 3.13, `requests` (HTTP), `PyYAML` (registry parsing), standard library `hashlib` / `json` / `argparse` / `logging`. No PDF library in this unit: RT-1 is byte fidelity only, field-level knowledge starts at RT-2.
 
+## CORRECTION, 2026-08-31 - what this unit actually builds
+
+The scope-change block above says Task 2 stands. Taken literally that is not
+possible: Task 2 consumes `FormSpec` and `load_registry` from Task 1, and Task 1
+is superseded. The registry is the thing that moved to TT-8, so the downloader
+cannot keep a registry-shaped interface. This block replaces the File Structure
+and the published-interface table, and restates Task 2's signature. Where an
+older section below disagrees with this one, this one wins.
+
+**The module is renamed.** `form_registry.py` becomes `pdf_ingest.py`. Nothing in
+this unit loads a registry any more, and a module named for a registry it does
+not contain would mislead every later unit that imports it.
+
+**The downloader takes a URL, not a form.** A `FormSpec` carried `form_id`,
+`office` and `source`, which are database columns in ThesisTracker now. The
+caller names the destination path, so this unit chooses no filenames and keeps no
+index of what it has fetched. Stateless PDF mechanics, per section 1.
+
+### Corrected file structure
+
+**New files**
+
+- `.claude/skills/uqac-forms/SKILL.md`
+- `.claude/skills/uqac-forms/scripts/pdf_ingest.py`
+- `.claude/skills/uqac-forms/scripts/requirements.txt`
+- `.claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py`
+- `.claude/commands/uqacform.md`
+
+**Not built here** (all moved to TT-8, where they are database rows and a `fetch`
+in Node): `registry/forms.yaml`, `registry/baseline.json`, `registry/maps/`, the
+PDF cache directory, and every function that reads or writes them.
+
+**Modified files** are unchanged from the list below, minus the `.gitignore` row:
+with no cache directory there is nothing to ignore.
+
+### Corrected interfaces published by RT-1
+
+Consumed from `.claude/skills/uqac-forms/scripts/pdf_ingest.py`:
+
+| Name | Signature | Consumed by |
+|---|---|---|
+| `fetch_pdf` | `fetch_pdf(url: str, dest: str, *, max_bytes: int = MAX_PDF_BYTES, max_redirects: int = MAX_REDIRECTS, timeout_s: float = REQUEST_TIMEOUT_S) -> str \| None` | RT-2, RT-3 |
+| `sha256_file` | `sha256_file(path: str) -> str` | RT-2, RT-5 |
+| `sha256_bytes` | `sha256_bytes(data: bytes) -> str` | RT-5 |
+| `MAX_PDF_BYTES`, `MAX_REDIRECTS`, `REQUEST_TIMEOUT_S`, `CHUNK_BYTES` | module constants | RT-2, RT-3, RT-5 |
+
+The nine other names in the old table - `FormSpec`, `load_registry`,
+`cache_path`, `map_path`, `map_status`, `mark_map_stale`, `require_fresh_map`,
+`check_drift`, `StaleMapError` - are not published by this unit. RT-2, RT-3 and
+RT-5 receive a path and a value dictionary from their caller instead.
+
+### The ingest contract, stated once for two languages
+
+TT-8 already implements this contract in Node (`api/_lib/drift.js`,
+`api/_lib/routes/catalogue.js`). Two implementations of one contract only stay
+honest if the contract is written down with numbers, so:
+
+| Rule | Value | Why it is not optional |
+|---|---|---|
+| Scheme | `https` only, **re-checked on every redirect hop** | Checking only the URL the caller typed is not a scheme check. A source that answers 302 to `http://` defeats it entirely. |
+| Redirects | at most `MAX_REDIRECTS` = 5, followed manually | An automatic follower cannot re-check the scheme between hops. |
+| Size | `MAX_PDF_BYTES` = 25 MiB, enforced **during** the stream | A cap applied after the body is in memory cannot prevent the allocation it exists to prevent. |
+| Magic bytes | first four bytes are `%PDF` | UQAC answers HTTP 200 with an HTML access page when a form moves. Status alone never proves a PDF. |
+| Timeout | `REQUEST_TIMEOUT_S` = 30 | Without one, a source that accepts and then stalls holds the caller open indefinitely. |
+| Write | atomic: `*.part` then `os.replace` | A partial file that looks like a cached form is worse than no file. |
+
+**Known divergence, recorded rather than silently fixed here.** As shipped, the
+Node side does not satisfy rows 1, 3 and 5: it passes `redirect: 'follow'` and
+checks the scheme once, it calls `arrayBuffer()` before comparing to the cap, and
+it sets no timeout. That is a ThesisTracker defect, not an RT-1 one, and it is
+listed in the Open items below so the fix is traceable to the contract that
+found it rather than arriving as an unexplained patch.
+
+---
+
 ## Global Constraints
 
 - Definition files (agents, skills, commands) are **English-only**. French appears only in emitted deliverable strings and the repo-root `CLAUDE.md`.
@@ -80,7 +155,7 @@
 
 ---
 
-## Task 1: Registry loader
+## Task 1: Registry loader (SUPERSEDED - moved to TT-8)
 
 **Files:**
 
@@ -384,7 +459,7 @@ git commit -m "feat(uqac-forms): registry loader with https and duplicate-id val
 
 ---
 
-## Task 2: Validated downloader
+## Task 2: Validated downloader (CORRECTED - see the correction block above)
 
 **Files:**
 
@@ -668,7 +743,7 @@ git commit -m "feat(uqac-forms): https-only validated form downloader with atomi
 
 ---
 
-## Task 3: Baseline fingerprint
+## Task 3: Baseline fingerprint (SUPERSEDED - moved to TT-8)
 
 **Files:**
 
@@ -837,7 +912,7 @@ git commit -m "feat(uqac-forms): SHA-256 baseline capture and persistence"
 
 ---
 
-## Task 4: Drift check and stale-map marking
+## Task 4: Drift check and stale-map marking (SUPERSEDED - moved to TT-8)
 
 **Files:**
 

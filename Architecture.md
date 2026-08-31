@@ -47,6 +47,7 @@ graph TD
     s7["extract-futureworks<br/>extract_text.py (--section-scan)"]
     s8["geolocalisation<br/>extract_locations.py · generate_geomap.py"]
     s9["recommendation-letter<br/>generate_letter.py · letter_templates.py"]
+    s16["uqac-forms<br/>pdf_ingest.py (validated ingest contract)"]
     s10["paper2talk<br/>talk_model.py · talk_render.py · talk_notes.py"]
     s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
   end

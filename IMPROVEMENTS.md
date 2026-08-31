@@ -423,3 +423,49 @@ prose gets switched off, and then nothing is enforced at all.
 the copy in `~/.claude/hooks/`, which `install-junctions.ps1 -Sync` deploys only from a green
 tree, so the earliest proof is the next session's first attempt. The tests prove the decision; the
 deployment proves the enforcement, and those are different claims.
+
+## 2026-08-30 - the singleton lock called a running daemon dead, and would have evicted it
+
+**Found:** `vault-daemon-autostart.ps1 -Status` reported `daemon : not running` while the daemon
+was demonstrably running. Pid 18628 was alive, `python`, started 13:19:20, and holding
+`~/.claude/vault-daemon.lock`.
+
+The lock's `at` stamp is written once at startup and never refreshed, so by 23:55 it was 6h36m
+old against `lock.stale_after_s = 300`. `_stale_reason` tested AGE FIRST and returned "past the
+ceiling" before reaching the pid check that would have found the holder alive.
+
+**The display was the smaller half.** `acquire()` uses the same predicate and DELETES the lock
+when it returns a reason, so starting a second daemon at that moment would have reclaimed the
+lock from the live one and run alongside it - two daemons consuming one outbox, which is the
+precise collision the singleton exists to prevent.
+
+**Root cause:** one staleness ceiling serving two lock lifetimes. The `_provenance` note in
+`daemon-config.json` says 300s was chosen for a lock "taken around a filesystem write only
+(milliseconds)". That is the WRITE lock. The SINGLETON lock is held for the daemon's whole life.
+The suite never caught it because every fixture wrote a fresh lock, and two tests actively
+asserted the defect - one named `test_an_old_lock_is_reclaimed_even_with_a_live_holder`.
+
+**Change:** on this host, liveness decides and age does not. A live pid is the holder whatever the
+timestamp says; a dead pid is reclaimed however fresh it is. Age still decides for a foreign host,
+where a local pid means nothing, and for a holder carrying no usable pid. No daemon change and no
+heartbeat: a heartbeat keeps one ceiling but makes correctness depend on a write that a wedged
+daemon stops making, which is the failure it would be introduced to detect.
+
+The cost is stated in the function's own docstring rather than left to be discovered: a wedged
+holder whose process is alive but doing no work is now never reclaimed. That is a different
+failure, and `-Status` plus the log tail are what surface it; silently evicting a live process to
+cover for it is the worse trade. A separate, much larger `singleton_stale_after_s` remains
+available as a backstop if that case ever bites.
+
+**Proven:** `test_vault_lock.py`, 12 tests to 14, with the two that codified the defect inverted
+rather than deleted, so the history of the decision survives in the file. Asserted in every
+direction: a live holder one tick over the ceiling survives AND `acquire` refuses it, a live
+holder 6h36m over survives (the measured scale rather than one tick), a DEAD holder over the
+ceiling is still reclaimed, a dead holder with a fresh timestamp is still reported dead, and a
+foreign host over the ceiling is still reclaimed. Then the check that matters: `-Status` re-run
+against the real daemon, pid 18628 still running, now reports `RUNNING (holds the singleton
+lock)`.
+
+**Unrelated and not a defect:** the same output says `log : none yet`. That daemon was not started
+by `vault-daemon-autostart.ps1`, and only that script redirects output to
+`~/.claude/vault-daemon.log`. Started by hand or by the drill, it writes to its own console.

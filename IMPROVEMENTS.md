@@ -603,3 +603,20 @@ Files: `.claude/skills/rt-observe/assets/rt_state.html`, `observe-config.json`,
   defects found by the new suites and fixed: an action-log path that raises `ValueError` turned a
   completed action into a 500, and output redaction ran AFTER truncation, so a home path cut in the
   middle kept the account name in the fragment the page publishes. 69 suites green.
+
+- 2026-09-01 - rt-observe, Amendment 2 of the dashboard plan (phases 9, 10, 11). The page became
+  TABBED and stopped scrolling: four views on the left, the rail's six panels as tabs on the right,
+  tab choice in `localStorage` behind the same wrapped accessor as the theme, no page scroll
+  measured at 385, 768, 1080, 1440 and 1920. Hover detail became ONE registry instead of a
+  cell-only tooltip, so the fan-out edge that read `1 lost` now names the mirror behind the number;
+  rounded corners come from a single `--rt-radius` token in the page and in `assets/rt-tokens.css`;
+  the diagram's boxes drag and their edges follow, because every path is emitted from the node's
+  own coordinates. The Real-Time Process tab was built from the two figures in
+  `VibeDesignBook/docs/chapitres/ch02-agent.tex`, adapter-fed: `claude_code.py` folds the
+  transcript tail it already reads into steps, a current state and a token total, Copilot Chat
+  reports that it has no step timeline rather than being drawn idle, and the percentage the figure
+  asks for is REFUSED with its reason, since no transcript reports the window its tokens sit in.
+  Two page defects were found on the way and fixed: the canvas was solving a layout while its tab
+  was hidden (zero width, cached under that shape), and writing the measured height back onto the
+  drawing grew its own wrapper on every poll. 26 tests added across test_rt_view.py (47) and
+  test_adapters.py (32); 69 suites green.

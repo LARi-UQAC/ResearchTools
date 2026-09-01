@@ -98,6 +98,28 @@
   --rt-s4: 16px;
   --rt-s5: 24px;
   --rt-s6: 36px;
+  --rt-radius: 3px;
+  --rt-radius-lg: 8px;
+  /* Tool identity, never severity. Four families, so a reader can tell a shell
+     call from a file write at a glance without reading either label; the alarm
+     hue stays reserved for the one state that must never be missed. */
+  --rt-tool-run: #b5761f;
+  --rt-tool-read: #2f6f9f;
+  --rt-tool-write: #3f7d4f;
+  --rt-tool-net: #7a5aa8;
+  /* One colour per token budget, so a ring and its bar are read as the same
+     measurement. Full is orange in all three, which is why orange is not one of
+     the three: a bar cannot be full of itself. */
+  --rt-budget-session: #1f6b3a;
+  --rt-budget-week: #1e4f8a;
+  --rt-budget-supplement: #8a6d1e;
+  --rt-budget-full: #e0761f;
+  --rt-budget-figure: #7fc8ee;
+  /* The one accent that is not a status. It marks MOTION - the marker running
+     along an edge the flow is travelling right now - and never severity, so it
+     does not compete with the alarm and does not have to be distinguishable
+     from it under a colour vision deficiency: nothing is decided by seeing it. */
+  --rt-runner: #d8862a;
 
   /* Motion. Exponential deceleration only; no bounce, no elastic. */
   --rt-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);

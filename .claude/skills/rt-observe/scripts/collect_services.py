@@ -37,6 +37,7 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -219,7 +220,8 @@ def _load_module(path, name):
     return module
 
 
-def _vault_daemon(repo_root, home, outbox_root, lock_path_value, stale_after_s):
+def _vault_daemon(repo_root, home, outbox_root, lock_path_value, stale_after_s,
+                  now=None, outbox_listed=0):
     """Liveness and queue depth. Never note content, never the vault.
 
     The lock asked here is the SINGLETON lock, and getting that wrong reports
@@ -250,12 +252,40 @@ def _vault_daemon(repo_root, home, outbox_root, lock_path_value, stale_after_s):
                 reason = "the liveness check failed: %s" % exc
 
     queue = {}
+    pending = []
     root = Path(_expand(outbox_root, home))
+    stamp = now if now is not None else datetime.now(timezone.utc)
     if root.is_dir():
         for folder in ("raw", "working", "sent", "needs-review", "queue"):
             directory = root / folder
             queue[folder] = (len([p for p in directory.iterdir() if p.is_file()])
                              if directory.is_dir() else None)
+        # WHAT is waiting, not only how much. A count answers whether the queue
+        # is moving; the names answer whether the thing you just wrote is in it,
+        # which is what an operator watching a write actually wants to know.
+        # The list is rebuilt from the filesystem on every collection, so a note
+        # the daemon consumes leaves it on the next poll with nothing to
+        # synchronise by hand.
+        for folder, state in (("", "staged"), ("raw", "raw"),
+                              ("working", "in flight"),
+                              ("needs-review", "parked")):
+            directory = root / folder if folder else root
+            if not directory.is_dir():
+                continue
+            for path in sorted(directory.glob("*.md")):
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                pending.append({
+                    "name": path.name,
+                    "state": state,
+                    "bytes": stat.st_size,
+                    "age_seconds": int(max(0.0,
+                                           stamp.timestamp() - stat.st_mtime)),
+                })
+    pending.sort(key=lambda entry: entry["age_seconds"])
+    listed = pending[:outbox_listed] if outbox_listed else []
 
     waiting = queue.get("raw") or 0
     return {
@@ -268,6 +298,8 @@ def _vault_daemon(repo_root, home, outbox_root, lock_path_value, stale_after_s):
         # carries the account name into every rendering of this panel.
         "outbox": home_tilde(str(root), home),
         "queue": queue,
+        "pending": listed,
+        "pending_total": len(pending),
         "alert": ("%d raw drop(s) are waiting and no daemon holds the lock, so "
                   "nothing will consume them" % waiting
                   if waiting and running is False else None),
@@ -341,8 +373,11 @@ def collect(repo_root, home, config_values, now=None):
         "status": "ok",
         "collected_at": stamp,
         "local_models": _ollama(config_values["subprocess_timeout_s"]),
-        "vault_daemon": _vault_daemon(repo_root, home,
-                                      config_values["outbox_root"],
-                                      config_values["daemon_lock_path"],
-                                      config_values["lock_stale_after_s"]),
+        "vault_daemon": _vault_daemon(
+            repo_root, home,
+            config_values["outbox_root"],
+            config_values["daemon_lock_path"],
+            config_values["lock_stale_after_s"],
+            now=now,
+            outbox_listed=config_values.get("outbox_listed", 0)),
     }

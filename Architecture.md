@@ -484,6 +484,32 @@ disagree. The cache has a second, non-blocking mode for serving: a section that 
 collected reads `collecting` and refreshes on a background thread, because the first
 `/api/state` otherwise waits on tier-1 `claude mcp list` reaching 28 servers.
 
+The page itself is two independent tab strips rather than one sheet, and it never scrolls: four
+views on the left, the rail's six panels on the right, every overflow handed to a pane. That is
+a layout decision with a consequence worth stating - the amount any panel may show is now set by
+the screen rather than by how far a reader will scroll. The one place it costs something is the
+fan-out, which is measured rather than styled: a pane that is `display: none` is zero pixels
+wide, so the canvas refuses to solve a layout while its tab is hidden and re-solves the moment
+the tab comes to the front.
+
+The `Real-Time Process` tab is adapter-fed like every other harness fact, and that is the whole of
+its design: `claude_code.py` folds the transcript tail it already reads into a step list, a current
+state and a token total, and the page draws what it is handed. A harness that cannot report a step
+says so, because idle and unreportable render identically on a flow diagram and mean opposite
+things. The one number the figures ask for and the harness does not expose is the percentage of a
+context window, so it is refused with its reason rather than estimated.
+
+Two collectors feed that tab, split on cost the way `mcp` already was. `adapters/claude_code.py`
+folds the transcript TAIL into steps, hooks, subagents and the tokens of the last message.
+`collect_usage.py` reads transcripts END TO END for the week total, so it carries its own TTL and
+its own floor: a viewer may shorten a section's TTL through the refresh control, and the floor is
+what stops that becoming a way to run the expensive scans continuously.
+
+Hover detail is a registry rather than a feature of each panel: an object carries
+`data-detail="<kind>"`, a provider returns the pairs, and one renderer draws them. That is a
+correctness decision more than a tidiness one - the matrix cell and the fan-out edge describe the
+same mirror, and two implementations are two chances to describe it differently.
+
 The launchers do the one thing Python cannot do for itself, which is find an interpreter;
 everything else - the port probe, the two refusals about a port already in use, the bind, the
 session token - lives in Python where the offline suite reaches it. That is the same split

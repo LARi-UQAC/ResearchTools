@@ -29,7 +29,8 @@ import collect_mirrors  # noqa: E402
 import collect_progress  # noqa: E402
 import collect_registry  # noqa: E402
 import collect_repo  # noqa: E402
-import collect_services  # noqa: E402
+import collect_services
+import collect_usage  # noqa: E402
 import rt_actions  # noqa: E402
 import rt_server  # noqa: E402
 
@@ -134,6 +135,7 @@ def section_builders(repo_root=None, home=None, config=None):
             "subprocess_timeout_s": config_value(
                 config, "timeouts_seconds", "subprocess_default"),
             "outbox_root": config_value(config, "paths", "obsidian_outbox"),
+            "outbox_listed": config_value(config, "caps", "outbox_listed"),
             "daemon_lock_path": config_value(
                 config, "paths", "daemon_singleton_lock"),
             "lock_stale_after_s": config_value(
@@ -170,6 +172,10 @@ def section_builders(repo_root=None, home=None, config=None):
         ("fleet", lambda now: _guarded(
             "the harness adapters",
             lambda: adapters.collect_all(
+                adapters.AdapterContext(repo_root, home, config, now)))),
+        ("usage", lambda now: _guarded(
+            "the usage scan",
+            lambda: collect_usage.collect(
                 adapters.AdapterContext(repo_root, home, config, now)))),
     ))
 
@@ -340,9 +346,31 @@ def view_config(config):
                    "vertical_below_px")
     return {
         "poll_ms": config_value(config, "view", "poll_ms"),
+        "detail_rows": config_value(config, "view", "detail_rows"),
+        "flow_groups": config_value(config, "caps", "flow_groups"),
+        "refresh_choices_ms": config_value(config, "view",
+                                           "refresh_choices_ms"),
+        "refresh_bounds_ms": config_value(config, "view", "refresh_bounds_ms"),
+        # May be null, and null is the shipped value: it is the DENOMINATOR of
+        # the token bar, and nothing in a transcript reports it (R3 wants a
+        # missing key named rather than defaulted, and this one is declared and
+        # deliberately empty, which is a different thing).
+        "context_window_tokens": config_value(config, "view",
+                                              "context_window_tokens"),
         "canvas": {key: config_value(config, "view", "canvas", key)
                    for key in canvas_keys},
     }
+
+
+def _ttl_floors(config):
+    """The fastest a VIEWER may ask for each section, by the same key names the
+    TTLs use. The refresh control lets a page ask for fresher data; this is what
+    stops it asking for the impossible."""
+    floors = config.get("ttl_floor_seconds")
+    if not isinstance(floors, dict):
+        raise KeyError("observe-config.json declares no ttl_floor_seconds")
+    return {key: config_value(config, "ttl_floor_seconds", key)
+            for key in floors}
 
 
 def _ttls(config):
@@ -465,7 +493,7 @@ def serve(args, config, out=None, err=None, clock=None,
         int(config_value(config, "server", "token_bytes")))
     builders = section_builders(args.repo_root, args.home, config)
     cache = rt_server.SnapshotCache(
-        builders, _ttls(config),
+        builders, _ttls(config), floors=_ttl_floors(config),
         envelope=lambda: {"repo": {"root": str(repo_root),
                                    "name": repo_root.name}})
     runner = action_runner(args, config, cache, builders, clock)

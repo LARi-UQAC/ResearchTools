@@ -36,14 +36,21 @@ plan: docs/superpowers/todo/2026-08-30-rt-observe-dashboard.md
 - [x] Phase 6 - register and prove | evidence: README counts corrected and rt-observe section added, Architecture Layer 6, routing-table row in .claude/CLAUDE.md, workflows.md flow row plus both stale "skills have no mirror" sentences corrected and -Personal documented, testing.md script surface and three suite entries, IMPROVEMENTS.md entry
 - [x] Phase 7 - mirror to every harness, then let the dashboard prove it | evidence: install.ps1 -Profile engineering -Manifest -Personal, then install-junctions.ps1 -Sync, then check-deployment.ps1 40 items in step; the matrix then reported lost 0, stale 0, orphan 0 and 64 suites green
 - [x] Phase 8 - write both memories back | evidence: local-writer dispatched, cut off by the account spend limit after one tool call, RESUMED and completed - four atomic notes staged (dead config as a failure class and the bidirectional test that catches it; a UserPromptSubmit hook's session-wide blast radius; transient UI state outside a reconciled DOM; redact-before-truncate) plus one Decisions.md append, with three earlier-phase notes correctly skipped as already staged. Graph refreshed from the REPOSITORY ROOT, AST only: 47/47 files, 6297 nodes, 8874 edges. The notes are STAGED in the outbox and reach the vault at session end through the flush hook, so the write is not proven until that hook runs
-- [ ] Phase 9 - the page becomes tabs and fits one screen  (Amendment 2, Part E)
-- [ ] Phase 9.1 - the Sessions tab needs to fit in the windows size, it's currently a line with a horizontal scrool bar. It should be presented in a table with multiple lines and rows. The number of lines and rows is computed with the number of session to fit in the windows size.
-- [ ] Phase 10 - the global interaction layer: hover detail, rounded corners, draggable boxes  (Amendment 2, Part G)
-- [ ] Phase 11 - the Real-Time Process tab  (Amendment 2, Part F; read the two VibeDesignBook figures FIRST)
+- [x] Phase 9 - the page becomes tabs and fits one screen  (Amendment 2, Part E) | evidence: two independent tab strips in `assets/rt_state.html` - four views on the left (mirror matrix landing, fan-out, sessions, and an empty Real-Time Process tab) and the rail's six panels as tabs on the right, tab choice in `localStorage` behind the same wrapped accessor as the theme; the page itself no longer scrolls, measured with Playwright at 385, 768, 1080, 1440 and 1920 (`scrollHeight - clientHeight` = 0 both axes at every width, every pane reachable, all four panes rendering, all six rail tabs on screen); 9 tests added to test_rt_view.py (31 there now) and the full suite 69 green with .rt-green.json rewritten; README, Architecture Layer 6 and the testing.md inventory updated
+- [x] Phase 10 - the global interaction layer: hover detail, rounded corners, draggable boxes  (Amendment 2, Part G) | evidence: one `registerDetail` registry and one renderer in `assets/rt_state.html` replacing the cell-only tooltip, with providers for the matrix cell, the plan phase, the fan-out node, the fan-out edge and a generic note (the session `unreachable` flag, which was a `title` attribute nobody could read); the worked example answered - the Rules-to-Copilot edge now names the stale mirror instead of only counting it, carried on the edge itself from `buildGraph`, with an invisible wide hit path so a one-pixel line can be hovered; `--rt-radius` added to BOTH the page and `assets/rt-tokens.css` (it belongs in the base `:root`, not in a dark scope - putting it in the stamp scope failed the two-dark-scopes test immediately); nodes draggable with `sim.graph`/`sim.dims` held for the interaction layer and the dragged position written into `sim.positions` so the poll holds it; `view.detail_rows` added to `observe-config.json` and to `view_config()` rather than a literal cap (R0); 9 tests added to test_rt_view.py (40 there now) and the full suite 69 green. Browser verification of this phase is the OPERATOR's, at their request
+- [x] Phase 11 - the Real-Time Process tab  (Amendment 2, Part F) | evidence: both figures read first in `VibeDesignBook/docs/chapitres/ch02-agent.tex` - `c2:fig:hooks_states` (seven states, coloured by WHO executes: deterministic hook, token-costing core, deterministic audit, waiting) and `c2:fig:superpowers_collab` (a subagent hangs off the session that spawned it); adapter side in `adapters/claude_code.py` - `FLOW_STATES` as the one table, `_flow_from` folding the SAME transcript tail already read into steps, current state, dropped count and tokens, with `caps.flow_steps` and `staleness_seconds.session_idle` in config (R0); page side in `assets/rt_state.html` - the state machine in SVG with the live state filled, travelled edges at double width and a runner marker under `--rt-runner`, one lane per session with grey history that can be picked back up, subagent chips hanging off their session, and a network flag; Copilot Chat reports `flow unavailable` with its reason rather than being drawn idle; 10 tests added to test_adapters.py (32) and 7 to test_rt_view.py (47), full suite 69 green. NOT visually verified: browser checking passed to the operator mid-phase at their request
 
-**NEXT ACTION**: Phase 9, 10 and 11 from Amendment 2, in that order: the tabs first because they decide how much any panel may show,
-the interaction layer second because the real-time tab is its heaviest consumer, and the
-Real-Time Process tab last. Phase 5 stays optional and unasked.
+**NEXT ACTION**: hand the page to the operator and wait. One request already arrived and is
+DONE: the Sessions strip and the Real-Time Process tab share a three-way filter - active, idle,
+no flow reported - built as one classifier and one control rather than one per panel, with the
+hidden count always stated and blocked storage showing everything. Phases 9, 10 and 11 are built and the
+suite is green at 69; the operator asked to drive the browser themselves and report what is wrong,
+so the next move is theirs and the one after that is fixing what they name. Three items of Part F
+were deliberately built THIN and are the likeliest things to come back: other sessions appear as
+lanes but a message between two of them is reported on the receiving lane rather than drawn as an
+edge; the runner animation restarts on the poll that rebuilds the machine; and the token bar is
+relative to the busiest session on screen because no window is reported anywhere. Phase 5 stays
+optional and unasked.
 
 Phase 8, write both memories back. Dispatch `local-writer` (the only
 caller allowed at either memory) with the learnings this phase produced - the dead-config
@@ -53,7 +60,96 @@ living outside a morphed DOM, and a `UserPromptSubmit` hook's blast radius - plu
 the REPOSITORY ROOT. Four notes from Phase 3 are already staged in the outbox and must not
 be duplicated. Phase 5 is optional and was NOT asked for; leave it unless the operator asks.
 
+## Operator feedback after the plan, and what it changed (2026-09-01)
+
+The operator drove the page themselves, as agreed, and reported eight things. All eight are
+fixed, the suite is 69 green, and every one of them was a real defect rather than a preference:
+
+1. **Subagent dispatches were invisible.** They shared the 18-slot step list with tool calls, so
+   a `local-writer` dispatch sat behind 120 later Bash calls. Subagents are now counted apart,
+   under `caps.flow_subagents`.
+2. **The Obsidian outbox write was invisible**, and so were **the hooks**, **betterleaks**, and
+   **RTK and caveman**. One cause: a hook firing arrives as an ATTACHMENT record, and the flow
+   read every attachment as noise. That silently hid the whole deterministic half of the harness
+   - the half the figure colours four of its seven states for.
+3. **A hook must loop on the box it runs on, with its name.** The figure's own idiom, now drawn:
+   a dashed self-loop per box, labelled, in alarm when the hook refused.
+4. **The hook name, never the python file.** Its own printed sentence wins; failing that the
+   script reduced to a name (`betterleaks-hook.py` reads `betterleaks`); failing that the matcher,
+   as `on Write`. The raw command stays in the hover panel.
+5. **The MCP name, not the tool id.** `mcp__playwright__browser_evaluate` now reads
+   `playwright . browser_evaluate`, with the raw id on the step for the hover panel.
+6. **The refresh delay was too long, and the control offered one value.** The poll was never the
+   slow part - the per-section TTL was - so the control now sets BOTH, sends `max_age`, and is a
+   TYPED number with the presets as a datalist. `ttl_floor_seconds` is the server-side clamp, so
+   no viewer can speed up the collector that leaves the machine.
+7. **The token bar was full and meaningless.** It was scaled to the busiest session on screen.
+   Replaced by three bars, at the operator's own specification: session, week, and a paid
+   supplement that appears only when one of the other two is full. Every maximum is typed beside
+   its bar, because none of the three is reported anywhere on this machine, and a bar with no
+   maximum is not drawn at all.
+8. **A filter for the session lists**, active / idle / no flow reported, shared by both tabs.
+
+New this round: `collect_usage.py`, the only collector that reads transcripts end to end, on its
+own TTL (600s) and its own floor (60s). Measured on this machine: 94.1M tokens over 7 days across
+41 transcripts, 45 seconds to scan, which is exactly why it is not on the fleet timer.
+
+## Second operator round, 2026-09-01: the tab was reworked, not tuned
+
+The first build drew everything as a box and read, in the operator's words, like an 80s
+interface. Six corrections, all applied, suite 69 green:
+
+1. **A box is an ACTOR.** Session, subagent, skill, memory. Nothing else gets one.
+2. **A tool call is an EVENT on a line**, so it is a tick, and a run of the same tool is one
+   tick carrying its count rather than six identical boxes.
+3. **A tool result is the EDGE leaving the call it answers**, on its way to PostToolUse -
+   the operator's own correction, and it is the arrow the state strip already draws between
+   those two boxes. Solid once the output came back, dashed while the call is still out.
+4. **Input and output are told apart by shape and direction**: a wedge arriving at the line,
+   an arrowhead travelling along it. With a legend naming all four marks, since a vocabulary
+   left to be inferred is a vocabulary read wrong.
+5. **A subagent is a LINE**, hanging off the line that spawned it, with its own ticks, its own
+   skills and its own hooks. The two memories and the network are boxes to the RIGHT, shared
+   by every line, because every subagent reaches the same ones.
+6. **Hook loops come from the DECLARED roster**, parsed from the SessionStart inventory, not
+   from firings alone. That is why RTK and caveman were invisible: a hook that fires once at
+   SessionStart leaves the 256 KB transcript tail within minutes of work, so a diagram drawn
+   from firings showed PreToolUse and PostToolUse and nothing else. A firing now upgrades a
+   declared name rather than being the only way to appear.
+
+Two traps found while doing it, both now tested: the inventory's status field carries its own
+pipes (`[ok, Write|Edit|MultiEdit]`), so the brackets must be stripped BEFORE the separator is
+split on or every matcher becomes a hook; and a plugin hook whose stdout is a JSON envelope was
+being named `{}`, so output-derived naming runs after the script name, never before it.
+
 ## Carried forward, do not re-derive
+
+- **Browser verification is the operator's, from 2026-09-01 on.** They asked mid-Phase-10 for
+  the Playwright measurements to stop and said they would drive the page themselves after the
+  plan and report what is wrong. So a phase from here ships proven by its offline suite and by
+  reading the code, and is NOT claimed to be visually verified. Phases 9 and the hover, drag
+  and edge-detail paths of 10 WERE measured in a real browser before that instruction, and the
+  evidence lines say which.
+
+- **The fan-out is measured, not styled, and that has two consequences Phase 9 had to
+  encode.** A pane that is `display: none` is zero pixels wide, so `renderCanvas` returns
+  before it measures anything and the tab switch discards the shape cache and re-solves.
+  And the drawing must NOT be given back the height just measured on its own wrapper: the
+  wrapper grows by what the drawing was given, the next measurement reads the larger
+  wrapper, and the pane gains a scrollbar it never needed. Only the upright layout sets an
+  explicit height now; the horizontal one fills its wrapper from the stylesheet.
+- **The solver settles a shape, not a position.** Springs between lanes of very different
+  populations left the whole diagram sitting in the bottom half of its tab - invisible in
+  the old 300px band, obvious the moment the fan-out got a tab of its own. `recentre()`
+  translates the settled cluster as one body on the free axis and touches no relative
+  position, so it is a placement fix and not a second solver.
+- **Port 8787 is held by an OLDER dashboard process.** It answers `/api/ping`, so the
+  launcher correctly reports `already-running`, but it 404s `GET /api/actions`: it predates
+  Phase 4 and its Python is stale. The page is re-read from disk per request, so a MARKUP
+  edit needs only a refresh, but that process will never serve the action layer. Phase 9 was
+  measured on a second server on port 8788 instead, which is this session's and can be
+  stopped freely. Restarting 8787 is the operator's call, since killing a process this
+  session did not start is how the vault daemon died.
 
 - The working tree is shared by every session in this directory: `.git/HEAD` is one
   file, so a peer's `git checkout` moves the branch under this work. Read

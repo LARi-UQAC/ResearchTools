@@ -29,7 +29,27 @@
       "unit": "milliseconds between page polls of /api/state",
       "provenance": "chosen - the per-section TTLs decide what a poll actually COSTS, so this is only how often the page asks"
     },
-    "canvas": {
+    "refresh_choices_ms": {
+      "value": [1000, 2000, 5000, 15000],
+      "unit": "milliseconds between page polls, offered as the refresh control's choices",
+      "provenance": "chosen 2026-09-01 after the operator reported the live tab lagging - the poll was never the slow part, the per-section TTL was, so the control now sets BOTH and the fastest choice is one second"
+    },
+  "refresh_bounds_ms": {
+      "value": [250, 600000],
+      "unit": "milliseconds - the smallest and largest refresh interval a viewer may type",
+      "provenance": "chosen 2026-09-01 - the operator asked to type their own value rather than pick from a list, so the list became suggestions and these are the only limits. The lower bound is a courtesy to the machine and not a safety boundary: the real protection is ttl_floor_seconds, which the server applies whatever a page asks for"
+    },
+  "context_window_tokens": {
+      "value": null,
+      "unit": "tokens of context window used as the DENOMINATOR of the token bar, or null for no bar at all",
+      "provenance": "unset on purpose - no transcript reports the window its tokens sit in, so any number here is the operator's and not a measurement. Left null the page prints the totals and draws NO bar, because a bar relative to something arbitrary reads as fullness: measured 2026-09-01, a bar scaled to the busiest session on screen showed that session permanently full"
+    },
+    "detail_rows": {
+      "value": 6,
+      "unit": "rows of named detail a hover panel lists before it says how many more there are",
+      "provenance": "chosen - a hover panel is read standing up, and an edge carrying every one of 134 mirrors would be a second matrix"
+    },
+  "canvas": {
       "settle_ticks": {
         "value": 320,
         "unit": "simulation ticks before the layout is considered settled",
@@ -72,7 +92,29 @@
       }
     }
   },
+  "ttl_floor_seconds": {
+    "default": {
+      "value": 1,
+      "unit": "seconds - the fastest a viewer may ask any section to be re-collected",
+      "provenance": "chosen - a page asking faster than this would re-run local collectors continuously for no gain, since none of them changes within a second"
+    },
+    "usage": {
+      "value": 60,
+      "unit": "seconds - the floor for the whole-transcript usage scan",
+      "provenance": "chosen - it reads every transcript end to end, so a viewer turning the refresh dial to one second must not be able to make it run every second"
+    },
+    "mcp_live": {
+      "value": 300,
+      "unit": "seconds - the floor for the MCP roster specifically",
+      "provenance": "specified - it is the only collector that leaves the machine, reaching 28 servers under a 45-second budget, so a viewer must NOT be able to speed it up. Its floor is its own TTL"
+    }
+  },
   "ttl_seconds": {
+    "usage": {
+      "value": 600,
+      "unit": "seconds between whole-transcript usage scans",
+      "provenance": "chosen - this is the only collector that reads every transcript end to end, and a week's total does not move meaningfully inside ten minutes"
+    },
     "mirrors": {
       "value": 15,
       "unit": "seconds",
@@ -137,6 +179,46 @@
     }
   },
   "caps": {
+    "usage_window_days": {
+      "value": 7,
+      "unit": "days of transcript history summed for the week bar",
+      "provenance": "chosen 2026-09-01 - the operator asked for a WEEK bar, and a week is what the subscription limit is stated in"
+    },
+    "usage_scan_bytes": {
+      "value": 33554432,
+      "unit": "bytes read from ONE transcript before the scan gives up on it and says so",
+      "provenance": "chosen - this collector reads transcripts WHOLE rather than by tail, so an unbounded read is a page that hangs on the largest session anyone has ever had"
+    },
+    "outbox_listed": {
+      "value": 12,
+      "unit": "outbox entries named in the snapshot before the rest are only counted",
+      "provenance": "chosen 2026-09-01 - the operator asked to SEE what is waiting to be written, and a list read on hover is read standing up"
+    },
+    "flow_groups": {
+      "value": 12,
+      "unit": "tool groups drawn around one agent before the rest become a count",
+      "provenance": "measured 2026-09-01 - at seven, a session that had used more than seven distinct tools lost the ones it had used least recently, and Write went missing from a session that had just written a file"
+    },
+    "flow_subagents": {
+      "value": 6,
+      "unit": "subagent dispatches kept for one session, counted apart from its steps",
+      "provenance": "measured 2026-09-01 - a dispatch sharing the step list vanished behind 120 later Bash calls, so the one thing being looked for was the one thing the cap dropped"
+    },
+    "flow_hooks_per_event": {
+      "value": 8,
+      "unit": "hook firings kept PER EVENT, so a once-per-session hook is not evicted by a once-per-tool-call one",
+      "provenance": "measured 2026-09-01 - PreToolUse and PostToolUse fire on every tool call, so a flat last-N window held nothing but those two and the operator never saw RTK or caveman, which fire at SessionStart"
+    },
+    "flow_hooks": {
+      "value": 20,
+      "unit": "hook firings kept for one session, counted apart from its steps",
+      "provenance": "measured 2026-09-01 - PreToolUse and PostToolUse fire on EVERY tool call, so hooks sharing the step list would drown the flow they are meant to explain"
+    },
+    "flow_steps": {
+      "value": 18,
+      "unit": "steps of one session's flow kept for the Real-Time Process tab",
+      "provenance": "chosen - the tab answers what is happening NOW, and a transcript tail carries far more than anyone reads standing up"
+    },
     "prompt_chars": {
       "value": 160,
       "unit": "characters of a session's current prompt",
@@ -169,6 +251,11 @@
     }
   },
   "staleness_seconds": {
+    "session_idle": {
+      "value": 90,
+      "unit": "seconds without a new transcript record before a session is drawn as waiting",
+      "provenance": "chosen - the harness emits no explicit idle event, so waiting is inferred from silence, and a threshold shorter than a long tool call would report a working session as idle"
+    },
     "graph_snapshot": {
       "value": 86400,
       "unit": "seconds",

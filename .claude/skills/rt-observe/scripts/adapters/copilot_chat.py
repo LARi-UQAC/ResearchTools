@@ -120,6 +120,15 @@ def collect(context):
                                      summary_cap),
                 "agent_name": agent_name,
                 "updated_at": updated_at,
+                # The Real-Time Process tab is adapter-fed, so a harness that
+                # cannot report a step says so rather than being drawn as an
+                # idle flow, which would be indistinguishable from a session
+                # sitting quietly and is the wrong answer twice over.
+                "flow": {
+                    "status": "unavailable",
+                    "reason": "the extension's store records session metadata "
+                              "only, so no step timeline exists to read",
+                },
                 "inbox": {
                     "reachable": False,
                     "pending": 0,

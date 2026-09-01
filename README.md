@@ -13,8 +13,8 @@ Ask for my book (French version): Vibe Design. 30$ contribution via:
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
 
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
-who want to find and fix the issues hiding in their academic writing before a reviewer,
-a thesis committee, or a grant panel does. 
+who want to design, find and fix the issues hiding in their academic design, writing before a reviewer,
+a thesis committee, or a grant panel does. It offers a Dashboard to follow the work-in-progress and has self-learning functions. 
 
 **Never let an LLM do your work for you. Use it to improve your work, find your weaknesses, and help you improve yourself.**
 **Never use these tools to conduct a formal or professional assessment, and do not let the tool make decisions for you. Use at your own risk.**
@@ -25,7 +25,7 @@ https://www.uqac.ca/ressourcespedago/iag/
 
 ResearchTools contains two loop for authoring and coding. It covers the whole process: starting
 a literature review, auditing an existing review, a complete paper, a UQAC
-thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy.
+thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy. Moreover, it offers the process to design the code, PCB and 3D CAD with a full Dashboard to see the agents working in background including some controls.
 
 Every check is grounded in the same working norms: no reference enters a document
 without being validated against Scopus (no fabricated citations, no invented DOIs),
@@ -33,7 +33,9 @@ weaknesses are reported as actionable findings with an executable improvement pl
 rather than vague encouragement, and drafts pass a multi-model deliberation (Gemini +
 GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
 
-The toolbox is built as agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
+An agent, `\local-writer`, manage the memories with a Daemon: Obsidian Vault and Graphify. The Harness cannot access to the memories directly. A control is applied on the Harness for the code generation: when the harness needs to generate a code to overcome a weakness in ResearchTools, it is integrated in the ResearchTools clone with an auto-update in your system. Then, ResearchTools will change over time and with your specific usage.
+
+The toolbox is built as software, agents, skills, and commands for [Claude Code](https://docs.anthropic.com/claude-code),
 with generated mirrors for GitHub Copilot, OpenCode, Continue, Aider, Codex, and other
 `AGENTS.md` readers (see [Installation](#installation)). Typical entry points: `/litreview` for a new topic (review update using `\litreview-updater`),
 `/auditpaper` before submitting, `/auditthesis` before a defense, `/bibclean` on any
@@ -740,6 +742,178 @@ without running it.
 
 ---
 
+### rt-observe - harness-neutral toolkit state and mirror matrix
+
+Answers one question: is this toolkit correctly deployed to every harness in use, and which
+empty cells are deliberate. `install.ps1` computes a verdict for every mirror it generates,
+prints it, and throws it away, so drift stays invisible until an agent behaves like an older
+version of itself.
+
+The centrepiece is the **mirror matrix**: every canonical agent, skill, command and rule down
+the page, every harness dialect across it. Eight states, and the two that matter most are the
+two that look identical on disk:
+
+| State | Meaning |
+|---|---|
+| `ok` | present, and nothing says it is degraded |
+| `by-design` | the generator deliberately skips it, per `mirror-policy.json` |
+| `stubbed` | present but reduced to a pointer, body over the Copilot ceiling |
+| `trimmed` | present with a shortened description, Codex list budget |
+| `stale` | present, but the canonical source is newer than the mirror |
+| `lost` | absent with **no** design reason |
+| `orphan` | present in a dialect with no canonical source |
+| `unknown` | that dialect is not installed here, so nothing can be said about it |
+
+Intent comes from [mirror-policy.json](mirror-policy.json) at the repository root, which
+`install.ps1` reads as well: one declaration, two consumers, and the `by-design` / `lost`
+distinction becomes readable on any OS from a fresh clone by someone who cannot run PowerShell.
+
+```bash
+python .claude/skills/rt-observe/scripts/rt_state.py            # human summary
+python .claude/skills/rt-observe/scripts/rt_state.py --json     # the whole snapshot
+```
+
+**The dashboard.** `rt-dashboard` starts a loopback server and opens the page. It is a plain
+command on purpose, in four spellings, because ResearchTools is cloned by people who do not run
+Claude Code:
+
+```powershell
+.\rt-dashboard.ps1 -DryRun        # names the interpreter, the bind and every TTL; starts nothing
+.\rt-dashboard.ps1 -Open          # serve on 127.0.0.1 and hand the URL to the browser
+.\rt-dashboard.bat                # double-click, and cmd
+sh ./rt-dashboard.sh --open        # macOS and Linux
+```
+
+VS Code users get the same two entries under Run Task, and `/rt-dashboard` is the Claude Code
+convenience wrapper. Each root file is a thin forward to the canonical launcher beside its
+module; the only decision any of them makes is which Python to use, and with none found it
+names every candidate it tried and exits 2 rather than guessing.
+
+The server binds `127.0.0.1` only, refuses any other bind address before a socket exists, and
+mints a session token at startup that `POST /api/action` requires. `GET /` serves the page,
+`GET /api/state` the cached snapshot, `GET /api/ping` the identity the launcher probes. Two
+refusals are worth knowing because they protect you from a wrong answer rather than an error: a
+port held by another process is reported **with the holding PID** and the launcher exits
+non-zero rather than binding a second port, since two dashboards showing two different
+snapshots is worse than none; and a dashboard already running is reported with its URL rather
+than started twice.
+
+**One screen, two tab strips.** The page does not scroll, at any width it supports. The sheet
+is the viewport, and anything longer than the pane it sits in scrolls inside that pane, which is
+what decides how much any one tab may show. The left column carries four views - the mirror
+matrix as the landing view, the fan-out diagram, the sessions strip, and the Real-Time Process
+tab described below. The right column carries the rail's six panels
+as tabs of their own: repository, plan, services, code graph, hooks and actions. Which tab is in
+front is a per-viewer convenience remembered in `localStorage`, the way the theme control is,
+and both strips take the arrow keys.
+
+**What the harness is doing right now.** The `Real-Time Process` tab draws the session state
+machine of the lab's own figure - SessionStart, waiting, UserPromptSubmit, reasoning and tool
+calling, PostToolUse, security audit - with the state a session is in filled dark and the arcs it
+has travelled this turn at double width, a marker running along them. Below it, one lane per
+session carries the recent steps: history stays on screen in low grey and any step can be picked
+back up, a subagent hangs off the session that spawned it and is named by the call that spawned
+it, and a call that leaves the machine says so (`mcp` means it went through a server, which may be
+remote). Token spend is reported as a total and NOT as a percentage: a transcript records tokens
+per message and never the window they sit in, so the bar is relative to the busiest session on
+screen and says as much. Adapter-fed like the rest, so Copilot Chat - whose store holds session
+metadata and no step timeline - reports that rather than being drawn as idle.
+
+**Four marks, four meanings.** A BOX is an actor: a session, a subagent, a skill, a memory. A
+tool call is not an actor but an event on a line, so it is a tick that carries a count when it
+repeats. A tool result is not a node either - it is the EDGE leaving the call it answers, solid
+once the output came back and dashed while the call is still out, which is the same arrow the
+state strip draws from `tool call` to `PostToolUse`. And a hook is drawn as a hook. The page says
+all four in a legend rather than leaving them to be inferred.
+
+**The deterministic half is visible too.** Hook firings arrive in a transcript as attachments,
+and reading attachments as noise is what once made RTK, caveman, the secret scan and the vault
+outbox flush invisible on a tab whose whole subject is what the harness is doing. Each one now
+draws the figure's own idiom: a dashed self-loop on the box it runs on, labelled with the hook's
+NAME rather than the file that implements it, and drawn in alarm when the hook refused rather than
+merely watched. Subagent dispatches are counted apart from tool calls, so a `local-writer`
+dispatch cannot be pushed off the lane by the next hundred Bash calls, and an MCP call is named by
+its server.
+
+**Three bars, and three maxima you type.** What this session holds, what the week has spent
+(summed from the transcripts: new input, cache creation and output, never tokens re-read from
+cache, which are the same conversation counted again), and a paid supplement that appears only
+once one of the other two is full. None of the three MAXIMA is reported anywhere on this machine,
+so each is typed beside its bar and kept per viewer, and a bar with no maximum is not drawn at
+all. Nothing here is money: no plan, invoice or payment method is readable from this machine.
+
+**The refresh rate is yours.** Type an interval beside the theme control; the presets are
+suggestions. The page then asks the server for data no older than that, and the server clamps the
+request up to a configured floor, so no viewer can make the collector that leaves the machine run
+faster than its own timer.
+
+**Hovering anything explains it.** One layer, not one tooltip per panel: a cell, a card, a plan
+phase, a box or an edge in the fan-out opts in, and a single renderer draws the detail behind the
+summary. The case that made it necessary is the fan-out edge that reads `1 lost` - the number was
+reachable and the name behind it was not, so the edge now carries which mirror is lost and in what
+state. The diagram's boxes can also be dragged, and their edges follow, because every path is
+drawn from the node's own coordinates rather than from a stored copy of them.
+
+**Acting on what it reports.** The rail carries an Actions panel, and every button in it runs
+one entry of a closed whitelist held as data in
+[.claude/skills/rt-observe/actions.json](.claude/skills/rt-observe/actions.json): an id maps to
+a FIXED argv, the page posts only that id, and nothing from the request ever reaches a command
+line. Every id points at a script this repository already ships and already tests -
+`install.ps1 -Personal` (the fix for the mirrors the matrix reports lost), `-Manifest`,
+`install-junctions.ps1 -Sync`, `check-deployment.ps1`, `run-offline-tests.ps1`,
+`restart-ollama.ps1`, the vault daemon's status and start, and one action that spawns a fresh
+headless session. Each offers a **dry run** that resolves the argv and executes nothing, a
+destructive one arms first and then shows the action's own confirm sentence rather than a
+generic prompt, and an action whose interpreter is not on this machine renders as a reason
+instead of a button that would fail on click.
+
+An action is judged by its **effect, not its exit code**: after it runs, the section it claims
+to change is collected again and the panel says `effect confirmed`, `effect NOT confirmed` or
+`effect unchecked`. `restart-ollama.ps1` is the reason - it is the documented script that exits
+0 while an orphaned child keeps its VRAM. Every attempt, refusals included, appends one JSON
+line to `~/.claude/rt-state-actions.jsonl`.
+
+**Messaging a session.** A Claude Code session card carries a Send button when, and only when,
+the delivery hook is installed for it. The message is written into `~/.claude/rt-inbox/<session
+id>/` and nothing executes; `rt-inbox-deliver.py`, a `UserPromptSubmit` hook, hands it to that
+session on its next turn and moves it to `delivered/`. A session with no hook is reported
+**unreachable** and never as delivered, because a message written into a directory nobody drains
+is worse than no message at all. This does not replace Claude Code's own cross-session
+messaging, and it cannot: a browser page cannot call an agent tool. What it adds is a durable
+record, a fleet view of who is reachable, and an inbox another harness could read too.
+
+Each section carries its own TTL, so a two-second page poll never re-runs `claude mcp list`,
+and a section that has never been collected reads `collecting` rather than blank - the first
+`/api/state` answers immediately while the slow collectors fill in behind it.
+
+The page is one self-contained file with no CDN, no npm and no build step, in both themes, from
+a 400px side panel to a wide monitor. The eight cell states are distinguishable with colour
+removed, because colour marks only the one state that must never be missed: on this surface no
+second status hue cleared the colour-vision-deficiency floors against the alarm red, so every
+other state is carried by a two-letter code, a texture and an edge weight. Its design tokens
+are extracted to [assets/rt-tokens.css](assets/rt-tokens.css), the first shared token file in
+this repository, and a test asserts the page and that file cannot drift apart.
+
+Standard library only: no pip install, no npm, no Docker, no build step, and the core never
+shells out to a `.ps1`. Exit 0 is clean, 1 means something is `lost` or `stale`, 2 is a refusal
+by design. **Zero harnesses is a supported configuration** - with no adapter present the
+matrix, the registry check, the repository panel and the plan progression are all still
+complete, which is the majority of the value and the whole of it for a lab member on Codex or
+Continue. Point `--home` at an empty directory to reproduce that case.
+
+Beyond the matrix it reports: the canonical definition set's own integrity, the green stamp
+and active profile, plan progression read from `PROGRESS.md` and cross-checked against the
+plan's own phase headings, the MCP roster (live when the `claude` binary is present, otherwise
+the declared roster with liveness stated as unavailable), local model residency, the vault
+daemon and its queue depth, and recent sessions from two adapters - Claude Code and GitHub
+Copilot Chat. Adding a harness is a new module plus one line in `harnesses.json`, with no core
+edit, and a test asserts exactly that.
+
+It never reads the Obsidian vault, and it never reads the code graph: the graph panel renders
+a snapshot that `local-writer` produced, because `vault-access-guard.py` refuses the graph to
+every other caller and a server reading it on your behalf is the bypass that guard exists to
+stop.
+
 ## Security audit (SkillSpector)
 
 All eight skills under `.claude/skills/` were scanned with **SkillSpector v2.2.3** in
@@ -811,6 +985,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/uqacform <https-url> [dest]` | Fetch one official UQAC form PDF, validated, and report its SHA-256. Refuses anything that is not a PDF served over https, and writes nothing when it refuses | Yes |
 | `/geolocalisation` | Map a review corpus's study locations from its `.bib`: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional `--full-text` PDF scan. | Optional — `.bib` file/dir/IDE file |
 | `/recommendation-letter` | Generate a support / recommendation / appreciation / acceptance / dispense letter in LaTeX → PDF from a candidate's files (two tracks; candidate status + funding provider; paired invitation). | Optional — folder / paths / IDE file |
+| `/rt-dashboard` | Start the rt-observe dashboard on loopback and open it: mirror matrix, fan-out canvas, plan progression, services and sessions. Wraps `rt-dashboard.ps1` / `.sh` / `.bat`, which need no Claude Code. `--dry-run` names the interpreter, the bind address and every TTL and starts nothing | Optional — `--dry-run`, `--open`, `--port <n>`, `--json` |
 
 ### `/concis` — Concise mode
 
@@ -947,6 +1122,23 @@ Example:
 (clean the `.bib` after adding references), `/ref` (format individual references).
 
 **File:** `.claude/commands/replyreviewer.md`
+
+### `/rt-dashboard` — Toolkit state dashboard
+
+Starts the `rt-observe` dashboard on loopback and reports the URL. With no argument it dry-runs
+first, which names the interpreter it resolved, the bind address, the page and every per-section
+TTL, and starts nothing. With `--json` it skips the server entirely and dumps the snapshot,
+which is the right form inside a script or when the only question is whether anything is `lost`.
+
+Its three refusals are read back to you rather than worked around: no interpreter found names
+every candidate tried and exits 2; a port held by something else names the holding PID and exits
+1, because two dashboards showing two different snapshots is worse than none; and a dashboard
+already running is reported with its URL rather than started twice.
+
+The command is a convenience, never the only way in. `rt-dashboard.ps1`, `rt-dashboard.sh`,
+`rt-dashboard.bat` and the VS Code task all reach the same launcher without Claude Code.
+
+**File:** `.claude/commands/rt-dashboard.md`
 
 ---
 
@@ -1115,7 +1307,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (16 agents)
+    ├── agents\                              (17 agents)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── litreview-updater.md       ← /litupdate
     │   ├── scopus-auditor.md          ← /auditreview
@@ -1133,7 +1325,7 @@ ResearchTools\
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (bridge)
     │   └── local-coder.md             ← local code gen (bridge)
-    ├── commands\                            (22 commands)
+    ├── commands\                            (24 commands)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
     │   ├── ref.md      ├── litreview.md             ├── litupdate.md

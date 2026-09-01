@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "purpose": "Generator INTENT for the harness mirror fan-out, as data rather than as PowerShell. install.ps1 reads it to decide what to skip and where to degrade; the rt-observe collector reads the same file to decide whether an absent mirror is BY DESIGN or a LOSS. One truth, two consumers. Before this file existed, both facts lived inside install.ps1, which made the toolkit's own intent unreadable to anyone without PowerShell - which is most of the people who clone this repository.",
+  "provenance": {
+    "extracted_from": "install.ps1",
+    "extracted_on": "2026-08-30",
+    "extracted_by": "rt-observe Phase 1",
+    "inertness_proof": "The generated trees were hashed before and after the extraction and compared file by file. The extraction is a move, never a change of value.",
+    "rule": "A value here is the ONLY declaration of itself. install.ps1 must not restate one, and the two ceiling suites parse this file rather than the installer (R0, R2, R6)."
+  },
+  "thresholds": {
+    "copilot_stub_threshold": {
+      "value": 28000,
+      "unit": "characters of the canonical agent body",
+      "provenance": "chosen - a margin under copilot_hard_limit, so a body that grows between two installs does not cross the hard limit unnoticed",
+      "effect": "An agent body above this is replaced in .github/agents/ by a roughly 1700-character pointer stub. The agent's actual instructions then stop reaching GitHub Copilot while the install still exits 0, so the state is reported as 'stubbed' and never as 'ok'.",
+      "measured_note": "local-writer.md sat at 27544 body characters on 2026-08-28, a margin of 456. The next addition to that agent has to trim something first."
+    },
+    "copilot_hard_limit": {
+      "value": 30000,
+      "unit": "characters of the GENERATED profile, frontmatter included",
+      "provenance": "specified - GitHub Copilot's documented limit on a custom agent prompt",
+      "effect": "install.ps1 throws rather than writing a profile above this. It is a hard stop, not a degradation."
+    },
+    "codex_skill_list_budget": {
+      "value": 8000,
+      "unit": "characters of the concatenated skill list Codex assembles",
+      "provenance": "specified - Codex allots the skills list 2% of the model context window, or 8000 characters when that window is unknown. Verified 2026-08-28 against learn.chatgpt.com/docs/build-skills. This is the conservative case, not a constant of this repo, and a Codex user can raise it.",
+      "effect": "Over budget, Codex shortens descriptions itself and then omits skills with a warning. install.ps1 pre-empts that by trimming each description to whole sentences under a computed per-skill cap, so the state is 'trimmed' and never 'ok'. Adding a skill shrinks the cap for EVERY skill.",
+      "measured_note": "15 skills produced 6198 of 8000 characters after trimming on 2026-08-30, with 11 of the 15 trimmed."
+    },
+    "codex_doc_max_bytes": {
+      "value": 32768,
+      "unit": "bytes of the concatenated AGENTS.md chain",
+      "provenance": "specified - Codex project_doc_max_bytes, verified 2026-08-28 against learn.chatgpt.com/docs/agent-configuration/agents-md",
+      "effect": "Over the cap, Codex drops the DEEPEST file in the chain, which is the one closest to the work.",
+      "measured_note": "The root plus .claude/skills/AGENTS.md chain was 5272 of 32768 bytes on 2026-08-30."
+    }
+  },
+  "skips": {
+    "session_mode_commands": {
+      "values": [
+        "concis",
+        "slim",
+        "focus",
+        "ctx"
+      ],
+      "applies_to": [
+        "copilot-prompts",
+        "vscode-user-prompts"
+      ],
+      "provenance": "chosen - these four commands only change how a Claude Code session formats its output",
+      "reason": "They have no meaning in another harness, so no prompt mirror is generated for them. An empty cell here is BY DESIGN and must never be reported as a loss. Conflating the two is the single defect the mirror matrix exists to prevent."
+    }
+  },
+  "orphans_by_design": {
+    "copilot-instructions": {
+      "values": [
+        "mermaid"
+      ],
+      "provenance": "measured 2026-08-30 - .github/instructions/ holds six files where .claude/rules/ holds five",
+      "reason": "mermaid.instructions.md is hand-maintained and has no source under .claude/rules/. Its own header says so. A mirror file with no canonical row is reported as 'orphan', and an orphan named here is deliberate rather than a leftover from a deleted rule."
+    },
+    "vscode-user-instructions": {
+      "values": [
+        "mermaid"
+      ],
+      "provenance": "measured 2026-08-30 - install.ps1 -Personal copies .github/instructions/*.instructions.md into the VS Code user profile, and that directory holds the hand-maintained mermaid file alongside the five generated ones",
+      "reason": "Same deliberate orphan as the copilot-instructions column, arriving here because -Personal copies the whole generated directory rather than re-deriving it from .claude/rules/. Declared so the column reads by-design instead of accumulating one permanent orphan nobody intends to fix."
+    }
+  },
+  "targets": [
+    {
+      "id": "copilot-agents",
+      "harness": "GitHub Copilot",
+      "scope": "repo",
+      "source": "agents",
+      "path": ".github/agents/{name}.agent.md",
+      "cardinality": "per-definition",
+      "requires_flag": null,
+      "degrades_to": "stubbed"
+    },
+    {
+      "id": "copilot-cli-agents",
+      "harness": "GitHub Copilot CLI",
+      "scope": "user",
+      "source": "agents",
+      "path": "~/.copilot/agents/{name}.agent.md",
+      "cardinality": "per-definition",
+      "requires_flag": "-Personal",
+      "degrades_to": null,
+      "note": "Written ONLY under install.ps1 -Personal. Every agent added since the last -Personal run is therefore invisible to that harness, which is a real loss and not a design decision. Six agents were in that state on 2026-08-30. A user who has never run -Personal has no directory at all, which is reported as 'not installed' for the whole column rather than as 17 losses."
+    },
+    {
+      "id": "copilot-prompts",
+      "harness": "GitHub Copilot",
+      "scope": "repo",
+      "source": "commands",
+      "path": ".github/prompts/{name}.prompt.md",
+      "cardinality": "per-definition",
+      "requires_flag": null,
+      "skip_list": "session_mode_commands"
+    },
+    {
+      "id": "copilot-instructions",
+      "harness": "GitHub Copilot",
+      "scope": "repo",
+      "source": "rules",
+      "path": ".github/instructions/{name}.instructions.md",
+      "cardinality": "per-definition",
+      "requires_flag": null
+    },
+    {
+      "id": "copilot-master",
+      "harness": "GitHub Copilot",
+      "scope": "repo",
+      "source": "repo",
+      "path": ".github/copilot-instructions.md",
+      "cardinality": "single-file",
+      "requires_flag": null
+    },
+    {
+      "id": "vscode-user-prompts",
+      "harness": "VS Code user profile",
+      "scope": "user",
+      "source": "commands",
+      "path": "%APPDATA%/Code/User/prompts/{name}.prompt.md",
+      "cardinality": "per-definition",
+      "requires_flag": "-Personal",
+      "skip_list": "session_mode_commands",
+      "note": "Copies the GENERATED prompt files into the VS Code user profile so they work in any workspace. It copies what .github/prompts/ holds, so the session-mode skip propagates here: those four were never generated, so they are by design absent from this column too. Same -Personal gate as the Copilot CLI column."
+    },
+    {
+      "id": "vscode-user-instructions",
+      "harness": "VS Code user profile",
+      "scope": "user",
+      "source": "rules",
+      "path": "%APPDATA%/Code/User/prompts/{name}.instructions.md",
+      "cardinality": "per-definition",
+      "requires_flag": "-Personal",
+      "note": "The same directory as the column above - VS Code keeps prompts and instructions together - but a different file suffix and a different source, so it is a separate column rather than one column with two templates. Modelling it as one produced a cell whose path was the directory itself, which existed for every name and therefore reported every rule as present."
+    },
+    {
+      "id": "opencode-agents",
+      "harness": "opencode",
+      "scope": "repo",
+      "source": "agents",
+      "path": ".opencode/agent/{name}.md",
+      "cardinality": "per-definition",
+      "requires_flag": null,
+      "note": "Full body, no size ceiling, so this column has no 'stubbed' state."
+    },
+    {
+      "id": "continue-rules",
+      "harness": "Continue",
+      "scope": "repo",
+      "source": "rules",
+      "path": ".continue/rules/researchtools.md",
+      "cardinality": "single-file",
+      "requires_flag": null,
+      "note": "BY DESIGN one pointer file rather than one mirror per rule. Continue receives a single rule that points at the canonical routing table. Four empty per-rule cells here are correct, and the column is scored as one cell, not five."
+    },
+    {
+      "id": "aider-conventions",
+      "harness": "Aider",
+      "scope": "repo",
+      "source": "repo",
+      "path": "CONVENTIONS.md",
+      "cardinality": "single-file",
+      "requires_flag": null,
+      "note": "Created only when absent, so an operator's edits survive a regeneration. That also means a stale CONVENTIONS.md is never corrected by an install and must be reported as 'stale' rather than 'ok'."
+    },
+    {
+      "id": "agents-md",
+      "harness": "any AGENTS.md reader",
+      "scope": "repo",
+      "source": "repo",
+      "path": "AGENTS.md",
+      "cardinality": "single-file",
+      "requires_flag": null
+    },
+    {
+      "id": "codex-skills",
+      "harness": "Codex",
+      "scope": "repo",
+      "source": "skills",
+      "path": ".agents/skills/{name}/SKILL.md",
+      "cardinality": "per-definition",
+      "requires_flag": null,
+      "degrades_to": "trimmed",
+      "budget": "codex_skill_list_budget",
+      "note": "Codex is the ONE harness with a native skill convention: it scans .agents/skills from the cwd up to the repository root and reads each SKILL.md for its name and description. The mirror is a frontmatter-only pointer whose description is trimmed to whole sentences, so a skill's trigger vocabulary must sit in its FIRST sentence, the one guaranteed to survive."
+    },
+    {
+      "id": "codex-nested-agents-md",
+      "harness": "Codex",
+      "scope": "repo",
+      "source": "repo",
+      "path": ".claude/skills/AGENTS.md",
+      "cardinality": "single-file",
+      "requires_flag": null,
+      "budget": "codex_doc_max_bytes"
+    }
+  ]
+}

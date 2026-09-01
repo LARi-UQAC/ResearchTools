@@ -155,6 +155,16 @@
             "statusMessage": "Tracking caveman mode..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\rt-inbox-deliver.py\"",
+            "timeout": 10,
+            "statusMessage": "Delivering rt-inbox messages..."
+          }
+        ]
       }
     ],
     "PostToolUse": [

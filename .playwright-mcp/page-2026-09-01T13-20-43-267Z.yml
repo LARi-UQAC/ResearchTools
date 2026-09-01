@@ -1,0 +1,142 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e3]:
+    - banner [ref=f4e4]:
+      - heading "rtobserve" [level=1] [ref=f4e5]
+      - generic [ref=f4e6]: ResearchTools . feat/rt-dashboard . engineering
+      - generic [ref=f4e7]: 2 stale
+      - 'button "Colour theme: system. Activate for light." [ref=f4e8] [cursor=pointer]': theme system
+    - main [ref=f4e9]:
+      - generic [ref=f4e10]:
+        - tablist "Dashboard views" [ref=f4e11]:
+          - tab "Mirror matrix" [ref=f4e12] [cursor=pointer]
+          - tab "Fan-out" [selected] [ref=f4e13] [cursor=pointer]
+          - tab "Sessions" [ref=f4e14] [cursor=pointer]
+          - tab "Real-Time Process" [ref=f4e15] [cursor=pointer]
+        - tabpanel "Fan-out" [ref=f4e16]:
+          - generic [ref=f4e17]:
+            - heading "Fan-out" [level=2] [ref=f4e18]
+            - paragraph [ref=f4e19]: One canonical definition set, six harness dialects, and what consumes them.
+          - img "Wiring diagram of definitions, harness mirrors, sessions and services." [ref=f4e22]:
+            - generic [ref=f4e137]: defined
+            - generic [ref=f4e138]: mirrored to
+            - generic [ref=f4e139]: consumed by
+            - generic [ref=f4e140]: services
+            - generic [ref=f4e149]: 1 lost
+            - generic [ref=f4e154]: 1 lost
+            - generic [ref=f4e177]: Agents 17
+            - generic [ref=f4e180]: Skills 16
+            - generic [ref=f4e183]: Commands 25
+            - generic [ref=f4e186]: Rules 5
+            - generic [ref=f4e189]: Copilot
+            - generic [ref=f4e192]: Copilot CLI
+            - generic [ref=f4e195]: VS Code user
+            - generic [ref=f4e198]: opencode
+            - generic [ref=f4e201]: Continue
+            - generic [ref=f4e204]: Aider
+            - generic [ref=f4e207]: AGENTS.md readers
+            - generic [ref=f4e210]: Codex
+            - generic [ref=f4e213]: Claude Code 12
+            - generic [ref=f4e216]: GitHub Copilot Chat 12
+            - generic [ref=f4e219]: MCP 15
+            - generic [ref=f4e222]: Local models 0
+            - generic [ref=f4e225]: Vault daemon 0
+      - complementary "Repository, plan, services, code graph, hooks and actions" [ref=f4e114]:
+        - tablist "Rail panels" [ref=f4e115]:
+          - tab "Repo" [ref=f4e116] [cursor=pointer]
+          - tab "Plan" [ref=f4e117] [cursor=pointer]
+          - tab "Services" [ref=f4e118] [cursor=pointer]
+          - tab "Graph" [ref=f4e119] [cursor=pointer]
+          - tab "Hooks" [ref=f4e120] [cursor=pointer]
+          - tab "Actions" [selected] [ref=f4e121] [cursor=pointer]
+        - tabpanel "Actions" [ref=f4e122]:
+          - generic [ref=f4e123]:
+            - heading "Actions" [level=2] [ref=f4e124]
+            - generic [ref=f4e125]:
+              - generic [ref=f4e228]:
+                - generic [ref=f4e229]: Repair the personal mirrors
+                - generic [ref=f4e230]: confirm
+              - generic [ref=f4e231]: "install.ps1 -Profile <active> -Manifest -Personal: regenerates every harness mirror AND the two targets the ordinary run never touches, ~/.copilot/agents and the VS Code user profile. This is the fix for the 6 agents and 7 commands the matrix reports lost."
+              - generic [ref=f4e232]:
+                - button "Run" [ref=f4e233] [cursor=pointer]
+                - button "Dry run" [ref=f4e234] [cursor=pointer]
+            - generic [ref=f4e235]:
+              - generic [ref=f4e236]:
+                - generic [ref=f4e237]: Regenerate the mirrors
+                - generic [ref=f4e238]: confirm
+              - generic [ref=f4e239]: "install.ps1 -Profile <active> -Manifest: regenerates the in-clone mirrors and writes .rt-mirrors.json, the manifest the matrix reads for drift-since-install. Does NOT touch the user profiles; that is mirrors.personal."
+              - generic [ref=f4e240]:
+                - button "Run" [ref=f4e241] [cursor=pointer]
+                - button "Dry run" [ref=f4e242] [cursor=pointer]
+            - generic [ref=f4e243]:
+              - generic [ref=f4e244]:
+                - generic [ref=f4e245]: Sync the proven files to ~/.claude
+                - generic [ref=f4e246]: confirm
+              - generic [ref=f4e247]: "install-junctions.ps1 -Sync: copies the files the offline suite proved green into the live ~/.claude, per code-file hash from .rt-green.json."
+              - generic [ref=f4e248]:
+                - button "Run" [ref=f4e249] [cursor=pointer]
+                - button "Dry run" [ref=f4e250] [cursor=pointer]
+            - generic [ref=f4e251]:
+              - generic [ref=f4e252]: Check the deployment
+              - generic [ref=f4e254]: "scripts/audit/check-deployment.ps1: read-only comparison of the live ~/.claude against this clone."
+              - generic [ref=f4e255]:
+                - button "Run now" [ref=f4e256] [cursor=pointer]
+                - button "Dry run" [ref=f4e257] [cursor=pointer]
+            - generic [ref=f4e258]:
+              - generic [ref=f4e259]: Run the offline suite
+              - generic [ref=f4e261]: "scripts/test/run-offline-tests.ps1: every Python suite in the clone. Writes .rt-green.json on a full pass and DELETES it on any failure, which is why the repository panel goes red rather than stale when this fails."
+              - generic [ref=f4e262]:
+                - button "Run now" [ref=f4e263] [cursor=pointer]
+                - button "Dry run" [ref=f4e264] [cursor=pointer]
+            - generic [ref=f4e265]:
+              - generic [ref=f4e266]:
+                - generic [ref=f4e267]: Restart the Ollama daemon
+                - generic [ref=f4e268]: confirm
+              - generic [ref=f4e269]: "opt-local-vram-llm/scripts/restart-ollama.ps1: kills BOTH ollama and its llama-server child, which a Stop-Process -Name 'ollama*' does not, then verifies the VRAM actually came back."
+              - generic [ref=f4e270]:
+                - button "Run" [ref=f4e271] [cursor=pointer]
+                - button "Dry run" [ref=f4e272] [cursor=pointer]
+            - generic [ref=f4e273]:
+              - generic [ref=f4e274]: Vault daemon status
+              - generic [ref=f4e276]: "vault-daemon-autostart.ps1 -Status: read-only. Prints whether the singleton lock is held, the log tail, and whether the Startup shortcut exists."
+              - generic [ref=f4e277]:
+                - button "Run now" [ref=f4e278] [cursor=pointer]
+                - button "Dry run" [ref=f4e279] [cursor=pointer]
+            - generic [ref=f4e280]:
+              - generic [ref=f4e281]:
+                - generic [ref=f4e282]: Start the vault daemon
+                - generic [ref=f4e283]: confirm
+              - generic [ref=f4e284]: "vault-daemon-autostart.ps1: starts the daemon hidden, with its output appended to ~/.claude/vault-daemon.log. It is a no-op when a live daemon already holds the singleton lock."
+              - generic [ref=f4e285]:
+                - button "Run" [ref=f4e286] [cursor=pointer]
+                - button "Dry run" [ref=f4e287] [cursor=pointer]
+            - generic [ref=f4e288]:
+              - generic [ref=f4e289]:
+                - generic [ref=f4e290]: Spawn a headless session on the inbox
+                - generic [ref=f4e291]: confirm
+              - generic [ref=f4e292]: Starts a NEW headless Claude Code session whose fixed prompt is to drain this machine's rt-inbox. It cannot inject anything into a session that is already running - no mechanism for that exists - so this starts a fresh one instead.
+              - generic [ref=f4e293]:
+                - button "Run" [ref=f4e294] [cursor=pointer]
+                - button "Dry run" [ref=f4e295] [cursor=pointer]
+            - generic [ref=f4e296]: "To send a session a message, use Send on its card in the fleet strip: a message needs a target, and the strip is where the targets are."
+    - contentinfo [ref=f4e126]:
+      - generic [ref=f4e127]:
+        - generic [ref=f4e128]: drawn by
+        - text: rt_state.py
+      - generic [ref=f4e129]:
+        - generic [ref=f4e130]: generated
+        - text: 13:20:42
+      - generic [ref=f4e131]:
+        - generic [ref=f4e132]: policy
+        - text: 51BFDDBF
+      - generic [ref=f4e133]:
+        - generic [ref=f4e134]: last install
+        - text: 13:13:02
+      - generic [ref=f4e135]:
+        - generic [ref=f4e136]: root
+        - text: C:\Martin Otis\OutilsLogiciels\ResearchTools
+  - generic:
+    - generic: Rules to Copilot
+    - text: 6 mirrors, 1 needing work
+    - generic:
+      - generic: stale
+      - emphasis: testing

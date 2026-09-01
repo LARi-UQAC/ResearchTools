@@ -54,6 +54,9 @@ loop-bridge-log.jsonl
 # .rt-undo/ holds the previous version of any file the loop changed, pruned to 20.
 .rt-green.json
 .rt-undo/
+# .rt-mirrors.json is install.ps1 -Manifest's record of the verdict it computed for
+# every mirror, plus the policy hash it used. Machine-local, like the green stamp.
+.rt-mirrors.json
 .claude/local-capability-probe.json
 
 # Machine-local configuration generated from a versioned template. A file a script generates

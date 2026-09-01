@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "purpose": "Every port, timeout, cap and exclusion rt-observe uses. No literal of any of these lives in the code (R0). Values are grouped by the collector that reads them, so a reader can see what one panel costs.",
+  "provenance": {
+    "written_on": "2026-08-30",
+    "note": "A value here is chosen unless its own 'provenance' says measured or specified. A missing key is an explicit error naming the key and this file (R3), never a silent default."
+  },
+  "server": {
+    "bind_host": {
+      "value": "127.0.0.1",
+      "provenance": "specified - .claude/rules/security.md, bind a service to a specific interface and never 0.0.0.0",
+      "note": "Loopback is shared by every process on the machine, so the bind is not an authorization boundary on its own. The session token is."
+    },
+    "port": {
+      "value": 8787,
+      "unit": "TCP port",
+      "provenance": "chosen - outside the ranges this workspace already uses (5000 Flask, 5246 Blazor, 11434 Ollama)"
+    },
+    "token_bytes": {
+      "value": 32,
+      "unit": "bytes of secrets.token_urlsafe entropy",
+      "provenance": "chosen"
+    }
+  },
+  "view": {
+    "purpose": "Everything the served page would otherwise hardcode. It is injected as one JSON block, so the markup carries no configured number at all (R0).",
+    "poll_ms": {
+      "value": 2000,
+      "unit": "milliseconds between page polls of /api/state",
+      "provenance": "chosen - the per-section TTLs decide what a poll actually COSTS, so this is only how often the page asks"
+    },
+    "refresh_choices_ms": {
+      "value": [1000, 2000, 5000, 15000],
+      "unit": "milliseconds between page polls, offered as the refresh control's choices",
+      "provenance": "chosen 2026-09-01 after the operator reported the live tab lagging - the poll was never the slow part, the per-section TTL was, so the control now sets BOTH and the fastest choice is one second"
+    },
+  "refresh_bounds_ms": {
+      "value": [250, 600000],
+      "unit": "milliseconds - the smallest and largest refresh interval a viewer may type",
+      "provenance": "chosen 2026-09-01 - the operator asked to type their own value rather than pick from a list, so the list became suggestions and these are the only limits. The lower bound is a courtesy to the machine and not a safety boundary: the real protection is ttl_floor_seconds, which the server applies whatever a page asks for"
+    },
+  "context_window_tokens": {
+      "value": null,
+      "unit": "tokens of context window used as the DENOMINATOR of the token bar, or null for no bar at all",
+      "provenance": "unset on purpose - no transcript reports the window its tokens sit in, so any number here is the operator's and not a measurement. Left null the page prints the totals and draws NO bar, because a bar relative to something arbitrary reads as fullness: measured 2026-09-01, a bar scaled to the busiest session on screen showed that session permanently full"
+    },
+    "detail_rows": {
+      "value": 6,
+      "unit": "rows of named detail a hover panel lists before it says how many more there are",
+      "provenance": "chosen - a hover panel is read standing up, and an edge carrying every one of 134 mirrors would be a second matrix"
+    },
+  "canvas": {
+      "settle_ticks": {
+        "value": 320,
+        "unit": "simulation ticks before the layout is considered settled",
+        "provenance": "chosen - enough for 18 nodes to separate; with prefers-reduced-motion these run before the first paint instead of on a frame timer"
+      },
+      "spring": {
+        "value": 0.045,
+        "unit": "link spring coefficient",
+        "provenance": "chosen"
+      },
+      "repulsion": {
+        "value": 2600,
+        "unit": "node-node repulsion strength, in px^2",
+        "provenance": "chosen"
+      },
+      "damping": {
+        "value": 0.86,
+        "unit": "velocity retained per tick",
+        "provenance": "chosen"
+      },
+      "lane_pull": {
+        "value": 0.09,
+        "unit": "pull toward the node's own lane, which is what keeps this a wiring diagram rather than a hairball",
+        "provenance": "chosen"
+      },
+      "vertical_below_px": {
+        "value": 640,
+        "unit": "CSS pixels of canvas width",
+        "provenance": "chosen - below this the four lanes cannot fit across the panel, so the diagram is TURNED (lanes become rows) rather than shrunk to illegibility"
+      },
+      "settle_ms": {
+        "value": 420,
+        "unit": "milliseconds of eased movement when the diagram's shape changes",
+        "provenance": "chosen - the layout is solved silently and only the MOVE is animated, so this is how long a box takes to travel from where it was to where it now belongs. Reported 2026-08-31: animating the solver itself, and restarting it on every poll, made the diagram impossible to follow"
+      },
+      "min_alpha": {
+        "value": 0.004,
+        "unit": "kinetic energy per node below which the tick loop stops",
+        "provenance": "chosen - the loop stops rather than running forever, so a settled page costs no frames"
+      }
+    }
+  },
+  "ttl_floor_seconds": {
+    "default": {
+      "value": 1,
+      "unit": "seconds - the fastest a viewer may ask any section to be re-collected",
+      "provenance": "chosen - a page asking faster than this would re-run local collectors continuously for no gain, since none of them changes within a second"
+    },
+    "usage": {
+      "value": 60,
+      "unit": "seconds - the floor for the whole-transcript usage scan",
+      "provenance": "chosen - it reads every transcript end to end, so a viewer turning the refresh dial to one second must not be able to make it run every second"
+    },
+    "mcp_live": {
+      "value": 300,
+      "unit": "seconds - the floor for the MCP roster specifically",
+      "provenance": "specified - it is the only collector that leaves the machine, reaching 28 servers under a 45-second budget, so a viewer must NOT be able to speed it up. Its floor is its own TTL"
+    }
+  },
+  "ttl_seconds": {
+    "usage": {
+      "value": 600,
+      "unit": "seconds between whole-transcript usage scans",
+      "provenance": "chosen - this is the only collector that reads every transcript end to end, and a week's total does not move meaningfully inside ten minutes"
+    },
+    "mirrors": {
+      "value": 15,
+      "unit": "seconds",
+      "provenance": "chosen - a filesystem walk of a few hundred small files; cheap enough to refresh often"
+    },
+    "repo": {
+      "value": 30,
+      "unit": "seconds",
+      "provenance": "chosen"
+    },
+    "registry": {
+      "value": 60,
+      "unit": "seconds",
+      "provenance": "chosen - the canonical set only changes when a definition file is edited, so it is the cheapest section to hold"
+    },
+    "progress": {
+      "value": 15,
+      "unit": "seconds",
+      "provenance": "chosen - PROGRESS.md is appended by hand during a phase, and seeing that appear is the point of the panel"
+    },
+    "services": {
+      "value": 60,
+      "unit": "seconds",
+      "provenance": "chosen - the local daemon and Ollama probes are cheap but not free"
+    },
+    "mcp_live": {
+      "value": 300,
+      "unit": "seconds",
+      "provenance": "chosen - `claude mcp list` reaches the network for 28 servers, so a 2-second page poll must never trigger it"
+    },
+    "sessions": {
+      "value": 10,
+      "unit": "seconds",
+      "provenance": "chosen"
+    },
+    "graph": {
+      "value": 60,
+      "unit": "seconds",
+      "provenance": "chosen - the snapshot only changes when local-writer refreshes it, so polling it hard buys nothing"
+    }
+  },
+  "timeouts_seconds": {
+    "subprocess_default": {
+      "value": 20,
+      "unit": "seconds",
+      "provenance": "chosen - R10, every subprocess call carries an explicit timeout"
+    },
+    "mcp_list": {
+      "value": 45,
+      "unit": "seconds",
+      "provenance": "chosen - it reaches 28 servers over the network; a timeout is reported as unavailable with the reason, never as an empty roster"
+    },
+    "action_default": {
+      "value": 600,
+      "unit": "seconds",
+      "provenance": "chosen - install.ps1 and the offline suite both run for minutes"
+    },
+    "ping": {
+      "value": 2,
+      "unit": "seconds",
+      "provenance": "chosen - the launcher asks /api/ping on loopback before binding; nothing legitimate on 127.0.0.1 takes longer, and a slow answer must not delay the refusal"
+    }
+  },
+  "caps": {
+    "usage_window_days": {
+      "value": 7,
+      "unit": "days of transcript history summed for the week bar",
+      "provenance": "chosen 2026-09-01 - the operator asked for a WEEK bar, and a week is what the subscription limit is stated in"
+    },
+    "usage_scan_bytes": {
+      "value": 33554432,
+      "unit": "bytes read from ONE transcript before the scan gives up on it and says so",
+      "provenance": "chosen - this collector reads transcripts WHOLE rather than by tail, so an unbounded read is a page that hangs on the largest session anyone has ever had"
+    },
+    "outbox_listed": {
+      "value": 12,
+      "unit": "outbox entries named in the snapshot before the rest are only counted",
+      "provenance": "chosen 2026-09-01 - the operator asked to SEE what is waiting to be written, and a list read on hover is read standing up"
+    },
+    "flow_groups": {
+      "value": 12,
+      "unit": "tool groups drawn around one agent before the rest become a count",
+      "provenance": "measured 2026-09-01 - at seven, a session that had used more than seven distinct tools lost the ones it had used least recently, and Write went missing from a session that had just written a file"
+    },
+    "flow_subagents": {
+      "value": 6,
+      "unit": "subagent dispatches kept for one session, counted apart from its steps",
+      "provenance": "measured 2026-09-01 - a dispatch sharing the step list vanished behind 120 later Bash calls, so the one thing being looked for was the one thing the cap dropped"
+    },
+    "flow_hooks_per_event": {
+      "value": 8,
+      "unit": "hook firings kept PER EVENT, so a once-per-session hook is not evicted by a once-per-tool-call one",
+      "provenance": "measured 2026-09-01 - PreToolUse and PostToolUse fire on every tool call, so a flat last-N window held nothing but those two and the operator never saw RTK or caveman, which fire at SessionStart"
+    },
+    "flow_hooks": {
+      "value": 20,
+      "unit": "hook firings kept for one session, counted apart from its steps",
+      "provenance": "measured 2026-09-01 - PreToolUse and PostToolUse fire on EVERY tool call, so hooks sharing the step list would drown the flow they are meant to explain"
+    },
+    "flow_steps": {
+      "value": 18,
+      "unit": "steps of one session's flow kept for the Real-Time Process tab",
+      "provenance": "chosen - the tab answers what is happening NOW, and a transcript tail carries far more than anyone reads standing up"
+    },
+    "prompt_chars": {
+      "value": 160,
+      "unit": "characters of a session's current prompt",
+      "provenance": "chosen - the fleet reads sessions across every project on this machine, one of them a litigation matter, so prompts are truncated before they reach the page"
+    },
+    "summary_chars": {
+      "value": 200,
+      "unit": "characters of a session summary",
+      "provenance": "chosen"
+    },
+    "sessions_shown": {
+      "value": 12,
+      "unit": "sessions per adapter",
+      "provenance": "chosen"
+    },
+    "inbox_message_chars": {
+      "value": 4000,
+      "unit": "characters of one inbox message",
+      "provenance": "chosen - a message longer than this is refused rather than truncated, because a truncated instruction delivered as whole is the failure mode the local-model window rules already legislate against"
+    },
+    "output_tail_chars": {
+      "value": 2000,
+      "unit": "characters kept from the END of an action's stdout and stderr",
+      "provenance": "specified - outbox_io.tail's rule: a Python traceback names its exception on the LAST line while its opening frames are identical on every failure, so truncation keeps the tail"
+    },
+    "transcript_tail_bytes": {
+      "value": 262144,
+      "unit": "bytes read from the end of a session transcript",
+      "provenance": "chosen - a transcript grows without bound and only its tail carries current state"
+    }
+  },
+  "staleness_seconds": {
+    "session_idle": {
+      "value": 90,
+      "unit": "seconds without a new transcript record before a session is drawn as waiting",
+      "provenance": "chosen - the harness emits no explicit idle event, so waiting is inferred from silence, and a threshold shorter than a long tool call would report a working session as idle"
+    },
+    "graph_snapshot": {
+      "value": 86400,
+      "unit": "seconds",
+      "provenance": "chosen - a graph snapshot older than a day is rendered stale rather than current, because refreshing it costs a local-writer dispatch and nobody does it hourly"
+    },
+    "green_stamp": {
+      "value": 604800,
+      "unit": "seconds",
+      "provenance": "chosen - a week-old green stamp is still green, but it is shown as aged so 'green from three days ago' is never read as 'green now'"
+    },
+    "daemon_lock": {
+      "value": 900,
+      "unit": "seconds",
+      "provenance": "chosen - passed to vault_lock.held_by_live_holder as its staleness ceiling; a lock older than this with a dead holder is reported not-running"
+    }
+  },
+  "privacy": {
+    "excluded_projects": {
+      "value": [],
+      "provenance": "chosen - empty by default; add a project directory name here and no session from it reaches the page at all",
+      "note": "Exclusion is applied before truncation, not after, so an excluded project contributes nothing rather than a shortened something."
+    }
+  },
+  "paths": {
+    "action_log": {
+      "value": "~/.claude/rt-state-actions.jsonl",
+      "provenance": "chosen - append-only, the same shape as vault_journal.py, outside the repository so it is never committed"
+    },
+    "inbox_root": {
+      "value": "~/.claude/rt-inbox",
+      "provenance": "chosen - beside the obsidian outbox, under ~/.claude and therefore outside the vault, so vault-access-guard.py is not involved"
+    },
+    "graph_snapshot": {
+      "value": "~/.claude/rt-graph-snapshot.json",
+      "provenance": "chosen - written by local-writer, read by the dashboard. Deliberately NOT inside graphify-out/, which vault-access-guard.py refuses to every caller but local-writer"
+    },
+    "obsidian_outbox": {
+      "value": "~/.claude/obsidian-outbox",
+      "provenance": "specified - the outbox layout owned by the obsidian-cli skill; its singleton lock sits beside it as obsidian-outbox.lock",
+      "note": "Read for liveness and queue DEPTH only, never for note content. It is under the Claude home and therefore outside the vault, so vault-access-guard.py is not involved and the single-writer rule is untouched."
+    },
+    "daemon_singleton_lock": {
+      "value": "~/.claude/vault-daemon.lock",
+      "provenance": "specified - daemon_outbox.py singleton_lock(), which names vault-daemon.lock beside the outbox",
+      "note": "This is the SINGLETON lock and it is NOT the write lock. obsidian-outbox.lock, in the same directory, serializes writers and is held only for the instant of a write, so asking IT whether a daemon is running answers no on a healthy machine. Measured 2026-08-30: this collector asked the write lock first and reported a running daemon as dead, which is the exact backwards reading the obsidian-cli suite warns about."
+    }
+  }
+}

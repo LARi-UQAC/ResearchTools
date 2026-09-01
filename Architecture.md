@@ -442,6 +442,108 @@ flowchart TD
   R --> A
 ```
 
+## Layer 6 - Observability
+
+Cross-cutting over every layer above: the `rt-observe` skill reports what this toolkit's own
+state IS, rather than what it does.
+
+**Neutral core plus optional adapters.** The core knows no harness name. Each harness is one
+module answering `probe(context)` and `collect(context)`, registered in
+`.claude/skills/rt-observe/harnesses.json` rather than in code, so adding one is a module plus
+a data line with no core edit. Two are built - Claude Code (sessions from the JSONL
+transcripts, plus the hooks inventory reusing `build_inventory` from
+`.claude/hooks/session-hooks-inventory.py`) and GitHub Copilot Chat (sessions over a read-only
+SQLite store, opened `file:...?mode=ro` and never for writing). Copilot CLI, Gemini, Codex,
+opencode and Continue are documented in that same registry as not built, with the reason, so a
+later session does not re-derive it.
+
+**The mirror matrix** is the centrepiece and the part that needs no harness at all: canonical
+definitions against harness dialects, comparing files in a clone. Its intent comes from
+`mirror-policy.json` at the repository root, read by `install.ps1` AND by
+`.claude/skills/rt-observe/scripts/collect_mirrors.py`. `install.ps1 -Manifest` additionally
+records the verdicts it already computed into `.rt-mirrors.json`, which the collector treats as
+an enrichment and never as a prerequisite: with no manifest the matrix is still complete, it
+simply cannot report drift since an install nobody ran.
+
+**Receipts, not status words.** Every value in the snapshot carries its provenance - what
+proved it and when - so a stale receipt renders differently from a fresh one and "green from
+three days ago" can never be misread as "green now". A collector that cannot answer returns an
+explicit unavailable state with its reason; an unavailable panel is stated on screen rather
+than blanked, and never silently omitted.
+
+**Two boundaries it does not cross.** It never reads the Obsidian vault. It never reads the
+code graph either: the graph panel renders a snapshot `local-writer` wrote outside the graph's
+own storage, since the access guard refuses the graph to every other caller and a server
+reading it on a caller's behalf is precisely what that guard stops.
+
+**Three entry points, one of them a page.** `rt_state.py` prints the snapshot or dumps it as
+JSON; `rt_state.py --serve`, reached through the `rt-dashboard` launchers, serves the same
+snapshot at `127.0.0.1` and renders it. The server and the one-shot dump share one definition of
+what the state is - `section_builders()` returns a callable per section, used by the blocking
+assembly and by the server's per-section TTL cache alike, so the page and the file cannot
+disagree. The cache has a second, non-blocking mode for serving: a section that has never been
+collected reads `collecting` and refreshes on a background thread, because the first
+`/api/state` otherwise waits on tier-1 `claude mcp list` reaching 28 servers.
+
+The page itself is two independent tab strips rather than one sheet, and it never scrolls: four
+views on the left, the rail's six panels on the right, every overflow handed to a pane. That is
+a layout decision with a consequence worth stating - the amount any panel may show is now set by
+the screen rather than by how far a reader will scroll. The one place it costs something is the
+fan-out, which is measured rather than styled: a pane that is `display: none` is zero pixels
+wide, so the canvas refuses to solve a layout while its tab is hidden and re-solves the moment
+the tab comes to the front.
+
+The `Real-Time Process` tab is adapter-fed like every other harness fact, and that is the whole of
+its design: `claude_code.py` folds the transcript tail it already reads into a step list, a current
+state and a token total, and the page draws what it is handed. A harness that cannot report a step
+says so, because idle and unreportable render identically on a flow diagram and mean opposite
+things. The one number the figures ask for and the harness does not expose is the percentage of a
+context window, so it is refused with its reason rather than estimated.
+
+Two collectors feed that tab, split on cost the way `mcp` already was. `adapters/claude_code.py`
+folds the transcript TAIL into steps, hooks, subagents and the tokens of the last message.
+`collect_usage.py` reads transcripts END TO END for the week total, so it carries its own TTL and
+its own floor: a viewer may shorten a section's TTL through the refresh control, and the floor is
+what stops that becoming a way to run the expensive scans continuously.
+
+Hover detail is a registry rather than a feature of each panel: an object carries
+`data-detail="<kind>"`, a provider returns the pairs, and one renderer draws them. That is a
+correctness decision more than a tidiness one - the matrix cell and the fan-out edge describe the
+same mirror, and two implementations are two chances to describe it differently.
+
+The launchers do the one thing Python cannot do for itself, which is find an interpreter;
+everything else - the port probe, the two refusals about a port already in use, the bind, the
+session token - lives in Python where the offline suite reaches it. That is the same split
+`run-drill.ps1` and `tune-new-model.ps1` already use, and it is why `rt-dashboard.ps1`,
+`rt-dashboard.sh`, `rt-dashboard.bat` and the VS Code task can all be thin.
+
+**The write half.** One route, `POST /api/action`, gated on the session token, behind a closed
+whitelist held as data in `actions.json`: an id maps to a fixed argv, and no field of the request
+ever reaches a command line, so there is no injection surface to review. A `{token}` inside an
+argv entry resolves from a closed server-side table - the interpreter through `shutil.which`, the
+repository root, the active profile read from `.claude/CLAUDE.md` - and an unknown token is a
+refusal rather than a passthrough. Availability is decided before anything is offered, so an
+action whose interpreter is absent renders as a reason rather than a button. Judgement is by
+effect (R9): the runner drops the section the action claims to change from the TTL cache and
+collects it again through the same builders the page reads, so an action that exits 0 while the
+matrix still reports three lost mirrors is reported failed. Every attempt appends a JSON record
+to `~/.claude/rt-state-actions.jsonl` (R17), which is the vault journal's shape one layer up.
+
+Session messaging is deliberately three separate mechanisms rather than one: an inbox the page
+writes atomically, a `UserPromptSubmit` hook that drains it at the target's next turn, and one
+whitelisted action that spawns a NEW headless session. Nothing injects into a running session,
+because no mechanism for that exists. A target with no delivery hook is reported unreachable
+rather than delivered, and the hook exits 0 in silence whenever its config, its inbox or its
+skill is absent - a `UserPromptSubmit` hook that exits non-zero refuses the prompt itself, which
+is the 2026-08-27 hook failure with a wider blast radius than the one that caused it.
+
+The page itself is one self-contained file: no CDN, no npm, no build step, both themes
+first-class, and every number it uses injected from `observe-config.json` so the markup carries
+no configured value. Its tokens are extracted to `assets/rt-tokens.css`, the first shared token
+file in this repository, which the three other HTML emitters here (`paper2talk`'s web deck,
+`geolocalisation`'s map, and the graph page graphify writes) may adopt later; a test asserts the
+page and that file cannot drift apart.
+
 ## Notes
 
 - **Agent file format.** Each agent is one flat markdown file [agents/](agents)`<name>.md` whose line 1 opens YAML frontmatter (`name:`, `description:`) — the layout Claude Code's subagent discovery scans. Skills are the opposite: folder-based (`skills/<name>/SKILL.md`). The `.claude/agents/` files are canonical; `install.ps1` (repo root) regenerates the GitHub Copilot (`.github/agents/*.agent.md`), OpenCode, Continue, and Aider mirrors from them, and `install-junctions.ps1` links them per-file into `~/.claude/agents/` for global availability. Skills additionally get a Codex mirror, `.agents/skills/<name>/SKILL.md` — a pointer carrying only the frontmatter, since Codex is the sole harness that discovers skills natively (it scans `.agents/skills` from the working directory up to the repo root); its description is trimmed to whole sentences to fit Codex's skill-list budget, and `.claude/skills/AGENTS.md` is the nested instruction file Codex appends to the root `AGENTS.md` when the working directory sits inside that tree.

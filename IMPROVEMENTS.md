@@ -469,3 +469,154 @@ lock)`.
 **Unrelated and not a defect:** the same output says `log : none yet`. That daemon was not started
 by `vault-daemon-autostart.ps1`, and only that script redirects output to
 `~/.claude/vault-daemon.log`. Started by hand or by the drill, it writes to its own console.
+
+## 2026-08-30 - rt-observe: generator intent left install.ps1, and the fan-out became observable
+
+`install.ps1` decided a verdict for every mirror it generated, printed it, and threw it away.
+Nothing observed whether the fan-out stayed intact, and two of its three intent values - the
+Copilot stub threshold, both Codex ceilings, the session-mode skip list - lived as literals
+inside PowerShell, which made the toolkit's own intent unreadable to anyone who cannot run
+PowerShell. That is most of the people who clone this repository.
+
+Those values now live in `mirror-policy.json` at the repository root, read by `install.ps1` AND
+by the new `rt-observe` skill's collector. The extraction was proven inert by hashing the 83
+generated files before and after: byte-identical. `install.ps1 -Manifest` additionally records
+the verdicts it already computed into a gitignored `.rt-mirrors.json`. Both ceiling suites now
+read the policy rather than parsing the installer, and each gained a negative control proving a
+restated literal would be caught.
+
+What the instrument found on its first run, beyond the six missing Copilot CLI agents it was
+built to expose: a SECOND lost column nobody had noticed - seven commands had never reached the
+VS Code user profile, under the same `-Personal` gate - and 23 mirrors that exist but are stale
+rather than absent, so drift was never only about absence. Adding `rt-observe` as the 16th skill
+then shrank the Codex per-skill description cap enough to cut `geolocalisation`'s mirrored
+description from 1019 characters to 69, losing its trigger vocabulary in that harness: working
+exactly as designed, and a real loss worth a decision.
+
+Three defects in the new code were caught by its own fixtures rather than in use: a column root
+derived from a probe path's parent reported a whole installed dialect as absent, a multi-source
+column silently produced zero rows, and "not installed" was applied to repo-scoped columns where
+absence is the loss. Two more were caught against reality: the daemon check asked the WRITE lock
+instead of the singleton and called a running daemon dead, and `subprocess` was given a bare
+binary name, which fails `[WinError 2]` on Windows and silently demoted a machine that has
+`claude` to the configured-roster tier.
+
+Files: `mirror-policy.json`, `PROGRESS.md`, `.claude/skills/rt-observe/**` (SKILL.md,
+observe-config.json, harnesses.json, six collectors, the adapter contract and two adapters,
+three offline suites totalling 79 tests), `install.ps1`, `.gitignore`, both ceiling suites,
+README.md, Architecture.md (new Layer 6), `.claude/CLAUDE.md`, `.claude/rules/workflows.md`
+(including the two stale "skills have no mirror" sentences, which contradicted README, and the
+missing `-Personal` step), `.claude/rules/testing.md`.
+
+
+## 2026-08-31 - rt-observe phase 3: the loopback server, the rt-dashboard launcher, the view
+
+The dashboard itself. `rt_state.py --serve` binds `127.0.0.1` only (a non-loopback bind is
+refused before a socket exists), mints a session token that `POST /api/action` requires, and
+serves four routes behind a per-section TTL cache. `rt-dashboard.ps1` / `.sh` / `.bat`, a VS
+Code task and `/rt-dashboard` all reach the same launcher, whose only decision is which Python
+to use: with none found it names every candidate and exits 2. The view is one self-contained
+file with no CDN and no build step, in both themes, from a 400px panel to a wide monitor; its
+tokens are extracted to `assets/rt-tokens.css`, the first shared token file here.
+
+Six defects were found by rendering the page and measuring it, not by reading the code, and all
+six are fixed with a test each: the account name reached `/api/state` twice (a session prompt is
+free text and quotes home paths, and two collectors reported an expanded `~`), five MCP servers
+all displayed as "plugin" because the roster split a name on its first colon, French Windows
+netstat broke a strict cp1252 decode inside subprocess's reader thread so a held port reported
+"no listener", a refused cross-origin POST desynchronised its keep-alive connection, a section
+still collecting rendered under the word "unavailable", and the rendered font floor was 9px.
+The redaction is now one shared `rt_redact.py` rather than four near-copies, two of which did
+not exist where they were needed.
+
+Files: `.claude/skills/rt-observe/` (`rt_server.py`, `rt_redact.py`, the two canonical
+launchers, `assets/rt_state.html`, `observe-config.json`, three more offline suites totalling 89
+tests), `assets/rt-tokens.css`, `rt-dashboard.{ps1,sh,bat}`, `.vscode/tasks.json`,
+`.claude/commands/rt-dashboard.md`, README.md, Architecture.md, `.claude/CLAUDE.md`,
+`.claude/rules/workflows.md`, `.claude/rules/testing.md`.
+
+## 2026-08-31 - six stray graph roots, and the rule that did not prevent them
+
+The refresh takes a directory. Nothing said WHICH directory, and pointed at a subdirectory the
+tool silently treats that subdirectory as its own project root: it writes a second partial graph
+there and leaves the repository graph untouched, with no error, no warning and no flag to
+prevent it. Two sessions did this on consecutive days.
+
+A test now walks the clone and fails when more than one graph root exists. On its FIRST run it
+found four more nobody knew about - six in total across at least three sessions, 1629 nodes of
+derived data, the oldest sitting undetected since the previous day. That is the measure of how
+invisible this was: every one of those runs reported success, and the graph they were meant to
+refresh had not moved.
+
+The missing half of the rule is now written in `.claude/CLAUDE.md` and `.claude/rules/security.md`,
+and `test_graph_routing.py` asserts both the rule and the absence of a second root, so the two
+cannot drift apart. All six strays were removed by `local-writer`, which is the only caller
+permitted to touch graph storage, and the repository graph was refreshed correctly from the root
+(5861 -> 6093 nodes, AST only, no model call). A semantic pass over the changed documents is
+still pending and is the operator's to authorise.
+
+Files: `.claude/hooks/Test/test_graph_routing.py` (13 -> 18 tests), `.claude/CLAUDE.md`,
+`.claude/rules/security.md`, `.claude/rules/testing.md`.
+
+## 2026-08-31 - the dashboard repaints values, not the page
+
+Three defects reported from the live page, all in the render layer.
+
+**Everything was rebuilt on every poll.** Each render function cleared its container and
+recreated it, so fixed labels were destroyed and rebuilt as often as the numbers beside them -
+worst in the right rail and the footer. Beyond the flicker it cost real things: scrollable panes
+lost their position every two seconds, and a text selection or a focus died with it. Fixed by a
+reconciler rather than a rewrite: each function still builds the DOM it always built, but into a
+detached container, and `morph` walks the live tree against it and writes only what differs.
+Measured after: over five polls the rail and the matrix mutate zero times, the footer five (its
+clock) and the fleet once (a session age).
+
+**The fan-out never settled.** `renderCanvas` reset every position and restarted a 320-tick
+animation on each poll, so a 1.8-second settle was relaunched every 2 seconds. The layout is now
+solved silently, positions are held between polls, and a move happens only when the graph's shape
+actually changes. Idle: 65 samples over 13 seconds, one position.
+
+**The view config was serialised once at startup** while the markup was re-read per request, so
+editing `observe-config.json` and refreshing gave a page reading `undefined` for the new key -
+NaN arithmetic and a silently broken animation rather than an error. Now rebuilt per request.
+
+Two things the investigation turned up. A shipped syntax error made the whole script fail to
+parse, and because a dead page mutates no DOM the instrument watching for repaints reported it as
+perfectly stable - a false pass from a blank page, now prevented by a `node --check` test. And
+the tween guard could deadlock: a browser that stops serving animation frames to a hidden tab
+leaves the flag set and freezes the canvas for good, so it is bounded at three times its budget.
+
+Added on request: a theme control cycling system / light / dark, remembered per browser, with the
+storage access wrapped since a private window throws on it.
+
+Files: `.claude/skills/rt-observe/assets/rt_state.html`, `observe-config.json`,
+`scripts/rt_server.py`, `scripts/rt_state.py`, `scripts/Test/test_rt_view.py` (14 -> 16 tests),
+`scripts/Test/test_rt_state.py`.
+
+- 2026-08-31 - `rt-observe` Phase 4, the action layer. `actions.json` (closed whitelist, fixed
+  argv, data not code) + `scripts/rt_actions.py` (dry run, confirm gate, append-only log at
+  `~/.claude/rt-state-actions.jsonl`, judgement by effect rather than exit code) + `GET
+  /api/actions` and the Actions panel in `assets/rt_state.html` + `.claude/hooks/rt-inbox-deliver.py`
+  and its config, declared in `settings.template.json`, for the session inbox. Also split MCP out
+  of the services section onto its own `ttl_seconds.mcp_live` timer: that key was declared at 300s
+  and consumed by nothing, so `claude mcp list` reached 28 servers on the 60s services timer. Two
+  defects found by the new suites and fixed: an action-log path that raises `ValueError` turned a
+  completed action into a 500, and output redaction ran AFTER truncation, so a home path cut in the
+  middle kept the account name in the fragment the page publishes. 69 suites green.
+
+- 2026-09-01 - rt-observe, Amendment 2 of the dashboard plan (phases 9, 10, 11). The page became
+  TABBED and stopped scrolling: four views on the left, the rail's six panels as tabs on the right,
+  tab choice in `localStorage` behind the same wrapped accessor as the theme, no page scroll
+  measured at 385, 768, 1080, 1440 and 1920. Hover detail became ONE registry instead of a
+  cell-only tooltip, so the fan-out edge that read `1 lost` now names the mirror behind the number;
+  rounded corners come from a single `--rt-radius` token in the page and in `assets/rt-tokens.css`;
+  the diagram's boxes drag and their edges follow, because every path is emitted from the node's
+  own coordinates. The Real-Time Process tab was built from the two figures in
+  `VibeDesignBook/docs/chapitres/ch02-agent.tex`, adapter-fed: `claude_code.py` folds the
+  transcript tail it already reads into steps, a current state and a token total, Copilot Chat
+  reports that it has no step timeline rather than being drawn idle, and the percentage the figure
+  asks for is REFUSED with its reason, since no transcript reports the window its tokens sit in.
+  Two page defects were found on the way and fixed: the canvas was solving a layout while its tab
+  was hidden (zero width, cached under that shape), and writing the measured height back onto the
+  drawing grew its own wrapper on every poll. 26 tests added across test_rt_view.py (47) and
+  test_adapters.py (32); 69 suites green.

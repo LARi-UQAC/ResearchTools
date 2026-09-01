@@ -39,6 +39,68 @@
 
 **Tech Stack:** Python 3.13, `pyhanko` (MIT), `cryptography`, `pypdf` (BSD-3, for the pre-flight inspection), standard library.
 
+## CORRECTION, 2026-08-31 - what this unit actually builds
+
+The scope-change block above says `sign_pdf` takes bytes and returns bytes. The
+published-interface table below still takes `in_path` and `out_path`, and
+`signature_fields` and `preflight` still take a path. This block replaces them.
+Where an older section disagrees with this one, this one wins.
+
+RT-4 consumes nothing from RT-1, RT-2 or RT-3. Signing a PDF needs no downloader,
+no widget dump and no filler.
+
+### Corrected interfaces published by RT-4
+
+| Name | Signature |
+|---|---|
+| `Signer` | protocol, `sign(pdf_bytes: bytes, field_name: str, reason: str) -> bytes` |
+| `SelfSignedSigner` | `SelfSignedSigner(cert_dir: str, common_name: str = ..., validity_days: int = 365)` |
+| `build_signer` | `build_signer(provider: str, **options: Any) -> Signer` |
+| `signature_fields` | `signature_fields(pdf: str \| bytes) -> list[dict]` |
+| `preflight` | `preflight(pdf: str \| bytes, field_name: str \| None = None) -> str` |
+| `sign_pdf` | `sign_pdf(pdf_bytes: bytes, signer: Signer, field_name: str \| None = None, reason: str = DEFAULT_REASON) -> bytes` |
+| `SigningError` | `class SigningError(RuntimeError)` |
+| `DEFAULT_REASON` | `str` |
+
+Bytes in, bytes out, for the same reason as RT-2 and RT-3: TT-8 holds the PDF as
+`bytea` and RT-5 receives a request body. A path-only signature would force both
+to write a temporary file, and a signing service that writes the document it is
+signing to disk is worse than one that does not.
+
+`sign_pdf` returns the signed PDF rather than a result dictionary. What the old
+shape reported is either already known to the caller (`field`, `reason`) or is a
+claim better proved than stated: `incremental: True` was a constant in a
+dictionary, not a fact about the file. The three-signature test below proves it
+instead.
+
+### The requirement that carries this unit
+
+**A new signature must preserve every previous one.** One form collects three
+signatures, from the student, the professor and the Direction, in separate
+requests hours or days apart. Each must be a PAdES incremental update appended
+to the document as it stood.
+
+Asserting that the output begins with the input bytes is necessary and not
+sufficient: a file can carry the earlier bytes and still have a broken earlier
+signature. The test signs one document three times on three fields and asks
+pyHanko to validate all three afterwards.
+
+This is also why RT-3 refuses to fill a document that is already signed. pypdf
+rewrites, so filling after signing voids what signing preserved.
+
+### The certificate is the only state in the service
+
+`SelfSignedSigner` generates development material on demand into a directory
+that is never committed. It exists so implementation proceeds while the
+production credential is undecided, and `build_signer` is the seam where that
+decision lands as configuration rather than as a code change.
+
+**It is a development default, and the code says so.** A self-signed certificate
+is exactly what an institutional office is most likely to reject, so a signed
+document produced with it must never be presented as one an office has accepted.
+
+---
+
 ## Global Constraints
 
 - Definition files (agents, skills, commands) are **English-only**.
@@ -73,7 +135,7 @@
 
 ---
 
-## Interfaces consumed
+## Interfaces consumed (SUPERSEDED - RT-4 consumes nothing from earlier units)
 
 From RT-1 `form_registry.py`: `require_fresh_map(form_id, maps_dir)`, `StaleMapError`, `MAPS_DIR`.
 

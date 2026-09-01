@@ -4,12 +4,12 @@ Shared architecture document for the two repositories that make up the UQAC form
 **ResearchTools** (`LARi-UQAC/ResearchTools`) and **ThesisTracker** (`JdUmuhoza/ThesisTracker`).
 The same file is committed to `main` in both, so either checkout tells the whole story.
 
-**Status: in progress. 9 of 20 units delivered.** Twenty branches carry one plan document each,
+**Status: in progress. 10 of 20 units delivered.** Twenty branches carry one plan document each,
 and twenty-one issues track them. Written 2026-07-29.
 
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
 with the ingest-contract fix that RT-1 and RT-2 found. RT-1 and RT-2 are merged to `main` here;
-RT-3 is on `feat/uqac-forms-filler`. TT-7 (email one-time codes) is built but **excluded by
+RT-3 is merged; RT-4 is on `feat/uqac-forms-signer`. TT-7 (email one-time codes) is built but **excluded by
 design** until UQAC provides a mail relay: merging it would replace the only working sign-in with
 a code nothing can deliver. It also carries the `direction` role, so it gates TT-10.
 
@@ -852,7 +852,7 @@ critical path and can land last.
 | RT-1 | `feat/uqac-forms-registry` | ResearchTools #4 | `uqac-forms` skill scaffold and the validated PDF-ingest contract (`%PDF` magic, size cap, https only, capped redirects). **Scope reduced:** the registry and the drift check moved to TT-8. **Delivered 2026-08-31.** |
 | RT-2 | `feat/uqac-forms-field-map` | ResearchTools #5 | `dump_widgets` with byte-exact names and `/AP /N` on-states, and `diff_widgets(a, b)` for drift reporting. **Scope reduced:** the map and the vocabulary are TT-8's rows. **Delivered 2026-08-31.** |
 | RT-3 | `feat/uqac-forms-filler` | ResearchTools #6 | Stateless `fill(pdf_bytes, values, flatten_fields) -> bytes`, `NeedAppearances`, selective field locking. **Scope reduced:** no profile, no map, no stale gate. **Delivered 2026-08-31.** |
-| RT-4 | `feat/uqac-forms-signer` | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. |
+| RT-4 | `feat/uqac-forms-signer` | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. **Delivered 2026-08-31.** |
 | RT-5 | `feat/uqac-forms-service` | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. |
 | RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag |
 | RT-7 | `feat/corpus-index` | ResearchTools #10 | Content-addressed parse cache, deterministic chunker, injected embedder, pgvector store, opt-in build |

@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Caps for rt-inbox-deliver.py, the UserPromptSubmit hook that hands a session the",
+    "messages the rt-observe dashboard left for it.",
+    "R0: these live here rather than in the hook so a machine can retune delivery without",
+    "editing Python. R4 provenance: CHOSEN on 2026-08-31, sized so a handful of short",
+    "operator notes reach a turn while a flooded inbox cannot fill a context window.",
+    "Setting enabled to false, deleting this file, or breaking its JSON disables delivery",
+    "in SILENCE and the hook still exits 0 (R11). That matters more here than anywhere",
+    "else in this repository: a UserPromptSubmit hook that exits non-zero refuses the",
+    "prompt itself, so a broken inbox would take the whole session with it."
+  ],
+
+  "enabled": true,
+
+  "inbox_root": "~/.claude/rt-inbox",
+  "max_messages": 10,
+  "max_chars": 4000
+}

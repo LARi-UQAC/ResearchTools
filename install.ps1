@@ -33,6 +33,13 @@
       .claude/skills/AGENTS.md         Nested AGENTS.md appended to the root one when
                                        Codex runs with a cwd inside that tree.
 
+    GENERATOR INTENT LIVES IN DATA, not here: mirror-policy.json at the repository
+    root carries the Copilot stub threshold, Copilot's hard limit, both Codex
+    ceilings, the session-mode skip list, the declared orphan mirrors, and the list
+    of target dialects. This script reads it and so does the rt-observe collector,
+    which is what lets a reader tell a deliberately empty mirror cell from a lost
+    one without being able to run PowerShell.
+
     Skills have no Copilot equivalent: they are repo folders the agents read
     directly (.claude/skills/<name>/SKILL.md), so they work from any tool that
     can read the repository. Codex is the exception - it has a native skill
@@ -53,19 +60,29 @@
     .\install.ps1 -Personal   # also copy Copilot agents to ~/.copilot/agents
                                      # (available in every project via Copilot CLI)
     .\install.ps1 -Profile cosmetic   # select the active domain profile
+    .\install.ps1 -Manifest           # also write .rt-mirrors.json (verdicts + policy hash)
 #>
 param(
-    [int]$CopilotStubThreshold = 28000,  # keep margin under the 30k hard limit
-    # Codex's two documented ceilings, verified 2026-08-28 against
-    # learn.chatgpt.com/docs/build-skills and
-    # learn.chatgpt.com/docs/agent-configuration/agents-md. The skills list gets
-    # 2% of the model's context window, or 8000 characters when that window is
-    # unknown; project_doc_max_bytes caps the concatenated AGENTS.md chain at
-    # 32 KiB. Both are Codex-side defaults a user can raise, so they are the
-    # conservative case, not a constant of this repo.
-    [int]$CodexSkillListBudget = 8000,
-    [int]$CodexDocMaxBytes = 32768,
+    # The three generator-intent values below - the Copilot stub threshold, both
+    # Codex ceilings, and the session-mode skip list further down - are NOT
+    # declared here any more. They live in mirror-policy.json at the repository
+    # root, because install.ps1 was the only thing that knew them and PowerShell
+    # is not readable to most of the people who clone this repo. The collector
+    # behind the rt-observe dashboard reads the same file, which is what lets it
+    # tell an empty cell that is BY DESIGN from one that is a LOSS.
+    #
+    # Passing one of these explicitly still overrides the policy, for a one-off
+    # experiment. Omitting it - the normal case - takes the policy value.
+    [int]$CopilotStubThreshold,
+    [int]$CodexSkillListBudget,
+    [int]$CodexDocMaxBytes,
     [switch]$Personal,
+    # Write .rt-mirrors.json: the verdict this run computed for every target,
+    # plus the policy hash it used. Gitignored and machine-local, exactly like
+    # .rt-green.json. The dashboard treats it as an enrichment, never a
+    # prerequisite: with no manifest the matrix is still complete, it simply
+    # cannot report drift SINCE an install nobody ran.
+    [switch]$Manifest,
     # -Profile also works ($PROFILE is a PowerShell automatic variable, hence the alias)
     [Alias('Profile')][string]$DomainProfile
 )
@@ -76,6 +93,54 @@ $ErrorActionPreference = "Stop"
 $utf8NoBom  = New-Object System.Text.UTF8Encoding($false)
 $repoRoot   = $PSScriptRoot
 $agentsDir  = Join-Path $repoRoot ".claude\agents"
+
+# --- Generator intent, read from data rather than declared here -------------
+# A missing or unparsable policy is an explicit stop naming the file (R3). It is
+# never defaulted: a silent fallback here would regenerate every mirror against
+# invented thresholds and report [OK] for all of them, which is precisely the
+# green-looking failure this repository keeps legislating against.
+
+$policyPath = Join-Path $repoRoot "mirror-policy.json"
+if (-not (Test-Path $policyPath)) {
+    throw "mirror-policy.json not found at $policyPath. It carries the Copilot stub threshold, both Codex ceilings and the session-mode skip list; install.ps1 no longer declares any of them."
+}
+$policyRaw = [System.IO.File]::ReadAllText($policyPath, [System.Text.Encoding]::UTF8)
+try {
+    $policy = $policyRaw | ConvertFrom-Json
+} catch {
+    throw "mirror-policy.json does not parse: $($_.Exception.Message)"
+}
+$policyHash = (Get-FileHash -Path $policyPath -Algorithm SHA256).Hash
+
+function Get-PolicyInt([string]$key) {
+    if (-not $policy.thresholds.PSObject.Properties.Name.Contains($key)) {
+        throw "mirror-policy.json declares no thresholds.$key"
+    }
+    $node = $policy.thresholds.$key
+    if ($null -eq $node.value) { throw "mirror-policy.json: thresholds.$key has no 'value'" }
+    return [int]$node.value
+}
+
+# An explicitly passed parameter still wins, for a one-off experiment; anything
+# omitted takes the policy value. $PSBoundParameters is the exact test, since an
+# unbound [int] is indistinguishable from a deliberate 0 by its value alone.
+if (-not $PSBoundParameters.ContainsKey('CopilotStubThreshold')) { $CopilotStubThreshold = Get-PolicyInt 'copilot_stub_threshold' }
+if (-not $PSBoundParameters.ContainsKey('CodexSkillListBudget'))  { $CodexSkillListBudget  = Get-PolicyInt 'codex_skill_list_budget' }
+if (-not $PSBoundParameters.ContainsKey('CodexDocMaxBytes'))      { $CodexDocMaxBytes      = Get-PolicyInt 'codex_doc_max_bytes' }
+$CopilotHardLimit = Get-PolicyInt 'copilot_hard_limit'
+
+# --- Verdict recorder: what this run actually did, for -Manifest ------------
+# install.ps1 already decides every verdict; it simply threw them away after
+# printing. Collecting them costs nothing and gives the dashboard a second,
+# independent source: the policy says what was INTENDED, the filesystem says what
+# IS, and this says what the last generation DID.
+
+$script:MirrorVerdicts = New-Object System.Collections.ArrayList
+function Add-MirrorVerdict([string]$Target, [string]$Name, [string]$State, [hashtable]$Detail) {
+    $record = [ordered]@{ target = $Target; name = $Name; state = $State }
+    if ($Detail) { foreach ($k in $Detail.Keys) { $record[$k] = $Detail[$k] } }
+    [void]$script:MirrorVerdicts.Add([pscustomobject]$record)
+}
 
 function Write-Ok([string]$text)   { Write-Host "  [OK]  $text" -ForegroundColor Green }
 function Write-Skip([string]$text) { Write-Host "  [--]  $text" -ForegroundColor DarkGray }
@@ -174,7 +239,7 @@ Hard constraints carried over from the full definition:
         $mode = "stub"
     }
     $out = "---`nname: $($a.Name)`n$($a.DescriptionLine)`n---`n`n$body`n"
-    if ($out.Length -gt 30000) { throw "$($a.Name): generated Copilot profile exceeds 30k" }
+    if ($out.Length -gt $CopilotHardLimit) { throw "$($a.Name): generated Copilot profile exceeds $CopilotHardLimit characters (mirror-policy.json thresholds.copilot_hard_limit)" }
     [System.IO.File]::WriteAllText((Join-Path $ghDir "$($a.Name).agent.md"), $out, $utf8NoBom)
     if ($mode -eq "stub") {
         # A stub carries none of the agent's instructions, only a pointer to the
@@ -183,8 +248,10 @@ Hard constraints carried over from the full definition:
         # it must not be printed as a green [OK].
         Write-Host ("  [STUB] .github/agents/{0}.agent.md  (body {1} > {2}; Copilot gets a pointer, not the instructions)" -f `
             $a.Name, $a.Body.Length, $CopilotStubThreshold) -ForegroundColor Yellow
+        Add-MirrorVerdict 'copilot-agents' $a.Name 'stubbed' @{ body_chars = $a.Body.Length; threshold = $CopilotStubThreshold; written_chars = $out.Length }
     } else {
         Write-Ok (".github/agents/{0}.agent.md  ({1}, {2} chars)" -f $a.Name, $mode, $out.Length)
+        Add-MirrorVerdict 'copilot-agents' $a.Name 'ok' @{ body_chars = $a.Body.Length; written_chars = $out.Length }
     }
 }
 
@@ -196,6 +263,7 @@ if ($Personal) {
     Get-ChildItem $ghDir -File -Filter *.agent.md | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $personalDir $_.Name) -Force
         Write-Ok ("~/.copilot/agents/{0}" -f $_.Name)
+        Add-MirrorVerdict 'copilot-cli-agents' ($_.Name -replace '\.agent\.md$', '') 'ok' $null
     }
 }
 
@@ -217,13 +285,24 @@ function Install-VSCodeUserFiles([string]$promptsDir, [string]$instructionsDir) 
 
 # --- GitHub Copilot: .github/prompts/<name>.prompt.md (from commands) -------
 
-$SessionModeCommands = @("concis", "slim", "focus", "ctx")   # Claude-only output modes
+# The skip list is generator INTENT, so it lives in mirror-policy.json with the
+# thresholds. An absent prompt mirror for one of these names is BY DESIGN; the
+# collector needs that distinction to avoid reporting four deliberate skips as
+# four losses, which is the defect the mirror matrix exists to prevent.
+if (-not $policy.skips.PSObject.Properties.Name.Contains('session_mode_commands')) {
+    throw "mirror-policy.json declares no skips.session_mode_commands"
+}
+$SessionModeCommands = @($policy.skips.session_mode_commands.values)
 $cmdDir = Join-Path $repoRoot ".claude\commands"
 $prDir  = Join-Path $repoRoot ".github\prompts"
 New-Item -ItemType Directory -Path $prDir -Force | Out-Null
 foreach ($cmd in (Get-ChildItem $cmdDir -File -Filter *.md)) {
     $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($cmd.Name)
-    if ($SessionModeCommands -contains $cmdName) { Write-Skip "prompt: $cmdName (Claude session mode)"; continue }
+    if ($SessionModeCommands -contains $cmdName) {
+        Write-Skip "prompt: $cmdName (Claude session mode)"
+        Add-MirrorVerdict 'copilot-prompts' $cmdName 'by-design' @{ reason = 'session_mode_commands' }
+        continue
+    }
     $raw = [System.IO.File]::ReadAllText($cmd.FullName, [System.Text.Encoding]::UTF8)
     if ($raw -match '(?s)^---') {
         $c = Read-AgentFile $cmd.FullName
@@ -244,6 +323,7 @@ foreach ($cmd in (Get-ChildItem $cmdDir -File -Filter *.md)) {
     $out = "---`n$($c.DescriptionLine)`n---`n`n$body`n"
     [System.IO.File]::WriteAllText((Join-Path $prDir "$cmdName.prompt.md"), $out, $utf8NoBom)
     Write-Ok ".github/prompts/$cmdName.prompt.md"
+    Add-MirrorVerdict 'copilot-prompts' $cmdName 'ok' $null
 }
 
 # --- GitHub Copilot: .github/instructions/<name>.instructions.md (from rules)
@@ -257,6 +337,7 @@ foreach ($rule in (Get-ChildItem $rulesDir -File -Filter *.md)) {
     $out = "---`napplyTo: `"**`"`n---`n`n$ruleBody"
     [System.IO.File]::WriteAllText((Join-Path $insDir "$ruleName.instructions.md"), $out, $utf8NoBom)
     Write-Ok ".github/instructions/$ruleName.instructions.md"
+    Add-MirrorVerdict 'copilot-instructions' $ruleName 'ok' $null
 }
 
 # --- GitHub Copilot: master .github/copilot-instructions.md ------------------
@@ -331,6 +412,7 @@ not this mirror.
 "@
 [System.IO.File]::WriteAllText((Join-Path $repoRoot ".github\copilot-instructions.md"), "$masterOut`n", $utf8NoBom)
 Write-Ok ".github/copilot-instructions.md"
+Add-MirrorVerdict 'copilot-master' 'copilot-instructions.md' 'ok' $null
 
 if ($Personal) { Install-VSCodeUserFiles $prDir $insDir }
 
@@ -393,6 +475,7 @@ ResearchTools script by path; it holds no logic of its own.
 "@
 [System.IO.File]::WriteAllText((Join-Path $ctDir "researchtools.md"), "$ctOut`n", $utf8NoBom)
 Write-Ok ".continue/rules/researchtools.md"
+Add-MirrorVerdict 'continue-rules' 'researchtools.md' 'ok' $null
 
 # --- Aider: CONVENTIONS.md mirror -------------------------------------------
 # Regenerated like the other three mirrors, so an agent change reaches Aider too.
@@ -454,6 +537,7 @@ ResearchTools script by path; it holds no logic of its own.
 "@
     [System.IO.File]::WriteAllText($convPath, "$convOut`n", $utf8NoBom)
     Write-Ok "CONVENTIONS.md"
+    Add-MirrorVerdict 'aider-conventions' 'CONVENTIONS.md' 'ok' $null
 } else {
     Write-Skip "CONVENTIONS.md hand-written (no generated marker) - not touched"
 }
@@ -521,6 +605,7 @@ LaTeX output in ``out/``.
 "@
 [System.IO.File]::WriteAllText($agentsMdPath, "$agentsMdOut`n", $utf8NoBom)
 Write-Ok "AGENTS.md"
+Add-MirrorVerdict 'agents-md' 'AGENTS.md' 'ok' $null
 
 # --- Codex: .agents/skills/<name>/SKILL.md pointer mirrors ------------------
 # Codex discovers skills by scanning .agents/skills in every directory from the
@@ -635,8 +720,10 @@ and nothing else.
     if ($desc.Length -lt $s.Description.Length) {
         Write-Host ("  [TRIM] .agents/skills/{0}/SKILL.md  (description {1} -> {2} chars to fit the Codex list budget)" -f `
             $s.Name, $s.Description.Length, $desc.Length) -ForegroundColor Yellow
+        Add-MirrorVerdict 'codex-skills' $s.Name 'trimmed' @{ description_chars = $s.Description.Length; written_chars = $desc.Length }
     } else {
         Write-Ok (".agents/skills/{0}/SKILL.md" -f $s.Name)
+        Add-MirrorVerdict 'codex-skills' $s.Name 'ok' @{ description_chars = $s.Description.Length }
     }
 }
 if ($listChars -gt $CodexSkillListBudget) {
@@ -645,6 +732,7 @@ if ($listChars -gt $CodexSkillListBudget) {
 } else {
     Write-Ok ("Codex skill list: {0} skills, {1}/{2} chars" -f $skills.Count, $listChars, $CodexSkillListBudget)
 }
+Add-MirrorVerdict 'codex-skills' '(list budget)' $(if ($listChars -gt $CodexSkillListBudget) { 'over-budget' } else { 'ok' }) @{ skills = $skills.Count; list_chars = $listChars; budget = $CodexSkillListBudget }
 
 # --- Codex: nested .claude/skills/AGENTS.md --------------------------------
 # Codex concatenates one AGENTS.md per directory from the git root down to the
@@ -690,6 +778,46 @@ if ($chainBytes -gt $CodexDocMaxBytes) {
         $chainBytes, $CodexDocMaxBytes) -ForegroundColor Yellow
 } else {
     Write-Ok (".claude/skills/AGENTS.md  (chain {0}/{1} bytes)" -f $chainBytes, $CodexDocMaxBytes)
+}
+Add-MirrorVerdict 'codex-nested-agents-md' 'AGENTS.md' $(if ($chainBytes -gt $CodexDocMaxBytes) { 'over-budget' } else { 'ok' }) @{ chain_bytes = $chainBytes; budget = $CodexDocMaxBytes }
+
+# --- -Manifest: write down the verdicts this run computed -------------------
+# Same contract as .rt-green.json: machine-local, gitignored, and an ENRICHMENT
+# for the reader rather than a prerequisite. It records the policy hash so a
+# consumer can tell a manifest written under a different policy from a current
+# one, and it records whether -Personal ran, because the ~/.copilot/agents column
+# is empty for two completely different reasons - never generated, or generated
+# and since drifted - and only this file distinguishes them.
+
+if ($Manifest) {
+    $manifestPath = Join-Path $repoRoot ".rt-mirrors.json"
+    # NOTE: not $manifest. PowerShell variable names are CASE INSENSITIVE, so
+    # $manifest IS the [switch]$Manifest parameter, and assigning a dictionary to
+    # it fails with a type error 700 lines from the parameter that caused it.
+    # Same defect class as the $h / $H collision recorded in check-deployment.ps1.
+    $manifestDoc = [ordered]@{
+        generated    = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss")
+        policy_hash  = $policyHash
+        policy_file  = "mirror-policy.json"
+        personal_run = [bool]$Personal
+        profile      = $activeProfile
+        counts       = [ordered]@{
+            agents   = $agents.Count
+            skills   = $skills.Count
+            commands = (Get-ChildItem $cmdDir -File -Filter *.md).Count
+            rules    = (Get-ChildItem $rulesDir -File -Filter *.md).Count
+        }
+        verdicts     = @($script:MirrorVerdicts)
+    }
+    $json = $manifestDoc | ConvertTo-Json -Depth 6
+    [System.IO.File]::WriteAllText($manifestPath, $json, $utf8NoBom)
+    # R9: verify the effect, not the return code. ConvertTo-Json on an empty
+    # verdict list would write a structurally valid file describing nothing.
+    $written = ([System.IO.File]::ReadAllText($manifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json)
+    if ($written.verdicts.Count -lt 1) {
+        throw ".rt-mirrors.json was written but carries no verdicts; the recorder did not run."
+    }
+    Write-Ok (".rt-mirrors.json  ({0} verdicts, policy {1})" -f $written.verdicts.Count, $policyHash.Substring(0, 12))
 }
 
 Write-Host ""

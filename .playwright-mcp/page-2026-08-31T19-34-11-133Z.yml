@@ -1,0 +1,578 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - heading "rtobserve" [level=1] [ref=f1e5]
+    - generic [ref=f1e6]: ResearchTools . feat/rt-dashboard . engineering
+    - generic [ref=f1e7]: 1 stale
+    - 'button "Colour theme: system. Activate for light." [ref=f1e8] [cursor=pointer]': theme system
+  - main [ref=f1e9]:
+    - generic [ref=f1e10]:
+      - tablist "Dashboard views" [ref=f1e11]:
+        - tab "Mirror matrix" [selected] [ref=f1e12] [cursor=pointer]
+        - tab "Fan-out" [ref=f1e13] [cursor=pointer]
+        - tab "Sessions" [ref=f1e14] [cursor=pointer]
+        - tab "Real-Time Process" [ref=f1e15] [cursor=pointer]
+      - tabpanel "Mirror matrix" [ref=f1e16]:
+        - generic [ref=f1e17]:
+          - heading "Mirror matrix" [level=2] [ref=f1e18]
+          - paragraph [ref=f1e19]: 134 mirrors across 13 dialects. 1 mirror needs regenerating. Open one to read which command writes it.
+          - generic [ref=f1e21]:
+            - checkbox "Show only lost, stale and orphan" [ref=f1e22]
+            - text: Show only lost, stale and orphan
+        - generic [ref=f1e23]:
+          - generic [ref=f1e24]:
+            - generic [ref=f1e25]:
+              - generic [ref=f1e26]: Agents . 17 defined
+              - table [ref=f1e27]:
+                - rowgroup [ref=f1e28]:
+                  - row [ref=f1e29]:
+                    - columnheader [ref=f1e30]
+                    - columnheader [ref=f1e31]:
+                      - text: Copilot
+                      - emphasis [ref=f1e32]: repo
+                    - columnheader [ref=f1e33]:
+                      - text: Copilot CLI
+                      - emphasis [ref=f1e34]: user . -Personal
+                    - columnheader [ref=f1e35]:
+                      - text: opencode
+                      - emphasis [ref=f1e36]: repo
+                - rowgroup [ref=f1e37]:
+                  - row [ref=f1e38]:
+                    - rowheader "authoring-loop" [ref=f1e39]
+                    - cell [ref=f1e40]:
+                      - 'button "authoring-loop in Copilot: ok. present, and it matches its source" [ref=f1e41] [cursor=pointer]'
+                    - cell [ref=f1e42]:
+                      - 'button "authoring-loop in Copilot CLI: ok. present, and it matches its source" [ref=f1e43] [cursor=pointer]'
+                    - cell [ref=f1e44]:
+                      - 'button "authoring-loop in opencode: ok. present, and it matches its source" [ref=f1e45] [cursor=pointer]'
+                  - row [ref=f1e46]:
+                    - rowheader "bib-cleaner" [ref=f1e47]
+                    - cell [ref=f1e48]:
+                      - 'button "bib-cleaner in Copilot: ok. present, and it matches its source" [ref=f1e49] [cursor=pointer]'
+                    - cell [ref=f1e50]:
+                      - 'button "bib-cleaner in Copilot CLI: ok. present, and it matches its source" [ref=f1e51] [cursor=pointer]'
+                    - cell [ref=f1e52]:
+                      - 'button "bib-cleaner in opencode: ok. present, and it matches its source" [ref=f1e53] [cursor=pointer]'
+                  - row [ref=f1e54]:
+                    - rowheader "cover-paper" [ref=f1e55]
+                    - cell [ref=f1e56]:
+                      - 'button "cover-paper in Copilot: stubbed. a pointer stands in for the body, which is over this harness''s size ceiling install.ps1 recorded this verdict: {''written_chars'': 1689, ''threshold'': 28000, ''body_chars'': 40180}" [ref=f1e57] [cursor=pointer]': ST
+                    - cell [ref=f1e58]:
+                      - 'button "cover-paper in Copilot CLI: ok. present, and it matches its source" [ref=f1e59] [cursor=pointer]'
+                    - cell [ref=f1e60]:
+                      - 'button "cover-paper in opencode: ok. present, and it matches its source" [ref=f1e61] [cursor=pointer]'
+                  - row [ref=f1e62]:
+                    - rowheader "latex-writer" [ref=f1e63]
+                    - cell [ref=f1e64]:
+                      - 'button "latex-writer in Copilot: ok. present, and it matches its source" [ref=f1e65] [cursor=pointer]'
+                    - cell [ref=f1e66]:
+                      - 'button "latex-writer in Copilot CLI: ok. present, and it matches its source" [ref=f1e67] [cursor=pointer]'
+                    - cell [ref=f1e68]:
+                      - 'button "latex-writer in opencode: ok. present, and it matches its source" [ref=f1e69] [cursor=pointer]'
+                  - row [ref=f1e70]:
+                    - rowheader "litreview-updater" [ref=f1e71]
+                    - cell [ref=f1e72]:
+                      - 'button "litreview-updater in Copilot: ok. present, and it matches its source" [ref=f1e73] [cursor=pointer]'
+                    - cell [ref=f1e74]:
+                      - 'button "litreview-updater in Copilot CLI: ok. present, and it matches its source" [ref=f1e75] [cursor=pointer]'
+                    - cell [ref=f1e76]:
+                      - 'button "litreview-updater in opencode: ok. present, and it matches its source" [ref=f1e77] [cursor=pointer]'
+                  - row [ref=f1e78]:
+                    - rowheader "local-coder" [ref=f1e79]
+                    - cell [ref=f1e80]:
+                      - 'button "local-coder in Copilot: ok. present, and it matches its source" [ref=f1e81] [cursor=pointer]'
+                    - cell [ref=f1e82]:
+                      - 'button "local-coder in Copilot CLI: ok. present, and it matches its source" [ref=f1e83] [cursor=pointer]'
+                    - cell [ref=f1e84]:
+                      - 'button "local-coder in opencode: ok. present, and it matches its source" [ref=f1e85] [cursor=pointer]'
+                  - row [ref=f1e86]:
+                    - rowheader "local-writer" [ref=f1e87]
+                    - cell [ref=f1e88]:
+                      - 'button "local-writer in Copilot: ok. present, and it matches its source" [ref=f1e89] [cursor=pointer]'
+                    - cell [ref=f1e90]:
+                      - 'button "local-writer in Copilot CLI: ok. present, and it matches its source" [ref=f1e91] [cursor=pointer]'
+                    - cell [ref=f1e92]:
+                      - 'button "local-writer in opencode: ok. present, and it matches its source" [ref=f1e93] [cursor=pointer]'
+                  - row [ref=f1e94]:
+                    - rowheader "paper-auditor" [ref=f1e95]
+                    - cell [ref=f1e96]:
+                      - 'button "paper-auditor in Copilot: stubbed. a pointer stands in for the body, which is over this harness''s size ceiling install.ps1 recorded this verdict: {''written_chars'': 1372, ''threshold'': 28000, ''body_chars'': 78561}" [ref=f1e97] [cursor=pointer]': ST
+                    - cell [ref=f1e98]:
+                      - 'button "paper-auditor in Copilot CLI: ok. present, and it matches its source" [ref=f1e99] [cursor=pointer]'
+                    - cell [ref=f1e100]:
+                      - 'button "paper-auditor in opencode: ok. present, and it matches its source" [ref=f1e101] [cursor=pointer]'
+                  - row [ref=f1e102]:
+                    - rowheader "reviewer-response" [ref=f1e103]
+                    - cell [ref=f1e104]:
+                      - 'button "reviewer-response in Copilot: stubbed. a pointer stands in for the body, which is over this harness''s size ceiling install.ps1 recorded this verdict: {''written_chars'': 1257, ''threshold'': 28000, ''body_chars'': 29178}" [ref=f1e105] [cursor=pointer]': ST
+                    - cell [ref=f1e106]:
+                      - 'button "reviewer-response in Copilot CLI: ok. present, and it matches its source" [ref=f1e107] [cursor=pointer]'
+                    - cell [ref=f1e108]:
+                      - 'button "reviewer-response in opencode: ok. present, and it matches its source" [ref=f1e109] [cursor=pointer]'
+                  - row [ref=f1e110]:
+                    - rowheader "scopus-auditor" [ref=f1e111]
+                    - cell [ref=f1e112]:
+                      - 'button "scopus-auditor in Copilot: stubbed. a pointer stands in for the body, which is over this harness''s size ceiling install.ps1 recorded this verdict: {''written_chars'': 1069, ''threshold'': 28000, ''body_chars'': 57290}" [ref=f1e113] [cursor=pointer]': ST
+                    - cell [ref=f1e114]:
+                      - 'button "scopus-auditor in Copilot CLI: ok. present, and it matches its source" [ref=f1e115] [cursor=pointer]'
+                    - cell [ref=f1e116]:
+                      - 'button "scopus-auditor in opencode: ok. present, and it matches its source" [ref=f1e117] [cursor=pointer]'
+                  - row [ref=f1e118]:
+                    - rowheader "scopus-researcher" [ref=f1e119]
+                    - cell [ref=f1e120]:
+                      - 'button "scopus-researcher in Copilot: stubbed. a pointer stands in for the body, which is over this harness''s size ceiling install.ps1 recorded this verdict: {''written_chars'': 1160, ''threshold'': 28000, ''body_chars'': 73807}" [ref=f1e121] [cursor=pointer]': ST
+                    - cell [ref=f1e122]:
+                      - 'button "scopus-researcher in Copilot CLI: ok. present, and it matches its source" [ref=f1e123] [cursor=pointer]'
+                    - cell [ref=f1e124]:
+                      - 'button "scopus-researcher in opencode: ok. present, and it matches its source" [ref=f1e125] [cursor=pointer]'
+                  - row [ref=f1e126]:
+                    - rowheader "submit-checker" [ref=f1e127]
+                    - cell [ref=f1e128]:
+                      - 'button "submit-checker in Copilot: ok. present, and it matches its source" [ref=f1e129] [cursor=pointer]'
+                    - cell [ref=f1e130]:
+                      - 'button "submit-checker in Copilot CLI: ok. present, and it matches its source" [ref=f1e131] [cursor=pointer]'
+                    - cell [ref=f1e132]:
+                      - 'button "submit-checker in opencode: ok. present, and it matches its source" [ref=f1e133] [cursor=pointer]'
+                  - row [ref=f1e134]:
+                    - rowheader "talk-builder" [ref=f1e135]
+                    - cell [ref=f1e136]:
+                      - 'button "talk-builder in Copilot: ok. present, and it matches its source" [ref=f1e137] [cursor=pointer]'
+                    - cell [ref=f1e138]:
+                      - 'button "talk-builder in Copilot CLI: ok. present, and it matches its source" [ref=f1e139] [cursor=pointer]'
+                    - cell [ref=f1e140]:
+                      - 'button "talk-builder in opencode: ok. present, and it matches its source" [ref=f1e141] [cursor=pointer]'
+                  - row [ref=f1e142]:
+                    - rowheader "thesis-auditor" [ref=f1e143]
+                    - cell [ref=f1e144]:
+                      - 'button "thesis-auditor in Copilot: stubbed. a pointer stands in for the body, which is over this harness''s size ceiling install.ps1 recorded this verdict: {''written_chars'': 1210, ''threshold'': 28000, ''body_chars'': 83512}" [ref=f1e145] [cursor=pointer]': ST
+                    - cell [ref=f1e146]:
+                      - 'button "thesis-auditor in Copilot CLI: ok. present, and it matches its source" [ref=f1e147] [cursor=pointer]'
+                    - cell [ref=f1e148]:
+                      - 'button "thesis-auditor in opencode: ok. present, and it matches its source" [ref=f1e149] [cursor=pointer]'
+                  - row [ref=f1e150]:
+                    - rowheader "thesis-proposal-auditor" [ref=f1e151]
+                    - cell [ref=f1e152]:
+                      - 'button "thesis-proposal-auditor in Copilot: stubbed. a pointer stands in for the body, which is over this harness''s size ceiling install.ps1 recorded this verdict: {''written_chars'': 1461, ''threshold'': 28000, ''body_chars'': 77233}" [ref=f1e153] [cursor=pointer]': ST
+                    - cell [ref=f1e154]:
+                      - 'button "thesis-proposal-auditor in Copilot CLI: ok. present, and it matches its source" [ref=f1e155] [cursor=pointer]'
+                    - cell [ref=f1e156]:
+                      - 'button "thesis-proposal-auditor in opencode: ok. present, and it matches its source" [ref=f1e157] [cursor=pointer]'
+                  - row [ref=f1e158]:
+                    - rowheader "thesis-to-paper" [ref=f1e159]
+                    - cell [ref=f1e160]:
+                      - 'button "thesis-to-paper in Copilot: ok. present, and it matches its source" [ref=f1e161] [cursor=pointer]'
+                    - cell [ref=f1e162]:
+                      - 'button "thesis-to-paper in Copilot CLI: ok. present, and it matches its source" [ref=f1e163] [cursor=pointer]'
+                    - cell [ref=f1e164]:
+                      - 'button "thesis-to-paper in opencode: ok. present, and it matches its source" [ref=f1e165] [cursor=pointer]'
+                  - row [ref=f1e166]:
+                    - rowheader "word-to-latex" [ref=f1e167]
+                    - cell [ref=f1e168]:
+                      - 'button "word-to-latex in Copilot: ok. present, and it matches its source" [ref=f1e169] [cursor=pointer]'
+                    - cell [ref=f1e170]:
+                      - 'button "word-to-latex in Copilot CLI: ok. present, and it matches its source" [ref=f1e171] [cursor=pointer]'
+                    - cell [ref=f1e172]:
+                      - 'button "word-to-latex in opencode: ok. present, and it matches its source" [ref=f1e173] [cursor=pointer]'
+            - generic [ref=f1e174]:
+              - generic [ref=f1e175]: Skills . 16 defined
+              - table [ref=f1e176]:
+                - rowgroup [ref=f1e177]:
+                  - row [ref=f1e178]:
+                    - columnheader [ref=f1e179]
+                    - columnheader [ref=f1e180]:
+                      - text: Codex
+                      - emphasis [ref=f1e181]: repo
+                - rowgroup [ref=f1e182]:
+                  - row [ref=f1e183]:
+                    - rowheader "deliberation" [ref=f1e184]
+                    - cell [ref=f1e185]:
+                      - 'button "deliberation in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 626, ''written_chars'': 301}" [ref=f1e186] [cursor=pointer]': TR
+                  - row [ref=f1e187]:
+                    - rowheader "drawio2tikz" [ref=f1e188]
+                    - cell [ref=f1e189]:
+                      - 'button "drawio2tikz in Codex: ok. present, and it matches its source" [ref=f1e190] [cursor=pointer]'
+                  - row [ref=f1e191]:
+                    - rowheader "extract-futureworks" [ref=f1e192]
+                    - cell [ref=f1e193]:
+                      - 'button "extract-futureworks in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 736, ''written_chars'': 286}" [ref=f1e194] [cursor=pointer]': TR
+                  - row [ref=f1e195]:
+                    - rowheader "extract-statistic" [ref=f1e196]
+                    - cell [ref=f1e197]:
+                      - 'button "extract-statistic in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 734, ''written_chars'': 273}" [ref=f1e198] [cursor=pointer]': TR
+                  - row [ref=f1e199]:
+                    - rowheader "geolocalisation" [ref=f1e200]
+                    - cell [ref=f1e201]:
+                      - 'button "geolocalisation in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 1019, ''written_chars'': 69}" [ref=f1e202] [cursor=pointer]': TR
+                  - row [ref=f1e203]:
+                    - rowheader "latex-hygiene" [ref=f1e204]
+                    - cell [ref=f1e205]:
+                      - 'button "latex-hygiene in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 524, ''written_chars'': 376}" [ref=f1e206] [cursor=pointer]': TR
+                  - row [ref=f1e207]:
+                    - rowheader "loop-engineer" [ref=f1e208]
+                    - cell [ref=f1e209]:
+                      - 'button "loop-engineer in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 662, ''written_chars'': 480}" [ref=f1e210] [cursor=pointer]': TR
+                  - row [ref=f1e211]:
+                    - rowheader "obsidian-cli" [ref=f1e212]
+                    - cell [ref=f1e213]:
+                      - 'button "obsidian-cli in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 560, ''written_chars'': 420}" [ref=f1e214] [cursor=pointer]': TR
+                  - row [ref=f1e215]:
+                    - rowheader "opt-local-vram-llm" [ref=f1e216]
+                    - cell [ref=f1e217]:
+                      - 'button "opt-local-vram-llm in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 663, ''written_chars'': 426}" [ref=f1e218] [cursor=pointer]': TR
+                  - row [ref=f1e219]:
+                    - rowheader "paper2talk" [ref=f1e220]
+                    - cell [ref=f1e221]:
+                      - 'button "paper2talk in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 884, ''written_chars'': 462}" [ref=f1e222] [cursor=pointer]': TR
+                  - row [ref=f1e223]:
+                    - rowheader "recommendation-letter" [ref=f1e224]
+                    - cell [ref=f1e225]:
+                      - 'button "recommendation-letter in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 743, ''written_chars'': 403}" [ref=f1e226] [cursor=pointer]': TR
+                  - row [ref=f1e227]:
+                    - rowheader "rt-observe" [ref=f1e228]
+                    - cell [ref=f1e229]:
+                      - 'button "rt-observe in Codex: ok. present, and it matches its source" [ref=f1e230] [cursor=pointer]'
+                  - row [ref=f1e231]:
+                    - rowheader "scholar-evaluation" [ref=f1e232]
+                    - cell [ref=f1e233]:
+                      - 'button "scholar-evaluation in Codex: trimmed. present with a shortened description, to fit this harness''s list budget install.ps1 recorded this verdict: {''description_chars'': 527, ''written_chars'': 321}" [ref=f1e234] [cursor=pointer]': TR
+                  - row [ref=f1e235]:
+                    - rowheader "scientific-writing" [ref=f1e236]
+                    - cell [ref=f1e237]:
+                      - 'button "scientific-writing in Codex: ok. present, and it matches its source" [ref=f1e238] [cursor=pointer]'
+                  - row [ref=f1e239]:
+                    - rowheader "scopus" [ref=f1e240]
+                    - cell [ref=f1e241]:
+                      - 'button "scopus in Codex: ok. present, and it matches its source" [ref=f1e242] [cursor=pointer]'
+                  - row [ref=f1e243]:
+                    - rowheader "word2latex" [ref=f1e244]
+                    - cell [ref=f1e245]:
+                      - 'button "word2latex in Codex: ok. present, and it matches its source" [ref=f1e246] [cursor=pointer]'
+            - generic [ref=f1e247]:
+              - generic [ref=f1e248]: Commands . 25 defined
+              - table [ref=f1e249]:
+                - rowgroup [ref=f1e250]:
+                  - row [ref=f1e251]:
+                    - columnheader [ref=f1e252]
+                    - columnheader [ref=f1e253]:
+                      - text: Copilot
+                      - emphasis [ref=f1e254]: repo
+                    - columnheader [ref=f1e255]:
+                      - text: VS Code user
+                      - emphasis [ref=f1e256]: user . -Personal
+                - rowgroup [ref=f1e257]:
+                  - row [ref=f1e258]:
+                    - rowheader "auditpaper" [ref=f1e259]
+                    - cell [ref=f1e260]:
+                      - 'button "auditpaper in Copilot: ok. present, and it matches its source" [ref=f1e261] [cursor=pointer]'
+                    - cell [ref=f1e262]:
+                      - 'button "auditpaper in VS Code user: ok. present, and it matches its source" [ref=f1e263] [cursor=pointer]'
+                  - row [ref=f1e264]:
+                    - rowheader "auditreview" [ref=f1e265]
+                    - cell [ref=f1e266]:
+                      - 'button "auditreview in Copilot: ok. present, and it matches its source" [ref=f1e267] [cursor=pointer]'
+                    - cell [ref=f1e268]:
+                      - 'button "auditreview in VS Code user: ok. present, and it matches its source" [ref=f1e269] [cursor=pointer]'
+                  - row [ref=f1e270]:
+                    - rowheader "auditthesis" [ref=f1e271]
+                    - cell [ref=f1e272]:
+                      - 'button "auditthesis in Copilot: ok. present, and it matches its source" [ref=f1e273] [cursor=pointer]'
+                    - cell [ref=f1e274]:
+                      - 'button "auditthesis in VS Code user: ok. present, and it matches its source" [ref=f1e275] [cursor=pointer]'
+                  - row [ref=f1e276]:
+                    - rowheader "bibclean" [ref=f1e277]
+                    - cell [ref=f1e278]:
+                      - 'button "bibclean in Copilot: ok. present, and it matches its source" [ref=f1e279] [cursor=pointer]'
+                    - cell [ref=f1e280]:
+                      - 'button "bibclean in VS Code user: ok. present, and it matches its source" [ref=f1e281] [cursor=pointer]'
+                  - row [ref=f1e282]:
+                    - rowheader "concis" [ref=f1e283]
+                    - cell [ref=f1e284]:
+                      - 'button "concis in Copilot: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e285] [cursor=pointer]': BD
+                    - cell [ref=f1e286]:
+                      - 'button "concis in VS Code user: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e287] [cursor=pointer]': BD
+                  - row [ref=f1e288]:
+                    - rowheader "ctx" [ref=f1e289]
+                    - cell [ref=f1e290]:
+                      - 'button "ctx in Copilot: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e291] [cursor=pointer]': BD
+                    - cell [ref=f1e292]:
+                      - 'button "ctx in VS Code user: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e293] [cursor=pointer]': BD
+                  - row [ref=f1e294]:
+                    - rowheader "doc" [ref=f1e295]
+                    - cell [ref=f1e296]:
+                      - 'button "doc in Copilot: ok. present, and it matches its source" [ref=f1e297] [cursor=pointer]'
+                    - cell [ref=f1e298]:
+                      - 'button "doc in VS Code user: ok. present, and it matches its source" [ref=f1e299] [cursor=pointer]'
+                  - row [ref=f1e300]:
+                    - rowheader "focus" [ref=f1e301]
+                    - cell [ref=f1e302]:
+                      - 'button "focus in Copilot: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e303] [cursor=pointer]': BD
+                    - cell [ref=f1e304]:
+                      - 'button "focus in VS Code user: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e305] [cursor=pointer]': BD
+                  - row [ref=f1e306]:
+                    - rowheader "geolocalisation" [ref=f1e307]
+                    - cell [ref=f1e308]:
+                      - 'button "geolocalisation in Copilot: ok. present, and it matches its source" [ref=f1e309] [cursor=pointer]'
+                    - cell [ref=f1e310]:
+                      - 'button "geolocalisation in VS Code user: ok. present, and it matches its source" [ref=f1e311] [cursor=pointer]'
+                  - row [ref=f1e312]:
+                    - rowheader "latex" [ref=f1e313]
+                    - cell [ref=f1e314]:
+                      - 'button "latex in Copilot: ok. present, and it matches its source" [ref=f1e315] [cursor=pointer]'
+                    - cell [ref=f1e316]:
+                      - 'button "latex in VS Code user: ok. present, and it matches its source" [ref=f1e317] [cursor=pointer]'
+                  - row [ref=f1e318]:
+                    - rowheader "litreview" [ref=f1e319]
+                    - cell [ref=f1e320]:
+                      - 'button "litreview in Copilot: ok. present, and it matches its source" [ref=f1e321] [cursor=pointer]'
+                    - cell [ref=f1e322]:
+                      - 'button "litreview in VS Code user: ok. present, and it matches its source" [ref=f1e323] [cursor=pointer]'
+                  - row [ref=f1e324]:
+                    - rowheader "litupdate" [ref=f1e325]
+                    - cell [ref=f1e326]:
+                      - 'button "litupdate in Copilot: ok. present, and it matches its source" [ref=f1e327] [cursor=pointer]'
+                    - cell [ref=f1e328]:
+                      - 'button "litupdate in VS Code user: ok. present, and it matches its source" [ref=f1e329] [cursor=pointer]'
+                  - row [ref=f1e330]:
+                    - rowheader "loopdev" [ref=f1e331]
+                    - cell [ref=f1e332]:
+                      - 'button "loopdev in Copilot: ok. present, and it matches its source" [ref=f1e333] [cursor=pointer]'
+                    - cell [ref=f1e334]:
+                      - 'button "loopdev in VS Code user: ok. present, and it matches its source" [ref=f1e335] [cursor=pointer]'
+                  - row [ref=f1e336]:
+                    - rowheader "opt-local-vram-llm" [ref=f1e337]
+                    - cell [ref=f1e338]:
+                      - 'button "opt-local-vram-llm in Copilot: ok. present, and it matches its source" [ref=f1e339] [cursor=pointer]'
+                    - cell [ref=f1e340]:
+                      - 'button "opt-local-vram-llm in VS Code user: ok. present, and it matches its source" [ref=f1e341] [cursor=pointer]'
+                  - row [ref=f1e342]:
+                    - rowheader "recommendation-letter" [ref=f1e343]
+                    - cell [ref=f1e344]:
+                      - 'button "recommendation-letter in Copilot: ok. present, and it matches its source" [ref=f1e345] [cursor=pointer]'
+                    - cell [ref=f1e346]:
+                      - 'button "recommendation-letter in VS Code user: ok. present, and it matches its source" [ref=f1e347] [cursor=pointer]'
+                  - row [ref=f1e348]:
+                    - rowheader "ref" [ref=f1e349]
+                    - cell [ref=f1e350]:
+                      - 'button "ref in Copilot: ok. present, and it matches its source" [ref=f1e351] [cursor=pointer]'
+                    - cell [ref=f1e352]:
+                      - 'button "ref in VS Code user: ok. present, and it matches its source" [ref=f1e353] [cursor=pointer]'
+                  - row [ref=f1e354]:
+                    - rowheader "replyreviewer" [ref=f1e355]
+                    - cell [ref=f1e356]:
+                      - 'button "replyreviewer in Copilot: ok. present, and it matches its source" [ref=f1e357] [cursor=pointer]'
+                    - cell [ref=f1e358]:
+                      - 'button "replyreviewer in VS Code user: ok. present, and it matches its source" [ref=f1e359] [cursor=pointer]'
+                  - row [ref=f1e360]:
+                    - rowheader "rt-dashboard" [ref=f1e361]
+                    - cell [ref=f1e362]:
+                      - 'button "rt-dashboard in Copilot: ok. present, and it matches its source" [ref=f1e363] [cursor=pointer]'
+                    - cell [ref=f1e364]:
+                      - 'button "rt-dashboard in VS Code user: ok. present, and it matches its source" [ref=f1e365] [cursor=pointer]'
+                  - row [ref=f1e366]:
+                    - rowheader "slim" [ref=f1e367]
+                    - cell [ref=f1e368]:
+                      - 'button "slim in Copilot: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e369] [cursor=pointer]': BD
+                    - cell [ref=f1e370]:
+                      - 'button "slim in VS Code user: by design. skipped on purpose, and the policy says which rule skips it named in mirror-policy.json skips.session_mode_commands" [ref=f1e371] [cursor=pointer]': BD
+                  - row [ref=f1e372]:
+                    - rowheader "submitcheck" [ref=f1e373]
+                    - cell [ref=f1e374]:
+                      - 'button "submitcheck in Copilot: ok. present, and it matches its source" [ref=f1e375] [cursor=pointer]'
+                    - cell [ref=f1e376]:
+                      - 'button "submitcheck in VS Code user: ok. present, and it matches its source" [ref=f1e377] [cursor=pointer]'
+                  - row [ref=f1e378]:
+                    - rowheader "talk" [ref=f1e379]
+                    - cell [ref=f1e380]:
+                      - 'button "talk in Copilot: ok. present, and it matches its source" [ref=f1e381] [cursor=pointer]'
+                    - cell [ref=f1e382]:
+                      - 'button "talk in VS Code user: ok. present, and it matches its source" [ref=f1e383] [cursor=pointer]'
+                  - row [ref=f1e384]:
+                    - rowheader "test" [ref=f1e385]
+                    - cell [ref=f1e386]:
+                      - 'button "test in Copilot: ok. present, and it matches its source" [ref=f1e387] [cursor=pointer]'
+                    - cell [ref=f1e388]:
+                      - 'button "test in VS Code user: ok. present, and it matches its source" [ref=f1e389] [cursor=pointer]'
+                  - row [ref=f1e390]:
+                    - rowheader "texcheck" [ref=f1e391]
+                    - cell [ref=f1e392]:
+                      - 'button "texcheck in Copilot: ok. present, and it matches its source" [ref=f1e393] [cursor=pointer]'
+                    - cell [ref=f1e394]:
+                      - 'button "texcheck in VS Code user: ok. present, and it matches its source" [ref=f1e395] [cursor=pointer]'
+                  - row [ref=f1e396]:
+                    - rowheader "tikz" [ref=f1e397]
+                    - cell [ref=f1e398]:
+                      - 'button "tikz in Copilot: ok. present, and it matches its source" [ref=f1e399] [cursor=pointer]'
+                    - cell [ref=f1e400]:
+                      - 'button "tikz in VS Code user: ok. present, and it matches its source" [ref=f1e401] [cursor=pointer]'
+                  - row [ref=f1e402]:
+                    - rowheader "word2latex" [ref=f1e403]
+                    - cell [ref=f1e404]:
+                      - 'button "word2latex in Copilot: ok. present, and it matches its source" [ref=f1e405] [cursor=pointer]'
+                    - cell [ref=f1e406]:
+                      - 'button "word2latex in VS Code user: ok. present, and it matches its source" [ref=f1e407] [cursor=pointer]'
+            - generic [ref=f1e408]:
+              - generic [ref=f1e409]: Rules . 5 defined . 1 not in the canonical set
+              - table [ref=f1e410]:
+                - rowgroup [ref=f1e411]:
+                  - row [ref=f1e412]:
+                    - columnheader [ref=f1e413]
+                    - columnheader [ref=f1e414]:
+                      - text: Copilot
+                      - emphasis [ref=f1e415]: repo
+                    - columnheader [ref=f1e416]:
+                      - text: VS Code user
+                      - emphasis [ref=f1e417]: user . -Personal
+                      - text: 1 stale
+                - rowgroup [ref=f1e418]:
+                  - row [ref=f1e419]:
+                    - rowheader "code-style" [ref=f1e420]
+                    - cell [ref=f1e421]:
+                      - 'button "code-style in Copilot: ok. present, and it matches its source" [ref=f1e422] [cursor=pointer]'
+                    - cell [ref=f1e423]:
+                      - 'button "code-style in VS Code user: ok. present, and it matches its source" [ref=f1e424] [cursor=pointer]'
+                  - row [ref=f1e425]:
+                    - rowheader "mermaid" [ref=f1e426]
+                    - cell [ref=f1e427]:
+                      - 'button "mermaid in Copilot: by design. skipped on purpose, and the policy says which rule skips it declared in mirror-policy.json orphans_by_design" [ref=f1e428] [cursor=pointer]': BD
+                    - cell [ref=f1e429]:
+                      - 'button "mermaid in VS Code user: by design. skipped on purpose, and the policy says which rule skips it declared in mirror-policy.json orphans_by_design" [ref=f1e430] [cursor=pointer]': BD
+                  - row [ref=f1e431]:
+                    - rowheader "preferences" [ref=f1e432]
+                    - cell [ref=f1e433]:
+                      - 'button "preferences in Copilot: ok. present, and it matches its source" [ref=f1e434] [cursor=pointer]'
+                    - cell [ref=f1e435]:
+                      - 'button "preferences in VS Code user: ok. present, and it matches its source" [ref=f1e436] [cursor=pointer]'
+                  - row [ref=f1e437]:
+                    - rowheader "security" [ref=f1e438]
+                    - cell [ref=f1e439]:
+                      - 'button "security in Copilot: ok. present, and it matches its source" [ref=f1e440] [cursor=pointer]'
+                    - cell [ref=f1e441]:
+                      - 'button "security in VS Code user: ok. present, and it matches its source" [ref=f1e442] [cursor=pointer]'
+                  - row [ref=f1e443]:
+                    - rowheader "testing" [ref=f1e444]
+                    - cell [ref=f1e445]:
+                      - 'button "testing in Copilot: ok. present, and it matches its source" [ref=f1e446] [cursor=pointer]'
+                    - cell [ref=f1e447]:
+                      - 'button "testing in VS Code user: stale. present, but the source changed after it was written the canonical source is newer than its mirror; re-run install.ps1" [ref=f1e448] [cursor=pointer]': SL
+                  - row [ref=f1e449]:
+                    - rowheader "workflows" [ref=f1e450]
+                    - cell [ref=f1e451]:
+                      - 'button "workflows in Copilot: ok. present, and it matches its source" [ref=f1e452] [cursor=pointer]'
+                    - cell [ref=f1e453]:
+                      - 'button "workflows in VS Code user: ok. present, and it matches its source" [ref=f1e454] [cursor=pointer]'
+            - generic [ref=f1e455]:
+              - generic [ref=f1e456]: Single-file targets . 5
+              - list [ref=f1e457]:
+                - listitem [ref=f1e458]:
+                  - 'button "copilot-instructions.md in Copilot: ok. present, and it matches its source" [ref=f1e459] [cursor=pointer]'
+                  - generic [ref=f1e460]: Copilot
+                  - generic [ref=f1e461]: copilot-instructions.md
+                - listitem [ref=f1e462]:
+                  - 'button "researchtools.md in Continue: ok. present, and it matches its source" [ref=f1e463] [cursor=pointer]'
+                  - generic [ref=f1e464]: Continue
+                  - generic [ref=f1e465]: researchtools.md
+                  - generic [ref=f1e466]: BY DESIGN one pointer file rather than one mirror per rule.
+                - listitem [ref=f1e467]:
+                  - 'button "CONVENTIONS.md in Aider: ok. present, and it matches its source" [ref=f1e468] [cursor=pointer]'
+                  - generic [ref=f1e469]: Aider
+                  - generic [ref=f1e470]: CONVENTIONS.md
+                  - generic [ref=f1e471]: Created only when absent, so an operator's edits survive a regeneration.
+                - listitem [ref=f1e472]:
+                  - 'button "AGENTS.md in AGENTS.md readers: ok. present, and it matches its source" [ref=f1e473] [cursor=pointer]'
+                  - generic [ref=f1e474]: AGENTS.md readers
+                  - generic [ref=f1e475]: AGENTS.md
+                - listitem [ref=f1e476]:
+                  - 'button "AGENTS.md in Codex: ok. present, and it matches its source" [ref=f1e477] [cursor=pointer]'
+                  - generic [ref=f1e478]: Codex
+                  - generic [ref=f1e479]: AGENTS.md
+          - generic [ref=f1e480]:
+            - generic [ref=f1e481]:
+              - button [ref=f1e482]
+              - generic [ref=f1e483]: ok
+              - text: 105 . present, and it matches its source
+            - generic [ref=f1e484]:
+              - button [ref=f1e485]: BD
+              - generic [ref=f1e486]: by design
+              - text: 10 . skipped on purpose, and the policy says which rule skips it
+            - generic [ref=f1e487]:
+              - button [ref=f1e488]: ST
+              - generic [ref=f1e489]: stubbed
+              - text: 7 . a pointer stands in for the body, which is over this harness's size ceiling
+            - generic [ref=f1e490]:
+              - button [ref=f1e491]: TR
+              - generic [ref=f1e492]: trimmed
+              - text: 11 . present with a shortened description, to fit this harness's list budget
+            - generic [ref=f1e493]:
+              - button [ref=f1e494]: SL
+              - generic [ref=f1e495]: stale
+              - text: 1 . present, but the source changed after it was written
+            - generic [ref=f1e496]:
+              - button [ref=f1e497]: LO
+              - generic [ref=f1e498]: lost
+              - text: 0 . missing, with no reason on record. Regenerate the mirrors
+            - generic [ref=f1e499]:
+              - button [ref=f1e500]: OR
+              - generic [ref=f1e501]: orphan
+              - text: 0 . a mirror with no canonical source behind it
+            - generic [ref=f1e502]:
+              - button [ref=f1e503]: "??"
+              - generic [ref=f1e504]: unknown
+              - text: 0 . this harness is not installed here, so its cells cannot be judged
+          - generic [ref=f1e505]: "Pick any cell to read its receipt: what proved that state, when, and why."
+          - generic [ref=f1e507]:
+            - generic [ref=f1e508]:
+              - generic [ref=f1e509]: collected
+              - text: 19:34:05
+            - generic [ref=f1e510]:
+              - generic [ref=f1e511]: age
+              - text: 6 s
+            - generic [ref=f1e512]:
+              - generic [ref=f1e513]: refresh
+              - text: 15 s
+    - complementary "Repository, plan, services, code graph, hooks and actions" [ref=f1e514]:
+      - tablist "Rail panels" [ref=f1e515]:
+        - tab "Repository" [selected] [ref=f1e516] [cursor=pointer]
+        - tab "Plan" [ref=f1e517] [cursor=pointer]
+        - tab "Services" [ref=f1e518] [cursor=pointer]
+        - tab "Graph" [ref=f1e519] [cursor=pointer]
+        - tab "Hooks" [ref=f1e520] [cursor=pointer]
+        - tab "Actions" [ref=f1e521] [cursor=pointer]
+      - tabpanel "Repository" [ref=f1e522]:
+        - generic [ref=f1e523]:
+          - heading "Repository" [level=2] [ref=f1e524]
+          - generic [ref=f1e525]:
+            - term [ref=f1e526]: branch
+            - definition [ref=f1e527]: feat/rt-dashboard
+            - term [ref=f1e528]: profile
+            - definition [ref=f1e529]: engineering
+            - term [ref=f1e530]: suite
+            - definition [ref=f1e531]: green . 69 passed
+            - term [ref=f1e532]: stamp age
+            - definition [ref=f1e533]: 2 h
+          - generic [ref=f1e534]:
+            - term [ref=f1e535]: definitions
+            - definition [ref=f1e536]: 17 agents, 16 skills, 25 commands, 5 rules
+            - term [ref=f1e537]: registry
+            - definition [ref=f1e538]: well formed . 5 advisories
+          - generic [ref=f1e539]:
+            - generic [ref=f1e540]:
+              - generic [ref=f1e541]: proven by
+              - text: run-offline-tests.ps1
+            - generic [ref=f1e542]:
+              - generic [ref=f1e543]: stamped
+              - text: 13:16:15
+  - contentinfo [ref=f1e544]:
+    - generic [ref=f1e545]:
+      - generic [ref=f1e546]: drawn by
+      - text: rt_state.py
+    - generic [ref=f1e547]:
+      - generic [ref=f1e548]: generated
+      - text: 19:34:11
+    - generic [ref=f1e549]:
+      - generic [ref=f1e550]: policy
+      - text: 51BFDDBF
+    - generic [ref=f1e551]:
+      - generic [ref=f1e552]: last install
+      - text: 13:13:02
+    - generic [ref=f1e553]:
+      - generic [ref=f1e554]: root
+      - text: C:\Martin Otis\OutilsLogiciels\ResearchTools

@@ -59,6 +59,7 @@ loop-bridge-log.jsonl
 .rt-mirrors.json
 .claude/local-capability-probe.json
 
+
 # Machine-local configuration generated from a versioned template. A file a script generates
 # is never a tracked file: this one carries THIS machine's vault path and Obsidian executable,
 # and the real one lives in ~/.claude/CLAUDE.md, which setup.ps1 writes additively.
@@ -85,7 +86,9 @@ loop-bridge-log.jsonl
 # The machine-specific counterpart is settings.local.json, which is personal and stays ignored.
 /.claude/settings.local.json
 
+
 # graphify: derived from the files, regenerable and disposable. One graph per repo,
 # built from the repo root; a graph under a subdirectory is a partial graph (see
 # local-writer.md, "Updating the graph").
 graphify-out/
+

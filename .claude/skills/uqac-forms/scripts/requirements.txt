@@ -3,6 +3,7 @@
 # pdf_ingest.py : requests (validated HTTPS download)
 # field_map.py  : pypdf   (AcroForm widget enumeration, BSD-3)
 # fill_form.py  : pypdf   (writes values, NeedAppearances, field locking)
+# sign_form.py  : pyHanko (PAdES incremental-update signature, MIT)
 #
 # Later units add their own, and the licence constraint decides which:
 #   sign_form.py                : pyhanko (MIT, RT-4)
@@ -14,3 +15,4 @@
 #   pip-audit -r .claude/skills/uqac-forms/requirements.txt --strict
 requests==2.34.2
 pypdf==6.15.0
+pyHanko==0.37.0

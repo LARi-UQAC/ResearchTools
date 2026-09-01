@@ -27,7 +27,7 @@ a form and cannot know the information that fills one, so:
 | Retrieving a PDF over https, validated | here (RT-1) |
 | Reading a form's widgets, and diffing two reads | here (RT-2) |
 | Writing values into a form | here (RT-3) |
-| Signing a form | here (RT-4) |
+| Signing a form, PAdES | here (RT-4) |
 | The catalogue of registered forms, and their fingerprints | ThesisTracker (TT-8) |
 | Field maps, workflow rules, the drift check | ThesisTracker (TT-8) |
 | The profile that supplies values | ThesisTracker (TT-9) |
@@ -37,11 +37,11 @@ when UQAC replaced one, it is in ThesisTracker and edited there in the UI by an
 `owner` or the `direction`. This skill will not tell you, because it does not
 know.
 
-## Scope in this unit (RT-1, RT-2, RT-3)
+## Scope in this unit (RT-1 to RT-4)
 
-Retrieval, inspection and filling: fetch a form, read its widgets, diff two
-reads, and write values into one. Signing (RT-4) and the HTTP service (RT-5)
-land in the following units.
+Retrieval, inspection, filling and signing: fetch a form, read its widgets, diff
+two reads, write values into one, and sign it. The HTTP service (RT-5) lands in
+the following unit.
 
 ## The ingest contract
 
@@ -156,6 +156,55 @@ remain form fields rather than page content. If you need a true burn-in, this
 skill is not the tool, and it says so rather than letting you find out from a
 PDF someone was able to edit.
 
+## Signing a form
+
+`scripts/sign_form.py` appends a PAdES signature to one named field.
+
+```python
+from sign_form import signature_fields, sign_pdf, build_signer
+
+signature_fields(pdf_bytes)          # name, page, signed
+signer = build_signer('self-signed', cert_dir='out/uqac-forms/dev-certs')
+signed = sign_pdf(pdf_bytes, signer, field_name='signature_etu')
+```
+
+### Every signature preserves the ones before it
+
+A UQAC form collects up to three signatures, from the student, the direction de
+recherche and the Decanat, applied in separate requests hours or days apart.
+Each is an **incremental update**: the existing bytes are untouched and the new
+signature is appended, so the earlier ones still cover what they signed.
+
+This is why `fill_form` refuses to fill an already-signed document. `pypdf`
+rewrites the file, and a rewrite destroys exactly what the incremental update
+protects. Fill every step first; sign last.
+
+The test suite does not settle for checking that the output starts with the
+input, because a file can carry the earlier bytes and still hold a broken
+earlier signature. It signs one document three times and has pyHanko validate
+all three.
+
+### It refuses to guess which field to sign
+
+`preflight` chooses the field only when exactly one is empty. With several, the
+caller must name one: signing the wrong field attributes a signature to the
+wrong person, which on an official document is worse than not signing.
+
+### The certificate is a development default, and says so
+
+`SelfSignedSigner` generates its own key and certificate on first use. Signatures
+made with it are **valid but not trusted**, and a test asserts exactly that. A
+self-signed certificate is what an institutional office is most likely to
+reject, so **a document signed this way must never be presented as one the
+Decanat or the Service des ressources financieres has accepted.**
+
+Whether either office accepts a PAdES signature at all, and which certificate
+authority they recognize, is still unanswered. It is in the Open items table of
+`NEW_ARCHITECTURE.md`, assigned to the professor. When the answer arrives it
+becomes a new `build_signer` provider, not a change to this code. `build_signer`
+refuses an unknown provider by name rather than falling back to the development
+signer, because a silent fallback is the worst possible default here.
+
 ## Prerequisites
 
 - `pip install -r .claude/skills/uqac-forms/scripts/requirements.txt`
@@ -188,6 +237,7 @@ refused download leaves nothing behind, including no `*.part`.
 python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py
 python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
 python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py
+python .claude/skills/uqac-forms/scripts/Test/test_sign_form.py
 ```
 
 Offline: `requests.get` is patched, so no test reaches the network. Every rule of

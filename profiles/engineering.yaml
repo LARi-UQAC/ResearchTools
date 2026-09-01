@@ -13,9 +13,56 @@ description: Mechanical / electrical / ML / control / systems engineering.
 # --- Author / institution (planned consumers: cover-paper, submit-checker) ---
 author:
   name: Martin Otis
-  email: m3otis@uqac.ca
+  email: Martin_Otis@uqac.ca
   institution: Universite du Quebec a Chicoutimi (UQAC)
   department: Departement des sciences appliquees
+
+  # --- Letter identity (wired consumer: recommendation-letter) --------------
+  # Who signs a letter. This is true of exactly one person, so it is profile
+  # data, never repository code (R7).
+  #
+  # Every value is written into the .tex AS IS, so it is LaTeX-ready: escape
+  # &, %, _ and # yourself, and a literal backslash inside a double-quoted YAML
+  # scalar is written "\\". The lists are rendered one line per entry, in order.
+  #
+  # Omit this block and the skill refuses to generate rather than borrowing
+  # another profile's identity.
+  letter:
+    letterhead_fr:
+      - Professeur Martin Otis
+      - Département des sciences appliquées
+      - Université du Québec à Chicoutimi (UQAC)
+      - "555, boul.\\ de l'Université, Chicoutimi (QC)"
+      - Canada, G7H 2B1
+    letterhead_en:
+      - Professor Martin Otis
+      - Department of Applied Sciences
+      - Université du Québec à Chicoutimi (UQAC)
+      - "555, boul.\\ de l'Université, Chicoutimi (QC)"
+      - Canada, G7H 2B1
+    signature_name_fr: Martin J.-D. Otis, ing. M.Sc.A. Ph.D.
+    signature_name_en: Martin J.-D. Otis, P.Eng., M.Sc.A., Ph.D.
+    signature_lines_fr:
+      - Professeur titulaire en génie électrique et informatique de l'UQAC
+      - Membre RISUQ, Centre CISD \& Regroupement ReSMIQ
+      - Responsable du Laboratoire d'Automatique et de Robotique interactive (LAR.i)
+      - "Tél.~: (418) 545-5011 (poste 2577)"
+      - "Courriel~: \\href{mailto:Martin_Otis@uqac.ca}{Martin\\_Otis@uqac.ca}"
+      - "Site Web~: \\href{https://lari.uqac.ca}{lari.uqac.ca}"
+    signature_lines_en:
+      - Full Professor in Electrical and Computer Engineering, UQAC
+      - Member RISUQ, CISD Centre \& ReSMIQ Group
+      - Director, Interactive Automation and Robotics Laboratory (LAR.i)
+      - "Tel.: (418) 545-5011 (ext.\\ 2577)"
+      - "Email: \\href{mailto:Martin_Otis@uqac.ca}{Martin\\_Otis@uqac.ca}"
+      - "Web: \\href{https://lari.uqac.ca}{lari.uqac.ca}"
+    # Short block used by the standalone dispense letter.
+    dispense_lines_fr:
+      - Professeur titulaire -- Université du Québec à Chicoutimi
+      - "\\href{https://lari.uqac.ca}{lari.uqac.ca}"
+    # Host named in the dispense table and in the acceptance letter's prose.
+    responsible_name: Martin Otis
+    lab_acronym: LAR.i
 
 # --- Scopus literature scope (scopus-researcher) ---
 scopus:

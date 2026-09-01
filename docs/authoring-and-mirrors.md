@@ -2,8 +2,9 @@
 
 This is the single, turnkey reference for adding or editing an **agent**, **skill**,
 or **command** in ResearchTools and propagating it to every assistant (Claude Code,
-GitHub Copilot, OpenCode, Continue, Aider). Follow the matching section; you should not
-need to re-investigate the mirror machinery.
+GitHub Copilot, OpenCode, Continue, Aider) plus any tool that reads the `AGENTS.md`
+convention (OpenHuman, Hermes Agent, Codex, and others). Follow the matching section;
+you should not need to re-investigate the mirror machinery.
 
 Related: [README.md](../README.md) and [Architecture.md](../Architecture.md) are the
 authoritative inventories; [.claude/CLAUDE.md](../.claude/CLAUDE.md) holds the routing
@@ -40,12 +41,83 @@ The first row (bold) and first column of any table you add follow the repo table
 | OpenCode | `.opencode/agent/<name>.md` | each agent | full body, no size limit |
 | Continue | `.continue/rules/researchtools.md` | agent list | one rule file that points at the `.claude/CLAUDE.md` routing table |
 | Aider | `CONVENTIONS.md` | static pointer | generated **only if absent**; never overwritten (see section 4) |
+| AGENTS.md readers | `AGENTS.md` | agent list | static master, regenerated on every run; serves any harness reading the `AGENTS.md` convention |
+| Codex | `.agents/skills/<name>/SKILL.md` | each skill | **pointer** mirror: frontmatter only, description trimmed to whole sentences to fit Codex's skill-list budget, body points at the canonical skill |
+| Codex | `.claude/skills/AGENTS.md` | static | nested `AGENTS.md`, appended to the root one when the working directory is inside the skills tree |
 
-**Skills have no per-tool mirror.** They are plain repo folders every tool can read. A
-skill becomes discoverable in Copilot/OpenCode/Continue **only** through (a) an agent that
-calls it, or (b) the routing table in `.claude/CLAUDE.md`. A user-invoked skill with no
-calling agent (e.g. `geolocalisation`) is invisible to the other tools unless it is in the
-routing table (and, ideally, has a command wrapper -> Copilot prompt).
+### Why `AGENTS.md` covers more than one harness
+
+Two actively maintained agent harnesses converge on the same file, which is why
+`AGENTS.md` is one new mirror target, not several. **OpenHuman**
+(`tinyhumansai/openhuman`, GPL-3.0) loads a project-level `AGENTS.md`:
+`src/openhuman/agent/prompts/agents_md.rs` line 26 sets
+`pub const AGENTS_MD_FILENAME: &str = "AGENTS.md";`, and `load_agents_md` (line 69)
+reads `dir.join(AGENTS_MD_FILENAME)`. **Hermes Agent** (`nousresearch/hermes-agent`,
+MIT) reads, per directory from the git root down to the working directory, the first
+of `AGENTS.override.md`, `AGENTS.md`, or `agents.md` (`agent/prompt_builder.py` line
+2281). Codex and any other tool that follows the same `AGENTS.md` convention are
+covered by the same file at no extra cost. Neither harness supports per-agent
+definition files, so `AGENTS.md` is a distilled master, the same class as
+`.continue/rules/researchtools.md` and `CONVENTIONS.md`, not a per-agent mirror.
+
+`AGENTS.md` at the repo root is a **shared namespace**: any tool that reads it now
+receives this content, which is the point, but it is also a fact a contributor must
+know before editing it - a change here reaches every harness that follows the
+convention, not just one.
+
+Hermes Agent additionally reads `CLAUDE.md` from the current working directory
+(`agent/prompt_builder.py` line 2323). This repo has none at its root, so
+`AGENTS.md` is the operative file for Hermes here, not an optional parity extra.
+
+**One file under `.github/instructions/` is NOT generated.**
+`.github/instructions/mermaid.instructions.md` is hand-maintained and has no source rule.
+It documents the Mermaid Chart VS Code extension (its LM tools, its command IDs, its
+`@mermaid-chart` slash commands), which is Copilot-and-VS-Code-specific: promoting it to
+`.claude/rules/mermaid.md` would push those command IDs into the OpenCode, Continue and
+Aider mirrors, where nothing can act on them. `install.ps1` writes one instructions file
+per rule and never deletes an extra one, so the file survives every regeneration untouched
+and must be edited in place. It carries a header saying so; do not "restore" it by running
+the installer, and do not read its presence as drift.
+
+**Skills have no per-tool mirror, except for Codex.** They are plain repo folders every
+tool can read. A skill becomes discoverable in Copilot/OpenCode/Continue **only** through
+(a) an agent that calls it, or (b) the routing table in `.claude/CLAUDE.md`. A user-invoked
+skill with no calling agent (e.g. `geolocalisation`) is invisible to those tools unless it
+is in the routing table (and, ideally, has a command wrapper -> Copilot prompt).
+
+Codex is the exception, because it is the one harness with a **native skill convention**:
+it scans `.agents/skills` in every directory from the working directory up to the
+repository root, reads each `SKILL.md` (that exact casing) for `name:` and `description:`,
+and offers the skill by name. So `install.ps1` generates `.agents/skills/<name>/SKILL.md`
+for all 15 skills, and a user-invoked skill needs neither an agent nor the routing table to
+be reachable there.
+
+Three properties of that mirror are deliberate:
+
+- **It is a pointer, never a copy.** Only the frontmatter is reproduced; the body says to
+  read `.claude/skills/<name>/SKILL.md` first. Duplicating skill bodies would create the
+  second truth the whole generated-mirror model exists to prevent.
+- **Descriptions are trimmed to whole sentences.** Codex caps the skill list at 2% of the
+  model's context window, or 8000 characters when the window is unknown, then shortens
+  descriptions and finally omits skills with a warning. Measured 2026-08-28, the untrimmed
+  list for this repo is 9417 characters, already over. The trim keeps the first sentence
+  unconditionally because it carries the trigger, and `test_codex_mirror.py` proves the
+  result fits. The choice is only whether the shortening is ours or Codex's.
+- **The description is emitted as a single-quoted YAML scalar.** Eleven of the canonical
+  descriptions are double-quoted at the source, and the first generated set carried those
+  quotes through and then trimmed mid-scalar, shipping eleven mirrors whose frontmatter did
+  not parse while the installer printed a green `[OK]` for each. One skill also opens its
+  description with a `>` block indicator, which is syntax and not text. Both are parsed out
+  now, and both have a test.
+
+`AGENTS.md` nesting is the same story from the other side: Codex concatenates one file per
+directory from the git root down to the working directory, later files overriding earlier
+ones, and stops once the combined size reaches `project_doc_max_bytes` (32 KiB default).
+`.claude/skills/AGENTS.md` therefore reaches a session whose cwd is inside the skills tree,
+carrying the script-surface rule that is easiest to break from exactly there. Note that
+Codex checks `AGENTS.override.md` **before** `AGENTS.md` in each directory - the same
+precedence Hermes Agent uses - so a hand-written override silently replaces the generated
+file for both harnesses.
 
 ## 3. The two install scripts (different jobs)
 
@@ -118,7 +190,11 @@ A skill and its command wrapper commonly coexist (`/geolocalisation` -> the
    mirrors automatically.
 
 Agent bodies over ~28k chars become a Copilot **stub** that points back at the canonical
-file - keep hard constraints early in the body so the stub carries them.
+file - keep hard constraints early in the body so the stub carries them. A stub does not
+carry the rest of the body, so a cross-cutting rule added to agent bodies (not just this
+one) must ALSO be distilled into the three master files (`.github/copilot-instructions.md`,
+`.continue/rules/researchtools.md`, `CONVENTIONS.md`), the way the Obsidian outbox and
+`ollama_bridge.py` rules already are.
 
 ## 7. Add a new SKILL
 
@@ -139,9 +215,17 @@ file - keep hard constraints early in the body so the stub carries them.
    Put runnable code in `.claude/skills/<name>/scripts/` and offline tests in
    `.../scripts/Test/`. Pin dependencies in the skill's `requirements.txt`, run
    `pip-audit`, and add a security-floor comment for any transitive CVE.
-2. **Register it (critical - a skill has no mirror):**
+
+   A script produced while operating on an EXTERNAL project — a manuscript, thesis, or
+   grant tree outside this repo — is authored in ResearchTools, under the owning skill's
+   `scripts/` directory, and is called from there by path; it is never left behind in
+   that project's own directory.
+2. **Register it (critical - a skill has no mirror outside Codex):**
    - `.claude/CLAUDE.md` "Tooling" table: add a routing row. This is the ONLY thing that
-     makes a user-invoked skill discoverable in Copilot/OpenCode/Continue.
+     makes a user-invoked skill discoverable in Copilot/OpenCode/Continue. Codex gets a
+     generated `.agents/skills/<name>/SKILL.md` pointer instead, so keep the canonical
+     `description` trigger-rich AND reasonably short: it is the whole trigger surface there,
+     and every skill added tightens the shared list budget the others must fit in.
    - [README.md](../README.md): bump the skill count in the three places it appears
      (header "N skills", the "N ship" sentence, the File-Locations "(N skills)"); add the
      skills-table row, a `### <name>` subsection, a Prerequisites row for new deps, and the
@@ -226,8 +310,9 @@ those docs are not mirrored).
   this document supersedes and generalizes it to agents as well. Keep both pointing at the
   same routing table. It lives in the Claude Code project memory directory
   (`~/.claude/projects/<project-slug>/memory/`, where `<project-slug>` is the working
-  directory with path separators replaced by `-`); on this machine that is
-  `C:\Users\m3otis\.claude\projects\c--Martin-Otis-OutilsLogiciels-ResearchTools\memory\adding-a-skill-checklist.md`
+  directory with path separators replaced by `-`); for a clone at `C:\work\ResearchTools`
+  that is
+  `%USERPROFILE%\.claude\projects\c--work-ResearchTools\memory\adding-a-skill-checklist.md`
   (indexed in that directory's `MEMORY.md`).
 - `install.ps1` header comment is the authoritative description of each generated file.
 

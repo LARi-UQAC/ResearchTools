@@ -26,10 +26,18 @@
       .opencode/agent/<name>.md        OpenCode agents (full body, description key).
       .continue/rules/researchtools.md Continue rule pointing at the routing table.
       CONVENTIONS.md                   Aider pointer (created only if absent).
+      .agents/skills/<name>/SKILL.md   Codex skill pointers: frontmatter only, with
+                                       the description trimmed to whole sentences so
+                                       the list stays under Codex's budget, and a
+                                       body that points at the canonical skill.
+      .claude/skills/AGENTS.md         Nested AGENTS.md appended to the root one when
+                                       Codex runs with a cwd inside that tree.
 
     Skills have no Copilot equivalent: they are repo folders the agents read
     directly (.claude/skills/<name>/SKILL.md), so they work from any tool that
-    can read the repository.
+    can read the repository. Codex is the exception - it has a native skill
+    convention, so it gets the pointer mirrors above and can invoke a skill by
+    name instead of needing an agent or the routing table to mention it.
 
     Run after adding or editing an agent, then commit the regenerated mirrors.
     Copilot needs no install step: files on the default branch under
@@ -48,6 +56,15 @@
 #>
 param(
     [int]$CopilotStubThreshold = 28000,  # keep margin under the 30k hard limit
+    # Codex's two documented ceilings, verified 2026-08-28 against
+    # learn.chatgpt.com/docs/build-skills and
+    # learn.chatgpt.com/docs/agent-configuration/agents-md. The skills list gets
+    # 2% of the model's context window, or 8000 characters when that window is
+    # unknown; project_doc_max_bytes caps the concatenated AGENTS.md chain at
+    # 32 KiB. Both are Codex-side defaults a user can raise, so they are the
+    # conservative case, not a constant of this repo.
+    [int]$CodexSkillListBudget = 8000,
+    [int]$CodexDocMaxBytes = 32768,
     [switch]$Personal,
     # -Profile also works ($PROFILE is a PowerShell automatic variable, hence the alias)
     [Alias('Profile')][string]$DomainProfile
@@ -111,6 +128,23 @@ $claudeMd     = $claudeMd -replace '(?m)^Profil actif : \S+', "Profil actif : $a
 [System.IO.File]::WriteAllText($claudeMdPath, $claudeMd, $utf8NoBom)
 Write-Ok "active profile: $activeProfile (recorded in .claude/CLAUDE.md)"
 
+# --- U6: regenerate the RT-CONTRACT block from .claude/CLAUDE.md -------------
+# It must run BEFORE the mirrors below, because the mirrors are generated from
+# the same source and a stale contract block would be published alongside a
+# fresh mirror. The engine lives in scripts/lib/rt-contract.ps1 so its test can
+# load it without running this installer.
+. (Join-Path $repoRoot "scripts\lib\rt-contract.ps1")
+try {
+    $rtContract = Update-RtContractBlock -RepoRoot $repoRoot
+    if ($rtContract.Changed) { Write-Ok "RT-CONTRACT block regenerated ($($rtContract.Lines) lines) from .claude/CLAUDE.md" }
+    else                     { Write-Ok "RT-CONTRACT block already in step with .claude/CLAUDE.md" }
+} catch {
+    # A refusal here is deliberate and must stop the run: publishing mirrors
+    # from a source whose export region is broken would spread the damage.
+    Write-Host "  [ERR] RT-CONTRACT generation refused: $($_.Exception.Message)" -ForegroundColor Red
+    exit 2
+}
+
 # --- GitHub Copilot: .github/agents/<name>.agent.md -------------------------
 
 $ghDir = Join-Path $repoRoot ".github\agents"
@@ -142,7 +176,16 @@ Hard constraints carried over from the full definition:
     $out = "---`nname: $($a.Name)`n$($a.DescriptionLine)`n---`n`n$body`n"
     if ($out.Length -gt 30000) { throw "$($a.Name): generated Copilot profile exceeds 30k" }
     [System.IO.File]::WriteAllText((Join-Path $ghDir "$($a.Name).agent.md"), $out, $utf8NoBom)
-    Write-Ok (".github/agents/{0}.agent.md  ({1}, {2} chars)" -f $a.Name, $mode, $out.Length)
+    if ($mode -eq "stub") {
+        # A stub carries none of the agent's instructions, only a pointer to the
+        # canonical file. Seven long-form agents are stubs by design; anything
+        # else here is an instruction set that just stopped reaching Copilot, so
+        # it must not be printed as a green [OK].
+        Write-Host ("  [STUB] .github/agents/{0}.agent.md  (body {1} > {2}; Copilot gets a pointer, not the instructions)" -f `
+            $a.Name, $a.Body.Length, $CopilotStubThreshold) -ForegroundColor Yellow
+    } else {
+        Write-Ok (".github/agents/{0}.agent.md  ({1}, {2} chars)" -f $a.Name, $mode, $out.Length)
+    }
 }
 
 # --- GitHub Copilot personal level: ~/.copilot/agents (optional) ------------
@@ -235,14 +278,53 @@ $agentRouting
 Task prompt files are available as slash commands in Copilot Chat (see
 ``.github/prompts/``). Helper skills (Scopus API scripts, statistics extraction,
 scientific-writing rules, corpus study-location mapping, recommendation/support/
-acceptance letters) are plain repo folders under ``.claude/skills/`` - read the
-relevant ``SKILL.md`` when a task calls for it (e.g. ``geolocalisation`` to map
-where a corpus's studies were conducted, or ``recommendation-letter`` to draft a
-support/recommendation/acceptance letter from a candidate's files).
+acceptance letters, Obsidian vault operations) are plain repo folders under
+``.claude/skills/`` - read the relevant ``SKILL.md`` when a task calls for it (e.g.
+``geolocalisation`` to map where a corpus's studies were conducted,
+``recommendation-letter`` to draft a support/recommendation/acceptance letter from
+a candidate's files, ``latex-hygiene`` to score a manuscript's mechanical hygiene
+(forbidden characters, AI-usage risk, word counts, brace and citation balance)
+before applying an audit plan and building it, or ``obsidian-cli`` to read or
+search the Obsidian vault through its allowed command surface, since skills have
+no mirror of their own).
 
 Hard rules: validate every reference against Scopus (scripts in
 ``.claude/skills/scopus/scripts/``); never fabricate references or DOIs; LaTeX
 output goes to ``out/``.
+
+Obsidian vault writes go through the outbox only: deposit the note in
+``~/.claude/obsidian-outbox/`` with a first-line directive and let the
+``obsidian-outbox-flush.py`` hook write it through the filesystem. The Obsidian CLI
+commands ``create``, ``append`` and ``prepend`` are forbidden, together with
+``eval``, ``dev:*``, ``plugin:install``, ``theme:install`` and every ``sync*``
+except read-only ``sync:history``. The one exception is
+``vault_consolidate.py --apply --yes``, an in-place link repair in notes that already
+exist, dry-run until ``--yes`` is passed.
+
+Local generation goes through ``.claude/skills/loop-engineer/scripts/ollama_bridge.py``,
+never ``ollama run``. The bridge resolves the model itself through ``model_resolver.py``
+and refuses rather than substituting a weaker one, so no agent or script names a model
+tag. ``--role writer`` or ``--role coder`` says WHICH work is being done, and the resolver
+returns the tag qualified for that role; without it both roles share one tag.
+``--vault-context <terms>`` is MANDATORY: the bridge searches the vault itself and
+exits 2 when neither it nor ``--no-vault-context`` is given, because a local model asked a
+documented question with no context answers with a fluent invention that passes every
+structural gate.
+
+Any Python script an auditing or authoring agent needs is created inside
+ResearchTools, under ``.claude/skills/<skill>/scripts/``, with an offline test
+beside it in ``Test/`` - never in the session scratchpad and never in the
+manuscript, thesis, or grant directory being worked on. Search the
+"ResearchTools script surface" inventory in ``.claude/rules/testing.md`` first,
+and extend an existing script with a flag or a subcommand rather than forking
+one; the manuscript directory may hold a thin wrapper that calls the
+ResearchTools script by path, never logic of its own. Several of the largest
+agents (``paper-auditor``, ``scopus-auditor``, ``scopus-researcher``,
+``thesis-auditor``, ``thesis-proposal-auditor``, ``reviewer-response``,
+``cover-paper``) are the very agents that write such scripts, and are delivered
+above as stubs pointing back at ``.claude/agents/<name>.md`` - read the
+canonical file when the stub is what you were given, since this rule lives in
+the full body, not the stub.
 
 This file is generated by ``install.ps1`` - edit the canonical sources,
 not this mirror.
@@ -280,29 +362,334 @@ read the corresponding file in full and follow it exactly:
 $agentList
 
 The task-to-agent routing table lives in ``.claude/CLAUDE.md`` (section "Tooling").
+
+Obsidian vault writes go through the outbox only: deposit the note in
+``~/.claude/obsidian-outbox/`` with a first-line directive and let the
+``obsidian-outbox-flush.py`` hook write it through the filesystem. The Obsidian CLI
+commands ``create``, ``append`` and ``prepend`` are forbidden, together with
+``eval``, ``dev:*``, ``plugin:install``, ``theme:install`` and every ``sync*``
+except read-only ``sync:history``. The one exception is
+``vault_consolidate.py --apply --yes``, an in-place link repair in notes that already
+exist, dry-run until ``--yes`` is passed.
+
+Local generation goes through ``.claude/skills/loop-engineer/scripts/ollama_bridge.py``,
+never ``ollama run``. The bridge resolves the model itself through ``model_resolver.py``
+and refuses rather than substituting a weaker one, so no agent or script names a model
+tag. ``--role writer`` or ``--role coder`` says WHICH work is being done, and the resolver
+returns the tag qualified for that role; without it both roles share one tag.
+``--vault-context <terms>`` is MANDATORY: the bridge searches the vault itself and
+exits 2 when neither it nor ``--no-vault-context`` is given, because a local model asked a
+documented question with no context answers with a fluent invention that passes every
+structural gate.
+
+Any Python script an auditing or authoring agent needs is created inside
+ResearchTools, under ``.claude/skills/<skill>/scripts/``, with an offline test
+beside it in ``Test/`` - never in the session scratchpad and never in the
+manuscript, thesis, or grant directory being worked on. Search the
+"ResearchTools script surface" inventory in ``.claude/rules/testing.md`` first,
+and extend an existing script with a flag or a subcommand rather than forking
+one. The manuscript directory may hold a thin wrapper that calls the
+ResearchTools script by path; it holds no logic of its own.
 "@
 [System.IO.File]::WriteAllText((Join-Path $ctDir "researchtools.md"), "$ctOut`n", $utf8NoBom)
 Write-Ok ".continue/rules/researchtools.md"
 
-# --- Aider: CONVENTIONS.md pointer (never overwrite an existing file) --------
+# --- Aider: CONVENTIONS.md mirror -------------------------------------------
+# Regenerated like the other three mirrors, so an agent change reaches Aider too.
+# Guarded by the marker on the first line: a CONVENTIONS.md without it was written
+# by a human, and a human file is never overwritten by an installer.
 
-$convPath = Join-Path $repoRoot "CONVENTIONS.md"
-if (-not (Test-Path $convPath)) {
+$convPath   = Join-Path $repoRoot "CONVENTIONS.md"
+$convMarker = "<!-- generated by install.ps1 - edit .claude/agents/ instead -->"
+$convGenerated = $true
+if (Test-Path $convPath) {
+    $convFirst = (Get-Content $convPath -TotalCount 1)
+    if ($convFirst -ne $convMarker) { $convGenerated = $false }
+}
+if ($convGenerated) {
     $convOut = @"
+$convMarker
 # Conventions
 
 Specialized agent definitions for this repository live in ``.claude/agents/`` (one
 flat markdown file per agent, YAML frontmatter). When performing a task covered by
-one of them (literature review, paper/thesis audit, BibTeX cleaning, reviewer
-response, submission check, LaTeX/TiKZ authoring, Word-to-LaTeX conversion), read
-the matching ``.claude/agents/<name>.md`` in full and follow it. The routing table
-is in ``.claude/CLAUDE.md``. Academic writing rules: validate references against
-Scopus, never fabricate DOIs, LaTeX output in ``out/``.
+one of them, read the matching ``.claude/agents/<name>.md`` in full and follow it:
+
+$agentList
+
+The task-to-agent routing table lives in ``.claude/CLAUDE.md`` (section "Tooling").
+Skills are repository folders the agents read directly
+(``.claude/skills/<name>/SKILL.md``), so they need no mirror.
+
+Academic writing rules: validate references against Scopus, never fabricate DOIs,
+LaTeX output in ``out/``.
+
+Obsidian vault writes go through the outbox only. Deposit the note in
+``~/.claude/obsidian-outbox/`` with a first-line directive and let the
+``obsidian-outbox-flush.py`` hook write it through the filesystem. The Obsidian CLI
+commands ``create``, ``append`` and ``prepend`` are forbidden, together with
+``eval``, ``dev:*``, ``plugin:install``, ``theme:install`` and every ``sync*``
+except read-only ``sync:history``. The one exception is
+``vault_consolidate.py --apply --yes``, an in-place link repair in notes that already
+exist, dry-run until ``--yes`` is passed.
+
+Local generation goes through ``.claude/skills/loop-engineer/scripts/ollama_bridge.py``,
+never ``ollama run``. The bridge resolves the model itself through ``model_resolver.py``
+and refuses rather than substituting a weaker one, so no agent or script names a model
+tag. ``--role writer`` or ``--role coder`` says WHICH work is being done, and the resolver
+returns the tag qualified for that role; without it both roles share one tag.
+``--vault-context <terms>`` is MANDATORY: the bridge searches the vault itself and
+exits 2 when neither it nor ``--no-vault-context`` is given, because a local model asked a
+documented question with no context answers with a fluent invention that passes every
+structural gate.
+
+Any Python script an auditing or authoring agent needs is created inside
+ResearchTools, under ``.claude/skills/<skill>/scripts/``, with an offline test
+beside it in ``Test/`` - never in the session scratchpad and never in the
+manuscript, thesis, or grant directory being worked on. Search the
+"ResearchTools script surface" inventory in ``.claude/rules/testing.md`` first,
+and extend an existing script with a flag or a subcommand rather than forking
+one. The manuscript directory may hold a thin wrapper that calls the
+ResearchTools script by path; it holds no logic of its own.
 "@
     [System.IO.File]::WriteAllText($convPath, "$convOut`n", $utf8NoBom)
-    Write-Ok "CONVENTIONS.md (created)"
+    Write-Ok "CONVENTIONS.md"
 } else {
-    Write-Skip "CONVENTIONS.md exists - not touched"
+    Write-Skip "CONVENTIONS.md hand-written (no generated marker) - not touched"
+}
+
+# --- AGENTS.md: shared master for any tool reading the AGENTS.md convention -
+# Overwritten on every run, unlike CONVENTIONS.md above: Hermes Agent reads
+# AGENTS.override.md in preference to this file, so a hand-written local
+# variant has a first-class place and nothing is lost by regenerating.
+
+$agentsMdPath = Join-Path $repoRoot "AGENTS.md"
+$agentsMdOut = @"
+<!-- generated by install.ps1 - edit .claude/agents/ instead -->
+# ResearchTools
+
+ResearchTools is an academic toolkit for LaTeX writing, Scopus reference
+validation, paper and thesis auditing, and grant-template conversion. This
+file is regenerated on every ``install.ps1`` run; local edits belong in
+``AGENTS.override.md`` instead, which Hermes Agent reads in preference to
+this file.
+
+Specialized agents (flat markdown files under ``.claude/agents/``):
+
+$agentList
+
+The task-to-agent routing table lives in ``.claude/CLAUDE.md`` (section "Tooling").
+
+Skills have no mirror of their own and are read directly at
+``.claude/skills/<name>/SKILL.md`` - for example ``geolocalisation`` to map
+where a corpus's studies were conducted, ``recommendation-letter`` to draft a
+support/recommendation/acceptance letter from a candidate's files,
+``latex-hygiene`` (``/texcheck``) to score a manuscript's mechanical hygiene
+before applying an audit plan, or ``obsidian-cli`` to read or search the
+Obsidian vault through its allowed command surface.
+
+Obsidian vault writes go through the outbox only: deposit the note in
+``~/.claude/obsidian-outbox/`` with a first-line directive and let the
+``obsidian-outbox-flush.py`` hook write it through the filesystem. The Obsidian CLI
+commands ``create``, ``append`` and ``prepend`` are forbidden, together with
+``eval``, ``dev:*``, ``plugin:install``, ``theme:install`` and every ``sync*``
+except read-only ``sync:history``. The one exception is
+``vault_consolidate.py --apply --yes``, an in-place link repair in notes that already
+exist, dry-run until ``--yes`` is passed.
+
+Local generation goes through ``.claude/skills/loop-engineer/scripts/ollama_bridge.py``,
+never ``ollama run``. The bridge resolves the model itself through ``model_resolver.py``
+and refuses rather than substituting a weaker one, so no agent or script names a model
+tag. ``--role writer`` or ``--role coder`` says WHICH work is being done, and the resolver
+returns the tag qualified for that role; without it both roles share one tag.
+``--vault-context <terms>`` is MANDATORY: the bridge searches the vault itself and
+exits 2 when neither it nor ``--no-vault-context`` is given, because a local model asked a
+documented question with no context answers with a fluent invention that passes every
+structural gate.
+
+Any Python script an auditing or authoring agent needs is created inside
+ResearchTools, under ``.claude/skills/<skill>/scripts/``, with an offline test
+beside it in ``Test/`` - never in the session scratchpad and never in the
+manuscript, thesis, or grant directory being worked on. Search the
+"ResearchTools script surface" inventory in ``.claude/rules/testing.md`` first,
+and extend an existing script with a flag or a subcommand rather than forking
+one. The manuscript directory may hold a thin wrapper that calls the
+ResearchTools script by path; it holds no logic of its own.
+
+Academic writing rules: validate references against Scopus, never fabricate DOIs,
+LaTeX output in ``out/``.
+"@
+[System.IO.File]::WriteAllText($agentsMdPath, "$agentsMdOut`n", $utf8NoBom)
+Write-Ok "AGENTS.md"
+
+# --- Codex: .agents/skills/<name>/SKILL.md pointer mirrors ------------------
+# Codex discovers skills by scanning .agents/skills in every directory from the
+# working directory up to the repository root, and requires the entry file to be
+# named exactly SKILL.md (that casing) carrying name: and description:.
+#
+# The mirror is a POINTER, never a copy. Duplicating 15 skill bodies would create
+# a second truth that drifts from .claude/skills/, which is the defect the whole
+# generated-mirror model exists to avoid. Only the frontmatter is reproduced,
+# because the description is the entire trigger surface: it decides whether Codex
+# reaches for the skill at all, and the body it then reads is the canonical one.
+#
+# Descriptions are trimmed to WHOLE SENTENCES under a computed per-skill cap so
+# the list stays inside CodexSkillListBudget. This is not cosmetic. Over budget,
+# Codex shortens descriptions itself and then omits skills with a warning, so a
+# skill can stop being reachable without anything here failing - the same silent
+# class as the Copilot stub. Measured 2026-08-28 on this repo: the untrimmed list
+# is 9417 chars against a 8000 budget. The only choice is whether the trimming is
+# ours and deliberate or Codex's and arbitrary.
+
+function Read-SkillFrontmatter([string]$path) {
+    $raw = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+    if ($raw -notmatch '(?s)^---\r?\n(.*?)\r?\n---\r?\n') { throw "No YAML frontmatter in $path" }
+    $lines = $Matches[1] -split "\r?\n"
+    $name = $null; $desc = $null
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^name:\s*(.+)$') { $name = $Matches[1].Trim(); continue }
+        if ($lines[$i] -match '^description:\s*(.*)$') {
+            # A YAML folded description continues on the following indented lines
+            # (recommendation-letter uses 10 of them), so a line-only read would
+            # mirror a truncated trigger and quietly change when Codex fires.
+            # "description: >" (or |, >-, |-) is a BLOCK SCALAR INDICATOR, not
+            # text. recommendation-letter uses one; carrying it through mirrors a
+            # description that literally begins "> Generate support...".
+            $head = $Matches[1].Trim()
+            if ($head -match '^[>|][-+]?\d*$') { $head = '' }
+            $parts = @($head)
+            for ($j = $i + 1; $j -lt $lines.Count; $j++) {
+                if ($lines[$j] -match '^\s+\S') { $parts += $lines[$j].Trim() } else { break }
+            }
+            $desc = (($parts | Where-Object { $_ }) -join ' ').Trim()
+            # Carry the VALUE, not its quoting. Eleven of these descriptions are
+            # double-quoted at the source; trimming a quoted scalar mid-string
+            # leaves an unterminated quote, the whole frontmatter stops parsing,
+            # and the skill silently disappears from Codex. Measured 2026-08-28 on
+            # the first generated set, which shipped 11 broken mirrors.
+            if ($desc.Length -ge 2 -and
+                (($desc[0] -eq '"' -and $desc[-1] -eq '"') -or
+                 ($desc[0] -eq "'" -and $desc[-1] -eq "'"))) {
+                $desc = $desc.Substring(1, $desc.Length - 2)
+            }
+        }
+    }
+    if (-not $name -or -not $desc) { throw "Missing name/description in $path" }
+    [pscustomobject]@{ Name = $name; Description = $desc }
+}
+
+function Limit-Description([string]$text, [int]$cap) {
+    if ($text.Length -le $cap) { return $text }
+    $sentences = [regex]::Split($text, '(?<=[.!?])\s+')
+    # The first sentence is kept even when it alone exceeds the cap: a mirror with
+    # an empty description is a skill Codex can never trigger, which is worse than
+    # one slightly over budget.
+    $kept = $sentences[0]
+    if ($sentences.Count -gt 1) {
+        foreach ($s in $sentences[1..($sentences.Count - 1)]) {
+            if (($kept.Length + 1 + $s.Length) -gt $cap) { break }
+            $kept = "$kept $s"
+        }
+    }
+    return $kept
+}
+
+$skillsDir      = Join-Path $repoRoot ".claude\skills"
+$codexSkillsDir = Join-Path $repoRoot ".agents\skills"
+$skills = @(Get-ChildItem $skillsDir -Directory | ForEach-Object {
+    $skillFile = Join-Path $_.FullName "SKILL.md"
+    if (Test-Path $skillFile) { Read-SkillFrontmatter $skillFile }
+})
+if ($skills.Count -eq 0) { throw "No skills found under .claude/skills/<name>/SKILL.md" }
+
+$nameOverhead = 0
+foreach ($s in $skills) { $nameOverhead += $s.Name.Length }
+$perSkillCap = [math]::Floor(($CodexSkillListBudget - $nameOverhead) / $skills.Count)
+
+New-Item -ItemType Directory -Path $codexSkillsDir -Force | Out-Null
+$listChars = 0
+foreach ($s in $skills) {
+    $desc = Limit-Description $s.Description $perSkillCap
+    $listChars += $s.Name.Length + $desc.Length
+    # Emit as a single-quoted YAML scalar: descriptions contain ": " (every
+    # "Trigger on:" clause does), which a plain scalar cannot hold, and single
+    # quoting needs only the doubling below rather than backslash escaping.
+    $descYaml = "'" + ($desc -replace "'", "''") + "'"
+    $skillOut = Join-Path $codexSkillsDir $s.Name
+    New-Item -ItemType Directory -Path $skillOut -Force | Out-Null
+    $out = @"
+---
+name: $($s.Name)
+description: $descYaml
+---
+
+Pointer mirror generated by ``install.ps1``. The authoritative skill, with every
+instruction, script and reference it ships, lives at
+``.claude/skills/$($s.Name)/SKILL.md`` in this repository.
+
+MANDATORY FIRST STEP: read ``.claude/skills/$($s.Name)/SKILL.md`` in full and follow
+it exactly. Do not act from this pointer alone - it carries the trigger description
+and nothing else.
+"@
+    [System.IO.File]::WriteAllText((Join-Path $skillOut "SKILL.md"), "$out`n", $utf8NoBom)
+    if ($desc.Length -lt $s.Description.Length) {
+        Write-Host ("  [TRIM] .agents/skills/{0}/SKILL.md  (description {1} -> {2} chars to fit the Codex list budget)" -f `
+            $s.Name, $s.Description.Length, $desc.Length) -ForegroundColor Yellow
+    } else {
+        Write-Ok (".agents/skills/{0}/SKILL.md" -f $s.Name)
+    }
+}
+if ($listChars -gt $CodexSkillListBudget) {
+    Write-Host ("  [WARN] Codex skill list is {0} chars over the {1} budget; Codex will shorten or omit entries" -f `
+        ($listChars - $CodexSkillListBudget), $CodexSkillListBudget) -ForegroundColor Yellow
+} else {
+    Write-Ok ("Codex skill list: {0} skills, {1}/{2} chars" -f $skills.Count, $listChars, $CodexSkillListBudget)
+}
+
+# --- Codex: nested .claude/skills/AGENTS.md --------------------------------
+# Codex concatenates one AGENTS.md per directory from the git root down to the
+# working directory, later files overriding earlier ones. A session whose cwd is
+# inside .claude/skills/ therefore gets this file appended to the root AGENTS.md.
+# It carries the one rule most easily broken from inside that tree: extend the
+# existing script surface rather than forking it.
+
+$skillsAgentsMdPath = Join-Path $skillsDir "AGENTS.md"
+$skillsAgentsMdOut = @"
+<!-- generated by install.ps1 - edit .claude/rules/workflows.md instead -->
+# Skill scripts
+
+This file adds to the repository-root ``AGENTS.md``; it does not replace it.
+
+Runnable code lives in ``.claude/skills/<skill>/scripts/`` with an offline test
+beside it in ``Test/`` - no network, no API key, no model load. A script lives
+beside its only caller (rule R18): one caller means the owning skill's
+``scripts/`` directory, several callers mean a repository-wide home
+(``.claude/hooks/``, ``profiles/``, ``install.ps1``).
+
+Before writing anything new, search the "ResearchTools script surface" inventory
+in ``.claude/rules/testing.md``. It is one line per script and is the fastest way
+to find what already exists. Extend a script with a flag or a subcommand rather
+than forking it, and add the new test to that file's offline-test block in the
+same commit.
+
+Constraints that bite hardest inside this tree:
+
+- No hardcoded numeric value, path, or external identifier (R0, R1, R2). Model
+  tags come from ``model_resolver.py`` alone, which refuses rather than
+  substituting a weaker model.
+- No silent fallback (R8). A missing dependency, key, or measurement stops the
+  run and names what is missing.
+- Verify the effect, not the return code, wherever the tool is known to lie (R9).
+- Every suite asserts at least one failure path (R20).
+"@
+[System.IO.File]::WriteAllText($skillsAgentsMdPath, "$skillsAgentsMdOut`n", $utf8NoBom)
+
+$chainBytes = (Get-Item $agentsMdPath).Length + (Get-Item $skillsAgentsMdPath).Length
+if ($chainBytes -gt $CodexDocMaxBytes) {
+    Write-Host ("  [WARN] AGENTS.md chain is {0} bytes, over Codex's {1}-byte project_doc_max_bytes; the tail is dropped" -f `
+        $chainBytes, $CodexDocMaxBytes) -ForegroundColor Yellow
+} else {
+    Write-Ok (".claude/skills/AGENTS.md  (chain {0}/{1} bytes)" -f $chainBytes, $CodexDocMaxBytes)
 }
 
 Write-Host ""

@@ -35,18 +35,42 @@
     SAFETY:
     - Never overwrites an existing real directory or real file.
     - Warns and skips on conflict; nothing is deleted automatically.
-    - Does NOT link settings.json or CLAUDE.md (machine-local files).
+    - Does NOT LINK settings.json or CLAUDE.md (machine-local files). -Sync does
+      WRITE to both, narrowly and idempotently: it refreshes the marker-delimited
+      RT-CONTRACT block inside CLAUDE.md, and appends one SessionStart entry to
+      settings.json if that entry is absent. Both are backed up to .bak first, both
+      are validated before and after, and the env block is never touched.
 
 .EXAMPLE
     .\install-junctions.ps1
     .\install-junctions.ps1 -WhatIf
 #>
 param(
-    [switch]$WhatIf
+    [switch]$WhatIf,
+    [switch]$Sync,
+    [switch]$Quiet
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# --- -Sync -------------------------------------------------------------------
+# A distinct code path from the legacy junction flow below, which is left as it was.
+# The engine lives in scripts\lib\rt-sync.ps1 so it can be loaded by a test without
+# running that legacy flow (and thus writing to the real ~/.claude) as a side effect.
+if ($Sync) {
+    . (Join-Path $PSScriptRoot "scripts\lib\rt-sync.ps1")
+    $script:RtQuiet = $Quiet.IsPresent
+    $rtHomeClaude = Join-Path $env:USERPROFILE ".claude"
+    if (-not (Test-Path $rtHomeClaude)) { exit 0 }
+    try { Invoke-RtSync $PSScriptRoot $rtHomeClaude } catch {
+        # Never non-zero: this runs as a SessionStart hook, and a failing hook refuses
+        # every tool of its matcher for the rest of the session.
+        if (-not $script:RtQuiet) { Write-Host "  [RT-SYNC] $($_.Exception.Message)" -ForegroundColor Red }
+    }
+    exit 0
+
+}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +86,7 @@ function Write-WhatIf([string]$text)   { Write-Host "  [WHATIF]   $text" -Foregr
 function Write-Info([string]$text)     { Write-Host "  [INFO]     $text" -ForegroundColor Cyan }
 
 $stats = @{ Created = 0; AlreadyExists = 0; Conflicts = 0; Skipped = 0 }
+$script:conflictPaths = @()
 
 function New-JunctionSafe([string]$linkPath, [string]$target) {
     if (Test-Path $linkPath) {
@@ -72,6 +97,7 @@ function New-JunctionSafe([string]$linkPath, [string]$target) {
         } else {
             Write-Conflict "$linkPath exists as a real directory — skipping (remove manually to replace)"
             $stats.Conflicts++
+            $script:conflictPaths += $linkPath
         }
         return
     }
@@ -96,6 +122,7 @@ function New-SymlinkSafe([string]$linkPath, [string]$target) {
         } else {
             Write-Conflict "$linkPath exists as a real file — skipping (remove manually to replace)"
             $stats.Conflicts++
+            $script:conflictPaths += $linkPath
         }
         return
     }
@@ -236,9 +263,10 @@ Write-Host "  Conflicts    : $($stats.Conflicts)"  $(if ($stats.Conflicts -gt 0)
 
 if ($stats.Conflicts -gt 0) {
     Write-Host ""
-    Write-Host "  To resolve a conflict, remove the item and re-run:" -ForegroundColor Yellow
-    Write-Host "    Remove-Item -Path <conflicting-path> -Recurse -Force" -ForegroundColor Yellow
-    Write-Host "    .\install-junctions.ps1" -ForegroundColor Yellow
+    Write-Host "  CONFLICTING ENTRIES (shadowing this repository):" -ForegroundColor Red
+    $script:conflictPaths | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+    Write-Host "  A real directory here means the repository version is NOT loaded." -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""

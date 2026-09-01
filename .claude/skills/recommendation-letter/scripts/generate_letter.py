@@ -1,7 +1,10 @@
 """
 generate_letter.py - recommendation-letter skill.
 
-Two-track LaTeX letter generator (stdlib only). Authored track (scholarship,
+Two-track LaTeX letter generator. Standard library plus PyYAML, which reads the
+signatory out of the active domain profile (letter_identity.py); the profile is
+YAML because that is where every other domain-specific value already lives.
+Authored track (scholarship,
 academic_position, industry_position, appreciation): the caller supplies
 body_tex, the script wraps it in the shared scaffold. Form track (acceptance,
 dispense): the script assembles a fixed French template from config fields.
@@ -23,6 +26,7 @@ import subprocess
 import sys
 import unicodedata
 
+import letter_identity
 import letter_templates as tpl
 
 PLACEHOLDER = "[À COMPLÉTER]"
@@ -68,7 +72,8 @@ def surname_slug(candidate_name):
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="Generate a LAR.i letter (LaTeX/PDF).")
+    p = argparse.ArgumentParser(
+        description="Generate a letter (LaTeX/PDF) signed by the active profile.")
     p.add_argument("--config", required=True, help="Path to the JSON config.")
     p.add_argument("--output", default="out", help="Output directory (default: out).")
     p.add_argument("--no-compile", action="store_true", help="Emit .tex only.")
@@ -225,7 +230,7 @@ def _supervisor_funding(config):
         parts.append("L'étudiant%%GENDER_E%% pourra aussi agir comme "
                      "assistant%%GENDER_E%% de recherche (environ 2500\\$/an) et "
                      "auxiliaire d'enseignement (environ 2500\\$/an) au sein du "
-                     "LAR.i.")
+                     "%%LAB_ACRONYM%%.")
     if amount and not parts:
         parts.append("Le montant de la bourse est de %s\\$/an, conditionnel à la "
                      "performance dans les activités de recherche."
@@ -280,12 +285,41 @@ def _babel(language):
     return "french" if language == "fr" else "english"
 
 
-def assemble_authored(config):
+# --- signatory blocks, rendered from the active profile -------------------
+# The values come from author.letter and are LaTeX-ready by contract, so they
+# are inserted verbatim and never passed through escape_latex(): escaping a
+# field that already reads \href{...} would print the macro instead of running
+# it. Candidate-supplied text keeps going through fill_scalars as before.
+
+def _stacked(lines):
+    """Join LaTeX lines with a line break after every entry but the last."""
+    return "\\\\\n".join(lines)
+
+
+def render_letterhead(identity, lang):
+    """The letterhead scaffold with this profile's address block in it."""
+    key = "letterhead_fr" if lang == "fr" else "letterhead_en"
+    return tpl.LETTERHEAD.replace("%%LETTERHEAD_LINES%%",
+                                  _stacked(identity[key]))
+
+
+def render_signature(identity, lang):
+    """The closing scaffold with this profile's name and credential lines."""
+    scaffold = tpl.SIGNATURE_FR if lang == "fr" else tpl.SIGNATURE_EN
+    name = identity["signature_name_fr" if lang == "fr" else "signature_name_en"]
+    lines = identity["signature_lines_fr" if lang == "fr" else "signature_lines_en"]
+    text = scaffold.replace("%%SIGNATURE_NAME%%", name)
+    return text.replace("%%SIGNATURE_LINES%%",
+                        _stacked(["{\\small %s}" % line for line in lines]))
+
+
+def assemble_authored(config, identity=None):
     """Full .tex for scholarship/academic_position/industry_position/appreciation."""
+    identity = identity if identity is not None else letter_identity.load_identity()
     lang = config.get("language", "fr")
     preamble = tpl.PREAMBLE.replace("%%BABEL_LANGUAGE%%", _babel(lang))
-    letterhead = tpl.LETTERHEAD_FR if lang == "fr" else tpl.LETTERHEAD_EN
-    signature = tpl.SIGNATURE_FR if lang == "fr" else tpl.SIGNATURE_EN
+    letterhead = render_letterhead(identity, lang)
+    signature = render_signature(identity, lang)
     date = format_date(config.get("date", ""), lang)
     salutation = ("Madame, Monsieur," if lang == "fr"
                   else "Dear Members of the Committee,")
@@ -360,11 +394,13 @@ def _acceptance_conditionals(config):
     }
 
 
-def build_acceptance(config):
+def build_acceptance(config, identity=None):
+    identity = identity if identity is not None else letter_identity.load_identity()
     gender = config.get("candidate_gender", "M")
-    text = tpl.TEMPLATE_ACCEPTANCE_FR.replace("%%LETTERHEAD_FR%%", tpl.LETTERHEAD_FR)
+    text = tpl.TEMPLATE_ACCEPTANCE_FR.replace("%%LETTERHEAD_FR%%",
+                                              render_letterhead(identity, "fr"))
     text = tpl.PREAMBLE.replace("%%BABEL_LANGUAGE%%", "french") + text
-    text = text.replace("%%SIGNATURE_FR%%", tpl.SIGNATURE_FR)
+    text = text.replace("%%SIGNATURE_FR%%", render_signature(identity, "fr"))
     text = text.replace("%%DATE%%", format_date(config.get("date", ""), "fr"))
     # raw (LaTeX-safe) conditional blocks - user free text inside is escaped
     for key, value in _acceptance_conditionals(config).items():
@@ -374,6 +410,10 @@ def build_acceptance(config):
         "CANDIDATE_NAME": config.get("candidate_name", "") or PLACEHOLDER,
         "PROJECT_DESCRIPTION": config.get("project_description", "") or PLACEHOLDER,
     })
+    # After the conditional blocks, not before: the funding paragraph is built in
+    # this module and names the laboratory too, so it has to be inserted first
+    # for its own placeholder to be seen. Same ordering reason as apply_gender.
+    text = text.replace("%%LAB_ACRONYM%%", identity["lab_acronym"])
     text = apply_gender(text, gender)
     return _clean_spaces(text)
 
@@ -391,10 +431,15 @@ def stay_days(start, end):
     return (d1 - d0).days
 
 
-def build_dispense(config):
+def build_dispense(config, identity=None):
+    identity = identity if identity is not None else letter_identity.load_identity()
     warns = []
     gender = config.get("candidate_gender", "M")
     text = tpl.TEMPLATE_DISPENSE_FR
+    text = text.replace("%%SIGNATURE_NAME%%", identity["signature_name_fr"])
+    text = text.replace("%%DISPENSE_LINES%%", _stacked(
+        ["{\\small %s}" % line for line in identity["dispense_lines_fr"]]))
+    text = text.replace("%%RESPONSIBLE_NAME%%", identity["responsible_name"])
     text = text.replace("%%DATE%%", format_date_dispense(config.get("date", "")))
     immigration = tpl.IMMIGRATION_PARAGRAPH_STANDARD
     days = stay_days(config.get("stay_start", ""), config.get("stay_end", ""))
@@ -444,13 +489,16 @@ def collect_warnings(config, body_or_none):
     return warns
 
 
-def generate(config):
+def generate(config, identity=None):
     """Return a list of {letter_type, tex, warnings, words} dicts."""
+    # Resolved once here rather than in each builder: an invitation pair emits
+    # two letters and both must be signed by the same person.
+    identity = identity if identity is not None else letter_identity.load_identity()
     ltype = config.get("letter_type", "")
     pair = config.get("invitation_pair", "")
     results = []
     if ltype in _AUTHORED:
-        tex = assemble_authored(config)
+        tex = assemble_authored(config, identity)
         body = config.get("body_tex", "")
         results.append({"letter_type": ltype, "tex": tex,
                         "warnings": collect_warnings(config, body),
@@ -466,11 +514,11 @@ def generate(config):
         make_acc = ltype == "acceptance"
         make_dis = ltype == "dispense"
     if make_acc:
-        tex = build_acceptance(config)
+        tex = build_acceptance(config, identity)
         results.append({"letter_type": "acceptance", "tex": tex,
                         "warnings": collect_warnings(config, None), "words": 0})
     if make_dis:
-        tex, w = build_dispense(config)
+        tex, w = build_dispense(config, identity)
         results.append({"letter_type": "dispense", "tex": tex,
                         "warnings": collect_warnings(config, None) + w, "words": 0})
     return results
@@ -537,7 +585,13 @@ def main(argv=None):
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    results = generate(config)
+    # A profile with no signatory is a refusal by design, not a crash: exit 2
+    # says the run was declined and names the key and the file (R12).
+    try:
+        results = generate(config)
+    except letter_identity.IdentityError as exc:
+        print("No letter identity: %s" % exc, file=sys.stderr)
+        return 2
     return write_outputs(results, config, args.output,
                          compile_pdf=not args.no_compile, strict=args.strict)
 

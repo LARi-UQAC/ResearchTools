@@ -229,13 +229,18 @@ def enrich_corpus(corpus: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]
         res = _run_scopus(["cite", doi])
         hit = (res.get("results") or [res])[0] if isinstance(res, dict) else {}
         for field in ("abstract", "authors", "citations", "publisher",
-                      "journal", "year", "title", "volume", "pages"):
+                      "journal", "year", "title", "volume", "pages",
+                      "doi_prefix", "publisher_by_prefix"):
             if isinstance(hit, dict) and hit.get(field):
                 record[field] = hit[field]
         grade, publisher, approved = grade_venue(record.get("journal", ""),
                                                  record.get("aggregation_type", ""))
         record["grade"] = grade
-        record["publisher_guess"] = record.get("publisher") or publisher
+        # The DOI prefix is assigned by the registration agency; Scopus's own
+        # publisher field is not, and was measured naming a learned society where
+        # 10.1007 says Springer, and an Elsevier imprint under its own name.
+        record["publisher_guess"] = (record.get("publisher_by_prefix")
+                                     or record.get("publisher") or publisher)
         record["publisher_approved"] = approved
         missing = [f for f in ("title", "authors", "journal") if not record.get(f)]
         record["validation"] = "OK" if not missing else f"[UNVERIFIED: {','.join(missing)}]"

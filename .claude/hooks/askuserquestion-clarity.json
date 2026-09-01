@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Thresholds for askuserquestion-clarity.py, the PreToolUse gate on AskUserQuestion.",
+    "R0: these numbers live here rather than in the hook so a machine can retune the gate",
+    "without editing Python. R4 provenance: CHOSEN, not measured - they are starting values",
+    "picked on 2026-08-30 when the gate was written, sized so that a question naming a file",
+    "and a measurement passes while a bare 'Which approach?' does not. Retune them here and",
+    "the change takes effect on the next tool call; nothing caches this file.",
+    "Deleting or breaking this file disables the gate in silence (R11); it never blocks."
+  ],
+
+  "enabled": true,
+
+  "min_question_chars": 60,
+  "min_description_chars": 40,
+  "min_description_gain_chars": 25,
+
+  "require_question_mark": true,
+  "require_recommended_marker": true,
+  "require_recommended_first": true,
+  "recommended_marker": "(Recommended)",
+
+  "_field_notes": {
+    "min_question_chars": "Question text floor. A question that states its origin - the file, the flag, the measurement - does not fit in less.",
+    "min_description_chars": "Per-option description floor. Behaviour plus cost does not fit in less; a bare label restated does.",
+    "min_description_gain_chars": "When the description contains the label verbatim, this much text must remain after removing it. Catches 'Strict' -> 'Strict mode'.",
+    "require_question_mark": "A question ends with '?'. A statement handed to AskUserQuestion is usually a decision that was never actually put to the user.",
+    "require_recommended_marker": "Every question carries one recommended option. Having an opinion is part of the work.",
+    "require_recommended_first": "The recommended option is options[0], because the reader stops at the first plausible one.",
+    "recommended_marker": "R5: the marker string is defined once, here, and never spelled again in code."
+  }
+}

@@ -37,6 +37,91 @@
 
 **Tech Stack:** Python 3.13, `pypdf` (BSD-3), `PyYAML`, standard library. No PyMuPDF (AGPL-3.0).
 
+## CORRECTION, 2026-08-31 - what this unit actually builds
+
+The scope-change block above is right about what moves. This block replaces the
+sections it does not name. Where an older section below disagrees with this one,
+this one wins.
+
+**RT-3 consumes nothing from RT-1 or RT-2.** The "Interfaces consumed" section
+lists names from a registry and a field map that no longer exist here. This
+function is handed a PDF and a dictionary and returns a PDF. It does not fetch,
+does not look up a map, and does not know which form it is filling.
+
+### Corrected file structure
+
+**New files**
+
+- `.claude/skills/uqac-forms/scripts/fill_form.py`
+- `.claude/skills/uqac-forms/scripts/Test/test_fill_form.py`
+
+**Not built here**: `load_profile`, `resolve_values`, the profile vocabulary,
+the field map and `require_fresh_map`. TT-9 resolves the values and TT-10
+decides which fields a step may write. Task 1 is superseded in full; Task 3
+loses its stale gate.
+
+### Corrected interfaces published by RT-3
+
+| Name | Signature |
+|---|---|
+| `fill` | `fill(pdf_bytes: bytes, values: dict[str, str], flatten_fields: list[str] \| None = None) -> bytes` |
+| `write_values` | `write_values(writer: PdfWriter, values: dict[str, str]) -> int` |
+| `set_need_appearances` | `set_need_appearances(writer: PdfWriter) -> None` |
+| `lock_fields` | `lock_fields(writer: PdfWriter, names: list[str]) -> int` |
+| `READONLY_FLAG` | `int = 1` |
+
+`values` maps a **byte-exact** PDF field name, as RT-2's `dump_widgets` reports
+it, to the string ThesisTracker already resolved. Nothing here trims, folds or
+re-encodes a key: a name this function tidies is a field it then fails to find.
+
+### flatten_fields is a list, and that is a behavioural change
+
+The old signature took `flatten=True` and locked every non-signature field at
+once. That is wrong for a multi-step form. A UQAC form is filled by several
+people in turn, and locking everything after the first step would leave the
+professor and the Direction with nothing they can write.
+
+`flatten_fields` therefore names the fields to lock, and is normally the fields
+of the step that just completed. `None` locks nothing.
+
+**A signature widget is never locked, even when named.** Locking one destroys
+the field a later signer needs, and the caller naming it is more likely a
+mistake than an instruction. It is skipped and not counted.
+
+### The order is not negotiable
+
+1. Write the values.
+2. Set `NeedAppearances`.
+3. Lock the fields of the completed step.
+4. Sign, in RT-4, as an incremental update.
+
+Signing last is what makes the signature verifiable: an incremental update
+appends, so every earlier signature survives. Anything that rewrites the whole
+document after a signature invalidates it.
+
+### Two failures this function must not produce silently
+
+**A value for a field that is not in the PDF.** The caller believes it filled
+something. `fill` raises rather than returning a document with a blank where the
+value should be, because a form that looks filled is worse than one that
+obviously failed.
+
+**A checkbox value that is not one of that widget's on-states.** Writing `/Yes`
+to a box whose on-state is `/Oui` leaves it unchecked on a document that then
+looks complete. This is the same failure RT-2's `on_states` exists to prevent,
+one stage later, and it is the reason the on-state is read per widget rather
+than assumed.
+
+### The honest limitation, carried into SKILL.md
+
+`pypdf` has no appearance-burning flatten. Locking a field read-only is what
+"flatten" means in this pipeline: the values are fixed and a viewer will not
+edit them, but they remain form fields rather than page content. A caller that
+needs a true burn-in needs a different tool, and should be told so rather than
+discovering it from a PDF someone was able to edit.
+
+---
+
 ## Global Constraints
 
 - Definition files (agents, skills, commands) are **English-only**.
@@ -70,7 +155,7 @@
 
 ---
 
-## Interfaces consumed
+## Interfaces consumed (SUPERSEDED - RT-3 consumes nothing from RT-1 or RT-2)
 
 From RT-1 `form_registry.py`:
 
@@ -89,7 +174,7 @@ From RT-2 `field_map.py`:
 
 ---
 
-## Task 1: Value resolution from a profile
+## Task 1: Value resolution from a profile (SUPERSEDED - TT-9 resolves the values)
 
 **Files:**
 
@@ -454,7 +539,7 @@ git commit -m "feat(uqac-forms): profile-to-field value resolution with per-widg
 
 ---
 
-## Task 2: Write the values, request appearances, lock the fields
+## Task 2: Write the values, request appearances, lock the named fields (CORRECTED)
 
 **Files:**
 
@@ -732,7 +817,7 @@ git commit -m "feat(uqac-forms): write values, request appearances, lock non-sig
 
 ---
 
-## Task 3: The fill pipeline, gated on a fresh map
+## Task 3: The stateless fill entry point (CORRECTED - no map, no stale gate)
 
 **Files:**
 

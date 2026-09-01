@@ -26,7 +26,8 @@ a form and cannot know the information that fills one, so:
 |---|---|
 | Retrieving a PDF over https, validated | here (RT-1) |
 | Reading a form's widgets, and diffing two reads | here (RT-2) |
-| Filling a form, signing it | here (RT-3, RT-4) |
+| Writing values into a form | here (RT-3) |
+| Signing a form | here (RT-4) |
 | The catalogue of registered forms, and their fingerprints | ThesisTracker (TT-8) |
 | Field maps, workflow rules, the drift check | ThesisTracker (TT-8) |
 | The profile that supplies values | ThesisTracker (TT-9) |
@@ -36,11 +37,11 @@ when UQAC replaced one, it is in ThesisTracker and edited there in the UI by an
 `owner` or the `direction`. This skill will not tell you, because it does not
 know.
 
-## Scope in this unit (RT-1, RT-2)
+## Scope in this unit (RT-1, RT-2, RT-3)
 
-Retrieval and inspection: fetch a form, read its widgets, and diff two reads.
-Filling (RT-3), signing (RT-4) and the HTTP service (RT-5) land in the
-following units.
+Retrieval, inspection and filling: fetch a form, read its widgets, diff two
+reads, and write values into one. Signing (RT-4) and the HTTP service (RT-5)
+land in the following units.
 
 ## The ingest contract
 
@@ -102,6 +103,59 @@ to `/Yes` is `restated`: nothing else about it changed, so without that key the
 drift check would pass it and every later fill would leave the box unchecked on
 a form that looks complete.
 
+## Filling a form
+
+`scripts/fill_form.py` writes values into a form and hands back the bytes. It
+is stateless: the caller supplies the PDF, the values, and which fields to
+lock.
+
+```python
+from fill_form import fill
+
+filled = fill(pdf_bytes, {'Nom': 'Umuhoza', 'plan_travail': 'Oui'},
+              flatten_fields=['Nom'])
+```
+
+Keys are the byte-exact field names `dump_widgets` reports. Values are strings
+ThesisTracker already resolved: this function looks nothing up.
+
+### The order, which is not negotiable
+
+1. Write the values.
+2. Set `NeedAppearances`, or the values are in the file and invisible on screen.
+3. Lock the fields of the step that just completed.
+4. Sign last, in RT-4, as an incremental update.
+
+Signing last is what makes a signature verifiable. An incremental update
+appends, so earlier signatures survive; a rewrite after signing does not.
+
+### flatten_fields is a list, not a flag
+
+A UQAC form is filled by several people in turn. Locking every field after the
+first step would leave the professor and the Direction with nothing they can
+write, so `flatten_fields` names the fields of the step that completed. `None`
+locks nothing. **A signature widget is never locked, even when named**, because
+locking one destroys the field a later signer needs.
+
+### Three refusals, each replacing a silent failure
+
+1. **A value for a field the PDF does not have.** The caller believes it filled
+   something. Every offending name is reported, not just the first.
+2. **A checkbox value that is not one of that widget's on-states.** Writing
+   `Yes` to a box whose on-state is `Oui` leaves it unchecked on a document
+   that looks complete.
+3. **Filling a document that is already signed.** `pypdf` writes a full rewrite,
+   not an incremental update, so this would invalidate the signature without
+   saying so.
+
+### What flatten does not mean
+
+`pypdf` has no appearance-burning flatten. Locking read-only is what flattening
+means here: the values are fixed and a viewer will not edit them, but they
+remain form fields rather than page content. If you need a true burn-in, this
+skill is not the tool, and it says so rather than letting you find out from a
+PDF someone was able to edit.
+
 ## Prerequisites
 
 - `pip install -r .claude/skills/uqac-forms/scripts/requirements.txt`
@@ -133,6 +187,7 @@ refused download leaves nothing behind, including no `*.part`.
 ```
 python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py
 python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
+python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py
 ```
 
 Offline: `requests.get` is patched, so no test reaches the network. Every rule of

@@ -786,13 +786,31 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
 .compose-note { font-size: var(--rt-t10); color: var(--rt-muted); margin: var(--rt-s2) 0 0; }
 
 /* ---- fleet --------------------------------------------------------------- */
-.fleet { display: flex; gap: 0; overflow-x: auto; }
+/*.fleet { display: flex; gap: 0; overflow-x: auto; }*/
+
+.fleet { 
+  display: flex; 
+  flex-wrap: wrap; 
+  gap: var(--rt-s2); 
+}
+
+/*.fleet { 
+  display: grid; 
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+  gap: var(--rt-s2); 
+  overflow-x: hidden; 
+}*/
+
 .fleet-card {
   flex: 0 0 268px;
   padding: var(--rt-s3) var(--rt-s4);
-  border-right: 1px solid var(--rt-line);
+  border: 2px solid var(--rt-line);
+  /*background: var(--rt-bg-card, #091110); */
+  border-radius: 4px;
   min-width: 0;
+  box-sizing: border-box;
 }
+
 .fleet-card:last-child { border-right: 0; }
 .fleet-card h4 {
   margin: 0;

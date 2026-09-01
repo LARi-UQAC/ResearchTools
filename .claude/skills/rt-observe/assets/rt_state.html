@@ -61,6 +61,28 @@
   --rt-s4: 16px;
   --rt-s5: 24px;
   --rt-s6: 36px;
+  --rt-radius: 3px;
+  --rt-radius-lg: 8px;
+  /* Tool identity, never severity. Four families, so a reader can tell a shell
+     call from a file write at a glance without reading either label; the alarm
+     hue stays reserved for the one state that must never be missed. */
+  --rt-tool-run: #b5761f;
+  --rt-tool-read: #2f6f9f;
+  --rt-tool-write: #3f7d4f;
+  --rt-tool-net: #7a5aa8;
+  /* One colour per token budget, so a ring and its bar are read as the same
+     measurement. Full is orange in all three, which is why orange is not one of
+     the three: a bar cannot be full of itself. */
+  --rt-budget-session: #1f6b3a;
+  --rt-budget-week: #1e4f8a;
+  --rt-budget-supplement: #8a6d1e;
+  --rt-budget-full: #e0761f;
+  --rt-budget-figure: #7fc8ee;
+  /* The one accent that is not a status. It marks MOTION - the marker running
+     along an edge the flow is travelling right now - and never severity, so it
+     does not compete with the alarm and does not have to be distinguishable
+     from it under a colour vision deficiency: nothing is decided by seeing it. */
+  --rt-runner: #d8862a;
   --rt-ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --rt-ease-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --rt-ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -194,6 +216,34 @@ body {
 /* Theme control. Quiet by construction: it is a preference, not a finding, so
    it wears the same hairline as any other secondary control and never competes
    with the alarm badge beside it. */
+.refresh {
+  align-self: center;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--rt-s2);
+  white-space: nowrap;
+}
+.refresh input {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rt-line);
+  padding: 0 2px;
+  /* Wide enough to READ, and with the browser's spinner removed: at 5ch with a
+     datalist triangle over it, the value was invisible. */
+  width: 8ch;
+  text-align: right;
+  appearance: textfield;
+  -webkit-appearance: textfield;
+}
+.refresh input::-webkit-outer-spin-button,
+.refresh input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.refresh input:focus-visible { outline: 2px solid var(--rt-blueprint); }
 .theme {
   margin-left: var(--rt-s3);
   align-self: center;
@@ -271,7 +321,15 @@ body {
   background: var(--rt-ground);
   box-shadow: inset 0 -2px 0 var(--rt-blueprint);
 }
-.tabs--rail .tab { padding: var(--rt-s2) var(--rt-s3); }
+/* The rail is 320px and carries six tabs, so this strip WRAPS rather than
+   scrolls. A tab you have to scroll sideways to discover is a tab nobody
+   finds: measured here, Actions sat off the end of the strip. */
+.tabs--rail { flex-wrap: wrap; overflow-x: hidden; }
+.tabs--rail .tab {
+  padding: var(--rt-s2) var(--rt-s3);
+  border-bottom: 1px solid var(--rt-line);
+  margin-bottom: -1px;
+}
 
 /* A hidden pane is display:none rather than merely transparent, so nothing in
    it is measured, tabbed into, or read out. The canvas pays for that - a hidden
@@ -564,12 +622,14 @@ table.mx tbody tr:hover th { color: var(--rt-blueprint); }
 
 /* ---- canvas -------------------------------------------------------------- */
 .a-canvas .panel-body { display: flex; flex-direction: column; }
-/* Grows into its tab. Never shrinks below the drawing: turned upright the
-   diagram computes a height of its own that can exceed the pane, and squashing
-   it there would clip the lanes instead of letting the pane scroll. */
-.canvas-wrap { position: relative; flex: 1 0 auto; min-height: 0; }
-svg.fanout { display: block; width: 100%; height: 300px; }
-@media (max-width: 1080px) { svg.fanout { height: 240px; } }
+/* Takes the height the tab has left, and no more. Upright the drawing computes
+   a height of its own that can exceed that, so this is where it scrolls: the
+   PAGE never does. */
+.canvas-wrap { position: relative; flex: 1; min-height: 0; overflow: auto; }
+/* Fills its wrapper rather than carrying a height of its own. Upright, the
+   script gives it an explicit one instead - that is the single case where the
+   drawing is taller than the tab, and the wrapper scrolls for it. */
+svg.fanout { display: block; width: 100%; height: 100%; }
 svg.fanout text {
   font-family: var(--rt-face-utility);
   fill: var(--rt-ink);
@@ -849,6 +909,474 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
 }
 .fleet-empty p { margin: 0 0 var(--rt-s2); color: var(--rt-muted); }
 
+/* ---- real-time process ---------------------------------------------------
+   The two figures this tab is drawn from (`c2:fig:hooks_states` and
+   `c2:fig:superpowers_collab`) carry their meaning in colour. This page cannot:
+   it was measured that a second status hue collapses under deuteranopia here,
+   so the role of a state is carried by a two-letter code and a border weight,
+   exactly as the matrix carries its eight states, and the only fill is the step
+   running RIGHT NOW. */
+.live { display: flex; flex-direction: column; gap: var(--rt-s3); }
+.live-machine { overflow-x: auto; }
+/* The height comes from the drawing, which stacks its hook names rather than
+   laying them along one line: at one line they collided with the next box's
+   and the strip could not be read. */
+svg.machine { display: block; min-width: 660px; width: 100%; }
+svg.machine text { font-family: var(--rt-face-utility); fill: var(--rt-ink); }
+svg.machine .m-label { font-size: 10px; letter-spacing: 0.04em; }
+svg.machine .m-role {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  fill: var(--rt-muted);
+}
+svg.machine .m-box {
+  fill: var(--rt-ground);
+  stroke: var(--rt-ink);
+  stroke-width: 1;
+  rx: var(--rt-radius);
+}
+svg.machine .m-box--idle { stroke-dasharray: 3 2; stroke: var(--rt-line); }
+svg.machine .m-box--core { stroke: var(--rt-blueprint); stroke-width: 1.6; }
+svg.machine .m-box--live { fill: var(--rt-ink); }
+svg.machine .m-live-text { fill: var(--rt-ground); }
+svg.machine .m-edge { fill: none; stroke: var(--rt-line); stroke-width: 1; }
+svg.machine .m-edge--travelled {
+  stroke: var(--rt-ink);
+  stroke-width: 2;
+}
+svg.machine .m-runner { fill: var(--rt-runner); }
+svg.machine .m-edge-label {
+  font-size: 10px;
+  fill: var(--rt-muted);
+  letter-spacing: 0.08em;
+}
+/* The figure's own idiom for a background process: a dashed self-loop over the
+   box it runs on, labelled. RTK, caveman, the secret scan and the outbox flush
+   are drawn exactly this way, because that is what they are - loops that repeat
+   independently of the main flow. */
+svg.machine .m-loop {
+  fill: none;
+  stroke: var(--rt-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+svg.machine .m-loop--blocked { stroke: var(--rt-alarm); stroke-width: 1.6; }
+svg.machine .m-loop-label { font-size: 10px; fill: var(--rt-muted); }
+svg.machine .m-loop-label--blocked { fill: var(--rt-alarm); }
+.live-hooks { display: flex; flex-wrap: wrap; gap: var(--rt-s2); margin-top: var(--rt-s2); }
+.live-hook {
+  border: 1px dashed var(--rt-line);
+  border-radius: var(--rt-radius);
+  padding: 1px var(--rt-s2);
+  font-size: var(--rt-t10);
+  color: var(--rt-muted);
+  white-space: nowrap;
+}
+.live-hook--blocked { border-color: var(--rt-alarm); color: var(--rt-alarm); }
+.live-sub { display: flex; flex-wrap: wrap; gap: var(--rt-s2); margin-top: var(--rt-s2); }
+
+/* A card rather than a ruled row. The sheet's hairlines are the drawing
+   surface's language; what sits ON it in this tab is read at a glance and gets
+   a softer edge. */
+.live-block {
+  border: 1px solid var(--rt-line);
+  border-radius: var(--rt-radius-lg);
+  background: var(--rt-ground);
+  padding: var(--rt-s3);
+}
+.fx-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rt-s4);
+  padding: 0 var(--rt-s2) var(--rt-s2);
+  font-size: var(--rt-t10);
+  color: var(--rt-muted);
+}
+.fx-legend-item { display: flex; align-items: center; gap: var(--rt-s2); }
+.fx-legend-item b {
+  font-weight: 400;
+  font-family: var(--rt-face-utility);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fx-legend-mark { width: 14px; height: 12px; flex: 0 0 auto; }
+.fx-legend-mark--agent {
+  border: 1.5px solid #6fb2d8;
+  background: #0f2029;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+.fx-legend-mark--call {
+  border: 1px solid var(--rt-tool-run);
+  background: #0e1a22;
+  border-radius: var(--rt-radius-lg);
+}
+.fx-legend-mark--memory {
+  border: 1px dashed var(--rt-line);
+  background: var(--rt-sunken);
+  border-radius: var(--rt-radius-lg);
+}
+/* The hook, at legend size: the same shank and bend the graph draws. */
+.fx-legend-mark--hook {
+  border-left: 1.5px solid var(--rt-muted);
+  border-bottom: 1.5px solid var(--rt-muted);
+  border-bottom-left-radius: 7px;
+  width: 9px;
+  margin-left: 3px;
+}
+.live-graph {
+  border: 1px solid var(--rt-line);
+  border-radius: var(--rt-radius-lg);
+  background: var(--rt-ground);
+  padding: var(--rt-s2);
+  overflow-x: auto;
+}
+/* The canvas is its own surface, dark in both themes. The sheet around it is a
+   drafting ground; this is an instrument panel, and the reference the operator
+   asked for reads as one because the drawing glows against a dark field rather
+   than sitting on paper. */
+.live-graph {
+  background:
+    radial-gradient(1200px 400px at 20% 0%,
+      color-mix(in oklab, #0d1b24 88%, var(--rt-blueprint)) 0%,
+      #0b141b 60%, #080f14 100%);
+  border-color: #16232c;
+}
+svg.flowgraph { display: block; width: 100%; }
+svg.flowgraph text { fill: #cfe0e8; }
+/* The agent: a hexagon inside a token ring, lit rather than outlined. */
+svg.flowgraph .fx-hex {
+  fill: color-mix(in oklab, #0f2029 80%, var(--rt-blueprint));
+  stroke: #6fb2d8;
+  stroke-width: 1.6;
+  filter: url(#fxglow);
+}
+svg.flowgraph .fx-agent--idle .fx-hex { stroke: #46626f; }
+/* Alive: the node breathes and sends a ping outward. Idle is still, which is
+   the point - a panel where everything moves says nothing about what is
+   working. */
+svg.flowgraph .fx-agent--live .fx-hex {
+  animation: fx-breathe 1.8s ease-in-out infinite;
+}
+svg.flowgraph .fx-ping {
+  fill: none;
+  stroke: var(--rt-budget-figure);
+  stroke-width: 1.5;
+}
+@keyframes fx-breathe {
+  0%, 100% { stroke-width: 1.6; }
+  50% { stroke-width: 3.2; }
+}
+svg.flowgraph .fx-agent--subagent .fx-hex { stroke-dasharray: 5 3; }
+svg.flowgraph .fx-ring-track {
+  fill: none;
+  stroke: #1b2c36;
+  stroke-width: 3;
+}
+/* The ring IS the session bar, drawn round the agent: same measurement, same
+   colour, so a glance at the graph answers which agent is eating the budget. */
+svg.flowgraph .fx-ring {
+  fill: none;
+  stroke: var(--rt-budget-session);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+svg.flowgraph .fx-ring--full { stroke: var(--rt-budget-full); }
+svg.flowgraph .fx-agent-state {
+  font-size: 10px;
+  fill: #9fd0e8;
+  letter-spacing: 0.06em;
+}
+svg.flowgraph .fx-agent-name { font-size: 12px; fill: #e6f1f6; }
+/* The number itself, in the one colour reserved for a figure rather than a
+   state: it is read, not judged. */
+svg.flowgraph .fx-agent-spend {
+  font-size: 11px;
+  fill: var(--rt-budget-figure);
+}
+/* A call: a labelled box on a curved wire, coloured by family. */
+svg.flowgraph .fx-wire {
+  fill: none;
+  stroke: #33505f;
+  stroke-width: 1.2;
+  opacity: 0.85;
+}
+svg.flowgraph .fx-wire--out { stroke-dasharray: 4 4; opacity: 0.5; }
+svg.flowgraph .fx-wire--run { stroke: var(--rt-tool-run); }
+svg.flowgraph .fx-wire--read { stroke: var(--rt-tool-read); }
+svg.flowgraph .fx-wire--write { stroke: var(--rt-tool-write); }
+svg.flowgraph .fx-wire--net { stroke: var(--rt-tool-net); }
+svg.flowgraph .fx-wire--skill { stroke: #7fb9d8; }
+svg.flowgraph .fx-call rect {
+  fill: #0e1a22;
+  stroke: #33505f;
+  stroke-width: 1;
+  rx: var(--rt-radius-lg);
+}
+svg.flowgraph .fx-call text { font-size: 11px; }
+svg.flowgraph .fx-call-count {
+  font-size: 10px;
+  fill: #7f97a3;
+  font-weight: 700;
+}
+svg.flowgraph .fx-call-at { font-size: 9.5px; fill: #6f8794; }
+/* Quiet by default, full colour and alive when the agent is using it. A tool
+   that ran an hour ago and a tool running right now were the same box, which is
+   the difference this panel exists to show. */
+svg.flowgraph .fx-call--quiet { opacity: 0.45; }
+svg.flowgraph .fx-call--live rect {
+  stroke-width: 1.8;
+  animation: fx-pulse 1.6s ease-in-out infinite;
+}
+svg.flowgraph .fx-wire--quiet { opacity: 0.3; }
+svg.flowgraph .fx-wire--live {
+  stroke-width: 2;
+  animation: fx-pulse 1.6s ease-in-out infinite;
+}
+@keyframes fx-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+svg.flowgraph .fx-call--run rect { stroke: var(--rt-tool-run); }
+svg.flowgraph .fx-call--run text { fill: #e2b671; }
+svg.flowgraph .fx-call--read rect { stroke: var(--rt-tool-read); }
+svg.flowgraph .fx-call--read text { fill: #8ec3e6; }
+svg.flowgraph .fx-call--write rect { stroke: var(--rt-tool-write); }
+svg.flowgraph .fx-call--write text { fill: #8ecb9d; }
+svg.flowgraph .fx-call--net rect { stroke: var(--rt-tool-net); }
+svg.flowgraph .fx-call--net text { fill: #bda6e0; }
+svg.flowgraph .fx-call--skill rect { stroke: #7fb9d8; fill: #10222c; }
+svg.flowgraph .fx-call--skill text { fill: #b7e0f2; }
+svg.flowgraph .fx-call--picked rect { stroke-width: 2; }
+svg.flowgraph .fx-call:focus-visible rect { stroke-width: 2; }
+svg.flowgraph .fx-spawn {
+  fill: none;
+  stroke: #3d5f70;
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+}
+svg.flowgraph .fx-hook { stroke: #7f97a3; }
+svg.flowgraph .fx-hook--blocked { stroke: var(--rt-alarm); }
+svg.flowgraph .fx-hook-label { fill: #6f8794; font-size: 10px; }
+/* A hook that FIRED is bold; one merely declared stays quiet. The operator
+   could not tell the two apart, and that difference is the column's whole
+   subject. */
+svg.flowgraph .fx-hook-label--fired { fill: #cfe0e8; font-weight: 700; }
+svg.flowgraph .fx-hook-label--blocked { fill: var(--rt-alarm); font-weight: 700; }
+/* A failure is a RESULT, and it was the one result that could not be tracked.
+   Marked by a triangle as well as by colour, so it survives a colour vision
+   deficiency - the same reason the matrix carries two-letter codes. */
+svg.flowgraph .fx-fail { fill: var(--rt-alarm); }
+svg.flowgraph .fx-wire--failed { stroke: var(--rt-alarm); opacity: 1; }
+svg.flowgraph .fx-call--failed rect { stroke: var(--rt-alarm); stroke-width: 1.6; }
+svg.flowgraph .fx-call--failed text { fill: #f0b7b5; }
+svg.flowgraph .fx-shared-box {
+  fill: #0e1a22;
+  stroke: #33505f;
+  rx: var(--rt-radius-lg);
+}
+svg.flowgraph .fx-shared-label { fill: #cfe0e8; font-size: 11px; }
+svg.flowgraph .fx-shared-count {
+  fill: var(--rt-budget-figure);
+  font-size: 11px;
+  font-weight: 700;
+}
+svg.flowgraph .fx-link {
+  fill: none;
+  stroke: #2b4a5c;
+  stroke-width: 1;
+  opacity: 0.6;
+}
+svg.flowgraph .fx-more { fill: #6f8794; font-size: 10px; }
+svg.flowgraph .fx-empty { fill: #6f8794; font-size: 11px; }
+svg.flowgraph text {
+  font-family: var(--rt-face-utility);
+  fill: var(--rt-ink);
+  font-size: 10px;
+}
+svg.flowgraph .fx-lane-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+svg.flowgraph .fx-lane-kind {
+  font-size: 10px;
+  fill: var(--rt-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+svg.flowgraph .fx-spine {
+  stroke: var(--rt-line);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+/* The bracket that hangs a subagent off the line that spawned it. */
+svg.flowgraph .fx-spawn {
+  fill: none;
+  stroke: var(--rt-line);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+/* A BOX is an actor - a line, a skill, a memory. A tool call is not an actor,
+   so it is a tick on the line and a run of the same tool is one tick carrying
+   its count. Drawn as boxes, `Bash`, `Bash`, `tool result` read as three
+   entities, which is three things that are not there. */
+svg.flowgraph .fx-actor rect {
+  fill: var(--rt-panel);
+  stroke: var(--rt-line);
+  stroke-width: 1;
+  rx: var(--rt-radius-lg);
+}
+svg.flowgraph .fx-actor--subagent rect { stroke-dasharray: 4 3; }
+svg.flowgraph .fx-actor:focus-visible rect {
+  stroke: var(--rt-blueprint);
+  stroke-width: 2;
+}
+/* The result edge: solid once the output came back, dashed while the call is
+   still out. It is the same arrow the state strip draws from `tool call` to
+   `PostToolUse`. */
+svg.flowgraph .fx-return {
+  stroke: var(--rt-ink);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+svg.flowgraph .fx-return--out {
+  stroke: var(--rt-muted);
+  stroke-dasharray: 3 3;
+}
+svg.flowgraph .fx-tick line {
+  stroke: var(--rt-muted);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+svg.flowgraph .fx-tick text { fill: var(--rt-muted); font-size: 10px; }
+/* Input and output are told apart by DIRECTION and by shape, never by colour
+   alone: a wedge arriving at the line, an arrowhead travelling along it. */
+svg.flowgraph .fx-in { fill: var(--rt-blueprint); }
+svg.flowgraph .fx-out { fill: var(--rt-ink); }
+svg.flowgraph .fx-tick--net line { stroke: var(--rt-blueprint); }
+svg.flowgraph .fx-tick--net text { fill: var(--rt-blueprint); }
+svg.flowgraph .fx-tick--now line { stroke: var(--rt-ink); stroke-width: 2; }
+svg.flowgraph .fx-tick--now text { fill: var(--rt-ink); font-weight: 700; }
+svg.flowgraph .fx-tick--now circle { fill: var(--rt-ink); }
+svg.flowgraph .fx-tick--picked line { stroke: var(--rt-blueprint); stroke-width: 2.5; }
+svg.flowgraph .fx-tick:focus-visible line { stroke: var(--rt-blueprint); stroke-width: 2.5; }
+/* A dispatch is a mark on the parent line: the subagent itself is the line
+   below, so this is only where it was spawned. */
+svg.flowgraph .fx-dispatch circle {
+  fill: var(--rt-ground);
+  stroke: var(--rt-ink);
+  stroke-width: 1.5;
+}
+svg.flowgraph .fx-dispatch text { fill: var(--rt-ink); font-size: 10px; }
+/* A skill changes what a line is following, so it sits above the line in a box
+   of its own, joined to the step that invoked it. */
+svg.flowgraph .fx-skill rect {
+  fill: var(--rt-wash);
+  stroke: var(--rt-blueprint);
+  stroke-width: 1;
+  rx: var(--rt-radius-lg);
+}
+svg.flowgraph .fx-join { stroke: var(--rt-blueprint); stroke-width: 1; }
+/* An actual hook. Deterministic, so it is drawn in the quiet ink and turns to
+   alarm only when it REFUSED a call. */
+svg.flowgraph .fx-hook {
+  fill: none;
+  stroke: var(--rt-muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+svg.flowgraph .fx-hook--blocked { stroke: var(--rt-alarm); stroke-width: 2.2; }
+svg.flowgraph .fx-hook-label { fill: var(--rt-muted); font-size: 10px; }
+svg.flowgraph .fx-shared-box {
+  fill: var(--rt-sunken);
+  stroke: var(--rt-line);
+  stroke-width: 1;
+  rx: var(--rt-radius-lg);
+}
+svg.flowgraph .fx-shared-label { fill: var(--rt-ink); }
+svg.flowgraph .fx-link {
+  fill: none;
+  stroke: var(--rt-blueprint);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+svg.flowgraph .fx-empty { fill: var(--rt-muted); font-size: 10px; }
+.live-lane { border-top: 1px solid var(--rt-line); padding-top: var(--rt-s2); }
+.live-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--rt-s3);
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t11);
+  letter-spacing: 0.06em;
+}
+.live-head b { font-weight: 700; }
+.live-head span { color: var(--rt-muted); font-size: var(--rt-t10); }
+.live-steps { display: flex; flex-wrap: wrap; gap: var(--rt-s2); margin-top: var(--rt-s2); }
+.live-chip {
+  border: 1px solid var(--rt-line);
+  border-radius: var(--rt-radius);
+  padding: 2px var(--rt-s2);
+  font-size: var(--rt-t10);
+  /* History stays on screen, in low grey, rather than being lost. */
+  color: var(--rt-muted);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.live-chip--now {
+  border-color: var(--rt-ink);
+  background: var(--rt-ink);
+  color: var(--rt-ground);
+}
+.live-chip--picked { border-color: var(--rt-blueprint); color: var(--rt-ink); }
+.live-chip--sub { margin-left: var(--rt-s4); border-style: dashed; }
+.live-chip em { font-style: normal; color: var(--rt-alarm); }
+.live-bar {
+  margin-top: var(--rt-s2);
+  height: 6px;
+  background: var(--rt-sunken);
+  border-radius: var(--rt-radius);
+  overflow: hidden;
+  flex: 1;
+  min-width: 60px;
+}
+.live-bar i { display: block; height: 100%; background: var(--rt-blueprint); }
+/* One colour per budget: what a session holds, what the week has spent, what
+   the paid supplement has run to. The agent's ring uses the session colour, so
+   the ring and the bar are visibly the same measurement. */
+.live-bar--session i { background: var(--rt-budget-session); }
+.live-bar--week i { background: var(--rt-budget-week); }
+.live-bar--supplement i { background: var(--rt-budget-supplement); }
+/* Full is the one state that must be unmissable, since it is what makes the
+   third bar appear at all - and it outranks the budget's own colour. */
+.live-bar--full i { background: var(--rt-budget-full); }
+.live-meter { display: flex; align-items: center; gap: var(--rt-s2); margin-top: var(--rt-s2); }
+.live-meter > span {
+  flex: 0 0 auto;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+  min-width: 7ch;
+}
+.live-meter b { font-weight: 400; font-size: var(--rt-t10); white-space: nowrap; }
+.live-meter input {
+  font: inherit;
+  font-size: var(--rt-t10);
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rt-line);
+  width: 7ch;
+  text-align: right;
+  padding: 0 2px;
+}
+.live-meter input:focus-visible { outline: 2px solid var(--rt-blueprint); }
+.live-spend--none { color: var(--rt-muted); }
+.live-spend { font-size: var(--rt-t10); color: var(--rt-muted); margin-top: var(--rt-s1); }
+
 /* ---- sheet block (footer) ------------------------------------------------ */
 .foot {
   display: flex; flex-wrap: wrap; gap: 0;
@@ -869,6 +1397,37 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
 }
 
 /* ---- tooltip ------------------------------------------------------------- */
+/* ---- interaction layer ---------------------------------------------------
+   Rounded corners on every OBJECT - a cell, a card, a control, a node in the
+   diagram - and never on the sheet or its panels, which are the drawing surface
+   and not boxes sitting on it. One token, so the whole page turns the same
+   corner. */
+.cell, .btn, .fleet-card, .unavail, .tblock, .tip, .mx-detail, .compose,
+.act-confirm, .act-result, .next, .hooks, .srv-list li {
+  border-radius: var(--rt-radius);
+}
+.tab { border-radius: var(--rt-radius) var(--rt-radius) 0 0; }
+svg.fanout .node rect { rx: var(--rt-radius); }
+
+/* Every object that can explain itself says so with the cursor, and the
+   diagram's boxes can be moved. `touch-action` is what makes a drag a drag on
+   a touch screen rather than a scroll of the pane under it. */
+[data-detail] { cursor: help; }
+svg.fanout { touch-action: none; }
+svg.fanout .node { cursor: grab; }
+svg.fanout .node:focus-visible rect { stroke: var(--rt-blueprint); stroke-width: 2; }
+svg.fanout.rt-dragging .node { cursor: grabbing; }
+svg.fanout .edge-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: help; }
+.tip-line { display: flex; gap: var(--rt-s2); margin-top: var(--rt-s1); }
+.tip-line span {
+  flex: 0 0 auto;
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+}
+.tip-line em { font-style: normal; }
 .tip {
   position: fixed;
   z-index: 20;
@@ -919,6 +1478,12 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
       <h1 class="wordmark"><b>rt</b><span>observe</span></h1>
       <div class="head-id" id="head-id">reading state</div>
       <div class="head-ok" id="head-verdict"></div>
+      <label class="btn refresh" for="refresh">
+        refresh
+        <input id="refresh" type="number" step="0.5" inputmode="decimal"
+               aria-label="Seconds between refreshes">
+        <span>s</span>
+      </label>
       <button class="btn theme" id="theme" type="button">
         theme <b id="theme-now">system</b>
       </button>
@@ -979,6 +1544,7 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
           <div class="panel-head">
             <h2 class="panel-title" id="t-fleet">Sessions</h2>
             <p class="panel-note" id="fleet-note"></p>
+            <div class="mx-controls" id="fleet-filter"></div>
           </div>
           <div class="panel-body">
             <div id="fleet"></div>
@@ -989,16 +1555,12 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
                  aria-labelledby="tab-live" data-active="0">
           <div class="panel-head">
             <h2 class="panel-title" id="t-live">Real-Time Process</h2>
-            <p class="panel-note">What the harness is doing right now.</p>
+            <p class="panel-note" id="live-note">What the harness is doing right
+              now.</p>
+            <div class="mx-controls" id="live-filter"></div>
           </div>
           <div class="panel-body">
-            <div class="unavail" id="live-empty">
-              <b>not built yet</b>
-              <div>This tab is the next phase of the plan. It stays here, and
-                stays empty, rather than being added the day it works: a tab
-                that appears and disappears between refreshes is a dashboard
-                nobody trusts.</div>
-            </div>
+            <div class="live" id="live"></div>
           </div>
         </section>
       </div>
@@ -1009,7 +1571,7 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
              aria-label="Rail panels">
           <button class="tab" type="button" role="tab" id="rtab-repo"
                   data-rail-tab="repo" aria-controls="rail"
-                  aria-selected="true">Repository</button>
+                  aria-selected="true">Repo</button>
           <button class="tab" type="button" role="tab" id="rtab-plan"
                   data-rail-tab="plan" aria-controls="rail"
                   aria-selected="false" tabindex="-1">Plan</button>
@@ -1333,6 +1895,7 @@ function cellButton(row, column) {
   var button = el("button", "cell", info.code);
   button.type = "button";
   button.dataset.state = state;
+  button.dataset.detail = "cell";
   button.dataset.name = row ? row.name : "";
   button.dataset.target = column.id;
   button.setAttribute("aria-label",
@@ -1587,19 +2150,42 @@ function renderDetail(name) {
 
 /* ---- tooltip ------------------------------------------------------------- */
 var tip = document.getElementById("tip");
-function showTip(button) {
-  var state = button.dataset.state;
-  var info = STATES[state] || STATES.unknown;
+/* ---- the hover detail layer, written once --------------------------------
+   Part G of the plan. Any box, any edge, any cell that can explain itself
+   carries data-detail="<kind>" plus whatever key its provider needs. A provider
+   returns { title, means, pairs, note } and the ONE renderer below draws it.
+
+   Written once on purpose rather than per panel: the fan-out edge that reads
+   `1 lost` and the matrix cell that reads `LO` are two views of one fact, and
+   two tooltip implementations are two chances to explain that fact differently.
+   The worked example the plan names is the edge - it said `1 lost` and WHICH
+   mirror was lost could not be reached from it at all. */
+var DETAIL = {};
+
+function registerDetail(kind, provide) { DETAIL[kind] = provide; }
+
+function showDetail(host) {
+  var provide = DETAIL[host.dataset.detail];
+  if (!provide) { return; }
+  var found = provide(host);
+  if (!found) { return; }
   tip.textContent = "";
-  tip.appendChild(el("b", null, info.label));
-  tip.appendChild(document.createTextNode(info.means));
-  var row = lastMirrors && lastMirrors.rows.filter(function (r) {
-    return r.name === button.dataset.name && r.target === button.dataset.target;
-  })[0];
-  if (row && row.reason) {
-    tip.appendChild(el("em", null, " " + row.reason));
-  }
-  var box = button.getBoundingClientRect();
+  tip.appendChild(el("b", null, found.title));
+  if (found.means) { tip.appendChild(document.createTextNode(found.means)); }
+  (found.pairs || []).forEach(function (pair) {
+    var line = el("div", "tip-line");
+    line.appendChild(el("span", null, pair[0]));
+    line.appendChild(el("em", null, pair[1]));
+    tip.appendChild(line);
+  });
+  if (found.note) { tip.appendChild(el("em", null, " " + found.note)); }
+  placeTip(host);
+}
+
+function placeTip(host) {
+  /* Works for an HTML element and for an SVG node alike, which is the point of
+     measuring the rendered box rather than reading coordinates out of either. */
+  var box = host.getBoundingClientRect();
   tip.dataset.show = "1";
   var width = tip.offsetWidth;
   var left = Math.min(box.left, window.innerWidth - width - 8);
@@ -1610,20 +2196,175 @@ function showTip(button) {
   tip.style.left = Math.max(4, left) + "px";
   tip.style.top = Math.max(4, top) + "px";
 }
+
 function hideTip() { tip.dataset.show = "0"; }
 
+function detailHost(event) {
+  var node = event.target.closest && event.target.closest("[data-detail]");
+  return (node && !node.hasAttribute("aria-hidden")) ? node : null;
+}
+
 document.addEventListener("pointerover", function (event) {
-  var button = event.target.closest && event.target.closest(".cell");
-  if (button && !button.hasAttribute("aria-hidden")) { showTip(button); }
+  var host = detailHost(event);
+  if (host) { showDetail(host); }
 });
 document.addEventListener("pointerout", function (event) {
-  if (event.target.closest && event.target.closest(".cell")) { hideTip(); }
+  if (detailHost(event)) { hideTip(); }
 });
 document.addEventListener("focusin", function (event) {
-  var button = event.target.closest && event.target.closest(".cell");
-  if (button && !button.hasAttribute("aria-hidden")) { showTip(button); }
+  var host = detailHost(event);
+  if (host) { showDetail(host); }
 });
 document.addEventListener("focusout", hideTip);
+
+registerDetail("cell", function (host) {
+  var info = STATES[host.dataset.state] || STATES.unknown;
+  var row = lastMirrors && lastMirrors.rows.filter(function (r) {
+    return r.name === host.dataset.name && r.target === host.dataset.target;
+  })[0];
+  return { title: info.label, means: info.means,
+           pairs: [["mirror", host.dataset.name || "unknown"]],
+           note: row ? row.reason : "" };
+});
+
+registerDetail("note", function (host) {
+  /* The generic one: a box whose whole detail is a sentence it already holds,
+     and optionally a LIST - what an outbox is holding, what a snapshot counts.
+     It exists so that a panel with one thing to say does not grow a tooltip
+     implementation of its own. */
+  var pairs = [];
+  (host.dataset.detailLines || "").split("|").forEach(function (line) {
+    if (!line) { return; }
+    var cut = line.indexOf(" ");
+    pairs.push(cut === -1 ? [line, ""]
+                          : [line.slice(0, cut), line.slice(cut + 1)]);
+  });
+  return { title: host.dataset.detailTitle || "detail",
+           means: host.dataset.detailNote || "",
+           pairs: pairs };
+});
+
+registerDetail("phase", function (host) {
+  var phase = ((lastState || {}).progress || {}).phases || [];
+  var found = phase.filter(function (p) {
+    return String(p.number) === host.dataset.detailKey;
+  })[0];
+  if (!found) { return null; }
+  return { title: found.label, means: "",
+           pairs: [["state", found.state]],
+           note: found.evidence
+             || "no evidence recorded, so this phase is ticked and unproven" };
+});
+
+registerDetail("gnode", function (host) {
+  var node = graphNode(host.dataset.detailKey);
+  if (!node) { return null; }
+  var pairs = [];
+  if (node.count !== null && node.count !== undefined) {
+    pairs.push([node.id.indexOf("src:") === 0 ? "defined" : "count",
+                String(node.count)]);
+  }
+  var broken = 0;
+  var total = 0;
+  ((sim.graph || {}).edges || []).forEach(function (edge) {
+    if (edge.from !== node.index && edge.to !== node.index) { return; }
+    total += edge.count;
+    broken += edge.broken;
+  });
+  if (total) { pairs.push(["mirrors", String(total)]); }
+  if (broken) { pairs.push(["needing work", String(broken)]); }
+  return { title: node.label,
+           means: LANE_NAMES[node.lane] ? LANE_NAMES[node.lane].toLowerCase() : "",
+           pairs: pairs,
+           note: node.absent ? "not installed on this machine"
+             : (broken ? "hover the red edge for which ones" : "") };
+});
+
+registerDetail("gedge", function (host) {
+  var edge = graphEdge(host.dataset.detailKey);
+  if (!edge) { return null; }
+  var graph = sim.graph || { nodes: [] };
+  var from = graph.nodes[edge.from] || {};
+  var to = graph.nodes[edge.to] || {};
+  var pairs = (edge.problems || []).slice(0, CFG.detail_rows).map(
+    function (problem) {
+      return [problem.state, problem.name];
+    });
+  var hidden = (edge.problems || []).length - pairs.length;
+  return { title: (from.label || "?") + " to " + (to.label || "?"),
+           means: edge.kind === "mirror"
+             ? edge.count + " mirrors, " + edge.broken + " needing work"
+             : "consumed directly, with no mirror in between",
+           pairs: pairs,
+           note: hidden > 0 ? "and " + hidden + " more" : "" };
+});
+
+function graphNode(id) {
+  var nodes = (sim.graph || {}).nodes || [];
+  return nodes.filter(function (n) { return n.id === id; })[0];
+}
+
+function graphEdge(key) {
+  var edges = (sim.graph || {}).edges || [];
+  return edges.filter(function (e) { return e.key === key; })[0];
+}
+
+/* ---- dragging ------------------------------------------------------------
+   Defined for the objects that HAVE edges, which is the diagram's boxes: the
+   panels are the sheet itself and moving one would only break the promise that
+   the whole dashboard fits the screen.
+
+   The edges follow for free, and that is a property of the drawing rather than
+   a feature: a path is emitted FROM the node coordinates every time, so there
+   is no second copy of the geometry that could fall out of step. */
+var dragging = null;
+
+function svgScale(svg) {
+  var box = svg.getBoundingClientRect();
+  var view = (svg.getAttribute("viewBox") || "0 0 1 1").split(" ");
+  return { x: parseFloat(view[2]) / (box.width || 1),
+           y: parseFloat(view[3]) / (box.height || 1) };
+}
+
+function clamp(value, low, high) {
+  return Math.max(low, Math.min(high, value));
+}
+
+document.addEventListener("pointerdown", function (event) {
+  var group = event.target.closest && event.target.closest("svg.fanout .node");
+  if (!group || !sim.graph || !sim.dims) { return; }
+  var node = graphNode(group.dataset.detailKey);
+  if (!node) { return; }
+  var svg = document.getElementById("fanout");
+  /* A movement in flight is superseded by a hand on the box. */
+  window.cancelAnimationFrame(sim.raf);
+  sim.tweening = false;
+  svg.classList.add("rt-dragging");
+  dragging = { node: node, svg: svg, fromX: event.clientX,
+               fromY: event.clientY, wasX: node.x, wasY: node.y };
+  event.preventDefault();
+});
+
+document.addEventListener("pointermove", function (event) {
+  if (!dragging) { return; }
+  var scale = svgScale(dragging.svg);
+  var dims = sim.dims;
+  var node = dragging.node;
+  node.x = clamp(dragging.wasX + (event.clientX - dragging.fromX) * scale.x,
+                 node.w / 2 + 2, dims.width - node.w / 2 - 2);
+  node.y = clamp(dragging.wasY + (event.clientY - dragging.fromY) * scale.y,
+                 node.h / 2 + 2, dims.height - node.h / 2 - 2);
+  /* Held, so the two-second poll does not put the box back where the solver
+     wanted it: the unchanged-shape path restores every node from here. */
+  if (sim.positions) { sim.positions[node.id] = { x: node.x, y: node.y }; }
+  drawGraph(sim.graph, dragging.svg, dims.width, dims.height, dims.vertical);
+});
+
+document.addEventListener("pointerup", function () {
+  if (!dragging) { return; }
+  dragging.svg.classList.remove("rt-dragging");
+  dragging = null;
+});
 document.addEventListener("click", function (event) {
   var button = event.target.closest && event.target.closest(".cell");
   if (!button || button.hasAttribute("aria-hidden")) { return; }
@@ -1714,6 +2455,8 @@ function renderPlanPanel(state) {
   (progress.phases || []).forEach(function (phase) {
     var li = el("li");
     li.dataset.state = phase.state;
+    li.dataset.detail = "phase";
+    li.dataset.detailKey = String(phase.number);
     li.appendChild(el("span", "num", phase.number));
     var body = el("div");
     body.appendChild(el("span", "lbl",
@@ -2185,6 +2928,91 @@ function renderRail(state) {
   applyRailTab();
 }
 
+/* ---- which sessions are shown -------------------------------------------
+   One classifier and one control, used by BOTH the Sessions strip and the
+   Real-Time Process tab. Two panels asking the same question must not answer it
+   twice: a session counted active in one tab and idle in the other is a
+   dashboard disagreeing with itself.
+
+   A session is `noflow` when its harness cannot report a step timeline at all,
+   which is a statement about the HARNESS; `idle` when it can and reports
+   waiting; `active` otherwise. Those are different facts and the filter keeps
+   them apart rather than merging them into "nothing happening". */
+var SESSION_CLASSES = [
+  { id: "active", label: "active" },
+  { id: "idle", label: "idle" },
+  { id: "noflow", label: "no flow reported" }
+];
+var SESSION_FILTER_KEY = "rt-observe-sessions";
+
+function storedFilter() {
+  var on = {};
+  SESSION_CLASSES.forEach(function (entry) { on[entry.id] = true; });
+  try {
+    var saved = window.localStorage.getItem(SESSION_FILTER_KEY);
+    if (saved !== null) {
+      var picked = saved.split(",");
+      SESSION_CLASSES.forEach(function (entry) {
+        on[entry.id] = picked.indexOf(entry.id) !== -1;
+      });
+    }
+  } catch (error) {
+    /* Blocked storage shows everything, which is the safe direction: a filter
+       that silently defaults to hiding is how a session goes missing. */
+  }
+  return on;
+}
+
+var sessionFilter = storedFilter();
+
+function sessionClass(session) {
+  var flow = session.flow || {};
+  if (flow.status !== "ok") { return "noflow"; }
+  return flow.state === "idle" ? "idle" : "active";
+}
+
+function sessionShown(session) {
+  return sessionFilter[sessionClass(session)] !== false;
+}
+
+function renderFilter(hostId) {
+  var host = document.getElementById(hostId);
+  if (!host) { return; }
+  var next = stage();
+  next.appendChild(el("span", null, "show"));
+  SESSION_CLASSES.forEach(function (entry) {
+    var label = el("label");
+    var box = document.createElement("input");
+    box.type = "checkbox";
+    box.dataset.sess = entry.id;
+    if (sessionFilter[entry.id] !== false) { box.setAttribute("checked", ""); }
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(" " + entry.label));
+    next.appendChild(label);
+  });
+  morph(host, next);
+}
+
+function hiddenNote(hidden) {
+  if (!hidden) { return ""; }
+  /* Said out loud, always. A filter that hides without saying how much turns
+     an empty panel into a false answer. */
+  return hidden + " hidden by the filter";
+}
+
+document.addEventListener("change", function (event) {
+  var box = event.target.closest && event.target.closest("[data-sess]");
+  if (!box) { return; }
+  sessionFilter[box.dataset.sess] = box.checked;
+  remember(SESSION_FILTER_KEY, SESSION_CLASSES.filter(function (entry) {
+    return sessionFilter[entry.id] !== false;
+  }).map(function (entry) { return entry.id; }).join(","));
+  if (lastState) {
+    renderFleet(lastState);
+    renderLive(lastState);
+  }
+});
+
 /* ---- fleet --------------------------------------------------------------- */
 function claudeCard(session, label) {
   var card = el("div", "fleet-card");
@@ -2248,7 +3076,10 @@ function copilotCard(session, label) {
   }
   var flags = el("div", "fleet-flags");
   flags.appendChild(el("span", null, "unreachable"));
-  flags.title = (session.inbox || {}).reason || "";
+  flags.dataset.detail = "note";
+  flags.dataset.detailTitle = "unreachable";
+  flags.dataset.detailNote = (session.inbox || {}).reason
+    || "no delivery path was reported for this harness";
   card.appendChild(flags);
   return card;
 }
@@ -2295,6 +3126,7 @@ function renderFleet(state) {
   }
 
   var cards = 0;
+  var hidden = 0;
   var strip = el("div", "fleet");
   installed.forEach(function (id) {
     var harness = (fleet.harnesses || {})[id] || {};
@@ -2305,17 +3137,1047 @@ function renderFleet(state) {
       return;
     }
     (harness.sessions || []).forEach(function (session) {
+      if (!sessionShown(session)) { hidden += 1; return; }
       strip.appendChild(id === "copilot_chat"
         ? copilotCard(session, harness.label || id)
         : claudeCard(session, harness.label || id));
       cards += 1;
     });
   });
+  if (!cards && hidden) {
+    strip.appendChild(el("div", "fleet-card",
+      "Every session here is hidden by the filter above."));
+  }
   txt(note, cards + " recent across " + installed.length
-      + " harness" + (installed.length === 1 ? "" : "es"));
+      + " harness" + (installed.length === 1 ? "" : "es")
+      + (hidden ? ". " + hiddenNote(hidden) : ""));
   next.appendChild(strip);
   morph(host, next);
+  renderFilter("fleet-filter");
 }
+
+/* ---- the Real-Time Process tab -------------------------------------------
+   What the harness is doing NOW, drawn from the two figures the operator
+   already made: the session state machine of `c2:fig:hooks_states`, and the
+   subagent fan-out of `c2:fig:superpowers_collab`, where a subagent hangs off
+   the session that spawned it.
+
+   Adapter-fed like every other harness fact. A harness that cannot report a
+   step SAYS so rather than being drawn as an idle flow: idle and unreportable
+   look identical on a diagram and mean opposite things. */
+/* The state machine of `c2:fig:hooks_states`, kept as a slim header strip, and
+   below it the thing the figure could not show on paper: every LINE that is
+   running. The operator's brief, in their words - a hook drawn as a hook, each
+   subagent on its own line with its own tools and skills, the two memories as
+   boxes every line reaches because every subagent shares them, and skills as
+   boxes rather than as one more step in a row. */
+var ROLE_CODE = { hook: "HK", core: "CO", security: "SE", idle: "ID" };
+/* Which box a hook loops on. The harness names the EVENT, and the event decides
+   where the loop hangs - the figure draws caveman looping on UserPromptSubmit
+   and RTK on the reasoning box for exactly this reason. An event this table does
+   not know hangs off no box and is still listed on its lane. */
+var HOOK_STATE = {
+  SessionStart: "session_start",
+  UserPromptSubmit: "prompt",
+  PreToolUse: "tool",
+  PostToolUse: "post_tool",
+  PreCompact: "reasoning",
+  Stop: "idle",
+  SessionEnd: "idle"
+};
+var pickedStep = null;
+
+function loopsByState(hooks, declared) {
+  /* Every hook this machine DECLARES gets its loop, whether or not a firing is
+     still in the transcript tail. Measured 2026-09-01: a hook that runs once at
+     SessionStart scrolls out of the tail within minutes of work, so on any
+     session older than an hour the diagram showed PreToolUse and PostToolUse
+     and nothing else - and RTK and caveman, the two the figure draws AS
+     background loops, were never visible at all.
+
+     A firing upgrades a declared name from `declared` to `fired`, and a
+     non-zero exit to `blocked`. */
+  var by = {};
+  (declared || []).forEach(function (row) {
+    var state = HOOK_STATE[row.event];
+    if (!state) { return; }
+    (by[state] = by[state] || []);
+    (row.names || []).forEach(function (name) {
+      by[state].push({ name: name, label: name, declared: true });
+    });
+  });
+  (hooks || []).forEach(function (hook) {
+    var state = HOOK_STATE[hook.event];
+    if (!state) { return; }
+    var list = (by[state] = by[state] || []);
+    var label = hook.label || hook.name;
+    var match = list.filter(function (entry) {
+      return entry.declared
+        && (entry.name.indexOf(label) === 0 || label.indexOf(entry.name) === 0);
+    })[0];
+    if (match) {
+      match.fired = true;
+      match.exit = hook.exit;
+      match.label = label;
+      return;
+    }
+    list.push({ name: label, label: label, fired: true, exit: hook.exit });
+  });
+  return by;
+}
+
+function machineSvg(states, live, travelled, hooks, declared) {
+  /* One row of states, the live one filled, the arcs travelled this turn at
+     double width with a marker running along them, and one dashed self-loop per
+     box carrying the hooks that run there.
+
+     The geometry is vertical on purpose. Measured 2026-09-01: the hook names
+     were laid along ONE line above the boxes and ran into each other, so the
+     strip was unreadable at exactly the moment it had something to say. Names
+     are stacked instead, clipped to the width of the box they belong to, two at
+     most, and the rest is a count that the hover panel expands. */
+  var boxW = 118;
+  var boxH = 34;
+  var gap = 26;
+  var width = Math.max(660, states.length * (boxW + gap));
+  var step = (width - boxW) / Math.max(1, states.length - 1);
+  var nameY = [12, 24];
+  var arcTop = 32;
+  var boxTop = 48;
+  var midY = boxTop + boxH / 2;
+  var height = boxTop + boxH + 14;
+  var parts = [];
+  var centres = [];
+  var loops = loopsByState(hooks, declared);
+
+  var clip = function (text, chars) {
+    text = String(text);
+    return text.length > chars ? text.slice(0, chars - 1) + "." : text;
+  };
+
+  states.forEach(function (state, index) {
+    var x = index * step;
+    var mid = x + boxW / 2;
+    centres.push(mid);
+    var on = state.id === live;
+    var cls = "m-box m-box--" + state.role + (on ? " m-box--live" : "");
+    parts.push('<g data-detail="mstate" data-detail-key="' + state.id
+      + '" data-detail-name="' + escapeText(state.label)
+      + '" data-detail-role="' + state.role + '" tabindex="0">'
+      + '<rect class="' + cls + '" x="' + x.toFixed(1) + '" y="' + boxTop
+      + '" width="' + boxW + '" height="' + boxH + '"/>'
+      + '<text class="m-role" x="' + mid.toFixed(1) + '" y="' + (boxTop + 13)
+      + '" text-anchor="middle">' + ROLE_CODE[state.role] + "</text>"
+      + '<text class="m-label' + (on ? " m-live-text" : "") + '" x="'
+      + mid.toFixed(1) + '" y="' + (boxTop + 26) + '" text-anchor="middle">'
+      + escapeText(clip(state.label, 17))
+      + "</text></g>");
+
+    var fired = loops[state.id] || [];
+    if (!fired.length) { return; }
+    var blocked = fired.some(function (hook) { return hook.exit; });
+    var lines = fired.slice(0, 2).map(function (hook) {
+      return clip(hook.label || hook.name, 16);
+    });
+    if (fired.length > 2) {
+      lines[1] = (lines[1] ? lines[1] + " " : "") + "+" + (fired.length - 2);
+    }
+    var detail = fired.map(function (hook) {
+      return (hook.label || hook.name)
+        + (hook.exit ? " (refused, exit " + hook.exit + ")"
+                     : (hook.fired ? " (fired this session)"
+                                   : " (declared, no firing in the tail)"));
+    }).join("; ");
+
+    parts.push('<g data-detail="note" data-detail-title="'
+      + escapeText(state.label) + ' hooks" data-detail-note="'
+      + escapeText(detail) + '" tabindex="0">'
+      + '<path class="m-loop' + (blocked ? " m-loop--blocked" : "")
+      + '" d="M' + (mid - 13).toFixed(1) + "," + boxTop
+      + " C" + (mid - 16).toFixed(1) + "," + arcTop + " "
+      + (mid + 16).toFixed(1) + "," + arcTop + " " + (mid + 13).toFixed(1)
+      + "," + boxTop + '"/>'
+      + lines.map(function (text, row) {
+          return '<text class="m-loop-label'
+            + (blocked ? " m-loop-label--blocked" : "") + '" x="'
+            + mid.toFixed(1) + '" y="' + nameY[row] + '" text-anchor="middle">'
+            + escapeText(text) + "</text>";
+        }).join("")
+      + "</g>");
+  });
+
+  states.forEach(function (state, index) {
+    if (index === 0) { return; }
+    var from = centres[index - 1] + boxW / 2 - 2;
+    var to = centres[index] - boxW / 2 + 2;
+    var was = travelled[state.id];
+    var path = "M" + from.toFixed(1) + "," + midY + " L" + to.toFixed(1)
+      + "," + midY;
+    parts.push('<path class="m-edge' + (was ? " m-edge--travelled" : "")
+      + '" d="' + path + '"/>');
+    if (state.id === "post_tool") {
+      /* The one edge worth naming: what travels from a tool call to PostToolUse
+         is the tool RESULT. */
+      parts.push('<text class="m-edge-label" x="'
+        + ((from + to) / 2).toFixed(1) + '" y="' + (midY - 6)
+        + '" text-anchor="middle">result</text>');
+    }
+    if (was && !REDUCED) {
+      parts.push('<circle class="m-runner" r="3">'
+        + '<animateMotion dur="1.4s" repeatCount="indefinite" path="'
+        + path + '"/></circle>');
+    }
+  });
+
+  return '<svg class="machine" viewBox="0 0 ' + width.toFixed(0) + ' '
+    + height + '" style="height:' + height
+    + 'px" role="img" aria-label="Harness state machine, currently '
+    + escapeText(live) + '">' + parts.join("") + "</svg>";
+}
+
+/* ---- the three bars ------------------------------------------------------
+   Not one of the three MAXIMA is reported anywhere on this machine - no
+   transcript carries a context window, a plan limit or an invoice - so each is
+   typed here, kept per viewer, and labelled as the operator's number. A bar
+   with no maximum is not drawn at all: scaled to something arbitrary, a bar
+   reads as fullness and says nothing. */
+var LIMIT_KEYS = { session: "rt-observe-max-session",
+                   week: "rt-observe-max-week",
+                   supplement: "rt-observe-max-supplement" };
+
+function storedLimit(which) {
+  try {
+    var saved = Number(window.localStorage.getItem(LIMIT_KEYS[which]));
+    return saved > 0 ? saved : 0;
+  } catch (error) {
+    return 0;   /* blocked storage: no maximum, so no bar, and it says so */
+  }
+}
+
+function setLimit(which, tokens) {
+  remember(LIMIT_KEYS[which], String(Math.max(0, Math.round(tokens))));
+  if (lastState) { renderLive(lastState); }
+}
+
+function thousands(tokens) {
+  return Math.round(tokens / 1000).toLocaleString();
+}
+
+function meterRow(host, spec) {
+  var row = el("div", "live-meter");
+  row.appendChild(el("span", null, spec.label));
+  var ratio = spec.max ? spec.used / spec.max : 0;
+  if (spec.max) {
+    var bar = el("div", "live-bar live-bar--" + spec.key
+                        + (ratio >= 1 ? " live-bar--full" : ""));
+    var fill = el("i");
+    fill.style.width = Math.max(1, Math.min(100, Math.round(100 * ratio))) + "%";
+    bar.appendChild(fill);
+    row.appendChild(bar);
+    row.appendChild(el("b", null, thousands(spec.used) + "K of "
+                                  + thousands(spec.max) + "K"));
+  } else {
+    row.appendChild(el("b", "live-spend--none",
+      thousands(spec.used) + "K used. Type a maximum for a bar."));
+  }
+  var input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.step = "50";
+  input.value = spec.max ? String(Math.round(spec.max / 1000)) : "";
+  input.placeholder = "K";
+  input.setAttribute("aria-label", spec.label + " maximum, thousands of tokens");
+  input.dataset.limit = spec.key;
+  row.appendChild(input);
+  host.appendChild(row);
+  return ratio;
+}
+
+document.addEventListener("change", function (event) {
+  var input = event.target.closest && event.target.closest("[data-limit]");
+  if (!input) { return; }
+  setLimit(input.dataset.limit, Number(input.value) * 1000);
+});
+
+/* ---- the flow graph ------------------------------------------------------
+   One LINE per running thing - the session, then each subagent it spawned -
+   and, to the right, the resources every line shares: the two memories, the
+   network, and one box per MCP server. A subagent is drawn on its own line
+   because that is what it is: a separate process with its own tools, its own
+   skills and its own hooks, reaching the SAME vault and the same graph. */
+var SHARED_NODES = [
+  { id: "obsidian", label: "Obsidian vault",
+    note: "the cross-project memory. Every line reaches the same one, and only "
+        + "local-writer may write it" },
+  { id: "graphify", label: "Graphify graph",
+    note: "this repository's structure memory, reached through the same single "
+        + "writer" },
+  { id: "internet", label: "Internet",
+    note: "a call that left this machine" }
+];
+
+function sharedState(state) {
+  /* What the shared boxes are HOLDING, not merely what they are.
+
+     The vault box lists the outbox: what is staged and waiting to be written,
+     what is parked for review, what is in flight. It is rebuilt from the
+     filesystem on every collection, so a note the daemon consumes leaves this
+     list on the next poll with nothing to synchronise by hand - which is the
+     property the operator asked for. */
+  var out = {};
+  var daemon = ((state.services || {}).vault_daemon) || {};
+  var pending = daemon.pending || [];
+  var lines = pending.map(function (entry) {
+    return entry.name + " " + entry.state + ", " + duration(entry.age_seconds);
+  });
+  var hidden = (daemon.pending_total || 0) - pending.length;
+  if (hidden > 0) { lines.push("+" + hidden + " more waiting"); }
+  out.obsidian = {
+    count: daemon.pending_total || 0,
+    means: daemon.running === false
+      ? "the daemon is not running, so nothing is consuming these"
+      : "staged in the outbox, written by the daemon",
+    lines: lines.length ? lines : ["nothing waiting to be written"]
+  };
+
+  var graph = state.graph || {};
+  var graphLines = [];
+  if (graph.status === "ok") {
+    if (graph.nodes) { graphLines.push("nodes " + graph.nodes); }
+    if (graph.links) { graphLines.push("edges " + graph.links); }
+    if (graph.age_seconds !== undefined && graph.age_seconds !== null) {
+      graphLines.push("snapshot " + duration(graph.age_seconds) + " old");
+    }
+    if (graph.stale) { graphLines.push("stale, a refresh is pending"); }
+  } else {
+    graphLines.push(graph.reason || "no snapshot has been produced");
+  }
+  out.graphify = {
+    count: graph.nodes || 0,
+    means: "rendered from a snapshot local-writer produced, never from the "
+         + "graph itself",
+    lines: graphLines
+  };
+  return out;
+}
+
+function laneModel(state) {
+  /* What is running, as lines. The main line is the session; each subagent it
+     dispatched is a line of its own, carrying whatever the harness reports of
+     it - which for a background agent is the dispatch and no more, and that is
+     said rather than drawn as an empty flow. */
+  var lanes = [];
+  var fleet = state.fleet || {};
+  (fleet.installed || []).forEach(function (id) {
+    var harness = (fleet.harnesses || {})[id] || {};
+    if (harness.status !== "ok") { return; }
+    (harness.sessions || []).forEach(function (session) {
+      if (!sessionShown(session)) { return; }
+      var flow = session.flow || {};
+      if (flow.status !== "ok") { return; }
+      var name = (session.cwd || "").split(/[\\/]/).filter(Boolean).pop()
+        || session.project || "session";
+      lanes.push({
+        id: "s:" + session.session_id,
+        label: name,
+        kind: "session",
+        state: flow.state,
+        tokens: flow.tokens || {},
+        steps: (flow.steps || []).filter(function (step) {
+          return !step.sidechain;
+        }),
+        hooks: flow.hooks || []
+      });
+      (flow.subagents || []).forEach(function (agent, index) {
+        lanes.push({
+          id: "a:" + session.session_id + ":" + index,
+          label: agent.name,
+          kind: "subagent",
+          parent: "s:" + session.session_id,
+          state: "spawned",
+          tokens: {},
+          at: agent.at,
+          steps: (flow.steps || []).filter(function (step) {
+            return step.sidechain;
+          }),
+          hooks: []
+        });
+      });
+    });
+  });
+  return lanes;
+}
+
+function sharedLinks(lane) {
+  /* Which shared boxes this line reached, and from which step. Attribution is
+     deliberately narrow: a network flag is evidence, a local-writer dispatch is
+     evidence, and a hook naming the outbox is evidence. Nothing is inferred
+     from a command line, which is free text and often a path. */
+  var links = [];
+  (lane.steps || []).forEach(function (step, index) {
+    if (step.network === "yes") { links.push({ at: index, to: "internet" }); }
+    if (step.network === "mcp" && step.server) {
+      links.push({ at: index, to: "mcp:" + step.server });
+    }
+    if (step.kind === "subagent" && /writer/.test(step.name || "")) {
+      links.push({ at: index, to: "obsidian" });
+      links.push({ at: index, to: "graphify" });
+    }
+  });
+  (lane.hooks || []).forEach(function (hook) {
+    if (/outbox|obsidian|vault/i.test(hook.label || "")) {
+      links.push({ at: Math.max(0, (lane.steps || []).length - 1),
+                   to: "obsidian" });
+    }
+  });
+  if (lane.kind === "subagent" && /writer/.test(lane.label || "")) {
+    links.push({ at: 0, to: "obsidian" });
+    links.push({ at: 0, to: "graphify" });
+  }
+  return links;
+}
+
+function hookGlyph(x, y, blocked) {
+  /* A hook, drawn as a hook: a shank down from the line, then the bend and the
+     point. The operator asked for the thing itself rather than a label. */
+  return '<path class="fx-hook' + (blocked ? " fx-hook--blocked" : "")
+    + '" d="M' + x.toFixed(1) + "," + y.toFixed(1)
+    + " v9 a4.5,4.5 0 1,0 -8,0 v-2" + '"/>';
+}
+
+function laneEvents(steps) {
+  /* One box per TOOL, not per invocation.
+
+     Grouping only consecutive runs left a line of identical `Bash` boxes
+     separated by whatever ran between them, which is a picture of the
+     transcript rather than of the work. A tool is one box now, carrying how
+     many times it was called, when it was last called, and every individual
+     call underneath for the hover panel.
+
+     `tool result` is still the return leg of the call before it, so it marks
+     that call returned - or FAILED, which is a result too and was the one the
+     drawing could not show. Reasoning is what the agent IS between calls, so it
+     is not an event at all. */
+  var groups = [];
+  var byName = {};
+  var lastCall = null;
+  (steps || []).forEach(function (step) {
+    if (step.kind === "result") {
+      if (lastCall) {
+        lastCall.resulted = true;
+        lastCall.failed = !!step.error;
+        lastCall.group.resulted = true;
+        if (step.error) { lastCall.group.failures += 1; }
+      }
+      return;
+    }
+    if (step.kind === "reasoning") { return; }
+    var name = step.name || step.kind;
+    var key = step.kind + "|" + name;
+    var group = byName[key];
+    if (!group) {
+      group = { kind: step.kind, name: name, count: 0, calls: [],
+                at: "", network: step.network || "",
+                server: step.server || "", resulted: false, failures: 0,
+                order: groups.length };
+      byName[key] = group;
+      groups.push(group);
+    }
+    group.count += 1;
+    group.at = step.at || group.at;
+    lastCall = { at: step.at || "", resulted: false, failed: false,
+                 group: group };
+    group.calls.push(lastCall);
+    /* The group the LAST call belongs to is the one that is live. */
+    groups.forEach(function (other) { other.live = false; });
+    group.live = true;
+  });
+  groups.forEach(function (group) {
+    group.failed = group.failures > 0;
+  });
+  return groups;
+}
+
+function callLines(group, cap) {
+  /* One line per call, for the hover panel: the time and how it ended. Asked
+     for in those words - Bash, time, status, one line each. */
+  var lines = group.calls.slice(-cap).map(function (call) {
+    return (call.at ? clock(call.at) : "?") + " "
+      + (call.failed ? "failed" : (call.resulted ? "ok" : "out"));
+  });
+  var hidden = group.calls.length - lines.length;
+  if (hidden > 0) { lines.push("+" + hidden + " earlier"); }
+  return lines.join("|");
+}
+
+/* Which family a tool belongs to. Identity, not severity: it lets a shell call
+   be told from a file write without reading either label. */
+function toolFamily(event) {
+  if (event.network === "yes" || event.network === "mcp") { return "net"; }
+  var name = (event.name || "").toLowerCase();
+  if (/bash|shell|powershell|run|test/.test(name)) { return "run"; }
+  if (/write|edit|notebook|patch/.test(name)) { return "write"; }
+  return "read";
+}
+
+function flowLegend() {
+  /* Four marks, four meanings, said once rather than left to be inferred. It
+     names what the drawing ACTUALLY uses: a legend naming a mark that is no
+     longer drawn is worse than no legend. */
+  var box = el("div", "fx-legend");
+  [["agent", "a session or a subagent, with a ring showing what it holds"],
+   ["call", "a tool call, on a wire coloured by family; dashed while its "
+          + "result is still out"],
+   ["hook", "deterministic code the harness ran around a call"],
+   ["memory", "a resource every agent shares: the vault, the graph, the "
+            + "network"]].forEach(function (pair) {
+    var item = el("div", "fx-legend-item");
+    item.dataset.detail = "note";
+    item.dataset.detailTitle = pair[0];
+    item.dataset.detailNote = pair[1];
+    item.appendChild(el("span", "fx-legend-mark fx-legend-mark--" + pair[0]));
+    item.appendChild(el("b", null, pair[0]));
+    box.appendChild(item);
+  });
+  return box;
+}
+
+function hexPath(cx, cy, r) {
+  var points = [];
+  for (var i = 0; i < 6; i += 1) {
+    var a = (Math.PI / 180) * (60 * i - 90);
+    points.push((cx + r * Math.cos(a)).toFixed(1) + ","
+                + (cy + r * Math.sin(a)).toFixed(1));
+  }
+  return "M" + points.join(" L") + " Z";
+}
+
+function ringPath(cx, cy, r, ratio) {
+  /* The token ring around an agent: an arc from the top, clockwise, as far as
+     the ratio goes. Drawn only when there IS a ratio - the maximum is the
+     operator's typed number, and without one there is nothing to fill. */
+  var span = Math.max(0.001, Math.min(1, ratio)) * Math.PI * 2;
+  var x1 = cx;
+  var y1 = cy - r;
+  var x2 = cx + r * Math.sin(span);
+  var y2 = cy - r * Math.cos(span);
+  return "M" + x1.toFixed(1) + "," + y1.toFixed(1) + " A" + r + "," + r
+    + " 0 " + (span > Math.PI ? 1 : 0) + ",1 " + x2.toFixed(1) + ","
+    + y2.toFixed(1);
+}
+
+function hookRows(lane, declared) {
+  /* Every hook that could run on this agent, with the ones that DID in bold.
+     Declared-but-quiet hooks are drawn too, because the roster is the answer to
+     "what guards this session" and a hook that has not fired since the tail
+     began is not a hook that is missing. */
+  var rows = [];
+  var seen = {};
+  (lane.hooks || []).forEach(function (hook) {
+    var name = hook.label || hook.name;
+    if (seen[name]) { return; }
+    seen[name] = true;
+    rows.push({ name: name, fired: true, exit: hook.exit,
+                note: (hook.label || hook.name)
+                  + (hook.exit ? " - refused with exit " + hook.exit
+                               : " - fired and allowed the call") });
+  });
+  (declared || []).forEach(function (row) {
+    (row.names || []).forEach(function (name) {
+      if (seen[name]) { return; }
+      seen[name] = true;
+      rows.push({ name: name, fired: false,
+                  note: name + " - declared on " + row.event
+                    + ", no firing inside the transcript tail" });
+    });
+  });
+  return rows;
+}
+
+function agentGraph(lanes, width, sessionMax, declared, holding) {
+  /* One NODE per running agent, its tool calls on curved links around it, its
+     hooks named beside it, its subagents hanging below on a curve, and the
+     memories every agent shares over on the right.
+
+     The viewBox is computed from what was actually DRAWN rather than assumed:
+     boxes sat outside the figure because the frame was a guess and the content
+     was not. Every placement reports its extremities here, and the frame is
+     whatever contains them. */
+  var nodeR = 30;
+  var ringR = 42;
+  var rowH = 250;
+  var colX = 300;
+  var sharedX = Math.max(colX + 470, width - 170);
+  var bounds = { minX: 0, minY: 0, maxX: width, maxY: 0 };
+  var mark = function (x, y) {
+    if (x < bounds.minX) { bounds.minX = x; }
+    if (y < bounds.minY) { bounds.minY = y; }
+    if (x > bounds.maxX) { bounds.maxX = x; }
+    if (y > bounds.maxY) { bounds.maxY = y; }
+  };
+
+  var events = lanes.map(function (lane) { return laneEvents(lane.steps); });
+  var shared = SHARED_NODES.slice();
+  var seen = {};
+  var links = [];
+  lanes.forEach(function (lane, row) {
+    sharedLinks({ steps: events[row], hooks: lane.hooks, kind: lane.kind,
+                  label: lane.label }).forEach(function (link) {
+      if (link.to.indexOf("mcp:") === 0 && !seen[link.to]) {
+        seen[link.to] = true;
+        shared.push({ id: link.to, label: link.to.slice(4),
+                      note: "an MCP server. It may be a local process or a "
+                          + "remote one; the harness does not say which" });
+      }
+      links.push({ row: row, to: link.to });
+    });
+  });
+  var used = {};
+  links.forEach(function (link) { used[link.to] = true; });
+  shared = shared.filter(function (node) { return used[node.id]; });
+
+  var sharedY = {};
+  shared.forEach(function (node, index) { sharedY[node.id] = 70 + index * 52; });
+
+  var parts = [];
+  var centre = function (row) {
+    return { x: colX + (lanes[row].kind === "subagent" ? 160 : 0),
+             y: 130 + row * rowH };
+  };
+
+  shared.forEach(function (node) {
+    var y = sharedY[node.id];
+    var held = (holding || {})[node.id];
+    mark(sharedX + 150, y + 20);
+    parts.push('<g class="fx-shared" data-detail="note"'
+      + ' data-detail-title="' + escapeText(node.label) + '"'
+      + ' data-detail-note="' + escapeText(held ? held.means : node.note) + '"'
+      + (held ? ' data-detail-lines="'
+                + escapeText(held.lines.join("|")) + '"' : "")
+      + ' tabindex="0">'
+      + '<rect class="fx-shared-box" x="' + sharedX + '" y="' + (y - 14)
+      + '" width="150" height="28"/>'
+      + '<text class="fx-shared-label" x="' + (sharedX + 12) + '" y="'
+      + (y + 4) + '">'
+      + escapeText(node.label.length > 15
+          ? node.label.slice(0, 14) + "." : node.label)
+      + "</text>"
+      /* The count on the box, so what is waiting is visible without hovering;
+         the names are the hover's job. */
+      + (held && held.count
+          ? '<text class="fx-shared-count" x="' + (sharedX + 138) + '" y="'
+            + (y + 4) + '" text-anchor="end">' + held.count + "</text>"
+          : "")
+      + "</g>");
+  });
+
+  lanes.forEach(function (lane, row) {
+    var at = centre(row);
+    mark(at.x - 170, at.y - ringR - 20);
+    mark(at.x + ringR, at.y + ringR + 40);
+
+    if (lane.kind === "subagent" && row > 0) {
+      var from = centre(row - 1);
+      parts.push('<path class="fx-spawn" d="M' + from.x + ',' + (from.y + nodeR)
+        + " C" + from.x + "," + (from.y + rowH / 2) + " " + at.x + ","
+        + (at.y - rowH / 2) + " " + at.x + "," + (at.y - ringR) + '"/>');
+    }
+
+    /* Tool calls, on an arc to the right of their agent, CLAMPED into the band
+       between the agent and the shared column so no box can leave the frame. */
+    var callW = 156;
+    /* The most RECENTLY used tools, not the last few in first-seen order: a
+       session that had used more than the cap lost the ones it had used least
+       recently, and `Write` went missing from a session that had just written
+       a file. */
+    var ordered = events[row].slice().sort(function (a, b) {
+      return String(a.at) < String(b.at) ? 1 : -1;
+    });
+    var shown = ordered.slice(0, CFG.flow_groups || 12).reverse();
+    var dropped = events[row].length - shown.length;
+    var leftEdge = at.x + ringR + 40;
+    var rightEdge = Math.max(leftEdge + callW, sharedX - 30);
+    shown.forEach(function (event, index) {
+      var spread = shown.length > 1 ? 150 / (shown.length - 1) : 0;
+      var angle = (-75 + index * spread) * Math.PI / 180;
+      var bx = at.x + 210 * Math.cos(angle) + 70;
+      var by = at.y + 96 * Math.sin(angle);
+      bx = Math.max(leftEdge + callW / 2, Math.min(rightEdge - callW / 2, bx));
+      var family = event.kind === "skill" ? "skill" : toolFamily(event);
+      /* Live only while the agent itself is working: the last tool a session
+         used is not being used while that session waits for a prompt. */
+      var live = event.live && lane.state !== "idle";
+      var id = "g|" + event.kind + "|" + event.name;
+      mark(bx + callW / 2 + 6, by + 26);
+      mark(bx - callW / 2 - 6, by - 20);
+      parts.push('<path class="fx-wire fx-wire--' + family
+        + (event.failed ? " fx-wire--failed" : "")
+        + (live ? " fx-wire--live" : " fx-wire--quiet")
+        + (event.resulted ? "" : " fx-wire--out") + '" d="M'
+        + (at.x + ringR).toFixed(1) + "," + at.y.toFixed(1)
+        + " Q" + ((at.x + bx) / 2).toFixed(1) + "," + at.y.toFixed(1) + " "
+        + (bx - callW / 2).toFixed(1) + "," + by.toFixed(1) + '"/>');
+      parts.push('<g class="fx-call fx-call--' + family
+        + (event.failed ? " fx-call--failed" : "")
+        + (live ? " fx-call--live" : " fx-call--quiet")
+        + (pickedStep === id ? " fx-call--picked" : "")
+        + '" data-detail="step" data-detail-kind="' + escapeText(event.kind)
+        + '" data-detail-name="' + escapeText(event.name)
+        + '" data-detail-at="' + escapeText(event.at)
+        + '" data-detail-net="' + escapeText(event.network)
+        + '" data-detail-server="' + escapeText(event.server)
+        + '" data-detail-count="' + event.count
+        + '" data-detail-failures="' + event.failures
+        + '" data-detail-calls="' + escapeText(callLines(event, CFG.detail_rows))
+        + '" data-step-id="' + escapeText(id) + '" tabindex="0">'
+        + '<rect x="' + (bx - callW / 2).toFixed(1) + '" y="'
+        + (by - 13).toFixed(1) + '" width="' + callW + '" height="26"/>'
+        + (event.failed ? failMark(bx - callW / 2 + 12, by) : "")
+        + '<text x="' + (bx - callW / 2 + (event.failed ? 26 : 12)).toFixed(1)
+        + '" y="' + (by + 4).toFixed(1) + '">'
+        + escapeText(event.name.length > 13
+            ? event.name.slice(0, 12) + "." : event.name)
+        + "</text>"
+        /* How many times, and when it last ran. Both were asked for, and both
+           are what turns a box from a label into a reading. */
+        + '<text class="fx-call-count" x="' + (bx + callW / 2 - 10).toFixed(1)
+        + '" y="' + (by + 4).toFixed(1) + '" text-anchor="end">'
+        + event.count + "</text>"
+        + '<text class="fx-call-at" x="' + (bx - callW / 2 + 12).toFixed(1)
+        + '" y="' + (by + 22).toFixed(1) + '">'
+        + escapeText(event.at ? clock(event.at) : "") + "</text>"
+        + "</g>");
+    });
+    if (dropped > 0) {
+      parts.push('<text class="fx-more" x="' + (at.x + 120) + '" y="'
+        + (at.y + 130) + '">+' + dropped + " earlier</text>");
+      mark(at.x + 200, at.y + 136);
+    }
+
+    /* Hooks, named, in a column to the LEFT of the agent. Bold when they FIRED,
+       quiet when merely declared - the operator could not tell the two apart,
+       and that difference is the whole point of the column. */
+    var rows = hookRows(lane, lane.kind === "subagent" ? [] : declared);
+    var visible = rows.slice(0, 6);
+    visible.forEach(function (hook, index) {
+      var hy = at.y - 58 + index * 22;
+      mark(at.x - 176, hy + 14);
+      parts.push('<g data-detail="note" data-detail-title="'
+        + escapeText(hook.name) + '" data-detail-note="'
+        + escapeText(hook.note) + '" tabindex="0">'
+        + (hook.exit ? failMark(at.x - 168, hy + 5) : "")
+        + hookGlyph(at.x - 150, hy, hook.exit)
+        + '<text class="fx-hook-label'
+        + (hook.fired ? " fx-hook-label--fired" : "")
+        + (hook.exit ? " fx-hook-label--blocked" : "") + '" x="'
+        + (at.x - 140) + '" y="' + (hy + 11) + '">'
+        + escapeText(hook.name.slice(0, 18)) + "</text></g>");
+    });
+    if (rows.length > visible.length) {
+      parts.push('<text class="fx-more" x="' + (at.x - 160) + '" y="'
+        + (at.y - 58 + visible.length * 22 + 11) + '">+'
+        + (rows.length - visible.length) + " more</text>");
+    }
+
+    var tokens = lane.tokens || {};
+    var ratio = (sessionMax && tokens.held) ? tokens.held / sessionMax : 0;
+    var awake = lane.state !== "idle" && lane.kind !== "subagent";
+    parts.push('<g class="fx-agent fx-agent--' + lane.kind
+      + (lane.state === "idle" ? " fx-agent--idle" : " fx-agent--live")
+      + '" data-detail="note" data-detail-title="' + escapeText(lane.label)
+      + '" data-detail-note="' + escapeText(lane.kind === "subagent"
+          ? "a subagent: its own tools, its own skills, the same memories"
+          : "a session of this harness, currently " + (lane.state || "idle"))
+      + '" tabindex="0">'
+      /* A ping leaving the node, repeating while the session works. The
+         operator's test of the panel is whether it looks ALIVE when something
+         is happening, and a still diagram fails it however correct it is.
+         SMIL rather than CSS because the radius of a circle is geometry, and
+         suppressed outright under reduced motion rather than merely slowed. */
+      + (awake && !REDUCED
+          ? '<circle class="fx-ping" cx="' + at.x + '" cy="' + at.y
+            + '" r="' + ringR + '">'
+            + '<animate attributeName="r" values="' + ringR + ";"
+            + (ringR + 26) + '" dur="1.8s" repeatCount="indefinite"/>'
+            + '<animate attributeName="opacity" values="0.55;0" dur="1.8s"'
+            + ' repeatCount="indefinite"/></circle>'
+          : "")
+      + '<circle class="fx-ring-track" cx="' + at.x + '" cy="' + at.y
+      + '" r="' + ringR + '"/>'
+      + (ratio > 0
+          ? '<path class="fx-ring' + (ratio >= 1 ? " fx-ring--full" : "")
+            + '" d="' + ringPath(at.x, at.y, ringR, ratio) + '"/>'
+          : "")
+      + '<path class="fx-hex" d="' + hexPath(at.x, at.y, nodeR) + '"/>'
+      + '<text class="fx-agent-state" x="' + at.x + '" y="' + (at.y + 4)
+      + '" text-anchor="middle">'
+      + escapeText((lane.state || "").slice(0, 8)) + "</text>"
+      + '<text class="fx-agent-name" x="' + at.x + '" y="' + (at.y + ringR + 20)
+      + '" text-anchor="middle">'
+      + escapeText(lane.label.length > 18
+          ? lane.label.slice(0, 17) + "." : lane.label) + "</text>"
+      + '<text class="fx-agent-spend" x="' + at.x + '" y="'
+      + (at.y + ringR + 34) + '" text-anchor="middle">'
+      + escapeText(tokens.status === "ok"
+          ? thousands(tokens.held) + "K held"
+            + (sessionMax ? " of " + thousands(sessionMax) + "K" : "")
+          : "tokens not reported") + "</text></g>");
+
+    links.filter(function (link) { return link.row === row; })
+      .forEach(function (link) {
+        var ty = sharedY[link.to];
+        if (ty === undefined) { return; }
+        parts.push('<path class="fx-link" d="M' + (at.x + ringR) + ',' + at.y
+          + " C" + ((at.x + sharedX) / 2) + "," + at.y + " "
+          + ((at.x + sharedX) / 2) + "," + ty + " " + sharedX + "," + ty
+          + '"/>');
+      });
+  });
+
+  var defs = '<defs>'
+    + '<filter id="fxglow" x="-60%" y="-60%" width="220%" height="220%">'
+    + '<feGaussianBlur stdDeviation="4" result="blur"/>'
+    + '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/>'
+    + "</feMerge></filter>"
+    + "</defs>";
+
+  var pad = 16;
+  var vx = bounds.minX - pad;
+  var vy = bounds.minY - pad;
+  var vw = bounds.maxX - bounds.minX + pad * 2;
+  var vh = bounds.maxY - bounds.minY + pad * 2;
+  return '<svg class="flowgraph" viewBox="' + vx.toFixed(0) + " "
+    + vy.toFixed(0) + " " + vw.toFixed(0) + " " + vh.toFixed(0)
+    + '" style="height:' + Math.round(vh * Math.min(1, width / vw))
+    + 'px" role="img" aria-label="One node per running agent, its tool calls '
+    + 'around it, and the memories they share">' + defs + parts.join("")
+    + "</svg>";
+}
+
+function failMark(x, y) {
+  /* A failure, marked where it happened. Red, and a TRIANGLE rather than a
+     colour change alone: the one state that must never be missed is also the
+     one state that must survive a colour vision deficiency. */
+  return '<path class="fx-fail" d="M' + x.toFixed(1) + "," + (y - 6).toFixed(1)
+    + " L" + (x + 6).toFixed(1) + "," + (y + 5).toFixed(1)
+    + " L" + (x - 6).toFixed(1) + "," + (y + 5).toFixed(1) + ' Z"/>';
+}
+
+var sessionFull = false;
+
+function renderSpend(host, state) {
+  var usage = state.usage || {};
+  var box = el("div", "live-block");
+  var head = el("div", "live-head");
+  head.appendChild(el("b", null, "spend"));
+  if (usage.status === "ok") {
+    head.appendChild(el("span", null, "last " + usage.window_days + " days"));
+  }
+  box.appendChild(head);
+
+  if (usage.status !== "ok") {
+    unavailable(box, "usage unavailable", usage);
+    host.appendChild(box);
+    return;
+  }
+
+  var weekMax = storedLimit("week");
+  var weekRatio = meterRow(box, { label: "week", key: "week",
+                                  used: usage.tokens, max: weekMax });
+  if (weekRatio >= 1 || sessionFull) {
+    meterRow(box, {
+      label: "supplement",
+      key: "supplement",
+      used: weekMax ? Math.max(0, usage.tokens - weekMax) : 0,
+      max: storedLimit("supplement")
+    });
+    box.appendChild(el("div", "live-spend",
+      "Past the week limit you set. The supplement bar counts TOKENS beyond "
+      + "it, not money: no plan, invoice or payment method is readable from "
+      + "this machine, so its maximum is yours to type as well."));
+  }
+  box.appendChild(el("div", "live-spend",
+    usage.tokens.toLocaleString() + " tokens over " + usage.messages
+    + " messages in " + usage.sessions + " sessions. " + usage.counts_what
+    + "."));
+  host.appendChild(box);
+}
+
+function sessionMeters(host, state) {
+  var block = el("div", "live-block");
+  var head = el("div", "live-head");
+  head.appendChild(el("b", null, "sessions"));
+  block.appendChild(head);
+  var drawn = 0;
+  (((state.fleet || {}).installed) || []).forEach(function (id) {
+    var harness = ((state.fleet || {}).harnesses || {})[id] || {};
+    if (harness.status !== "ok") { return; }
+    (harness.sessions || []).forEach(function (session) {
+      if (!sessionShown(session)) { return; }
+      var tokens = (session.flow || {}).tokens || {};
+      if (tokens.status !== "ok") { return; }
+      var name = (session.cwd || "").split(/[\\/]/).filter(Boolean).pop()
+        || session.project || "session";
+      var full = meterRow(block, {
+        label: name.slice(0, 12),
+        key: "session",
+        used: tokens.held,
+        max: storedLimit("session") || CFG.context_window_tokens || 0
+      }) >= 1;
+      sessionFull = sessionFull || full;
+      drawn += 1;
+    });
+  });
+  if (drawn) { host.appendChild(block); }
+}
+
+function renderLive(state) {
+  var host = document.getElementById("live");
+  var next = stage();
+  var fleet = state.fleet || {};
+  if (fleet.status && fleet.status !== "ok") {
+    unavailable(next, "Sessions unavailable", fleet);
+    morph(host, next);
+    return;
+  }
+
+  var machine = null;
+  var hidden = 0;
+  (fleet.installed || []).forEach(function (id) {
+    var harness = (fleet.harnesses || {})[id] || {};
+    if (harness.status !== "ok") {
+      var box = el("div", "live-block");
+      unavailable(box, (harness.label || id) + " unavailable", harness);
+      next.appendChild(box);
+      return;
+    }
+    if (!machine && harness.flow_states) { machine = harness; }
+    (harness.sessions || []).forEach(function (session) {
+      if (!sessionShown(session)) { hidden += 1; }
+    });
+  });
+
+  var lanes = laneModel(state);
+
+  /* A running dashboard re-reads its MARKUP from disk on every request but not
+     its Python, so a page can be new while the snapshot behind it is old. That
+     produced three false readings in one sitting - an empty `active` list, no
+     declared hooks, no subagents - all of them reported as defects in the view
+     when the view was fine. So the page checks the SHAPE of what it was served
+     and says which half is stale. */
+  if (machine && !machine.hook_loops) {
+    var stale = el("div", "unavail");
+    stale.appendChild(el("b", null, "the server behind this page is older than "
+                                    + "the page"));
+    stale.appendChild(el("div", null,
+      "It is serving a snapshot with no hook roster, so declared hooks, "
+      + "subagents and the newer flow fields cannot be drawn whatever this tab "
+      + "does. Markup is re-read per request; Python is not. Restart the "
+      + "dashboard to see them."));
+    next.appendChild(stale);
+  }
+
+  if (machine && lanes.length) {
+    var flow = lanes[0];
+    var travelled = {};
+    (flow.steps || []).forEach(function (step) {
+      travelled[{ prompt: "prompt", reasoning: "reasoning", tool: "tool",
+                  skill: "tool", subagent: "tool",
+                  result: "post_tool" }[step.kind]] = true;
+    });
+    (flow.hooks || []).forEach(function (hook) {
+      var hooked = HOOK_STATE[hook.event];
+      if (hooked) { travelled[hooked] = true; }
+    });
+    var strip = el("div", "live-machine");
+    strip.innerHTML = machineSvg(machine.flow_states, flow.state || "idle",
+                                 travelled, flow.hooks, machine.hook_loops);
+    next.appendChild(strip);
+  }
+
+  if (lanes.length) {
+    var graph = el("div", "live-graph");
+    /* Four marks, four meanings, said once rather than left to be inferred:
+       a BOX is an actor, a HOOK is deterministic code the harness ran, an INPUT
+       goes into a call and an OUTPUT comes back from one. */
+    graph.appendChild(flowLegend());
+    var box = document.getElementById("live");
+    var width = Math.max(720, Math.round(
+      (box ? box.getBoundingClientRect().width : 0) || 900));
+    graph.innerHTML = agentGraph(
+      lanes, width,
+      storedLimit("session") || CFG.context_window_tokens || 0,
+      machine ? machine.hook_loops : [],
+      sharedState(state));
+    next.appendChild(graph);
+  } else {
+    next.appendChild(el("div", "unavail", hidden
+      ? "Every session here is hidden by the filter above. "
+        + hiddenNote(hidden) + "."
+      : "No harness on this machine reports a step timeline, so there is no "
+        + "flow to draw. That is a statement about the harnesses installed "
+        + "here, not about whether anything is running."));
+  }
+
+  sessionFull = false;
+  sessionMeters(next, state);
+  renderSpend(next, state);
+  morph(host, next);
+  var note = document.getElementById("live-note");
+  if (note) {
+    txt(note, "What the harness is doing right now"
+        + (hidden ? ". " + hiddenNote(hidden) : "."));
+  }
+  renderFilter("live-filter");
+}
+
+registerDetail("step", function (host) {
+  /* Asked for in these words: name, then one line per call with its time and
+     how it ended. The box says how many and when last; the panel says each. */
+  var pairs = [];
+  (host.dataset.detailCalls || "").split("|").forEach(function (line) {
+    if (!line) { return; }
+    var cut = line.indexOf(" ");
+    pairs.push(cut === -1 ? [line, ""]
+                          : [line.slice(0, cut), line.slice(cut + 1)]);
+  });
+  if (!pairs.length && host.dataset.detailAt) {
+    pairs.push([clock(host.dataset.detailAt), ""]);
+  }
+  if (host.dataset.detailNet === "yes") {
+    pairs.push(["network", "this call leaves the machine"]);
+  } else if (host.dataset.detailNet === "mcp") {
+    pairs.push(["network", "through "
+                + (host.dataset.detailServer || "an MCP server")
+                + ", which may be remote"]);
+  }
+  var count = Number(host.dataset.detailCount) || 0;
+  var failures = Number(host.dataset.detailFailures) || 0;
+  return { title: host.dataset.detailName,
+           means: (count ? count + (count === 1 ? " call" : " calls") : "")
+             + (failures ? ", " + failures + " failed" : ""),
+           pairs: pairs };
+});
+
+registerDetail("mstate", function (host) {
+  return { title: host.dataset.detailName,
+           means: { hook: "a deterministic hook, costing no tokens",
+                    core: "the reasoning core, which is what tokens are spent on",
+                    security: "a deterministic security audit",
+                    idle: "waiting for the next prompt"
+                  }[host.dataset.detailRole] || "" };
+});
+
+document.addEventListener("click", function (event) {
+  var node = event.target.closest && event.target.closest("[data-step-id]");
+  if (!node) { return; }
+  /* History is not lost: any past step can be picked back up and held
+     highlighted. Held in a module variable because the graph is rebuilt on
+     every poll. */
+  pickedStep = pickedStep === node.dataset.stepId ? null : node.dataset.stepId;
+  if (lastState) { renderLive(lastState); }
+  showDetail(node);
+});
 
 /* ---- fan-out canvas -----------------------------------------------------
    The signature element, and a wiring diagram rather than a hairball: nodes are
@@ -2369,12 +4231,17 @@ function buildGraph(state) {
       var edge = edges.filter(function (e) { return e.key === key; })[0];
       if (!edge) {
         edge = { key: key, from: from.index, to: to.index, count: 0,
-                 broken: 0, kind: "mirror" };
+                 broken: 0, kind: "mirror", problems: [] };
         edges.push(edge);
       }
       edge.count += 1;
       if (PROBLEM_STATES[row.state.value]) {
         edge.broken += 1;
+        /* WHICH mirror, kept on the edge itself. The label reads `1 lost` and
+           the plan's worked example is exactly this: the number was reachable
+           and the name behind it was not. */
+        edge.problems.push({ name: row.name, state: row.state.value,
+                             target: column.id });
         from.alarm = true;
         to.alarm = true;
       }
@@ -2646,6 +4513,10 @@ function drawGraph(graph, svg, width, height, vertical) {
         + b.x.toFixed(1) + "," + b.y.toFixed(1);
     }
     parts.push('<path class="' + cls + '" d="' + path + '"/>');
+    /* A one-pixel line is not a hover target. This invisible twin is, and it
+       carries the detail so the thin line does not have to be hit exactly. */
+    parts.push('<path class="edge-hit" d="' + path + '" data-detail="gedge"'
+      + ' data-detail-key="' + escapeText(edge.key) + '"/>');
     if (edge.broken) {
       parts.push('<text class="edge-label" x="' + ((a.x + b.x) / 2).toFixed(1)
         + '" y="' + ((a.y + b.y) / 2 - 4).toFixed(1)
@@ -2657,7 +4528,8 @@ function drawGraph(graph, svg, width, height, vertical) {
     var cls = "node";
     if (node.alarm) { cls += " node--alarm"; }
     if (node.absent) { cls += " node--absent"; }
-    parts.push('<g class="' + cls + '">'
+    parts.push('<g class="' + cls + '" tabindex="0" data-detail="gnode"'
+      + ' data-detail-key="' + escapeText(node.id) + '">'
       + '<rect x="' + (node.x - node.w / 2).toFixed(1) + '" y="'
       + (node.y - node.h / 2).toFixed(1) + '" width="' + node.w
       + '" height="' + node.h + '"/>'
@@ -2706,6 +4578,27 @@ function solve(graph, width, height, vertical) {
       break;
     }
   }
+}
+
+function recentre(graph, span, vertical) {
+  /* The solver settles a shape, not a position: springs between lanes of very
+     different populations leave the whole drawing sitting off-centre on the
+     free axis, which was invisible in a 300px band and obvious the moment the
+     diagram got a tab of its own. So the settled cluster is translated as ONE
+     body - relative positions are the solver's answer and are not touched. */
+  var axis = vertical ? "x" : "y";
+  var top = vertical ? 8 : 34;   /* the lane labels live in this strip */
+  var lo = Infinity;
+  var hi = -Infinity;
+  graph.nodes.forEach(function (node) {
+    lo = Math.min(lo, node[axis]);
+    hi = Math.max(hi, node[axis]);
+  });
+  if (lo > hi) { return; }
+  var room = span - top - 8;
+  if (room <= 0) { return; }
+  var shift = top + Math.max(0, (room - (hi - lo)) / 2) - lo;
+  graph.nodes.forEach(function (node) { node[axis] += shift; });
 }
 
 function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
@@ -2780,10 +4673,21 @@ function renderCanvas(state) {
      to its first size for ever; the wrapper is what the tab actually offers. */
   var offered = Math.round(svg.parentNode.getBoundingClientRect().height);
   var height = canvasHeight(graph, vertical, offered, width);
-  svg.style.height = height + "px";
+  /* Only the upright layout sets a height. Left alone, the drawing fills its
+     wrapper from the stylesheet, and writing back the height just measured
+     would be a feedback loop: the wrapper grows by what the drawing was given,
+     the next measurement reads the larger wrapper, and the pane scrolls a
+     little further on every poll. Measured 2026-08-31, in a tab that gained a
+     scrollbar it never needed. */
+  svg.style.height = vertical ? height + "px" : "";
 
   var shape = graphShape(graph, width, height, vertical);
   layout(graph, width, height, vertical);
+  /* Kept for the interaction layer, which answers questions about the drawing
+     long after this function has returned: hover reads the node and the edge
+     from here, and a drag writes a position back into it. */
+  sim.graph = graph;
+  sim.dims = { width: width, height: height, vertical: vertical };
 
   if (sim.positions && sim.shape === shape) {
     /* Same diagram as last poll. Hold every box exactly where it was and repaint
@@ -2826,6 +4730,7 @@ function renderCanvas(state) {
   window.cancelAnimationFrame(sim.raf);
   sim.tweening = false;
   solve(graph, width, height, vertical);
+  recentre(graph, vertical ? width : height, vertical);
   var from = sim.positions;
   sim.positions = {};
   graph.nodes.forEach(function (node) {
@@ -2845,6 +4750,9 @@ function renderCanvas(state) {
 
 /* ---- head, foot, poll ---------------------------------------------------- */
 var lastState = null;
+/* One timer, so a manual refresh does not leave the previous one running and
+   double the rate the operator asked for. */
+var pollTimer = 0;
 
 function renderHead(state) {
   var repo = state.repo_state || {};
@@ -2914,12 +4822,90 @@ function render(state) {
   renderMatrix(state);
   renderRail(state);
   renderFleet(state);
+  renderLive(state);
   renderCanvas(state);
   renderFoot(state);
 }
 
+/* ---- refresh rate --------------------------------------------------------
+   The poll was never the slow part: a section is served from a per-section TTL
+   cache, so asking twice a second for data whose TTL is ten seconds returns the
+   same ten-second-old answer. The control therefore sets BOTH - how often the
+   page asks, and the `max_age` it asks for - and the server clamps that request
+   up to a configured floor, so no viewer can make the roster that leaves the
+   machine run faster than its own timer. */
+var REFRESH_KEY = "rt-observe-refresh";
+
+function refreshBounds() {
+  var bounds = CFG.refresh_bounds_ms || [];
+  return bounds.length === 2 ? bounds : [250, 600000];
+}
+
+function clampRefresh(ms) {
+  var bounds = refreshBounds();
+  /* A hard fallback rather than CFG.poll_ms alone: an older server serves a
+     view block without these keys, and `String(undefined / 1000)` put `NaN` in
+     the field - a control showing NaN is a control showing nothing. */
+  if (!(ms > 0)) { ms = CFG.poll_ms > 0 ? CFG.poll_ms : 2000; }
+  return Math.min(bounds[1], Math.max(bounds[0], ms));
+}
+
+function storedRefresh() {
+  /* A TYPED number, not a choice from a list: the presets are suggestions on a
+     datalist and anything inside the configured bounds is accepted. Stored as
+     milliseconds and read back through the same clamp, so a value left behind
+     by an older build cannot put the page outside its own limits. */
+  var saved = null;
+  try {
+    saved = window.localStorage.getItem(REFRESH_KEY);
+  } catch (error) {
+    /* Blocked storage: the configured default, as everywhere else. */
+  }
+  return clampRefresh(Number(saved) || CFG.poll_ms);
+}
+
+var refreshMs = storedRefresh();
+
+function applyRefresh(ms) {
+  refreshMs = clampRefresh(ms);
+  remember(REFRESH_KEY, String(refreshMs));
+  var input = document.getElementById("refresh");
+  if (input) { input.value = String(refreshMs / 1000); }
+  /* Ask again immediately at the new rate rather than waiting out the old one,
+     which is the whole point of turning the dial. */
+  poll();
+}
+
+function renderRefresh() {
+  var input = document.getElementById("refresh");
+  if (!input) { return; }
+  var bounds = refreshBounds();
+  input.min = String(bounds[0] / 1000);
+  input.max = String(bounds[1] / 1000);
+  /* Written on EVERY render, not only the first: the field is what tells the
+     operator what the interval currently is, and a value set once can be lost
+     to anything that touches the header afterwards. Only the listener is
+     attached once. */
+  if (document.activeElement !== input) {
+    input.value = String(refreshMs / 1000);
+  }
+  if (input.dataset.ready) { return; }
+  input.dataset.ready = "1";
+  /* The presets are a HINT, not a picker. A datalist put a dropdown triangle
+     inside the field and covered the value: measured 2026-09-01, the operator
+     could not read what the interval was. */
+  input.title = "seconds between refreshes. Suggested: "
+    + (CFG.refresh_choices_ms || []).map(function (ms) {
+        return ms / 1000 + "s";
+      }).join(", ");
+  input.addEventListener("change", function () {
+    applyRefresh(Number(input.value) * 1000);
+  });
+}
+
 function poll() {
-  window.fetch("/api/state", { headers: { "Accept": "application/json" } })
+  window.fetch("/api/state?max_age=" + (refreshMs / 1000),
+               { headers: { "Accept": "application/json" } })
     .then(function (response) { return response.json(); })
     .then(function (state) { render(state); })
     .catch(function (error) {
@@ -2933,7 +4919,11 @@ function poll() {
         window.console.warn("rt-observe poll failed", error);
       }
     })
-    .then(function () { window.setTimeout(poll, CFG.poll_ms); });
+    .then(function () {
+      renderRefresh();
+      window.clearTimeout(pollTimer);
+      pollTimer = window.setTimeout(poll, refreshMs);
+    });
 }
 
 var resizeTimer = 0;
@@ -3002,6 +4992,7 @@ document.getElementById("theme").addEventListener("click", cycleTheme);
 applyTheme(storedTheme());
 applyViewTab();
 applyRailTab();
+renderRefresh();
 
 /* The whitelist is read ONCE at load and again after each run, never on the
    two-second poll: it costs a PATH lookup per action and it only changes when

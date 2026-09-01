@@ -14,12 +14,13 @@ repository will run.
 """
 import io
 import json
+import os
 import sqlite3
 import sys
 import tempfile
 import textwrap
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -296,6 +297,529 @@ class ClaudeCodeAdapterTest(AdapterHarness):
         inbox = state["sessions"][0]["inbox"]
         self.assertFalse(inbox["reachable"])
         self.assertIn("would never be read", inbox["reason"])
+
+
+class FlowTest(AdapterHarness):
+    """The Real-Time Process tab is adapter-fed, so what it can honestly draw is
+    decided here rather than in the markup. `_flow_from` is driven directly with
+    an injected age: the alternative is a fixture whose modification time is the
+    real clock, which would make `idle` depend on when the suite is run."""
+
+    def _flow(self, records, age=0, cap=18, idle_after=90):
+        import adapters.claude_code as adapter
+        return adapter._flow_from(records, cap, age, idle_after)
+
+    def _assistant(self, blocks, **extra):
+        record = {"type": "assistant", "timestamp": "2026-09-01T13:00:00Z",
+                  "message": {"content": blocks}}
+        record.update(extra)
+        return record
+
+    def test_a_tool_call_a_result_and_a_thought_become_three_steps(self):
+        flow = self._flow([
+            {"type": "last-prompt"},
+            self._assistant([{"type": "thinking"}]),
+            self._assistant([{"type": "tool_use", "name": "Bash"}]),
+            {"type": "user", "timestamp": "2026-09-01T13:00:02Z",
+             "message": {"content": [{"type": "tool_result"}]}},
+        ])
+        self.assertEqual(["prompt", "reasoning", "tool", "result"],
+                         [s["kind"] for s in flow["steps"]])
+        self.assertEqual("post_tool", flow["state"])
+
+    def test_an_attachment_that_is_not_a_hook_contributes_nothing(self):
+        """The tail is mostly attachments. A step per record would draw a flow
+        that is real and unreadable, which is the same as not drawing one - but
+        a HOOK firing is an attachment too, and reading them all as noise is
+        what made the deterministic half of the harness invisible."""
+        flow = self._flow([{"type": "attachment"}] * 5)
+        self.assertEqual([], flow["steps"])
+        self.assertEqual([], flow["hooks"])
+        self.assertEqual("idle", flow["state"])
+
+    def _hook(self, **fields):
+        attachment = {"type": "hook_success", "hookEvent": "PreToolUse",
+                      "hookName": "PreToolUse:Write", "exitCode": 0}
+        attachment.update(fields)
+        return {"type": "attachment", "timestamp": "2026-09-01T13:00:00Z",
+                "attachment": attachment}
+
+    def test_a_hook_firing_is_reported_and_kept_off_the_step_list(self):
+        """PreToolUse and PostToolUse fire on EVERY tool call, so hooks sharing
+        the step list would drown the flow they are meant to explain. They are
+        counted apart, which is also what keeps them from pushing a subagent
+        dispatch out of the lane."""
+        flow = self._flow([
+            self._hook(command="Scanning for secrets (betterleaks)..."),
+            self._assistant([{"type": "tool_use", "name": "Write"}]),
+        ])
+        self.assertEqual(["tool"], [s["kind"] for s in flow["steps"]])
+        self.assertEqual(1, len(flow["hooks"]))
+        self.assertEqual("PreToolUse", flow["hooks"][0]["event"])
+
+    def test_a_hook_is_named_by_its_own_words_never_by_its_file(self):
+        """The operator asked for the hook NAME on the loop, not the python file
+        that implements it. Three sources, in this order."""
+        import adapters.claude_code as adapter
+        self.assertEqual(
+            "Scanning for secrets (betterleaks)",
+            adapter._hook_label("Scanning for secrets (betterleaks)...",
+                                "PreToolUse:Write"))
+        self.assertEqual(
+            "betterleaks",
+            adapter._hook_label('python "C:/h/betterleaks-hook.py"',
+                                "PreToolUse:Write"))
+        # A plugin file named after the event itself says nothing the arrow does
+        # not already say, so the matcher is used instead - and the file name
+        # never reaches the diagram.
+        named = adapter._hook_label(
+            'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py"',
+            "PreToolUse:Write")
+        self.assertEqual("on Write", named)
+        self.assertNotIn(".py", named)
+
+    def test_a_refusing_hook_carries_its_exit_code(self):
+        """The one hook state that must never be missed: a non-zero exit means
+        the call was BLOCKED, not merely watched."""
+        flow = self._flow([self._hook(type="hook_error", exitCode=2,
+                                      command="Checking vault access")])
+        self.assertEqual(2, flow["hooks"][0]["exit"])
+
+    def test_an_mcp_call_is_named_by_its_server(self):
+        """`mcp__playwright__browser_evaluate` says the protocol twice and the
+        server once. The chip says who was called and what for; the raw id stays
+        on the step for the hover panel."""
+        flow = self._flow([self._assistant(
+            [{"type": "tool_use", "name": "mcp__playwright__browser_evaluate"}])])
+        step = flow["steps"][0]
+        self.assertEqual("playwright . browser_evaluate", step["name"])
+        self.assertEqual("mcp__playwright__browser_evaluate", step["tool"])
+        self.assertEqual("playwright", step["server"])
+        self.assertEqual("mcp", step["network"])
+
+    def test_a_subagent_dispatch_is_not_pushed_out_by_later_tool_calls(self):
+        """Measured 2026-09-01: the dispatch was invisible on the tab because
+        120 later Bash calls had pushed it off an 18-slot list. Subagents are
+        counted apart for exactly this reason."""
+        records = [self._assistant([{"type": "tool_use", "name": "Agent",
+                                     "input": {"subagent_type": "local-writer"}}])]
+        records += [self._assistant([{"type": "tool_use", "name": "Bash"}])] * 40
+        flow = self._flow(records, cap=4)
+        self.assertEqual(4, len(flow["steps"]))
+        self.assertEqual(["local-writer"],
+                         [a["name"] for a in flow["subagents"]])
+
+    def test_a_failed_tool_result_is_reported_as_failed(self):
+        """`Fail is a result, and it is impossible to track` - the operator. The
+        transcript marks it on the result block, so the call it answers can be
+        drawn as failed rather than as returned, which looked identical."""
+        flow = self._flow([
+            self._assistant([{"type": "tool_use", "name": "Bash"}]),
+            {"type": "user", "timestamp": "2026-09-01T13:00:02Z",
+             "message": {"content": [{"type": "tool_result",
+                                      "is_error": True}]}},
+        ])
+        self.assertTrue(flow["steps"][-1]["error"])
+
+    def test_a_result_that_did_not_fail_says_so_too(self):
+        """The negative control: without it the field could be true always and
+        every call would be drawn as failed."""
+        flow = self._flow([
+            self._assistant([{"type": "tool_use", "name": "Bash"}]),
+            {"type": "user", "timestamp": "2026-09-01T13:00:02Z",
+             "message": {"content": [{"type": "tool_result",
+                                      "is_error": False}]}},
+        ])
+        self.assertFalse(flow["steps"][-1]["error"])
+
+    def test_a_subagent_is_named_by_the_call_that_spawned_it(self):
+        """`c2:fig:superpowers_collab` hangs a subagent off the session that
+        spawned it, and the parent transcript is where that link exists: the
+        sidechain records themselves never name the agent type."""
+        flow = self._flow([self._assistant([
+            {"type": "tool_use", "name": "Agent",
+             "input": {"subagent_type": "local-writer"}}])])
+        self.assertEqual("subagent", flow["steps"][0]["kind"])
+        self.assertEqual("local-writer", flow["steps"][0]["name"])
+
+    def test_a_call_that_leaves_the_machine_says_so_and_mcp_says_maybe(self):
+        """Part F asks which tool call left the machine. WebFetch did; an MCP
+        server MAY have, since a server can be a local process - and claiming
+        more than is known is the defect, not the caution."""
+        web = self._flow([self._assistant(
+            [{"type": "tool_use", "name": "WebFetch"}])])
+        self.assertEqual("yes", web["steps"][0]["network"])
+        mcp = self._flow([self._assistant(
+            [{"type": "tool_use", "name": "mcp__thing__do"}],
+            attributionMcpServer="thing")])
+        self.assertEqual("mcp", mcp["steps"][0]["network"])
+        self.assertEqual("thing", mcp["steps"][0]["server"])
+        local = self._flow([self._assistant(
+            [{"type": "tool_use", "name": "Bash"}])])
+        self.assertEqual("no", local["steps"][0]["network"])
+
+    def test_silence_is_read_as_waiting_and_only_after_the_threshold(self):
+        """A settled session goes quiet and is idle. The threshold is the only
+        thing that decides it."""
+        records = [self._assistant([{"type": "tool_use", "name": "Bash"}]),
+                   {"type": "user", "timestamp": "2026-09-01T13:00:02Z",
+                    "message": {"content": [{"type": "tool_result"}]}}]
+        self.assertEqual("post_tool", self._flow(records, age=10)["state"])
+        self.assertEqual("idle", self._flow(records, age=90)["state"])
+
+    def test_an_outstanding_call_means_working_however_long_the_silence(self):
+        """A call with no result after it is still OUT, and a build or a test
+        run writes nothing to the transcript for minutes. Measured by the
+        operator: a session that was working read as asleep, because silence
+        alone was being taken for idleness."""
+        records = [self._assistant([{"type": "tool_use", "name": "Bash"}])]
+        self.assertEqual("tool", self._flow(records, age=10)["state"])
+        self.assertEqual("tool", self._flow(records, age=6000)["state"],
+                         "the call never returned, so the session is waiting "
+                         "on it rather than idle")
+
+    def test_the_step_list_is_capped_and_says_what_it_dropped(self):
+        records = [self._assistant([{"type": "tool_use", "name": "Bash"}])] * 8
+        flow = self._flow(records, cap=3)
+        self.assertEqual(3, len(flow["steps"]))
+        self.assertEqual(5, flow["dropped"])
+
+    def test_no_percentage_is_invented_from_a_window_nobody_reported(self):
+        """The one number Part F asks for that the harness does not expose. A
+        bar drawn from a guessed denominator reads exactly like a measured one,
+        so the total is reported and the percentage is refused WITH its reason
+        (R8)."""
+        flow = self._flow([self._assistant(
+            [{"type": "text"}],
+            message={"content": [{"type": "text"}],
+                     "usage": {"input_tokens": 10,
+                               "cache_read_input_tokens": 90,
+                               "output_tokens": 5}})])
+        self.assertEqual("ok", flow["tokens"]["status"])
+        self.assertEqual(100, flow["tokens"]["held"])
+        self.assertIsNone(flow["tokens"]["percent"])
+        self.assertIn("window", flow["tokens"]["percent_reason"])
+
+    def test_a_transcript_with_no_usage_says_so_rather_than_reporting_zero(self):
+        flow = self._flow([self._assistant([{"type": "text"}])])
+        self.assertEqual("unavailable", flow["tokens"]["status"])
+        self.assertIn("reason", flow["tokens"])
+
+    def test_the_state_machine_is_named_by_the_adapter_not_the_page(self):
+        """One table. The page colours by role and the adapter names the role,
+        so a second list in the markup cannot drift from this one (R5)."""
+        import adapters.claude_code as adapter
+        roles = set(s[2] for s in adapter.FLOW_STATES)
+        self.assertEqual({"hook", "core", "security", "idle"}, roles)
+        ids = [s[0] for s in adapter.FLOW_STATES]
+        self.assertEqual(ids[0], "session_start")
+        self.assertIn("post_tool", ids)
+
+    def test_a_session_card_carries_its_flow(self):
+        self._transcript_for_flow()
+        import adapters.claude_code as adapter
+        state = adapter.collect(self.context)
+        self.assertIn("flow_states", state)
+        self.assertEqual("ok", state["sessions"][0]["flow"]["status"])
+
+    def _transcript_for_flow(self):
+        path = (self.home / ".claude" / "projects" / "proj-a" / "sess-1.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps({"sessionId": "sess-1"}) + "\n")
+            handle.write(json.dumps(
+                {"type": "assistant",
+                 "message": {"content": [{"type": "tool_use",
+                                          "name": "Bash"}]}}) + "\n")
+
+
+class DeclaredHooksTest(unittest.TestCase):
+    """The hook roster the state strip draws its loops from.
+
+    Firings alone were not enough: a hook that runs once at SessionStart leaves
+    the transcript tail within minutes of work, so the two the figure draws AS
+    background loops - RTK and caveman - were never visible on a session more
+    than an hour old. The declared roster comes from the inventory the session
+    already prints."""
+
+    def _parse(self, lines):
+        import adapters.claude_code as adapter
+        return adapter._declared_hooks(lines)
+
+    def test_the_matchers_pipes_are_not_read_as_more_hooks(self):
+        """The trap that was live for one run: a status reads
+        `[ok, Write|Edit|MultiEdit]`, and splitting on the separator BEFORE
+        removing the brackets turned every matcher into a hook of its own."""
+        rows = self._parse([
+            "PreToolUse(2): betterleaks-hook.py [ok, Write|Edit|MultiEdit] "
+            "| vault-access-guard.py [ok, Bash|Read]"])
+        self.assertEqual(1, len(rows))
+        # The scripts are what was parsed; the names are what is DRAWN.
+        self.assertEqual(["betterleaks-hook.py", "vault-access-guard.py"],
+                         rows[0]["scripts"])
+        self.assertEqual(2, len(rows[0]["names"]))
+
+    def test_the_hooks_the_operator_asked_for_are_named(self):
+        import json
+        from pathlib import Path
+        import adapters.claude_code as adapter
+        table = json.loads(
+            (Path(adapter.__file__).resolve().parent.parent.parent
+             / "hook-names.json").read_text(encoding="utf-8"))["names"]
+        rows = adapter._declared_hooks([
+            "SessionStart(7): caveman-activate.js [ok] | rtk-active [inline] "
+            "| obsidian-outbox-flush.py [ok]",
+            "UserPromptSubmit(1): caveman-mode-tracker.js [ok]"], table)
+        names = sum([row["names"] for row in rows], [])
+        scripts = sum([row["scripts"] for row in rows], [])
+        # The operator asked to see these three by NAME.
+        for wanted in ("Caveman", "RTK", "Obsidian outbox"):
+            with self.subTest(hook=wanted):
+                self.assertIn(wanted, names)
+        for name in names:
+            with self.subTest(name=name):
+                self.assertNotIn(".", name,
+                                 "a file extension on a diagram is a path, "
+                                 "not a name")
+        self.assertIn("caveman-activate.js", scripts,
+                      "the file is kept behind the name, for the hover panel "
+                      "and for matching a firing")
+
+    def test_a_header_line_is_not_an_event(self):
+        """`[HOOKS ACTIVE] 14 entries / 6 events | 10 ok` is a summary, not a
+        roster, and reading it as one would invent an event called `14 entries`.
+        """
+        rows = self._parse(["[HOOKS ACTIVE] 14 entries / 6 events | 10 ok",
+                            "Stop(1): memory-upkeep [inline]"])
+        self.assertEqual(["Stop"], [row["event"] for row in rows])
+
+    def test_no_inventory_is_an_empty_roster_and_never_a_crash(self):
+        self.assertEqual([], self._parse(None))
+        self.assertEqual([], self._parse([]))
+
+
+class HookNamingTest(unittest.TestCase):
+    """What a hook is CALLED, and which hooks are shown at all.
+
+    The operator asked for Caveman, RTK and BetterLeaks - not
+    caveman-activate.js, rtk-active and betterleaks-hook.py - and asked that the
+    harness's own plugin hooks stay off the diagram, since no settings.json on
+    this machine asked for them."""
+
+    def _adapter(self):
+        import adapters.claude_code as adapter
+        return adapter
+
+    def _table(self):
+        return {"betterleaks-hook.py": "BetterLeaks",
+                "caveman-activate.js": "Caveman",
+                "rtk-active": "RTK"}
+
+    def test_a_hook_is_called_by_its_name_and_never_by_its_file(self):
+        adapter = self._adapter()
+        table = self._table()
+        for script, wanted in (("betterleaks-hook.py", "BetterLeaks"),
+                               ("caveman-activate.js", "Caveman"),
+                               ("rtk-active", "RTK")):
+            with self.subTest(script=script):
+                self.assertEqual(wanted,
+                                 adapter._hook_display(script, table))
+
+    def test_a_hook_the_table_does_not_know_still_gets_a_name(self):
+        """A missing entry degrades to a readable form of the file name, not to
+        the file name itself and never to nothing (R11)."""
+        adapter = self._adapter()
+        self.assertEqual("Some new guard",
+                         adapter._hook_display("some-new-guard-hook.py", {}))
+        self.assertEqual("Thing", adapter._hook_display("thing.ps1", {}))
+
+    def test_the_shipped_table_names_the_hooks_that_were_asked_for(self):
+        import json
+        from pathlib import Path
+        import adapters.claude_code as adapter
+        path = (Path(adapter.__file__).resolve().parent.parent.parent
+                / "hook-names.json")
+        names = json.loads(path.read_text(encoding="utf-8"))["names"]
+        self.assertEqual("Caveman", names["caveman-activate.js"])
+        self.assertEqual("RTK", names["rtk-active"])
+        self.assertEqual("BetterLeaks", names["betterleaks-hook.py"])
+
+    def test_the_declared_roster_carries_names_and_the_scripts_behind_them(self):
+        adapter = self._adapter()
+        rows = adapter._declared_hooks(
+            ["PreToolUse(1): betterleaks-hook.py [ok, Write|Edit]"],
+            self._table())
+        self.assertEqual(["BetterLeaks"], rows[0]["names"])
+        self.assertEqual(["betterleaks-hook.py"], rows[0]["scripts"])
+
+    def test_a_hook_with_no_name_of_its_own_is_not_in_the_roster(self):
+        """Measured 2026-09-01: a plugin registers `hook.js` on EVERY event, so
+        the roster carried an entry called `Hook` on all ten of them - and since
+        `hook` is a substring of every path containing `hooks/`, that one entry
+        then matched every plugin firing and relabelled the lot `Hook`. A hook
+        with no name of its own is the harness's, not the operator's."""
+        adapter = self._adapter()
+        rows = adapter._declared_hooks(
+            ["PreToolUse(2): betterleaks-hook.py [ok] | hook.js [ok]"],
+            self._table())
+        self.assertEqual(["BetterLeaks"], rows[0]["names"])
+        self.assertNotIn("hook.js", rows[0]["scripts"])
+
+    def test_a_hook_is_matched_by_the_words_it_prints(self):
+        """`vault-access-guard.py` prints `Checking vault access (local-writer
+        only)` and shares no substring with the name it is displayed under, so
+        the match is on WORDS. Without it a hook that named itself politely was
+        dropped as though it had never run."""
+        adapter = self._adapter()
+        table = {"vault-access-guard.py": "Vault guard"}
+        declared = adapter._declared_hooks(
+            ["PreToolUse(1): vault-access-guard.py [ok]"], table)
+        kept = adapter._only_declared(
+            [{"event": "PreToolUse", "name": "PreToolUse:Read",
+              "label": "Checking vault access (local-writer only)",
+              "command": "Checking vault access (local-writer only)...",
+              "at": "1"}], declared, table)
+        self.assertEqual(["Vault guard"], [h["label"] for h in kept])
+
+    def test_a_loose_stem_cannot_capture_an_unrelated_firing(self):
+        """The negative control for the defect above: matching on a stem rather
+        than a whole name is what let one entry swallow every firing."""
+        adapter = self._adapter()
+        table = {"betterleaks-hook.py": "BetterLeaks"}
+        declared = adapter._declared_hooks(
+            ["PreToolUse(1): betterleaks-hook.py [ok]"], table)
+        kept = adapter._only_declared(
+            [{"event": "PreToolUse", "name": "PreToolUse:Bash",
+              "label": "on Bash", "at": "1",
+              "command": 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py"'}],
+            declared, table)
+        self.assertEqual([], kept)
+
+    def test_only_the_hooks_this_machine_declares_are_drawn(self):
+        """The transcript also records the harness's own plugin hooks. Drawn
+        beside the operator's guards they are noise wearing the same shape."""
+        adapter = self._adapter()
+        declared = adapter._declared_hooks(
+            ["PreToolUse(1): betterleaks-hook.py [ok, Write]"], self._table())
+        fired = [
+            {"event": "PreToolUse", "name": "PreToolUse:Write",
+             "label": "Scanning for secrets (betterleaks)",
+             "command": "Scanning for secrets (betterleaks)...", "at": "1"},
+            {"event": "PreToolUse", "name": "PreToolUse:Bash",
+             "label": "on Bash", "at": "2",
+             "command": 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.py"'},
+        ]
+        kept = adapter._only_declared(fired, declared, self._table())
+        self.assertEqual(["BetterLeaks"], [hook["label"] for hook in kept],
+                         "the plugin hook is dropped and the declared one is "
+                         "renamed to what the operator calls it")
+
+    def test_a_firing_is_matched_by_its_script_as_well_as_by_its_words(self):
+        """Some hooks print a sentence, some print nothing and the harness shows
+        the command. Both routes have to reach the same declared entry."""
+        adapter = self._adapter()
+        declared = adapter._declared_hooks(
+            ["SessionStart(1): caveman-activate.js [ok]"], self._table())
+        kept = adapter._only_declared(
+            [{"event": "SessionStart", "name": "SessionStart:startup",
+              "label": "Loading caveman mode", "at": "1",
+              "command": 'node "C:/h/caveman-activate.js"'}],
+            declared, self._table())
+        self.assertEqual(["Caveman"], [hook["label"] for hook in kept])
+
+    def test_no_declared_roster_leaves_the_firings_alone(self):
+        """A machine whose inventory could not be read still shows what fired,
+        rather than showing nothing at all (R11)."""
+        adapter = self._adapter()
+        fired = [{"event": "PreToolUse", "name": "x", "label": "y", "at": "1"}]
+        self.assertEqual(fired, adapter._only_declared(fired, [], {}))
+
+
+class UsageScanTest(AdapterHarness):
+    """The week bar's numerator. This is the only collector here that reads a
+    transcript END TO END, which is why it has a timer and a floor of its own -
+    and why what it counts had to be decided rather than assumed."""
+
+    def _transcript(self, name, records, age_days=0):
+        path = (self.home / ".claude" / "projects" / "proj-a"
+                / ("%s.jsonl" % name))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+            for record in records:
+                handle.write(json.dumps(record) + "\n")
+        if age_days:
+            old = (NOW - timedelta(days=age_days)).timestamp()
+            os.utime(path, (old, old))
+        return path
+
+    def _message(self, days_ago=0, **usage):
+        when = NOW - timedelta(days=days_ago)
+        return {"type": "assistant",
+                "timestamp": when.isoformat().replace("+00:00", "Z"),
+                "message": {"content": [{"type": "text"}], "usage": usage}}
+
+    def _collect(self):
+        import collect_usage
+        return collect_usage.collect(self.context)
+
+    def test_what_is_counted_is_what_was_new(self):
+        """A cached prompt re-reads the same tokens on every message, so adding
+        cache_read would count one conversation dozens of times and produce a
+        number that looks like usage and measures repetition."""
+        self._transcript("s1", [self._message(
+            input_tokens=10, cache_creation_input_tokens=5,
+            cache_read_input_tokens=90000, output_tokens=7)])
+        state = self._collect()
+        self.assertEqual("ok", state["status"])
+        self.assertEqual(22, state["tokens"])
+        self.assertEqual(1, state["messages"])
+        self.assertIn("re-read from cache are excluded", state["counts_what"])
+
+    def test_a_message_older_than_the_window_is_not_counted(self):
+        self._transcript("s1", [self._message(days_ago=0, input_tokens=100),
+                                self._message(days_ago=30, input_tokens=999)])
+        self.assertEqual(100, self._collect()["tokens"])
+
+    def test_a_transcript_untouched_within_the_window_is_never_opened(self):
+        """The cheap half of the scan: a file whose mtime predates the window
+        cannot hold a record inside it, so it is skipped without being read."""
+        self._transcript("old", [self._message(input_tokens=500)], age_days=30)
+        state = self._collect()
+        self.assertEqual(0, state["transcripts_scanned"])
+        self.assertEqual(0, state["tokens"])
+
+    def test_an_excluded_project_contributes_nothing(self):
+        path = (self.home / ".claude" / "projects" / "secret-matter")
+        path.mkdir(parents=True, exist_ok=True)
+        with io.open(path / "s.jsonl", "w", encoding="utf-8",
+                     newline="\n") as handle:
+            handle.write(json.dumps(self._message(input_tokens=4242)) + "\n")
+        excluded = list(self.config["privacy"]["excluded_projects"]["value"])
+        self.config["privacy"]["excluded_projects"]["value"] = \
+            excluded + ["secret-matter"]
+        self.assertEqual(0, self._collect()["tokens"])
+
+    def test_a_giant_transcript_is_cut_and_says_so(self):
+        """It reads whole files, so an unbounded read is a page that hangs on
+        the largest session anyone ever had."""
+        self.config["caps"]["usage_scan_bytes"]["value"] = 200
+        self._transcript("big", [self._message(input_tokens=1)] * 50)
+        state = self._collect()
+        self.assertEqual(1, state["transcripts_truncated"])
+
+    def test_a_machine_with_no_transcripts_says_so_rather_than_zero(self):
+        """Zero spend and no way to know are different answers, and only one of
+        them is true here (R8)."""
+        state = self._collect()
+        self.assertEqual("unavailable", state["status"])
+        self.assertIn("reason", state)
+
+    def test_a_corrupt_line_does_not_lose_the_file(self):
+        path = self._transcript("s1", [self._message(input_tokens=10)])
+        with io.open(path, "a", encoding="utf-8", newline="\n") as handle:
+            handle.write("{not json\n")
+            handle.write(json.dumps(self._message(input_tokens=5)) + "\n")
+        self.assertEqual(15, self._collect()["tokens"])
 
 
 class CopilotChatAdapterTest(AdapterHarness):

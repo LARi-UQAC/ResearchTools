@@ -54,7 +54,13 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
         "ttl_seconds": {"mirrors": value(15), "repo": value(30),
                         "registry": value(60), "progress": value(15),
                         "services": value(60), "sessions": value(10),
-                        "graph": value(60), "mcp_live": value(300)},
+                        "graph": value(60), "mcp_live": value(300),
+                        "usage": value(600)},
+        # The floors a VIEWER cannot ask below. mcp_live's floor is its own
+        # TTL, which is the point: the refresh control may speed up a local
+        # collector and must never speed up the one that leaves the machine.
+        "ttl_floor_seconds": {"default": value(1), "mcp_live": value(300),
+                              "usage": value(60)},
         "timeouts_seconds": {"subprocess_default": value(20),
                              "mcp_list": value(45), "action_default": value(600),
                              "ping": value(2)},
@@ -157,7 +163,7 @@ def call(handler_cls, method, path, body=None, headers=None):
 def handler_for(snapshot=None, token=TOKEN, page=None, asset_roots=(),
                 action_runner=None, catalogue=None, port=8787):
     return rt_server.make_handler(
-        snapshot or (lambda: {"generated": NOW.isoformat()}),
+        snapshot or (lambda max_age=None: {"generated": NOW.isoformat()}),
         token, page, list(asset_roots), action_runner=action_runner,
         catalogue=catalogue, log=None,
         started=NOW.isoformat(timespec="seconds"), port=port)
@@ -441,6 +447,69 @@ class HoldingPid(unittest.TestCase):
         self.assertEqual(7, run.call_args.kwargs["timeout"])
 
 
+class RefreshRate(unittest.TestCase):
+    """The refresh control, added 2026-09-01 after the operator reported the
+    live tab lagging. The poll was never the slow part: a section is served from
+    a per-section TTL cache, so asking twice a second for data whose TTL is ten
+    seconds returns the same ten-second-old answer. A viewer may now ask for a
+    shorter TTL - and the floor is what stops that being a way to make the one
+    collector that leaves the machine run continuously."""
+
+    def setUp(self):
+        self.builders = {"fleet": lambda now: {"n": 1},
+                         "mcp": lambda now: {"n": 2}}
+        self.cache = rt_server.SnapshotCache(
+            self.builders, {"fleet": 10, "mcp": 300},
+            floors={"default": 1, "mcp_live": 300})
+
+    def test_a_viewer_may_ask_a_local_section_to_be_fresher(self):
+        self.assertEqual(10, self.cache.effective_ttl("fleet"))
+        self.assertEqual(2, self.cache.effective_ttl("fleet", 2))
+
+    def test_a_viewer_may_never_ask_below_the_floor(self):
+        self.assertEqual(1, self.cache.effective_ttl("fleet", 0.01))
+        self.assertEqual(300, self.cache.effective_ttl("mcp", 1),
+                         "the roster that leaves the machine keeps its own "
+                         "timer whatever a page asks for")
+
+    def test_asking_for_less_freshness_than_configured_changes_nothing(self):
+        """The dial shortens a TTL and never lengthens one: a viewer cannot ask
+        to be shown older data than the configuration allows."""
+        self.assertEqual(10, self.cache.effective_ttl("fleet", 999))
+
+    def test_a_missing_floor_is_named_rather_than_invented(self):
+        bare = rt_server.SnapshotCache(self.builders, {"fleet": 10}, floors={})
+        with self.assertRaises(KeyError) as caught:
+            bare.floor_for("fleet")
+        self.assertIn("ttl_floor_seconds.default", str(caught.exception))
+
+    def test_the_request_carries_max_age_and_a_bad_one_is_ignored(self):
+        self.assertIsNone(rt_server._max_age("/api/state"))
+        self.assertEqual(2.0, rt_server._max_age("/api/state?max_age=2"))
+        self.assertIsNone(rt_server._max_age("/api/state?max_age=soon"))
+        self.assertIsNone(rt_server._max_age("/api/state?max_age=-5"),
+                          "a negative age is not a faster refresh")
+
+    def test_a_shorter_max_age_actually_re_collects(self):
+        calls = []
+
+        def build(now):
+            calls.append(now)
+            return {"n": len(calls)}
+
+        cache = rt_server.SnapshotCache({"fleet": build}, {"fleet": 10},
+                                        floors={"default": 1})
+        first = NOW
+        cache.snapshot(first, block=True)
+        # Three seconds later: inside the configured TTL, outside the asked-for
+        # one. Without max_age the cache holds; with it, it re-collects.
+        later = first + timedelta(seconds=3)
+        cache.snapshot(later, block=True)
+        self.assertEqual(1, len(calls))
+        cache.snapshot(later, block=True, max_age=2)
+        self.assertEqual(2, len(calls))
+
+
 class GetRoutes(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -471,13 +540,13 @@ class GetRoutes(unittest.TestCase):
 
     def test_state_returns_the_snapshot(self):
         payload = {"generated": "x", "mirrors": {"status": "ok"}}
-        response = call(handler_for(snapshot=lambda: payload),
+        response = call(handler_for(snapshot=lambda max_age=None: payload),
                         "GET", "/api/state")
         self.assertEqual(200, response.status)
         self.assertEqual("ok", response.json()["mirrors"]["status"])
 
     def test_a_snapshot_that_raises_is_stated_never_blanked(self):
-        def boom():
+        def boom(max_age=None):
             raise RuntimeError("collector exploded")
         response = call(handler_for(snapshot=boom), "GET", "/api/state")
         self.assertEqual(500, response.status)

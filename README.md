@@ -797,6 +797,62 @@ non-zero rather than binding a second port, since two dashboards showing two dif
 snapshots is worse than none; and a dashboard already running is reported with its URL rather
 than started twice.
 
+**One screen, two tab strips.** The page does not scroll, at any width it supports. The sheet
+is the viewport, and anything longer than the pane it sits in scrolls inside that pane, which is
+what decides how much any one tab may show. The left column carries four views - the mirror
+matrix as the landing view, the fan-out diagram, the sessions strip, and the Real-Time Process
+tab described below. The right column carries the rail's six panels
+as tabs of their own: repository, plan, services, code graph, hooks and actions. Which tab is in
+front is a per-viewer convenience remembered in `localStorage`, the way the theme control is,
+and both strips take the arrow keys.
+
+**What the harness is doing right now.** The `Real-Time Process` tab draws the session state
+machine of the lab's own figure - SessionStart, waiting, UserPromptSubmit, reasoning and tool
+calling, PostToolUse, security audit - with the state a session is in filled dark and the arcs it
+has travelled this turn at double width, a marker running along them. Below it, one lane per
+session carries the recent steps: history stays on screen in low grey and any step can be picked
+back up, a subagent hangs off the session that spawned it and is named by the call that spawned
+it, and a call that leaves the machine says so (`mcp` means it went through a server, which may be
+remote). Token spend is reported as a total and NOT as a percentage: a transcript records tokens
+per message and never the window they sit in, so the bar is relative to the busiest session on
+screen and says as much. Adapter-fed like the rest, so Copilot Chat - whose store holds session
+metadata and no step timeline - reports that rather than being drawn as idle.
+
+**Four marks, four meanings.** A BOX is an actor: a session, a subagent, a skill, a memory. A
+tool call is not an actor but an event on a line, so it is a tick that carries a count when it
+repeats. A tool result is not a node either - it is the EDGE leaving the call it answers, solid
+once the output came back and dashed while the call is still out, which is the same arrow the
+state strip draws from `tool call` to `PostToolUse`. And a hook is drawn as a hook. The page says
+all four in a legend rather than leaving them to be inferred.
+
+**The deterministic half is visible too.** Hook firings arrive in a transcript as attachments,
+and reading attachments as noise is what once made RTK, caveman, the secret scan and the vault
+outbox flush invisible on a tab whose whole subject is what the harness is doing. Each one now
+draws the figure's own idiom: a dashed self-loop on the box it runs on, labelled with the hook's
+NAME rather than the file that implements it, and drawn in alarm when the hook refused rather than
+merely watched. Subagent dispatches are counted apart from tool calls, so a `local-writer`
+dispatch cannot be pushed off the lane by the next hundred Bash calls, and an MCP call is named by
+its server.
+
+**Three bars, and three maxima you type.** What this session holds, what the week has spent
+(summed from the transcripts: new input, cache creation and output, never tokens re-read from
+cache, which are the same conversation counted again), and a paid supplement that appears only
+once one of the other two is full. None of the three MAXIMA is reported anywhere on this machine,
+so each is typed beside its bar and kept per viewer, and a bar with no maximum is not drawn at
+all. Nothing here is money: no plan, invoice or payment method is readable from this machine.
+
+**The refresh rate is yours.** Type an interval beside the theme control; the presets are
+suggestions. The page then asks the server for data no older than that, and the server clamps the
+request up to a configured floor, so no viewer can make the collector that leaves the machine run
+faster than its own timer.
+
+**Hovering anything explains it.** One layer, not one tooltip per panel: a cell, a card, a plan
+phase, a box or an edge in the fan-out opts in, and a single renderer draws the detail behind the
+summary. The case that made it necessary is the fan-out edge that reads `1 lost` - the number was
+reachable and the name behind it was not, so the edge now carries which mirror is lost and in what
+state. The diagram's boxes can also be dragged, and their edges follow, because every path is
+drawn from the node's own coordinates rather than from a stored copy of them.
+
 **Acting on what it reports.** The rail carries an Actions panel, and every button in it runs
 one entry of a closed whitelist held as data in
 [.claude/skills/rt-observe/actions.json](.claude/skills/rt-observe/actions.json): an id maps to

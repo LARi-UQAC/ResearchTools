@@ -328,7 +328,8 @@ class ServicesTest(TempTree):
         return {"subprocess_timeout_s": 5,
                 "outbox_root": str(self.home / "outbox"),
                 "daemon_lock_path": str(self.home / "vault-daemon.lock"),
-                "lock_stale_after_s": 900}
+                "lock_stale_after_s": 900,
+                "outbox_listed": 3}
 
     def _mcp_values(self):
         return {"mcp_timeout_s": 5}
@@ -480,6 +481,47 @@ class ServicesTest(TempTree):
                                              self._values(), now=NOW)
         self.assertTrue(state["vault_daemon"]["running"])
         self.assertIsNone(state["vault_daemon"]["alert"])
+
+    def test_the_outbox_names_what_is_waiting_and_not_only_how_much(self):
+        """A count answers whether the queue is moving; the NAMES answer whether
+        the note you just wrote is in it, which is what someone watching a write
+        actually wants to know. Rebuilt from the filesystem on every collection,
+        so a note the daemon consumes leaves the list by itself."""
+        (self.home / "outbox" / "raw").mkdir(parents=True)
+        write(self.home / "outbox" / "one.md", "staged note")
+        write(self.home / "outbox" / "raw" / "drop.md", "a raw drop")
+        with no_binaries():
+            state = collect_services.collect(self.repo, self.home,
+                                             self._values(), now=NOW)
+        daemon = state["vault_daemon"]
+        names = dict((entry["name"], entry["state"])
+                     for entry in daemon["pending"])
+        self.assertEqual({"one.md": "staged", "drop.md": "raw"}, names)
+        self.assertEqual(2, daemon["pending_total"])
+        for entry in daemon["pending"]:
+            with self.subTest(entry=entry["name"]):
+                self.assertIn("age_seconds", entry)
+
+    def test_the_named_list_is_capped_while_the_total_is_not(self):
+        """The list is read on hover, standing up. The count behind it is not
+        capped, or a queue of forty would report as three."""
+        (self.home / "outbox").mkdir(parents=True)
+        for index in range(6):
+            write(self.home / "outbox" / ("note%d.md" % index), "x")
+        with no_binaries():
+            state = collect_services.collect(self.repo, self.home,
+                                             self._values(), now=NOW)
+        daemon = state["vault_daemon"]
+        self.assertEqual(3, len(daemon["pending"]))
+        self.assertEqual(6, daemon["pending_total"])
+
+    def test_an_empty_outbox_reports_an_empty_list_not_a_missing_one(self):
+        (self.home / "outbox").mkdir(parents=True)
+        with no_binaries():
+            state = collect_services.collect(self.repo, self.home,
+                                             self._values(), now=NOW)
+        self.assertEqual([], state["vault_daemon"]["pending"])
+        self.assertEqual(0, state["vault_daemon"]["pending_total"])
 
     def test_an_absent_vault_lock_module_says_so_rather_than_guessing(self):
         with no_binaries():

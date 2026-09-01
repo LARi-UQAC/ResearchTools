@@ -1,0 +1,19 @@
+{
+  "purpose": "What to CALL each hook on the diagram. The inventory names the SCRIPT that runs, and a script name is a file, not a name: the operator asked to see Caveman, RTK and BetterLeaks, not caveman-activate.js, rtk-active and betterleaks-hook.py. Data rather than code (R6), so a hook added to settings.json gets a name here without touching a module, and a name missing from this table degrades to a readable form of its own file name rather than to nothing (R11).",
+  "provenance": "written 2026-09-01 from the hooks this machine declares in ~/.claude/settings.json, as listed by session-hooks-inventory.py",
+  "names": {
+    "caveman-activate.js": "Caveman",
+    "caveman-mode-tracker.js": "Caveman",
+    "rtk-active": "RTK",
+    "betterleaks-hook.py": "BetterLeaks",
+    "vault-access-guard.py": "Vault guard",
+    "prompt-injection-defender.py": "Injection defender",
+    "pip-audit-hook.py": "pip-audit",
+    "obsidian-outbox-flush.py": "Obsidian outbox",
+    "session-hooks-inventory.py": "Hooks inventory",
+    "install-junctions.ps1": "Junctions sync",
+    "auto-sync-check": "Git sync",
+    "session-status": "Session status",
+    "memory-upkeep": "Memory upkeep"
+  }
+}

@@ -37,6 +37,7 @@ import urllib.error
 import urllib.request
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 from pathlib import Path
 
 APP_ID = "rt-observe"
@@ -56,9 +57,28 @@ SECTION_TTL_KEY = {
     "mcp": "mcp_live",
     "services": "services",
     "fleet": "sessions",
+    # Reads every transcript END TO END rather than by tail, so it gets a timer
+    # of its own and a floor a viewer cannot go below.
+    "usage": "usage",
 }
 
 _ASSET_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _max_age(path):
+    """The freshness a viewer asked for, in seconds, or None.
+
+    Parsed permissively and clamped by the cache, never here: a query string is
+    input, so this returns a number or nothing at all and every decision about
+    what that number is ALLOWED to mean stays in one place."""
+    if "?" not in path:
+        return None
+    raw = parse_qs(path.split("?", 1)[1]).get("max_age", [None])[0]
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
 _ASSET_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".svg": "image/svg+xml",
@@ -128,9 +148,14 @@ class SnapshotCache:
     on a background thread whose result the next poll picks up.
     """
 
-    def __init__(self, builders, ttls, envelope=None, spawn=None):
+    def __init__(self, builders, ttls, envelope=None, spawn=None, floors=None):
         self._builders = builders
         self._ttls = dict(ttls)
+        # What a VIEWER may ask for. A page can ask for a section fresher than
+        # its TTL - that is the refresh control - but never fresher than the
+        # floor, which is how `claude mcp list` stays un-hammerable by anyone
+        # holding the URL.
+        self._floors = dict(floors or {})
         self._envelope = envelope or (lambda: {})
         self._cache = {}
         self._inflight = set()
@@ -143,6 +168,27 @@ class SnapshotCache:
                 "observe-config.json declares no ttl_seconds.%s, and this "
                 "server never invents one" % SECTION_TTL_KEY.get(section, section))
         return self._ttls[section]
+
+    def floor_for(self, section):
+        """The fastest this section may be re-collected, whatever a viewer
+        asks. A section with no floor of its own takes the default one."""
+        key = SECTION_TTL_KEY.get(section, section)
+        if key in self._floors:
+            return self._floors[key]
+        if "default" not in self._floors:
+            raise KeyError(
+                "observe-config.json declares no ttl_floor_seconds.default, "
+                "and this server never invents one")
+        return self._floors["default"]
+
+    def effective_ttl(self, section, max_age=None):
+        """The TTL this request actually gets: the configured one, or the
+        viewer's shorter request clamped up to the floor. Never longer than
+        configured and never faster than the floor."""
+        ttl = self.ttl_for(section)
+        if max_age is None:
+            return ttl
+        return max(self.floor_for(section), min(ttl, max_age))
 
     def invalidate(self, section=None):
         """Drop a cached section so the next read re-collects it. This is what
@@ -160,12 +206,13 @@ class SnapshotCache:
         for name, build in self._builders.items():
             self._refresh_later(name, build, now)
 
-    def snapshot(self, now, block=True):
+    def snapshot(self, now, block=True, max_age=None):
         sections = {}
         receipts = {}
         for name, build in self._builders.items():
-            value, collected_at = self._section(name, build, now, block)
-            ttl = self.ttl_for(name)
+            value, collected_at = self._section(name, build, now, block,
+                                                max_age)
+            ttl = self.effective_ttl(name, max_age)
             if collected_at is None:
                 # Never collected, and we are not waiting for it. Stated, not
                 # blanked and not invented (R3, R8).
@@ -190,8 +237,8 @@ class SnapshotCache:
         payload["receipts"] = receipts
         return payload
 
-    def _section(self, name, build, now, block=True):
-        ttl = self.ttl_for(name)
+    def _section(self, name, build, now, block=True, max_age=None):
+        ttl = self.effective_ttl(name, max_age)
         with self._lock:
             hit = self._cache.get(name)
         if hit is not None and now - hit[1] < timedelta(seconds=ttl):
@@ -470,7 +517,7 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
 
         def _state(self):
             try:
-                payload = snapshot_fn()
+                payload = snapshot_fn(_max_age(self.path))
             except Exception as exc:                    # noqa: BLE001
                 return self._json(500, {
                     "status": "unavailable",
@@ -601,7 +648,8 @@ def build_server(host, port, cache, token, page_path, asset_roots,
     assert_loopback(host)
     started = clock().isoformat(timespec="seconds") if clock else None
     handler = make_handler(
-        lambda: cache.snapshot(clock(), block=False),
+        lambda max_age=None: cache.snapshot(clock(), block=False,
+                                            max_age=max_age),
         token, page_path, asset_roots,
         action_runner=action_runner, catalogue=catalogue, log=log,
         started=started, port=port, page_vars=page_vars)

@@ -206,6 +206,7 @@ python .claude/skills/scopus/scripts/Test/test_search_sort_and_publisher.py  # s
 python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py # scan_sections / section-scan
 python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py         # ingest contract: scheme per hop, streamed cap, magic bytes
 python .claude/skills/uqac-forms/scripts/Test/test_field_map.py          # widget dump (byte-exact names, /AP /N on-states) and the drift diff
+python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py          # filling: on-state validation, selective locking, sign-last refusal
 python .claude/skills/latex-hygiene/scripts/Test/test_tex_check.py        # chars/aiscan/wc/abstract/braces/par/citecov/refcov: forbidden chars, AI-usage score, accepted-text word count, brace/begin-end balance, changes-macro corruption, cite<->bib and label<->ref coverage
 python .claude/skills/latex-hygiene/scripts/Test/test_tex_patch.py        # 10 tests: exact-match plan application, occurrence-count gate, FAILS: list, --author override, --init preamble emission, colour-only deleted markup
 python .claude/skills/latex-hygiene/scripts/Test/test_tex_build.py        # 7 tests: accept resolution, pdflatex/bibtex/pdflatex/pdflatex sequence, BIBINPUTS, output-dir .bib refusal

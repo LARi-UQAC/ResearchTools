@@ -2,9 +2,9 @@
 #
 # pdf_ingest.py : requests (validated HTTPS download)
 # field_map.py  : pypdf   (AcroForm widget enumeration, BSD-3)
+# fill_form.py  : pypdf   (writes values, NeedAppearances, field locking)
 #
 # Later units add their own, and the licence constraint decides which:
-#   fill_form.py                : pypdf   (BSD-3, RT-3)
 #   sign_form.py                : pyhanko (MIT, RT-4)
 # This skill must stay AGPL-free because it ships inside a deployable container.
 # PyMuPDF, used by extract-statistic, is AGPL-3.0 and stays isolated in that

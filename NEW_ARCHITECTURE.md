@@ -4,8 +4,16 @@ Shared architecture document for the two repositories that make up the UQAC form
 **ResearchTools** (`LARi-UQAC/ResearchTools`) and **ThesisTracker** (`JdUmuhoza/ThesisTracker`).
 The same file is committed to `main` in both, so either checkout tells the whole story.
 
-**Status: planned, not implemented.** Twenty branches carry one plan document each, and twenty-one
-issues track them. No implementation code exists yet. Written 2026-07-29.
+**Status: in progress. 8 of 20 units delivered.** Twenty branches carry one plan document each,
+and twenty-one issues track them. Written 2026-07-29.
+
+Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker; RT-1 is
+on `feat/uqac-forms-registry` here, and RT-2 on `feat/uqac-forms-field-map`. TT-7 (email one-time codes) is built but **excluded by
+design** until UQAC provides a mail relay: merging it would replace the only working sign-in with
+a code nothing can deliver. It also carries the `direction` role, so it gates TT-10.
+
+This file is meant to be identical on `main` in both repositories. It had drifted: this copy still
+read "planned, not implemented" while six units were live in production.
 
 Outcome when all twenty units land: a professor admits a student and their whole timeline appears,
 from the first administrative form to the final thesis deposit; a superuser registers an official
@@ -353,7 +361,7 @@ sequenceDiagram
   A-->>U: "56 fields found. Map them, then define the steps."
   U->>A: bind each field to a profile key, a literal, or "not filled"
   U->>A: define the ordered steps: actor, fill, modify, sign,<br/>return target, signature field, and which step submits
-  A->>A: validate: every signature field exists; every actor role exists;<br/>a return target is an earlier step; exactly one step submits;<br/>the last step is the submitting one; no step with no capability
+  A->>A: validate: signature fields exist, actor roles exist, return target is earlier,<br/>exactly one step submits, last step submits, and each step has capability
   A->>D: store the field map and the step definitions, status active
   A-->>U: the form is available to the roles its first step names
 ```
@@ -476,7 +484,7 @@ to academic content instead of forms.
 ```mermaid
 sequenceDiagram
   autonumber
-  participant P as Professor in Claude Code
+  participant P as Professor in Harness
   participant RT as ResearchTools auditors
   participant A as ThesisTracker API
   participant S as Student
@@ -841,8 +849,8 @@ critical path and can land last.
 
 | Unit | Branch | Issue | Deliverable |
 |---|---|---|---|
-| RT-1 | `feat/uqac-forms-registry` | ResearchTools #4 | `uqac-forms` skill scaffold and the validated PDF-ingest contract (`%PDF` magic, size cap, https only, capped redirects). **Scope reduced:** the registry and the drift check moved to TT-8. |
-| RT-2 | `feat/uqac-forms-field-map` | ResearchTools #5 | `dump_widgets` with byte-exact names and `/AP /N` on-states, and `diff_widgets(a, b)` for drift reporting. **Scope reduced:** the map and the vocabulary are TT-8's rows. |
+| RT-1 | `feat/uqac-forms-registry` | ResearchTools #4 | `uqac-forms` skill scaffold and the validated PDF-ingest contract (`%PDF` magic, size cap, https only, capped redirects). **Scope reduced:** the registry and the drift check moved to TT-8. **Delivered 2026-08-31.** |
+| RT-2 | `feat/uqac-forms-field-map` | ResearchTools #5 | `dump_widgets` with byte-exact names and `/AP /N` on-states, and `diff_widgets(a, b)` for drift reporting. **Scope reduced:** the map and the vocabulary are TT-8's rows. **Delivered 2026-08-31.** |
 | RT-3 | `feat/uqac-forms-filler` | ResearchTools #6 | Stateless `fill(pdf_bytes, values, flatten_fields) -> bytes`, `NeedAppearances`, selective field locking. **Scope reduced:** no profile, no map, no stale gate. |
 | RT-4 | `feat/uqac-forms-signer` | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. |
 | RT-5 | `feat/uqac-forms-service` | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. |

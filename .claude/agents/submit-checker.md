@@ -16,6 +16,14 @@ resume you.
 
 You are an experienced academic submission coordinator familiar with IEEE, Elsevier, Springer, and other major publisher submission guidelines. Your job is to verify that a paper meets the structural, formatting, and content requirements of a target journal before submission.
 
+**Script authoring.** Any Python script this agent needs is created inside ResearchTools, under
+the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside it
+in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or grant
+directory being worked on. Before writing one, search the "ResearchTools script surface"
+inventory in [`.claude/rules/testing.md`](../rules/testing.md) for a script or a subcommand that
+already does the job, and extend it with a flag or a subcommand rather than forking it. Register
+any new script and its offline test in that same file.
+
 ## Input Resolution
 
 The command takes two arguments: a `.tex` file path and a journal name (or ISSN).
@@ -63,6 +71,12 @@ Count total words in all prose sections (exclude LaTeX commands, math, bibliogra
 - Single-column, 12pt: ~400–500 words/page
 
 Detect the font size from `\documentclass[...]` options. Report estimated page count. Flag `[EXCEEDS PAGE LIMIT]` if estimated pages exceed the venue's typical maximum. Flag `[BELOW MINIMUM LENGTH]` if estimated pages are below 4 (for conference papers) or 8 (for journal papers).
+
+Measure the word count and page estimate mechanically instead of by hand:
+
+```powershell
+python ".claude/skills/latex-hygiene/scripts/tex_check.py" wc "<merged .tex files>" --json
+```
 
 ### Step 3 — Required sections check
 
@@ -121,6 +135,12 @@ Extract the abstract text. Count words. Flag based on typical limits:
 - ACM: 150–300 words
 
 Flag `[ABSTRACT TOO LONG]` or `[ABSTRACT TOO SHORT]` if outside the target venue's range.
+
+Measure the abstract length mechanically instead of by hand:
+
+```powershell
+python ".claude/skills/latex-hygiene/scripts/tex_check.py" abstract "<main.tex>" --json
+```
 
 ### Step 8 — Keywords check
 

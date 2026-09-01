@@ -19,9 +19,38 @@ read the corresponding file in full and follow it exactly:
 - `scopus-auditor` - see `.claude/agents/scopus-auditor.md`
 - `scopus-researcher` - see `.claude/agents/scopus-researcher.md`
 - `submit-checker` - see `.claude/agents/submit-checker.md`
+- `talk-builder` - see `.claude/agents/talk-builder.md`
 - `thesis-auditor` - see `.claude/agents/thesis-auditor.md`
 - `thesis-proposal-auditor` - see `.claude/agents/thesis-proposal-auditor.md`
 - `thesis-to-paper` - see `.claude/agents/thesis-to-paper.md`
 - `word-to-latex` - see `.claude/agents/word-to-latex.md`
 
 The task-to-agent routing table lives in `.claude/CLAUDE.md` (section "Tooling").
+
+Obsidian vault writes go through the outbox only: deposit the note in
+`~/.claude/obsidian-outbox/` with a first-line directive and let the
+`obsidian-outbox-flush.py` hook write it through the filesystem. The Obsidian CLI
+commands `create`, `append` and `prepend` are forbidden, together with
+`eval`, `dev:*`, `plugin:install`, `theme:install` and every `sync*`
+except read-only `sync:history`. The one exception is
+`vault_consolidate.py --apply --yes`, an in-place link repair in notes that already
+exist, dry-run until `--yes` is passed.
+
+Local generation goes through `.claude/skills/loop-engineer/scripts/ollama_bridge.py`,
+never `ollama run`. The bridge resolves the model itself through `model_resolver.py`
+and refuses rather than substituting a weaker one, so no agent or script names a model
+tag. `--role writer` or `--role coder` says WHICH work is being done, and the resolver
+returns the tag qualified for that role; without it both roles share one tag.
+`--vault-context <terms>` is MANDATORY: the bridge searches the vault itself and
+exits 2 when neither it nor `--no-vault-context` is given, because a local model asked a
+documented question with no context answers with a fluent invention that passes every
+structural gate.
+
+Any Python script an auditing or authoring agent needs is created inside
+ResearchTools, under `.claude/skills/<skill>/scripts/`, with an offline test
+beside it in `Test/` - never in the session scratchpad and never in the
+manuscript, thesis, or grant directory being worked on. Search the
+"ResearchTools script surface" inventory in `.claude/rules/testing.md` first,
+and extend an existing script with a flag or a subcommand rather than forking
+one. The manuscript directory may hold a thin wrapper that calls the
+ResearchTools script by path; it holds no logic of its own.

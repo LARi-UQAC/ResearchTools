@@ -15,13 +15,14 @@ down, and generate locally.
 | Plan (writing-plans) | Opus | high | structured planning |
 | Execute, TDD, review panel, correct | Sonnet | high | routine agentic work |
 | Local agents' cloud wrapper | Haiku | medium | frames the task, drives the bridge |
-| Code / comments / scoring arithmetic | local (qwen3.5:9b / ornith:9b) | - | free, on the GPU |
+| Code / comments / scoring arithmetic | local (the resolver's coder and writer models) | - | free, on the GPU |
 
 Routing: cloud runs on the user's subscription auth (no gateway, no API key). Local models are
-reached only through the Bash bridge inside the `local-coder` / `local-writer` agents
-(`ollama run <model>`), because subscription auth cannot resolve a local model name as an
-`AgentDefinition` model. Until the 9B models are imported, the bridge falls back to
-`qwen2.5-coder:7b`.
+reached only through `ollama_bridge.py` inside the `local-coder` / `local-writer` agents,
+because subscription auth cannot resolve a local model name as an `AgentDefinition` model.
+The bridge speaks Ollama's HTTP API, never `ollama run`, and has no fallback tag: it asks
+`model_resolver.py` with the caller's `--role`, and no qualified model is a stop, not a
+substitution.
 
 ## Pipeline
 

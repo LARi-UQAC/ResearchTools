@@ -1,0 +1,166 @@
+{
+  "_header": {
+    "purpose": "Declared candidate model tags and the qualification policy for the loop-engineer local bridge (P4 Task 3, model_resolver.py). --list cross-references 'ollama list' (installed tags) against the 'candidates' array below: an installed tag absent here is reported ineligible, with that reason printed. --qualify additionally requires the tag to be installed. Declaration here is necessary but never sufficient to become 'current': that only happens by beating the incumbent's last recorded score on the frozen task set in qualification/tasks.json.",
+    "no_hardcoded_tag_in_code": "model_resolver.py contains no model tag literal in its EXECUTABLE code. Every tag the resolver can ever return or compare lives in exactly three places: this file (declared candidates), local-model-state.json (the qualified 'current' tag, gitignored, machine-local), or the LARI_LOCAL_MODEL environment override. Narrowed 2026-08-27: the previous wording said 'anywhere in its source', which a grep disproves - three of its docstrings name a tag while recording WHERE a measurement was taken. That is historical provenance, not a value the resolver can return, and removing it would destroy the record of what was measured on what. The rule that matters is the staleness one: a model update renames the tag, so no file that tells a reader which model to USE today may name one. A comment saying which tag a past measurement came from is dated by construction and does not go stale.",
+    "incumbent_seed_exception": "Candidate list rebuilt 2026-08-28 from measurement rather than from preference. Every tuned tag that was swept on the full KV cache axis is declared here with the configuration its sweep retained, whatever its task score, because dropping a model from the list is a claim about the card and must rest on a measurement. The one tag carrying no measurement is the superseded coder incumbent, kept because the state history names it, and its absence from the measurement document is itself the measured result. Tags 3 to 4 times the size of the card (the 17 to 23 GB families) were not swept: their weights alone exceed it, which the pre-check settles without a search.",
+    "task_set_note": "Every score quoted below is on the TEN-task-per-role set adopted 2026-08-28, with every declared and runnable tag scored on ALL twenty tasks rather than only on its own role, so a role holder is chosen from complete data. Scores from the retired three-task set are not comparable and none is quoted: that set could only say 0 to 3, so candidates tied constantly and the tie fell through to a VRAM measurement that knows nothing about code quality, and it was unrepresentative besides - one candidate went from 1/3 to 8/10 and the two tasks it still fails were two of that set's three. A tag with no measured context window cannot run the set at all; its row is 'not runnable', never a zero.",
+    "scores_field": "'scores' and 'measurement' carry the numbers as DATA; the prose in 'notes' explains them and must never be the only place a number lives. Every runnable tag is scored on ALL twenty tasks, both roles, not only on the role it is declared for - judging a candidate solely on its own role is how an 18/20 model held the coder role while a 20/20 model sat unscored on it. A tag that cannot run carries runnable:false and a reason, never a zero."
+  },
+  "policy": {
+    "_fix_round_1_note": "Fix round 1 (F2): every bare key below is now actually READ and ENFORCED by model_resolver.py's cmd_qualify / _load_policy. Each *_description sibling is documentation only - it is never parsed - kept separate from the enforced key precisely so it cannot be mistaken for live policy. Before this round the whole 'policy' object was declared but never read at all.",
+    "qualification_mode": "beat_incumbent",
+    "qualification_mode_description": "the only mode model_resolver.py implements (_SUPPORTED_QUALIFICATION_MODES); --qualify refuses explicitly if this is changed to anything else.",
+    "require_declared": true,
+    "require_declared_description": "when true, --qualify refuses a tag absent from the 'candidates' array below; when false, that check is skipped (require_installed, if also true, still applies).",
+    "require_installed": true,
+    "require_installed_description": "when true, --qualify refuses a tag absent from 'ollama list'; when false, that check is skipped.",
+    "win_rule": "no_regression_strict_gain_by_role_tie_broken_by_measured_budget",
+    "win_rule_description": "a challenger must not regress (fewer tasks passed) in ANY task kind present in either side's per-kind breakdown. A strict gain in at least one kind still wins outright. What changed on 2026-08-28: a tie in every kind is no longer an automatic loss. The task set grades code quality, and equal scores mean it cannot separate the two candidates; local-model-config.json grades what this card can actually hold, which is a different question nobody had asked. On an exact tie the decision therefore goes to the measured VRAM budget: the challenger wins when the incumbent has no admissible measured configuration at all, or when the challenger retains a strictly larger context window without losing decode throughput. The tie-break never rescues a regression. Looked up in model_resolver.py's _WIN_RULES dispatch table, and honoured by the per-role adoption path as well - before this date that path compared pass ratios on its own and ignored policy.win_rule entirely.",
+    "bootstrap_rule": true,
+    "bootstrap_rule_description": "when true, --qualify of a declared+installed candidate seeds local-model-state.json unconditionally when no incumbent exists yet (missing or empty state file); when false, --qualify refuses until the state is seeded some other way.",
+    "writer_evidence_weight": "a writer-task pass only proves the candidate followed format instructions (hygiene, structure, language, length, frontmatter); it is weaker evidence than a coder-task pass, which is graded by a real assertion against real behaviour. See qualification/tasks.json's own header. (Documentation only, like the *_description fields above - not parsed by model_resolver.py.)"
+  },
+  "candidates": [
+    {
+      "tag": "gemma4:e4b-gpu",
+      "role": "coder",
+      "declared": "2026-08-28",
+      "notes": "Swept by opt-local-vram-llm on 2026-08-28 across the full KV cache axis under the fidelity-scored objective: retains num_ctx 65536 at kv_cache_type f16, 100 percent GPU resident, 695 MiB free, median decode 38.99 tok/s, KV cost 16.21 MiB per 1k tokens. Scored on ALL twenty tasks of the widened set the same day: coder 9/10, writer 9/10, total 18/20; failed coder-doi-prefix and writer-atomic-resource-note.",
+      "scores": {
+        "task_set": "ten-per-role-2026-08-28",
+        "measured_on": "2026-08-28",
+        "coder": {
+          "passed": 9,
+          "total": 10
+        },
+        "writer": {
+          "passed": 9,
+          "total": 10
+        },
+        "total": {
+          "passed": 18,
+          "total": 20
+        }
+      },
+      "measurement": {
+        "measured_on": "2026-08-28",
+        "num_ctx": 65536,
+        "kv_cache_type": "f16",
+        "decode_tps": 38.99,
+        "free_mib": 695,
+        "weights_mib": 4386.7,
+        "kv_cost_mib_per_1k_tokens": 16.21
+      }
+    },
+    {
+      "tag": "qwen2.5-coder:7b-gpu",
+      "role": "coder",
+      "declared": "2026-08-28",
+      "notes": "Swept by opt-local-vram-llm on 2026-08-28 across the full KV cache axis under the fidelity-scored objective: retains num_ctx 8192 at kv_cache_type f16, 100 percent GPU resident, 1151 MiB free, median decode 37.02 tok/s, KV cost 55.73 MiB per 1k tokens. Scored on ALL twenty tasks of the widened set the same day: coder 8/10, writer 5/10, total 13/20; failed coder-norm-doi, coder-split-author-name and five of the ten writer tasks.",
+      "scores": {
+        "task_set": "ten-per-role-2026-08-28",
+        "measured_on": "2026-08-28",
+        "coder": {
+          "passed": 8,
+          "total": 10
+        },
+        "writer": {
+          "passed": 5,
+          "total": 10
+        },
+        "total": {
+          "passed": 13,
+          "total": 20
+        }
+      },
+      "measurement": {
+        "measured_on": "2026-08-28",
+        "num_ctx": 8192,
+        "kv_cache_type": "f16",
+        "decode_tps": 37.02,
+        "free_mib": 1151,
+        "weights_mib": 4536.5,
+        "kv_cost_mib_per_1k_tokens": 55.73
+      }
+    },
+    {
+      "tag": "ornith-1.5:9b-gpu",
+      "role": "writer",
+      "declared": "2026-08-28",
+      "notes": "Swept by opt-local-vram-llm on 2026-08-28 across the full KV cache axis under the fidelity-scored objective: retains num_ctx 16384 at kv_cache_type f16, 100 percent GPU resident, 317 MiB free, median decode 25.01 tok/s, KV cost 32.26 MiB per 1k tokens. Scored on ALL twenty tasks of the widened set the same day: coder 8/10, writer 9/10, total 17/20; failed coder-doi-prefix, coder-normalize-issn and writer-atomic-resource-note.",
+      "scores": {
+        "task_set": "ten-per-role-2026-08-28",
+        "measured_on": "2026-08-28",
+        "coder": {
+          "passed": 8,
+          "total": 10
+        },
+        "writer": {
+          "passed": 9,
+          "total": 10
+        },
+        "total": {
+          "passed": 17,
+          "total": 20
+        }
+      },
+      "measurement": {
+        "measured_on": "2026-08-28",
+        "num_ctx": 16384,
+        "kv_cache_type": "f16",
+        "decode_tps": 25.01,
+        "free_mib": 317,
+        "weights_mib": 5194.5,
+        "kv_cost_mib_per_1k_tokens": 32.26
+      }
+    },
+    {
+      "tag": "ornith:9b-gpu",
+      "role": "writer",
+      "declared": "2026-08-28",
+      "notes": "Swept by opt-local-vram-llm on 2026-08-28 across the full KV cache axis under the fidelity-scored objective: retains num_ctx 16384 at kv_cache_type f16, 100 percent GPU resident, 421 MiB free, median decode 26.64 tok/s, KV cost 32.26 MiB per 1k tokens. Scored on ALL twenty tasks of the widened set the same day: coder 10/10, writer 10/10, total 20/20, the only model passing every task.",
+      "scores": {
+        "task_set": "ten-per-role-2026-08-28",
+        "measured_on": "2026-08-28",
+        "coder": {
+          "passed": 10,
+          "total": 10
+        },
+        "writer": {
+          "passed": 10,
+          "total": 10
+        },
+        "total": {
+          "passed": 20,
+          "total": 20
+        }
+      },
+      "measurement": {
+        "measured_on": "2026-08-28",
+        "num_ctx": 16384,
+        "kv_cache_type": "f16",
+        "decode_tps": 26.64,
+        "free_mib": 421,
+        "weights_mib": 5194.5,
+        "kv_cost_mib_per_1k_tokens": 32.26
+      }
+    },
+    {
+      "tag": "qwen3.5:9b-gpu",
+      "role": "coder",
+      "declared": "2026-08-14",
+      "notes": "Superseded, kept declared because local-model-state.json's history names it. It has NO entry in local-model-config.json and cannot get one: measured 2026-08-28, it is fully resident only at a 512-token window where it leaves 83 MiB free against the 300 MiB floor, so no rung of any KV cache type is admissible on this card. Consequence for anyone reading a score sheet: it is NOT RUNNABLE, not bad. The bridge refuses it with '[CONTEXT-BUDGET] no entry for model', because there is no measured context window to run against and it will not invent one, so zero of the twenty tasks execute. A 0/20 printed for this tag counts tasks that never ran and must never be read as a capability measurement.",
+      "scores": {
+        "task_set": "ten-per-role-2026-08-28",
+        "measured_on": "2026-08-28",
+        "runnable": false,
+        "why": "no measured context window in local-model-config.json, so the bridge refuses the tag and zero tasks execute. NOT a score of zero."
+      },
+      "measurement": {
+        "measured_on": "2026-08-28",
+        "admissible_configuration": false,
+        "why": "fully resident only at a 512-token window, 83 MiB free against the 300 MiB floor"
+      }
+    }
+  ]
+}

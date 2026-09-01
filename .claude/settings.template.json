@@ -1,7 +1,9 @@
 {
   "env": {
     "CLAUDE_CODE_GIT_BASH_PATH": "{{GIT_BASH_PATH}}",
-    "ENABLE_STOP_REVIEW": "0"
+    "ENABLE_STOP_REVIEW": "0",
+    "GRAPHIFY_OLLAMA_KEEP_ALIVE": "-1",
+    "GRAPHIFY_OLLAMA_NUM_CTX": "16384"
   },
   "permissions": {
     "allow": [
@@ -52,6 +54,28 @@
             "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\betterleaks-hook.py\"",
             "timeout": 30,
             "statusMessage": "Scanning for secrets (betterleaks)..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\vault-access-guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking vault access (local-writer only)..."
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\askuserquestion-clarity.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking question clarity (R25)..."
           }
         ]
       }
@@ -109,6 +133,16 @@
             "statusMessage": "Flushing Obsidian outbox (startup)..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\session-hooks-inventory.py\"",
+            "timeout": 30,
+            "statusMessage": "Listing active hooks..."
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -155,6 +189,19 @@
             "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\obsidian-outbox-flush.py\"",
             "timeout": 30,
             "statusMessage": "Flushing Obsidian outbox..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if grep -q '\"stop_hook_active\":[[:space:]]*true'; then exit 0; fi; A=\"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agents/local-writer.md\"; [ -f \"$A\" ] || exit 0; R=\"${CLAUDE_PROJECT_DIR:-}\"; [ -n \"$R\" ] || R=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; cd \"$R\" 2>/dev/null || exit 0; git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0; S=$(git rev-parse --git-dir)/claude-stop-state; H=$(git status --porcelain 2>/dev/null | md5sum | cut -d\" \" -f1); P=$(cat \"$S\" 2>/dev/null || true); if [ \"$H\" = \"$P\" ]; then exit 0; fi; printf %s \"$H\" > \"$S\"; if [ -d \"$R/graphify-out\" ]; then echo '{\"decision\": \"block\", \"reason\": \"[memory upkeep] Files changed since the last check. Route memory upkeep to the local-writer agent (Agent tool, subagent_type: local-writer) rather than doing it by hand: it owns BOTH memories and knows their write paths and their defects. Hand it (a) the changed paths, (b) any durable learning from this session in one or two sentences. OBSIDIAN: a reusable, cross-project learning becomes an atomic note under 30_Ressources/<Technology>/ written through ~/.claude/obsidian-outbox/, never with obsidian create or append (the CLI silently drops writes past a ~4096-byte header and still returns 0); project-bound state is appended to 10_Projets/<nature>/<project>/Decisions.md instead. local-writer is the single serialized vault writer and runs its consolidation pass after every write. Never name a model tag: model_resolver.py is the only thing that names one, and it refuses rather than substituting a weaker model. GRAPHIFY: this project has a graphify-out/ directory, so it also has a structure memory. Refresh it with `graphify update <path>` on the changed paths, which is AST-only and free when every changed file is code; a changed document, paper or image needs a semantic pass, which is a model call, so say so instead of running one silently. Never write graph.json directly, and consult the graph with `graphify query` rather than grepping the repo. Finally, check whether the project CLAUDE.md should reflect anything structural that changed. If only code moved and nothing durable was learned, do the minimum and stop. Do not repeat this check. Dispatching local-writer for memory upkeep is standing-permitted: no brief has to re-grant it, and it is ONE agent, sequential, never a parallel fan-out.\"}'; else echo '{\"decision\": \"block\", \"reason\": \"[memory upkeep] Files changed since the last check. Route memory upkeep to the local-writer agent (Agent tool, subagent_type: local-writer) rather than doing it by hand: it owns BOTH memories and knows their write paths and their defects. Hand it (a) the changed paths, (b) any durable learning from this session in one or two sentences. OBSIDIAN: a reusable, cross-project learning becomes an atomic note under 30_Ressources/<Technology>/ written through ~/.claude/obsidian-outbox/, never with obsidian create or append (the CLI silently drops writes past a ~4096-byte header and still returns 0); project-bound state is appended to 10_Projets/<nature>/<project>/Decisions.md instead. local-writer is the single serialized vault writer and runs its consolidation pass after every write. Never name a model tag: model_resolver.py is the only thing that names one, and it refuses rather than substituting a weaker model. Finally, check whether the project CLAUDE.md should reflect anything structural that changed. If only code moved and nothing durable was learned, do the minimum and stop. Do not repeat this check. Dispatching local-writer for memory upkeep is standing-permitted: no brief has to re-grant it, and it is ONE agent, sequential, never a parallel fan-out.\"}'; fi",
+            "shell": "bash",
+            "timeout": 15,
+            "statusMessage": "memory upkeep: vault + graphify via local-writer..."
           }
         ]
       }

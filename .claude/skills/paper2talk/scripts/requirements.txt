@@ -1,0 +1,15 @@
+# paper2talk - Python dependencies.
+# Pinned, audited with pip-audit on 2026-08-12 (no known CVE for these versions).
+#
+# The renderers also need, outside pip:
+#   pptxgenjs (npm)   the no-gabarit PowerPoint fallback (assets/deck_skeleton.js);
+#                     set NODE_PATH when building outside the tree that holds it.
+#                     With a gabarit, talk_pptx.py (python-pptx) is the renderer.
+#   Poppler           pdftoppm, for the page images (ships with MiKTeX on Windows)
+#   PowerPoint or LibreOffice   the PDF conversion backend (talk_render.py)
+#   draw.io Desktop   fig_export.py, for the scale-3 figure re-export
+#   a LaTeX toolchain the Beamer target
+pypdf==6.15.0
+python-pptx==1.0.2
+defusedxml==0.7.1
+jinja2==3.1.6

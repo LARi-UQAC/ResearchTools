@@ -22,6 +22,14 @@ dashes, no smart quotes (use straight `"`/`'` only), no zero-width spaces (U+200
 ellipsis character (use `...`), no AI transition phrases ("Furthermore,", "Moreover,", "Additionally,",
 "It is worth noting"), no perfect parallel lists. Target AI-style risk score below 10%.
 
+**Script authoring.** Any Python script this agent needs is created inside ResearchTools, under
+the owning skill's `.claude/skills/<skill>/scripts/` directory, with an offline test beside it
+in `Test/` — never in the session scratchpad and never in the manuscript, thesis, or grant
+directory being worked on. Before writing one, search the "ResearchTools script surface"
+inventory in [`.claude/rules/testing.md`](../rules/testing.md) for a script or a subcommand that
+already does the job, and extend it with a flag or a subcommand rather than forking it. Register
+any new script and its offline test in that same file.
+
 ## Skill consultation (mandatory first step)
 
 Before drafting any prose, read `.claude/skills/scientific-writing/SKILL.md` in full. The
@@ -277,6 +285,18 @@ The reviewer color in `\definechangesauthor` identifies which reviewer triggered
 in the typeset output — the colored markup is the direct, visible link between the paper
 and the response letter. No separate annotation package is required.
 
+Before emitting any `changes` markup in Step 5, check the paper mechanically for the two defects
+that markup introduces silently:
+
+```powershell
+python ".claude/skills/latex-hygiene/scripts/tex_check.py" par "<paper.tex>"
+python ".claude/skills/latex-hygiene/scripts/tex_check.py" braces "<paper.tex>"
+```
+
+`par` catches an `\added`/`\deleted`/`\replaced` argument that crosses a blank line (the macros are
+not `\long`, so this breaks the build); `braces` catches an unbalanced brace before it is compounded
+by the markup about to be applied.
+
 ---
 
 ### Step 5 — Apply paper corrections
@@ -296,6 +316,14 @@ After each change, record the target section title and approximate paragraph for
 | `add-figure` — new float added | `\added[id=RN]{\begin{figure}...\end{figure}}` |
 
 Where `RN` is the reviewer ID (R1, R2, etc.) whose comment triggered the change.
+
+Each applied change above is machine-readable input to `tex_check.py patch --plan`, using the
+same emission contract `paper-auditor.md` defines: one fenced `latex` block per fix, exactly one
+top-level `changes` macro, the `\replaced`/`\deleted` argument matched as an exact string, and an
+`\added` block preceded by its own `% after: <literal text>` or `% before: <literal text>`
+comment. The reviewer ID `RN` already embedded in every command maps directly onto
+`patch --author <id>`, so a response letter drafted under one reviewer's id can be landed in the
+paper under a different `--author` value without a manual pass over the markup.
 
 **Original text is never deleted silently.** If text is replaced, always use `\replaced{}{}`.
 If removed without replacement, use `\deleted{}` and leave in place.

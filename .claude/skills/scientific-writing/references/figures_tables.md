@@ -7,6 +7,12 @@
 > the prose with at least two sentences. The generic PNG/TIFF/dpi/CMYK/software guidance below applies
 > only to non-LaTeX media (or AI-generated raster figures when that medium has been chosen). AI figures
 > are optional; when the medium is unclear, ask the user (AskUserQuestion) before generating.
+>
+> **Captions are governed by `float_authoring_rules.md`, not by this file.** In LaTeX output the
+> `\caption{}` is exactly ONE short meaningful sentence (C1), and every explanatory sentence lives in
+> the main text beside the first `\ref{}` (C3). Table qualifications go in a `threeparttable`
+> `tablenotes` block (C4). The "comprehensive, self-explanatory caption" section below, and its
+> multi-sentence example, apply only to non-LaTeX media.
 
 ## Overview
 
@@ -539,7 +545,10 @@ n.s. or NS = not significant
 "The figure shows..." (always use specific number)
 ```
 
-## Captions
+## Captions (non-LaTeX media only)
+
+> Superseded for LaTeX output by `float_authoring_rules.md` C1-C4: one sentence in `\caption{}`,
+> explanation in the main text, details in `tablenotes`.
 
 ### Caption Structure
 

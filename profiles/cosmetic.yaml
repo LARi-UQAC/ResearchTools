@@ -11,6 +11,11 @@ author:
   email: lionel.ripoll@uqac.ca
   institution: Universite du Quebec a Chicoutimi (UQAC)
   department: Departement des sciences fondamentales
+  # No 'letter:' block on purpose. The recommendation-letter skill therefore
+  # refuses to generate under this profile and says which key it wanted, which
+  # is correct: signing a letter with the engineering profile's name, phone and
+  # laboratory would be a wrong answer that reads as a right one. Copy the
+  # block from profiles/_template.yaml and fill it in to enable letters here.
 
 scopus:
   subject_areas:

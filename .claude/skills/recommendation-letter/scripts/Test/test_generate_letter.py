@@ -1,6 +1,12 @@
 """
-Offline unit tests for generate_letter.py. Standard library only:
-no network, no pdflatex, no model load.
+Offline unit tests for generate_letter.py: no network, no pdflatex, no model
+load. PyYAML is imported through letter_identity, which is the one third-party
+dependency the skill has.
+
+The signatory is INJECTED here, never read from the machine's active profile.
+A test that read profiles/engineering.yaml would pass or fail depending on
+which profile the operator last selected with install.ps1 -Profile, which is
+machine state, not a property of the code under test.
 
 Run from the repo root:
     python -m unittest discover -s ".claude/skills/recommendation-letter/scripts/Test" -v
@@ -14,6 +20,36 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import generate_letter as gl
+import letter_identity
+
+# Deliberately not the shipped profile's values: if a rendered letter carries
+# one of these strings, the identity travelled from the profile through
+# letter_identity and into the .tex, which is exactly what is being asserted.
+FIXTURE_IDENTITY = {
+    "letterhead_fr": ["Professeure Fixture Nom", "Departement de test",
+                      "Universite de Fixture"],
+    "letterhead_en": ["Professor Fixture Nom", "Test Department",
+                      "Fixture University"],
+    "signature_name_fr": "Fixture A.-B. Nom, ing. Ph.D.",
+    "signature_name_en": "Fixture A.-B. Nom, P.Eng., Ph.D.",
+    "signature_lines_fr": ["Professeure titulaire de fixture",
+                           "Responsable du laboratoire FIXLAB"],
+    "signature_lines_en": ["Full Professor of fixture",
+                           "Director of the FIXLAB laboratory"],
+    "dispense_lines_fr": ["Professeure titulaire -- Universite de Fixture"],
+    "responsible_name": "Fixture Nom",
+    "lab_acronym": "FIXLAB",
+}
+
+_REAL_LOAD_IDENTITY = letter_identity.load_identity
+
+
+def setUpModule():
+    letter_identity.load_identity = lambda *a, **k: dict(FIXTURE_IDENTITY)
+
+
+def tearDownModule():
+    letter_identity.load_identity = _REAL_LOAD_IDENTITY
 
 
 class TestConfigAndFilenames(unittest.TestCase):
@@ -209,7 +245,9 @@ class TestAuthoredAssembly(unittest.TestCase):
         tex = gl.assemble_authored(cfg)
         self.assertIn(r"\begin{document}", tex)
         self.assertIn("Corps de la lettre ici.", tex)
-        self.assertIn("Martin J.-D. Otis", tex)
+        # The signatory comes from the profile, not from the templates.
+        self.assertIn(FIXTURE_IDENTITY["signature_name_fr"], tex)
+        self.assertIn(FIXTURE_IDENTITY["letterhead_fr"][0], tex)
         self.assertIn("Le 27 mars 2026", tex)
 
     def test_assemble_authored_en_uses_english_blocks(self):
@@ -219,7 +257,35 @@ class TestAuthoredAssembly(unittest.TestCase):
                "target": "Professor position", "body_tex": "Body."}
         tex = gl.assemble_authored(cfg)
         self.assertIn("Best regards", tex)
-        self.assertIn("Full Professor", tex)
+        # English side of the same profile block, and only the English side.
+        self.assertIn(FIXTURE_IDENTITY["signature_lines_en"][0], tex)
+        self.assertNotIn(FIXTURE_IDENTITY["signature_lines_fr"][0], tex)
+
+    def test_signature_block_renders_every_profile_line(self):
+        """Each credential line gets its own {\\small ...} row, in order."""
+        block = gl.render_signature(FIXTURE_IDENTITY, "fr")
+        self.assertIn("\\textbf{%s}" % FIXTURE_IDENTITY["signature_name_fr"], block)
+        self.assertIn("{\\small Professeure titulaire de fixture}\\\\\n"
+                      "{\\small Responsable du laboratoire FIXLAB}", block)
+
+    def test_letterhead_renders_every_profile_line(self):
+        block = gl.render_letterhead(FIXTURE_IDENTITY, "fr")
+        for line in FIXTURE_IDENTITY["letterhead_fr"]:
+            self.assertIn(line, block)
+        # Line break after every entry but the last.
+        self.assertEqual(block.count("\\\\\n"),
+                         len(FIXTURE_IDENTITY["letterhead_fr"]) - 1)
+
+    def test_no_signatory_left_in_the_templates(self):
+        """The scaffolds must carry placeholders, never a person."""
+        import letter_templates as templates
+        source = (templates.LETTERHEAD + templates.SIGNATURE_FR
+                  + templates.SIGNATURE_EN + templates.TEMPLATE_DISPENSE_FR
+                  + templates.TEMPLATE_ACCEPTANCE_FR)
+        self.assertIn("%%SIGNATURE_NAME%%", source)
+        self.assertIn("%%LETTERHEAD_LINES%%", source)
+        for token in ("Otis", "LAR.i", "lari.uqac.ca", "545-5011"):
+            self.assertNotIn(token, source)
 
 
 class TestAcceptance(unittest.TestCase):

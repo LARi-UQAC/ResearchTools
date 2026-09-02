@@ -824,14 +824,18 @@ initial ontology was correct.
    technical terms of the corpus itself: over the extracted full texts (`refs/*.txt` — extract any
    missing ones with `extract_text.py`), build a frequency list of content words AND bigrams —
    multi-word technical terms are the likeliest blind spots. Unigrams:
-   `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | sort | uniq -c | sort -rn`; bigrams
+   `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | grep -v '^$' | sort | uniq -c | sort -rn`; bigrams
    (sliding window): `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | grep -v '^$' |
    awk 'prev{print prev" "$0} {prev=$0}' | sort | uniq -c | sort -rn`. Manually filter both
    lists to technical terms, keep the top ~30 overall.
-2. **Count per paper**: for each candidate term, `grep -oi "<term>" <paper>.txt | wc -l` on each
-   extracted text — a TRUE occurrence count. Never `grep -c`: it counts matching lines, and on
-   line-wrapped extracted text (paragraph-long lines) it undercounts by an order of magnitude,
-   silently sinking a term below the >= 10 floor.
+2. **Count per paper**: for each candidate term, flatten the extracted text first (so a bigram
+   split across a line wrap is still matched), then count fixed-string occurrences:
+   `tr -s ' \t\n' ' ' < <paper>.txt | grep -oiF "<term>" | wc -l` — a TRUE occurrence count.
+   Never `grep -c`: it counts matching lines, and on line-wrapped extracted text
+   (paragraph-long lines) it undercounts by an order of magnitude, silently sinking a term
+   below the >= 10 floor. Never `grep -oi` on the raw file: a multi-word term broken by a wrap
+   is missed, and `-F` is required so terms with regex metacharacters (`Theta*`, `A*`, `C++`,
+   `S-57`) are matched literally instead of being misparsed.
 3. **Gate**: any term present in **>= 3 corpus papers** with substantial frequency (>= 10
    occurrences in at least one paper) but **absent from the review `.tex`** → flag
    `[CORPUS TERM NOT COVERED: <term>, <max occ.>/<n papers>]`.

@@ -91,4 +91,6 @@ loop-bridge-log.jsonl
 # built from the repo root; a graph under a subdirectory is a partial graph (see
 # local-writer.md, "Updating the graph").
 graphify-out/
-
+# Obsidian vault state under the repo (agent memory: user-specific, evolves with
+# usage, never versioned). See PR #13 / issue #14 NEW-2.
+.obsidian/

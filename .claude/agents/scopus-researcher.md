@@ -150,6 +150,35 @@ Excluded       : work with no topical relevance to the active domain (fails
 
 Output as `\subsection*{Critères d'inclusion / exclusion}` in the search strategy block (Step 1b).
 
+### Step 0b — Subject ontology (MANDATORY — before any query is written)
+
+**Rationale.** A query built from an a-priori enumeration of what the subject "is made of" acts as
+a closed shopping list: the agents only find what was named. The failure mode is ontological, not
+bibliographic — the corpus can contain the missing concept hundreds of times and the review will
+still never mention it. Establish the ontology of the pivot object FROM THE LITERATURE before
+freezing the Step 1 queries.
+
+1. **Find the canonical structural reviews** of the pivot object (2-3 papers): search
+   `"<pivot object>" review` via `scopus_api.py search`, restrict to `DOCTYPE(re)` when supported,
+   rank by citation count. Prefer reviews from DIFFERENT disciplinary communities when they exist
+   (e.g. materials science vs control engineering vs the profile's own field).
+2. **Read them in full text** — download with the Step 3b-PDF tooling (`download_pdf.py`, into the
+   same `refs/`), extract with `extract_text.py`. Abstracts are not sufficient for this step.
+   These canonical reviews ARE part of the coverage corpus (they count as corpus papers in the
+   Step 15b frequency list and `>= 3 papers` denominator) and MUST be cited in the review `.bib`.
+3. **Extract the ontology**: constituents/components, structural architecture, taxonomy and the
+   terminology EACH community uses for them (the same object is often framed differently across
+   fields — record the divergent framings, they are future query terms and potential gaps).
+4. **Hard rule — brief enumerations are hypotheses, never perimeter.** Any list of constituents,
+   mechanisms, or sub-topics supplied in the user brief, the repo CLAUDE.md, or the orchestrating
+   prompt MUST be checked against the extracted ontology. Divergence → flag
+   `[ONTOLOGY != BRIEF: <missing/extra element>]`, report it to the user in the final document,
+   and broaden the Step 1 queries with the ontology terms. Never silently narrow the search to
+   the brief's enumeration.
+5. **Output**: a `\subsection*{Ontologie du sujet}` block in the search strategy log (Step 1b):
+   source reviews (cited), constituent list, per-community terminology table, and any
+   `[ONTOLOGY != BRIEF]` flags. The ontology terms also feed the Step 15b coverage gate.
+
 ### Step 1 — Search
 
 Run the script with 15 results:
@@ -785,12 +814,49 @@ Recommended update frequency, inferred from corpus temporal distribution (provid
 - Moderate (control theory hybrids, computer vision): **12 months**
 - Mature (classical control, industrial automation, GEMMA, AMDEC): **24 months**
 
+### Step 15b — Terminology coverage gate (corpus → review) — MANDATORY
+
+Mechanical cross-check that the review actually covers what the corpus is dominated by. This is
+the downstream counterpart of Step 0b: it catches a theme the synthesis missed even when the
+initial ontology was correct.
+
+1. **Candidate terms** = (a) every constituent/term of the Step 0b ontology, plus (b) the dominant
+   technical terms of the corpus itself: over the extracted full texts (`refs/*.txt` — extract any
+   missing ones with `extract_text.py`), build a frequency list of content words AND bigrams —
+   multi-word technical terms are the likeliest blind spots. Unigrams:
+   `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | grep -v '^$' | sort | uniq -c | sort -rn`; bigrams
+   (sliding window): `cat refs/*.txt | tr 'A-Z' 'a-z' | tr -c 'a-z-' '\n' | grep -v '^$' |
+   awk 'prev{print prev" "$0} {prev=$0}' | sort | uniq -c | sort -rn`. Manually filter both
+   lists to technical terms, keep the top ~30 overall.
+2. **Count per paper**: for each candidate term, flatten the extracted text first (so a bigram
+   split across a line wrap is still matched), then count fixed-string occurrences:
+   `tr -s ' \t\n' ' ' < <paper>.txt | grep -oiF "<term>" | wc -l` — a TRUE occurrence count.
+   Never `grep -c`: it counts matching lines, and on line-wrapped extracted text
+   (paragraph-long lines) it undercounts by an order of magnitude, silently sinking a term
+   below the >= 10 floor. Never `grep -oi` on the raw file: a multi-word term broken by a wrap
+   is missed, and `-F` is required so terms with regex metacharacters (`Theta*`, `A*`, `C++`,
+   `S-57`) are matched literally instead of being misparsed.
+3. **Gate**: any term present in **>= 3 corpus papers** with substantial frequency (>= 10
+   occurrences in at least one paper) but **absent from the review `.tex`** → flag
+   `[CORPUS TERM NOT COVERED: <term>, <max occ.>/<n papers>]`.
+4. **Arbitrate every flag explicitly** — two outcomes only: cover it (amend the synthesis, the
+   gap map, or the comparison tables), or justify the exclusion in the Limitations section
+   (Step 14b) with one sentence. A silent absence is a checklist failure (TC1).
+5. Log the term table (term | corpus occurrences | papers | covered/excluded-justified) in the
+   reproducibility metadata (Step 15).
+6. **Sequencing**: this gate necessarily runs on the assembled `.tex` (it greps the review), so it
+   sits after Step 15 by design. A `[CORPUS TERM NOT COVERED]` flag RE-OPENS Step 15 (final
+   assembly) and Step 14b (Limitations): apply the amendment to the assembled document, then
+   re-log the metadata. Step 16 is not reached until every flag is arbitrated.
+
 ### Step 16 — Checklist report
 
 Print the full checklist with ✓ or ✗ for each item:
 
 ```
 [ ] IC1 — Inclusion / exclusion criteria documented (Step 0), cross-disciplinary scope from the active profile
+[ ] ON1 — Subject ontology established from full-text canonical reviews BEFORE queries (Step 0b); brief enumerations treated as hypotheses; every [ONTOLOGY != BRIEF] flag reported and queries broadened accordingly
+[ ] TC1 — Terminology coverage gate run (Step 15b): ontology + dominant corpus terms cross-checked against the review .tex; every [CORPUS TERM NOT COVERED] flag arbitrated (covered, or exclusion justified in Limitations); term table logged in reproducibility metadata
 [ ] SA1 — Scopus.AI manual consultation performed (Step 1a): prompt menu presented, user output ingested, every [SCOPUS.AI] reference validated (or marked skipped by user)
 [ ] SA2 — Scopus.AI references with no resolvable DOI / no API match flagged [UNVERIFIED — Scopus.AI only] and excluded from synthesis
 [ ] CS1 — Consensus MCP consultation run (RECON → PLAN → SEARCH); framework + sub-areas logged; every [CONSENSUS] reference validated (or MCP marked unavailable)
@@ -832,7 +898,7 @@ Print the full checklist with ✓ or ✗ for each item:
 [ ] DL1 — Deliberation panel run (Step 17) and `## Deliberation Log` block appended to the final review, with Panel line, Rounds, Reviewers-unavailable, Evidence counts, and the four outcome lists
 ```
 
-Do not mark the document complete if any IC, SA, CS, SL, EC, PR, QG, GM, CV, PC, PH, TR, LM, RP, H, C, O, G, ST, FW, or DL item is ✗. List what must be fixed. FW1/FW2 are MANDATORY: the review cannot be declared complete without the corpus future-works table and at least one hypothesis + research-project title derived from its top-Pareto rows. ST1 may be checked as "abstract-level fallback" only when `pdfplumber` is unavailable, or with `[STATS PDF-MISSING]` notes when some corpus PDFs could not be retrieved. SA1 may be checked as "skipped by user" only if the user explicitly declined the Scopus.AI step. CS1 may be checked as "MCP unavailable" only if the Consensus tool could not be reached. DL1 is MANDATORY: Step 17 always runs before the document is marked complete, so this checklist is only final after Step 17. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content for DL1; an empty or missing Deliberation Log is not.
+Do not mark the document complete if any IC, ON, TC, SA, CS, SL, EC, PR, QG, GM, CV, PC, PH, TR, LM, RP, H, C, O, G, ST, FW, or DL item is ✗. List what must be fixed. FW1/FW2 are MANDATORY: the review cannot be declared complete without the corpus future-works table and at least one hypothesis + research-project title derived from its top-Pareto rows. ST1 may be checked as "abstract-level fallback" only when `pdfplumber` is unavailable, or with `[STATS PDF-MISSING]` notes when some corpus PDFs could not be retrieved. SA1 may be checked as "skipped by user" only if the user explicitly declined the Scopus.AI step. CS1 may be checked as "MCP unavailable" only if the Consensus tool could not be reached. DL1 is MANDATORY: Step 17 always runs before the document is marked complete, so this checklist is only final after Step 17. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content for DL1; an empty or missing Deliberation Log is not. ON1 and TC1 are MANDATORY: a review whose queries were frozen without a full-text ontology pass, or whose dominant corpus terms were never cross-checked against the synthesis, is not complete.
 
 ### Step 17 — Deliberation (MANDATORY)
 
@@ -1082,6 +1148,8 @@ Revue cible : [Journal name]
 ## Validation — Liste de contrôle
 
 [✓/✗] IC1 — Inclusion / exclusion criteria documented
+[✓/✗] ON1 — Subject ontology from full-text canonical reviews before queries
+[✓/✗] TC1 — Terminology coverage gate run; all corpus-term flags arbitrated
 [✓/✗] SA1 — Scopus.AI manual consultation performed (or skipped by user)
 [✓/✗] SA2 — Unverifiable Scopus.AI refs flagged and excluded from synthesis
 [✓/✗] CS1 — Consensus MCP consultation run (or MCP unavailable)

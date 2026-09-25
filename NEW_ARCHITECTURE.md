@@ -10,7 +10,9 @@ and twenty-one issues track them. Written 2026-07-29.
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
 with the ingest-contract fix that RT-1 and RT-2 found. RT-1 through RT-5 are all merged to
 `main` here (RT-5 merged 2026-09-25, PR #22). RT-5's `/pdf/fill` multipart-vs-raw-body request
-shape is **unconfirmed with TT-3** and must be agreed before that unit codes against it. TT-7
+shape was checked against the ThesisTracker side 2026-09-25: TT-3 is not built yet, so there is
+no existing client contract to conflict with, and no objection was raised to what shipped.
+Reconfirm once TT-3 is actually implemented. TT-7
 (email one-time codes) is built but **excluded by design** until UQAC provides a mail relay:
 merging it would replace the only working sign-in with a code nothing can deliver. It also
 carries the `direction` role, so it gates TT-10.
@@ -942,7 +944,7 @@ critical path and can land last.
 | RT-3 | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | ResearchTools #6 | Stateless `fill(pdf_bytes, values, flatten_fields) -> bytes`, `NeedAppearances`, selective field locking. **Scope reduced:** no profile, no map, no stale gate. **Delivered 2026-08-31.** |
 | RT-4 | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. **Delivered 2026-08-31.** |
 | RT-5 | `feat/form-service` (was `feat/uqac-forms-service`) | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. `/pdf/fill` uses multipart/form-data, still unconfirmed with TT-3 - settle before TT-3 codes against it. **Delivered 2026-09-25** (PR #22, merged to `main`). |
-| RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag |
+| RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag. `count` capped at 25 (Scopus's own STANDARD-view ceiling). **Implemented 2026-09-25, PR open, not yet merged.** |
 | RT-7 | `feat/corpus-index` | ResearchTools #10 | Content-addressed parse cache, deterministic chunker, injected embedder, pgvector store, opt-in build |
 | TT-0 | `feat/routes-portability` | ThesisTracker #1 | Named handlers, thin Vercel dispatchers, `pg` swap, Express front door, container |
 | TT-1 | `feat/forms-entity` | ThesisTracker #2 | `form_instances` entity and its additive migration; `crud.js`, `scope.js`, `auth.js` untouched |

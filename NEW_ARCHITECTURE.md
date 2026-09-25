@@ -941,7 +941,7 @@ critical path and can land last.
 | RT-2 | `feat/form-service-field-map` (was `feat/uqac-forms-field-map`) | ResearchTools #5 | `dump_widgets` with byte-exact names and `/AP /N` on-states, and `diff_widgets(a, b)` for drift reporting. **Scope reduced:** the map and the vocabulary are TT-8's rows. **Delivered 2026-08-31.** |
 | RT-3 | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | ResearchTools #6 | Stateless `fill(pdf_bytes, values, flatten_fields) -> bytes`, `NeedAppearances`, selective field locking. **Scope reduced:** no profile, no map, no stale gate. **Delivered 2026-08-31.** |
 | RT-4 | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. **Delivered 2026-08-31.** |
-| RT-5 | `feat/form-service` (was `feat/uqac-forms-service`) | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. |
+| RT-5 | `feat/form-service` (was `feat/uqac-forms-service`) | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. `/pdf/fill` uses multipart/form-data, unconfirmed with TT-3. **Implemented 2026-09-25, PR open, not yet merged.** |
 | RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag |
 | RT-7 | `feat/corpus-index` | ResearchTools #10 | Content-addressed parse cache, deterministic chunker, injected embedder, pgvector store, opt-in build |
 | TT-0 | `feat/routes-portability` | ThesisTracker #1 | Named handlers, thin Vercel dispatchers, `pg` swap, Express front door, container |
@@ -1015,6 +1015,7 @@ Binding rules, each enforced by a test or a startup check:
 | Only `owner` or `direction` may create a `services` row or change its `parent_service_id`, `service_type` or `hierarchy_level` (2026-09-25); a service's own `assigned_login` may edit only that row's `email`/`responsibility`, never its place in the hierarchy | TT-8 UI, asserted by test |
 | A profile write-back updates the **form owner's** profile, never the editor's, and records who did it | TT-9 |
 | A new signature preserves every previous one; the chain is verifiable in step order | RT-4, asserted by test |
+| A signature's intact, valid and trusted status are reported separately, never collapsed into one pass/fail | RT-5 `sign_form.validate_signatures`, asserted by test |
 | An instance whose definition went stale is frozen, not silently advanced | TT-8 drift check, TT-10 gate |
 | The PDF service persists nothing from a request and logs no field value | RT-5, asserted by test |
 | The form service refuses to start without a shared secret of at least 32 characters, compared in constant time | RT-5 `config.load_settings`, `security.keys_match` |

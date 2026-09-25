@@ -673,6 +673,15 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
   text-transform: uppercase;
   margin-bottom: var(--rt-s2);
 }
+.rail-sub {
+  font-family: var(--rt-face-utility);
+  font-size: var(--rt-t10);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rt-muted);
+  margin: var(--rt-s3) 0 var(--rt-s1) 0;
+}
 .kv { display: grid; grid-template-columns: auto 1fr; gap: var(--rt-s1) var(--rt-s3); }
 .kv dt {
   font-family: var(--rt-face-utility);
@@ -1566,7 +1575,7 @@ svg.fanout .edge-hit { fill: none; stroke: transparent; stroke-width: 12; cursor
       </div>
 
       <aside class="a-rail"
-             aria-label="Repository, plan, services, code graph, hooks and actions">
+             aria-label="Repository, plan, services, code graph, hooks, journal and actions">
         <div class="tabs tabs--rail" role="tablist" id="rail-tabs"
              aria-label="Rail panels">
           <button class="tab" type="button" role="tab" id="rtab-repo"
@@ -1584,6 +1593,9 @@ svg.fanout .edge-hit { fill: none; stroke: transparent; stroke-width: 12; cursor
           <button class="tab" type="button" role="tab" id="rtab-hooks"
                   data-rail-tab="hooks" aria-controls="rail"
                   aria-selected="false" tabindex="-1">Hooks</button>
+          <button class="tab" type="button" role="tab" id="rtab-journal"
+                  data-rail-tab="journal" aria-controls="rail"
+                  aria-selected="false" tabindex="-1">Journal</button>
           <button class="tab" type="button" role="tab" id="rtab-actions"
                   data-rail-tab="actions" aria-controls="rail"
                   aria-selected="false" tabindex="-1">Actions</button>
@@ -1716,6 +1728,8 @@ var RAIL_TABS = [
     build: function (state) { return renderGraphPanel(state); } },
   { id: "hooks", label: "Hooks",
     build: function (state) { return renderHooksPanel(state); } },
+  { id: "journal", label: "Journal",
+    build: function (state) { return renderJournalPanel(state); } },
   { id: "actions", label: "Actions",
     build: function () { return renderActionsPanel(); } }
 ];
@@ -2569,6 +2583,46 @@ function renderGraphPanel(state) {
   var block = el("div");
   titleBlock(block, receiptFor(state, "graph"), !!graph.stale);
   panel.appendChild(block);
+  return panel;
+}
+
+function renderJournalPanel(state) {
+  /* Phase 2/3 of the journal-durable plan (2026-09-24): a per-person history
+     read from PostgreSQL (identity), and a trace count read back from
+     OpenObserve (traces) rather than from live transcripts. Both are optional
+     by design - on a clone with no database or log store configured, this
+     panel says so with its own reason and every other rail panel is
+     unaffected, which is the acceptance test for this whole layer. */
+  var panel = railPanel("Journal");
+  var identity = state.identity || {};
+  var traces = state.traces || {};
+  if (identity.status !== "ok" && traces.status !== "ok") {
+    unavailable(panel, "Journal unavailable", identity.status !== "ok"
+      ? identity : traces);
+    return panel;
+  }
+  panel.appendChild(el("h3", "rail-sub", "Identity"));
+  if (identity.status === "ok") {
+    kv(panel, [
+      ["persons", identity.persons],
+      ["identifiers", identity.identifiers],
+      ["snapshots", identity.snapshots]
+    ]);
+  } else {
+    unavailable(panel, "Identity unavailable", identity);
+  }
+  panel.appendChild(el("h3", "rail-sub", "Traces"));
+  if (traces.status === "ok") {
+    kv(panel, [
+      ["rows", traces.rows],
+      ["distinct sessions", traces.distinct_sessions],
+      ["newest event", traces.newest_event],
+      ["truncated", traces.truncated ? "yes" : null, !!traces.truncated]
+    ]);
+    if (traces.reason) { panel.appendChild(el("div", "unavail", traces.reason)); }
+  } else {
+    unavailable(panel, "Traces unavailable", traces);
+  }
   return panel;
 }
 

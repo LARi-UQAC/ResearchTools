@@ -5,6 +5,7 @@ Specialized agent definitions for this repository live in `.claude/agents/` (one
 flat markdown file per agent, YAML frontmatter). When performing a task covered by
 one of them, read the matching `.claude/agents/<name>.md` in full and follow it:
 
+- `abstract-writer` - see `.claude/agents/abstract-writer.md`
 - `authoring-loop` - see `.claude/agents/authoring-loop.md`
 - `bib-cleaner` - see `.claude/agents/bib-cleaner.md`
 - `cover-paper` - see `.claude/agents/cover-paper.md`
@@ -12,6 +13,7 @@ one of them, read the matching `.claude/agents/<name>.md` in full and follow it:
 - `litreview-updater` - see `.claude/agents/litreview-updater.md`
 - `local-coder` - see `.claude/agents/local-coder.md`
 - `local-writer` - see `.claude/agents/local-writer.md`
+- `narrative-cv-writer` - see `.claude/agents/narrative-cv-writer.md`
 - `paper-auditor` - see `.claude/agents/paper-auditor.md`
 - `reviewer-response` - see `.claude/agents/reviewer-response.md`
 - `scopus-auditor` - see `.claude/agents/scopus-auditor.md`

@@ -58,7 +58,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](Architecture.md).
 
-The repo ships **16 skills**, **17 agents**, and **25 commands**.
+The repo ships **18 skills**, **19 agents**, and **27 commands**.
 
 ---
 
@@ -421,17 +421,21 @@ reappears under `.claude/skills/`.
 | `deliberation` | Two-round Gemini ↔ GitHub Copilot debate over a near-final draft; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |
 | `extract-statistic` | Statistical analysis. Mode `audit`: review a manuscript's own statistics (test selection, assumptions, effect size, presentation, cross-validation). Mode `mine`: extract the reported statistics of a corpus's full-text PDFs and synthesize a corpus statistics table plus an improvement-opportunity list. Engineering-default domain profiles. Used inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine). | `.claude/skills/extract-statistic/SKILL.md` |
 | `extract-futureworks` | Future-works analysis (reuses `extract_text.py --section-scan`). Mode `audit`: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode `mine`: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and `scopus-researcher` (mine), where it is a hard gate: no hypothesis/project without it. | `.claude/skills/extract-futureworks/SKILL.md` |
+| `extract-contributions` | What a cited paper says it CONTRIBUTES, out of its full text (reuses `extract_text.py`; ships no reader). Mode `validate`: pair every `\cite{}` of a manuscript with the paper's own contribution sentences and flag the citations the paper does not support. Mode `mine`: tabulate a `refs/` corpus by kind. Surfaces evidence verbatim and decides nothing; `ok` / `no-contribution` / `empty` / `unreadable` are kept apart so a retrieval failure is never read as a property of the paper. Markers are data in `contribution_markers.json`. | `.claude/skills/extract-contributions/SKILL.md` |
+| `extract-paper-idea` | Extract a paper's OWN content into one JSON, the basis for drafting or refreshing its abstract (or, for a UQAC thesis, its Résumé + Abstract pair). Ships no reader of its own: reuses `paper2talk`'s `\input`/`\include` flattening and section map, `extract-statistic`'s future-works-cue section scan, and `extract-contributions`' marker scan (pointed at the paper's own text instead of a cited one). Detects document type (`uqac.cls` on the flattened text) and the document's own language; never a forced bilingual pair for a paper, always both languages for a thesis. Delegates the drafting to the `abstract-writer` agent. | `/abstract`, `.claude/skills/extract-paper-idea/SKILL.md` |
 | `paper2talk` | Accepted paper -> conference talk. Asks six questions before reading the paper (audience, duration, output target, aspect ratio, PDF format, deck ending), echoes a build contract, then builds ONE `talk_model.json` and renders it to PowerPoint (pptxgenjs), LaTeX Beamer on the lab gabarit, or a self-contained web page. Speaker notes budgeted at 130 wpm aiming under the slot, figures re-exported through the draw.io CLI at scale 3, and a visual QA loop (PowerPoint COM -> `pdftoppm`) with a legibility gate and a no-text-only-slide rule. Delegates the loop to the `talk-builder` agent. | `/talk`, `.claude/skills/paper2talk/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
 | `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `/geolocalisation`, `.claude/skills/geolocalisation/SKILL.md` |
 | `loop-engineer` | Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score `>=` min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; `local-coder`/`local-writer` do local generation. `loop_audit.py` aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated. | `/loopdev`, `.claude/skills/loop-engineer/SKILL.md` |
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
+| `narrative-cv` | Draft, refresh, or tailor the narrative "CV descriptif" (FRQ CV-FRQ, structurally identical to the tri-agency CIHR/NSERC/SSHRC CV commun des trois organismes) to one grant competition: three sections, up to 10 items in section 2, 6-page FR / 5-page EN cap. Built around a durable master contributions inventory in the researcher's own external project folder, refreshed via Scopus (AU-ID two-step) + `extract-contributions` and re-ranked per competition by keyword overlap against that program's own objectives/evaluation criteria rather than rebuilt from scratch each time. Renders LaTeX/PDF and a plain-text companion for the new-FRQnet-portal paste-in channel from one JSON model (`paper2talk`'s one-model-many-renderers pattern). | `/cv`, `.claude/skills/narrative-cv/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 | `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
 | `uqac-forms` | Stateless mechanics for the official UQAC PDF forms. RT-1 ships the validated ingest contract: https only re-checked on every redirect hop, at most 5 redirects followed manually, a 25 MiB cap enforced during the stream, `%PDF` magic bytes, a 30 s timeout, and an atomic write. The form catalogue, field maps and profile live in ThesisTracker, not here. Filling (RT-3) and PAdES signing (RT-4) follow. | Yes |
 | `graphify` *(external: `uv tool install graphifyy`, not shipped here)* | The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. `query`, `path` and `explain` are deterministic traversals of `graphify-out/graph.json` and cost no model at all, which is why one graph query beats grepping file by file. Reached only through `local-writer`, like the vault. The CLI itself is a separate install (`uv tool install graphifyy`); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. `.graphify_version` records the version it was generated from - refresh the copy after upgrading the CLI. | `/graphify`, `.claude/skills/graphify/SKILL.md` |
 | `opt-local-vram-llm` | Tune a local Ollama model for this GPU: retain the largest `num_ctx` that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps `num_ctx` against `OLLAMA_KV_CACHE_TYPE` (restarting the daemon per value and proving the restart took effect from `server.log`, restoring the original value on failure), then declares the tuned tag as a role candidate in `local-models.json`. Stops before qualification, which stays with `model_resolver.py --qualify`. | `/opt-local-vram-llm`, `.claude/skills/opt-local-vram-llm/SKILL.md` |
+| `aider-setup` | Set up, tune and run the aider nightly local-coding pipeline — a second, independent local-coding harness that needs no Claude Code: two local Ollama models (a writer that codes and tests, a reviewer that never edits, gated by measured token budgets) run one aider process per plan overnight, driven by `aider-plan.ps1`/`aider-night.ps1`. Owns the packaging pipeline (`scripts/build/`) that assembles the student-facing `aider-kit.zip` from this skill's own canonical sources, with a leak scan and an install-and-dry-run gate. `config/rules.md` is generated at build time from this repository's own `.claude/rules/` (R26 fixes the plan-file shape every harness reads; R27 the function-header convention). | `.claude/skills/aider-setup/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
 
@@ -517,6 +521,34 @@ linter enforces the AI-usage rules. All shipped sample data is synthetic.
 - `.claude/skills/recommendation-letter/scripts/Test/test_generate_letter.py` — offline unit tests (53 cases)
 - `.claude/skills/recommendation-letter/references/quality-patterns.md` — authored-track quality patterns
 - `.claude/skills/recommendation-letter/evals/` — synthetic sample configs
+
+### `narrative-cv` — FRQ / tri-agency narrative CV
+
+FRQ's CV-FRQ and the tri-agency (CIHR/NSERC/SSHRC) "CV commun des trois organismes" are the same
+format (verified against both official pages 2026-09-25): three sections (career/skills, up to
+ten contributions and experiences, supervision and mentoring), 6 pages French or 5 English. Built
+around a durable master inventory rather than a stateless per-run extraction, so a grant CV is a
+re-selection over a growing corpus instead of a from-scratch rebuild each time.
+
+| Stage | Script | Job |
+|---|---|---|
+| 1 — inventory | `cv_inventory.py` | CRUD over the master inventory YAML (`init`/`add`/`list`/`stats`/`mark-used`), validated and deduplicated by id/DOI. Never calls Scopus itself. |
+| 2 — select | `cv_select.py` | Deterministic keyword-overlap ranking against a competition's own objectives/evaluation criteria — a signal for the drafting agent's judgment, not a verdict. |
+| 3 — build | `cv_build.py` | Renders ONE `cv_model.json` to LaTeX and a plain-text companion, builds the mandatory old-portal filename (`NOM_XXXXX1234_Titre.pdf`, normes_presentation.pdf), and checks the compiled page count against the 6/5-page cap. |
+
+The candidate's identity (CV header/footer, filename surname) and the external project folder
+the inventory and drafts live in (`cv.project_dir`) both come from the active profile
+(`profiles/<active>.yaml`), never from a hardcoded path — a profile carrying neither block is a
+stop, not a guess. Drives the `narrative-cv-writer` agent, reached via `/cv`.
+
+**Files:**
+- `.claude/skills/narrative-cv/SKILL.md`
+- `.claude/skills/narrative-cv/scripts/cv_common.py` — shared helpers: contribution-types loader, active-profile identity/project-dir resolution (no fallback), FRQ filename builder
+- `.claude/skills/narrative-cv/scripts/cv_inventory.py` — the master inventory CRUD
+- `.claude/skills/narrative-cv/scripts/cv_select.py` — keyword-overlap ranking
+- `.claude/skills/narrative-cv/scripts/cv_build.py` — LaTeX/text rendering, filename, page-budget check
+- `.claude/skills/narrative-cv/scripts/contribution_types.json` — section titles, clientele/category vocabularies, page budget, portal/font variants (data, not code)
+- `.claude/skills/narrative-cv/scripts/Test/test_cv_common.py`, `test_cv_inventory.py`, `test_cv_select.py`, `test_cv_build.py` — offline unit tests (61 cases; no network, no LaTeX install, no machine-local profile dependency)
 
 ### `paper2talk` — accepted paper to conference talk
 
@@ -740,179 +772,32 @@ without running it.
   `test_vram_modelfile.py`, `test_vram_daemon.py`, `test_vram_optimizer.py` - four offline
   suites (11 + 9 + 5 + 13 tests), no network, no GPU, no Ollama daemon
 
+### `aider-setup` - the aider nightly local-coding pipeline
+
+A second, independent local-coding harness that needs no Claude Code: two local Ollama models
+(a writer that codes and tests, a reviewer that never edits, gated by measured token budgets)
+run one aider process per plan overnight, driven by `aider-plan.ps1` / `aider-night.ps1`. Owns
+the packaging pipeline that assembles the student-facing `aider-kit.zip` from this skill's own
+canonical sources.
+
+Full manual, Ollama tuning reference, worked example, and continuity notes:
+[docs/aider-setup.md](docs/aider-setup.md).
+
 ---
 
 ### rt-observe - harness-neutral toolkit state and mirror matrix
 
 Answers one question: is this toolkit correctly deployed to every harness in use, and which
-empty cells are deliberate. `install.ps1` computes a verdict for every mirror it generates,
-prints it, and throws it away, so drift stays invisible until an agent behaves like an older
-version of itself.
+empty mirror cells are deliberate rather than lost. Serves the same snapshot as a loopback
+dashboard (`/rt-dashboard`, `rt-dashboard.ps1`/`.sh`/`.bat`) - mirror matrix, fan-out wiring
+diagram, Real-Time Process tab, sessions strip, and the rail's seven receipt-bearing panels
+(repository, plan, services, code graph, hooks, journal, actions - the last a closed, tested
+action whitelist, dry-run by default). The journal panel (2026-09-24) reads an OPTIONAL,
+absent-by-default persistence layer - PostgreSQL identity/account-mapping plus an OpenObserve
+trace/audit stream - that changes nothing about a clone with neither configured.
 
-The centrepiece is the **mirror matrix**: every canonical agent, skill, command and rule down
-the page, every harness dialect across it. Eight states, and the two that matter most are the
-two that look identical on disk:
-
-| State | Meaning |
-|---|---|
-| `ok` | present, and nothing says it is degraded |
-| `by-design` | the generator deliberately skips it, per `mirror-policy.json` |
-| `stubbed` | present but reduced to a pointer, body over the Copilot ceiling |
-| `trimmed` | present with a shortened description, Codex list budget |
-| `stale` | present, but the canonical source is newer than the mirror |
-| `lost` | absent with **no** design reason |
-| `orphan` | present in a dialect with no canonical source |
-| `unknown` | that dialect is not installed here, so nothing can be said about it |
-
-Intent comes from [mirror-policy.json](mirror-policy.json) at the repository root, which
-`install.ps1` reads as well: one declaration, two consumers, and the `by-design` / `lost`
-distinction becomes readable on any OS from a fresh clone by someone who cannot run PowerShell.
-
-```bash
-python .claude/skills/rt-observe/scripts/rt_state.py            # human summary
-python .claude/skills/rt-observe/scripts/rt_state.py --json     # the whole snapshot
-```
-
-**The dashboard.** `rt-dashboard` starts a loopback server and opens the page. It is a plain
-command on purpose, in four spellings, because ResearchTools is cloned by people who do not run
-Claude Code:
-
-```powershell
-.\rt-dashboard.ps1 -DryRun        # names the interpreter, the bind and every TTL; starts nothing
-.\rt-dashboard.ps1 -Open          # serve on 127.0.0.1 and hand the URL to the browser
-.\rt-dashboard.bat                # double-click, and cmd
-sh ./rt-dashboard.sh --open        # macOS and Linux
-```
-
-VS Code users get the same two entries under Run Task, and `/rt-dashboard` is the Claude Code
-convenience wrapper. Each root file is a thin forward to the canonical launcher beside its
-module; the only decision any of them makes is which Python to use, and with none found it
-names every candidate it tried and exits 2 rather than guessing.
-
-The server binds `127.0.0.1` only, refuses any other bind address before a socket exists, and
-mints a session token at startup that `POST /api/action` requires. `GET /` serves the page,
-`GET /api/state` the cached snapshot, `GET /api/ping` the identity the launcher probes. Two
-refusals are worth knowing because they protect you from a wrong answer rather than an error: a
-port held by another process is reported **with the holding PID** and the launcher exits
-non-zero rather than binding a second port, since two dashboards showing two different
-snapshots is worse than none; and a dashboard already running is reported with its URL rather
-than started twice.
-
-**One screen, two tab strips.** The page does not scroll, at any width it supports. The sheet
-is the viewport, and anything longer than the pane it sits in scrolls inside that pane, which is
-what decides how much any one tab may show. The left column carries four views - the mirror
-matrix as the landing view, the fan-out diagram, the sessions strip, and the Real-Time Process
-tab described below. The right column carries the rail's six panels
-as tabs of their own: repository, plan, services, code graph, hooks and actions. Which tab is in
-front is a per-viewer convenience remembered in `localStorage`, the way the theme control is,
-and both strips take the arrow keys.
-
-**What the harness is doing right now.** The `Real-Time Process` tab draws the session state
-machine of the lab's own figure - SessionStart, waiting, UserPromptSubmit, reasoning and tool
-calling, PostToolUse, security audit - with the state a session is in filled dark and the arcs it
-has travelled this turn at double width, a marker running along them. Below it, one lane per
-session carries the recent steps: history stays on screen in low grey and any step can be picked
-back up, a subagent hangs off the session that spawned it and is named by the call that spawned
-it, and a call that leaves the machine says so (`mcp` means it went through a server, which may be
-remote). Token spend is reported as a total and NOT as a percentage: a transcript records tokens
-per message and never the window they sit in, so the bar is relative to the busiest session on
-screen and says as much. Adapter-fed like the rest, so Copilot Chat - whose store holds session
-metadata and no step timeline - reports that rather than being drawn as idle.
-
-**Four marks, four meanings.** A BOX is an actor: a session, a subagent, a skill, a memory. A
-tool call is not an actor but an event on a line, so it is a tick that carries a count when it
-repeats. A tool result is not a node either - it is the EDGE leaving the call it answers, solid
-once the output came back and dashed while the call is still out, which is the same arrow the
-state strip draws from `tool call` to `PostToolUse`. And a hook is drawn as a hook. The page says
-all four in a legend rather than leaving them to be inferred.
-
-**The deterministic half is visible too.** Hook firings arrive in a transcript as attachments,
-and reading attachments as noise is what once made RTK, caveman, the secret scan and the vault
-outbox flush invisible on a tab whose whole subject is what the harness is doing. Each one now
-draws the figure's own idiom: a dashed self-loop on the box it runs on, labelled with the hook's
-NAME rather than the file that implements it, and drawn in alarm when the hook refused rather than
-merely watched. Subagent dispatches are counted apart from tool calls, so a `local-writer`
-dispatch cannot be pushed off the lane by the next hundred Bash calls, and an MCP call is named by
-its server.
-
-**Three bars, and three maxima you type.** What this session holds, what the week has spent
-(summed from the transcripts: new input, cache creation and output, never tokens re-read from
-cache, which are the same conversation counted again), and a paid supplement that appears only
-once one of the other two is full. None of the three MAXIMA is reported anywhere on this machine,
-so each is typed beside its bar and kept per viewer, and a bar with no maximum is not drawn at
-all. Nothing here is money: no plan, invoice or payment method is readable from this machine.
-
-**The refresh rate is yours.** Type an interval beside the theme control; the presets are
-suggestions. The page then asks the server for data no older than that, and the server clamps the
-request up to a configured floor, so no viewer can make the collector that leaves the machine run
-faster than its own timer.
-
-**Hovering anything explains it.** One layer, not one tooltip per panel: a cell, a card, a plan
-phase, a box or an edge in the fan-out opts in, and a single renderer draws the detail behind the
-summary. The case that made it necessary is the fan-out edge that reads `1 lost` - the number was
-reachable and the name behind it was not, so the edge now carries which mirror is lost and in what
-state. The diagram's boxes can also be dragged, and their edges follow, because every path is
-drawn from the node's own coordinates rather than from a stored copy of them.
-
-**Acting on what it reports.** The rail carries an Actions panel, and every button in it runs
-one entry of a closed whitelist held as data in
-[.claude/skills/rt-observe/actions.json](.claude/skills/rt-observe/actions.json): an id maps to
-a FIXED argv, the page posts only that id, and nothing from the request ever reaches a command
-line. Every id points at a script this repository already ships and already tests -
-`install.ps1 -Personal` (the fix for the mirrors the matrix reports lost), `-Manifest`,
-`install-junctions.ps1 -Sync`, `check-deployment.ps1`, `run-offline-tests.ps1`,
-`restart-ollama.ps1`, the vault daemon's status and start, and one action that spawns a fresh
-headless session. Each offers a **dry run** that resolves the argv and executes nothing, a
-destructive one arms first and then shows the action's own confirm sentence rather than a
-generic prompt, and an action whose interpreter is not on this machine renders as a reason
-instead of a button that would fail on click.
-
-An action is judged by its **effect, not its exit code**: after it runs, the section it claims
-to change is collected again and the panel says `effect confirmed`, `effect NOT confirmed` or
-`effect unchecked`. `restart-ollama.ps1` is the reason - it is the documented script that exits
-0 while an orphaned child keeps its VRAM. Every attempt, refusals included, appends one JSON
-line to `~/.claude/rt-state-actions.jsonl`.
-
-**Messaging a session.** A Claude Code session card carries a Send button when, and only when,
-the delivery hook is installed for it. The message is written into `~/.claude/rt-inbox/<session
-id>/` and nothing executes; `rt-inbox-deliver.py`, a `UserPromptSubmit` hook, hands it to that
-session on its next turn and moves it to `delivered/`. A session with no hook is reported
-**unreachable** and never as delivered, because a message written into a directory nobody drains
-is worse than no message at all. This does not replace Claude Code's own cross-session
-messaging, and it cannot: a browser page cannot call an agent tool. What it adds is a durable
-record, a fleet view of who is reachable, and an inbox another harness could read too.
-
-Each section carries its own TTL, so a two-second page poll never re-runs `claude mcp list`,
-and a section that has never been collected reads `collecting` rather than blank - the first
-`/api/state` answers immediately while the slow collectors fill in behind it.
-
-The page is one self-contained file with no CDN, no npm and no build step, in both themes, from
-a 400px side panel to a wide monitor. The eight cell states are distinguishable with colour
-removed, because colour marks only the one state that must never be missed: on this surface no
-second status hue cleared the colour-vision-deficiency floors against the alarm red, so every
-other state is carried by a two-letter code, a texture and an edge weight. Its design tokens
-are extracted to [assets/rt-tokens.css](assets/rt-tokens.css), the first shared token file in
-this repository, and a test asserts the page and that file cannot drift apart.
-
-Standard library only: no pip install, no npm, no Docker, no build step, and the core never
-shells out to a `.ps1`. Exit 0 is clean, 1 means something is `lost` or `stale`, 2 is a refusal
-by design. **Zero harnesses is a supported configuration** - with no adapter present the
-matrix, the registry check, the repository panel and the plan progression are all still
-complete, which is the majority of the value and the whole of it for a lab member on Codex or
-Continue. Point `--home` at an empty directory to reproduce that case.
-
-Beyond the matrix it reports: the canonical definition set's own integrity, the green stamp
-and active profile, plan progression read from `PROGRESS.md` and cross-checked against the
-plan's own phase headings, the MCP roster (live when the `claude` binary is present, otherwise
-the declared roster with liveness stated as unavailable), local model residency, the vault
-daemon and its queue depth, and recent sessions from two adapters - Claude Code and GitHub
-Copilot Chat. Adding a harness is a new module plus one line in `harnesses.json`, with no core
-edit, and a test asserts exactly that.
-
-It never reads the Obsidian vault, and it never reads the code graph: the graph panel renders
-a snapshot that `local-writer` produced, because `vault-access-guard.py` refuses the graph to
-every other caller and a server reading it on your behalf is the bypass that guard exists to
-stop.
+Full reference (states, dashboard layout, actions panel, session messaging, adapters):
+[docs/rt-observe.md](docs/rt-observe.md).
 
 ## Security audit (SkillSpector)
 
@@ -985,7 +870,9 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/uqacform <https-url> [dest]` | Fetch one official UQAC form PDF, validated, and report its SHA-256. Refuses anything that is not a PDF served over https, and writes nothing when it refuses | Yes |
 | `/geolocalisation` | Map a review corpus's study locations from its `.bib`: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional `--full-text` PDF scan. | Optional — `.bib` file/dir/IDE file |
 | `/recommendation-letter` | Generate a support / recommendation / appreciation / acceptance / dispense letter in LaTeX → PDF from a candidate's files (two tracks; candidate status + funding provider; paired invitation). | Optional — folder / paths / IDE file |
+| `/cv` | Draft, refresh, or tailor the narrative CV-FRQ / tri-agency CV to one grant competition via the `narrative-cv-writer` agent: durable master contributions inventory, ranked by keyword overlap against the competition's own objectives, drafted through `scientific-writing`, rendered to LaTeX/PDF + plain text. `--refresh-only` updates the inventory with no draft produced. | Yes — competition + objectives text/path + language + portal variant |
 | `/rt-dashboard` | Start the rt-observe dashboard on loopback and open it: mirror matrix, fan-out canvas, plan progression, services and sessions. Wraps `rt-dashboard.ps1` / `.sh` / `.bat`, which need no Claude Code. `--dry-run` names the interpreter, the bind address and every TTL and starts nothing | Optional — `--dry-run`, `--open`, `--port <n>`, `--json` |
+| `/abstract [paper.tex]` | Extract a paper's own content and draft (or refresh) its abstract, grounded in its own contribution/method/results/limitations rather than a paraphrase; for a UQAC thesis, drafts the Résumé (French) + Abstract (English) pair from the same extraction. Confirms before overwriting existing content | Optional — `.tex` path/IDE file |
 
 ### `/concis` — Concise mode
 
@@ -1172,8 +1059,10 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `talk-builder` | Accepted paper → conference talk: six opening questions first, build contract, `talk_model.json`, render (PowerPoint / Beamer / web), then the validate → notes → render → inspect loop until every page is clean | `/talk` | `.claude/agents/talk-builder.md` |
 | `word-to-latex` | Faithful Word `.docx` → LaTeX conversion (pandoc + visual-fidelity patches) | `/word2latex` | `.claude/agents/word-to-latex.md` |
 | `cover-paper` | Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt) | by name (at submission) | `.claude/agents/cover-paper.md` |
+| `narrative-cv-writer` | Draft/refresh/tailor the FRQ / tri-agency narrative CV to one grant competition: refresh the durable master contributions inventory (Scopus AU-ID two-step + `extract-contributions`, plus a grouped question for non-publication items), rank against the competition's own objectives via `cv_select.py`, draft the three sections through `scientific-writing`, render LaTeX/PDF + plain text, self-check the page budget and AI-usage score | `/cv` | `.claude/agents/narrative-cv-writer.md` |
 | `thesis-to-paper` | Integrate a thesis + its conference papers into one submission-ready journal manuscript (invited extension); pandoc reference conversion, figure pipeline, content-delta matrix, then `/litreview` + `scientific-writing` + `/bibclean` + `/submitcheck` + `/auditpaper` inline, with a multi-session checkpoint protocol | by name / "extend this paper to a journal version" | `.claude/agents/thesis-to-paper.md` |
 | `authoring-loop` | ScholarEval-gated authoring loop: define subject -> author (Fable 5) -> audit with `scholar-evaluation` (Sonnet/Haiku) -> loop to `min_score` or `max_budget` -> record learnings to memory via `local-writer`. Authoring counterpart of the `loop-engineer` code loop | by name / "improve this to a ScholarEval target under a budget" | `.claude/agents/authoring-loop.md` |
+| `abstract-writer` | Extract a paper's own content (`extract-paper-idea` skill) and draft or refresh its abstract, grounded in its own contribution/method/results/limitations rather than a paraphrase; for a UQAC thesis, drafts the Résumé (French) + Abstract (English) pair from the same extraction. No citations, no Scopus, no deliberation. Self-checks against `composition_rules.md` + the `latex-hygiene` AI-usage scanner; confirms before overwriting existing content | `/abstract` | `.claude/agents/abstract-writer.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
 | `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via the resolver's writer-role model over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
 | `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via the resolver's coder-role model over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
@@ -1215,6 +1104,36 @@ is an explicit stop, never a silent substitution of a weaker model. LiteLLM
 tuning. `local-writer` never authors LaTeX prose (it may add `%` comments only); all
 scientific and LaTeX redaction stays with `latex-writer` + `scientific-writing` on the
 latest cloud Claude model.
+
+**`local-coder` vs. the `aider-setup` pipeline - two lanes, not a duplicate.** Both generate
+code on a local model for free, and it is worth being precise about why one did not replace
+the other. `local-coder` is **synchronous, in-session, single-step**: the cloud orchestrator
+(loop-engineer, a plan step) hands it one precise task - implement this function against this
+failing test - and reviews the result immediately, inside a running Claude Code session.
+`aider-setup` (see below) is **asynchronous, unattended, whole-plan**: it runs a full night
+with Claude Code closed entirely, driving one aider process per plan file for hours with no
+one watching, then leaves an audit report for the morning. Neither can stand in for the
+other - `local-coder` cannot run when nobody is present to dispatch and review it, and Aider's
+nightly driver has no synchronous entry point a mid-session orchestrator could call. The
+aider-kit integration deliberately left `local-coder`'s definition, model resolution, and
+prompt untouched for this reason.
+
+### Aider nightly pipeline (a second, separate local-coding lane)
+
+`aider-setup` is not a wrapper around `local-coder`, and does not go through Claude Code at
+all once installed - the point, since it is built to run when Claude Code and every model it
+drives are both closed. Two local Ollama tags do the work: a writer that codes its own tests,
+and a reviewer, sandboxed and content-hash checked, that can never edit code however its
+prompt is answered. The driver (`aider-plan.ps1`) runs **one aider process per plan file**,
+which is what drops the context window between plans; after each plan it runs the test suite,
+then the reviewer, which writes `audit.md` and may reopen the plan for one more bounded round.
+A plain `cmd` entry point (`aider-night.ps1`/`.bat`) starts a night, holding a wake lock so
+Windows' Modern Standby does not throttle an unattended run, and pushes a branch at the end -
+merging to a protected branch stays a human decision, made the next morning after reading
+`audit.md`. The rules every model follows (`config/rules.md`) are generated at build time from
+this repository's own `.claude/rules/*.md`, so they cannot drift from what every other harness
+enforces. Setup, tuning, and rebuilding the student-facing kit: see
+[.claude/skills/aider-setup/SKILL.md](.claude/skills/aider-setup/SKILL.md) and its `MANUAL.md`.
 
 ### Loop engineering (local-model dev loop)
 
@@ -1307,7 +1226,8 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (17 agents)
+    ├── agents\                              (18 agents; not all listed below -- see the
+    │                                          Agents table above for the current, complete list)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── litreview-updater.md       ← /litupdate
     │   ├── scopus-auditor.md          ← /auditreview
@@ -1324,8 +1244,10 @@ ResearchTools\
     │   ├── authoring-loop.md          ← ScholarEval-gated authoring loop
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (bridge)
-    │   └── local-coder.md             ← local code gen (bridge)
-    ├── commands\                            (24 commands)
+    │   ├── local-coder.md             ← local code gen (bridge)
+    │   └── narrative-cv-writer.md     ← /cv
+    ├── commands\                            (25 commands; not all listed below -- see the
+    │                                          Commands table above for the current, complete list)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
     │   ├── ref.md      ├── litreview.md             ├── litupdate.md
@@ -1334,9 +1256,11 @@ ResearchTools\
     │   ├── submitcheck.md              ├── replyreviewer.md
     │   ├── word2latex.md               ├── geolocalisation.md
     │   ├── loopdev.md                  ├── talk.md
-    │   └── recommendation-letter.md
+    │   ├── recommendation-letter.md
+    │   └── cv.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (16 skills)
+    └── skills\                              (18 skills; not all listed below -- see the
+                                               Skills table above for the current, complete list)
         ├── scopus\
         │   ├── SKILL.md
         │   └── scripts\  (scopus_api.py, semantic_scholar_api.py, download_pdf.py,
@@ -1360,6 +1284,9 @@ ResearchTools\
                            references\ LOOP/STATE/PROCESS/ledger templates; requirements.txt)
         ├── recommendation-letter\SKILL.md   (+ scripts\generate_letter.py, letter_templates.py,
         │                  Test\test_generate_letter.py; references\quality-patterns.md; evals\)
+        ├── narrative-cv\SKILL.md            (+ scripts\cv_common.py, cv_inventory.py, cv_select.py,
+        │                  cv_build.py, contribution_types.json,
+        │                  Test\test_cv_common.py, test_cv_inventory.py, test_cv_select.py, test_cv_build.py)
         ├── paper2talk\SKILL.md              (+ scripts\talk_rules.py, talk_model.py, talk_template.py,
                            fig_export.py, talk_render.py, talk_notes.py, to_a4.py, talk_validate.py,
                            talk_pptx.py, paper_extract.py, talk_doctor.py,

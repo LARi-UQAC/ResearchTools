@@ -10,6 +10,7 @@ Run:
     python -m pytest Test/test_browser_fetch.py -v
 """
 
+import os
 import sys
 import tempfile
 import unittest
@@ -133,13 +134,27 @@ class FakePage:
 
 
 class _FakeChromium:
-    def __init__(self, page):
+    def __init__(self, page, name="chromium"):
         self._page = page
         self.launched_headless = None
+        self.profile_dir = None
+        self.launch_called = False
+        # playwright-stealth reads .name off each browser type when it hooks it.
+        self.name = name
 
     def launch(self, headless=True, **kw):
+        # Kept so a regression back to the non-persistent launch is visible to
+        # test_persistent_profile_is_used rather than silently passing.
+        self.launch_called = True
         self.launched_headless = headless
         return _FakeBrowser(self._page)
+
+    def launch_persistent_context(self, user_data_dir, headless=True, **kw):
+        # A persistent context IS the context: no browser object is returned,
+        # which is the contract browser_fetch now depends on for its cleanup.
+        self.launched_headless = headless
+        self.profile_dir = user_data_dir
+        return _FakeContext(self._page)
 
 
 class _FakeBrowser:
@@ -157,6 +172,7 @@ class _FakeBrowser:
 class _FakeContext:
     def __init__(self, page):
         self._page = page
+        self.closed = False
 
     def on(self, event, cb):
         pass  # no popups in the offline fakes
@@ -167,10 +183,21 @@ class _FakeContext:
     def new_page(self):
         return self._page
 
+    def close(self):
+        # A persistent context is closed directly, standing in for the browser
+        # close the non-persistent path used to perform.
+        self.closed = True
+
 
 class _FakePW:
     def __init__(self, page):
         self.chromium = _FakeChromium(page)
+        # playwright-stealth hooks every browser type on the Playwright object,
+        # not just the one the caller uses, so a fake exposing chromium alone
+        # raised AttributeError on 'firefox' the moment the wrapper was entered.
+        # These two exist to be patched and are never launched.
+        self.firefox = _FakeChromium(page, "firefox")
+        self.webkit = _FakeChromium(page, "webkit")
 
 
 class _FakePWCtx:
@@ -187,6 +214,24 @@ class _FakePWCtx:
 def _fake_sync_playwright(page):
     """Return a callable usable as browser_fetch.sync_playwright."""
     return lambda: _FakePWCtx(page)
+
+
+class _FakePWCtxFrom:
+    """Yield a Playwright fake the caller already holds.
+
+    _FakePWCtx builds a new _FakePW on every enter, so what the code under test
+    launched cannot be inspected afterwards. This variant hands back the exact
+    object the test kept a reference to.
+    """
+
+    def __init__(self, fake_pw):
+        self._fake = fake_pw
+
+    def __enter__(self):
+        return self._fake
+
+    def __exit__(self, *exc):
+        return False
 
 
 PDF_BYTES = b"%PDF-1.7\n" + b"real-article-body " * 50 + b"\n%%EOF"
@@ -254,6 +299,47 @@ class TestBrowserFetch(unittest.TestCase):
         self.assertIsNotNone(res)
         self.assertEqual(res["source"], "override")
         self.assertEqual(page.goto_urls[0], override)  # went to override, not doi.org
+        self.assertTrue(on_disk.startswith(b"%PDF"))
+
+    def test_persistent_profile_is_used_not_a_fresh_browser(self):
+        # Measured 2026-09-17: ScienceDirect refused a plain Playwright Chromium
+        # with a Cloudflare interstitial. A persistent profile keeps the solved
+        # challenge and the institutional session across papers, which a fresh
+        # context throws away every time. Asserted in BOTH directions, since a
+        # regression to chromium.launch() would otherwise still pass every other
+        # test in this file.
+        page = FakePage(pdf_body=PDF_BYTES)
+        fake = _FakePW(page)
+
+        with mock.patch.object(browser_fetch, "_PW_OK", True), \
+             mock.patch.object(browser_fetch, "sync_playwright",
+                               lambda: _FakePWCtxFrom(fake)):
+            with tempfile.TemporaryDirectory() as tmp:
+                dest = str(Path(tmp) / "paper.pdf")
+                browser_fetch.fetch_pdf_via_browser("10.9999/x", dest, headed=False)
+
+        self.assertEqual(fake.chromium.profile_dir,
+                         browser_fetch.BROWSER_PROFILE_DIR)
+        self.assertFalse(fake.chromium.launch_called,
+                         "must not fall back to a fresh non-persistent browser")
+
+    def test_profile_dir_is_outside_the_repository(self):
+        # The profile holds session cookies for the operator's institutional
+        # access, so it must never land in the clone and be committed.
+        prof = os.path.abspath(browser_fetch.BROWSER_PROFILE_DIR)
+        repo = os.path.abspath(os.path.join(os.path.dirname(browser_fetch.__file__),
+                                            "..", "..", "..", ".."))
+        self.assertFalse(prof.startswith(repo + os.sep),
+                         f"profile {prof} sits inside the repository {repo}")
+
+    def test_missing_stealth_degrades_and_never_raises(self):
+        # R11: an absent optional dependency degrades the tier with a hint. It
+        # must not fail the run, because the plain driver still retrieves from
+        # every publisher that does not gate on the automation fingerprint.
+        page = FakePage(pdf_body=PDF_BYTES)
+        with mock.patch.object(browser_fetch, "_STEALTH_OK", False):
+            res, on_disk = self._run(page, headed=False)
+        self.assertIsNotNone(res)
         self.assertTrue(on_disk.startswith(b"%PDF"))
 
     def test_non_https_override_rejected(self):

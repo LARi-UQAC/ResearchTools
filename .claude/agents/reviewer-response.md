@@ -401,6 +401,33 @@ bytes are validated by the `%PDF` magic number. A `[SCOPUS NOT FOUND — referen
 reference is never downloaded. Record any download failure (institutional access required)
 in the Step 8 summary alongside its DOI link; it does not block adding the reference.
 
+### Step 6c — Contribution grounding (extract-contributions skill)
+
+For every reference whose full text was retrieved in Step 6b, ground the confidence annotation
+(Step 3, Step 6) and the reference-introduction sentence in the paper's own stated contribution
+rather than in the Scopus abstract alone — an abstract states what a paper is about, not always
+what it contributes, and the sentence a citing author needs often lives only in the paper's own
+introduction. Read `.claude/skills/extract-contributions/SKILL.md`, then run it in single-paper
+mode on the downloaded file:
+
+```sh
+python ".claude/skills/extract-contributions/scripts/extract_contributions.py" "refs/<key>.pdf"
+```
+
+Read the returned `sentences` (verbatim contribution/novelty/result/method claims from the paper's
+own text; `kinds_found` is a sorting aid, never a verdict). When at least one sentence exists:
+- Rewrite the confidence-level sentence already placed in Step 3/Step 6 to quote or closely
+  paraphrase that verbatim sentence instead of the abstract, and re-assign the confidence level
+  (`[HIGH CONFIDENCE]` when the sentence directly supports the reviewer's specific point,
+  unchanged otherwise).
+- Rewrite the "Reference introduction check" sentence in the response paragraph (Step 3) the same
+  way, so the reader learns what the paper itself claims, not a paraphrase of its abstract.
+
+Never invent a contribution the paper's own text does not state. When the paper states no
+contribution (`status: no-contribution`) or the PDF could not be read (`status: unreadable`),
+leave the existing abstract-based sentences unchanged and flag `[CIT FULLTEXT-MISSING]` /
+`[CIT NO-CONTRIBUTION-STATED]` in the Step 8 summary instead.
+
 ### Step 7 — Generate LaTeX response letters
 
 For each reviewer (R1, R2, ...), create the file
@@ -541,6 +568,10 @@ Comments requiring manual review (target location not identified automatically):
   - R1-N: "<reference title>" -- removed; alternative used: "<alternative title>"
   - ...
 
+[CIT FULLTEXT-MISSING] / [CIT NO-CONTRIBUTION-STATED] items (if any, Step 6c):
+  - R1-N: "<reference title>" -- confidence annotation left abstract-based
+  - ...
+
 [BRACE ERROR] items (if any):
   - line N: unmatched brace in dded{}, \deleted{}, or 
 eplaced{}{}
@@ -582,6 +613,7 @@ When the user says "Execute reviewer response for [paper file]" or "Apply review
 - Found in Scopus + DOI present: auto-approved, add to paper and response letter — no user confirmation needed
 - Found in Scopus + no DOI: auto-approved, add to paper and response letter, flag `[NO DOI]` to the user in the summary
 - Not found in Scopus: remove the reference entirely; search for a validated alternative and apply the same rules
+- Every new reference's confidence annotation and reference-introduction sentence is grounded in its own downloaded full text (Step 6c, extract-contributions) whenever that text was retrieved and states a contribution — never in the abstract alone when a better source exists
 - Response letter language follows the paper's primary language
 
 **Tools:** `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `mcp__claude_ai_Consensus__search`

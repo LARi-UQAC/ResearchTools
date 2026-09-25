@@ -24,6 +24,7 @@ and the output produced. Full arguments are in `README.md`.
 | Fetch an official UQAC form PDF, validated | `/uqacform` | `uqac-forms` skill | The PDF plus its SHA-256; nothing written on refusal |
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 | Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
+| Draft, refresh, or tailor the narrative CV-FRQ / tri-agency CV to one grant competition | `/cv` | `narrative-cv-writer` agent (+ `narrative-cv`, `scopus`, `extract-contributions`, `scientific-writing` skills) | LaTeX/PDF + plain-text CV in the profile's `cv.project_dir`, durable inventory refreshed |
 | Measure LaTeX manuscript hygiene (forbidden characters, AI-usage score, word count, brace balance, citation coverage) | `/texcheck` | `latex-hygiene` skill | Hygiene report / AI-usage score / word count |
 | Ask whether the toolkit is correctly deployed to every harness, and which empty mirror cells are deliberate | `python .claude/skills/rt-observe/scripts/rt_state.py` | `rt-observe` skill | Mirror matrix (canonical definitions x harness dialects, eight states), registry integrity, repo green stamp and profile, plan progression, MCP roster, local models, vault daemon, sessions |
 | Watch that state on a page instead of reading a dump | `/rt-dashboard`, `.\rt-dashboard.ps1 -Open`, `sh ./rt-dashboard.sh --open`, `rt-dashboard.bat`, or the VS Code task | `rt-observe` skill | A loopback dashboard: the matrix as one grid per definition kind, the fan-out diagram, the plan timeline, the receipt rail and the session strip. `-DryRun` names the interpreter, the bind address and every TTL and starts nothing |
@@ -43,6 +44,7 @@ locally and free. No gateway; cloud stays on the normal subscription auth.
 | Tune a local Ollama model's context window and KV cache type for this GPU | `opt-local-vram-llm` skill (`/opt-local-vram-llm`) | measured sweep against `optimize_ollama.evaluate_rung` | Tuned `-gpu` tag, `local-model-config.json` measurement, candidate declared in `local-models.json` |
 | Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
 | Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, no daily note; single serialized writer, the outbox is the write path, not a fallback |
+| Run a nightly local-coding pipeline with no Claude Code involved: one aider process per plan, a writer model and a reviewer model that never edits code | `aider-setup` skill (daytime setup) + `aider-night.ps1`/`.bat` (the night itself, a plain `cmd` entry point) | two local Ollama tags (writer, reviewer), resolved from `model-settings.yml`, never Claude | Commits per plan step on a working branch, `audit.md`, a pushed branch with no merge; plans follow the shape R26 fixes below |
 
 The KV cache type is a daemon-wide environment variable that Ollama reads only at daemon
 start, not per request. `opt-local-vram-llm` therefore restarts the daemon once for each
@@ -95,6 +97,80 @@ Talk rendering on Windows: `paper2talk` converts a deck to PDF through **PowerPo
 (`scripts/office/soffice.py`) assumes a POSIX socket and fails here with
 `module 'socket' has no attribute 'AF_UNIX'`; `soffice` is tried first only when it is on
 `PATH`. Page images come from Poppler's `pdftoppm`, which ships with the MiKTeX install.
+
+## Plan shape
+
+**R26 - a multi-step task is planned in files, and the files have a fixed shape.**
+This is not aider-specific: written as a rule rather than left inside one harness's own
+configuration, it binds every harness that plans a multi-step task in files - Claude Code,
+Aider, Codex, Continue, Copilot - so a plan written for one reads the same as a plan written
+for another.
+
+Every planned task lives in `docs/superpowers/plans/` of its own project:
+
+| File | Max tokens | Who writes it |
+|---|---:|---|
+| `spec.md` | 8 000 | the human, or a cloud model with the human |
+| `plan1.md`, `plan2.md`, ... | 8 000 each | the plan author |
+| `progress.md` | 12 000 | the executing model, one `## <filename>` section per file |
+| `audit.md` | 12 000 | the auditing model only, never the executor |
+
+`todo/` is the archive subdirectory. A source file carries its own ceiling of **16 000
+tokens**; past it, split along a seam the code already has, never at an arbitrary line count.
+
+Three marks in `progress.md`, and only three: `- [ ]` not done, `- [x]` done with a short
+result, `- [!]` blocked with one line of reason.
+
+**Every plan step names the file it touches.** Measured twice: a step reading "add a subtract
+function" with no filename made a model create a second module instead of editing the one
+that existed; and with the harness handing over only `progress.md`, a run spent sixteen
+minutes producing nothing while the model reasoned about whether it was allowed to touch a
+file. A plan names at most **ten** files - at 16 000 tokens each, eleven files at their
+maximum fill everything the window has left.
+
+Lifecycle, which the rule also fixes: `plan<N>.md` moves to `todo/` when its own section is
+fully ticked **and** its audit is clean. `progress.md` moves to `todo/` when every section is
+ticked, unless the audit added a step back into a section, in which case it stays until that
+step is resolved. `audit.md` stays in `plans/` - it is what a person acts on next. Moving
+files is the harness's job, never the model's: the rule is exact (every box in a section is
+`[x]`) and a model asked to tidy up will eventually move the wrong file.
+
+A ticked section whose audit is **not** clean is not done - it is unproven, the same verdict
+given a phase ticked with no evidence in the `PROGRESS.md` shape `authoring-loop` and
+`thesis-to-paper` already use. An `audit.md` of zero bytes is not a clean audit, it is a
+failed one.
+
+Plan authoring itself is a cloud-model task, never a local model's: `superpowers:writing-plans`
+is the standard entry point. A local model (the aider writer, `local-coder`) executes one step
+of one plan; it does not author a plan, and this rule does not change what `local-coder` is
+invoked to do.
+
+## Shared working tree
+
+Every session working `C:\Martin Otis\OutilsLogiciels\ResearchTools` shares ONE working tree and
+ONE `.git/HEAD`. Two concrete incidents, both 2026-08-30, neither caused by a bug:
+
+- **A peer's `git checkout main` moved the branch under a running session.** Work planned for a
+  feature branch was about to be written onto `main`, and the session had no way to notice because
+  its plan asserted the branch rather than reading it.
+- **A peer's `git add -A` swept a third session's untracked files into the peer's commit.** It
+  worked and it is tested, but it reached `main` with no review or commit message of its own.
+
+Three rules for a session sharing this tree with others:
+
+- Read `.git/HEAD` as a plain FILE before any write phase, not with a git command, so it stays
+  available even to a session forbidden to invoke git.
+- On a shared tree, stage by path. `git add -A` claims files the session did not write.
+- "Another session's work appears on `main`" is ambiguous there: it may mean they landed it, or
+  that somebody else's staging swept it in. The commit that ADDED the file is how to tell.
+
+The same sharing also explains a class of false positives elsewhere, not only on `main`. The
+`Stop` memory-upkeep hook's fingerprint (`$(git rev-parse --git-dir)/claude-stop-state`) is ONE
+file per repo, so a change committed by any session can invalidate the marker another, genuinely
+quiet, session is comparing against, and that session's hook fires as if it had made the change
+itself. `rt-observe` already reads the branch from `.git/HEAD`, so the first rule above is
+observable today; the other two, and the hook fingerprint's per-session scoping, are conventions
+and code only this file and its owning hook can carry.
 
 ## LaTeX maintenance
 

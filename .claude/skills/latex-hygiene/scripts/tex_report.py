@@ -39,7 +39,12 @@ def has_defect(command: str, result: Dict) -> bool:
     if command == "aiscan":
         return result.get("risk_score", 0) >= 10
     if command == "wc":
-        return False
+        # A plain word count and a page estimate are informational and never
+        # trip --strict. A --section count given an explicit --limit is the
+        # one exception, because the caller named a cap and a grant form
+        # enforces it. over_limit is absent from every other wc result, so
+        # this stays False for the three pre-existing wc shapes.
+        return bool(result.get("over_limit"))
     if command == "abstract":
         return not result.get("abstract_found", True)
     if command == "braces":
@@ -93,7 +98,22 @@ def print_text(command: str, result: Dict) -> None:
             print("  %-26s weight=%-6s count=%d" % (name, sig["weight"], sig["count"]))
         print("pronoun hits: %d | list environments: %d" % (len(result["pronouns"]), len(result["lists"])))
     elif command == "wc":
-        if "rows" in result:
+        if "refused" in result:
+            if result["refused"]:
+                print("REFUSED:", result["reason"])
+                if result["candidates"]:
+                    print("section titles available:")
+                    for c in result["candidates"]:
+                        print("  -", c)
+            else:
+                kind = "accepted" if result["accepted"] else "source"
+                print("section: %s" % result["section"])
+                print("file:    %s" % result["file"])
+                print("words (%s): %d" % (kind, result["words"]))
+                if result["limit"] is not None:
+                    verdict = ("OVER by %d" % result["overflow"]) if result["over_limit"] else "within cap"
+                    print("cap: %d -> %s" % (result["limit"], verdict))
+        elif "rows" in result:
             print("%-26s %7s %7s %7s %7s" % ("section", "before", "after", "delta", "pct"))
             for row in result["rows"]:
                 pct = "n/a" if row["pct"] is None else "%.1f%%" % row["pct"]

@@ -54,6 +54,19 @@ except ImportError:  # pragma: no cover - optional dependency
     _PWError = Exception
     _PW_OK = False
 
+# Optional stealth layer, same degrade-with-a-hint contract as Playwright above.
+# Measured 2026-09-17: ScienceDirect answers a plain Playwright Chromium with a
+# Cloudflare interstitial that never clears, while IEEE and Taylor & Francis
+# pass. The single init script this module already injected is not enough, since
+# the challenge also reads the CDP traces, the permissions shim and the plugin
+# list. playwright-stealth patches that whole set in one place.
+try:
+    from playwright_stealth import Stealth
+    _STEALTH_OK = True
+except ImportError:  # pragma: no cover - optional dependency
+    Stealth = None
+    _STEALTH_OK = False
+
 PDF_MAGIC = b"%PDF"
 MAX_PDF_BYTES = 100 * 1024 * 1024  # 100 MB cap, matching download_pdf.py
 NAV_TIMEOUT_S = 60                 # per-navigation timeout
@@ -62,6 +75,16 @@ ASSIST_WAIT_S = 45                 # headed: time for a human to accept cookies 
 #                                    solve a visible challenge; polled, breaks
 #                                    the instant a PDF is captured
 POLL_S = 1.5                       # poll interval while waiting for the PDF
+
+# Persistent browser profile. A fresh context starts with no cookies, no history
+# and no local storage, which is itself a bot signal, and it throws away the
+# clearance cookie the previous paper just earned. Reusing one profile lets a
+# solved challenge and an institutional session carry across papers in a run and
+# across runs. The directory is created on first use and is disposable: deleting
+# it costs only the stored cookies. It is NOT placed in the repository, since it
+# holds session cookies for the operator's institutional access.
+BROWSER_PROFILE_DIR = os.path.join(
+    os.path.expanduser("~"), ".claude", "scopus-browser-profile")
 
 # A desktop Chrome profile string; a genuine engine drives it, so this only sets
 # the advertised UA.
@@ -392,13 +415,37 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
         except Exception:  # pragma: no cover
             pass
 
+    # The stealth wrapper hooks the Playwright object itself, so every context
+    # and page it creates is patched. Without the package the plain driver is
+    # used and the reason is logged once: an absent optional dependency degrades
+    # the tier, it never fails the run (R8, R11).
+    _pw_cm = None
+    if _STEALTH_OK:
+        try:
+            _pw_cm = Stealth().use_sync(sync_playwright())
+        except Exception as exc:  # pragma: no cover - wrapper/version mismatch
+            logger.info("[BROWSER] stealth wrapper unusable (%s): plain driver", exc)
+            _pw_cm = None
+    if _pw_cm is None:
+        if not _STEALTH_OK:
+            logger.info("[BROWSER] playwright-stealth not installed: running the plain "
+                        "driver, which Cloudflare-gated publishers may refuse")
+        _pw_cm = sync_playwright()
+
     try:
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(
+        with _pw_cm as pw:
+            # A persistent context returns the context directly; there is no
+            # separate browser object to close, which is why the cleanup below
+            # closes the context instead.
+            os.makedirs(BROWSER_PROFILE_DIR, exist_ok=True)
+            context = pw.chromium.launch_persistent_context(
+                BROWSER_PROFILE_DIR,
                 headless=not headed,
+                accept_downloads=True,
+                user_agent=BROWSER_UA,
                 args=["--disable-blink-features=AutomationControlled"])
+            browser = context  # closed in the finally below
             try:
-                context = browser.new_context(accept_downloads=True, user_agent=BROWSER_UA)
                 # Reduce the automation fingerprint: Cloudflare/Akamai re-challenge
                 # every navigation when navigator.webdriver is true.
                 try:

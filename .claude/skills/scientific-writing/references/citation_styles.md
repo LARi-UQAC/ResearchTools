@@ -12,6 +12,20 @@
 > original bibliography format: inline `\bibitem` (`thebibliography`) or a separate BibTeX `.bib` file,
 > and do not convert one format to the other. The generic AMA/Vancouver/APA/Chicago tables below
 > remain a reference for other venues.
+>
+> **Ground that descriptive sentence in the cited paper's own text, not its abstract.** An abstract
+> states what a paper is about; it does not always state what the paper contributes, and the
+> sentence a citing author needs ("to the best of our knowledge...", "unlike previous work,
+> we...") often lives only in the introduction's contributions paragraph. When the cited paper's
+> full text is present in `refs/` (retrieved by `download_pdf.py`), run
+> `.claude/skills/extract-contributions/SKILL.md` — single-paper mode for one new reference,
+> `mine` mode for a whole corpus — and draw the descriptive sentence from its returned verbatim
+> `sentences`, never inventing a claim the paper's own text does not support. Absent full text, or
+> when the paper states no contribution (`status: no-contribution`), fall back to the abstract and
+> flag `[CIT FULLTEXT-MISSING]` / `[CIT NO-CONTRIBUTION-STATED]` in the caller's report — never
+> silently substitute one source for the other. The calling agent (`scopus-researcher`,
+> `litreview-updater`, `reviewer-response`, or an auditor in `validate` mode) is what invokes the
+> skill and routes its flags; this override states the citing rule once for all of them.
 
 ## Overview
 

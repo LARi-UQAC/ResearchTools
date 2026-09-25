@@ -8,6 +8,7 @@ in `.claude/CLAUDE.md` - read it before producing academic content.
 Specialized custom agents (invoke from the agents panel, `/agent` in Copilot
 CLI, or `copilot --agent <name>`):
 
+- `abstract-writer`: see `.github/agents/abstract-writer.agent.md` (full definition in `.claude/agents/abstract-writer.md`)
 - `authoring-loop`: see `.github/agents/authoring-loop.agent.md` (full definition in `.claude/agents/authoring-loop.md`)
 - `bib-cleaner`: see `.github/agents/bib-cleaner.agent.md` (full definition in `.claude/agents/bib-cleaner.md`)
 - `cover-paper`: see `.github/agents/cover-paper.agent.md` (full definition in `.claude/agents/cover-paper.md`)
@@ -15,6 +16,7 @@ CLI, or `copilot --agent <name>`):
 - `litreview-updater`: see `.github/agents/litreview-updater.agent.md` (full definition in `.claude/agents/litreview-updater.md`)
 - `local-coder`: see `.github/agents/local-coder.agent.md` (full definition in `.claude/agents/local-coder.md`)
 - `local-writer`: see `.github/agents/local-writer.agent.md` (full definition in `.claude/agents/local-writer.md`)
+- `narrative-cv-writer`: see `.github/agents/narrative-cv-writer.agent.md` (full definition in `.claude/agents/narrative-cv-writer.md`)
 - `paper-auditor`: see `.github/agents/paper-auditor.agent.md` (full definition in `.claude/agents/paper-auditor.md`)
 - `reviewer-response`: see `.github/agents/reviewer-response.agent.md` (full definition in `.claude/agents/reviewer-response.md`)
 - `scopus-auditor`: see `.github/agents/scopus-auditor.agent.md` (full definition in `.claude/agents/scopus-auditor.md`)

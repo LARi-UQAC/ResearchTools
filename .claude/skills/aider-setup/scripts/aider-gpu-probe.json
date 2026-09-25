@@ -1,0 +1,157 @@
+{
+  "_purpose": "Everything aider-gpu-probe.py reads at run time. No number, path, model tag or regex is written in the script itself, and a missing key is named rather than defaulted. Edit this file, not the code: a student with different models or a different card changes data only.",
+
+  "_reading_the_result": "The gpu% column is offloaded layers, read from the Ollama server log, and it is the only honest split. The mem% column is size_vram/size from /api/ps: that is a MEMORY ratio, and a run with zero layers on the GPU still shows a few percent there because the compute buffers and a projector live in VRAM. Never quote mem% as the GPU share.",
+
+  "ollama": {
+    "host": "http://127.0.0.1:11434",
+    "_host_comment": "The daemon's loopback address. Left as an explicit key because a student running Ollama in a container or on another port changes it here.",
+
+    "connect_timeout_s": 30,
+    "_connect_comment": "For the short calls: /api/tags, /api/ps, and the eviction request. Eviction itself returns in about 1.1 s, measured 2026-09-03, so 30 s is a wide margin rather than an estimate of the work.",
+
+    "load_timeout_s": 900,
+    "_load_comment": "For the first generate, which is what actually loads the weights. A model that does not fit in VRAM is read from disk and run on the CPU, and that is slow: this ceiling has to cover the worst combination in the sweep, not the best.",
+
+    "decode_timeout_s": 600,
+    "_decode_comment": "For the second generate, the one that is timed. On a CPU-only load a few dozen tokens can take minutes.",
+
+    "show_timeout_s": 60,
+    "_show_comment": "For /api/show, read once per model before the sweep to learn its native context maximum.",
+
+    "keep_alive": "5m",
+    "_keep_alive_comment": "Sent explicitly on every request. A client's keep_alive overrides the daemon's own default, and on a machine where that default is -1 (forever) an omitted value would leave each swept model resident for the rest of the session.",
+
+    "think": false,
+    "_think_comment": "A reasoning model asked to think spends the measured window on reasoning tokens, which changes what eval_count counts. Off, so the decode figure describes the same work for every tag.",
+
+    "evict_poll_interval_s": 1.0,
+    "evict_timeout_s": 120,
+    "_evict_comment": "After asking for an unload, /api/ps is polled until it reports nothing resident. The effect is checked rather than the request's success: two large models briefly co-resident is enough to stop a laptop, and that has happened.",
+
+    "post_evict_settle_s": 8,
+    "_settle_comment": "Measured 2026-09-03: immediately after an eviction the operating system reported 4.4 GB free and, seconds later, 17.6 GB. Freed memory is reported late, so a reading taken at once is a false alarm."
+  },
+
+  "server_log": {
+    "candidate_paths": [
+      "{{LOCALAPPDATA}}/Ollama/server.log",
+      "{{HOME}}/.ollama/logs/server.log",
+      "{{HOME}}/AppData/Local/Ollama/server.log",
+      "/var/log/ollama/server.log"
+    ],
+    "_paths_comment": "Tried in order, the first that exists winning; when none exists the script refuses and names every path it tried. Placeholders are substituted at run time so no personal path is written here. The Windows location is the first entry because that is where the daemon writes by default there.",
+
+    "read_delay_s": 2.0,
+    "_read_delay_comment": "The generate call returns before the daemon has finished writing its load lines. Without this pause the tail is read too early and the load looks silent.",
+
+    "max_tail_bytes": 4000000,
+    "_max_tail_comment": "A ceiling on how much of the log is read back for one load. The file is append-only and holds every load since the daemon started (hundreds of kilobytes within a day), which is why only the bytes appended after this load's own offset are parsed: parsing the whole file finds the LAST load, which may be someone else's."
+  },
+
+  "log_patterns": {
+    "_comment": "Regexes, not code, so a change in the daemon's log format is a data edit. Each list is tried in order and the FIRST pattern that matches at all is the one used, so a second entry is a fallback for another version rather than a second reading of the same load. Sample lines are quoted beside each.",
+
+    "offload": [
+      "load_tensors:\\s+offloaded\\s+(\\d+)/(\\d+)\\s+layers to GPU"
+    ],
+    "_offload_sample": "load_tensors: offloaded 0/66 layers to GPU  -- group 1 offloaded, group 2 total. This is the measurement the script exists for.",
+
+    "kv_cache_mib": [
+      "llama_kv_cache:\\s*size\\s*=\\s*([0-9.]+)\\s*MiB",
+      "llama_kv_cache_unified:[^\\n]*?size\\s*=\\s*([0-9.]+)\\s*MiB"
+    ],
+    "_kv_cache_sample": "llama_kv_cache: size = 8704.00 MiB (262144 cells, 16 layers, 1/1 seqs), K (q8_0): 4352.00 MiB, V (q8_0): 4352.00 MiB -- a hybrid attention layout prints one such line PER CACHE, so they are summed. See log_selection.",
+
+    "compute_buffer_pool": [
+      "sched_reserve:\\s*(\\S+) compute buffer size\\s*=\\s*([0-9.]+)\\s*MiB",
+      "(\\S+) compute buffer size\\s*=\\s*([0-9.]+)\\s*MiB"
+    ],
+    "_compute_buffer_sample": "sched_reserve: CUDA0 compute buffer size = 1959.73 MiB, and sched_reserve: CUDA_Host compute buffer size = 276.02 MiB. Group 1 is the POOL and group 2 the MiB, because the pool is what makes the figure mean anything: CUDA0 competes for VRAM, CUDA_Host lives in system RAM and competes with whatever weights were spilled there. They are reported as two columns and never added. The second pattern is the fallback for a backend that does not print the sched_reserve prefix.",
+
+    "n_threads": [
+      "n_threads\\s*=\\s*(\\d+)"
+    ],
+    "_n_threads_sample": "cmn init: llama threadpool init, n_threads = 10 -- how many CPU threads the run was given, which is what a CPU-only load is limited by. n_threads_batch does not match this pattern.",
+
+    "n_ctx": [
+      "llama_context:\\s*n_ctx\\s*=\\s*(\\d+)"
+    ],
+    "_n_ctx_sample": "llama_context: n_ctx = 262144 -- the window the daemon actually GRANTED. A num_ctx above what the daemon can place is clamped rather than refused, so a measurement whose granted window is not the requested one is rejected instead of recorded. This is the DEFAULT outcome on a small card, not a corner case: observed 2026-09-03 on a 6 GB laptop-class card, a tag whose own name asserts a maximum context and whose Modelfile bakes num_ctx 262144 was loaded and /api/ps reported context_length 17772. The daemon sized it down to what fit, returned success, and logged no error. Nothing but this line says so.",
+
+    "kv_cache_type": [
+      "OLLAMA_KV_CACHE_TYPE:([^\\s\\]]+)"
+    ],
+    "_kv_cache_type_sample": "Read out of the env=\"map[...]\" blob of the last 'server config' line. This is the only proof that a daemon restart took a new KV cache type; the restart's exit code is not.",
+
+    "fit_attempt": [
+      "common_params_fit_impl:\\s*id=\\d+,\\s*n_layer=\\s*(\\d+),[^\\n]*?mem=\\s*(\\d+)\\s*MiB"
+    ],
+    "_fit_attempt_sample": "common_params_fit_impl: id=0, n_layer= 1, n_part= 0, overflow_type=4, mem= 4302 MiB -- the allocator's own failed attempts, printed just before its verdict. They are what turns a row reading 0 layers into an explanation: even one layer wanted more memory than the card had free."
+  },
+
+  "log_selection": {
+    "kv_cache_mib": "sum",
+    "_kv_cache_mib_comment": "Summed, because a hybrid attention layout prints one line per cache and taking the first under-reports the cache by the size of every other one. Allowed: sum, max, first, last.",
+
+    "compute_buffer_mib": "split",
+    "_compute_buffer_mib_comment": "Reported as TWO figures, device and host, rather than one. Only the device pool competes for VRAM; the host pool lives in system RAM and competes with the weights that were spilled there, so adding 1959.73 MiB of VRAM to 276.02 MiB of host RAM produces a number describing no real constraint. 'max' would at least be the figure that has to fit, but it discards the host figure, which is the second half of the story on a machine that is paging. Allowed: split (default), sum, max, first, last -- the four combining rules are kept for anyone who wants one column, and several device pools (more than one card) are summed together within their own side either way.",
+
+    "host_pool_patterns": ["(?i)host", "(?i)^cpu"],
+    "_host_pool_comment": "A pool whose name matches any of these is system RAM; everything else is a device pool. Data rather than code because a backend this was never run against names its pools differently: ROCm, Vulkan, Metal and SYCL builds each have their own spelling. A pool nobody classified is counted as a device pool, which is the conservative reading when the question is what has to fit on the card."
+  },
+
+  "gpu": {
+    "nvidia_smi": "nvidia-smi",
+    "_nvidia_smi_comment": "Resolved on PATH and then invoked by the resolved path, because a bare name fails on Windows where the launcher carries an extension. Absent, the script refuses: the skip predicate and every VRAM figure depend on it.",
+
+    "query_timeout_s": 30,
+    "_query_timeout_comment": "nvidia-smi answers in well under a second on a healthy driver; this ceiling exists so a wedged driver stops the run instead of hanging it."
+  },
+
+  "measurement": {
+    "warmup_prompt": "hi",
+    "warmup_num_predict": 1,
+    "_warmup_comment": "The first request exists to LOAD the model, not to measure it. One token, so the load dominates and nothing here is mistaken for a throughput figure.",
+
+    "decode_prompt": "Write one short paragraph about how a compiler turns source code into machine code.",
+    "decode_num_predict": 128,
+    "_decode_comment": "The second request is the timed one. Throughput is eval_count / (eval_duration / 1e9) from its response: eval_* is DECODE. prompt_eval_* is prefill, which is parallel and fast, and mixing the two reports a number belonging to neither. 128 tokens is long enough that per-request overhead does not dominate and short enough that a CPU-only combination still finishes."
+  },
+
+  "skip": {
+    "kv_bytes_per_token": 34816,
+    "_kv_bytes_comment": "Measured 2026-09-03: a KV cache of 8704 MiB at a 262144-token window, K and V both at q8_0, which is 34 KiB per token. Used ONLY to skip a combination whose cache alone cannot fit; every KV figure the table reports is read back from the server log. This value depends on the model's layer count and on the KV cache type, so it is a screening estimate and not a claim about any particular tag.",
+
+    "vram_headroom_mib": 1024,
+    "_headroom_comment": "VRAM reserved for everything that is not KV cache: the weights, the compute buffers and the desktop compositor. Measured 2026-09-03 on a 6 GB laptop-class card, roughly 1 GB was already held before any model loaded. A combination whose predicted KV cache alone exceeds (total VRAM - this) cannot place a single layer, so it is skipped rather than run for minutes on the CPU."
+  },
+
+  "safety": {
+    "min_free_ram_mib": 8192,
+    "_min_free_comment": "Chosen by the operator, not measured: a model that does not fit in VRAM is run from system RAM instead, so a sweep started on a machine with little free RAM is what stops it. Raise this above the largest model in the list to be strict; lower it to sweep small models on a busy machine.",
+
+    "free_ram_reread_delay_s": 10,
+    "_reread_comment": "A reading below the floor is slept on and taken again before it is believed, for the same reason post_evict_settle_s exists: freed memory is reported late, and one early reading refuses to start on a machine that is fine."
+  },
+
+  "models": [
+    "qwen2.5-coder:7b-gpu",
+    "ornith:9b-gpu",
+    "qwen3.8:latest",
+    "gemma4:31b-maxctx"
+  ],
+  "_models_comment": "The comparison this script is for is between MODELS, not between contexts of one model. Weights dominate: a 17 GB four-bit model over 66 layers is about 260 MB per layer, so on a 6 GB card roughly 19 layers is the ceiling even at zero context, while a 4.7 GB tag fits whole. The list is ordered small to large so the first rows come back quickly. REPLACE IT with the tags you actually have. Two of these were tuned on the machine this was written on and you will not have them, so this list is expected to fail on a new machine: run `ollama list` and paste your own. A tag that is not installed is a REFUSAL, not a warning, and the message names the tag, lists what is installed, and repeats that instruction.",
+
+  "contexts": [8192, 32768, 65536, 131072, 262144],
+  "_contexts_comment": "Rungs, not a range: each is a separate load. A rung above a model's own maximum is skipped before it is attempted, because Ollama clamps rather than refuses and the row would otherwise describe a window that was never granted.",
+
+  "ranking": {
+    "order": [
+      ["layers_fraction", "desc"],
+      ["decode_tps", "desc"],
+      ["num_ctx", "desc"]
+    ],
+    "_order_comment": "Most significant first. The default answers 'what actually runs on the GPU, and among those what is fastest, and among those what gives the most context'. An operator who needs context above all else moves num_ctx first. A row missing a field sorts last on it whatever the direction, so an unmeasured value never wins by being absent."
+  }
+}

@@ -45,6 +45,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import rt_openobserve  # noqa: E402
 from rt_redact import home_tilde  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -123,6 +124,16 @@ class Runner:
                                effect check. None means verification is
                                unavailable and SAYS so rather than passing.
         which, run, clock, ident, profile_fn (callable): injected seams
+        remote_sink (callable): payload -> (ok, detail), the journal-durable
+                                plan's second sink (Phase 2). None (the
+                                default, and every call site before 2026-09-24)
+                                means no remote push is attempted and the
+                                returned payload carries no "remote" key at
+                                all - additive only, so every prior caller and
+                                test is unaffected. The append-only JSONL below
+                                is written regardless: it is the fallback the
+                                plan asks to survive a sink outage, not an
+                                alternative to it.
 
     Outputs:
         Runner
@@ -131,7 +142,7 @@ class Runner:
 
     def __init__(self, repo_root, home, values, catalog=None, section_fn=None,
                  which=None, run=None, clock=None, ident=None, profile_fn=None,
-                 settings_path=None):
+                 settings_path=None, remote_sink=None):
         self.repo_root = Path(repo_root)
         self.home = Path(home)
         self.values = dict(values)
@@ -144,6 +155,7 @@ class Runner:
         self._profile_fn = profile_fn or self._active_profile
         self.settings_path = (Path(settings_path) if settings_path
                               else self.home / ".claude" / "settings.json")
+        self.remote_sink = remote_sink
         self._by_id = {a["id"]: a for a in self.catalog["actions"]}
 
     # -- resolution -----------------------------------------------------
@@ -477,7 +489,50 @@ class Runner:
             # what actually ran. The action still happened; say the RECORD
             # failed rather than claiming the action did (R8).
             payload["log_error"] = "the action log could not be appended: %s" % exc
+        # The journal-durable plan's second sink (Phase 2), additive only: the
+        # JSONL line above is written whether or not this is configured, which
+        # is what makes it the fallback the plan asks to survive an OpenObserve
+        # outage rather than a second required write. No remote_sink (the
+        # default) means no "remote" key at all, so every call site that
+        # predates 2026-09-24 sees an unchanged payload.
+        if self.remote_sink is not None:
+            try:
+                ok, detail = self.remote_sink(payload)
+            except Exception as exc:                      # noqa: BLE001
+                ok, detail = False, ("the remote sink raised: %s: %s"
+                                     % (type(exc).__name__, exc))
+            payload["remote"] = {"ok": ok, "detail": detail}
         return payload
+
+
+def build_remote_sink(oo_values, home, timeout_s, opener=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Wire the audit stream's second sink from an already-loaded OpenObserve
+        configuration. Kept pure (no config file, no environment read) so the
+        undeclared/incomplete-block distinction stays owned by
+        rt_openobserve.load_oo_config and its one caller in rt_state.py.
+
+    Inputs:
+        oo_values (dict or None): rt_openobserve.load_oo_config's first return
+                                  value; None means disabled and this function
+                                  answers None, changing no caller's behaviour
+        home (Path): redaction target, applied inside send_json (R21)
+        timeout_s (float): explicit timeout (R10)
+        opener (callable): urllib.request.urlopen look-alike, for tests
+
+    Outputs:
+        sink (callable) or None
+    --------------------------------------------------------------------------
+    """
+    if oo_values is None:
+        return None
+
+    def sink(payload):
+        return rt_openobserve.send_json(oo_values, "audit", [payload], home,
+                                        timeout_s, opener=opener)
+    return sink
 
 
 def runner_values(config, config_value):
@@ -504,7 +559,8 @@ def _cli_runner(args):
 
     return Runner(repo_root, home,
                   runner_values(config, rt_state.config_value),
-                  section_fn=section_fn)
+                  section_fn=section_fn,
+                  remote_sink=rt_state.audit_remote_sink(config, home))
 
 
 def main(argv=None):

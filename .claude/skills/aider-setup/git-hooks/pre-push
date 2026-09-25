@@ -1,0 +1,16 @@
+#!/bin/sh
+# Refuse a direct push to a protected branch.
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one line per ref.
+
+refs=$(cat)
+
+echo "$refs" | while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      echo "pre-push refused: direct push to '$remote_ref'." >&2
+      echo "  Push your own branch, then open a pull request." >&2
+      exit 1
+      ;;
+  esac
+done || exit 1
+exit 0

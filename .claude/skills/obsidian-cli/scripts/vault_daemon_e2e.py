@@ -303,6 +303,7 @@ def check_residency(with_eviction: bool) -> dict:
 
 
 def main(argv=None) -> int:
+    outbox_io.configure_streams()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yes", action="store_true",
                         help="authorise writes to the real vault; without it "

@@ -25,6 +25,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+# outbox_io imports this module lazily, inside flush_one, so importing it here
+# at module level does not close a cycle.
+import outbox_io  # noqa: E402
+
 STATE_PENDING = "PENDING"
 STATE_WRITE = "WRITE"
 STATE_EDGE = "EDGE"       # consolidation edge appended to an existing note
@@ -223,13 +231,19 @@ def undo_since(vault, records: list, since: int, write: bool = False) -> dict:
 
 
 def main(argv: "list[str] | None" = None) -> int:
+    outbox_io.configure_streams()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--journal", required=True)
     parser.add_argument("--vault", default=None)
     parser.add_argument("--list", action="store_true",
-                        help="print every record as JSON, newest last")
+                        help="print EVERY record as JSON, newest last, PENDING "
+                             "included; its positions are not --undo indices")
     parser.add_argument("--undo", metavar="INDEX", default=None,
-                        help="index into --list, or 'last'; dry-run without --yes")
+                        help="index into the UNDOABLE records (state WRITE, "
+                             "EDGE or SNAPSHOT), which is what --count sizes; "
+                             "PENDING records are NOT in this numbering, so it "
+                             "is not the position in --list. Or 'last'. "
+                             "Dry-run without --yes")
     parser.add_argument("--undo-since", metavar="INDEX", type=int, default=None,
                         dest="undo_since",
                         help="undo every record from INDEX to the end, newest "
@@ -272,7 +286,14 @@ def main(argv: "list[str] | None" = None) -> int:
     try:
         entry = writes[-1] if args.undo == "last" else writes[int(args.undo)]
     except (ValueError, IndexError):
-        print(f"[JOURNAL] no record at index {args.undo}", file=sys.stderr)
+        # Name the size of the set being indexed. Measured 2026-09-18: the bare
+        # message sent a caller looking for a cleared or wrong journal, when the
+        # index was simply taken from --list, which counts PENDING records too.
+        print(f"[JOURNAL] no record at index {args.undo}: there are "
+              f"{len(writes)} undoable records (0..{len(writes) - 1}), the set "
+              f"--count sizes. --list prints {len(records)} records including "
+              f"PENDING and its positions are NOT --undo indices.",
+              file=sys.stderr)
         return 1
     if not args.vault:
         print("[JOURNAL] --vault is required to undo", file=sys.stderr)

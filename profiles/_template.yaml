@@ -32,6 +32,13 @@ author:
     responsible_name: "<name as it appears in a form field>"
     lab_acronym: "<LAB>"
 
+# Where this profile's narrative-CV inventory and per-competition drafts
+# live (wired consumer: narrative-cv). Never inside ResearchTools (R7).
+# Drop the whole block if you never draft a CV-FRQ / tri-agency CV: the
+# skill then refuses to run rather than guessing a location.
+cv:
+  project_dir: "<absolute path to your own external CV project folder>"
+
 scopus:
   subject_areas:
     primary: []                # 1-2 Scopus SUBJAREA codes that anchor your field

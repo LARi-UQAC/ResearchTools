@@ -66,3 +66,16 @@ exactly what that guard exists to stop.
 Live MCP connection state exists on no file on disk, so the roster read from configuration is
 reported as *configured, liveness unavailable* unless the `claude` binary is on PATH. That is
 stated on screen rather than blanked.
+
+## The optional journal (2026-09-24)
+
+Two more panels, both absent by default and both additive: an identity/account-to-container
+layer in PostgreSQL (`rt_store.py`, the only module that knows postgres exists) and a
+trace/audit journal in OpenObserve (`rt_openobserve.py`, the only module that knows it exists;
+also a second sink beside the existing `~/.claude/rt-state-actions.jsonl`, which remains the
+fallback). Neither is required: with no `postgres`/`openobserve` block declared in
+`observe-config.json`, every panel above is unaffected and the two new ones report
+`unavailable` with a named reason. Full design, the store split rationale, and the known
+limitations (no RBAC in OpenObserve's open-source edition, its 5-hour silent ingest window, and
+identifier spoofing across containers) are in
+[docs/rt-observe.md](../../../docs/rt-observe.md#the-optional-journal-identity-traces-audit).

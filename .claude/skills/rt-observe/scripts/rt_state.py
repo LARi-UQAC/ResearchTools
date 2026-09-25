@@ -25,13 +25,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import adapters  # noqa: E402
 import collect_graph  # noqa: E402
+import collect_identity  # noqa: E402
 import collect_mirrors  # noqa: E402
 import collect_progress  # noqa: E402
 import collect_registry  # noqa: E402
 import collect_repo  # noqa: E402
 import collect_services
+import collect_traces  # noqa: E402
 import collect_usage  # noqa: E402
 import rt_actions  # noqa: E402
+import rt_openobserve  # noqa: E402
 import rt_server  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -177,6 +180,17 @@ def section_builders(repo_root=None, home=None, config=None):
             "the usage scan",
             lambda: collect_usage.collect(
                 adapters.AdapterContext(repo_root, home, config, now)))),
+        # Phase 2/3 of the journal-durable plan (2026-09-24). Both are
+        # additive, optional-by-default sections: with no 'postgres' or
+        # 'openobserve' block in observe-config.json they report unavailable
+        # with a named reason, and every section above is untouched (the
+        # acceptance test for that is test_rt_persistence_invariant.py).
+        ("identity", lambda now: _guarded(
+            "the identity/audit-mapping layer",
+            lambda: collect_identity.collect(repo_root, home, config, now=now))),
+        ("traces", lambda now: _guarded(
+            "the trace journal",
+            lambda: collect_traces.collect(repo_root, home, config, now=now))),
     ))
 
 
@@ -378,6 +392,39 @@ def _ttls(config):
             for section, key in rt_server.SECTION_TTL_KEY.items()}
 
 
+def audit_remote_sink(config, home, err=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the action-audit second sink (Phase 2), or None. Owns the
+        absent/broken distinction: an undeclared 'openobserve' block is the
+        default, silent, zero-service state; a DECLARED but incomplete one is
+        a real misconfiguration and is reported once here rather than raised,
+        because an optional layer must never stop the primary action runner
+        from starting (R8).
+
+    Inputs:
+        config (dict): parsed observe-config.json
+        home (Path): redaction target (R21)
+        err (stream): where a misconfiguration warning is printed once
+
+    Outputs:
+        sink (callable) or None
+    --------------------------------------------------------------------------
+    """
+    err = err or sys.stderr
+    try:
+        values, reason = rt_openobserve.load_oo_config(config)
+    except rt_openobserve.OpenObserveError as exc:
+        err.write("rt-observe: the OpenObserve audit sink is disabled: %s\n"
+                  % exc)
+        return None
+    if values is None:
+        return None
+    timeout_s = config_value(config, "timeouts_seconds", "openobserve_ingest")
+    return rt_actions.build_remote_sink(values, home, timeout_s)
+
+
 def action_runner(args, config, cache, builders, clock):
     """
     --------------------------------------------------------------------------
@@ -401,12 +448,13 @@ def action_runner(args, config, cache, builders, clock):
         cache.invalidate(name)
         return builders[name](clock())
 
+    home = Path(args.home) if args.home else Path.home()
     try:
         return rt_actions.Runner(
-            Path(args.repo_root or REPO_ROOT),
-            Path(args.home) if args.home else Path.home(),
+            Path(args.repo_root or REPO_ROOT), home,
             rt_actions.runner_values(config, config_value),
-            section_fn=section_fn, clock=clock)
+            section_fn=section_fn, clock=clock,
+            remote_sink=audit_remote_sink(config, home))
     except rt_actions.ActionsError:
         return None
 

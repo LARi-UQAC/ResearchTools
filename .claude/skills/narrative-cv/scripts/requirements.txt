@@ -1,0 +1,15 @@
+# narrative-cv skill.
+#
+# PyYAML: the inventory (cv_inventory.py) and the active profile's author
+# identity (cv_common.py) are both YAML, read with yaml.safe_load - never
+# yaml.load, which can construct Python objects out of a data file.
+# pypdf: page-count check against the FRQ/tri-agency 6/5-page cap
+# (cv_build.py check_page_budget).
+#
+# Versions checked here with `pip-audit -r requirements.txt --strict` on
+# 2026-09-25. pypdf 6.15.0, pinned elsewhere in this repo (paper2talk) as of
+# its own last audit, is NOT reused here: this run's audit found
+# PYSEC-2026-3910, PYSEC-2026-3911 and PYSEC-2026-3913 against it, fixed in
+# 6.16.0/6.16.1, so this skill pins 6.16.1 instead.
+PyYAML==6.0.3
+pypdf==6.16.1

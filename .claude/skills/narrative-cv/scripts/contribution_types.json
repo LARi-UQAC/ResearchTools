@@ -1,0 +1,96 @@
+{
+  "_provenance": "Categories, section titles, and limits transcribed 2026-09-25 from CV-FRQ_instructions.pdf (FRQ, Juillet 2026) and confirmed structurally identical to the tri-agency CIHR/NSERC/SSHRC \"CV commun des trois organismes\" (sshrc-crsh.canada.ca instructions page, fetched 2026-09-25). Data, not code (R6): the agent's judgment picks a category per item, this file only enumerates the closed set so a category name cannot drift into a typo.",
+
+  "sections": {
+    "1": {
+      "id": "parcours_competences",
+      "title_fr": "Parcours et compétences",
+      "title_en": "Career and skill set",
+      "title_fr_tri_agency": "Déclaration personnelle",
+      "max_items": null,
+      "note": "Free prose. No item cap; length shares the total page budget with sections 2 and 3."
+    },
+    "2": {
+      "id": "contributions_experiences",
+      "title_fr": "Contributions et expériences les plus importantes",
+      "title_en": "Most significant contributions and experiences",
+      "max_items": 10,
+      "note": "Up to 10 items, each with: description, role played, date/period, and at least one clientele tag."
+    },
+    "3": {
+      "id": "supervision_mentorat",
+      "title_fr": "Activités de supervision et de mentorat",
+      "title_en": "Supervision and mentoring activities",
+      "max_items": null,
+      "note": "Free prose or list. May be marked s.o. / N/A with one short sentence if genuinely not applicable."
+    }
+  },
+
+  "page_budget": {
+    "fr": 6,
+    "en": 5,
+    "unit": "pages",
+    "note": "Hard cap per CV-FRQ_instructions.pdf and the tri-agency page. Appendix sections a specific competition may require are excluded from this cap."
+  },
+
+  "clienteles": [
+    {"id": "milieu_academique", "label_fr": "milieu académique", "label_en": "academic community"},
+    {"id": "milieu_pratique", "label_fr": "milieu de pratique", "label_en": "practitioner community"},
+    {"id": "grand_public", "label_fr": "grand public", "label_en": "general public"}
+  ],
+
+  "portal_variants": {
+    "frq_old_portal": {
+      "label": "FRQnet - ancien portail (fichier PDF joint)",
+      "output": "pdf",
+      "font": "Times New Roman",
+      "font_size_pt": 12,
+      "line_spacing": "single",
+      "margins_cm": 2,
+      "header": "candidate full name",
+      "footer": "document title",
+      "pagination": true,
+      "max_size_mb": 2,
+      "filename_rule": "NOM_XXXXX1234_Titre.pdf (max 50 chars, no accent, no space, no special char, one dot before the extension)",
+      "source": "normes_presentation.pdf (FRQ, 2025-09-23)"
+    },
+    "frq_new_portal": {
+      "label": "FRQnet - Espace demande (section CV-FRQ, saisie directe)",
+      "output": "plain_text",
+      "note": "No PDF: content is typed/pasted directly into the portal's CV-FRQ web fields. This skill still emits a plain-text companion for that paste-in."
+    },
+    "tri_agency": {
+      "label": "CV des trois organismes (CIHR/NSERC/SSHRC, gabarit propre)",
+      "output": "pdf",
+      "font": "Arial",
+      "font_size_pt": 12,
+      "line_spacing": "single (minimum)",
+      "margins_cm": 2,
+      "max_size_mb": 5,
+      "note": "True Arial is not a standard LaTeX font; the build substitutes Helvetica (helvet/sans-serif default), which is visually close but not byte-identical. Stated rather than silently approximated (R14).",
+      "source": "sshrc-crsh.canada.ca tri-agency CV instructions page, fetched 2026-09-25"
+    }
+  },
+
+  "categories": [
+    {"id": "publications", "label_fr": "Publications (articles, communications, monographies, rapports, affiches, soumis ou acceptés)"},
+    {"id": "mobilisation_connaissances", "label_fr": "Mobilisation des connaissances (vulgarisation, médias, balados, blogues, conférences publiques)"},
+    {"id": "evaluation", "label_fr": "Activités d'évaluation (articles, conférences, demandes de financement, jurys)"},
+    {"id": "service_communaute", "label_fr": "Services ou contributions à la communauté (comités, édition de revues, associations)"},
+    {"id": "creation_artistique", "label_fr": "Création artistique et contribution au milieu"},
+    {"id": "infrastructure_donnees", "label_fr": "Infrastructure de gestion de données, cohortes, biobanques"},
+    {"id": "ecosysteme_diversifie", "label_fr": "Écosystème de recherche diversifié et inclusif"},
+    {"id": "organisation_evenements", "label_fr": "Organisation de congrès, colloques, ateliers, écoles d'été"},
+    {"id": "engagement_leadership", "label_fr": "Engagement ou leadership pour la recherche avec et par la société"},
+    {"id": "autochtone_leadership", "label_fr": "Leadership, autodétermination et renforcement des capacités des peuples autochtones"},
+    {"id": "methodes_savoirs", "label_fr": "Méthodes, systèmes de connaissances ou pratiques et approches culturelles"},
+    {"id": "entreprises_organismes", "label_fr": "Création d'entreprises ou d'organismes favorisant la recherche"},
+    {"id": "propriete_intellectuelle", "label_fr": "Propriété intellectuelle (brevets, droits d'auteur, licences)"},
+    {"id": "partenariats", "label_fr": "Partenariats ou collaborations (réseaux, science citoyenne, bénévolat)"},
+    {"id": "avis_memoires", "label_fr": "Avis ou mémoires ayant contribué à des politiques, lois ou normes"},
+    {"id": "produits_technologies", "label_fr": "Produits, technologies, processus, services ou conseils"},
+    {"id": "logiciels_outils", "label_fr": "Conception de logiciels ou d'outils"},
+    {"id": "science_ouverte", "label_fr": "Science ouverte"},
+    {"id": "mentorat", "label_fr": "Supervision, formation ou mentorat (section 3 only)"}
+  ]
+}

@@ -16,8 +16,8 @@ and the output target. It NEVER defines the process. Absolute rules:
    by the end user or auto-skipped-with-log in unattended mode; Step 1d (Consensus) when the
    MCP is unavailable, logged; Step 6 (deliberation) degraded only when GEMINI_API_KEY AND
    GITHUB_TOKEN are both absent, the script still executed. `extract-futureworks` (Step 5),
-   `extract-statistic` (Step 5), `deliberation` (Step 6), and `scholar-evaluation` (Step 7)
-   are MANDATORY skill invocations on every run.
+   `extract-statistic` (Step 5), `extract-contributions` (Step 5), `deliberation` (Step 6), and
+   `scholar-evaluation` (Step 7) are MANDATORY skill invocations on every run.
 3. Subagent context: if executed as a subagent with no channel to the user, do NOT skip the
    Step 1a Scopus.AI checkpoint (attended runs). End with "PIPELINE-PAUSED @ Step 1a", the
    prompt menu, and what the user must paste back; the orchestrator relays it and sends the
@@ -68,6 +68,7 @@ All paths are relative to the repo root. `SK` = `.claude/skills/scopus/scripts`.
 | Full-text retrieval (presence-gated) | `python SK/download_pdf.py bib "<delta.bib>" --out-dir "<refs>"` |
 | Corpus future-works mining (mine mode) | `extract-futureworks` skill |
 | Corpus statistics mining (mine mode) | `extract-statistic` skill |
+| Corpus contribution mining (mine mode) | `extract-contributions` skill |
 | Preemption/sufficiency debate | `deliberation` skill |
 | Quantitative contribution score | `scholar-evaluation` skill |
 | The <=200-word synthesis prose | `scientific-writing` skill (cloud model only) |
@@ -134,9 +135,22 @@ Updates `refs/_manifest.json` and `refs/_failed.md`.
 ### Step 5 — Mine contributions, future works, and statistics (delta corpus)
 Read `.claude/skills/extract-futureworks/SKILL.md` and run it in **mine** mode on `delta.bib`,
 then `.claude/skills/extract-statistic/SKILL.md` in **mine** mode. Both reuse
-`extract_text.py --section-scan` / `--stats-scan` over the delta `refs/`. For each new paper,
-record its stated CONTRIBUTION (from abstract + full text). Missing full text degrades to
-abstract-level, flagged `[FW FULLTEXT-MISSING]` / `[STATS PDF-MISSING]`, and never blocks.
+`extract_text.py --section-scan` / `--stats-scan` over the delta `refs/`.
+
+Then read `.claude/skills/extract-contributions/SKILL.md` and run it in **mine** mode over the
+same delta `refs/`, so the Step 8 synthesis cites what each new paper claims rather than what its
+abstract merely describes:
+
+```
+python ".claude/skills/extract-contributions/scripts/extract_contributions.py" "<review-dir>/refs" --json
+```
+
+For each new paper, record its stated CONTRIBUTION from the returned `sentences` (verbatim
+contribution/novelty/result/method claims) when `status: ok`; fall back to the abstract only when
+full text is missing or the paper states none. Missing full text degrades to abstract-level,
+flagged `[FW FULLTEXT-MISSING]` / `[STATS PDF-MISSING]` / `[CIT FULLTEXT-MISSING]`; a full text
+present but silent on contribution is flagged `[CIT NO-CONTRIBUTION-STATED]`. None of the three
+ever blocks the pipeline.
 
 ### Step 5b — Terminology coverage gate (delta corpus → review)
 Same mechanism as scopus-researcher Step 15b, scoped to the delta: over the extracted full texts
@@ -173,7 +187,10 @@ dimension, via `calculate_scores.py`, to emit: a numeric **contribution-still-no
 Using the `scientific-writing` skill, write ONE flowing paragraph (<=200 words, no bullet
 points) presenting the relevant new papers: each with `\cite{}`, a clickable DOI via `\href`,
 at least one sentence of context per reference, AI-usage < 20%, and the workspace style hygiene
-(straight quotes, hyphens not em dashes, no invisible characters). This paragraph is inserted
+(straight quotes, hyphens not em dashes, no invisible characters). Ground each reference's
+context sentence in its Step 5 contribution sentence(s) when one was found; fall back to the
+abstract only where flagged `[CIT FULLTEXT-MISSING]` / `[CIT NO-CONTRIBUTION-STATED]` (per the
+`citation_styles.md` override in the `scientific-writing` skill). This paragraph is inserted
 into the review's literature body in Step 9. `scientific-writing` and any LaTeX authoring run on
 the cloud model, never a local model.
 
@@ -211,6 +228,7 @@ this block is the handoff to the human finalize pass.
 [ ] PD1 — Delta PDFs retrieved (Step 4, presence-gated); _manifest.json updated; misses flagged, not blocking
 [ ] FW1 — extract-futureworks mine run on the delta (Step 5); contributions + future-works rows extracted
 [ ] ST1 — extract-statistic mine run on the delta (Step 5); corpus-stats rows extracted (abstract-level fallback logged if PDFs missing)
+[ ] CIT1 — extract-contributions mine run on the delta (Step 5); each new paper's own contribution sentences extracted and used to ground its Step 8 synthesis citation (abstract-level fallback logged as [CIT FULLTEXT-MISSING] / [CIT NO-CONTRIBUTION-STATED])
 [ ] TC1 — Terminology coverage gate run on the delta (Step 5b): dominant delta terms cross-checked against the review .tex; every [CORPUS TERM NOT COVERED] flag arbitrated (merged or justified in CHANGELOG)
 [ ] PE1 — Preemption deliberation run (Step 6): each new paper x each G*/H* classified; ## Deliberation Log appended (or both keys absent, logged)
 [ ] QE1 — Quantitative score computed (Step 7): contribution-still-novel x/5 + per-gap preemption-risk
@@ -221,9 +239,9 @@ this block is the handoff to the human finalize pass.
 [ ] CL1 — CHANGELOG written; REVIEW REQUIRED block lists new papers, flagged publishers, possibly-preempted gaps/hypotheses
 ```
 
-Do not mark the update complete if any mandatory item is ✗. FW1, ST1, TC1, PE1, QE1 are MANDATORY
-(the same rule as scopus-researcher's mining + deliberation gates). SA1 may be "skipped by
-user"/"skipped (unattended)"; CS1 "MCP unavailable"; PE1 degraded only when both deliberation
+Do not mark the update complete if any mandatory item is ✗. FW1, ST1, CIT1, TC1, PE1, QE1 are
+MANDATORY (the same rule as scopus-researcher's mining + deliberation gates). SA1 may be "skipped
+by user"/"skipped (unattended)"; CS1 "MCP unavailable"; PE1 degraded only when both deliberation
 keys are absent — each must be logged.
 
 ## Scheduling note

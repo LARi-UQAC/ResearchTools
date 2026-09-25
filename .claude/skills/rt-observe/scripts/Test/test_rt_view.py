@@ -360,11 +360,13 @@ class TabbedLayout(unittest.TestCase):
                          "the script switches tabs the markup does not carry")
 
     def test_the_rail_strip_and_the_rail_renderer_name_the_same_panels(self):
-        """The rail's six panels are named in two places - the static buttons
+        """The rail's panels are named in two places - the static buttons
         and the renderer list. A third copy is how a tab starts pointing at a
-        panel nobody builds, so the two that remain are compared."""
+        panel nobody builds, so the two that remain are compared. Seven since
+        2026-09-24: the journal-durable plan added the "Journal" panel
+        (identity + traces, Phase 2/3)."""
         buttons = re.findall(r'data-rail-tab="([a-z]+)"', self.markup)
-        self.assertEqual(6, len(buttons), "expected six rail tabs")
+        self.assertEqual(7, len(buttons), "expected seven rail tabs")
         # Scoped to the RAIL_TABS block itself. Unscoped, this finder also
         # matched the session filter's own {id, label} entries, and reported a
         # disagreement that did not exist.

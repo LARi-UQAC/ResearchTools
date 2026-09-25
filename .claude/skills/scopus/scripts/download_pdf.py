@@ -56,6 +56,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import unicodedata
 from typing import Any
@@ -108,6 +109,24 @@ DOI_RESOLVER_URL = "https://doi.org/{doi}"
 PDF_MAGIC = b"%PDF"
 MAX_PDF_BYTES = 100 * 1024 * 1024  # 100 MB cap, streamed; aborts past this
 MAX_HTML_BYTES = 25 * 1024 * 1024  # 25 MB cap for an HTML full-text page
+
+# A PDF of this many pages or fewer, returned by a paywalled tier, is the
+# publisher's preview rather than the article. One page is what Elsevier
+# actually serves on an unentitled DOI (measured 2026-09-12, six times on the
+# BuildingGIS corpus). Two is deliberately NOT the threshold: a SIGSPATIAL
+# workshop paper in that same corpus, wu2021leafmap, is a genuine two-page
+# article, and rejecting it would trade one wrong answer for another.
+PREVIEW_MAX_PAGES = 1
+PREVIEW_SCAN_BYTES = 4 * 1024 * 1024  # enough of the file to count page objects
+
+# A short document carrying no body is a preview whatever its page objects
+# claim. Measured 2026-09-14 on the BuildingGIS corpus: its twelve one-page
+# previews carry 3408 to 5388 characters of extractable text, while
+# wu2021leafmap, a genuine two-page SIGSPATIAL paper in the same corpus, carries
+# 8925. The floor sits between the two measurements, and the page bound stops at
+# two because nothing longer was ever measured as a preview.
+PREVIEW_MAX_TEXT_PAGES = 2
+PREVIEW_MIN_FULLTEXT_CHARS = 6000
 MIN_HTML_BYTES = 2000              # below this an HTML body is too thin to be a paper
 MAX_REDIRECTS = 5
 CHUNK_BYTES = 8192
@@ -1046,6 +1065,169 @@ def _result(base: dict[str, Any], out_dir: str, file: str, fmt: str,
     return result
 
 
+def pdf_page_count(path: str) -> int | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Count the pages of a PDF without a third-party dependency, by counting
+        the /Type /Page objects of the raw file. Used only to tell a full text
+        from a one-page paywall preview, so an approximate count is enough.
+
+    Inputs:
+        path (str): PDF file on disk.
+
+    Outputs:
+        pages (Optional[int]): page count, or None when the file cannot be read
+            or carries no recognisable page object. None means "unknown" and is
+            never treated as a rejection (R11: an absent measurement does not
+            refuse the artifact).
+    --------------------------------------------------------------------------
+    """
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(PREVIEW_SCAN_BYTES)
+    except OSError:
+        return None
+    pages = len(re.findall(rb"/Type\s*/Page[^s]", raw))
+    if pages:
+        return pages
+    counts = [int(m.group(1)) for m in re.finditer(rb"/Count\s+(\d+)", raw)]
+    return max(counts) if counts else None
+
+
+_PYMUPDF_WARNED = False
+
+
+def pdf_measure(path: str) -> tuple[int, int] | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read a PDF's true page count and the length of its extractable text,
+        using PyMuPDF, which parses the document rather than guessing from its
+        bytes.
+
+    Inputs:
+        path (str): the PDF on disk.
+
+    Outputs:
+        measure (Optional[Tuple[int, int]]): (pages, characters), or None when
+            PyMuPDF is not installed or the file cannot be opened.
+
+    Why this exists. Measured 2026-09-14 on the live BuildingGIS corpus, the
+    byte-counting fallback answered 10, 14, 15 and 30 pages for four documents
+    PyMuPDF reads as exactly ONE page carrying about five thousand characters:
+    an Elsevier preview embeds the page skeleton of the whole article while
+    rendering only the first page. The guard added on 2026-09-12 therefore
+    missed four of the eight previews in that corpus and archived them as
+    retrieved full texts.
+
+    PyMuPDF is not a declared dependency of this skill, so its absence degrades
+    the measurement rather than failing the run, and SAYS so once (R8: never a
+    silent substitution).
+    --------------------------------------------------------------------------
+    """
+    global _PYMUPDF_WARNED
+    try:
+        import pymupdf                      # noqa: PLC0415 - optional, probed here
+    except ImportError:
+        try:
+            import fitz as pymupdf          # noqa: PLC0415 - legacy import name
+        except ImportError:
+            if not _PYMUPDF_WARNED:
+                _PYMUPDF_WARNED = True
+                logger.warning(
+                    "[FULLTEXT] PyMuPDF is not installed: the preview guard falls back "
+                    "to counting page objects in the raw bytes, which OVERCOUNTS on a "
+                    "publisher preview. Install pymupdf to measure pages exactly.")
+            return None
+    try:
+        with pymupdf.open(path) as doc:
+            pages = doc.page_count
+            chars = sum(len(page.get_text()) for page in doc)
+    except Exception:                       # noqa: BLE001 - an unreadable file is not a verdict
+        return None
+    return pages, chars
+
+
+def is_paywall_preview(path: str) -> tuple[bool, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide whether a retrieved PDF is a publisher's one-page preview rather
+        than the article. Measured 2026-09-12 on the BuildingGIS corpus: the
+        Elsevier Full-Text API answers HTTP 200 with a ONE-page PDF carrying the
+        title, the abstract and the opening of the introduction whenever the
+        entitlement does not cover the article. The bytes begin with %PDF, so
+        every structural check passed and six references were archived as
+        `status: elsevier, tier: 1` full texts. Worse, accepting it ended the
+        tier chain, so the seven remaining methods were never tried.
+
+    Inputs:
+        path (str): the PDF just written by a tier.
+
+    Outputs:
+        (preview, reason) (Tuple[bool, str]): whether to reject, and the reason
+            to write to the log. An unreadable or unmeasurable file is NOT a
+            preview: the tier keeps its result rather than losing a good file to
+            a failed measurement.
+    --------------------------------------------------------------------------
+    """
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        size = 0
+
+    measured = pdf_measure(path)
+    if measured is not None:
+        pages, chars = measured
+        if pages <= PREVIEW_MAX_PAGES:
+            return True, ("%d page(s), %d bytes, %d characters - publisher preview, "
+                          "not the full text" % (pages, size, chars))
+        if pages <= PREVIEW_MAX_TEXT_PAGES and chars < PREVIEW_MIN_FULLTEXT_CHARS:
+            return True, ("%d page(s) but only %d characters - publisher preview, "
+                          "not the full text" % (pages, chars))
+        return False, ""
+
+    # No PyMuPDF: fall back to the byte heuristic, which can only UNDER-report a
+    # preview (it overcounts pages), never invent one.
+    pages = pdf_page_count(path)
+    if pages is None or pages > PREVIEW_MAX_PAGES:
+        return False, ""
+    return True, ("%d page(s), %d bytes - publisher preview, not the full text "
+                  "(counted from the raw bytes; install pymupdf for an exact count)"
+                  % (pages, size))
+
+
+def _reject_preview(dest: str, tier_name: str) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Apply is_paywall_preview to a tier's output and, on rejection, delete
+        the file so the next tier starts from a clean slate and the
+        presence-gate does not later mistake the preview for a retrieved text.
+
+    Inputs:
+        dest (str): the PDF a tier just wrote.
+        tier_name (str): tier label, for the log line.
+
+    Outputs:
+        rejected (bool): True when the file was a preview and has been removed.
+    --------------------------------------------------------------------------
+    """
+    if not os.path.exists(dest):
+        return False
+    preview, reason = is_paywall_preview(dest)
+    if not preview:
+        return False
+    logger.warning("[FULLTEXT] %s returned a preview, continuing the chain: %s",
+                   tier_name, reason)
+    try:
+        os.remove(dest)
+    except OSError as exc:
+        logger.warning("[FULLTEXT] could not remove the preview %s: %s", dest, exc)
+    return True
+
+
 def download_one(entry: dict[str, str], out_dir: str,
                  api_key: str | None, insttoken: str | None, *,
                  email: str | None = None, allow_html: bool = True,
@@ -1102,7 +1284,7 @@ def download_one(entry: dict[str, str], out_dir: str,
     pdf_dest = os.path.join(out_dir, target_filename(entry, "pdf"))
 
     # Tier 1 - Elsevier Full-Text (PDF).
-    if try_elsevier(doi, pdf_dest, api_key, insttoken):
+    if try_elsevier(doi, pdf_dest, api_key, insttoken) and not _reject_preview(pdf_dest, "Elsevier"):
         logger.info("[FULLTEXT] Elsevier PDF OK: %s", os.path.basename(pdf_dest))
         return _result(base, out_dir, os.path.basename(pdf_dest), "pdf", "elsevier", 1)
     # Tier 2 - Semantic Scholar open-access PDF.
@@ -1110,7 +1292,7 @@ def download_one(entry: dict[str, str], out_dir: str,
         logger.info("[FULLTEXT] Semantic Scholar PDF OK: %s", os.path.basename(pdf_dest))
         return _result(base, out_dir, os.path.basename(pdf_dest), "pdf", "semantic_scholar", 2)
     # Tier 3 - publisher PDF reconstructed from the DOI (browser headers + curl).
-    if try_publisher_pdf(doi, pdf_dest):
+    if try_publisher_pdf(doi, pdf_dest) and not _reject_preview(pdf_dest, "publisher"):
         logger.info("[FULLTEXT] publisher PDF OK: %s", os.path.basename(pdf_dest))
         return _result(base, out_dir, os.path.basename(pdf_dest), "pdf", "publisher", 3)
     # Tier 4 - Unpaywall (PDF then landing HTML).
@@ -1146,10 +1328,19 @@ def download_one(entry: dict[str, str], out_dir: str,
 
     # Tier 8 - real browser (opt-in, last resort): passes the JS/SSO challenges an
     # HTTP client cannot, and follows a per-paper override URL when supplied.
-    if use_browser and browser_fetch is not None and browser_fetch.browser_available():
+    if not use_browser:
+        logger.info("[FULLTEXT] tier 8 (browser) not requested: pass --browser to enable it")
+    elif browser_fetch is None:
+        logger.warning("[FULLTEXT] tier 8 (browser) UNAVAILABLE: the playwright package "
+                       "is not installed in %s - run: pip install playwright && "
+                       "playwright install chromium", sys.executable)
+    elif not browser_fetch.browser_available():
+        logger.warning("[FULLTEXT] tier 8 (browser) UNAVAILABLE: playwright is installed "
+                       "but no Chromium build was found - run: playwright install chromium")
+    else:
         res = browser_fetch.fetch_pdf_via_browser(
             doi, pdf_dest, override_url=override_url, headed=headed)
-        if res:
+        if res and not _reject_preview(pdf_dest, "browser"):
             logger.info("[FULLTEXT] browser %s OK: %s", res["source"], res["file"])
             return _result(base, out_dir, res["file"], res["format"], res["source"], 8)
 
@@ -1162,18 +1353,103 @@ def download_one(entry: dict[str, str], out_dir: str,
 # Manifest / report
 # --------------------------------------------------------------------------- #
 def write_manifest(out_dir: str, results: list[dict[str, Any]]) -> None:
-    """Write refs/_manifest.json mapping each reference to its file and source."""
-    manifest = {(r.get("citekey") or r.get("doi") or f"ref{i}"): r
-                for i, r in enumerate(results)}
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        MERGE this run's results into refs/_manifest.json, preserving every
+        entry the file already carries.
+
+        This used to rebuild the dictionary from the current call's results
+        alone. On the `doi` subcommand each call carries exactly ONE result, so
+        twelve successive single-DOI calls took the BuildingGIS manifest from
+        more than sixty entries down to one, on 2026-09-12, with no backup and
+        no warning. The retrieval provenance of the whole corpus was lost and
+        could not be reconstructed: the files were still on disk, but which
+        tier had fetched each of them no longer existed anywhere.
+
+    Inputs:
+        out_dir (str): the refs/ directory.
+        results (List[Dict]): this run's results, one per reference.
+
+    Outputs:
+        None. Writes refs/_manifest.json, and refs/_manifest.bak.json holding
+        the previous content whenever there was one.
+
+    An existing file that cannot be parsed is NOT discarded silently: it is
+    kept as the backup and the run says so, because a corrupt manifest may
+    still be the only record of how a corpus was retrieved.
+    --------------------------------------------------------------------------
+    """
     path = os.path.join(out_dir, "_manifest.json")
+    previous: dict[str, Any] = {}
+    if os.path.exists(path):
+        backup = os.path.join(out_dir, "_manifest.bak.json")
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                loaded = json.load(handle)
+            if isinstance(loaded, dict):
+                previous = loaded
+            else:
+                logger.warning("[MANIFEST] existing manifest is not an object; "
+                               "kept as %s", os.path.basename(backup))
+        except (OSError, ValueError) as exc:
+            logger.warning("[MANIFEST] existing manifest unreadable (%s); kept as %s",
+                           exc, os.path.basename(backup))
+        try:
+            shutil.copyfile(path, backup)
+        except OSError as exc:      # pragma: no cover - best effort
+            logger.warning("[MANIFEST] could not write the backup: %s", exc)
+
+    fresh = {(r.get("citekey") or r.get("doi") or f"ref{i}"): r
+             for i, r in enumerate(results)}
+    merged = dict(previous)
+    merged.update(fresh)
+
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, ensure_ascii=False, indent=2)
+        json.dump(merged, handle, ensure_ascii=False, indent=2)
+
+    kept = len(merged) - len(fresh)
+    logger.info("[MANIFEST] %d entr%s written (%d from this run, %d preserved)",
+                len(merged), "y" if len(merged) == 1 else "ies", len(fresh), max(kept, 0))
 
 
-def write_failed(out_dir: str, results: list[dict[str, Any]]) -> None:
-    """Write refs/_failed.md with DOI links + manual-save instructions for the
-    references no automated tier could retrieve in any format."""
-    failed = [r for r in results if r.get("status") == "failed"]
+def read_manifest(out_dir: str) -> dict[str, Any]:
+    """Return the manifest as a dict, or an empty dict when absent or corrupt."""
+    path = os.path.join(out_dir, "_manifest.json")
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def write_failed(out_dir: str) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write refs/_failed.md from the MERGED manifest, so it names every
+        reference no automated tier has retrieved so far and not merely those
+        of the current call.
+
+    Inputs:
+        out_dir (str): the refs/ directory, already carrying a written manifest.
+
+    Outputs:
+        none.
+
+    Measured 2026-09-14: the previous version rebuilt the file from the current
+    call's results with open(path, "w"), so eleven `doi` calls in a row meant the
+    last one decided. A successful eleventh erased the record of seven failures
+    and left "All references with a DOI were retrieved" in a corpus where seven
+    references were missing. The manifest is merged and is therefore the only
+    record that survives a sequence of single-DOI calls, which is why this reads
+    from it rather than keeping a second tally of its own.
+    --------------------------------------------------------------------------
+    """
+    failed = [r for r in read_manifest(out_dir).values()
+              if isinstance(r, dict) and r.get("status") == "failed" and r.get("doi")]
+    failed.sort(key=lambda r: (r.get("citekey") or r.get("doi") or ""))
     path = os.path.join(out_dir, "_failed.md")
     lines = ["# References to retrieve manually (UQAC network)", ""]
     if not failed:
@@ -1229,7 +1505,7 @@ def _run_doi(args: argparse.Namespace) -> None:
                           use_browser=args.browser, headed=not args.headless,
                           override_url=override_url)
     write_manifest(out_dir, [result])
-    write_failed(out_dir, [result])
+    write_failed(out_dir)
     _summarize([result], out_dir)
 
 
@@ -1260,8 +1536,117 @@ def _run_bib(args: argparse.Namespace) -> None:
                             override_url=sources.get(e.get("citekey") or ""))
                for e in entries]
     write_manifest(out_dir, results)
-    write_failed(out_dir, results)
+    write_failed(out_dir)
     _summarize(results, out_dir)
+
+
+PREVIEW_QUARANTINE = "_previews"
+
+
+def audit_previews(out_dir: str, apply: bool = False) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Re-examine the PDFs already sitting in a refs/ directory and report the
+        publisher previews among them, optionally moving them aside so the
+        corpus stops reading an abstract as an article.
+
+    Inputs:
+        out_dir (str): the refs/ directory.
+        apply (bool): move the previews and update the records. False is a dry
+            run that writes nothing (R16).
+
+    Outputs:
+        report (Dict): {"checked", "previews": [{citekey, file, reason}],
+            "applied", "quarantine"}.
+
+    Why a separate pass is needed. The retrieval flow is presence-gated - the
+    agent skips any paper whose refs/<citekey>.pdf already exists - so a preview
+    that reached the disk before the guard existed, or through a tier the guard
+    did not cover, is never revisited by a normal run. Measured 2026-09-14 on
+    the BuildingGIS corpus: twelve such files, four of which the byte-counting
+    heuristic still reported as multi-page articles.
+
+    Applying marks each entry `failed` in the manifest rather than deleting it,
+    so the DOI survives and _failed.md can name it for manual retrieval.
+    --------------------------------------------------------------------------
+    """
+    manifest_now = read_manifest(out_dir)
+    previews: list[dict[str, Any]] = []
+    recovered: list[dict[str, Any]] = []
+    checked = 0
+    for name in sorted(os.listdir(out_dir)):
+        if name.startswith("_") or not name.lower().endswith(".pdf"):
+            continue
+        path = os.path.join(out_dir, name)
+        if not os.path.isfile(path):
+            continue
+        checked += 1
+        citekey = os.path.splitext(name)[0]
+        is_preview, reason = is_paywall_preview(path)
+        if is_preview:
+            previews.append({"citekey": citekey, "file": name, "reason": reason})
+            continue
+        entry = manifest_now.get(citekey)
+        if isinstance(entry, dict) and entry.get("status") == "failed":
+            # Retrieved by hand after the automated run gave up. Without this,
+            # _failed.md keeps asking for a paper that is already on the disk.
+            recovered.append({"citekey": citekey, "file": name})
+
+    quarantine = os.path.join(out_dir, PREVIEW_QUARANTINE)
+    if apply and (previews or recovered):
+        if previews:
+            os.makedirs(quarantine, exist_ok=True)
+        manifest = read_manifest(out_dir)
+        for item in previews:
+            src = os.path.join(out_dir, item["file"])
+            dest = os.path.join(quarantine, item["file"])
+            try:
+                shutil.move(src, dest)
+            except OSError as exc:          # pragma: no cover - best effort
+                logger.warning("[AUDIT] could not move %s: %s", item["file"], exc)
+                continue
+            entry = manifest.get(item["citekey"])
+            if isinstance(entry, dict):
+                entry["status"] = "failed"
+                entry["format"] = None
+                entry["source"] = None
+                entry["tier"] = None
+                entry["note"] = "publisher preview quarantined: " + item["reason"]
+        for item in recovered:
+            entry = manifest.get(item["citekey"])
+            if isinstance(entry, dict):
+                entry["status"] = "present"
+                entry["format"] = "pdf"
+                entry["file"] = item["file"]
+                entry["note"] = "retrieved manually; reconciled by audit"
+                try:
+                    entry["bytes"] = os.path.getsize(os.path.join(out_dir, item["file"]))
+                except OSError:     # pragma: no cover - best effort
+                    pass
+        path = os.path.join(out_dir, "_manifest.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, ensure_ascii=False, indent=2)
+        write_failed(out_dir)
+
+    for item in previews:
+        logger.warning("[AUDIT] preview: %s - %s", item["file"], item["reason"])
+    for item in recovered:
+        logger.info("[AUDIT] on disk but recorded failed: %s", item["file"])
+    logger.info("[AUDIT] %d PDF(s) checked, %d preview(s), %d retrieved by hand%s",
+                checked, len(previews), len(recovered),
+                "" if apply else " (dry run: pass --yes to write)")
+    return {"checked": checked, "previews": previews, "recovered": recovered,
+            "applied": bool(apply and (previews or recovered)),
+            "quarantine": quarantine}
+
+
+def _run_audit(args: argparse.Namespace) -> None:
+    out_dir = resolve_out_dir(args.out_dir, args.latex)
+    report = audit_previews(out_dir, apply=args.yes)
+    report["mode"] = "audit"
+    report["out_dir"] = out_dir
+    print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 def main() -> None:
@@ -1289,6 +1674,16 @@ def main() -> None:
     p_doi.add_argument("--headless", action="store_true",
                        help="run the browser tier headless (default is a visible window)")
     p_doi.set_defaults(func=_run_doi)
+
+    p_audit = sub.add_parser(
+        "audit", help="re-examine an existing refs/ and report the publisher previews in it")
+    p_audit.add_argument("--out-dir", default=None, help="explicit refs/ directory")
+    p_audit.add_argument("--latex", default=None,
+                         help="main .tex file; refs/ is located next to it")
+    p_audit.add_argument("--yes", action="store_true",
+                         help="move the previews into refs/_previews/, mark them failed in "
+                              "the manifest and rewrite _failed.md (default: dry run)")
+    p_audit.set_defaults(func=_run_audit)
 
     p_bib = sub.add_parser("bib", help="retrieve full text for every DOI in a .bib file")
     p_bib.add_argument("query", nargs="?", default=None,

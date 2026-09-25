@@ -64,6 +64,46 @@ try:
 except ImportError:  # pragma: no cover
     pymupdf4llm = None
 
+
+def _silence_mupdf() -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Stop the MuPDF C library from printing its parser complaints, which it
+        writes to the process stdout and which therefore land INSIDE the JSON
+        report this script emits.
+
+    Inputs:
+        none.
+
+    Outputs:
+        silenced (bool): True when the PyMuPDF API was available and applied.
+
+    Measured 2026-09-13 on financement/refs/agbossou2026nolandtake.pdf: the
+    file produced 14 lines of "MuPDF error: format error: No common ancestor in
+    structure tree" ahead of the JSON, so json.load on the output raised
+    "Expecting value: line 1 column 1". The existing contextlib.redirect_stdout
+    around pymupdf4llm does not help, because it redirects the PYTHON-level
+    sys.stdout while MuPDF writes to the file descriptor underneath it, and
+    find_tables() runs outside that block in any case.
+
+    The messages are not discarded: PyMuPDF keeps them, and TOOLS.mupdf_warnings
+    returns them to a caller that wants them. A PyMuPDF too old to carry the API
+    leaves the behaviour unchanged and returns False rather than raising (R11).
+    --------------------------------------------------------------------------
+    """
+    tools = getattr(pymupdf, "TOOLS", None) if pymupdf is not None else None
+    if tools is None or not hasattr(tools, "mupdf_display_errors"):
+        return False
+    try:
+        tools.mupdf_display_errors(False)
+    except Exception:      # noqa: BLE001 - a silenced logger is never worth a crash
+        return False
+    return True
+
+
+_MUPDF_SILENCED = _silence_mupdf()
+
 # Markdown backends (Part 1 of the plan), pluggable and optional. Docling is the
 # default high-fidelity converter (PDF + HTML -> structured Markdown with tables,
 # layout, reading order); MarkItDown is the light fallback for HTML/Markdown.
@@ -500,8 +540,44 @@ def _run_bib(args: argparse.Namespace) -> None:
     _emit(_ensure_and_parse_bib(args), "bib")
 
 
+def configure_streams() -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Make stdout able to carry the glyphs a publisher used, so emitting the
+        report cannot fail on one character.
+
+    Inputs:
+        none.
+
+    Outputs:
+        none.
+
+    Measured 2026-09-13 on financement/refs/davis2021upzonings.pdf: the Windows
+    console is cp1252, the paper contains U+2212 (minus sign), and the run died
+    with "ERROR: 'charmap' codec can't encode character '−' in position
+    3576" and exit 1, having written nothing at all. UnicodeEncodeError is a
+    subclass of ValueError, so main's handler caught it and reported it as if
+    the PDF were at fault. utf-8 is requested first and errors="replace" is the
+    fallback, so a stream that cannot be reconfigured degrades to a substituted
+    character rather than to a lost report (R8: never a silent nothing).
+    --------------------------------------------------------------------------
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError, LookupError):   # pragma: no cover
+            try:
+                stream.reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    configure_streams()
     # Shared flags, attached to every subparser so they may appear after the
     # subcommand (extract_text.py text <file> --stats-scan), as documented.
     common = argparse.ArgumentParser(add_help=False)

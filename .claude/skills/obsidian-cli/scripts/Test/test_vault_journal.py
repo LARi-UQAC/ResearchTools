@@ -206,6 +206,116 @@ class VaultJournalTest(unittest.TestCase):
         self.assertEqual(vj.main(["--journal", str(self.journal),
                                   "--vault", str(self.vault), "--undo", "7"]), 1)
 
+    # ---- the 2026-09-18 block: the two index spaces, and the encoding trap ----
+    #
+    # Origin: repairing two doubled vault notes took four rounds because
+    # --count sizes one set and --list prints another, nothing said so, and the
+    # out-of-range message named neither. A session concluded the journal had
+    # been cleared. Each case below pins one of those.
+
+    def _mixed_journal(self):
+        """A journal whose PENDING records sit BETWEEN the undoable ones, so an
+        implementation that indexed --list positions cannot pass by accident."""
+        vj.record(self.journal, "first.md", 0, 11, "s", vj.STATE_PENDING, at=STAMP)
+        vj.record(self.journal, "first.md", 0, 11, "s", vj.STATE_WRITE, at=STAMP)
+        vj.record(self.journal, "second.md", 0, 22, "s", vj.STATE_PENDING, at=STAMP)
+        vj.record(self.journal, "second.md", 0, 22, "s", vj.STATE_WRITE, at=STAMP)
+
+    def test_undo_indexes_the_undoable_set_not_the_list_positions(self):
+        # --undo 1 must reach the SECOND undoable record, not the second line
+        # of --list, which is a PENDING record. This is the defect that cost
+        # four rounds: the two numberings differ as soon as a PENDING exists.
+        self._mixed_journal()
+        self._note("second.md", "x" * 22)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = vj.main(["--journal", str(self.journal), "--vault",
+                            str(self.vault), "--undo", "1"])
+        self.assertEqual(code, 0)
+        self.assertIn("second.md", out.getvalue())
+        self.assertNotIn("first.md", out.getvalue())
+
+    def test_count_sizes_the_same_set_undo_indexes(self):
+        # The contract that makes --count usable as a baseline at all: the
+        # number it prints must be the number of valid --undo indices.
+        self._mixed_journal()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            vj.main(["--journal", str(self.journal), "--count"])
+        count = int(out.getvalue().strip())
+        self.assertEqual(count, 2)
+        # The last valid index is count - 1, and count itself is out of range.
+        self._note("second.md", "x" * 22)
+        self.assertEqual(vj.main(["--journal", str(self.journal), "--vault",
+                                  str(self.vault), "--undo", str(count - 1)]), 0)
+        self.assertEqual(vj.main(["--journal", str(self.journal), "--vault",
+                                  str(self.vault), "--undo", str(count)]), 1)
+
+    def test_out_of_range_message_names_both_set_sizes(self):
+        # The bare "no record at index N" sent a caller looking for a cleared
+        # or wrong journal. The message must name what it is indexing AND say
+        # that --list is a different, larger set, or the reader has no way to
+        # convert the number they have into the number they need.
+        self._mixed_journal()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = vj.main(["--journal", str(self.journal), "--vault",
+                            str(self.vault), "--undo", "99"])
+        self.assertEqual(code, 1)
+        msg = err.getvalue()
+        self.assertIn("2 undoable", msg)     # the set --undo indexes
+        self.assertIn("4 records", msg)      # what --list prints, PENDING included
+        self.assertIn("PENDING", msg)
+
+    def test_configure_streams_asks_for_utf8_and_replace(self):
+        # Measured 2026-09-18: the console is cp1252, a journal record carried
+        # U+2212, and --list died before printing anything. Both streams must
+        # be asked for utf-8 AND errors="replace": a substituted character is a
+        # degraded report, an unencodable one is no report at all (R8).
+        class Stream:
+            def __init__(self):
+                self.calls = []
+
+            def reconfigure(self, **kw):
+                self.calls.append(kw)
+
+        out, err = Stream(), Stream()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            vj.outbox_io.configure_streams()
+        for stream in (out, err):
+            self.assertEqual(stream.calls,
+                             [{"encoding": "utf-8", "errors": "replace"}])
+
+    def test_configure_streams_falls_back_then_gives_up_quietly(self):
+        # Three shapes that must not raise, because this runs before argparse:
+        # a stream that refuses the encoding but accepts errors, one that
+        # refuses both, and one with no reconfigure at all (R11).
+        class Refuses:
+            def __init__(self, also_errors):
+                self.also_errors = also_errors
+                self.calls = []
+
+            def reconfigure(self, **kw):
+                self.calls.append(kw)
+                if "encoding" in kw or self.also_errors:
+                    raise ValueError("cannot reconfigure")
+
+        class NoReconfigure:
+            pass
+
+        partial = Refuses(also_errors=False)
+        with contextlib.redirect_stdout(partial), \
+                contextlib.redirect_stderr(NoReconfigure()):
+            vj.outbox_io.configure_streams()
+        self.assertEqual(partial.calls,
+                         [{"encoding": "utf-8", "errors": "replace"},
+                          {"errors": "replace"}])
+
+        total = Refuses(also_errors=True)
+        with contextlib.redirect_stdout(total), \
+                contextlib.redirect_stderr(NoReconfigure()):
+            vj.outbox_io.configure_streams()   # must not raise
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -53,6 +53,53 @@ def load_config(config_path=None) -> dict:
         raise ConfigError(f"[OUTBOX] {path} is not valid JSON: {exc}") from exc
 
 
+def configure_streams() -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Make stdout and stderr able to carry the glyphs a vault note used, so
+        emitting a report cannot fail on one character. Called by the main()
+        of every script in this skill that prints JSON.
+
+    Inputs:
+        none.
+
+    Outputs:
+        none.
+
+    Measured 2026-09-18 on this machine: the console is cp1252, a journal
+    record carried U+2212 (minus sign), and `vault_journal.py --list` died on
+    `UnicodeEncodeError: 'charmap' codec can't encode character '\\u2212'`
+    BEFORE printing anything. That is the vault's recovery tool failing at the
+    moment it is needed, and the traceback names cp1252, which a reader then
+    misattributes to the notes rather than to the console. One session did
+    exactly that and wrote a note blaming a note encoding that was never at
+    fault.
+
+        The same defect was measured and fixed in extract-statistic's
+        extract_text.py on 2026-09-13. It is reimplemented here rather than
+        imported across skills because obsidian-outbox-flush.py and the daemon
+        sit on this module's import path, and a cross-skill ImportError there
+        would make a hook exit non-zero and refuse every tool in its matcher
+        (R11).
+
+        utf-8 is requested first and errors="replace" is the fallback, so a
+        stream that cannot be reconfigured degrades to a substituted character
+        rather than to a lost report (R8: never a silent nothing).
+    --------------------------------------------------------------------------
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError, LookupError):   # pragma: no cover
+            try:
+                stream.reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def tail(text: str, limit: int = 700) -> str:
     """
     --------------------------------------------------------------------------

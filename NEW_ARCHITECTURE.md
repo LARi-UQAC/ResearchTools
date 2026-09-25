@@ -70,7 +70,7 @@ ThesisTracker. Investigation rejected that shape.
 | GitHub OAuth for sign-in | **Replaced by an email one-time code (TT-7)** | It required every user to hold a GitHub account, a handle is not an identity a supervisor recognizes, and the OAuth callback was the one step of the Vercel retirement that could not be rolled back instantly. The institutional email address becomes the username; `users.login` stays the primary key, so no data row moves. |
 | Personal email (gmail, hotmail) | **Recovery and security notices only, never a login** | Rebinding an institutional address is an `owner` action, so a compromised personal mailbox alone cannot take over an account. |
 | Which domains may sign in | **A configurable allowlist with no default** | `ALLOWED_EMAIL_DOMAINS`, and the application refuses to start when it is empty. A wrong default would silently admit a domain nobody vetted. |
-| Runtime | **Dual-target, converging to Docker** | Vercel sat at 12 of 12 Hobby functions, is licensed for personal non-commercial use, and would place matricules and signed expense claims on United States infrastructure under Quebec Law 25. |
+| Runtime | **Docker only. Vercel is a development/testing harness, never a production target** | Vercel sat at 12 of 12 Hobby functions, is licensed for personal non-commercial use, and would place matricules and signed expense claims on United States infrastructure under Quebec Law 25. Confirmed by the professor, 2026-09-25: Vercel never carries real student data, so removing it is dropping a test harness, not migrating live traffic. |
 | PDF library | **`pypdf`, BSD-3** | PyMuPDF is AGPL-3.0 and stays isolated in the `extract-statistic` skill. The deployable container carries no AGPL. |
 | Signature | **PAdES, pluggable signer, self-signed development default** | Unblocks implementation while the Décanat and SRF acceptance question stays open. |
 | Docker host | **Undecided by choice** | Compose and Caddy read the hostname from the environment. Chosen before real data loads, not before build. |
@@ -213,7 +213,9 @@ Deliberate properties:
 - The `pgvector` extension is needed by RT-7 only. It rides whichever Postgres the deployment
   gives it; the compose files are written so a merged or a separate instance both work.
 
-Vercel remains the second front door until retirement (section 14). One implementation, two doors:
+Vercel served as a development/testing front door while the Docker stack was being built. It is
+never the production target and carries no real student data (confirmed 2026-09-25); production
+runs on the Express/Docker door only. One implementation, two doors during development:
 `api/_lib/routes/*.js` holds every handler, a thin Vercel entry dispatches on method plus query
 parameter, and the Express app mounts the same handlers on REST paths.
 
@@ -861,7 +863,7 @@ critical path and can land last.
 | TT-2 | `feat/forms-routes` | ThesisTracker #3 | Owner-scoped instance routes, signing queues, binary document routes |
 | TT-3 | `feat/forms-service-client` | ThesisTracker #4 | Injected-fetch client for the stateless PDF service, with a complete failure-to-status mapping |
 | TT-4 | `feat/forms-ui` | ThesisTracker #5 | Step-aware Forms view, per-role queues, pre-filled fields, the rules editor for a superuser |
-| TT-5 | `feat/forms-integration` | ThesisTracker #6 | Combined compose, executable acceptance checklist, Vercel retirement checklist |
+| TT-5 | `feat/forms-integration` | ThesisTracker #6 | Combined compose, executable acceptance checklist, Vercel decommission checklist (test harness only, never held real data) |
 | TT-6 | `feat/cohort-report` | ThesisTracker #7 | Publications client method, staff-only roster walk, printable cohort report |
 | TT-7 | `feat/email-code-auth` | ThesisTracker #9 | Email one-time code replaces GitHub OAuth; domain allowlist with no default; the `direction` role |
 | TT-8 | `feat/form-catalogue` | ThesisTracker #10 | `form_definitions` (with `submission_email`), `form_step_defs` (with `can_return`, `return_to_seq`, `must_submit`), `form_field_map`; superuser-only registration and rules editing; the drift check in Node |
@@ -942,9 +944,10 @@ Binding rules, each enforced by a test or a startup check:
 | No email address, code, session token, profile value, or PDF byte is ever logged | asserted by tests across RT-3, RT-5, TT-2, TT-3, TT-7, TT-9 |
 
 Law 25 drives the runtime decision: matricules, addresses, and signed expense claims stay on the
-institutional host. Retiring Vercel removes the last location of student personal information
-outside the institution. The same reasoning chooses the mail relay, and it is also why the PDF
-service is stateless: publicly-sourced code runs beside private student data while holding none of
+institutional host. Vercel never held any of it (confirmed 2026-09-25), so decommissioning it closes
+a test harness, not a location that carried real student data. The same reasoning chooses the mail
+relay, and it is also why the PDF service is stateless: publicly-sourced code runs beside private
+student data while holding none of
 it.
 
 ---
@@ -967,16 +970,20 @@ arrives: self-hosted on the same UQAC host, never n8n Cloud; workflows authored 
 reviewed as source, never imported; paper metadata from the `scopus` skill, never a scraper or
 Google Scholar; no LLM node drafts scientific prose. Full rationale in ThesisTracker issue #8.
 
-### Vercel retirement
+### Vercel decommission
 
-Planned, not urgent, checklist written in TT-5. Order: choose the host, provision Postgres, migrate
-with row-count verification, confirm the new host can send mail, set DNS, run the acceptance
-checklist, keep Vercel read-only for two weeks, delete.
+**Confirmed by the professor, 2026-09-25: Vercel is a development/testing system only and never
+holds real student data.** Removing it is dropping a test harness, not migrating live traffic — no
+row-count verification, no read-only migration window, no user-facing cutover. Checklist (TT-5,
+updated): stand up the institutional Docker host and its Postgres, confirm it can send mail, set
+DNS, run the acceptance checklist, then delete the Vercel project. Order matters only for standing
+up the real target; nothing needs to survive a transition since nothing real ran on Vercel to begin
+with.
 
-**The rollback is free at every step: stop the new stack.** That was not true when this project
-started. The original step 4 was repointing the GitHub OAuth callback, and it was the pivot:
-everything before it could be undone by stopping a container, everything after it needed a second
-change in a third-party account. TT-7 removed it, so nothing outside the two hosts has to change.
+**The rollback is free at every step: stop the new stack.** That was already true before this
+confirmation, and now doubly so: there is no live data anywhere to lose. The original step 4
+(before TT-7) was repointing the GitHub OAuth callback, the one step that could not be undone by
+stopping a container; TT-7 removed it, so nothing outside the Docker host has to change.
 
 ### Open items
 

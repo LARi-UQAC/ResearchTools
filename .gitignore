@@ -49,6 +49,14 @@ post-media/
 .claude/.maintenance.lock
 loop-bridge-log.jsonl
 
+# aider-setup: the operator's own live aider config, used only to run this
+# machine's tests against the real driver. It carries this machine's absolute
+# home path (build_kit.py's scrub() strips that same path when it copies a
+# *different* template into the shipped kit - this file is not that template,
+# it is the fixture the tests run against). Regenerate it from
+# .claude/skills/aider-setup/config/aider.conf.yml, substituting your own home.
+.claude/skills/aider-setup/scripts/build/aider.conf.yml.saved
+
 # Self-improvement loop: machine-local state, never repository content.
 # .rt-green.json is the proof that the offline suite passed, with a hash per code file;
 # .rt-undo/ holds the previous version of any file the loop changed, pruned to 20.
@@ -91,6 +99,10 @@ loop-bridge-log.jsonl
 # built from the repo root; a graph under a subdirectory is a partial graph (see
 # local-writer.md, "Updating the graph").
 graphify-out/
+
 # Obsidian vault state under the repo (agent memory: user-specific, evolves with
 # usage, never versioned). See PR #13 / issue #14 NEW-2.
 .obsidian/
+
+# Local git worktrees (superpowers:using-git-worktrees), isolated checkouts for unit branches.
+/.worktrees/

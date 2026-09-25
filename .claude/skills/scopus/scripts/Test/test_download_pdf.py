@@ -528,7 +528,7 @@ class TestReports(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as tmp:
             download_pdf.write_manifest(tmp, results)
-            download_pdf.write_failed(tmp, results)
+            download_pdf.write_failed(tmp)
             manifest = json.loads(Path(os.path.join(tmp, "_manifest.json")).read_text(encoding="utf-8"))
             failed = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
         self.assertIn("A", manifest)
@@ -636,6 +636,380 @@ class TestLoadSources(unittest.TestCase):
                 "{ not valid json", encoding="utf-8")
             self.assertEqual(download_pdf._load_sources(tmp), {})
 
+
+class ManifestMergeTest(unittest.TestCase):
+    """write_manifest must never lose an entry it did not write.
+
+    Measured 2026-09-12 on the BuildingGIS corpus: the `doi` subcommand carries
+    one result per call, and twelve successive calls took _manifest.json from
+    more than sixty entries to one. The files stayed on disk; which tier had
+    fetched each of them did not.
+    """
+
+    def test_previous_entries_survive_a_single_doi_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "_manifest.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"old1": {"citekey": "old1", "tier": 1},
+                           "old2": {"citekey": "old2", "tier": 3}}, fh)
+            download_pdf.write_manifest(tmp, [{"citekey": "new1", "tier": 8}])
+            with open(path, encoding="utf-8") as fh:
+                got = json.load(fh)
+        self.assertEqual(set(got), {"old1", "old2", "new1"})
+        self.assertEqual(got["old2"]["tier"], 3)
+
+    def test_a_rerun_of_the_same_key_replaces_only_that_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "_manifest.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"a": {"citekey": "a", "status": "failed"},
+                           "b": {"citekey": "b", "status": "elsevier"}}, fh)
+            download_pdf.write_manifest(tmp, [{"citekey": "a", "status": "browser"}])
+            with open(path, encoding="utf-8") as fh:
+                got = json.load(fh)
+        self.assertEqual(got["a"]["status"], "browser")
+        self.assertEqual(got["b"]["status"], "elsevier")
+
+    def test_the_previous_manifest_is_kept_as_a_backup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "_manifest.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"old": {"citekey": "old"}}, fh)
+            download_pdf.write_manifest(tmp, [{"citekey": "new"}])
+            backup = os.path.join(tmp, "_manifest.bak.json")
+            self.assertTrue(os.path.exists(backup))
+            with open(backup, encoding="utf-8") as fh:
+                self.assertEqual(set(json.load(fh)), {"old"})
+
+    def test_an_unreadable_manifest_is_backed_up_not_discarded(self):
+        # A corrupt manifest may still be the only record of how a corpus was
+        # retrieved, so it is preserved rather than overwritten in silence.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "_manifest.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("{ this is not json")
+            download_pdf.write_manifest(tmp, [{"citekey": "new"}])
+            with open(os.path.join(tmp, "_manifest.bak.json"), encoding="utf-8") as fh:
+                self.assertIn("not json", fh.read())
+            with open(path, encoding="utf-8") as fh:
+                self.assertEqual(set(json.load(fh)), {"new"})
+
+    def test_no_previous_file_still_writes_this_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [{"citekey": "only"}])
+            with open(os.path.join(tmp, "_manifest.json"), encoding="utf-8") as fh:
+                self.assertEqual(set(json.load(fh)), {"only"})
+            self.assertFalse(os.path.exists(os.path.join(tmp, "_manifest.bak.json")))
+
+
+def _pdf_bytes(pages: int) -> bytes:
+    """Minimal PDF carrying `pages` /Type /Page objects."""
+    body = b"".join(b"%d 0 obj\n<< /Type /Page >>\nendobj\n" % (i + 3)
+                    for i in range(pages))
+    return b"%PDF-1.4\n" + body + b"trailer\n<< /Root 1 0 R >>\n%%EOF\n"
+
+
+class PaywallPreviewTest(unittest.TestCase):
+    """A one-page publisher preview must not be accepted as a full text.
+
+    Measured 2026-09-12: api.elsevier.com answers HTTP 200 with a ONE-page PDF
+    (title, abstract, opening of the introduction) on a DOI the entitlement does
+    not cover. The bytes begin with %PDF, so every structural check passed, six
+    references were archived as tier-1 successes, and accepting them ended the
+    chain before the seven other methods were tried.
+    """
+
+    def setUp(self):
+        # These fixtures encode the page count in the BYTES only: PyMuPDF does
+        # not read them as real documents, so they exercise the FALLBACK path,
+        # which is what they were written for in 2026-09-12. The exact
+        # measurement added on 2026-09-14 has its own cases in
+        # TestPreviewMeasurement, where the two disagree on purpose.
+        patcher = mock.patch.object(download_pdf, "pdf_measure", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _write(self, tmp, name, data):
+        path = os.path.join(tmp, name)
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return path
+
+    def test_a_one_page_pdf_is_a_preview(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "p.pdf", _pdf_bytes(1))
+            preview, reason = download_pdf.is_paywall_preview(path)
+        self.assertTrue(preview)
+        self.assertIn("1 page", reason)
+
+    def test_a_two_page_paper_is_not_a_preview(self):
+        # Negative control with teeth: wu2021leafmap, in this very corpus, is a
+        # genuine two-page SIGSPATIAL workshop paper. A threshold of two pages
+        # would trade one wrong answer for another.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "p.pdf", _pdf_bytes(2))
+            preview, _ = download_pdf.is_paywall_preview(path)
+        self.assertFalse(preview)
+
+    def test_a_long_paper_is_not_a_preview(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "p.pdf", _pdf_bytes(15))
+            preview, _ = download_pdf.is_paywall_preview(path)
+        self.assertFalse(preview)
+
+    def test_an_unmeasurable_pdf_is_never_rejected(self):
+        # R11 / R8: a failed measurement must not throw away a good file. An
+        # unknown page count is unknown, not a preview.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "p.pdf", b"%PDF-1.4\nno page objects here\n")
+            preview, _ = download_pdf.is_paywall_preview(path)
+        self.assertFalse(preview)
+        self.assertIsNone(download_pdf.pdf_page_count(os.path.join(tmp, "absent.pdf")))
+
+    def test_rejecting_a_preview_deletes_it_so_the_next_tier_starts_clean(self):
+        # The file must go: otherwise the presence gate would later mistake the
+        # preview for a retrieved full text and skip the reference entirely.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "p.pdf", _pdf_bytes(1))
+            self.assertTrue(download_pdf._reject_preview(path, "Elsevier"))
+            self.assertFalse(os.path.exists(path))
+
+    def test_a_real_paper_is_kept_by_the_rejection_helper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "p.pdf", _pdf_bytes(12))
+            self.assertFalse(download_pdf._reject_preview(path, "Elsevier"))
+            self.assertTrue(os.path.exists(path))
+
+    def test_a_missing_file_is_not_reported_as_a_preview(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(download_pdf._reject_preview(
+                os.path.join(tmp, "nope.pdf"), "Elsevier"))
+
+
+class BrowserTierSilenceTest(unittest.TestCase):
+    """An unavailable tier must say so.
+
+    `--browser` with no playwright package printed nothing at all, so the log
+    of a failed retrieval looked identical whether tier 8 had been tried or had
+    never existed.
+    """
+
+    def _source(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(download_pdf.__file__)),
+                            "download_pdf.py")
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_every_browser_skip_reason_is_logged(self):
+        src = self._source()
+        self.assertIn("tier 8 (browser) not requested", src)
+        self.assertIn("the playwright package", src)
+        self.assertIn("no Chromium build was found", src)
+
+    def test_the_unavailable_branches_name_the_remedy(self):
+        src = self._source()
+        self.assertIn("pip install playwright", src)
+        self.assertIn("playwright install chromium", src)
+
+    def test_the_browser_tier_is_also_preview_gated(self):
+        # A browser can land on a preview too; the gate is on the artifact, not
+        # on the tier that produced it.
+        src = self._source()
+        self.assertIn('_reject_preview(pdf_dest, "browser")', src)
+
+
+class TestPreviewMeasurement(unittest.TestCase):
+    """The preview guard has to measure, not guess.
+
+    Measured 2026-09-14 on the live BuildingGIS corpus: pdf_page_count answered
+    10, 14, 15 and 30 pages for four documents PyMuPDF reads as exactly ONE page
+    carrying about five thousand characters. An Elsevier preview embeds the page
+    skeleton of the whole article while rendering its first page, so four of the
+    eight previews in that corpus passed the 2026-09-12 guard and were archived
+    as `status: elsevier, tier: 1` full texts.
+    """
+
+    def test_an_overcounted_preview_is_still_rejected(self):
+        # The defect, reproduced: the byte heuristic says many pages, the exact
+        # measurement says one.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "big.pdf")
+            Path(path).write_bytes(b"%PDF-1.7\n" + b"/Type /Page " * 14)
+            with mock.patch.object(download_pdf, "pdf_measure", return_value=(1, 4829)):
+                preview, reason = download_pdf.is_paywall_preview(path)
+        self.assertTrue(preview)
+        self.assertIn("4829 characters", reason)
+
+    def test_a_genuine_short_paper_is_kept(self):
+        # The negative control, taken from the same corpus: wu2021leafmap is a
+        # real two-page SIGSPATIAL paper of 8925 characters. Rejecting it would
+        # trade one wrong answer for another.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "short.pdf")
+            Path(path).write_bytes(b"%PDF-1.7\n")
+            with mock.patch.object(download_pdf, "pdf_measure", return_value=(2, 8925)):
+                preview, _ = download_pdf.is_paywall_preview(path)
+        self.assertFalse(preview)
+
+    def test_two_pages_with_no_body_are_a_preview(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "thin.pdf")
+            Path(path).write_bytes(b"%PDF-1.7\n")
+            with mock.patch.object(download_pdf, "pdf_measure", return_value=(2, 1200)):
+                preview, reason = download_pdf.is_paywall_preview(path)
+        self.assertTrue(preview)
+        self.assertIn("only 1200 characters", reason)
+
+    def test_a_real_article_is_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "full.pdf")
+            Path(path).write_bytes(b"%PDF-1.7\n")
+            with mock.patch.object(download_pdf, "pdf_measure", return_value=(19, 84622)):
+                preview, _ = download_pdf.is_paywall_preview(path)
+        self.assertFalse(preview)
+
+    def test_without_pymupdf_the_byte_heuristic_still_guards(self):
+        # Degradation, not failure: the fallback can only UNDER-report a preview,
+        # never invent one, and the reason says which measurement was used.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "one.pdf")
+            Path(path).write_bytes(b"%PDF-1.7\n" + b"/Type /Page ")
+            with mock.patch.object(download_pdf, "pdf_measure", return_value=None):
+                preview, reason = download_pdf.is_paywall_preview(path)
+        self.assertTrue(preview)
+        self.assertIn("raw bytes", reason)
+
+    def test_an_unmeasurable_file_is_not_a_preview(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "odd.pdf")
+            Path(path).write_bytes(b"%PDF-1.7\nno page objects here")
+            with mock.patch.object(download_pdf, "pdf_measure", return_value=None):
+                preview, _ = download_pdf.is_paywall_preview(path)
+        self.assertFalse(preview)
+
+
+class TestFailedFromManifest(unittest.TestCase):
+    """_failed.md is a view of the merged manifest, not a tally of one call.
+
+    Measured 2026-09-14: eleven `doi` calls in a row meant the last one decided,
+    so a successful eleventh erased the record of seven failures and left "All
+    references with a DOI were retrieved" in a corpus missing seven papers.
+    """
+
+    def test_a_later_success_does_not_erase_an_earlier_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "A", "doi": "10.1/a", "file": None, "status": "failed"}])
+            download_pdf.write_failed(tmp)
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "B", "doi": "10.1/b", "file": "b.pdf", "status": "elsevier"}])
+            download_pdf.write_failed(tmp)
+            failed = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertIn("https://doi.org/10.1/a", failed)
+        self.assertNotIn("10.1/b", failed)
+
+    def test_an_all_clear_is_written_only_when_nothing_failed(self):
+        # The positive control: the reassuring sentence must still be reachable,
+        # or the fix would simply never say all is well.
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "A", "doi": "10.1/a", "file": "a.pdf", "status": "elsevier"}])
+            download_pdf.write_failed(tmp)
+            failed = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertIn("All references", failed)
+
+    def test_no_manifest_yields_no_false_all_clear_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_failed(tmp)
+            failed = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertIn("All references", failed)
+
+
+class TestAuditPreviews(unittest.TestCase):
+    """Revisiting a refs/ the presence gate would never look at again."""
+
+    def _corpus(self, tmp):
+        Path(os.path.join(tmp, "good2020key.pdf")).write_bytes(b"%PDF-1.7\n")
+        Path(os.path.join(tmp, "prev2020key.pdf")).write_bytes(b"%PDF-1.7\n")
+        Path(os.path.join(tmp, "_manifest.bak.json")).write_text("{}", encoding="utf-8")
+        download_pdf.write_manifest(tmp, [
+            {"citekey": "good2020key", "doi": "10.1/g", "file": "good2020key.pdf",
+             "status": "elsevier"},
+            {"citekey": "prev2020key", "doi": "10.1/p", "file": "prev2020key.pdf",
+             "status": "elsevier"}])
+
+    @staticmethod
+    def _measure(path):
+        return (1, 4800) if "prev" in os.path.basename(path) else (19, 84622)
+
+    def test_a_dry_run_reports_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._corpus(tmp)
+            with mock.patch.object(download_pdf, "pdf_measure", self._measure):
+                report = download_pdf.audit_previews(tmp)
+            still_there = os.path.exists(os.path.join(tmp, "prev2020key.pdf"))
+        self.assertEqual([p["citekey"] for p in report["previews"]], ["prev2020key"])
+        self.assertEqual(report["checked"], 2)
+        self.assertFalse(report["applied"])
+        self.assertTrue(still_there)
+
+    def test_applying_quarantines_and_records_the_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._corpus(tmp)
+            with mock.patch.object(download_pdf, "pdf_measure", self._measure):
+                download_pdf.audit_previews(tmp, apply=True)
+            moved = os.path.exists(os.path.join(tmp, "_previews", "prev2020key.pdf"))
+            gone = not os.path.exists(os.path.join(tmp, "prev2020key.pdf"))
+            kept = os.path.exists(os.path.join(tmp, "good2020key.pdf"))
+            manifest = json.loads(
+                Path(os.path.join(tmp, "_manifest.json")).read_text(encoding="utf-8"))
+            failed = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertTrue(moved)
+        self.assertTrue(gone)
+        self.assertTrue(kept)
+        self.assertEqual(manifest["prev2020key"]["status"], "failed")
+        self.assertEqual(manifest["good2020key"]["status"], "elsevier")
+        self.assertIn("https://doi.org/10.1/p", failed)
+
+    def test_a_paper_retrieved_by_hand_is_no_longer_reported_failed(self):
+        # Found by running the audit on the live corpus: three references the
+        # operator had just downloaded were still asking to be downloaded,
+        # because the manual retrieval never touched the manifest.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._corpus(tmp)
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "good2020key", "doi": "10.1/g", "file": None,
+                 "status": "failed"}])
+            with mock.patch.object(download_pdf, "pdf_measure", self._measure):
+                report = download_pdf.audit_previews(tmp, apply=True)
+            manifest = json.loads(
+                Path(os.path.join(tmp, "_manifest.json")).read_text(encoding="utf-8"))
+            failed = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertEqual([r["citekey"] for r in report["recovered"]], ["good2020key"])
+        self.assertEqual(manifest["good2020key"]["status"], "present")
+        self.assertNotIn("10.1/g", failed)
+
+    def test_a_dry_run_reconciles_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._corpus(tmp)
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "good2020key", "doi": "10.1/g", "file": None,
+                 "status": "failed"}])
+            with mock.patch.object(download_pdf, "pdf_measure", self._measure):
+                report = download_pdf.audit_previews(tmp)
+            manifest = json.loads(
+                Path(os.path.join(tmp, "_manifest.json")).read_text(encoding="utf-8"))
+        self.assertEqual([r["citekey"] for r in report["recovered"]], ["good2020key"])
+        self.assertEqual(manifest["good2020key"]["status"], "failed")
+
+    def test_the_bookkeeping_files_are_not_audited(self):
+        # A name starting with "_" is the corpus's own record, never a paper.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._corpus(tmp)
+            Path(os.path.join(tmp, "_notes.pdf")).write_bytes(b"%PDF-1.7\n")
+            with mock.patch.object(download_pdf, "pdf_measure", self._measure):
+                report = download_pdf.audit_previews(tmp)
+        self.assertEqual(report["checked"], 2)
 
 if __name__ == "__main__":
     unittest.main()

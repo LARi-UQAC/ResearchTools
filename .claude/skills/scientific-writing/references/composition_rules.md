@@ -120,6 +120,13 @@ examine".
 - **R3.3 Every section opens with a backward link.** Each section except the Introduction opens with
   a backward link to the conclusion of the previous section, before it presents its own subsections
   under R3.1.
+- **R3.4 A title names its subject. It never asks, suggests, or remarks.** A section or subsection
+  title is a noun phrase stating what the section covers. It is never phrased as a question, an
+  exclamation, an imperative, or a passing remark. For a paper, titles follow the field's own
+  canonical divisions: Introduction, Related Works, Methodology, the name of the proposed method,
+  Results, Discussion, Limitations, Conclusion, Future Works, Acknowledgment. For a book or a talk,
+  a title is instead a short phrase of a few words naming the subtopic covered, never one of the
+  paper's canonical labels. Neither form ever reads as a question, a suggestion, or a remark.
 
 Compliant closing:
 
@@ -128,6 +135,17 @@ The proposed energy model was therefore shown to depend jointly on the robot spe
 displaced mass. The experimental protocol used to identify its coefficients is presented in
 Section~\ref{sec:experimental-protocol}.
 ```
+
+### Section and subsection titles
+
+| Non-compliant title | Compliant title |
+|---|---|
+| "Is deep learning ready for real-time control?" | "Real-time constraints of deep-learning inference" |
+| "Let's look at the results" | "Results" |
+| "Some thoughts on future work" | "Future Works" |
+| "Why the baseline underperforms" | "Baseline underperformance" |
+| "A word on the study's limits" | "Limitations of the study" |
+| "Consider the following method" | "Suggested [method name]" |
 
 ## 4. Abstract
 
@@ -159,6 +177,46 @@ Applies both when authoring for that journal and when auditing a manuscript aime
 - **R5.4** Record, in the document's plan or header comment, every journal requirement that overrides
   a default rule of this file. The structured-abstract exception of R4.1 is the common case.
 
+## 6. Writing register by section
+
+Five writing styles exist in general use: narrative, descriptive, persuasive, expository, and
+creative (confirmed 2026-09-25 against two independent sources, same five, same order). Two are
+forbidden everywhere in this repo. The other three are assigned to a specific section each, never
+used interchangeably. These registers sit alongside the sentence-level rules of section 1: passive
+by default (R1.1), active only for a defensible reason such as a decision the authors themselves
+made (R1.2, R1.5), whichever register applies.
+
+- **R6.1 Narrative and creative writing are forbidden everywhere.** No section tells a story with a
+  protagonist, a conflict, or a surprising twist. No section mixes registers to surprise the
+  reader, the way creative writing does. Every section states a fact, a method, or an argument,
+  never an anecdote.
+- **R6.2 Introduction, Related Works, and Literature Review are expository.** Their purpose is to
+  inform, not to persuade. State what prior work established, using the exact technical term for
+  each concept, never a softened paraphrase. Define each acronym at first use and reuse it
+  consistently after that. Ground every claim in a verified source, drawn from the cited paper's
+  own contribution sentence (the `extract-contributions` skill), never from a paraphrase of its
+  abstract. This section states no opinion and takes no side: it reports only what the cited work
+  itself established.
+
+  **Exception, grant proposals only:** a reviewing panel is not always a domain specialist. A grant
+  proposal therefore defines each technical term in one short clause the first time it appears. A
+  paper or a thesis carries no such exception: the exact term stands alone, undefined beyond its
+  first citation.
+- **R6.3 Methodology is descriptive, without metaphor.** Its purpose is to let another researcher
+  reproduce the experiment from the text alone. State every step of the procedure used to test the
+  hypothesis, in the order it was performed. A measurement or a parameter is stated in its own exact
+  terms, never stood in for by a figurative comparison.
+- **R6.4 Results states measured, verified facts, and nothing else.** No hedge word implying a cause
+  ("suggests", "indicates", "may be") belongs here, and no claim that is not read directly off a
+  measurement or a statistical test. Interpretation belongs to the Discussion alone
+  (`imrad_structure.md`'s own Results principle: "Show, don't interpret. Save interpretation for the
+  Discussion.").
+- **R6.5 Discussion is persuasive.** Its purpose is to demonstrate, from the Results already stated,
+  that the hypothesis is confirmed, refuted, or partially informed. State plainly whether the
+  study's own objectives were met. Every persuasive claim here still rests on a fact already
+  established in the Results. Persuasive is a register, not a licence to assert past what the data
+  supports.
+
 ## Self-check before finalizing
 
 For the document being authored or the plan being written, verify and resolve every miss:
@@ -175,5 +233,13 @@ For the document being authored or the plan being written, verify and resolve ev
 - [ ] R3.1: every section opens on a paragraph that `\ref{}`s each of its subsections
 - [ ] R3.2: every section except Conclusion and Future works closes on exactly one conclusion
       sentence plus exactly one announcement sentence
+- [ ] R3.4: every section/subsection title is a noun phrase naming its subject, never a question,
+      a suggestion, or a remark
 - [ ] R4.1-R4.4: abstract has no labels, no citation, no acronym, no equation
 - [ ] R5.1-R5.4: journal guidelines read, or requested, and every override recorded
+- [ ] R6.1: no narrative or creative writing anywhere in the document
+- [ ] R6.2: Introduction/Related Works/Literature Review is expository, exact terms, no opinion
+      (a grant proposal's own term-definition exception recorded, if it applies)
+- [ ] R6.3: Methodology is descriptive with no metaphor, every step of the procedure stated
+- [ ] R6.4: Results states measured facts only, no hedge word, no interpretation
+- [ ] R6.5: Discussion is persuasive, demonstrates the hypothesis verdict and the objectives met

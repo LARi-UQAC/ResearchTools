@@ -64,6 +64,14 @@ author:
     responsible_name: Martin Otis
     lab_acronym: LAR.i
 
+# --- Narrative CV project location (wired consumer: narrative-cv) ---
+# Where this profile's CV inventory and per-competition drafts live. Never
+# inside ResearchTools (R7): the value is the researcher's own external
+# project folder. Omit this block and the skill refuses to run rather than
+# guessing a location (R1, R8) - cv_common.load_cv_project_dir().
+cv:
+  project_dir: "C:\\Martin Otis\\OutilsLogiciels\\CV_Martin_Otis"
+
 # --- Scopus literature scope (scopus-researcher) ---
 scopus:
   subject_areas:

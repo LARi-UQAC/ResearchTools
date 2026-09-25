@@ -60,6 +60,11 @@ SECTION_TTL_KEY = {
     # Reads every transcript END TO END rather than by tail, so it gets a timer
     # of its own and a floor a viewer cannot go below.
     "usage": "usage",
+    # Phase 2/3 of the journal-durable plan (2026-09-24): both optional,
+    # both reporting unavailable-with-reason rather than an empty panel when
+    # postgres/openobserve are not configured.
+    "identity": "identity",
+    "traces": "traces",
 }
 
 _ASSET_NAME = re.compile(r"^[A-Za-z0-9._-]+$")

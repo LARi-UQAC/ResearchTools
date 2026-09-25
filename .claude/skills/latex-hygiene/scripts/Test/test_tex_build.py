@@ -161,5 +161,80 @@ class TestAccept(unittest.TestCase):
         self.assertIn("Also keep this", out_text)
 
 
+class TestArtifactDecoding(unittest.TestCase):
+    """
+    The 2026-09-16 defect: parse_counters read the .log with a strict UTF-8
+    decode. MiKTeX under a French Windows writes paths and messages in the
+    system codepage, so byte 0xe9 raised UnicodeDecodeError and `build`
+    reported NOTHING although pdflatex and bibtex had both succeeded and the
+    61-page PDF was on disk. A build whose result cannot be read looks exactly
+    like a build that failed, which is why this is a defect and not a cosmetic
+    issue.
+    """
+
+    @staticmethod
+    def _write_bytes(tmp_dir: str, name: str, payload: bytes) -> None:
+        with open(os.path.join(tmp_dir, name), "wb") as handle:
+            handle.write(payload)
+
+    def test_a_log_in_the_system_codepage_does_not_raise(self):
+        # 0xe9 is a cp1252 "e acute" and is not a valid standalone UTF-8 byte.
+        log = (
+            b"This is pdfTeX\n"
+            b"(C:\\Users\\prof\\Documents\\r\xe9f\xe9rences\\paper.tex)\n"
+            b"Output written on paper.pdf (61 pages, 9787008 bytes).\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_bytes(tmp, "paper.log", log)
+            counters = tex_build.parse_counters("paper", tmp)
+
+        self.assertEqual(counters["pages"], 61)
+
+    def test_counters_survive_a_replaced_byte_next_to_them(self):
+        # Positive control: the four counters are pure ASCII, so a replaced
+        # byte on the same line must neither create nor destroy one.
+        log = (
+            b"! Undefined control sequence.\n"
+            b"LaTeX Warning: Citation `r\xe9f2026' on page 3 undefined.\n"
+            b"! Missing $ inserted.\n"
+            b"Output written on paper.pdf (12 pages, 100 bytes).\n"
+        )
+        bbl = b"\\bibitem{a} Auteur, \xe9t\xe9. https://doi.org/10.1000/x\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_bytes(tmp, "paper.log", log)
+            self._write_bytes(tmp, "paper.bbl", bbl)
+            counters = tex_build.parse_counters("paper", tmp)
+
+        self.assertEqual(counters["errors"], 2)
+        self.assertEqual(counters["undefined"], 2)
+        self.assertEqual(counters["doi_links"], 1)
+        self.assertEqual(counters["pages"], 12)
+
+    def test_a_clean_utf8_log_is_unchanged(self):
+        # Negative control: the tolerant reader must not alter the ordinary
+        # case, or every existing measurement would have moved with this fix.
+        log = "! Error.\nCitation undefined.\nOutput written on p.pdf (7 pages, 1 bytes).\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_bytes(tmp, "paper.log", log.encode("utf-8"))
+            counters = tex_build.parse_counters("paper", tmp)
+
+        self.assertEqual(counters["errors"], 1)
+        self.assertEqual(counters["undefined"], 1)
+        self.assertEqual(counters["pages"], 7)
+
+    def test_source_files_keep_the_strict_decode(self):
+        # The load-bearing negative control: the fix must NOT widen the source
+        # reader. A .tex that is not UTF-8 is an authoring defect to surface,
+        # and silently replacing bytes there would hide it.
+        import tex_common
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_bytes(tmp, "paper.tex", b"Texte accentu\xe9.\n")
+            path = os.path.join(tmp, "paper.tex")
+            with self.assertRaises(UnicodeDecodeError):
+                tex_common.read_text(path)
+            self.assertIn("Texte accentu", tex_common.read_artifact_text(path))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -35,7 +35,7 @@ import shutil
 import subprocess
 from typing import Dict, List, Optional
 
-from tex_common import read_text, resolve_accepted
+from tex_common import read_artifact_text, read_text, resolve_accepted
 
 logger = logging.getLogger(__name__)
 
@@ -196,12 +196,15 @@ def parse_counters(name: str, outdir: str) -> Dict:
             "pages": Optional[int]}. Missing artifacts read as empty text
             rather than raising, so a build that failed before producing a
             .bbl still reports errors/undefined from whatever .log exists.
+            Artifacts are decoded with read_artifact_text, not read_text: the
+            engine writes its log in the system codepage, and a strict UTF-8
+            read made a successful build report nothing (see that function).
     --------------------------------------------------------------------------
     """
     log_path = os.path.join(outdir, name + ".log")
     bbl_path = os.path.join(outdir, name + ".bbl")
-    log_text = read_text(log_path) if os.path.isfile(log_path) else ""
-    bbl_text = read_text(bbl_path) if os.path.isfile(bbl_path) else ""
+    log_text = read_artifact_text(log_path) if os.path.isfile(log_path) else ""
+    bbl_text = read_artifact_text(bbl_path) if os.path.isfile(bbl_path) else ""
 
     errors = len(re.findall(r"(?m)^!", log_text))
     undefined = len(re.findall(r"undefined", log_text, re.IGNORECASE))

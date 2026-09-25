@@ -4,14 +4,15 @@ Shared architecture document for the two repositories that make up the UQAC form
 **ResearchTools** (`LARi-UQAC/ResearchTools`) and **ThesisTracker** (`JdUmuhoza/ThesisTracker`).
 The same file is committed to `main` in both, so either checkout tells the whole story.
 
-**Status: in progress. 11 of 20 units delivered.** Twenty branches carry one plan document each,
+**Status: in progress. 12 of 20 units delivered.** Twenty branches carry one plan document each,
 and twenty-one issues track them. Written 2026-07-29.
 
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
-with the ingest-contract fix that RT-1 and RT-2 found. RT-1 through RT-5 are all merged to
-`main` here (RT-5 merged 2026-09-25, PR #22). RT-5's `/pdf/fill` multipart-vs-raw-body request
-shape was checked against the ThesisTracker side 2026-09-25: TT-3 is not built yet, so there is
-no existing client contract to conflict with, and no objection was raised to what shipped.
+with the ingest-contract fix that RT-1 and RT-2 found. RT-1 through RT-6 are all merged to
+`main` here (RT-5 merged 2026-09-25, PR #22; RT-6 merged 2026-09-25, PR #24). RT-5's `/pdf/fill`
+multipart-vs-raw-body request shape was checked against the ThesisTracker side 2026-09-25: TT-3
+is not built yet, so there is no existing client contract to conflict with, and no objection was
+raised to what shipped.
 Reconfirm once TT-3 is actually implemented. TT-7
 (email one-time codes) is built but **excluded by design** until UQAC provides a mail relay:
 merging it would replace the only working sign-in with a code nothing can deliver. It also
@@ -244,6 +245,14 @@ is what makes it safe to deploy publicly-sourced code beside private student dat
 
 Identity is entirely ThesisTracker's. The service authenticates a **machine** with a shared secret
 and never sees a user, a session, or an email address.
+
+**RT-7's corpus index is academic tooling, not the form-service function above.** Its parse cache
+(`<citekey>.parsed.md` / `.parsed.meta.json`, gitignored, next to each cached source) and its
+opt-in pgvector store belong to `.claude/skills/extract-statistic/`, the academic toolbox row of
+the table above, not `.claude/skills/form-service/`. The pgvector store does ride the same `db`
+service RT-5 already added to `deploy/docker-compose.yml`, so no separate vector vendor or
+Postgres instance is introduced - but the form-service function itself stays exactly as stateless
+as the table states.
 
 ---
 
@@ -944,8 +953,8 @@ critical path and can land last.
 | RT-3 | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | ResearchTools #6 | Stateless `fill(pdf_bytes, values, flatten_fields) -> bytes`, `NeedAppearances`, selective field locking. **Scope reduced:** no profile, no map, no stale gate. **Delivered 2026-08-31.** |
 | RT-4 | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. **Delivered 2026-08-31.** |
 | RT-5 | `feat/form-service` (was `feat/uqac-forms-service`) | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. `/pdf/fill` uses multipart/form-data, still unconfirmed with TT-3 - settle before TT-3 codes against it. **Delivered 2026-09-25** (PR #22, merged to `main`). |
-| RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag. `count` capped at 25 (Scopus's own STANDARD-view ceiling). **Implemented 2026-09-25, PR open, not yet merged.** |
-| RT-7 | `feat/corpus-index` | ResearchTools #10 | Content-addressed parse cache, deterministic chunker, injected embedder, pgvector store, opt-in build |
+| RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag. `count` capped at 25 (Scopus's own STANDARD-view ceiling). **Delivered 2026-09-25** (PR #24, merged to `main`). |
+| RT-7 | `feat/corpus-index` | ResearchTools #10 | Content-addressed parse cache, deterministic chunker, injected embedder, pgvector store, opt-in build. **Implemented 2026-09-25, PR open, not yet merged.** |
 | TT-0 | `feat/routes-portability` | ThesisTracker #1 | Named handlers, thin Vercel dispatchers, `pg` swap, Express front door, container |
 | TT-1 | `feat/forms-entity` | ThesisTracker #2 | `form_instances` entity and its additive migration; `crud.js`, `scope.js`, `auth.js` untouched |
 | TT-2 | `feat/forms-routes` | ThesisTracker #3 | Owner-scoped instance routes, signing queues, binary document routes |

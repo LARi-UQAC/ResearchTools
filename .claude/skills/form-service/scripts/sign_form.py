@@ -120,6 +120,42 @@ def signature_fields(pdf: str | bytes) -> list[dict[str, Any]]:
     return out
 
 
+def validate_signatures(pdf: str | bytes) -> list[dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Report the validation status of every embedded signature: whether the
+        signed bytes are intact, whether the signature verifies, and whether it
+        chains to a trusted authority. The three are kept apart rather than
+        collapsed into one pass/fail, because a self-signed development
+        signature is intact and valid and must still never be presented as one
+        an institutional office has accepted.
+
+    Inputs:
+        pdf (str | bytes): a path, or the PDF body
+
+    Outputs:
+        report (list[dict]): one entry per embedded signature, each with
+            field, intact, valid and trusted. Empty when the document carries
+            no signature at all.
+    --------------------------------------------------------------------------
+    """
+    from pyhanko.sign.validation import validate_pdf_signature
+
+    body = pdf if isinstance(pdf, (bytes, bytearray)) else open(pdf, "rb").read()
+    reader = PdfFileReader(io.BytesIO(body), strict=False)
+    report: list[dict[str, Any]] = []
+    for embedded in reader.embedded_signatures:
+        status_ = validate_pdf_signature(embedded)
+        report.append({
+            "field": embedded.field_name,
+            "intact": bool(status_.intact),
+            "valid": bool(status_.valid),
+            "trusted": bool(status_.trusted),
+        })
+    return report
+
+
 def preflight(pdf: str | bytes, field_name: str | None = None) -> str:
     """
     --------------------------------------------------------------------------

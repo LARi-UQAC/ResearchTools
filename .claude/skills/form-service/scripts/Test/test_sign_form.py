@@ -270,6 +270,20 @@ class TestThreeSignatureChain(_SignerTestCase):
             sizes.append(len(pdf))
         self.assertEqual(sizes, sorted(sizes), "the file must only grow")
 
+    def test_validate_signatures_reports_intact_valid_and_untrusted(self) -> None:
+        report = sign_form.validate_signatures(self.signed_three_times())
+        self.assertEqual(len(report), 3)
+        for entry in report:
+            self.assertTrue(entry["intact"], entry["field"])
+            self.assertTrue(entry["valid"], entry["field"])
+            self.assertFalse(entry["trusted"],
+                             f"{entry['field']}: a development signature must never "
+                             "report as trusted")
+
+    def test_validate_signatures_on_an_unsigned_document_is_empty(self) -> None:
+        pdf = form_with_signature_fields(THREE)
+        self.assertEqual(sign_form.validate_signatures(pdf), [])
+
 
 class TestSelfSignedSigner(_SignerTestCase):
 

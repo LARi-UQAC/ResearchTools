@@ -23,10 +23,13 @@ Requires: SCOPUS_API_KEY env var (set via Windows User environment variables).
 import argparse
 import difflib
 import json
+import logging
 import os
 import re
 import sys
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import requests
@@ -1331,6 +1334,190 @@ def _author_candidates_from_s2(name: str, count: int) -> list[dict[str, Any]]:
     ]
 
 
+# The approved-publisher list from .claude/CLAUDE.md. A venue outside it is
+# FLAGGED, never dropped: the professor decides relevance, and a silent drop
+# would hide a real publication from a cohort report.
+APPROVED_PUBLISHERS = (
+    "ieee", "springer", "elsevier", "taylor", "francis", "cambridge", "wiley",
+    "iet ", "institution of engineering", "iop ", "institute of physics", "acm",
+    "mdpi", "asme", "acme", "biomed central", "bmc",
+)
+
+
+def is_approved_publisher(publisher_or_venue: str) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide whether a venue or publisher string belongs to the approved list.
+        Matching is a lowercase substring test on the venue name, because Scopus
+        returns the publication name rather than the publisher for most records.
+
+    Inputs:
+        publisher_or_venue (str): the venue or publisher name
+
+    Outputs:
+        approved (bool): True when the name matches an approved publisher
+    --------------------------------------------------------------------------
+    """
+    text = (publisher_or_venue or "").lower()
+    if not text:
+        return False
+    return any(marker in text for marker in APPROVED_PUBLISHERS)
+
+
+def _raise_for_status(response: requests.Response, context: str) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Turn a non-200 Scopus response into a raised exception. Deliberately
+        NOT `_check_response`, which calls sys.exit(1): that is correct for the
+        CLI entry points but fatal when the caller is a request handled inside
+        a long-lived service process, where a Scopus outage must be a caught
+        exception rather than a dead worker.
+
+    Inputs:
+        response (requests.Response): the Scopus HTTP response
+        context (str): what was being requested, for the error message
+
+    Outputs:
+        none
+
+    Raises:
+        RuntimeError naming the status and, when Scopus reports
+        AUTHORIZATION_ERROR (the key is valid but not entitled for this API,
+        measured 2026-08-12 on the Author Search API), the workaround: pass
+        author_id directly instead of a name.
+    --------------------------------------------------------------------------
+    """
+    if response.status_code == 200:
+        return
+    if _is_authorization_error(response):
+        raise RuntimeError(
+            f"{context}: this Scopus key is not entitled for this API "
+            "(AUTHORIZATION_ERROR). Pass author_id directly to skip name "
+            "resolution.")
+    raise RuntimeError(f"{context} failed ({response.status_code}): {response.text[:300]}")
+
+
+def _resolve_author_id(name: str, api_key: str, insttoken: str | None) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Resolve an author name to one Scopus author record, reusing the same
+        name-splitting rule as the existing `author` mode.
+
+    Inputs:
+        name (str): the author's name, "Given Family" or "Family, Given"
+        api_key (str): Scopus API key
+        insttoken (str | None): institutional token for off-campus access
+
+    Outputs:
+        author (dict): {author_id, name, affiliation, h_index, documents}
+
+    Raises:
+        RuntimeError naming the query when Scopus returns no author, or when
+        the key is not entitled for the Author Search API.
+    --------------------------------------------------------------------------
+    """
+    surname, initial = _split_author_name(name)
+    query = (f"AUTHLASTNAME({surname}) AND AUTHFIRST({initial})"
+             if initial else f"AUTHLASTNAME({surname})")
+    response = requests.get(
+        AUTHOR_SEARCH_URL, headers=_make_headers(api_key, insttoken),
+        params={"query": query, "count": 1,
+                "field": "dc:identifier,preferred-name,affiliation-current,"
+                         "document-count,h-index"},
+        timeout=30)
+    _raise_for_status(response, f"author search for {name!r}")
+    entries = response.json().get("search-results", {}).get("entry", [])
+    if not entries or not entries[0].get("dc:identifier"):
+        raise ValueError(f"no Scopus author found for {name!r}")
+
+    entry = entries[0]
+    preferred = entry.get("preferred-name", {})
+    affiliation = entry.get("affiliation-current", {})
+    return {
+        "author_id": str(entry.get("dc:identifier", "")).replace("AUTHOR_ID:", ""),
+        "name": f"{preferred.get('surname', '')}, {preferred.get('given-name', '')}".strip(", "),
+        "affiliation": (affiliation.get("affiliation-name", "")
+                        if isinstance(affiliation, dict) else ""),
+        "h_index": entry.get("h-index", ""),
+        "documents": entry.get("document-count", ""),
+    }
+
+
+def author_documents(name: str, count: int = 10, api_key: str | None = None,
+                     insttoken: str | None = None,
+                     author_id: str | None = None) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Retrieve one author's most recent Scopus documents, each carrying its
+        own DOI and a flag saying whether its venue belongs to the approved
+        publisher list. Nothing is synthesized: a record with no DOI in Scopus
+        comes back with an empty DOI.
+
+    Inputs:
+        name (str): the author's name
+        count (int): how many documents to return, most recent first. Capped
+            by the caller at 25: Scopus's STANDARD view refuses a page above
+            25 with HTTP 400 (see _SEARCH_PAGE below).
+        api_key (str | None): Scopus key, read from the environment when None
+        insttoken (str | None): institutional token for off-campus access
+        author_id (str | None): skip the resolution call when already known,
+            the only path available when the key is not entitled for the
+            Author Search API
+
+    Outputs:
+        result (dict): {query, author, publications, fetched_at}
+
+    Raises:
+        ValueError when the author cannot be resolved.
+        RuntimeError on any other non-200 Scopus response.
+    --------------------------------------------------------------------------
+    """
+    import datetime
+
+    key = api_key or _get_api_key()
+    author = ({"author_id": author_id, "name": name, "affiliation": "",
+               "h_index": "", "documents": ""}
+              if author_id else _resolve_author_id(name, key, insttoken))
+
+    response = requests.get(
+        SEARCH_URL, headers=_make_headers(key, insttoken),
+        params={"query": f"AU-ID({author['author_id']})", "count": count,
+                "sort": "-coverDate",
+                "field": "dc:title,prism:publicationName,prism:coverDate,prism:doi,"
+                         "subtypeDescription,citedby-count"},
+        timeout=30)
+    _raise_for_status(response, f"document search for AU-ID({author['author_id']})")
+
+    publications: list[dict[str, Any]] = []
+    for entry in response.json().get("search-results", {}).get("entry", []):
+        doi = str(entry.get("prism:doi", "") or "")
+        venue = str(entry.get("prism:publicationName", "") or "")
+        publications.append({
+            "title": str(entry.get("dc:title", "") or ""),
+            "venue": venue,
+            "year": str(entry.get("prism:coverDate", "") or "")[:4],
+            "doi": doi,
+            "doi_url": f"https://doi.org/{doi}" if doi else "",
+            "type": str(entry.get("subtypeDescription", "") or ""),
+            "citations": str(entry.get("citedby-count", "") or ""),
+            "approved_publisher": is_approved_publisher(venue),
+        })
+
+    logger.info("[SCOPUS] %d document(s) for author %s", len(publications),
+                author["author_id"])
+    return {
+        "query": name,
+        "author": author,
+        "publications": publications,
+        "fetched_at": datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0).isoformat(),
+    }
+
+
 def _author(name: str, api_key: str, insttoken: str | None, count: int = 5,
             au_id: str | None = None) -> None:
     """
@@ -1434,7 +1621,8 @@ def _author(name: str, api_key: str, insttoken: str | None, count: int = 5,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scopus REST API client for Claude Code")
-    parser.add_argument("mode", choices=["search", "cite", "validate", "verify", "author", "journal"])
+    parser.add_argument("mode", choices=["search", "cite", "validate", "verify", "author",
+                                         "journal", "publications"])
     parser.add_argument("query", help="Search query, DOI, title fragment, or author name")
     parser.add_argument("--count", type=int, default=10, help="Max results (search mode only)")
     parser.add_argument("--year_min", type=int, default=None,
@@ -1503,6 +1691,10 @@ def main() -> None:
         "author": lambda: _author(args.query, api_key, args.insttoken, args.count, args.au_id),
         "journal": lambda: _journal(args.query, api_key, args.insttoken, args.fallback_doi,
                                     args.issn),
+        "publications": lambda: print(json.dumps(
+            author_documents(args.query, count=args.count, api_key=api_key,
+                             insttoken=args.insttoken, author_id=args.au_id),
+            ensure_ascii=False, indent=2)),
     }
     dispatch[args.mode]()
 

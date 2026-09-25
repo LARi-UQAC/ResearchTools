@@ -620,6 +620,37 @@ file in this repository, which the three other HTML emitters here (`paper2talk`'
 `geolocalisation`'s map, and the graph page graphify writes) may adopt later; a test asserts the
 page and that file cannot drift apart.
 
+## Layer 7 - Deployment (form-service HTTP API)
+
+`deploy/form-service/` wraps the `form-service` skill scripts (RT-1 through RT-4: PDF
+ingest, widget dump, filling, PAdES signing) in a FastAPI application so ThesisTracker calls
+one service instead of shelling out to Python. `deploy/docker-compose.yml` runs it alongside a
+`pgvector/pgvector` Postgres (needed by RT-7's corpus index, unrelated to the form path) and a
+Caddy front door whose hostname is read from the environment.
+
+```mermaid
+flowchart LR
+  TT["ThesisTracker<br/>Express API"] -->|"X-Form-Service-Key<br/>PDF bytes plus values"| CADDY["Caddy<br/>reverse proxy"]
+  CADDY --> FS["form-service<br/>FastAPI, :8080<br/>stateless"]
+  FS --> CERT[("certs volume<br/>signing material only")]
+  RT7["RT-7 corpus index<br/>(unrelated to the form path)"] --> DB[("db<br/>Postgres 17 + pgvector")]
+
+  classDef svc fill:#DBEAFE,stroke:#1E3A8A,color:#14181F
+  classDef store fill:#D1FAE5,stroke:#065F46,color:#14181F
+  class TT,CADDY,FS,RT7 svc
+  class CERT,DB store
+```
+
+Two properties matter more than the rest of the diagram. The service is reached only over a
+private network, behind a shared secret compared in constant time, and the service refuses to
+start when that secret is unset or too short. The image carries no AGPL dependency: `pypdf`
+(BSD-3) and `pyHanko` (MIT) are the only PDF libraries here, and PyMuPDF (AGPL-3.0) stays
+isolated in the `extract-statistic` skill, never installed in this image.
+
+The dependency runs one way only: ThesisTracker calls the form service, never the reverse.
+ThesisTracker itself is a separate system and does not belong in the Layer 1 graph above;
+`NEW_ARCHITECTURE.md` is where the two projects meet.
+
 ## Notes
 
 - **Agent file format.** Each agent is one flat markdown file [agents/](agents)`<name>.md` whose line 1 opens YAML frontmatter (`name:`, `description:`) — the layout Claude Code's subagent discovery scans. Skills are the opposite: folder-based (`skills/<name>/SKILL.md`). The `.claude/agents/` files are canonical; `install.ps1` (repo root) regenerates the GitHub Copilot (`.github/agents/*.agent.md`), OpenCode, Continue, and Aider mirrors from them, and `install-junctions.ps1` links them per-file into `~/.claude/agents/` for global availability. Skills additionally get a Codex mirror, `.agents/skills/<name>/SKILL.md` — a pointer carrying only the frontmatter, since Codex is the sole harness that discovers skills natively (it scans `.agents/skills` from the working directory up to the repo root); its description is trimmed to whole sentences to fit Codex's skill-list budget, and `.claude/skills/AGENTS.md` is the nested instruction file Codex appends to the root `AGENTS.md` when the working directory sits inside that tree.

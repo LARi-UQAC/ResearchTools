@@ -104,6 +104,33 @@ excluded. A probe hook recorded `tool_name: "AskUserQuestion"`, `hook_event_name
 "PreToolUse"`, and a `tool_input` carrying one key, `questions`, whose entries hold
 `question`, `header`, `multiSelect` and `options[].label` / `options[].description` (R13).
 
+## Answering the user
+
+**R28 - a direct question gets a short, plain answer before any action, and work waits for
+confirmation that the answer landed.** R25 governs a question the session puts to the user
+through `AskUserQuestion`; this is the other direction, a question the user puts to the
+session in chat. Three parts:
+
+1. **Define the word first.** A question containing a term with more than one plausible
+   reading ("logging", "state", "cache") is answered by naming the reading being used before
+   answering it, not by picking one silently and hoping it was the intended one. When a term
+   could mean two unrelated things, say both and which one the answer covers.
+2. **Short.** A plain factual question gets a plain factual answer: what the thing is, what it
+   touches, what changes with or without it. Not an architecture review, not a table of
+   options, not a tangent onto an adjacent design question the user did not ask about that
+   turn - even a real one, raised separately.
+3. **Answer, then wait, then act.** A question blocks new edits or commands until it is
+   answered AND the user has confirmed the answer is clear. Continuing to modify code while an
+   explanation is still being worked out reads as acting on an unconfirmed assumption, which is
+   the failure this rule exists to stop, whatever the modification actually was.
+
+Measured 2026-09-25: a plain question about one added line ("why adding logger =
+`logging.getLogger(__name__)`") took five follow-up messages to land, three of them the user
+restating that the previous answer was not clear, because the reply led with an architecture
+tangent about a different, unasked question and kept editing the file while the explanation
+was still incomplete. The eventual answer was three sentences; it should have been the first
+reply.
+
 ## Reuse over reinvention
 
 - Prefer existing agents, skills, and commands (see the routing table in `.claude/CLAUDE.md`)

@@ -44,3 +44,12 @@ pymupdf==1.27.2.3
 
 docling==2.103.0
 markitdown[pdf]==0.1.6
+
+# corpus_index.py (OPTIONAL, RT-7): pgvector store and the local embedder.
+# Both degrade gracefully when absent: the chunker and the parse cache work
+# without them, and the index simply reports itself unavailable.
+# Audited clean 2026-09-25 (pip-audit --strict): pinned to the latest release
+# of each at that date, not the 2026-07-29 plan's psycopg==3.3.4 (three patch
+# releases behind by the time this unit was implemented).
+psycopg[binary]==3.3.6
+pgvector==0.5.0

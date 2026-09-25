@@ -60,11 +60,11 @@ catalogue: the catalogue, the field maps and the drift check live in ThesisTrack
 | `[x]` | RT-2 widget dump and diff | [#5](../../issues/5) | `feat/form-service-field-map` (was `feat/uqac-forms-field-map`) | RT-1 | Merged to `main`. Scope reduced: the map and the vocabulary are TT-8 rows. |
 | `[x]` | RT-3 fill | [#6](../../issues/6) | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | RT-2 | Merged to `main`. Scope reduced: no profile, no map, no stale gate. |
 | `[x]` | RT-4 sign and chain | [#7](../../issues/7) | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | RT-3 | Merged to `main`, confirmed 2026-09-25 (NEW_ARCHITECTURE.md's header still read it as pending — that line is stale, not this one). Preserves every previous signature. |
-| `[ ]` | RT-5 stateless service | [#8](../../issues/8) | `feat/form-service` (was `feat/uqac-forms-service`) | RT-4 | **Actionable now, in progress.** Branch was 79 commits behind `main`; rebased 2026-09-25 in an isolated worktree (`.worktrees/uqac-forms-service`), diff against `main` is plan-file-only again except the rename commit. **Blocks ThesisTracker TT-3 and TT-5.** Skill renamed `uqac-forms` -> `form-service` 2026-09-25: the form-filling mechanics were already institution-agnostic, only the name overclaimed UQAC-specificity. |
-| `[!]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | Plan only. **Blocks ThesisTracker TT-6.** |
-| `[!]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | Plan only. On no critical path, can land last. Recommended against, then approved: the four binding mitigations are in the plan and must not be dropped. |
+| `[x]` | RT-5 stateless service | [#8](../../issues/8) | `feat/form-service` (was `feat/uqac-forms-service`) | RT-4 | Merged to `main` 2026-09-25 (PR #22). `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`; fail-fast shared-secret gate, no CORS, no work directory. `sign_form.validate_signatures` added (intact/valid/trusted reported separately). `/pdf/fill`'s multipart-vs-raw-body shape is **unconfirmed with ThesisTracker TT-3** and must be agreed before TT-3 codes against it. Docker/Compose stack written but not run end to end (no Docker daemon in the build environment). |
+| `[ ]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | **Actionable now.** RT-5 merged, unblocked. **Blocks ThesisTracker TT-6.** |
+| `[ ]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | **Actionable now.** RT-5 merged, unblocked; independent of RT-6, and still on no critical path so it can land last. The four binding mitigations from the plan must not be dropped. |
 
-Counts: 7 units. DONE 4, REVIEW 0, IN PROGRESS 1, BLOCKED 2, TODO 0, DEFERRED 0.
+Counts: 7 units. DONE 5, REVIEW 0, IN PROGRESS 0, BLOCKED 0, TODO 2, DEFERRED 0.
 
 Issues in this repository that are NOT part of this programme and are tracked separately:
 [#11](../../issues/11) `download_pdf.py` background download with Cloudflare, and
@@ -74,12 +74,16 @@ Issues in this repository that are NOT part of this programme and are tracked se
 
 ## 3. Actionable now
 
-1. **RT-5.** RT-1 through RT-4 are merged. RT-5 is the last link before ThesisTracker's TT-3 and
-   TT-5 can start, and it is in progress in an isolated worktree as of 2026-09-25.
-2. In ThesisTracker: TT-0, TT-1, TT-2, TT-8, TT-9, TT-12 are merged; TT-7 is in progress on a
-   fresh branch (`feat/email-code-auth-v2`), independent of RT-5.
+1. **RT-6 and RT-7.** RT-1 through RT-5 are merged. Both are unblocked, independent of each
+   other, and start from a clean `main`.
+2. In ThesisTracker: TT-3 and TT-5 are unblocked now that RT-5 is merged, but TT-3's client
+   codes against RT-5's HTTP contract, and `/pdf/fill`'s multipart-vs-raw-body request shape
+   has **not** been confirmed with that side yet. Settle that before TT-3 starts, not after.
+   TT-0, TT-1, TT-2, TT-8, TT-9, TT-12 are merged; TT-7 is in progress on a fresh branch
+   (`feat/email-code-auth-v2`), independent of RT-5.
 
-RT-5 is the one remaining blocker on the critical path to TT-3 and TT-5.
+No remaining blocker on the ResearchTools side. The RT-5/TT-3 contract confirmation is the
+one cross-repo item to close before ThesisTracker starts its next unit.
 
 ---
 

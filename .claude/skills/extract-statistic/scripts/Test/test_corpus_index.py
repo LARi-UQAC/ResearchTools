@@ -10,6 +10,7 @@ clear message when no database is configured. Run with the project Python:
 import os
 import sys
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -69,6 +70,104 @@ class TestChunker(unittest.TestCase):
 
     def test_an_empty_text_yields_no_chunk(self) -> None:
         self.assertEqual(corpus_index.chunk_text("   \n  ", "otis2025diagnosis"), [])
+
+
+def fake_embedder(dim: int = 8):
+    """Deterministic embedder: no model, no network, stable across machines."""
+    def embed(texts: list[str]) -> list[list[float]]:
+        vectors = []
+        for text in texts:
+            digest = [0.0] * dim
+            for position, char in enumerate(text):
+                digest[position % dim] += (ord(char) % 17) / 100.0
+            vectors.append(digest)
+        return vectors
+    return embed
+
+
+class TestEmbedderSeam(unittest.TestCase):
+    def test_the_fake_embedder_is_deterministic(self) -> None:
+        embed = fake_embedder()
+        self.assertEqual(embed(["hello"]), embed(["hello"]))
+
+    def test_embed_chunks_returns_one_vector_per_chunk(self) -> None:
+        chunks = corpus_index.chunk_text(LONG_TEXT, "otis2025diagnosis")
+        vectors = corpus_index.embed_chunks(chunks, fake_embedder())
+        self.assertEqual(len(vectors), len(chunks))
+        self.assertEqual(len(vectors[0]), 8)
+
+    def test_embed_chunks_batches_without_changing_the_order(self) -> None:
+        chunks = corpus_index.chunk_text(LONG_TEXT, "otis2025diagnosis")
+        one = corpus_index.embed_chunks(chunks, fake_embedder(), batch_size=1)
+        many = corpus_index.embed_chunks(chunks, fake_embedder(), batch_size=100)
+        self.assertEqual(one, many)
+
+    def test_the_default_embedder_targets_the_local_endpoint_only(self) -> None:
+        # No corpus text may leave the machine: the default endpoint is loopback.
+        self.assertIn("127.0.0.1", corpus_index.DEFAULT_EMBED_ENDPOINT)
+
+
+class TestVectorStoreImportGuard(unittest.TestCase):
+    """No database needed: proves a missing psycopg surfaces an actionable
+    message rather than a bare ModuleNotFoundError, per the requirements.txt
+    comment promising the index 'simply reports itself unavailable'."""
+
+    def test_a_missing_psycopg_raises_an_actionable_runtime_error(self) -> None:
+        import builtins
+        real_import = builtins.__import__
+
+        def _blocked(name, *args, **kwargs):
+            if name == "psycopg":
+                raise ImportError("simulated: psycopg not installed")
+            return real_import(name, *args, **kwargs)
+
+        store = corpus_index.VectorStore("postgresql://x/y")
+        with unittest.mock.patch("builtins.__import__", side_effect=_blocked):
+            with self.assertRaises(RuntimeError) as ctx:
+                store._connect()
+        self.assertIn("psycopg", str(ctx.exception))
+        self.assertIn("requirements.txt", str(ctx.exception))
+
+
+@unittest.skipUnless(
+    os.environ.get("CORPUS_INDEX_DSN"),
+    "CORPUS_INDEX_DSN is not set: skipping the pgvector store tests. Start the "
+    "RT-5 compose stack and export "
+    "CORPUS_INDEX_DSN=postgresql://uqac:...@127.0.0.1:5433/uqac to run them.")
+class TestVectorStore(unittest.TestCase):
+    def setUp(self) -> None:
+        self.store = corpus_index.VectorStore(
+            os.environ["CORPUS_INDEX_DSN"], table="corpus_chunks_test")
+        self.store.ensure_schema(dim=8)
+        self.chunks = corpus_index.chunk_text(LONG_TEXT, "otis2025diagnosis")
+        self.vectors = corpus_index.embed_chunks(self.chunks, fake_embedder())
+
+    def tearDown(self) -> None:
+        self.store.drop()
+
+    def test_upsert_then_stats_counts_the_chunks(self) -> None:
+        self.store.upsert(self.chunks, self.vectors)
+        self.assertEqual(self.store.stats()["chunks"], len(self.chunks))
+
+    def test_upserting_twice_does_not_duplicate(self) -> None:
+        self.store.upsert(self.chunks, self.vectors)
+        self.store.upsert(self.chunks, self.vectors)
+        self.assertEqual(self.store.stats()["chunks"], len(self.chunks))
+
+    def test_search_returns_provenance_not_a_conclusion(self) -> None:
+        self.store.upsert(self.chunks, self.vectors)
+        hits = self.store.search(self.vectors[0], top=3)
+        self.assertTrue(hits)
+        for hit in hits:
+            self.assertIn("citekey", hit)
+            self.assertIn("passage", hit)
+            self.assertIn("page", hit)
+            self.assertIn("char_start", hit)
+
+    def test_the_verbatim_passage_survives_the_round_trip(self) -> None:
+        self.store.upsert(self.chunks, self.vectors)
+        hits = self.store.search(self.vectors[0], top=1)
+        self.assertEqual(hits[0]["passage"], self.chunks[0]["passage"])
 
 
 if __name__ == "__main__":

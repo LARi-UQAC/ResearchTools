@@ -1,0 +1,9 @@
+# Hostname comes from the environment so the stack is host-agnostic.
+{$FORM_SERVICE_HOST} {
+	encode zstd gzip
+
+	# Server to server only: no CORS header is ever added here.
+	reverse_proxy form-service:8080 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

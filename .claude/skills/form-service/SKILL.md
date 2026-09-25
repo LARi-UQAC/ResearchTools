@@ -245,6 +245,15 @@ Offline: `requests.get` is patched, so no test reaches the network. Every rule o
 the contract has a test, because a rule with no test is a rule the second
 implementation is free to drop.
 
+## HTTP service
+
+`deploy/form-service/` wraps this skill in a FastAPI application so another
+application (ThesisTracker) can fill, sign, and validate PDFs without shelling
+out to Python. Every route except `/health` requires a shared-secret header,
+the service refuses to start without one, and no field value is ever logged or
+persisted. See `deploy/form-service/README.md` for the endpoint table and the
+run commands.
+
 ## Unverified
 
 Whether the Decanat des etudes and the Service des ressources financieres accept
@@ -252,3 +261,7 @@ a PAdES cryptographic signature is **not confirmed**. The signer (RT-4) is
 pluggable with a self-signed development default so implementation can proceed;
 the production certificate decision (UQAC PKI, or Notarius / ConsignO) is open
 and someone must ask both offices.
+
+`POST /pdf/fill` uses `multipart/form-data` while the other three HTTP routes
+take the raw PDF as the whole request body. This split has **not been agreed**
+with the ThesisTracker (TT-3) side and must be before either unit ships.

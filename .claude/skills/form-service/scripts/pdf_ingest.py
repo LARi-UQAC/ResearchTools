@@ -1,5 +1,5 @@
 """
-pdf_ingest.py - the validated PDF-ingest contract for the uqac-forms skill.
+pdf_ingest.py - the validated PDF-ingest contract for the form-service skill.
 
 Stage: retrieval. Given an https URL, it produces a file on disk that is proven
 to be a PDF, or nothing at all. It holds no registry, no cache index and no

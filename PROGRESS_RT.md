@@ -56,11 +56,11 @@ catalogue: the catalogue, the field maps and the drift check live in ThesisTrack
 
 | St | Unit | Issue | Branch | Depends on | Notes |
 |---|---|---|---|---|---|
-| `[x]` | RT-1 skill scaffold and PDF ingest | [#4](../../issues/4) | `feat/uqac-forms-registry` | - | Merged to `main`. Scope reduced on 2026-07-29: the registry and drift check moved to TT-8. |
-| `[x]` | RT-2 widget dump and diff | [#5](../../issues/5) | `feat/uqac-forms-field-map` | RT-1 | Merged to `main`. Scope reduced: the map and the vocabulary are TT-8 rows. |
-| `[x]` | RT-3 fill | [#6](../../issues/6) | `feat/uqac-forms-filler` | RT-2 | Merged to `main`. Scope reduced: no profile, no map, no stale gate. |
-| `[x]` | RT-4 sign and chain | [#7](../../issues/7) | `feat/uqac-forms-signer` | RT-3 | Merged to `main`, confirmed 2026-09-25 (NEW_ARCHITECTURE.md's header still read it as pending — that line is stale, not this one). Preserves every previous signature. |
-| `[ ]` | RT-5 stateless service | [#8](../../issues/8) | `feat/uqac-forms-service` | RT-4 | **Actionable now, in progress.** Branch was 79 commits behind `main`; rebased 2026-09-25 in an isolated worktree (`.worktrees/uqac-forms-service`), diff against `main` is plan-file-only again. **Blocks ThesisTracker TT-3 and TT-5.** Naming under discussion: the professor asked to genericize `uqac-forms` since the form-filling mechanics aren't UQAC-specific; not yet resolved, so branch/skill names are unchanged pending that decision. |
+| `[x]` | RT-1 skill scaffold and PDF ingest | [#4](../../issues/4) | `feat/form-service-registry` (was `feat/uqac-forms-registry`) | - | Merged to `main`. Scope reduced on 2026-07-29: the registry and drift check moved to TT-8. |
+| `[x]` | RT-2 widget dump and diff | [#5](../../issues/5) | `feat/form-service-field-map` (was `feat/uqac-forms-field-map`) | RT-1 | Merged to `main`. Scope reduced: the map and the vocabulary are TT-8 rows. |
+| `[x]` | RT-3 fill | [#6](../../issues/6) | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | RT-2 | Merged to `main`. Scope reduced: no profile, no map, no stale gate. |
+| `[x]` | RT-4 sign and chain | [#7](../../issues/7) | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | RT-3 | Merged to `main`, confirmed 2026-09-25 (NEW_ARCHITECTURE.md's header still read it as pending — that line is stale, not this one). Preserves every previous signature. |
+| `[ ]` | RT-5 stateless service | [#8](../../issues/8) | `feat/form-service` (was `feat/uqac-forms-service`) | RT-4 | **Actionable now, in progress.** Branch was 79 commits behind `main`; rebased 2026-09-25 in an isolated worktree (`.worktrees/uqac-forms-service`), diff against `main` is plan-file-only again except the rename commit. **Blocks ThesisTracker TT-3 and TT-5.** Skill renamed `uqac-forms` -> `form-service` 2026-09-25: the form-filling mechanics were already institution-agnostic, only the name overclaimed UQAC-specificity. |
 | `[!]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | Plan only. **Blocks ThesisTracker TT-6.** |
 | `[!]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | Plan only. On no critical path, can land last. Recommended against, then approved: the four binding mitigations are in the plan and must not be dropped. |
 
@@ -119,11 +119,11 @@ A ResearchTools unit is not DONE until these pass. They are offline: no network,
 model load, per [.claude/rules/testing.md](.claude/rules/testing.md).
 
 ```powershell
-python .claude/skills/uqac-forms/scripts/Test/test_form_registry.py
-python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
-python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py
-python .claude/skills/uqac-forms/scripts/Test/test_sign_form.py
-pip-audit -r .claude/skills/uqac-forms/requirements.txt --strict
+python .claude/skills/form-service/scripts/Test/test_form_registry.py
+python .claude/skills/form-service/scripts/Test/test_field_map.py
+python .claude/skills/form-service/scripts/Test/test_fill_form.py
+python .claude/skills/form-service/scripts/Test/test_sign_form.py
+pip-audit -r .claude/skills/form-service/requirements.txt --strict
 .\install.ps1 -Profile engineering
 ```
 
@@ -140,7 +140,7 @@ python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py
 Manual, network-bound, not part of the offline gate:
 
 ```powershell
-python .claude/skills/uqac-forms/scripts/form_registry.py check --all
+python .claude/skills/form-service/scripts/form_registry.py check --all
 pyhanko sign validate out/<signed>.pdf
 ```
 

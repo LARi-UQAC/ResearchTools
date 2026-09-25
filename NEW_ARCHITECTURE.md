@@ -8,10 +8,20 @@ The same file is committed to `main` in both, so either checkout tells the whole
 and twenty-one issues track them. Written 2026-07-29.
 
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
-with the ingest-contract fix that RT-1 and RT-2 found. RT-1 and RT-2 are merged to `main` here;
-RT-3 is merged; RT-4 is on `feat/uqac-forms-signer`. TT-7 (email one-time codes) is built but **excluded by
-design** until UQAC provides a mail relay: merging it would replace the only working sign-in with
-a code nothing can deliver. It also carries the `direction` role, so it gates TT-10.
+with the ingest-contract fix that RT-1 and RT-2 found. RT-1, RT-2, RT-3 and RT-4 are all merged
+to `main` here (confirmed 2026-09-25 by branch-ancestry audit; this line previously read RT-4 as
+still on its branch, which was stale). RT-5 is in progress. TT-7 (email one-time codes) is built
+but **excluded by design** until UQAC provides a mail relay: merging it would replace the only
+working sign-in with a code nothing can deliver. It also carries the `direction` role, so it
+gates TT-10.
+
+**Skill renamed, 2026-09-25.** ResearchTools' `uqac-forms` skill is now `form-service`: the
+form-filling mechanics were already institution-agnostic (the caller supplies the URL and field
+values), only the name overclaimed UQAC-specificity. Branches RT-1 through RT-5 renamed to match
+(`feat/form-service-registry`, `-field-map`, `-filler`, `-signer`, and `feat/form-service` for
+RT-5). The command is now `/fetchform`. This document's own project name ("the UQAC form engine")
+is unchanged: the first deployment is UQAC-specific by design (Décanat, SRF, `uqac.ca`, Quebec
+Law 25), even though the underlying skill is not.
 
 This file is meant to be identical on `main` in both repositories.
 
@@ -218,7 +228,7 @@ plus a SHA-256 is a `fetch` in Node.
 | Knows about | What a PDF widget is, how to write a value into one, how to sign, and how to judge a paper or a thesis against the literature | Which forms exist, who fills what, in what order, with which data, and what is expected of each student by when |
 | Does **not** know | Which forms exist, who a student is, what any field means, how anyone signs in, what a deadline is | How to parse a PDF, how to validate a reference |
 | State it keeps | None per request. A signing certificate, nothing else | Everything: catalogue, rules, maps, profiles, documents, workflow position, timeline, findings |
-| New surface | `.claude/skills/uqac-forms/` (PDF mechanics), `deploy/form-service/` | `api/_lib/routes/`, `server/`, the catalogue, the profile store, the workflow engine, the timeline, correction-plan intake, email-code sign-in |
+| New surface | `.claude/skills/form-service/` (PDF mechanics), `deploy/form-service/` | `api/_lib/routes/`, `server/`, the catalogue, the profile store, the workflow engine, the timeline, correction-plan intake, email-code sign-in |
 | Direction of travel | Produces artifacts: filled bytes, signed bytes, an improvement plan | Consumes them, tracks them, and shows them to a person |
 
 The boundary rule, corrected: **ResearchTools manipulates PDF bytes, ThesisTracker knows what they
@@ -927,11 +937,11 @@ critical path and can land last.
 
 | Unit | Branch | Issue | Deliverable |
 |---|---|---|---|
-| RT-1 | `feat/uqac-forms-registry` | ResearchTools #4 | `uqac-forms` skill scaffold and the validated PDF-ingest contract (`%PDF` magic, size cap, https only, capped redirects). **Scope reduced:** the registry and the drift check moved to TT-8. **Delivered 2026-08-31.** |
-| RT-2 | `feat/uqac-forms-field-map` | ResearchTools #5 | `dump_widgets` with byte-exact names and `/AP /N` on-states, and `diff_widgets(a, b)` for drift reporting. **Scope reduced:** the map and the vocabulary are TT-8's rows. **Delivered 2026-08-31.** |
-| RT-3 | `feat/uqac-forms-filler` | ResearchTools #6 | Stateless `fill(pdf_bytes, values, flatten_fields) -> bytes`, `NeedAppearances`, selective field locking. **Scope reduced:** no profile, no map, no stale gate. **Delivered 2026-08-31.** |
-| RT-4 | `feat/uqac-forms-signer` | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. **Delivered 2026-08-31.** |
-| RT-5 | `feat/uqac-forms-service` | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. |
+| RT-1 | `feat/form-service-registry` (was `feat/uqac-forms-registry`) | ResearchTools #4 | `form-service` skill scaffold (was `uqac-forms`, renamed 2026-09-25) and the validated PDF-ingest contract (`%PDF` magic, size cap, https only, capped redirects). **Scope reduced:** the registry and the drift check moved to TT-8. **Delivered 2026-08-31.** |
+| RT-2 | `feat/form-service-field-map` (was `feat/uqac-forms-field-map`) | ResearchTools #5 | `dump_widgets` with byte-exact names and `/AP /N` on-states, and `diff_widgets(a, b)` for drift reporting. **Scope reduced:** the map and the vocabulary are TT-8's rows. **Delivered 2026-08-31.** |
+| RT-3 | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | ResearchTools #6 | Stateless `fill(pdf_bytes, values, flatten_fields) -> bytes`, `NeedAppearances`, selective field locking. **Scope reduced:** no profile, no map, no stale gate. **Delivered 2026-08-31.** |
+| RT-4 | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | ResearchTools #7 | Stateless PAdES sign of a named field, pluggable signer, and the guarantee that a new signature preserves every previous one. **Delivered 2026-08-31.** |
+| RT-5 | `feat/form-service` (was `feat/uqac-forms-service`) | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. |
 | RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag |
 | RT-7 | `feat/corpus-index` | ResearchTools #10 | Content-addressed parse cache, deterministic chunker, injected embedder, pgvector store, opt-in build |
 | TT-0 | `feat/routes-portability` | ThesisTracker #1 | Named handlers, thin Vercel dispatchers, `pg` swap, Express front door, container |

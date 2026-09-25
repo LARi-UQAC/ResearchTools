@@ -23,12 +23,29 @@ Usage:
   python corpus_index.py status [--dsn ...]
 """
 
+import argparse
+import json
 import logging
 import os
 import re
+import sys
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+# Reuse bib_audit.py's line-anchored .bib parser rather than a fresh regex
+# scan: it already avoids matching an '@' sitting inside a field VALUE (an
+# abstract mentioning an email address, for instance), which a naive
+# whole-file regex would not. Same cross-skill import pattern extract_text.py
+# already uses for download_pdf.py.
+_SCOPUS_SCRIPTS = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scopus", "scripts")
+)
+sys.path.insert(0, _SCOPUS_SCRIPTS)
+try:
+    import bib_audit
+except ImportError:  # pragma: no cover - build mode simply unavailable without it
+    bib_audit = None
 
 CHUNK_CHARS = 1200
 CHUNK_OVERLAP = 200
@@ -361,3 +378,175 @@ class VectorStore:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(f"DROP TABLE IF EXISTS {self.table}")
             conn.commit()
+
+
+_FULLTEXT_EXTENSIONS = (".parsed.md", ".pdf", ".html", ".md", ".txt")
+
+
+def _citekeys(bib_path: str) -> list[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Every citekey of a .bib file, in file order, via bib_audit's own
+        line-anchored parser (see the module-level import comment for why a
+        fresh regex is not used here).
+
+    Inputs:
+        bib_path (str): the corpus .bib
+
+    Outputs:
+        keys (list[str])
+
+    Raises:
+        FileNotFoundError: bib_path does not exist, naming the path.
+        RuntimeError: bib_audit could not be imported (scopus skill missing).
+    --------------------------------------------------------------------------
+    """
+    if not os.path.isfile(bib_path):
+        raise FileNotFoundError(f"bib file not found: {bib_path}")
+    if bib_audit is None:
+        raise RuntimeError(
+            "bib_audit.py is not importable: the scopus skill scripts are "
+            f"expected at {_SCOPUS_SCRIPTS}")
+    return [entry["key"] for entry in bib_audit.parse_bib(bib_path)]
+
+
+def _fulltext_for(citekey: str, refs_dir: str) -> str | None:
+    """The first retrievable full-text artifact of a citekey, or None."""
+    for extension in _FULLTEXT_EXTENSIONS:
+        candidate = os.path.join(refs_dir, f"{citekey}{extension}")
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def build_index(bib_path: str, refs_dir: str, store: Any, embedder: Embedder,
+                cache_dir: str | None = None) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Index a corpus: for each citekey of the .bib, read its full text through
+        the parse cache, chunk it, embed the chunks, and store them.
+
+        This is OPT-IN and is never called from another skill. A citekey with no
+        retrievable full text is reported in `missing`, never silently dropped,
+        because a silently short corpus is a wrong corpus.
+
+    Inputs:
+        bib_path (str): the corpus .bib
+        refs_dir (str): the refs/ directory holding the retrieved full texts
+        store (VectorStore): the destination store
+        embedder (Embedder): the injected embedding callable
+        cache_dir (str | None): parse-cache location, next to the source when None
+
+    Outputs:
+        result (dict): {documents, chunks, missing, cache_hits}
+    --------------------------------------------------------------------------
+    """
+    import parse_cache
+
+    keys = _citekeys(bib_path)
+    missing: list[str] = []
+    documents = 0
+    total_chunks = 0
+    cache_hits = 0
+    dim_set = False
+
+    for citekey in keys:
+        source = _fulltext_for(citekey, refs_dir)
+        if source is None:
+            missing.append(citekey)
+            continue
+
+        if source.endswith(".parsed.md"):
+            with open(source, encoding="utf-8") as handle:
+                text = handle.read()
+            offsets = None
+            meta_path = source.replace(".parsed.md", ".parsed.meta.json")
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, encoding="utf-8") as handle:
+                        offsets = json.load(handle).get("page_offsets")
+                except (OSError, json.JSONDecodeError):
+                    offsets = None
+            cache_hits += 1
+        else:
+            parsed = parse_cache.parse_cached(source, cache_dir)
+            text = parsed["text"]
+            offsets = parsed["meta"].get("page_offsets")
+            cache_hits += 1 if parsed["cache_hit"] else 0
+
+        chunks = chunk_text(text, citekey, offsets)
+        if not chunks:
+            missing.append(citekey)
+            continue
+
+        vectors = embed_chunks(chunks, embedder)
+        if not dim_set:
+            store.ensure_schema(len(vectors[0]))
+            dim_set = True
+        store.upsert(chunks, vectors)
+        documents += 1
+        total_chunks += len(chunks)
+
+    logger.info("[CORPUS-INDEX] indexed %d document(s), %d chunk(s), %d without full text",
+                documents, total_chunks, len(missing))
+    return {"documents": documents, "chunks": total_chunks,
+            "missing": missing, "cache_hits": cache_hits}
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    parser = argparse.ArgumentParser(
+        description="Opt-in corpus index. A retrieval hit is provenance, never a citation.")
+    sub = parser.add_subparsers(dest="mode", required=True)
+
+    p_build = sub.add_parser("build", help="index a corpus (opt-in, never implicit)")
+    p_build.add_argument("--bib", required=True)
+    p_build.add_argument("--refs", default=None, help="refs/ directory (default next to the .bib)")
+    p_build.add_argument("--dsn", default=None)
+    p_build.add_argument("--table", default="corpus_chunks")
+    p_build.add_argument("--model", default=DEFAULT_EMBED_MODEL)
+
+    p_query = sub.add_parser("query", help="retrieve passages with full provenance")
+    p_query.add_argument("question")
+    p_query.add_argument("--top", type=int, default=8)
+    p_query.add_argument("--dsn", default=None)
+    p_query.add_argument("--table", default="corpus_chunks")
+    p_query.add_argument("--model", default=DEFAULT_EMBED_MODEL)
+
+    p_status = sub.add_parser("status", help="report what is indexed")
+    p_status.add_argument("--dsn", default=None)
+    p_status.add_argument("--table", default="corpus_chunks")
+
+    args = parser.parse_args()
+    dsn = resolve_dsn(args.dsn)
+    if dsn is None:
+        raise SystemExit(
+            "no database configured: set CORPUS_INDEX_DSN or pass --dsn. Start the "
+            "stack with: docker compose -f deploy/docker-compose.yml up -d db")
+    store = VectorStore(dsn, table=args.table)
+
+    if args.mode == "status":
+        print(json.dumps(store.stats(), indent=2, ensure_ascii=False))
+        return
+
+    embedder = ollama_embedder(model=args.model)
+
+    if args.mode == "build":
+        refs = args.refs or os.path.join(os.path.dirname(os.path.abspath(args.bib)), "refs")
+        result = build_index(args.bib, refs, store, embedder)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        if result["missing"]:
+            logger.warning("[CORPUS-INDEX] %d citekey(s) had no retrievable full text: %s",
+                           len(result["missing"]), ", ".join(result["missing"]))
+        return
+
+    vector = embedder([args.question])[0]
+    hits = store.search(vector, args.top)
+    print(json.dumps({"question": args.question, "hits": hits,
+                      "note": NOT_A_CITATION}, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

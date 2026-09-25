@@ -104,11 +104,48 @@ python ".claude/skills/extract-statistic/scripts/extract_text.py" bib "<corpus.b
 # then synthesize <basename>_corpus_stats.md + .json
 ```
 
+## Parse cache
+
+`parse_cache.py` caches the expensive PDF parse keyed by the source SHA-256, as
+`<name>.parsed.md` plus a `<name>.parsed.meta.json` sidecar. `parse_one` reads
+through it, so a repeated statistics scan or future-works scan on an unchanged
+file costs no parse. The cache is additive: `scan_sections()` and `scan_stats()`
+are unchanged and a cache miss behaves exactly as before.
+
+## Corpus index (opt-in)
+
+`corpus_index.py` indexes a corpus for ad-hoc cross-corpus retrieval.
+
+```
+python .claude/skills/extract-statistic/scripts/corpus_index.py build --bib <corpus.bib>
+python .claude/skills/extract-statistic/scripts/corpus_index.py query "<question>" --top 8
+python .claude/skills/extract-statistic/scripts/corpus_index.py status
+```
+
+Four rules, none negotiable:
+
+1. Strictly additive. `scan_sections()` and `scan_stats()` are not modified and
+   remain the sole source for the statistics and future-works pipelines. The
+   index never feeds them.
+2. Every hit returns the source citekey, the page, and the verbatim passage, so
+   a human verifies before use. Same provenance contract as `geolocalisation`.
+3. The build is opt-in and never runs implicitly inside another skill.
+4. **A retrieval hit is never a citation.** A passage surfaced by similarity
+   still passes the normal Scopus validation gate before entering any document.
+
+The embedder is injected and defaults to the local Ollama endpoint on
+`127.0.0.1`, so no corpus text leaves the machine. The store is the pgvector
+Postgres of `deploy/docker-compose.yml`; set `CORPUS_INDEX_DSN` to reach it.
+
 ## Resources
 
 - `scripts/extract_text.py` — PDF / HTML / plaintext extraction + a statistics-candidate scan; reuses
   `download_pdf.py` for retrieval (it does not reimplement downloading).
-- `scripts/requirements.txt` — `pymupdf4llm` + `pymupdf` floors with the pip-audit and AGPL note.
+- `scripts/parse_cache.py` — content-addressed parse cache, additive.
+- `scripts/corpus_index.py` — opt-in chunk, embed, pgvector store; injected embedder so tests stay
+  offline.
+- `scripts/requirements.txt` — `pymupdf4llm` + `pymupdf` floors with the pip-audit and AGPL note, plus
+  the optional `psycopg`/`pgvector` pins for the corpus index (both degrade gracefully when absent).
 - `references/statistical-audit-protocol.md` — the six-step audit pipeline, flag catalogue, output
   format, and key rules.
 - `references/domain-profiles.md` — the `engineering` (default) and `cosmetic` domain-check profiles

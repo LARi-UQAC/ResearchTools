@@ -170,5 +170,97 @@ class TestVectorStore(unittest.TestCase):
         self.assertEqual(hits[0]["passage"], self.chunks[0]["passage"])
 
 
+import tempfile  # noqa: E402
+
+
+class _RecordingStore:
+    """Stand-in for VectorStore: no database, records what it was given."""
+
+    def __init__(self) -> None:
+        self.rows: list = []
+        self.dim: int | None = None
+
+    def ensure_schema(self, dim: int) -> None:
+        self.dim = dim
+
+    def upsert(self, chunks, vectors) -> int:
+        self.rows.extend(zip(chunks, vectors))
+        return len(chunks)
+
+
+class TestBuildIndex(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.refs = os.path.join(self.tmp.name, "refs")
+        os.makedirs(self.refs, exist_ok=True)
+        self.bib = os.path.join(self.tmp.name, "corpus.bib")
+        with open(self.bib, "w", encoding="utf-8") as handle:
+            handle.write(
+                "@article{otis2025diagnosis,\n  title = {Diagnostic industriel},\n"
+                "  doi = {10.1109/TRO.2025.000001}\n}\n"
+                "@article{absent2024missing,\n  title = {Sans texte integral},\n"
+                "  doi = {10.9999/x}\n}\n")
+        with open(os.path.join(self.refs, "otis2025diagnosis.parsed.md"), "w",
+                  encoding="utf-8") as handle:
+            handle.write(LONG_TEXT)
+        with open(os.path.join(self.refs, "otis2025diagnosis.parsed.meta.json"), "w",
+                  encoding="utf-8") as handle:
+            handle.write('{"source_sha256": "x", "page_offsets": null, "tables": []}')
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_it_indexes_the_documents_it_can_read(self) -> None:
+        store = _RecordingStore()
+        result = corpus_index.build_index(self.bib, self.refs, store, fake_embedder())
+        self.assertEqual(result["documents"], 1)
+        self.assertGreater(result["chunks"], 0)
+
+    def test_a_document_with_no_full_text_is_reported_never_silently_dropped(self) -> None:
+        store = _RecordingStore()
+        result = corpus_index.build_index(self.bib, self.refs, store, fake_embedder())
+        self.assertEqual(result["missing"], ["absent2024missing"])
+
+    def test_every_stored_chunk_carries_the_citekey_of_its_source(self) -> None:
+        store = _RecordingStore()
+        corpus_index.build_index(self.bib, self.refs, store, fake_embedder())
+        self.assertEqual({chunk["citekey"] for chunk, _ in store.rows},
+                         {"otis2025diagnosis"})
+
+    def test_the_schema_dimension_comes_from_the_embedder(self) -> None:
+        store = _RecordingStore()
+        corpus_index.build_index(self.bib, self.refs, store, fake_embedder(dim=8))
+        self.assertEqual(store.dim, 8)
+
+    def test_an_empty_corpus_reports_zero_rather_than_raising(self) -> None:
+        empty = os.path.join(self.tmp.name, "empty.bib")
+        with open(empty, "w", encoding="utf-8") as handle:
+            handle.write("")
+        store = _RecordingStore()
+        result = corpus_index.build_index(empty, self.refs, store, fake_embedder())
+        self.assertEqual(result["documents"], 0)
+        self.assertEqual(result["chunks"], 0)
+
+    def test_a_missing_bib_file_names_it_rather_than_a_bare_traceback(self) -> None:
+        store = _RecordingStore()
+        with self.assertRaises(FileNotFoundError) as ctx:
+            corpus_index.build_index(os.path.join(self.tmp.name, "nope.bib"),
+                                     self.refs, store, fake_embedder())
+        self.assertIn("nope.bib", str(ctx.exception))
+
+    def test_citekeys_reuses_bib_audits_line_anchored_parser(self) -> None:
+        # A naive whole-file regex for '@word{key,' would also match an '@'
+        # sitting inside a field VALUE (an abstract mentioning an email
+        # address, for instance). bib_audit.parse_bib anchors on the start of
+        # the line, so it does not.
+        tricky = os.path.join(self.tmp.name, "tricky.bib")
+        with open(tricky, "w", encoding="utf-8") as handle:
+            handle.write(
+                "@article{real2025key,\n"
+                "  abstract = {Contact test@article{fake2025key, for details.},\n"
+                "  doi = {10.1/x}\n}\n")
+        self.assertEqual(corpus_index._citekeys(tricky), ["real2025key"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

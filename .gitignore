@@ -109,3 +109,7 @@ graphify-out/
 
 # form service: local environment, never committed
 deploy/.env
+
+# parse cache: derived from the source PDF, never committed
+*.parsed.md
+*.parsed.meta.json

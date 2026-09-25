@@ -436,10 +436,12 @@ def parse_one(path: str, stats_scan: bool, include_text: bool,
     """
     record: dict[str, Any] = {"file": os.path.basename(path)}
     try:
-        if path.lower().endswith(".pdf"):
-            text, tables = read_pdf(path)
-        else:
-            text, tables = read_textlike(path), []
+        # Additive: the cache only avoids re-parsing an unchanged file. The
+        # scanners below are untouched and stay the sole source of truth for
+        # the statistics and future-works pipelines.
+        import parse_cache
+        cached = parse_cache.parse_cached(path)
+        text, tables = cached["text"], cached["tables"]
     except Exception as exc:  # surface an actionable message, never a bare trace
         logger.warning("[EXTRACT-STAT] parse failed for %s: %s", path, exc)
         return {**record, "status": "error", "error": str(exc)}

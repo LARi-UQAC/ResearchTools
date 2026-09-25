@@ -10,7 +10,7 @@ code tidies is a field nobody can ever fill again. The diff tests exist because
 TT-8 ships the same function in Node, and the two must report the same thing.
 
 Run with the project Python:
-    python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
+    python .claude/skills/form-service/scripts/Test/test_field_map.py
 """
 
 import copy

@@ -1,4 +1,4 @@
-# Dependencies for the uqac-forms skill scripts.
+# Dependencies for the form-service skill scripts.
 #
 # pdf_ingest.py : requests (validated HTTPS download)
 # field_map.py  : pypdf   (AcroForm widget enumeration, BSD-3)
@@ -12,7 +12,7 @@
 # skill.
 #
 # Pinned exactly, then audited before use:
-#   pip-audit -r .claude/skills/uqac-forms/requirements.txt --strict
+#   pip-audit -r .claude/skills/form-service/requirements.txt --strict
 requests==2.34.2
-pypdf==6.15.0
+pypdf==6.16.1
 pyHanko==0.37.0

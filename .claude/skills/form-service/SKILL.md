@@ -207,7 +207,7 @@ signer, because a silent fallback is the worst possible default here.
 
 ## Prerequisites
 
-- `pip install -r .claude/skills/uqac-forms/scripts/requirements.txt`
+- `pip install -r .claude/skills/form-service/scripts/requirements.txt`
 - Network access to `www.uqac.ca` for a fetch. Everything else is offline.
 
 ## Workflow
@@ -215,12 +215,12 @@ signer, because a silent fallback is the worst possible default here.
 Fetch one form and report its digest:
 
 ```
-python .claude/skills/uqac-forms/scripts/pdf_ingest.py <https-url> <dest.pdf>
+python .claude/skills/form-service/scripts/pdf_ingest.py <https-url> <dest.pdf>
 ```
 
 On success it prints `{"ok": true, "path": ..., "sha256": ...}` and exits 0. On
 any refusal it prints `{"ok": false, "url": ...}`, exits 1, and writes no file.
-The reason is logged with the `[UQAC-FORMS]` prefix.
+The reason is logged with the `[FORM-SERVICE]` prefix.
 
 Compare the reported `sha256` against whatever your caller stored. This skill
 does not keep that record, so it cannot tell you whether a form changed; it can
@@ -234,10 +234,10 @@ refused download leaves nothing behind, including no `*.part`.
 ## Tests
 
 ```
-python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py
-python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
-python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py
-python .claude/skills/uqac-forms/scripts/Test/test_sign_form.py
+python .claude/skills/form-service/scripts/Test/test_pdf_ingest.py
+python .claude/skills/form-service/scripts/Test/test_field_map.py
+python .claude/skills/form-service/scripts/Test/test_fill_form.py
+python .claude/skills/form-service/scripts/Test/test_sign_form.py
 ```
 
 Offline: `requests.get` is patched, so no test reaches the network. Every rule of

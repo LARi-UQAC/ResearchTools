@@ -181,13 +181,16 @@ class TestSettings(unittest.TestCase):
 
     def test_a_short_secret_refuses_to_start(self) -> None:
         with self.assertRaises(RuntimeError) as ctx:
-            config.load_settings({"FORM_SERVICE_KEY": "short"})
+            config.load_settings({"FORM_SERVICE_KEY": "zz9wq"})
         self.assertIn("32", str(ctx.exception))
 
     def test_the_secret_is_never_repeated_in_the_error(self) -> None:
+        # A literal like "short" would collide with the word "shorter" in the
+        # refusal message and pass for the wrong reason: this probe value must
+        # never appear as a substring of any English word the message uses.
         with self.assertRaises(RuntimeError) as ctx:
-            config.load_settings({"FORM_SERVICE_KEY": "short"})
-        self.assertNotIn("short", str(ctx.exception))
+            config.load_settings({"FORM_SERVICE_KEY": "zz9wq"})
+        self.assertNotIn("zz9wq", str(ctx.exception))
 
     def test_cert_dir_comes_from_the_environment_with_a_default(self) -> None:
         settings = config.load_settings({"FORM_SERVICE_KEY": VALID_KEY,

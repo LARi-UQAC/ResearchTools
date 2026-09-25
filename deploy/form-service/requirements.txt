@@ -1,0 +1,18 @@
+# form-service image. Pinned exactly, audited with:
+#   pip-audit -r deploy/form-service/requirements.txt --strict
+#
+# Licence floor: the image must carry NO AGPL dependency, because it is
+# deployed. pypdf is BSD-3 and pyHanko is MIT; PyMuPDF (AGPL-3.0) stays isolated
+# in the extract-statistic skill and is never installed here.
+fastapi==0.141.1
+uvicorn==0.54.0
+pypdf==6.16.1
+pyHanko==0.37.0
+cryptography==50.0.1
+requests==2.34.2
+
+# Test extra: the Starlette test client needs httpx, and python-multipart is
+# needed by fastapi's Form()/File() parsing (used by POST /pdf/fill). Both
+# installed in the test environment only, never in the runtime image.
+# httpx==0.28.1
+# python-multipart==0.0.20

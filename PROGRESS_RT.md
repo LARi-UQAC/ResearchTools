@@ -60,11 +60,11 @@ catalogue: the catalogue, the field maps and the drift check live in ThesisTrack
 | `[x]` | RT-2 widget dump and diff | [#5](../../issues/5) | `feat/form-service-field-map` (was `feat/uqac-forms-field-map`) | RT-1 | Merged to `main`. Scope reduced: the map and the vocabulary are TT-8 rows. |
 | `[x]` | RT-3 fill | [#6](../../issues/6) | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | RT-2 | Merged to `main`. Scope reduced: no profile, no map, no stale gate. |
 | `[x]` | RT-4 sign and chain | [#7](../../issues/7) | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | RT-3 | Merged to `main`, confirmed 2026-09-25 (NEW_ARCHITECTURE.md's header still read it as pending — that line is stale, not this one). Preserves every previous signature. |
-| `[x]` | RT-5 stateless service | [#8](../../issues/8) | `feat/form-service` (was `feat/uqac-forms-service`) | RT-4 | Merged to `main` 2026-09-25 (PR #22). `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`; fail-fast shared-secret gate, no CORS, no work directory. `sign_form.validate_signatures` added (intact/valid/trusted reported separately). `/pdf/fill`'s multipart-vs-raw-body shape is **unconfirmed with ThesisTracker TT-3** and must be agreed before TT-3 codes against it. Docker/Compose stack written but not run end to end (no Docker daemon in the build environment). |
-| `[ ]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | **Actionable now.** RT-5 merged, unblocked. **Blocks ThesisTracker TT-6.** |
+| `[x]` | RT-5 stateless service | [#8](../../issues/8) | `feat/form-service` (was `feat/uqac-forms-service`) | RT-4 | Merged to `main` 2026-09-25 (PR #22). `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`; fail-fast shared-secret gate, no CORS, no work directory. `sign_form.validate_signatures` added (intact/valid/trusted reported separately). `/pdf/fill`'s multipart-vs-raw-body shape checked against ThesisTracker 2026-09-25: TT-3 not built yet, no conflict, no objection raised; reconfirm once TT-3 lands. Docker/Compose stack written but not run end to end (no Docker daemon in the build environment). |
+| `[R]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | PR [#24](../../pull/24) open, not yet merged. `GET /publications`: disk cache, token-bucket rate limiter, `count` capped at 25 (Scopus's own STANDARD-view ceiling, not the plan's original 50). Three plan defects fixed before shipping: `_check_response`'s `sys.exit(1)` would have killed the service worker on a Scopus outage; the naive name-split reintroduced the "Otis, Martin" bug `_split_author_name` was written to fix; the Dockerfile never copied `scopus_api.py`'s skill into the image. Live-Scopus verification and the Docker/Compose build not run (no network/daemon in the build environment). **Blocks ThesisTracker TT-6.** |
 | `[ ]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | **Actionable now.** RT-5 merged, unblocked; independent of RT-6, and still on no critical path so it can land last. The four binding mitigations from the plan must not be dropped. |
 
-Counts: 7 units. DONE 5, REVIEW 0, IN PROGRESS 0, BLOCKED 0, TODO 2, DEFERRED 0.
+Counts: 7 units. DONE 5, REVIEW 1, IN PROGRESS 0, BLOCKED 0, TODO 1, DEFERRED 0.
 
 Issues in this repository that are NOT part of this programme and are tracked separately:
 [#11](../../issues/11) `download_pdf.py` background download with Cloudflare, and
@@ -74,16 +74,14 @@ Issues in this repository that are NOT part of this programme and are tracked se
 
 ## 3. Actionable now
 
-1. **RT-6 and RT-7.** RT-1 through RT-5 are merged. Both are unblocked, independent of each
-   other, and start from a clean `main`.
-2. In ThesisTracker: TT-3 and TT-5 are unblocked now that RT-5 is merged, but TT-3's client
-   codes against RT-5's HTTP contract, and `/pdf/fill`'s multipart-vs-raw-body request shape
-   has **not** been confirmed with that side yet. Settle that before TT-3 starts, not after.
-   TT-0, TT-1, TT-2, TT-8, TT-9, TT-12 are merged; TT-7 is in progress on a fresh branch
+1. **RT-7.** RT-1 through RT-5 are merged and RT-6 is in review. RT-7 is unblocked and
+   independent of RT-6, and starts from a clean `main`.
+2. **RT-6** ([PR #24](../../pull/24)) needs a human merge.
+3. In ThesisTracker: TT-3 and TT-5 are unblocked now that RT-5 is merged. TT-0, TT-1, TT-2,
+   TT-8, TT-9, TT-12 are merged; TT-7 is in progress on a fresh branch
    (`feat/email-code-auth-v2`), independent of RT-5.
 
-No remaining blocker on the ResearchTools side. The RT-5/TT-3 contract confirmation is the
-one cross-repo item to close before ThesisTracker starts its next unit.
+No remaining blocker on the ResearchTools side.
 
 ---
 

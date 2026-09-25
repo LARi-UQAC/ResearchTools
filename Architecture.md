@@ -188,7 +188,7 @@ flowchart TD
 
 ## Layer 3 — Scopus skill internals
 
-The [scopus](skills/scopus) skill is the busiest dependency: six scripts under [skills/scopus/scripts/](skills/scopus/scripts) split metadata, full-text retrieval, author backfill, and the multi-model reviewers. [SKILL.md](skills/scopus/SKILL.md) dispatches `$ARGUMENTS` to one of six metadata modes on `scopus_api.py` (a pure JSON client that never writes files), to `download_pdf.py` for PDFs, or to `gemini_table.py` for comparison-table cell enrichment. `semantic_scholar_api.py` is a throttled fallback that backfills the full ordered author list when Scopus returns none. `gemini_reviewer.py` and `github_reviewer.py` live here too but are consumed by the [deliberation](skills/deliberation) panel, not by `scopus_api.py`.
+The [scopus](skills/scopus) skill is the busiest dependency: six scripts under [skills/scopus/scripts/](skills/scopus/scripts) split metadata, full-text retrieval, author backfill, and the multi-model reviewers. [SKILL.md](skills/scopus/SKILL.md) dispatches `$ARGUMENTS` to one of seven metadata modes on `scopus_api.py` (a pure JSON client that never writes files), to `download_pdf.py` for PDFs, or to `gemini_table.py` for comparison-table cell enrichment. `semantic_scholar_api.py` is a throttled fallback that backfills the full ordered author list when Scopus returns none. `gemini_reviewer.py` and `github_reviewer.py` live here too but are consumed by the [deliberation](skills/deliberation) panel, not by `scopus_api.py`.
 
 **Consensus is not a scopus script.** No file under [skills/scopus](skills/scopus) references it. Consensus is the MCP tool `mcp__claude_ai_Consensus__search`, called by the agent (Claude) itself during the [deliberation](skills/deliberation) step; the agent runs up to four searches, writes them to `evidence.txt`, and hands that file to `deliberate.py` via `--evidence-file`. `deliberate.py` performs only the Gemini and Copilot API calls. The dashed evidence path is shown in the cluster below to make this boundary explicit. (Scopus.AI — Elsevier's manual generative tool — and the `scopus` skill scripts are three distinct things.)
 
@@ -248,7 +248,7 @@ flowchart TD
 
 | Script | Modes / subcommands | External endpoint | Env var |
 | --- | --- | --- | --- |
-| [scopus_api.py](skills/scopus/scripts/scopus_api.py) | search · cite · validate · verify · author · journal | Elsevier Search / Abstract Retrieval / Author Search / Serial Title | `SCOPUS_API_KEY` |
+| [scopus_api.py](skills/scopus/scripts/scopus_api.py) | search · cite · validate · verify · author · journal · publications | Elsevier Search / Abstract Retrieval / Author Search / Serial Title | `SCOPUS_API_KEY` |
 | [semantic_scholar_api.py](skills/scopus/scripts/semantic_scholar_api.py) | authors · paper · external_ids_for_doi | Semantic Scholar Academic Graph | `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` (optional) |
 | [download_pdf.py](skills/scopus/scripts/download_pdf.py) | doi · bib (any format: pdf/html/md) | Elsevier → S2 → publisher → Unpaywall → arXiv → PMC → DOI landing → browser (`--browser`) | `SCOPUS_API_KEY`, `UNPAYWALL_EMAIL` (optional) |
 | [browser_fetch.py](skills/scopus/scripts/browser_fetch.py) | tier 8 for download_pdf.py (opt-in) | real Playwright Chromium; per-paper `refs/_sources.json` override URL (e.g. ResearchGate) | optional: `playwright` + `playwright install chromium` |
@@ -624,28 +624,38 @@ page and that file cannot drift apart.
 
 `deploy/form-service/` wraps the `form-service` skill scripts (RT-1 through RT-4: PDF
 ingest, widget dump, filling, PAdES signing) in a FastAPI application so ThesisTracker calls
-one service instead of shelling out to Python. `deploy/docker-compose.yml` runs it alongside a
-`pgvector/pgvector` Postgres (needed by RT-7's corpus index, unrelated to the form path) and a
-Caddy front door whose hostname is read from the environment.
+one service instead of shelling out to Python. RT-6 adds `GET /publications`, importing
+`scopus_api.py` from the *scopus* skill (a second COPY into the image, `SCOPUS_SCRIPTS_DIR`),
+cached on disk with a TTL and rate limited with a token bucket sized for the Elsevier quota:
+a cohort report over an already-seen roster costs no Scopus call at all, and the quota is a
+property of the key rather than of the caller, so the bucket is shared per process rather than
+per request. `deploy/docker-compose.yml` runs it alongside a `pgvector/pgvector` Postgres
+(needed by RT-7's corpus index, unrelated to the form path) and a Caddy front door whose
+hostname is read from the environment.
 
 ```mermaid
 flowchart LR
   TT["ThesisTracker<br/>Express API"] -->|"X-Form-Service-Key<br/>PDF bytes plus values"| CADDY["Caddy<br/>reverse proxy"]
   CADDY --> FS["form-service<br/>FastAPI, :8080<br/>stateless"]
   FS --> CERT[("certs volume<br/>signing material only")]
+  FS -->|"GET /publications<br/>cached, rate limited"| SCOPUS[("Elsevier Scopus API<br/>key never leaves here")]
+  FS --> PUBCACHE[("publications cache volume<br/>TTL, hashed key")]
   RT7["RT-7 corpus index<br/>(unrelated to the form path)"] --> DB[("db<br/>Postgres 17 + pgvector")]
 
   classDef svc fill:#DBEAFE,stroke:#1E3A8A,color:#14181F
   classDef store fill:#D1FAE5,stroke:#065F46,color:#14181F
   class TT,CADDY,FS,RT7 svc
-  class CERT,DB store
+  class CERT,DB,SCOPUS,PUBCACHE store
 ```
 
 Two properties matter more than the rest of the diagram. The service is reached only over a
 private network, behind a shared secret compared in constant time, and the service refuses to
 start when that secret is unset or too short. The image carries no AGPL dependency: `pypdf`
 (BSD-3) and `pyHanko` (MIT) are the only PDF libraries here, and PyMuPDF (AGPL-3.0) stays
-isolated in the `extract-statistic` skill, never installed in this image.
+isolated in the `extract-statistic` skill, never installed in this image. `SCOPUS_API_KEY` is
+optional at the compose level: an unset key degrades `GET /publications` to `503` with a named
+reason, and every other route works without it, unlike `FORM_SERVICE_KEY`, which is required
+to start at all.
 
 The dependency runs one way only: ThesisTracker calls the form service, never the reverse.
 ThesisTracker itself is a separate system and does not belong in the Layer 1 graph above;

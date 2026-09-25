@@ -9,12 +9,14 @@ Single source of truth for **where the UQAC form engine work stands** in this re
 - ThesisTracker tracks its own units in `PROGRESS_TT.md` in that repository. Cross-repo dependencies
   are named in the Blocks column here.
 
-**Snapshot date:** 2026-09-25. Recomputed via git ancestry (RT-1..4 confirmed merged to `main`
-by `ls-tree`/branch inspection, cross-checked with the ThesisTracker session's own audit of this
-repo) after the 2026-08-13 snapshot below was found stale — it still marked RT-1 as TODO and
+**Snapshot date:** 2026-09-25 (RT-7). Recomputed via git ancestry (RT-1..4 confirmed merged to
+`main` by `ls-tree`/branch inspection, cross-checked with the ThesisTracker session's own audit of
+this repo) after the 2026-08-13 snapshot below was found stale — it still marked RT-1 as TODO and
 RT-2..4 as BLOCKED with zero code, while `NEW_ARCHITECTURE.md`'s own header already said
-"Delivered 2026-08-31" for RT-1..3. Recompute again with the commands in section 4 before
-trusting this one too.
+"Delivered 2026-08-31" for RT-1..3. RT-6's row here was itself found stale within this same RT-7
+pass (still read PR open after PR #24 actually merged) - a reminder that this registry drifts even
+between adjacent units, not just across large gaps. Recompute again with the commands in section 4
+before trusting this one too.
 
 ---
 
@@ -61,10 +63,10 @@ catalogue: the catalogue, the field maps and the drift check live in ThesisTrack
 | `[x]` | RT-3 fill | [#6](../../issues/6) | `feat/form-service-filler` (was `feat/uqac-forms-filler`) | RT-2 | Merged to `main`. Scope reduced: no profile, no map, no stale gate. |
 | `[x]` | RT-4 sign and chain | [#7](../../issues/7) | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | RT-3 | Merged to `main`, confirmed 2026-09-25 (NEW_ARCHITECTURE.md's header still read it as pending — that line is stale, not this one). Preserves every previous signature. |
 | `[x]` | RT-5 stateless service | [#8](../../issues/8) | `feat/form-service` (was `feat/uqac-forms-service`) | RT-4 | Merged to `main` 2026-09-25 (PR #22). `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`; fail-fast shared-secret gate, no CORS, no work directory. `sign_form.validate_signatures` added (intact/valid/trusted reported separately). `/pdf/fill`'s multipart-vs-raw-body shape checked against ThesisTracker 2026-09-25: TT-3 not built yet, no conflict, no objection raised; reconfirm once TT-3 lands. Docker/Compose stack written but not run end to end (no Docker daemon in the build environment). |
-| `[R]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | PR [#24](../../pull/24) open, not yet merged. `GET /publications`: disk cache, token-bucket rate limiter, `count` capped at 25 (Scopus's own STANDARD-view ceiling, not the plan's original 50). Three plan defects fixed before shipping: `_check_response`'s `sys.exit(1)` would have killed the service worker on a Scopus outage; the naive name-split reintroduced the "Otis, Martin" bug `_split_author_name` was written to fix; the Dockerfile never copied `scopus_api.py`'s skill into the image. Live-Scopus verification and the Docker/Compose build not run (no network/daemon in the build environment). **Blocks ThesisTracker TT-6.** |
-| `[ ]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | **Actionable now.** RT-5 merged, unblocked; independent of RT-6, and still on no critical path so it can land last. The four binding mitigations from the plan must not be dropped. |
+| `[x]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | Merged to `main` 2026-09-25 (PR #24). `GET /publications`: disk cache, token-bucket rate limiter, `count` capped at 25 (Scopus's own STANDARD-view ceiling, not the plan's original 50). Three plan defects fixed before shipping: `_check_response`'s `sys.exit(1)` would have killed the service worker on a Scopus outage; the naive name-split reintroduced the "Otis, Martin" bug `_split_author_name` was written to fix; the Dockerfile never copied `scopus_api.py`'s skill into the image. Live-Scopus verification and the Docker/Compose build not run (no network/daemon in the build environment). Unblocks ThesisTracker TT-6. |
+| `[R]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | PR [#26](../../pull/26) open, not yet merged. Content-addressed parse cache (additive to every `extract_text.py` consumer) + opt-in chunker/embedder/pgvector index over a corpus, provenance-only retrieval. Its remote branch was 100+ commits stale with only its 2 plan-writing commits still real (same pattern as RT-6) - reset onto `main` + cherry-picked rather than rebased. Three plan defects fixed before shipping: a bare `import pymupdf` that would silently drop page offsets on a machine only exposing the legacy `fitz` alias; a naive whole-file `.bib` regex reused instead as `bib_audit.parse_bib`'s line-anchored parser (the naive form also matches an `@` inside a field value); a missing `psycopg` surfacing a bare `ModuleNotFoundError` instead of the actionable message the requirements.txt comment promises. Live pgvector-store tests (4) not run against a real database (Docker Desktop not running in the build environment); they skip cleanly by design. |
 
-Counts: 7 units. DONE 5, REVIEW 1, IN PROGRESS 0, BLOCKED 0, TODO 1, DEFERRED 0.
+Counts: 7 units. DONE 6, REVIEW 1, IN PROGRESS 0, BLOCKED 0, TODO 0, DEFERRED 0.
 
 Issues in this repository that are NOT part of this programme and are tracked separately:
 [#11](../../issues/11) `download_pdf.py` background download with Cloudflare, and
@@ -74,12 +76,12 @@ Issues in this repository that are NOT part of this programme and are tracked se
 
 ## 3. Actionable now
 
-1. **RT-7.** RT-1 through RT-5 are merged and RT-6 is in review. RT-7 is unblocked and
-   independent of RT-6, and starts from a clean `main`.
-2. **RT-6** ([PR #24](../../pull/24)) needs a human merge.
-3. In ThesisTracker: TT-3 and TT-5 are unblocked now that RT-5 is merged. TT-0, TT-1, TT-2,
-   TT-8, TT-9, TT-12 are merged; TT-7 is in progress on a fresh branch
-   (`feat/email-code-auth-v2`), independent of RT-5.
+1. **RT-7** ([PR #26](../../pull/26)) needs a human merge. On no critical path, can land last.
+2. All seven ResearchTools units are now merged or in review; nothing else is TODO on this side.
+3. In ThesisTracker: TT-3 and TT-5 are unblocked now that RT-5 is merged; TT-6 is unblocked now
+   that RT-6 is merged. TT-0, TT-1, TT-2, TT-8, TT-9, TT-12 are merged; TT-7 (email-code-auth,
+   PR #15) and TT-3 (forms-service-client, PR #16) are open awaiting review; TT-4 (forms-ui)
+   starting on the ThesisTracker side per its own session, independent of anything here.
 
 No remaining blocker on the ResearchTools side.
 

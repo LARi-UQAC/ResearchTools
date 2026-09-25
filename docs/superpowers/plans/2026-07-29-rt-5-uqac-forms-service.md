@@ -1,47 +1,59 @@
-# RT-5: UQAC Form Service Implementation Plan
+# RT-5: form-service HTTP API implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Expose the fill and sign pipeline as a small containerized HTTP service that ThesisTracker can call server to server, authenticated by a shared secret, logging no field value, and shipped with a compose file whose Postgres carries the `pgvector` extension RT-7 needs.
+**Goal:** Expose the `form-service` skill's stateless PDF mechanics (RT-1 through RT-4) as a small containerized HTTP service that ThesisTracker calls server to server, authenticated by a shared secret, logging no field value, and shipped with a compose file whose Postgres carries the `pgvector` extension RT-7 needs.
 
-> ## SCOPE CHANGE, 2026-07-29 - read before anything else
+> ## CORRECTION, 2026-09-25 - this plan was rewritten before implementation started
 >
-> Two decisions changed after this plan was written, and `NEW_ARCHITECTURE.md` on `main`
-> is the authority on both. **Read its sections 1, 3, 4 and 10 before starting.**
+> The version of this plan written 2026-07-29 targeted a form-catalogue-aware service
+> (`GET /forms`, `GET /schema`, `POST /forms/{id}/fill`) built on top of a `form_registry`
+> module. Two things changed since, both already recorded in `NEW_ARCHITECTURE.md`:
 >
-> **The repository boundary moved.** ResearchTools cannot track a form and cannot know the information that fills one: it is skills, agents and commands for a thesis, a paper, a review or a report, and only ThesisTracker writes the database. The form catalogue, the workflow rules, the field maps, the profile store and the drift check therefore live in **ThesisTracker**, edited in the UI by an `owner` or the `direction`. The ResearchTools service is reduced to **stateless PDF mechanics**: hand it a PDF and a set of values, it hands back a PDF. It is a function, not a system, and holds no data.
+> 1. **The repository boundary moved (2026-07-29 SCOPE CHANGE).** ResearchTools cannot track
+>    a form and cannot know the information that fills one. The catalogue, the field maps, the
+>    profile store and the drift check live in **ThesisTracker** (TT-8/TT-9). This service is
+>    reduced to stateless PDF mechanics: hand it a PDF and it hands back a PDF, or a report
+>    about one. There never was a `form_registry.py` module in this skill; RT-1 through RT-4
+>    shipped `pdf_ingest.py`, `field_map.py`, `fill_form.py`, `sign_form.py`, all bytes-in,
+>    bytes-out, none of them touching a catalogue.
+> 2. **The skill renamed `uqac-forms` -> `form-service` (2026-09-25).** The form-filling
+>    mechanics were already institution-agnostic; only the name overclaimed UQAC-specificity.
+>    This plan's own branch is `feat/uqac-forms-service` on disk still; it renames to
+>    `feat/form-service` as this plan's first commit, matching the row `NEW_ARCHITECTURE.md`
+>    section 9 already carries for RT-5.
 >
-> > **What this means for RT-5.** The service becomes stateless, and its endpoints change
-> shape: they take a PDF in the request body rather than a form id.
+> **The endpoint contract is `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`** (the
+> `NEW_ARCHITECTURE.md` section 9 RT-5 row, and its section 4 sequence diagram: `POST
+> /pdf/widgets (the bytes)` in, `every widget: name, type, page, rect, on-states` out). Every
+> route takes the PDF itself, never a form id, because the service holds no catalogue to look
+> one up in.
 >
-> | Was | Becomes |
-> |---|---|
-> | `GET /forms` | **gone.** TT-8 owns the catalogue |
-> | `GET /schema` | **gone.** TT-9 owns the vocabulary |
-> | `POST /forms/{id}/fill` | `POST /pdf/fill`, multipart or JSON with the PDF and the values |
-> | `POST /forms/{id}/signature-fields` | `POST /pdf/widgets`, returning every widget, not only signatures |
-> | `POST /forms/{id}/sign` | `POST /pdf/sign`, query `field` and `reason` |
-> | - | `POST /pdf/validate`, returning a signature report |
+> **A second simplification, discovered only once the RT-1 to RT-4 code existed to read.**
+> `field_map.dump_widgets`, `fill_form.fill`, and `sign_form.sign_pdf`/`signature_fields` are
+> already bytes-in, bytes-out; none of them writes to or reads from disk except
+> `sign_form.build_signer`, which persists the signing certificate under `cert_dir` (a
+> long-lived credential, not per-request data). The service therefore needs **no work
+> directory and no per-request temporary file**, which the 2026-07-29 plan assumed it would
+> (its `Settings.work_dir` and its file-cleanup tests). Removed below.
 >
-> - The `form-data` volume for the cache and the maps is **gone**. The service keeps one
->   volume, for signing material.
-> - Everything else stands and matters more: the fail-fast shared secret, the constant-time
->   compare, no CORS, the `127.0.0.1` development bind, no AGPL in the image, and the
->   test asserting that no field value is logged and nothing is persisted between requests.
-> - The `pgvector` Postgres in the compose file is needed by RT-7 only; it is no longer
->   part of the form path at all.
->
-> **TT-3's client is written against this contract**, so the endpoint names and the
-> `X-Uqac-*` headers must be agreed before either unit ships.
->
-> Everything below that this block does not contradict still stands. Where the plan and
-> `NEW_ARCHITECTURE.md` disagree, the architecture document wins, and your first commit
-> should be the correction to this plan.
+> Everything else in the 2026-07-29 draft that this block does not contradict still stands:
+> the fail-fast shared secret, the constant-time compare, no CORS, the `127.0.0.1`
+> development bind, no AGPL in the image, and the test asserting that no field value is ever
+> logged. Where this correction and an older paragraph below disagree, this correction wins.
 
+**Architecture:** `deploy/form-service/` is a FastAPI application that imports the
+`form-service` skill scripts as a library and adds nothing but transport. Every route except
+`GET /health` requires a constant-time-compared `X-Form-Service-Key` header; the service
+refuses to start when the secret is unset or under 32 characters, so there is no accidental
+open deployment. Every route accepts and returns bytes or a small JSON report; nothing is
+persisted between requests except the signing certificate. The image carries no AGPL
+dependency. `deploy/docker-compose.yml` runs the service plus a `pgvector/pgvector` Postgres
+(needed by RT-7, unrelated to the form path) and a Caddy front door whose hostname comes from
+the environment, so the final host stays undecided by choice.
 
-**Architecture:** `deploy/form-service/` is a FastAPI application that imports the skill scripts as a library and adds nothing but transport. Every route requires a constant-time-compared `X-Form-Service-Key` header; the service refuses to start when the secret is unset, so there is no accidental open deployment. `POST /forms/{form_id}/fill` returns `application/pdf` with the counts in response headers, and `POST /sign` takes a PDF body and returns the signed PDF. The image carries no AGPL dependency. `deploy/docker-compose.yml` runs the service plus a `pgvector/pgvector` Postgres and a Caddy front door whose hostname comes from the environment, so the final host stays undecided by choice.
-
-**Tech Stack:** Python 3.13, FastAPI, Uvicorn, `pypdf`, `pyhanko`, `PyYAML`, Docker, Docker Compose, Caddy. `httpx` in the test extra for the Starlette test client.
+**Tech Stack:** Python 3.13, FastAPI, Uvicorn, `pypdf`, `pyHanko`, `cryptography`, `requests`,
+Docker, Docker Compose, Caddy. `httpx` in the test extra for the Starlette test client.
 
 ## Global Constraints
 
@@ -51,14 +63,30 @@
 - Docstrings use the repo's extended `Purpose: / Inputs: / Outputs:` block format.
 - Logging: `logging.getLogger(__name__)`, messages prefixed `[FORM-SERVICE]`. **Never log a field value, a profile, a secret, or a certificate.** Method, path, status, and duration only.
 - **Bind `127.0.0.1` in development.** Inside the container the process binds `0.0.0.0` because it is reachable only on the compose network behind Caddy; the published port is bound to `127.0.0.1` on the host. Both facts are stated in the README so neither is a surprise.
-- **Shared-secret header on every route**, compared with `hmac.compare_digest`. The service exits at startup when `FORM_SERVICE_KEY` is unset. The secret never appears in a log, an error body, or a compose file (it comes from the environment).
+- **Shared-secret header on every route except `/health`**, compared with `hmac.compare_digest`. The service exits at startup when `FORM_SERVICE_KEY` is unset or shorter than 32 characters. The secret never appears in a log, an error body, or a compose file (it comes from the environment).
 - **No CORS middleware at all.** This is a server-to-server API; a browser never calls it. A wildcard CORS policy on a route that accepts a body is forbidden by `.claude/rules/security.md`.
-- **Law 25:** a profile carries a permanent code, an address, and a cheque payee. Request bodies are never persisted, never logged, and the filled PDF is streamed back rather than stored on the service.
+- **Nothing persisted, nothing logged.** A request body (a PDF, its values) is never written to disk and never appears in a log line, aside from the one-time signing certificate under `cert_dir`.
 - Maximum request body size enforced; a malformed or oversized body is rejected before any PDF work.
-- Dependencies pinned exactly in `deploy/form-service/requirements.txt`, then `pip-audit -r deploy/form-service/requirements.txt --strict`. **No AGPL in the image.**
+- Dependencies pinned exactly in `deploy/form-service/requirements.txt`, matching the versions already pinned and audited in `.claude/skills/form-service/scripts/requirements.txt`, then `pip-audit -r deploy/form-service/requirements.txt --strict`. **No AGPL in the image.**
 - Offline tests only: the FastAPI test client, with the skill functions patched, so the suite needs no network and no real form.
 
-**Depends on:** RT-4 (`feat/uqac-forms-signer`), which depends on RT-3, RT-2, RT-1.
+**Depends on:** RT-4 (`feat/form-service-signer`), which depends on RT-3, RT-2, RT-1. All four delivered 2026-08-31.
+
+---
+
+## Task 0: Rename the branch to match `NEW_ARCHITECTURE.md`
+
+**Files:** none; this is a git operation.
+
+- [ ] **Step 1: Rename the local and remote branch**
+
+```bash
+git branch -m feat/uqac-forms-service feat/form-service
+```
+
+The remote still carries the old name from before the branch was rebased; the corrected
+history is pushed under the new name in Task 5, with `git push origin :feat/uqac-forms-service`
+deleting the stale remote branch once the new one is up.
 
 ---
 
@@ -82,18 +110,20 @@
 
 **Modified files**
 
-- `.claude/skills/uqac-forms/SKILL.md` - a section pointing at the service.
+- `.claude/skills/form-service/scripts/sign_form.py` - add `validate_signatures`.
+- `.claude/skills/form-service/scripts/Test/test_sign_form.py` - test it.
+- `.claude/skills/form-service/SKILL.md` - a section pointing at the service.
 - `.claude/rules/testing.md` - the new offline test command.
 - `.gitignore` - ignore `deploy/.env`.
+- `README.md`, `Architecture.md`, `NEW_ARCHITECTURE.md` - record delivery (Task 5).
 
 ---
 
 ## Interfaces consumed
 
-From RT-1 `form_registry.py`: `load_registry`, `map_status`, `require_fresh_map`, `StaleMapError`, `DEFAULT_CACHE_DIR`, `MAPS_DIR`.
-From RT-2 `field_map.py`: `load_schema`, `load_map`, `validate_map`.
-From RT-3 `fill_form.py`: `fill(form_id, profile, out_path, cache_dir, maps_dir, flatten, pdf_path) -> {"form_id","out","filled","skipped","flattened"}`.
-From RT-4 `sign_form.py`: `build_signer`, `sign_pdf`, `signature_fields`, `preflight`, `SigningError`, `DEFAULT_REASON`.
+From RT-2 `field_map.py`: `dump_widgets(pdf: str | bytes) -> list[dict]`.
+From RT-3 `fill_form.py`: `fill(pdf_bytes: bytes, values: dict[str, str], flatten_fields: list[str] | None = None) -> bytes`, raising `FillError`.
+From RT-4 `sign_form.py`: `signature_fields(pdf) -> list[dict]`, `build_signer(provider, **options) -> Signer`, `sign_pdf(pdf_bytes, signer, field_name=None, reason=...) -> bytes`, `DEFAULT_REASON`, raising `SigningError`. This plan adds `validate_signatures(pdf) -> list[dict]` to the same module (Task 1a), since it needs the same pyHanko import surface `signature_fields` already has.
 
 ---
 
@@ -109,7 +139,7 @@ From RT-4 `sign_form.py`: `build_signer`, `sign_pdf`, `signature_fields`, `prefl
 
 - Consumes: nothing.
 - Produces:
-  - `class Settings` with `service_key: str`, `cache_dir: str`, `maps_dir: str`, `cert_dir: str`, `signing_provider: str`, `max_body_bytes: int`, `work_dir: str`.
+  - `class Settings` with `service_key: str`, `cert_dir: str`, `signing_provider: str`, `max_body_bytes: int`. No `cache_dir`, `maps_dir`, or `work_dir`: nothing in this service reads a map or writes a scratch file (see the 2026-09-25 correction above).
   - `load_settings(env: Mapping[str, str] | None = None) -> Settings`, raising `RuntimeError` when `FORM_SERVICE_KEY` is unset or shorter than 32 characters.
   - `require_service_key(x_form_service_key: str = Header(...)) -> None`, a FastAPI dependency raising `HTTPException(401)` on a mismatch, compared with `hmac.compare_digest`.
 
@@ -119,11 +149,11 @@ Create `deploy/form-service/tests/test_api.py`:
 
 ```python
 """
-test_api.py - Offline unit tests for the UQAC form service.
+test_api.py - Offline unit tests for the form-service HTTP API.
 
-No network, no real UQAC form, no certificate: the skill functions are patched
-and the FastAPI test client drives the app in-process. Run with the project
-Python from the repo root:
+No network, no real form, no certificate authority: the skill functions are
+patched and the FastAPI test client drives the app in-process. Run with the
+project Python from the repo root:
     python deploy/form-service/tests/test_api.py
 """
 
@@ -159,11 +189,14 @@ class TestSettings(unittest.TestCase):
             config.load_settings({"FORM_SERVICE_KEY": "short"})
         self.assertNotIn("short", str(ctx.exception))
 
-    def test_paths_come_from_the_environment_with_defaults(self) -> None:
+    def test_cert_dir_comes_from_the_environment_with_a_default(self) -> None:
         settings = config.load_settings({"FORM_SERVICE_KEY": VALID_KEY,
-                                         "FORM_SERVICE_MAPS_DIR": "/data/maps"})
-        self.assertEqual(settings.maps_dir, "/data/maps")
-        self.assertTrue(settings.cache_dir)
+                                         "FORM_SERVICE_CERT_DIR": "/data/certs"})
+        self.assertEqual(settings.cert_dir, "/data/certs")
+
+    def test_a_default_environment_still_has_a_cert_dir(self) -> None:
+        settings = config.load_settings({"FORM_SERVICE_KEY": VALID_KEY})
+        self.assertTrue(settings.cert_dir)
 
 
 class TestKeyComparison(unittest.TestCase):
@@ -192,25 +225,25 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'app'`.
 
 - [ ] **Step 3: Write the requirements file**
 
-Create `deploy/form-service/requirements.txt`:
+Create `deploy/form-service/requirements.txt`, matching the versions already pinned and
+audited in `.claude/skills/form-service/scripts/requirements.txt`:
 
 ```
-# UQAC form service image. Pinned exactly, audited with:
+# form-service image. Pinned exactly, audited with:
 #   pip-audit -r deploy/form-service/requirements.txt --strict
 #
 # Licence floor: the image must carry NO AGPL dependency, because it is
-# deployed. pypdf is BSD-3 and pyhanko is MIT; PyMuPDF (AGPL-3.0) stays isolated
+# deployed. pypdf is BSD-3 and pyHanko is MIT; PyMuPDF (AGPL-3.0) stays isolated
 # in the extract-statistic skill and is never installed here.
 fastapi==0.141.1
-uvicorn==0.52.0
-pypdf==6.14.2
-pyhanko==0.36.2
-cryptography==49.0.0
-PyYAML==6.0.3
+uvicorn==0.54.0
+pypdf==6.16.1
+pyHanko==0.37.0
+cryptography==46.0.7
 requests==2.34.2
 
-# Test extra: the Starlette test client needs httpx. Installed in the test image
-# layer only, never in the runtime image.
+# Test extra: the Starlette test client needs httpx. Installed in the test
+# environment only, never in the runtime image.
 # httpx==0.28.1
 ```
 
@@ -222,7 +255,7 @@ Create `deploy/form-service/app/config.py`:
 
 ```python
 """
-config.py - Environment configuration for the UQAC form service.
+config.py - Environment configuration for the form-service HTTP API.
 
 Fails fast: a service with no shared secret does not start, so an accidental
 open deployment is impossible rather than merely unlikely.
@@ -233,7 +266,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 MIN_KEY_LENGTH = 32
-DEFAULT_MAX_BODY_BYTES = 25 * 1024 * 1024  # 25 MB, matching the form download cap
+DEFAULT_MAX_BODY_BYTES = 25 * 1024 * 1024  # 25 MB, matching the form-service ingest cap
 
 
 @dataclass(frozen=True)
@@ -241,11 +274,8 @@ class Settings:
     """Everything the service reads from its environment."""
 
     service_key: str
-    cache_dir: str
-    maps_dir: str
     cert_dir: str
     signing_provider: str
-    work_dir: str
     max_body_bytes: int
 
 
@@ -280,11 +310,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     return Settings(
         service_key=key,
-        cache_dir=env.get("FORM_SERVICE_CACHE_DIR", "/data/cache"),
-        maps_dir=env.get("FORM_SERVICE_MAPS_DIR", "/data/maps"),
         cert_dir=env.get("FORM_SERVICE_CERT_DIR", "/data/certs"),
         signing_provider=env.get("FORM_SERVICE_SIGNING_PROVIDER", "self-signed"),
-        work_dir=env.get("FORM_SERVICE_WORK_DIR", "/tmp/form-service"),
         max_body_bytes=int(env.get("FORM_SERVICE_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)),
     )
 ```
@@ -295,8 +322,9 @@ Create `deploy/form-service/app/security.py`:
 """
 security.py - The shared-secret gate.
 
-Every route depends on this. The comparison is constant time, the failure
-message says nothing about the expected value, and the secret is never logged.
+Every route except /health depends on this. The comparison is constant time,
+the failure message says nothing about the expected value, and the secret is
+never logged.
 """
 
 import hmac
@@ -333,7 +361,7 @@ async def require_service_key(x_form_service_key: str | None = Header(default=No
     """
     --------------------------------------------------------------------------
     Purpose:
-        FastAPI dependency enforcing the shared secret on every route.
+        FastAPI dependency enforcing the shared secret on every route it guards.
 
     Inputs:
         x_form_service_key (str | None): the X-Form-Service-Key request header
@@ -354,13 +382,109 @@ async def require_service_key(x_form_service_key: str | None = Header(default=No
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `python deploy/form-service/tests/test_api.py`
-Expected: PASS, 9 tests.
+Expected: PASS, 10 tests.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add deploy/form-service/app deploy/form-service/requirements.txt deploy/form-service/tests
 git commit -m "feat(form-service): fail-fast configuration and constant-time shared-secret gate"
+```
+
+---
+
+## Task 1a: `validate_signatures` in the signing module
+
+RT-4 shipped `signature_fields` (who is signed) but nothing that reports whether a signature
+verifies. `POST /pdf/validate` needs that, and the pyHanko import surface belongs with the
+rest of the signing module rather than duplicated in the HTTP layer.
+
+**Files:**
+
+- Modify: `.claude/skills/form-service/scripts/sign_form.py`
+- Modify: `.claude/skills/form-service/scripts/Test/test_sign_form.py`
+
+**Interfaces:**
+
+- Produces: `validate_signatures(pdf: str | bytes) -> list[dict[str, Any]]`, one entry per
+  embedded signature: `{"field", "intact", "valid", "trusted"}`.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `TestThreeSignatureChain` in `test_sign_form.py`:
+
+```python
+    def test_validate_signatures_reports_intact_valid_and_untrusted(self) -> None:
+        report = sign_form.validate_signatures(self.signed_three_times())
+        self.assertEqual(len(report), 3)
+        for entry in report:
+            self.assertTrue(entry["intact"], entry["field"])
+            self.assertTrue(entry["valid"], entry["field"])
+            self.assertFalse(entry["trusted"],
+                             f"{entry['field']}: a development signature must never "
+                             "report as trusted")
+
+    def test_validate_signatures_on_an_unsigned_document_is_empty(self) -> None:
+        pdf = form_with_signature_fields(THREE)
+        self.assertEqual(sign_form.validate_signatures(pdf), [])
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python .claude/skills/form-service/scripts/Test/test_sign_form.py`
+Expected: FAIL with `AttributeError: module 'sign_form' has no attribute 'validate_signatures'`.
+
+- [ ] **Step 3: Write the minimal implementation**
+
+Append to `sign_form.py`, after `signature_fields`:
+
+```python
+def validate_signatures(pdf: str | bytes) -> list[dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Report the validation status of every embedded signature: whether the
+        signed bytes are intact, whether the signature verifies, and whether it
+        chains to a trusted authority. The three are kept apart rather than
+        collapsed into one pass/fail, because a self-signed development
+        signature is intact and valid and must still never be presented as one
+        an institutional office has accepted.
+
+    Inputs:
+        pdf (str | bytes): a path, or the PDF body
+
+    Outputs:
+        report (list[dict]): one entry per embedded signature, each with
+            field, intact, valid and trusted. Empty when the document carries
+            no signature at all.
+    --------------------------------------------------------------------------
+    """
+    from pyhanko.sign.validation import validate_pdf_signature
+
+    body = pdf if isinstance(pdf, (bytes, bytearray)) else open(pdf, "rb").read()
+    reader = PdfFileReader(io.BytesIO(body), strict=False)
+    report: list[dict[str, Any]] = []
+    for embedded in reader.embedded_signatures:
+        status_ = validate_pdf_signature(embedded)
+        report.append({
+            "field": embedded.field_name,
+            "intact": bool(status_.intact),
+            "valid": bool(status_.valid),
+            "trusted": bool(status_.trusted),
+        })
+    return report
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python .claude/skills/form-service/scripts/Test/test_sign_form.py`
+Expected: PASS, every prior test plus the 2 new ones.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add .claude/skills/form-service/scripts/sign_form.py .claude/skills/form-service/scripts/Test/test_sign_form.py
+git commit -m "feat(form-service): validate_signatures reports intact, valid and trusted separately"
 ```
 
 ---
@@ -374,71 +498,54 @@ git commit -m "feat(form-service): fail-fast configuration and constant-time sha
 
 **Interfaces:**
 
-- Consumes: `form_registry`, `field_map`, `fill_form`, `sign_form` from RT-1 to RT-4.
+- Consumes: `field_map`, `fill_form`, `sign_form` from RT-2 to RT-4 plus Task 1a.
 - Produces:
-  - `list_forms(settings: Settings) -> list[dict[str, Any]]`, one entry per registered form: `{"form_id", "title", "office", "map_status"}`.
-  - `profile_schema() -> dict[str, dict[str, str]]`.
-  - `fill_to_bytes(form_id: str, profile: dict, flatten: bool, settings: Settings) -> tuple[bytes, dict[str, Any]]` returning the PDF bytes and the fill result.
+  - `widgets_of(pdf_bytes: bytes) -> list[dict[str, Any]]`.
+  - `fill_to_bytes(pdf_bytes: bytes, values: dict[str, str], flatten_fields: list[str], settings: Settings) -> tuple[bytes, dict[str, Any]]` returning the filled PDF and a small result summary.
   - `sign_bytes(pdf_bytes: bytes, field_name: str | None, reason: str, settings: Settings) -> tuple[bytes, dict[str, Any]]`.
-  - `inspect_signature_fields(pdf_bytes: bytes, settings: Settings) -> list[dict[str, Any]]`.
+  - `validate_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]`.
 
-This module is the only place that touches the skill scripts, so the routes stay pure transport and the tests patch one seam.
+Every function is bytes-in, bytes-out, and none of them touches disk except `sign_bytes`
+building the signer from `settings.cert_dir`. This module is the only place that imports the
+skill scripts, so the routes stay pure transport and the tests patch one seam.
 
 - [ ] **Step 1: Write the failing test**
 
 Append to `deploy/form-service/tests/test_api.py`, above the `if __name__` block:
 
 ```python
-import tempfile  # noqa: E402
-
-
 class TestSkillBridge(unittest.TestCase):
     def setUp(self) -> None:
+        import tempfile
         from app import skill_bridge
         self.bridge = skill_bridge
         self.tmp = tempfile.TemporaryDirectory()
         self.settings = config.load_settings({
             "FORM_SERVICE_KEY": VALID_KEY,
-            "FORM_SERVICE_WORK_DIR": os.path.join(self.tmp.name, "work"),
-            "FORM_SERVICE_MAPS_DIR": os.path.join(self.tmp.name, "maps"),
-            "FORM_SERVICE_CACHE_DIR": os.path.join(self.tmp.name, "cache"),
             "FORM_SERVICE_CERT_DIR": os.path.join(self.tmp.name, "certs"),
         })
-        self._real_fill = self.bridge.fill_form.fill
 
     def tearDown(self) -> None:
-        self.bridge.fill_form.fill = self._real_fill
         self.tmp.cleanup()
 
-    def test_fill_to_bytes_returns_the_written_pdf_and_the_counts(self) -> None:
-        def fake_fill(form_id, profile, out_path, **kwargs):
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
-            with open(out_path, "wb") as handle:
-                handle.write(b"%PDF-1.7\nfilled\n%%EOF")
-            return {"form_id": form_id, "out": out_path, "filled": 2,
-                    "skipped": ["champ_interne"], "flattened": 2}
+    def test_widgets_of_delegates_to_field_map(self) -> None:
+        self.bridge.field_map.dump_widgets = lambda pdf: [{"name": "Champ1"}]
+        self.assertEqual(self.bridge.widgets_of(b"%PDF-1.7\n"), [{"name": "Champ1"}])
 
-        self.bridge.fill_form.fill = fake_fill
+    def test_fill_to_bytes_returns_the_pdf_and_the_counts(self) -> None:
+        self.bridge.fill_form.fill = lambda pdf_bytes, values, flatten_fields=None: (
+            b"%PDF-1.7\nfilled\n%%EOF")
         body, result = self.bridge.fill_to_bytes(
-            "srf-rapport-depenses", {"student": {"nom": "X"}}, True, self.settings)
+            b"%PDF-1.7\n", {"student.nom": "X"}, [], self.settings)
         self.assertTrue(body.startswith(b"%PDF"))
-        self.assertEqual(result["filled"], 2)
-        self.assertEqual(result["skipped"], ["champ_interne"])
+        self.assertEqual(result["filled"], 1)
+        self.assertEqual(result["flattened"], 0)
 
-    def test_fill_to_bytes_leaves_no_file_behind_on_the_service(self) -> None:
-        def fake_fill(form_id, profile, out_path, **kwargs):
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
-            with open(out_path, "wb") as handle:
-                handle.write(b"%PDF-1.7\nfilled\n%%EOF")
-            return {"form_id": form_id, "out": out_path, "filled": 1,
-                    "skipped": [], "flattened": 1}
-
-        self.bridge.fill_form.fill = fake_fill
-        self.bridge.fill_to_bytes("srf-rapport-depenses", {}, True, self.settings)
-        leftovers = []
-        for root, _dirs, files in os.walk(self.settings.work_dir):
-            leftovers.extend(os.path.join(root, f) for f in files)
-        self.assertEqual(leftovers, [], "a profile-derived PDF must not linger on the service")
+    def test_validate_bytes_delegates_to_sign_form(self) -> None:
+        self.bridge.sign_form.validate_signatures = lambda pdf: [
+            {"field": "Signature_directeur", "intact": True, "valid": True, "trusted": False}]
+        report = self.bridge.validate_bytes(b"%PDF-1.7\n")
+        self.assertEqual(report[0]["field"], "Signature_directeur")
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -452,18 +559,18 @@ Create `deploy/form-service/app/skill_bridge.py`:
 
 ```python
 """
-skill_bridge.py - The only module that imports the uqac-forms skill scripts.
+skill_bridge.py - The only module that imports the form-service skill scripts.
 
 Keeping the import surface in one file means the routes are pure transport and
-the tests have exactly one seam to patch. Nothing here persists a profile or a
-filled document: the working file is deleted as soon as its bytes are read.
+the tests have exactly one seam to patch. Every function is bytes-in,
+bytes-out: nothing here persists a request body, and the only disk access at
+all is sign_bytes reading or generating the long-lived signing certificate
+under settings.cert_dir.
 """
 
 import logging
 import os
 import sys
-import tempfile
-import uuid
 from typing import Any
 
 from .config import Settings
@@ -471,126 +578,65 @@ from .config import Settings
 logger = logging.getLogger(__name__)
 
 # The skill scripts are plain modules in the repo, mounted into the image at
-# /opt/uqac-forms/scripts. SKILL_SCRIPTS_DIR overrides the location for a local
-# run straight from a checkout.
+# /opt/form-service/scripts. SKILL_SCRIPTS_DIR overrides the location for a
+# local run straight from a checkout.
 _DEFAULT_SCRIPTS = os.environ.get(
     "SKILL_SCRIPTS_DIR",
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.dirname(os.path.abspath(__file__))))),
-        ".claude", "skills", "uqac-forms", "scripts"))
+        ".claude", "skills", "form-service", "scripts"))
 if _DEFAULT_SCRIPTS not in sys.path:
     sys.path.insert(0, _DEFAULT_SCRIPTS)
 
 import field_map  # noqa: E402
 import fill_form  # noqa: E402
-import form_registry  # noqa: E402
 import sign_form  # noqa: E402
 
 
-def list_forms(settings: Settings) -> list[dict[str, Any]]:
+def widgets_of(pdf_bytes: bytes) -> list[dict[str, Any]]:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Report the registered forms with the state of their field map, so a
-        caller knows before filling whether a form is usable.
+        List every AcroForm widget in an uploaded PDF.
 
     Inputs:
-        settings (Settings): service configuration
+        pdf_bytes (bytes): the uploaded document
 
     Outputs:
-        forms (list[dict]): {form_id, title, office, map_status}
+        widgets (list[dict]): name, name_hex, type, page, rect, on_states,
+            readonly, per field_map.dump_widgets
     --------------------------------------------------------------------------
     """
-    return [{
-        "form_id": spec.form_id,
-        "title": spec.title,
-        "office": spec.office,
-        "map_status": form_registry.map_status(spec.form_id, settings.maps_dir),
-    } for spec in form_registry.load_registry().values()]
+    return field_map.dump_widgets(pdf_bytes)
 
 
-def profile_schema() -> dict[str, dict[str, str]]:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Return the shared profile vocabulary, so a caller can build a profile
-        without reading the repository.
-
-    Inputs:
-        none
-
-    Outputs:
-        schema (dict): {namespace: {key: description}}
-    --------------------------------------------------------------------------
-    """
-    return field_map.load_schema()
-
-
-def _work_path(settings: Settings, suffix: str) -> str:
-    """A unique path under the work directory; the caller deletes it."""
-    os.makedirs(settings.work_dir, exist_ok=True)
-    return os.path.join(settings.work_dir, f"{uuid.uuid4().hex}{suffix}")
-
-
-def fill_to_bytes(form_id: str, profile: dict[str, Any], flatten: bool,
+def fill_to_bytes(pdf_bytes: bytes, values: dict[str, str], flatten_fields: list[str],
                   settings: Settings) -> tuple[bytes, dict[str, Any]]:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Fill a form and return its bytes, leaving nothing on disk. The profile
-        carries personal information, so the working file is removed in a finally
-        block whatever happens.
+        Fill a PDF and return the result bytes with a small summary. Stateless:
+        the input bytes are never written to disk.
 
     Inputs:
-        form_id (str): registry id
-        profile (dict): the profile document
-        flatten (bool): lock the non-signature fields
-        settings (Settings): service configuration
+        pdf_bytes (bytes): the form to fill
+        values (dict[str, str]): byte-exact field name to value
+        flatten_fields (list[str]): fields to lock, normally those of the step
+            that just completed
+        settings (Settings): service configuration, unused here today, carried
+            for a future per-request limit
 
     Outputs:
-        result (tuple): (pdf_bytes, fill_result)
+        result (tuple): (filled_bytes, {"filled": int, "flattened": int})
 
     Raises:
-        form_registry.StaleMapError, RuntimeError from the skill.
+        fill_form.FillError: an unknown field name or a checkbox value that is
+            not one of the widget's own on-states.
     --------------------------------------------------------------------------
     """
-    out = _work_path(settings, ".pdf")
-    try:
-        result = fill_form.fill(form_id, profile, out,
-                                cache_dir=settings.cache_dir,
-                                maps_dir=settings.maps_dir,
-                                flatten=flatten)
-        with open(out, "rb") as handle:
-            body = handle.read()
-        result = {**result, "out": None}  # never leak a server path to a caller
-        return body, result
-    finally:
-        if os.path.exists(out):
-            os.remove(out)
-
-
-def inspect_signature_fields(pdf_bytes: bytes, settings: Settings) -> list[dict[str, Any]]:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        List the signature fields of an uploaded PDF.
-
-    Inputs:
-        pdf_bytes (bytes): the uploaded document
-        settings (Settings): service configuration
-
-    Outputs:
-        fields (list[dict]): {name, page, signed}
-    --------------------------------------------------------------------------
-    """
-    path = _work_path(settings, ".pdf")
-    try:
-        with open(path, "wb") as handle:
-            handle.write(pdf_bytes)
-        return sign_form.signature_fields(path)
-    finally:
-        if os.path.exists(path):
-            os.remove(path)
+    del settings  # not needed yet; kept for a future per-request policy
+    body = fill_form.fill(pdf_bytes, values, flatten_fields or None)
+    return body, {"filled": len(values), "flattened": len(flatten_fields or [])}
 
 
 def sign_bytes(pdf_bytes: bytes, field_name: str | None, reason: str,
@@ -598,50 +644,56 @@ def sign_bytes(pdf_bytes: bytes, field_name: str | None, reason: str,
     """
     --------------------------------------------------------------------------
     Purpose:
-        Sign an uploaded filled form and return the signed bytes, leaving
-        nothing on disk.
+        Sign an uploaded filled PDF and return the signed bytes.
 
     Inputs:
         pdf_bytes (bytes): the filled document
         field_name (str | None): signature field, auto-selected when unique
         reason (str): the reason recorded in the signature
-        settings (Settings): service configuration
+        settings (Settings): service configuration; signing_provider and
+            cert_dir decide which signer builds
 
     Outputs:
-        result (tuple): (signed_bytes, sign_result)
+        result (tuple): (signed_bytes, {"field": str})
 
     Raises:
-        sign_form.SigningError on any pre-flight refusal.
+        sign_form.SigningError: any pre-flight refusal, or the underlying
+            signing failure.
     --------------------------------------------------------------------------
     """
-    source = _work_path(settings, ".pdf")
-    signed = _work_path(settings, "_signe.pdf")
-    try:
-        with open(source, "wb") as handle:
-            handle.write(pdf_bytes)
-        signer = sign_form.build_signer(settings.signing_provider,
-                                        cert_dir=settings.cert_dir)
-        result = sign_form.sign_pdf(source, signed, signer,
-                                    field_name=field_name, reason=reason)
-        with open(signed, "rb") as handle:
-            body = handle.read()
-        return body, {**result, "in": None, "out": None}
-    finally:
-        for path in (source, signed):
-            if os.path.exists(path):
-                os.remove(path)
+    signer = sign_form.build_signer(settings.signing_provider, cert_dir=settings.cert_dir)
+    chosen = sign_form.preflight(pdf_bytes, field_name)
+    signed = sign_form.sign_pdf(pdf_bytes, signer, field_name=chosen, reason=reason)
+    return signed, {"field": chosen}
+
+
+def validate_bytes(pdf_bytes: bytes) -> list[dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Report the validation status of every signature in an uploaded PDF.
+
+    Inputs:
+        pdf_bytes (bytes): the document to check
+
+    Outputs:
+        report (list[dict]): field, intact, valid, trusted, per
+            sign_form.validate_signatures
+    --------------------------------------------------------------------------
+    """
+    return sign_form.validate_signatures(pdf_bytes)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python deploy/form-service/tests/test_api.py`
-Expected: PASS, 11 tests.
+Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add deploy/form-service/app/skill_bridge.py deploy/form-service/tests/test_api.py
-git commit -m "feat(form-service): skill bridge that never persists a profile or a filled PDF"
+git commit -m "feat(form-service): bytes-in bytes-out skill bridge, no work directory needed"
 ```
 
 ---
@@ -658,29 +710,33 @@ git commit -m "feat(form-service): skill bridge that never persists a profile or
 - Consumes: `load_settings`, `require_service_key`, and the whole skill bridge.
 - Produces the HTTP contract TT-3 codes against:
 
-| Method and path | Body | Success | Failure |
+| Method and path | Request | Success | Failure |
 |---|---|---|---|
-| `GET /health` | none | `200 {"status": "ok", "forms": int}` | - |
-| `GET /forms` | none | `200 {"forms": [{form_id, title, office, map_status}]}` | - |
-| `GET /schema` | none | `200 {"schema": {namespace: {key: description}}}` | - |
-| `POST /forms/{form_id}/fill` | `{"profile": {...}, "flatten": true}` | `200 application/pdf`, headers `X-Uqac-Filled`, `X-Uqac-Flattened`, `X-Uqac-Skipped` (comma separated) | `404` unknown form, `409` stale map, `413` body too large, `422` malformed body |
-| `POST /forms/{form_id}/signature-fields` | `application/pdf` | `200 {"fields": [{name, page, signed}]}` | `413`, `422` |
-| `POST /forms/{form_id}/sign` | `application/pdf`, query `field`, `reason` | `200 application/pdf`, header `X-Uqac-Signature-Field` | `409` nothing signable or already signed, `413`, `422` |
+| `GET /health` | none | `200 {"status": "ok"}` | - |
+| `POST /pdf/widgets` | body: raw PDF, `Content-Type: application/pdf` | `200 {"widgets": [...]}` | `401`, `413`, `422` |
+| `POST /pdf/fill` | `multipart/form-data`: `pdf` (file), `values` (JSON object string), `flatten_fields` (JSON array string, optional) | `200 application/pdf`, headers `X-Form-Filled`, `X-Form-Flattened` | `401`, `409` already signed, `413`, `422` unknown field or bad checkbox value or malformed JSON |
+| `POST /pdf/sign` | body: raw PDF, `Content-Type: application/pdf`; query `field` (optional), `reason` (optional) | `200 application/pdf`, header `X-Form-Signature-Field` | `401`, `409` nothing signable, already signed, or ambiguous; `413`, `422` |
+| `POST /pdf/validate` | body: raw PDF, `Content-Type: application/pdf` | `200 {"signatures": [{field, intact, valid, trusted}]}` | `401`, `413`, `422` |
 
-Every route requires `X-Form-Service-Key` and answers `401` without it.
+`multipart/form-data` is used only for `/pdf/fill`, the one route that needs both a PDF and
+structured data in the same request; the other three routes take the PDF as the whole body,
+matching `NEW_ARCHITECTURE.md` section 4's own phrasing ("`POST /pdf/widgets` (the bytes)").
+This choice has not been confirmed with the ThesisTracker side; say so in the pull request
+body per this plan's own Task 5.
 
 - [ ] **Step 1: Write the failing test**
 
 Append to `deploy/form-service/tests/test_api.py`, above the `if __name__` block:
 
 ```python
+import json  # noqa: E402
+
+
 class TestApi(unittest.TestCase):
     def setUp(self) -> None:
         os.environ["FORM_SERVICE_KEY"] = VALID_KEY
+        import tempfile
         self.tmp = tempfile.TemporaryDirectory()
-        os.environ["FORM_SERVICE_WORK_DIR"] = os.path.join(self.tmp.name, "work")
-        os.environ["FORM_SERVICE_MAPS_DIR"] = os.path.join(self.tmp.name, "maps")
-        os.environ["FORM_SERVICE_CACHE_DIR"] = os.path.join(self.tmp.name, "cache")
         os.environ["FORM_SERVICE_CERT_DIR"] = os.path.join(self.tmp.name, "certs")
 
         from fastapi.testclient import TestClient
@@ -691,98 +747,103 @@ class TestApi(unittest.TestCase):
         self.headers = {"X-Form-Service-Key": VALID_KEY}
 
         self._real = {
-            "list_forms": skill_bridge.list_forms,
+            "widgets_of": skill_bridge.widgets_of,
             "fill_to_bytes": skill_bridge.fill_to_bytes,
             "sign_bytes": skill_bridge.sign_bytes,
-            "inspect": skill_bridge.inspect_signature_fields,
+            "validate_bytes": skill_bridge.validate_bytes,
         }
-        skill_bridge.list_forms = lambda settings: [
-            {"form_id": "srf-rapport-depenses", "title": "Rapport de depenses",
-             "office": "srf", "map_status": "ok"}]
-        skill_bridge.fill_to_bytes = lambda form_id, profile, flatten, settings: (
-            b"%PDF-1.7\nfilled\n%%EOF",
-            {"form_id": form_id, "out": None, "filled": 3,
-             "skipped": ["champ_interne"], "flattened": 3})
-        skill_bridge.sign_bytes = lambda body, field, reason, settings: (
-            b"%PDF-1.7\nfilled\n%%EOF-signed",
-            {"field": field or "Signature_directeur", "reason": reason,
-             "incremental": True, "in": None, "out": None})
-        skill_bridge.inspect_signature_fields = lambda body, settings: [
-            {"name": "Signature_directeur", "page": 1, "signed": False}]
+        skill_bridge.widgets_of = lambda pdf: [
+            {"name": "Champ1", "type": "text", "page": 1}]
+        skill_bridge.fill_to_bytes = lambda pdf, values, flatten_fields, settings: (
+            b"%PDF-1.7\nfilled\n%%EOF", {"filled": len(values), "flattened": len(flatten_fields)})
+        skill_bridge.sign_bytes = lambda pdf, field, reason, settings: (
+            b"%PDF-1.7\nfilled\n%%EOF-signed", {"field": field or "Signature_directeur"})
+        skill_bridge.validate_bytes = lambda pdf: [
+            {"field": "Signature_directeur", "intact": True, "valid": True, "trusted": False}]
 
     def tearDown(self) -> None:
-        self.bridge.list_forms = self._real["list_forms"]
+        self.bridge.widgets_of = self._real["widgets_of"]
         self.bridge.fill_to_bytes = self._real["fill_to_bytes"]
         self.bridge.sign_bytes = self._real["sign_bytes"]
-        self.bridge.inspect_signature_fields = self._real["inspect"]
+        self.bridge.validate_bytes = self._real["validate_bytes"]
+        os.environ.pop("FORM_SERVICE_CERT_DIR", None)
         self.tmp.cleanup()
 
-    def test_health_requires_no_secret_and_reports_readiness(self) -> None:
+    def test_health_requires_no_secret(self) -> None:
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
 
     def test_every_data_route_rejects_a_missing_key(self) -> None:
-        for method, path in (("get", "/forms"), ("get", "/schema"),
-                             ("post", "/forms/srf-rapport-depenses/fill")):
-            response = getattr(self.client, method)(path)
+        for method, path, kwargs in (
+            ("post", "/pdf/widgets", {"content": b"%PDF-1.7\n"}),
+            ("post", "/pdf/validate", {"content": b"%PDF-1.7\n"}),
+        ):
+            response = getattr(self.client, method)(path, **kwargs)
             self.assertEqual(response.status_code, 401, f"{method} {path}")
 
     def test_a_wrong_key_is_rejected(self) -> None:
-        response = self.client.get("/forms", headers={"X-Form-Service-Key": "j" * 48})
+        response = self.client.post("/pdf/widgets",
+                                    headers={"X-Form-Service-Key": "j" * 48},
+                                    content=b"%PDF-1.7\n")
         self.assertEqual(response.status_code, 401)
 
-    def test_forms_lists_the_registry_with_map_status(self) -> None:
-        response = self.client.get("/forms", headers=self.headers)
+    def test_widgets_returns_the_dump(self) -> None:
+        response = self.client.post("/pdf/widgets", headers=self.headers,
+                                    content=b"%PDF-1.7\n")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["forms"][0]["map_status"], "ok")
+        self.assertEqual(response.json()["widgets"][0]["name"], "Champ1")
+
+    def test_widgets_rejects_a_non_pdf_body(self) -> None:
+        response = self.client.post("/pdf/widgets", headers=self.headers,
+                                    content=b"not a pdf")
+        self.assertEqual(response.status_code, 422)
+
+    def test_widgets_rejects_an_oversized_body(self) -> None:
+        os.environ["FORM_SERVICE_MAX_BODY_BYTES"] = "10"
+        try:
+            response = self.client.post("/pdf/widgets", headers=self.headers,
+                                        content=b"%PDF-1.7\n" + b"x" * 100)
+            self.assertEqual(response.status_code, 413)
+        finally:
+            os.environ.pop("FORM_SERVICE_MAX_BODY_BYTES", None)
 
     def test_fill_returns_a_pdf_with_the_counts_in_headers(self) -> None:
-        response = self.client.post("/forms/srf-rapport-depenses/fill",
-                                    headers=self.headers,
-                                    json={"profile": {"student": {"nom": "X"}}})
+        response = self.client.post(
+            "/pdf/fill", headers=self.headers,
+            files={"pdf": ("form.pdf", b"%PDF-1.7\n", "application/pdf")},
+            data={"values": json.dumps({"student.nom": "X"}),
+                 "flatten_fields": json.dumps(["student.nom"])})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["content-type"], "application/pdf")
         self.assertTrue(response.content.startswith(b"%PDF"))
-        self.assertEqual(response.headers["x-uqac-filled"], "3")
-        self.assertEqual(response.headers["x-uqac-skipped"], "champ_interne")
+        self.assertEqual(response.headers["x-form-filled"], "1")
+        self.assertEqual(response.headers["x-form-flattened"], "1")
 
-    def test_fill_maps_a_stale_map_to_409(self) -> None:
-        import form_registry
-
-        def stale(*args, **kwargs):
-            raise form_registry.StaleMapError("srf-rapport-depenses: field map is stale")
-        self.bridge.fill_to_bytes = stale
-        response = self.client.post("/forms/srf-rapport-depenses/fill",
-                                    headers=self.headers, json={"profile": {}})
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("stale", response.json()["detail"])
-
-    def test_fill_maps_an_unknown_form_to_404(self) -> None:
-        response = self.client.post("/forms/pas-un-formulaire/fill",
-                                    headers=self.headers, json={"profile": {}})
-        self.assertEqual(response.status_code, 404)
-
-    def test_fill_rejects_a_body_without_a_profile(self) -> None:
-        response = self.client.post("/forms/srf-rapport-depenses/fill",
-                                    headers=self.headers, json={})
+    def test_fill_rejects_malformed_values_json(self) -> None:
+        response = self.client.post(
+            "/pdf/fill", headers=self.headers,
+            files={"pdf": ("form.pdf", b"%PDF-1.7\n", "application/pdf")},
+            data={"values": "not json"})
         self.assertEqual(response.status_code, 422)
 
-    def test_signature_fields_lists_them(self) -> None:
+    def test_fill_maps_an_unknown_field_to_422(self) -> None:
+        import fill_form
+
+        def refuse(*args, **kwargs):
+            raise fill_form.FillError("no such field in this PDF: 'Nope'")
+        self.bridge.fill_to_bytes = lambda pdf, values, flatten_fields, settings: refuse()
         response = self.client.post(
-            "/forms/srf-rapport-depenses/signature-fields",
-            headers={**self.headers, "Content-Type": "application/pdf"},
-            content=b"%PDF-1.7\n")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["fields"][0]["name"], "Signature_directeur")
+            "/pdf/fill", headers=self.headers,
+            files={"pdf": ("form.pdf", b"%PDF-1.7\n", "application/pdf")},
+            data={"values": json.dumps({"Nope": "X"})})
+        self.assertEqual(response.status_code, 422)
 
     def test_sign_returns_the_signed_pdf_and_names_the_field(self) -> None:
-        response = self.client.post(
-            "/forms/srf-rapport-depenses/sign",
-            headers={**self.headers, "Content-Type": "application/pdf"},
-            content=b"%PDF-1.7\n")
+        response = self.client.post("/pdf/sign", headers=self.headers,
+                                    content=b"%PDF-1.7\n")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["x-uqac-signature-field"], "Signature_directeur")
+        self.assertEqual(response.headers["x-form-signature-field"], "Signature_directeur")
 
     def test_sign_maps_a_signing_refusal_to_409(self) -> None:
         import sign_form
@@ -790,33 +851,30 @@ class TestApi(unittest.TestCase):
         def refuse(*args, **kwargs):
             raise sign_form.SigningError("no signature field")
         self.bridge.sign_bytes = refuse
-        response = self.client.post(
-            "/forms/srf-rapport-depenses/sign",
-            headers={**self.headers, "Content-Type": "application/pdf"},
-            content=b"%PDF-1.7\n")
+        response = self.client.post("/pdf/sign", headers=self.headers,
+                                    content=b"%PDF-1.7\n")
         self.assertEqual(response.status_code, 409)
 
-    def test_an_oversized_body_is_rejected_before_any_pdf_work(self) -> None:
-        os.environ["FORM_SERVICE_MAX_BODY_BYTES"] = "10"
-        try:
-            response = self.client.post(
-                "/forms/srf-rapport-depenses/signature-fields",
-                headers={**self.headers, "Content-Type": "application/pdf"},
-                content=b"%PDF-1.7\n" + b"x" * 100)
-            self.assertEqual(response.status_code, 413)
-        finally:
-            os.environ.pop("FORM_SERVICE_MAX_BODY_BYTES", None)
+    def test_validate_returns_the_report(self) -> None:
+        response = self.client.post("/pdf/validate", headers=self.headers,
+                                    content=b"%PDF-1.7\n")
+        self.assertEqual(response.status_code, 200)
+        entry = response.json()["signatures"][0]
+        self.assertTrue(entry["valid"])
+        self.assertFalse(entry["trusted"])
 
     def test_no_cors_middleware_is_installed(self) -> None:
         from app import main
         names = [m.cls.__name__ for m in main.app.user_middleware]
         self.assertNotIn("CORSMiddleware", names)
 
-    def test_no_profile_value_reaches_the_log(self) -> None:
+    def test_no_field_value_reaches_the_log(self) -> None:
         from app import main
         with self.assertLogs(main.logger, level="INFO") as captured:
-            self.client.post("/forms/srf-rapport-depenses/fill", headers=self.headers,
-                             json={"profile": {"student": {"code_permanent": "TREM99010199"}}})
+            self.client.post(
+                "/pdf/fill", headers=self.headers,
+                files={"pdf": ("form.pdf", b"%PDF-1.7\n", "application/pdf")},
+                data={"values": json.dumps({"student.code_permanent": "TREM99010199"})})
         self.assertNotIn("TREM99010199", "\n".join(captured.output))
 ```
 
@@ -833,24 +891,25 @@ Create `deploy/form-service/app/main.py`:
 
 ```python
 """
-main.py - The UQAC form service HTTP API.
+main.py - The form-service HTTP API.
 
-Pure transport: every decision lives in the uqac-forms skill, reached through
-skill_bridge. Every data route requires the shared secret. There is no CORS
-middleware, because a browser never calls this API and a wildcard policy on a
-route that accepts a body is forbidden by .claude/rules/security.md.
+Pure transport: every decision lives in the form-service skill, reached
+through skill_bridge. Every route except /health requires the shared secret.
+There is no CORS middleware, because a browser never calls this API and a
+wildcard policy on a route that accepts a body is forbidden by
+.claude/rules/security.md.
 
-Nothing here logs a profile, a field value, or the secret: method, path, status,
-and duration only.
+Nothing here logs a field value, a profile, or the secret: method, path,
+status, and duration only.
 """
 
+import json
 import logging
 import time
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
 
 from . import skill_bridge
 from .config import load_settings
@@ -858,14 +917,7 @@ from .security import require_service_key
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="UQAC form service", version="1.0.0", docs_url=None, redoc_url=None)
-
-
-class FillRequest(BaseModel):
-    """Body of a fill request. `profile` is required, so an empty POST is a 422."""
-
-    profile: dict[str, Any] = Field(...)
-    flatten: bool = True
+app = FastAPI(title="form-service", version="1.0.0", docs_url=None, redoc_url=None)
 
 
 @app.middleware("http")
@@ -880,7 +932,7 @@ async def access_log(request: Request, call_next):
 
 
 async def _pdf_body(request: Request) -> bytes:
-    """Read a PDF request body, enforcing the size cap before any PDF work."""
+    """Read a raw PDF request body, enforcing the size cap before any PDF work."""
     settings = load_settings()
     body = await request.body()
     if len(body) > settings.max_body_bytes:
@@ -894,92 +946,87 @@ async def _pdf_body(request: Request) -> bytes:
     return body
 
 
-def _known_form(form_id: str) -> None:
-    """404 an unknown form id before anything else runs."""
-    settings = load_settings()
-    if form_id not in {f["form_id"] for f in skill_bridge.list_forms(settings)}:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"Unknown form id: {form_id}")
+def _parse_json_field(raw: str, name: str) -> Any:
+    """Parse a form field that carries JSON, mapping a bad payload to 422."""
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"{name} is not valid JSON: {exc}") from exc
 
 
 @app.get("/health")
 async def health() -> JSONResponse:
     """Readiness probe. The only route with no shared-secret requirement."""
-    try:
-        count = len(skill_bridge.list_forms(load_settings()))
-    except Exception:  # a broken registry must not look healthy
-        logger.exception("[FORM-SERVICE] health check failed to read the registry")
-        return JSONResponse(status_code=503, content={"status": "degraded", "forms": 0})
-    return JSONResponse(content={"status": "ok", "forms": count})
+    return JSONResponse(content={"status": "ok"})
 
 
-@app.get("/forms", dependencies=[Depends(require_service_key)])
-async def forms() -> dict[str, Any]:
-    """The registered forms with the state of their field map."""
-    return {"forms": skill_bridge.list_forms(load_settings())}
+@app.post("/pdf/widgets", dependencies=[Depends(require_service_key)])
+async def widgets(request: Request) -> dict[str, Any]:
+    """List every AcroForm widget in the uploaded PDF."""
+    body = await _pdf_body(request)
+    return {"widgets": skill_bridge.widgets_of(body)}
 
 
-@app.get("/schema", dependencies=[Depends(require_service_key)])
-async def schema() -> dict[str, Any]:
-    """The shared profile vocabulary."""
-    return {"schema": skill_bridge.profile_schema()}
-
-
-@app.post("/forms/{form_id}/fill", dependencies=[Depends(require_service_key)])
-async def fill(form_id: str, body: FillRequest) -> Response:
-    """Fill one form and stream the PDF back. Counts travel in headers."""
-    _known_form(form_id)
+@app.post("/pdf/fill", dependencies=[Depends(require_service_key)])
+async def fill(pdf: UploadFile = File(...), values: str = Form(...),
+              flatten_fields: str = Form(default="[]")) -> Response:
+    """Fill an uploaded form and stream the PDF back. Counts travel in headers."""
     settings = load_settings()
+    body = await pdf.read()
+    if len(body) > settings.max_body_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail="Request body exceeds the configured maximum")
+    if not body.startswith(b"%PDF"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="Body is not a PDF")
+
+    parsed_values = _parse_json_field(values, "values")
+    parsed_flatten = _parse_json_field(flatten_fields, "flatten_fields")
+
     try:
-        pdf, result = skill_bridge.fill_to_bytes(form_id, body.profile, body.flatten, settings)
-    except skill_bridge.form_registry.StaleMapError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    except KeyError as exc:
+        filled, result = skill_bridge.fill_to_bytes(body, parsed_values, parsed_flatten, settings)
+    except skill_bridge.fill_form.FillError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    return Response(content=pdf, media_type="application/pdf", headers={
-        "X-Uqac-Filled": str(result["filled"]),
-        "X-Uqac-Flattened": str(result["flattened"]),
-        "X-Uqac-Skipped": ",".join(result["skipped"]),
+    return Response(content=filled, media_type="application/pdf", headers={
+        "X-Form-Filled": str(result["filled"]),
+        "X-Form-Flattened": str(result["flattened"]),
     })
 
 
-@app.post("/forms/{form_id}/signature-fields", dependencies=[Depends(require_service_key)])
-async def signature_fields(form_id: str, request: Request) -> dict[str, Any]:
-    """List the signature fields of an uploaded filled form."""
-    _known_form(form_id)
-    body = await _pdf_body(request)
-    return {"fields": skill_bridge.inspect_signature_fields(body, load_settings())}
-
-
-@app.post("/forms/{form_id}/sign", dependencies=[Depends(require_service_key)])
-async def sign(form_id: str, request: Request,
-               field: str | None = None, reason: str | None = None) -> Response:
+@app.post("/pdf/sign", dependencies=[Depends(require_service_key)])
+async def sign(request: Request, field: str | None = None,
+              reason: str | None = None) -> Response:
     """Sign an uploaded filled form and stream the signed PDF back."""
-    _known_form(form_id)
     body = await _pdf_body(request)
     settings = load_settings()
     chosen_reason = reason or skill_bridge.sign_form.DEFAULT_REASON
     try:
-        pdf, result = skill_bridge.sign_bytes(body, field, chosen_reason, settings)
+        signed, result = skill_bridge.sign_bytes(body, field, chosen_reason, settings)
     except skill_bridge.sign_form.SigningError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    return Response(content=pdf, media_type="application/pdf", headers={
-        "X-Uqac-Signature-Field": str(result["field"]),
+    return Response(content=signed, media_type="application/pdf", headers={
+        "X-Form-Signature-Field": str(result["field"]),
     })
+
+
+@app.post("/pdf/validate", dependencies=[Depends(require_service_key)])
+async def validate(request: Request) -> dict[str, Any]:
+    """Report the validation status of every signature in the uploaded PDF."""
+    body = await _pdf_body(request)
+    return {"signatures": skill_bridge.validate_bytes(body)}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python deploy/form-service/tests/test_api.py`
-Expected: PASS, 25 tests.
+Expected: PASS, 26 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add deploy/form-service/app/main.py deploy/form-service/tests/test_api.py
-git commit -m "feat(form-service): fill, signature-fields, and sign routes behind the shared secret"
+git commit -m "feat(form-service): widgets, fill, sign and validate routes behind the shared secret"
 ```
 
 ---
@@ -989,26 +1036,26 @@ git commit -m "feat(form-service): fill, signature-fields, and sign routes behin
 **Files:**
 
 - Create: `deploy/form-service/Dockerfile`, `deploy/form-service/.dockerignore`, `deploy/form-service/README.md`
-- Create: `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/.env.example`
+- Create: `deploy/docker-compose.yml`, `deploy/Caddyfile`, `deploy/initdb/01-pgvector.sql`, `deploy/.env.example`
 - Modify: `.gitignore`
 
 **Interfaces:**
 
 - Consumes: the application from Tasks 1 to 3.
-- Produces: a runnable stack. Service reachable at `http://127.0.0.1:8081` locally and behind Caddy at `${FORM_SERVICE_HOST}` on a real host; Postgres at `db:5432` with the `vector` extension available, which **RT-7 consumes** as its pgvector store.
+- Produces: a runnable stack. Service reachable at `http://127.0.0.1:8081` locally and behind Caddy at `${FORM_SERVICE_HOST}` on a real host; Postgres at `db:5432` with the `vector` extension available, which **RT-7 consumes** as its pgvector store. The form service has no data volume of its own beyond the signing certificate.
 
 - [ ] **Step 1: Write the Dockerfile**
 
 Create `deploy/form-service/Dockerfile`:
 
 ```dockerfile
-# UQAC form service. No AGPL dependency ships in this image.
+# form-service. No AGPL dependency ships in this image.
 FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    SKILL_SCRIPTS_DIR=/opt/uqac-forms/scripts
+    SKILL_SCRIPTS_DIR=/opt/form-service/scripts
 
 WORKDIR /srv
 
@@ -1016,14 +1063,13 @@ COPY deploy/form-service/requirements.txt /srv/requirements.txt
 RUN pip install --no-cache-dir -r /srv/requirements.txt
 
 # The skill is the library; the service is the transport.
-COPY .claude/skills/uqac-forms/scripts /opt/uqac-forms/scripts
-COPY .claude/skills/uqac-forms/registry /opt/uqac-forms/registry
+COPY .claude/skills/form-service/scripts /opt/form-service/scripts
 COPY deploy/form-service/app /srv/app
 
-# Non-root, and a data directory the compose file mounts over.
+# Non-root, and one data directory: the signing certificate only.
 RUN useradd --system --create-home --uid 10001 formsvc \
-    && mkdir -p /data/cache /data/maps /data/certs /tmp/form-service \
-    && chown -R formsvc:formsvc /data /tmp/form-service /srv
+    && mkdir -p /data/certs \
+    && chown -R formsvc:formsvc /data /srv
 USER formsvc
 
 EXPOSE 8080
@@ -1053,9 +1099,9 @@ out/
 Create `deploy/docker-compose.yml`:
 
 ```yaml
-# UQAC form engine stack. Host-agnostic by design: every hostname and secret
-# comes from the environment, so the final Docker host is chosen before real
-# data loads and not before build. Copy deploy/.env.example to deploy/.env.
+# form engine stack. Host-agnostic by design: every hostname and secret comes
+# from the environment, so the final Docker host is chosen before real data
+# loads and not before build. Copy deploy/.env.example to deploy/.env.
 services:
   form-service:
     build:
@@ -1063,12 +1109,10 @@ services:
       dockerfile: deploy/form-service/Dockerfile
     environment:
       FORM_SERVICE_KEY: ${FORM_SERVICE_KEY:?set FORM_SERVICE_KEY in deploy/.env}
-      FORM_SERVICE_CACHE_DIR: /data/cache
-      FORM_SERVICE_MAPS_DIR: /data/maps
       FORM_SERVICE_CERT_DIR: /data/certs
       FORM_SERVICE_SIGNING_PROVIDER: ${FORM_SERVICE_SIGNING_PROVIDER:-self-signed}
     volumes:
-      - form-data:/data
+      - form-certs:/data/certs
     ports:
       # Published on the loopback interface only, never on 0.0.0.0.
       - "127.0.0.1:8081:8080"
@@ -1076,7 +1120,8 @@ services:
 
   db:
     # pgvector rides the Postgres the stack already needs; RT-7 stores its
-    # corpus embeddings here, so no separate vector vendor is introduced.
+    # corpus embeddings here, so no separate vector vendor is introduced. It
+    # is unrelated to the form path.
     image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-uqac}
@@ -1111,7 +1156,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  form-data:
+  form-certs:
   db-data:
   caddy-data:
   caddy-config:
@@ -1152,7 +1197,8 @@ FORM_SERVICE_KEY=
 # an institutional signature. See the open item in SKILL.md.
 FORM_SERVICE_SIGNING_PROVIDER=self-signed
 
-# Postgres (pgvector). RT-7 stores corpus embeddings in this database.
+# Postgres (pgvector). RT-7 stores corpus embeddings in this database, unrelated
+# to the form path.
 POSTGRES_USER=uqac
 POSTGRES_PASSWORD=
 POSTGRES_DB=uqac
@@ -1173,18 +1219,18 @@ deploy/.env
 Create `deploy/form-service/README.md`:
 
 ````markdown
-# UQAC form service
+# form-service
 
-Transport for the `uqac-forms` skill: fill and sign the official UQAC forms over
-HTTP, so ThesisTracker calls one service instead of shelling out to Python.
+Transport for the `form-service` skill: fill, sign, and validate PDF forms over
+HTTP, so ThesisTracker calls one service instead of shelling out to Python. The
+service holds no catalogue: which forms exist and what their fields mean is
+ThesisTracker's own record (TT-8/TT-9).
 
 ## Run it locally, no Docker
 
 ```bash
 export FORM_SERVICE_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
-export FORM_SERVICE_CACHE_DIR=out/uqac-forms/cache
-export FORM_SERVICE_MAPS_DIR=.claude/skills/uqac-forms/registry/maps
-export FORM_SERVICE_CERT_DIR=.claude/skills/uqac-forms/certs
+export FORM_SERVICE_CERT_DIR=out/form-service/certs
 uvicorn app.main:app --host 127.0.0.1 --port 8081 --app-dir deploy/form-service
 ```
 
@@ -1213,23 +1259,22 @@ There is no CORS middleware: a browser never calls this API.
 
 ## Endpoints
 
-| Method and path | Body | Returns |
+| Method and path | Request | Returns |
 |---|---|---|
-| `GET /health` | none | `{"status": "ok", "forms": n}` |
-| `GET /forms` | none | `{"forms": [{form_id, title, office, map_status}]}` |
-| `GET /schema` | none | `{"schema": {namespace: {key: description}}}` |
-| `POST /forms/{id}/fill` | `{"profile": {...}, "flatten": true}` | `application/pdf`, headers `X-Uqac-Filled`, `X-Uqac-Flattened`, `X-Uqac-Skipped` |
-| `POST /forms/{id}/signature-fields` | `application/pdf` | `{"fields": [{name, page, signed}]}` |
-| `POST /forms/{id}/sign` | `application/pdf`, query `field`, `reason` | `application/pdf`, header `X-Uqac-Signature-Field` |
+| `GET /health` | none | `{"status": "ok"}` |
+| `POST /pdf/widgets` | raw PDF body | `{"widgets": [{name, name_hex, type, page, rect, on_states, readonly}]}` |
+| `POST /pdf/fill` | `multipart/form-data`: `pdf` file, `values` JSON object, `flatten_fields` JSON array (optional) | `application/pdf`, headers `X-Form-Filled`, `X-Form-Flattened` |
+| `POST /pdf/sign` | raw PDF body; query `field`, `reason` (both optional) | `application/pdf`, header `X-Form-Signature-Field` |
+| `POST /pdf/validate` | raw PDF body | `{"signatures": [{field, intact, valid, trusted}]}` |
 
-Status codes: `401` no or wrong key, `404` unknown form, `409` stale field map or
-a signing refusal, `413` body over the cap, `422` malformed body.
+Status codes: `401` no or wrong key, `409` a signing refusal (nothing signable,
+already signed, or ambiguous which field), `413` body over the cap, `422` not a
+PDF or a fill refusal (unknown field, bad checkbox value, malformed JSON).
 
 ## Personal information
 
-A profile carries a permanent code, a postal address, and a cheque payee. The
-service never persists a request body, never logs a field value, and deletes its
-working file in a `finally` block. Nothing is stored between requests.
+The service never persists a request body and never logs a field value. Nothing
+is stored between requests, aside from the signing certificate.
 
 ## Signing
 
@@ -1244,13 +1289,15 @@ a PAdES signature is unverified. Switch providers with
 ```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up --build -d
 curl -s http://127.0.0.1:8081/health
-curl -s -H "X-Form-Service-Key: $FORM_SERVICE_KEY" http://127.0.0.1:8081/forms
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/forms          # expect 401
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/pdf/widgets   # expect 401
 docker compose -f deploy/docker-compose.yml exec db psql -U uqac -d uqac -c "SELECT extname FROM pg_extension WHERE extname='vector';"
 docker compose -f deploy/docker-compose.yml down
 ```
 
-Expected: `/health` returns `{"status":"ok","forms":5}`, `/forms` returns the registry with `map_status` per form, the unauthenticated call returns `401`, and the `psql` query returns one row named `vector`.
+Expected: `/health` returns `{"status":"ok"}`, the unauthenticated call returns `401`, and the
+`psql` query returns one row named `vector`. **Not run in this environment**: no Docker
+daemon is available in the sandbox this plan was executed in; state this explicitly rather
+than claiming it passed.
 
 - [ ] **Step 5: Audit the image dependencies**
 
@@ -1258,20 +1305,22 @@ Expected: `/health` returns `{"status":"ok","forms":5}`, `/forms` returns the re
 pip-audit -r deploy/form-service/requirements.txt --strict
 ```
 
-Expected: no vulnerabilities. Cite any `CVE-YYYY-NNNNN` and its fixed version in a comment above the bumped pin.
+Expected: no vulnerabilities. Cite any `CVE-YYYY-NNNNN` and its fixed version in a comment
+above the bumped pin.
 
 - [ ] **Step 6: Update SKILL.md and the rules**
 
-Add to `.claude/skills/uqac-forms/SKILL.md`:
+Add to `.claude/skills/form-service/SKILL.md`:
 
 ```markdown
 ## HTTP service
 
 `deploy/form-service/` wraps this skill in a FastAPI application so another
-application (ThesisTracker) can fill and sign without shelling out to Python.
-Every route requires a shared-secret header, the service refuses to start
-without one, and no field value or profile is ever logged or persisted. See
-`deploy/form-service/README.md` for the endpoint table and the run commands.
+application (ThesisTracker) can fill, sign, and validate PDFs without shelling
+out to Python. Every route except `/health` requires a shared-secret header,
+the service refuses to start without one, and no field value is ever logged or
+persisted. See `deploy/form-service/README.md` for the endpoint table and the
+run commands.
 ```
 
 Add to `.claude/rules/testing.md`:
@@ -1284,15 +1333,10 @@ python deploy/form-service/tests/test_api.py   # configuration, secret gate, ski
 
 ```powershell
 python deploy/form-service/tests/test_api.py
-python .claude/skills/uqac-forms/scripts/Test/test_sign_form.py
-python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py
-python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
-python .claude/skills/uqac-forms/scripts/Test/test_form_registry.py
-python .claude/skills/scopus/scripts/Test/test_download_pdf.py
-python .claude/skills/scopus/scripts/Test/test_browser_fetch.py
-python .claude/skills/scopus/scripts/Test/test_bib_batch.py
-python .claude/skills/scopus/scripts/Test/test_litreview_update.py
-python .claude/skills/extract-statistic/scripts/Test/test_section_scan.py
+python .claude/skills/form-service/scripts/Test/test_sign_form.py
+python .claude/skills/form-service/scripts/Test/test_fill_form.py
+python .claude/skills/form-service/scripts/Test/test_field_map.py
+python .claude/skills/form-service/scripts/Test/test_pdf_ingest.py
 ```
 
 Expected: all pass.
@@ -1300,7 +1344,7 @@ Expected: all pass.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add deploy .claude/skills/uqac-forms/SKILL.md .claude/rules/testing.md .gitignore
+git add deploy .claude/skills/form-service/SKILL.md .claude/rules/testing.md .gitignore
 git commit -m "feat(form-service): container, compose with pgvector Postgres, and Caddy front door"
 ```
 
@@ -1308,13 +1352,21 @@ git commit -m "feat(form-service): container, compose with pgvector Postgres, an
 
 ## Interfaces published by RT-5
 
-**HTTP contract, consumed by TT-3:** the endpoint table in Task 3. Header names, status codes, and the `X-Uqac-*` response headers are the contract; TT-3 codes against them and its injected-fetch tests assert them.
+**HTTP contract, consumed by TT-3:** the endpoint table in Task 3. Header names, status
+codes, and the `X-Form-*` response headers are the contract; TT-3 codes against them and its
+injected-fetch tests assert them. **The multipart-vs-raw-body split has not been confirmed
+with TT-3 and must be before either unit ships**, per this plan's own Task 3 note.
 
-**For RT-6:** the same FastAPI application. RT-6 adds `GET /publications` to `app/main.py`, reuses `require_service_key`, and adds its own module next to `skill_bridge.py`.
+**For RT-6:** the same FastAPI application. RT-6 adds `GET /publications` to `app/main.py`,
+reuses `require_service_key`, and adds its own module next to `skill_bridge.py`.
 
-**For RT-7:** the `db` service of `deploy/docker-compose.yml`, a `pgvector/pgvector:pg17` Postgres with the `vector` extension created by `deploy/initdb/01-pgvector.sql`, reachable at `db:5432` on the compose network and `127.0.0.1:5433` on the host.
+**For RT-7:** the `db` service of `deploy/docker-compose.yml`, a `pgvector/pgvector:pg17`
+Postgres with the `vector` extension created by `deploy/initdb/01-pgvector.sql`, reachable at
+`db:5432` on the compose network and `127.0.0.1:5433` on the host.
 
-**Environment variables:** `FORM_SERVICE_KEY` (required, 32 characters minimum), `FORM_SERVICE_CACHE_DIR`, `FORM_SERVICE_MAPS_DIR`, `FORM_SERVICE_CERT_DIR`, `FORM_SERVICE_SIGNING_PROVIDER`, `FORM_SERVICE_WORK_DIR`, `FORM_SERVICE_MAX_BODY_BYTES`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `FORM_SERVICE_HOST`.
+**Environment variables:** `FORM_SERVICE_KEY` (required, 32 characters minimum),
+`FORM_SERVICE_CERT_DIR`, `FORM_SERVICE_SIGNING_PROVIDER`, `FORM_SERVICE_MAX_BODY_BYTES`,
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `FORM_SERVICE_HOST`.
 
 ---
 
@@ -1322,19 +1374,20 @@ git commit -m "feat(form-service): container, compose with pgvector Postgres, an
 
 ```powershell
 python deploy/form-service/tests/test_api.py
+python .claude/skills/form-service/scripts/Test/test_sign_form.py
 pip-audit -r deploy/form-service/requirements.txt --strict
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up --build -d
-curl -s http://127.0.0.1:8081/health
 ```
 
-Plus the RT-1 through RT-4 suites and the five existing offline suites in `.claude/rules/testing.md`, which must stay green.
+Plus the RT-1 through RT-4 suites, which must stay green. The Docker/compose acceptance
+commands in Task 4 Step 4 need a Docker daemon this plan's execution environment did not
+have; report that gap rather than claiming it passed.
 
 ---
 
 ## Task 5: Documentation and the pull request
 
-Run this after the acceptance block above passes. It is the last task of the unit,
-and it is what makes the work reviewable by someone who was not here.
+Run this after the acceptance block above passes. It is the last task of the unit, and it is
+what makes the work reviewable by someone who was not here.
 
 **Files:**
 
@@ -1345,39 +1398,34 @@ and it is what makes the work reviewable by someone who was not here.
 **Interfaces:**
 
 - Consumes: the finished implementation of every task above.
-- Produces: the inventories a reader needs, and one pull request per unit so nothing
-  reaches `main` unreviewed.
+- Produces: the inventories a reader needs, and one pull request per unit so nothing reaches
+  `main` unreviewed.
 
 - [ ] **Step 1: Update `README.md`**
 
-Task 6 of this plan updates `SKILL.md` and the rules but not the README. Add here:
-
-1. A `### Deployment` subsection, or a paragraph in the existing deployment area,
-   naming `deploy/form-service/` as the containerized transport over the
-   `uqac-forms` skill, and pointing at `deploy/form-service/README.md` for the
-   endpoint table and the run commands.
-2. In the Prerequisites table, a row for Docker and Docker Compose, needed only for
-   the service, never for the skill itself.
-3. In the File-Locations tree, a `deploy/` branch listing `form-service/` (app,
-   Dockerfile, requirements, tests), `docker-compose.yml`, `Caddyfile`,
-   `initdb/01-pgvector.sql`, and `.env.example`.
-4. One sentence on the security posture, because it is the part a reader is most
-   likely to get wrong: every route requires a shared-secret header, the service
-   refuses to start without one, there is no CORS middleware, and no profile or
-   field value is ever logged or persisted.
+1. A `### Deployment` subsection, or a paragraph in the existing deployment area, naming
+   `deploy/form-service/` as the containerized transport over the `form-service` skill, and
+   pointing at `deploy/form-service/README.md` for the endpoint table and the run commands.
+2. In the Prerequisites table, a row for Docker and Docker Compose, needed only for the
+   service, never for the skill itself.
+3. In the File-Locations tree, a `deploy/` branch listing `form-service/` (app, Dockerfile,
+   requirements, tests), `docker-compose.yml`, `Caddyfile`, `initdb/01-pgvector.sql`, and
+   `.env.example`.
+4. One sentence on the security posture: every route except `/health` requires a
+   shared-secret header, the service refuses to start without one, there is no CORS
+   middleware, and no field value is ever logged or persisted.
 
 - [ ] **Step 2: Update `Architecture.md`**
 
-This unit adds a deployment layer the document does not yet describe. Add a short
-section after the existing layers, with its own mermaid diagram, showing the
-service, the `pgvector` Postgres, and the Caddy front door, and stating the two
-properties that matter: the service is reached over a private network with a shared
-secret, and the image carries no AGPL dependency because PyMuPDF stays isolated in
-the `extract-statistic` skill.
+Add a short section after the existing layers, with its own mermaid diagram, showing the
+service, the `pgvector` Postgres, and the Caddy front door, and stating the two properties
+that matter: the service is reached over a private network with a shared secret, and the
+image carries no AGPL dependency because PyMuPDF stays isolated in the `extract-statistic`
+skill.
 
-Add one line naming the consumer: ThesisTracker calls this service, and the
-dependency runs one way only. Do not draw ThesisTracker into the Layer 1 graph; it
-is a separate system, and `NEW_ARCHITECTURE.md` is where the two meet.
+Add one line naming the consumer: ThesisTracker calls this service, and the dependency runs
+one way only. Do not draw ThesisTracker into the Layer 1 graph; it is a separate system, and
+`NEW_ARCHITECTURE.md` is where the two meet.
 
 - [ ] **Step 3: Update `NEW_ARCHITECTURE.md`**
 
@@ -1387,17 +1435,15 @@ checkouts so the two copies never drift.
 
 1. In the section 9 unit table, append ` Delivered <YYYY-MM-DD>.` to the **RT-5** row's
    deliverable cell.
-2. Section 4 (the runtime topology diagram) describes what this unit builds. Verify the
-   service name, the port, the volume, and the statement that the service has no published
-   host port, all against the delivered compose file. Section 10's security table names
-   `config.load_settings` and `security.keys_match`: confirm both exist and behave as stated.
-3. The file opens with `**Status: planned, not implemented.**` That line stops being true
-   the moment any unit lands. Replace it with
-   `**Status: in progress. <n> of 14 units delivered.**` and keep the count correct.
+2. Verify section 4's runtime topology diagram (the `form-service` node, its `:8080` port,
+   its `certs` volume) against the delivered compose file.
+3. Section 10's security table names `config.load_settings` and `security.keys_match`:
+   confirm both exist and behave as stated, and add the new `RT-5, asserted by test` row for
+   `validate_signatures` reporting intact, valid and trusted separately.
 
-The change must land in both repositories. After committing it here, copy the same file
-into the other checkout and open a second, documentation-only pull request there, or fold
-it into that repository's next unit pull request. Verify the two copies match:
+The change must land in both repositories. After committing it here, copy the same file into
+the other checkout and open a second, documentation-only pull request there, or fold it into
+that repository's next unit pull request. Verify the two copies match:
 
 ```bash
 git -C "<path to ResearchTools>" show main:NEW_ARCHITECTURE.md | sha256sum
@@ -1425,13 +1471,13 @@ git commit -m "docs(form-service): record RT-5 in the inventories"
 
 - [ ] **Step 6: Open the pull request**
 
-`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only,
-so neither the CLI nor that token can open a pull request. Do not try to install `gh`.
-The OAuth token in the Windows Credential Manager has `repo` scope and is sufficient.
-Retrieve it per command: never write it to a file, never echo it, never commit it.
+`gh` is **not installed** on this machine, and `GITHUB_TOKEN` carries `read:user` only, so
+neither the CLI nor that token can open a pull request. Do not try to install `gh`. The OAuth
+token in the Windows Credential Manager has `repo` scope and is sufficient. Retrieve it per
+command: never write it to a file, never echo it, never commit it.
 
 ```bash
-git push -u origin feat/uqac-forms-service
+git push -u origin feat/form-service
 
 TOK=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | sed -n 's/^password=//p')
 curl -s -X POST https://api.github.com/repos/LARi-UQAC/ResearchTools/pulls \
@@ -1445,23 +1491,25 @@ Write `pr-body.json` to the scratchpad first, never into the repository:
 
 ```json
 {
-  "title": "[RT-5] uqac-forms: containerized HTTP service",
-  "head": "feat/uqac-forms-service",
+  "title": "[RT-5] form-service: stateless HTTP API for widgets, fill, sign, validate",
+  "head": "feat/form-service",
   "base": "main",
-  "body": "Closes #8\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** RT-4 (`feat/uqac-forms-signer`), and the whole RT-1 to RT-4 chain behind it.\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary>\n\n**Reviewer must check by hand.** <the manual verification steps of this plan, or 'none'>"
+  "body": "Closes #8\n\n<what the unit delivers, in three or four lines>\n\n**Depends on.** RT-4 (`feat/form-service-signer`), and the whole RT-1 to RT-4 chain behind it.\n\n**Needs confirmation with ThesisTracker (TT-3).** /pdf/fill uses multipart/form-data (a pdf file plus values and flatten_fields as JSON form fields); the other three routes take the raw PDF as the whole body. This has not been agreed with the TT-3 side.\n\n**Acceptance run.** <paste the commands from the acceptance block and their real result, not a summary; the Docker/compose commands were not run, no Docker daemon in this environment>\n\n**Reviewer must check by hand.** The Docker/compose stack end to end, since it was not run here."
 }
 ```
 
-If a permission classifier blocks the command that reads the token, open the pull request
-in the browser instead and paste the same title and body:
+If a permission classifier blocks the command that reads the token, open the pull request in
+the browser instead and paste the same title and body:
 
 ```
-https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/uqac-forms-service?expand=1
+https://github.com/LARi-UQAC/ResearchTools/compare/main...feat/form-service?expand=1
 ```
 
 Then delete `pr-body.json` from the scratchpad.
 
-**Do not merge your own pull request.** Merging to `main` is the human gate. RT-6, RT-7, TT-3 and TT-5 are all blocked behind this unit. It is the widest dependency of the project; say so in the body.
+**Do not merge your own pull request.** Merging to `main` is the human gate. RT-6, RT-7, TT-3
+and TT-5 are all blocked behind this unit. It is the widest dependency of the project; say so
+in the body.
 
 - [ ] **Step 7: Report**
 

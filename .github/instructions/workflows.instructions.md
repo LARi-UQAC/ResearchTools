@@ -25,7 +25,7 @@ and the output produced. Full arguments are in `README.md`.
 | Integrate a thesis + conference papers into one journal manuscript | by name / "extend this paper to a journal version" | `thesis-to-paper` | Submission-ready journal `.tex` (+ sections, refs, PDF), content-delta matrix, disclosure letter; multi-session checkpoint protocol |
 | Iterate a manuscript/review to a target ScholarEval score under a budget | by name / "improve this to a ScholarEval target" | `authoring-loop` (author on Fable 5, audit with `scholar-evaluation` on Sonnet/Haiku) | Improved `.tex` + per-iteration ScholarEval scores, `authoring-loop-log.md`, learnings written to memory by `local-writer` |
 | Build the conference talk from an accepted paper | `/talk <paper>` | `paper2talk` skill / `talk-builder` | Deck (PowerPoint, Beamer, or self-contained web) on the lab gabarit + timed speaker notes, projector-grade figures, slide-size and paper PDFs |
-| Fetch an official UQAC form PDF, validated | `/uqacform` | `uqac-forms` skill | The PDF plus its SHA-256; nothing written on refusal |
+| Fetch an official PDF form (any institution), validated | `/fetchform` | `form-service` skill | The PDF plus its SHA-256; nothing written on refusal |
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 | Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
 | Draft, refresh, or tailor the narrative CV-FRQ / tri-agency CV to one grant competition | `/cv` | `narrative-cv-writer` agent (+ `narrative-cv`, `scopus`, `extract-contributions`, `scientific-writing` skills) | LaTeX/PDF + plain-text CV in the profile's `cv.project_dir`, durable inventory refreshed |
@@ -148,6 +148,33 @@ Plan authoring itself is a cloud-model task, never a local model's: `superpowers
 is the standard entry point. A local model (the aider writer, `local-coder`) executes one step
 of one plan; it does not author a plan, and this rule does not change what `local-coder` is
 invoked to do.
+
+**R29 - a plan states what to build, never a literal code block to transcribe.** Not
+cloud-specific: like R26, it binds every harness and every executor that writes or runs a plan
+in this repo, `aider-setup`'s nightly writer model included. Interfaces, function signatures
+and their contracts, what each named test proves, acceptance criteria: yes. A full function
+body or a full test body meant to be pasted into the real file: no. The executor derives the
+implementation from the plan's own words; a plan that hands over working code invites
+transcription instead of understanding, and the model, cloud or local, stops verifying what it
+is about to write.
+
+Measured 2026-09-25 on the RT-5 and RT-6 units: both plans embedded a complete code block per
+task, and both blew R26's 8 000-token ceiling by roughly double (RT-5 at ~16 000 tokens, RT-6
+at ~13 000, neither ever split into `plan1.md`/`plan2.md` as the rule already required) with
+the code blocks the largest single contributor. The same unquestioned code carried five real
+defects into the implementation: a `sys.exit(1)` inside code meant to run in a long-lived
+service process, a request cap the API itself refuses above a lower measured ceiling, a
+name-parsing helper that reintroduced a bug an existing tested function had already fixed, a
+container build missing a dependency's copy step, and a logging call added only because the
+snippet had one, found only after being asked why. All five were sitting in plan code nobody
+re-derived or re-checked before it was written into a file.
+
+**Applies to `aider-setup` too, by explicit decision rather than by default.** The earlier
+open question was whether a smaller local model can implement correctly from intent alone,
+without a code example to work from. Decided: it applies uniformly, cloud or local executor,
+same as R26. If the aider writer model measurably cannot follow an intent-only plan step, that
+is a finding to bring back here and weigh against the five defects R29 exists to prevent, not a
+reason to have left the rule half-applied from the start.
 
 ## Shared working tree
 

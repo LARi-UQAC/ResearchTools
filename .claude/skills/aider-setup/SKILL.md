@@ -18,7 +18,7 @@ changing anything here. This file is the entry point and the map of what lives w
 | Piece | Kind | When it runs | Needs Claude Code |
 |---|---|---|---|
 | This skill | Claude Code skill | daytime, once per machine, to set up or fix the pipeline | yes |
-| `R26` (plan shape) in [../../rules/workflows.md](../../rules/workflows.md) | rule | whenever any harness writes a plan | no — it binds every harness that writes `docs/superpowers/plans/` |
+| `R26` (plan shape) and `R29` (no literal code in a plan, applies to this kit's writer model too) in [../../rules/workflows.md](../../rules/workflows.md) | rule | whenever any harness writes or executes a plan | no — both bind every harness that writes or runs `docs/superpowers/plans/` |
 | `scripts/aider-night.ps1` / `.bat` | plain `cmd` entry point | at night, everything else closed | **no** |
 
 A skill is a Claude Code construct and cannot run when Claude Code is not running, which is why

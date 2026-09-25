@@ -19,13 +19,30 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from . import skill_bridge
-from .config import load_settings
+from . import publications, skill_bridge
+from .config import Settings, load_settings
 from .security import require_service_key
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="form-service", version="1.0.0", docs_url=None, redoc_url=None)
+
+# One token bucket per process, built lazily on first use rather than at
+# import time: every other route here reads Settings per request, and a
+# module-level load_settings() call would make importing this file fail
+# whenever FORM_SERVICE_KEY is not yet set in the environment. Scopus quota is
+# a property of the key, not of the caller, so the bucket is shared.
+_publications_bucket: publications.TokenBucket | None = None
+
+
+def _get_publications_bucket(settings: Settings) -> publications.TokenBucket:
+    """Build the shared token bucket once per process, from the first Settings seen."""
+    global _publications_bucket
+    if _publications_bucket is None:
+        _publications_bucket = publications.TokenBucket(
+            capacity=settings.publications_rate_per_minute,
+            refill_per_minute=settings.publications_rate_per_minute)
+    return _publications_bucket
 
 
 @app.middleware("http")
@@ -123,3 +140,34 @@ async def validate(request: Request) -> dict[str, Any]:
     """Report the validation status of every signature in the uploaded PDF."""
     body = await _pdf_body(request)
     return {"signatures": skill_bridge.validate_bytes(body)}
+
+
+# Scopus's STANDARD view refuses a page above 25 with HTTP 400 (see
+# scopus_api._SEARCH_PAGE); the cap here is 25, not the round number 50, for
+# that measured reason.
+_PUBLICATIONS_MAX_COUNT = 25
+
+
+@app.get("/publications", dependencies=[Depends(require_service_key)])
+async def author_publications(author: str, count: int = 10,
+                              refresh: bool = False) -> dict[str, Any]:
+    """One author's Scopus publications, cached and rate limited."""
+    if not author.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="author is required")
+    if count < 1 or count > _PUBLICATIONS_MAX_COUNT:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"count must be between 1 and {_PUBLICATIONS_MAX_COUNT}")
+    settings = load_settings()
+    bucket = _get_publications_bucket(settings)
+    try:
+        payload, cached = publications.fetch_publications(
+            author, count, refresh, settings, bucket)
+    except publications.RateLimited as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc))
+    except publications.ScopusUnavailable as exc:
+        # 503, never an empty list: an empty list reads as "no publications".
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return {**payload, "cached": cached}

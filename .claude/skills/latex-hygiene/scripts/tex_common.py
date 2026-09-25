@@ -42,7 +42,51 @@ CHANGES_MACRO = re.compile(r"\\(added|deleted|replaced)(\[[^\]]*\])?\{")
 
 FLOAT_ENV = re.compile(r"\\begin\{(table\*?|figure\*?)\}.*?\\end\{\1\}", re.S)
 COMMENT_LINE = re.compile(r"(?m)(?<!\\)%.*$")
-WORD = re.compile(r"[A-Za-z][A-Za-z'-]+")
+
+# Environments whose content is NOT the author's prose and must never enter a
+# word count. `formhelp` holds the printed instructions of a grant form, which
+# the applicant may neither delete nor restyle: they are on the page, they are
+# not the applicant's words, and a form that caps a section at 300 words is
+# not counting them. Named once here so the section counter and the file
+# counter cannot disagree about what prose is (R5).
+NON_PROSE_ENVS = ("formhelp",)
+NON_PROSE_ENV = re.compile(
+    r"\\begin\{(%s)\}.*?\\end\{\1\}" % "|".join(NON_PROSE_ENVS), re.S
+)
+
+# Accented Latin letters are part of a word. The ASCII-only class this
+# replaced silently mis-tokenised French, the default language of a UQAC
+# thesis: measured 2026-09-12 by tex_common.count_words, "ete", "ou" and
+# "deja" written with their accents each counted as ZERO words, and
+# "detection" counted as one token spelled "tection". A counter that drops
+# the accented function words of the language it is pointed at reports an
+# undercount that reads exactly like a measurement.
+# U+00C0-U+024F covers Latin-1 Supplement letters, Latin Extended-A and
+# Latin Extended-B, minus U+00D7 and U+00F7, the multiplication and
+# division signs, which sit inside that block and are not letters.
+# The two-character minimum is UNCHANGED and deliberate: a lone letter is
+# skipped in French exactly as it already was in English, so "a" and "a"
+# with a grave accent are treated alike and no existing count moves for a
+# reason other than an accent.
+_LETTER = "A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f"
+WORD = re.compile("[%s][%s'-]+" % (_LETTER, _LETTER))
+
+# Macros whose braced argument is an identifier, a path or a setting rather
+# than prose: the whole call goes, argument included.
+_IDENT_MACROS = (
+    "label|ref|eqref|autoref|pageref|nameref"
+    "|cite|citep|citet|citeauthor|citeyear"
+    "|includegraphics|input|include|usepackage|documentclass|bibliographystyle"
+    "|bibitem|url|hypersetup|definecolor|setlength|renewcommand|newcommand"
+    "|graphicspath|tikzset|usetikzlibrary|pagestyle|thispagestyle|bibliography"
+)
+_IDENT_MACRO = re.compile(
+    r"\\(?:%s)\*?\s*(?:\[[^\]]*\])?\s*\{[^{}]*\}(?:\s*\{[^{}]*\})?" % _IDENT_MACROS
+)
+# Any remaining control sequence: the name is markup, not a word. Its braced
+# argument is kept, because that is where \emph, \textbf and the
+# changes-package macros carry real prose.
+_ANY_MACRO = re.compile(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?|\\.")
 
 
 def expand_globs(patterns: List[str]) -> List[str]:
@@ -87,6 +131,41 @@ def read_text(path: str) -> str:
         return handle.read()
 
 
+def read_artifact_text(path: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read a LaTeX BUILD ARTIFACT (.log, .blg, .bbl) as text, tolerating
+        bytes that are not valid UTF-8.
+
+        Measured 2026-09-16 on MiKTeX under a French Windows, building
+        BuildingGIS/financement/revue_litterature_complete.tex: the engine
+        writes paths and messages in the system codepage, so byte 0xe9
+        appeared at offset 43098 of the .log, the strict UTF-8 read of
+        read_text raised UnicodeDecodeError, and `tex_check.py build`
+        reported NOTHING although pdflatex and bibtex had both succeeded and
+        the 61-page PDF was on disk. A build whose result cannot be read is
+        indistinguishable from a build that failed, which is the defect.
+
+        Source files keep read_text and its strict decode. A .tex or .bib
+        that is not UTF-8 is an authoring defect to surface, while a log that
+        is not UTF-8 is the ordinary output of the engine on this platform.
+
+        Replacement is safe for every counter parse_counters extracts, since
+        "!", "undefined", "doi.org" and the page-count pattern are pure ASCII
+        and a replaced byte can neither create nor destroy one.
+
+    Inputs:
+        path (str): build-artifact file path.
+
+    Outputs:
+        text (str): file content, undecodable bytes replaced by U+FFFD.
+    --------------------------------------------------------------------------
+    """
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        return handle.read()
+
+
 def strip_comments(text: str) -> str:
     """
     --------------------------------------------------------------------------
@@ -119,6 +198,64 @@ def strip_floats(text: str) -> str:
     --------------------------------------------------------------------------
     """
     return FLOAT_ENV.sub("", text)
+
+
+def strip_non_prose_envs(text: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Remove the environments listed in NON_PROSE_ENVS, content included.
+        A grant form prints its own instructions on the page ("Veuillez
+        fournir : a) un apercu du probleme de recherche ... Maximum de 300
+        mots"), and those words belong to the funding agency, not to the
+        applicant. Counting them against the applicant's own cap is counting
+        the ruler as part of what it measures.
+
+    Inputs:
+        text (str): LaTeX source.
+
+    Outputs:
+        text (str): source with those environments removed.
+
+    Limit: the match is non-greedy and does not nest, so a formhelp inside a
+    formhelp would end at the first \\end. Grant instruction blocks do not
+    nest, and a nested one would be a authoring error worth seeing.
+    --------------------------------------------------------------------------
+    """
+    return NON_PROSE_ENV.sub(" ", text)
+
+
+def strip_macros(text: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Remove what a reader does not read aloud: the control sequences
+        themselves, and the arguments of the macros whose argument is an
+        identifier rather than prose. Measured 2026-09-12 on a Mitacs
+        proposal section, "\\label{sommaire}" contributed the two words
+        "label" and "sommaire", and every "\\subsubsection" contributed one
+        more, so a 300-word form cap was being judged partly on markup.
+
+    Inputs:
+        text (str): LaTeX source, comments and floats already stripped.
+
+    Outputs:
+        text (str): source with identifier-only macro calls removed and
+            remaining control sequences reduced to a space, braces kept as
+            separators.
+
+    Deliberate limit: the argument of any macro NOT named below is kept, and
+    that is correct for the ones that wrap prose (\\emph, \\textbf, and the
+    changes-package macros). A macro carrying a non-prose argument that is
+    not in the list is counted as prose, so the list is the thing to extend
+    rather than the rule.
+    --------------------------------------------------------------------------
+    """
+    # \href{url}{text}: the first argument is an address, the second is prose.
+    text = re.sub(r"\\href\s*\{[^{}]*\}\s*(?=\{)", " ", text)
+    text = _IDENT_MACRO.sub(" ", text)
+    text = _ANY_MACRO.sub(" ", text)
+    return text.replace("{", " ").replace("}", " ")
 
 
 def count_words(text: str) -> int:

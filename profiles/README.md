@@ -47,6 +47,8 @@ Wired now:
 | `scopus.relevance_signals` + `off_topic_flag` | scopus-researcher Step 3a topical-relevance check |
 | `framework_default` | scopus-researcher Step 1d.2 synthesis framework |
 | `author.letter` | recommendation-letter: WHO signs the letter. Read by `letter_identity.py`, which refuses by name when the block or one of its keys is absent rather than borrowing another profile's identity - signing a letter with someone else's name, laboratory and telephone number is a wrong answer that reads exactly like a right one. `profiles/_template.yaml` carries the full key list; a profile that never generates letters simply omits the block |
+| `author.name` / `email` / `institution` / `department` | narrative-cv: the CV header/footer identity and the old-portal filename's surname (`cv_common.load_author_identity()`); refuses rather than guessing when a key is missing |
+| `cv.project_dir` | narrative-cv: the external project folder the CV inventory and per-competition drafts live in (`cv_common.load_cv_project_dir()`); refuses rather than guessing when absent - a profile that never drafts a CV omits the block |
 
 Planned (fields exist in the schema, consumers not wired yet):
 

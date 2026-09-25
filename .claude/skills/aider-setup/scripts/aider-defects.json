@@ -1,0 +1,154 @@
+{
+  "_purpose": "The ten defects found on 2026-09-05/06, each with a signature that can be tested against a finished or running project. Read by aider-defect-check.py. A defect is listed here only if its recurrence is DETECTABLE from artefacts the run leaves behind - a defect nobody can test for is a note, not a check.",
+  "_measured": "All ten were found on the first real multi-plan run of the kit, on a seven-plan mobile-robot simulator. Seven were invisible to inspection and visible only to a run. D12 added 2026-09-07; D5 and D7 tightened the same day after D7's pattern was measured matching a healthy log.",
+  "_how_to_read_a_signature": "kind says what is examined. 'file_empty' - a file the run created but left with zero bytes. 'log_regex' - a pattern in the driver's own transcript. 'log_regex_absent' - a pattern that MUST be present, whose absence is the defect. 'bom' - a byte order mark at the start of a file. 'ledger_placement' - an audit reopen line under the wrong plan heading. 'encoding_mixed' - one file holding two encodings.",
+  "_the_mistake_these_signatures_kept_making": "FIVE of the eleven first fired on a HEALTHY run: D1, D3, D4, D8, D10. Each was written from the failure alone and matched the normal INTERMEDIATE state too, because while a run is producing something the two are identical - an empty file is truncation or work in progress, an unticked audit line is stranded or the reopen mechanism working, a transcript ending mid-sentence is a refusal or a reviewer still typing. Every one needed the same cure: ask WHETHER THE PRODUCER HAS FINISHED before asking what it produced. A signature that fires during normal operation is worse than none, because it teaches its reader to skip the one time it is right.",
+  "defects": [
+    {
+      "id": "D1",
+      "title": "a plan's output cannot fit one reply, so files are created EMPTY",
+      "was": "reserve.reply_tokens 8192 against a plan permitted 3 files x 4000 tokens. Both plan1 and plan2 were cut at exactly 8192 generated tokens, mid-word.",
+      "fix": "reserve.reply_tokens 14336, propagated to num_predict and max_output_tokens",
+      "signature": {
+        "kind": "file_empty",
+        "where": "project",
+        "extensions": [
+          ".py",
+          ".json"
+        ]
+      },
+      "why_this_signature": "aider writes a file only after parsing a COMPLETE edit block, so a truncated reply leaves the file it created at zero bytes. That is the defect's fingerprint and it needs no log."
+    },
+    {
+      "id": "D2",
+      "title": "a suite that ran ZERO tests counted as a pass",
+      "was": "unittest discover finding nothing exits 0, so the driver wrote '- [x] tests pass'",
+      "fix": "Ran 0 tests / no tests ran is now a BLOCK",
+      "signature": {
+        "kind": "log_regex",
+        "where": "run_log",
+        "pattern": "Ran 0 tests[\\s\\S]{0,80}?tests pass"
+      },
+      "why_this_signature": "the two strings together are the defect; either alone is legitimate."
+    },
+    {
+      "id": "D3",
+      "title": "a plan could not create a data file it named",
+      "was": "only source extensions could be named by a plan, so config.json and requirements.txt were never added to the chat",
+      "fix": "plan targets accept .json .txt .toml .yml .yaml .cfg .ini .csv",
+      "signature": {
+        "kind": "named_but_absent",
+        "where": "plans",
+        "names": [
+          "config.json",
+          "requirements.txt"
+        ]
+      },
+      "why_this_signature": "the plan names the file and the project does not have it after that plan ran."
+    },
+    {
+      "id": "D4",
+      "title": "a byte order mark on every file the driver wrote",
+      "was": "Set-Content -Encoding UTF8 emits a BOM on PowerShell 5.1; every run record and every touched progress.md carried EF BB BF",
+      "fix": "eight writers moved to Write-Utf8NoBom",
+      "signature": {
+        "kind": "bom",
+        "where": "written_files"
+      },
+      "why_this_signature": "one byte at offset 0, and json.load refuses the file over it."
+    },
+    {
+      "id": "D5",
+      "title": "the documented detached launch never started",
+      "was": "Start-Process joined its ArgumentList with spaces, so a -TestCommand containing spaces bound partially and the script died during PARAMETER BINDING, before its first log line - while the launcher had printed a pid",
+      "fix": "values baked into the generated script as quoted literals",
+      "signature": {
+        "kind": "log_missing",
+        "where": "run_log",
+        "min_log_age_seconds": 120
+      },
+      "why_this_signature": "A pid printed and no log file, or a log that stops before the driver banner. Judged only once the log is at least min_log_age_seconds old: in the first seconds of a healthy run the log is empty and the banner has not been written, so asking then reports every launch as a failure. Ask whether the producer has had time to produce before asking what it produced."
+    },
+    {
+      "id": "D6",
+      "title": "the run log held two encodings",
+      "was": "Tee-Object writes UTF-16 and takes no -Encoding, while four Out-File header lines wrote utf8, so the documented -Encoding Unicode printed half the file spaced out",
+      "fix": "the header lines now write unicode, matching Tee-Object",
+      "signature": {
+        "kind": "encoding_mixed",
+        "where": "run_log"
+      },
+      "why_this_signature": "decoding as UTF-16 leaves ASCII text separated by NUL-derived spaces."
+    },
+    {
+      "id": "D7",
+      "title": "the window budgeted against was not the one allocated",
+      "was": "with no metadata entry aider answers with the ARCHITECTURE maximum, so the driver budgeted against 262144 while Ollama allocated 65536",
+      "fix": "the driver compares the two and REFUSES, naming both",
+      "signature": {
+        "kind": "log_regex",
+        "where": "run_log",
+        "pattern": "REFUSED: the window this run would budget against is not the one it will get"
+      },
+      "why_this_signature": "The DRIVER'S OWN refusal, word for word, and nothing else. The first version matched 'window' at end of line or the bare number 262144, and measured 2026-09-07 that pattern hit once in a run log from a perfectly healthy night. A signature that matches prose is a signature that reports the normal state, which is the mistake the five over-eager ones made."
+    },
+    {
+      "id": "D8",
+      "title": "an audit's reopen lines landed under the wrong plan",
+      "was": "the audit of plan2 wrote both '- [ ] audit:' lines under '## plan1.md', so plan2 read as finished and plan3 started while three real defects sat where nothing would look",
+      "fix": "the driver moves them under the plan just audited and says how many",
+      "signature": {
+        "kind": "ledger_placement",
+        "where": "progress"
+      },
+      "why_this_signature": "an audit line under a heading whose plan has already been ticked complete."
+    },
+    {
+      "id": "D9",
+      "title": "the reviewer wrote no report at all",
+      "was": "plan3 blocked as unaudited; the reviewer's own log was the only record of what it found",
+      "fix": "the size check already caught it; the CAUSE was D8 and D10",
+      "signature": {
+        "kind": "log_regex",
+        "where": "run_log",
+        "pattern": "the audit wrote nothing to audit\\.md"
+      },
+      "why_this_signature": "the driver already names it; this only asks whether it happened again."
+    },
+    {
+      "id": "D10",
+      "title": "the reviewer ended its turn with a question",
+      "was": "with stale reopen lines visible it offered to apply the fixes - 'Voulez-vous que je procede aux corrections ?' - and wrote nothing. The prompt forbade asking for a FILE and said nothing about asking permission",
+      "fix": "both audit prompts state there is no one to answer and forbid ending on a question, a permission request or an offer",
+      "signature": {
+        "kind": "audit_log_question",
+        "where": "audit_logs"
+      },
+      "why_this_signature": "the reviewer's transcript ends on a question mark or an offer to proceed."
+    },
+    {
+      "id": "D11",
+      "title": "a finding reached the LEDGER but never the report",
+      "was": "plan1 round 2, 2026-09-06: the reviewer wrote '- [ ] audit: move obstacle position to config.json' into progress.md and nothing into audit.md, so a real finding sat in the ledger with its reason nowhere. The driver's size check blocked the plan, correctly, but named only the symptom.",
+      "fix": "the audit prompt states an ORDER - audit.md first, the ledger line only for a finding already written there - and names the repeat-round case, since the heading is already present on round 2 and the reviewer read the section as done. The block message now lists the orphaned ledger lines.",
+      "signature": {
+        "kind": "orphan_ledger_line",
+        "where": "progress"
+      },
+      "why_this_signature": "an audit line under a plan whose name has no section in audit.md is a finding with no report behind it. Both files are on disk, so it needs no log."
+    },
+    {
+      "id": "D12",
+      "title": "the reviewer EDITED the code instead of reporting on it",
+      "was": "The audit pass runs with --yes. When the reviewer emitted a SEARCH/REPLACE block for a source file, aider ADDED that file to the chat by itself, applied the edit and committed it, while audit.md stayed at 235 bytes and the plan was recorded as unaudited. Measured 2026-09-06 on plan 5: three files rewritten and committed. The driver's comment claimed the only file it could act on was audit.md, which was an assumption about the model's motive rather than a property of the harness. One of those edits - a test asserting a matplotlib API that does not exist - then blocked two plans on the following run.",
+      "fix": "Both audit passes now run in a sandbox directory holding ONLY the file the reviewer may write, with --no-git. A file it names does not exist there. Restore-ProjectIfTouched then compares SHA-256 content hashes before and after and restores anything touched, keeping a copy of files already dirty because git holds no copy of an uncommitted state. Proven by Test/verify-audit-sandbox.ps1.",
+      "signature": {
+        "kind": "log_regex",
+        "where": "run_log",
+        "pattern": "REVIEWER (?:TOUCHED|COMMITTED|DELETED) (?!\\.aider\\.)"
+      },
+      "why_this_signature": "The guard's own message, which should now never appear. It is EXCLUDED for .aider.* paths on purpose: aider rewrites its own chat history on every invocation including the audit, so the guard correctly saw that file change on a healthy run of 2026-09-07 and reported it. The project is what this defect is about, not aider's bookkeeping."
+    }
+  ],
+  "_also_fixed_not_listed": "The audit report was written in French while the whole kit is English. It is a real fix (both prompts now say 'Write the report in English') but it is left off this list deliberately: language is not reliably detectable without guessing, and a check that guesses trains a reader to ignore it."
+}

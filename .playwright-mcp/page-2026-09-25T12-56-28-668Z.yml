@@ -1,0 +1,432 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - navigation [ref=e5]:
+      - generic [ref=e6]:
+        - link [ref=e8] [cursor=pointer]:
+          - /url: /fr/blog/
+        - generic [ref=e13]:
+          - button [ref=e15] [cursor=pointer]
+          - link [ref=e21] [cursor=pointer]:
+            - /url: https://www.skillshare.com/membership/checkout?coupon=blog1month&via=blog-nav
+            - text: Essayez Skillshare gratuitement
+    - generic [ref=e24]:
+      - generic [ref=e32]:
+        - heading [level=1] [ref=e33]: Les 5 styles d’écriture accompagnés d’exemples
+        - paragraph [ref=e35]: "Découvrez les principaux styles d’écriture : narrative, descriptive, persuasive, expositoire et créative, et lisez des exemples de chacun."
+        - generic [ref=e36]:
+          - generic [ref=e37]: Erin Greenawald
+          - generic [ref=e42]: 8 Apr 2022
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - heading [level=3] [ref=e46]: Table des matières
+            - list [ref=e47]:
+              - listitem [ref=e48]:
+                - link [ref=e49] [cursor=pointer]:
+                  - /url: "#les-5-styles-dcriture-et-pourquoi-vous-devriez-matriser-chacun-dentre-eux"
+                  - text: Les 5 styles d'écriture et pourquoi vous devriez maîtriser chacun d'entre eux
+          - generic [ref=e50]:
+            - heading [level=3] [ref=e51]: Essayez Skillshare gratuitement ! Inscrivez-vous dès aujourd'hui à un essai gratuit de 7 jours.
+            - link [ref=e52] [cursor=pointer]:
+              - /url: https://www.skillshare.com/signup
+              - text: Commencer
+            - list [ref=e53]:
+              - listitem [ref=e54]: Accès illimité à tous les cours
+              - listitem [ref=e55]: Une communauté créative solidaire
+              - listitem [ref=e56]: Apprenez hors ligne avec l'application Skillshare
+        - generic [ref=e58]:
+          - generic [ref=e59]: Partager
+          - list [ref=e60]:
+            - listitem [ref=e61]:
+              - link [ref=e62] [cursor=pointer]:
+                - /url: https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+            - listitem [ref=e67]:
+              - link [ref=e68] [cursor=pointer]:
+                - /url: https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+            - listitem [ref=e73]:
+              - link [ref=e74] [cursor=pointer]:
+                - /url: https://www.linkedin.com/shareArticle?mini=true&url=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+            - listitem [ref=e79]:
+              - link [ref=e80] [cursor=pointer]:
+                - /url: https://www.pinterest.com/pin/create/button/?url=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+        - generic [ref=e85]:
+          - paragraph [ref=e88]: Devenir un écrivain accompli, pour le travail ou pour le plaisir, ne consiste pas simplement à s'asseoir et à coucher des mots sur le papier. Il existe en fait différents types d'écriture qui répondent à des objectifs différents, et comprendre l'objectif que vous essayez d'atteindre, et la technique qui le servira le mieux, rendra votre travail plus efficace.
+          - paragraph [ref=e91]: Vous trouverez ci-dessous des informations sur les cinq styles d'écriture, sur les circonstances dans lesquelles vous devez utiliser chacun d'entre eux et sur la manière d'améliorer vos compétences, quel que soit le type d'écriture que vous souhaitez privilégier.
+          - heading [level=2] [ref=e93]: Les 5 styles d'écriture et pourquoi vous devriez maîtriser chacun d'entre eux
+          - heading [level=3] [ref=e95]: 1. Écriture narrative
+          - paragraph [ref=e98]:
+            - text: L'
+            - link [ref=e99] [cursor=pointer]:
+              - /url: https://www.skillshare.com/blog/5-examples-of-narrative-writing/
+              - text: écriture narrative
+            - text: "est la narration dans ce qu'elle a de plus fondamental : il s'agit de partager un événement particulier survenu à un personnage. Il peut s'agir d'un récit épique ou d'une petite anecdote, qui peut s'étendre sur des années ou sur quelques minutes, il peut s'agir de faits ou de fiction."
+          - paragraph [ref=e102]:
+            - text: L'écriture narrative utilise plusieurs des
+            - link [ref=e103] [cursor=pointer]:
+              - /url: http://skillshare.com/blog/be-memorable-7-elements-of-storytelling-to-master/
+              - text: éléments de narration
+            - text: les plus courants, tels que l'intrigue, le personnage, le cadre, le conflit, l'émotion et le message central que vous essayez de faire passer. Certains
+            - link [ref=e104] [cursor=pointer]:
+              - /url: https://www.skillshare.com/classes/Storytelling-for-Leaders-How-to-Craft-Stories-That-Matter/1980968673/projects
+              - text: archétypes d'histoire
+            - text: ou structures narratives éprouvés peuvent également être utilisés pour façonner votre écriture narrative, comme le passage à l'âge adulte, la quête de richesse ou le périple du héros.
+          - paragraph [ref=e107]: "L'écriture narrative peut prendre de nombreuses formes, cependant un principe reste toujours vrai : vous devez embarquer le lecteur dans un voyage avec un début, un milieu et une fin. Même si vous relatez simplement un incident cocasse qui vous est arrivé hier, votre personnage doit commencer quelque part, se heurter à une sorte de conflit ou d'expérience intéressante, et finalement parvenir à trouver une solution."
+          - heading [level=4] [ref=e109]: Quand recourir à l'écriture narrative
+          - paragraph [ref=e112]: "L'écriture narrative est le plus souvent utilisée dans la fiction et l'écriture créative, mais elle peut également être utilisée dans la non-fiction pour rendre les histoires vraies plus convaincantes pour votre lecteur. Quel que soit votre domaine d'écriture, le style narratif vaut la peine d'être maîtrisé car le public a tendance à s'attacher davantage aux histoires. Par exemple, vous pouvez utiliser l'écriture narrative dans :"
+          - list [ref=e113]:
+            - listitem [ref=e114]: Les romans et les nouvelles
+            - listitem [ref=e115]: Les mémoires
+            - listitem [ref=e116]: Les essais créatifs
+            - listitem [ref=e117]: Les reportages
+            - listitem [ref=e118]: Les présentations ou les discours
+          - heading [level=4] [ref=e120]: Les exemples de rédaction narrative
+          - paragraph [ref=e123]:
+            - text: Prenez n'importe lequel de vos romans préférés et vous êtes sûr d'y trouver de l'écriture narrative. Voici quelques excellents exemples disponibles sur le web, tous recommandés par l'écrivain Noah Milligan dans son cours Skillshare sur l'
+            - link [ref=e124] [cursor=pointer]:
+              - /url: https://www.skillshare.com/classes/Fiction-Writing-How-to-Craft-the-Perfect-Short-Story/136605829
+              - text: écriture de nouvelles
+            - text: ":"
+          - list [ref=e125]:
+            - listitem [ref=e126]:
+              - text: «
+              - link [ref=e127] [cursor=pointer]:
+                - /url: http://storyscapejournal.com/Issue14/disobedience-by-noah-milligan.html
+                - text: Disobedience
+              - text: » par Noah Milligan
+            - listitem [ref=e128]:
+              - text: «
+              - link [ref=e129] [cursor=pointer]:
+                - /url: https://www.guernicamag.com/fiction/wounding-radius/
+                - text: Wounding Radius
+              - text: » par Constance Squires
+            - listitem [ref=e130]:
+              - text: «
+              - link [ref=e131] [cursor=pointer]:
+                - /url: http://thislandpress.com/2015/02/16/you-are-going-to-be-a-good-man/
+                - text: You Are Going to Be a Good Man
+              - text: » par George McCormick
+          - heading [level=3] [ref=e133]: 2. Écriture descriptive
+          - paragraph [ref=e136]: L'écriture descriptive consiste à saisir chaque détail du lieu, de la personne ou de la scène sur lesquels vous écrivez. L'objectif est de plonger le lecteur au cœur du récit, en lui donnant l'impression d'y être.
+          - paragraph [ref=e139]:
+            - text: "Lorsque vous essayez d'adopter un style d'écriture descriptif, considérez que vous peignez une image avec vos mots. Que pouvez-vous ajouter pour aider le lecteur à se représenter le sujet dans son esprit ? Vous pouvez généralement écrire des descriptions vivantes en utilisant les cinq sens : la vue, l'odorat, l'ouïe, le toucher et le goût. Vous pouvez également avoir recours à"
+            - link [ref=e140] [cursor=pointer]:
+              - /url: https://www.skillshare.com/classes/Write-Vivid-Narration-Bring-Action-Setting-and-Mood-to-Life/1560384732
+              - text: des comparaisons et des métaphores
+            - text: pour évoquer une humeur ou un sentiment trop difficile à saisir avec des descriptions physiques. Cela peut aider à transformer une simple description en un texte qui touchera vos lecteurs à un niveau plus profond.
+          - paragraph [ref=e143]:
+            - text: Selon
+            - link [ref=e144] [cursor=pointer]:
+              - /url: https://www.skillshare.com/classes/Descriptive-Writing-Crafting-Vivid-Immersive-Scenes/1691098678
+              - text: Kathy Fish, enseignante sur Skillshare
+            - text: ", l'écriture descriptive ne consiste pas seulement à embellir votre histoire. « Une bonne description remplit quatre objectifs. Elle immerge le lecteur et lui fait vivre une véritable expérience. Elle permet également d'établir, d'améliorer ou de changer le ton de l'histoire. Elle peut pousser le lecteur à avancer dans l'histoire, surtout si vous incluez un élément surprenant ou inattendu dans votre description. Elle peut donner au lecteur une idée de l'état mental de votre personnage. »"
+          - heading [level=4] [ref=e146]: Quand recourir à l'écriture descriptive
+          - paragraph [ref=e149]: "L'écriture descriptive est le plus souvent utilisée dans l'écriture créative et peut être utilisée avec l'écriture narrative pour construire une scène et un décor. On peut parfois l'utiliser dans des textes plus formels pour expliquer une idée plus en profondeur ou pour amener le lecteur à s'identifier émotionnellement à l'histoire que vous racontez. Voici quelques exemples de situations où vous pouvez utiliser l'écriture descriptive :"
+          - list [ref=e150]:
+            - listitem [ref=e151]:
+              - link [ref=e152] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/Writing-for-Expression-How-to-Make-Your-Words-More-Artful-Lyrical/1520871152
+                - text: Poèmes
+              - text: ou
+              - link [ref=e153] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/Songwriting-For-Social-Change-Creating-Music-with-Purpose/914471050
+                - text: paroles de chanson
+            - listitem [ref=e154]:
+              - link [ref=e155] [cursor=pointer]:
+                - /url: https://www.skillshare.com/browse/fiction
+                - text: Fiction
+              - text: ", telles que des romans ou des nouvelles"
+            - listitem [ref=e156]: Copywriting, par exemple pour décrire un produit ou une destination de voyage
+            - listitem [ref=e157]: Non-fiction narrative, telle que des mémoires
+          - heading [level=4] [ref=e159]: Exemples de textes descriptifs
+          - paragraph [ref=e162]:
+            - text: Pour voir l'écriture descriptive en action, consultez certaines des lectures recommandées dans le cours Skillshare de Kathy Fish sur
+            - link [ref=e163] [cursor=pointer]:
+              - /url: https://www.skillshare.com/classes/Descriptive-Writing-Crafting-Vivid-Immersive-Scenes/1691098678/
+              - text: comment écrire de manière descriptive
+            - text: ":"
+          - list [ref=e164]:
+            - listitem [ref=e165]:
+              - text: «
+              - link [ref=e166] [cursor=pointer]:
+                - /url: https://as.vanderbilt.edu/nashvillereview/archives/9100
+                - text: Syndication
+              - text: » par Allegra Hyde
+            - listitem [ref=e167]:
+              - text: «
+              - link [ref=e168] [cursor=pointer]:
+                - /url: http://www.paperdarts.org/literary-magazine/2016/1/6/the-sea-urchin
+                - text: The Sea Urchin
+              - text: » par Marci Calabretta Cancio-Bello
+            - listitem [ref=e169]:
+              - text: «
+              - link [ref=e170] [cursor=pointer]:
+                - /url: http://www.storyglossia.com/37/scarecrows_print.html
+                - text: Summer Scalping; Scarecrows
+              - text: » par Len Kuntz,
+              - emphasis [ref=e171]: Storyglossia
+          - heading [level=3] [ref=e173]: 3. Écriture persuasive
+          - paragraph [ref=e176]: L'écriture persuasive consiste à faire passer votre message. Le but est de partager votre opinion de manière réfléchie ou, mieux encore, de convaincre le lecteur d'un point de vue ou d'une idée. Que vous ayez une position ferme sur une question ou que vous ayez besoin d'inciter le public à agir pour une cause, l'écriture persuasive est le moyen d'y parvenir.
+          - paragraph [ref=e179]: "Bien entendu, vous ne pouvez pas vous contenter d'énoncer votre point de vue pour convaincre tout le monde, vous devez l'étayer efficacement pour rallier le lecteur à votre cause. Il existe plusieurs types principaux de moyens de persuasion que vous pouvez utiliser à l'écrit :"
+          - list [ref=e180]:
+            - listitem [ref=e181]: Des preuves statistiques, telles que des faits concrets ou des études
+            - listitem [ref=e182]: Des preuves anecdotiques, telles que des expériences personnelles ou des interviews
+            - listitem [ref=e183]: Des témoignages, tels que des citations d'experts en la matière
+            - listitem [ref=e184]: Des documents écrits, tels que des passages de livres ou des sources primaires
+          - paragraph [ref=e187]: "Quelles que soient les preuves utilisées, il est souvent préférable de ne pas se laisser emporter par ses sentiments dans un texte persuasif. Si le fait de dévoiler un pan de votre expérience personnelle peut vous aider à construire un argumentaire convaincant, trop d'émotion risque de brouiller vos arguments clés et de rebuter le lecteur. Au lieu de cela, essayez de vous mettre à la place du lecteur et demandez-vous : Quelles sont les principales informations susceptibles de les convaincre ?"
+          - heading [level=4] [ref=e189]: Quand recourir à l'écriture persuasive
+          - paragraph [ref=e192]: "L'écriture persuasive se retrouve souvent dans les œuvres de non-fiction et n'est presque jamais utilisée dans les œuvres de fiction. Elle mérite d'être maîtrisée si vous rédigez des documents professionnels, ne serait-ce que des e-mails destinés à vos collègues, car convaincre clairement les gens de vos idées ou de votre point de vue peut s'avérer très utile au travail. Vous verrez également que l'écriture persuasive est utilisée dans le type d'écrits suivants :"
+          - list [ref=e193]:
+            - listitem [ref=e194]: Essais
+            - listitem [ref=e195]: Op-eds
+            - listitem [ref=e196]: Discours ou présentations
+            - listitem [ref=e197]:
+              - link [ref=e198] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/Copywriting-For-Beginners-How-To-Write-Web-Copy-That-Sells-Without-Being-Cheesy/627184083?via=browse-trending-writing-layout-grid
+                - text: Copywriting pour la conversion
+            - listitem [ref=e199]: Rédaction de textes de vente
+            - listitem [ref=e200]: Lettres de motivation
+            - listitem [ref=e201]: Lettres de recommandation
+          - heading [level=4] [ref=e203]: Exemple d'écriture persuasive
+          - paragraph [ref=e206]:
+            - text: Pour des exemples d'écriture persuasive, consultez cette suggestion de lecture tirée du cours de l'auteure Sara Eckel sur la
+            - link [ref=e207] [cursor=pointer]:
+              - /url: https://www.skillshare.com/classes/Make-Your-Voice-Heard-Write-a-Personal-and-Persuasive-Essay/128511114
+              - text: rédaction d'essais persuasifs
+            - text: ":"
+          - list [ref=e208]:
+            - listitem [ref=e209]:
+              - text: «
+              - link [ref=e210] [cursor=pointer]:
+                - /url: https://www.houstonchronicle.com/opinion/outlook/article/Smart-educated-and-skilled-but-stuck-at-home-13701351.php
+                - text: Smart, Educated and Skilled—But Stuck at Home
+              - text: » par Kavita Krishnan
+            - listitem [ref=e211]:
+              - text: «
+              - link [ref=e212] [cursor=pointer]:
+                - /url: https://www.washingtonpost.com/outlook/2018/10/25/why-i-love-political-canvassing/
+                - text: Why I Love
+              - link [ref=e213] [cursor=pointer]:
+                - /url: https://www.washingtonpost.com/outlook/2018/10/25/why-i-love-political-canvassing/
+                - text: Political Canvassing
+              - text: » par Sara Eckel
+            - listitem [ref=e214]:
+              - text: «
+              - link [ref=e215] [cursor=pointer]:
+                - /url: https://www.dallasnews.com/opinion/commentary/2019/03/19/many-of-the-soldiers-securing-our-borders-are-immigrants-who-are-proud-to-defend-the-u-s/
+                - text: Many of the Soldiers Securing Our Border Are Immigrants Who Are Proud to Defend the U.S.
+              - text: » par Adebayo Adeleke
+          - heading [level=3] [ref=e217]: 4. Écrite expositoire
+          - paragraph [ref=e220]: L'écriture expositoire a pour but d'expliquer un sujet ou d'informer sur un domaine particulier. Le but est simplement d'apprendre quelque chose au lecteur.
+          - paragraph [ref=e223]: "L'écriture expositoire doit viser à répondre à toutes les questions qu'un lecteur peut se poser sur un sujet : pensez aux questions classiques qui, quoi, pourquoi, quand et comment. Vous devez présenter les choses clairement, en évitant tout jargon ou tout langage trop technique qui pourrait être source de confusion. Essayez vous d'aborder à l'écriture expositoire avec la mentalité d'un débutant pour rendre votre article aussi utile que possible."
+          - paragraph [ref=e226]: Le plus important est de ne pas exprimer vos émotions et vos opinions sur un sujet. Contrairement à l'écriture persuasive, l'écriture expositoire ne doit pas avoir d'angle ou d'ordre du jour, elle doit simplement présenter les faits.
+          - heading [level=4] [ref=e228]: Quand recourir à l'écriture expositoire
+          - paragraph [ref=e231]: "Apprendre à écrire dans ce style vous servira si vous devez un jour enseigner par écrit, même s'il s'agit seulement de former votre collègue à un processus particulier. Si, historiquement, l'écriture expositoire était surtout considérée comme un style académique, elle est aujourd'hui omniprésente sur le web, notamment sur les blogs consacrés au marketing de contenu et dans les articles didactiques qui enseignent aux lecteurs comment maîtriser toutes sortes de compétences. Par exemple, vous retrouverez l'écriture expositoire dans :"
+          - list [ref=e232]:
+            - listitem [ref=e233]: Des articles didactiques
+            - listitem [ref=e234]: Des articles de centre d'aide, des pages FAQ ou d'autres textes expliquant le fonctionnement d'un produit
+            - listitem [ref=e235]: Des manuels scolaires
+            - listitem [ref=e236]: Écriture technique ou commerciale
+            - listitem [ref=e237]: Matériel de formation
+          - heading [level=4] [ref=e239]: Exemples d'écriture expositoire
+          - paragraph [ref=e242]: "Cet article de blog est un exemple classique d'écriture expositoire, il est rédigé pour partager des faits et vous apprendre quelque chose ! En outre, vous trouverez ici d'autres exemples d'écriture expositoire :"
+          - list [ref=e243]:
+            - listitem [ref=e244]: Cherchez sur Google « comment faire » et lisez les articles qui apparaissent.
+            - listitem [ref=e245]:
+              - link [ref=e246] [cursor=pointer]:
+                - /url: https://www.vox.com/explainers
+                - text: Des articles didactiques de
+                - emphasis [ref=e247]: Vox
+          - heading [level=3] [ref=e249]: 5. Écriture créative
+          - paragraph [ref=e252]: Comme pour tout moyen d'expression artistique, les règles sont faites pour être transgressées. L'écriture créative englobe toute écriture qui se situe en dehors des styles ci-dessus, ou qui combine ces styles de manière surprenante. Le but de l'écriture créative est vraiment de trouver de nouvelles façons de raconter des histoires qui peuvent surprendre et ravir les lecteurs.
+          - paragraph [ref=e255]: Lorsqu'il s'agit d'écriture créative, vous pouvez vous permettre de réécrire littéralement les règles constitutives d'une écriture de qualité. Vous pouvez essayer un nouveau format ou une nouvelle structure que vous n'avez jamais vu auparavant. Vous pouvez intégrer d'autres langues ou des éléments multimédias dans votre travail. Permettez vous de prendre du plaisir !
+          - heading [level=4] [ref=e257]: Quand recourir à l'écriture créative
+          - paragraph [ref=e260]: "Le but de l'écriture créative est vraiment de vous permettre d'expérimenter avec votre art ! Voici une liste non exhaustive de sources d'inspiration pour l'écriture créative :"
+          - list [ref=e261]:
+            - listitem [ref=e262]:
+              - text: L'
+              - link [ref=e263] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/Humor-Writing-Write-Funny-for-the-Internet/278668683
+                - text: écriture humoristique
+              - text: ou satirique
+            - listitem [ref=e264]:
+              - link [ref=e265] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/Instagram-Poetry-Create-Personal-Visual-Vignettes-for-Self-Expression/1182020092?via=search-layout-grid
+                - text: La poésie
+            - listitem [ref=e266]:
+              - link [ref=e267] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/Writing-Flash-Fiction/1779016163
+                - text: Les micronouvelles
+            - listitem [ref=e268]:
+              - link [ref=e269] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/Creative-Writing-Crafting-Personal-Essays-with-Impact/1709959838/projects
+                - text: La non-fiction créative
+            - listitem [ref=e270]: Le journalisme de données
+          - heading [level=4] [ref=e272]: Exemples d'écriture créative
+          - paragraph [ref=e275]: "Si vous cherchez de l'inspiration pour votre propre création littéraire, voici quelques adresses où vous pourrez découvrir les façons uniques dont d'autres écrivains repoussent les limites :"
+          - list [ref=e276]:
+            - listitem [ref=e277]:
+              - link [ref=e278] [cursor=pointer]:
+                - /url: https://www.mcsweeneys.net/
+                - emphasis [ref=e279]: McSweeny’s
+            - listitem [ref=e280]:
+              - link [ref=e281] [cursor=pointer]:
+                - /url: https://pudding.cool/
+                - emphasis [ref=e282]: The Pudding
+            - listitem [ref=e283]:
+              - link [ref=e284] [cursor=pointer]:
+                - /url: https://www.nytimes.com/interactive/2020/12/30/us/2020-year-in-graphics.html
+                - text: Les histoires multimédias du
+                - emphasis [ref=e285]: New York Times
+          - generic [ref=e287]:
+            - figure [ref=e289]
+            - generic [ref=e291]:
+              - heading [level=2] [ref=e292]:
+                - strong [ref=e293]: Prendre l'habitude d'écrire
+              - paragraph [ref=e294]:
+                - strong [ref=e295]: "La boîte à outils de l'écrivain : 6 étapes pour une habitude d'écriture réussie"
+              - link [ref=e297] [cursor=pointer]:
+                - /url: https://www.skillshare.com/classes/The-Writers-Toolkit-6-Steps-to-a-Successful-Writing-Habit/1072824603
+                - text: Suivez le cours !
+          - generic [ref=e299]:
+            - generic [ref=e301]:
+              - generic [ref=e302]: Écrit par
+              - heading [level=3] [ref=e306]: Erin Greenawald
+            - generic [ref=e308]:
+              - generic [ref=e309]: Partager
+              - list [ref=e310]:
+                - listitem [ref=e311]:
+                  - link [ref=e312] [cursor=pointer]:
+                    - /url: https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+                - listitem [ref=e317]:
+                  - link [ref=e318] [cursor=pointer]:
+                    - /url: https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+                - listitem [ref=e323]:
+                  - link [ref=e324] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/shareArticle?mini=true&url=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+                - listitem [ref=e329]:
+                  - link [ref=e330] [cursor=pointer]:
+                    - /url: https://www.pinterest.com/pin/create/button/?url=https%3A%2F%2Fwww.skillshare.com%2Ffr%2Fblog%2Fles-5-styles-decriture-accompagnes-dexemples%2F
+    - generic [ref=e336]:
+      - generic [ref=e337]:
+        - generic [ref=e338]:
+          - heading [level=4] [ref=e339]: Communauté
+          - list [ref=e340]:
+            - listitem [ref=e341]:
+              - link [ref=e342] [cursor=pointer]:
+                - /url: https://teams.skillshare.com/
+                - text: Skillshare pour les institutions
+            - listitem [ref=e343]:
+              - link [ref=e344] [cursor=pointer]:
+                - /url: https://join.skillshare.com/gift-membership/
+                - text: Cartes d’abonnement cadeau
+            - listitem [ref=e345]:
+              - link [ref=e346] [cursor=pointer]:
+                - /url: https://join.skillshare.com/corporate-gift-cards
+                - text: Cartes cadeaux d’entreprise
+        - generic [ref=e347]:
+          - heading [level=4] [ref=e348]: Skillshare
+          - list [ref=e349]:
+            - listitem [ref=e350]:
+              - link [ref=e351] [cursor=pointer]:
+                - /url: https://www.skillshare.com/about
+                - text: À propos
+            - listitem [ref=e352]:
+              - link [ref=e353] [cursor=pointer]:
+                - /url: https://www.skillshare.com/careers
+                - text: Carrières
+            - listitem [ref=e354]:
+              - link [ref=e355] [cursor=pointer]:
+                - /url: https://www.skillshare.com/press
+                - text: Presse
+            - listitem [ref=e356]:
+              - link [ref=e357] [cursor=pointer]:
+                - /url: https://www.skillshare.com/blog/
+                - text: Blog
+            - listitem [ref=e358]:
+              - link [ref=e359] [cursor=pointer]:
+                - /url: https://www.skillshare.com/affiliates
+                - text: Programme d’affiliation
+            - listitem [ref=e360]:
+              - link [ref=e361] [cursor=pointer]:
+                - /url: https://join.skillshare.com/brandpartnerships/
+                - text: Partenariats
+        - generic [ref=e362]:
+          - heading [level=4] [ref=e363]: Enseigner
+          - list [ref=e364]:
+            - listitem [ref=e365]:
+              - link [ref=e366] [cursor=pointer]:
+                - /url: https://www.skillshare.com/teach
+                - text: Devenir enseignant
+            - listitem [ref=e367]:
+              - link [ref=e368] [cursor=pointer]:
+                - /url: https://help.skillshare.com/hc/categories/200244167
+                - text: Centre d’aide aux enseignants
+        - generic [ref=e369]:
+          - heading [level=4] [ref=e370]: Mobile
+          - list [ref=e371]:
+            - listitem [ref=e372]:
+              - link [ref=e373] [cursor=pointer]:
+                - /url: https://itunes.apple.com/app/apple-store/id916819843?pt=96247807&ct=site-footer&mt=8
+            - listitem [ref=e378]:
+              - link [ref=e379] [cursor=pointer]:
+                - /url: https://play.google.com/store/apps/details?id=com.skillshare.Skillshare&referrer=utm_source%3Dskillshare%26utm_medium%3Dsite-footer
+      - generic [ref=e384]:
+        - generic [ref=e385]:
+          - generic [ref=e386]: © Skillshare, Inc. 2026
+          - list [ref=e388]:
+            - listitem [ref=e389]:
+              - link [ref=e390] [cursor=pointer]:
+                - /url: http://help.skillshare.com/
+                - text: Aide
+            - listitem [ref=e391]:
+              - link [ref=e392] [cursor=pointer]:
+                - /url: https://www.skillshare.com/privacy
+                - text: Confidentialité
+            - listitem [ref=e393]:
+              - link [ref=e394] [cursor=pointer]:
+                - /url: https://www.skillshare.com/terms
+                - text: CGU
+            - listitem [ref=e395]:
+              - link [ref=e396] [cursor=pointer]:
+                - /url: "#privacy-choices"
+                - text: Vos choix en matière de confidentialité
+            - listitem [ref=e397]:
+              - link [ref=e398] [cursor=pointer]:
+                - /url: https://www.skillshare.com/privacy#privacy-ccpa
+                - text: Avis pour les résidents de Californie
+        - generic [ref=e399]:
+          - list [ref=e401]:
+            - listitem [ref=e402]:
+              - link [ref=e403] [cursor=pointer]:
+                - /url: https://instagram.com/skillshare
+            - listitem [ref=e409]:
+              - link [ref=e410] [cursor=pointer]:
+                - /url: https://www.linkedin.com/company/skillshare-com/
+            - listitem [ref=e416]:
+              - link [ref=e417] [cursor=pointer]:
+                - /url: https://www.youtube.com/@Skillshare-com
+            - listitem [ref=e423]:
+              - link [ref=e424] [cursor=pointer]:
+                - /url: https://www.pinterest.com/skillshare/
+            - listitem [ref=e430]:
+              - link [ref=e431] [cursor=pointer]:
+                - /url: https://tiktok.com/@skillshare
+          - button [ref=e438] [cursor=pointer]:
+            - generic [ref=e439]: Français
+  - alert [ref=e448]
+  - complementary [active] [ref=e449]:
+    - dialog [ref=e450]:
+      - heading "Votre vie privée est importante pour nous" [level=2] [ref=e452]
+      - 'combobox "Langue: Français. Ouvrir sélecteur de langue" [ref=e454] [cursor=pointer]':
+        - generic [ref=e457]: Français
+      - generic [ref=e461]: Nous collectons et mettons à disposition de différentes entreprises certaines informations concernant nos visiteurs par le biais de cookies et d'autres technologies similaires, dans le but de promouvoir nos services et d'autres services tiers auprès de vous, comme décrit dans notre Politique de confidentialité. Selon les lois en vigueur, cela peut être considéré comme de la « vente », du « partage » ou du « traitement » d'information à des fins de publicité ciblée. Vous pouvez refuser ce dispositif en cliquant sur le bouton « Accepter les cookies essentiels » ci-dessous. Nous pouvons également mettre à disposition certaines informations et coordonnées, telles que votre nom, adresse, numéro de téléphone ou adresse e-mail, à d'autres entreprises dans le cadre d'une vente, d'un partage ou d'une utilisation de données à des fins de publicité ciblée. Vous pouvez refuser ce dispositif en remplissant le formulaire indiqué ci-dessous.
+      - generic [ref=e462]:
+        - link "Formulaire d’exclusion" [ref=e463] [cursor=pointer]:
+          - /url: https://preferences.skillshare.com/dont_sell
+        - link "Politique de confidentialité" [ref=e464] [cursor=pointer]:
+          - /url: https://www.skillshare.com/privacy
+        - link "Politique de cookies" [ref=e465] [cursor=pointer]:
+          - /url: https://www.skillshare.com/cookies
+      - button "Tout accepter" [ref=e466] [cursor=pointer]
+      - button "Accepter les cookies essentiels" [ref=e467] [cursor=pointer]
+      - button "Modifier les préférences" [ref=e468] [cursor=pointer]

@@ -31,6 +31,8 @@ import tex_common  # noqa: E402
 import tex_par  # noqa: E402
 import tex_abstract  # noqa: E402
 import tex_refcov  # noqa: E402
+import tex_check  # noqa: E402
+import tex_report  # noqa: E402
 import tex_wc  # noqa: E402
 
 
@@ -322,6 +324,214 @@ class TestEnvironmentBalance(unittest.TestCase):
             path = _write(Path(tmp), "balanced.tex", src)
             result = tex_braces.scan_braces([path])
         self.assertTrue(result["env_balanced"])
+
+
+# Two headings at the same level, one deeper heading nested inside the first,
+# a float, a changes macro, and an accented French sentence: one fixture that
+# every --section case below can interrogate from a different angle.
+_SECTIONED = (
+    "\\documentclass[11pt]{article}\n"
+    "\\begin{document}\n"
+    "\\subsection*{2.1~Sommaire du projet~:}\\label{sommaire}\n"
+    "La detection automatique des batiments eleves ici.\n"
+    "\\subsubsection*{Un titre plus profond}\n"
+    "Ce texte appartient encore au sommaire.\n"
+    "\\subsection*{2.2~Contexte du projet~:}\n"
+    "Ce texte appartient au contexte et jamais au sommaire.\n"
+    "\\end{document}\n"
+)
+
+
+class TestSectionWordCount(unittest.TestCase):
+    """wc --section: per-section caps, the shape a grant form actually asks for."""
+
+    def _fixture(self, tmp, src=_SECTIONED, name="sectioned.tex"):
+        return _write(Path(tmp), name, src)
+
+    def test_section_stops_at_next_same_level_heading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            result = tex_wc.scan_wc_section([path], "2.1 Sommaire")
+        self.assertFalse(result["refused"])
+        # 7 words of the first sentence, the 4 of the nested heading title
+        # (which is content of 2.1, and a grant form counts it), and the 6
+        # of its body: 17, with not one word of 2.2.
+        self.assertEqual(result["words"], 17)
+
+    def test_deeper_heading_does_not_close_the_section(self):
+        # The nested \subsubsection* body is inside 2.1, so the section span
+        # must still contain it; without this case the previous one would
+        # also pass on an implementation that stopped at ANY heading.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            text = tex_common.strip_comments(tex_common.read_text(path))
+            sections = tex_wc.list_sections(text)
+        self.assertEqual(sections[1]["title"], "un titre plus profond")
+        body = text[sections[0]["body_start"]:sections[0]["body_end"]]
+        self.assertIn("Un titre plus profond", body)
+        self.assertNotIn("jamais au sommaire", body)
+
+    def test_accented_french_words_are_counted(self):
+        # Regression for the 2026-09-12 tex_common.WORD fix: under the
+        # ASCII-only class these four tokens counted 1 in total, two of them
+        # counting zero.
+        self.assertEqual(
+            tex_common.count_words("\u00e9t\u00e9 o\u00f9 d\u00e9j\u00e0 d\u00e9tection"), 4)
+        self.assertEqual(tex_common.count_words("the quick brown fox"), 4)
+
+    def test_single_letter_words_stay_excluded_in_both_languages(self):
+        # The two-character minimum is unchanged, so the accent fix moves no
+        # English count for a reason other than an accent.
+        self.assertEqual(tex_common.count_words("a"), 0)
+        self.assertEqual(tex_common.count_words("\u00e0"), 0)
+
+    def test_accepted_resolves_changes_inside_the_section(self):
+        src = (
+            "\\subsection*{Resume}\n"
+            "\\replaced[id=MO]{deux mots}{quatre mots totalement inutiles}\n"
+            "\\deleted[id=MO]{ces mots disparaissent}\n"
+            "\\subsection*{Suite}\nautre chose\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp, src, "changes.tex")
+            raw = tex_wc.scan_wc_section([path], "Resume")
+            acc = tex_wc.scan_wc_section([path], "Resume", accepted=True)
+        self.assertEqual(acc["words"], 2)
+        self.assertLess(acc["words"], raw["words"])
+
+    def test_floats_are_excluded_from_the_section_count(self):
+        src = (
+            "\\subsection*{Avec flottant}\n"
+            "\\begin{table}\nmots de tableau jamais comptes ici\n\\end{table}\n"
+            "trois mots seulement\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp, src, "float.tex")
+            result = tex_wc.scan_wc_section([path], "Avec flottant")
+        self.assertEqual(result["words"], 3)
+
+    def test_absent_section_is_refused_and_names_the_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            result = tex_wc.scan_wc_section([path], "2.99 Inexistante")
+        self.assertTrue(result["refused"])
+        self.assertIn("not found", result["reason"])
+        self.assertTrue(any("Sommaire" in c for c in result["candidates"]))
+        self.assertEqual(result["words"], 0)
+
+    def test_ambiguous_section_is_refused_as_ambiguous_not_as_absent(self):
+        # "du projet" matches both headings. Reporting that as "not found"
+        # sends the reader looking in the wrong file instead of naming the
+        # section more fully, so the two refusals stay distinguishable.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            result = tex_wc.scan_wc_section([path], "du projet")
+        self.assertTrue(result["refused"])
+        self.assertIn("ambiguous", result["reason"])
+        self.assertNotIn("not found", result["reason"])
+
+    def test_limit_exceeded_is_reported_with_its_overflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            result = tex_wc.scan_wc_section([path], "2.1 Sommaire", limit=10)
+        self.assertTrue(result["over_limit"])
+        self.assertEqual(result["overflow"], result["words"] - 10)
+        self.assertTrue(tex_report.has_defect("wc", result))
+
+    def test_limit_respected_is_not_a_defect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            result = tex_wc.scan_wc_section([path], "2.1 Sommaire", limit=1000)
+        self.assertFalse(result["over_limit"])
+        self.assertFalse(tex_report.has_defect("wc", result))
+
+    def test_plain_wc_is_still_never_a_defect(self):
+        # Negative control for the widened has_defect predicate: the three
+        # pre-existing wc shapes carry no over_limit key and must stay
+        # informational under --strict.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            plain = tex_wc.scan_wc([path])
+            acc = tex_wc.scan_wc_accepted([path])
+        self.assertFalse(tex_report.has_defect("wc", plain))
+        self.assertFalse(tex_report.has_defect("wc", acc))
+
+    def test_cli_exits_two_on_a_refusal_and_one_on_an_exceeded_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp)
+            self.assertEqual(
+                tex_check.main(["wc", path, "--section", "2.99 Inexistante", "--json"]), 2)
+            self.assertEqual(
+                tex_check.main(["wc", path, "--section", "2.1 Sommaire",
+                                "--limit", "1", "--strict", "--json"]), 1)
+            self.assertEqual(
+                tex_check.main(["wc", path, "--section", "2.1 Sommaire",
+                                "--limit", "1000", "--strict", "--json"]), 0)
+
+    def test_a_bold_pseudo_heading_opens_no_section(self):
+        # Documented limit, asserted so it cannot drift into a silent wrong
+        # answer: Mitacs section 2.4 is a \textbf line, not a \subsection.
+        src = (
+            "\\subsection*{Vraie section}\nun deux trois\n"
+            "\\textbf{2.4~Fausse section~:}\nquatre cinq six\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._fixture(tmp, src, "bold.tex")
+            sections = tex_wc.list_sections(tex_common.read_text(path))
+            result = tex_wc.scan_wc_section([path], "Vraie section")
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(result["words"], 8)
+
+
+class TestFormHelpExcluded(unittest.TestCase):
+    """Les consignes imprimees d'un formulaire ne sont pas les mots du demandeur.
+
+    Mesure du 2026-09-12 sur la demande MITACS : le gabarit imprime « Veuillez
+    fournir : a) un apercu du probleme de recherche... (Maximum de 300 mots) ».
+    Ce texte est protege dans Word, donc il est sur la page sans appartenir au
+    demandeur, et un plafond de 300 mots ne le compte pas.
+    """
+
+    def test_formhelp_content_is_out_of_a_section_count(self):
+        src = (
+            "\\subsection*{2.1 Sommaire}\n"
+            "\\begin{formhelp}\n"
+            "Veuillez fournir un apercu du probleme de recherche pose ici.\n"
+            "\\end{formhelp}\n"
+            "un deux trois\n"
+            "\\subsection*{2.2 Suite}\nautre chose\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write(Path(tmp), "form.tex", src)
+            result = tex_wc.scan_wc_section([path], "2.1 Sommaire")
+        self.assertEqual(result["words"], 3)
+
+    def test_formhelp_content_is_out_of_a_whole_file_count(self):
+        # Le compteur de section et le compteur de fichier doivent partager la
+        # meme definition de la prose, sinon ils divergent en silence.
+        src = ("\\begin{formhelp}\ndix mots de consigne qui ne comptent jamais du tout ici\n"
+               "\\end{formhelp}\nquatre mots du demandeur\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write(Path(tmp), "form2.tex", src)
+            result = tex_wc.scan_wc([path])
+        self.assertEqual(result["total_prose_words"], 4)
+
+    def test_text_outside_formhelp_is_still_counted(self):
+        # Controle negatif : sans cette assertion, un strip trop large passerait.
+        src = "avant la consigne\n\\begin{formhelp}\nconsigne\n\\end{formhelp}\napres la consigne\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write(Path(tmp), "form3.tex", src)
+            result = tex_wc.scan_wc([path])
+        self.assertEqual(result["total_prose_words"], 6)
+
+    def test_a_formhelp_holding_a_list_is_removed_whole(self):
+        src = ("\\subsection*{S}\n\\begin{formhelp}\n"
+               "\\begin{enumerate}\n\\item premier point\n\\item second point\n"
+               "\\end{enumerate}\n\\end{formhelp}\ndeux mots\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write(Path(tmp), "form4.tex", src)
+            result = tex_wc.scan_wc_section([path], "S")
+        self.assertEqual(result["words"], 2)
 
 
 if __name__ == "__main__":

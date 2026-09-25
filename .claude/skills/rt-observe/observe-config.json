@@ -154,6 +154,16 @@
       "value": 60,
       "unit": "seconds",
       "provenance": "chosen - the snapshot only changes when local-writer refreshes it, so polling it hard buys nothing"
+    },
+    "identity": {
+      "value": 30,
+      "unit": "seconds",
+      "provenance": "chosen 2026-09-24 - the identity/audit layer (rt_store.py, Phase 2 of the journal-durable plan) reads a mutable PostgreSQL table that a lab member edits by hand, so it is refreshed about as often as the services panel"
+    },
+    "traces": {
+      "value": 30,
+      "unit": "seconds",
+      "provenance": "chosen 2026-09-24 - collect_traces.py (Phase 3) reads OpenObserve over HTTP; kept short like identity rather than long like mcp_live, since a single-node OpenObserve answering `_search` on its own disk is cheap, unlike `claude mcp list` reaching 28 remote servers"
     }
   },
   "timeouts_seconds": {
@@ -176,6 +186,16 @@
       "value": 2,
       "unit": "seconds",
       "provenance": "chosen - the launcher asks /api/ping on loopback before binding; nothing legitimate on 127.0.0.1 takes longer, and a slow answer must not delay the refusal"
+    },
+    "openobserve_ingest": {
+      "value": 5,
+      "unit": "seconds",
+      "provenance": "chosen 2026-09-24 - rt_actions.py's second sink sits on the hot path of every dashboard action, so a wedged OpenObserve must not delay the action's own response by more than this before the JSONL fallback is reported as the only record"
+    },
+    "openobserve_search": {
+      "value": 10,
+      "unit": "seconds",
+      "provenance": "chosen 2026-09-24 - collect_traces.py's read side; longer than the ingest timeout because a _search query over a retained stream costs more than a single-record insert"
     }
   },
   "caps": {
@@ -248,6 +268,16 @@
       "value": 262144,
       "unit": "bytes read from the end of a session transcript",
       "provenance": "chosen - a transcript grows without bound and only its tail carries current state"
+    },
+    "traces_page_size": {
+      "value": 100,
+      "unit": "rows per OpenObserve _search request",
+      "provenance": "chosen 2026-09-24"
+    },
+    "traces_max_pages": {
+      "value": 5,
+      "unit": "pages read from OpenObserve before the collector stops and reports a bound rather than reading forever (R10)",
+      "provenance": "chosen 2026-09-24 - 500 rows is enough for a panel read standing up; a deeper history belongs to OpenObserve's own UI, not this one"
     }
   },
   "staleness_seconds": {

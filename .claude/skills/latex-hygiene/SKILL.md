@@ -1,6 +1,6 @@
 ---
 name: latex-hygiene
-description: "Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace balance, par-inside-changes-argument corruption, and citation-key coverage between a .tex and its .bib. Backs the /texcheck command and the aiscan / wc checks that paper-auditor and submit-checker already describe in prose. Trigger on: /texcheck, LaTeX hygiene, AI-usage score, word count, brace balance, citation coverage, forbidden characters, track-changed word count."
+description: "Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose, track-changed and per-section word counts against a grant-form cap, abstract length, brace balance, par-inside-changes-argument corruption, and citation-key coverage between a .tex and its .bib. Backs the /texcheck command and the aiscan / wc checks that paper-auditor and submit-checker already describe in prose. Trigger on: /texcheck, LaTeX hygiene, AI-usage score, word count, brace balance, citation coverage, forbidden characters, track-changed word count."
 allowed-tools: [Read, Bash]
 ---
 
@@ -44,6 +44,7 @@ and accepts `--json` for machine consumption.
 | `aiscan` | `.tex` files/globs | `risk_score`, weighted count per signal, lowest-deviation sentence window, a 15-word excerpt per hit |
 | `wc` | `.tex` files/globs | prose word count per file (floats and comments excluded), float count, total, page estimate |
 | `wc --accepted` | `.tex` files/globs, optional `--before <dir>` | word count of the accepted text (`changes` macros resolved); with `--before`, a before/after/delta/percent table |
+| `wc --section <name>` | `.tex` files/globs, optional `--accepted` and `--limit <n>` | word count of ONE named section, the shape a grant form caps; a name matching zero or several headings is refused with the candidates listed (exit 2), and `--limit` with `--strict` exits 1 over the cap |
 | `abstract` | main `.tex` | abstract word count, keyword count |
 | `braces` | `.tex` files/globs | two balance classes, each with line numbers: curly-brace depth (final depth per file, first negative line) and `\begin`/`\end` environment balance (an `\end` with no open `\begin`, an `\end{a}` closing a `\begin{b}`, any environment left open at end of file) |
 | `par` | `.tex` files/globs | occurrences of `\added`/`\deleted`/`\replaced` whose argument crosses a blank line (the package macros are not `\long`, so this breaks a build) |
@@ -116,6 +117,8 @@ calling `chars --strict` before declaring an edit finished).
 python ".claude/skills/latex-hygiene/scripts/tex_check.py" aiscan "<manuscript>/sections/*.tex" --json
 python ".claude/skills/latex-hygiene/scripts/tex_check.py" wc "<manuscript>/sections/*.tex" --json
 python ".claude/skills/latex-hygiene/scripts/tex_check.py" wc --accepted "<manuscript>/sections/*.tex" --before "<pre-trim dir>"
+# Grant-form caps: one section, accepted text, against its own limit.
+python ".claude/skills/latex-hygiene/scripts/tex_check.py" wc "<proposal>.tex" --section "Sommaire du projet" --accepted --limit 300 --strict
 python ".claude/skills/latex-hygiene/scripts/tex_check.py" citecov --tex "<manuscript>/sections/*.tex" --bib "<manuscript>/references.bib"
 python ".claude/skills/latex-hygiene/scripts/tex_check.py" all "<manuscript>/sections/*.tex" --json
 ```
@@ -173,3 +176,22 @@ Rejected outright, one line each, so they are not re-proposed:
 - `--json` is available on every subcommand; an agent consumes JSON, not aligned columns.
 - Never fabricate a count. A subcommand that cannot parse a file reports the parse failure rather
   than silently returning zero.
+
+## Known limitations
+
+- **`aiscan`'s `em_dash` signal counts `--`, so a LaTeX source can score as high AI risk on
+  correct typography alone.** `_DOUBLE_DASH` in `tex_aiscan.py` is `(?<!-)--(?!-)`, applied to the
+  whole file. In LaTeX, `--` is the en dash of a numeric range (`p.~613--624`, `mois~1--4`,
+  `15--30~min`, `2018--2025`) and it is also TikZ's line-to path operator (`\draw (m5) -- (m2)`).
+  Neither is the parenthetical em dash the AI-usage rule actually bans. Measured 2026-09-15 on
+  `Aluminerie Alouette/proposition MITACS Acceleration PID.tex` (32 pages, 382 prose sentences):
+  the whole file scored `risk_score=75` on `em_dash count=138`, of which 72 were TikZ path
+  operators, 29 were real em dashes inside `%` comments, and the remaining 37 were numeric ranges.
+  With TikZ pictures and comments removed the score fell to 26, and with numeric ranges also
+  neutralised it fell to **3 (AI RISK LOW)** with `em_dash count=0`. The residual signals were
+  `sentence_length_uniformity=1` and `perfect_parallel_list=8`.
+  Consequence, and why this matters: a user who takes the headline score at face value against the
+  "below 20 %" rule in `CLAUDE.md` will edit correct LaTeX to satisfy the heuristic, breaking
+  ranges and TikZ figures. Until the signal is narrowed, read `aiscan` on a copy with
+  `tikzpicture` environments and `%` comments stripped, and check the `em_dash` hit contexts before
+  acting on the score.

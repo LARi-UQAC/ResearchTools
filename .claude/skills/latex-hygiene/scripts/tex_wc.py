@@ -1,6 +1,7 @@
 """
-tex_wc - subcommand `wc`: prose word count, page estimate, and the
-`--accepted` / `--before` variants for changes-package track-changed text.
+tex_wc - subcommand `wc`: prose word count, page estimate, the
+`--accepted` / `--before` variants for changes-package track-changed text,
+and the `--section` / `--limit` per-section cap check.
 
 Stage: latex-hygiene pipeline, length and trim-delta measurement. Merges
 wc_sections.py (plain prose count + float count) with accepted_wc.py (the
@@ -8,6 +9,14 @@ accepted-text resolver and its before/after delta table), and adds the
 page-estimate heuristic that submit-checker.md Step 2 currently applies by
 hand: words-per-page by column count and font size, with font size read from
 \\documentclass[...] options rather than assumed.
+
+`--section` answers the question a grant form asks and a journal does not:
+how long is THIS section. Mitacs caps its project summary at 300 words,
+its research question at 50, and its background at a 500-word minimum, and
+CRSNG and FRQNT are shaped the same way. Counting the whole file answers
+none of those, so before this existed the count was redone by hand, per
+manuscript, which is the cost the rule against per-manuscript scripts
+exists to stop.
 """
 
 import logging
@@ -19,16 +28,37 @@ from typing import Dict, List, Tuple
 from tex_common import (
     count_words,
     expand_globs,
+    read_balanced_arg,
     read_text,
     resolve_accepted,
     strip_comments,
     strip_floats,
+    strip_macros,
+    strip_non_prose_envs,
 )
 
 logger = logging.getLogger(__name__)
 
 _FLOAT_BEGIN = re.compile(r"\\begin\{(table\*?|figure\*?)\}")
 _DOCCLASS = re.compile(r"\\documentclass(\[(?P<opts>[^\]]*)\])?\{(?P<cls>[^}]*)\}")
+
+# Sectioning commands, deepest number = deepest level. A section ends at the
+# next heading whose level is the same or shallower, which is what makes
+# "2.1" stop at "2.2" instead of swallowing the rest of the document.
+_SECTION_LEVELS = {
+    "part": 0,
+    "chapter": 1,
+    "section": 2,
+    "subsection": 3,
+    "subsubsection": 4,
+    "paragraph": 5,
+    "subparagraph": 6,
+}
+_SECTION_CMD = re.compile(
+    r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\s*\{"
+)
+_LABEL = re.compile(r"\\label\{[^}]*\}")
+_MACRO = re.compile(r"\\[a-zA-Z]+\*?")
 
 # Midpoints of the three heuristics in submit-checker.md Step 2:
 #   two-column, 10pt: ~700-800 words/page
@@ -145,7 +175,7 @@ def scan_wc(files: List[str]) -> Dict:
     total_floats = 0
     for path in files:
         raw = read_text(path)
-        body = strip_comments(strip_floats(raw))
+        body = strip_macros(strip_non_prose_envs(strip_comments(strip_floats(raw))))
         w = count_words(body)
         fl = len(_FLOAT_BEGIN.findall(raw))
         per_file[path] = {"prose_words": w, "floats": fl}
@@ -167,6 +197,189 @@ def scan_wc(files: List[str]) -> Dict:
     }
 
 
+def normalise_title(raw: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Reduce a heading argument to comparable plain text, so that a caller
+        can name a section the way it reads on the page rather than the way
+        it is spelled in the source.
+
+    Inputs:
+        raw (str): the brace argument of a sectioning command, for example
+            "2.1~Sommaire du projet~:".
+
+    Outputs:
+        title (str): label text with \\label{} removed, other macros dropped,
+            braces and tie characters turned into spaces, whitespace
+            collapsed, and case folded for matching.
+    --------------------------------------------------------------------------
+    """
+    t = _LABEL.sub(" ", raw)
+    t = _MACRO.sub(" ", t)
+    t = t.replace("~", " ").replace("{", " ").replace("}", " ")
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def list_sections(text: str) -> List[Dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Enumerate the sectioning commands of one file with the span of body
+        text each one owns.
+
+    Inputs:
+        text (str): LaTeX source, comments already stripped.
+
+    Outputs:
+        sections (List[Dict]): one entry per heading, in document order,
+            {"level": int, "command": str, "title": str, "raw_title": str,
+            "body_start": int, "body_end": int}. body_end is the offset of
+            the next heading at the same or a shallower level, or the end of
+            the text.
+
+    Known limit: only real sectioning commands delimit. A heading faked with
+    \\textbf{...}, as Mitacs section 2.4 is in the proposal template, opens
+    no section and is counted inside whichever real section precedes it.
+    --------------------------------------------------------------------------
+    """
+    found = []
+    for m in _SECTION_CMD.finditer(text):
+        raw_title, after = read_balanced_arg(text, m.end())
+        found.append({
+            "level": _SECTION_LEVELS[m.group(1)],
+            "command": m.group(1),
+            "title": normalise_title(raw_title),
+            "raw_title": raw_title.strip(),
+            "heading_start": m.start(),
+            "body_start": after,
+        })
+    for i, sec in enumerate(found):
+        end = len(text)
+        for nxt in found[i + 1:]:
+            if nxt["level"] <= sec["level"]:
+                end = nxt["heading_start"]
+                break
+        sec["body_end"] = end
+    return found
+
+
+def slice_section(text: str, name: str) -> Dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Return the body of the one section whose title matches `name`, or
+        refuse. Nothing is guessed: zero matches and two or more matches are
+        both refusals that name the candidates, because silently counting
+        the wrong section produces a number that looks measured.
+
+    Inputs:
+        text (str): LaTeX source, comments already stripped.
+        name (str): section name or a distinctive fragment of it, matched
+            case-insensitively against the normalised title.
+
+    Outputs:
+        result (Dict): {"matched": bool, "body": str, "title": str,
+            "reason": Optional[str], "candidates": List[str]}.
+    --------------------------------------------------------------------------
+    """
+    sections = list_sections(text)
+    needle = normalise_title(name)
+    hits = [s for s in sections if needle and needle in s["title"]]
+    if len(hits) == 1:
+        s = hits[0]
+        return {
+            "matched": True,
+            "body": text[s["body_start"]:s["body_end"]],
+            "title": s["raw_title"],
+            "reason": None,
+            "candidates": [x["raw_title"] for x in sections],
+        }
+    reason = (
+        "no section title contains %r" % name if not hits
+        else "%d section titles contain %r" % (len(hits), name)
+    )
+    return {
+        "matched": False,
+        "body": "",
+        "title": None,
+        "reason": reason,
+        "candidates": [x["raw_title"] for x in (hits or sections)],
+    }
+
+
+def scan_wc_section(files: List[str], name: str, accepted: bool = False,
+                    limit: int = None) -> Dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Count the words of one named section, optionally after resolving the
+        changes-package markup, and compare the count to a cap.
+
+    Inputs:
+        files (List[str]): .tex files to search; the section must be found in
+            exactly one of them.
+        name (str): section name or fragment.
+        accepted (bool): count the accepted text rather than the raw source.
+        limit (Optional[int]): word cap. When given, the result carries
+            over_limit and overflow so --strict can gate on it.
+
+    Outputs:
+        result (Dict): {"section": str, "file": str, "words": int,
+            "accepted": bool, "limit": Optional[int], "over_limit": bool,
+            "overflow": int, "refused": bool, "reason": Optional[str],
+            "candidates": List[str]}.
+    --------------------------------------------------------------------------
+    """
+    matches = []
+    everything = []
+    per_file_reasons = []
+    for path in files:
+        text = strip_comments(read_text(path))
+        found = slice_section(text, name)
+        everything.extend("%s: %s" % (os.path.basename(path), c)
+                          for c in found["candidates"])
+        if found["matched"]:
+            matches.append((path, found))
+        elif found["reason"] and "no section title" not in found["reason"]:
+            # An ambiguous match must not be reported as an absent one: the
+            # remedy differs, since "2.1" failing against "2.10" and "2.11"
+            # is fixed by naming the section more fully, not by looking
+            # elsewhere for it.
+            per_file_reasons.append("%s: %s" % (os.path.basename(path), found["reason"]))
+
+    if len(matches) != 1:
+        if per_file_reasons and not matches:
+            reason = "section %r is ambiguous -- %s" % (name, "; ".join(per_file_reasons))
+        elif not matches:
+            reason = "section %r not found in any of the %d file(s) given" % (name, len(files))
+        else:
+            reason = "section %r matches in %d files: %s" % (
+                name, len(matches), ", ".join(os.path.basename(p) for p, _ in matches))
+        logger.error("[HYGIENE] wc --section: %s", reason)
+        return {
+            "section": name, "file": None, "words": 0, "accepted": accepted,
+            "limit": limit, "over_limit": False, "overflow": 0,
+            "refused": True, "reason": reason, "candidates": everything,
+        }
+
+    path, found = matches[0]
+    body = found["body"]
+    if accepted:
+        body = resolve_accepted(body)
+    words = count_words(strip_macros(strip_non_prose_envs(strip_floats(body))))
+    over = bool(limit is not None and words > limit)
+    logger.info("[HYGIENE] wc --section %r: %s -> %d word(s)%s",
+                found["title"], path, words,
+                (" over a cap of %d" % limit) if over else "")
+    return {
+        "section": found["title"], "file": path, "words": words,
+        "accepted": accepted, "limit": limit, "over_limit": over,
+        "overflow": (words - limit) if over else 0,
+        "refused": False, "reason": None, "candidates": [],
+    }
+
+
 def accepted_word_count(path: str) -> int:
     """
     --------------------------------------------------------------------------
@@ -184,7 +397,7 @@ def accepted_word_count(path: str) -> int:
     s = strip_comments(read_text(path))
     s = resolve_accepted(s)
     s = strip_floats(s)
-    return count_words(s)
+    return count_words(strip_macros(strip_non_prose_envs(s)))
 
 
 def scan_wc_accepted(files: List[str]) -> Dict:

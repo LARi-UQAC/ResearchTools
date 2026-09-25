@@ -1,0 +1,39 @@
+{
+  "_purpose": "Which skill files reach the model at which stage of a run, so that a skill is never typed on a command line. Read by aider-plan.ps1 only when -Skills is passed; without that switch this file is not opened at all and the pipeline behaves exactly as it did before.",
+
+  "_what_a_skill_is_here": "Read-only prose, nothing more. aider has no skill system: nothing invokes these files, nothing enforces them, and the YAML frontmatter at their top is read as text like the rest. They make the rules the pipeline already has harder for the model to ignore, and add no capability. Measured 2026-09-03.",
+
+  "_bundle_rule": "A skill is its SKILL.md PLUS every Markdown file that SKILL.md names, resolved beside it. Measured 2026-09-03: test-driven-development/SKILL.md refers to writing-good-tests.md, so handing over the SKILL.md alone gives the model an instruction naming a document it does not have - worse than not passing it. A named file that is missing is a refusal by name, never a silent skip. One level of resolution only: if a referenced file names a third, declare that bundle by hand rather than recursing in silence.",
+
+  "_why_copied_here": "These files are copies, not pointers into ~/.claude/plugins/cache/. That cache is rewritten on every plugin update, and a file that vanishes turns every run into a refusal at startup. Copied 2026-09-03 from superpowers 6.3.0.",
+
+  "stages": {
+    "write": {
+      "bundle": "C:/Users/m3otis/.config/aider/skills/test-driven-development",
+      "ceiling": 2500,
+      "_measured": "2427 tokens on 2026-09-05: SKILL.md 1589 + writing-good-tests.md 838, after the shipped copies were trimmed to fit. Was 3993 (2219 + 1774) on 2026-09-03, before the trim. At 97 percent of the ceiling there is no room to grow: re-check this count if you refresh either file from upstream, because the originals are larger.",
+      "_why": "The working protocol already demands a test in the same step as the code. This says the same thing at greater length, to the model that writes."
+    },
+
+    "audit": {
+      "files": ["C:/Users/m3otis/.config/aider/skills/code-reviewer.md"],
+      "ceiling": 2000,
+      "_measured": "1283 tokens on 2026-09-03 with cl100k_base.",
+      "_why": "This is the reviewer's actual brief - 'You are a Senior Code Reviewer ... review completed work against its plan or requirements and identify issues before they cascade'.",
+      "_why_not_the_skill_md": "requesting-code-review/SKILL.md is deliberately excluded although it would fit in the budget at 681 tokens. It describes how to DISPATCH a reviewer subagent, which aider cannot do; passing it would hand over the wrapper and drop the content.",
+      "_ordering_is_mandatory": "The driver's own audit instruction MUST be emitted BEFORE this text, never after. That instruction forbids the reviewer from asking for a file, and this brief was written for a subagent that may ask for one. Measured: a full cycle once ran where the reviewer did its analysis correctly, then asked permission to fix the code, and audit.md came out zero bytes. A skill placed before the guard is a skill that can undo it."
+    },
+
+    "reopen": {
+      "files": ["C:/Users/m3otis/.config/aider/skills/receiving-code-review.md"],
+      "ceiling": 2000,
+      "_measured": "1487 tokens on 2026-09-03 with cl100k_base.",
+      "_why": "Round 2 is a plan the audit put a step back into, which is exactly work receiving a review. This bundle is one file: it references nothing.",
+      "_applies_to": "The plan path, on the second and later rounds only. Round 1 gets the write stage."
+    }
+  },
+
+  "_budget_note": "One stage is active per call, so the floor pays the LARGEST stage ceiling once rather than their sum. What that costs against the working set is printed by the driver on every run, dry run included, so the figure is not written down here where it would go stale.",
+
+  "_dry_run": "-DryRun -Skills prints each stage's resolved file list and measured cost and starts no model. That combination is the reason -Skills is a switch rather than a third run mode: a mode that cannot be rehearsed cannot be changed safely."
+}

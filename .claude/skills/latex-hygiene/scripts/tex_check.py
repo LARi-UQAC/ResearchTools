@@ -34,7 +34,12 @@ from tex_refcov import scan_refcov
 from tex_report import has_defect, print_text
 from tex_scan import scan_files
 from tex_build import run_both, run_build, write_accepted
-from tex_wc import scan_wc, scan_wc_accepted, scan_wc_accepted_delta
+from tex_wc import (
+    scan_wc,
+    scan_wc_accepted,
+    scan_wc_accepted_delta,
+    scan_wc_section,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +138,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Count the changes-package accepted text instead of raw source.")
     p_wc.add_argument("--before", metavar="DIR",
                        help="With --accepted: compare against a before/ directory (before/after/delta table).")
+    p_wc.add_argument("--section", metavar="NAME",
+                       help="Count one named section only (grant-form caps). Combines with --accepted.")
+    p_wc.add_argument("--limit", type=int, metavar="N",
+                       help="With --section: word cap; --strict then exits 1 when the section is over it.")
 
     p_abstract = sub.add_parser("abstract", parents=[common], help="Abstract word count and keyword count.")
     p_abstract.add_argument("main_file", help="Path to the manuscript's main .tex file.")
@@ -218,7 +227,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         result = scan_aiscan(expand_globs(args.files))
     elif command == "wc":
         files = expand_globs(args.files)
-        if args.accepted and args.before:
+        if args.section:
+            result = scan_wc_section(files, args.section, args.accepted, args.limit)
+        elif args.accepted and args.before:
             result = scan_wc_accepted_delta(args.before, files)
         elif args.accepted:
             result = scan_wc_accepted(files)
@@ -258,6 +269,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # malformed block, must fail loudly regardless of --strict.
     if command == "patch" and result.get("fails"):
         return 1
+    # A named section that does not exist, or that matches more than once, is
+    # a refusal by design rather than a hygiene defect: the caller asked for a
+    # measurement that cannot be taken, so exit 2 (R12) whatever --strict says
+    # instead of printing a zero that reads like an empty section.
+    if command == "wc" and result.get("refused"):
+        return 2
     if args.strict and has_defect(command, result):
         return 1
     return 0

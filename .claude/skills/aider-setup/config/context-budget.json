@@ -1,0 +1,103 @@
+{
+  "_purpose": "What each file may take of the model's context window, so an assembled prompt never exceeds it. Read by aider-plan.ps1 before every pass. No number here is written in the driver's code (R0), and a missing key is named rather than defaulted (R3).",
+  "_window": "NOT declared here. The driver asks aider for the resolved model's max_input_tokens at run time, because a window written down would silently disagree with the model actually loaded. Note that a BASE tag reports its architecture's native maximum whatever num_ctx its Modelfile bakes in, so a tuned tag needs an entry in ~/.aider.model.metadata.json for that question to be answered honestly.",
+  "reserve": {
+    "_unit": "tokens",
+    "reply_tokens": 14336,
+    "_reply_comment": "Room for the model's own answer. Measured 2026-09-02 on fixture runs at 164 to 759 tokens for a plan step, and 2026-09-05 from six real run logs at 119 tokens for the largest plan MESSAGE. Halved from 16384 by the operator 2026-09-05 as a direct consequence of capping audit.md at 4096: the old figure was sized for a 12000-token audit written in one reply, so it was over-provisioned about four times. 8192 is twice the largest single reply the ceilings now permit, audit.md at 4096 and a new code file at 4000, so it keeps a full factor of two in hand.",
+    "harness_overhead_tokens": 3072,
+    "_harness_comment": "aider's system prompt, its edit-format examples, the file listing and the chat scaffolding. MEASURED DIRECTLY 2026-09-05 by tokenising aider 0.86.2's own EditBlockPrompts class, which is static text in the installed package: main_system 236 + system_reminder 530 + example_messages 369 (four fixed messages) + the shell-command clause 351 + file and repo-map scaffolding 312 = 1798 tokens for the diff edit format. Set to 3072, which is 1798 plus room for the per-file framing at the ten-file plan limit, roughly 300 to 400 tokens, and about 870 spare.\n\nIt was 8192 until this measurement, on the reasoning that 'the edit-format examples grow with the number of files in the chat'. That reasoning is FALSE: example_messages is a fixed four-message exchange of 369 tokens and does not vary with file count. The 4x multiplier was therefore guarding against something that does not happen, and it cost 5120 tokens of window on every single call - which on a small card is KV cache, which is model weights pushed off the GPU.",
+    "_reply_tokens_why": "14336, measured 2026-09-05. It was 8192, and plan1 and plan2 were both cut at EXACTLY 8192 generated tokens - the server log shows 20410 total minus 8192 generated for a 12218-token prompt, and 17493 minus 8192 for a 9301-token one. The budget had permitted exactly that: a plan may create several files, the whole plan is answered in ONE reply, and plan1 creates three (config.json, world.py, tests/test_world.py) which the code_file_output ceiling allows to reach 12000 tokens. The reserve now covers three files plus the edit fences. It is 14336 rather than 16384 because 16384 pushes the computed window to the 131072 rung, which is the configuration measured to put ZERO layers of a 27B model on a 6 GB card. This costs no VRAM: num_ctx stays 65536 and the reserve comes out of a working set that had 43257 tokens spare."
+  },
+  "repo_map_tokens": 4096,
+  "_repo_map_comment": "Passed to aider as --map-tokens, so this file is the single source of truth rather than a second copy in aider.conf.yml. aider's own default is 1024, and its own CEILING for this model is get_repo_map_tokens()*2 = 8192 (base_coder.py:270), above which it prints 'Warning: map-tokens > 8192 is not recommended. Too much irrelevant code can confuse LLMs.' Measured 2026-09-03: set to 16384 on the reasoning that a 262144 window makes the map cheap, and a plan run then produced NOTHING - the model spent its whole reply reasoning about which files it was allowed to touch. A large window makes a big map affordable; it does not make it useful.",
+  "always_on_files": [
+    "C:/Users/m3otis/.config/aider/conventions.md",
+    "C:/Users/m3otis/.config/aider/rules.md"
+  ],
+  "_always_on_comment": "Supplied by the DRIVER as --read on every invocation, not left to the config's own read: list. Measured 2026-09-02: a --read on the command line REPLACES the config's read list instead of adding to it, so before this every driver run silently dropped both files and the model executed plans having never seen a coding rule. The driver measures each file rather than trusting a number written here.",
+  "ceilings": {
+    "_unit": "tokens",
+    "_note": "One ceiling per file, by name. A single global figure cannot be right for a spec that is written once and a ledger that grows with every plan.",
+    "conventions.md": 2500,
+    "_conventions_comment": "The working protocol, loaded on every call. Measured 1661 on 2026-09-05 after the function-header section was collapsed to a pointer at R27, which rules.md already carries and which is also read on every call - two statements of one convention, both paid for on every call, and already differing in wording. Raised to 2500 the same day, when it had reached 94 percent of the old 2000 ceiling.",
+    "rules.md": 3500,
+    "_rules_comment": "The generated coding rules, loaded on every call. Measured 2831 on 2026-09-05, carrying 22 rules of R0 to R27 with R20 to R24 and R26 absent from the source. Generated, so its growth is not under the author's control: each rule body is capped at rule_body_tokens, and a local rule added under rules-local/ arrives here on the next sync.",
+    "spec.md": 4000,
+    "_spec_comment": "The project's anchor, re-read on every call. Cut from 8000 to 4000 by the operator 2026-09-05: measured 65 tokens in the template, and every token of ceiling is reserved window, which is KV cache, which is model weights pushed off the GPU. A spec needing more than 4000 tokens is describing more than one project.",
+    "progress.md": 2048,
+    "_progress_comment": "The ledger. Cut from 12000 to 2048 by the operator 2026-09-05, with the design changed to match rather than the ceiling stretched: progress.md is a LIST OF TASKS THAT POINTS AT plan<N>.md, not a place to restate them. It still grows with every plan, so compress the sections of finished plans to one line each as it fills; that compression is a requirement of the design and not a remedy for an overflow.",
+    "plan.md": 4000,
+    "_plan_comment": "Applies to each plan<N>.md, and only one is ever loaded at a time because the harness drops the context between plans, so the allowance is per plan rather than for all of them together. Cut from 8000 to 4000 by the operator 2026-09-05. Measured that day from six real run logs: the MESSAGE a plan step actually sent was 119 tokens at its largest.",
+    "audit.md": 4096,
+    "_audit_comment": "Written by the audit pass and appended to across batches, so this bounds ONE batch's findings rather than the whole code base. Cut from 12000 to 4096 by the operator 2026-09-05, which is also what let reply_tokens halve: that reserve had been sized for a 12000-token audit written in one reply.",
+    "rule_body_tokens": 150,
+    "_rule_body_comment": "The per-rule cap aider-rules-sync.py applies when it generates rules.md. Not a file ceiling: it bounds ONE rule's body, so a long rule is truncated at a sentence boundary while a short one passes through untouched. Measured 2026-09-05 on 22 rules totalling 3850 tokens: the distribution is extremely skewed, three rules (R18, R25, R27) being 1804 of that total, and R18's bolded statement is 13 tokens against a 677-token body of history about another repository's directory layout. At 150 exactly four rules are touched and eighteen are untouched, and the file lands near 2775 against its 3500 ceiling. Statement-only was measured at 1259 and rejected as over-compression: R0's 67-token statement carries the qualifications that stop a mathematical constant being treated as configuration.",
+    "code_file": 16000,
+    "_code_comment": "Any single source file being READ into the prompt. Over it, the audit is asked to name a split along a seam that already exists in the code. This is a reading ceiling and deliberately NOT the target for what a plan step should produce: see code_file_output.",
+    "code_file_output": 4000,
+    "_code_file_output_comment": "What a plan step should PRODUCE in a new source file, about 300 to 400 lines. Set 2026-09-05 by the operator from a measurement rather than a preference: decode on this machine was 3.87 tok/s, which is about 240 output tokens a minute, so 4000 tokens is roughly 17 minutes of generation and the 16384-token reply reserve would be 70. aider's fix loop retries three times, so a step that fails at the reserve's size can cost three hours and produce nothing. The second reason is recovery: a file that fits in one reply can be regenerated, and one that does not can only be diffed onto something already broken. Reading stays at code_file, because an edit sends a SEARCH/REPLACE diff rather than the file - plan-step replies were measured at 164 to 759 tokens on 2026-09-02, so the reserve is sized for audit.md and never for code.",
+    "test_file_output": 4000,
+    "_test_file_output_comment": "The same figure for a new test file, for the same reason: a test is new text written whole, not a diff. Kept as its own key rather than sharing code_file_output so a project that writes table-driven tests can raise one without raising the other.",
+    "_output_enforcement": "These two are handed to the MODEL through conventions.md's size-ceiling table, which is loaded on every call. The driver does not reject an over-size reply after the fact, because by then the tokens are already spent - the cost is the generation time, so the only useful place to state the limit is before the model writes. Marked here as instruction-enforced rather than harness-enforced (R15)."
+  },
+  "tests": {
+    "required": true,
+    "_required_comment": "When true, a plan that produced or changed a source file with no matching test file is reported and the run stops. Set false for a project where that rule does not apply.",
+    "command": "",
+    "_command_comment": "The command the DRIVER runs, and the one it hands aider as --test-cmd. Empty means it must be supplied with -TestCommand; a required test with no command is a refusal, never a silent skip (R8). It is deliberately not guessed from the project: running the wrong command and reading its success is worse than not running one.",
+    "file_patterns": [
+      "tests/test_{stem}{ext}",
+      "test/test_{stem}{ext}",
+      "test_{stem}{ext}",
+      "{stem}_test{ext}"
+    ],
+    "_patterns_comment": "Where a test for <stem><ext> may live, tried in order. The first that exists satisfies the rule.",
+    "exempt_name_patterns": [
+      "test_*",
+      "*_test",
+      "conftest",
+      "__init__"
+    ],
+    "_exempt_comment": "Files that are themselves tests or package scaffolding, and so need no test of their own.",
+    "max_fix_attempts": 3,
+    "_max_fix_comment": "Passed through for the record only: the fix loop is aider's own, and its max_reflections is fixed at 3 in base_coder.py:101. Raising this number here changes nothing, which is why it says so rather than pretending to be a dial."
+  },
+  "plan": {
+    "max_files_touched": 10,
+    "_comment": "A design rule rather than an enforced ceiling. A plan that needs more than ten files is two plans. What bounds a plan now is not the window but the generation time, since a new file is capped at code_file_output and a local model on a modest card produces a few hundred tokens a minute."
+  },
+  "report": {
+    "tie_tolerance_pct": 3.0,
+    "_tie_tolerance_comment": "How close two swept rungs must be before the LOWER one is preferred. Read by ollama-tune.ps1 when it recommends num_thread. Measured 2026-09-05: 20 threads returned 3.41 tok/s at 99.4 percent CPU while 14 returned 3.39 at 81.3, so taking the fastest rung bought 0.6 percent of throughput and cost every remaining core. A repeated 14-thread rung moved 12 percent on its own, so anything inside this tolerance is not distinguishable in a single run at all."
+  },
+  "ollama": {
+    "api_base": "http://127.0.0.1:11434",
+    "_api_base_comment": "Where the driver asks the daemon to unload a model. Same address aider uses through OLLAMA_API_BASE.",
+    "unload_wait_seconds": 120,
+    "_unload_comment": "The driver evicts the outgoing model and WAITS for the daemon to report nothing resident before starting the next one. OLLAMA_MAX_LOADED_MODELS=1 is supposed to make the swap exclusive, but nothing guarantees the eviction completes before the new load begins, and the two tags are 20 GB and 19 GB on a 32 GB machine: 39 GB transiently is how a machine stops. Measured 2026-09-02 on the reference machine, after one such stop: with nothing loaded it reported under 17 GB free, already less than one model needs at full context.",
+    "window_rungs": [
+      32768,
+      49152,
+      65536,
+      131072
+    ],
+    "_window_rungs_comment": "Candidate context windows for aider-ollama-config.py, smallest first. Ollama accepts a non-power-of-two window, which is why 49152 is here. 262144 is deliberately absent: measured 2026-09-05 its compute buffer alone took 3525 MiB of a 6144 MiB card and placed ZERO layers on the GPU, so it is a known-bad setting rather than a rung worth testing.",
+    "window_headroom_tokens": 16000,
+    "_window_headroom_comment": "How far a window must clear the working minimum before it is chosen. Not padding: measured 2026-09-05, a 49152 window clears the 41908 minimum by 7244, which cannot also hold one existing file read in at the 16000 code_file ceiling, so a plan touching real code would overflow it. Set to one code_file so the chosen window always has room for a file the model did not write.",
+    "unload_poll_seconds": 3,
+    "_poll_comment": "How often the daemon is asked whether it has finished releasing memory."
+  },
+  "audit": {
+    "model": "ollama_chat/gemma4:31b-aider",
+    "_model_comment": "A DIFFERENT model audits than the one that wrote the code. A model reviewing its own output rates its own reasoning, which is the failure this separation exists to avoid. Cost, measured 2026-09-02: OLLAMA_MAX_LOADED_MODELS is 1 on this machine, so every switch evicts the other model and pays a full reload, near 110 seconds each way.",
+    "per_plan": true,
+    "_per_plan_comment": "Audit at the end of EVERY plan rather than once at the end. A defect found after plan 1 is cheap; the same defect found after plan 7 has six plans built on top of it.",
+    "max_rounds_per_plan": 2,
+    "_rounds_comment": "How many times a plan may go round the write-test-audit loop. Round 1 executes the plan; a further round only happens if the audit put unticked steps back into the ledger. Past this the plan is marked blocked rather than looped forever.",
+    "batch_safety_margin_tokens": 8192,
+    "_margin_comment": "Held back when packing source files into audit batches. Counts are cl100k estimates and the model's own tokenizer differs by a few percent, so the pack is deliberately loose.",
+    "max_files_per_batch": 60,
+    "_max_files_comment": "A second, cruder bound: each file carries about 40 tokens of framing that the token count alone does not capture, so sixty files cost roughly 2400 tokens of overhead."
+  }
+}

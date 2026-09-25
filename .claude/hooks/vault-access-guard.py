@@ -54,8 +54,21 @@ SOLE_MEMORY_AGENT = SOLE_VAULT_AGENT  # the same agent keeps both memories
 GRAPH_PATH_NEEDLES = ("graphify-out",)
 
 # Read graph.json on the caller's behalf, and their command line never names the graph's path.
-# Matched in a COMMAND ONLY - see the module docstring.
+# Matched at COMMAND POSITION only - see GRAPH_SCRIPT_PATTERNS below and the module docstring.
 GRAPH_SCRIPT_NEEDLES = ("check-graph-health.ps1", "verify-graph-health.ps1")
+
+# What counts as "about to be executed" for a script name: the first token of the command, a
+# token right after a chain operator (&&, ;, |, backtick, $(, the PowerShell call operator &),
+# the -File flag of a powershell/pwsh launcher, or the rtk wrapper. Measured 2026-08-31: the old
+# check was a plain substring test with no position awareness at all, so a read-only
+# `grep -n "check-graph-health.ps1" testing.md` was refused for merely searching documentation -
+# the script's name was the search STRING, never executed. This mirrors what GRAPH_CLI_PATTERN
+# already does for the bare `graphify` word; script names just need a wider prefix set because
+# `powershell -File <path>` and `rtk <path>` are how they are actually invoked.
+_SCRIPT_PREFIX = r"(?:^|[|;&`]|\$\(|-[Ff]ile\b|\brtk\b)\s*['\"]?(?:[\w./\\ :-]*[/\\])?"
+GRAPH_SCRIPT_PATTERNS = tuple(
+    re.compile(_SCRIPT_PREFIX + re.escape(name) + r"\b") for name in GRAPH_SCRIPT_NEEDLES
+)
 
 # The CLI at command position: start of line, or after a pipe, semicolon, &&, backtick or $(.
 # `grep graphify ...` and `rtk grep graphify` are therefore NOT matched, which is the point.
@@ -224,14 +237,52 @@ def find_graph_violation(tool_name: str, tool_input: dict) -> str:
         return ""
     normalized = _norm(command)
 
-    for needle in GRAPH_SCRIPT_NEEDLES:
-        if needle in normalized:
-            return needle
+    for name, pattern in zip(GRAPH_SCRIPT_NEEDLES, GRAPH_SCRIPT_PATTERNS):
+        if pattern.search(normalized):
+            return name
 
     if GRAPH_CLI_PATTERN.search(normalized):
         return "graphify (CLI)"
 
     return ""
+
+
+def _emit_allow(hit: str, kind: str) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell Claude Code's OWN permission layer to skip its interactive prompt
+        for exactly this call, because this guard has already decided it is
+        authorized. Without this, an exit-0-with-no-output hook does not
+        exempt the call from the normal permission check that follows it: the
+        guard and the prompt are two separate gates, and clearing the first
+        does not clear the second. Measured 2026-09-24: local-writer, run as a
+        non-interactive subagent, hit exactly that second gate on
+        `graphify update` and had no one able to answer the prompt, so it
+        refused rather than proceeding - and asked the orchestrator to run the
+        command in its place, which is the bypass this guard exists to stop.
+
+    Inputs:
+        hit (str): the vault or graph needle that matched, for the reason text
+        kind (str): "vault" or "graph", for the reason text
+
+    Outputs:
+        None. Prints one JSON object to stdout (PreToolUse hookSpecificOutput).
+    --------------------------------------------------------------------------
+    """
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": (
+                "vault-access-guard.py: %s is the sole agent this guard exempts for "
+                "%s access (matched %r), and it runs non-interactively, so this guard "
+                "grants standing approval for this one authorized call rather than "
+                "leaving it stuck behind an unanswerable prompt."
+                % (SOLE_MEMORY_AGENT, kind, hit)
+            ),
+        }
+    }))
 
 
 def main() -> int:
@@ -244,23 +295,33 @@ def main() -> int:
     if tool_name not in GUARDED_TOOLS:
         return 0
 
-    if (payload.get("agent_type") or "") == SOLE_MEMORY_AGENT:
-        return 0
-
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return 0
 
+    is_sole_agent = (payload.get("agent_type") or "") == SOLE_MEMORY_AGENT
+
     hit = find_violation(tool_name, tool_input)
     if hit:
+        if is_sole_agent:
+            _emit_allow(hit, "vault")
+            return 0
         sys.stderr.write(MESSAGE.format(hit=hit, tool=tool_name) + "\n")
         return 2
 
     graph_hit = find_graph_violation(tool_name, tool_input)
     if graph_hit:
+        if is_sole_agent:
+            _emit_allow(graph_hit, "graph")
+            return 0
         sys.stderr.write(GRAPH_MESSAGE.format(hit=graph_hit, tool=tool_name) + "\n")
         return 2
 
+    # Not a vault/graph call at all: local-writer's other work (docstrings, Markdown
+    # docs, an unrelated Bash command) is untouched either way - this guard has no
+    # opinion on it, and it must not grant a standing "allow" for something it never
+    # examined. Broadening the auto-allow beyond the guarded resource would hand
+    # local-writer more standing permission than this fix was asked to give it.
     return 0
 
 

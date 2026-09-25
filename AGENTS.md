@@ -9,6 +9,7 @@ this file.
 
 Specialized agents (flat markdown files under `.claude/agents/`):
 
+- `abstract-writer` - see `.claude/agents/abstract-writer.md`
 - `authoring-loop` - see `.claude/agents/authoring-loop.md`
 - `bib-cleaner` - see `.claude/agents/bib-cleaner.md`
 - `cover-paper` - see `.claude/agents/cover-paper.md`
@@ -16,6 +17,7 @@ Specialized agents (flat markdown files under `.claude/agents/`):
 - `litreview-updater` - see `.claude/agents/litreview-updater.md`
 - `local-coder` - see `.claude/agents/local-coder.md`
 - `local-writer` - see `.claude/agents/local-writer.md`
+- `narrative-cv-writer` - see `.claude/agents/narrative-cv-writer.md`
 - `paper-auditor` - see `.claude/agents/paper-auditor.md`
 - `reviewer-response` - see `.claude/agents/reviewer-response.md`
 - `scopus-auditor` - see `.claude/agents/scopus-auditor.md`

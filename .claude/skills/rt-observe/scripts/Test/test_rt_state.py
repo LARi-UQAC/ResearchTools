@@ -55,7 +55,13 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
                         "registry": value(60), "progress": value(15),
                         "services": value(60), "sessions": value(10),
                         "graph": value(60), "mcp_live": value(300),
-                        "usage": value(600)},
+                        "usage": value(600),
+                        # Phase 2/3 of the journal-durable plan (2026-09-24):
+                        # declared here so ttls_from() (which walks EVERY
+                        # SECTION_TTL_KEY entry) does not KeyError; no
+                        # 'postgres'/'openobserve' block means both sections
+                        # report unavailable regardless of their TTL.
+                        "identity": value(30), "traces": value(30)},
         # The floors a VIEWER cannot ask below. mcp_live's floor is its own
         # TTL, which is the point: the refresh control may speed up a local
         # collector and must never speed up the one that leaves the machine.

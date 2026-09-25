@@ -1,0 +1,124 @@
+{
+  "_purpose": "Everything aider-thread-probe.py reads at run time. It answers one question the GPU probe does not: given a model that does NOT fit on the card, how many CPU threads are worth giving it, and what is actually the limit - threads, PCIe, or system memory bandwidth. No number, path, model tag or regex lives in the script.",
+
+  "_reading_the_result": "Three columns decide the answer and must be read together. n_thr_got is read back from the server log, never assumed from the request: Ollama may ignore num_thread, and a rung whose granted value did not change measures nothing. decode_tps is the payload. pcie_rx/tx is the REAL traffic crossing the bus during that decode, so a small figure there is positive proof the bus is not the limit rather than an argument that it should not be. If decode_tps plateaus while cpu_pct still rises, the limit is memory bandwidth and further threads buy heat.",
+
+  "ollama": {
+    "host": "http://127.0.0.1:11434",
+    "connect_timeout_s": 30,
+    "load_timeout_s": 1200,
+    "_load_comment": "Higher than the GPU probe's 900 s on purpose. This script deliberately loads a model far larger than the card, which is read from disk and placed in system RAM; measured 2026-09-05 on this machine, 12.1 GB free against about 17 GB of weights, so the load pages and a ceiling sized for a fitting model would abort a valid rung.",
+    "decode_timeout_s": 900,
+    "show_timeout_s": 60,
+    "keep_alive": "5m",
+    "_keep_alive_comment": "Sent explicitly on every request. OLLAMA_KEEP_ALIVE on this machine is -1, read 2026-09-05 from the daemon's own 'server config' line which prints it as 2562047h47m16s, so an omitted value would leave a 17 GB model resident for the rest of the session.",
+    "think": false,
+    "_think_comment": "qwen3.8 declares a thinking capability. Asked to think it spends the measured window on reasoning tokens, which changes what eval_count counts, so the decode figure would stop describing the same work across rungs.",
+    "evict_poll_interval_s": 1.0,
+    "evict_timeout_s": 180,
+    "post_evict_settle_s": 10,
+    "_settle_comment": "Freed memory is reported late by Windows. The GPU probe measured 4.4 GB free immediately after an eviction and 17.6 GB seconds later; 10 s here because the model being evicted is larger than anything that sweep unloaded."
+  },
+
+  "server_log": {
+    "candidate_paths": [
+      "{{LOCALAPPDATA}}/Ollama/server.log",
+      "{{HOME}}/.ollama/logs/server.log",
+      "{{HOME}}/AppData/Local/Ollama/server.log",
+      "/var/log/ollama/server.log"
+    ],
+    "read_delay_s": 2.0,
+    "max_tail_bytes": 4000000
+  },
+
+  "log_patterns": {
+    "_comment": "Held here rather than imported from aider-gpu-probe.json because a log format change is a data edit and the two scripts may be pointed at different daemon versions. The PARSERS are imported, so there is exactly one implementation of the reading.",
+    "offload": ["load_tensors:\\s+offloaded\\s+(\\d+)/(\\d+)\\s+layers to GPU"],
+    "kv_cache_mib": [
+      "llama_kv_cache:\\s*size\\s*=\\s*([0-9.]+)\\s*MiB",
+      "llama_kv_cache_unified:[^\\n]*?size\\s*=\\s*([0-9.]+)\\s*MiB"
+    ],
+    "compute_buffer_pool": [
+      "sched_reserve:\\s*(\\S+) compute buffer size\\s*=\\s*([0-9.]+)\\s*MiB",
+      "(\\S+) compute buffer size\\s*=\\s*([0-9.]+)\\s*MiB"
+    ],
+    "n_threads": ["n_threads\\s*=\\s*(\\d+)"],
+    "_n_threads_comment": "The measurement this script turns on: 'cmn init: llama threadpool init, n_threads = 10'. n_threads_batch does not match this pattern, which is correct here - prefill threading is a separate axis and mixing them reports a number belonging to neither.",
+    "n_ctx": ["llama_context:\\s*n_ctx\\s*=\\s*(\\d+)"],
+    "kv_cache_type": ["OLLAMA_KV_CACHE_TYPE:([^\\s\\]]+)"],
+    "fit_attempt": ["common_params_fit_impl:\\s*id=\\d+,\\s*n_layer=\\s*(\\d+),[^\\n]*?mem=\\s*(\\d+)\\s*MiB"]
+  },
+
+  "log_selection": {
+    "kv_cache_mib": "sum",
+    "compute_buffer_mib": "split",
+    "host_pool_patterns": ["(?i)host", "(?i)^cpu"]
+  },
+
+  "gpu": {
+    "nvidia_smi": "nvidia-smi",
+    "query_timeout_s": 30,
+    "pcie_sample_interval_s": 1,
+    "_pcie_comment": "nvidia-smi dmon's minimum interval is 1 s, which is why decode_num_predict is sized to keep the timed window well above it. Verified present 2026-09-05. This is why no CUDA install is needed to answer the RAM-to-VRAM question - the counter measures traffic that actually happened, where a cudaMemcpy benchmark measures the bus ceiling instead.",
+
+    "dmon_select": "ut",
+    "_dmon_select_comment": "The dmon selectors, as one string. 'u' is utilization (sm, mem, and the encode/decode engines) and 't' is PCIe receive and transmit, so 'ut' answers both in ONE child process. The column set depends on this value - 't' alone prints three columns and 'ut' prints nine - so the parser reads the header dmon prints rather than fixed positions. Verified 2026-09-05: 'dmon -s ut' printed the header 'gpu sm mem enc dec jpg ofa rxpci txpci'. Changing this string is therefore safe, which is the point of reading the header; a positional parser would have started reporting sm as rxpci."
+  },
+
+  "paging": {
+    "enabled": true,
+    "sample_interval_s": 1,
+    "_paging_comment": "Hard page-in rate, read as Win32_PerfFormattedData_PerfOS_Memory.PagesInputPerSec. WMI property names are locale-independent where typeperf counter paths are NOT: on a French Windows the path '\\Memory\\Pages Input/sec' does not resolve, and this machine has been bitten by localisation before, where French netstat emitted byte 0x90 and a strict decode returned an empty answer. A rung with a non-zero page-in rate is not a clean thread measurement and is flagged rather than averaged in."
+  },
+
+  "safety": {
+    "min_free_ram_mib": 6144,
+    "_min_free_comment": "Chosen by the operator, not measured. Lower than the GPU probe's 8192 on purpose: this script's whole subject is a model that does not fit, so that floor would refuse every rung. Below this there is no point starting, because the load itself would thrash.",
+    "free_ram_reread_delay_s": 10
+  },
+
+  "sweep": {
+    "model": "qwen3.8:latest",
+    "_model_comment": "The coder-role tag actually installed here. Measured 2026-09-05 by 'ollama show': architecture qwen35, 27.3B parameters, Q4_K_M, 262144 native context, plus a 460.73M CLIP projector - about 17 GB of weights against a 6144 MiB card. Replace it here, never in the code.",
+    "num_ctx": 8192,
+    "_num_ctx_comment": "Held CONSTANT across every rung, because the experiment varies exactly one thing. 8192 rather than the tag's native 262144: the KV cache at full context would not fit, the daemon would clamp it silently, and a clamped window makes two rungs incomparable. Small enough that KV cache is not what is being measured - the weights dominate either way.",
+    "threads": [4, 6, 8, 10, 12, 14, 16, 20],
+    "_threads_comment": "Rungs, not a range: each forces a reload. Sized to this CPU, read 2026-09-05 from Win32_Processor - an i9-13900H, 14 physical cores and 20 logical, which is 6 performance cores with hyperthreading plus 8 efficiency cores. 10 is included because that is what the daemon chose by itself, and 16 because 16 of 20 logical is the 80 percent target the question names. Both ends are present so a plateau is visible rather than inferred.",
+    "repeats": 1,
+    "_repeats_comment": "One timed decode per rung by default. Each rung costs a full reload of a 17 GB model, so a second repeat roughly doubles a run already measured in tens of minutes. Raise it when two rungs land within noise of each other.",
+
+    "gpu_layers": [5, 8, 10, 12, 14],
+    "_gpu_layers_comment": "Rungs for --mode gpulayers, LOWEST FIRST on purpose: 5 is what the allocator chose for itself on this machine 2026-09-05, so it is the control every forced rung is compared against under the same machine state. It refused a sixth layer at 2607 MiB while its own report said 2057 MiB was still free, and nvidia-smi showed 3597 MiB of 6144 in use, so roughly 2.5 GB of card sat idle while 14071 MiB of weights were in system RAM and the machine paged. Whether that spare VRAM is usable is the experiment; the allocator may be right, which is why 14 is the top rung rather than 66.",
+
+    "gpu_sweep_num_thread": 14,
+    "_gpu_sweep_num_thread_comment": "Held constant while the layer axis moves, because two axes swept at once measure neither. 14 is the value the thread sweep of 2026-09-05 recommended: 3.39 tok/s, within 1 percent of the best figure anywhere in that sweep, at 81.3 percent CPU rather than the 99.4 percent that 20 threads cost.",
+
+    "contexts": [8192, 16384, 32768, 65536, 131072],
+    "_contexts_comment": "Window rungs for --mode context, smallest first. Chosen against the assembled prompt this harness actually sends, not as a range: aider-plan.ps1's three reserves alone (harness 8192 + repo map 8192 + reply 16384) are 32768 tokens, so a 32768 window holds the reserves and NOTHING else, and 8192 and 16384 are here only to measure the VRAM cost curve rather than as usable settings. 65536 is the smallest rung that holds the measured floor of 38942 tokens, and 131072 the smallest that holds the ceiling floor of 70768. 262144 is deliberately absent: measured 2026-09-05 its compute buffer alone took 3525 MiB of a 6144 MiB card and placed zero layers, so it is a known-bad setting and not a rung worth an eight-minute reload.",
+
+    "gpu_stop_after_failures": 2,
+    "_gpu_stop_comment": "Consecutive load failures that end the layer sweep. A forced offload the card cannot satisfy fails at allocation, and once it has failed twice the remaining higher rungs will fail too; continuing would repeatedly hammer a card that has already refused."
+  },
+
+  "measurement": {
+    "warmup_prompt": "hi",
+    "warmup_num_predict": 1,
+    "_warmup_comment": "Exists to LOAD the model, not to measure it. One token, so nothing here can be mistaken for a throughput figure.",
+    "decode_prompt": "Write one short paragraph about how a compiler turns source code into machine code.",
+    "decode_num_predict": 128,
+    "_decode_comment": "Throughput is eval_count / (eval_duration / 1e9): eval_* is DECODE, prompt_eval_* is prefill. 128 tokens keeps the timed window long enough for the 1 s PCIe and paging samplers to collect a useful series - at a decode rate in the low single digits, which is what a 17 GB model on a 6 GB card gives, that is half a minute or more."
+  },
+
+  "bandwidth": {
+    "workers": [1, 2, 4, 6, 8, 10, 12, 14, 16, 20],
+    "buffer_mib_per_worker": 192,
+    "_buffer_comment": "Per worker and private to it, so nothing is served from another worker's cache. 192 MiB is far above this CPU's 24 MB L3, so every pass is a real trip to DRAM. Deliberately modest: 20 workers at 192 MiB is about 3.8 GB, which fits in the 12.1 GB free measured 2026-09-05 without pushing the machine into the paging this script observes elsewhere.",
+    "seconds_per_point": 3.0,
+    "_seconds_comment": "Per worker-count point. Long enough that process start-up and the barrier do not dominate, short enough that the whole curve is a couple of minutes.",
+    "_why_comment": "This mode answers what the thread sweep cannot answer alone. If aggregate read bandwidth stops rising at N workers, no model can go faster past N threads however many the daemon is given, and the sweep's plateau then has a cause rather than only a shape."
+  },
+
+  "report": {
+    "float_places": 2
+  }
+}

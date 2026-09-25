@@ -59,7 +59,7 @@ graph TD
     s7["extract-futureworks<br/>extract_text.py (--section-scan)"]
     s8["geolocalisation<br/>extract_locations.py · generate_geomap.py"]
     s9["recommendation-letter<br/>generate_letter.py · letter_templates.py"]
-    s16["uqac-forms<br/>pdf_ingest.py (validated ingest contract)"]
+    s16["form-service<br/>pdf_ingest.py (validated ingest contract)"]
     s10["paper2talk<br/>talk_model.py · talk_render.py · talk_notes.py"]
     s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
     s12["narrative-cv<br/>cv_inventory.py · cv_select.py · cv_build.py"]
@@ -619,6 +619,37 @@ no configured value. Its tokens are extracted to `assets/rt-tokens.css`, the fir
 file in this repository, which the three other HTML emitters here (`paper2talk`'s web deck,
 `geolocalisation`'s map, and the graph page graphify writes) may adopt later; a test asserts the
 page and that file cannot drift apart.
+
+## Layer 7 - Deployment (form-service HTTP API)
+
+`deploy/form-service/` wraps the `form-service` skill scripts (RT-1 through RT-4: PDF
+ingest, widget dump, filling, PAdES signing) in a FastAPI application so ThesisTracker calls
+one service instead of shelling out to Python. `deploy/docker-compose.yml` runs it alongside a
+`pgvector/pgvector` Postgres (needed by RT-7's corpus index, unrelated to the form path) and a
+Caddy front door whose hostname is read from the environment.
+
+```mermaid
+flowchart LR
+  TT["ThesisTracker<br/>Express API"] -->|"X-Form-Service-Key<br/>PDF bytes plus values"| CADDY["Caddy<br/>reverse proxy"]
+  CADDY --> FS["form-service<br/>FastAPI, :8080<br/>stateless"]
+  FS --> CERT[("certs volume<br/>signing material only")]
+  RT7["RT-7 corpus index<br/>(unrelated to the form path)"] --> DB[("db<br/>Postgres 17 + pgvector")]
+
+  classDef svc fill:#DBEAFE,stroke:#1E3A8A,color:#14181F
+  classDef store fill:#D1FAE5,stroke:#065F46,color:#14181F
+  class TT,CADDY,FS,RT7 svc
+  class CERT,DB store
+```
+
+Two properties matter more than the rest of the diagram. The service is reached only over a
+private network, behind a shared secret compared in constant time, and the service refuses to
+start when that secret is unset or too short. The image carries no AGPL dependency: `pypdf`
+(BSD-3) and `pyHanko` (MIT) are the only PDF libraries here, and PyMuPDF (AGPL-3.0) stays
+isolated in the `extract-statistic` skill, never installed in this image.
+
+The dependency runs one way only: ThesisTracker calls the form service, never the reverse.
+ThesisTracker itself is a separate system and does not belong in the Layer 1 graph above;
+`NEW_ARCHITECTURE.md` is where the two projects meet.
 
 ## Notes
 

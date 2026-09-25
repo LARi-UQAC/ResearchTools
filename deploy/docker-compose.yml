@@ -1,0 +1,61 @@
+# form engine stack. Host-agnostic by design: every hostname and secret comes
+# from the environment, so the final Docker host is chosen before real data
+# loads and not before build. Copy deploy/.env.example to deploy/.env.
+services:
+  form-service:
+    build:
+      context: ..
+      dockerfile: deploy/form-service/Dockerfile
+    environment:
+      FORM_SERVICE_KEY: ${FORM_SERVICE_KEY:?set FORM_SERVICE_KEY in deploy/.env}
+      FORM_SERVICE_CERT_DIR: /data/certs
+      FORM_SERVICE_SIGNING_PROVIDER: ${FORM_SERVICE_SIGNING_PROVIDER:-self-signed}
+    volumes:
+      - form-certs:/data/certs
+    ports:
+      # Published on the loopback interface only, never on 0.0.0.0.
+      - "127.0.0.1:8081:8080"
+    restart: unless-stopped
+
+  db:
+    # pgvector rides the Postgres the stack already needs; RT-7 stores its
+    # corpus embeddings here, so no separate vector vendor is introduced. It
+    # is unrelated to the form path.
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-uqac}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-uqac}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-uqac} -d ${POSTGRES_DB:-uqac}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      # The host is undecided by choice: Caddy reads it from the environment.
+      FORM_SERVICE_HOST: ${FORM_SERVICE_HOST:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - form-service
+    restart: unless-stopped
+
+volumes:
+  form-certs:
+  db-data:
+  caddy-data:
+  caddy-config:

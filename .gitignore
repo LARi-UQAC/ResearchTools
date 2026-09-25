@@ -106,3 +106,6 @@ graphify-out/
 
 # Local git worktrees (superpowers:using-git-worktrees), isolated checkouts for unit branches.
 /.worktrees/
+
+# form service: local environment, never committed
+deploy/.env

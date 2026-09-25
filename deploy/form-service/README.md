@@ -45,10 +45,27 @@ There is no CORS middleware: a browser never calls this API.
 | `POST /pdf/fill` | `multipart/form-data`: `pdf` file, `values` JSON object, `flatten_fields` JSON array (optional) | `application/pdf`, headers `X-Form-Filled`, `X-Form-Flattened` |
 | `POST /pdf/sign` | raw PDF body; query `field`, `reason` (both optional) | `application/pdf`, header `X-Form-Signature-Field` |
 | `POST /pdf/validate` | raw PDF body | `{"signatures": [{field, intact, valid, trusted}]}` |
+| `GET /publications` | query `author`, `count` (max 25), `refresh` | `{"query", "author", "publications", "fetched_at", "cached"}` |
 
 Status codes: `401` no or wrong key, `409` a signing refusal (nothing signable,
 already signed, or ambiguous which field), `413` body over the cap, `422` not a
-PDF or a fill refusal (unknown field, bad checkbox value, malformed JSON).
+PDF or a fill refusal (unknown field, bad checkbox value, malformed JSON), `429`
+the publications rate limit is exhausted, `503` Scopus unreachable or
+unconfigured, `404` the author was not found in Scopus.
+
+## Publications
+
+`GET /publications` is the one route with a policy of its own. The Scopus key,
+the request throttling, and the approved-publisher list all stay in this
+service; ThesisTracker receives plain JSON with a per-entry
+`approved_publisher` flag and never reaches Elsevier. A venue outside the
+approved list is **flagged, never dropped**, since a silent drop would hide a
+real publication from a cohort report. An unreachable or unconfigured Scopus
+answers `503`, never an empty list, because an empty list reads as "this
+person has never published". `count` is capped at 25, not a round 50: Scopus's
+STANDARD view refuses a page above 25 with HTTP 400. A cache hit costs no
+Scopus quota, so a cohort report over an already-seen roster makes no network
+call at all.
 
 ## Personal information
 

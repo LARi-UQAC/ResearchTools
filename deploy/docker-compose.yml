@@ -10,8 +10,16 @@ services:
       FORM_SERVICE_KEY: ${FORM_SERVICE_KEY:?set FORM_SERVICE_KEY in deploy/.env}
       FORM_SERVICE_CERT_DIR: /data/certs
       FORM_SERVICE_SIGNING_PROVIDER: ${FORM_SERVICE_SIGNING_PROVIDER:-self-signed}
+      FORM_SERVICE_PUBLICATIONS_CACHE_DIR: /data/publications
+      FORM_SERVICE_PUBLICATIONS_TTL_S: ${FORM_SERVICE_PUBLICATIONS_TTL_S:-86400}
+      FORM_SERVICE_PUBLICATIONS_RATE_PER_MINUTE: ${FORM_SERVICE_PUBLICATIONS_RATE_PER_MINUTE:-20}
+      # Optional: GET /publications answers 503 with a named reason, not a
+      # crash, when this is unset. Everything else in the service works
+      # without it.
+      SCOPUS_API_KEY: ${SCOPUS_API_KEY:-}
     volumes:
       - form-certs:/data/certs
+      - form-publications-cache:/data/publications
     ports:
       # Published on the loopback interface only, never on 0.0.0.0.
       - "127.0.0.1:8081:8080"
@@ -56,6 +64,7 @@ services:
 
 volumes:
   form-certs:
+  form-publications-cache:
   db-data:
   caddy-data:
   caddy-config:

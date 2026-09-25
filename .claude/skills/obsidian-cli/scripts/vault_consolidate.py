@@ -59,6 +59,7 @@ from vault_links import (  # noqa: E402,F401
     _BRACKETED_LINK, _find_link_occurrence, _is_bracketed_link, _link_target,
     _replace_single_pass, _rewrite_prose_preserving_code)
 from vault_apply import apply_map  # noqa: E402,F401
+import outbox_io  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,6 +80,7 @@ def main(argv: list[str] | None = None) -> int:
             no-op
     --------------------------------------------------------------------------
     """
+    outbox_io.configure_streams()
     ap = argparse.ArgumentParser()
     ap.add_argument("--vault", default=r"C:/Martin Otis/Vault")
     ap.add_argument("--top", type=int, default=25)

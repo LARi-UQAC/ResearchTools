@@ -4,7 +4,17 @@ This document maps the academic tooling layer under [.claude/](.). Three layers 
 
 ## Layer 1 — Component architecture
 
-The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing). The [extract-statistic](skills/extract-statistic) skill is consumed by [paper-auditor](agents/paper-auditor.md) and [thesis-auditor](agents/thesis-auditor.md) (mode `audit`, to review a manuscript's own statistics) and by [scopus-researcher](agents/scopus-researcher.md) (mode `mine`, to extract the reported statistics of the corpus PDFs). The [latex-writer](agents/latex-writer.md) authoring agent — invoked by context to draft LaTeX, Beamer, and TiKZ — enters the [scientific-writing](skills/scientific-writing) skill through its LaTeX-authoritative entry point and consumes the skill in full (see the Notes). The same agent converts draw.io sheets to TiKZ through the [drawio2tikz](skills/drawio2tikz) skill, whose absolute-coordinate output is the documented exception to the relative-positioning rule. The [geolocalisation](skills/geolocalisation) skill is the one skill a command drives directly rather than through an agent: `/geolocalisation` maps a review corpus's study locations from its `.bib` (draft table + per-paper provenance note, override CSV wins, optional `--full-text` PDF scan), consuming no agent and none of the shared skills. One academic agent is an orchestrator rather than a leaf: [thesis-to-paper](agents/thesis-to-paper.md) turns a student thesis plus its conference papers into one submission-ready journal manuscript, composing `/litreview`, `scientific-writing`, `/bibclean`, `/submitcheck`, and `/auditpaper` INLINE (it runs as a top-level workflow and executes those pipelines itself rather than dispatching them as nested subagents, since a subagent cannot reliably spawn another). It is invoked by name and carries its own multi-session checkpoint protocol; it is documented in the Notes rather than drawn into the diagram above. Two further agents — [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) — sit outside this academic flow: they are local-delegation agents (a Haiku wrapper driving a local Ollama model over a Bash bridge) used for documentation, comments, and code generation, and they are orchestrated by the [loop-engineer](skills/loop-engineer) skill. Both are documented in "Layer 5 — Loop engineering" below rather than in the diagram above.
+The diagram shows which command launches which agent, and which skills each agent consumes. Two agents — [cover-paper](agents/cover-paper.md) and [thesis-proposal-auditor](agents/thesis-proposal-auditor.md) — have no dedicated slash command; they are invoked by name. Every agent depends on the [scopus](skills/scopus) skill for reference validation; the auditors and the researcher additionally route through [deliberation](skills/deliberation), [scholar-evaluation](skills/scholar-evaluation), and [scientific-writing](skills/scientific-writing). The [extract-statistic](skills/extract-statistic) skill is consumed by [paper-auditor](agents/paper-auditor.md) and [thesis-auditor](agents/thesis-auditor.md) (mode `audit`, to review a manuscript's own statistics) and by [scopus-researcher](agents/scopus-researcher.md) (mode `mine`, to extract the reported statistics of the corpus PDFs). The [extract-paper-idea](skills/extract-paper-idea) skill is a sibling of [extract-contributions](skills/extract-contributions) rather than a corpus-mining tool: it merges the SAME paper's own content (via `paper2talk`'s LaTeX flattening, `extract-statistic`'s future-works-cue scan, and `extract-contributions`' marker scan, all pointed at the author's own text) into one JSON, consumed by the new [abstract-writer](agents/abstract-writer.md) agent to draft or refresh that paper's abstract (or, for a UQAC thesis, its Résumé + Abstract pair), reached through `/abstract`. The [latex-writer](agents/latex-writer.md) authoring agent — invoked by context to draft LaTeX, Beamer, and TiKZ — enters the [scientific-writing](skills/scientific-writing) skill through its LaTeX-authoritative entry point and consumes the skill in full (see the Notes). The same agent converts draw.io sheets to TiKZ through the [drawio2tikz](skills/drawio2tikz) skill, whose absolute-coordinate output is the documented exception to the relative-positioning rule. The [geolocalisation](skills/geolocalisation) skill is the one skill a command drives directly rather than through an agent: `/geolocalisation` maps a review corpus's study locations from its `.bib` (draft table + per-paper provenance note, override CSV wins, optional `--full-text` PDF scan), consuming no agent and none of the shared skills. One academic agent is an orchestrator rather than a leaf: [thesis-to-paper](agents/thesis-to-paper.md) turns a student thesis plus its conference papers into one submission-ready journal manuscript, composing `/litreview`, `scientific-writing`, `/bibclean`, `/submitcheck`, and `/auditpaper` INLINE (it runs as a top-level workflow and executes those pipelines itself rather than dispatching them as nested subagents, since a subagent cannot reliably spawn another). It is invoked by name and carries its own multi-session checkpoint protocol; it is documented in the Notes rather than drawn into the diagram above. Two further agents — [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) — sit outside this academic flow: they are local-delegation agents (a Haiku wrapper driving a local Ollama model over a Bash bridge) used for documentation, comments, and code generation, and they are orchestrated by the [loop-engineer](skills/loop-engineer) skill. Both are documented in "Layer 5 — Loop engineering" below rather than in the diagram above. The
+[narrative-cv-writer](agents/narrative-cv-writer.md) agent, reached via `/cv`, drafts the FRQ /
+tri-agency narrative CV: it consumes [scopus](skills/scopus) (the AU-ID two-step, exactly
+[cover-paper](agents/cover-paper.md)'s Artifact 3 pattern), the
+[extract-contributions](skills/extract-contributions) skill (a new publication's own contribution
+sentence, never a paraphrase of its abstract), [scientific-writing](skills/scientific-writing)
+(the same composition rules every authoring agent follows), and its own
+[narrative-cv](skills/narrative-cv) skill for the durable master-inventory CRUD, the keyword-
+overlap ranking against one competition's own objectives, and the LaTeX/plain-text rendering. It
+runs none of the deliberation/scholar-evaluation pipeline the four auditors and the researcher
+share, since a CV carries no reference list to cross-review or score.
 
 ```mermaid
 graph TD
@@ -20,6 +30,7 @@ graph TD
     c9["/recommendation-letter"]
     c10["/litupdate"]
     c11["/talk"]
+    c12["/cv"]
   end
 
   subgraph AG["Agents — agents/"]
@@ -35,6 +46,7 @@ graph TD
     a10["latex-writer<br/>LaTeX/Beamer/TiKZ authoring"]
     a11["litreview-updater<br/>incremental review refresh"]
     a12["talk-builder<br/>accepted paper -> conference talk"]
+    a13["narrative-cv-writer<br/>FRQ / tri-agency narrative CV"]
   end
 
   subgraph SK["Skills — skills/"]
@@ -50,6 +62,7 @@ graph TD
     s16["uqac-forms<br/>pdf_ingest.py (validated ingest contract)"]
     s10["paper2talk<br/>talk_model.py · talk_render.py · talk_notes.py"]
     s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
+    s12["narrative-cv<br/>cv_inventory.py · cv_select.py · cv_build.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -70,8 +83,10 @@ graph TD
   c9 --> s9
   c10 --> a11
   c11 --> a12
+  c12 --> a13
   a12 --> s10
   a12 --> s1
+  a13 --> s12 & s1
   a4 -.->|"invoked by name<br/>(no command)"| a4
   a9 -.->|"invoked by name<br/>(no command)"| a9
   a10 -.->|"invoked by context<br/>(no command)"| a10
@@ -116,6 +131,8 @@ graph TD
 `/talk` drives the [talk-builder](agents/talk-builder.md) agent, which consumes the [paper2talk](skills/paper2talk) skill (its own scripts and renderers) and the [scopus](skills/scopus) skill only for reference checks on a borrowed figure; it uses none of the audit skills, since the paper is already accepted and the deliverable is the deck rather than a review. Where the paper lifecycle is concerned, `paper2talk` starts exactly where [submit-checker](agents/submit-checker.md) and [cover-paper](agents/cover-paper.md) stop: acceptance.
 
 `/recommendation-letter` likewise invokes the [recommendation-letter](skills/recommendation-letter) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix; its `generate_letter.py` is standard-library only and compiles the letter with `pdflatex`.
+
+`/cv` drives the [narrative-cv-writer](agents/narrative-cv-writer.md) agent, which is also omitted from this matrix: it consumes [scopus](skills/scopus) and [scientific-writing](skills/scientific-writing) like the matrix's other rows, plus [extract-contributions](skills/extract-contributions) (not one of this matrix's columns) and its own [narrative-cv](skills/narrative-cv) skill, but none of `deliberation`, `scholar-evaluation`, `extract-statistic`, or `extract-futureworks` - a CV has no reference list to deliberate over or ScholarEval score.
 
 ### Domain profiles
 
@@ -359,6 +376,52 @@ outbox instead of a direct CLI write command, since `create`/`append`/`prepend` 
 fail silently above a JSON-header size threshold. See
 [docs/contributor-notes.md](docs/contributor-notes.md) section 5.
 
+## Layer 6 — Aider nightly local-coding pipeline
+
+Where Layer 5 delegates individual steps of a Claude Code session to a local model, the
+[aider-setup](skills/aider-setup) skill runs a **second, independent** local-coding pipeline
+that needs no Claude Code at all — the point, since it runs overnight when Claude Code and the
+model it drives are both closed. Three pieces, three lifetimes: `aider-setup` itself (a Claude
+Code skill, daytime, once per machine, to install or fix the pipeline), `R26` in
+[workflows.md](.claude/rules/workflows.md) (a rule, binding the plan-file shape every harness
+that plans in `docs/superpowers/plans/` writes to, Aider included), and
+`scripts/aider-night.ps1`/`.bat` (a plain `cmd` entry point with no Claude Code dependency,
+holding a wake lock so Windows' Modern Standby does not throttle an unattended run).
+
+The driver, `scripts/aider-plan.ps1`, runs **one aider process per plan** — the mechanism that
+actually drops the context window between plans — against two local Ollama tags resolved from
+`config/model-settings.yml`: a writer that codes and its own tests, and a reviewer that runs in
+a content-hashed sandbox and can never edit code, however its prompt is answered. After each
+plan the driver runs the test suite, then the reviewer, which writes `audit.md` and may reopen
+the plan for one more round bounded by `audit.max_rounds_per_plan`. Every token ceiling the
+pipeline enforces is measured and lives in `config/context-budget.json` with its own
+provenance (R13); `scripts/aider-gpu-probe.py` / `aider-thread-probe.py` /
+`aider-ollama-config.py` are what a `num_ctx`/`num_gpu`/`num_thread` recommendation in
+`CONFIG_OLLAMA.md` is built from, on this machine's own card rather than assumed.
+
+`config/rules.md` — the file the driver passes as `--read` on every single call — is
+**generated, never a static copy**: `scripts/aider-rules-sync.py` derives it from this
+repository's own `.claude/rules/*.md` plus `config/rules-local/`, so the rules Aider's models
+follow cannot drift from the rules ResearchTools enforces everywhere else. `scripts/build/`
+is the packaging pipeline that assembles the **student-facing** `aider-kit.zip` from this same
+skill's own canonical sources — never from a copy living elsewhere — with a seven-term leak
+scan (the operator's account name, this repository's own name, the GPU model, ...) and an
+install-then-dry-run gate (`verify-kit-install.ps1`) that installs the assembled kit into a
+scratch home and runs the real driver from that installation, because a kit green on every
+static check has still shipped a config the installed aider refused to read.
+
+Aider is not a mirror-fanout target in the sense the rest of this layer's harnesses are: it
+receives no agent, no command, and (Codex's own convention aside) no skill — only the rules,
+through the one `aider-setup-rules` target in `mirror-policy.json`. Marking agents, commands
+and skills as simply absent from that policy, rather than declaring and failing them, is what
+keeps the mirror matrix from reporting dozens of losses on a harness never meant to receive
+them. `rt-observe`'s own `aider` adapter (`.claude/skills/rt-observe/scripts/adapters/aider.py`)
+reads the machine-level run records the driver writes atomically to `~/.aider-plan/runs/`, one
+per project, and asks liveness of the recorded PID rather than the file's presence, for the
+same reason `vault_lock.held_by_live_holder` does on the vault daemon's side: a run killed by a
+shutdown leaves its last record behind, and reading that as "still running" reports exactly
+backwards.
+
 ```mermaid
 flowchart TD
   S([--loop --budget B --score min]) --> A["Design<br/>brainstorming - Fable 5"]
@@ -470,6 +533,19 @@ proved it and when - so a stale receipt renders differently from a fresh one and
 three days ago" can never be misread as "green now". A collector that cannot answer returns an
 explicit unavailable state with its reason; an unavailable panel is stated on screen rather
 than blanked, and never silently omitted.
+
+**Optional persistence (2026-09-24).** The snapshot above is recomputed at every read and kept
+nowhere; the journal-durable plan adds an OPTIONAL layer that remembers, split by whether a
+mistake in it can be corrected. `rt_store.py` is the ONLY module that knows PostgreSQL exists,
+for the mutable half - identity, account-to-container mapping, snapshot history.
+`rt_openobserve.py` is the ONLY module that knows OpenObserve exists, for the immutable half -
+agent traces, and a second sink for the action-audit log beside its existing JSONL, which
+remains the fallback a sink outage cannot take down. Both are declared in `observe-config.json`
+under blocks that are absent by default: undeclared is the supported zero-service state, and a
+block that IS declared but incomplete is a named configuration error (R3) rather than a silent
+no-op. See [docs/rt-observe.md](docs/rt-observe.md#the-optional-journal-identity-traces-audit)
+for the store split, the OpenObserve pitfalls it records rather than works around, and what is
+left for an operator to verify against a live instance.
 
 **Two boundaries it does not cross.** It never reads the Obsidian vault. It never reads the
 code graph either: the graph panel renders a snapshot `local-writer` wrote outside the graph's

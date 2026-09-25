@@ -44,6 +44,7 @@ POLICY = REPO / "mirror-policy.json"
 # drift is silent (R0, R2).
 RESTATED_BUDGET = re.compile(r"\$CodexSkillListBudget\s*=\s*\d")
 RESTATED_DOCBYTES = re.compile(r"\$CodexDocMaxBytes\s*=\s*\d")
+RESTATED_FLOOR = re.compile(r"\$CodexMinDescriptionChars\s*=\s*\d")
 FRONTMATTER = re.compile(r"(?s)\A---\r?\n(.*?)\r?\n---\r?\n")
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
@@ -121,6 +122,7 @@ class CodexMirrorTest(unittest.TestCase):
         self.policy = json.loads(io.open(POLICY, encoding="utf-8").read())
         self.budget = self._policy_int("codex_skill_list_budget")
         self.doc_max_bytes = self._policy_int("codex_doc_max_bytes")
+        self.min_description_chars = self._policy_int("codex_min_description_chars")
 
         self.skills = {}
         for skill_md in sorted(SKILLS.glob("*/SKILL.md")):
@@ -156,6 +158,10 @@ class CodexMirrorTest(unittest.TestCase):
             RESTATED_DOCBYTES.search(self.installer),
             "install.ps1 assigns a literal to $CodexDocMaxBytes again. It must read "
             "thresholds.codex_doc_max_bytes from mirror-policy.json.")
+        self.assertIsNone(
+            RESTATED_FLOOR.search(self.installer),
+            "install.ps1 assigns a literal to $CodexMinDescriptionChars again. It must "
+            "read thresholds.codex_min_description_chars from mirror-policy.json.")
         self.assertIn(
             "mirror-policy.json", self.installer,
             "install.ps1 no longer mentions mirror-policy.json, so nothing reads the "
@@ -169,8 +175,11 @@ class CodexMirrorTest(unittest.TestCase):
             RESTATED_BUDGET.search("    [int]$CodexSkillListBudget = 8000,"))
         self.assertIsNotNone(
             RESTATED_DOCBYTES.search("    [int]$CodexDocMaxBytes = 32768,"))
+        self.assertIsNotNone(
+            RESTATED_FLOOR.search("    [int]$CodexMinDescriptionChars = 120,"))
         self.assertIsNone(RESTATED_BUDGET.search("    [int]$CodexSkillListBudget,"))
         self.assertIsNone(RESTATED_DOCBYTES.search("    [int]$CodexDocMaxBytes,"))
+        self.assertIsNone(RESTATED_FLOOR.search("    [int]$CodexMinDescriptionChars,"))
 
     def trimmed(self):
         return {n: limit_description(d, self.cap) for n, d in self.skills.items()}
@@ -190,6 +199,35 @@ class CodexMirrorTest(unittest.TestCase):
         self.assertEqual(
             empty, [],
             f"these skills would mirror with an empty description: {empty}")
+
+    def test_no_trimmed_description_falls_below_the_usefulness_floor(self):
+        """A trim that fits the budget can still gut a skill. Measured 2026-08-30:
+        geolocalisation trimmed to 69 characters, one sentence carrying none of its
+        trigger words, and nothing here noticed because the budget assertion above
+        only checks the TOTAL, never any one skill's share of it."""
+        thin = {
+            n: len(k) for n, k in self.trimmed().items()
+            if len(k) < len(self.skills[n]) and len(k) < self.min_description_chars
+        }
+        self.assertEqual(
+            thin, {},
+            f"these skills trim below the {self.min_description_chars}-char floor, "
+            f"so their trigger vocabulary likely did not survive: {thin}")
+
+    def test_the_floor_rule_can_actually_fail(self):
+        """R20. A short single-sentence description, forced through a tiny cap by an
+        oversized second sentence, must still be caught: the first sentence is kept
+        unconditionally by Limit-Description, so a floor check that only looked at
+        WHETHER a trim happened, rather than at what survived it, would pass this."""
+        short_first = "Do X."
+        padded = short_first + " " + ("filler word " * 200)
+        kept = limit_description(padded, cap=10)
+        self.assertLess(
+            len(kept), self.min_description_chars,
+            "fixture description did not trim below the floor; the test proves "
+            "nothing")
+        thin = len(kept) < self.min_description_chars
+        self.assertTrue(thin, "the floor check must flag this fixture as thin")
 
     def test_every_description_keeps_its_whole_first_sentence(self):
         """The first sentence carries the trigger. Trimming may drop later

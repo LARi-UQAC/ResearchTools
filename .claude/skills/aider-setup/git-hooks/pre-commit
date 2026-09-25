@@ -1,0 +1,18 @@
+#!/bin/sh
+# Refuse a commit on a protected branch. Installed per repository, into
+# .git/hooks/, by install-hooks.ps1 - never through a global core.hooksPath,
+# which git also honours when resolving --git-path and which therefore makes a
+# delegating hook re-run itself for ever.
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+[ -n "$branch" ] || exit 0
+
+case "$branch" in
+  main|master)
+    echo "pre-commit refused: commit on protected branch '$branch'." >&2
+    echo "  Branch first:  git switch -c <name>" >&2
+    echo "  Then open a pull request; a human merges it." >&2
+    exit 1
+    ;;
+esac
+exit 0

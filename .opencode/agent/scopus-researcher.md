@@ -18,8 +18,8 @@ It NEVER defines the process. Absolute rules:
    "Scopus.AI : skipped by user"; Step 1d when the MCP is unavailable, logged; Step 17
    degraded only when GEMINI_API_KEY AND GITHUB_TOKEN are both absent, the script still
    executed. No other step has a skip clause. extract-statistic (3b-stats),
-   extract-futureworks (3b-FW) and deliberation (17) are MANDATORY skill invocations on
-   every run. The pipeline has TWO sanctioned pauses: the Scopus.AI checkpoint (Step 1a)
+   extract-futureworks (3b-FW), extract-contributions (3b-CIT) and deliberation (17) are
+   MANDATORY skill invocations on every run. The pipeline has TWO sanctioned pauses: the Scopus.AI checkpoint (Step 1a)
    and the saturation checkpoint (Step 1c: AskUserQuestion for more iterations when the
    budget is exhausted while the new-paper rate is still >= 10 %).
 3. Scopus.AI checkpoint in subagent context: if you are executed as a subagent (no direct
@@ -461,6 +461,39 @@ proposed hypothesis AND one research-project title are derived from the top-Pare
 (checklist FW1/FW2, Step 16). Do NOT run a deliberation panel here: Step 17 runs the single mandatory
 `deliberation` over the finished review.
 
+### Step 3b-CIT — Contribution mining (extract-contributions skill) — MANDATORY
+
+Mine what each retained paper's own full text says it contributes, so the Step 4 summary and the
+Step 6 synthesis cite what the paper claims rather than what its abstract merely describes. An
+abstract states what a paper is about; it does not always state what the paper contributes, and the
+sentence a citing author needs ("to the best of our knowledge...", "unlike previous work, we...")
+often lives only in the introduction. Read `.claude/skills/extract-contributions/SKILL.md`, then run
+it in **mine** mode over the corpus `refs/` already retrieved in Step 3b-PDF:
+
+```
+python ".claude/skills/extract-contributions/scripts/extract_contributions.py" "<refs-dir>" --json
+```
+
+Output per paper: `citekey`, `status` (`ok` / `no-contribution` / `empty` / `unreadable`), and
+`sentences` — verbatim contribution/novelty/result/method sentences, each with its `kind` and
+`position`. Treat `kinds_found` as a sorting aid, never a verdict (the skill's own "What it does not
+do"): read the candidate sentences before citing them.
+
+Presence-gated, mirroring Step 3b-stats/3b-FW: a paper whose PDF failed to download
+(`refs/_failed.md` from Step 3b-PDF) contributes abstract-level claims only and is flagged
+`[CIT FULLTEXT-MISSING]`; a retrieved full text that states no contribution (`status:
+no-contribution`) is a fact about the paper, not a retrieval failure, and is flagged
+`[CIT NO-CONTRIBUTION-STATED]` rather than silently falling back to the abstract. Neither ever
+blocks the pipeline.
+
+Route downstream: **Step 4** grounds every paper summary in its own contribution sentence(s) from
+this step when one was found, falling back to the abstract only when flagged above; **Step 6**
+grounds every inline citation the same way; the **Step 9d** Pareto matrix cells and the **Step 10**
+hypothesis "Main contribution" statements draw on the same verbatim sentences rather than a
+paraphrase. Do NOT run `validate` mode here — that mode pairs `\cite{}` sentences of an EXISTING
+manuscript against the cited papers, and this agent is still authoring the review; `validate` mode
+is reserved for the auditors (`paper-auditor`, `thesis-auditor`) that check a finished document.
+
 ### Step 3c — PRISMA-style TikZ flow diagram
 
 Document the screening pipeline as a TikZ flowchart, following the TikZ rules in CLAUDE.md (relative positioning only via `below=of`/`right=of`, perpendicular arrows, no overlaps, 3-character minimum spacing). Generate `<basename>_prisma.tikz` with 4 vertical blocks:
@@ -482,7 +515,10 @@ Cite the figure in the LaTeX text with two sentences explaining the funnel and t
 
 ### Step 4 — Summarize
 
-Write a 2–3 sentence summary per paper based solely on its abstract. Do not add claims the abstract does not support. Summary header includes the quality grade:
+Write a 2–3 sentence summary per paper. Ground it in the paper's own contribution sentence(s) from
+Step 3b-CIT when that step found one; otherwise base it solely on the abstract. Do not add claims
+that neither the contribution sentences nor the abstract support. Summary header includes the
+quality grade:
 
 ```
 [Grade A] Surname et al. (Year) — "Title"  [CITATION MINING / SCOPUS.AI / CONSENSUS if applicable]
@@ -499,7 +535,8 @@ Write a structured literature review:
 - One section per theme (H2 heading)
 - 3–5 sentences synthesizing the papers in that theme
 - Inline citations using `[N]` where N is the paper's number in the final reference list
-- No fabricated claims — only what the retrieved abstracts state
+- No fabricated claims — only what the paper's own contribution sentence(s) (Step 3b-CIT) or,
+  absent full text or a stated contribution, the retrieved abstract, state
 
 **Synthesis method selection** (from `LitteratureReviewSkill/Sciences/references/synthesis-methods.md`):
 - Narrative synthesis: exploratory reviews (< 20 papers or heterogeneous methods) — default
@@ -894,10 +931,11 @@ Print the full checklist with ✓ or ✗ for each item:
 [ ] ST1 — Corpus statistics mining run (Step 3b-stats, extract-statistic skill): corpus statistics table + statistical-improvement opportunity list produced and routed into the gap map (9b), Pareto matrix (9d), and hypotheses (10). PDFs absent → [STATS PDF-MISSING] noted; PyMuPDF absent → abstract-level fallback recorded
 [ ] FW1 — Corpus future-works mining run (Step 3b-FW, extract-futureworks skill): the corpus future-works table is built, every row mapped to a review theme/gap (fit to the review), and the table Pareto-ordered (effort vs impact). Full text absent → [FW FULLTEXT-MISSING] noted; backend absent → abstract-level fallback recorded
 [ ] FW2 — At least one proposed hypothesis AND one research-project title are derived from the top-Pareto future-works rows (Step 10). This gate is mandatory: the review is not complete without a hypothesis and a research-project title grounded in the corpus future works
+[ ] CIT1 — Contribution mining run (Step 3b-CIT, extract-contributions skill, mine mode): every retained paper's own contribution sentences extracted and used to ground its Step 4 summary and Step 6 inline citation. Full text absent → [CIT FULLTEXT-MISSING] noted; full text present but silent → [CIT NO-CONTRIBUTION-STATED] noted; neither blocks the pipeline
 [ ] DL1 — Deliberation panel run (Step 17) and `## Deliberation Log` block appended to the final review, with Panel line, Rounds, Reviewers-unavailable, Evidence counts, and the four outcome lists
 ```
 
-Do not mark the document complete if any IC, ON, TC, SA, CS, SL, EC, PR, QG, GM, CV, PC, PH, TR, LM, RP, H, C, O, G, ST, FW, or DL item is ✗. List what must be fixed. FW1/FW2 are MANDATORY: the review cannot be declared complete without the corpus future-works table and at least one hypothesis + research-project title derived from its top-Pareto rows. ST1 may be checked as "abstract-level fallback" only when `pdfplumber` is unavailable, or with `[STATS PDF-MISSING]` notes when some corpus PDFs could not be retrieved. SA1 may be checked as "skipped by user" only if the user explicitly declined the Scopus.AI step. CS1 may be checked as "MCP unavailable" only if the Consensus tool could not be reached. DL1 is MANDATORY: Step 17 always runs before the document is marked complete, so this checklist is only final after Step 17. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content for DL1; an empty or missing Deliberation Log is not. ON1 and TC1 are MANDATORY: a review whose queries were frozen without a full-text ontology pass, or whose dominant corpus terms were never cross-checked against the synthesis, is not complete.
+Do not mark the document complete if any IC, ON, TC, SA, CS, SL, EC, PR, QG, GM, CV, PC, PH, TR, LM, RP, H, C, O, G, ST, FW, CIT, or DL item is ✗. List what must be fixed. FW1/FW2 are MANDATORY: the review cannot be declared complete without the corpus future-works table and at least one hypothesis + research-project title derived from its top-Pareto rows. CIT1 is MANDATORY: it may be checked with `[CIT FULLTEXT-MISSING]` / `[CIT NO-CONTRIBUTION-STATED]` notes, never silently skipped. ST1 may be checked as "abstract-level fallback" only when `pdfplumber` is unavailable, or with `[STATS PDF-MISSING]` notes when some corpus PDFs could not be retrieved. SA1 may be checked as "skipped by user" only if the user explicitly declined the Scopus.AI step. CS1 may be checked as "MCP unavailable" only if the Consensus tool could not be reached. DL1 is MANDATORY: Step 17 always runs before the document is marked complete, so this checklist is only final after Step 17. A `[REVIEWER UNAVAILABLE: ...]` marker is acceptable content for DL1; an empty or missing Deliberation Log is not. ON1 and TC1 are MANDATORY: a review whose queries were frozen without a full-text ontology pass, or whose dominant corpus terms were never cross-checked against the synthesis, is not complete.
 
 ### Step 17 — Deliberation (MANDATORY)
 

@@ -263,6 +263,29 @@ class GraphAccessGuardTest(unittest.TestCase):
         })
         self.assertEqual(code, 2)
 
+    def test_grep_for_an_audit_script_name_is_not_an_access(self):
+        # Measured 2026-08-31: a read-only documentation search whose PATTERN is the script's own
+        # name was refused, although nothing was executed and the graph was never read. The name
+        # was the search STRING, sitting inside a quoted grep argument, not at command position.
+        # This is the negative control the original three (all using the bare word "graphify",
+        # never a script name) did not cover, which is why the gap survived.
+        for command in (
+            'grep -n "check-graph-health.ps1" .claude/rules/testing.md',
+            "rtk grep verify-graph-health.ps1 README.md",
+        ):
+            with self.subTest(command=command):
+                code, _ = run_hook({"tool_name": "Bash", "tool_input": {"command": command}})
+                self.assertEqual(code, 0)
+
+    def test_running_an_audit_script_via_rtk_is_still_blocked(self):
+        # The positive control that keeps the fix from silently widening into the bypass the arm
+        # exists to close: actually RUNNING the script, even through the rtk wrapper, still counts.
+        code, _ = run_hook({
+            "tool_name": "Bash",
+            "tool_input": {"command": r"rtk .\scripts\audit\check-graph-health.ps1"},
+        })
+        self.assertEqual(code, 2)
+
     def test_editing_an_audit_script_is_not_an_access(self):
         # The asymmetry that makes the script names safe to guard: running one reads the graph,
         # maintaining one does not. Guarding the path key too would lock the repository's own

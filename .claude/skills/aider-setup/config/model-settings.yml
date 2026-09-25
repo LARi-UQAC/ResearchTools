@@ -1,0 +1,172 @@
+# Aider - per-model settings.
+#
+# Named explicitly by `model-settings-file:` in ~/.aider.conf.yml, which is why
+# this file can live here rather than as a dotfile at the top of the home
+# directory. Measured 2026-09-02: the config KEY is honoured, and so is the
+# AIDER_MODEL_SETTINGS_FILE environment variable, while AIDER_CONFIG is not -
+# only --config relocates the config file itself.
+#
+# The measured numbers below describe ONE GPU. When these files eventually come
+# from ResearchTools they stay behind, in a local file, the way
+# local-model-config.json already does.
+
+# ---------------------------------------------------------------------------
+# gemma4:31b-aider - the TUNED REVIEWER, named under audit.model in
+# context-budget.json. It is never the default coder.
+#
+# 31.3B Q4_K_M, 21 GB resident. Built 2026-09-06 from gemma4:31b-maxctx, whose
+# Modelfile baked a 262144 window and nothing else - no num_thread, no
+# num_predict - so the reviewer was the only model in this harness that had
+# never been tuned, and it decoded at 1.6 tok/s against the coder's 2.8.
+#
+# Measured that evening by aider-thread-probe.py, at num_ctx 49152:
+#     threads 10 -> 2.78 tok/s at 53.3 percent CPU
+#     threads 14 -> 2.86 tok/s at 73.3 percent   <- chosen
+#     threads 18 -> 2.86 tok/s at 94.1 percent
+#     forced num_gpu 2/4/6 -> 2.83 / 2.85 / 2.87, and page-ins rose from 671
+#     to 3604 per second at 6, so NO num_gpu is set and the allocator chooses.
+# Caveat stated rather than buried: every thread rung recorded hard page-ins
+# during the timed decode, so those figures measure the disk as much as the CPU.
+#
+# num_ctx and num_predict are baked in the tag AND restated below, because
+# aider sends extra_params on every request and a request-level value overrides
+# the Modelfile.
+#
+# Gemma takes no system role: every gemma entry aider ships of its own
+# (gemini/gemma-3-27b-it and both openrouter twins) carries
+# use_system_prompt: false, and this follows them.
+# ---------------------------------------------------------------------------
+- name: ollama_chat/gemma4:31b-aider
+  edit_format: diff
+  use_repo_map: true
+  use_system_prompt: false
+  reasoning_tag: think
+  editor_edit_format: editor-diff
+  extra_params:
+    # Reasoning OFF, for the reason given on the coder entry below, and here it
+    # cost a whole audit rather than a whole plan. Measured 2026-09-06 on plan 4
+    # of the night run: the reviewer generated over 10000 tokens across two
+    # hours, deliberating in the open - its log ends "I'll just output the
+    # blocks", then "Wait, the prompt says" - and wrote NOTHING to audit.md,
+    # which stayed at 235 bytes. That is defect D9 of the registry.
+    think: false
+    # The window, stated rather than inherited. The tag's Modelfile bakes
+    # 262144 and aider believed it, reporting "~35,390 of 262,144" as it was
+    # cut; the daemon had actually opened the slot at n_ctx 28928, which the
+    # reply overran. A window aider cannot see is a budget nobody is keeping,
+    # which is defect D7. Verify what is granted with `ollama ps`, never from
+    # this number: Ollama clamps a request it cannot satisfy instead of
+    # refusing it.
+    num_ctx: 49152
+    # A bound on the reply, which this entry never had. audit.md is capped at
+    # 4096 tokens of findings by context-budget.json, so this leaves a full
+    # factor of two for the edit fences and still stops a reviewer that has
+    # started deliberating from running for two hours.
+    num_predict: 8192
+    top_p: 0.95
+    # Never unload between plans. The daemon already defaults to -1 through
+    # OLLAMA_KEEP_ALIVE in the user registry, but a client's own keep_alive
+    # OVERRIDES that default, so it is restated here rather than assumed.
+    keep_alive: -1
+
+# ---------------------------------------------------------------------------
+# qwen3.8:latest - the coder BASE tag. You pull this one; you run the tuned tag derived from it, below.
+#   aider --model ollama_chat/qwen3.8:latest
+#
+# 27.3B Q4_K_M, 17 GB of weights, native context 262144, thinking capable.
+# Unlike the gemma4 tag it bakes NO num_ctx, so without the explicit value
+# below Ollama falls back to its own small default and aider truncates the
+# repo map with nothing said.
+#
+# Measured 2026-09-02 on the reference machine (6 GB of VRAM, 32 GB of RAM) by
+# loading the tag and reading `ollama ps`:
+#     num_ctx  32768 -> 19 GB resident, 88%/12% CPU/GPU,  34 s to load
+#     num_ctx  65536 -> 20 GB resident, 90%/10% CPU/GPU,  35 s to load
+#     num_ctx 131072 -> 19 GB resident, 95%/ 5% CPU/GPU,  41 s to load
+#     num_ctx 262144 -> 20 GB resident, 92%/ 8% CPU/GPU, 109 s to load
+# Context costs almost no RAM here; it evicts weight layers from the card, so a
+# larger window is paid for in decode speed rather than in memory. The native
+# maximum is set deliberately: these runs happen overnight on a machine doing
+# nothing else, where load time and latency do not matter and window does.
+#
+# The 262144 row was measured with the full desktop open, so it is a FLOOR:
+# with everything closed the machine has more free memory, never less.
+#
+# NOTE, 2026-09-05: the sentence above about setting the native maximum
+# deliberately no longer describes what runs. This entry is the BASE tag, kept
+# so the measurements above stay readable; the tag actually used is the tuned
+# one below, at the window context-budget.json implies. Measured that day, the
+# native window put ZERO layers of a 27B model on a 6 GB card, because the
+# compute buffer alone took 3.5 GB of it.
+#
+# The shape of the entry follows aider's own groq/qwen-qwq-32b settings, the
+# nearest thing it ships to a thinking Qwen of this size.
+# ---------------------------------------------------------------------------
+- name: ollama_chat/qwen3.8:latest
+  edit_format: diff
+  use_repo_map: true
+  reasoning_tag: think
+  use_temperature: 0.6
+  editor_edit_format: editor-diff
+  extra_params:
+    num_ctx: 262144
+    top_p: 0.95
+    # Never unload between plans, for the reason given on the gemma4 entry.
+    keep_alive: -1
+
+# ---------------------------------------------------------------------------
+# The TUNED tag, and the entry that makes tuning take effect.
+#
+# Written by aider-ollama-config.py. num_ctx here is not decoration: aider sends
+# extra_params on every request, and a num_ctx in the request OVERRIDES the one
+# baked into the tag's Modelfile. Without this entry, pointing aider at a tuned
+# tag changes the name and nothing else - the tag would still run at whatever
+# num_ctx the entry above specifies, which is the configuration measured to put
+# ZERO layers on a 6 GB card.
+#
+# The value is the smallest window that holds this harness's assembled prompt,
+# computed from context-budget.json rather than chosen. Re-run
+# aider-ollama-config.py after changing any ceiling in that file, or the two
+# disagree and the budget the driver prints describes a window that is not in
+# force.
+# ---------------------------------------------------------------------------
+- name: ollama_chat/qwen3.8-aider
+  edit_format: diff
+  use_repo_map: true
+  reasoning_tag: think
+  use_temperature: 0.6
+  editor_edit_format: editor-diff
+  extra_params:
+    num_ctx: 65536
+    # Sent per request for the same reason num_ctx is. Measured 2026-09-05: a
+    # plan1 reply stopped at about 2104 tokens with finish_reason=length while
+    # the tag's own Modelfile declares num_predict 8192, so the tag's value was
+    # not what governed that call. A truncated reply is not a visible failure:
+    # aider writes a file only once it has parsed a COMPLETE edit block, so the
+    # code appears in the chat, no closing fence arrives, nothing is written,
+    # and the file stays empty. Verified the same day that a request-level
+    # num_predict is honoured exactly - 30 asked, 30 generated, done_reason
+    # length - so stating it here removes the dependency on whatever default
+    # was in force.
+    num_predict: 14336
+    # Reasoning OFF, and this is the setting that decides whether a plan gets
+    # written at all. Measured 2026-09-06 against the daemon, one variable
+    # changed between two calls at num_predict 250:
+    #     as sent before  -> 250 tokens generated, done_reason length,
+    #                        0 characters of content, 724 of reasoning
+    #     think: false    ->  51 tokens generated, done_reason stop,
+    #                        172 characters of content, 0 of reasoning
+    # The first answer used its ENTIRE budget deliberating and returned nothing.
+    # That is what happened to plan 4 of the night run at full scale: 14336
+    # tokens generated - exactly num_predict - of which aider counted 2803 as
+    # content, the reply cut mid-identifier, and arcs.py and test_arcs.py left
+    # empty. reasoning_tag above makes aider HIDE that text; it does not stop
+    # Ollama generating it or billing it against the reply reserve.
+    #
+    # LiteLLM forwards this to the top level of the request body, where Ollama
+    # reads it, and its guard is `if think is not None`, so False survives
+    # rather than being dropped as falsy
+    # (litellm/llms/ollama/chat/transformation.py, lines 255 and 320).
+    think: false
+    top_p: 0.95
+    keep_alive: -1

@@ -14,20 +14,23 @@ conventions take precedence where they exist.
 - Code rules and style live in `.claude/rules/` (this folder), not in end-user docs.
 - When documenting a feature, update the relevant doc and link it from the index rather than
   scattering notes.
-- A change to a script's CLI surface (a new flag, a renamed subcommand, a changed default)
-  updates that script's line in the "ResearchTools script surface" inventory of
-  `.claude/rules/testing.md` in the same commit (`R23`). That inventory is the only discovery
-  path a skill has, so one that lags is worse than none.
+**R23 - a change to a script's CLI surface updates that script's line in the
+`testing.md` inventory, in the same commit.**
+A new flag, a renamed subcommand, a changed default. That inventory is the only
+discovery path a skill or a later session has, so an inventory that lags is worse
+than none: it is a map that is confidently wrong.
 
 ## Language
 
 - Two languages: French (default) and English.
 - For academic work: French by default for a UQAC thesis, English for scientific papers.
 - Keep user-facing strings centralized (a single localization source) rather than inline.
-- Agent, skill and command definition files are English-only (`R22`), and since 2026-08-30 so
-  is every `CLAUDE*.md` in this repository, `CLAUDE.template.md` included. French appears only
-  in the strings a deliverable emits, such as the `ALERTE: behind=N commits` line the git-sync
-  rule prints; a definition file mixing the two makes a rule unsearchable in either language.
+**R22 - an agent, skill or command definition file is English-only.**
+Since 2026-08-30 this covers every `CLAUDE*.md` in this repository, `CLAUDE.template.md`
+included. French appears only in the strings a deliverable emits, such as the
+`ALERTE: behind=N commits` line the git-sync rule prints; a definition file mixing
+the two makes a rule unsearchable in either language, which is how a rule that
+already exists comes to be re-invented.
   The exemption that used to cover the repo-root `CLAUDE.md` was revoked when U5 translated the
   template: the live `~/.claude/CLAUDE.md` stays French until the operator installs the
   translation deliberately, and `check-claude-template.ps1` reports that gap by comparing the

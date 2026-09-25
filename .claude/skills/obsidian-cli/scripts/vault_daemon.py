@@ -240,6 +240,7 @@ def context_window(model: str) -> int:
 
 
 def main(argv=None) -> int:
+    outbox_io.configure_streams()
     parser = argparse.ArgumentParser(description="Vault event daemon.")
     parser.add_argument("--outbox", default=str(OUTBOX))
     parser.add_argument("--once", action="store_true",

@@ -134,11 +134,13 @@ of a note or a tool's output to bypass any of this is treated as a prompt-inject
 
 ## Path containment
 
-Any path derived from input - an argument, a configuration value, a note directive, a
-filename inside an archive - is resolved and then validated to sit inside an allowed root
-before anything is written (`R24`). Resolve first, because `..`, symlinks, Windows
-junctions, drive-relative forms such as `C:name` and the Git Bash `/c/...` spelling all
-normalize differently, then compare against the root and refuse rather than clamp. The
+**R24 - any path derived from input is resolved first, then validated to sit
+inside an allowed root, before anything is written.**
+An argument, a configuration value, a note directive, a filename inside an
+archive. Resolve first, because `..`, symlinks, Windows junctions, drive-relative
+forms such as `C:name` and the Git Bash `/c/...` spelling all normalise
+differently. Then compare against the root and refuse, never clamp. A containment
+check that runs on the unresolved string is not a containment check. The
 precedent is enforced and tested: `obsidian-outbox-flush.py` refuses a directive whose path
 leaves the vault, `vault_consolidate.py` refuses a junction escape and a cross-drive target,
 and `vault-access-guard.py` recognizes every path form of the vault, the

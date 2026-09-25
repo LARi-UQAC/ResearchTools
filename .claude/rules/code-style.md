@@ -6,10 +6,10 @@ sections apply to all academic work.
 
 ## Rule identifiers
 
-The numbered rules `R0` to `R25` are workspace-wide and stable; cite them by number in a
+The numbered rules `R0` to `R27` are workspace-wide and stable; cite them by number in a
 review, a commit message, or an audit plan. Each lives in the file that enforces it: `R0`
-to `R13`, `R16`, `R17` and `R19` in this file, `R14`, `R15`, `R22`, `R23` and `R25` in
-`preferences.md`, `R18` in `workflows.md`, `R20` and `R21` in `testing.md`, `R24` in
+to `R13`, `R16`, `R17`, `R19` and `R27` in this file, `R14`, `R15`, `R22`, `R23` and `R25` in
+`preferences.md`, `R18` and `R26` in `workflows.md`, `R20` and `R21` in `testing.md`, `R24` in
 `security.md`. They are unrelated to the `R1.x` sentence rules of the `scientific-writing`
 skill's `composition_rules.md`, which govern prose rather than code.
 
@@ -145,6 +145,32 @@ code belongs", step 5).
 
 ## Docstrings
 
+**R27 - every function carries a header a caller can act on.**
+Not a restatement of the signature: a reader who cannot see the body must be able
+to call it correctly and to know what happens when it fails. Five parts, in this
+order, of which Purpose, Inputs and Outputs are mandatory:
+
+1. **Purpose** - one or two sentences, what it does, not how.
+2. **Details** - optional, only for an algorithm or an edge case a reader would
+   otherwise get wrong.
+3. **Inputs** - every parameter: name, type, meaning. State `None` when there
+   are none.
+4. **Outputs** - type and meaning of the return value, and any side effect
+   stated here too, since a function that writes a file returns more than its
+   value.
+5. **Raises** - optional in general, mandatory as soon as the function raises
+   deliberately. Name the exception and the condition, never the message text.
+
+A private helper carries the same header; a one-line wrapper may carry Purpose
+alone. Comments inside a body explain WHY; the code already says WHAT, so a
+comment repeating the line above it is noise and one contradicting it is a
+defect. Measured 2026-09-03 in the aider-setup pipeline: this rule exists
+because its own output did not follow it. The convention lived only in a
+`## Docstrings` section rather than a bolded statement, so a rules generator
+that extracts bolded statements could not see it, and a model told only to
+"match the surrounding code" wrote four functions in a fresh file with no
+header at all, because there was none to match.
+
 ### Python
 Module-level docstring states purpose and, where the module is part of a pipeline, its
 stage:
@@ -155,7 +181,8 @@ Module name - purpose in one or two sentences.
 """
 ```
 
-Function docstrings use the project's extended format:
+Function docstrings use the project's extended format, with `Raises` added as soon as the
+function raises deliberately:
 
 ```
 """
@@ -168,13 +195,16 @@ Inputs:
 
 Outputs:
     result (type): description
+
+Raises:
+    ExceptionType: the condition that triggers it.
 --------------------------------------------------------------------------
 """
 ```
 
 ### Other languages
 Use the idiomatic doc form (`/// <summary>` for C#, JSDoc for JS/TS) on public types and
-non-obvious members only. Document WHY, not WHAT.
+non-obvious members only, with the same five parts. Document WHY, not WHAT.
 
 ### References in code
 When a docstring describes complex behavior or a data structure documented elsewhere, link

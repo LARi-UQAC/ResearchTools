@@ -16,6 +16,13 @@
       "label": "GitHub Copilot Chat",
       "provides": ["sessions"],
       "note": "Read-only SQLite over the VS Code extension's session store, opened file:...?mode=ro and never for writing."
+    },
+    {
+      "id": "aider",
+      "module": "aider",
+      "label": "Aider nightly pipeline",
+      "provides": ["sessions", "plans"],
+      "note": "Reads the run records the driver writes under ~/.aider-plan/runs/, one per project, rewritten atomically at every state change. It never opens a project, never runs git and never loads a model. Liveness is asked of the recorded pid and never of the file's presence: a run killed by a shutdown leaves its last record behind, and reading that as 'still running' reports exactly backwards. A record whose schema is not the one this adapter knows is NAMED as unreadable rather than guessed at."
     }
   ],
 
@@ -49,6 +56,12 @@
       "label": "Continue",
       "where": ".continue/",
       "reason": "Configuration only, same as opencode."
+    },
+    {
+      "id": "openhands",
+      "label": "OpenHands",
+      "where": ".openhands/",
+      "reason": "Considered 2026-09-24, alongside the Aider adapter. Named only as a future option in README.md's ThesisTracker roadmap note - not installed on this machine, so its session state and its repo-instructions convention are both unverified. Not built rather than guessed at (R14): a wrong path here would ship a mirror target or an adapter that reads nothing."
     }
   ]
 }

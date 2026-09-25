@@ -132,10 +132,10 @@ class ContractTest(AdapterHarness):
         registry = adapters.load_registry(Path(self._tmp.name))
         self.assertEqual(registry["adapters"], [])
 
-    def test_the_shipped_registry_declares_the_two_built_adapters(self):
+    def test_the_shipped_registry_declares_the_built_adapters(self):
         registry = adapters.load_registry()
         ids = {entry["id"] for entry in registry["adapters"]}
-        self.assertEqual(ids, {"claude_code", "copilot_chat"})
+        self.assertEqual(ids, {"claude_code", "copilot_chat", "aider"})
         # And the ones deliberately not built are documented, so a later session
         # does not re-derive why.
         not_built = {entry["id"] for entry in registry["documented_not_built"]}

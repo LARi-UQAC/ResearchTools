@@ -76,6 +76,7 @@ param(
     [int]$CopilotStubThreshold,
     [int]$CodexSkillListBudget,
     [int]$CodexDocMaxBytes,
+    [int]$CodexMinDescriptionChars,
     [switch]$Personal,
     # Write .rt-mirrors.json: the verdict this run computed for every target,
     # plus the policy hash it used. Gitignored and machine-local, exactly like
@@ -127,6 +128,7 @@ function Get-PolicyInt([string]$key) {
 if (-not $PSBoundParameters.ContainsKey('CopilotStubThreshold')) { $CopilotStubThreshold = Get-PolicyInt 'copilot_stub_threshold' }
 if (-not $PSBoundParameters.ContainsKey('CodexSkillListBudget'))  { $CodexSkillListBudget  = Get-PolicyInt 'codex_skill_list_budget' }
 if (-not $PSBoundParameters.ContainsKey('CodexDocMaxBytes'))      { $CodexDocMaxBytes      = Get-PolicyInt 'codex_doc_max_bytes' }
+if (-not $PSBoundParameters.ContainsKey('CodexMinDescriptionChars')) { $CodexMinDescriptionChars = Get-PolicyInt 'codex_min_description_chars' }
 $CopilotHardLimit = Get-PolicyInt 'copilot_hard_limit'
 
 # --- Verdict recorder: what this run actually did, for -Manifest ------------
@@ -625,6 +627,12 @@ Add-MirrorVerdict 'agents-md' 'AGENTS.md' 'ok' $null
 # class as the Copilot stub. Measured 2026-08-28 on this repo: the untrimmed list
 # is 9417 chars against a 8000 budget. The only choice is whether the trimming is
 # ours and deliberate or Codex's and arbitrary.
+#
+# A trim that fits the budget can still gut a skill: geolocalisation trimmed to 69
+# characters on 2026-08-30, one sentence carrying none of its trigger words, and
+# [TRIM] alone did not distinguish that from an ordinary trim. thresholds.codex_min_
+# description_chars in mirror-policy.json is the floor below which a trim prints a
+# distinct [WARN-THIN] line and is remembered so as below_floor=true in the manifest.
 
 function Read-SkillFrontmatter([string]$path) {
     $raw = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
@@ -720,7 +728,16 @@ and nothing else.
     if ($desc.Length -lt $s.Description.Length) {
         Write-Host ("  [TRIM] .agents/skills/{0}/SKILL.md  (description {1} -> {2} chars to fit the Codex list budget)" -f `
             $s.Name, $s.Description.Length, $desc.Length) -ForegroundColor Yellow
-        Add-MirrorVerdict 'codex-skills' $s.Name 'trimmed' @{ description_chars = $s.Description.Length; written_chars = $desc.Length }
+        $belowFloor = $desc.Length -lt $CodexMinDescriptionChars
+        if ($belowFloor) {
+            # Distinct from [TRIM] on purpose: a trim that fits the budget is routine, a trim
+            # that falls under the usefulness floor is a skill whose trigger vocabulary likely
+            # did not survive. Measured 2026-08-30: geolocalisation trimmed to 69 characters,
+            # one sentence carrying none of its trigger words, and [TRIM] alone did not say so.
+            Write-Host ("  [WARN-THIN] .agents/skills/{0}/SKILL.md  (trimmed description is {1} chars, under the {2}-char usefulness floor - its trigger vocabulary may not have survived; shorten the canonical description so the FIRST sentence carries it)" -f `
+                $s.Name, $desc.Length, $CodexMinDescriptionChars) -ForegroundColor Red
+        }
+        Add-MirrorVerdict 'codex-skills' $s.Name 'trimmed' @{ description_chars = $s.Description.Length; written_chars = $desc.Length; below_floor = $belowFloor }
     } else {
         Write-Ok (".agents/skills/{0}/SKILL.md" -f $s.Name)
         Add-MirrorVerdict 'codex-skills' $s.Name 'ok' @{ description_chars = $s.Description.Length }

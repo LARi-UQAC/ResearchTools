@@ -44,6 +44,23 @@ and this document is the authority on all four. Every affected plan carries a sc
 Two units are new with this revision: **TT-11**, the student timeline created on admission
 (section 7), and **TT-12**, the intake of ResearchTools correction plans (section 8).
 
+**Revision note, 2026-09-25.** The fixed role model (`users.role`, `form_step_defs.actor_role`)
+is replaced by a generic, hierarchical `services` model (section 1 row "Role/actor model",
+section 5.1, section 11). Confirmed against UQAC's own live form pages before writing this down,
+not assumed: SRF (finance), the Décanat's thesis-lifecycle catalogue, PSDRC (internal research
+grants) and SRH (HR) each route differently, and a form is not always a PDF — PSDRC alone uses
+static PDFs, JotForm-hosted web forms, and pure email routing with no form object at all,
+depending on the track. `form_definitions` gains a `form_type` column (`pdf | web_form |
+email_only`) for this. The professor confirmed the design in a figure comparison; two facts
+drove the shape: a professor supervises more than one student (so "professor" cannot be a single
+shared value), and a self-requesting professor (paying their own expense, filing their own grant)
+skips the supervisor tier entirely rather than routing through a student who does not exist for
+that request. **The hierarchy link itself — which office a service reports to — is edited through
+ThesisTracker's own visual interface**, not a config file or a migration: this is a live,
+per-relationship assignment a superuser or the Direction maintains as professors, students and
+offices change, the same way form rules are already edited in the UI (section 5.4). This touches
+the already-merged TT-1, TT-8 and TT-9 schemas directly, not just new units.
+
 ---
 
 ## 1. Why this shape
@@ -61,7 +78,9 @@ ThesisTracker. Investigation rejected that shape.
 | Where the form catalogue, the rules, the field maps and the student data live | **The ThesisTracker database, edited in the UI** | Only ThesisTracker writes that database. ResearchTools is skills, agents and commands operating on a thesis, a paper, a review or a report: it cannot track a form and cannot know the information that fills one. |
 | What the ResearchTools form service does | **Stateless PDF mechanics only** | Enumerate the widgets of a PDF it is handed, write given values into given fields, sign a named signature field, validate a signature. No registry, no map, no profile, no state between requests. Python holds this because `pypdf` and `pyhanko` have no Node equivalent. |
 | Who may add a form or change its rules | **`owner` (superuser) or `direction`** | Every PDF comes from the University administration, so a professor neither adds forms nor rewrites the rules of an official document. A professor uses them. |
-| The Direction de programme | **A fourth role that signs in the app** | Signature only: the Direction never writes a field. They see a signing queue and the rules editor, never a student's tracker. |
+| The Direction de programme | **A `direction`-typed service, not a fourth fixed role** | Signature only: the Direction never writes a field. They see a signing queue and the rules editor, never a student's tracker. |
+| Role/actor model (`users.role`, `form_step_defs.actor_role`) | **Replaced by a generic, hierarchical `services` model** (2026-09-25) | The real UQAC catalogue has offices beyond direction/dean (finance, the research décanat, HR), a professor supervises more than one student, and a self-requesting professor skips the supervisor tier entirely. A fixed enum cannot express any of that: it collapses every student's supervisor into one shared value with no email and no office of its own. See section 1a. |
+| Form submission mechanism | **`form_definitions.form_type`: `pdf \| web_form \| email_only`** | Checked directly against SRF, the Décanat, PSDRC and SRH before assuming otherwise: PSDRC alone uses all three inside one page (JotForm-hosted "volets", a pure email-routing volet with no form object, and static PDFs) plus two unavailable tracks. RT-1..5's PDF pipeline (`pdf`) stays the default and best-supported case; `web_form` is a validated link-out with no fill/sign; `email_only` is a routing address (or several, keyed by sub-category) with no form object at all. |
 | Fields repeated on every form (name, address, program) | **Filled automatically from a profile store, written back on every edit** | A student types their address once. When a student or a professor corrects a value while filling, the correction is saved and becomes the default for the next form. |
 | A form that needs correcting after it was signed | **Sent back, and the engine forces it** | A `modify` after a `sign` leaves the earlier signature valid over its own revision but no longer covering the final content. So the professor's correction routes the form back to the student for approval automatically, and the Direction can return it to the professor. Forward-only would produce documents whose signatures no longer mean what they appear to mean. |
 | Getting the finished form to the office | **Emailed to a destination stored on the form definition** | Each official form belongs to a different office. The address is part of the definition, editable by an `owner` or the `direction`, and never supplied by the client at submission time. |
@@ -74,6 +93,47 @@ ThesisTracker. Investigation rejected that shape.
 | PDF library | **`pypdf`, BSD-3** | PyMuPDF is AGPL-3.0 and stays isolated in the `extract-statistic` skill. The deployable container carries no AGPL. |
 | Signature | **PAdES, pluggable signer, self-signed development default** | Unblocks implementation while the Décanat and SRF acceptance question stays open. |
 | Docker host | **Undecided by choice** | Compose and Caddy read the hostname from the environment. Chosen before real data loads, not before build. |
+
+### 1a. The services model, and why the enum could not survive contact with the real catalogue
+
+Fetched directly from UQAC's own pages before writing this down, not assumed:
+
+- **SRF** (finance): 16 forms, all static PDF/Excel. No web forms, no visible per-form routing
+  metadata on the catalogue page itself.
+- **Décanat** (thesis/mémoire lifecycle): all PDF/DOCX. Real routing today is collect every
+  required signature offline, then email the whole packet once to a single mailbox — not
+  step-by-step online signing. Digitizing that is what TT-10 is for; it does not mean the manual
+  process was wrong to model.
+- **PSDRC** (internal research grants): seven "volets", each its own program. Three use
+  JotForm-hosted web forms; one has no form object at all and routes by email, split across two
+  different mailboxes depending on request type; two are simply unavailable.
+- **SRH** (HR): no catalogue reachable from the page checked; forms likely sit behind an
+  authenticated portal, unexplored.
+
+Two consequences follow directly, neither expressible by `users.role` or `form_step_defs.actor_role`:
+
+1. **A professor supervises more than one student.** "Professor" cannot be a single shared value:
+   Prof. X supervising Student A and Student B is the same person holding two separate
+   relationships, each potentially routing to a different office depending on the form's own
+   category (a thesis form goes to the Décanat; an expense claim goes to SRF).
+2. **A self-requesting professor skips a tier.** When the professor is paying their own expense or
+   filing their own grant, the chain has no student in it at all — the supervisor tier does not
+   apply and must not be forced into the model as an empty or fabricated row.
+
+The `services` table (section 11) replaces the enum with one row per relationship: a
+`service_type` (a data value from a configurable catalogue — `student`, `supervisor`,
+`direction`, `dean_office`, `finance`, `research_office`, and so on — never a schema enum), a
+`parent_service_id` expressing which office or person it reports to, an `assigned_login` (which
+can repeat: the same person holds many service rows), and its own `email`, independent of any
+other service's. A form step names only the `service_type` it needs; the concrete row is found by
+walking the requester's own chain of `parent_service_id` links up to the nearest match, stopping
+early — never inventing an intermediate row — when a tier such as `supervisor` does not apply.
+
+**The hierarchy link is edited in the UI, not migrated or hardcoded.** Which office a supervisor's
+service reports to, which student a supervisor's service belongs to, and that service's own
+email are all live, per-relationship data a superuser or the Direction maintains as people and
+assignments change — the same editing surface TT-8 already gives form rules (section 5.4), not a
+one-time seed.
 
 ---
 
@@ -238,8 +298,10 @@ catalogue, and they say who touches the form, in what order, and what each of th
 
 ### 5.1 The capability model
 
-A form definition owns an ordered list of steps. Each step names one **actor role** and grants a
-subset of five capabilities:
+A form definition owns an ordered list of steps. Each step names one **service type** (section 1a)
+and grants a subset of five capabilities. The concrete service — which specific supervisor, which
+office — is resolved per `form_instance` from its owning student's own `services` chain, never
+fixed at the definition level:
 
 | Capability | Meaning | Enforced by |
 |---|---|---|
@@ -362,10 +424,10 @@ sequenceDiagram
   A->>D: store the definition, its SHA-256, the submission address,<br/>and the raw widget list
   A-->>U: "56 fields found. Map them, then define the steps."
   U->>A: bind each field to a profile key, a literal, or "not filled"
-  U->>A: define the ordered steps: actor, fill, modify, sign,<br/>return target, signature field, and which step submits
-  A->>A: validate: signature fields exist, actor roles exist, return target is earlier,<br/>exactly one step submits, last step submits, and each step has capability
+  U->>A: define the ordered steps: service type, fill, modify, sign,<br/>return target, signature field, and which step submits
+  A->>A: validate: signature fields exist, service types exist in the catalogue, return target is earlier,<br/>exactly one step submits, last step submits, and each step has capability
   A->>D: store the field map and the step definitions, status active
-  A-->>U: the form is available to the roles its first step names
+  A-->>U: the form is available to whichever service its first step names
 ```
 
 Nothing is inferred. A field nobody fills is marked as such explicitly, so a blank on an official
@@ -628,6 +690,8 @@ erDiagram
   users ||--o{ profile_values : owns
   users ||--o{ timeline_items : owns
   users ||--o{ review_artifacts : owns
+  users ||--o{ services : "may hold (assigned_login)"
+  services ||--o{ services : "reports to (parent_service_id)"
   form_definitions ||--o{ form_step_defs : "ordered steps"
   form_definitions ||--o{ form_field_map : "one row per widget"
   form_definitions ||--o{ form_instances : "instantiated as"
@@ -642,16 +706,28 @@ erDiagram
     text login PK
     text email UK "the username"
     text recovery_email
-    text role "pending|student|professor|direction|owner"
+    text role "pending|owner - account-level only; student/professor/direction/dean are services, not roles, since 2026-09-25"
     text name
+  }
+  services {
+    text id PK
+    text service_type "student|supervisor|direction|dean_office|finance|research_office|... - a data value from a configurable catalogue, never a schema enum"
+    int hierarchy_level "rank; generalizes the old return_to_seq 'must be earlier' rule"
+    text parent_service_id FK "reports to, nullable at the root (e.g. the dean's office)"
+    text assigned_login FK "nullable (a service can be vacant); the SAME login may back many rows - one professor, many students"
+    text responsibility "free text, what this service is responsible for"
+    text email "this service's own address, independent of every other service's"
+    text updated_by
   }
   form_definitions {
     text id PK
     text code UK "for example mth-inscription-sujet"
     text title
     text office "decanat|srf|dsa"
+    text form_type "pdf|web_form|email_only - confirmed 2026-09-25 against SRF/Decanat/PSDRC/SRH, not assumed"
+    text web_form_url "set when form_type = web_form; validated for reachability, never filled or signed by this system"
     text source_url
-    text submission_email "where the finished form is sent"
+    text submission_email "where the finished form is sent; for email_only this IS the form - may vary by sub-category"
     text submission_cc
     text pdf_sha256
     bytea pdf_bytes
@@ -663,7 +739,7 @@ erDiagram
     text id PK
     text form_def_id FK
     int seq "1, 2, 3"
-    text actor_role "student|professor|direction"
+    text service_type "the category this step needs (e.g. 'supervisor'), resolved per form_instance by walking the owning student's services chain - never a concrete assignment at the definition level"
     bool can_fill
     bool can_modify
     bool must_sign
@@ -866,8 +942,8 @@ critical path and can land last.
 | TT-5 | `feat/forms-integration` | ThesisTracker #6 | Combined compose, executable acceptance checklist, Vercel decommission checklist (test harness only, never held real data) |
 | TT-6 | `feat/cohort-report` | ThesisTracker #7 | Publications client method, staff-only roster walk, printable cohort report |
 | TT-7 | `feat/email-code-auth` | ThesisTracker #9 | Email one-time code replaces GitHub OAuth; domain allowlist with no default; the `direction` role |
-| TT-8 | `feat/form-catalogue` | ThesisTracker #10 | `form_definitions` (with `submission_email`), `form_step_defs` (with `can_return`, `return_to_seq`, `must_submit`), `form_field_map`; superuser-only registration and rules editing; the drift check in Node |
-| TT-9 | `feat/profile-store` | ThesisTracker #11 | `profile_values` with history, pre-fill resolution, owner-scoped write-back on every fill and modify |
+| TT-8 | `feat/form-catalogue` | ThesisTracker #10 | `form_definitions` (with `submission_email`, and `form_type`/`web_form_url` since 2026-09-25), `form_step_defs` (with `can_return`, `return_to_seq`, `must_submit`, and `service_type` replacing `actor_role` since 2026-09-25), `form_field_map`; superuser-only registration and rules editing, now extended with the `services` hierarchy editor (section 1a); the drift check in Node. **Scope change 2026-09-25:** already merged, needs revisiting for the services model (section 1a) — see the revision note above section 2. |
+| TT-9 | `feat/profile-store` | ThesisTracker #11 | `profile_values` with history, pre-fill resolution, owner-scoped write-back on every fill and modify. **Scope change 2026-09-25:** already merged; the resolution that finds a form step's concrete actor now also walks a student's `services` chain (section 1a), not just `profile_values` |
 | TT-10 | `feat/workflow-engine` | ThesisTracker #12 | Step instances; actor and capability enforcement; **returns with a mandatory reason**; **forced re-approval when a modification breaks an earlier signature**; signature stacking; **submission by email to the definition's address**; reopen at a named step |
 | TT-11 | `feat/student-timeline` | ThesisTracker #13 | Timeline template and instantiation on admission; forms, reports, seminar, papers per contribution, thesis milestones; dates shifted from the subject-calendar form's stored values |
 | TT-12 | `feat/correction-plans` | ThesisTracker #14 | Intake of ResearchTools audit artifacts; `review_findings` as a student worklist; a rejected finding needs a reason; the score is stored as reported, never recomputed |
@@ -926,6 +1002,7 @@ Binding rules, each enforced by a test or a startup check:
 | A rejected review finding requires a resolution note; nothing is silently closed. A ScholarEval score is stored as reported and never recomputed | TT-12 |
 | The `direction` role can sign and edit rules, and can never write a form field or browse a tracker | TT-7 role, TT-8 rules routes, TT-10 capabilities |
 | Only `owner` or `direction` may add a form definition or change its rules; a professor gets 403 | TT-8 |
+| Only `owner` or `direction` may create a `services` row or change its `parent_service_id`, `service_type` or `hierarchy_level` (2026-09-25); a service's own `assigned_login` may edit only that row's `email`/`responsibility`, never its place in the hierarchy | TT-8 UI, asserted by test |
 | A profile write-back updates the **form owner's** profile, never the editor's, and records who did it | TT-9 |
 | A new signature preserves every previous one; the chain is verifiable in step order | RT-4, asserted by test |
 | An instance whose definition went stale is frozen, not silently advanced | TT-8 drift check, TT-10 gate |

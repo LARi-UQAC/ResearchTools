@@ -8,10 +8,11 @@ The same file is committed to `main` in both, so either checkout tells the whole
 and twenty-one issues track them. Written 2026-07-29.
 
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
-with the ingest-contract fix that RT-1 and RT-2 found. RT-1 through RT-5 are all merged to
-`main` here (RT-5 merged 2026-09-25, PR #22). RT-5's `/pdf/fill` multipart-vs-raw-body request
-shape was checked against the ThesisTracker side 2026-09-25: TT-3 is not built yet, so there is
-no existing client contract to conflict with, and no objection was raised to what shipped.
+with the ingest-contract fix that RT-1 and RT-2 found. RT-1 through RT-6 are all merged to
+`main` here (RT-5 merged 2026-09-25, PR #22; RT-6 merged 2026-09-25, PR #24). RT-5's `/pdf/fill`
+multipart-vs-raw-body request shape was checked against the ThesisTracker side 2026-09-25: TT-3
+is not built yet, so there is no existing client contract to conflict with, and no objection was
+raised to what shipped.
 Reconfirm once TT-3 is actually implemented. TT-7
 (email one-time codes) is built but **excluded by design** until UQAC provides a mail relay:
 merging it would replace the only working sign-in with a code nothing can deliver. It also

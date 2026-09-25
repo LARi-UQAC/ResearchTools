@@ -1,18 +1,19 @@
 ---
-name: uqac-forms
+name: form-service
 description: >
-  Stateless mechanics for the official UQAC PDF forms (Decanat des etudes thesis
-  forms, Service des ressources financieres travel and expense forms): retrieve a
-  form over https with the validated ingest contract, and later fill and
-  cryptographically sign one. Holds no catalogue and no personal data: the form
-  catalogue, field maps and profile live in ThesisTracker. Trigger on: /uqacform,
-  fetch a UQAC form PDF, formulaire UQAC, inscription du sujet, plan de travail,
-  autorisation de depot, rapport de depenses, demande d'avance de voyage, fill a
-  UQAC form, sign a UQAC form.
+  Stateless mechanics for official PDF forms from any institution (proven on UQAC's
+  Decanat des etudes thesis forms and Service des ressources financieres travel and
+  expense forms): retrieve a form over https with the validated ingest contract, and
+  later fill and cryptographically sign one. Holds no catalogue and no personal
+  data: the form catalogue, field maps and profile live in the consuming
+  application (ThesisTracker, for the UQAC deployment). Trigger on: /fetchform,
+  fetch an official form PDF, formulaire UQAC, inscription du sujet, plan de
+  travail, autorisation de depot, rapport de depenses, demande d'avance de voyage,
+  fill an institutional form, sign an institutional form.
 allowed-tools: [Read, Write, Edit, Bash, AskUserQuestion, Glob]
 ---
 
-# uqac-forms - official UQAC form mechanics
+# form-service - stateless PDF form mechanics
 
 Hand this skill a PDF and a set of values and it hands back a PDF. It is a
 function, not a system, and it stores nothing.
@@ -164,7 +165,7 @@ PDF someone was able to edit.
 from sign_form import signature_fields, sign_pdf, build_signer
 
 signature_fields(pdf_bytes)          # name, page, signed
-signer = build_signer('self-signed', cert_dir='out/uqac-forms/dev-certs')
+signer = build_signer('self-signed', cert_dir='out/form-service/dev-certs')
 signed = sign_pdf(pdf_bytes, signer, field_name='signature_etu')
 ```
 

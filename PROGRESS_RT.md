@@ -64,9 +64,12 @@ catalogue: the catalogue, the field maps and the drift check live in ThesisTrack
 | `[x]` | RT-4 sign and chain | [#7](../../issues/7) | `feat/form-service-signer` (was `feat/uqac-forms-signer`) | RT-3 | Merged to `main`, confirmed 2026-09-25 (NEW_ARCHITECTURE.md's header still read it as pending — that line is stale, not this one). Preserves every previous signature. |
 | `[x]` | RT-5 stateless service | [#8](../../issues/8) | `feat/form-service` (was `feat/uqac-forms-service`) | RT-4 | Merged to `main` 2026-09-25 (PR #22). `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`; fail-fast shared-secret gate, no CORS, no work directory. `sign_form.validate_signatures` added (intact/valid/trusted reported separately). `/pdf/fill`'s multipart-vs-raw-body shape checked against ThesisTracker 2026-09-25: TT-3 not built yet, no conflict, no objection raised; reconfirm once TT-3 lands. Docker/Compose stack written but not run end to end (no Docker daemon in the build environment). |
 | `[x]` | RT-6 publications endpoint | [#9](../../issues/9) | `feat/publications-endpoint` | RT-5 | Merged to `main` 2026-09-25 (PR #24). `GET /publications`: disk cache, token-bucket rate limiter, `count` capped at 25 (Scopus's own STANDARD-view ceiling, not the plan's original 50). Three plan defects fixed before shipping: `_check_response`'s `sys.exit(1)` would have killed the service worker on a Scopus outage; the naive name-split reintroduced the "Otis, Martin" bug `_split_author_name` was written to fix; the Dockerfile never copied `scopus_api.py`'s skill into the image. Live-Scopus verification and the Docker/Compose build not run (no network/daemon in the build environment). Unblocks ThesisTracker TT-6. |
-| `[R]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | PR [#26](../../pull/26) open, not yet merged. Content-addressed parse cache (additive to every `extract_text.py` consumer) + opt-in chunker/embedder/pgvector index over a corpus, provenance-only retrieval. Its remote branch was 100+ commits stale with only its 2 plan-writing commits still real (same pattern as RT-6) - reset onto `main` + cherry-picked rather than rebased. Three plan defects fixed before shipping: a bare `import pymupdf` that would silently drop page offsets on a machine only exposing the legacy `fitz` alias; a naive whole-file `.bib` regex reused instead as `bib_audit.parse_bib`'s line-anchored parser (the naive form also matches an `@` inside a field value); a missing `psycopg` surfacing a bare `ModuleNotFoundError` instead of the actionable message the requirements.txt comment promises. Live pgvector-store tests (4) not run against a real database (Docker Desktop not running in the build environment); they skip cleanly by design. |
+| `[x]` | RT-7 parse cache and corpus index | [#10](../../issues/10) | `feat/corpus-index` | RT-5 | Merged to `main` 2026-09-25 (PR #26). Content-addressed parse cache (additive to every `extract_text.py` consumer) + opt-in chunker/embedder/pgvector index over a corpus, provenance-only retrieval. Its remote branch was 100+ commits stale with only its 2 plan-writing commits still real (same pattern as RT-6) - reset onto `main` + cherry-picked rather than rebased. Three plan defects fixed before shipping: a bare `import pymupdf` that would silently drop page offsets on a machine only exposing the legacy `fitz` alias; a naive whole-file `.bib` regex reused instead as `bib_audit.parse_bib`'s line-anchored parser (the naive form also matches an `@` inside a field value); a missing `psycopg` surfacing a bare `ModuleNotFoundError` instead of the actionable message the requirements.txt comment promises. Live pgvector-store tests (4) not run against a real database (Docker Desktop not running in the build environment); they skip cleanly by design. |
 
-Counts: 7 units. DONE 6, REVIEW 1, IN PROGRESS 0, BLOCKED 0, TODO 0, DEFERRED 0.
+Counts: 7 units. DONE 7, REVIEW 0, IN PROGRESS 0, BLOCKED 0, TODO 0, DEFERRED 0.
+
+**All seven ResearchTools units are now merged to `main`. This side of the 20-unit programme is
+complete; the thirteen remaining units (TT-0 through TT-12) are entirely ThesisTracker's.**
 
 Issues in this repository that are NOT part of this programme and are tracked separately:
 [#11](../../issues/11) `download_pdf.py` background download with Cloudflare, and
@@ -76,14 +79,14 @@ Issues in this repository that are NOT part of this programme and are tracked se
 
 ## 3. Actionable now
 
-1. **RT-7** ([PR #26](../../pull/26)) needs a human merge. On no critical path, can land last.
-2. All seven ResearchTools units are now merged or in review; nothing else is TODO on this side.
-3. In ThesisTracker: TT-3 and TT-5 are unblocked now that RT-5 is merged; TT-6 is unblocked now
-   that RT-6 is merged. TT-0, TT-1, TT-2, TT-8, TT-9, TT-12 are merged; TT-7 (email-code-auth,
-   PR #15) and TT-3 (forms-service-client, PR #16) are open awaiting review; TT-4 (forms-ui)
-   starting on the ThesisTracker side per its own session, independent of anything here.
+Nothing. All seven ResearchTools units (RT-1 through RT-7) are merged to `main`; there is no more
+RT-side code to write in this programme. What remains, entirely on ThesisTracker: TT-3
+(forms-service-client, PR #16) and TT-7 (email-code-auth, PR #15) open awaiting review; TT-4
+(forms-ui) in progress; TT-5 and TT-6 unblocked (RT-5 and RT-6 both merged) but not yet started;
+TT-0, TT-1, TT-2, TT-8, TT-9, TT-12 merged.
 
-No remaining blocker on the ResearchTools side.
+No remaining blocker on the ResearchTools side. A future session touching this repo again is
+maintenance or a scope change, not a new numbered unit.
 
 ---
 

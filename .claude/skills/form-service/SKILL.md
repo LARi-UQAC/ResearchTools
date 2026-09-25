@@ -1,18 +1,19 @@
 ---
-name: uqac-forms
+name: form-service
 description: >
-  Stateless mechanics for the official UQAC PDF forms (Decanat des etudes thesis
-  forms, Service des ressources financieres travel and expense forms): retrieve a
-  form over https with the validated ingest contract, and later fill and
-  cryptographically sign one. Holds no catalogue and no personal data: the form
-  catalogue, field maps and profile live in ThesisTracker. Trigger on: /uqacform,
-  fetch a UQAC form PDF, formulaire UQAC, inscription du sujet, plan de travail,
-  autorisation de depot, rapport de depenses, demande d'avance de voyage, fill a
-  UQAC form, sign a UQAC form.
+  Stateless mechanics for official PDF forms from any institution (proven on UQAC's
+  Decanat des etudes thesis forms and Service des ressources financieres travel and
+  expense forms): retrieve a form over https with the validated ingest contract, and
+  later fill and cryptographically sign one. Holds no catalogue and no personal
+  data: the form catalogue, field maps and profile live in the consuming
+  application (ThesisTracker, for the UQAC deployment). Trigger on: /fetchform,
+  fetch an official form PDF, formulaire UQAC, inscription du sujet, plan de
+  travail, autorisation de depot, rapport de depenses, demande d'avance de voyage,
+  fill an institutional form, sign an institutional form.
 allowed-tools: [Read, Write, Edit, Bash, AskUserQuestion, Glob]
 ---
 
-# uqac-forms - official UQAC form mechanics
+# form-service - stateless PDF form mechanics
 
 Hand this skill a PDF and a set of values and it hands back a PDF. It is a
 function, not a system, and it stores nothing.
@@ -164,7 +165,7 @@ PDF someone was able to edit.
 from sign_form import signature_fields, sign_pdf, build_signer
 
 signature_fields(pdf_bytes)          # name, page, signed
-signer = build_signer('self-signed', cert_dir='out/uqac-forms/dev-certs')
+signer = build_signer('self-signed', cert_dir='out/form-service/dev-certs')
 signed = sign_pdf(pdf_bytes, signer, field_name='signature_etu')
 ```
 
@@ -207,7 +208,7 @@ signer, because a silent fallback is the worst possible default here.
 
 ## Prerequisites
 
-- `pip install -r .claude/skills/uqac-forms/scripts/requirements.txt`
+- `pip install -r .claude/skills/form-service/scripts/requirements.txt`
 - Network access to `www.uqac.ca` for a fetch. Everything else is offline.
 
 ## Workflow
@@ -215,12 +216,12 @@ signer, because a silent fallback is the worst possible default here.
 Fetch one form and report its digest:
 
 ```
-python .claude/skills/uqac-forms/scripts/pdf_ingest.py <https-url> <dest.pdf>
+python .claude/skills/form-service/scripts/pdf_ingest.py <https-url> <dest.pdf>
 ```
 
 On success it prints `{"ok": true, "path": ..., "sha256": ...}` and exits 0. On
 any refusal it prints `{"ok": false, "url": ...}`, exits 1, and writes no file.
-The reason is logged with the `[UQAC-FORMS]` prefix.
+The reason is logged with the `[FORM-SERVICE]` prefix.
 
 Compare the reported `sha256` against whatever your caller stored. This skill
 does not keep that record, so it cannot tell you whether a form changed; it can
@@ -234,15 +235,24 @@ refused download leaves nothing behind, including no `*.part`.
 ## Tests
 
 ```
-python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py
-python .claude/skills/uqac-forms/scripts/Test/test_field_map.py
-python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py
-python .claude/skills/uqac-forms/scripts/Test/test_sign_form.py
+python .claude/skills/form-service/scripts/Test/test_pdf_ingest.py
+python .claude/skills/form-service/scripts/Test/test_field_map.py
+python .claude/skills/form-service/scripts/Test/test_fill_form.py
+python .claude/skills/form-service/scripts/Test/test_sign_form.py
 ```
 
 Offline: `requests.get` is patched, so no test reaches the network. Every rule of
 the contract has a test, because a rule with no test is a rule the second
 implementation is free to drop.
+
+## HTTP service
+
+`deploy/form-service/` wraps this skill in a FastAPI application so another
+application (ThesisTracker) can fill, sign, and validate PDFs without shelling
+out to Python. Every route except `/health` requires a shared-secret header,
+the service refuses to start without one, and no field value is ever logged or
+persisted. See `deploy/form-service/README.md` for the endpoint table and the
+run commands.
 
 ## Unverified
 
@@ -251,3 +261,7 @@ a PAdES cryptographic signature is **not confirmed**. The signer (RT-4) is
 pluggable with a self-signed development default so implementation can proceed;
 the production certificate decision (UQAC PKI, or Notarius / ConsignO) is open
 and someone must ask both offices.
+
+`POST /pdf/fill` uses `multipart/form-data` while the other three HTTP routes
+take the raw PDF as the whole request body. This split has **not been agreed**
+with the ThesisTracker (TT-3) side and must be before either unit ships.

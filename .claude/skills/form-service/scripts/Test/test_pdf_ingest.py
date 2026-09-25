@@ -8,7 +8,7 @@ implementation is free to drop, which is exactly what happened on the Node side
 before the contract was written down.
 
 requests.get is patched, so no test reaches the network.
-Run with the project Python: python .claude/skills/uqac-forms/scripts/Test/test_pdf_ingest.py
+Run with the project Python: python .claude/skills/form-service/scripts/Test/test_pdf_ingest.py
 """
 
 import contextlib

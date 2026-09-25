@@ -11,7 +11,7 @@ form that looks complete and is not, which is the failure this whole skill
 exists to prevent.
 
 Run with the project Python:
-    python .claude/skills/uqac-forms/scripts/Test/test_fill_form.py
+    python .claude/skills/form-service/scripts/Test/test_fill_form.py
 """
 
 import io

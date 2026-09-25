@@ -11,6 +11,8 @@ from typing import Mapping
 
 MIN_KEY_LENGTH = 32
 DEFAULT_MAX_BODY_BYTES = 25 * 1024 * 1024  # 25 MB, matching the form-service ingest cap
+DEFAULT_PUBLICATIONS_TTL_S = 86400  # 24h: a cohort report over a stable roster reuses this
+DEFAULT_PUBLICATIONS_RATE_PER_MINUTE = 20  # sized for the Elsevier quota, not for load
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,9 @@ class Settings:
     cert_dir: str
     signing_provider: str
     max_body_bytes: int
+    publications_cache_dir: str
+    publications_ttl_s: int
+    publications_rate_per_minute: int
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -57,4 +62,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         cert_dir=env.get("FORM_SERVICE_CERT_DIR", "/data/certs"),
         signing_provider=env.get("FORM_SERVICE_SIGNING_PROVIDER", "self-signed"),
         max_body_bytes=int(env.get("FORM_SERVICE_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)),
+        publications_cache_dir=env.get("FORM_SERVICE_PUBLICATIONS_CACHE_DIR",
+                                       "/data/publications"),
+        publications_ttl_s=int(env.get("FORM_SERVICE_PUBLICATIONS_TTL_S",
+                                       DEFAULT_PUBLICATIONS_TTL_S)),
+        publications_rate_per_minute=int(
+            env.get("FORM_SERVICE_PUBLICATIONS_RATE_PER_MINUTE",
+                   DEFAULT_PUBLICATIONS_RATE_PER_MINUTE)),
     )

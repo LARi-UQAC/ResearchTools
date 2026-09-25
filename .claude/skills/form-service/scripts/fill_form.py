@@ -237,7 +237,7 @@ def lock_fields(writer: PdfWriter, names: list[str]) -> int:
     for name in names:
         for annot in index[name]:
             if str(_inherited(annot, "/FT") or "") == _SIGNATURE:
-                logger.info("[UQAC-FORMS] not locking signature field %r", name)
+                logger.info("[FORM-SERVICE] not locking signature field %r", name)
                 continue
             flags = int(_inherited(annot, "/Ff") or 0)
             annot[NameObject("/Ff")] = NumberObject(flags | READONLY_FLAG)

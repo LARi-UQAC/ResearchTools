@@ -12,7 +12,7 @@ and still have a broken earlier signature. So the test signs one document three
 times and asks pyHanko to validate all three afterwards.
 
 Run with the project Python:
-    python .claude/skills/uqac-forms/scripts/Test/test_sign_form.py
+    python .claude/skills/form-service/scripts/Test/test_sign_form.py
 """
 
 import io

@@ -102,7 +102,7 @@ def signature_fields(pdf: str | bytes) -> list[dict[str, Any]]:
     except Exception as err:
         # A document pyHanko cannot parse for signatures may still be a form we
         # can list, so this is not fatal on its own.
-        logger.warning("[UQAC-FORMS] could not read embedded signatures: %s", err)
+        logger.warning("[FORM-SERVICE] could not read embedded signatures: %s", err)
         signed_names = set()
 
     out: list[dict[str, Any]] = []
@@ -228,7 +228,7 @@ class SelfSignedSigner:
                 encryption_algorithm=serialization.NoEncryption()))
         with open(self._cert_path, "wb") as handle:
             handle.write(cert.public_bytes(serialization.Encoding.PEM))
-        logger.info("[UQAC-FORMS] generated development signing material in %s",
+        logger.info("[FORM-SERVICE] generated development signing material in %s",
                     self._dir)
 
     def certificate_pem(self) -> bytes:

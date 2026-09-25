@@ -125,7 +125,7 @@ def _write_validated(response: object, dest: str, max_bytes: int) -> bool:
                 size += len(chunk)
                 if size > max_bytes:
                     logger.warning(
-                        "[UQAC-FORMS] exceeds the %d-byte cap - discarded", max_bytes)
+                        "[FORM-SERVICE] exceeds the %d-byte cap - discarded", max_bytes)
                     return False
                 if not checked_magic:
                     # The first chunk is at least CHUNK_BYTES unless the body is
@@ -133,12 +133,12 @@ def _write_validated(response: object, dest: str, max_bytes: int) -> bool:
                     # at all. A body too short to carry them is not a PDF.
                     if not chunk.startswith(PDF_MAGIC):
                         logger.warning(
-                            "[UQAC-FORMS] not a PDF: the body does not begin with %%PDF")
+                            "[FORM-SERVICE] not a PDF: the body does not begin with %%PDF")
                         return False
                     checked_magic = True
                 handle.write(chunk)
         if not checked_magic:
-            logger.warning("[UQAC-FORMS] refusing an empty body")
+            logger.warning("[FORM-SERVICE] refusing an empty body")
             return False
         os.replace(tmp, dest)
         return True
@@ -176,7 +176,7 @@ def fetch_pdf(url: str, dest: str, *,
     current = url
     for _ in range(max_redirects + 1):
         if urlparse(current).scheme != "https":
-            logger.warning("[UQAC-FORMS] refusing a non-https URL: %s", current)
+            logger.warning("[FORM-SERVICE] refusing a non-https URL: %s", current)
             return None
 
         response = None
@@ -188,7 +188,7 @@ def fetch_pdf(url: str, dest: str, *,
                 location = response.headers.get("Location")
                 if not location:
                     logger.warning(
-                        "[UQAC-FORMS] redirect with no Location from %s", current)
+                        "[FORM-SERVICE] redirect with no Location from %s", current)
                     return None
                 # Relative Locations are legal, so resolve against the hop that
                 # issued them before the next scheme check sees the result.
@@ -196,7 +196,7 @@ def fetch_pdf(url: str, dest: str, *,
                 continue
 
             if response.status_code != 200:
-                logger.warning("[UQAC-FORMS] %s answered %d",
+                logger.warning("[FORM-SERVICE] %s answered %d",
                                current, response.status_code)
                 return None
 
@@ -204,13 +204,13 @@ def fetch_pdf(url: str, dest: str, *,
                 return dest
             return None
         except requests.RequestException as err:
-            logger.warning("[UQAC-FORMS] request failed for %s: %s", current, err)
+            logger.warning("[FORM-SERVICE] request failed for %s: %s", current, err)
             return None
         finally:
             if response is not None:
                 response.close()
 
-    logger.warning("[UQAC-FORMS] more than %d redirects from %s", max_redirects, url)
+    logger.warning("[FORM-SERVICE] more than %d redirects from %s", max_redirects, url)
     return None
 
 

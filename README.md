@@ -4,6 +4,9 @@
 [![Python 3.x](https://img.shields.io/badge/python-3.x-blue.svg)](docs/manual/01-installation.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](docs/manual/01-installation.md)
 [![Docs](https://img.shields.io/badge/docs-12%20chapters-brightgreen.svg)](docs/manual/00-purpose.md)
+[![GitHub Repo stars](https://img.shields.io/github/stars/LARi-UQAC/ResearchTools?style=social)](https://github.com/LARi-UQAC/ResearchTools/stargazers)
+
+If this toolkit is useful to you, a star helps others find it.
 
 <p align="center">
   <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="220">

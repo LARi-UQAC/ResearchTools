@@ -95,3 +95,25 @@ map-validated, single-pass rewrite of existing links, run only by
 
 New notes follow `30_Ressources/Obsidian/_Convention_Capture.md`: filed by
 technology, never by project.
+
+## Vault event daemon's ask queue (2026-09-26)
+
+`vault_daemon.py` (this skill's `scripts/` directory) is the standalone
+process that files raw knowledge drops into the vault. Beside that path, it
+also drains a read-only ask queue (`daemon_ask.py`): a question written to
+`~/.claude/obsidian-outbox/ask/requests/<id>.json`, answered by searching
+the vault for relevant notes and calling the local LLM, with the answer
+written to `ask/answers/<id>.json`.
+
+This queue is gated to requests declaring `"from": "rt-dashboard"` -
+anything else is answered `status: "refused"` rather than processed. It
+never calls `graphify query` and never reads `graphify-out/`: the vault is
+cross-project and a graph is per-project, so the daemon has no fixed notion
+of "the repository" to query (see `daemon-config.json`'s own
+`graphify_repo_root` provenance for the same reasoning). A graph-shaped
+question is answered from the `context_snapshot` the caller supplies, which
+already carries a `local-writer`-produced graph snapshot summary when one
+was collected.
+
+This is the mechanism behind rt-dashboard's voice panel - see the
+`rt-observe` skill's own SKILL.md for the other half of the exchange.

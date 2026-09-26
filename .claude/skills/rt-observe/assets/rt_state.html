@@ -1513,6 +1513,9 @@ svg.fanout .edge-hit { fill: none; stroke: transparent; stroke-width: 12; cursor
           <button class="tab" type="button" role="tab" id="tab-live"
                   data-view="live" aria-controls="pane-live"
                   aria-selected="false" tabindex="-1">Real-Time Process</button>
+          <button class="tab" type="button" role="tab" id="tab-voice"
+                  data-view="voice" aria-controls="pane-voice"
+                  aria-selected="false" tabindex="-1">Voice</button>
         </div>
 
         <section class="panel pane a-matrix" id="pane-matrix" role="tabpanel"
@@ -1570,6 +1573,31 @@ svg.fanout .edge-hit { fill: none; stroke: transparent; stroke-width: 12; cursor
           </div>
           <div class="panel-body">
             <div class="live" id="live"></div>
+          </div>
+        </section>
+
+        <section class="panel pane a-voice" id="pane-voice" role="tabpanel"
+                 aria-labelledby="tab-voice" data-active="0">
+          <div class="panel-head">
+            <h2 class="panel-title" id="t-voice">Voice</h2>
+            <p class="panel-note">Hold P to ask a question about this
+              toolkit's own memory. Answered by the local LLM through the
+              vault daemon's ask queue, spoken back through the browser.</p>
+            <div class="mx-controls">
+              <label>Language
+                <select id="voice-language">
+                  <option value="auto">Auto-detect</option>
+                  <option value="en">English</option>
+                  <option value="fr">Francais</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="panel-body">
+            <button class="btn" type="button" id="voice-ptt">Hold P to talk</button>
+            <p class="panel-note" id="voice-status">idle</p>
+            <p id="voice-transcript"></p>
+            <p id="voice-answer"></p>
           </div>
         </section>
       </div>
@@ -1716,7 +1744,7 @@ function stage() { return document.createElement("div"); }
    places name these six panels - the static buttons in the markup and the
    renderer that builds them - and a third copy is how a tab starts pointing at
    a panel nobody builds. The suite compares the two that remain. */
-var VIEW_TABS = ["matrix", "canvas", "fleet", "live"];
+var VIEW_TABS = ["matrix", "canvas", "fleet", "live", "voice"];
 var RAIL_TABS = [
   { id: "repo", label: "Repository",
     build: function (state) { return renderRepoPanel(state); } },
@@ -5047,6 +5075,90 @@ applyTheme(storedTheme());
 applyViewTab();
 applyRailTab();
 renderRefresh();
+
+/* ---- voice panel: push-to-talk (hold P), transcribe, ask, speak -------- */
+(function () {
+  var recorder = null;
+  var chunks = [];
+  var status = document.getElementById("voice-status");
+  var transcriptEl = document.getElementById("voice-transcript");
+  var answerEl = document.getElementById("voice-answer");
+  var languageEl = document.getElementById("voice-language");
+  var holding = false;
+
+  function setStatus(text) { if (status) { status.textContent = text; } }
+
+  function startRecording() {
+    if (holding) { return; }
+    holding = true;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      recorder = new MediaRecorder(stream);
+      chunks = [];
+      recorder.ondataavailable = function (e) { chunks.push(e.data); };
+      recorder.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        var blob = new Blob(chunks, { type: "audio/webm" });
+        sendForTranscription(blob);
+      };
+      recorder.start();
+      setStatus("listening...");
+    }).catch(function (err) {
+      setStatus("microphone unavailable: " + err.message);
+      holding = false;
+    });
+  }
+
+  function stopRecording() {
+    if (!holding || !recorder) { return; }
+    holding = false;
+    setStatus("transcribing...");
+    recorder.stop();
+  }
+
+  function sendForTranscription(blob) {
+    var language = languageEl ? languageEl.value : "auto";
+    blob.arrayBuffer().then(function (buf) {
+      window.fetch("/api/voice/transcribe?language=" + encodeURIComponent(language), {
+        method: "POST",
+        headers: { "Content-Type": "audio/webm", "X-RT-Session-Token": TOKEN },
+        body: buf,
+      }).then(function (r) { return r.json(); }).then(function (body) {
+        if (body.status !== "ok" || !body.text) {
+          setStatus(body.reason || "no speech recognized");
+          return;
+        }
+        transcriptEl.textContent = body.text;
+        askQuestion(body.text, language);
+      }).catch(function (err) { setStatus("transcription failed: " + err); });
+    });
+  }
+
+  function askQuestion(question, language) {
+    setStatus("asking...");
+    window.fetch("/api/voice/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, question: question, language: language }),
+    }).then(function (r) { return r.json(); }).then(function (body) {
+      if (body.status !== "ok") {
+        setStatus(body.reason || ("answer status: " + body.status));
+        return;
+      }
+      answerEl.textContent = body.answer_text;
+      setStatus("idle");
+      if (window.speechSynthesis) {
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(body.answer_text));
+      }
+    }).catch(function (err) { setStatus("ask failed: " + err); });
+  }
+
+  window.addEventListener("keydown", function (e) {
+    if ((e.key === "p" || e.key === "P") && !e.repeat) { startRecording(); }
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.key === "p" || e.key === "P") { stopRecording(); }
+  });
+})();
 
 /* The whitelist is read ONCE at load and again after each run, never on the
    two-second poll: it costs a PATH lookup per action and it only changes when

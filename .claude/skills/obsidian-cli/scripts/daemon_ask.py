@@ -35,6 +35,20 @@ if str(SCRIPTS) not in sys.path:
 import daemon_states  # noqa: E402
 import daemon_taxonomy  # noqa: E402
 
+_TOKEN = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]{2,}")
+# Same shape as narrative-cv's cv_select.py: tokenize, drop the shortest and
+# most common words, score by overlap, break ties deterministically (R19).
+_STOPWORDS = {
+    "the", "and", "for", "are", "was", "were", "this", "that", "with",
+    "from", "have", "has", "had", "does", "did", "why", "what", "which",
+    "who", "when", "how", "not", "but", "you", "your", "our", "its",
+}
+
+
+def _tokenize(text: str) -> set:
+    return {t.lower() for t in _TOKEN.findall(text)
+            if t.lower() not in _STOPWORDS}
+
 
 class AskRefused(RuntimeError):
     """The request cannot be answered and must be recorded as refused."""
@@ -90,3 +104,49 @@ def read_request(path: Path) -> dict:
         "language": language,
         "context_snapshot": payload.get("context_snapshot") or {},
     }
+
+
+def search_vault(vault: Path, question: str, max_notes: int,
+                 excerpt_chars: int) -> list:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Rank every note under 30_Ressources/ and 10_Projets/ by keyword
+        overlap with the question, and return the top matches with an
+        excerpt. Pure keyword overlap, no embedding and no external index:
+        this is a bounded local scan, not a search engine.
+
+    Inputs:
+        vault (Path): the vault root
+        question (str): the caller's question, already stripped
+        max_notes (int): cap on how many notes are returned (R0)
+        excerpt_chars (int): cap on each returned excerpt (R0)
+
+    Outputs:
+        hits (list): [{"rel", "score", "excerpt"}], sorted by score
+        descending then rel ascending; empty when nothing scores above zero
+        or the vault has neither folder.
+    --------------------------------------------------------------------------
+    """
+    question_terms = _tokenize(question)
+    if not question_terms:
+        return []
+    roots = [Path(vault) / daemon_taxonomy.RESOURCES,
+             Path(vault) / daemon_taxonomy.PROJECTS]
+    scored = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for note in sorted(root.rglob("*.md")):
+            try:
+                body = note.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            overlap = len(question_terms & _tokenize(body))
+            if overlap == 0:
+                continue
+            rel = note.relative_to(vault).as_posix()
+            scored.append({"rel": rel, "score": overlap,
+                           "excerpt": body[:excerpt_chars]})
+    scored.sort(key=lambda h: (-h["score"], h["rel"]))
+    return scored[:max_notes]

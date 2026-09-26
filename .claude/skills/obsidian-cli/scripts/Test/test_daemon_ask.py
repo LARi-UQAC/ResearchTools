@@ -341,6 +341,46 @@ class RunAskOnceCase(unittest.TestCase):
         self.daemon.run_ask_once("a-tag", 16384)
         self.assertTrue(answer_path.exists())
 
+    def test_a_model_resolution_failure_answers_every_waiting_request(self):
+        """Measured 2026-09-26: the worktree lacked local-model-config.json,
+        context_window() raised before run_ask_once ever ran, the daemon only
+        printed it to its own console, and the dashboard sat on 'thinking'
+        until its own timeout blamed a daemon that WAS running. The waiting
+        caller must get the real reason instead."""
+        self._request(name="q1")
+        self._request(name="q2")
+
+        def failing_resolve(role):
+            raise RuntimeError("no state file at local-model-state.json")
+
+        self.daemon.answer_pending_asks(
+            "2026-09-26T12:00:05+00:00", resolve=failing_resolve)
+        for name in ("q1", "q2"):
+            answer = json.loads((self.outbox / "ask" / "answers" / f"{name}.json")
+                                .read_text(encoding="utf-8"))
+            self.assertEqual(answer["status"], "error")
+            self.assertIn("local-model-state.json", answer["reason"])
+            self.assertFalse(
+                (self.outbox / "ask" / "requests" / f"{name}.json").exists())
+
+    def test_a_window_lookup_failure_also_answers_the_request(self):
+        self._request(name="q1")
+        self.daemon.answer_pending_asks(
+            "2026-09-26T12:00:05+00:00", resolve=lambda role: "a-tag",
+            window_of=lambda tag: (_ for _ in ()).throw(
+                KeyError("no retained_num_ctx for a-tag")))
+        answer = json.loads((self.outbox / "ask" / "answers" / "q1.json")
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(answer["status"], "error")
+        self.assertIn("retained_num_ctx", answer["reason"])
+
+    def test_an_empty_queue_never_resolves_a_model(self):
+        calls = []
+        self.daemon.answer_pending_asks(
+            "2026-09-26T12:00:05+00:00",
+            resolve=lambda role: calls.append(role) or "a-tag")
+        self.assertEqual(calls, [])
+
     def test_an_unexpected_exception_becomes_an_error_answer_not_a_crash(self):
         self._request(name="good1")
         with mock.patch("daemon_ask.daemon_states.call_model",

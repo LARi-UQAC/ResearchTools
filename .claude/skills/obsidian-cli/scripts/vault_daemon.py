@@ -212,6 +212,75 @@ class VaultDaemon(OutboxLayout):
             return []
         return sorted(requests_dir.glob("*.json"))
 
+    def _write_answer(self, request_file: Path, result: dict) -> dict:
+        """Write one answer atomically, named after the request file (R24),
+        then consume the request."""
+        answers_dir = self.outbox / "ask" / "answers"
+        answers_dir.mkdir(parents=True, exist_ok=True)
+        result["id"] = request_file.stem
+        tmp = answers_dir / f"{request_file.stem}.json.tmp"
+        final = answers_dir / f"{request_file.stem}.json"
+        tmp.write_text(json.dumps(result, ensure_ascii=False),
+                       encoding="utf-8", newline="\n")
+        tmp.replace(final)
+        request_file.unlink(missing_ok=True)
+        return result
+
+    def fail_pending_asks(self, reason: str, now: str) -> list:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Answer every waiting request with status=error and the reason,
+            so the caller sees why instead of timing out on a daemon that is
+            running but cannot reach its model.
+
+        Inputs:
+            reason (str): what failed, shown to the caller verbatim
+            now (str): ISO 8601 stamp for answered_at (R19)
+
+        Outputs:
+            answers (list): one record per request answered
+        ----------------------------------------------------------------------
+        """
+        return [self._write_answer(request_file,
+                                   {"answered_at": now, "status": "error",
+                                    "reason": reason})
+                for request_file in self.pending_asks()]
+
+    def answer_pending_asks(self, now: str, resolve=None,
+                            window_of=None) -> list:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Resolve the writer-role model and answer every pending ask. The
+            single entry point both run_forever and --once use, so a model
+            that cannot be resolved (no state file, no measured window,
+            Ollama down) is reported to each waiting caller rather than only
+            printed to this daemon's own console.
+
+        Inputs:
+            now (str): ISO 8601 "now", injected (R19)
+            resolve (callable): role -> tag; defaults to ob.resolve_model
+            window_of (callable): tag -> retained window; defaults to
+                context_window
+
+        Outputs:
+            answers (list): one record per request handled; empty, and no
+            model resolved at all, when nothing is waiting
+        ----------------------------------------------------------------------
+        """
+        if not self.pending_asks():
+            return []
+        resolve = resolve or ob.resolve_model
+        window_of = window_of or context_window
+        try:
+            model = resolve("writer")
+            window = window_of(model)
+        except Exception as exc:  # noqa: BLE001 - reported, never substituted
+            return self.fail_pending_asks(
+                f"local model unavailable: {type(exc).__name__}: {exc}", now)
+        return self.run_ask_once(model, window, now=now)
+
     def run_ask_once(self, model: str, window: int, now: str = None) -> list:
         """
         ----------------------------------------------------------------------
@@ -283,14 +352,7 @@ class VaultDaemon(OutboxLayout):
             # payload's declared "id" (R24: an untrusted "id" of
             # "../../evil" must not be able to name a file outside
             # answers_dir, and an absent "id" must not collide on "None").
-            result["id"] = request_file.stem
-            tmp = answers_dir / f"{request_file.stem}.json.tmp"
-            final = answers_dir / f"{request_file.stem}.json"
-            tmp.write_text(json.dumps(result, ensure_ascii=False),
-                           encoding="utf-8", newline="\n")
-            tmp.replace(final)
-            request_file.unlink(missing_ok=True)
-            handled.append(result)
+            handled.append(self._write_answer(request_file, result))
         return handled
 
     def run_once(self) -> list:
@@ -330,20 +392,16 @@ class VaultDaemon(OutboxLayout):
                 # No fallback tag (R8). Say it and keep watching, so the drops
                 # wait in raw/ rather than being filed by something weaker.
                 print(f"[DAEMON] {exc}", file=sys.stderr)
-            if (time.monotonic() - last_ask >= ask_interval
-                    and self.pending_asks()):
-                # Resolving a model tag (and its measured window) is a real
-                # cost, and an unmeasured tag raises ContextBudgetError -
-                # both are worth paying only when a request is actually
-                # waiting, never on every idle poll pass.
-                try:
-                    model = ob.resolve_model("writer")
-                    self.run_ask_once(
-                        model, context_window(model),
-                        now=datetime.now(timezone.utc).isoformat())
-                except (ob.BridgeError, context_budget.ContextBudgetError) \
-                        as exc:
-                    print(f"[DAEMON] ask queue: {exc}", file=sys.stderr)
+            if time.monotonic() - last_ask >= ask_interval:
+                # answer_pending_asks resolves a model only when a request is
+                # waiting, and a resolution failure becomes an error answer
+                # the caller reads, never just a line on this console.
+                for answer in self.answer_pending_asks(
+                        datetime.now(timezone.utc).isoformat()):
+                    if answer.get("status") != "ok":
+                        print(f"[DAEMON] ask {answer['id']}: "
+                              f"{answer['status']} - {answer.get('reason')}",
+                              file=sys.stderr)
                 last_ask = time.monotonic()
             if (time.monotonic() - last_drain >= drain_every
                     and not self.pending()):
@@ -406,11 +464,7 @@ def main(argv=None) -> int:
     if args.once:
         daemon.recover_working()
         daemon.run_once()
-        if daemon.pending_asks():
-            model = ob.resolve_model("writer")
-            daemon.run_ask_once(
-                model, context_window(model),
-                now=datetime.now(timezone.utc).isoformat())
+        daemon.answer_pending_asks(datetime.now(timezone.utc).isoformat())
         return 0
     return daemon.run_forever()
 

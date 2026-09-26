@@ -1,0 +1,14 @@
+# Normalize text files to LF in the repository and on checkout, regardless of platform.
+# Fixes the "LF will be replaced by CRLF" warning seen on every commit from Windows clients.
+* text=auto eol=lf
+
+# Binary files: never let git attempt line-ending or diff normalization on these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.docx binary
+*.pptx binary
+*.xlsx binary

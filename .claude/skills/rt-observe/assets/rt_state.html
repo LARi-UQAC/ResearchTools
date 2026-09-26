@@ -5085,13 +5085,27 @@ renderRefresh();
   var answerEl = document.getElementById("voice-answer");
   var languageEl = document.getElementById("voice-language");
   var holding = false;
+  // Set when the key is released before getUserMedia's promise settles (very
+  // common on the FIRST press, since the browser's permission prompt steals
+  // the keyup): the recorder that arrives afterward is stopped immediately
+  // instead of being armed, and `recorder` may still be the PREVIOUS,
+  // already-stopped recorder rather than null on a second fast tap, so
+  // stopRecording checks its `state` rather than only its presence.
+  var pendingStop = false;
 
   function setStatus(text) { if (status) { status.textContent = text; } }
 
   function startRecording() {
     if (holding) { return; }
     holding = true;
+    pendingStop = false;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      if (pendingStop) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        holding = false;
+        setStatus("idle");
+        return;
+      }
       recorder = new MediaRecorder(stream);
       chunks = [];
       recorder.ondataavailable = function (e) { chunks.push(e.data); };
@@ -5109,8 +5123,12 @@ renderRefresh();
   }
 
   function stopRecording() {
-    if (!holding || !recorder) { return; }
+    if (!holding) { return; }
     holding = false;
+    if (!recorder || recorder.state !== "recording") {
+      pendingStop = true;
+      return;
+    }
     setStatus("transcribing...");
     recorder.stop();
   }
@@ -5147,15 +5165,27 @@ renderRefresh();
       answerEl.textContent = body.answer_text;
       setStatus("idle");
       if (window.speechSynthesis) {
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(body.answer_text));
+        var utter = new SpeechSynthesisUtterance(body.answer_text);
+        var tag = { en: "en-US", fr: "fr-FR" }[language];
+        if (tag) { utter.lang = tag; }
+        window.speechSynthesis.speak(utter);
       }
     }).catch(function (err) { setStatus("ask failed: " + err); });
   }
 
+  function isTypingTarget(target) {
+    if (!target) { return false; }
+    var tag = (target.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || tag === "select" ||
+          !!target.isContentEditable;
+  }
+
   window.addEventListener("keydown", function (e) {
+    if (isTypingTarget(e.target)) { return; }
     if ((e.key === "p" || e.key === "P") && !e.repeat) { startRecording(); }
   });
   window.addEventListener("keyup", function (e) {
+    if (isTypingTarget(e.target)) { return; }
     if (e.key === "p" || e.key === "P") { stopRecording(); }
   });
 })();

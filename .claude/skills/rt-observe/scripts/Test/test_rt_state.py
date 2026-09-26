@@ -966,8 +966,10 @@ class VoiceWiringCase(unittest.TestCase):
             {"mirrors": 15})
         written = {}
 
-        def fake_write(outbox_root, question, snapshot, ident=None, clock=None):
+        def fake_write(outbox_root, question, snapshot, language="auto",
+                       ident=None, clock=None):
             written["question"] = question
+            written["language"] = language
             (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
             (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
                 json.dumps({"status": "ok", "answer_text": "fine"}),
@@ -979,7 +981,50 @@ class VoiceWiringCase(unittest.TestCase):
             write_request=fake_write, poll=voice_ask.poll_answer)
         result = ask_fn("is this stale")
         self.assertEqual(written["question"], "is this stale")
+        self.assertEqual(written["language"], "auto")
         self.assertEqual(result["answer_text"], "fine")
+
+    def test_ask_fn_forwards_the_chosen_language(self):
+        import voice_ask
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        config["timeouts_seconds"]["voice_ask_wait"] = {"value": 1}
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        written = {}
+
+        def fake_write(outbox_root, question, snapshot, language="auto",
+                       ident=None, clock=None):
+            written["language"] = language
+            (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
+            (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
+                json.dumps({"status": "ok", "answer_text": "fine"}),
+                encoding="utf-8")
+            return "fixed"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(),
+            write_request=fake_write, poll=voice_ask.poll_answer)
+        ask_fn("is this stale", language="fr")
+        self.assertEqual(written["language"], "fr")
+
+    def test_transcribe_fn_forwards_the_chosen_language(self):
+        config = fixture_config()
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        captured = {}
+
+        def fake_transcribe(audio_bytes, config, language=None):
+            captured["language"] = language
+            return "ok"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(), transcribe=fake_transcribe)
+        transcribe_fn(b"audio", language="fr")
+        self.assertEqual(captured["language"], "fr")
 
 
 if __name__ == "__main__":

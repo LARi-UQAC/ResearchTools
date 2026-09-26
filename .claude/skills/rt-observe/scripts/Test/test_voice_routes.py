@@ -49,13 +49,15 @@ class TranscribeRouteCase(unittest.TestCase):
         self.assertEqual(response.status, 501)
 
     def test_missing_token_header_is_refused(self):
-        handler = handler_for(voice_transcribe=lambda body: "is this stale")
+        handler = handler_for(
+            voice_transcribe=lambda body, language="auto": "is this stale")
         response = call_raw(handler, "POST", "/api/voice/transcribe",
                             raw_body=b"audio-bytes")
         self.assertEqual(response.status, 403)
 
     def test_cross_origin_transcribe_is_refused(self):
-        handler = handler_for(voice_transcribe=lambda body: "is this stale")
+        handler = handler_for(
+            voice_transcribe=lambda body, language="auto": "is this stale")
         response = call_raw(handler, "POST", "/api/voice/transcribe",
                             raw_body=b"audio-bytes",
                             headers={"X-RT-Session-Token": TOKEN,
@@ -64,7 +66,8 @@ class TranscribeRouteCase(unittest.TestCase):
         self.assertIn("cross-origin", response.json()["reason"])
 
     def test_transcribes_and_returns_text(self):
-        handler = handler_for(voice_transcribe=lambda body: "is this stale")
+        handler = handler_for(
+            voice_transcribe=lambda body, language="auto": "is this stale")
         response = call_raw(handler, "POST", "/api/voice/transcribe",
                             raw_body=b"audio-bytes",
                             headers={"X-RT-Session-Token": TOKEN})
@@ -74,7 +77,7 @@ class TranscribeRouteCase(unittest.TestCase):
     def test_engine_unavailable_is_reported_not_crashed(self):
         import stt_engine
 
-        def raiser(_body):
+        def raiser(_body, language="auto"):
             raise stt_engine.SttUnavailable("faster-whisper is not installed")
 
         handler = handler_for(voice_transcribe=raiser)
@@ -84,6 +87,43 @@ class TranscribeRouteCase(unittest.TestCase):
         self.assertEqual(response.status, 503)
         self.assertIn("not installed", response.json()["reason"])
 
+    def test_language_query_param_is_forwarded(self):
+        captured = {}
+
+        def transcribe(body, language="auto"):
+            captured["language"] = language
+            return "c'est perime"
+
+        handler = handler_for(voice_transcribe=transcribe)
+        response = call_raw(handler, "POST",
+                            "/api/voice/transcribe?language=fr",
+                            raw_body=b"audio-bytes",
+                            headers={"X-RT-Session-Token": TOKEN})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(captured["language"], "fr")
+
+    def test_no_language_query_param_defaults_to_auto(self):
+        captured = {}
+
+        def transcribe(body, language="auto"):
+            captured["language"] = language
+            return "ok"
+
+        handler = handler_for(voice_transcribe=transcribe)
+        call_raw(handler, "POST", "/api/voice/transcribe",
+                raw_body=b"audio-bytes",
+                headers={"X-RT-Session-Token": TOKEN})
+        self.assertEqual(captured["language"], "auto")
+
+    def test_an_unsupported_language_query_param_is_refused(self):
+        handler = handler_for(
+            voice_transcribe=lambda body, language="auto": "unreachable")
+        response = call_raw(handler, "POST",
+                            "/api/voice/transcribe?language=de",
+                            raw_body=b"audio-bytes",
+                            headers={"X-RT-Session-Token": TOKEN})
+        self.assertEqual(response.status, 400)
+
 
 class AskRouteCase(unittest.TestCase):
     def _post_json(self, handler, path, body, headers=None):
@@ -91,26 +131,26 @@ class AskRouteCase(unittest.TestCase):
         return call(handler, "POST", path, body=body, headers=headers)
 
     def test_requires_a_valid_token(self):
-        handler = handler_for(voice_ask=lambda q: {"status": "ok"})
+        handler = handler_for(voice_ask=lambda q, language="auto": {"status": "ok"})
         response = self._post_json(handler, "/api/voice/ask",
                                    {"token": "wrong", "question": "x"})
         self.assertEqual(response.status, 403)
 
     def test_cross_origin_ask_is_refused(self):
-        handler = handler_for(voice_ask=lambda q: {"status": "ok"})
+        handler = handler_for(voice_ask=lambda q, language="auto": {"status": "ok"})
         response = self._post_json(
             handler, "/api/voice/ask", {"token": TOKEN, "question": "x"},
             headers={"Origin": "https://evil.example"})
         self.assertEqual(response.status, 403)
 
     def test_refuses_an_empty_question(self):
-        handler = handler_for(voice_ask=lambda q: {"status": "ok"})
+        handler = handler_for(voice_ask=lambda q, language="auto": {"status": "ok"})
         response = self._post_json(handler, "/api/voice/ask",
                                    {"token": TOKEN, "question": "   "})
         self.assertEqual(response.status, 400)
 
     def test_refuses_an_oversized_question(self):
-        handler = handler_for(voice_ask=lambda q: {"status": "ok"},
+        handler = handler_for(voice_ask=lambda q, language="auto": {"status": "ok"},
                               caps={"voice_question_chars": 500})
         response = self._post_json(
             handler, "/api/voice/ask",
@@ -120,7 +160,7 @@ class AskRouteCase(unittest.TestCase):
     def test_forwards_a_valid_question_and_returns_the_answer(self):
         captured = {}
 
-        def ask(question):
+        def ask(question, language="auto"):
             captured["question"] = question
             return {"status": "ok", "answer_text": "no, all green"}
 
@@ -130,6 +170,37 @@ class AskRouteCase(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(response.json()["answer_text"], "no, all green")
         self.assertEqual(captured["question"], "is this stale")
+
+    def test_language_field_is_forwarded(self):
+        captured = {}
+
+        def ask(question, language="auto"):
+            captured["language"] = language
+            return {"status": "ok"}
+
+        handler = handler_for(voice_ask=ask)
+        self._post_json(handler, "/api/voice/ask",
+                        {"token": TOKEN, "question": "x", "language": "fr"})
+        self.assertEqual(captured["language"], "fr")
+
+    def test_no_language_field_defaults_to_auto(self):
+        captured = {}
+
+        def ask(question, language="auto"):
+            captured["language"] = language
+            return {"status": "ok"}
+
+        handler = handler_for(voice_ask=ask)
+        self._post_json(handler, "/api/voice/ask",
+                        {"token": TOKEN, "question": "x"})
+        self.assertEqual(captured["language"], "auto")
+
+    def test_an_unsupported_language_field_is_refused(self):
+        handler = handler_for(voice_ask=lambda q, language="auto": {"status": "ok"})
+        response = self._post_json(
+            handler, "/api/voice/ask",
+            {"token": TOKEN, "question": "x", "language": "de"})
+        self.assertEqual(response.status, 400)
 
 
 if __name__ == "__main__":

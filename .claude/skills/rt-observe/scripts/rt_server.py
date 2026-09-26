@@ -37,7 +37,7 @@ import urllib.error
 import urllib.request
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
 
 APP_ID = "rt-observe"
@@ -590,12 +590,19 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
                 return self._json(403, {"status": "refused",
                                         "reason": "no or invalid session token "
                                                   "(X-RT-Session-Token header)"})
+            query = parse_qs(urlsplit(self.path).query)
+            language = (query.get("language") or ["auto"])[0]
+            if language not in ("auto", "en", "fr"):
+                return self._json(400, {
+                    "status": "refused",
+                    "reason": "unsupported language %r; the voice panel's "
+                              "dropdown offers auto, en, fr only" % language})
             if voice_transcribe is None:
                 return self._json(501, {
                     "status": "unavailable",
                     "reason": "no STT engine is installed on this server"})
             try:
-                text = voice_transcribe(audio)
+                text = voice_transcribe(audio, language=language)
             except Exception as exc:                       # noqa: BLE001
                 return self._json(503, {"status": "unavailable",
                                         "reason": str(exc)})
@@ -625,12 +632,18 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
                     "status": "refused",
                     "reason": "the question is %d characters and the cap is "
                               "%d" % (len(question), cap)})
+            language = body.get("language") or "auto"
+            if language not in ("auto", "en", "fr"):
+                return self._json(400, {
+                    "status": "refused",
+                    "reason": "unsupported language %r; the voice panel's "
+                              "dropdown offers auto, en, fr only" % language})
             if voice_ask is None:
                 return self._json(501, {
                     "status": "unavailable",
                     "reason": "the ask relay is not installed on this server"})
             try:
-                result = voice_ask(question)
+                result = voice_ask(question, language=language)
             except Exception as exc:                        # noqa: BLE001
                 return self._json(500, {"status": "unavailable",
                                         "reason": str(exc)})

@@ -209,5 +209,71 @@ class AnswerCase(unittest.TestCase):
         self.assertIn("Reponds en francais", captured["prompt"])
 
 
+class RunAskOnceCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.vault = self.tmp / "Vault"
+        (self.vault / "30_Ressources" / "Python").mkdir(parents=True)
+        self.outbox = self.tmp / "outbox"
+        (self.outbox / "ask" / "requests").mkdir(parents=True)
+        (self.outbox / "ask" / "answers").mkdir(parents=True)
+        self.config = {
+            "lock": {"acquire_timeout_s": 1, "stale_after_s": 300,
+                     "poll_interval_s": 0.01},
+            "probe": {"request_timeout_s": 5},
+            "daemon": {"poll_interval_s": 0.01, "classify_confidence_min": 0.7,
+                      "draft_max_attempts": 2, "drain_idle_s": 900,
+                      "consolidate_top_n": 15, "judge_edge_max_pairs": 15,
+                      "queue_max_entries": 500, "phantom_max_per_drain": 10,
+                      "ask_poll_interval_s": 1, "ask_request_ttl_s": 90,
+                      "ask_max_vault_notes": 5, "ask_note_excerpt_chars": 1200,
+                      "ask_context_snapshot_max_chars": 4000},
+        }
+        import vault_daemon
+        self.daemon = vault_daemon.VaultDaemon(
+            self.vault, self.outbox, self.config, today="2026-09-26T12:00:00+00:00")
+
+    def _request(self, name="abc123", from_="rt-dashboard"):
+        path = self.outbox / "ask" / "requests" / f"{name}.json"
+        path.write_text(json.dumps({
+            "id": name, "from": from_,
+            "asked_at": "2026-09-26T12:00:00+00:00",
+            "question": "is this repo stale", "context_snapshot": {}}),
+            encoding="utf-8")
+        return path
+
+    def test_answers_a_valid_request_and_removes_it(self):
+        self._request()
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        return_value="No, the suite is green."):
+            self.daemon.run_ask_once("a-tag", 16384)
+        self.assertFalse(
+            (self.outbox / "ask" / "requests" / "abc123.json").exists())
+        answer_path = self.outbox / "ask" / "answers" / "abc123.json"
+        self.assertTrue(answer_path.exists())
+        answer = json.loads(answer_path.read_text(encoding="utf-8"))
+        self.assertEqual(answer["status"], "ok")
+
+    def test_refused_request_still_gets_an_answer_file(self):
+        self._request(from_="someone-else")
+        self.daemon.run_ask_once("a-tag", 16384)
+        answer = json.loads(
+            (self.outbox / "ask" / "answers" / "abc123.json")
+            .read_text(encoding="utf-8"))
+        self.assertEqual(answer["status"], "refused")
+
+    def test_a_malformed_request_does_not_block_a_good_one(self):
+        (self.outbox / "ask" / "requests" / "bad.json").write_text(
+            "{not json", encoding="utf-8")
+        self._request(name="good1")
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        return_value="fine"):
+            self.daemon.run_ask_once("a-tag", 16384)
+        self.assertTrue(
+            (self.outbox / "ask" / "answers" / "good1.json").exists())
+        self.assertTrue(
+            (self.outbox / "ask" / "answers" / "bad.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

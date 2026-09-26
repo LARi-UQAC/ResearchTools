@@ -37,6 +37,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import daemon_ask  # noqa: E402
 import daemon_states as ds  # noqa: E402
 import outbox_io  # noqa: E402
 import vault_lock  # noqa: E402
@@ -181,6 +182,48 @@ class VaultDaemon(OutboxLayout):
               file=sys.stderr)
         return report
 
+    def run_ask_once(self, model: str, window: int) -> list:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Drain outbox/ask/requests/, answering each with the local model
+            and vault search, then remove the request once answered so a
+            crash mid-answer simply retries it on the next poll (the answer
+            write is atomic tmp+replace, same discipline as write_note).
+
+        Inputs:
+            model (str): the resolved writer-role tag
+            window (int): the measured retained window for that tag
+
+        Outputs:
+            answers (list): one record per request handled, for the report
+        ----------------------------------------------------------------------
+        """
+        requests_dir = self.outbox / "ask" / "requests"
+        answers_dir = self.outbox / "ask" / "answers"
+        requests_dir.mkdir(parents=True, exist_ok=True)
+        answers_dir.mkdir(parents=True, exist_ok=True)
+        timeout = outbox_io.require(self.config, "probe", "request_timeout_s")
+        handled = []
+        for request_file in sorted(requests_dir.glob("*.json")):
+            try:
+                request = daemon_ask.read_request(request_file)
+                result = daemon_ask.answer(
+                    request, self.vault, model, window, timeout,
+                    self.config, today=self.today)
+                result.setdefault("id", request_file.stem)
+            except daemon_ask.AskRefused as exc:
+                result = {"id": request_file.stem, "answered_at": self.today,
+                         "status": "refused", "reason": str(exc)}
+            tmp = answers_dir / f"{result['id']}.json.tmp"
+            final = answers_dir / f"{result['id']}.json"
+            tmp.write_text(json.dumps(result, ensure_ascii=False),
+                           encoding="utf-8", newline="\n")
+            tmp.replace(final)
+            request_file.unlink(missing_ok=True)
+            handled.append(result)
+        return handled
+
     def run_once(self) -> list:
         drops = self.pending()
         if not drops:
@@ -209,6 +252,8 @@ class VaultDaemon(OutboxLayout):
         last_drain = time.monotonic()
         print(f"[DAEMON] watching {self.outbox / RAW} every {interval}s",
               file=sys.stderr)
+        ask_interval = self._cfg("ask_poll_interval_s")
+        last_ask = time.monotonic()
         while not _STOP["requested"]:
             try:
                 self.run_once()
@@ -216,6 +261,13 @@ class VaultDaemon(OutboxLayout):
                 # No fallback tag (R8). Say it and keep watching, so the drops
                 # wait in raw/ rather than being filed by something weaker.
                 print(f"[DAEMON] {exc}", file=sys.stderr)
+            if time.monotonic() - last_ask >= ask_interval:
+                try:
+                    model = ob.resolve_model("writer")
+                    self.run_ask_once(model, context_window(model))
+                except ob.BridgeError as exc:
+                    print(f"[DAEMON] ask queue: {exc}", file=sys.stderr)
+                last_ask = time.monotonic()
             if (time.monotonic() - last_drain >= drain_every
                     and not self.pending()):
                 # Quiet interval only: no event in flight, nothing waiting.
@@ -259,8 +311,11 @@ def main(argv=None) -> int:
         return 0
     daemon = VaultDaemon(vault, Path(args.outbox), config)
     if args.dry_run:
-        print(json.dumps({"pending": [p.name for p in daemon.pending()]},
-                         ensure_ascii=False, indent=2))
+        print(json.dumps({
+            "pending": [p.name for p in daemon.pending()],
+            "pending_asks": [p.name for p in
+                            (Path(args.outbox) / "ask" / "requests").glob("*.json")],
+        }, ensure_ascii=False, indent=2))
         return 0
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
@@ -272,6 +327,8 @@ def main(argv=None) -> int:
     if args.once:
         daemon.recover_working()
         daemon.run_once()
+        model = ob.resolve_model("writer")
+        daemon.run_ask_once(model, context_window(model))
         return 0
     return daemon.run_forever()
 

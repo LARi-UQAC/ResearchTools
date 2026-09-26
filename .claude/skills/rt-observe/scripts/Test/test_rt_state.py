@@ -69,7 +69,14 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
                               "usage": value(60)},
         "timeouts_seconds": {"subprocess_default": value(20),
                              "mcp_list": value(45), "action_default": value(600),
-                             "ping": value(2)},
+                             "ping": value(2),
+                             # serve() builds the voice callables unconditionally
+                             # (Task 5, 2026-09-26), so this and the two keys
+                             # below are declared here for the same reason
+                             # identity/traces are: a caller that never touches
+                             # the voice panel must not KeyError just for
+                             # existing.
+                             "voice_ask_wait": value(20)},
         # Everything the served page reads, injected as one block so the markup
         # carries no configured number (R0). The shipped file's own keys are
         # asserted separately, against the real config rather than this one.
@@ -83,9 +90,11 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
         # binds, so a config missing these fails the REFUSAL cases too - which
         # is how this block came to be added.
         "paths": {"action_log": value("~/.claude/rt-actions.jsonl"),
-                  "inbox_root": value("~/.claude/rt-inbox")},
+                  "inbox_root": value("~/.claude/rt-inbox"),
+                  "obsidian_outbox": value("~/.claude/obsidian-outbox")},
         "caps": {"inbox_message_chars": value(4000),
-                 "output_tail_chars": value(2000)},
+                 "output_tail_chars": value(2000),
+                 "voice_question_chars": value(500)},
     }
 
 
@@ -943,6 +952,79 @@ class SectionBuilders(unittest.TestCase):
             mirrors = builders["mirrors"](NOW)
         self.assertEqual("unavailable", mirrors["status"])
         self.assertIn("mirror-policy.json", mirrors["reason"])
+
+
+class VoiceWiringCase(unittest.TestCase):
+    def test_ask_fn_writes_a_request_and_polls_the_answer(self):
+        import voice_ask
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        config["timeouts_seconds"]["voice_ask_wait"] = {"value": 1}
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        written = {}
+
+        def fake_write(outbox_root, question, snapshot, language="auto",
+                       ident=None, clock=None):
+            written["question"] = question
+            written["language"] = language
+            (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
+            (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
+                json.dumps({"status": "ok", "answer_text": "fine"}),
+                encoding="utf-8")
+            return "fixed"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(),
+            write_request=fake_write, poll=voice_ask.poll_answer)
+        result = ask_fn("is this stale")
+        self.assertEqual(written["question"], "is this stale")
+        self.assertEqual(written["language"], "auto")
+        self.assertEqual(result["answer_text"], "fine")
+
+    def test_ask_fn_forwards_the_chosen_language(self):
+        import voice_ask
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        config["timeouts_seconds"]["voice_ask_wait"] = {"value": 1}
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        written = {}
+
+        def fake_write(outbox_root, question, snapshot, language="auto",
+                       ident=None, clock=None):
+            written["language"] = language
+            (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
+            (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
+                json.dumps({"status": "ok", "answer_text": "fine"}),
+                encoding="utf-8")
+            return "fixed"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(),
+            write_request=fake_write, poll=voice_ask.poll_answer)
+        ask_fn("is this stale", language="fr")
+        self.assertEqual(written["language"], "fr")
+
+    def test_transcribe_fn_forwards_the_chosen_language(self):
+        config = fixture_config()
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        captured = {}
+
+        def fake_transcribe(audio_bytes, config, language=None):
+            captured["language"] = language
+            return "ok"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(), transcribe=fake_transcribe)
+        transcribe_fn(b"audio", language="fr")
+        self.assertEqual(captured["language"], "fr")
 
 
 if __name__ == "__main__":

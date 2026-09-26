@@ -1,0 +1,8 @@
+faster-whisper==1.0.3
+# faster_whisper.utils imports requests directly; huggingface-hub>=1.0
+# dropped it as a hard dependency (moved off it toward httpx), so a
+# fresh resolve on a modern pip can install faster-whisper cleanly and
+# still fail on first real transcription with ModuleNotFoundError:
+# requests. Measured 2026-09-26 installing into a fresh Python 3.11
+# .venv-skills (huggingface-hub resolved to 1.33.0).
+requests==2.34.2

@@ -414,8 +414,9 @@ class TabbedLayout(unittest.TestCase):
                               "aria-controls points at %s, which does not exist"
                               % target)
         panels = re.findall(r'role="tabpanel"', self.markup)
-        self.assertEqual(5, len(panels),
-                         "four view panes plus the rail are tab panels")
+        self.assertEqual(6, len(panels),
+                         "five view panes (matrix/canvas/fleet/live/voice) "
+                         "plus the rail are tab panels")
 
     def test_which_tab_is_in_front_is_a_wrapped_per_viewer_convenience(self):
         """Same contract as the theme control: a browser that blocks storage

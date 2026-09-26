@@ -172,6 +172,17 @@ same as R26. If the aider writer model measurably cannot follow an intent-only p
 is a finding to bring back here and weigh against the five defects R29 exists to prevent, not a
 reason to have left the rule half-applied from the start.
 
+**R33 - a plan's own doc task updates the public-facing docs too, not only the internal
+`SKILL.md`/`testing.md`/`CLAUDE.md` set.** Effective 2026-09-26. Every plan's doc-update task
+(the one R26 already requires at the end of each `planN.md`) names, alongside the internal
+files: `README.md`'s feature list or table when the plan adds or changes a user-facing
+capability, and the public MkDocs landing page (`docs/index.md` and the relevant page under
+`docs/manual/` or the deep-dive references, per `mkdocs.yml`'s own `nav` — extend the existing
+page for the touched skill rather than adding a new one, per R18). A plan whose change is purely
+internal (a hook, a rule, a script with no end-user-visible behavior) states that explicitly in
+its doc task rather than silently skipping the step, so an empty landing-page update reads as a
+decision and not an oversight.
+
 ## Shared working tree
 
 Every session working `C:\Martin Otis\OutilsLogiciels\ResearchTools` shares ONE working tree and

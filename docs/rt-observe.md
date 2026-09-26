@@ -233,3 +233,16 @@ The **Journal** rail panel shows the identity layer's counts (persons, identifie
 and the trace stream's own shape (row count, distinct sessions, newest event) - never a
 recomputed token total, which stays owned by the usage panel's existing, already-decided
 counting rule.
+
+## The voice panel (2026-09-26)
+
+[voice_ask.py](../.claude/skills/rt-observe/scripts/voice_ask.py) writes a question into
+`~/.claude/obsidian-outbox/ask/requests/` and polls `ask/answers/` for the reply, following the
+exact file shapes [daemon_ask.py](../.claude/skills/obsidian-cli/scripts/daemon_ask.py) (the
+`obsidian-cli` skill) expects on the other side. Neither this module nor
+[stt_engine.py](../.claude/skills/rt-observe/scripts/stt_engine.py) (local speech-to-text,
+`faster-whisper` as a lazily-imported optional dependency) ever opens `OBSIDIAN_VAULT` or
+`graphify-out/`: the vault/graph reasoning is entirely the daemon's, reached only through the
+outbox files above, which already sit outside the vault boundary the rest of this skill's
+collectors observe. TTS in this phase is the browser's own `speechSynthesis`, not a new
+server-side engine.

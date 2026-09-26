@@ -1,5 +1,7 @@
 # RT-1: UQAC Form Registry and Drift Detection Implementation Plan
 
+**Executed. Merged to `main` 2026-08-31.** Archived here from `docs/superpowers/plans/` once RT-7 (the last RT unit) merged and the ResearchTools side of the 20-unit programme closed out. See `done/PROGRESS_RT.md` for the full registry.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the `uqac-forms` skill scaffold with a declarative registry of UQAC PDF forms, a validated downloader, a SHA-256 baseline, and a drift check that refuses to let downstream tooling run against a form UQAC has silently replaced.

@@ -1,5 +1,7 @@
 # RT-2: UQAC Form Field Map and Profile Vocabulary Implementation Plan
 
+**Executed. Merged to `main` 2026-08-31.** Archived here alongside the other RT plans once the ResearchTools side of the 20-unit programme closed out. See `done/PROGRESS_RT.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn each registered UQAC PDF into a reviewable field map: dump every AcroForm widget with its type, page, and checkbox on-states, let a human bind each widget to one key of a shared profile vocabulary, and validate that the binding still holds.

@@ -1,13 +1,24 @@
-# PROGRESS_RT.md - ResearchTools execution registry
+# PROGRESS_RT.md - ResearchTools execution registry (ARCHIVED)
 
-Single source of truth for **where the UQAC form engine work stands** in this repository.
+**All seven units are DONE.** Archived here 2026-09-25, from the repository root, alongside its
+seven unit plans (`2026-07-29-rt-1..7-*.md`, this same directory), once RT-7's merge (PR #26)
+closed out the ResearchTools side of the 20-unit programme. Kept for the record rather than
+deleted, per this repository's own `done/` convention (see `PROGRESS.md` and the other archived
+plans in this directory). No further recompute is expected; if RT-side work resumes, it is
+maintenance or a scope change, not a continuation of these seven units.
 
-- The architecture and the unit definitions live in [NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md)
-  section 12. That document says WHAT each unit is; this one says WHERE it is.
-- Each unit's implementation plan lives on the unit's own branch at
-  `docs/superpowers/plans/2026-07-29-rt-<n>-<slug>.md`. Plans are deliberately not on `main`.
+Single source of truth for **where the UQAC form engine work stood** while it was active.
+
+- The architecture and the unit definitions live in
+  [NEW_ARCHITECTURE.md](../../../../NEW_ARCHITECTURE.md) section 12. That document says WHAT each
+  unit is; this one said WHERE it was.
+- Each unit's implementation plan lived on the unit's own branch during development, at
+  `docs/superpowers/plans/2026-07-29-rt-<n>-<slug>.md`; every one of the seven ended up merged to
+  `main` regardless (the "deliberately not on `main`" design this bullet originally stated was
+  not actually honoured - a normal PR merge includes whatever the branch's HEAD carries, plan file
+  included). Now archived here.
 - ThesisTracker tracks its own units in `PROGRESS_TT.md` in that repository. Cross-repo dependencies
-  are named in the Blocks column here.
+  were named in the Blocks column here while this registry was live.
 
 **Snapshot date:** 2026-09-25 (RT-7). Recomputed via git ancestry (RT-1..4 confirmed merged to
 `main` by `ls-tree`/branch inspection, cross-checked with the ThesisTracker session's own audit of

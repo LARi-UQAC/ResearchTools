@@ -1,5 +1,7 @@
 # RT-5: form-service HTTP API implementation plan
 
+**Executed. Merged to `main` 2026-09-25 (PR #22).** Archived here alongside the other RT plans once the ResearchTools side of the 20-unit programme closed out. See `done/PROGRESS_RT.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Expose the `form-service` skill's stateless PDF mechanics (RT-1 through RT-4) as a small containerized HTTP service that ThesisTracker calls server to server, authenticated by a shared secret, logging no field value, and shipped with a compose file whose Postgres carries the `pgvector` extension RT-7 needs.

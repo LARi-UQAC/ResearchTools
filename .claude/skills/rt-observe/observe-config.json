@@ -341,6 +341,10 @@
         "value": null,
         "provenance": "chosen 2026-09-26 - the per-request voice-panel dropdown (auto/en/fr) governs; this stays null as the fallback default when a caller omits language entirely"
       }
+    },
+    "partial_refresh_ms": {
+      "value": 2000,
+      "provenance": "chosen 2026-09-26 - matches the Devoir2 reference implementation's own speech_rafraichissement_secondes cadence (periodic re-transcription of the growing recording while the key is still held, so the transcript updates live rather than only once on release)"
     }
   },
   "paths": {

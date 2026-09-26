@@ -1,5 +1,7 @@
 # RT-4: UQAC Form Signer Implementation Plan
 
+**Executed. Merged to `main` 2026-08-31.** Archived here alongside the other RT plans once the ResearchTools side of the 20-unit programme closed out. See `done/PROGRESS_RT.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Sign a filled UQAC form cryptographically as a PAdES incremental update, behind a pluggable `Signer` protocol whose shipped implementation is a self-signed development signer, so the whole pipeline is usable while the question of what UQAC actually accepts stays open.

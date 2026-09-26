@@ -196,6 +196,11 @@
       "value": 10,
       "unit": "seconds",
       "provenance": "chosen 2026-09-24 - collect_traces.py's read side; longer than the ingest timeout because a _search query over a retained stream costs more than a single-record insert"
+    },
+    "voice_ask_wait": {
+      "value": 20,
+      "unit": "seconds the /api/voice/ask route blocks waiting for the daemon's answer file before giving up",
+      "provenance": "chosen 2026-09-26 - long enough for a resident writer-role model's median call plus the daemon's own ask_poll_interval_s, short enough that an HTTP thread is never tied up indefinitely"
     }
   },
   "caps": {
@@ -213,6 +218,11 @@
       "value": 12,
       "unit": "outbox entries named in the snapshot before the rest are only counted",
       "provenance": "chosen 2026-09-01 - the operator asked to SEE what is waiting to be written, and a list read on hover is read standing up"
+    },
+    "voice_question_chars": {
+      "value": 500,
+      "unit": "characters of one transcribed question",
+      "provenance": "chosen 2026-09-26 - a spoken question this long is almost certainly a transcription runaway, not a real question; refused rather than truncated, matching inbox_message_chars"
     },
     "flow_groups": {
       "value": 12,
@@ -307,6 +317,30 @@
       "value": [],
       "provenance": "chosen - empty by default; add a project directory name here and no session from it reaches the page at all",
       "note": "Exclusion is applied before truncation, not after, so an excluded project contributes nothing rather than a shortened something."
+    }
+  },
+  "voice": {
+    "stt": {
+      "engine": {
+        "value": "faster-whisper",
+        "provenance": "chosen 2026-09-26 - the Devoir2 reference implementation's proven baseline (voice_input_node.py); plan3 evaluates whisper large-v3 / large-v3-turbo against it"
+      },
+      "model_size": {
+        "value": "small",
+        "provenance": "chosen 2026-09-26 - matches the Devoir2 baseline"
+      },
+      "compute_type": {
+        "value": "int8",
+        "provenance": "chosen 2026-09-26 - matches the Devoir2 baseline; ~0.5GB, CPU-friendly"
+      },
+      "device": {
+        "value": "cpu",
+        "provenance": "chosen 2026-09-26 - the GPU is already committed to the resident Ollama model; CUDA is an explicit opt-in, not the default"
+      },
+      "language": {
+        "value": null,
+        "provenance": "chosen 2026-09-26 - the per-request voice-panel dropdown (auto/en/fr) governs; this stays null as the fallback default when a caller omits language entirely"
+      }
     }
   },
   "paths": {

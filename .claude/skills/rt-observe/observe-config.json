@@ -198,9 +198,9 @@
       "provenance": "chosen 2026-09-24 - collect_traces.py's read side; longer than the ingest timeout because a _search query over a retained stream costs more than a single-record insert"
     },
     "voice_ask_wait": {
-      "value": 20,
+      "value": 85,
       "unit": "seconds the /api/voice/ask route blocks waiting for the daemon's answer file before giving up",
-      "provenance": "chosen 2026-09-26 - long enough for a resident writer-role model's median call plus the daemon's own ask_poll_interval_s, short enough that an HTTP thread is never tied up indefinitely"
+      "provenance": "measured 2026-09-26 - the original 20 s timed out before any answer could arrive: daemon-config.json records a 36.991 s median writer-role call, and the resident ornith:9b-gpu decoded at 20.3 tok/s that day. Kept just under the daemon's own ask_request_ttl_s (90 s) so the dashboard never waits on a request the daemon has already expired"
     }
   },
   "caps": {
@@ -330,21 +330,33 @@
         "provenance": "chosen 2026-09-26 - matches the Devoir2 baseline"
       },
       "compute_type": {
-        "value": "int8",
-        "provenance": "chosen 2026-09-26 - matches the Devoir2 baseline; ~0.5GB, CPU-friendly"
+        "value": "float16",
+        "provenance": "chosen by the operator 2026-09-26 ('no CPU, all on GPU') - matches Devoir2's measured config (Lab1/code/ihr_config.json speech_compute_type=float16, the native GPU type for ctranslate2); Devoir2's vram-residence-report.md measured ~673 MiB incremental VRAM for small/float16/cuda"
       },
       "device": {
-        "value": "cpu",
-        "provenance": "chosen 2026-09-26 - the GPU is already committed to the resident Ollama model; CUDA is an explicit opt-in, not the default"
+        "value": "cuda",
+        "provenance": "chosen by the operator 2026-09-26 ('no CPU, all on GPU') - matches Devoir2's speech_device=cuda. Needs the NVIDIA runtime of requirements-voice-cuda.txt on a machine without a system CUDA Toolkit. The operator judged the ~0.7 GB left beside the resident writer-role model enough for Whisper's ~673 MiB"
       },
       "language": {
         "value": null,
         "provenance": "chosen 2026-09-26 - the per-request voice-panel dropdown (auto/en/fr) governs; this stays null as the fallback default when a caller omits language entirely"
+      },
+      "vad_filter": {
+        "value": true,
+        "provenance": "copied 2026-09-26 from Devoir2 (devoir2.transcription.vad_filtre), which measured Whisper transcribing silence and pure tones as subtitle credits; the live preview re-transcribes a buffer that is mostly silence before speech starts"
+      },
+      "vad_min_silence_ms": {
+        "value": 500,
+        "provenance": "copied 2026-09-26 from Devoir2 (vad_duree_silence_min_ms): short against a thinking pause, long against a breath"
+      },
+      "condition_on_previous_text": {
+        "value": false,
+        "provenance": "copied 2026-09-26 from Devoir2 (conditionner_sur_texte_precedent): stops one hallucination from repeating at every live-preview refresh"
       }
     },
     "partial_refresh_ms": {
-      "value": 2000,
-      "provenance": "chosen 2026-09-26 - matches the Devoir2 reference implementation's own speech_rafraichissement_secondes cadence (periodic re-transcription of the growing recording while the key is still held, so the transcript updates live rather than only once on release)"
+      "value": 1000,
+      "provenance": "measured 2026-09-26 - Whisper small/float16 on cuda transcribed a 6.4 s sentence in 0.51-0.71 s beside the resident writer model (.superpowers/stt_gpu_probe.py). Devoir2's 3.0 s was sized for its CPU cost of 1.44 s; on the GPU 1 s keeps the caption live, and the page's in-flight guard makes the real cadence max(this, one transcription) so previews never overlap"
     }
   },
   "paths": {

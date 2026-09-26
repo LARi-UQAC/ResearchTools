@@ -86,7 +86,12 @@ identifier spoofing across containers) are in
 A push-to-talk voice panel (hold P, release to send), one place this skill adds an optional
 dependency (`requirements-voice.txt` for `faster-whisper`, lazily imported inside
 `stt_engine.py`'s default loader only, absent by default reports unavailable with the install
-command rather than breaking the dashboard). Every question is relayed to the vault daemon's
+command rather than breaking the dashboard). Whisper runs on the GPU (small, float16, cuda:
+Devoir2's measured configuration, operator decision 2026-09-26), which needs
+`requirements-voice-cuda.txt` for the NVIDIA runtime on a machine without a system CUDA
+Toolkit; `stt_engine.add_cuda_dll_dirs` puts those DLLs on the search path. The model is warmed
+at startup, and the transcript updates live while P is held (sequential re-transcription of the
+growing recording, like Devoir2). Every question is relayed to the vault daemon's
 own ask queue (`.claude/skills/obsidian-cli`'s `daemon_ask.py`) and answered there - this
 process never opens `OBSIDIAN_VAULT` or `graphify-out/` itself. TTS in this phase is the
 browser's own `speechSynthesis`, not a new server-side engine. Language is a dropdown

@@ -16,8 +16,32 @@ class VoiceConfigCase(unittest.TestCase):
     def test_stt_keys_are_declared(self):
         import rt_state
         for key in ("engine", "model_size", "compute_type", "device",
-                    "language"):
+                    "language", "vad_filter", "vad_min_silence_ms",
+                    "condition_on_previous_text"):
             rt_state.config_value(self.config, "voice", "stt", key)
+
+    def test_stt_runs_on_the_gpu_like_devoir2(self):
+        """Operator decision 2026-09-26: 'no CPU, all on GPU', matching
+        Devoir2's measured config (small / float16 / cuda)."""
+        import rt_state
+        self.assertEqual(
+            rt_state.config_value(self.config, "voice", "stt", "device"),
+            "cuda")
+        self.assertEqual(
+            rt_state.config_value(self.config, "voice", "stt",
+                                  "compute_type"), "float16")
+
+    def test_the_dashboard_never_outwaits_the_daemon_ttl(self):
+        """A dashboard waiting longer than the daemon keeps a request would
+        wait on an answer that can only ever say 'expired'."""
+        import json
+        import rt_state
+        wait = rt_state.config_value(self.config, "timeouts_seconds",
+                                     "voice_ask_wait")
+        daemon_cfg = json.loads(
+            (SCRIPTS.parents[1] / "obsidian-cli" / "daemon-config.json")
+            .read_text(encoding="utf-8"))
+        self.assertLess(wait, daemon_cfg["daemon"]["ask_request_ttl_s"])
 
     def test_ask_wait_and_question_cap_are_declared(self):
         import rt_state

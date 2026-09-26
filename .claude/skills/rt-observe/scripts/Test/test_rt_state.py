@@ -838,6 +838,35 @@ class ServeCommand(unittest.TestCase):
         self.assertIn("api/state", out.getvalue())
         httpd.server_close.assert_called_once()
 
+    def test_the_serving_path_warms_the_stt_model_once(self):
+        """Measured 2026-09-26: with lazy loading the first transcription took
+        14.3 s, so no live preview could appear during the first push-to-talk.
+        Devoir2 preloads and warms at startup; so does the dashboard now."""
+        out, err = io.StringIO(), io.StringIO()
+        httpd = mock.Mock()
+        httpd.serve_forever.side_effect = KeyboardInterrupt
+        warmed = []
+        with mock.patch.object(rt_server, "build_server", return_value=httpd), \
+             mock.patch.object(rt_state, "section_builders", return_value={}):
+            rt_state.serve(
+                self._args(), fixture_config(), out=out, err=err,
+                clock=lambda: NOW, warmup=warmed.append,
+                decide=lambda *a: {"action": "serve", "port": 8787,
+                                   "host": "127.0.0.1",
+                                   "url": "http://127.0.0.1:8787/"})
+        self.assertEqual(len(warmed), 1)
+
+    def test_a_refused_start_never_warms_the_model(self):
+        out, err = io.StringIO(), io.StringIO()
+        warmed = []
+        rt_state.serve(
+            self._args(), fixture_config(), out=out, err=err,
+            clock=lambda: NOW, warmup=warmed.append,
+            decide=lambda *a: {"action": "refuse", "port": 8787,
+                               "host": "127.0.0.1", "reason": "held",
+                               "pid": 1, "url": "http://127.0.0.1:8787/"})
+        self.assertEqual(warmed, [])
+
     def test_open_is_not_honoured_by_a_dry_run(self):
         out, err = io.StringIO(), io.StringIO()
         browse = mock.Mock()
@@ -1017,6 +1046,20 @@ class VoiceWiringCase(unittest.TestCase):
             write_request=fake_write, poll=voice_ask.poll_answer)
         ask_fn("is this stale", language="fr")
         self.assertEqual(written["language"], "fr")
+
+    def test_start_stt_warmup_runs_warm_off_the_serving_thread(self):
+        seen = {}
+
+        def fake_warm(config):
+            seen["config"] = config
+            return None
+
+        def run_now(target):
+            target()
+
+        cfg = fixture_config()
+        rt_state.start_stt_warmup(cfg, warm=fake_warm, spawn=run_now)
+        self.assertIs(seen["config"], cfg)
 
     def test_transcribe_fn_forwards_the_chosen_language(self):
         config = fixture_config()

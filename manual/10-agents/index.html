@@ -1,0 +1,1555 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/manual/10-agents/">
+      
+      
+        <link rel="prev" href="../09-thesistracker-integration/">
+      
+      
+        <link rel="next" href="../11-file-locations/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>10 Agents - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#agents" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              10 Agents
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../01-installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../04-skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../05-security-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Security audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#latex-writer-key-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        latex-writer key rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reviewer-response-key-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reviewer-response key rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-delegation-ollama-subagents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local delegation (Ollama subagents)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#loop-engineering-local-model-dev-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loop engineering (local-model dev loop)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#obsidian-knowledge-capture-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Obsidian knowledge-capture loop
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#calling-an-agent-explicitly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calling an agent explicitly
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-the-agents-outside-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using the agents outside Claude Code
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../authoring-and-mirrors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributor-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../github-repo-setup-playbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#latex-writer-key-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        latex-writer key rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reviewer-response-key-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reviewer-response key rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-delegation-ollama-subagents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local delegation (Ollama subagents)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#loop-engineering-local-model-dev-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Loop engineering (local-model dev loop)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#obsidian-knowledge-capture-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Obsidian knowledge-capture loop
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#calling-an-agent-explicitly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calling an agent explicitly
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-the-agents-outside-claude-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using the agents outside Claude Code
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="agents">Agents<a class="headerlink" href="#agents" title="Permanent link">&para;</a></h1>
+<p>Chapter 10 of the ResearchTools manual. Back to <a href="../../README.md">table of contents</a>.</p>
+<p>Agents are specialists Claude delegates to automatically based on context, or explicitly on
+request ("use the <code>scopus-auditor</code> agent to…"). Fifteen ship in this repo; most back a slash
+command. Two of them (<code>local-writer</code>, <code>local-coder</code>) are local-delegation agents: a cheap
+cloud wrapper that drives a local Ollama model over a Bash bridge (see "Local delegation").
+Two are loop orchestrators: <code>authoring-loop</code> (ScholarEval-gated writing loop) and the
+code loop in the <code>loop-engineer</code> skill (see "Loop engineering").</p>
+<p>Format (repo convention): one flat markdown file per agent at <code>.claude/agents/&lt;name&gt;.md</code>,
+opening with YAML frontmatter (<code>name:</code>, <code>description:</code>). This is what Claude Code's subagent
+discovery scans; a sub-folder layout is invisible to it. Note the asymmetry with skills,
+which ARE folder-based (<code>skills/&lt;name&gt;/SKILL.md</code>). The canonical <code>.claude/agents/</code> files are
+the single source of truth; per-tool mirrors are generated from them (see
+"Using the agents outside Claude Code" below).</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Purpose</th>
+<th>Command / trigger</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scopus-researcher</code></td>
+<td>Autonomous literature review: search, validate, summarize, PRISMA + gap/coverage/Pareto matrices, hypotheses, LaTeX output</td>
+<td><code>/litreview</code></td>
+<td><code>.claude/agents/scopus-researcher.md</code></td>
+</tr>
+<tr>
+<td><code>litreview-updater</code></td>
+<td>Incrementally refresh an existing review with new papers: windowed Scopus + Consensus search, delta dedup, validation/grading, preemption check (deliberation + scholar-evaluation), dated <code>\added{}</code> copy <code>_up_YYYYMMDD.tex</code> + CHANGELOG; unattended draft + REVIEW REQUIRED</td>
+<td><code>/litupdate</code></td>
+<td><code>.claude/agents/litreview-updater.md</code></td>
+</tr>
+<tr>
+<td><code>scopus-auditor</code></td>
+<td>Audit an existing review; validate every reference; executable improvement plan</td>
+<td><code>/auditreview</code></td>
+<td><code>.claude/agents/scopus-auditor.md</code></td>
+</tr>
+<tr>
+<td><code>paper-auditor</code></td>
+<td>Full paper content audit (intro→future works) + Scopus validation + ScholarEval score + improvement plan</td>
+<td><code>/auditpaper</code></td>
+<td><code>.claude/agents/paper-auditor.md</code></td>
+</tr>
+<tr>
+<td><code>thesis-auditor</code></td>
+<td>Full UQAC thesis audit (front matter, hypothesis flow, chapter structure, bilingual consistency, UQAC compliance) + ScholarEval score</td>
+<td><code>/auditthesis</code></td>
+<td><code>.claude/agents/thesis-auditor.md</code></td>
+</tr>
+<tr>
+<td><code>thesis-proposal-auditor</code></td>
+<td>Audit a UQAC thesis <strong>proposal</strong> (≤35 pages body, testable hypotheses, suggested methodology, no full results) + ScholarEval score</td>
+<td>thesis-proposal audit / by name</td>
+<td><code>.claude/agents/thesis-proposal-auditor.md</code></td>
+</tr>
+<tr>
+<td><code>reviewer-response</code></td>
+<td>Point-by-point response letters + traceable <code>changes</code>-package markup in the paper</td>
+<td><code>/replyreviewer</code></td>
+<td><code>.claude/agents/reviewer-response.md</code></td>
+</tr>
+<tr>
+<td><code>bib-cleaner</code></td>
+<td>Validate, deduplicate, normalize and DOI-enrich a <code>.bib</code> file</td>
+<td><code>/bibclean</code></td>
+<td><code>.claude/agents/bib-cleaner.md</code></td>
+</tr>
+<tr>
+<td><code>submit-checker</code></td>
+<td>Pass/fail submission checklist against a target journal's requirements</td>
+<td><code>/submitcheck</code></td>
+<td><code>.claude/agents/submit-checker.md</code></td>
+</tr>
+<tr>
+<td><code>talk-builder</code></td>
+<td>Accepted paper → conference talk: six opening questions first, build contract, <code>talk_model.json</code>, render (PowerPoint / Beamer / web), then the validate → notes → render → inspect loop until every page is clean</td>
+<td><code>/talk</code></td>
+<td><code>.claude/agents/talk-builder.md</code></td>
+</tr>
+<tr>
+<td><code>word-to-latex</code></td>
+<td>Faithful Word <code>.docx</code> → LaTeX conversion (pandoc + visual-fidelity patches)</td>
+<td><code>/word2latex</code></td>
+<td><code>.claude/agents/word-to-latex.md</code></td>
+</tr>
+<tr>
+<td><code>cover-paper</code></td>
+<td>Submission package: hidden Cover Letter in source, standalone Title Page PDF, Corresponding Author Profile PDF (recent papers from Scopus), Graphical Abstract via Canva MCP from the paper's figures (Elsevier/Springer spec + FigureLabs prompt)</td>
+<td>by name (at submission)</td>
+<td><code>.claude/agents/cover-paper.md</code></td>
+</tr>
+<tr>
+<td><code>narrative-cv-writer</code></td>
+<td>Draft/refresh/tailor the FRQ / tri-agency narrative CV to one grant competition: refresh the durable master contributions inventory (Scopus AU-ID two-step + <code>extract-contributions</code>, plus a grouped question for non-publication items), rank against the competition's own objectives via <code>cv_select.py</code>, draft the three sections through <code>scientific-writing</code>, render LaTeX/PDF + plain text, self-check the page budget and AI-usage score</td>
+<td><code>/cv</code></td>
+<td><code>.claude/agents/narrative-cv-writer.md</code></td>
+</tr>
+<tr>
+<td><code>thesis-to-paper</code></td>
+<td>Integrate a thesis + its conference papers into one submission-ready journal manuscript (invited extension); pandoc reference conversion, figure pipeline, content-delta matrix, then <code>/litreview</code> + <code>scientific-writing</code> + <code>/bibclean</code> + <code>/submitcheck</code> + <code>/auditpaper</code> inline, with a multi-session checkpoint protocol</td>
+<td>by name / "extend this paper to a journal version"</td>
+<td><code>.claude/agents/thesis-to-paper.md</code></td>
+</tr>
+<tr>
+<td><code>authoring-loop</code></td>
+<td>ScholarEval-gated authoring loop: define subject -&gt; author (Fable 5) -&gt; audit with <code>scholar-evaluation</code> (Sonnet/Haiku) -&gt; loop to <code>min_score</code> or <code>max_budget</code> -&gt; record learnings to memory via <code>local-writer</code>. Authoring counterpart of the <code>loop-engineer</code> code loop</td>
+<td>by name / "improve this to a ScholarEval target under a budget"</td>
+<td><code>.claude/agents/authoring-loop.md</code></td>
+</tr>
+<tr>
+<td><code>abstract-writer</code></td>
+<td>Extract a paper's own content (<code>extract-paper-idea</code> skill) and draft or refresh its abstract, grounded in its own contribution/method/results/limitations rather than a paraphrase; for a UQAC thesis, drafts the Résumé (French) + Abstract (English) pair from the same extraction. No citations, no Scopus, no deliberation. Self-checks against <code>composition_rules.md</code> + the <code>latex-hygiene</code> AI-usage scanner; confirms before overwriting existing content</td>
+<td><code>/abstract</code></td>
+<td><code>.claude/agents/abstract-writer.md</code></td>
+</tr>
+<tr>
+<td><code>latex-writer</code></td>
+<td>Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis</td>
+<td>by context (writing)</td>
+<td><code>.claude/agents/latex-writer.md</code></td>
+</tr>
+<tr>
+<td><code>local-writer</code></td>
+<td>High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via the resolver's writer-role model over a Bash bridge; NOT LaTeX text authoring</td>
+<td>by context / by name</td>
+<td><code>.claude/agents/local-writer.md</code></td>
+</tr>
+<tr>
+<td><code>local-coder</code></td>
+<td>Local code generation against a spec/failing test, refactor snippets, scaffolds via the resolver's coder-role model over a Bash bridge; no state-changing git</td>
+<td>by context / by name</td>
+<td><code>.claude/agents/local-coder.md</code></td>
+</tr>
+</tbody>
+</table>
+<p>The four ScholarEval auditors (<code>scopus-auditor</code>, <code>paper-auditor</code>, <code>thesis-auditor</code>,
+<code>thesis-proposal-auditor</code>) score the document before writing the plan; after the plan is
+executed they re-run the scoring on the revised source and report a before/after ScholarEval
+comparison (baseline vs post), hard-gated so execution only completes when the score improves.</p>
+<h2 id="latex-writer-key-rules"><code>latex-writer</code> key rules<a class="headerlink" href="#latex-writer-key-rules" title="Permanent link">&para;</a></h2>
+<ul>
+<li>TiKZ: relative positioning only (drawio2tikz-converted figures are the sanctioned absolute-coordinate exception); arrows perpendicular; no overlaps</li>
+<li>References: peer-reviewed only (IEEE, Springer, Elsevier, Taylor &amp; Francis, Cambridge, Wiley, IET, IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC)); DOI via hyperref; any other publisher needs user confirmation</li>
+<li>Tables: rows = parameters, cols = concepts; bold headers; 10 % grey row shading</li>
+<li>Language: French default for UQAC thesis, English for scientific papers</li>
+<li>Avoid AI-detectable patterns: zero-width spaces, smart quotes, em dashes, perfect parallel lists</li>
+</ul>
+<h2 id="reviewer-response-key-rules"><code>reviewer-response</code> key rules<a class="headerlink" href="#reviewer-response-key-rules" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Reviewer files assigned sequentially: first file = R1, second = R2, etc.</li>
+<li>Grammar-only fixes (G): applied directly, no markup</li>
+<li>Additions <code>\added[id=RN]{}</code>, deletions <code>\deleted[id=RN]{}</code>, rewrites <code>\replaced[id=RN]{}{}</code> (changes package)</li>
+<li>Reviewer colors: R1 blue, R2 red, R3 orange, R4+ purple (<code>\definechangesauthor</code>)</li>
+<li>Every proposed reference validated via Scopus; <code>[NO DOI]</code> flagged in the summary when applicable</li>
+</ul>
+<h2 id="local-delegation-ollama-subagents">Local delegation (Ollama subagents)<a class="headerlink" href="#local-delegation-ollama-subagents" title="Permanent link">&para;</a></h2>
+<p><code>local-writer</code> and <code>local-coder</code> cut cloud cost by keeping the top model as orchestrator and
+pushing token-heavy generation to local models on the GPU. Each agent runs on a cheap cloud
+model (Haiku) that only frames the task and drives a local model over <code>ollama_bridge.py</code>,
+which speaks Ollama's HTTP API and takes <code>--role writer</code> or <code>--role coder</code> instead of a model
+name; the bulk text or code is generated locally and free. No gateway is used and cloud stays
+on your normal subscription auth, so only the small Haiku wrapper spends cloud tokens.</p>
+<p>Requirements: Ollama running, and a qualified tag for the role you are about to use
+(<code>model_resolver.py --resolve --role coder</code>). There is no fallback tag: an unqualified role
+is an explicit stop, never a silent substitution of a weaker model. LiteLLM
+(<code>~/.litellm/ollama.yaml</code>) is optional and only gives the bridge its keep-alive / context
+tuning. <code>local-writer</code> never authors LaTeX prose (it may add <code>%</code> comments only); all
+scientific and LaTeX redaction stays with <code>latex-writer</code> + <code>scientific-writing</code> on the
+latest cloud Claude model.</p>
+<p><code>aider-setup</code> is a second, separate local-coding lane that needs no Claude Code at all — how it
+differs from <code>local-coder</code> and the nightly run itself: chapter <a href="../06-aider-pipeline/">06</a>.</p>
+<h2 id="loop-engineering-local-model-dev-loop">Loop engineering (local-model dev loop)<a class="headerlink" href="#loop-engineering-local-model-dev-loop" title="Permanent link">&para;</a></h2>
+<p>The <code>loop-engineer</code> skill runs a budget-bounded develop-and-improve loop: design → plan →
+code → comment → test → review → score → correct, repeating until a composite quality gate
+is met or a hard budget cap is hit. It keeps the best cloud model (Fable 5) as
+orchestrator/judge, uses cheaper cloud tiers (Opus for plans, Sonnet for execution and
+review) for the actions, and delegates code and comments to the local <code>local-coder</code> /
+<code>local-writer</code> agents so the heavy generation is free.</p>
+<p>Option contract: <code>--loop --budget &lt;max_usd&gt; --score &lt;min_score&gt; [--max-iters N]</code>. The default
+stop gate is composite: tests green AND no CRITICAL/HIGH review findings AND aggregate score
+<code>&gt;=</code> min_score (default 90); a literal 100 is opt-in. The loop also stops on the hard budget
+cap, the max-iterations cap, or a no-progress plateau. The score aggregates findings from the
+installed reviewers (<code>/code-review</code>, <code>/security-guidance</code>, <code>pr-review-toolkit</code>,
+<code>systematic-debugging</code>) plus the betterleaks / pip-audit hooks, with security as a hard floor
+(any CRITICAL fails the gate regardless of the aggregate). The final merge to a protected
+branch is human-gated: the loop stops at "ready to merge" and waits for your confirmation.
+The loop diagram and the use-case diagram are in <a href="../../Architecture.md">Architecture.md</a>
+("Layer 5 — Loop engineering").</p>
+<p>The same loop applies to writing through the <code>authoring-loop</code> agent (the ScholarEval-gated
+variant): define a subject, author with an authoring agent (<code>/litreview</code>, <code>latex-writer</code>,
+<code>/replyreviewer</code>, …) on Fable 5, audit with the <code>scholar-evaluation</code> skill on Sonnet or Haiku
+to get a score, loop until the ScholarEval target or the budget is reached, then record the
+learnings to memory via <code>local-writer</code>. The five steps are documented in the loop-engineer
+<a href="../../.claude/skills/loop-engineer/SKILL.md">SKILL.md</a>.</p>
+<h2 id="obsidian-knowledge-capture-loop">Obsidian knowledge-capture loop<a class="headerlink" href="#obsidian-knowledge-capture-loop" title="Permanent link">&para;</a></h2>
+<p>Both loops read and write the Obsidian vault so learnings persist across iterations and projects
+(Claude Code has no cross-project memory of its own; the vault is that broad memory).
+<code>local-writer</code> is the single, serialized vault writer; <code>local-coder</code> reads only and hands it any
+learning. Reads happen at plan time (baked into the plan by <code>brainstorming</code> / <code>writing-plans</code> on
+the cloud tiers) and, during a run, only by the local agents (task start, checkpoints, error
+recovery); <code>executing-plans</code> does not read. Writes land in <code>10_Projets/&lt;projet&gt;/</code> logs and
+reusable <code>30_Ressources/</code> atomic notes through the outbox only - the SessionStart/SessionEnd
+<code>obsidian-outbox-flush.py</code> hook is the sole write path, never a fallback. The <code>~/bin/obsidian</code>
+wrapper is for reads. Requires Obsidian open with the CLI enabled. Full design in <a href="../../contributor-notes/">docs/contributor-notes.md</a>
+section 5; routing in <a href="../../.claude/CLAUDE.md">.claude/CLAUDE.md</a>.</p>
+<h2 id="calling-an-agent-explicitly">Calling an agent explicitly<a class="headerlink" href="#calling-an-agent-explicitly" title="Permanent link">&para;</a></h2>
+<p>Agents are normally triggered automatically by context. To invoke one directly, address it
+by name in your message:</p>
+<div class="highlight"><pre><span></span><code>Use the scopus-auditor agent to audit the review in paper_review/literature_review.tex
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>reviewer-response agent: --paper sn-article.tex --reviewers r1.txt --editor "Prof. Yin"
+</code></pre></div>
+<p>The slash commands <code>/auditreview</code>, <code>/replyreviewer</code>, <code>/litreview</code>, etc. are thin wrappers that
+call these agents with the same argument syntax — use the commands for convenience and the
+explicit agent names when you need finer control or want to chain agents in one message.</p>
+<h2 id="using-the-agents-outside-claude-code">Using the agents outside Claude Code<a class="headerlink" href="#using-the-agents-outside-claude-code" title="Permanent link">&para;</a></h2>
+<p><code>install.ps1</code> regenerates per-tool mirrors from the canonical <code>.claude/agents/*.md</code>
+files. Run it after adding or editing an agent, then commit the regenerated output. Add
+<code>-Personal</code> to also copy the Copilot agent profiles to <code>~/.copilot/agents/</code>, which makes
+them available to Copilot CLI in every project (re-run after agent edits to refresh).</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Generated target</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GitHub Copilot (agents)</td>
+<td><code>.github/agents/&lt;name&gt;.agent.md</code></td>
+<td>Auto-discovered once on the default branch (GitHub.com agents panel, coding agent, VS Code, Copilot CLI <code>/agent</code> or <code>copilot --agent &lt;name&gt;</code>). Copilot caps agent prompts at 30,000 characters, so the five large agents ship as stubs that read the canonical file first.</td>
+</tr>
+<tr>
+<td>GitHub Copilot (commands)</td>
+<td><code>.github/prompts/&lt;name&gt;.prompt.md</code></td>
+<td>One prompt file per task command (13); invoke as <code>/&lt;name&gt;</code> in Copilot Chat. The Claude session modes (<code>concis</code>, <code>slim</code>, <code>focus</code>, <code>ctx</code>) are skipped.</td>
+</tr>
+<tr>
+<td>GitHub Copilot (rules)</td>
+<td><code>.github/instructions/&lt;name&gt;.instructions.md</code></td>
+<td>One per <code>.claude/rules/*.md</code>, applied to all files (<code>applyTo: "**"</code>), plus the master <code>.github/copilot-instructions.md</code> (mission, agent routing, skills pointer).</td>
+</tr>
+<tr>
+<td>GitHub Copilot (skills)</td>
+<td>none needed</td>
+<td>Skills are plain repo folders (<code>.claude/skills/&lt;name&gt;/SKILL.md</code>); Copilot agents read them directly, and the master instructions point there.</td>
+</tr>
+<tr>
+<td>OpenCode</td>
+<td><code>.opencode/agent/&lt;name&gt;.md</code></td>
+<td>Full body, <code>description</code> frontmatter.</td>
+</tr>
+<tr>
+<td>Continue</td>
+<td><code>.continue/rules/researchtools.md</code></td>
+<td>One rule pointing at the canonical files and routing table.</td>
+</tr>
+<tr>
+<td>Aider</td>
+<td><code>CONVENTIONS.md</code></td>
+<td>Pointer paragraph (created once, never overwritten).</td>
+</tr>
+<tr>
+<td><code>AGENTS.md</code> readers (OpenHuman, Hermes Agent, Codex, and others)</td>
+<td><code>AGENTS.md</code></td>
+<td>Distilled master, regenerated on every run; agent list, routing pointer, skills examples, and the cross-cutting rules.</td>
+</tr>
+<tr>
+<td>Codex (skills)</td>
+<td><code>.agents/skills/&lt;name&gt;/SKILL.md</code></td>
+<td>Codex is the one harness with a native skill convention: it scans <code>.agents/skills</code> from the working directory up to the repo root. Each mirror is a <strong>pointer</strong> carrying only the frontmatter, since the description is the whole trigger surface and the body it then reads is the canonical file. Descriptions are trimmed to whole sentences to fit Codex's skill-list budget (8000 chars when the context window is unknown); over budget Codex shortens and then omits entries, so the trim is deliberate rather than left to chance.</td>
+</tr>
+<tr>
+<td>Codex (nested instructions)</td>
+<td><code>.claude/skills/AGENTS.md</code></td>
+<td>Codex concatenates one <code>AGENTS.md</code> per directory from the git root down to the working directory, later files overriding earlier ones, capped by <code>project_doc_max_bytes</code> (32 KiB default). This one adds the script-surface rule for sessions working inside the skills tree.</td>
+</tr>
+</tbody>
+</table>
+<p>For global availability in Claude Code (any working directory), <code>install-junctions.ps1</code>
+links each <code>.claude/agents/&lt;name&gt;.md</code> into <code>~/.claude/agents/</code> per file (symlink; hard-link
+fallback when Developer Mode is off — re-run after a <code>git pull</code> that changes agents).
+Skills keep their per-folder junctions.</p>
+<hr />
+<p><a href="../09-thesistracker-integration/">← 09 ThesisTracker integration</a> | <a href="../../README.md">Table of contents</a> | <a href="../11-file-locations/">11 File locations →</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

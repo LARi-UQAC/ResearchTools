@@ -1,0 +1,1661 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/manual/01-installation/">
+      
+      
+        <link rel="prev" href="../00-purpose/">
+      
+      
+        <link rel="next" href="../02-profiles/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>01 Installation - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#installation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              01 Installation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install-scripts-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install scripts overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-claudemd-family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The CLAUDE*.md family
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-clone-the-repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — Clone the repository
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-detect-this-machines-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Detect this machine's paths
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-make-agents-available-globally-optional-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Make agents available globally (optional, recommended)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-install-for-other-coding-tools-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Install for other coding tools (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-python-environment-for-the-offline-test-suite-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Python environment for the offline test suite (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributing-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributing improvements
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../04-skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../05-security-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Security audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../authoring-and-mirrors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributor-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../github-repo-setup-playbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install-scripts-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install scripts overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-claudemd-family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The CLAUDE*.md family
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-clone-the-repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — Clone the repository
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-detect-this-machines-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Detect this machine's paths
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-make-agents-available-globally-optional-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Make agents available globally (optional, recommended)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-install-for-other-coding-tools-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Install for other coding tools (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-python-environment-for-the-offline-test-suite-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Python environment for the offline test suite (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributing-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributing improvements
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
+<p>Chapter 01 of the ResearchTools manual. Back to <a href="../../README.md">table of contents</a>.</p>
+<p>Follow these steps on any machine after cloning the repository.</p>
+<h2 id="install-scripts-overview">Install scripts overview<a class="headerlink" href="#install-scripts-overview" title="Permanent link">&para;</a></h2>
+<p>Three scripts, three different jobs and lifecycles. <code>setup.ps1</code> is the single entry point:
+it wraps the other two via <code>-InstallJunctions</code> / <code>-InstallTools</code>, and <code>-All</code> runs the full
+sequence (config, then junctions, then tools) in one pass.</p>
+<p><code>setup.ps1 -InstallDaemon</code> is the fourth job, and it belongs here rather than in the two
+installers: it delegates to
+<code>.claude\skills\obsidian-cli\scripts\vault-daemon-autostart.ps1 -Install</code>, which puts one
+shortcut in the Startup folder so the vault event daemon is running at login and raw drops
+in <code>~/.claude/obsidian-outbox/raw</code> get filed instead of piling up. <code>-All</code> includes it only
+when a vault is configured, and says so in one line when it skips: a login daemon with no
+vault starts, finds nothing and exits invisibly. <code>install.ps1</code> runs many times a day and
+<code>install-junctions.ps1 -Sync</code> runs at every session start, so a Startup write in either
+would come back after the user deliberately removed it.</p>
+<p>Nothing installs that shortcut on its own, and no tool here should: the Startup folder is the
+operator's. <strong>The daemon is therefore started by the operator</strong>, either by running
+<code>setup.ps1 -InstallDaemon</code> once so it comes up at every login, or by launching
+<code>vault-daemon-autostart.bat</code> when it is wanted. Until one of those happens, raw drops simply
+accumulate in <code>~/.claude/obsidian-outbox/raw/</code> and are filed the first time the daemon runs;
+they are not lost. <code>vault-daemon-autostart.ps1 -Status</code> is read-only and answers the three
+questions that matter - whether a daemon holds the lock right now, what the log's tail says,
+and whether the login shortcut exists at all.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>setup.ps1</code></th>
+<th><code>install-junctions.ps1</code></th>
+<th><code>install.ps1</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Job</td>
+<td>Detect this machine's paths (Git Bash, Node, Obsidian) and fill the gaps in the GLOBAL Claude Code configuration from the two templates</td>
+<td>Link the repo into <code>~/.claude</code> so Claude Code loads agents/skills/rules/commands in every workspace</td>
+<td>Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider, <code>AGENTS.md</code> readers (<code>-Personal</code> adds the user-level Copilot install)</td>
+</tr>
+<tr>
+<td>Output</td>
+<td>Nothing inside the repository. Additively: <code>~/.claude/CLAUDE.md</code> (whole file only when absent), <code>~/.claude/settings.json</code> (only the hook entries the template declares and the live file lacks), <code>OBSIDIAN_VAULT</code> at USER scope (only when unset), and <code>.venv-skills/</code> in the clone with <code>-InstallPython</code></td>
+<td>Links in <code>C:\Users\&lt;you&gt;\.claude\</code></td>
+<td>Generated files committed in the repo (<code>.github\</code>, <code>.opencode\</code>, <code>.continue\</code>, <code>CONVENTIONS.md</code>, <code>AGENTS.md</code>) + optional user copies</td>
+</tr>
+<tr>
+<td>When to run</td>
+<td>Once after clone (or when machine paths change)</td>
+<td>Once after clone; re-run when an agent or skill is ADDED (or a hardlink detached after a pull)</td>
+<td>After every agent/command/rule EDIT, then commit the output</td>
+</tr>
+<tr>
+<td>Privilege</td>
+<td>none</td>
+<td>symlinks want Developer Mode (automatic hardlink fallback)</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Interactive</td>
+<td>yes (asks vault path, confirms) - <code>-NonInteractive</code> refuses with exit 2 instead of assuming a default, and <code>-Preview</code> writes nothing at all</td>
+<td>no</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Via <code>setup.ps1</code></td>
+<td>-</td>
+<td><code>-InstallJunctions</code></td>
+<td><code>-InstallTools</code></td>
+</tr>
+<tr>
+<td>Other switches</td>
+<td><code>-InstallDaemon</code> (vault daemon at login), <code>-InstallPython</code> (<code>.venv-skills</code> for the offline suite)</td>
+<td>-</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-All</span> <span class="n">-Personal</span>   <span class="c"># new machine: config + Claude links + all tool mirrors</span>
+</code></pre></div>
+<h2 id="the-claudemd-family">The <code>CLAUDE*.md</code> family<a class="headerlink" href="#the-claudemd-family" title="Permanent link">&para;</a></h2>
+<p>Two files, both hand-written, both English, neither carrying a machine path or a person's
+name. A file a script generates is never a tracked file, so anything derived from these
+lands in <code>~/.claude/</code> or in the mirrors, which are regenerated wholesale and reviewed as
+output.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it is</th>
+<th>Written by</th>
+<th>Where its content lands</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CLAUDE.template.md</code></td>
+<td>Source of the GLOBAL instructions: session rules, Obsidian vault integration, git-sync, plan-mode workflow, hooks. Carries the <code>{{OBSIDIAN_VAULT}}</code> / <code>{{OBSIDIAN_EXE}}</code> placeholders and the only copy of the <code>RT-CONTRACT</code> block</td>
+<td>a human</td>
+<td><code>~/.claude/CLAUDE.md</code> — the whole substituted file when that file does not exist, the <code>RT-CONTRACT</code> block alone when it does (<code>install-junctions.ps1 -Sync</code>, <code>Update-RtClaudeMd</code>)</td>
+</tr>
+<tr>
+<td><code>.claude/CLAUDE.md</code></td>
+<td>The repository's own authority: mission, writing standard, references, figures/tables/equations, the routing table, pipeline integrity, where code belongs</td>
+<td>a human</td>
+<td>loaded by Claude Code when working inside this repository</td>
+</tr>
+</tbody>
+</table>
+<p>Two files that used to sit beside them are gone: a root <code>CLAUDE.md</code>, which was a generated
+copy of the template carrying this machine's vault and Obsidian paths, and <code>CLAUDE (up).md</code>,
+a stale copy of the parent directory's file that nothing read. Only the root <code>CLAUDE.md</code> is
+gitignored.</p>
+<p><code>.claude/settings.json</code> is a different case and <strong>is committed</strong>. It is the shared project
+scope, and it has to reach GitHub: a routine running on the web clones this repository and has
+no <code>~/.claude</code> of yours, so this committed file is the only way it learns which plugin
+marketplaces to trust when it reviews a pull request. It holds marketplace and plugin
+declarations only — no absolute path, no account name, no secret. It must never declare
+<code>hooks</code>: the global file already does, a project copy makes every hook run twice, and their
+commands are Windows paths that do not exist on a Linux runner. Anything machine-specific goes
+in <code>settings.local.json</code>, which is gitignored. <code>.claude/settings.template.json</code> remains the
+declaration of the GLOBAL <code>~/.claude/settings.json</code>, which is a separate file with a separate
+job.</p>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Required for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://docs.anthropic.com/claude-code">Claude Code</a></td>
+<td>Running agents and slash commands</td>
+</tr>
+<tr>
+<td><a href="https://git-scm.com/download/win">Git for Windows</a> (includes Git Bash)</td>
+<td>Hooks that use <code>bash</code> shell</td>
+</tr>
+<tr>
+<td><a href="https://nodejs.org/">Node.js</a></td>
+<td>Caveman-mode hooks (<code>caveman-activate.js</code>, etc.)</td>
+</tr>
+<tr>
+<td>Python 3.x</td>
+<td>Scopus skill scripts + security hooks (<code>betterleaks</code>, <code>pip-audit</code>, <code>prompt-injection-defender</code>)</td>
+</tr>
+<tr>
+<td><code>pip install requests google-genai openai</code></td>
+<td>Scopus skill + Gemini/Copilot cross-review</td>
+</tr>
+<tr>
+<td><code>pip install pymupdf4llm pymupdf</code> <em>(optional, AGPL-3.0)</em></td>
+<td><code>extract-statistic</code> skill PDF parsing (<code>mine</code> mode), LLM-ready Markdown + table extraction; reuses <code>SCOPUS_API_KEY</code> via <code>download_pdf.py</code>, needs no key of its own</td>
+</tr>
+<tr>
+<td><code>pip install docling markitdown[pdf]</code> <em>(optional, MIT; Docling pulls torch)</em></td>
+<td>Pluggable Markdown backend for <code>extract_text.py</code> (<code>--stats-scan</code> / <code>--section-scan</code>) and HTML conversion in the any-format retrieval path. Docling is the default (best tables/layout), MarkItDown the light fallback; absent both, the parser uses pymupdf4llm + a tag-strip</td>
+</tr>
+<tr>
+<td><code>pip install "psycopg[binary]" pgvector</code> <em>(optional)</em></td>
+<td><code>extract-statistic</code>'s opt-in <code>corpus_index.py</code> (RT-7): pgvector store for ad-hoc cross-corpus retrieval. Both degrade gracefully when absent - the parse cache (<code>parse_cache.py</code>) and the chunker work without them, and the index reports itself unavailable</td>
+</tr>
+<tr>
+<td><code>pip install matplotlib</code> <em>(+ optional <code>folium</code>)</em></td>
+<td><code>geolocalisation</code> skill: world-map PNG figure (<code>matplotlib</code>) and interactive HTML map (<code>folium</code>). No geopandas/GDAL. The <code>--full-text</code> study-site scan additionally reuses <code>pymupdf</code> + <code>download_pdf.py</code></td>
+</tr>
+<tr>
+<td><code>pandoc</code></td>
+<td><code>word2latex</code> skill (Word → LaTeX)</td>
+</tr>
+<tr>
+<td><code>pip install pypdf python-pptx jinja2 defusedxml</code></td>
+<td><code>paper2talk</code> skill: paper-size PDF reflow (<code>pypdf</code>), the gabarit-based PowerPoint renderer (<code>python-pptx</code>), the Beamer/web renderers (<code>jinja2</code>), OOXML reading (<code>defusedxml</code>). Pinned in <code>.claude/skills/paper2talk/scripts/requirements.txt</code></td>
+</tr>
+<tr>
+<td><code>npm install pptxgenjs</code> <em>(optional)</em></td>
+<td><code>paper2talk</code> fallback for a PowerPoint deck with no gabarit at all. Set <code>NODE_PATH</code> when building outside the tree that holds the install</td>
+</tr>
+<tr>
+<td>PowerPoint (Office 16+) <strong>or</strong> LibreOffice, plus Poppler <code>pdftoppm</code></td>
+<td><code>paper2talk</code> render loop: deck → PDF → page images. On Windows the working path is PowerPoint COM <code>SaveAs(..., 32)</code>; the <code>document-skills</code> <code>soffice.py</code> wrapper fails here with <code>AF_UNIX</code>. Poppler ships with MiKTeX</td>
+</tr>
+<tr>
+<td>draw.io Desktop <em>(optional)</em></td>
+<td><code>paper2talk</code> figure re-export at scale 3 (<code>fig_export.py</code>); locate it with <code>--drawio</code> or <code>DRAWIO_EXE</code></td>
+</tr>
+<tr>
+<td><code>pdflatex</code> (TeX Live / MiKTeX)</td>
+<td><code>recommendation-letter</code> skill: compile letters to PDF (degrades to <code>.tex</code> only if absent)</td>
+</tr>
+<tr>
+<td>Obsidian Desktop <em>(optional)</em></td>
+<td>Obsidian vault integration in <code>CLAUDE.md</code></td>
+</tr>
+<tr>
+<td><code>uv tool install graphifyy</code> <em>(optional)</em></td>
+<td>The graphify CLI behind the code-graph memory. The SKILL is vendored here (<code>.claude/skills/graphify/</code>, from graphify 0.9.50) so a clone is never left with instructions to consult a graph and no way to reach one; the CLI itself is not, and without it <code>query</code>, <code>path</code>, <code>explain</code> and <code>update</code> are simply unavailable</td>
+</tr>
+<tr>
+<td>Ollama <em>(optional)</em></td>
+<td>The local model behind <code>local-writer</code> and <code>local-coder</code></td>
+</tr>
+<tr>
+<td>Docker and Docker Compose <em>(optional)</em></td>
+<td><code>deploy/form-service/</code>, the containerized HTTP transport over the <code>form-service</code> skill. Not needed to use the skill itself</td>
+</tr>
+</tbody>
+</table>
+<p>Two Ollama settings are the operator's own step, and the scope is not interchangeable. The
+<code>GRAPHIFY_*</code> pair ships in <code>.claude/settings.template.json</code>, because graphify runs as a child of
+Claude Code and sends its own <code>keep_alive</code> in every request body, which overrides the daemon
+default. The <code>OLLAMA_*</code> values cannot ship there at all and belong in the Windows user registry
+(<code>HKCU:\Environment</code>), because the Ollama daemon is started by its own tray application at login
+and never sees Claude Code's environment. Setting only one of the two leaves the model being
+unloaded on a timer that nothing in this repository controls:</p>
+<div class="highlight"><pre><span></span><code><span class="c"># operator step, once, then restart the daemon and confirm with `ollama ps`</span>
+<span class="no">[Environment]</span><span class="p">::</span><span class="n">SetEnvironmentVariable</span><span class="p">(</span><span class="s1">'OLLAMA_KEEP_ALIVE'</span><span class="p">,</span>        <span class="s1">'-1'</span><span class="p">,</span> <span class="s1">'User'</span><span class="p">)</span>
+<span class="no">[Environment]</span><span class="p">::</span><span class="n">SetEnvironmentVariable</span><span class="p">(</span><span class="s1">'OLLAMA_MAX_LOADED_MODELS'</span><span class="p">,</span> <span class="s1">'1'</span><span class="p">,</span>  <span class="s1">'User'</span><span class="p">)</span>
+<span class="no">[Environment]</span><span class="p">::</span><span class="n">SetEnvironmentVariable</span><span class="p">(</span><span class="s1">'OLLAMA_NUM_PARALLEL'</span><span class="p">,</span>      <span class="s1">'1'</span><span class="p">,</span>  <span class="s1">'User'</span><span class="p">)</span>
+<span class="no">[Environment]</span><span class="p">::</span><span class="n">SetEnvironmentVariable</span><span class="p">(</span><span class="s1">'OLLAMA_FLASH_ATTENTION'</span><span class="p">,</span>   <span class="s1">'1'</span><span class="p">,</span>  <span class="s1">'User'</span><span class="p">)</span>
+</code></pre></div>
+<p><code>OBSIDIAN_VAULT</code> is the third value of this kind, and <code>setup.ps1</code> now offers to set it at
+USER scope when you give it a vault path. It is add-only: a variable that already holds a
+value is printed and left alone unless you pass <code>-Force</code>, and a path that does not exist is
+refused rather than stored. USER scope rather than the current shell is deliberate — the
+Startup shortcut passes no argument, so a login-started daemon reads the user environment
+block and nothing a shell exported. An already-open terminal keeps its old block, and VS Code
+has to be restarted before a session sees the new one.</p>
+<p><code>ollama ps</code> must then show <code>Forever</code> in the <code>UNTIL</code> column. Restart the daemon with
+<code>.claude\skills\opt-local-vram-llm\scripts\restart-ollama.ps1</code>, never by killing <code>ollama*</code> by
+name: the model runs in a child process called <code>llama-server.exe</code>, which that pattern does not
+match, so it survives and keeps its slice of VRAM.</p>
+<h2 id="step-1-clone-the-repository">Step 1 — Clone the repository<a class="headerlink" href="#step-1-clone-the-repository" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="n">git</span> <span class="n">clone</span> <span class="n">https</span><span class="p">://</span><span class="n">github</span><span class="p">.</span><span class="n">com</span><span class="p">/</span><span class="n">LARi-UQAC</span><span class="p">/</span><span class="n">ResearchTools</span><span class="p">.</span><span class="n">git</span>
+<span class="nb">cd </span><span class="n">ResearchTools</span>
+</code></pre></div>
+<h2 id="step-2-detect-this-machines-paths">Step 2 — Detect this machine's paths<a class="headerlink" href="#step-2-detect-this-machines-paths" title="Permanent link">&para;</a></h2>
+<p>Run the setup script from the repository root. It auto-detects Git Bash and Node.js and
+asks for your Obsidian vault path (optional).</p>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div>
+<p>It writes nothing into the repository. The two templates
+(<code>.claude/settings.template.json</code>, <code>CLAUDE.template.md</code>) are the hand-written sources, and
+the configuration they describe belongs in your global Claude Code folder, <code>~/.claude/</code>.</p>
+<h2 id="step-3-make-agents-available-globally-optional-recommended">Step 3 — Make agents available globally (optional, recommended)<a class="headerlink" href="#step-3-make-agents-available-globally-optional-recommended" title="Permanent link">&para;</a></h2>
+<p>This step links <code>~/.claude/agents/</code>, <code>~/.claude/skills/</code>, <code>~/.claude/rules/</code>, and
+<code>~/.claude/commands/</code> into this repository, so that Claude Code loads these agents and
+skills in <strong>every</strong> workspace, not only when you open this folder.</p>
+<p>Only missing links are created; existing ones are never overwritten.</p>
+<div class="highlight"><pre><span></span><code><span class="c"># Preview what will be created without making changes</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallJunctions</span> <span class="n">-Preview</span>
+
+<span class="c"># Apply</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallJunctions</span>
+</code></pre></div>
+<blockquote>
+<p><strong>Alternative (direct):</strong> <code>.\install-junctions.ps1</code> (or <code>.\install-junctions.ps1 -WhatIf</code> to preview).</p>
+</blockquote>
+<p><strong>How linking works by directory type</strong> (skills are folder-based, agents are file-based —
+see the Agents chapter):</p>
+<table>
+<thead>
+<tr>
+<th>Directory</th>
+<th>Link type</th>
+<th>One link per…</th>
+<th>New file/folder after <code>git pull</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agents/</code></td>
+<td>SymbolicLink per FILE (HardLink fallback when Developer Mode is off)</td>
+<td>Agent file (e.g. <code>scopus-researcher.md</code>)</td>
+<td>Re-run <code>.\setup.ps1 -InstallJunctions</code> — existing agents show <code>[EXISTS]</code>, only the new one is created. With HardLinks, also re-run after a pull that EDITS an agent (git rewrites detach hardlinks)</td>
+</tr>
+<tr>
+<td><code>skills/</code></td>
+<td>Junction per sub-folder</td>
+<td>Skill (e.g. <code>scopus/</code>)</td>
+<td>Re-run — only the new skill is created</td>
+</tr>
+<tr>
+<td><code>rules/</code></td>
+<td>Junction on the whole directory</td>
+<td>Entire <code>rules/</code> folder</td>
+<td>Automatic — new <code>.md</code> files are visible immediately through the existing junction, no re-run needed</td>
+</tr>
+<tr>
+<td><code>commands/</code></td>
+<td>Junction on the whole directory</td>
+<td>Entire <code>commands/</code> folder</td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table>
+<p>Junctions need no Administrator privileges. Agent file links prefer SymbolicLinks (enable
+Windows Developer Mode, or run elevated); without that privilege the script falls back to
+HardLinks automatically.</p>
+<p><strong>Fallback when <code>rules/</code> or <code>commands/</code> already exists as a real directory</strong> (another
+project previously created it): the script automatically switches to per-file symbolic
+links for any missing files. If Administrator privileges are required for the symlinks,
+the script re-launches itself elevated.</p>
+<p>Because the links point directly into this repository, a <code>git pull</code> is all that is
+needed to propagate rule and command improvements contributed by any collaborator.</p>
+<h2 id="step-4-install-for-other-coding-tools-optional">Step 4 — Install for other coding tools (optional)<a class="headerlink" href="#step-4-install-for-other-coding-tools-optional" title="Permanent link">&para;</a></h2>
+<p><code>install.ps1</code> regenerates the GitHub Copilot, OpenCode, Continue, Aider, and <code>AGENTS.md</code>
+mirrors from the canonical <code>.claude/</code> sources (agents, task commands, rules). With <code>-Personal</code> it also
+installs the Copilot agents to <code>~/.copilot/agents/</code> and the prompt/instruction files to
+the VS Code user profile, making them available in every workspace:</p>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span>                     <span class="c"># repo-level mirrors only (commit the output)</span>
+<span class="p">.\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Personal</span>           <span class="c"># + user-level Copilot install</span>
+<span class="p">.\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Profile</span> <span class="n">cosmetic</span>   <span class="c"># + select the active domain profile</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallTools</span> <span class="n">-Personal</span>   <span class="c"># same, via the setup entry point</span>
+</code></pre></div>
+<p><code>install.ps1</code> also records the active domain profile (see <a href="../02-profiles/">Profiles</a>): pass
+<code>-Profile &lt;name&gt;</code> or answer the interactive prompt; non-interactive runs keep the
+current default (<code>engineering</code>).</p>
+<p>Details in <a href="../10-agents/#using-the-agents-outside-claude-code">Using the agents outside Claude Code</a>.</p>
+<h2 id="step-5-python-environment-for-the-offline-test-suite-optional">Step 5 — Python environment for the offline test suite (optional)<a class="headerlink" href="#step-5-python-environment-for-the-offline-test-suite-optional" title="Permanent link">&para;</a></h2>
+<p><code>scripts/test/run-offline-tests.ps1</code> resolves <code>.venv-skills\Scripts\python.exe</code> first, then
+<code>.venv</code>, then whatever <code>python</code> is on <code>PATH</code>. Without that environment several suites cannot
+import what they need and are reported <strong>NOT RUN</strong> — which is honest, and means the suite is
+not actually proving what it looks like it is proving.</p>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span>            <span class="c"># creates .venv-skills, installs, then pip-audits</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span> <span class="n">-Preview</span>   <span class="c"># say what it would install, install nothing</span>
+</code></pre></div>
+<p>It installs only what the offline suite imports: <code>pypdf</code>, <code>python-pptx</code>, <code>jinja2</code> and
+<code>defusedxml</code> for the thirteen <code>paper2talk</code> suites, and <code>PyYAML</code> for
+<code>test_letter_identity.py</code>. Everything else in the Prerequisites table above stays a manual
+step on purpose — <code>docling</code> alone pulls <code>torch</code>, and a CVE in a skill you never run should
+not block the environment your tests need.</p>
+<p>By hand, if you would rather not use the switch:</p>
+<div class="highlight"><pre><span></span><code><span class="n">python</span> <span class="n">-m</span> <span class="n">venv</span> <span class="p">.</span><span class="n">venv-skills</span>
+<span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">paper2talk</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
+<span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">recommendation-letter</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
+<span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip_audit</span> <span class="p">-</span><span class="n">-strict</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">paper2talk</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
+</code></pre></div>
+<p>The directory name matters: name it anything else and the runner will not look there.</p>
+<h2 id="contributing-improvements">Contributing improvements<a class="headerlink" href="#contributing-improvements" title="Permanent link">&para;</a></h2>
+<p>Fork the repository, improve an agent or skill on a feature branch, and open a
+pull request against <code>main</code>. The repository owner reviews and merges; a <code>git pull</code>
+on their machine immediately updates the linked entries via the junctions.</p>
+<p>To <strong>add or edit an agent, skill, or command</strong> (and propagate it to Copilot,
+OpenCode, Continue, Aider, and <code>AGENTS.md</code> readers), follow the turnkey guide
+<a href="../../authoring-and-mirrors/">docs/authoring-and-mirrors.md</a>: canonical sources,
+per-type checklist, and the <code>install.ps1</code> mirror regeneration. Shared project
+conventions and environment facts (English-only definition files, agent/skill
+layout, local-model routing, git/GitHub workflow) live in
+<a href="../../contributor-notes/">docs/contributor-notes.md</a>.</p>
+<hr />
+<p><a href="../00-purpose/">← 00 Purpose &amp; overview</a> | <a href="../../README.md">Table of contents</a> | <a href="../02-profiles/">02 Profiles &amp; environment →</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

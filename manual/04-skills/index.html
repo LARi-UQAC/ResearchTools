@@ -1,0 +1,1932 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/manual/04-skills/">
+      
+      
+        <link rel="prev" href="../03-token-management/">
+      
+      
+        <link rel="next" href="../05-security-audit/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>04 Skills - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#skills" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              04 Skills
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../01-installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#scopus-scopus-academic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /scopus — Scopus academic search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#geolocalisation-corpus-study-location-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        geolocalisation — corpus study-location mapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommendation-letter-support-recommendation-acceptance-dispense-letters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recommendation-letter — support / recommendation / acceptance / dispense letters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#narrative-cv-frq-tri-agency-narrative-cv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        narrative-cv — FRQ / tri-agency narrative CV
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#paper2talk-accepted-paper-to-conference-talk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        paper2talk — accepted paper to conference talk
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-two-memories-the-vault-and-the-code-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The two memories - the vault and the code graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#obsidian-cli-obsidian-vault-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        obsidian-cli - Obsidian vault operations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latex-hygiene-mechanical-latex-manuscript-hygiene" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        latex-hygiene - mechanical LaTeX manuscript hygiene
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opt-local-vram-llm-measured-vram-tuning-for-the-local-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        opt-local-vram-llm - measured VRAM tuning for the local agents
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../05-security-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Security audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../authoring-and-mirrors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributor-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../github-repo-setup-playbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#scopus-scopus-academic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /scopus — Scopus academic search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#geolocalisation-corpus-study-location-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        geolocalisation — corpus study-location mapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommendation-letter-support-recommendation-acceptance-dispense-letters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        recommendation-letter — support / recommendation / acceptance / dispense letters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#narrative-cv-frq-tri-agency-narrative-cv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        narrative-cv — FRQ / tri-agency narrative CV
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#paper2talk-accepted-paper-to-conference-talk" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        paper2talk — accepted paper to conference talk
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-two-memories-the-vault-and-the-code-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The two memories - the vault and the code graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#obsidian-cli-obsidian-vault-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        obsidian-cli - Obsidian vault operations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latex-hygiene-mechanical-latex-manuscript-hygiene" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        latex-hygiene - mechanical LaTeX manuscript hygiene
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opt-local-vram-llm-measured-vram-tuning-for-the-local-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        opt-local-vram-llm - measured VRAM tuning for the local agents
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="skills">Skills<a class="headerlink" href="#skills" title="Permanent link">&para;</a></h1>
+<p>Chapter 04 of the ResearchTools manual. Back to <a href="../../README.md">table of contents</a>.</p>
+<p>Skills bundle scripts and references the agents reuse. Fifteen ship in this repo, and every one
+of them is written here.</p>
+<p><strong>This repository vendors no skill it did not write.</strong> Two were vendored on 2026-08-30 and both
+were removed the same day, because each already had its own delivery path and the copy only
+created a second one that would drift:</p>
+<ul>
+<li><code>tech-debt</code> is delivered by the <code>engineering@knowledge-work-plugins</code> plugin, which both
+  <code>.claude/settings.template.json</code> and <code>.claude/settings.json</code> declare in <code>enabledPlugins</code>. The
+  vendored file was byte-identical to the plugin's own, which Claude Code serves from
+  <code>~/.claude/plugins/cache/</code>. A plugin declaration is the delivery mechanism; a copy is not.</li>
+<li><code>graphify</code> ships with the graphify tool, installed on the machine with
+  <code>uv tool install graphifyy</code>. The skill is a property of that installation, not of this
+  repository.</li>
+</ul>
+<p>The consequence is stated rather than hidden: a clone whose machine has neither the plugin
+enabled nor the graphify tool installed gets <code>local-writer</code> referring to a code graph it cannot
+reach. That is a machine-setup gap, answered by the Prerequisites table in
+<a href="../01-installation/">01-installation.md</a>, and not something
+a copied <code>SKILL.md</code> fixes - a vendored copy of a CLI's skill without the CLI is instructions for a
+tool that is still absent. <code>test_settings_template_distribution.py</code> asserts that neither name
+reappears under <code>.claude/skills/</code>.</p>
+<p><strong>In this chapter:</strong> <a href="#scopus--scopus-academic-search">scopus</a> ·
+<a href="#geolocalisation--corpus-study-location-mapping">geolocalisation</a> ·
+<a href="#recommendation-letter--support--recommendation--acceptance--dispense-letters">recommendation-letter</a> ·
+<a href="#narrative-cv--frq--tri-agency-narrative-cv">narrative-cv</a> ·
+<a href="#paper2talk--accepted-paper-to-conference-talk">paper2talk</a> ·
+<a href="#the-two-memories---the-vault-and-the-code-graph">the two memories</a> ·
+<a href="#obsidian-cli---obsidian-vault-operations">obsidian-cli</a> ·
+<a href="#latex-hygiene---mechanical-latex-manuscript-hygiene">latex-hygiene</a> ·
+<a href="#opt-local-vram-llm---measured-vram-tuning-for-the-local-agents">opt-local-vram-llm</a></p>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>Purpose</th>
+<th>Entry point</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scopus</code></td>
+<td>Search Scopus (citation-ordered, title/abstract/keyword scoped), validate references (ambiguity-flagged), fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback).</td>
+<td><code>/scopus</code>, <code>.claude/skills/scopus/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>scientific-writing</code></td>
+<td>Core writing skill: scientific manuscripts in flowing IMRAD prose with verified citations (IEEE/APA/AMA/Vancouver) and reporting guidelines (CONSORT/STROBE/PRISMA).</td>
+<td><code>.claude/skills/scientific-writing/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>scholar-evaluation</code></td>
+<td>ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations.</td>
+<td><code>.claude/skills/scholar-evaluation/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>deliberation</code></td>
+<td>Two-round Gemini ↔ GitHub Copilot debate over a near-final draft; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents.</td>
+<td><code>.claude/skills/deliberation/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>extract-statistic</code></td>
+<td>Statistical analysis. Mode <code>audit</code>: review a manuscript's own statistics (test selection, assumptions, effect size, presentation, cross-validation). Mode <code>mine</code>: extract the reported statistics of a corpus's full-text PDFs and synthesize a corpus statistics table plus an improvement-opportunity list. Engineering-default domain profiles. Used inside <code>paper-auditor</code> / <code>thesis-auditor</code> (audit) and <code>scopus-researcher</code> (mine). Also carries <code>parse_cache.py</code> (content-addressed PDF-parse cache, additive to every consumer) and the opt-in <code>corpus_index.py</code> (deterministic chunker, injected embedder, pgvector store for ad-hoc cross-corpus retrieval; every hit is provenance, never a citation).</td>
+<td><code>.claude/skills/extract-statistic/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>extract-futureworks</code></td>
+<td>Future-works analysis (reuses <code>extract_text.py --section-scan</code>). Mode <code>audit</code>: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode <code>mine</code>: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and <code>scopus-researcher</code> (mine), where it is a hard gate: no hypothesis/project without it.</td>
+<td><code>.claude/skills/extract-futureworks/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>extract-contributions</code></td>
+<td>What a cited paper says it CONTRIBUTES, out of its full text (reuses <code>extract_text.py</code>; ships no reader). Mode <code>validate</code>: pair every <code>\cite{}</code> of a manuscript with the paper's own contribution sentences and flag the citations the paper does not support. Mode <code>mine</code>: tabulate a <code>refs/</code> corpus by kind. Surfaces evidence verbatim and decides nothing; <code>ok</code> / <code>no-contribution</code> / <code>empty</code> / <code>unreadable</code> are kept apart so a retrieval failure is never read as a property of the paper. Markers are data in <code>contribution_markers.json</code>.</td>
+<td><code>.claude/skills/extract-contributions/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>extract-paper-idea</code></td>
+<td>Extract a paper's OWN content into one JSON, the basis for drafting or refreshing its abstract (or, for a UQAC thesis, its Résumé + Abstract pair). Ships no reader of its own: reuses <code>paper2talk</code>'s <code>\input</code>/<code>\include</code> flattening and section map, <code>extract-statistic</code>'s future-works-cue section scan, and <code>extract-contributions</code>' marker scan (pointed at the paper's own text instead of a cited one). Detects document type (<code>uqac.cls</code> on the flattened text) and the document's own language; never a forced bilingual pair for a paper, always both languages for a thesis. Delegates the drafting to the <code>abstract-writer</code> agent.</td>
+<td><code>/abstract</code>, <code>.claude/skills/extract-paper-idea/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>paper2talk</code></td>
+<td>Accepted paper -&gt; conference talk. Asks six questions before reading the paper (audience, duration, output target, aspect ratio, PDF format, deck ending), echoes a build contract, then builds ONE <code>talk_model.json</code> and renders it to PowerPoint (pptxgenjs), LaTeX Beamer on the lab gabarit, or a self-contained web page. Speaker notes budgeted at 130 wpm aiming under the slot, figures re-exported through the draw.io CLI at scale 3, and a visual QA loop (PowerPoint COM -&gt; <code>pdftoppm</code>) with a legibility gate and a no-text-only-slide rule. Delegates the loop to the <code>talk-builder</code> agent.</td>
+<td><code>/talk</code>, <code>.claude/skills/paper2talk/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>word2latex</code></td>
+<td>Convert a Word <code>.docx</code> template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the <code>word-to-latex</code> agent.</td>
+<td><code>/word2latex</code>, <code>.claude/skills/word2latex/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>drawio2tikz</code></td>
+<td>Convert one <code>.drawio</code> sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN <code>--translate</code>). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules.</td>
+<td><code>/drawio2tikz</code>, <code>.claude/skills/drawio2tikz/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>geolocalisation</code></td>
+<td>Map a review corpus in space from its <code>.bib</code>: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional <code>--full-text</code> PDF scan via <code>download_pdf.py</code>, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins.</td>
+<td><code>/geolocalisation</code>, <code>.claude/skills/geolocalisation/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>loop-engineer</code></td>
+<td>Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score <code>&gt;=</code> min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; <code>local-coder</code>/<code>local-writer</code> do local generation. <code>loop_audit.py</code> aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated.</td>
+<td><code>/loopdev</code>, <code>.claude/skills/loop-engineer/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>recommendation-letter</code></td>
+<td>Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic.</td>
+<td><code>/recommendation-letter</code>, <code>.claude/skills/recommendation-letter/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>narrative-cv</code></td>
+<td>Draft, refresh, or tailor the narrative "CV descriptif" (FRQ CV-FRQ, structurally identical to the tri-agency CIHR/NSERC/SSHRC CV commun des trois organismes) to one grant competition: three sections, up to 10 items in section 2, 6-page FR / 5-page EN cap. Built around a durable master contributions inventory in the researcher's own external project folder, refreshed via Scopus (AU-ID two-step) + <code>extract-contributions</code> and re-ranked per competition by keyword overlap against that program's own objectives/evaluation criteria rather than rebuilt from scratch each time. Renders LaTeX/PDF and a plain-text companion for the new-FRQnet-portal paste-in channel from one JSON model (<code>paper2talk</code>'s one-model-many-renderers pattern).</td>
+<td><code>/cv</code>, <code>.claude/skills/narrative-cv/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>obsidian-cli</code></td>
+<td>Read and search the Obsidian vault through the allowed command surface only (<code>read</code>, <code>search</code>, <code>list</code>, <code>property:get</code>/<code>property:set</code>, <code>tasks</code>, <code>links</code>, <code>tags</code>, <code>move</code>, <code>rename</code>); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (<code>create</code>, <code>append</code>, <code>prepend</code>, plus <code>eval</code>, <code>dev:*</code>, <code>plugin:install</code>, <code>theme:install</code>, <code>sync*</code>) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and <code>create</code> on an existing file writes a numbered duplicate instead of failing.</td>
+<td><code>.claude/skills/obsidian-cli/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>latex-hygiene</code></td>
+<td>Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/<code>\begin</code>-<code>\end</code> balance, <code>changes</code>-macro paragraph-crossing corruption, and label/citation coverage (<code>citecov</code> against a <code>.bib</code>, <code>refcov</code> for uncited labels, dangling refs, and duplicate labels). Backs the <code>aiscan</code>/<code>wc</code> checks that <code>paper-auditor</code> and <code>submit-checker</code> already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (<code>patch</code>), scans for post-write corruption (<code>scan</code>), and resolves and builds the tracked or accepted PDF (<code>accept</code>, <code>build</code>).</td>
+<td><code>/texcheck</code>, <code>.claude/skills/latex-hygiene/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>form-service</code> (was <code>uqac-forms</code>, renamed 2026-09-25)</td>
+<td>Stateless mechanics for official PDF forms from any institution. RT-1 ships the validated ingest contract: https only re-checked on every redirect hop, at most 5 redirects followed manually, a 25 MiB cap enforced during the stream, <code>%PDF</code> magic bytes, a 30 s timeout, and an atomic write. The form catalogue, field maps and profile live in ThesisTracker, not here. Filling (RT-3), PAdES signing (RT-4) and signature validation follow. RT-5 exposes all of it as a stateless HTTP API in <code>deploy/form-service/</code> (<code>/pdf/widgets</code>, <code>/pdf/fill</code>, <code>/pdf/sign</code>, <code>/pdf/validate</code>), shared-secret gated, no CORS, nothing persisted. See chapter <a href="../09-thesistracker-integration/">09</a> for the boundary with ThesisTracker.</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>graphify</code> <em>(external: <code>uv tool install graphifyy</code>, not shipped here)</em></td>
+<td>The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. <code>query</code>, <code>path</code> and <code>explain</code> are deterministic traversals of <code>graphify-out/graph.json</code> and cost no model at all, which is why one graph query beats grepping file by file. Reached only through <code>local-writer</code>, like the vault. The CLI itself is a separate install (<code>uv tool install graphifyy</code>); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. <code>.graphify_version</code> records the version it was generated from - refresh the copy after upgrading the CLI.</td>
+<td><code>/graphify</code>, <code>.claude/skills/graphify/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>opt-local-vram-llm</code></td>
+<td>Tune a local Ollama model for this GPU: retain the largest <code>num_ctx</code> that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps <code>num_ctx</code> against <code>OLLAMA_KV_CACHE_TYPE</code> (restarting the daemon per value and proving the restart took effect from <code>server.log</code>, restoring the original value on failure), then declares the tuned tag as a role candidate in <code>local-models.json</code>. Stops before qualification, which stays with <code>model_resolver.py --qualify</code>.</td>
+<td><code>/opt-local-vram-llm</code>, <code>.claude/skills/opt-local-vram-llm/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>aider-setup</code></td>
+<td>Set up, tune and run the aider nightly local-coding pipeline — a second, independent local-coding harness that needs no Claude Code: two local Ollama models (a writer that codes and tests, a reviewer that never edits, gated by measured token budgets) run one aider process per plan overnight, driven by <code>aider-plan.ps1</code>/<code>aider-night.ps1</code>. Owns the packaging pipeline (<code>scripts/build/</code>) that assembles the student-facing <code>aider-kit.zip</code> from this skill's own canonical sources, with a leak scan and an install-and-dry-run gate. <code>config/rules.md</code> is generated at build time from this repository's own <code>.claude/rules/</code> (R26 fixes the plan-file shape every harness reads; R27 the function-header convention). See chapter <a href="../06-aider-pipeline/">06</a> for the full picture.</td>
+<td><code>.claude/skills/aider-setup/SKILL.md</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="scopus-scopus-academic-search"><code>/scopus</code> — Scopus academic search<a class="headerlink" href="#scopus-scopus-academic-search" title="Permanent link">&para;</a></h3>
+<p>Searches the Scopus database via the Elsevier REST API. Requires <code>SCOPUS_API_KEY</code>
+(see the API-keys table in <a href="../02-profiles/">02-profiles.md</a>) and an active institutional network connection
+(campus or VPN), or an <code>--insttoken</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/scopus &lt;topic&gt;</code></td>
+<td>Search top papers on a topic — <strong>ordered by citation count</strong>, and bare keywords are scoped to title/abstract/keywords. Add <code>--sort recent</code> when you want the newest papers instead</td>
+</tr>
+<tr>
+<td><code>/scopus review &lt;topic&gt;</code></td>
+<td>Structured literature review with inline citations</td>
+</tr>
+<tr>
+<td><code>/scopus validate &lt;DOI or title&gt;</code></td>
+<td>Confirm a reference exists. Flags <code>ambiguous</code> when several records share the title, so <code>results[0]</code> is never taken on faith</td>
+</tr>
+<tr>
+<td><code>/scopus cite &lt;DOI&gt;</code></td>
+<td>Citation count + full metadata for one paper</td>
+</tr>
+<tr>
+<td><code>/scopus author AU-ID(&lt;digits&gt;)</code></td>
+<td>Author profile: document count, affiliation, computed h-index, top papers. Works on a Search-only key</td>
+</tr>
+<tr>
+<td><code>/scopus author &lt;name&gt;</code></td>
+<td>Same, when the key is entitled for the Author Search API; otherwise degrades to Semantic Scholar candidates and says so (no Scopus AU-ID can be resolved from a name without that entitlement)</td>
+</tr>
+<tr>
+<td><code>/scopus journal &lt;name or ISSN&gt;</code></td>
+<td>Journal SJR quartile, CiteScore, subject areas</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Files:</strong>
+- <code>.claude/skills/scopus/SKILL.md</code>
+- <code>.claude/skills/scopus/scripts/scopus_api.py</code> — Scopus REST client. <code>search</code> orders by <code>-citedby-count</code> (<code>--sort recent</code> for date order; the alias is required because argparse refuses a value starting with a dash) and wraps a query naming no Scopus field in <code>TITLE-ABS-KEY()</code>; without both, a search answered only this year's least-cited papers, and citation ordering on an unqualified query answered the most-cited papers of all science. <code>validate</code> queries the title as a quoted phrase and publishes <code>title_similarity</code> plus an <code>ambiguous</code> flag. <code>journal --issn</code> is the reliable venue lookup: it resolves print and electronic ISSNs in turn and returns the best CiteScore subject percentile with the quartile derived from it (a lookup by title, or an ISSN lookup combined with <code>field=</code>, answers a stub). <code>publications</code> returns one author's document list, most recent first, each carrying its own DOI and an <code>approved_publisher</code> flag against the CLAUDE.md list (flagged, never dropped); <code>deploy/form-service/</code>'s <code>GET /publications</code> wraps it in a disk cache and a rate limiter so the Scopus key, the throttling, and the publisher policy never cross the service boundary to ThesisTracker
+- <code>.claude/skills/scopus/scripts/doi_publisher.py</code> — DOI prefix → publisher. <code>search</code>, <code>validate</code> and <code>cite</code> all carry <code>doi_prefix</code> and <code>publisher_by_prefix</code>; the prefix is assigned by the registration agency, whereas Scopus <code>prism:publisher</code> was measured naming a learned society for a Springer DOI and an imprint for an Elsevier one
+- <code>.claude/skills/scopus/scripts/bib_batch.py</code> — <strong>candidates → <code>.bib</code></strong>: strict <code>TITLE()</code> title-to-DOI resolution, cite enrichment, venue grading, BibTeX generation
+- <code>.claude/skills/scopus/scripts/bib_audit.py</code> — <strong><code>.bib</code> → audit</strong>, the opposite direction: required fields, duplicates, DOI validation against Scopus, venue metrics by ISSN, publisher approval, then an annotated pass-through copy (<code>&lt;base&gt;_clean.bib</code>) and a measured report (<code>&lt;base&gt;_bib_report.md</code>). Drives the <code>bib-cleaner</code> agent; <code>--no-network</code> replays from its cache
+- <code>.claude/skills/scopus/scripts/semantic_scholar_api.py</code> — Semantic Scholar fallback
+- <code>.claude/skills/scopus/scripts/download_pdf.py</code> — any-format full-text retrieval (PDF, else HTML/Markdown via Unpaywall, arXiv, PMC, validated DOI landing), plus an opt-in <code>--browser</code> tier
+- <code>.claude/skills/scopus/scripts/browser_fetch.py</code> — tier 8: a real Playwright Chromium for challenge-gated publishers (Akamai/Cloudflare), with a per-paper <code>refs/_sources.json</code> override URL (e.g. ResearchGate) for papers with no institutional access; optional (needs <code>playwright</code> + <code>playwright install chromium</code>)
+- <code>.claude/skills/scopus/scripts/litreview_update.py</code> — incremental-update bookkeeping for <code>/litupdate</code> (baseline fingerprint, delta dedup via <code>bib_batch.title_match</code>, dated output paths, CHANGELOG scaffold)
+- <code>.claude/skills/scopus/scripts/gemini_reviewer.py</code> · <code>github_reviewer.py</code> · <code>gemini_table.py</code> — cross-review cores</p>
+<h3 id="geolocalisation-corpus-study-location-mapping"><code>geolocalisation</code> — corpus study-location mapping<a class="headerlink" href="#geolocalisation-corpus-study-location-mapping" title="Permanent link">&para;</a></h3>
+<p>Turns a corpus <code>.bib</code> into a spatial map of where each paper's empirical study was conducted.
+A case-study site is not a bibliographic field (no API returns it — it lives in the text), so
+the skill is deliberately human-in-the-loop: it emits a <strong>draft</strong> with a <code>confidence</code> column and
+a per-paper provenance note, a human reviews it, and a manual <strong>override CSV always wins</strong> before
+rendering. Requires <code>SCOPUS_API_KEY</code> (campus network or VPN), or run <code>--no-scopus</code> for a
+manual-entry template.</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Command</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 — extract</td>
+<td><code>extract_locations.py --bib &lt;corpus.bib&gt; --out &lt;dir&gt; [--full-text] [--override &lt;curated.csv&gt;]</code></td>
+<td><code>study_locations.csv</code> (with <code>confidence</code>, <code>evidence_field</code>, <code>evidence</code>, <code>provenance</code>) + <code>provenance/&lt;citekey&gt;.md</code> audit notes</td>
+</tr>
+<tr>
+<td>2 — review</td>
+<td><em>(human)</em></td>
+<td>curate / confirm; correct every <code>low</code>/<code>none</code> row via the override CSV</td>
+</tr>
+<tr>
+<td>3 — render</td>
+<td><code>generate_geomap.py --csv &lt;dir&gt;/study_locations.csv --out &lt;dir&gt; [--formats …] [--min-confidence …]</code></td>
+<td>CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), world-map PNG, interactive HTML, <code>country_counts.csv</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Extraction:</strong> per-DOI Scopus abstract + title + keywords; place names matched against an
+  offline Natural Earth gazetteer, with capitalization + a population floor + a common-word
+  stoplist for precision (separates the city <code>Mobile</code> from the word <code>mobile</code>).</li>
+<li><strong><code>--full-text</code>:</strong> for <code>none</code>/<code>low</code> results, downloads the PDF via the scopus skill's
+  <code>download_pdf.py</code>, reads it with PyMuPDF, and scans <strong>only study-cue sentences with
+  affiliation lines rejected</strong> — an unfiltered full-text scan maps author affiliations, not
+  study sites. Adopted only when it beats the abstract; PDFs cached in <code>refs/</code>.</li>
+<li><strong>Auditability:</strong> every mapped point carries <code>evidence_field</code> + the verbatim <code>evidence</code>
+  sentence in the CSV, a <code>provenance/&lt;citekey&gt;.md</code> note, and the same surfaced in the HTML
+  popup, GeoJSON properties, and KML description.</li>
+<li>No geopandas/GDAL — the basemap is drawn from raw GeoJSON. Deps: <code>matplotlib</code> (PNG),
+  optional <code>folium</code> (HTML) and <code>PyMuPDF</code> (<code>--full-text</code>).</li>
+</ul>
+<p><strong>Files:</strong>
+- <code>.claude/skills/geolocalisation/SKILL.md</code>
+- <code>.claude/skills/geolocalisation/scripts/extract_locations.py</code> — bib + Scopus/full-text → draft CSV + provenance notes
+- <code>.claude/skills/geolocalisation/scripts/generate_geomap.py</code> — reviewed CSV → CSV/KML/GeoJSON/PNG/HTML + per-country table (no geopandas)
+- <code>.claude/skills/geolocalisation/references/geocoding-protocol.md</code> — extraction method, confidence rubric, override format, full-text pipeline
+- <code>.claude/skills/geolocalisation/scripts/Test/test_extract_locations.py</code> — offline unit tests (bib parse, matcher, evidence, full-text)</p>
+<h3 id="recommendation-letter-support-recommendation-acceptance-dispense-letters">recommendation-letter — support / recommendation / acceptance / dispense letters<a class="headerlink" href="#recommendation-letter-support-recommendation-acceptance-dispense-letters" title="Permanent link">&para;</a></h3>
+<p>Generates supervisor letters in LaTeX → PDF from a candidate's own files, signed by the
+active profile's author (<code>profiles/&lt;active&gt;.yaml</code>, <code>author.letter</code>; a profile with no such
+block is a stated refusal, never a letter signed with someone else's name). Two
+tracks: Claude authors the four persuasive types (scholarship, academic_position,
+industry_position, appreciation; French or English), while a Python
+script fills the fixed French <strong>acceptance</strong> and <strong>dispense</strong> forms. <code>candidate_status</code>
+(applicant / current_student / graduated) sets how the candidate is named; <code>funding_provider</code>
+(supervisor / candidate / combination) branches the funding paragraph; the dispense letter
+carries the &lt; 120-day work-permit exemption paragraph and warns when a stay exceeds it;
+<code>invitation_pair=both</code> emits the acceptance and dispense letters together. A style-hygiene
+linter enforces the AI-usage rules. All shipped sample data is synthetic.</p>
+<p><strong>Files:</strong>
+- <code>.claude/skills/recommendation-letter/SKILL.md</code>
+- <code>.claude/skills/recommendation-letter/scripts/generate_letter.py</code> — two-track assembler, validator, <code>pdflatex</code> compile
+- <code>.claude/skills/recommendation-letter/scripts/letter_templates.py</code> — preamble, letterhead/signature, acceptance/dispense French templates
+- <code>.claude/skills/recommendation-letter/scripts/Test/test_generate_letter.py</code> — offline unit tests (53 cases)
+- <code>.claude/skills/recommendation-letter/references/quality-patterns.md</code> — authored-track quality patterns
+- <code>.claude/skills/recommendation-letter/evals/</code> — synthetic sample configs</p>
+<h3 id="narrative-cv-frq-tri-agency-narrative-cv"><code>narrative-cv</code> — FRQ / tri-agency narrative CV<a class="headerlink" href="#narrative-cv-frq-tri-agency-narrative-cv" title="Permanent link">&para;</a></h3>
+<p>FRQ's CV-FRQ and the tri-agency (CIHR/NSERC/SSHRC) "CV commun des trois organismes" are the same
+format (verified against both official pages 2026-09-25): three sections (career/skills, up to
+ten contributions and experiences, supervision and mentoring), 6 pages French or 5 English. Built
+around a durable master inventory rather than a stateless per-run extraction, so a grant CV is a
+re-selection over a growing corpus instead of a from-scratch rebuild each time.</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Script</th>
+<th>Job</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 — inventory</td>
+<td><code>cv_inventory.py</code></td>
+<td>CRUD over the master inventory YAML (<code>init</code>/<code>add</code>/<code>list</code>/<code>stats</code>/<code>mark-used</code>), validated and deduplicated by id/DOI. Never calls Scopus itself.</td>
+</tr>
+<tr>
+<td>2 — select</td>
+<td><code>cv_select.py</code></td>
+<td>Deterministic keyword-overlap ranking against a competition's own objectives/evaluation criteria — a signal for the drafting agent's judgment, not a verdict.</td>
+</tr>
+<tr>
+<td>3 — build</td>
+<td><code>cv_build.py</code></td>
+<td>Renders ONE <code>cv_model.json</code> to LaTeX and a plain-text companion, builds the mandatory old-portal filename (<code>NOM_XXXXX1234_Titre.pdf</code>, normes_presentation.pdf), and checks the compiled page count against the 6/5-page cap.</td>
+</tr>
+</tbody>
+</table>
+<p>The candidate's identity (CV header/footer, filename surname) and the external project folder
+the inventory and drafts live in (<code>cv.project_dir</code>) both come from the active profile
+(<code>profiles/&lt;active&gt;.yaml</code>), never from a hardcoded path — a profile carrying neither block is a
+stop, not a guess. Drives the <code>narrative-cv-writer</code> agent, reached via <code>/cv</code>.</p>
+<p><strong>Files:</strong>
+- <code>.claude/skills/narrative-cv/SKILL.md</code>
+- <code>.claude/skills/narrative-cv/scripts/cv_common.py</code> — shared helpers: contribution-types loader, active-profile identity/project-dir resolution (no fallback), FRQ filename builder
+- <code>.claude/skills/narrative-cv/scripts/cv_inventory.py</code> — the master inventory CRUD
+- <code>.claude/skills/narrative-cv/scripts/cv_select.py</code> — keyword-overlap ranking
+- <code>.claude/skills/narrative-cv/scripts/cv_build.py</code> — LaTeX/text rendering, filename, page-budget check
+- <code>.claude/skills/narrative-cv/scripts/contribution_types.json</code> — section titles, clientele/category vocabularies, page budget, portal/font variants (data, not code)
+- <code>.claude/skills/narrative-cv/scripts/Test/test_cv_common.py</code>, <code>test_cv_inventory.py</code>, <code>test_cv_select.py</code>, <code>test_cv_build.py</code> — offline unit tests (61 cases; no network, no LaTeX install, no machine-local profile dependency)</p>
+<h3 id="paper2talk-accepted-paper-to-conference-talk"><code>paper2talk</code> — accepted paper to conference talk<a class="headerlink" href="#paper2talk-accepted-paper-to-conference-talk" title="Permanent link">&para;</a></h3>
+<p>Starts where <code>submit-checker</code> and <code>cover-paper</code> stop: the paper is accepted, the talk is the
+next deliverable. The skill asks <strong>six questions before reading the paper</strong> — audience,
+duration and conference, output target, aspect ratio, PDF format, and how the deck ends —
+because every one of them is an input to a number the build cannot invent, then echoes a build
+contract (<code>n_content</code>, word budget, font floor, preferred form, deliverables) before a single
+slide is authored.</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Command</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0 — preflight</td>
+<td><code>talk_doctor.py --target pptx</code></td>
+<td>per-dependency state, which targets are buildable here, what degrades without each missing tool</td>
+</tr>
+<tr>
+<td>0b — read</td>
+<td><code>paper_extract.py main.tex --out inventory.json</code></td>
+<td><code>\input</code>-flattened sections, floats with labels/captions/assets, equations, citation keys, and the number inventory the deck is checked against</td>
+</tr>
+<tr>
+<td>1 — brand</td>
+<td><code>talk_template.py &lt;gabarit.pptx&gt; --out brand.json --extract-media assets/</code></td>
+<td>canvas, layouts, master background, every object in inches with <code>srcRect</code> as a keep-fraction</td>
+</tr>
+<tr>
+<td>2 — figures</td>
+<td><code>fig_export.py &lt;fig.svg&gt; --out &lt;fig.png&gt; --scale 3 [--fix-text map.json]</code></td>
+<td>projector-grade PNG + implied-DPI report (warns below 150)</td>
+</tr>
+<tr>
+<td>3 — model</td>
+<td><code>talk_model.py &lt;talk_model.json&gt;</code></td>
+<td>block-vocabulary check, no-text-only-slide rule, exhibit coverage, budget aggregation</td>
+</tr>
+<tr>
+<td>4 — render</td>
+<td><code>talk_pptx.py --template &lt;gabarit.pptx&gt;</code> · <code>talk_model.py --render …tex.j2</code> (Beamer) · <code>…html.j2</code> (web)</td>
+<td><code>.pptx</code> built on the gabarit's own layouts, <code>.tex</code>, or one self-contained <code>.html</code>, all from the same model</td>
+</tr>
+<tr>
+<td>5 — gates</td>
+<td><code>talk_validate.py</code> · <code>talk_notes.py</code> · <code>talk_render.py [--paper a4]</code></td>
+<td>package + legibility checks, spoken budget and cadence, PDF + page images, A4/Letter reflow</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Cadence.</strong> One slide per minute counts <strong>content</strong> slides only:
+  <code>n_content = floor(minutes - 0.5*(title+thanks) - 0.33*dividers)</code>. A 13-minute talk is 12
+  content slides and 15 in all, or 10 and 18 with five dividers.</li>
+<li><strong>Rate.</strong> 130 words per minute for a technical talk (not the 150 wpm of conversational
+  speech), aimed at <code>(minutes - 1.5) x 130</code> so the talk lands under the slot.</li>
+<li><strong>Audience-parameterised typography.</strong> 16 pt body floor in the field (14 pt for captions and
+  references), 20 pt for a general-public talk; no bullet cap for a scientific audience, since a
+  slide may legitimately carry seven or eight equations. The cap is replaced by a mechanical
+  legibility gate.</li>
+<li><strong>Content hierarchy.</strong> figure &gt; table &gt; equation &gt; prose. Prose, bullets included, is the last
+  resort; a content slide with no exhibit is a defect, and every exhibit must be discussed in
+  its own speaker notes (matched on subject keywords, never filenames).</li>
+<li><strong>Gabarits.</strong> <code>../gabarit_these_maitrise_DSA_UQAC/src/slides/</code>: <code>Gabarit169.pptx</code> (16:9, 18
+  named layouts), <code>Gabarit43.pptx</code> (4:3, preferred when an A4 handout is the deliverable),
+  <code>main.tex</code> for Beamer. The deck is built <strong>on</strong> the gabarit with python-pptx rather than
+  imitated, so the lab branding, layouts and placeholders are used as designed.</li>
+<li><strong>Nothing invented.</strong> <code>talk_model.py --check-numbers inventory.json</code> compares every number
+  on every slide against the numbers the paper states, on normalised values (a French decimal
+  comma and an English point are one number), so a figure that entered the deck from nowhere is
+  caught before the room catches it.</li>
+<li><strong>Windows render path.</strong> PowerPoint COM <code>SaveAs(..., 32)</code> then <code>pdftoppm</code>; the
+  <code>document-skills</code> <code>soffice.py</code> wrapper fails here with <code>AF_UNIX</code>. <code>soffice</code> is used when it is
+  on <code>PATH</code>. A legacy <code>.ppt</code> gabarit is converted with <code>talk_template.py --convert</code>
+  (<code>SaveAs(..., 24)</code>), leaving the original untouched.</li>
+</ul>
+<p><strong>Files:</strong>
+- <code>.claude/skills/paper2talk/SKILL.md</code>
+- <code>.claude/skills/paper2talk/scripts/talk_rules.py</code> — audience profiles, tier costs, cadence, budget, build contract
+- <code>.claude/skills/paper2talk/scripts/talk_model.py</code> — deck-as-data validation + Jinja render of the Beamer/web targets
+- <code>.claude/skills/paper2talk/scripts/talk_doctor.py</code> — preflight: buildable targets, per-tool degradation
+- <code>.claude/skills/paper2talk/scripts/paper_extract.py</code> — paper → inventory (<code>\input</code> flattening, floats, equations, numbers)
+- <code>.claude/skills/paper2talk/scripts/talk_pptx.py</code> — PowerPoint renderer: opens the lab gabarit, drops its sample slides, builds on its own layouts and placeholders
+- <code>.claude/skills/paper2talk/scripts/talk_template.py</code> · <code>fig_export.py</code> · <code>talk_render.py</code> · <code>talk_notes.py</code> · <code>to_a4.py</code> · <code>talk_validate.py</code>
+- <code>.claude/skills/paper2talk/assets/deck_skeleton.js</code> (no-gabarit fallback) · <code>beamer_skeleton.tex.j2</code> · <code>web_skeleton.html.j2</code>
+- <code>.claude/skills/paper2talk/references/renderer-contracts.md</code> · <code>qa-loop.md</code>
+- <code>.claude/skills/paper2talk/scripts/Test/</code> — thirteen offline suites, 182 tests (fixtures built in the test; no Office, no network)
+- Harvest and licence findings: <code>docs/superpowers/notes/2026-08-11-reference-skill-harvest.md</code></p>
+<h3 id="the-two-memories-the-vault-and-the-code-graph">The two memories - the vault and the code graph<a class="headerlink" href="#the-two-memories-the-vault-and-the-code-graph" title="Permanent link">&para;</a></h3>
+<p>Two memories back this toolkit, and they do not overlap. The Obsidian vault holds what was
+LEARNED, across every project: a failure and its root cause, a decision and why, a tool that
+misbehaves. The graphify knowledge graph in <code>graphify-out/</code> holds what this repository's code
+IS right now: which function calls which, how one module reaches another, where a symbol
+lives. The vault is permanent and hand-curated; the graph is derived from the files and
+therefore rebuildable and disposable.</p>
+<p>The routing rule follows from that. A question about <strong>this code</strong> goes to the graph first,
+and <code>query</code>, <code>path</code> and <code>explain</code> are deterministic traversals that cost no model at all, so
+one graph query beats grepping file by file. A question about a failure mode, a misbehaving
+tool or a past decision goes to the <strong>vault</strong> first. Many tasks want both, in that order.</p>
+<p>Both are reached the same way and only that way: <strong>dispatch the <code>local-writer</code> agent</strong>. It is
+the single reader and the single writer of both memories. Consulting or refreshing the graph
+by hand is the same breach as reading the vault by hand, and since 2026-08-30 the
+<code>vault-access-guard.py</code> hook enforces BOTH at the tool boundary rather than only the vault. For the
+vault it matches by PATH rather than by command; for the graph it matches the <code>graphify-out/</code> path,
+the <code>graphify</code> CLI, and the two graph audit scripts by name, because running a read-only health
+check to learn the graph's state is a consultation in which the graph's path never appears.
+The graph is refreshed by writing a file and then pointing <code>graphify update &lt;path&gt;</code> at it,
+never by editing <code>graph.json</code>.</p>
+<p><strong>What the graph does not answer.</strong> Measured 2026-08-30 through a <code>local-writer</code> consultation:
+every node carries <code>_origin: ast</code>, so the graph holds the code and the <em>structure</em> of each <code>.md</code>
+file - headings, names, where things live - and no layer that read what those files say. Asked
+"why is the Obsidian CLI write path forbidden", it returned 109 nodes of file names, command
+names and test-class names, and none of the three measured reasons (the header-size threshold,
+the CLI exiting 0 on a failed write, <code>create</code> making a numbered duplicate). Those reasons live in
+<code>.claude/CLAUDE.md</code> and in the vault. So the graph is asked <em>what calls what</em>, and the vault is asked <em>why</em>.
+Asking the graph for intent is the failure that hurts, because it returns names that read like an
+answer. Adding the missing layer is possible and needs no API key - the graphify skill's own flow
+has the host agent read the documents - but it is a deliberate, token-costing run, so
+<code>check-graph-health.ps1</code> reports the state as a note and does not fail on it.</p>
+<p>The graph's own state is the one thing a session may read directly, because it is metadata
+rather than content: <code>scripts/audit/check-graph-health.ps1</code> is read-only and reports what is
+in the graph, which files it claims to cover and never produced a node for, and whether any
+covered file is newer than the graph itself. It exits 0 where there is no <code>graphify-out/</code> at
+all, so it is harmless in a project that has no graph.</p>
+<h3 id="obsidian-cli-obsidian-vault-operations"><code>obsidian-cli</code> - Obsidian vault operations<a class="headerlink" href="#obsidian-cli-obsidian-vault-operations" title="Permanent link">&para;</a></h3>
+<p>Gives Claude the vault's allowed read/search command surface (<code>read</code>, <code>search</code>, <code>list</code>,
+<code>property:get</code>/<code>property:set</code>, <code>tasks</code>, <code>links</code>, <code>tags</code>, <code>move</code>, <code>rename</code>) and the single
+sanctioned write path: a captured learning is drafted, dropped in
+<code>~/.claude/obsidian-outbox/</code> with a <code>create|append path="..."</code> directive on its first line,
+and the <code>obsidian-outbox-flush.py</code> hook (SessionStart/SessionEnd) writes it into the vault
+through the filesystem, verifying the effect by file size before and after rather than
+trusting the CLI's return code.</p>
+<p><code>create</code>, <code>append</code>, and <code>prepend</code> (plus <code>eval</code>, <code>dev:*</code>, <code>plugin:install</code>, <code>theme:install</code>,
+and every <code>sync*</code> except read-only <code>sync:history</code>) are forbidden commands. The measured
+reasons: the write fails on the whole JSON header size (content, path, <code>tty</code>/<code>cwd</code>), not
+the content alone - a 3850-byte header passes, a 4343-byte header does not, and 4096 bytes,
+a Windows named-pipe buffer, falls in between; the CLI exits 0 even when the write failed,
+so a script checking the return code archives notes that were never written; and <code>create</code>
+on an existing file silently writes a numbered duplicate (<code>Decisions 1.md</code>) instead of
+failing.</p>
+<p><strong>Files:</strong>
+- <code>.claude/skills/obsidian-cli/SKILL.md</code>
+- <code>.claude/skills/obsidian-cli/references/command-reference.md</code> - full command syntax
+- <code>.claude/skills/obsidian-cli/scripts/vault_consolidate.py</code> - deterministic half of
+  consolidation: measures shared tags/<code>domaine</code>/term overlap and proposes links, decides
+  nothing; <code>--mode links</code> reports dead wiki-links read-only, and <code>--apply &lt;map.json&gt; --yes</code>
+  is the one guarded, map-validated, single-pass rewrite of existing links exempted from the
+  outbox-only write rule
+- <code>.claude/skills/obsidian-cli/scripts/vault_daemon.py</code> - the unattended path. A raw drop
+  (unrouted text in <code>~/.claude/obsidian-outbox/raw/</code>, three frontmatter keys, no directive)
+  is classified, drafted, filed, journalled and queued for consolidation without a session:
+  the cloud wrapper pushes, the local model decides. <code>--once</code> handles what is pending,
+  <code>--drain</code> runs the deferred work by hand, <code>--dry-run</code> lists and touches nothing. Anything
+  it is not confident about is parked in <code>needs-review/</code> with its reason, for <code>local-writer</code>
+  to file with the whole reusable layer in context
+- <code>.claude/skills/obsidian-cli/scripts/daemon_outbox.py</code> - the outbox layout that IS the
+  queue (<code>raw</code>, <code>working</code>, <code>raw/sent</code>, <code>needs-review</code>, <code>state</code>, <code>queue</code>), plus the write
+  lock, the one-daemon-per-machine singleton lock, the atomic claim by rename, and the sweep
+  that recovers a drop stranded by a crash
+- <code>.claude/skills/obsidian-cli/scripts/daemon_states.py</code> - the per-state handlers; both
+  model calls are constrained by a JSON schema, and every refusal parks the event
+- <code>.claude/skills/obsidian-cli/scripts/daemon_drains.py</code> - the deferred half: candidate
+  pairs judged one per call on the strict mechanism test, accepted edges appended
+  reciprocally with their sentence and journalled. Phantom repair stays human-gated
+- <code>.claude/skills/obsidian-cli/scripts/local_capability_probe.py</code> - the gate that measured,
+  before any of this was written, that the daemon honours a JSON schema and re-uses a
+  prompt prefix
+- <code>.claude/skills/obsidian-cli/scripts/vault_lock.py</code>, <code>vault_journal.py</code>, <code>outbox_io.py</code> -
+  the shared write path: one lock across sessions and processes, an append-only record of
+  every vault write with an <code>--undo</code>, and the single implementation the flush hook and the
+  daemon both call
+- <code>.claude/skills/obsidian-cli/daemon-config.json</code> - every timeout, ceiling and threshold,
+  with its provenance; no such value is written in the code that uses it</p>
+<h3 id="latex-hygiene-mechanical-latex-manuscript-hygiene"><code>latex-hygiene</code> - mechanical LaTeX manuscript hygiene<a class="headerlink" href="#latex-hygiene-mechanical-latex-manuscript-hygiene" title="Permanent link">&para;</a></h3>
+<p>Turns the hygiene checks <code>paper-auditor</code>, <code>submit-checker</code>, and <code>thesis-auditor</code> already describe
+in prose into one script with subcommands, so the AI-usage score, the word count, and the brace
+balance are computed the same way every session instead of by hand. One script, <code>tex_check.py</code>;
+every subcommand takes paths or globs, never a hardcoded manuscript path, and accepts <code>--json</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Subcommand</th>
+<th>Input</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>chars</code></td>
+<td><code>.tex</code> files/globs</td>
+<td>per-file forbidden-character hits (line + name) and a total count</td>
+</tr>
+<tr>
+<td><code>aiscan</code></td>
+<td><code>.tex</code> files/globs</td>
+<td><code>risk_score</code>, weighted count per signal, lowest-deviation sentence window, a 15-word excerpt per hit</td>
+</tr>
+<tr>
+<td><code>wc</code></td>
+<td><code>.tex</code> files/globs</td>
+<td>prose word count per file (floats and comments excluded), float count, total, page estimate</td>
+</tr>
+<tr>
+<td><code>wc --accepted</code></td>
+<td><code>.tex</code> files/globs, optional <code>--before &lt;dir&gt;</code></td>
+<td>word count of the accepted text (<code>changes</code> macros resolved); with <code>--before</code>, a before/after/delta/percent table</td>
+</tr>
+<tr>
+<td><code>abstract</code></td>
+<td>main <code>.tex</code></td>
+<td>abstract word count, keyword count</td>
+</tr>
+<tr>
+<td><code>braces</code></td>
+<td><code>.tex</code> files/globs</td>
+<td>final brace depth per file, the line of the first negative dip, and <code>\begin</code>/<code>\end</code> environment balance</td>
+</tr>
+<tr>
+<td><code>par</code></td>
+<td><code>.tex</code> files/globs</td>
+<td>occurrences of <code>\added</code>/<code>\deleted</code>/<code>\replaced</code> whose argument crosses a blank line (the macros are not <code>\long</code>, so this breaks a build)</td>
+</tr>
+<tr>
+<td><code>citecov</code></td>
+<td><code>--tex &lt;globs&gt; --bib &lt;file&gt;</code></td>
+<td>cited keys absent from the <code>.bib</code> (dangling), and <code>.bib</code> entries never cited</td>
+</tr>
+<tr>
+<td><code>refcov</code></td>
+<td><code>.tex</code> files/globs</td>
+<td>uncited labels, dangling <code>\ref</code>/<code>\eqref</code>/<code>\cref</code> targets, and duplicate labels</td>
+</tr>
+<tr>
+<td><code>patch</code></td>
+<td><code>--plan &lt;audit_plan.md&gt; --target &lt;file.tex&gt;</code>, optional <code>--author &lt;id&gt;</code>, <code>--dry-run</code>, <code>--init</code></td>
+<td>applies an audit plan by exact-match substitution, one occurrence required per edit; a <code>FAILS:</code> list and non-zero exit on any 0-match or 2+-match edit</td>
+</tr>
+<tr>
+<td><code>scan</code></td>
+<td><code>.tex</code> files/globs, optional <code>--bib &lt;file&gt;</code>, <code>--fail-on-markers</code></td>
+<td>post-write guard for control characters, damaged control-sequence residue, <code>changes</code> macros crossing a table/float boundary, a <code>%</code> comment that swallowed a row-terminating <code>\\</code>, a stale <code>\cite</code> inside a deleted span, and live <code>\hl{}</code>/<code>\todo{}</code> markers</td>
+</tr>
+<tr>
+<td><code>accept</code></td>
+<td><code>--target &lt;file.tex&gt;</code>, optional <code>--out &lt;path&gt;</code>, <code>--resolve</code></td>
+<td>the accepted source, <code>[final]{changes}</code>/<code>[disable]{todonotes}</code>, generated from the tracked source</td>
+</tr>
+<tr>
+<td><code>build</code></td>
+<td><code>--target &lt;file&gt;</code>, optional <code>--outdir out</code>, <code>--both</code></td>
+<td>pdflatex/bibtex/pdflatex/pdflatex with mandatory <code>BIBINPUTS=".."</code>, refusing a <code>.bib</code> inside the output directory</td>
+</tr>
+<tr>
+<td><code>all</code></td>
+<td>files/globs</td>
+<td>the aggregate of the read-side subcommands above</td>
+</tr>
+</tbody>
+</table>
+<p><code>aiscan</code> reproduces the High/Medium signal weights and the <code>risk_score</code> formula stated in
+<code>paper-auditor.md</code> Step 7.5 (a High signal counts 2, a Medium signal counts 1, toward <code>raw_count</code>).
+The script is pure Python standard library, so it needs no <code>requirements.txt</code> and adds no
+<code>pip-audit</code> surface.</p>
+<p><strong>Files:</strong>
+- <code>.claude/skills/latex-hygiene/SKILL.md</code>
+- <code>.claude/skills/latex-hygiene/scripts/tex_check.py</code> - thin CLI dispatching to the subcommand modules
+- <code>.claude/skills/latex-hygiene/scripts/tex_common.py</code>, <code>tex_chars.py</code>, <code>tex_braces.py</code>, <code>tex_par.py</code>,
+  <code>tex_citecov.py</code>, <code>tex_abstract.py</code>, <code>tex_wc.py</code>, <code>tex_aiscan.py</code>, <code>tex_aiscan_text.py</code>
+- <code>.claude/skills/latex-hygiene/scripts/tex_patch.py</code>, <code>tex_scan.py</code>, <code>tex_build.py</code> - the four
+  write-side subcommands (<code>patch</code>, <code>scan</code>, <code>accept</code>, <code>build</code>)
+- <code>.claude/skills/latex-hygiene/scripts/Test/test_tex_check.py</code> - offline synthetic-string tests
+- <code>.claude/skills/latex-hygiene/scripts/Test/test_tex_patch.py</code>, <code>test_tex_build.py</code> - offline
+  tests for the write side (10 + 7 tests); <code>test_tex_build.py</code> patches <code>subprocess</code> and
+  <code>shutil.which</code>, no LaTeX installation needed</p>
+<h3 id="opt-local-vram-llm-measured-vram-tuning-for-the-local-agents"><code>opt-local-vram-llm</code> - measured VRAM tuning for the local agents<a class="headerlink" href="#opt-local-vram-llm-measured-vram-tuning-for-the-local-agents" title="Permanent link">&para;</a></h3>
+<p>Replaces six manual steps with one command when a newer model arrives for <code>local-writer</code> or
+<code>local-coder</code>: read the manifest, write a Modelfile, create the tag, sweep, declare the
+candidate, qualify. Every number it writes is measured on this card, none copied from a model
+card or inferred from a parameter count. The objective, in order: admissible (`size_vram / size</p>
+<blockquote>
+<p>= 0.999<code>from</code>/api/ps<code>, 300 MiB free, the rung not clamped by the model's own context
+maximum), fast enough (decode throughput at or above</code>--throughput-floor<code>, default 0.90, of the
+best admissible throughput), then largest window wins, ties broken on throughput.</code>num_ctx<code>climbs the existing ladder;</code>kv_cache_type<code>(</code>f16<code>,</code>q8_0<code>,</code>q4_0<code>) is a daemon-wide variable
+read only at start, so each value costs a restart through</code>restart-ollama.ps1<code>, verified against</code>server.log<code>before anything is measured.</code>num_gpu<code>is pinned at 99, not swept. The rung
+measurement itself is</code>optimize_ollama.evaluate_rung<code>, imported from</code>loop-engineer<code>rather than
+duplicated. It stops at declaration: it writes</code>local-model-config.json<code>, declares the tag as a
+role candidate in</code>local-models.json<code>, and prints the</code>model_resolver.py --qualify` command
+without running it.</p>
+</blockquote>
+<p><strong>Files:</strong>
+- <code>.claude/skills/opt-local-vram-llm/SKILL.md</code>
+- <code>.claude/skills/opt-local-vram-llm/scripts/vram_probe.py</code> - read-only manifest and daemon facts
+- <code>.claude/skills/opt-local-vram-llm/scripts/vram_modelfile.py</code> - pure Modelfile render
+- <code>.claude/skills/opt-local-vram-llm/scripts/vram_daemon.py</code> - KV cache axis: write, restart,
+  verify, restore
+- <code>.claude/skills/opt-local-vram-llm/scripts/vram_optimizer.py</code> - the driver: search, objective
+  function, report, declaration
+- <code>.claude/skills/opt-local-vram-llm/scripts/Test/test_vram_probe.py</code>,
+  <code>test_vram_modelfile.py</code>, <code>test_vram_daemon.py</code>, <code>test_vram_optimizer.py</code> - four offline
+  suites (11 + 9 + 5 + 13 tests), no network, no GPU, no Ollama daemon</p>
+<p><code>aider-setup</code> and <code>rt-observe</code> are big enough to get their own chapters rather than a
+subsection here: <a href="../06-aider-pipeline/">06-aider-pipeline.md</a> and
+<a href="../07-rt-observe-dashboard/">07-rt-observe-dashboard.md</a>.</p>
+<hr />
+<p><a href="../03-token-management/">← 03 Token management</a> | <a href="../../README.md">Table of contents</a> | <a href="../05-security-audit/">05 Security audit →</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,1900 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/github-repo-setup-playbook/">
+      
+      
+        <link rel="prev" href="../contributor-notes/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>GitHub repo setup playbook - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#github-repository-presentation-playbook" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              GitHub repo setup playbook
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../manual/00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/01-installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/04-skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/05-security-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Security audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/06-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/07-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/08-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/09-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/10-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/11-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../authoring-and-mirrors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributor-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-find-or-define-the-brand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Find or define the brand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-documentation-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Documentation structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2 — Documentation structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#2a-decide-does-the-readme-need-to-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2a. Decide: does the README need to split?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2b-root-readmemd-becomes-the-entry-point-not-the-whole-story" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2b. Root README.md becomes the entry point, not the whole story
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2c-a-docsindexmd-for-an-optional-documentation-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2c. A docs/index.md for an optional documentation site
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-community-health-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Community health files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-readmemd-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — README.md template
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4 — README.md template">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#4a-actually-rendering-a-banner-not-just-describing-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4a. Actually rendering a banner (not just describing one)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4b-if-the-hero-is-a-gif-made-from-an-existing-video" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4b. If the hero is a GIF made from an existing video
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-optional-a-themed-documentation-site-mkdocs-material" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Optional: a themed documentation site (MkDocs Material)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-github-repository-settings-via-gh-verify-before-and-after" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 — GitHub repository settings (via gh, verify before and after)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-process-rules-issueboardprdocs-discipline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 — Process rules: Issue/board/PR/docs discipline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-8-verification-checklist-run-before-handing-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 — Verification checklist (run before handing back)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-things-this-playbook-got-wrong-the-first-time-keep-this-section-growing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix — Things this playbook got wrong the first time (keep this section growing)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-find-or-define-the-brand" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Find or define the brand
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-documentation-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Documentation structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2 — Documentation structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#2a-decide-does-the-readme-need-to-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2a. Decide: does the README need to split?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2b-root-readmemd-becomes-the-entry-point-not-the-whole-story" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2b. Root README.md becomes the entry point, not the whole story
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2c-a-docsindexmd-for-an-optional-documentation-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2c. A docs/index.md for an optional documentation site
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-community-health-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Community health files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-readmemd-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — README.md template
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4 — README.md template">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#4a-actually-rendering-a-banner-not-just-describing-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4a. Actually rendering a banner (not just describing one)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4b-if-the-hero-is-a-gif-made-from-an-existing-video" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4b. If the hero is a GIF made from an existing video
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-optional-a-themed-documentation-site-mkdocs-material" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Optional: a themed documentation site (MkDocs Material)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-github-repository-settings-via-gh-verify-before-and-after" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 — GitHub repository settings (via gh, verify before and after)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-process-rules-issueboardprdocs-discipline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 — Process rules: Issue/board/PR/docs discipline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-8-verification-checklist-run-before-handing-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 — Verification checklist (run before handing back)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-things-this-playbook-got-wrong-the-first-time-keep-this-section-growing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix — Things this playbook got wrong the first time (keep this section growing)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="github-repository-presentation-playbook">GitHub Repository Presentation Playbook<a class="headerlink" href="#github-repository-presentation-playbook" title="Permanent link">&para;</a></h1>
+<p><strong>Audience:</strong> a Claude Code session setting up (or overhauling) a GitHub repository's public
+presentation for a lab project — README, documentation structure, community files, and repo
+settings. This is a procedure to execute, not a narrative to read once.</p>
+<p><strong>Reference implementation:</strong> <code>LARi-UQAC/ResearchTools</code>, built through this exact sequence.
+Where a step needs a concrete example, this file points at the real file in that repo rather
+than inventing one — read the cited file, don't guess its shape.</p>
+<p><strong>Scope:</strong> this playbook covers <em>presentation and process</em> (how the repo looks, how docs are
+organized, how contributions flow). It does NOT cover the lab's language/style/security rules
+for the <em>content</em> of the code or prose itself — those live in <code>.claude/rules/*.md</code> of each
+project and are out of scope here. If the target repo has its own <code>.claude/rules/</code>, read it
+first; nothing in this playbook overrides it.</p>
+<p><strong>Do not fabricate.</strong> Every badge, count, and claim below must be verified against the actual
+repo before being written (file counts, chapter counts, license, existing assets). A number
+copied from this playbook without checking is exactly the kind of stale claim this whole
+process exists to prevent.</p>
+<hr />
+<h2 id="phase-0-prerequisites">Phase 0 — Prerequisites<a class="headerlink" href="#phase-0-prerequisites" title="Permanent link">&para;</a></h2>
+<p>Check before starting, don't assume:</p>
+<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>auth<span class="w"> </span>status<span class="w">          </span><span class="c1"># needs at least: repo, project scopes. Re-check — scopes drift.</span>
+gh<span class="w"> </span>api<span class="w"> </span>user<span class="w"> </span>--jq<span class="w"> </span>.login<span class="w"> </span><span class="c1"># confirms which account is actually authenticated</span>
+</code></pre></div>
+<ul>
+<li><code>gh</code> CLI installed and authenticated with <code>repo</code> scope (repo settings, badges data) and
+  <code>project</code> scope (Phase 7 board) — see <code>gh auth status</code>. If a scope is missing:
+  <code>gh auth refresh -s &lt;scope&gt;</code>.</li>
+<li>If the plan includes generating a GIF/image asset: <code>ffmpeg</code> on PATH (<code>ffmpeg -version</code>). On
+  Windows with <code>scoop</code> available: <code>scoop install ffmpeg-essentials</code>.</li>
+<li>If the plan includes a themed documentation site: Python 3 for a <strong>dedicated</strong> virtualenv
+  (never reuse a project's own test/runtime venv for doc tooling — see Phase 5).</li>
+<li>Ask the user, don't guess, before starting: does this repo already have a <code>CONTRIBUTING.md</code>,
+  design assets, or a documented brand? Overwriting existing work without checking is worse
+  than a slow start.</li>
+</ul>
+<hr />
+<h2 id="phase-1-find-or-define-the-brand">Phase 1 — Find or define the brand<a class="headerlink" href="#phase-1-find-or-define-the-brand" title="Permanent link">&para;</a></h2>
+<p><strong>Do not invent colors.</strong> Before picking any palette:</p>
+<ol>
+<li>Search the repo for existing design assets — a <code>post-media/</code>, <code>assets/</code>, <code>brand/</code>, or
+   <code>design/</code>-named folder, any <code>.html</code> design template, any style guide doc. This is worth a
+   real search (<code>find . -iname "*brand*" -o -iname "*template*.html" -o -iname "*.dc.html"</code>),
+   not a quick glance — the ResearchTools reference implementation had a full brand system
+   sitting in <code>post-media/Series Template.dc.html</code> (a Claude Design export) that nobody had
+   surfaced into the README before this process ran.</li>
+<li>If found: extract the exact hex values (background, primary accent, secondary accent,
+   text color) and the font family. Do not approximate ("looks like teal") — read the CSS
+   values directly.</li>
+<li>If genuinely nothing exists: ask the user for 2-3 brand colors, or propose a minimal
+   palette (one dark neutral, one accent) and get explicit sign-off before applying it
+   everywhere. Do not default to a generic palette (a framework's default blue, shields.io's
+   default colors) and call it "the brand."</li>
+<li>Record the palette once, in one place (see Phase 5's <code>extra.css</code> for where), and reuse it
+   everywhere — badges, diagrams, the doc site theme. A repo with five different accent colors
+   across its README, its Architecture doc, and its badges looks like nobody is driving.</li>
+</ol>
+<hr />
+<h2 id="phase-2-documentation-structure">Phase 2 — Documentation structure<a class="headerlink" href="#phase-2-documentation-structure" title="Permanent link">&para;</a></h2>
+<h3 id="2a-decide-does-the-readme-need-to-split">2a. Decide: does the README need to split?<a class="headerlink" href="#2a-decide-does-the-readme-need-to-split" title="Permanent link">&para;</a></h3>
+<p>Rule of thumb, not a hard number: past roughly 400-500 lines or when a single <code>README.md</code>
+covers more than 4-5 genuinely distinct topics (installation, every skill/feature, every
+command, architecture, file layout...), split it. Below that, a single well-organized README
+is fine and a split is over-engineering.</p>
+<p>If splitting: the reference pattern is <code>docs/manual/</code>, one file per topic, numbered for a
+stable read order:</p>
+<div class="highlight"><pre><span></span><code>docs/manual/
+  00-purpose.md          # mission, roadmap, this manual's own conventions
+  01-installation.md
+  02-&lt;topic&gt;.md
+  ...
+  NN-file-locations.md   # or whatever the last natural topic is
+</code></pre></div>
+<p>Chapter file template (every chapter, no exceptions):</p>
+<div class="highlight"><pre><span></span><code><span class="gh"># &lt;Chapter Title&gt;</span>
+
+Chapter NN of the &lt;Project&gt; manual. Back to [<span class="nt">table of contents</span>](<span class="na">../../README.md</span>).
+
+&lt;content&gt;
+
+---
+[<span class="nt">← &lt;prev-num&gt; &lt;prev-title&gt;</span>](<span class="na">&lt;prev-file&gt;.md</span>) | [<span class="nt">Table of contents</span>](<span class="na">../../README.md</span>) | [<span class="nt">&lt;next-num&gt; &lt;next-title&gt; →</span>](<span class="na">&lt;next-file&gt;.md</span>)
+</code></pre></div>
+<ul>
+<li>First chapter: no "← previous" link. Last chapter: no "next →" link.</li>
+<li><strong>Before moving content out of the root README, grep the project's own test suite for
+  hardcoded reads of that file.</strong> A test can assert that specific literal substrings exist in
+  <code>README.md</code> by path (<code>Path(__file__)... / "README.md"</code>), and content moved into a chapter
+  file will fail that test silently — no compile error, just a red test run later. Search
+  <code>Test/*.py</code>, <code>Test/*.ps1</code>, or equivalent, for the literal string <code>"README.md"</code> before
+  restructuring, and either keep the required substrings in the thinned root file (in a
+  pointer/quickstart section) or update the test.</li>
+<li>If any chapter grows long (over ~300 lines) and has multiple <code>###</code>-level subsections, add an
+  in-chapter mini table of contents right after the intro, with anchor links to each
+  subsection. <strong>Compute the anchors mechanically, do not hand-guess them</strong> — GitHub's heading
+  slug algorithm removes em-dashes and slashes entirely (it does not turn them into hyphens),
+  which produces double-hyphens in places a hand guess will get wrong:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">gfm_slug</span><span class="p">(</span><span class="n">heading_text</span><span class="p">):</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">heading_text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[^\w\- ]'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>   <span class="c1"># strip everything except word chars, spaces, hyphens</span>
+    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">' '</span><span class="p">,</span> <span class="s1">'-'</span><span class="p">)</span>
+</code></pre></div>
+<p>This is GitHub's own algorithm specifically. If the repo will also be served through MkDocs,
+  Sphinx, or any other renderer, know that <strong>their slugifiers are not the same algorithm</strong> —
+  an anchor correct on GitHub can silently fail to jump inside a different renderer's build.
+  Verify per target, don't assume portability.</p>
+<h3 id="2b-root-readmemd-becomes-the-entry-point-not-the-whole-story">2b. Root README.md becomes the entry point, not the whole story<a class="headerlink" href="#2b-root-readmemd-becomes-the-entry-point-not-the-whole-story" title="Permanent link">&para;</a></h3>
+<p>Once split, the root <code>README.md</code> is a slim landing page: title, badges, a hero visual, a short
+pitch, a table of contents, and links to every chapter — not the chapter content itself. See
+Phase 4 for the exact template.</p>
+<h3 id="2c-a-docsindexmd-for-an-optional-documentation-site">2c. A <code>docs/index.md</code> for an optional documentation site<a class="headerlink" href="#2c-a-docsindexmd-for-an-optional-documentation-site" title="Permanent link">&para;</a></h3>
+<p>Add this even before deciding on Phase 5, since it costs nothing: a plain landing page
+listing every chapter and every deep-dive reference doc, so the <code>docs/</code> folder itself makes
+sense to a browsing human even without any site generator running.</p>
+<hr />
+<h2 id="phase-3-community-health-files">Phase 3 — Community health files<a class="headerlink" href="#phase-3-community-health-files" title="Permanent link">&para;</a></h2>
+<p>GitHub recognizes a specific set of files and reports their presence under
+Insights → Community Standards. Add each one, adapted to the project (never copy the reference
+implementation's own contact email, license holder, or project-specific rules verbatim):</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CONTRIBUTING.md</code> (root)</td>
+<td>How to contribute</td>
+<td>Point to existing detailed docs rather than duplicating install/test steps; keep it thin</td>
+</tr>
+<tr>
+<td><code>CODE_OF_CONDUCT.md</code> (root)</td>
+<td>Community standard</td>
+<td>Contributor Covenant v2.1 is a reasonable default; needs a real contact (email or a person), not a placeholder</td>
+</tr>
+<tr>
+<td><code>SECURITY.md</code> (root)</td>
+<td>Vulnerability reporting</td>
+<td>State the REAL threat model (a local research tool with no exposed service is not "enterprise compliance scenarios" — don't cargo-cult SOC2/HIPAA language that doesn't apply)</td>
+</tr>
+<tr>
+<td><code>.github/PULL_REQUEST_TEMPLATE.md</code></td>
+<td>PR checklist</td>
+<td>Mirror the project's OWN existing rules (test command, doc-update requirement) rather than a generic checklist — see Phase 7</td>
+</tr>
+<tr>
+<td><code>.github/ISSUE_TEMPLATE/bug_report.md</code>, <code>feature_request.md</code>, <code>config.yml</code></td>
+<td>Structured issues</td>
+<td><code>config.yml</code> with <code>blank_issues_enabled: false</code> if you want to force template use</td>
+</tr>
+<tr>
+<td><code>.github/CODEOWNERS</code></td>
+<td>Default reviewers</td>
+<td>One line minimum: <code>* @&lt;owner&gt;</code></td>
+</tr>
+<tr>
+<td><code>.gitattributes</code></td>
+<td>Line-ending normalization</td>
+<td><code>* text=auto eol=lf</code> plus explicit <code>binary</code> markers for every image/video/document extension in the repo — a binary file with no <code>binary</code> marker risks silent corruption from text normalization</td>
+</tr>
+<tr>
+<td><code>.editorconfig</code></td>
+<td>Cross-editor formatting</td>
+<td>Standard template; exclude <code>.md</code> from <code>trim_trailing_whitespace</code> (Markdown's hard-line-break convention uses a trailing double-space)</td>
+</tr>
+<tr>
+<td><code>.github/FUNDING.yml</code></td>
+<td>Native GitHub Sponsor button</td>
+<td>Only if the project actually has a funding link; check it doesn't already exist before adding</td>
+</tr>
+<tr>
+<td><code>CHANGELOG.md</code> (root)</td>
+<td>User-facing version history</td>
+<td>Distinct audience from an engineering decision log if one exists (e.g. this repo's <code>IMPROVEMENTS.md</code>) — a CHANGELOG answers "what changed for someone using this," a decision log answers "why, for whoever maintains it." Don't merge the two.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Check first, every time:</strong> <code>.github/FUNDING.yml</code> and similar files may already exist and be
+correctly configured. Read before writing.</p>
+<hr />
+<h2 id="phase-4-readmemd-template">Phase 4 — README.md template<a class="headerlink" href="#phase-4-readmemd-template" title="Permanent link">&para;</a></h2>
+<p>Order that worked, annotated. Adapt content, keep the shape:</p>
+<div class="highlight"><pre><span></span><code><span class="gh"># &lt;Project Name&gt;</span>
+
+[<span class="nt">![License</span>](<span class="na">...</span>)] [<span class="nt">![Language/Platform</span>](<span class="na">...</span>)] [<span class="nt">![Docs</span>](<span class="na">...</span>)] [<span class="nt">![Stars</span>](<span class="na">...</span>)]
+[<span class="nt">![Last commit</span>](<span class="na">...</span>)] [<span class="nt">![Contributors</span>](<span class="na">...</span>)] [<span class="nt">![Open issues</span>](<span class="na">...</span>)]
+
+&lt;!-- Banner: a real rendered image carrying the project's identity + one-line pitch.
+     Not the bare logo alone — see Phase 4a on how to actually render one. --&gt;
+&lt;p align="center"&gt;&lt;img src="path/to/banner.png" alt="..." width="900"&gt;&lt;/p&gt;
+
+&lt;!-- Logo + a short demo (GIF or screenshot) side by side, in an HTML table for
+     GitHub-reliable side-by-side layout (plain adjacent &lt;img&gt; tags wrap unpredictably): --&gt;
+&lt;table align="center" border="0" cellspacing="0" cellpadding="0"&gt;
+&lt;tr&gt;
+&lt;td align="center"&gt;&lt;img src="logo.png" width="200"&gt;&lt;/td&gt;
+&lt;td align="center"&gt;&lt;img src="demo.gif" width="420"&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/table&gt;
+
+&lt;details&gt;
+&lt;summary&gt;&lt;b&gt;Table of contents&lt;/b&gt;&lt;/summary&gt;
+
+<span class="k">-</span><span class="w"> </span>[links to every section below]
+
+&lt;/details&gt;
+
+&lt;!-- 1-2 sentence pitch, then 3-4 bullets of what it actually does. Bullets should read as
+     genuinely distinct capabilities, not a padded, suspiciously symmetric list — vary
+     sentence length and structure, or it reads as AI-generated filler. --&gt;
+
+<span class="gu">## Why &lt;Project&gt;</span>
+&lt;!-- A short before/after table beats a feature list for selling the value proposition.
+     Ground every row in a real, named capability — never a generic claim. --&gt;
+
+<span class="gu">## See it in action</span>
+&lt;!-- A real screenshot or GIF of the actual running tool. Not a mockup. --&gt;
+
+<span class="gu">## Quickstart</span>
+&lt;!-- The minimum commands to get running. Link to a full install chapter for the rest. --&gt;
+
+<span class="gu">## Manual chapters</span>
+&lt;!-- If split (Phase 2): a small "at a glance" diagram (Mermaid, in the SAME brand colors
+     as everything else — see Phase 1) plus the chapter table. --&gt;
+
+<span class="gu">## Supported harnesses / platforms</span>
+&lt;!-- If relevant: a row of badges for what's supported, in ONE consistent color rather than
+     a different hue per badge — a uniform color reads as "one coherent set," a rainbow
+     reads as unplanned. --&gt;
+
+<span class="gu">## Support this project</span>
+&lt;!-- Sponsor/donate links, star ask — near the BOTTOM, not competing with the pitch at the
+     top for the reader's first few seconds of attention. --&gt;
+</code></pre></div>
+<h3 id="4a-actually-rendering-a-banner-not-just-describing-one">4a. Actually rendering a banner (not just describing one)<a class="headerlink" href="#4a-actually-rendering-a-banner-not-just-describing-one" title="Permanent link">&para;</a></h3>
+<p>A banner built as static HTML/CSS (for precise brand control) needs to be rendered to an
+image before it's useful in a README — an unrendered <code>.html</code> source file wired nowhere is not
+a banner, it's a draft. If the session's tools include a headless browser (e.g. a Playwright
+MCP) but <code>file://</code> navigation is refused and starting a local server is denied by a permission
+classifier (both are legitimate safety gates — don't try to bypass either):</p>
+<ol>
+<li>Commit the HTML file (and any local image assets it references) to the repo, pushed to
+   GitHub.</li>
+<li>Navigate the headless browser to
+   <code>https://htmlpreview.github.io/?https://github.com/&lt;owner&gt;/&lt;repo&gt;/blob/&lt;branch&gt;/&lt;path-to-file&gt;.html</code>
+   — a free public service that serves a GitHub-hosted HTML file back with the correct
+   <code>text/html</code> content type (GitHub's own <code>raw.githubusercontent.com</code> serves it as
+   <code>text/plain</code>, which is why a browser won't render it there) and rewrites the file's
+   relative asset links to resolve against the same repo.</li>
+<li>Screenshot the rendered page, save the result as a real PNG asset in the repo, and
+   reference THAT image from the README — not the HTML source.</li>
+</ol>
+<p>This only works for a file already pushed to a reachable GitHub location; it does not help
+preview <em>uncommitted</em> local changes to the HTML.</p>
+<h3 id="4b-if-the-hero-is-a-gif-made-from-an-existing-video">4b. If the hero is a GIF made from an existing video<a class="headerlink" href="#4b-if-the-hero-is-a-gif-made-from-an-existing-video" title="Permanent link">&para;</a></h3>
+<p><strong>Check the first frame before finalizing.</strong> A source clip with an intro/background-only
+lead-in produces a GIF whose resting frame (what a slow-loading page, or any static-preview
+context, shows) is blank or content-free — this is invisible until checked directly against
+the live page, not just a local preview. Extract candidate start frames as stills
+(<code>ffmpeg -ss &lt;t&gt; -i input.mp4 -frames:v 1 probe.png</code>) and look at them before committing to a
+start offset; don't assume the source "probably starts fine."</p>
+<p>Two-pass palette technique for a compact, high-quality GIF:</p>
+<div class="highlight"><pre><span></span><code>ffmpeg<span class="w"> </span>-ss<span class="w"> </span>&lt;offset&gt;<span class="w"> </span>-i<span class="w"> </span>input.mp4<span class="w"> </span>-vf<span class="w"> </span><span class="s2">"fps=12,scale=480:-1:flags=lanczos,palettegen"</span><span class="w"> </span>palette.png
+ffmpeg<span class="w"> </span>-ss<span class="w"> </span>&lt;offset&gt;<span class="w"> </span>-i<span class="w"> </span>input.mp4<span class="w"> </span>-i<span class="w"> </span>palette.png<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-filter_complex<span class="w"> </span><span class="s2">"fps=12,scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse"</span><span class="w"> </span>output.gif
+</code></pre></div>
+<hr />
+<h2 id="phase-5-optional-a-themed-documentation-site-mkdocs-material">Phase 5 — Optional: a themed documentation site (MkDocs Material)<a class="headerlink" href="#phase-5-optional-a-themed-documentation-site-mkdocs-material" title="Permanent link">&para;</a></h2>
+<p>Only worth it once <code>docs/manual/</code> (Phase 2) exists with real content — theming an empty
+folder is wasted effort.</p>
+<ol>
+<li>
+<p><strong>Dedicated environment</strong>, never the project's own test/runtime venv:
+   <div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv-docs
+.venv-docs/Scripts/python.exe<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material
+</code></pre></div>
+   Audit it (<code>pip install pip-audit &amp;&amp; pip_audit --strict</code>), then remove <code>pip-audit</code> and its
+   own transitive dependencies from the pinned requirements file — they were a one-off audit
+   tool, not a doc-site dependency. Pin what's left with <code>pip freeze</code>.</p>
+</li>
+<li>
+<p><strong><code>mkdocs.yml</code></strong> at the repo root, <code>docs_dir: docs</code>, explicit <code>nav:</code> (don't rely on
+   auto-discovery — it will include scratch/plan-authoring content you don't want on a public
+   site), and the brand palette from Phase 1 applied via <code>extra_css</code> overriding Material's CSS
+   variables (<code>--md-primary-fg-color</code>, <code>--md-accent-fg-color</code>, etc.) rather than settling for
+   Material's nearest built-in named color.</p>
+</li>
+<li>
+<p><strong><code>exclude_docs:</code> for anything under <code>docs/</code> that isn't meant for the site</strong> (a
+   plan-authoring scratch folder, work-in-progress notes). <strong><code>not_in_nav:</code> is NOT an
+   exclusion</strong> — it only hides a file from the sidebar while still building it, and a
+   malformed file that GitHub's renderer tolerates can still crash MkDocs's own build (a
+   Python-Markdown/HTML-parser edge case is a measured example). Use <code>exclude_docs:</code> for
+   anything that must not be processed at all.</p>
+</li>
+<li>
+<p><strong>Build locally and read the warnings</strong>, don't just trust the source: <code>mkdocs build</code>
+   (add <code>--strict</code> to fail on any warning, useful for a first pass, but expect and accept two
+   categories of warning as informational rather than bugs — see the gotchas below).</p>
+</li>
+<li>
+<p><strong>No CI/CD if the project has a "no automated pipeline" policy</strong>: publish with a manual
+   <code>mkdocs gh-deploy</code> (pushes a <code>gh-pages</code> branch by hand) rather than a GitHub Actions
+   workflow. Document the manual command in <code>docs/index.md</code>. Enabling the Pages <em>setting</em>
+   itself (Settings → Pages → Deploy from branch → <code>gh-pages</code>) is a repo-settings change for
+   the human to make, not something to script.</p>
+</li>
+</ol>
+<p><strong>Known, acceptable gaps to document rather than "fix" into a bigger scope:</strong>
+- A link from inside <code>docs/</code> to a file OUTSIDE <code>docs_dir</code> (e.g. the root <code>README.md</code>,
+  <code>Architecture.md</code>) resolves fine on GitHub's own browser but not inside the MkDocs build,
+  since its <code>docs_dir</code> only knows about <code>docs/</code>. State this, don't silently break the
+  GitHub-browsing experience trying to force both to work identically.
+- GitHub's own heading-slug algorithm and MkDocs/Python-Markdown's slugifier diverge (see
+  Phase 2a) — an in-page anchor correct on GitHub can fail inside the built site.</p>
+<hr />
+<h2 id="phase-6-github-repository-settings-via-gh-verify-before-and-after">Phase 6 — GitHub repository settings (via <code>gh</code>, verify before and after)<a class="headerlink" href="#phase-6-github-repository-settings-via-gh-verify-before-and-after" title="Permanent link">&para;</a></h2>
+<p>All of these are real API calls with real effects — read the current state first, and read it
+back after to confirm, rather than trusting a silent success:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Current state, before touching anything</span>
+gh<span class="w"> </span>api<span class="w"> </span>repos/&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span>--jq<span class="w"> </span><span class="s1">'{description, has_wiki, has_projects, has_discussions, topics}'</span>
+
+<span class="c1"># Description + topics ("About" section — the first thing a visitor sees, before README)</span>
+gh<span class="w"> </span>repo<span class="w"> </span>edit<span class="w"> </span>&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span>--description<span class="w"> </span><span class="s2">"&lt;one sentence&gt;"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--add-topic<span class="w"> </span>&lt;topic1&gt;<span class="w"> </span>--add-topic<span class="w"> </span>&lt;topic2&gt;<span class="w"> </span>...
+
+<span class="c1"># Discussions on, if useful for informal Q&amp;A separate from Issues</span>
+gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>repos/&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span>-f<span class="w"> </span><span class="nv">has_discussions</span><span class="o">=</span><span class="nb">true</span>
+
+<span class="c1"># Wiki off, IF genuinely redundant with docs/manual/ + a doc site — ask first, don't assume</span>
+gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>repos/&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span>-f<span class="w"> </span><span class="nv">has_wiki</span><span class="o">=</span><span class="nb">false</span>
+
+<span class="c1"># Verify</span>
+gh<span class="w"> </span>api<span class="w"> </span>repos/&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span>--jq<span class="w"> </span><span class="s1">'{description, has_wiki, has_projects, has_discussions, topics}'</span>
+</code></pre></div>
+<p><strong>Social preview image and enabling the Pages setting itself are web-UI-only</strong> — no API path
+for either as of this writing. Prepare the asset (Phase 4a's banner is a better fit than a
+bare logo for the image, given GitHub's ~1280×640 social-card aspect ratio), then hand the
+human the exact setting path (Settings → Social preview / Settings → Pages).</p>
+<p><strong>First version tag</strong>, once content is in a shippable state — don't invent a version number
+unilaterally, it's a public-facing decision:</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>tag<span class="w"> </span>-a<span class="w"> </span>v0.1.0<span class="w"> </span>-m<span class="w"> </span><span class="s2">"&lt;summary&gt;"</span><span class="w">     </span><span class="c1"># ask the user for the actual number, don't assume 0.1.0 fits</span>
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>v0.1.0<span class="w">               </span><span class="c1"># a push — confirm the project's own git-ownership norms first (Phase 8 note)</span>
+gh<span class="w"> </span>release<span class="w"> </span>create<span class="w"> </span>v0.1.0<span class="w"> </span>--title<span class="w"> </span><span class="s2">"..."</span><span class="w"> </span>--notes<span class="w"> </span><span class="s2">"..."</span>
+</code></pre></div>
+<hr />
+<h2 id="phase-7-process-rules-issueboardprdocs-discipline">Phase 7 — Process rules: Issue/board/PR/docs discipline<a class="headerlink" href="#phase-7-process-rules-issueboardprdocs-discipline" title="Permanent link">&para;</a></h2>
+<p>If the target project has its own numbered-rule convention (like <code>.claude/rules/*.md</code> R-numbers
+in this codebase), ADD to that sequence — check the current highest number first
+(<code>grep -rhoE "\*\*R[0-9]+" .claude/rules/*.md | sort -t R -k2 -n -u | tail -5</code>) and update any
+index/cross-reference that states the old bound in the SAME edit (see the gotcha below). If the
+project has no such convention, write these as plain prose policy in <code>CONTRIBUTING.md</code> instead
+of inventing a numbering scheme it doesn't otherwise use.</p>
+<p><strong>Pattern 1 — a PR needs a linked Issue and a board card before it opens.</strong> Reference
+implementation: <code>.claude/rules/workflows.md</code> R30 in <code>LARi-UQAC/ResearchTools</code>. Steps: open an
+Issue naming the problem → add it to the repo's own GitHub Project board
+(<code>gh project item-add &lt;project-number&gt; --owner &lt;owner&gt; --url &lt;issue-url&gt;</code>) → open the PR
+referencing the Issue (<code>Closes #&lt;N&gt;</code>). Exempt trivial fixes (typo, broken link) from the
+ceremony.</p>
+<p><strong>Pattern 2 — a PR does not merge until the documentation it touches is updated, in the same
+PR.</strong> Reference implementation: R31 in the same file. This is a merge-time gate the reviewer
+checks, complementing Pattern 1's open-time gate — "will fix docs later" is not an approval.</p>
+<p><strong>Setting up the board</strong>, if one doesn't exist for the repo yet:</p>
+<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>project<span class="w"> </span>create<span class="w"> </span>--owner<span class="w"> </span>&lt;owner&gt;<span class="w"> </span>--title<span class="w"> </span><span class="s2">"&lt;Project&gt; Roadmap"</span>
+gh<span class="w"> </span>project<span class="w"> </span>link<span class="w"> </span>&lt;number&gt;<span class="w"> </span>--owner<span class="w"> </span>&lt;owner&gt;<span class="w"> </span>--repo<span class="w"> </span>&lt;owner&gt;/&lt;repo&gt;
+<span class="c1"># Seed it with existing open issues:</span>
+gh<span class="w"> </span>project<span class="w"> </span>item-add<span class="w"> </span>&lt;number&gt;<span class="w"> </span>--owner<span class="w"> </span>&lt;owner&gt;<span class="w"> </span>--url<span class="w"> </span>&lt;issue-url&gt;
+<span class="c1"># And with draft cards for anything already written as a prose roadmap somewhere in the docs:</span>
+gh<span class="w"> </span>project<span class="w"> </span>item-create<span class="w"> </span>&lt;number&gt;<span class="w"> </span>--owner<span class="w"> </span>&lt;owner&gt;<span class="w"> </span>--title<span class="w"> </span><span class="s2">"&lt;item&gt;"</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">"&lt;context&gt;"</span>
+</code></pre></div>
+<p><strong>Gotcha, measured on this exact playbook's own reference implementation:</strong> a rule file that
+lists a numeric range or count another file also states (e.g. "rules R0 to R27", "18 skills")
+WILL drift the next time a new item is added, unless updating every place that states the old
+bound is treated as part of the same edit — not a follow-up. This repo's own
+<code>.claude/rules/code-style.md</code> "Rule identifiers" index had silently stopped naming two rules
+for an unknown number of sessions before this playbook's authoring cycle caught and fixed it.
+Grep for the old bound and fix every hit, every time.</p>
+<p><strong>Gotcha — junction/symlink propagation:</strong> if the rules directory being edited is shared
+across multiple projects via a symlink or directory junction (check the project's own install
+docs), an edit here goes live EVERYWHERE that junction reaches, immediately, with no sync step
+and no guard rail. A rule drafted with a concrete example from the current repo (a literal
+project-board URL, a literal owner name) will read wrong the moment another project's session
+reads it. Phrase the generalizable rule generically ("the repo's own board") and cite the
+concrete example separately, clearly marked as one instance rather than the universal target.</p>
+<hr />
+<h2 id="phase-8-verification-checklist-run-before-handing-back">Phase 8 — Verification checklist (run before handing back)<a class="headerlink" href="#phase-8-verification-checklist-run-before-handing-back" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[ ] Every internal markdown link resolves — script it, don't eyeball a 100+-line README:
+  <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">re</span><span class="o">,</span><span class="w"> </span><span class="nn">os</span>
+<span class="c1"># walk every changed .md file, regex for ']( ... )', skip http(s) and '#'-only anchors,</span>
+<span class="c1"># os.path.normpath+exists() the rest relative to the file's own directory</span>
+</code></pre></div></li>
+<li>[ ] If the project has an offline test suite that reads <code>README.md</code> or another doc file by
+      literal path for required substrings (see Phase 2a), re-run it after every doc edit —
+      not just once at the end.</li>
+<li>[ ] After pushing: compare the local committed blob SHA against what GitHub actually serves
+      (<code>git rev-parse HEAD:&lt;path&gt;</code> vs <code>gh api repos/&lt;owner&gt;/&lt;repo&gt;/contents/&lt;path&gt; --jq .sha</code>)
+      for anything that "should just work" but is easy to get wrong (binary assets especially).
+      A byte-for-byte cached CDN response can look like a bug that isn't one — check this
+      before assuming a push failed.</li>
+<li>[ ] Actually LOOK at the live rendered page (a headless-browser screenshot of the real
+      <code>https://github.com/&lt;owner&gt;/&lt;repo&gt;</code> URL) at least once — a markdown source that "should"
+      render correctly can still surprise you (an animated GIF's static first frame, a badge
+      that silently fails to fetch its logo, a collapsed <code>&lt;details&gt;</code> block that looks broken
+      collapsed). Don't declare success from source inspection alone.</li>
+<li>[ ] Clean up debug artifacts before finishing: screenshots taken for verification, headless
+      browser snapshot files (check for a stray directory left behind, e.g.
+      <code>.playwright-mcp/</code>), temp probe frames. Add a <code>.gitignore</code> entry for the tool's own debug
+      output directory if this is a recurring pattern, so it can't be accidentally committed
+      again — this repo found one such file that had been sitting committed since an earlier,
+      unrelated session.</li>
+<li>[ ] Respect the project's own git-ownership norm. Some projects want the session to commit
+      and push freely; others want every commit/push left to the human. This is NOT
+      universal and can change mid-session — if told "let me commit and push myself," that
+      applies from that point forward, including for work already staged. Don't assume a
+      general "yes, go ahead" from earlier in a session extends to git operations unless it
+      was said about git specifically.</li>
+</ul>
+<hr />
+<h2 id="appendix-things-this-playbook-got-wrong-the-first-time-keep-this-section-growing">Appendix — Things this playbook got wrong the first time (keep this section growing)<a class="headerlink" href="#appendix-things-this-playbook-got-wrong-the-first-time-keep-this-section-growing" title="Permanent link">&para;</a></h2>
+<p>Real, measured mistakes from building the reference implementation, so the next run doesn't
+repeat them:</p>
+<ul>
+<li>Assumed a video file's opening frame was representative without checking — it was a
+  content-free background blur, invisible until verified against the actual live page.</li>
+<li>Assumed <code>file://</code> rendering was categorically blocked with no alternative, and told the user
+  so — a working <code>https://</code> route (<code>htmlpreview.github.io</code>) existed and was found only after
+  being asked to try again.</li>
+<li>Hardcoded a specific repo's project-board URL directly into a rule meant to generalize
+  across every project a shared rule file reaches.</li>
+<li>Left a stale "R0 to R27" bound in a cross-reference index for at least two rule additions
+  before it was caught.</li>
+<li>Assumed a differently-named file (<code>LogoLARI_FINAL.png</code> vs <code>LogoLARI_trim.png</code>) sitting at
+  the repo root was dead duplicate weight without checking — it was referenced by a separate
+  pipeline. Grep before proposing a deletion, every time.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

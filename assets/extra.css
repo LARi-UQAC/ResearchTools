@@ -1,0 +1,116 @@
+/* ResearchTools brand palette, extracted from the design system used for the project's
+   own promo cards (post-media/Series Template.dc.html): navy #10243E, teal #1F9E8F /
+   #16776C, amber #C9762F. Overrides Material's built-in "teal"/"amber" named palette
+   (set in mkdocs.yml) with the exact brand hex values. */
+:root, [data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1F9E8F;
+  --md-primary-fg-color--light: #7FC7D9;
+  --md-primary-fg-color--dark: #16776C;
+  --md-accent-fg-color: #C9762F;
+  --md-typeset-a-color: #16776C;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #16776C;
+  --md-accent-fg-color: #C9762F;
+}
+
+.md-header, .md-tabs {
+  background-color: #10243E;
+}
+
+/* Custom homepage landing page (docs/index.md only, via .rt-landing) — hero, CTA buttons,
+   and a feature-card grid, hand-built with plain HTML/CSS rather than Material's
+   grid-cards markdown extension, so it renders identically regardless of pymdown-extensions
+   version. */
+.rt-hero {
+  text-align: center;
+  padding: 2.5rem 1rem 2rem;
+}
+.rt-hero img {
+  max-width: 900px;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+.rt-hero h1 {
+  margin-top: 1.5rem;
+  font-size: 2rem;
+}
+.rt-hero p.rt-subtitle {
+  color: rgba(16, 36, 62, 0.7);
+  font-size: 1.15rem;
+  max-width: 640px;
+  margin: 0.5rem auto 1.5rem;
+}
+[data-md-color-scheme="slate"] .rt-hero p.rt-subtitle {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.rt-cta {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.rt-cta a.md-button {
+  border-radius: 8px;
+}
+.rt-cta a.md-button--primary {
+  background-color: #1F9E8F;
+  border-color: #1F9E8F;
+}
+.rt-cta a.md-button--primary:hover {
+  background-color: #16776C;
+  border-color: #16776C;
+}
+
+.rt-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin: 2rem 0;
+}
+.rt-feature-card {
+  border: 1px solid rgba(16, 36, 62, 0.12);
+  border-radius: 12px;
+  padding: 1.25rem 1.4rem;
+  background: rgba(31, 158, 143, 0.04);
+}
+[data-md-color-scheme="slate"] .rt-feature-card {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(31, 158, 143, 0.08);
+}
+.rt-feature-card h3 {
+  margin-top: 0;
+  color: #16776C;
+}
+[data-md-color-scheme="slate"] .rt-feature-card h3 {
+  color: #7FC7D9;
+}
+
+.rt-stats {
+  display: flex;
+  justify-content: center;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+  text-align: center;
+  margin: 2rem 0;
+  padding: 1.5rem 0;
+  border-top: 1px solid rgba(16, 36, 62, 0.1);
+  border-bottom: 1px solid rgba(16, 36, 62, 0.1);
+}
+.rt-stats .rt-stat-num {
+  display: block;
+  font-size: 2rem;
+  font-weight: 800;
+  color: #C9762F;
+}
+.rt-stats .rt-stat-label {
+  font-size: 0.85rem;
+  color: rgba(16, 36, 62, 0.65);
+}
+[data-md-color-scheme="slate"] .rt-stats .rt-stat-label {
+  color: rgba(255, 255, 255, 0.65);
+}

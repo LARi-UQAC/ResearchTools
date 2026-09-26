@@ -1,0 +1,1818 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/authoring-and-mirrors/">
+      
+      
+        <link rel="prev" href="../rt-observe/">
+      
+      
+        <link rel="next" href="../contributor-notes/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Authoring & mirrors - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#authoring-and-mirroring-agents-skills-commands" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Authoring & mirrors
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../manual/00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/01-installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/04-skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/05-security-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Security audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/06-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/07-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/08-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/09-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/10-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/11-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-model-one-source-generated-mirrors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The model: one source, generated mirrors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-mirror-map-what-each-tool-consumes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The mirror map (what each tool consumes)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. The mirror map (what each tool consumes)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-agentsmd-covers-more-than-one-harness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why AGENTS.md covers more than one harness
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-two-install-scripts-different-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The two install scripts (different jobs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-what-conventionsmd-is-and-is-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. What CONVENTIONS.md is (and is not)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-choose-the-right-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Choose the right kind
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-add-a-new-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Add a new AGENT
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-add-a-new-skill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Add a new SKILL
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-add-a-new-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Add a new COMMAND
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-regenerate-verify-commit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Regenerate, verify, commit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-quick-checklist-by-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Quick checklist by type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributor-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../github-repo-setup-playbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-model-one-source-generated-mirrors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The model: one source, generated mirrors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-mirror-map-what-each-tool-consumes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The mirror map (what each tool consumes)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. The mirror map (what each tool consumes)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-agentsmd-covers-more-than-one-harness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why AGENTS.md covers more than one harness
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-two-install-scripts-different-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The two install scripts (different jobs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-what-conventionsmd-is-and-is-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. What CONVENTIONS.md is (and is not)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-choose-the-right-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Choose the right kind
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-add-a-new-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Add a new AGENT
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-add-a-new-skill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Add a new SKILL
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-add-a-new-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Add a new COMMAND
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-regenerate-verify-commit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Regenerate, verify, commit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-quick-checklist-by-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Quick checklist by type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="authoring-and-mirroring-agents-skills-commands">Authoring and mirroring: agents, skills, commands<a class="headerlink" href="#authoring-and-mirroring-agents-skills-commands" title="Permanent link">&para;</a></h1>
+<p>This is the single, turnkey reference for adding or editing an <strong>agent</strong>, <strong>skill</strong>,
+or <strong>command</strong> in ResearchTools and propagating it to every assistant (Claude Code,
+GitHub Copilot, OpenCode, Continue, Aider) plus any tool that reads the <code>AGENTS.md</code>
+convention (OpenHuman, Hermes Agent, Codex, and others). Follow the matching section;
+you should not need to re-investigate the mirror machinery.</p>
+<p>Related: <a href="../README.md">README.md</a> and <a href="../Architecture.md">Architecture.md</a> are the
+authoritative inventories; <a href="../.claude/CLAUDE.md">.claude/CLAUDE.md</a> holds the routing
+table; <a href="../.claude/rules/workflows.md">.claude/rules/workflows.md</a> lists task flows.</p>
+<h2 id="1-the-model-one-source-generated-mirrors">1. The model: one source, generated mirrors<a class="headerlink" href="#1-the-model-one-source-generated-mirrors" title="Permanent link">&para;</a></h2>
+<p><code>.claude/</code> is the <strong>single source of truth</strong>. Every other tool reads either the repo
+directly or a file <strong>generated</strong> from <code>.claude/</code>. Never hand-edit a generated mirror; edit
+the canonical source and regenerate.</p>
+<table>
+<thead>
+<tr>
+<th>Canonical source (<code>.claude/</code>)</th>
+<th>Shape</th>
+<th>Count today</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agents/&lt;name&gt;.md</code></td>
+<td>flat file, YAML frontmatter (<code>name:</code>, <code>description:</code>)</td>
+<td>15</td>
+</tr>
+<tr>
+<td><code>skills/&lt;name&gt;/SKILL.md</code></td>
+<td>folder with <code>SKILL.md</code> (+ optional <code>scripts/</code>, <code>references/</code>)</td>
+<td>10</td>
+</tr>
+<tr>
+<td><code>commands/&lt;name&gt;.md</code></td>
+<td>thin wrapper, ends with <code>$ARGUMENTS</code></td>
+<td>19</td>
+</tr>
+<tr>
+<td><code>rules/&lt;name&gt;.md</code></td>
+<td>plain markdown</td>
+<td>5</td>
+</tr>
+<tr>
+<td><code>CLAUDE.md</code></td>
+<td>mission, the "Tooling" <strong>routing table</strong>, the <code>active_profile</code> selector</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>The first row (bold) and first column of any table you add follow the repo table rules in
+<a href="../.claude/CLAUDE.md">.claude/CLAUDE.md</a>.</p>
+<h2 id="2-the-mirror-map-what-each-tool-consumes">2. The mirror map (what each tool consumes)<a class="headerlink" href="#2-the-mirror-map-what-each-tool-consumes" title="Permanent link">&para;</a></h2>
+<p><code>install.ps1</code> regenerates all of these idempotently from the canonical sources:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Consumes</th>
+<th>Generated from</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code</td>
+<td><code>.claude/</code> directly</td>
+<td>-</td>
+<td>canonical; nothing to generate</td>
+</tr>
+<tr>
+<td>GitHub Copilot</td>
+<td><code>.github/agents/&lt;name&gt;.agent.md</code></td>
+<td>each agent</td>
+<td>full body inlined; a <strong>stub</strong> pointing at <code>.claude/agents/&lt;name&gt;.md</code> when the body exceeds ~28k chars (Copilot's 30k prompt cap)</td>
+</tr>
+<tr>
+<td>GitHub Copilot</td>
+<td><code>.github/prompts/&lt;name&gt;.prompt.md</code></td>
+<td>each command</td>
+<td><strong>except</strong> the session-mode commands <code>concis</code>, <code>slim</code>, <code>focus</code>, <code>ctx</code> (no Copilot meaning); <code>$ARGUMENTS</code> is rewritten to a chat phrase</td>
+</tr>
+<tr>
+<td>GitHub Copilot</td>
+<td><code>.github/instructions/&lt;name&gt;.instructions.md</code></td>
+<td>each rule</td>
+<td>wrapped with <code>applyTo: "**"</code></td>
+</tr>
+<tr>
+<td>GitHub Copilot</td>
+<td><code>.github/copilot-instructions.md</code></td>
+<td>agents + skills pointer</td>
+<td>master file: mission, agent routing, skills pointer</td>
+</tr>
+<tr>
+<td>OpenCode</td>
+<td><code>.opencode/agent/&lt;name&gt;.md</code></td>
+<td>each agent</td>
+<td>full body, no size limit</td>
+</tr>
+<tr>
+<td>Continue</td>
+<td><code>.continue/rules/researchtools.md</code></td>
+<td>agent list</td>
+<td>one rule file that points at the <code>.claude/CLAUDE.md</code> routing table</td>
+</tr>
+<tr>
+<td>Aider</td>
+<td><code>CONVENTIONS.md</code></td>
+<td>static pointer</td>
+<td>generated <strong>only if absent</strong>; never overwritten (see section 4)</td>
+</tr>
+<tr>
+<td>AGENTS.md readers</td>
+<td><code>AGENTS.md</code></td>
+<td>agent list</td>
+<td>static master, regenerated on every run; serves any harness reading the <code>AGENTS.md</code> convention</td>
+</tr>
+<tr>
+<td>Codex</td>
+<td><code>.agents/skills/&lt;name&gt;/SKILL.md</code></td>
+<td>each skill</td>
+<td><strong>pointer</strong> mirror: frontmatter only, description trimmed to whole sentences to fit Codex's skill-list budget, body points at the canonical skill</td>
+</tr>
+<tr>
+<td>Codex</td>
+<td><code>.claude/skills/AGENTS.md</code></td>
+<td>static</td>
+<td>nested <code>AGENTS.md</code>, appended to the root one when the working directory is inside the skills tree</td>
+</tr>
+</tbody>
+</table>
+<h3 id="why-agentsmd-covers-more-than-one-harness">Why <code>AGENTS.md</code> covers more than one harness<a class="headerlink" href="#why-agentsmd-covers-more-than-one-harness" title="Permanent link">&para;</a></h3>
+<p>Two actively maintained agent harnesses converge on the same file, which is why
+<code>AGENTS.md</code> is one new mirror target, not several. <strong>OpenHuman</strong>
+(<code>tinyhumansai/openhuman</code>, GPL-3.0) loads a project-level <code>AGENTS.md</code>:
+<code>src/openhuman/agent/prompts/agents_md.rs</code> line 26 sets
+<code>pub const AGENTS_MD_FILENAME: &amp;str = "AGENTS.md";</code>, and <code>load_agents_md</code> (line 69)
+reads <code>dir.join(AGENTS_MD_FILENAME)</code>. <strong>Hermes Agent</strong> (<code>nousresearch/hermes-agent</code>,
+MIT) reads, per directory from the git root down to the working directory, the first
+of <code>AGENTS.override.md</code>, <code>AGENTS.md</code>, or <code>agents.md</code> (<code>agent/prompt_builder.py</code> line
+2281). Codex and any other tool that follows the same <code>AGENTS.md</code> convention are
+covered by the same file at no extra cost. Neither harness supports per-agent
+definition files, so <code>AGENTS.md</code> is a distilled master, the same class as
+<code>.continue/rules/researchtools.md</code> and <code>CONVENTIONS.md</code>, not a per-agent mirror.</p>
+<p><code>AGENTS.md</code> at the repo root is a <strong>shared namespace</strong>: any tool that reads it now
+receives this content, which is the point, but it is also a fact a contributor must
+know before editing it - a change here reaches every harness that follows the
+convention, not just one.</p>
+<p>Hermes Agent additionally reads <code>CLAUDE.md</code> from the current working directory
+(<code>agent/prompt_builder.py</code> line 2323). This repo has none at its root, so
+<code>AGENTS.md</code> is the operative file for Hermes here, not an optional parity extra.</p>
+<p><strong>One file under <code>.github/instructions/</code> is NOT generated.</strong>
+<code>.github/instructions/mermaid.instructions.md</code> is hand-maintained and has no source rule.
+It documents the Mermaid Chart VS Code extension (its LM tools, its command IDs, its
+<code>@mermaid-chart</code> slash commands), which is Copilot-and-VS-Code-specific: promoting it to
+<code>.claude/rules/mermaid.md</code> would push those command IDs into the OpenCode, Continue and
+Aider mirrors, where nothing can act on them. <code>install.ps1</code> writes one instructions file
+per rule and never deletes an extra one, so the file survives every regeneration untouched
+and must be edited in place. It carries a header saying so; do not "restore" it by running
+the installer, and do not read its presence as drift.</p>
+<p><strong>Skills have no per-tool mirror, except for Codex.</strong> They are plain repo folders every
+tool can read. A skill becomes discoverable in Copilot/OpenCode/Continue <strong>only</strong> through
+(a) an agent that calls it, or (b) the routing table in <code>.claude/CLAUDE.md</code>. A user-invoked
+skill with no calling agent (e.g. <code>geolocalisation</code>) is invisible to those tools unless it
+is in the routing table (and, ideally, has a command wrapper -&gt; Copilot prompt).</p>
+<p>Codex is the exception, because it is the one harness with a <strong>native skill convention</strong>:
+it scans <code>.agents/skills</code> in every directory from the working directory up to the
+repository root, reads each <code>SKILL.md</code> (that exact casing) for <code>name:</code> and <code>description:</code>,
+and offers the skill by name. So <code>install.ps1</code> generates <code>.agents/skills/&lt;name&gt;/SKILL.md</code>
+for all 15 skills, and a user-invoked skill needs neither an agent nor the routing table to
+be reachable there.</p>
+<p>Three properties of that mirror are deliberate:</p>
+<ul>
+<li><strong>It is a pointer, never a copy.</strong> Only the frontmatter is reproduced; the body says to
+  read <code>.claude/skills/&lt;name&gt;/SKILL.md</code> first. Duplicating skill bodies would create the
+  second truth the whole generated-mirror model exists to prevent.</li>
+<li><strong>Descriptions are trimmed to whole sentences.</strong> Codex caps the skill list at 2% of the
+  model's context window, or 8000 characters when the window is unknown, then shortens
+  descriptions and finally omits skills with a warning. Measured 2026-08-28, the untrimmed
+  list for this repo is 9417 characters, already over. The trim keeps the first sentence
+  unconditionally because it carries the trigger, and <code>test_codex_mirror.py</code> proves the
+  result fits. The choice is only whether the shortening is ours or Codex's.</li>
+<li><strong>The description is emitted as a single-quoted YAML scalar.</strong> Eleven of the canonical
+  descriptions are double-quoted at the source, and the first generated set carried those
+  quotes through and then trimmed mid-scalar, shipping eleven mirrors whose frontmatter did
+  not parse while the installer printed a green <code>[OK]</code> for each. One skill also opens its
+  description with a <code>&gt;</code> block indicator, which is syntax and not text. Both are parsed out
+  now, and both have a test.</li>
+</ul>
+<p><code>AGENTS.md</code> nesting is the same story from the other side: Codex concatenates one file per
+directory from the git root down to the working directory, later files overriding earlier
+ones, and stops once the combined size reaches <code>project_doc_max_bytes</code> (32 KiB default).
+<code>.claude/skills/AGENTS.md</code> therefore reaches a session whose cwd is inside the skills tree,
+carrying the script-surface rule that is easiest to break from exactly there. Note that
+Codex checks <code>AGENTS.override.md</code> <strong>before</strong> <code>AGENTS.md</code> in each directory - the same
+precedence Hermes Agent uses - so a hand-written override silently replaces the generated
+file for both harnesses.</p>
+<h2 id="3-the-two-install-scripts-different-jobs">3. The two install scripts (different jobs)<a class="headerlink" href="#3-the-two-install-scripts-different-jobs" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Script</th>
+<th>Job</th>
+<th>When to run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>install.ps1</code></td>
+<td><strong>Generate the mirrors</strong> (section 2) and record the active profile in <code>.claude/CLAUDE.md</code></td>
+<td>After adding/editing any agent, command, or rule. Then commit the regenerated mirrors.</td>
+</tr>
+<tr>
+<td><code>install-junctions.ps1</code></td>
+<td>Link <code>~/.claude</code> &lt;-&gt; this repo so Claude Code loads these agents/skills/rules/commands in <strong>any</strong> workspace</td>
+<td>Once per machine; re-run after a <code>git pull</code> that rewrote agent files (hardlink fallback detaches)</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Profile</span> <span class="n">engineering</span>      <span class="c"># regenerate all mirrors, keep engineering profile</span>
+<span class="p">.\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Personal</span>                 <span class="c"># also copy Copilot agents to ~/.copilot/agents + VS Code user prompts</span>
+<span class="p">.\</span><span class="nb">install-junctions</span><span class="p">.</span><span class="n">ps1</span>                  <span class="c"># (separate) global Claude Code loading; -WhatIf to preview</span>
+</code></pre></div>
+<p><code>install.ps1</code> is idempotent and safe to run repeatedly. Copilot needs no install step
+beyond committing the files: <code>.github/agents/*.agent.md</code> on the default branch are
+auto-discovered.</p>
+<h2 id="4-what-conventionsmd-is-and-is-not">4. What <code>CONVENTIONS.md</code> is (and is not)<a class="headerlink" href="#4-what-conventionsmd-is-and-is-not" title="Permanent link">&para;</a></h2>
+<p><code>CONVENTIONS.md</code> at the repo root is the <strong>Aider</strong> conventions pointer. <code>install.ps1</code>
+writes it <strong>only if it does not already exist</strong>, so once present it is effectively static
+and hand-maintainable. Its sole job is to tell Aider (and any generic tool) that agent
+definitions live in <code>.claude/agents/</code> and to follow the routing table in
+<code>.claude/CLAUDE.md</code>.</p>
+<p>It is <strong>not</strong> a start/stop registry for skills, commands, or agents, and editing it does
+not register anything. Registration happens in the routing table (<code>.claude/CLAUDE.md</code>) and
+the generated mirrors.</p>
+<h2 id="5-choose-the-right-kind">5. Choose the right kind<a class="headerlink" href="#5-choose-the-right-kind" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Agent</strong> - an autonomous, multi-step pipeline with a contractual process and an exit
+  checklist (e.g. an auditor, a researcher). Mirrored to Copilot + OpenCode + Continue.</li>
+<li><strong>Skill</strong> - a reusable capability, usually script-backed, invoked by agents or the user
+  (e.g. <code>scopus</code>, <code>extract-statistic</code>). No mirror; lives as a repo folder.</li>
+<li><strong>Command</strong> - a thin <code>/slash</code> wrapper that points at an agent or a skill workflow.
+  Mirrored to a Copilot prompt.</li>
+</ul>
+<p>A skill and its command wrapper commonly coexist (<code>/geolocalisation</code> -&gt; the
+<code>geolocalisation</code> skill). A command may instead drive an agent (<code>/bibclean</code> -&gt; the
+<code>bib-cleaner</code> agent).</p>
+<h2 id="6-add-a-new-agent">6. Add a new AGENT<a class="headerlink" href="#6-add-a-new-agent" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Create <code>.claude/agents/&lt;name&gt;.md</code> (flat file). Minimum frontmatter is <code>name</code> and
+   <code>description</code> (only these two are read by <code>install.ps1</code>; a <code>tools:</code> line is optional):</li>
+</ol>
+<div class="highlight"><pre><span></span><code>---
+name: &lt;name&gt;
+<span class="gu">description: "Use when &lt;trigger&gt;. Produces &lt;deliverable&gt;."</span>
+<span class="gu">---</span>
+
+<span class="gu">## Pipeline integrity - NON-NEGOTIABLE</span>
+&lt;state the contractual pipeline: the ordered steps, the mandatory skill
+invocations, the manual-checkpoint rule, and the final ✓/✗ exit checklist -
+see "Agent pipeline integrity" in .claude/CLAUDE.md and model on
+.claude/agents/bib-cleaner.md&gt;
+</code></pre></div>
+<ol>
+<li>Update the inventories and routing:</li>
+<li><code>.claude/CLAUDE.md</code> "Tooling" table: add a routing row (canonical registration).</li>
+<li><a href="../README.md">README.md</a>: bump the agent count where stated; add the agents-table row.</li>
+<li><a href="../Architecture.md">Architecture.md</a>: add the agent node/edge in the mermaid graph and
+     any inventory count.</li>
+<li><a href="../.claude/rules/workflows.md">.claude/rules/workflows.md</a>: add a flow row if it maps a
+     user goal to this agent.</li>
+<li>Regenerate + commit (section 9). <code>install.ps1</code> emits the Copilot, OpenCode, and Continue
+   mirrors automatically.</li>
+</ol>
+<p>Agent bodies over ~28k chars become a Copilot <strong>stub</strong> that points back at the canonical
+file - keep hard constraints early in the body so the stub carries them. A stub does not
+carry the rest of the body, so a cross-cutting rule added to agent bodies (not just this
+one) must ALSO be distilled into the three master files (<code>.github/copilot-instructions.md</code>,
+<code>.continue/rules/researchtools.md</code>, <code>CONVENTIONS.md</code>), the way the Obsidian outbox and
+<code>ollama_bridge.py</code> rules already are.</p>
+<h2 id="7-add-a-new-skill">7. Add a new SKILL<a class="headerlink" href="#7-add-a-new-skill" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Create <code>.claude/skills/&lt;name&gt;/SKILL.md</code>. Frontmatter carries <code>name</code>, a trigger-rich
+   <code>description</code>, and (optionally) <code>allowed-tools</code> / <code>permissions</code>:</li>
+</ol>
+<div class="highlight"><pre><span></span><code>---
+name: &lt;name&gt;
+description: "&lt;what it does&gt;. Use when &lt;triggers, including slash and natural-language phrases&gt;."
+<span class="gu">allowed-tools: [Read, Write, Edit, Bash]</span>
+<span class="gu">---</span>
+
+<span class="gh"># &lt;name&gt; - &lt;one-line purpose&gt;</span>
+&lt;the workflow: numbered steps; scripts under scripts/; prerequisites; outputs&gt;
+</code></pre></div>
+<p>Put runnable code in <code>.claude/skills/&lt;name&gt;/scripts/</code> and offline tests in
+   <code>.../scripts/Test/</code>. Pin dependencies in the skill's <code>requirements.txt</code>, run
+   <code>pip-audit</code>, and add a security-floor comment for any transitive CVE.</p>
+<p>A script produced while operating on an EXTERNAL project — a manuscript, thesis, or
+   grant tree outside this repo — is authored in ResearchTools, under the owning skill's
+   <code>scripts/</code> directory, and is called from there by path; it is never left behind in
+   that project's own directory.
+2. <strong>Register it (critical - a skill has no mirror outside Codex):</strong>
+   - <code>.claude/CLAUDE.md</code> "Tooling" table: add a routing row. This is the ONLY thing that
+     makes a user-invoked skill discoverable in Copilot/OpenCode/Continue. Codex gets a
+     generated <code>.agents/skills/&lt;name&gt;/SKILL.md</code> pointer instead, so keep the canonical
+     <code>description</code> trigger-rich AND reasonably short: it is the whole trigger surface there,
+     and every skill added tightens the shared list budget the others must fit in.
+   - <a href="../README.md">README.md</a>: bump the skill count in the three places it appears
+     (header "N skills", the "N ship" sentence, the File-Locations "(N skills)"); add the
+     skills-table row, a <code>### &lt;name&gt;</code> subsection, a Prerequisites row for new deps, and the
+     File-Locations tree entry (fix the <code>└──</code>/<code>├──</code> on the previous last skill).
+   - <a href="../Architecture.md">Architecture.md</a>: update the skill inventory/count.
+   - <code>install.ps1</code> skills-pointer sentence in <code>.github/copilot-instructions.md</code> names a few
+     helper skills; add yours there only if it should be called out (edit the generator's
+     master text, not the mirror).
+3. Add a command wrapper if the skill is user-invokable (section 8) - this makes <code>/&lt;name&gt;</code>
+   first-class and emits a Copilot prompt. Optional: a skill may advertise <code>/&lt;name&gt;</code> and let
+   the Skill tool handle the trigger with no command file (precedent: <code>drawio2tikz</code>).
+4. Regenerate + commit (section 9).</p>
+<h2 id="8-add-a-new-command">8. Add a new COMMAND<a class="headerlink" href="#8-add-a-new-command" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Create <code>.claude/commands/&lt;name&gt;.md</code>. Frontmatter is optional (Claude Code allows a
+   frontmatter-less command whose H1 becomes the description). Model on
+   <code>.claude/commands/word2latex.md</code>: a short procedure that points at the agent/skill,
+   ending with the argument placeholder and the language line:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="gh"># &lt;Title -&gt; becomes the description&gt;</span>
+
+&lt;short procedure; reference the agent or skill workflow to run&gt;
+
+$ARGUMENTS
+</code></pre></div>
+<p>End user-facing command bodies with: "Respond in French unless the active file is in
+   English." <code>install.ps1</code> rewrites <code>$ARGUMENTS</code> for the Copilot prompt automatically.
+2. Update the inventories:
+   - <a href="../README.md">README.md</a>: bump the command count (header "N commands", File-Locations
+     "(N commands)"), add the Commands-table row and the File-Locations commands-tree entry
+     (fix the <code>└──</code> on the previous last command).
+   - <a href="../Architecture.md">Architecture.md</a>: add the command node + edge (command -&gt; agent, or
+     command -&gt; skill directly when the skill has no agent).
+   - <a href="../.claude/rules/workflows.md">.claude/rules/workflows.md</a>: add the flow row.
+3. Regenerate + commit (section 9). A Copilot prompt <code>.github/prompts/&lt;name&gt;.prompt.md</code> is
+   emitted (unless <code>&lt;name&gt;</code> is a session-mode command: <code>concis</code>, <code>slim</code>, <code>focus</code>, <code>ctx</code>).</p>
+<h2 id="9-regenerate-verify-commit">9. Regenerate, verify, commit<a class="headerlink" href="#9-regenerate-verify-commit" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">install</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Profile</span> <span class="n">engineering</span>
+</code></pre></div>
+<p>Then verify the new entity is wired everywhere, and commit <strong>the canonical change and the
+regenerated mirrors together</strong>:</p>
+<div class="highlight"><pre><span></span><code>rtk<span class="w"> </span>grep<span class="w"> </span>-n<span class="w"> </span><span class="s2">"&lt;name&gt;"</span><span class="w"> </span>.claude/CLAUDE.md<span class="w"> </span>README.md<span class="w"> </span>Architecture.md<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>.github/copilot-instructions.md<span class="w"> </span>.github/prompts/<span class="w"> </span>.github/agents/<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>.opencode/agent/<span class="w"> </span>.continue/rules/researchtools.md
+rtk<span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>.claude<span class="w"> </span>.github<span class="w"> </span>.opencode<span class="w"> </span>.continue<span class="w"> </span>CONVENTIONS.md<span class="w"> </span>README.md<span class="w"> </span>Architecture.md
+rtk<span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"feat: add &lt;name&gt; &lt;agent|skill|command&gt; and regenerate mirrors"</span>
+</code></pre></div>
+<p>Editing a <strong>rule</strong> (<code>.claude/rules/&lt;name&gt;.md</code>) also requires a regenerate, since its Copilot
+mirror <code>.github/instructions/&lt;name&gt;.instructions.md</code> is generated from it. A change to a
+skill's scripts or to <code>README.md</code>/<code>Architecture.md</code> alone needs no regenerate (skills and
+those docs are not mirrored).</p>
+<h2 id="10-quick-checklist-by-type">10. Quick checklist by type<a class="headerlink" href="#10-quick-checklist-by-type" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Agent</th>
+<th>Skill</th>
+<th>Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Create canonical file</td>
+<td><code>agents/&lt;name&gt;.md</code></td>
+<td><code>skills/&lt;name&gt;/SKILL.md</code> (+<code>scripts/</code>)</td>
+<td><code>commands/&lt;name&gt;.md</code></td>
+</tr>
+<tr>
+<td><code>.claude/CLAUDE.md</code> routing row</td>
+<td>yes</td>
+<td><strong>yes (only discoverability path)</strong></td>
+<td>via its agent/skill</td>
+</tr>
+<tr>
+<td>README count + table + tree</td>
+<td>agent count</td>
+<td>skill count (3 spots) + subsection</td>
+<td>command count</td>
+</tr>
+<tr>
+<td>Architecture.md graph/inventory</td>
+<td>node/edge</td>
+<td>inventory count</td>
+<td>node/edge</td>
+</tr>
+<tr>
+<td>workflows.md flow row</td>
+<td>if user-facing</td>
+<td>if user-facing</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Dependencies + <code>pip-audit</code></td>
+<td>if scripted</td>
+<td>if scripted</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td>Run <code>install.ps1</code> + commit mirrors</td>
+<td>yes</td>
+<td>yes (for routing/master)</td>
+<td>yes (emits prompt)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="11-see-also">11. See also<a class="headerlink" href="#11-see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li>
+<p><a href="../contributor-notes/">contributor-notes.md</a> - shared project conventions and environment
+  facts (English-only definition files, agent/skill layout, local-model routing, git/GitHub
+  workflow), distilled from per-contributor Claude Code memories into version control.</p>
+</li>
+<li>
+<p>The project memory <code>adding-a-skill-checklist</code> records the skill + command mirror flow;
+  this document supersedes and generalizes it to agents as well. Keep both pointing at the
+  same routing table. It lives in the Claude Code project memory directory
+  (<code>~/.claude/projects/&lt;project-slug&gt;/memory/</code>, where <code>&lt;project-slug&gt;</code> is the working
+  directory with path separators replaced by <code>-</code>); for a clone at <code>C:\work\ResearchTools</code>
+  that is
+  <code>%USERPROFILE%\.claude\projects\c--work-ResearchTools\memory\adding-a-skill-checklist.md</code>
+  (indexed in that directory's <code>MEMORY.md</code>).</p>
+</li>
+<li><code>install.ps1</code> header comment is the authoritative description of each generated file.</li>
+</ul>
+<p>Martin Otis</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

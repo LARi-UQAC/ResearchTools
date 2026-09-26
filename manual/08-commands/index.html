@@ -1,0 +1,1649 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/manual/08-commands/">
+      
+      
+        <link rel="prev" href="../07-rt-observe-dashboard/">
+      
+      
+        <link rel="next" href="../09-thesistracker-integration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>08 Commands - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#commands-slash-commands" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              08 Commands
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../01-installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../04-skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../05-security-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Security audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#concis-concise-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /concis — Concise mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#focus-topic-session-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /focus &lt;topic&gt; — Session scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ctx-context-window-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /ctx — Context window audit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tikz-tikz-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /tikz — TiKZ validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-module-run-project-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /test [module] — Run project tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#doc-target-documentation-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /doc &lt;target&gt; — Documentation generator
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latex-latex-diagnosis-and-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /latex — LaTeX diagnosis and fix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ref-citation-academic-reference-formatter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /ref &lt;citation&gt; — Academic reference formatter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replyreviewer-peer-reviewer-response-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /replyreviewer — Peer reviewer response generator
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../authoring-and-mirrors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributor-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../github-repo-setup-playbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#concis-concise-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /concis — Concise mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#focus-topic-session-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /focus &lt;topic&gt; — Session scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ctx-context-window-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /ctx — Context window audit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tikz-tikz-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /tikz — TiKZ validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-module-run-project-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /test [module] — Run project tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#doc-target-documentation-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /doc &lt;target&gt; — Documentation generator
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#latex-latex-diagnosis-and-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /latex — LaTeX diagnosis and fix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ref-citation-academic-reference-formatter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /ref &lt;citation&gt; — Academic reference formatter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#replyreviewer-peer-reviewer-response-generator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /replyreviewer — Peer reviewer response generator
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="commands-slash-commands">Commands (Slash Commands)<a class="headerlink" href="#commands-slash-commands" title="Permanent link">&para;</a></h1>
+<p>Chapter 08 of the ResearchTools manual. Back to <a href="../../README.md">table of contents</a>.</p>
+<p>Invoked with <code>/command-name [arguments]</code> in any Claude Code session. All files live in
+<code>.claude/commands/</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+<th>Arguments</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/concis</code></td>
+<td>Concise mode for the rest of the session</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>/slim</code></td>
+<td>Slim mode — ultra-minimal output (2 sentences, code only)</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>/focus &lt;topic&gt;</code></td>
+<td>Scopes the session to one topic only</td>
+<td>Yes — topic</td>
+</tr>
+<tr>
+<td><code>/ctx</code></td>
+<td>Audits context-window pressure (turns, topics, recommendation)</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>/tikz [code]</code></td>
+<td>Validates TiKZ code against 6 rules (anchoring, arrows, overlaps…)</td>
+<td>Optional — code or file</td>
+</tr>
+<tr>
+<td><code>/test [module]</code></td>
+<td>Runs project tests following <code>.claude/rules/testing.md</code></td>
+<td>Optional — module/file</td>
+</tr>
+<tr>
+<td><code>/doc &lt;target&gt;</code></td>
+<td>Generates or updates documentation for a file or function</td>
+<td>Yes — file/function</td>
+</tr>
+<tr>
+<td><code>/latex [args]</code></td>
+<td>Diagnoses and fixes LaTeX errors from the <code>.log</code> or open file</td>
+<td>Optional — specific error</td>
+</tr>
+<tr>
+<td><code>/ref &lt;citation&gt;</code></td>
+<td>Formats and validates an academic reference (UQAC/LAR.i style)</td>
+<td>Yes — reference</td>
+</tr>
+<tr>
+<td><code>/litreview &lt;topic&gt;</code></td>
+<td>Full autonomous literature review: search → validate → synthesize → comparison table → hypotheses + contributions → objectives → context → novelty checklist</td>
+<td>Yes — research topic</td>
+</tr>
+<tr>
+<td><code>/litupdate &lt;review.tex&gt;</code></td>
+<td>Incrementally update an existing review with new papers: windowed search → delta dedup → validate/grade → preemption check (deliberation + scholar-evaluation) → dated <code>\added{}</code> copy <code>_up_YYYYMMDD.tex</code> + CHANGELOG. Schedulable (draft + REVIEW REQUIRED when unattended)</td>
+<td>Yes — existing review <code>.tex</code></td>
+</tr>
+<tr>
+<td><code>/auditreview [file or text]</code></td>
+<td>Audit an existing review: validate references, flag errors, novelty checklist, executable improvement plan</td>
+<td>Optional — file/text/IDE file</td>
+</tr>
+<tr>
+<td><code>/auditpaper [file or text]</code></td>
+<td>Audit a complete paper: references, methodology, results, discussion, future works — Scopus validation + cross-review + improvement plan</td>
+<td>Optional — file/text/IDE file</td>
+</tr>
+<tr>
+<td><code>/auditthesis [main.tex or dir]</code></td>
+<td>Full UQAC thesis audit: front matter, jury, hypothesis flow, chapter structure, references, figures, equations, acronyms, LLM-style, bilingual résumé/abstract, UQAC formatting</td>
+<td>Optional — path/dir/IDE file</td>
+</tr>
+<tr>
+<td><code>/bibclean [file.bib]</code></td>
+<td>Clean and validate a BibTeX file: required fields, author normalization, duplicates, DOI enrichment, SJR quartile, publisher approval check</td>
+<td>Optional — <code>.bib</code> file/IDE file</td>
+</tr>
+<tr>
+<td><code>/submitcheck &lt;file.tex&gt; &lt;journal&gt;</code></td>
+<td>Check submission readiness for a target journal: page count, sections, reference style, abstract length, keywords, anonymization</td>
+<td>Yes — <code>.tex</code> file + journal</td>
+</tr>
+<tr>
+<td><code>/replyreviewer</code></td>
+<td>Point-by-point LaTeX response letters + track-change markup in the paper via the <code>changes</code> package (one letter per reviewer file)</td>
+<td>Yes — see below</td>
+</tr>
+<tr>
+<td><code>/talk &lt;paper&gt;</code></td>
+<td>Accepted paper → conference talk: six opening questions (audience, duration, target, aspect, PDF format, ending), build contract, one deck model rendered to PowerPoint / Beamer / self-contained web, timed speaker notes at 130 wpm, visual QA loop</td>
+<td>Yes — paper path + optional flags</td>
+</tr>
+<tr>
+<td><code>/word2latex</code></td>
+<td>Convert a Word <code>.docx</code> template to a faithful LaTeX source (pandoc + standard patch sequence)</td>
+<td>Yes — <code>.docx</code> path</td>
+</tr>
+<tr>
+<td><code>/fetchform &lt;https-url&gt; [dest]</code></td>
+<td>Fetch one official PDF form (any institution), validated, and report its SHA-256. Refuses anything that is not a PDF served over https, and writes nothing when it refuses</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>/geolocalisation</code></td>
+<td>Map a review corpus's study locations from its <code>.bib</code>: draft study-location table (confidence + per-paper provenance), human review, then CSV/KML/GeoJSON/PNG/HTML + per-country count. Optional <code>--full-text</code> PDF scan.</td>
+<td>Optional — <code>.bib</code> file/dir/IDE file</td>
+</tr>
+<tr>
+<td><code>/recommendation-letter</code></td>
+<td>Generate a support / recommendation / appreciation / acceptance / dispense letter in LaTeX → PDF from a candidate's files (two tracks; candidate status + funding provider; paired invitation).</td>
+<td>Optional — folder / paths / IDE file</td>
+</tr>
+<tr>
+<td><code>/cv</code></td>
+<td>Draft, refresh, or tailor the narrative CV-FRQ / tri-agency CV to one grant competition via the <code>narrative-cv-writer</code> agent: durable master contributions inventory, ranked by keyword overlap against the competition's own objectives, drafted through <code>scientific-writing</code>, rendered to LaTeX/PDF + plain text. <code>--refresh-only</code> updates the inventory with no draft produced.</td>
+<td>Yes — competition + objectives text/path + language + portal variant</td>
+</tr>
+<tr>
+<td><code>/rt-dashboard</code></td>
+<td>Start the rt-observe dashboard on loopback and open it: mirror matrix, fan-out canvas, plan progression, services and sessions. Wraps <code>rt-dashboard.ps1</code> / <code>.sh</code> / <code>.bat</code>, which need no Claude Code. <code>--dry-run</code> names the interpreter, the bind address and every TTL and starts nothing</td>
+<td>Optional — <code>--dry-run</code>, <code>--open</code>, <code>--port &lt;n&gt;</code>, <code>--json</code></td>
+</tr>
+<tr>
+<td><code>/abstract [paper.tex]</code></td>
+<td>Extract a paper's own content and draft (or refresh) its abstract, grounded in its own contribution/method/results/limitations rather than a paraphrase; for a UQAC thesis, drafts the Résumé (French) + Abstract (English) pair from the same extraction. Confirms before overwriting existing content</td>
+<td>Optional — <code>.tex</code> path/IDE file</td>
+</tr>
+</tbody>
+</table>
+<p>Full detail for <code>/rt-dashboard</code>: see <a href="../07-rt-observe-dashboard/">07-rt-observe-dashboard.md</a>.</p>
+<h2 id="concis-concise-mode"><code>/concis</code> — Concise mode<a class="headerlink" href="#concis-concise-mode" title="Permanent link">&para;</a></h2>
+<p>Activates for the rest of the session: max 5 sentences for short answers, structured
+bullets for long answers, no preamble, no trailing summary, code written directly with
+WHY-only comments. Responds in French unless the active file is in English.</p>
+<p><strong>File:</strong> <code>.claude/commands/concis.md</code></p>
+<h2 id="focus-topic-session-scope"><code>/focus &lt;topic&gt;</code> — Session scope<a class="headerlink" href="#focus-topic-session-scope" title="Permanent link">&para;</a></h2>
+<p>Restricts the session to a single topic; everything outside it is ignored. Responds in
+French unless the active file is in English.</p>
+<p><strong>File:</strong> <code>.claude/commands/focus.md</code></p>
+<h2 id="ctx-context-window-audit"><code>/ctx</code> — Context window audit<a class="headerlink" href="#ctx-context-window-audit" title="Permanent link">&para;</a></h2>
+<p>Reports, in under 10 lines: estimated exchange turns, top 3 context-consuming topics/files,
+a low/moderate/high pressure level, and a <code>/compact</code> recommendation when needed. Reads no
+additional files. Responds in French.</p>
+<p><strong>File:</strong> <code>.claude/commands/ctx.md</code></p>
+<h2 id="tikz-tikz-validation"><code>/tikz</code> — TiKZ validation<a class="headerlink" href="#tikz-tikz-validation" title="Permanent link">&para;</a></h2>
+<p>Validates TiKZ code (from <code>$ARGUMENTS</code> or the IDE file) against 6 rules:</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>What is checked</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Line breaks in nodes</td>
+<td><code>align=center</code> only — never <code>text centered</code></td>
+</tr>
+<tr>
+<td>backgrounds + scaling</td>
+<td>No <code>\begin{scope}[on background layer]</code> inside <code>\resizebox</code>/<code>\scalebox</code></td>
+</tr>
+<tr>
+<td>Arrow angles</td>
+<td>Arrows connect perpendicularly to node borders (.north/.south/.east/.west)</td>
+</tr>
+<tr>
+<td>Overlaps</td>
+<td>Min 3-character gap between rectangles; arrow labels must not overlap geometry</td>
+</tr>
+<tr>
+<td>Anchoring</td>
+<td><code>positioning</code> library + <code>node distance</code> only — no absolute coordinates</td>
+</tr>
+<tr>
+<td>TiKZiT compatibility</td>
+<td>Named styles in <code>.tikzstyles</code>; no exotic libraries</td>
+</tr>
+</tbody>
+</table>
+<p>For each violation: cites the line, explains the cause, provides corrected code directly.</p>
+<p>A figure generated by the <code>drawio2tikz</code> skill is exempt from the Anchoring and TiKZiT-compatibility
+rules (it uses absolute coordinates by design); arrow tips, spacing, and overlaps are still checked.</p>
+<p><strong>File:</strong> <code>.claude/commands/tikz.md</code></p>
+<h2 id="test-module-run-project-tests"><code>/test [module]</code> — Run project tests<a class="headerlink" href="#test-module-run-project-tests" title="Permanent link">&para;</a></h2>
+<p>Reads <code>.claude/rules/testing.md</code>, selects the correct venv, runs the tests, and reports
+<strong>passed / total</strong> with short error messages and likely causes.</p>
+<p><strong>File:</strong> <code>.claude/commands/test.md</code></p>
+<h2 id="doc-target-documentation-generator"><code>/doc &lt;target&gt;</code> — Documentation generator<a class="headerlink" href="#doc-target-documentation-generator" title="Permanent link">&para;</a></h2>
+<p>Generates documentation following <code>.claude/rules/code-style.md</code> (Python Stage-N module +
+Purpose/Inputs/Outputs docstrings; C# <code>/// &lt;summary&gt;</code>; LaTeX/Markdown equation formatting).
+Documents WHY, not WHAT. Responds in French unless the active file is in English.</p>
+<p><strong>File:</strong> <code>.claude/commands/doc.md</code></p>
+<h2 id="latex-latex-diagnosis-and-fix"><code>/latex</code> — LaTeX diagnosis and fix<a class="headerlink" href="#latex-latex-diagnosis-and-fix" title="Permanent link">&para;</a></h2>
+<p>Reads <code>out/*.log</code> first for exact error lines, cites the line, explains the cause, and
+applies the fix directly. Priority checks: <code>\resizebox</code> wrapping a <code>backgrounds</code>-library
+tikzpicture, <code>\\</code> in a <code>text centered</code> node, <code>\addcontentsline</code> order. States whether a
+two-pass recompilation is needed. Responds in French.</p>
+<p><strong>File:</strong> <code>.claude/commands/latex.md</code></p>
+<h2 id="ref-citation-academic-reference-formatter"><code>/ref &lt;citation&gt;</code> — Academic reference formatter<a class="headerlink" href="#ref-citation-academic-reference-formatter" title="Permanent link">&para;</a></h2>
+<p>Formats and validates references per UQAC / LAR.i rules.</p>
+<p><strong>Accepted publishers:</strong> IEEE, Springer, Elsevier, Taylor &amp; Francis, Cambridge, Wiley, IET,
+IOP, ACM, MDPI, ASME, ACME, BioMed Central (BMC). Any other publisher requires professor approval. Provides: full LaTeX
+reference, clickable DOI via <code>\href</code>, a 0–100 % confidence level with justification, and an
+introductory sentence. Never fabricates a reference or DOI.</p>
+<p><strong>File:</strong> <code>.claude/commands/ref.md</code></p>
+<h2 id="replyreviewer-peer-reviewer-response-generator"><code>/replyreviewer</code> — Peer reviewer response generator<a class="headerlink" href="#replyreviewer-peer-reviewer-response-generator" title="Permanent link">&para;</a></h2>
+<p>Generates a formal LaTeX response letter per reviewer comment file and applies track-change
+markup directly in the paper using the <code>changes</code> package. The reviewer ID (<code>id=RN</code>) in each
+<code>\added</code>, <code>\replaced</code>, or <code>\deleted</code> command is the permanent, visible link between the paper
+modification and the response letter. Delegates to the <code>reviewer-response</code> agent.</p>
+<p><strong>Full command syntax:</strong></p>
+<div class="highlight"><pre><span></span><code>/replyreviewer --paper &lt;paper.tex&gt; --reviewers &lt;r1.txt&gt; [r2.txt ...] [--title "Title"] [--editor "Name"]
+</code></pre></div>
+<p>Example:
+<div class="highlight"><pre><span></span><code>/replyreviewer --paper sn-article.tex --reviewers .\reviewers\R1.txt .\reviewers\R2.txt --editor "Zhouping Yin"
+</code></pre></div></p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--paper &lt;path.tex&gt;</code></td>
+<td>Yes</td>
+<td>Path to the original LaTeX paper</td>
+</tr>
+<tr>
+<td><code>--reviewers &lt;files&gt;</code></td>
+<td>Yes</td>
+<td>One <code>.txt</code> file per reviewer; first = R1, second = R2, etc.</td>
+</tr>
+<tr>
+<td><code>--title "..."</code></td>
+<td>No</td>
+<td>Paper title for the letter header; extracted from <code>\title{}</code> if omitted</td>
+</tr>
+<tr>
+<td><code>--editor "..."</code></td>
+<td>No</td>
+<td>Editor name for the salutation; defaults to <code>[EDITOR NAME]</code> if omitted</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What the agent produces:</strong></p>
+<ol>
+<li><strong>One LaTeX response letter per reviewer</strong> — <code>&lt;basename&gt;_response_R&lt;N&gt;.tex</code>, each with a
+   formal opening, General Comments, point-by-point Specific Comments, and a Scopus-validated
+   References Added section with clickable DOIs.</li>
+<li><strong>Annotated original paper</strong> — <code>\added[id=RN]{}</code> / <code>\replaced[id=RN]{}{}</code> / <code>\deleted[id=RN]{}</code>
+   markup, grammar-only fixes applied directly, and <code>\usepackage{changes}</code> with one
+   <code>\definechangesauthor</code> per reviewer (R1 blue, R2 red, R3 orange, R4+ purple) added to the
+   preamble automatically.</li>
+</ol>
+<p><strong>Comment categories processed:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Category</th>
+<th>Paper change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>G</td>
+<td>Grammar / spelling</td>
+<td>Direct fix, no markup</td>
+</tr>
+<tr>
+<td>S</td>
+<td>Style / writing</td>
+<td><code>\replaced[id=RN]{new}{old}</code></td>
+</tr>
+<tr>
+<td>SC</td>
+<td>Scientific issue</td>
+<td><code>\added[id=RN]{...}</code></td>
+</tr>
+<tr>
+<td>M</td>
+<td>Methodology addition</td>
+<td><code>\added[id=RN]{...}</code></td>
+</tr>
+<tr>
+<td>R</td>
+<td>Results addition</td>
+<td><code>\added[id=RN]{...}</code></td>
+</tr>
+<tr>
+<td>D</td>
+<td>Discussion addition</td>
+<td><code>\added[id=RN]{...}</code></td>
+</tr>
+<tr>
+<td>FT</td>
+<td>Figure / table issue</td>
+<td><code>\added[id=RN]{...}</code> new float</td>
+</tr>
+<tr>
+<td>EQ</td>
+<td>Equation issue</td>
+<td><code>\replaced[id=RN]{}{}</code> or <code>\deleted[id=RN]{}</code></td>
+</tr>
+<tr>
+<td>REF</td>
+<td>Reference suggestion</td>
+<td>Scopus-validated, <code>\added[id=RN]{\cite{}}</code></td>
+</tr>
+<tr>
+<td>Q</td>
+<td>General quality</td>
+<td><code>\added[id=RN]{...}</code></td>
+</tr>
+<tr>
+<td>MAJ</td>
+<td>Major revision</td>
+<td><code>\replaced[id=RN]{}{}</code> / <code>\deleted[id=RN]{}</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Prerequisites:</strong> <code>SCOPUS_API_KEY</code> set; campus network or VPN active.</p>
+<p><strong>Related commands:</strong> <code>/auditpaper</code> (full audit before/after revision), <code>/bibclean</code>
+(clean the <code>.bib</code> after adding references), <code>/ref</code> (format individual references).</p>
+<p><strong>File:</strong> <code>.claude/commands/replyreviewer.md</code></p>
+<hr />
+<p><a href="../07-rt-observe-dashboard/">← 07 rt-observe &amp; dashboard</a> | <a href="../../README.md">Table of contents</a> | <a href="../09-thesistracker-integration/">09 ThesisTracker integration →</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

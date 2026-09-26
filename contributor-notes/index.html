@@ -1,0 +1,1721 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/contributor-notes/">
+      
+      
+        <link rel="prev" href="../authoring-and-mirrors/">
+      
+      
+        <link rel="next" href="../github-repo-setup-playbook/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Contributor notes - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#contributor-notes-shared-project-knowledge" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Contributor notes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../manual/00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../../ResearchToolsLogo.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/01-installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/04-skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/05-security-audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Security audit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/06-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/07-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/08-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/09-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/10-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/11-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../authoring-and-mirrors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-definition-files-are-english-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Definition files are English-only
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-agents-are-files-skills-are-folders-no-symmetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Agents are files, skills are folders (no symmetry)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-local-model-routing-local-writer-local-coder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Local-model routing (local-writer / local-coder)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-git-and-github-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Git and GitHub workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-obsidian-knowledge-capture-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Obsidian knowledge-capture loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Obsidian knowledge-capture loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-vault-event-daemon-unattended-filing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The vault event daemon (unattended filing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-graphify-code-graph-the-second-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The graphify code graph (the second memory)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-keeping-this-file-alive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Keeping this file alive
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../github-repo-setup-playbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-definition-files-are-english-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Definition files are English-only
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-agents-are-files-skills-are-folders-no-symmetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Agents are files, skills are folders (no symmetry)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-local-model-routing-local-writer-local-coder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Local-model routing (local-writer / local-coder)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-git-and-github-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Git and GitHub workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-obsidian-knowledge-capture-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Obsidian knowledge-capture loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Obsidian knowledge-capture loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-vault-event-daemon-unattended-filing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The vault event daemon (unattended filing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-graphify-code-graph-the-second-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The graphify code graph (the second memory)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-keeping-this-file-alive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Keeping this file alive
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="contributor-notes-shared-project-knowledge">Contributor notes (shared project knowledge)<a class="headerlink" href="#contributor-notes-shared-project-knowledge" title="Permanent link">&para;</a></h1>
+<p>Durable, non-obvious conventions for working on ResearchTools. These were previously held
+only in individual Claude Code <strong>personal</strong> memories (<code>~/.claude/projects/&lt;slug&gt;/memory/</code>),
+which are machine-local and invisible to other contributors. This file is the
+<strong>version-controlled, shared</strong> home for that knowledge: read it before contributing, and add
+to it when you learn a durable project fact.</p>
+<p>For the mechanics of creating/editing an agent, skill, or command and regenerating the
+per-tool mirrors, see <a href="../authoring-and-mirrors/">authoring-and-mirrors.md</a>; this file covers
+the conventions and environment facts around that process.</p>
+<h2 id="1-definition-files-are-english-only">1. Definition files are English-only<a class="headerlink" href="#1-definition-files-are-english-only" title="Permanent link">&para;</a></h2>
+<p>Every file under <code>.claude/agents/</code>, <code>.claude/skills/</code>, and <code>.claude/commands/</code> (and across
+the whole <code>OutilsLogiciels</code> workspace) is written in <strong>English only</strong>. A single file never
+mixes languages.</p>
+<ul>
+<li>Applies to guardrails, sections, checklists, and sentinel strings you add - write them in
+  English even when the request arrives in French. Shared sentinels stay English:
+  <code>PIPELINE-PAUSED @ &lt;step&gt;</code>, <code>PIPELINE INCOMPLETE - DO NOT USE</code>.</li>
+<li>French is allowed only in (a) deliverable output strings an agent emits (e.g. a LaTeX
+  title <code>\subsection*{Carte des lacunes}</code>) and (b) files that are already French (the
+  repo-root <code>CLAUDE.md</code>, generated from <code>CLAUDE.template.md</code>).</li>
+</ul>
+<h2 id="2-agents-are-files-skills-are-folders-no-symmetry">2. Agents are files, skills are folders (no symmetry)<a class="headerlink" href="#2-agents-are-files-skills-are-folders-no-symmetry" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Agents: flat <code>.claude/agents/&lt;name&gt;.md</code>, line 1 <code>---</code>, frontmatter keys <code>name:</code> +
+  <code>description:</code> (quoted). Claude Code subagent discovery scans <strong>only flat <code>*.md</code></strong> here; a
+  folder or a frontmatter-less file is undiscoverable. Copilot/OpenCode use the same
+  flat+frontmatter convention.</li>
+<li>Skills: folder-based <code>.claude/skills/&lt;name&gt;/SKILL.md</code> (+ <code>scripts/</code>, <code>references/</code>).</li>
+<li>Never reintroduce the old <code>&lt;name&gt;/AGENT.md</code> folder layout for agents (it silently breaks
+  discovery). Some parent-repo dev agents outside ResearchTools may still carry that broken
+  layout - migrate them to the flat layout when asked.</li>
+<li>After editing an agent, run <code>install.ps1</code> to regenerate the mirrors and, for global Claude
+  Code loading, <code>install-junctions.ps1</code> (see <a href="../authoring-and-mirrors/">authoring-and-mirrors.md</a>).
+  On Windows without Developer Mode, <code>install-junctions.ps1</code> falls back to <strong>hardlinks</strong> that
+  detach when <code>git pull</code> rewrites a file - re-run it after such a pull, or enable Developer
+  Mode for true symlinks.</li>
+</ul>
+<h2 id="3-local-model-routing-local-writer-local-coder">3. Local-model routing (<code>local-writer</code> / <code>local-coder</code>)<a class="headerlink" href="#3-local-model-routing-local-writer-local-coder" title="Permanent link">&para;</a></h2>
+<p>These agents push token-heavy generation to a local Ollama model to save cloud tokens.</p>
+<ul>
+<li>The intended auth is <strong>claude.ai subscription</strong> (no pay-as-you-go <code>ANTHROPIC_API_KEY</code>).
+  Do <strong>not</strong> set a whole-session <code>ANTHROPIC_BASE_URL</code> pointing at a local gateway - it
+  disables the cloud models (a gateway without an Anthropic key cannot serve them).</li>
+<li>Per-subagent <code>model: ollama/...</code> frontmatter is not natively supported by Claude Code.
+  The working pattern: a <code>model: haiku</code> cloud <strong>wrapper</strong> that drives a local model through
+  <code>.claude/skills/loop-engineer/scripts/ollama_bridge.py</code>. Cloud stays on subscription auth;
+  only the small wrapper spends cloud tokens; the bulk generation is local and free.</li>
+<li>The bridge speaks Ollama's HTTP API (<code>POST /api/generate</code>), NOT <code>ollama run</code>. Measured
+  2026-08-14 on Ollama 0.32.9: the CLI cannot fix a seed (the same requested seed gave
+  different text), and it writes 68 to 71 ANSI cursor-control sequences into stdout, which a
+  naive strip corrupts because the model writes, moves the cursor back and rewrites. The API
+  fixes the seed byte-for-byte and carries zero escapes.</li>
+<li><strong>The vault lookup lives in the bridge, and is not optional.</strong> <code>--vault-context &lt;terms&gt;</code>
+  makes it search <code>30_Ressources</code> and prepend the matching notes; omitting it AND
+  <code>--no-vault-context</code> is exit 2. The rule used to live only in the agent definition and was
+  skipped by the first caller in a hurry: with no context the local model answered a
+  documented LaTeX question with the non-existent command <code>\endminitoc</code>, passing every other
+  gate, because the other gates are structural and none looks at truth.</li>
+<li>No model tag appears in an agent or a script. <code>model_resolver.py</code> is the only thing that
+  names one, <code>.claude/local-model-state.json</code> is the only file recording it, and there is no
+  fallback: an unqualified or uninstalled model is an explicit stop, never a quieter
+  substitute. The retired <code>qwen2.5-coder:7b</code> fallback is exactly what this removes.</li>
+<li>The measured window is <code>num_ctx</code> 16384 (2026-08-14, RTX A1000 6 GB, <code>q8_0</code> KV cache, 100
+  percent GPU, 625 MiB free), recorded in the machine-local <code>.claude/local-model-config.json</code>
+  and frozen in <code>~/.litellm/Modelfile.ornith-9b-gpu</code>. <code>context_budget.py</code> reads that file and
+  errors rather than assuming a default. Ollama silently truncates a prompt longer than
+  <code>num_ctx</code> to <code>num_ctx // 2 + 2</code> tokens and reports success, which is why the budget gate
+  exists at all.</li>
+<li>An optional LiteLLM config (<code>~/.litellm/ollama.yaml</code>) proxies only Ollama (keep-alive /
+  context tuning); it is not required, and the bridge inherits NOTHING from it.</li>
+<li>The <code>loop-engineer</code> skill (<code>/loopdev</code>) builds on these agents; its Agent SDK loop also
+  runs on subscription auth, with local steps through the same bridge.</li>
+</ul>
+<h2 id="4-git-and-github-workflow">4. Git and GitHub workflow<a class="headerlink" href="#4-git-and-github-workflow" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Remote: <code>LARi-UQAC/ResearchTools</code>. Contributors fork, branch, and open a PR against
+  <code>main</code>; the maintainer reviews and merges. A maintainer <code>git pull</code> immediately refreshes
+  the junction-linked entries in <code>~/.claude</code>.</li>
+<li>Commit hygiene: never commit directly to <code>main</code> for feature work - branch first. A commit
+  message containing <code>Closes #N</code> auto-closes that issue on push. To close a PR <strong>without</strong>
+  merging, delete its head branch.</li>
+<li>API write access via a plain <code>GITHUB_TOKEN</code> may be restricted (read-only on this repo for
+  non-admins); rely on <code>git push</code> (credential-manager auth) for write operations rather than
+  API calls to comment on or patch issues/PRs.</li>
+</ul>
+<h2 id="5-obsidian-knowledge-capture-loop">5. Obsidian knowledge-capture loop<a class="headerlink" href="#5-obsidian-knowledge-capture-loop" title="Permanent link">&para;</a></h2>
+<p>The vault path is authoritative from the <code>OBSIDIAN_VAULT</code> environment variable; the documented
+default is <code>C:\Martin Otis\Vault</code>. The vault (PARA layout <code>10_Projets</code> / <code>20_Domaines</code> /
+<code>30_Ressources</code> / <code>90_Archives</code>) is the broad, cross-project memory Claude Code lacks natively:
+its auto-memory is siloed per working directory (<code>~/.claude/projects/&lt;slug&gt;/memory/</code>), so no
+single Claude memory spans grants, students, papers, and software. The vault fills that role. The
+<code>loop-engineer</code> and <code>authoring-loop</code> flows read and write it so a lesson learned in one iteration
+(or project) is not re-learned later.</p>
+<p><strong>Roles (single serialized writer, read-many).</strong></p>
+<ul>
+<li><code>local-writer</code> is the only agent that writes to the vault: it drafts the note body locally and
+  deposits it in <code>~/.claude/obsidian-outbox/</code> with a first-line directive
+  (<code>&lt;!-- obsidian: create|append path="..." --&gt;</code>); the <code>obsidian-outbox-flush.py</code> hook writes it
+  into the vault through the filesystem and verifies the effect by comparing the target file's
+  size before and after. The outbox is the only write path for CREATING or APPENDING note
+  CONTENT, not a fallback used only when Obsidian happens to be closed - see the rationale under
+  Transport below. The one sanctioned exception is <code>vault_consolidate.py --apply --yes</code> (see
+  Consolidation below): an in-place MAINTENANCE edit of links in notes that already exist,
+  performed by this same single serialized writer, through the filesystem, verified by re-reading
+  the file, never through the Obsidian CLI. Writes stay serialized - never two agents at once, and
+  never an external concurrent tool (Claudian, a second IDE agent) on the same vault. That is what
+  the root <code>CLAUDE.md</code> "single writer" rule protects.</li>
+<li><code>local-coder</code> reads only; if it finds a code learning it hands the text to <code>local-writer</code>.</li>
+<li>Plan-time cloud reads (superpowers <code>brainstorming</code> on Fable 5, <code>writing-plans</code> on Opus) are
+  orchestrator-mediated: the planner reads the vault and bakes the learnings into the plan.
+  <code>executing-plans</code> and the Sonnet review panel do not read.</li>
+</ul>
+<p><strong>Consolidation: a deterministic script, a judgment agent.</strong> After every write, <code>local-writer</code> runs
+<code>.claude/skills/obsidian-cli/scripts/vault_consolidate.py</code>, which measures two distinct graph
+defects and decides neither:</p>
+<table>
+<thead>
+<tr>
+<th>Defect</th>
+<th>Deterministic half measures</th>
+<th>Judgment half decides</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Missing edge (<code>--mode candidates</code>, the default)</td>
+<td>shared tags, shared <code>domaine</code>, Jaccard overlap on rare terms between unlinked notes</td>
+<td>whether the pair shares a real mechanism; add a reciprocal edge with one sentence, or reject</td>
+</tr>
+<tr>
+<td>Dead edge (<code>--mode links</code>)</td>
+<td>every wiki-link that resolves to no note, with up to three suggested targets scored <code>basename</code> / <code>alias</code> / <code>fuzzy</code></td>
+<td>which suggestion, if any, is the real target; author the fix as a literal bracketed map</td>
+</tr>
+</tbody>
+</table>
+<p><code>--mode links</code> is read-only, so <code>local-coder</code> and the orchestrator may run it like any other vault
+read; only <code>local-writer</code> may run the rewrite. That rewrite (<code>--apply &lt;map.json&gt;</code>) is dry-run by
+default - it reports the intended change and writes nothing until <code>--yes</code> is also passed - and it
+refuses any path that resolves outside the vault rather than writing through it, the same discipline
+the outbox hook applies below.</p>
+<p><strong>Where things go (PARA).</strong></p>
+<ul>
+<li>Project-chronological logs -&gt; <code>10_Projets/&lt;nature&gt;/&lt;projet&gt;/</code> (the four natures: <code>Articles</code>,
+  <code>Subventions</code>, <code>Livres</code>, <code>Logiciels</code>): <code>Decisions.md</code> (ADR), <code>CodeReview.md</code> (findings),
+  <code>Revisions.md</code> (article/content corrections). Append.</li>
+<li>Reusable cross-project knowledge -&gt; <code>30_Ressources/&lt;Technology&gt;/</code> (current folders: <code>LaTEX</code>,
+  <code>Python</code>, <code>PowerShell</code>, <code>Obsidian</code>, <code>ResearchTools</code>, <code>Publication</code>): one atomic note per
+  learning, with frontmatter (<code>type</code>, <code>projet: "[[...]]"</code>, <code>domaine</code>, <code>date</code>, <code>tags</code>) and a
+  back-link. The folder axis is the technology, not the nature of the learning: the nature
+  already lives in the <code>type:</code> property, so a folder per nature would duplicate that property
+  and foreclose this second axis. Retrieve all of a project's notes in one call with
+  <code>obsidian search query="[[&lt;projet&gt;]]"</code>.</li>
+<li>There is no note keyed by a single day. The date lives as a <code>date:</code> frontmatter property on
+  the note itself and, inside a project log, as a <code>## YYYY-MM-DD</code> section heading. The
+  cross-project view is <code>10_Projets/Tableau de bord.base</code>, which indexes whole files only, never
+  titles or internal lines, so it cannot rebuild an entry-by-entry chronology across projects;
+  finding everything logged on one date means searching across every <code>Decisions.md</code>.</li>
+</ul>
+<p><strong>Triggers.</strong> Error root-cause, loop iteration checkpoint, review finding (code-review /
+tech-debt / ai-firstify), gate reached, article/content correction, new method type.</p>
+<p><strong>Transport and reliability.</strong></p>
+<ul>
+<li>Bare <code>obsidian</code> under Git Bash resolves to the GUI <code>Obsidian.exe</code> and hangs. Use a
+  <code>~/bin/obsidian</code> wrapper that execs <code>Obsidian.com</code>, with <code>export PATH="$HOME/bin:$PATH"</code>.
+  Requires Obsidian open + CLI enabled (<code>Settings &gt; General &gt; Advanced &gt; Command line
+  interface = ON</code>).</li>
+<li>Every note deposited by <code>local-writer</code> goes to <code>~/.claude/obsidian-outbox/&lt;slug&gt;.md</code> (first
+  line <code>&lt;!-- obsidian: create|append path="..." --&gt;</code>, the rest is the content), unconditionally,
+  regardless of whether Obsidian happens to be reachable. The <code>obsidian-outbox-flush.py</code> hook
+  (SessionStart + SessionEnd, wired in <code>.claude/settings.template.json</code>, script under
+  <code>.claude/hooks/</code>) writes the target file directly on the filesystem and confirms the write by
+  comparing the file's size before and after, never by trusting a return code.</li>
+<li>For the capture-to-read loop to close within one session, Obsidian must be open during the run
+  so its file watcher can pick up the change. Otherwise the note waits in the outbox until the
+  next flush; <code>local-coder</code> also scans the outbox (<code>cat ~/.claude/obsidian-outbox/*.md</code>) to pick
+  up not-yet-flushed learnings intra-session.</li>
+</ul>
+<p><strong>Why the filesystem writes the note, not the CLI.</strong></p>
+<p>Three measured defects retired the CLI write path (<code>create</code>, <code>append</code>, <code>prepend</code>):</p>
+<ul>
+<li>Past a threshold, the CLI hands its command to Obsidian's main process as JSON over a socket,
+  and the header arrives truncated: <code>JSON.parse</code> throws inside the main process, an unhandled
+  "A JavaScript error occurred in the main process" dialog pops up, and the write never happens.
+  The threshold sits on the whole JSON header (note content plus path plus <code>tty</code>/<code>cwd</code> metadata),
+  not on the content alone: a 3850-byte header is accepted, a 4343-byte header is refused, and
+  4096 bytes, a Windows named-pipe buffer, falls in between. Measured on Obsidian 1.13.4 (crash
+  site <code>main.js:80:136</code>) and reproduced on 1.13.7 with the same failure shape at a different
+  location (<code>main.js:64:136</code>) - a contributor on a newer Obsidian should not assume this was
+  fixed upstream. The full trace is in the hook's module docstring, not repeated here.</li>
+<li>The CLI still exits 0 when the write above fails, so a script that only checks the return code
+  archives notes that were never written.</li>
+<li><code>create</code> onto an existing file does not fail and does not append - it silently writes a
+  numbered duplicate (<code>Decisions 1.md</code>), which is how the vault accumulated exact duplicate
+  notes.</li>
+</ul>
+<p>Two candidate causes were ruled out by measurement, not assumed away: the server code inside the
+<code>.asar</code> does reassemble the socket's chunks and does frame the JSON on a newline, so the defect
+is not there, and a UTF-8 sequence split across a chunk boundary was ruled out because the
+failing note's only non-ASCII bytes sit far from the boundary. What remains, unproven, is a
+client that exits without waiting for the socket's <code>drain</code> event and so loses the tail of the
+message; verifying that would mean reproducing the crash, and the threshold alone is enough to
+decide. Consequently <code>obsidian create</code>, <code>append</code>, and <code>prepend</code> are forbidden for writing
+(decision D3), ranked with <code>eval</code>, <code>dev:*</code>, <code>plugin:install</code>, <code>theme:install</code>, and <code>sync*</code> (except
+the read-only <code>sync:history</code>). The filesystem write has been checked in practice on notes of
+5443 and 7266 bytes, with no truncation.</p>
+<p><strong>CLI traps that remain (also measured on 2026-08-03; the read-only surface is still in use).</strong></p>
+<ul>
+<li><code>create --help</code> does not print help - it creates a file named <code>Untitled.md</code>. Use
+  <code>obsidian help &lt;command&gt;</code> for documentation instead, and note that CLI parameters take no
+  dashes (<code>path=</code>, <code>to=</code>, <code>content=</code>).</li>
+<li><code>obsidian move</code> into a folder that does not exist exits 0 but fails with <code>ENOENT</code> without
+  creating the missing folder. Create the destination folder first.</li>
+</ul>
+<p><strong>Setup (per machine).</strong></p>
+<div class="highlight"><pre><span></span><code>mkdir<span class="w"> </span>-p<span class="w"> </span>~/bin
+<span class="nb">printf</span><span class="w"> </span><span class="s1">'#!/bin/bash\nexec "/c/Users/&lt;you&gt;/AppData/Local/Programs/Obsidian/Obsidian.com" "$@"\n'</span><span class="w"> </span>&gt;<span class="w"> </span>~/bin/obsidian
+chmod<span class="w"> </span>+x<span class="w"> </span>~/bin/obsidian
+grep<span class="w"> </span>-q<span class="w"> </span><span class="s1">'HOME/bin'</span><span class="w"> </span>~/.bashrc<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">printf</span><span class="w"> </span><span class="s1">'\nexport PATH="$HOME/bin:$PATH"\n'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc
+cp<span class="w"> </span>.claude/hooks/obsidian-outbox-flush.py<span class="w"> </span>~/.claude/hooks/<span class="w">   </span><span class="c1"># if not junction-linked</span>
+</code></pre></div>
+<p>Keep the <code>settings.template.json</code> SessionStart / SessionEnd entries that call the flush hook.</p>
+<p><strong>Plugin decision.</strong> Do not install Claudian / obsidian-claude-code-plugin (they embed a second
+agent = a concurrent writer, breaking the single-writer rule) nor the Claude Code IDE / IDE Pro
+MCP-over-WebSocket plugins (this integration is deliberately the local CLI, not MCP). Stay
+CLI-only.</p>
+<p><strong>Drift check.</strong> The five corrections above (this file, the ResearchTools <code>.claude/CLAUDE.md</code>,
+<code>local-writer.md</code>, <code>local-coder.md</code>, and <code>CLAUDE.template.md</code>) are prose: nothing compiles them, so
+nothing notices them drifting apart again. <code>scripts/audit/check-claude-template.ps1</code> is that
+control. It regenerates <code>CLAUDE.template.md</code> with today's substitutions into a file under
+<code>$env:TEMP</code> (never by calling <code>setup.ps1</code>, and never by writing to the live global file), diffs
+the result against this machine's own <code>~/.claude/CLAUDE.md</code>, and asserts four invariants: no
+<code>daily:append</code> in the template, no removed <code>30_Ressources</code> folder (<code>Apprentissages/</code>, <code>Methodes/</code>,
+<code>GardeFous/</code>) used as a live location in a definition file (<code>.claude/agents</code>, <code>.claude/commands</code>,
+<code>.claude/skills</code>, plus the two per-agent mirror trees <code>.github/agents/*.agent.md</code> and
+<code>.opencode/agent/*.md</code>; <code>.continue/rules/researchtools.md</code> is a single combined rules file, not a
+per-agent mirror, and carries none of these three folder names today, so it is left out), the
+shipped hook verifies a write through <code>st_size</code> rather than a return code, and the shipped hook
+never calls the Obsidian CLI binary. A line naming a removed folder is exempt only when its
+trimmed content is byte-identical to one of two hardcoded, exact-quoted lines from
+<code>local-writer.md</code>'s own historical sentence about the 2026-08-03 rename - fix round 1 replaced an
+earlier "sanctioning phrase somewhere in a nearby window" check after a scratch fixture showed it
+could be defeated by pasting unrelated boilerplate containing the same words next to a genuine
+live-location instruction. Template and live also diverge on three content lines by design right now (Task 5
+advanced the template with a fix the live file cannot receive without running <code>setup.ps1</code> by
+hand): the script names each of the three, by literal content, as a pending propagation with that
+remedy, and fails on any other, unclassified difference. What it does not cover: it compares the
+template against ONE machine's global file, so a second contributor's own drifted copy is
+invisible to it; a clean exit here is not a claim that every contributor's <code>~/.claude/CLAUDE.md</code>
+is in sync.</p>
+<h3 id="the-vault-event-daemon-unattended-filing">The vault event daemon (unattended filing)<a class="headerlink" href="#the-vault-event-daemon-unattended-filing" title="Permanent link">&para;</a></h3>
+<p>Everything above describes the ATTENDED path: a session runs, <code>local-writer</code> judges, the note
+is filed. The daemon is the unattended one, added 2026-08-28 on branch
+<code>feat/vault-event-daemon</code>. Its point is that the cloud wrapper should not be the thing that
+decides where a learning goes. Haiku pushes a raw drop; the LOCAL model classifies it, drafts
+it, and the vault organises itself, at no cloud generation cost.</p>
+<p><strong>The event contract.</strong> A raw drop is unrouted text in <code>~/.claude/obsidian-outbox/raw/</code>, with
+three frontmatter keys (<code>source</code>, <code>subject</code>, optional <code>project</code>) and no directive line, because
+deciding the destination IS the daemon's job. Pre-routed notes carrying a directive keep
+working exactly as before; only the unrouted form is new.</p>
+<p><strong>The path.</strong> <code>CLASSIFY</code> and <code>DRAFT</code> call the local model. <code>ROUTE</code>, <code>WRITE</code> and <code>ENQUEUE</code> are
+Python. Two model calls, roughly 1.2 minutes. Whatever <code>ROUTE</code> refuses lands in
+<code>needs-review/</code> with the reason on its first line, and a session picks it up by dispatching
+<code>local-writer</code>, which classifies with the whole reusable layer in context. The daemon never
+retries a parked event: re-running a judgment the model already failed produces the same
+answer more slowly.</p>
+<p><strong>The filesystem is the queue</strong>, so <code>obsidian-cli</code> still ships no <code>requirements.txt</code> and adds
+no <code>pip-audit</code> surface: <code>raw/</code> inbound, <code>working/</code> claimed, <code>raw/sent/</code> delivered,
+<code>needs-review/</code> parked, <code>state/</code> in flight, <code>queue/*</code> deferred. Three distinct mechanisms hold
+it together, and confusing them is the mistake to avoid. The WRITE lock serializes writers so
+a file is never corrupted. The SINGLETON lock admits one daemon per machine: without it two
+daemons classify and draft every drop twice, paying two model calls for one result, which
+serializing the writes does not prevent. The CLAIM is a rename out of <code>raw/</code>, atomic, so the
+winner owns the drop and the loser gets <code>FileNotFoundError</code>. Producers are unlimited and
+parallel; the consumer is one, deliberately, because the card holds one resident model and two
+consumers would only thrash VRAM.</p>
+<p><strong>Two signals designed to mean something.</strong> A <code>state/</code> file exists only while an event is in
+flight, so one that survives IS the crash signal, and the startup sweep names them: that is the
+list of notes to check against the journal. A deferred queue is cleared only on the branch that
+actually did the work, so a skipped drain never silently discards what it did not process.</p>
+<p><strong>Deferred drains.</strong> Consolidation and graphify are off the event path on purpose: at the
+measured 36.991 s median call, judging fifteen candidate pairs inline would pin the GPU for
+about ten minutes per drop. The drain asks <code>vault_consolidate.py</code> for the candidates, judges
+one pair per model call on the strict mechanism test, and appends accepted edges reciprocally
+with the sentence saying what they share. Phantom-link repair is deliberately NOT here: adding
+an edge appends a sentence and is reversible from the journal, while rewriting <code>[[Old]]</code> to
+<code>[[New]]</code> substitutes text across many notes at once, is not reversible from an append-only
+record, and rests on a truth judgment the writer-role evidence does not support.</p>
+<p><strong>What the gates cannot do.</strong> They are structural, and none of them looks at whether an answer
+is true - the 2026-08-14 <code>\endminitoc</code> incident is the standing reminder. The confidence
+threshold (<code>daemon.classify_confidence_min</code>, 0.7 to start) is a dial, not a measurement: a
+model's self-reported confidence is not a probability, so the daemon logs its own accept and
+park counts per event and the value is meant to be revised from that log. The journal makes a
+wrong filing recoverable and the report makes it visible; neither makes it correct.</p>
+<p><strong>Measured before it was built</strong> (<code>.claude/local-capability-probe.json</code>, 2026-08-28, Ollama
+0.33.0): a JSON schema sent in the request's <code>format</code> field is honoured, enum included, so the
+two judgment calls are constrained at the sampler rather than validated hopefully. And a shared
+prompt prefix is re-used - but the verdict cannot be taken on token count, since the daemon
+bills the full <code>prompt_eval_count</code> either way (2186 on both calls); prefill duration is the
+only exposed signal, and it needs a CONTROL call on a prefix never seen to separate it from
+machine load. Measured ratio 0.23, 635 ms against 2741 ms.</p>
+<h2 id="6-the-graphify-code-graph-the-second-memory">6. The graphify code graph (the second memory)<a class="headerlink" href="#6-the-graphify-code-graph-the-second-memory" title="Permanent link">&para;</a></h2>
+<p>Section 5 covers the vault, which holds what has been <strong>learned</strong>. This section covers the graph,
+which holds what this repository's code <strong>is</strong>. They are governed identically and they answer
+different questions; the parity is deliberate, and until 2026-08-30 only the vault half of it was
+enforced.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>graphify graph</th>
+<th>Obsidian vault</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Holds</td>
+<td>the structure of this repository, as its files are now</td>
+<td>what has been learned, across every project</td>
+</tr>
+<tr>
+<td>Derives from</td>
+<td>the files, so it is regenerable and disposable</td>
+<td>experience, not derivable from any repository</td>
+</tr>
+<tr>
+<td>Scope</td>
+<td>one project, <code>graphify-out/graph.json</code></td>
+<td>the whole machine, the PARA tree</td>
+</tr>
+<tr>
+<td>Answers</td>
+<td>"what calls X", "how does A reach B", "where does this symbol live"</td>
+<td>"have I hit this before", "why was this decided"</td>
+</tr>
+<tr>
+<td>Lifetime</td>
+<td>rebuilt whenever files change</td>
+<td>permanent, consolidated, curated</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Routing.</strong> A question about <em>this code</em> goes to the graph first. A question about a failure
+mode, a tool that misbehaves, or a past decision goes to the vault first. Many tasks want both, in
+that order.</p>
+<p><strong>Who may touch it: <code>local-writer</code>, and nobody else.</strong> Same rule as the vault, same agent, and
+since 2026-08-30 the same hook. <code>vault-access-guard.py</code> refuses three things to every other
+caller:</p>
+<table>
+<thead>
+<tr>
+<th>Refused</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a <code>graphify-out/</code> path</td>
+<td>the graph's storage, matched wherever it appears, exactly like the vault root</td>
+</tr>
+<tr>
+<td>the <code>graphify</code> CLI <strong>at command position</strong></td>
+<td>a chained <code>cd ... &amp;&amp; graphify update</code> is an access; <code>grep graphify</code> is not, and matching the bare word would refuse every search of the documentation</td>
+</tr>
+<tr>
+<td><code>check-graph-health.ps1</code> and <code>verify-graph-health.ps1</code> <strong>by name</strong></td>
+<td>they read <code>graph.json</code> on the caller's behalf, so the graph's own path never appears in the command</td>
+</tr>
+</tbody>
+</table>
+<p>That third row is the one worth understanding, because it is the case that actually happened. The
+rule was prose here while the vault's was mechanical, and it was bypassed in three sessions; in
+the last, a session ran a <em>read-only health check</em> twice to learn the graph's state. A guard
+matching only the path would have caught none of the three. This is the 2026-08-27 vault lesson
+one level up: back then the rule was phrased per COMMAND and <code>cat</code>, <code>grep</code> and a Python script
+walked through it, so it was rephrased per PATH - and a per-path rule is then walked through by a
+wrapper. Name the resource, its tools, <strong>and</strong> the scripts that read it for you.</p>
+<p>The script names are matched inside an executed command only, never against a path argument, so
+editing or reading those scripts stays open to everyone. Running one is a consultation;
+maintaining one is not. Four negative controls in
+<code>.claude/hooks/Test/test_vault_access_guard.py</code> keep the guard from firing on prose, because one
+that does gets switched off, after which nothing is enforced at all.</p>
+<p><strong>Consulting costs no model.</strong> <code>graphify query "&lt;question&gt;" --budget 7000</code>, and <code>path</code> and
+<code>explain</code>, are deterministic traversals of <code>graph.json</code>. Prefer one query to a <code>grep</code> file by
+file. Respect the CLI's truncation warning: it says how many nodes were cut, and the answer is
+often among them.</p>
+<p><strong>Refreshing takes a DIRECTORY, not a file.</strong> Write the file, then point <code>graphify update</code> at the
+directory that contains it, or at the repository root. Measured 2026-08-30: a single file path
+returns <code>[WinError 267] Nom de répertoire non valide</code> and refreshes nothing while appearing to
+succeed. That failure was twice mis-diagnosed the same day, once as "PowerShell is not supported"
+and once as "spaces in the repository path break the CLI"; both were wrong, and the graph itself
+disproved the first - it already held 127 nodes extracted from <code>.ps1</code> files. Verify a refresh by
+its effect, the node and link counts and the file's timestamp, never by the exit code. Never edit
+<code>graph.json</code> directly.</p>
+<p>Pointing the CLI at a subdirectory builds a <em>separate</em> graph there, which is how
+<code>scripts/lib/graphify-out/</code> and <code>scripts/test/graphify-out/</code> came to exist. They are gitignored
+and harmless, but the convention is one graph per repository, and a later <code>graphify query</code> aimed
+at such a subdirectory would silently read a partial graph.</p>
+<p><strong>An AST refresh over code is free; a semantic pass is a model call.</strong> Say so rather than starting
+one silently. Measured 2026-08-30: every node in this repository's graph carries <code>_origin: ast</code>
+and always has, so there is no semantic layer to keep current - building one is a deliberate,
+token-costing decision, not a debt this repository is carrying.</p>
+<p><strong>What the graph does not answer.</strong> Because it is AST-only, it holds the code and the <em>structure</em>
+of each <code>.md</code> file - headings, names, where things live - and no layer that read what those files
+say. Asked why the Obsidian CLI write path is forbidden, it returned 109 nodes of file, command
+and test-class names and none of the three measured reasons. A why-question goes to the vault. The
+failure mode that actually hurts here is not an empty answer, it is a confident one.</p>
+<p><strong>The skill is not shipped here.</strong> <code>graphify</code> is installed per machine
+(<code>uv tool install graphifyy</code>) and its skill belongs to that installation. A copy was vendored into
+<code>.claude/skills/</code> on 2026-08-30 and removed the same day: a copy of a CLI's skill without the CLI
+is instructions for an absent tool, and it creates a second source that drifts. The same applies
+to any skill an enabled plugin delivers.</p>
+<p><strong>Its own state is reported, read-only, by</strong> <code>scripts/audit/check-graph-health.ps1</code>: contents,
+what it claims to cover and produced no node for, and whether any covered file is newer than the
+graph. Staleness is the one finding that exits non-zero; AST-only is a note, not a failure,
+because that is the intended shape here and a check permanently red for a reason nobody intends to
+fix gets switched off. Dispatch <code>local-writer</code> to run it.</p>
+<h2 id="7-keeping-this-file-alive">7. Keeping this file alive<a class="headerlink" href="#7-keeping-this-file-alive" title="Permanent link">&para;</a></h2>
+<p>When you (or an assistant) learn a durable, non-obvious project fact - a convention, an
+environment constraint, a gotcha - record it <strong>here</strong>, in the repo, not only in a personal
+Claude Code memory. Personal memories still help within a single contributor's sessions, but
+this file is what the whole team and every assistant (Copilot, OpenCode, Continue, Aider)
+can read. Prefer genericized paths (<code>~/...</code>) over machine-specific absolute paths.</p>
+<p>Martin Otis</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

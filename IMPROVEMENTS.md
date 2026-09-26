@@ -32,6 +32,198 @@ its error, and any file left behind skip-marked.
 
 **Project log:** appended 2026-09-26 entry to `10_Projets/Logiciels/ResearchTools/Decisions.md`.
 
-**Graphify:** AST-only refresh at repository root (`graphify update .`). Semantic pass deferred: changed files are config (`mkdocs.yml`) and image (`docs/assets/ResearchToolsLogo.png`), neither code. No semantic extraction justifies the model cost; AST-only sufficient to track dependencies and file presence.
+**Graphify:** AST-only refresh at repository root (command form: graphify update, dot argument). Semantic pass deferred: changed files are config (`mkdocs.yml`) and image (`docs/assets/ResearchToolsLogo.png`), neither code. No semantic extraction justifies the model cost; AST-only sufficient to track dependencies and file presence.
 
 ## 2026-09-26 — MkDocs landing page built; base64 context-cost lesson captured; graphify deferral
+
+**Completed:** MkDocs landing page for documentation site. Changes: `docs/index.md` (complete rebuild as real landing page with front-matter `hide: [navigation, toc]`, hero section with banner image + tagline + 3 CTA buttons, feature grid with 3 cards, existing "Why ResearchTools" table); `mkdocs.yml` (added `attr_list` and `md_in_html` extensions to Markdown config); `docs/assets/extra.css` (brand CSS classes: `.rt-hero`, `.rt-cta`, `.rt-feature-grid`, `.rt-feature-card`, `.rt-stats` with light/dark variants, integrated into site color palette).
+
+**Durable learning captured:** Atomic note `30_Ressources/Methode/base64-encoding-llm-context-cost.md` documenting a measured token-cost lesson. Reading a self-contained HTML file with base64-encoded assets into context is extremely expensive: a 252,740-character base64 string consumed ~2.7M tokens (9% of file = ~241K tokens). Base64 amplifies context cost by roughly 30× compared to the unencoded binary. Consequence: use htmlpreview.github.io for GitHub-hosted pages, ask users for local preview (mkdocs serve), never embed as base64 for model inspection.
+
+**Project Decisions entry:** Appended 2026-09-26 entry to `10_Projets/Logiciels/ResearchTools/Decisions.md` noting the landing page was built, visual verification was deferred due to token-cost measurement, and structural verification was substituted.
+
+**Graphify:** AST-only refresh at repository root (`graphify update .`). Semantic pass deferred: three changed files are documentation/config (index.md, mkdocs.yml, extra.css) with no code understanding to extract. Semantic extraction adds no value for a documentation-only change.
+
+## 2026-09-26 — GitHub-presentation playbook consolidated; AST-only graphify update deferred
+
+**Completed:** `docs/github-repo-setup-playbook.md` — an 8-phase, reusable playbook for bringing another repository's GitHub presentation to publication standard. Phases: brand palette discovery, docs structure (docs/manual/ book-split), community files, README template, MkDocs Material setup (with measured gotchas), GitHub settings via `gh` CLI, R30/R31 governance pattern (generic, not hardcoded), verification checklist, appendix naming measured mistakes caught during reference implementation.
+
+**Consolidation:** pointer note filed to `30_Ressources/Publication/github-presentation-setup-consolidated.md` (via outbox) stating the playbook's location and linking it to related atomic notes it stitches together (ffmpeg GIF technique, GFM-slug computation, MkDocs exclude_docs gotcha, Playwright file-render boundary, rule-index-drift prevention). Those five remain independent and reusable; this pointer is the discovery path for future sessions asked to "set up GitHub for a new repo."
+
+**Project log:** one-line append to `10_Projets/Logiciels/ResearchTools/Decisions.md` noting the playbook was written, its scope, and its docs links.
+
+**Graphify:** AST-only refresh at repository root (`graphify update .`). Semantic pass deferred: new markdown document (~550 lines of documentation text) + two small doc edits (docs/index.md, mkdocs.yml). Cost not justified for a documentation-only change; semantic extraction adds no code understanding.
+
+## 2026-09-26 — Governance additions R30 and R31; index-drift failure class discovered and documented
+
+**Governance additions:**
+Two numbered rules were added to `.claude/rules/workflows.md` to enforce PRs against the toolkit's own governance:
+- R30: A PR needs a linked GitHub Issue with a Kanban card on the repo's own project board before opening it (exception: pure documentation fixes).
+- R31: Documentation for whatever a PR touched must be updated in the same PR before it can be approved/merged (merge-time gate, companion to R30's open-time gate).
+
+Both rules are now surfaced at the point of use: `CONTRIBUTING.md` describes R30 as an open-time checklist, and `PULL_REQUEST_TEMPLATE.md` embeds R31 as a merge-time gate item.
+
+**Learning discovered: index enumeration drift:**
+While updating `.claude/rules/code-style.md` to reflect the current rule roster (R0 through R31), a silent failure was uncovered: the section's "Rule identifiers" header had stated "R0 to R27" for several sessions while R28 and R29 had been added unnoticed, leaving readers consulting that index with false information. This is not a code defect but a process one: a hand-maintained index that enumerates a bounded sequence drifts silently when a new item is added without updating that index in the same commit. Identical patterns exist for hook inventories, mirror counts, and feature lists throughout the repository.
+
+**Learning documented:** Wrote atomic note `30_Ressources/Methode/index-enumeration-drift.md` (via outbox) capturing this failure class, its measured instance, its root cause (sequences defined in separate files with no mechanical link to the index that claims to know them), and the antidote: grep for EVERY place that states the old bound after adding a new item, then update all of them in the same edit.
+
+**Secondary learning:** `.claude/rules/` is a machine-wide junction; editing a rule file here takes effect immediately in every Claude Code project on this machine. The consequence: rule text must be phrased generically ("this repo's own X") rather than with concrete instances (a literal URL, owner name, project number), because the same rule is read from unrelated projects where that instance is wrong. An R30 open-time draft used a GitHub Project URL; it was reworded to "the repo's own project board" to remain valid across machines and projects.
+
+**Project Decisions entry:** Appended 2026-09-26 entry naming R30 and R31, their enforcement, the GitHub Wiki disable and Project board #6 creation, and the vault note about index drift.
+
+**Graphify:** AST-only refresh at repository root (`graphify update .`) on the three edited rule files (code-style.md, workflows.md, and two supporting files). Semantic pass deferred: rules are documentation, not code; no semantic extraction justifies the model cost.
+
+## 2026-08-28 - repo-wide hooks - a session now prints the hook inventory it actually loaded
+
+**Found:** a session opened showing only `Session: RTK=active | Caveman=full | git-sync=on`
+and the hooks were assumed dead. They were not: four of six SessionStart entries had run and
+emitted, while `obsidian-outbox-flush.py` writes its `[OUTBOX]` lines to stderr and
+`install-junctions.ps1 -Sync -Quiet` is quiet by construction. Only a SessionStart hook's
+stdout reaches the session context. Two drifts surfaced with it. The hook table in
+`CLAUDE.template.md` claimed eleven entries against thirteen declared in `settings.json`,
+omitting the `install-junctions -Sync` entry and the `Stop` memory-upkeep hook; and nothing at
+startup reported a declared hook whose script had gone missing, which is exactly the
+2026-08-27 `vault-access-guard.py` failure that refused nine tools for four turns.
+
+**Changed:** new `.claude/hooks/session-hooks-inventory.py`, registered as a SessionStart hook
+in `.claude/settings.template.json` and in the live `~/.claude/settings.json`. It reads
+`settings.json`, prints on stdout a header line, one compact line per event, and a
+`[HOOKS ALERT]` line naming any declared hook whose script is absent from disk. It exits 0 on
+a missing, unreadable or malformed settings file (R11), takes its path from the environment
+rather than a literal (R1), and holds no clock or randomness (R19). The hand-maintained tables
+in `CLAUDE.template.md`, the live `~/.claude/CLAUDE.md` and `CLAUDE (up).md` now describe each
+hook's ROLE and defer the count to the generated inventory, with the stdout-versus-stderr rule
+written into the "un hook doit échouer en silence" consequences.
+
+**Proven:** `.claude/hooks/Test/test_session_hooks_inventory.py`, 20 offline tests, no network
+and no settings file of this machine read. `scripts/test/run-offline-tests.ps1` green
+end to end (46 PASSED, 0 FAILED, 1 NOT RUN for the pre-existing `pypdf` gap), and
+`.rt-green.json` rewritten. Running the hook against the real `settings.json` then caught two
+defects the fixtures had not: the `Stop` hook's prose reason mentions `Decisions.md` and
+`model_resolver.py`, which became the hook's label and a false missing-file alert, and a bare
+relative script name was checked against a working directory that is not ours to assume.
+Script detection was narrowed to the invocation head and to paths carrying a separator, with
+three tests added for those cases. `install-junctions.ps1 -Sync` correctly HELD the file until
+the suite was re-run, then propagated it; `~/.claude/hooks/session-hooks-inventory.py` now
+prints fourteen entries over six events with no alert.
+
+## 2026-08-28 - repo-wide hooks - the inventory now carries per-hook status and is shown to the user
+
+**Found:** the inventory added earlier the same day was emitted correctly and seen by nobody. A
+SessionStart hook's stdout reaches the model's context, not the user's pane, exactly like
+`[RTK ACTIVE]` and `[AUTO-SYNC CHECK]`. The `Session:` line is visible only because its hook
+asks for it to be printed. A second session read the silence as the hooks being dead, then
+declined to relay the block on the grounds that "Hooks globaux" warns against duplication - a
+misreading of that warning, which is about a table hand-copied INTO a document, not about a
+block regenerated from `settings.json` at every start. The inventory also named each hook
+without saying anything about its state.
+
+**Changed:** `session-hooks-inventory.py` now emits a per-hook status - `ok`, `MISSING`,
+`inline`, `template` - with the matcher appended for a tool-gated event, header tallies, and a
+final `[HOOKS DISPLAY]` line asking for the block to be relayed verbatim. "Status de session
+obligatoire" in `CLAUDE.template.md` and in the live `~/.claude/CLAUDE.md` now REQUIRES that
+relay right after the `Session:` line, excludes the directive line itself from the copy, states
+why it is not the duplication the hooks section warns about, and tells a session with no
+`[HOOKS ACTIVE]` in context to say so rather than invent an inventory.
+
+**Proven:** the suite grew to 26 tests, adding the four status states, the matcher segment and
+its absence off tool-gated events, the header tallies, and the directive's presence and position
+after the alert. `scripts/test/run-offline-tests.ps1` green end to end: 48 PASSED, 0 FAILED,
+0 NOT RUN. `install-junctions.ps1 -Sync` propagated the hook.
+
+## 2026-08-28 - Codex harness mirror: skills reachable natively, both ceilings tested
+
+**Why:** asked whether a ChatGPT harness mirror was possible. "ChatGPT" is three surfaces,
+not one. The coding harness, Codex, was already served by the root `AGENTS.md`, but the
+repo's 15 skills were invisible there: the mirror map's claim that "skills have no per-tool
+mirror" was true of Copilot, OpenCode and Continue, and false of Codex, which is the one
+harness with a native skill convention.
+
+**Changed:** `install.ps1` now generates `.agents/skills/<name>/SKILL.md` for every skill -
+a POINTER carrying only the frontmatter, body directing the reader to the canonical
+`.claude/skills/<name>/SKILL.md` - plus a nested `.claude/skills/AGENTS.md` that Codex
+appends to the root one when the working directory is inside that tree. Two new params,
+`$CodexSkillListBudget` (8000) and `$CodexDocMaxBytes` (32768), carry Codex's own documented
+defaults with the date and source they were verified against (R0, R13). Descriptions are
+trimmed to whole sentences under a computed per-skill cap, the first sentence always kept.
+Registered in `README.md`, `Architecture.md`, `docs/authoring-and-mirrors.md` (mirror map,
+the corrected claim, and the add-a-skill checklist) and `.claude/rules/testing.md`.
+
+**Two defects caught by the new test rather than by reading:** the first generated set
+carried the source's own double quotes into the mirror and then trimmed mid-scalar, shipping
+11 of 15 mirrors whose YAML frontmatter did not parse while the installer printed a green
+`[OK]` for each - the exact silent class this repo already knows from the Copilot stub. And
+one skill opens its description with a `>` block indicator, which is syntax, so the mirror
+read "> Generate support..." as text. The description is now emitted as a single-quoted
+scalar with internal quotes doubled, and both parsers strip the block indicator.
+
+**Proven:** `test_codex_mirror.py`, 10 tests, was run against the BROKEN generated set first
+and failed on 12 mirrors before the fix, so its teeth are demonstrated rather than asserted.
+Budgets are parsed from `install.ps1` so the test cannot outlive a threshold change.
+`scripts/test/run-offline-tests.ps1` green end to end: 56 PASSED, 0 FAILED, 0 NOT RUN.
+
+**Not done:** Codex custom prompts (`$CODEX_HOME/prompts/`) were considered as the analogue
+of the `-Personal` Copilot install and deliberately skipped - they are deprecated upstream in
+favour of skills, which this change already covers.
+
+## 2026-08-29 - setup.ps1 -InstallDaemon, and the graphify drain's queue named as a defect
+
+**Gap:** `vault-daemon-autostart.ps1 -Install` existed and nothing called it, so a new user
+who ran `setup.ps1` got skills, mirrors and hooks but no daemon: raw drops landed in
+`~/.claude/obsidian-outbox/raw/` and waited for someone to notice. The flush hook reports
+them at SessionStart, which is the alarm, not the fix.
+
+**Change:** `setup.ps1 -InstallDaemon` delegates to that script, and `-All` includes it only
+when a vault is configured, skipping with a stated reason otherwise. The decision and the
+delegation live in `scripts/lib/rt-daemon-install.ps1` for the same reason `rt-sync.ps1`
+exists: dot-sourcing `setup.ps1` to test it would run its whole interactive flow. `setup.ps1`
+is the home rather than `install.ps1`, which regenerates mirrors many times a day and runs at
+every session start through `-Sync`; a Startup-folder write there would come back after the
+user deliberately removed it.
+
+**Proven:** `scripts/test/verify-daemon-install.ps1`, 22 checks, including -Preview invoking
+nothing (R16), a non-zero autostart code propagating rather than being swallowed, and the
+professor's real Startup folder listed before and after so the test cannot create the shortcut
+it is meant to be reasoning about.
+
+**OWNER UNKNOWN, left undone:** `daemon_outbox.enqueue()` files vault-relative note paths into
+a `graphify` queue that `drain_graphify` would hand to `graphify update` with cwd set to a code
+repository, where those paths name nothing. Reviewed 2026-08-29 with M. Otis: the vault is
+cross-project and a graphify graph is per-project, so a machine-global daemon holding one
+`graphify_repo_root` is the wrong shape at any value. `graphify_repo_root` therefore stays
+null, its provenance in `daemon-config.json` now says why, and the queueing itself wants
+removing - a code graph is refreshed by `local-writer` pointing `graphify update` at the code
+it just wrote. Not done here because it is a behaviour change to the daemon with its own test,
+outside this session's scope.
+
+## 2026-08-29 - tune-new-model.ps1: the runbook from a downloaded model to the adoption gate
+
+**Gap:** every piece between "a model is on disk" and "the resolver serves it" existed and was
+tested, but the SEQUENCE lived nowhere. A new model was therefore either adopted without being
+compared against the field, or tuned, declared and forgotten.
+
+**Change:** `.claude/skills/opt-local-vram-llm/scripts/tune-new-model.ps1` runs steps 1 to 3 -
+sweep for this card, score against the frozen task set writing nothing, then `--matrix` the
+whole field - prints the comparison and STOPS. Step 4, `model_resolver.py --qualify`, is the
+only step that changes which tag every local agent executes, so it stays a command a person
+types: a harness that adopted on its own would make measuring and taking effect the same
+event, and nobody would see the numbers before they applied. The decisions live in
+`tune_preflight.py` beside it, where the offline suite reaches them, exactly as `run-drill.ps1`
+keeps its teardown in `vault_journal.py`. `vram_optimizer.py` gained `tuned_tag_for()` and
+`TUNED_TAG_SUFFIX` so the harness that scores the tuned tag does not spell the suffix a second
+time (R2).
+
+**Proven:** `test_tune_preflight.py`, 30 tests. Refusals: a tag not installed, a tag that is
+ALREADY tuned, an unreachable daemon, an empty tag refused without even consulting Ollama, and
+after the sweep a tuned tag that is absent or has no measured window - that last one is the
+state the resolver reports as NOT RUNNABLE, where scoring anyway prints zeros that read as the
+model's failure rather than the sweep's. Plus three static guards on the `.ps1`: it must never
+hand `--qualify` to the resolver, never shell out to `ollama run`, and never name a model tag,
+that one carrying a negative control so a broken pattern cannot pass silently.
+`scripts/test/run-offline-tests.ps1` green end to end: 57 PASSED, 0 FAILED, 0 NOT RUN.
+
+**Not done:** the harness's happy path is not covered offline and cannot be - it spawns the
+sweep, which restarts the Ollama daemon. It was exercised by hand only as far as its first
+refusal (an uninstalled tag: stop, exit 1, no report directory created).
+

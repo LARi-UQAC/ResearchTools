@@ -13,20 +13,21 @@
   <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="200">
 </p>
 
-<p align="center"><b>Find what's wrong in your academic writing or software design — before a reviewer, a thesis committee, or a grant panel does.</b></p>
+<p align="center"><b>Find what's wrong in your academic writing or software design: before a reviewer, a thesis committee, or a grant panel does.</b></p>
 
 ![ResearchTools promo](docs/manual/researchtools-hero.gif)
 
 <details>
 <summary><b>Table of contents</b></summary>
 
-- [Why ResearchTools](#why-researchtools)
-- [See it in action](#see-it-in-action)
-- [Quickstart](#quickstart)
-- [The two memories](#the-two-memories)
-- [Manual chapters](#manual-chapters)
-- [Supported harnesses](#supported-harnesses)
-- [Support this project](#support-this-project)
+- [ResearchTools — Manual](#researchtools--manual)
+  - [Why ResearchTools](#why-researchtools)
+  - [See it in action](#see-it-in-action)
+  - [Quickstart](#quickstart)
+  - [The two memories](#the-two-memories)
+  - [Manual chapters](#manual-chapters)
+  - [Supported harnesses](#supported-harnesses)
+  - [Support this project](#support-this-project)
 
 </details>
 

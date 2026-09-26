@@ -139,6 +139,39 @@ class VaultLockTest(unittest.TestCase):
         self.assertTrue(vl.pid_alive(os.getpid()))
         self.assertFalse(vl.pid_alive(0))
 
+    @unittest.skipUnless(os.name == "nt", "Windows-only liveness path")
+    def test_pid_alive_checks_the_exit_code_not_only_the_handle(self):
+        """Measured 2026-09-26: OpenProcess(SYNCHRONIZE) succeeded (handle
+        516) for a pid Get-Process, tasklist and Get-CimInstance Win32_Process
+        all agreed had already exited - Windows keeps that kernel object
+        openable for a window after exit. A handle opening is not proof of
+        life; GetExitCodeProcess is."""
+        def fake_get_exit_code(handle, ref):
+            ref.contents.value = 0  # exited, not STILL_ACTIVE
+            return 1
+        with patch.object(vl.ctypes.windll.kernel32, "OpenProcess",
+                          return_value=516), \
+             patch.object(vl.ctypes.windll.kernel32, "CloseHandle",
+                          return_value=1), \
+             patch.object(vl.ctypes.windll.kernel32, "GetExitCodeProcess",
+                          side_effect=fake_get_exit_code):
+            self.assertFalse(vl.pid_alive(24652))
+
+    @unittest.skipUnless(os.name == "nt", "Windows-only liveness path")
+    def test_pid_alive_says_yes_when_the_exit_code_is_still_active(self):
+        """The positive control for the case above: an open handle whose
+        GetExitCodeProcess reports STILL_ACTIVE (259) is genuinely alive."""
+        def fake_get_exit_code(handle, ref):
+            ref.contents.value = 259  # STILL_ACTIVE
+            return 1
+        with patch.object(vl.ctypes.windll.kernel32, "OpenProcess",
+                          return_value=516), \
+             patch.object(vl.ctypes.windll.kernel32, "CloseHandle",
+                          return_value=1), \
+             patch.object(vl.ctypes.windll.kernel32, "GetExitCodeProcess",
+                          side_effect=fake_get_exit_code):
+            self.assertTrue(vl.pid_alive(24652))
+
     def test_held_by_live_holder_reads_a_running_holder_and_never_mutates(self):
         """The read-only question the outbox flush hook asks about the daemon's
         singleton lock. It must answer without touching the file: a reader that

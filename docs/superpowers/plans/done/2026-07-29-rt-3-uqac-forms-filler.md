@@ -1,5 +1,7 @@
 # RT-3: UQAC Form Filler Implementation Plan
 
+**Executed. Merged to `main` 2026-08-31.** Archived here alongside the other RT plans once the ResearchTools side of the 20-unit programme closed out. See `done/PROGRESS_RT.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn a profile plus a reviewed field map into a filled official UQAC PDF, with appearances requested, non-signature fields locked, the signature field left intact for RT-4, and a hard refusal to run against a stale map.

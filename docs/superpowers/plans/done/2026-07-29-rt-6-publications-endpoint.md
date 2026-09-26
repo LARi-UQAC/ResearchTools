@@ -1,5 +1,7 @@
 # RT-6: Publications Endpoint Implementation Plan
 
+**Executed. Merged to `main` 2026-09-25 (PR #24).** Archived here alongside the other RT plans once the ResearchTools side of the 20-unit programme closed out. See `done/PROGRESS_RT.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Expose one author's validated Scopus publications through the form service as a cached, rate-limited endpoint, so ThesisTracker can build a cohort report without ever holding the Scopus key or bypassing the approved-publisher policy.

@@ -1,5 +1,7 @@
 # RT-7: Corpus Parse Cache and Semantic Index Implementation Plan
 
+**Executed. Merged to `main` 2026-09-25 (PR #26).** Last RT unit; its merge closed out the ResearchTools side of the 20-unit programme, which is why this plan and its six siblings were archived here. See `done/PROGRESS_RT.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Cache the expensive PDF parse keyed by file hash so every text-extraction consumer gets faster, and build an opt-in pgvector index over the cached text for ad-hoc cross-corpus retrieval whose every hit carries citekey, page, and the verbatim passage.

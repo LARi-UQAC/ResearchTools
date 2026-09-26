@@ -59,7 +59,8 @@ It reports and it recovers; it does not author. It never edits an agent, a skill
 It never reads the Obsidian vault, and it never reads the code graph: the graph panel renders
 a snapshot that `local-writer` produced, because `vault-access-guard.py` refuses
 `graphify-out/` to every other caller and a server reading the graph on a caller's behalf is
-exactly what that guard exists to stop.
+exactly what that guard exists to stop. The voice panel's questions are relayed to the vault
+daemon's own ask queue and never read either store from this process.
 
 ## Known limitation
 
@@ -79,3 +80,15 @@ fallback). Neither is required: with no `postgres`/`openobserve` block declared 
 limitations (no RBAC in OpenObserve's open-source edition, its 5-hour silent ingest window, and
 identifier spoofing across containers) are in
 [docs/rt-observe.md](../../../docs/rt-observe.md#the-optional-journal-identity-traces-audit).
+
+## The voice panel (2026-09-26)
+
+A push-to-talk voice panel (hold P, release to send), one place this skill adds an optional
+dependency (`requirements-voice.txt` for `faster-whisper`, lazily imported inside
+`stt_engine.py`'s default loader only, absent by default reports unavailable with the install
+command rather than breaking the dashboard). Every question is relayed to the vault daemon's
+own ask queue (`.claude/skills/obsidian-cli`'s `daemon_ask.py`) and answered there - this
+process never opens `OBSIDIAN_VAULT` or `graphify-out/` itself. TTS in this phase is the
+browser's own `speechSynthesis`, not a new server-side engine. Language is a dropdown
+(auto/en/fr) next to the panel, not auto-detected alone. Full design:
+[docs/rt-observe.md](../../../docs/rt-observe.md#the-voice-panel-2026-09-26).

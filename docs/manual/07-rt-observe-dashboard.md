@@ -37,6 +37,21 @@ badge top-right and the footer strip (drawn by `rt_state.py`, generation timesta
 hash, last install, repo root) are the receipts every panel here carries per R9 — a claim with
 no stamp is not trusted.
 
+## The voice panel (2026-09-26)
+
+A fifth tab, **Voice**, next to Real-Time Process. Hold **P** to record, release to send; a
+dropdown next to the button picks the language (Auto-detect, English, Francais), which drives
+both the speech-to-text decode and the answer's own language. Speech-to-text runs locally
+(`faster-whisper`, an optional dependency — a machine without it installed sees the panel report
+exactly which `pip install` command fixes that, never a broken dashboard) and never leaves this
+process.
+
+The panel never opens the Obsidian vault or the `graphify` graph itself. Every question is
+relayed to the vault daemon's own read-only ask queue (`.claude/skills/obsidian-cli`'s
+`daemon_ask.py`), which searches the vault, calls the local LLM, and answers back — the same
+boundary the rest of this page already holds itself to for the vault/graph panels above. The
+answer is spoken back through the browser's own `speechSynthesis`, not a new server-side voice.
+
 ## The `/rt-dashboard` command
 
 Starts the `rt-observe` dashboard on loopback and reports the URL. With no argument it dry-runs

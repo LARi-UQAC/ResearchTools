@@ -68,7 +68,9 @@ Not a replacement for judgment — a second pair of eyes that never gets tired o
 
 The `rt-observe` dashboard watching a live session: hook flow, fan-out to the two memories
 (Obsidian vault, `graphify` graph), and a spawned subagent, all on loopback with no external
-service. Full walkthrough: [docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
+service. A push-to-talk voice panel (hold P) lets you ask it a question about this toolkit's
+own memory out loud, answered by the local LLM through the vault daemon's ask queue and spoken
+back. Full walkthrough: [docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
 
 ## Quickstart
 

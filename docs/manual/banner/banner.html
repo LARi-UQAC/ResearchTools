@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #EAF4F6; }
+  * { font-family: Figtree, sans-serif; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div style="position:relative;width:1200px;height:340px;background:#EAF4F6;overflow:hidden;">
+
+  <svg width="1200" height="340" viewBox="0 0 1200 340" style="position:absolute;inset:0;">
+    <defs><filter id="tblob" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter></defs>
+    <ellipse cx="120" cy="60" rx="220" ry="160" fill="#BFE0E8" opacity="0.5" filter="url(#tblob)"></ellipse>
+    <ellipse cx="1060" cy="40" rx="260" ry="200" fill="#7FC7D9" opacity="0.32" filter="url(#tblob)"></ellipse>
+    <ellipse cx="1000" cy="320" rx="300" ry="180" fill="#9FD3E0" opacity="0.30" filter="url(#tblob)"></ellipse>
+  </svg>
+
+  <!-- ResearchTools logo, left -->
+  <div style="position:absolute;left:56px;top:50%;transform:translateY(-50%);background:#FFFFFF;border-radius:20px;padding:14px 18px;box-shadow:0 12px 30px rgba(16,36,62,0.14);">
+    <img src="ResearchToolsLogo.png" alt="ResearchTools" style="display:block;height:130px;width:auto;">
+  </div>
+
+  <!-- Headline block -->
+  <div style="position:absolute;left:290px;top:50%;transform:translateY(-50%);width:640px;">
+    <div style="display:flex;align-items:center;gap:10px;color:#16776C;font-weight:700;font-size:16px;letter-spacing:3px;text-transform:uppercase;margin-bottom:14px;">
+      <span style="width:22px;height:3px;background:#16776C;border-radius:2px;"></span>ResearchTools
+    </div>
+    <div style="color:#10243E;font-weight:800;font-size:44px;line-height:1.12;letter-spacing:-0.5px;margin-bottom:16px;">
+      Find what's <span style="color:#C9762F;">wrong</span> before<br>anyone else does.
+    </div>
+    <div style="color:rgba(16,36,62,0.65);font-weight:500;font-size:19px;line-height:1.4;">
+      Literature reviews, paper &amp; thesis audits, LaTeX authoring, and code review:
+      agents that check your work before a reviewer does.
+    </div>
+  </div>
+
+  <!-- UQAC / LAR.i credit, bottom-right, small, text-only (no second embedded image) -->
+  <div style="position:absolute;bottom:24px;right:36px;color:rgba(16,36,62,0.55);font-weight:600;font-size:14px;letter-spacing:0.5px;">
+    LAR.i &middot; Universit&eacute; du Qu&eacute;bec &agrave; Chicoutimi
+  </div>
+
+</div>
+</body>
+</html>

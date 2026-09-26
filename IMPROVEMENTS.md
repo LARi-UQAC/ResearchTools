@@ -529,3 +529,34 @@ quickstart section.
 
 **Deferred:** Graphify semantic pass for this batch (docs/templates-only, no code). AST-only refresh completed at repository root: `Re-extracting code files in . (no LLM needed)...` with 53 uncached files at 100% (20 workers), backed up prior graph to `graphify-out/2026-09-26/` (curated, 6 files), rebuilt to 9038 nodes, 13063 edges, 698 communities. Rationale: same as earlier cycles — docs-only edits, no semantic meaning to extract, cost not justified. `[graphify watch] Rebuilt: 9038 nodes, 13063 edges, 698 communities; graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out`. Repository root explicitly confirmed in the command: `cd "C:\Martin Otis\OutilsLogiciels\ResearchTools" && graphify update .`.
 
+## 2026-09-26 — README hero GIF, supported-harnesses badges, Why-ResearchTools section
+
+**Polish:** `README.md` gained a "Supported harnesses" badge row (Claude Code, GitHub Copilot,
+OpenCode, Continue, Aider, Codex, generic AGENTS.md readers, each linking to the real mirror
+table in `docs/manual/10-agents.md`), an animated hero GIF (`docs/manual/researchtools-hero.gif`,
+2.7 MB) placed under the logo, three dynamic GitHub badges (last-commit, contributors, open
+issues), a "## Why ResearchTools" before/after table grounded in real skills
+(`scholar-evaluation`, `extract-contributions`, `local-writer`/`local-coder`), and the dense
+pitch paragraph reformulated into three bullets. Also fixed a Mermaid syntax defect introduced
+by a manual edit (stray text sitting outside a quoted node label) in the "at a glance" diagram.
+
+**Asset provenance:** the hero GIF was generated from an existing, previously unused promotional
+asset (`post-media/ResearchTools Card.mp4`, a "paper-auditor" themed card from a prepared
+21-week social-media series that had never been surfaced anywhere else), converted with a
+two-pass ffmpeg palette technique (`palettegen` then `paletteuse`, 480px width, 12 fps) rather
+than recorded fresh. `ffmpeg-essentials` was installed via `scoop install ffmpeg-essentials` for
+this one-off conversion; nothing in the repository depends on ffmpeg being present.
+
+**Deferred:** Graphify semantic pass for this batch (docs/media-only, no code). AST-only refresh
+completed at repository root (`graphify update .`): 38/38 uncached files, rebuilt to 9053 nodes,
+13078 edges, 695 communities, prior graph backed up to `graphify-out/2026-09-26/`.
+
+## 2026-09-26 — MkDocs Material site, brand palette applied, graphify semantic pass deferred
+
+**Completed:** README.md recolored with project's actual brand palette (navy `#10243E`, teal `#1F9E8F`, amber `#C9762F`, sourced from `post-media/Series Template.dc.html`); custom badges and harness links moved to collapsible `<details>` to declutter the top; donation ask moved to "Support this project" footer section. Themed MkDocs Material site stood up at `docs/` with `mkdocs.yml` + `requirements-docs.txt` (pip-audit clean), `docs/assets/extra.css` for brand-palette overrides. Site builds locally (non-strict mode), published via manual `mkdocs gh-deploy`. Two known gaps documented inline: cross-repo links (e.g. root README.md from `docs/`-rooted site) do not resolve during build, and `04-skills.md` in-page slug anchors use GitHub algorithm not MkDocs' own (measured, two durable learnings written to vault).
+
+**Attempted but blocked:** `docs/manual/banner/banner.html` (brand-identity banner, ready HTML/CSS, with embedded .png assets) built but NOT rendered to screenshot — Playwright MCP tools refuse `file://` navigation and permission classifier refuses local HTTP server (legitimate safety gate, no workaround attempted). HTML source left as user-renderable artifact.
+
+**Deferred:** Graphify semantic pass on markdown docs and banner HTML. Rationale: documentation-only changes, no code impact, cost not justified. AST-only refresh completed at repository root (`graphify update .`). Three durable learnings written atomically to vault (outbox): MkDocs `exclude_docs` gotcha, GFM slug vs MkDocs slugifier divergence, Playwright file-rendering permission boundary.
+
+**Entry to project Decisions:** brand palette discovery and application (README badges, MkDocs theme); themed MkDocs Material site (build verified, publish path documented, no CI/CD); banner attempt (source delivered, rendering blocked by tool permissions, not worked around); three reusable learnings filed to `30_Ressources/`.

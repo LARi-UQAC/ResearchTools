@@ -113,3 +113,8 @@ deploy/.env
 # parse cache: derived from the source PDF, never committed
 *.parsed.md
 *.parsed.meta.json
+
+# MkDocs Material doc-site build output (mkdocs.yml). Derived from docs/, regenerable, never
+# committed. Publishing is a manual `mkdocs gh-deploy` (pushes a gh-pages branch by hand) -
+# no GitHub Actions workflow, consistent with this repo's no-CI/CD policy.
+site/

@@ -1,0 +1,20 @@
+/* ResearchTools brand palette, extracted from the design system used for the project's
+   own promo cards (post-media/Series Template.dc.html): navy #10243E, teal #1F9E8F /
+   #16776C, amber #C9762F. Overrides Material's built-in "teal"/"amber" named palette
+   (set in mkdocs.yml) with the exact brand hex values. */
+:root, [data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1F9E8F;
+  --md-primary-fg-color--light: #7FC7D9;
+  --md-primary-fg-color--dark: #16776C;
+  --md-accent-fg-color: #C9762F;
+  --md-typeset-a-color: #16776C;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #16776C;
+  --md-accent-fg-color: #C9762F;
+}
+
+.md-header, .md-tabs {
+  background-color: #10243E;
+}

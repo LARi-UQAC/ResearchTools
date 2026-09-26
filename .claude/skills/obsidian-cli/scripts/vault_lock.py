@@ -32,7 +32,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _WIN_SYNCHRONIZE = 0x00100000
+_WIN_QUERY_LIMITED_INFORMATION = 0x1000
 _WIN_ERROR_ACCESS_DENIED = 5
+_WIN_STILL_ACTIVE = 259
 MAX_RECLAIM_ATTEMPTS = 3  # bounded retry (R10): a livelock must end as a refusal
 
 
@@ -62,12 +64,25 @@ def pid_alive(pid: int) -> bool:
         return False
     if os.name == "nt":
         kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(_WIN_SYNCHRONIZE, False, pid)
-        if handle:
+        handle = kernel32.OpenProcess(
+            _WIN_SYNCHRONIZE | _WIN_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # Access denied means the process exists and belongs to someone else.
+            return kernel32.GetLastError() == _WIN_ERROR_ACCESS_DENIED
+        try:
+            # A successfully opened handle is NOT proof of a running process:
+            # measured 2026-09-26, OpenProcess(SYNCHRONIZE) still succeeded
+            # for a pid Get-Process, tasklist and WMI all agreed had already
+            # exited - Windows keeps the kernel object openable for a window
+            # after exit. GetExitCodeProcess is the only thing that actually
+            # distinguishes "running" from "exited, handle not yet reaped".
+            exit_code = ctypes.c_ulong(0)
+            if not kernel32.GetExitCodeProcess(
+                    handle, ctypes.pointer(exit_code)):
+                return True  # Could not query; assume alive rather than guess.
+            return exit_code.value == _WIN_STILL_ACTIVE
+        finally:
             kernel32.CloseHandle(handle)
-            return True
-        # Access denied means the process exists and belongs to someone else.
-        return kernel32.GetLastError() == _WIN_ERROR_ACCESS_DENIED
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

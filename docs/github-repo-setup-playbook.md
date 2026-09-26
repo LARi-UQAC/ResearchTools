@@ -334,6 +334,34 @@ gh api -X PATCH repos/<owner>/<repo> -f has_wiki=false
 gh api repos/<owner>/<repo> --jq '{description, has_wiki, has_projects, has_discussions, topics}'
 ```
 
+**Secret scanning + push protection.** Free on a **public** repo (part of GitHub Advanced
+Security, which is paid on private); check visibility first — `gh repo view <owner>/<repo>
+--json visibility,isPrivate`. Different from a local `pre-commit` hook or this repo's own
+`betterleaks-hook.py`: those run client-side, before or after a write, and are trivially
+skipped (`--no-verify`, or simply not installed); this runs server-side on GitHub, on every
+push, unconditionally. Enable both together — scanning alone only flags a leaked secret after
+it has already landed in history; push protection refuses the push itself:
+
+```bash
+gh api -X PATCH repos/<owner>/<repo> \
+  --input - <<'EOF'
+{
+  "security_and_analysis": {
+    "secret_scanning": {"status": "enabled"},
+    "secret_scanning_push_protection": {"status": "enabled"}
+  }
+}
+EOF
+
+# Verify
+gh api repos/<owner>/<repo> --jq .security_and_analysis
+```
+
+The same `--input -` JSON-body pattern is the correct way to PATCH any nested
+`security_and_analysis` field — `gh api -f key.nested=value` does not build nested JSON, only
+flat top-level fields; a dotted `-f` key is sent as a literal flat key, not a nested object, and
+GitHub silently ignores it rather than erroring, so the flag being accepted proves nothing.
+
 **Social preview image and enabling the Pages setting itself are web-UI-only** — no API path
 for either as of this writing. Prepare the asset (Phase 4a's banner is a better fit than a
 bare logo for the image, given GitHub's ~1280×640 social-card aspect ratio), then hand the

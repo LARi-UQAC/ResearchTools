@@ -477,7 +477,7 @@ flowchart LR
   local --- u3
   local --- u4
   local --- u6
-  classDef actor fill:#eef,stroke:#333,stroke-width:1px;
+  classDef actor fill:#EAF4F6,stroke:#1F9E8F,stroke-width:1px,color:#10243E;
 ```
 
 ### Authoring loop (ScholarEval-gated variant)
@@ -642,8 +642,8 @@ flowchart LR
   FS --> PUBCACHE[("publications cache volume<br/>TTL, hashed key")]
   RT7["RT-7 corpus index<br/>(unrelated to the form path)"] --> DB[("db<br/>Postgres 17 + pgvector")]
 
-  classDef svc fill:#DBEAFE,stroke:#1E3A8A,color:#14181F
-  classDef store fill:#D1FAE5,stroke:#065F46,color:#14181F
+  classDef svc fill:#D6F0ED,stroke:#1F9E8F,color:#10243E
+  classDef store fill:#FBE9D9,stroke:#C9762F,color:#10243E
   class TT,CADDY,FS,RT7 svc
   class CERT,DB,SCOPUS,PUBCACHE store
 ```

@@ -1,5 +1,6 @@
 """Tests for stt_engine.py. Never loads a real STT model - the loader is
 always injected, so this suite runs with no faster-whisper install (R21)."""
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -78,6 +79,34 @@ class TranscribeCase(unittest.TestCase):
         stt_engine.reset_loaded_model()
         stt_engine.transcribe(b"a", CONFIG, loader=lambda: model, language="fr")
         self.assertEqual(model.last_language, "fr")
+
+    def test_raw_bytes_are_wrapped_in_a_file_like_object(self):
+        # faster-whisper's WhisperModel.transcribe() accepts a path, a
+        # file-like object, or an ndarray - never a plain bytes object,
+        # which it hands to PyAV's av.open() and fails on. A browser
+        # MediaRecorder upload arrives here as raw bytes.
+        import stt_engine
+        model = _FakeModel([_FakeSegment("ok")])
+        captured = {}
+        original = model.transcribe
+
+        def spy(audio, language=None):
+            captured["audio"] = audio
+            return original(audio, language=language)
+
+        model.transcribe = spy
+        stt_engine.reset_loaded_model()
+        stt_engine.transcribe(b"raw-audio-bytes", CONFIG, loader=lambda: model)
+        self.assertIsInstance(captured["audio"], io.BytesIO)
+        self.assertEqual(captured["audio"].getvalue(), b"raw-audio-bytes")
+
+    def test_an_unsupported_language_is_refused_not_silently_ignored(self):
+        import stt_engine
+        model = _FakeModel([_FakeSegment("ok")])
+        stt_engine.reset_loaded_model()
+        with self.assertRaises(ValueError):
+            stt_engine.transcribe(b"a", CONFIG, loader=lambda: model,
+                                  language="de")
 
 
 if __name__ == "__main__":

@@ -444,8 +444,13 @@ def voice_callables(config, cache, home, write_request=None, poll=None,
         stt_engine.transcribe
 
     Outputs:
-        (transcribe_fn, ask_fn) (tuple): transcribe_fn(audio_bytes) -> str,
-        ask_fn(question) -> dict
+        (transcribe_fn, ask_fn) (tuple): transcribe_fn(audio_bytes,
+        language="auto") -> str, ask_fn(question, language="auto") -> dict.
+        Both forward the voice panel's dropdown value end to end - to the
+        STT decode hint AND to the daemon's answer language - rather than
+        defaulting silently, since a route that reads the dropdown and a
+        callable that ignores it is a wiring gap this dashboard's own
+        docs would then be lying about.
     --------------------------------------------------------------------------
     """
     import stt_engine
@@ -459,13 +464,14 @@ def voice_callables(config, cache, home, write_request=None, poll=None,
     outbox_root = (home / text[2:]) if text.startswith("~/") else Path(text)
     wait_s = config_value(config, "timeouts_seconds", "voice_ask_wait")
 
-    def transcribe_fn(audio_bytes):
-        return transcribe(audio_bytes, config)
+    def transcribe_fn(audio_bytes, language="auto"):
+        return transcribe(audio_bytes, config, language=language)
 
-    def ask_fn(question):
+    def ask_fn(question, language="auto"):
         state = cache.snapshot(datetime.now(timezone.utc), block=False)
         digest = voice_ask.build_context_snapshot(state)
-        request_id = write_request(outbox_root, question, digest)
+        request_id = write_request(outbox_root, question, digest,
+                                   language=language)
         return poll(outbox_root, request_id, timeout_s=wait_s,
                    poll_interval_s=min(1.0, wait_s / 10))
 

@@ -17,6 +17,8 @@ dropdown, auto/en/fr), overriding config's default for that one call, since
 the same server may answer a French question and an English one back to
 back.
 """
+import io
+
 _MODEL = None
 _LANGUAGE_HINT = {"auto": None, "en": "en", "fr": "fr"}
 
@@ -67,8 +69,15 @@ def transcribe(audio_bytes: bytes, config: dict, loader=None,
     Raises:
         SttUnavailable: the configured engine could not be loaded (missing
         dependency, or the loader raised for any other reason).
+        ValueError: `language` is not one of the voice panel's own dropdown
+        values (auto/en/fr) - never silently treated as auto-detect (R8).
     --------------------------------------------------------------------------
     """
+    dropdown_value = language or config["voice"]["stt"]["language"]["value"] or "auto"
+    if dropdown_value not in _LANGUAGE_HINT:
+        raise ValueError(
+            f"unsupported language {dropdown_value!r}; the voice panel's "
+            "dropdown offers auto, en, fr only")
     global _MODEL
     if _MODEL is None:
         try:
@@ -79,7 +88,9 @@ def transcribe(audio_bytes: bytes, config: dict, loader=None,
                 f"{type(exc).__name__}: {exc}. Install it with "
                 "pip install -r .claude/skills/rt-observe/scripts/"
                 "requirements-voice.txt") from exc
-    dropdown_value = language or config["voice"]["stt"]["language"]["value"] or "auto"
-    hint = _LANGUAGE_HINT.get(dropdown_value)
-    segments, _info = _MODEL.transcribe(audio_bytes, language=hint)
+    hint = _LANGUAGE_HINT[dropdown_value]
+    # faster-whisper's transcribe() accepts a path, a file-like object, or
+    # an ndarray - never plain bytes, which it hands to PyAV's av.open()
+    # and fails on. The browser's MediaRecorder upload arrives as bytes.
+    segments, _info = _MODEL.transcribe(io.BytesIO(audio_bytes), language=hint)
     return "".join(segment.text for segment in segments).strip()

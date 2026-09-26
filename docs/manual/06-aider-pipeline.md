@@ -44,3 +44,6 @@ merging to a protected branch stays a human decision, made the next morning afte
 this repository's own `.claude/rules/*.md`, so they cannot drift from what every other harness
 enforces. Setup, tuning, and rebuilding the student-facing kit: see
 [.claude/skills/aider-setup/SKILL.md](../../.claude/skills/aider-setup/SKILL.md) and its `MANUAL.md`.
+
+---
+[← 05 Security audit](05-security-audit.md) | [Table of contents](../../README.md) | [07 rt-observe & dashboard →](07-rt-observe-dashboard.md)

@@ -25,6 +25,16 @@ a copied `SKILL.md` fixes - a vendored copy of a CLI's skill without the CLI is 
 tool that is still absent. `test_settings_template_distribution.py` asserts that neither name
 reappears under `.claude/skills/`.
 
+**In this chapter:** [scopus](#scopus--scopus-academic-search) ·
+[geolocalisation](#geolocalisation--corpus-study-location-mapping) ·
+[recommendation-letter](#recommendation-letter--support--recommendation--acceptance--dispense-letters) ·
+[narrative-cv](#narrative-cv--frq--tri-agency-narrative-cv) ·
+[paper2talk](#paper2talk--accepted-paper-to-conference-talk) ·
+[the two memories](#the-two-memories---the-vault-and-the-code-graph) ·
+[obsidian-cli](#obsidian-cli---obsidian-vault-operations) ·
+[latex-hygiene](#latex-hygiene---mechanical-latex-manuscript-hygiene) ·
+[opt-local-vram-llm](#opt-local-vram-llm---measured-vram-tuning-for-the-local-agents)
+
 | Skill | Purpose | Entry point |
 |---|---|---|
 | `scopus` | Search Scopus (citation-ordered, title/abstract/keyword scoped), validate references (ambiguity-flagged), fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback). | `/scopus`, `.claude/skills/scopus/SKILL.md` |
@@ -387,3 +397,6 @@ without running it.
 `aider-setup` and `rt-observe` are big enough to get their own chapters rather than a
 subsection here: [06-aider-pipeline.md](06-aider-pipeline.md) and
 [07-rt-observe-dashboard.md](07-rt-observe-dashboard.md).
+
+---
+[← 03 Token management](03-token-management.md) | [Table of contents](../../README.md) | [05 Security audit →](05-security-audit.md)

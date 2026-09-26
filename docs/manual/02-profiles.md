@@ -44,3 +44,6 @@ Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
 > An on-campus network connection or active UQAC VPN is required for Scopus access
 > unless an `--insttoken` is supplied. Secrets are kept out of git: `.env`, `secrets/`,
 > and `credentials/` are listed in `.gitignore`.
+
+---
+[← 01 Installation](01-installation.md) | [Table of contents](../../README.md) | [03 Token management →](03-token-management.md)

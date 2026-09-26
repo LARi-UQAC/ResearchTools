@@ -46,3 +46,6 @@ disk-cached, rate-limited publications cache. Full diagram and detail: `Architec
 
 When a plan changes something both sides depend on, `NEW_ARCHITECTURE.md` is the file that
 records it — update it there, in both checkouts, rather than in this manual.
+
+---
+[← 08 Commands](08-commands.md) | [Table of contents](../../README.md) | [10 Agents →](10-agents.md)

@@ -39,3 +39,6 @@ next pass. Its declared dependencies pin exact/floor versions verified with `pip
 `allowed-tools: [Read, Write, Edit, Bash]`, reuses the scopus skill's network I/O through
 `download_pdf.py` rather than opening its own, and fetches only public-domain Natural Earth
 basemaps (TLS-verified, cached).
+
+---
+[← 04 Skills](04-skills.md) | [Table of contents](../../README.md) | [06 Aider nightly pipeline →](06-aider-pipeline.md)

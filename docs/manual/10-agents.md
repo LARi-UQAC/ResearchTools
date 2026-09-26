@@ -160,3 +160,6 @@ For global availability in Claude Code (any working directory), `install-junctio
 links each `.claude/agents/<name>.md` into `~/.claude/agents/` per file (symlink; hard-link
 fallback when Developer Mode is off — re-run after a `git pull` that changes agents).
 Skills keep their per-folder junctions.
+
+---
+[← 09 ThesisTracker integration](09-thesistracker-integration.md) | [Table of contents](../../README.md) | [11 File locations →](11-file-locations.md)

@@ -246,3 +246,6 @@ per-type checklist, and the `install.ps1` mirror regeneration. Shared project
 conventions and environment facts (English-only definition files, agent/skill
 layout, local-model routing, git/GitHub workflow) live in
 [docs/contributor-notes.md](../contributor-notes.md).
+
+---
+[← 00 Purpose & overview](00-purpose.md) | [Table of contents](../../README.md) | [02 Profiles & environment →](02-profiles.md)

@@ -4,6 +4,11 @@
   <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="220">
 </p>
 
+Ask for my book (French version): Vibe Design. 30$ contribution via:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/s/89b1e1cc6c)
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
+
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
 who want to design, find and fix the issues hiding in their academic design and writing
 before a reviewer, a thesis committee, or a grant panel does — and, on the software side,

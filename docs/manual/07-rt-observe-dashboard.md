@@ -17,6 +17,26 @@ trace/audit stream - that changes nothing about a clone with neither configured.
 Full reference (states, dashboard layout, actions panel, session messaging, adapters):
 [docs/rt-observe.md](../rt-observe.md).
 
+## Screenshot
+
+![rt-observe dashboard, Real-Time Process tab](rtobserve.png)
+
+The **Real-Time Process** tab (one of the four left-side views, alongside Mirror Matrix,
+Fan-out, and Sessions), captured on branch `feat/rt-dashboard`, profile `engineering`. The top
+strip walks the harness state machine for the current turn — `SessionStart` → `waiting` →
+`UserPromptSubmit` → `reasoning + tool` → `tool call` → `PostToolUse` → `security audit` — with
+the hooks firing at each step named above their box (`install-junctions`, `memory-upkeep`,
+`caveman-mode-tr...`, `betterleaks-hoo...`, `pip-audit-hook...`). Below it, the fan-out diagram
+draws one turn's actual calls: the `tool` node branching into `Write`, `prompt`, and `Bash`
+counts, out to **Obsidian vault** and **Graphify graph** as the two memories, and down to a
+`spawned` `local-writer` subagent — this is the "runner" the tests describe travelling a live
+edge. The right rail shows the **Repository** panel (branch, profile, suite status `green .
+69 passed`, stamp age, definitions count, registry health, and `run-offline-tests.ps1` as the
+prover), with **Plan**, **Services**, **Graph**, and **Hooks** as sibling tabs. The `2 STALE`
+badge top-right and the footer strip (drawn by `rt_state.py`, generation timestamp, policy
+hash, last install, repo root) are the receipts every panel here carries per R9 — a claim with
+no stamp is not trusted.
+
 ## The `/rt-dashboard` command
 
 Starts the `rt-observe` dashboard on loopback and reports the URL. With no argument it dry-runs

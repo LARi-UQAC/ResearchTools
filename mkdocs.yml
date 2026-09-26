@@ -66,6 +66,7 @@ nav:
       - rt-observe: rt-observe.md
       - Authoring & mirrors: authoring-and-mirrors.md
       - Contributor notes: contributor-notes.md
+      - GitHub repo setup playbook: github-repo-setup-playbook.md
 
 exclude_docs: |
   superpowers/**

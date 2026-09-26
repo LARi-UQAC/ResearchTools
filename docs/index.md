@@ -46,6 +46,10 @@ Longer, single-topic documents that a manual chapter points into rather than rep
   or command, and regenerating the per-tool mirrors
 - [contributor-notes.md](contributor-notes.md) — shared conventions (English-only definition
   files, agent/skill layout, local-model routing, git/GitHub workflow)
+- [github-repo-setup-playbook.md](github-repo-setup-playbook.md) — portable step-by-step for
+  bringing another repo's GitHub presentation up to this same standard (README structure,
+  doc-site setup, community files, repo settings, Issue/board/PR process rules), written for a
+  Claude Code session to execute, not for a human to read once
 
 ## Elsewhere in the repository
 

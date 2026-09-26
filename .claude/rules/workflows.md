@@ -199,6 +199,30 @@ itself. `rt-observe` already reads the branch from `.git/HEAD`, so the first rul
 observable today; the other two, and the hook fingerprint's per-session scoping, are conventions
 and code only this file and its owning hook can carry.
 
+## Issue and Project tracking
+
+**R30 - a change that opens a pull request carries a linked GitHub Issue, and that Issue has
+a card on the repository's own project board.** Effective 2026-09-26. Workspace-wide by where
+this file lives (`.claude/rules/`, a machine-wide junction), but "the board" means whichever
+project board belongs to the repo being worked in — for ResearchTools, that is
+[ResearchTools Roadmap](https://github.com/users/LARi-UQAC/projects/6) (project #6, linked to
+this repo); a different repo names its own. Order, before opening the PR:
+
+1. **Issue first.** `gh issue create` (or open one by hand) naming what the PR will fix or add.
+   A PR with no Issue is missing the "why" a later session, or a reviewer, needs — the PR diff
+   alone answers "what changed," never "what problem this solves" or "why now."
+2. **Card second.** `gh project item-add <project-number> --owner <org-or-user> --url
+   <issue-url>` puts that Issue on the repo's Kanban board (ResearchTools: `--owner LARi-UQAC`,
+   project 6). A draft card with no Issue (`gh project item-create`) is fine for a roadmap item
+   not yet ready to be worked, but the moment work starts on it, it needs a real Issue behind
+   it, per step 1.
+3. **PR last**, referencing the Issue (`Fixes #<N>` or `Closes #<N>` in the PR body) so merging
+   the PR auto-closes the Issue, which the board then reflects.
+
+Exemption: a pure documentation fix with no behavioral change (a typo, a broken link, a stale
+number caught by inspection) does not need this ceremony — use judgment, the same as R16 not
+gating every read-only script behind a dry-run flag it has no destructive path to guard.
+
 ## LaTeX maintenance
 
 - Validate TiKZ figures with `/tikz` before committing them (anchoring, perpendicular
@@ -214,9 +238,27 @@ The slash commands are thin wrappers over these agents.
 
 ## Documentation maintenance
 
-After a substantive change, update the relevant doc and verify that links resolve. Keep
-`README.md` and `Architecture.md` as the authoritative inventory; do not duplicate their
-tables into `.claude/CLAUDE.md`.
+**R31 - a PR does not merge until the documentation for what it touched is updated, in the
+same PR.** Effective 2026-09-26. Companion to R30: R30 gates OPENING a PR (Issue + board
+card), R31 gates APPROVING/MERGING it (docs caught up). "The respective documentation" means
+whichever of these the change actually touched:
+
+- A skill, agent, or command added or edited → its entry in `README.md` /
+  `docs/manual/04-skills.md`, `10-agents.md`, or `08-commands.md`, and `Architecture.md` if
+  the relationship diagram changed.
+- A script's CLI surface changed (new flag, renamed subcommand, changed default) → its line
+  in `.claude/rules/testing.md` (already required by R23 — this rule is the merge-time check
+  that R23 was actually followed, not a second requirement).
+- A workflow or convention changed → the matching `.claude/rules/*.md` file, and this file's
+  own "Rule identifiers" cross-index in `code-style.md` if a rule number was added or moved.
+- A chapter of the manual changed structurally (a section added, removed, or renamed) → that
+  chapter's entry in the `README.md` chapter table stays accurate.
+
+The reviewer (or the approver, on a solo-reviewed PR) checks this before approving, the same
+way they check tests passed — "looks right, will fix docs later" is not an approval. Keep
+`README.md` and `Architecture.md` as the authoritative inventory regardless; do not duplicate
+their tables into `.claude/CLAUDE.md`, and verify updated links actually resolve rather than
+assuming the new path is right.
 
 ## Where code belongs
 

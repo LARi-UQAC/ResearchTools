@@ -10,8 +10,14 @@ Thanks for looking at this before opening a pull request — it saves a review r
    each kind, the per-type doc-update checklist, and the mirror regeneration step.
 3. Run `.\scripts\test\run-offline-tests.ps1` before opening the PR. It discovers every
    offline suite; a single failure, even in a skill you did not touch, means not finished.
-4. Open a pull request against `main`. See [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)
-   for the checklist the review expects.
+4. Open a GitHub Issue for what the change fixes or adds, and add it to the
+   [ResearchTools Roadmap](https://github.com/users/LARi-UQAC/projects/6) board — every PR
+   needs a linked Issue with a Kanban card (R30 in `.claude/rules/workflows.md`), except a
+   pure documentation fix with no behavioral change.
+5. Open a pull request against `main`, referencing the Issue (`Closes #<N>`). See
+   [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) for the checklist the
+   review expects. It does not merge until the documentation for whatever it touched is
+   updated in the same PR (R31) — the reviewer checks this before approving, same as tests.
 
 Full detail (install scripts, junctions, mirror generation): [docs/manual/01-installation.md](docs/manual/01-installation.md#contributing-improvements).
 Shared conventions (English-only definition files, agent/skill layout, local-model routing,

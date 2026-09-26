@@ -246,3 +246,12 @@ exact file shapes [daemon_ask.py](../.claude/skills/obsidian-cli/scripts/daemon_
 outbox files above, which already sit outside the vault boundary the rest of this skill's
 collectors observe. TTS in this phase is the browser's own `speechSynthesis`, not a new
 server-side engine.
+
+Speech-to-text runs on the GPU: Whisper small, float16, CUDA, the configuration Devoir2 measured
+on this RTX A1000 (its `vram-residence-report.md` records about 673 MiB of extra VRAM). Measured
+here on 2026-09-26 beside the resident writer-role model: a 6.4 s sentence transcribes in
+0.5-0.7 s, and the model's decode rate stayed at 20.4-20.9 tok/s, so neither model spilled.
+`requirements-voice-cuda.txt` carries the NVIDIA runtime (Devoir2's pins) for a machine
+without a system CUDA Toolkit. The dashboard warms the model at startup (a lazily loaded model
+took 14.3 s on its first call), and the page re-transcribes the growing recording once per
+`voice.partial_refresh_ms`, one request at a time, so the caption stays live without queueing.

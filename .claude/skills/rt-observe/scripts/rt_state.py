@@ -16,6 +16,7 @@ import io
 import json
 import secrets
 import sys
+import threading
 import webbrowser
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -514,8 +515,37 @@ def action_runner(args, config, cache, builders, clock):
         return None
 
 
+def start_stt_warmup(config, warm=None, spawn=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Load and warm the speech-to-text model on a background thread as the
+        dashboard starts, so the first push-to-talk already has a live
+        preview. Measured 2026-09-26: loaded lazily, the first transcription
+        took 14.3 s; Devoir2 preloads for the same reason.
+
+    Inputs:
+        config (dict): parsed observe-config.json
+        warm (callable): config -> reason | None; defaults to stt_engine.warm
+        spawn (callable): target -> None; defaults to a daemon thread
+
+    Outputs:
+        None. A model that cannot load is not an error here: the voice route
+        reports it, with its install command, when someone presses P.
+    --------------------------------------------------------------------------
+    """
+    if warm is None:
+        import stt_engine
+        warm = stt_engine.warm
+    if spawn is None:
+        def spawn(target):
+            threading.Thread(target=target, daemon=True,
+                             name="stt-warmup").start()
+    spawn(lambda: warm(config))
+
+
 def serve(args, config, out=None, err=None, clock=None,
-          decide=None, browse=None):
+          decide=None, browse=None, warmup=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -531,6 +561,8 @@ def serve(args, config, out=None, err=None, clock=None,
         clock (callable): returns the current time (R19)
         decide (callable): rt_server.start_decision replacement, for the suite
         browse (callable): webbrowser.open replacement, for the suite
+        warmup (callable): config -> None, starts the STT warm-up; defaults
+            to start_stt_warmup, injected so the suite never loads a model
 
     Outputs:
         code (int): 0 serving or already running, 1 refused, 2 refusal by design
@@ -630,6 +662,7 @@ def serve(args, config, out=None, err=None, clock=None,
     # for the slowest one. Measured 2026-08-31: the services section runs
     # tier-1 `claude mcp list`, which reaches the network for 28 servers.
     cache.warm(clock())
+    (warmup or start_stt_warmup)(config)
     out.write("rt-dashboard serving  %s\n" % url)
     out.write("  session token  %s\n" % token)
     out.write("  state          %sapi/state\n" % url)

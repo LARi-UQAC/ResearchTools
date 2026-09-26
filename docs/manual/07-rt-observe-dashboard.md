@@ -41,10 +41,20 @@ no stamp is not trusted.
 
 A fifth tab, **Voice**, next to Real-Time Process. Hold **P** to record, release to send; a
 dropdown next to the button picks the language (Auto-detect, English, Francais), which drives
-both the speech-to-text decode and the answer's own language. Speech-to-text runs locally
-(`faster-whisper`, an optional dependency — a machine without it installed sees the panel report
-exactly which `pip install` command fixes that, never a broken dashboard) and never leaves this
-process.
+both the speech-to-text decode and the answer's own language. The transcript updates live while
+you speak, the same progressive re-transcription Devoir2 uses, and the view draws the voice
+pipeline in the Real-Time Process tab's own idiom: one agent node whose ring is your microphone
+level, four stage boxes (listening, transcribing, thinking, replying) that light up in turn with
+their measured durations, and a live spectrum strip.
+
+Speech-to-text runs locally on the GPU: `faster-whisper` small in float16 on CUDA, the
+configuration Devoir2 measured on this card. It sits beside the resident writer-role model
+(about 0.7 GB free; Whisper adds about 673 MiB, and the model's decode rate was measured
+unchanged with it loaded). Install `scripts/requirements-voice.txt`, plus
+`scripts/requirements-voice-cuda.txt` for the NVIDIA runtime on a machine without a system CUDA
+Toolkit. A machine without them sees the panel name the missing install command, never a
+broken dashboard. The model is loaded and warmed when the dashboard starts, so the first press
+already has a live transcript.
 
 The panel never opens the Obsidian vault or the `graphify` graph itself. Every question is
 relayed to the vault daemon's own read-only ask queue (`.claude/skills/obsidian-cli`'s

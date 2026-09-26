@@ -373,6 +373,8 @@ def view_config(config):
                                               "context_window_tokens"),
         "canvas": {key: config_value(config, "view", "canvas", key)
                    for key in canvas_keys},
+        "voice": {"partial_refresh_ms": config_value(
+            config, "voice", "partial_refresh_ms")},
     }
 
 

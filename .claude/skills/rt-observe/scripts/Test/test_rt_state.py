@@ -906,6 +906,14 @@ class SectionBuilders(unittest.TestCase):
             with self.subTest(canvas=key):
                 rt_state.config_value(fixture, "view", "canvas", key)
 
+    def test_view_config_carries_the_voice_partial_refresh_interval(self):
+        """The push-to-talk panel's periodic live-preview transcription cadence
+        (R0: config-driven, no literal in the page's JS)."""
+        shipped = rt_state.load_config()
+        ms = rt_state.view_config(shipped)["voice"]["partial_refresh_ms"]
+        self.assertIsInstance(ms, int)
+        self.assertGreater(ms, 0)
+
     def test_every_declared_ttl_is_consumed_by_a_section(self):
         """The direction the other TTL test cannot see. Measured 2026-08-31:
         ttl_seconds.mcp_live was declared at 300s with its own provenance and

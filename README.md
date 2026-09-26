@@ -5,23 +5,44 @@
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](docs/manual/01-installation.md)
 [![Docs](https://img.shields.io/badge/docs-12%20chapters-brightgreen.svg)](docs/manual/00-purpose.md)
 [![GitHub Repo stars](https://img.shields.io/github/stars/LARi-UQAC/ResearchTools?style=social)](https://github.com/LARi-UQAC/ResearchTools/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/LARi-UQAC/ResearchTools)](https://github.com/LARi-UQAC/ResearchTools/commits/main)
+[![Contributors](https://img.shields.io/github/contributors/LARi-UQAC/ResearchTools)](https://github.com/LARi-UQAC/ResearchTools/graphs/contributors)
+[![Open issues](https://img.shields.io/github/issues/LARi-UQAC/ResearchTools)](https://github.com/LARi-UQAC/ResearchTools/issues)
 
 If this toolkit is useful to you, a star helps others find it.
+
+**Supported harnesses** — one canonical `.claude/` source, mirrored everywhere below (detail:
+[10-agents.md](docs/manual/10-agents.md#using-the-agents-outside-claude-code)):
+
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-native-D97757.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![GitHub Copilot](https://img.shields.io/badge/GitHub%20Copilot-mirrored-8957E5.svg?logo=githubcopilot&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![OpenCode](https://img.shields.io/badge/OpenCode-mirrored-1A1A1A.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![Continue](https://img.shields.io/badge/Continue-mirrored-2E7D32.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![Aider](https://img.shields.io/badge/Aider-mirrored-27C93F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![Codex](https://img.shields.io/badge/Codex-mirrored-412991.svg?logo=openai&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![AGENTS.md readers](https://img.shields.io/badge/AGENTS.md-generic%20readers-555555.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
 
 <p align="center">
   <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="220">
 </p>
+
+![ResearchTools promo](docs/manual/researchtools-hero.gif)
 
 Ask for my book (French version): Vibe Design. 30$ contribution via:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/s/89b1e1cc6c)
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
 
-ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
-who want to design, find and fix the issues hiding in their academic design and writing
-before a reviewer, a thesis committee, or a grant panel does. On the software side,
-in code, PCB, and 3D CAD design. Full pitch, the 2026 roadmap, and this manual's own
-conventions: [docs/manual/00-purpose.md](docs/manual/00-purpose.md).
+ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students. It
+finds and fixes what's wrong before a reviewer, a thesis committee, or a grant panel does:
+
+- Literature reviews, paper and thesis audits, BibTeX cleanup, reviewer responses, submission
+  packages: the academic writing side.
+- Code, PCB, and 3D CAD design review, with a dashboard to watch the agents work, and log them.
+- A local-model-backed dev loop that keeps the heavy generation off your cloud bill.
+
+Full pitch, the 2026 roadmap, and this manual's own conventions:
+[docs/manual/00-purpose.md](docs/manual/00-purpose.md).
 
 **Never let an LLM do your work for you. Use it to improve your work, find your weaknesses,
 and help you improve yourself. Never use these tools to conduct a formal or professional
@@ -30,6 +51,16 @@ assessment, and do not let the tool make decisions for you. Use at your own risk
 This file is the entry point only. The manual is split into chapters under `docs/manual/`,
 the same way [Architecture.md](Architecture.md) is already split into layers instead of kept
 as one flat file — this keeps each topic at a readable size instead of one 1300-line page.
+
+## Why ResearchTools
+
+| Without | With ResearchTools |
+|---|---|
+| Catch a missing reference or a broken hypothesis flow after the reviewer does | An auditor scores the manuscript first, against the same ScholarEval rubric a committee uses |
+| Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
+| Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
+
+Not a replacement for judgment — a second pair of eyes that never gets tired of checking.
 
 ## See it in action
 
@@ -70,7 +101,7 @@ graph LR
   U["You"] -->|"/command"| CC["Your Harness"]
   CC --> AG["Agents"]
   AG --> SK["Skills"]
-  SK --> EXT[("Scopus / Gemini /<br/>Copilot APIs" / etc.)]
+  SK --> EXT[("Scopus / Gemini /<br/>Copilot APIs, etc.")]
   AG -->|"dispatch local-writer"| VAULT[("Obsidian vault<br/>what was learned")]
   AG -->|"dispatch local-writer"| GRAPH[("graphify graph<br/>what the code is")]
 ```

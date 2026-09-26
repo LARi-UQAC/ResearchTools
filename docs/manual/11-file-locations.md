@@ -83,3 +83,6 @@ ResearchTools\
                            Test\test_vram_modelfile.py, Test\test_vram_daemon.py,
                            Test\test_vram_optimizer.py)
 ```
+
+---
+[← 10 Agents](10-agents.md) | [Table of contents](../../README.md)

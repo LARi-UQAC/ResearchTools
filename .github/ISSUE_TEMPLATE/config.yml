@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Manual (docs/manual/)
+    url: https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md
+    about: Check the chapter for the affected skill/agent/command before filing an issue.

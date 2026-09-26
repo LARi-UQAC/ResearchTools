@@ -170,3 +170,6 @@ Example:
 (clean the `.bib` after adding references), `/ref` (format individual references).
 
 **File:** `.claude/commands/replyreviewer.md`
+
+---
+[← 07 rt-observe & dashboard](07-rt-observe-dashboard.md) | [Table of contents](../../README.md) | [09 ThesisTracker integration →](09-thesistracker-integration.md)

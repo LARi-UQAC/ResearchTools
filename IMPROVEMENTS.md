@@ -514,3 +514,18 @@ with 9011 nodes, 13007 edges, 690 communities. Semantic pass for the 13 markdown
 and verify-python-env.ps1 required specific substrings in root README; grep Test/*.py confirmed
 both assertions before restructuring, and root file retained those substrings in its new
 quickstart section.
+
+## 2026-09-26 — rt-observe dashboard documentation: screenshot added; graphify semantic pass deferred
+
+**Added:** `docs/manual/07-rt-observe-dashboard.md` now includes a `## Screenshot` section embedding `rtobserve.png` (new binary file) with a caption describing the Real-Time Process tab state: hook-flow strip showing pre- and post-tool-execution hooks, fan-out diagram to Obsidian vault and Graphify graph, spawned `local-writer` subagent node, and Repository rail panel rendering the session's own code structure and recent actions. Donation badge re-added to root `README.md` on user request (trivial).
+
+**Deferred:** Graphify semantic pass on the two new/modified files (screenshot + doc, image binary). Rationale: docs-only change; visual content self-documenting via its own rendering; cost not justified for understanding dashboard state through a screenshot. AST-only refresh already complete from prior cycle.
+
+## 2026-09-26 — GitHub-presentation polish: badges, hero, Mermaid, templates, and footer navigation
+
+**Polish:** Badges row, "See it in action" hero screenshot section, and Mermaid "at a glance" diagram added to root `README.md` (existing file). New root files: `CONTRIBUTING.md` (standard open-source contributor guide) and `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1). New `.github/` directory with `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/bug_report.md`, `ISSUE_TEMPLATE/feature_request.md`, and `ISSUE_TEMPLATE/config.yml`. New `docs/index.md` (optional GitHub Pages landing page, mirroring the ROOT structure). Consistent "← previous | table of contents | next →" footer navigation added to all 12 existing chapters in `docs/manual/` (00-purpose through 11-file-locations).
+
+**Verified:** GitHub-Flavored Markdown heading-slug computation (internal TOC links and cross-file anchors) validated using automated GFM-slug algorithm (lowercase → remove non-word/space/hyphen chars → replace spaces with hyphens) to catch silent anchor-link failures; verified against `test_graph_routing.py` (18/18 green).
+
+**Deferred:** Graphify semantic pass for this batch (docs/templates-only, no code). AST-only refresh completed at repository root: `Re-extracting code files in . (no LLM needed)...` with 53 uncached files at 100% (20 workers), backed up prior graph to `graphify-out/2026-09-26/` (curated, 6 files), rebuilt to 9038 nodes, 13063 edges, 698 communities. Rationale: same as earlier cycles — docs-only edits, no semantic meaning to extract, cost not justified. `[graphify watch] Rebuilt: 9038 nodes, 13063 edges, 698 communities; graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out`. Repository root explicitly confirmed in the command: `cd "C:\Martin Otis\OutilsLogiciels\ResearchTools" && graphify update .`.
+

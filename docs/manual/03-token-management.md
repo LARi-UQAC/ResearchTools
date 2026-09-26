@@ -30,3 +30,6 @@ Use these tools together to keep sessions fast and cheap.
 | `/focus <topic>` | Long sessions touching many files |
 | `/ctx` | When the session feels sluggish or heavy |
 | `/compact` | After `/ctx` reports moderate/high pressure |
+
+---
+[← 02 Profiles & environment](02-profiles.md) | [Table of contents](../../README.md) | [04 Skills →](04-skills.md)

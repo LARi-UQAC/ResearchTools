@@ -1,5 +1,10 @@
 # ResearchTools — Manual
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.x](https://img.shields.io/badge/python-3.x-blue.svg)](docs/manual/01-installation.md)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](docs/manual/01-installation.md)
+[![Docs](https://img.shields.io/badge/docs-12%20chapters-brightgreen.svg)](docs/manual/00-purpose.md)
+
 <p align="center">
   <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="220">
 </p>
@@ -11,7 +16,7 @@ Ask for my book (French version): Vibe Design. 30$ contribution via:
 
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
 who want to design, find and fix the issues hiding in their academic design and writing
-before a reviewer, a thesis committee, or a grant panel does — and, on the software side,
+before a reviewer, a thesis committee, or a grant panel does. On the software side,
 in code, PCB, and 3D CAD design. Full pitch, the 2026 roadmap, and this manual's own
 conventions: [docs/manual/00-purpose.md](docs/manual/00-purpose.md).
 
@@ -22,6 +27,14 @@ assessment, and do not let the tool make decisions for you. Use at your own risk
 This file is the entry point only. The manual is split into chapters under `docs/manual/`,
 the same way [Architecture.md](Architecture.md) is already split into layers instead of kept
 as one flat file — this keeps each topic at a readable size instead of one 1300-line page.
+
+## See it in action
+
+![rt-observe dashboard, Real-Time Process tab](docs/manual/rtobserve.png)
+
+The `rt-observe` dashboard watching a live session: hook flow, fan-out to the two memories
+(Obsidian vault, `graphify` graph), and a spawned subagent, all on loopback with no external
+service. Full walkthrough: [docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
 
 ## Quickstart
 
@@ -45,6 +58,19 @@ Two memories back this toolkit, and neither is read or written directly: the Obs
 [docs/manual/04-skills.md](docs/manual/04-skills.md#the-two-memories---the-vault-and-the-code-graph).
 
 ## Manual chapters
+
+At a glance — commands drive agents, agents draw on skills, and both memories are reached
+only through `local-writer` (detail: [04-skills.md](docs/manual/04-skills.md)):
+
+```mermaid
+graph LR
+  U["You"] -->|"/command"| CC["Your Harness"]
+  CC --> AG["Agents"]
+  AG --> SK["Skills"]
+  SK --> EXT[("Scopus / Gemini /<br/>Copilot APIs" / etc.)]
+  AG -->|"dispatch local-writer"| VAULT[("Obsidian vault<br/>what was learned")]
+  AG -->|"dispatch local-writer"| GRAPH[("graphify graph<br/>what the code is")]
+```
 
 | # | Chapter | Covers |
 |---|---|---|

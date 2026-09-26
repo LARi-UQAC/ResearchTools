@@ -53,3 +53,6 @@ The command is a convenience, never the only way in. `rt-dashboard.ps1`, `rt-das
 `rt-dashboard.bat` and the VS Code task all reach the same launcher without Claude Code.
 
 **File:** `.claude/commands/rt-dashboard.md`
+
+---
+[← 06 Aider nightly pipeline](06-aider-pipeline.md) | [Table of contents](../../README.md) | [08 Commands →](08-commands.md)

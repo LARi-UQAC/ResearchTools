@@ -65,3 +65,6 @@ share a similar name and a different job: `Architecture.md` maps this repository
 agents/skills/commands (7 layers); `NEW_ARCHITECTURE.md`, at the repo root, is the architecture
 shared with the sibling repository ThesisTracker (committed identically to `main` in both).
 Chapter [09](09-thesistracker-integration.md) covers that boundary.
+
+---
+[Table of contents](../../README.md) | [01 Installation →](01-installation.md)

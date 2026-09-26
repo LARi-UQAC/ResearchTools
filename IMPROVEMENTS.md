@@ -560,3 +560,11 @@ completed at repository root (`graphify update .`): 38/38 uncached files, rebuil
 **Deferred:** Graphify semantic pass on markdown docs and banner HTML. Rationale: documentation-only changes, no code impact, cost not justified. AST-only refresh completed at repository root (`graphify update .`). Three durable learnings written atomically to vault (outbox): MkDocs `exclude_docs` gotcha, GFM slug vs MkDocs slugifier divergence, Playwright file-rendering permission boundary.
 
 **Entry to project Decisions:** brand palette discovery and application (README badges, MkDocs theme); themed MkDocs Material site (build verified, publish path documented, no CI/CD); banner attempt (source delivered, rendering blocked by tool permissions, not worked around); three reusable learnings filed to `30_Ressources/`.
+
+## 2026-09-26 — hero GIF first-frame validation & cleanup: avatar GIF started at t=1.0s, stray Playwright artifact removed
+
+**Bug fixed:** `docs/manual/researchtools-hero.gif` regenerated to start at t=1.0s of source video (`post-media/ResearchTools Card.mp4`) instead of t=0, eliminating a blank-frame rendering issue. Verified via live Playwright screenshot of actual GitHub README—hero now displays meaningful content (headline + logo) on first page load. Stray `.playwright-mcp/page-2026-09-25T12-56-28-668Z.yml` Playwright debug artifact, accidentally committed in earlier session, removed from working tree.
+
+**Durable learning filed to vault:** First-frame validation rule for animated GIFs in static-preview contexts (README hero, thumbnails, embedded docs). Measured defect: source video with intro-only lead-in (t=0–0.9s) produced a GIF whose resting frame was blank light-blue box on initial GitHub page load. Fix: use `ffmpeg -ss <offset>` to start encode at timestamp where content is visible, verify that frame as a still PNG before running full GIF conversion. Provenance: Playwright live screenshot of actual GitHub repo page on 2026-09-26, not local preview.
+
+**Graphify deferral logged:** AST-only refresh at repository root (binary GIF + trivial README edit, no code impact). Semantic pass deferred (cost not justified). Note: `.rt-green.json` verified present and green from prior cycle; no test suite regeneration triggered.

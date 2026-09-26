@@ -620,6 +620,12 @@ table.mx tbody tr:hover th { color: var(--rt-blueprint); }
 .mx-detail .why { color: var(--rt-muted); }
 .mx-detail-empty { color: var(--rt-muted); font-size: var(--rt-t11); }
 
+/* ---- voice --------------------------------------------------------------- */
+.a-voice .panel-body { display: flex; flex-direction: column; align-items: center;
+  gap: var(--rt-s3); padding-top: var(--rt-s4); }
+#voice-orb { display: block; }
+#voice-transcript, #voice-answer { max-width: 46ch; text-align: center; }
+
 /* ---- canvas -------------------------------------------------------------- */
 .a-canvas .panel-body { display: flex; flex-direction: column; }
 /* Takes the height the tab has left, and no more. Upright the drawing computes
@@ -1594,6 +1600,8 @@ svg.fanout .edge-hit { fill: none; stroke: transparent; stroke-width: 12; cursor
             </div>
           </div>
           <div class="panel-body">
+            <canvas id="voice-orb" width="260" height="260"
+                    aria-hidden="true"></canvas>
             <button class="btn" type="button" id="voice-ptt">Hold P to talk</button>
             <p class="panel-note" id="voice-status">idle</p>
             <p id="voice-transcript"></p>
@@ -5092,13 +5100,173 @@ renderRefresh();
   // already-stopped recorder rather than null on a second fast tap, so
   // stopRecording checks its `state` rather than only its presence.
   var pendingStop = false;
+  var lastPartialText = "";
+  var partialTimer = null;
 
   function setStatus(text) { if (status) { status.textContent = text; } }
+
+  /* ---- orb: a 4-stage pipeline runner (mic -> transcribe -> ask -> speak),
+     the SAME idiom the Real-Time Process tab already uses - a marker
+     travelling between actors along a path - applied to this panel's own
+     four real stages instead of an amplitude blob. The runner eases toward
+     whichever stage is active and pulses in place there: mic-reactive at
+     "listening" (reuses the analyser below), a breathing thinking-pulse at
+     "transcribing"/"asking", and a faster talking-pulse at "speaking". At
+     rest it parks at a dim home position between speak and mic. */
+  var STAGES = [
+    { key: "listening", label: "listening", angle: -Math.PI / 2 },
+    { key: "transcribing", label: "transcribing", angle: 0 },
+    { key: "asking", label: "thinking", angle: Math.PI / 2 },
+    { key: "speaking", label: "replying", angle: Math.PI },
+  ];
+  var HOME_ANGLE = -Math.PI * 3 / 4; // between speak and mic
+  var orb = document.getElementById("voice-orb");
+  var orbCtx = orb ? orb.getContext("2d") : null;
+  var orbState = "idle";
+  var orbLevel = 0;
+  var orbAngle = HOME_ANGLE;
+  var orbRaf = null;
+  var audioCtx = null;
+  var analyser = null;
+  var analyserBuf = null;
+
+  function orbColor(name) {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name).trim() || "#888";
+  }
+
+  function micLevel() {
+    if (!analyser || !analyserBuf) { return 0; }
+    analyser.getByteTimeDomainData(analyserBuf);
+    var sum = 0;
+    for (var i = 0; i < analyserBuf.length; i++) {
+      var v = (analyserBuf[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.min(1, Math.sqrt(sum / analyserBuf.length) * 4);
+  }
+
+  function targetAngle() {
+    for (var i = 0; i < STAGES.length; i++) {
+      if (STAGES[i].key === orbState) { return STAGES[i].angle; }
+    }
+    return HOME_ANGLE;
+  }
+
+  function easeAngle(current, target, rate) {
+    var delta = ((target - current + Math.PI) % (2 * Math.PI)) - Math.PI;
+    return current + delta * rate;
+  }
+
+  function drawOrb() {
+    if (!orbCtx) { return; }
+    var w = orb.width, h = orb.height, cx = w / 2, cy = h / 2;
+    var track = Math.min(w, h) * 0.34;
+    orbCtx.clearRect(0, 0, w, h);
+
+    orbCtx.strokeStyle = orbColor("--rt-line");
+    orbCtx.lineWidth = 1.5;
+    orbCtx.beginPath();
+    orbCtx.arc(cx, cy, track, 0, Math.PI * 2);
+    orbCtx.stroke();
+
+    STAGES.forEach(function (stage) {
+      var active = stage.key === orbState;
+      var x = cx + track * Math.cos(stage.angle);
+      var y = cy + track * Math.sin(stage.angle);
+      orbCtx.fillStyle = active ? orbColor("--rt-blueprint") : orbColor("--rt-line");
+      orbCtx.beginPath();
+      orbCtx.arc(x, y, active ? 7 : 5, 0, Math.PI * 2);
+      orbCtx.fill();
+      orbCtx.fillStyle = orbColor(active ? "--rt-ink" : "--rt-muted");
+      orbCtx.font = "11px " + orbColor("--rt-face-body");
+      // A label centred on its node clips against the canvas edge on the
+      // right/left sides (measured: "transcribing"'s trailing letter fell
+      // outside the canvas). Text on the right half grows LEFTWARD from its
+      // anchor (toward the centre), the left half grows RIGHTWARD, and only
+      // the near-vertical top/bottom labels stay centred, where there is
+      // margin on both sides regardless.
+      var cosA = Math.cos(stage.angle);
+      orbCtx.textAlign = cosA > 0.3 ? "right" : cosA < -0.3 ? "left" : "center";
+      var lx = cx + (track + 20) * cosA;
+      var ly = cy + (track + 20) * Math.sin(stage.angle) + 4;
+      orbCtx.fillText(stage.label, lx, ly);
+    });
+
+    var runnerX = cx + track * Math.cos(orbAngle);
+    var runnerY = cy + track * Math.sin(orbAngle);
+    var runnerColor = orbState === "idle" ? orbColor("--rt-muted") : orbColor("--rt-runner");
+    var pulse = orbState === "idle" ? 0 : orbLevel;
+
+    // A short trailing arc behind the runner suggests motion along the
+    // track, the same visual cue the fan-out diagram's own runner uses.
+    orbCtx.globalAlpha = 0.35;
+    orbCtx.strokeStyle = runnerColor;
+    orbCtx.lineWidth = 3;
+    orbCtx.beginPath();
+    orbCtx.arc(cx, cy, track, orbAngle - 0.4, orbAngle);
+    orbCtx.stroke();
+    orbCtx.globalAlpha = 1;
+
+    orbCtx.fillStyle = runnerColor;
+    orbCtx.globalAlpha = 0.25;
+    orbCtx.beginPath();
+    orbCtx.arc(runnerX, runnerY, 9 + pulse * 10, 0, Math.PI * 2);
+    orbCtx.fill();
+    orbCtx.globalAlpha = 1;
+    orbCtx.beginPath();
+    orbCtx.arc(runnerX, runnerY, 6 + pulse * 5, 0, Math.PI * 2);
+    orbCtx.fill();
+  }
+
+  function orbLoop() {
+    var target = targetAngle();
+    orbAngle = REDUCED ? target : easeAngle(orbAngle, target, 0.12);
+    if (orbState === "listening") {
+      orbLevel = micLevel();
+    } else if (orbState === "transcribing" || orbState === "asking") {
+      orbLevel = 0.35 + 0.2 * Math.sin(Date.now() / 260);
+    } else if (orbState === "speaking") {
+      orbLevel = 0.4 + 0.35 * Math.abs(Math.sin(Date.now() / 130));
+    } else {
+      orbLevel = 0;
+    }
+    drawOrb();
+    orbRaf = window.requestAnimationFrame(orbLoop);
+  }
+  if (orbCtx && !orbRaf) { orbLoop(); }
+
+  function stopPartialRefresh() {
+    if (partialTimer) { window.clearInterval(partialTimer); partialTimer = null; }
+  }
+
+  function showLivePreview() {
+    if (!chunks.length) { return; }
+    var blob = new Blob(chunks, { type: "audio/webm" });
+    var language = languageEl ? languageEl.value : "auto";
+    blob.arrayBuffer().then(function (buf) {
+      return window.fetch(
+        "/api/voice/transcribe?language=" + encodeURIComponent(language), {
+          method: "POST",
+          headers: { "Content-Type": "audio/webm", "X-RT-Session-Token": TOKEN },
+          body: buf,
+        });
+    }).then(function (r) { return r.json(); }).then(function (body) {
+      if (body.status === "ok" && body.text && body.text !== lastPartialText) {
+        lastPartialText = body.text;
+        transcriptEl.textContent = body.text;
+      }
+      // Best-effort live caption, matching the Devoir2 reference's own
+      // progressive-transcription cadence: a stale or empty reply just
+      // means this snapshot did not improve on what is already shown.
+    }).catch(function () { /* live preview only, next tick tries again */ });
+  }
 
   function startRecording() {
     if (holding) { return; }
     holding = true;
     pendingStop = false;
+    lastPartialText = "";
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       if (pendingStop) {
         stream.getTracks().forEach(function (t) { t.stop(); });
@@ -5108,14 +5276,29 @@ renderRefresh();
       }
       recorder = new MediaRecorder(stream);
       chunks = [];
-      recorder.ondataavailable = function (e) { chunks.push(e.data); };
+      recorder.ondataavailable = function (e) {
+        chunks.push(e.data);
+        if (holding) { showLivePreview(); }
+      };
       recorder.onstop = function () {
         stream.getTracks().forEach(function (t) { t.stop(); });
+        if (audioCtx) { audioCtx.close(); audioCtx = null; analyser = null; }
         var blob = new Blob(chunks, { type: "audio/webm" });
         sendForTranscription(blob);
       };
       recorder.start();
       setStatus("listening...");
+      orbState = "listening";
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        analyserBuf = new Uint8Array(analyser.fftSize);
+        audioCtx.createMediaStreamSource(stream).connect(analyser);
+      } catch (err) { analyser = null; }
+      partialTimer = window.setInterval(function () {
+        if (recorder && recorder.state === "recording") { recorder.requestData(); }
+      }, CFG.voice.partial_refresh_ms);
     }).catch(function (err) {
       setStatus("microphone unavailable: " + err.message);
       holding = false;
@@ -5125,11 +5308,13 @@ renderRefresh();
   function stopRecording() {
     if (!holding) { return; }
     holding = false;
+    stopPartialRefresh();
     if (!recorder || recorder.state !== "recording") {
       pendingStop = true;
       return;
     }
     setStatus("transcribing...");
+    orbState = "transcribing";
     recorder.stop();
   }
 
@@ -5143,16 +5328,21 @@ renderRefresh();
       }).then(function (r) { return r.json(); }).then(function (body) {
         if (body.status !== "ok" || !body.text) {
           setStatus(body.reason || "no speech recognized");
+          orbState = "idle";
           return;
         }
         transcriptEl.textContent = body.text;
         askQuestion(body.text, language);
-      }).catch(function (err) { setStatus("transcription failed: " + err); });
+      }).catch(function (err) {
+        setStatus("transcription failed: " + err);
+        orbState = "idle";
+      });
     });
   }
 
   function askQuestion(question, language) {
     setStatus("asking...");
+    orbState = "asking";
     window.fetch("/api/voice/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -5160,6 +5350,7 @@ renderRefresh();
     }).then(function (r) { return r.json(); }).then(function (body) {
       if (body.status !== "ok") {
         setStatus(body.reason || ("answer status: " + body.status));
+        orbState = "idle";
         return;
       }
       answerEl.textContent = body.answer_text;
@@ -5168,9 +5359,17 @@ renderRefresh();
         var utter = new SpeechSynthesisUtterance(body.answer_text);
         var tag = { en: "en-US", fr: "fr-FR" }[language];
         if (tag) { utter.lang = tag; }
+        utter.onstart = function () { orbState = "speaking"; };
+        utter.onend = function () { orbState = "idle"; };
+        utter.onerror = function () { orbState = "idle"; };
         window.speechSynthesis.speak(utter);
+      } else {
+        orbState = "idle";
       }
-    }).catch(function (err) { setStatus("ask failed: " + err); });
+    }).catch(function (err) {
+      setStatus("ask failed: " + err);
+      orbState = "idle";
+    });
   }
 
   function isTypingTarget(target) {

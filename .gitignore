@@ -118,3 +118,7 @@ deploy/.env
 # committed. Publishing is a manual `mkdocs gh-deploy` (pushes a gh-pages branch by hand) -
 # no GitHub Actions workflow, consistent with this repo's no-CI/CD policy.
 site/
+
+# Playwright MCP debug snapshots (page state dumps written wherever a session invokes the
+# browser tools). One such file was found already committed (2026-09-25) and removed.
+.playwright-mcp/

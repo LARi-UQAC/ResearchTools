@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
@@ -124,6 +125,88 @@ class SearchVaultCase(unittest.TestCase):
             self.vault, "zzzznonexistentword qqqqanotherword",
             max_notes=5, excerpt_chars=200)
         self.assertEqual(hits, [])
+
+
+class AnswerCase(unittest.TestCase):
+    def setUp(self):
+        self.vault = Path(tempfile.mkdtemp())
+        (self.vault / "30_Ressources" / "Python").mkdir(parents=True)
+        (self.vault / "30_Ressources" / "Python" / "note.md").write_text(
+            "type: apprentissage\n\ncontext budget clamps num_ctx silently.\n",
+            encoding="utf-8")
+        self.config = {"daemon": {
+            "ask_request_ttl_s": 90, "ask_max_vault_notes": 5,
+            "ask_note_excerpt_chars": 1200,
+            "ask_context_snapshot_max_chars": 4000}}
+
+    def _request(self, asked_at="2026-09-26T12:00:00+00:00"):
+        return {"id": "abc123", "from": "rt-dashboard", "asked_at": asked_at,
+                "question": "why does context budget clamp num_ctx",
+                "context_snapshot": {"repo_green": "green"}}
+
+    def test_answers_ok_with_the_model_reply(self):
+        import daemon_ask
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        return_value="It clamps to avoid an oversized prompt."):
+            result = daemon_ask.answer(
+                self._request(), self.vault, "a-tag", 16384, 5.0,
+                self.config, today="2026-09-26T12:00:03+00:00")
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("clamps", result["answer_text"])
+        self.assertIn("30_Ressources/Python/note.md",
+                      result["sources"]["vault_notes"])
+
+    def test_expires_a_stale_request(self):
+        import daemon_ask
+        result = daemon_ask.answer(
+            self._request(asked_at="2026-09-26T10:00:00+00:00"),
+            self.vault, "a-tag", 16384, 5.0, self.config,
+            today="2026-09-26T12:00:00+00:00")
+        self.assertEqual(result["status"], "expired")
+
+    def test_reports_bridge_error_as_status_error(self):
+        import daemon_ask
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        side_effect=daemon_ask.daemon_states.ob.BridgeError(
+                            "no qualified model")):
+            result = daemon_ask.answer(
+                self._request(), self.vault, "a-tag", 16384, 5.0,
+                self.config, today="2026-09-26T12:00:03+00:00")
+        self.assertEqual(result["status"], "error")
+        self.assertIn("no qualified model", result["reason"])
+
+    def test_truncates_an_oversized_context_snapshot(self):
+        import daemon_ask
+        big = {"repo_green": "x" * 10000}
+        request = self._request()
+        request["context_snapshot"] = big
+        captured = {}
+
+        def fake_call_model(prompt, *a, **kw):
+            captured["prompt"] = prompt
+            return "answer"
+
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        side_effect=fake_call_model):
+            daemon_ask.answer(request, self.vault, "a-tag", 16384, 5.0,
+                              self.config, today="2026-09-26T12:00:03+00:00")
+        self.assertLess(len(captured["prompt"]), 10500)
+
+    def test_language_selection_reaches_the_prompt(self):
+        import daemon_ask
+        request = self._request()
+        request["language"] = "fr"
+        captured = {}
+
+        def fake_call_model(prompt, *a, **kw):
+            captured["prompt"] = prompt
+            return "reponse"
+
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        side_effect=fake_call_model):
+            daemon_ask.answer(request, self.vault, "a-tag", 16384, 5.0,
+                              self.config, today="2026-09-26T12:00:03+00:00")
+        self.assertIn("Reponds en francais", captured["prompt"])
 
 
 if __name__ == "__main__":

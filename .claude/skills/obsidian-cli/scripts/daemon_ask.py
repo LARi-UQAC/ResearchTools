@@ -150,3 +150,93 @@ def search_vault(vault: Path, question: str, max_notes: int,
                            "excerpt": body[:excerpt_chars]})
     scored.sort(key=lambda h: (-h["score"], h["rel"]))
     return scored[:max_notes]
+
+
+# Keyed by the dropdown's own three values (plan2's voice panel), so a
+# language this module cannot express is a KeyError caught nowhere by
+# design - read_request already refused anything outside this set (R5).
+_LANGUAGE_INSTRUCTION = {
+    "en": "Answer in English.",
+    "fr": "Reponds en francais.",
+    "auto": "Answer in the same language the question below is written in.",
+}
+
+ASK_PREFIX = (
+    "You answer a spoken question about a personal research toolkit's own "
+    "state, using ONLY the state digest and vault excerpts given below. "
+    "Speak in plain prose, in short sentences: your answer will be read "
+    "aloud by a speech synthesizer. Never use markdown, never use bullet "
+    "points, never use asterisks or headings. If the digest and excerpts do "
+    "not answer the question, say so plainly rather than guessing. {language}\n"
+)
+
+
+def _age_seconds(asked_at: str, today: str) -> float:
+    try:
+        asked = datetime.fromisoformat(asked_at)
+        now = datetime.fromisoformat(today)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, (now - asked).total_seconds())
+
+
+def _snapshot_text(context_snapshot: dict, max_chars: int) -> str:
+    text = json.dumps(context_snapshot, ensure_ascii=False)
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + " ...(truncated)"
+
+
+def answer(request: dict, vault: Path, model: str, window: int,
+          timeout: float, config: dict, today: str) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Compose the answer to one already-gated ask request: expire a stale
+        one, search the vault, call the local model, and shape the result
+        into one of the answer file's locked statuses.
+
+    Inputs:
+        request (dict): the parsed request from read_request()
+        vault (Path): the vault root
+        model (str): the resolved writer-role tag
+        window (int): the measured retained window for that tag
+        timeout (float): the model call's socket timeout (R10)
+        config (dict): daemon-config.json, for the ask_* bounds
+        today (str): ISO 8601 UTC "now", injected by the caller (R19)
+
+    Outputs:
+        result (dict): {"id", "answered_at", "status", ...}. status is
+        "ok" (answer_text, sources, model_calls), "expired" (reason), or
+        "error" (reason, from a caught ob.BridgeError).
+    --------------------------------------------------------------------------
+    """
+    import outbox_io
+    ttl = outbox_io.require(config, "daemon", "ask_request_ttl_s")
+    base = {"id": request["id"], "answered_at": today}
+    age = _age_seconds(request.get("asked_at") or today, today)
+    if age > ttl:
+        return dict(base, status="expired",
+                    reason=f"request is {int(age)}s old, past the {ttl}s TTL")
+
+    max_notes = outbox_io.require(config, "daemon", "ask_max_vault_notes")
+    excerpt_chars = outbox_io.require(config, "daemon", "ask_note_excerpt_chars")
+    snapshot_max = outbox_io.require(
+        config, "daemon", "ask_context_snapshot_max_chars")
+
+    hits = search_vault(vault, request["question"], max_notes, excerpt_chars)
+    excerpts = "\n".join(
+        f"\nVault note ({h['rel']}):\n{h['excerpt']}\n" for h in hits)
+    language = request.get("language", "auto")
+    prompt = (ASK_PREFIX.format(language=_LANGUAGE_INSTRUCTION[language])
+             + f"\nState digest:\n{_snapshot_text(request['context_snapshot'], snapshot_max)}\n"
+             + excerpts
+             + f"\nQuestion: {request['question']}\n")
+    try:
+        text = daemon_states.call_model(prompt, model, window, timeout)
+    except daemon_states.ob.BridgeError as exc:
+        return dict(base, status="error", reason=str(exc))
+    except daemon_states.EventRefused as exc:
+        return dict(base, status="error", reason=str(exc))
+    return dict(base, status="ok", answer_text=text, model_calls=1,
+               sources={"vault_notes": [h["rel"] for h in hits]})

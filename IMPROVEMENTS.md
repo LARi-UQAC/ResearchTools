@@ -12,6 +12,16 @@ and how it was proven. An abandoned attempt is marked ABANDONED and names the fa
 its error, and any file left behind skip-marked.
 
 
+## 2026-09-26 — MkDocs landing page built; base64 context-cost lesson captured; graphify deferral
+
+**Completed:** MkDocs landing page for documentation site. Changes: `docs/index.md` (complete rebuild as real landing page with front-matter `hide: [navigation, toc]`, hero section with banner image + tagline + 3 CTA buttons, feature grid with 3 cards, existing "Why ResearchTools" table); `mkdocs.yml` (added `attr_list` and `md_in_html` extensions to Markdown config); `docs/assets/extra.css` (brand CSS classes: `.rt-hero`, `.rt-cta`, `.rt-feature-grid`, `.rt-feature-card`, `.rt-stats` with light/dark variants, integrated into site color palette).
+
+**Durable learning captured:** Atomic note `30_Ressources/Methode/base64-encoding-llm-context-cost.md` documenting a measured token-cost lesson. Reading a self-contained HTML file with base64-encoded assets into context is extremely expensive: a 252,740-character base64 string consumed ~2.7M tokens (9% of file = ~241K tokens). Base64 amplifies context cost by roughly 30× compared to the unencoded binary. Consequence: use htmlpreview.github.io for GitHub-hosted pages, ask users for local preview (mkdocs serve), never embed as base64 for model inspection.
+
+**Project Decisions entry:** Appended 2026-09-26 entry to `10_Projets/Logiciels/ResearchTools/Decisions.md` noting the landing page was built, visual verification was deferred due to token-cost measurement, and structural verification was substituted.
+
+**Graphify:** AST-only refresh at repository root (`graphify update .`). Semantic pass deferred: three changed files are documentation/config (index.md, mkdocs.yml, extra.css) with no code understanding to extract. Semantic extraction adds no value for a documentation-only change.
+
 ## 2026-09-26 — GitHub-presentation playbook consolidated; AST-only graphify update deferred
 
 **Completed:** `docs/github-repo-setup-playbook.md` — an 8-phase, reusable playbook for bringing another repository's GitHub presentation to publication standard. Phases: brand palette discovery, docs structure (docs/manual/ book-split), community files, README template, MkDocs Material setup (with measured gotchas), GitHub settings via `gh` CLI, R30/R31 governance pattern (generic, not hardcoded), verification checklist, appendix naming measured mistakes caught during reference implementation.
@@ -194,5 +204,4 @@ that one carrying a negative control so a broken pattern cannot pass silently.
 **Not done:** the harness's happy path is not covered offline and cannot be - it spawns the
 sweep, which restarts the Ollama daemon. It was exercised by hand only as far as its first
 refusal (an uninstalled tag: stop, exit 1, no report directory created).
-
 

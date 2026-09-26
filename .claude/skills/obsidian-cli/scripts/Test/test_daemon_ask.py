@@ -2,6 +2,7 @@
 import json
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -208,6 +209,22 @@ class AnswerCase(unittest.TestCase):
                               self.config, today="2026-09-26T12:00:03+00:00")
         self.assertIn("Reponds en francais", captured["prompt"])
 
+    def test_survives_a_bare_date_today_against_an_aware_asked_at(self):
+        # Production default (daemon_outbox.OutboxLayout, before this fix)
+        # constructs `today` from date.today().isoformat() - a bare date,
+        # no time, no tz - while asked_at is always a full aware ISO
+        # datetime (voice_ask.write_ask_request). Subtracting an aware
+        # datetime from a naive one raises TypeError, uncaught, which used
+        # to kill the daemon on its first real ask request.
+        import daemon_ask
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        return_value="fine"):
+            result = daemon_ask.answer(
+                self._request(asked_at="2026-09-26T12:00:00+00:00"),
+                self.vault, "a-tag", 16384, 5.0, self.config,
+                today="2026-09-26")
+        self.assertEqual(result["status"], "ok")
+
 
 class RunAskOnceCase(unittest.TestCase):
     def setUp(self):
@@ -273,6 +290,67 @@ class RunAskOnceCase(unittest.TestCase):
             (self.outbox / "ask" / "answers" / "good1.json").exists())
         self.assertTrue(
             (self.outbox / "ask" / "answers" / "bad.json").exists())
+
+    def test_a_malicious_payload_id_cannot_escape_the_answers_dir(self):
+        # R24: the answer file's identity comes from the REQUEST FILE'S OWN
+        # name, never from the untrusted payload's declared "id" - the
+        # request file's name is already constrained by the glob that found
+        # it, the payload's "id" is not.
+        path = self.outbox / "ask" / "requests" / "abc123.json"
+        path.write_text(json.dumps({
+            "id": "../../evil", "from": "rt-dashboard",
+            "asked_at": "2026-09-26T12:00:00+00:00",
+            "question": "is this repo stale", "context_snapshot": {}}),
+            encoding="utf-8")
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        return_value="fine"):
+            self.daemon.run_ask_once("a-tag", 16384)
+        self.assertTrue(
+            (self.outbox / "ask" / "answers" / "abc123.json").exists())
+        self.assertFalse((self.tmp / "evil.json").exists())
+        self.assertFalse((self.outbox / "evil.json").exists())
+
+    def test_an_absent_payload_id_still_names_the_answer_after_the_request(self):
+        path = self.outbox / "ask" / "requests" / "abc123.json"
+        path.write_text(json.dumps({
+            "from": "rt-dashboard",
+            "asked_at": "2026-09-26T12:00:00+00:00",
+            "question": "is this repo stale", "context_snapshot": {}}),
+            encoding="utf-8")
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        return_value="fine"):
+            self.daemon.run_ask_once("a-tag", 16384)
+        self.assertTrue(
+            (self.outbox / "ask" / "answers" / "abc123.json").exists())
+        self.assertFalse((self.outbox / "ask" / "answers" / "None.json").exists())
+
+    def test_an_orphaned_answer_older_than_the_ttl_is_pruned(self):
+        import os
+        answer_path = self.outbox / "ask" / "answers" / "orphan.json"
+        answer_path.write_text('{"id": "orphan", "status": "ok"}',
+                               encoding="utf-8")
+        old = time.time() - (self.config["daemon"]["ask_request_ttl_s"] + 30)
+        os.utime(answer_path, (old, old))
+        self.daemon.run_ask_once("a-tag", 16384)
+        self.assertFalse(answer_path.exists())
+
+    def test_a_fresh_orphaned_answer_is_kept(self):
+        answer_path = self.outbox / "ask" / "answers" / "fresh.json"
+        answer_path.write_text('{"id": "fresh", "status": "ok"}',
+                               encoding="utf-8")
+        self.daemon.run_ask_once("a-tag", 16384)
+        self.assertTrue(answer_path.exists())
+
+    def test_an_unexpected_exception_becomes_an_error_answer_not_a_crash(self):
+        self._request(name="good1")
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        side_effect=RuntimeError("boom")):
+            self.daemon.run_ask_once("a-tag", 16384)
+        answer = json.loads(
+            (self.outbox / "ask" / "answers" / "good1.json")
+            .read_text(encoding="utf-8"))
+        self.assertEqual(answer["status"], "error")
+        self.assertIn("boom", answer["reason"])
 
 
 if __name__ == "__main__":

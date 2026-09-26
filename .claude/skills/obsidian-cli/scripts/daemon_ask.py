@@ -3,11 +3,15 @@
 daemon_ask.py - the vault daemon's read-only ask queue.
 
 Answers a question using vault search plus a state digest the caller already
-computed, through the local LLM. The one caller allowed to submit here is
-rt-dashboard: `read_request` refuses anything whose "from" is not
-"rt-dashboard" rather than silently accepting an unlabeled request, which is
-the one runtime check standing behind the "only rt-dashboard, no other
-caller" instruction this queue exists to satisfy.
+computed, through the local LLM. `read_request`'s "from" check is a routing
+label, not access control: it refuses a request that does not DECLARE itself
+as coming from rt-dashboard, but any process able to write a file into
+outbox/ask/requests/ can declare it and get a vault-grounded answer back -
+this queue trusts the outbox the way every other write to it already is
+trusted, on the single-user local-machine model security.md states, and does
+not itself enforce that only rt-dashboard actually wrote the file. Path
+containment (R24) and the request/TTL/exception guards below are real; the
+"from" field is a contract between callers, not a boundary.
 
 This module never calls `graphify query` and never reads `graphify-out/`.
 daemon-config.json's `daemon.graphify_repo_root` is null on purpose (see its
@@ -25,7 +29,7 @@ the other's prompts.
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -175,9 +179,21 @@ def _age_seconds(asked_at: str, today: str) -> float:
     try:
         asked = datetime.fromisoformat(asked_at)
         now = datetime.fromisoformat(today)
+        # `today` and `asked_at` can each be naive (a bare date) or aware
+        # (a full ISO datetime with offset), and the two do not have to
+        # match: a naive-minus-aware subtraction raises TypeError, which
+        # used to escape uncaught and kill the daemon on the first real
+        # request (production's default `today` is a bare date; every
+        # `asked_at` this queue ever sees is aware). Coerce both to aware
+        # UTC before subtracting, inside the same guard, so no shape of
+        # either input can raise past this point.
+        if asked.tzinfo is None:
+            asked = asked.replace(tzinfo=timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        return max(0.0, (now - asked).total_seconds())
     except (TypeError, ValueError):
         return 0.0
-    return max(0.0, (now - asked).total_seconds())
 
 
 def _snapshot_text(context_snapshot: dict, max_chars: int) -> str:

@@ -1,0 +1,71 @@
+site_name: ResearchTools
+site_description: AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.
+site_url: https://LARi-UQAC.github.io/ResearchTools/
+repo_url: https://github.com/LARi-UQAC/ResearchTools
+repo_name: LARi-UQAC/ResearchTools
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - content.code.copy
+  logo: ../ResearchToolsLogo.png
+  favicon: ../ResearchToolsLogo.png
+
+extra_css:
+  - assets/extra.css
+
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Manual:
+      - 00 Purpose & overview: manual/00-purpose.md
+      - 01 Installation: manual/01-installation.md
+      - 02 Profiles & environment: manual/02-profiles.md
+      - 03 Token management: manual/03-token-management.md
+      - 04 Skills: manual/04-skills.md
+      - 05 Security audit: manual/05-security-audit.md
+      - 06 Aider nightly pipeline: manual/06-aider-pipeline.md
+      - 07 rt-observe & dashboard: manual/07-rt-observe-dashboard.md
+      - 08 Commands: manual/08-commands.md
+      - 09 ThesisTracker integration: manual/09-thesistracker-integration.md
+      - 10 Agents: manual/10-agents.md
+      - 11 File locations: manual/11-file-locations.md
+  - Deep-dive references:
+      - aider-setup: aider-setup.md
+      - rt-observe: rt-observe.md
+      - Authoring & mirrors: authoring-and-mirrors.md
+      - Contributor notes: contributor-notes.md
+
+exclude_docs: |
+  superpowers/**

@@ -1,9 +1,21 @@
 # ResearchTools Documentation
 
-This page is a landing point for GitHub Pages (Settings → Pages → Deploy from a branch →
-`main` / `/docs`) — enabling that setting turns this folder into a browsable site with no
-build step. Nothing here duplicates the manual; every link below points at the same file a
-Claude Code session or a plain GitHub browse would read.
+This is the homepage of the themed MkDocs Material site (`mkdocs.yml` at the repo root,
+brand palette in `docs/assets/extra.css` — navy `#10243E`, teal `#1F9E8F`, amber `#C9762F`,
+taken from the project's own design system in `post-media/Series Template.dc.html`). Nothing
+here duplicates the manual; every link below points at the same file a Claude Code session or
+a plain GitHub browse would read.
+
+**Preview locally:** `.venv-docs\Scripts\python.exe -m mkdocs serve` (env: `pip install -r
+requirements-docs.txt` into `.venv-docs`), then open the printed `http://127.0.0.1:8000`.
+**Publish:** `mkdocs gh-deploy`, run by hand whenever the docs change — no GitHub Actions
+workflow, matching this repo's no-CI/CD policy — then enable Settings → Pages → Deploy from
+a branch → `gh-pages`. Two known gaps in the built site (not on the raw GitHub browse): links
+that reach outside `docs/` (to `README.md`, `Architecture.md`, `.claude/CLAUDE.md`) resolve
+on GitHub but not inside the MkDocs build, since its `docs_dir` is `docs/` only; and
+`04-skills.md`'s internal table of contents uses GitHub's heading-slug algorithm, which
+differs slightly from MkDocs' own slugifier, so those specific in-page anchors don't jump
+correctly inside the built site.
 
 ## Start here
 

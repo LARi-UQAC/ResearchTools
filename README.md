@@ -1,37 +1,34 @@
 # ResearchTools — Manual
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.x](https://img.shields.io/badge/python-3.x-blue.svg)](docs/manual/01-installation.md)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](docs/manual/01-installation.md)
-[![Docs](https://img.shields.io/badge/docs-12%20chapters-brightgreen.svg)](docs/manual/00-purpose.md)
-[![GitHub Repo stars](https://img.shields.io/github/stars/LARi-UQAC/ResearchTools?style=social)](https://github.com/LARi-UQAC/ResearchTools/stargazers)
-[![Last commit](https://img.shields.io/github/last-commit/LARi-UQAC/ResearchTools)](https://github.com/LARi-UQAC/ResearchTools/commits/main)
-[![Contributors](https://img.shields.io/github/contributors/LARi-UQAC/ResearchTools)](https://github.com/LARi-UQAC/ResearchTools/graphs/contributors)
-[![Open issues](https://img.shields.io/github/issues/LARi-UQAC/ResearchTools)](https://github.com/LARi-UQAC/ResearchTools/issues)
-
-If this toolkit is useful to you, a star helps others find it.
-
-**Supported harnesses** — one canonical `.claude/` source, mirrored everywhere below (detail:
-[10-agents.md](docs/manual/10-agents.md#using-the-agents-outside-claude-code)):
-
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-native-D97757.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![GitHub Copilot](https://img.shields.io/badge/GitHub%20Copilot-mirrored-8957E5.svg?logo=githubcopilot&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![OpenCode](https://img.shields.io/badge/OpenCode-mirrored-1A1A1A.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![Continue](https://img.shields.io/badge/Continue-mirrored-2E7D32.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![Aider](https://img.shields.io/badge/Aider-mirrored-27C93F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![Codex](https://img.shields.io/badge/Codex-mirrored-412991.svg?logo=openai&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![AGENTS.md readers](https://img.shields.io/badge/AGENTS.md-generic%20readers-555555.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![License: MIT](https://img.shields.io/badge/License-MIT-10243E.svg)](LICENSE)
+[![Python 3.x](https://img.shields.io/badge/python-3.x-1F9E8F.svg)](docs/manual/01-installation.md)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-1F9E8F.svg)](docs/manual/01-installation.md)
+[![Docs](https://img.shields.io/badge/docs-12%20chapters-10243E.svg)](docs/manual/00-purpose.md)
+[![GitHub Repo stars](https://img.shields.io/github/stars/LARi-UQAC/ResearchTools?style=flat&color=C9762F)](https://github.com/LARi-UQAC/ResearchTools/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/LARi-UQAC/ResearchTools?color=1F9E8F)](https://github.com/LARi-UQAC/ResearchTools/commits/main)
+[![Contributors](https://img.shields.io/github/contributors/LARi-UQAC/ResearchTools?color=1F9E8F)](https://github.com/LARi-UQAC/ResearchTools/graphs/contributors)
+[![Open issues](https://img.shields.io/github/issues/LARi-UQAC/ResearchTools?color=10243E)](https://github.com/LARi-UQAC/ResearchTools/issues)
 
 <p align="center">
-  <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="220">
+  <img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="200">
 </p>
+
+<p align="center"><b>Find what's wrong in your academic writing or software design — before a reviewer, a thesis committee, or a grant panel does.</b></p>
 
 ![ResearchTools promo](docs/manual/researchtools-hero.gif)
 
-Ask for my book (French version): Vibe Design. 30$ contribution via:
+<details>
+<summary><b>Table of contents</b></summary>
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/s/89b1e1cc6c)
-[![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
+- [Why ResearchTools](#why-researchtools)
+- [See it in action](#see-it-in-action)
+- [Quickstart](#quickstart)
+- [The two memories](#the-two-memories)
+- [Manual chapters](#manual-chapters)
+- [Supported harnesses](#supported-harnesses)
+- [Support this project](#support-this-project)
+
+</details>
 
 ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students. It
 finds and fixes what's wrong before a reviewer, a thesis committee, or a grant panel does:
@@ -125,3 +122,24 @@ Relationship diagrams and the 7-layer execution architecture for **this** reposi
 [Architecture.md](Architecture.md). The architecture **shared with the sibling repository
 ThesisTracker** (form catalogue, twenty-unit delivery plan) is a separate file,
 [NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 09 above; do not confuse the two.
+
+## Supported harnesses
+
+One canonical `.claude/` source, mirrored everywhere below (detail:
+[10-agents.md](docs/manual/10-agents.md#using-the-agents-outside-claude-code)):
+
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-native-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![GitHub Copilot](https://img.shields.io/badge/GitHub%20Copilot-mirrored-1F9E8F.svg?logo=githubcopilot&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![OpenCode](https://img.shields.io/badge/OpenCode-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![Continue](https://img.shields.io/badge/Continue-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![Aider](https://img.shields.io/badge/Aider-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![Codex](https://img.shields.io/badge/Codex-mirrored-1F9E8F.svg?logo=openai&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![AGENTS.md readers](https://img.shields.io/badge/AGENTS.md-generic%20readers-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+
+## Support this project
+
+If this toolkit is useful to you, a star helps others find it. Ask for my book (French
+version): Vibe Design. 30$ contribution via:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/s/89b1e1cc6c)
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-C9762F.svg)](https://www.paypal.me/MartinJDOtis)

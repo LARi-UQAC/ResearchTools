@@ -29,8 +29,8 @@ theme:
     - navigation.top
     - search.suggest
     - content.code.copy
-  logo: ../ResearchToolsLogo.png
-  favicon: ../ResearchToolsLogo.png
+  logo: assets/ResearchToolsLogo.png
+  favicon: assets/ResearchToolsLogo.png
 
 extra_css:
   - assets/extra.css

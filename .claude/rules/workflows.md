@@ -175,21 +175,54 @@ reason to have left the rule half-applied from the start.
 ## Shared working tree
 
 Every session working `C:\Martin Otis\OutilsLogiciels\ResearchTools` shares ONE working tree and
-ONE `.git/HEAD`. Two concrete incidents, both 2026-08-30, neither caused by a bug:
+ONE `.git/HEAD`. Three concrete incidents, none caused by a bug:
 
-- **A peer's `git checkout main` moved the branch under a running session.** Work planned for a
-  feature branch was about to be written onto `main`, and the session had no way to notice because
-  its plan asserted the branch rather than reading it.
-- **A peer's `git add -A` swept a third session's untracked files into the peer's commit.** It
-  worked and it is tested, but it reached `main` with no review or commit message of its own.
+- **2026-08-30 — a peer's `git checkout main` moved the branch under a running session.** Work
+  planned for a feature branch was about to be written onto `main`, and the session had no way to
+  notice because its plan asserted the branch rather than reading it.
+- **2026-08-30 — a peer's `git add -A` swept a third session's untracked files into the peer's
+  commit.** It worked and it is tested, but it reached `main` with no review or commit message of
+  its own.
+- **2026-09-26 — a peer's checkout to a feature branch stranded another session's uncommitted
+  work there, and recovering it silently destroyed committed history.** A session working on
+  `main` had four uncommitted files; a peer checked the shared tree out to their own branch to
+  open a PR, and those four files rode along onto the peer's branch with no warning. The first
+  session recovered correctly (peer flagged it, `.git/HEAD` re-checked, files stashed with
+  `-u`), but `git checkout main` + `stash pop` applied the stash against a STALE base: main had
+  moved on (more commits landed by other work in between), the stash's recorded diff did not
+  know that, and popping it onto main's current tip silently overwrote ~170 lines of
+  already-committed history in a region with no textual conflict — `stash pop` reports a
+  conflict only on textual overlap, never on "the target moved since I branched off it." Caught
+  only by manually diffing the new commit's line/insertion counts against its parent, not by any
+  git error.
 
-Three rules for a session sharing this tree with others:
+**R32 - a session on this shared tree never assumes it is the only one working here, and never
+switches the checked-out branch without checking first.** Effective 2026-09-26. Concretely:
 
-- Read `.git/HEAD` as a plain FILE before any write phase, not with a git command, so it stays
-  available even to a session forbidden to invoke git.
+1. Read `.git/HEAD` as a plain FILE immediately before ANY branch-changing operation
+   (`checkout`, `switch`), not just once at session start — a peer can move it between your
+   own reads.
+2. Before switching, check for other live sessions (`ListAgents`) and, if one is found and the
+   tree is shared, say what you are about to do and why before doing it — a one-line heads-up
+   costs nothing and is what caught the 2026-09-26 incident before it compounded.
+3. When work must move across a branch switch (stash, cherry-pick, or any equivalent), verify
+   the TARGET branch's current tip after switching, before reapplying anything — `git log -1`
+   and a fresh `git status` on the target, not an assumption that it still looks like it did
+   last time this session checked. A stash/cherry-pick applies against what IT recorded, not
+   against the target's live state, and silently wins on any line range that does not
+   textually overlap.
+4. After any operation that rewrites a file via a cross-branch mechanism (stash pop, merge,
+   cherry-pick), diff the result against the immediately preceding commit's parent for that
+   file, not just against your own expectation of its content — a clean apply is not proof
+   nothing was silently dropped.
+
+Three plain rules from the same lesson, restated for the ordinary (non-branch-switching) case:
+
 - On a shared tree, stage by path. `git add -A` claims files the session did not write.
 - "Another session's work appears on `main`" is ambiguous there: it may mean they landed it, or
   that somebody else's staging swept it in. The commit that ADDED the file is how to tell.
+- Coordinate via a message to the peer (if one is running) before and after any operation that
+  changes what is checked out — not only when something already went wrong.
 
 The same sharing also explains a class of false positives elsewhere, not only on `main`. The
 `Stop` memory-upkeep hook's fingerprint (`$(git rev-parse --git-dir)/claude-stop-state`) is ONE

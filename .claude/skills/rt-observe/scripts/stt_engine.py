@@ -11,9 +11,10 @@ sees the voice route answer "unavailable" naming requirements-voice.txt,
 never a broken dashboard.
 
 Model size/compute_type/device and the anti-hallucination options are
-config-driven (observe-config.json voice.stt.*) and copy the Devoir2
-reference implementation's measured configuration: small / float16 / cuda,
-VAD filter on, no conditioning on the previous text. Language is
+config-driven (observe-config.json voice.stt.*): large-v3-turbo /
+int8_float16 / cuda, chosen by a scored comparison (see model_size's
+provenance), with the Devoir2 reference implementation's anti-hallucination
+options, VAD filter on, no conditioning on the previous text. Language is
 per-request (the voice panel's own dropdown, auto/en/fr).
 
 On Windows with no system CUDA Toolkit, ctranslate2 finds cuBLAS/cuDNN only

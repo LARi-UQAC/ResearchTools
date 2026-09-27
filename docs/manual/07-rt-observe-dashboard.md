@@ -47,10 +47,10 @@ pipeline in the Real-Time Process tab's own idiom: one agent node whose ring is 
 level, four stage boxes (listening, transcribing, thinking, replying) that light up in turn with
 their measured durations, and a live spectrum strip.
 
-Speech-to-text runs locally on the GPU: `faster-whisper` small in float16 on CUDA, the
-configuration Devoir2 measured on this card. It sits beside the resident writer-role model
-(about 0.7 GB free; Whisper adds about 673 MiB, and the model's decode rate was measured
-unchanged with it loaded). Install `scripts/requirements-voice.txt`, plus
+Speech-to-text runs locally on the GPU: `faster-whisper` large-v3-turbo in int8_float16 on
+CUDA. It won a scored comparison of four Whisper variants run beside the resident writer-role
+model: 2.5% word error on the operator's own recordings, a 19.5 s recording transcribed in
+0.74 s, and 945 MiB of VRAM (see [docs/rt-observe.md](../rt-observe.md) for the full table). Install `scripts/requirements-voice.txt`, plus
 `scripts/requirements-voice-cuda.txt` for the NVIDIA runtime on a machine without a system CUDA
 Toolkit. A machine without them sees the panel name the missing install command, never a
 broken dashboard. The model is loaded and warmed when the dashboard starts, so the first press

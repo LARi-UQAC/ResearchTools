@@ -20,16 +20,26 @@ class VoiceConfigCase(unittest.TestCase):
                     "condition_on_previous_text"):
             rt_state.config_value(self.config, "voice", "stt", key)
 
-    def test_stt_runs_on_the_gpu_like_devoir2(self):
-        """Operator decision 2026-09-26: 'no CPU, all on GPU', matching
-        Devoir2's measured config (small / float16 / cuda)."""
+    def test_stt_runs_on_the_gpu(self):
+        """Operator decision 2026-09-26: 'no CPU, all on GPU'."""
         import rt_state
         self.assertEqual(
             rt_state.config_value(self.config, "voice", "stt", "device"),
             "cuda")
+
+    def test_stt_model_is_the_measured_winner(self):
+        """Operator choice 2026-09-26 from the scored comparison (4 Whisper
+        variants on the operator's 3 dictated recordings, beside the resident
+        writer model): large-v3-turbo int8_float16 scored 98.8 - 2.5% word
+        error, a 19.5 s buffer in 0.74 s (under the 1 s live refresh), 7% of
+        the LLM demoted from VRAM against large-v3's 24%."""
+        import rt_state
+        self.assertEqual(
+            rt_state.config_value(self.config, "voice", "stt", "model_size"),
+            "large-v3-turbo")
         self.assertEqual(
             rt_state.config_value(self.config, "voice", "stt",
-                                  "compute_type"), "float16")
+                                  "compute_type"), "int8_float16")
 
     def test_the_dashboard_never_outwaits_the_daemon_ttl(self):
         """A dashboard waiting longer than the daemon keeps a request would

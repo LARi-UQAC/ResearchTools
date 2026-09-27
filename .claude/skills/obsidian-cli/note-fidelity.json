@@ -1,0 +1,11 @@
+{
+  "_about": "Configuration for note_fidelity.py, the check a drafted vault note must pass before local-writer stages it. Every value is a {value, provenance} pair (R4); a missing key is an explicit error (R3).",
+  "min_integer_digits": {
+    "value": 2,
+    "provenance": "chosen 2026-09-26 - a single-digit integer ('3 of them') is usually prose, not a measured fact, and checking it would refuse ordinary sentences; every invented number found that day had three or more digits (1405, 421) or a decimal point. Decimals are always checked"
+  },
+  "unchecked_frontmatter_keys": {
+    "value": ["type", "domaine", "tags"],
+    "provenance": "chosen 2026-09-26 - the capture convention's controlled vocabulary (type, domaine) and free keywords (tags) are chosen by the writer, not facts taken from the brief; projet and date ARE checked, since a wrong [[project]] link was one of that day's fabrications"
+  }
+}

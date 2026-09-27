@@ -227,3 +227,11 @@ that one carrying a negative control so a broken pattern cannot pass silently.
 sweep, which restarts the Ollama daemon. It was exercised by hand only as far as its first
 refusal (an uninstalled tag: stop, exit 1, no report directory created).
 
+
+## 2026-09-26 - local-writer / obsidian-cli - drafted vault notes must pass a fidelity check before staging
+
+**Change:** new `.claude/skills/obsidian-cli/scripts/note_fidelity.py` (+ `note-fidelity.json`). local-writer now stages every drafted note through `note_fidelity.py --brief <facts given> --note <draft> --stage <slug>`, which stages nothing (exit 2) when the draft carries a number, identifier, file name, commit hash or `[[link]]` absent from the brief. `local-writer.md` step 1 of its write sequence and `obsidian-cli/SKILL.md` say so.
+
+**Found:** a memory-upkeep run on branch feat/voice-memory-query. Given a precise brief, local-writer's local model drafted five notes that all carried invented facts (an unmeasured "1405 MiB", `get_store()`/`load_oo_config()` credited with a daemon fix they have nothing to do with, a wrong `[[project]]` link, an inverted finding) and the wrapper reported them as correct, because every existing rule checked only that the files existed. They flushed; six vault writes (journal records 506-511) were undone with `vault_journal.py --undo-since 506`, authorized by the operator.
+
+**Proven:** `test_note_fidelity.py`, 15 tests, including that day's real draft and brief verbatim; replaying the real fabricated Decisions.md draft against its real brief refuses it naming `get_store()`, `load_oo_config()`, 1405, 421 and 300. Known limit, pinned by a test: a claim re-worded into its opposite with no new token passes, so the staged note is still read. Full offline suite green.

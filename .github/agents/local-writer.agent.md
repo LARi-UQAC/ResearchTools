@@ -233,10 +233,14 @@ thresholds, the trace and the causes ruled out by measurement are in the docstri
 `obsidian-outbox-flush.py`. Always go through the outbox, which writes to the filesystem and
 verifies the effect:
 
-1. Write the note to `~/.claude/obsidian-outbox/<slug>.md`, first line
-   `<!-- obsidian: create|append path="..." -->`, the rest being the content. The flush hook
-   (`obsidian-outbox-flush.py`, SessionStart / SessionEnd, or run by hand) delivers it, degrades a
-   `create` on an existing file to `append`, and refuses a path outside the vault.
+1. Draft the note to a scratch file, first line `<!-- obsidian: create|append path="..." -->`,
+   and save the facts you were given, verbatim, to a brief file. Stage ONLY with
+   `python note_fidelity.py --brief <brief> --note <draft> --stage <slug>`: it stages nothing
+   (exit 2) when the draft carries a number, identifier, hash or `[[link]]` the brief lacks.
+   Fix the draft from the brief or drop the claim; never widen the brief. Measured 2026-09-26:
+   all five drafts of one run carried invented facts. The flush hook (`obsidian-outbox-flush.py`,
+   SessionStart / SessionEnd) delivers it, degrades a `create` on an existing file to `append`,
+   and refuses a path outside the vault.
 2. Choose the path by the **technology of the problem**, per the capture convention in
    `30_Ressources/Obsidian/_Convention_Capture.md`:
    - reusable fix -> `30_Ressources/<Technology>/<slug>.md`, where `<Technology>` is where the
@@ -272,7 +276,7 @@ renames it into place, so a reader that globs `*.md` never sees a half-written n
 
 A staged note is not reported until you have SEEN it on disk. After staging, list the
 outbox, confirm every file you believe you wrote is present, and report each one by path
-with its size in bytes:
+with its size in bytes and its fidelity verdict:
 
 ```bash
 ls -l ~/.claude/obsidian-outbox/*.md ~/.claude/obsidian-outbox/raw/*.md

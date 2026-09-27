@@ -13,8 +13,15 @@ vault-internal paths relative to that root, e.g.
 
 Write sequence:
 
-1. Draft the note body.
-2. Write it to `~/.claude/obsidian-outbox/<slug>.md`. First line:
+1. Draft the note body to a scratch file, and keep the facts you were given,
+   verbatim, in a brief file.
+2. Stage it with `scripts/note_fidelity.py --brief <brief> --note <draft>
+   --stage <slug>`, which writes `~/.claude/obsidian-outbox/<slug>.md` ONLY
+   when every number, identifier, file name, commit hash and `[[link]]` of
+   the draft appears in the brief, and otherwise stages nothing and exits 2
+   (measured 2026-09-26: one run's five drafts all carried invented facts,
+   and six writes had to be undone from the journal). It cannot see a claim
+   re-worded into its opposite, so the staged note is still read. First line:
    `<!-- obsidian: create|append path="..." -->` - lowercase `obsidian:`,
    whole line, nothing after `-->`, or the file is skipped silently and
    stays in the outbox. Rest is content. Default to `create`: it degrades

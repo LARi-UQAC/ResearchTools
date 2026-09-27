@@ -1,0 +1,11 @@
+# NVIDIA runtime for the voice panel's Whisper on the GPU
+# (observe-config.json voice.stt.device = "cuda"), on a machine with no system
+# CUDA Toolkit. Same pins as Devoir2 (6MIG841-Lab/etudiant/Lab1/code/
+# requirements-cuda.txt), measured on this RTX A1000 Laptop (driver 556.12).
+# Without them ctranslate2 raises `cublas64_12.dll is not found` on the first
+# real transcription, not at model load. stt_engine.add_cuda_dll_dirs puts
+# their bin directories on the DLL search path.
+# About 2 GB to download. A machine with no NVIDIA GPU does not need this file.
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-cudnn-cu12==9.26.0.51

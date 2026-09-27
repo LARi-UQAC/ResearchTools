@@ -33,7 +33,8 @@ reappears under `.claude/skills/`.
 [the two memories](#the-two-memories---the-vault-and-the-code-graph) ·
 [obsidian-cli](#obsidian-cli---obsidian-vault-operations) ·
 [latex-hygiene](#latex-hygiene---mechanical-latex-manuscript-hygiene) ·
-[opt-local-vram-llm](#opt-local-vram-llm---measured-vram-tuning-for-the-local-agents)
+[opt-local-vram-llm](#opt-local-vram-llm---measured-vram-tuning-for-the-local-agents) ·
+[opt-local-stt-vram](#opt-local-stt-vram---measured-speech-to-text-selection-for-this-gpu)
 
 | Skill | Purpose | Entry point |
 |---|---|---|
@@ -57,6 +58,7 @@ reappears under `.claude/skills/`.
 | `form-service` (was `uqac-forms`, renamed 2026-09-25) | Stateless mechanics for official PDF forms from any institution. RT-1 ships the validated ingest contract: https only re-checked on every redirect hop, at most 5 redirects followed manually, a 25 MiB cap enforced during the stream, `%PDF` magic bytes, a 30 s timeout, and an atomic write. The form catalogue, field maps and profile live in ThesisTracker, not here. Filling (RT-3), PAdES signing (RT-4) and signature validation follow. RT-5 exposes all of it as a stateless HTTP API in `deploy/form-service/` (`/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`), shared-secret gated, no CORS, nothing persisted. See chapter [09](09-thesistracker-integration.md) for the boundary with ThesisTracker. | Yes |
 | `graphify` *(external: `uv tool install graphifyy`, not shipped here)* | The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. `query`, `path` and `explain` are deterministic traversals of `graphify-out/graph.json` and cost no model at all, which is why one graph query beats grepping file by file. Reached only through `local-writer`, like the vault. The CLI itself is a separate install (`uv tool install graphifyy`); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. `.graphify_version` records the version it was generated from - refresh the copy after upgrading the CLI. | `/graphify`, `.claude/skills/graphify/SKILL.md` |
 | `opt-local-vram-llm` | Tune a local Ollama model for this GPU: retain the largest `num_ctx` that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps `num_ctx` against `OLLAMA_KV_CACHE_TYPE` (restarting the daemon per value and proving the restart took effect from `server.log`, restoring the original value on failure), then declares the tuned tag as a role candidate in `local-models.json`. Stops before qualification, which stays with `model_resolver.py --qualify`. | `/opt-local-vram-llm`, `.claude/skills/opt-local-vram-llm/SKILL.md` |
+| `opt-local-stt-vram` | Pick the voice panel's speech-to-text model for this GPU: download the named models (faster-whisper sizes or CTranslate2 repo ids; the four measured on 2026-09-26 by default), measure each in a fresh process BESIDE the resident local LLM, and print one scored table - word error against the operator's own reference words, live-caption speed against the panel's refresh budget, dedicated VRAM, and how much of the LLM each pushes out of VRAM (a gate). Stops before adoption: switching `observe-config.json` `voice.stt.*` stays a human edit. | `/opt-local-stt-vram`, `.claude/skills/opt-local-stt-vram/SKILL.md` |
 | `aider-setup` | Set up, tune and run the aider nightly local-coding pipeline — a second, independent local-coding harness that needs no Claude Code: two local Ollama models (a writer that codes and tests, a reviewer that never edits, gated by measured token budgets) run one aider process per plan overnight, driven by `aider-plan.ps1`/`aider-night.ps1`. Owns the packaging pipeline (`scripts/build/`) that assembles the student-facing `aider-kit.zip` from this skill's own canonical sources, with a leak scan and an install-and-dry-run gate. `config/rules.md` is generated at build time from this repository's own `.claude/rules/` (R26 fixes the plan-file shape every harness reads; R27 the function-header convention). See chapter [06](06-aider-pipeline.md) for the full picture. | `.claude/skills/aider-setup/SKILL.md` |
 
 ### `/scopus` — Scopus academic search
@@ -393,6 +395,40 @@ without running it.
 - `.claude/skills/opt-local-vram-llm/scripts/Test/test_vram_probe.py`,
   `test_vram_modelfile.py`, `test_vram_daemon.py`, `test_vram_optimizer.py` - four offline
   suites (11 + 9 + 5 + 13 tests), no network, no GPU, no Ollama daemon
+
+### `opt-local-stt-vram` - measured speech-to-text selection for this GPU
+
+The sibling of `opt-local-vram-llm` for the voice panel of chapter
+[07](07-rt-observe-dashboard.md). You name the speech-to-text models; it downloads them, runs
+each one in its own process beside the resident local LLM (the way the panel runs, everything on
+VRAM), and prints a table to choose from. The first run, on 2026-09-26 with three dictated
+recordings on a 6 GB RTX A1000, read:
+
+| Model | Word error | 19.5 s recording | VRAM | LLM pushed out | Score |
+|---|---|---|---|---|---|
+| large-v3-turbo int8_float16 | 2.5% | 0.73 s | 993 MiB | 9.6% | 98.8 |
+| small float16 | 10.0% | 0.56 s | 673 MiB | 3.4% | 95.0 |
+| medium int8_float16 | 7.5% | 1.14 s | 929 MiB | 9.6% | 90.1 |
+| large-v3 int8_float16 | 2.5% | 1.65 s | 1665 MiB | 26.4% | gated |
+
+Word error is scored against the operator's own reference words, never a model's transcript.
+Speed is full marks when the longest recording transcribes within the panel's live refresh
+budget, because a caption that keeps up gains nothing from being faster. The LLM column comes
+from the LLM process's own dedicated-VRAM counter before and after, since Windows demotes part of
+the LLM rather than spilling the new model, and `nvidia-smi` cannot say whose memory it is. A
+candidate over the gate (10% by default) is listed without a score; one that fails to download or
+load is `not runnable` with its reason. `--rescore` recomputes the table from a saved run after a
+reference correction, with no model run. NeMo models are a declared seam for a larger GPU, not
+yet an engine.
+
+**Files:**
+- `.claude/skills/opt-local-stt-vram/SKILL.md`, `stt-bench-config.json`
+- `.claude/skills/opt-local-stt-vram/scripts/stt_bench.py` - the CLI, one child process per candidate
+- `.claude/skills/opt-local-stt-vram/scripts/stt_score.py` - pure scoring and the table
+- `.claude/skills/opt-local-stt-vram/scripts/gpu_memory.py` - per-process GPU memory
+- `.claude/skills/opt-local-stt-vram/scripts/engines/` - `faster_whisper_engine.py`, `nemo_engine.py`
+- `.claude/skills/opt-local-stt-vram/scripts/Test/` - four offline suites (15 + 11 + 9 + 16
+  tests), no model, no GPU, no Ollama
 
 `aider-setup` and `rt-observe` are big enough to get their own chapters rather than a
 subsection here: [06-aider-pipeline.md](06-aider-pipeline.md) and

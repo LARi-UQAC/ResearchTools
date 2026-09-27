@@ -78,10 +78,15 @@ ResearchTools\
                            tex_braces.py, tex_par.py, tex_citecov.py, tex_abstract.py, tex_wc.py,
                            tex_aiscan.py, tex_aiscan_text.py, tex_patch.py, tex_scan.py, tex_build.py,
                            Test\test_tex_check.py, Test\test_tex_patch.py, Test\test_tex_build.py)
-        └── opt-local-vram-llm\SKILL.md      (+ scripts\vram_probe.py, vram_modelfile.py,
+        ├── opt-local-vram-llm\SKILL.md      (+ scripts\vram_probe.py, vram_modelfile.py,
                            vram_daemon.py, vram_optimizer.py, Test\test_vram_probe.py,
                            Test\test_vram_modelfile.py, Test\test_vram_daemon.py,
                            Test\test_vram_optimizer.py)
+        └── opt-local-stt-vram\SKILL.md      (+ stt-bench-config.json, scripts\stt_bench.py,
+                           stt_score.py, gpu_memory.py, bench_config.py,
+                           engines\faster_whisper_engine.py, engines\nemo_engine.py,
+                           Test\test_stt_bench.py, Test\test_stt_score.py,
+                           Test\test_gpu_memory.py, Test\test_engines_config.py)
 ```
 
 ---

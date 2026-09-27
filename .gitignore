@@ -11,6 +11,9 @@ credentials/
 out/
 docs/superpowers/
 
+# superpowers plan-execution scratch (ledger, briefs, review packages)
+.superpowers/
+
 # Python
 __pycache__/
 *.pyc

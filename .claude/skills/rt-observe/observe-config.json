@@ -196,6 +196,11 @@
       "value": 10,
       "unit": "seconds",
       "provenance": "chosen 2026-09-24 - collect_traces.py's read side; longer than the ingest timeout because a _search query over a retained stream costs more than a single-record insert"
+    },
+    "voice_ask_wait": {
+      "value": 85,
+      "unit": "seconds the /api/voice/ask route blocks waiting for the daemon's answer file before giving up",
+      "provenance": "measured 2026-09-26 - the original 20 s timed out before any answer could arrive: daemon-config.json records a 36.991 s median writer-role call, and the resident ornith:9b-gpu decoded at 20.3 tok/s that day. Kept just under the daemon's own ask_request_ttl_s (90 s) so the dashboard never waits on a request the daemon has already expired"
     }
   },
   "caps": {
@@ -213,6 +218,11 @@
       "value": 12,
       "unit": "outbox entries named in the snapshot before the rest are only counted",
       "provenance": "chosen 2026-09-01 - the operator asked to SEE what is waiting to be written, and a list read on hover is read standing up"
+    },
+    "voice_question_chars": {
+      "value": 500,
+      "unit": "characters of one transcribed question",
+      "provenance": "chosen 2026-09-26 - a spoken question this long is almost certainly a transcription runaway, not a real question; refused rather than truncated, matching inbox_message_chars"
     },
     "flow_groups": {
       "value": 12,
@@ -307,6 +317,46 @@
       "value": [],
       "provenance": "chosen - empty by default; add a project directory name here and no session from it reaches the page at all",
       "note": "Exclusion is applied before truncation, not after, so an excluded project contributes nothing rather than a shortened something."
+    }
+  },
+  "voice": {
+    "stt": {
+      "engine": {
+        "value": "faster-whisper",
+        "provenance": "chosen 2026-09-26 - the Devoir2 reference implementation's proven baseline (voice_input_node.py); the Whisper variant is chosen by measurement, see model_size"
+      },
+      "model_size": {
+        "value": "large-v3-turbo",
+        "provenance": "chosen by the operator 2026-09-26 from a scored comparison of small/float16, medium, large-v3-turbo and large-v3 (int8_float16) on the operator's 3 dictated recordings (6MIG841-Lab CommandeVocale/CommandeAccepte/CommandeFausse, scored against the operator's own reference text, not Devoir2's constants, which are Whisper small's own output), each candidate in a fresh process beside the resident writer-role model. Score = (100 - word error %) and live-caption speed (100 when a 19.5 s buffer transcribes within partial_refresh_ms) averaged, gated on demoting at most 10% of the LLM from VRAM: large-v3-turbo 98.8 (2.5% WER, 0.74 s, 945 MiB dedicated, 7% of the LLM demoted), small 95.0 (10.0% WER, 0.58 s, 625 MiB, 2%), medium 86.6 (7.5%, 1.24 s), large-v3 gated out (2.5%, 1.69 s, 1617 MiB, 24% of the LLM demoted). Sample is 40 reference words, so one word is 2.5% WER"
+      },
+      "compute_type": {
+        "value": "int8_float16",
+        "provenance": "measured 2026-09-26 in the same comparison as model_size: int8 weights with float16 compute keep large-v3-turbo at 945 MiB dedicated beside the resident writer-role model, which demoted 385 MiB of the LLM and delayed its next answer by 0.20 s (2.48 s -> 2.68 s on a short prompt)"
+      },
+      "device": {
+        "value": "cuda",
+        "provenance": "chosen by the operator 2026-09-26 ('no CPU, all on GPU') - matches Devoir2's speech_device=cuda. Needs the NVIDIA runtime of requirements-voice-cuda.txt on a machine without a system CUDA Toolkit. Nothing larger than Whisper small fits beside the resident writer-role model without WDDM demoting part of the LLM to system RAM (measured 2026-09-26, per-process GPU Process Memory counters)"
+      },
+      "language": {
+        "value": null,
+        "provenance": "chosen 2026-09-26 - the per-request voice-panel dropdown (auto/en/fr) governs; this stays null as the fallback default when a caller omits language entirely"
+      },
+      "vad_filter": {
+        "value": true,
+        "provenance": "copied 2026-09-26 from Devoir2 (devoir2.transcription.vad_filtre), which measured Whisper transcribing silence and pure tones as subtitle credits; the live preview re-transcribes a buffer that is mostly silence before speech starts"
+      },
+      "vad_min_silence_ms": {
+        "value": 500,
+        "provenance": "copied 2026-09-26 from Devoir2 (vad_duree_silence_min_ms): short against a thinking pause, long against a breath"
+      },
+      "condition_on_previous_text": {
+        "value": false,
+        "provenance": "copied 2026-09-26 from Devoir2 (conditionner_sur_texte_precedent): stops one hallucination from repeating at every live-preview refresh"
+      }
+    },
+    "partial_refresh_ms": {
+      "value": 1000,
+      "provenance": "measured 2026-09-26 - Whisper small/float16 on cuda transcribed a 6.4 s sentence in 0.51-0.71 s beside the resident writer model; re-checked the same day for large-v3-turbo int8_float16, which transcribes a 19.5 s buffer in 0.74 s (median of 5), so 1 s still keeps the caption live. Devoir2's 3.0 s was sized for its CPU cost of 1.44 s, and the page's in-flight guard makes the real cadence max(this, one transcription) so previews never overlap"
     }
   },
   "paths": {

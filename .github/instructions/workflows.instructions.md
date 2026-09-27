@@ -46,6 +46,7 @@ locally and free. No gateway; cloud stays on the normal subscription auth.
 | Docstrings, code comments, Markdown docs, CHANGELOG, Obsidian summaries | `local-writer` | haiku wrapper + the resolver's writer-role model (bridge) | Rule-compliant text written to the target file |
 | Code against a spec/failing test, refactor snippets, scaffolds | `local-coder` | haiku wrapper + the resolver's coder-role model (bridge) | Minimal, style-matched code edits |
 | Tune a local Ollama model's context window and KV cache type for this GPU | `opt-local-vram-llm` skill (`/opt-local-vram-llm`) | measured sweep against `optimize_ollama.evaluate_rung` | Tuned `-gpu` tag, `local-model-config.json` measurement, candidate declared in `local-models.json` |
+| Choose the voice panel's speech-to-text model for this GPU, measured beside the resident LLM | `opt-local-stt-vram` skill (`/opt-local-stt-vram`) | one child process per candidate, per-process VRAM counters, the operator's reference words | Scored selection table (`stt_bench_table.md`) + JSON report; the `observe-config.json` keys to edit, never edited |
 | Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
 | Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, no daily note; single serialized writer, the outbox is the write path, not a fallback |
 | Run a nightly local-coding pipeline with no Claude Code involved: one aider process per plan, a writer model and a reviewer model that never edits code | `aider-setup` skill (daytime setup) + `aider-night.ps1`/`.bat` (the night itself, a plain `cmd` entry point) | two local Ollama tags (writer, reviewer), resolved from `model-settings.yml`, never Claude | Commits per plan step on a working branch, `audit.md`, a pushed branch with no merge; plans follow the shape R26 fixes below |
@@ -176,24 +177,68 @@ same as R26. If the aider writer model measurably cannot follow an intent-only p
 is a finding to bring back here and weigh against the five defects R29 exists to prevent, not a
 reason to have left the rule half-applied from the start.
 
+**R33 - a plan's own doc task updates the public-facing docs too, not only the internal
+`SKILL.md`/`testing.md`/`CLAUDE.md` set.** Effective 2026-09-26. Every plan's doc-update task
+(the one R26 already requires at the end of each `planN.md`) names, alongside the internal
+files: `README.md`'s feature list or table when the plan adds or changes a user-facing
+capability, and the public MkDocs landing page (`docs/index.md` and the relevant page under
+`docs/manual/` or the deep-dive references, per `mkdocs.yml`'s own `nav` — extend the existing
+page for the touched skill rather than adding a new one, per R18). A plan whose change is purely
+internal (a hook, a rule, a script with no end-user-visible behavior) states that explicitly in
+its doc task rather than silently skipping the step, so an empty landing-page update reads as a
+decision and not an oversight.
+
 ## Shared working tree
 
 Every session working `C:\Martin Otis\OutilsLogiciels\ResearchTools` shares ONE working tree and
-ONE `.git/HEAD`. Two concrete incidents, both 2026-08-30, neither caused by a bug:
+ONE `.git/HEAD`. Three concrete incidents, none caused by a bug:
 
-- **A peer's `git checkout main` moved the branch under a running session.** Work planned for a
-  feature branch was about to be written onto `main`, and the session had no way to notice because
-  its plan asserted the branch rather than reading it.
-- **A peer's `git add -A` swept a third session's untracked files into the peer's commit.** It
-  worked and it is tested, but it reached `main` with no review or commit message of its own.
+- **2026-08-30 — a peer's `git checkout main` moved the branch under a running session.** Work
+  planned for a feature branch was about to be written onto `main`, and the session had no way to
+  notice because its plan asserted the branch rather than reading it.
+- **2026-08-30 — a peer's `git add -A` swept a third session's untracked files into the peer's
+  commit.** It worked and it is tested, but it reached `main` with no review or commit message of
+  its own.
+- **2026-09-26 — a peer's checkout to a feature branch stranded another session's uncommitted
+  work there, and recovering it silently destroyed committed history.** A session working on
+  `main` had four uncommitted files; a peer checked the shared tree out to their own branch to
+  open a PR, and those four files rode along onto the peer's branch with no warning. The first
+  session recovered correctly (peer flagged it, `.git/HEAD` re-checked, files stashed with
+  `-u`), but `git checkout main` + `stash pop` applied the stash against a STALE base: main had
+  moved on (more commits landed by other work in between), the stash's recorded diff did not
+  know that, and popping it onto main's current tip silently overwrote ~170 lines of
+  already-committed history in a region with no textual conflict — `stash pop` reports a
+  conflict only on textual overlap, never on "the target moved since I branched off it." Caught
+  only by manually diffing the new commit's line/insertion counts against its parent, not by any
+  git error.
 
-Three rules for a session sharing this tree with others:
+**R32 - a session on this shared tree never assumes it is the only one working here, and never
+switches the checked-out branch without checking first.** Effective 2026-09-26. Concretely:
 
-- Read `.git/HEAD` as a plain FILE before any write phase, not with a git command, so it stays
-  available even to a session forbidden to invoke git.
+1. Read `.git/HEAD` as a plain FILE immediately before ANY branch-changing operation
+   (`checkout`, `switch`), not just once at session start — a peer can move it between your
+   own reads.
+2. Before switching, check for other live sessions (`ListAgents`) and, if one is found and the
+   tree is shared, say what you are about to do and why before doing it — a one-line heads-up
+   costs nothing and is what caught the 2026-09-26 incident before it compounded.
+3. When work must move across a branch switch (stash, cherry-pick, or any equivalent), verify
+   the TARGET branch's current tip after switching, before reapplying anything — `git log -1`
+   and a fresh `git status` on the target, not an assumption that it still looks like it did
+   last time this session checked. A stash/cherry-pick applies against what IT recorded, not
+   against the target's live state, and silently wins on any line range that does not
+   textually overlap.
+4. After any operation that rewrites a file via a cross-branch mechanism (stash pop, merge,
+   cherry-pick), diff the result against the immediately preceding commit's parent for that
+   file, not just against your own expectation of its content — a clean apply is not proof
+   nothing was silently dropped.
+
+Three plain rules from the same lesson, restated for the ordinary (non-branch-switching) case:
+
 - On a shared tree, stage by path. `git add -A` claims files the session did not write.
 - "Another session's work appears on `main`" is ambiguous there: it may mean they landed it, or
   that somebody else's staging swept it in. The commit that ADDED the file is how to tell.
+- Coordinate via a message to the peer (if one is running) before and after any operation that
+  changes what is checked out — not only when something already went wrong.
 
 The same sharing also explains a class of false positives elsewhere, not only on `main`. The
 `Stop` memory-upkeep hook's fingerprint (`$(git rev-parse --git-dir)/claude-stop-state`) is ONE
@@ -202,6 +247,30 @@ quiet, session is comparing against, and that session's hook fires as if it had 
 itself. `rt-observe` already reads the branch from `.git/HEAD`, so the first rule above is
 observable today; the other two, and the hook fingerprint's per-session scoping, are conventions
 and code only this file and its owning hook can carry.
+
+## Issue and Project tracking
+
+**R30 - a change that opens a pull request carries a linked GitHub Issue, and that Issue has
+a card on the repository's own project board.** Effective 2026-09-26. Workspace-wide by where
+this file lives (`.claude/rules/`, a machine-wide junction), but "the board" means whichever
+project board belongs to the repo being worked in — for ResearchTools, that is
+[ResearchTools Roadmap](https://github.com/users/LARi-UQAC/projects/6) (project #6, linked to
+this repo); a different repo names its own. Order, before opening the PR:
+
+1. **Issue first.** `gh issue create` (or open one by hand) naming what the PR will fix or add.
+   A PR with no Issue is missing the "why" a later session, or a reviewer, needs — the PR diff
+   alone answers "what changed," never "what problem this solves" or "why now."
+2. **Card second.** `gh project item-add <project-number> --owner <org-or-user> --url
+   <issue-url>` puts that Issue on the repo's Kanban board (ResearchTools: `--owner LARi-UQAC`,
+   project 6). A draft card with no Issue (`gh project item-create`) is fine for a roadmap item
+   not yet ready to be worked, but the moment work starts on it, it needs a real Issue behind
+   it, per step 1.
+3. **PR last**, referencing the Issue (`Fixes #<N>` or `Closes #<N>` in the PR body) so merging
+   the PR auto-closes the Issue, which the board then reflects.
+
+Exemption: a pure documentation fix with no behavioral change (a typo, a broken link, a stale
+number caught by inspection) does not need this ceremony — use judgment, the same as R16 not
+gating every read-only script behind a dry-run flag it has no destructive path to guard.
 
 ## LaTeX maintenance
 
@@ -218,9 +287,27 @@ The slash commands are thin wrappers over these agents.
 
 ## Documentation maintenance
 
-After a substantive change, update the relevant doc and verify that links resolve. Keep
-`README.md` and `Architecture.md` as the authoritative inventory; do not duplicate their
-tables into `.claude/CLAUDE.md`.
+**R31 - a PR does not merge until the documentation for what it touched is updated, in the
+same PR.** Effective 2026-09-26. Companion to R30: R30 gates OPENING a PR (Issue + board
+card), R31 gates APPROVING/MERGING it (docs caught up). "The respective documentation" means
+whichever of these the change actually touched:
+
+- A skill, agent, or command added or edited → its entry in `README.md` /
+  `docs/manual/04-skills.md`, `10-agents.md`, or `08-commands.md`, and `Architecture.md` if
+  the relationship diagram changed.
+- A script's CLI surface changed (new flag, renamed subcommand, changed default) → its line
+  in `.claude/rules/testing.md` (already required by R23 — this rule is the merge-time check
+  that R23 was actually followed, not a second requirement).
+- A workflow or convention changed → the matching `.claude/rules/*.md` file, and this file's
+  own "Rule identifiers" cross-index in `code-style.md` if a rule number was added or moved.
+- A chapter of the manual changed structurally (a section added, removed, or renamed) → that
+  chapter's entry in the `README.md` chapter table stays accurate.
+
+The reviewer (or the approver, on a solo-reviewed PR) checks this before approving, the same
+way they check tests passed — "looks right, will fix docs later" is not an approval. Keep
+`README.md` and `Architecture.md` as the authoritative inventory regardless; do not duplicate
+their tables into `.claude/CLAUDE.md`, and verify updated links actually resolve rather than
+assuming the new path is right.
 
 ## Where code belongs
 

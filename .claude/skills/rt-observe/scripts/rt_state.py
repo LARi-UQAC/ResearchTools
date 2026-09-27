@@ -16,6 +16,7 @@ import io
 import json
 import secrets
 import sys
+import threading
 import webbrowser
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -373,6 +374,8 @@ def view_config(config):
                                               "context_window_tokens"),
         "canvas": {key: config_value(config, "view", "canvas", key)
                    for key in canvas_keys},
+        "voice": {"partial_refresh_ms": config_value(
+            config, "voice", "partial_refresh_ms")},
     }
 
 
@@ -425,6 +428,59 @@ def audit_remote_sink(config, home, err=None):
     return rt_actions.build_remote_sink(values, home, timeout_s)
 
 
+def voice_callables(config, cache, home, write_request=None, poll=None,
+                    transcribe=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the two callables rt_server.build_server wires into the voice
+        routes, closing over the current cache snapshot so the ask relay's
+        context digest is always the freshest one this process has, with no
+        second collection pass.
+
+    Inputs:
+        config (dict): parsed observe-config.json
+        cache (rt_server.SnapshotCache): this process's live cache
+        home (Path): for resolving paths.obsidian_outbox's "~/" spelling
+        write_request, poll, transcribe (callable): injected for the suite;
+        default to voice_ask.write_ask_request, voice_ask.poll_answer and
+        stt_engine.transcribe
+
+    Outputs:
+        (transcribe_fn, ask_fn) (tuple): transcribe_fn(audio_bytes,
+        language="auto") -> str, ask_fn(question, language="auto") -> dict.
+        Both forward the voice panel's dropdown value end to end - to the
+        STT decode hint AND to the daemon's answer language - rather than
+        defaulting silently, since a route that reads the dropdown and a
+        callable that ignores it is a wiring gap this dashboard's own
+        docs would then be lying about.
+    --------------------------------------------------------------------------
+    """
+    import stt_engine
+    import voice_ask
+
+    write_request = write_request or voice_ask.write_ask_request
+    poll = poll or voice_ask.poll_answer
+    transcribe = transcribe or stt_engine.transcribe
+
+    text = config_value(config, "paths", "obsidian_outbox")
+    outbox_root = (home / text[2:]) if text.startswith("~/") else Path(text)
+    wait_s = config_value(config, "timeouts_seconds", "voice_ask_wait")
+
+    def transcribe_fn(audio_bytes, language="auto"):
+        return transcribe(audio_bytes, config, language=language)
+
+    def ask_fn(question, language="auto"):
+        state = cache.snapshot(datetime.now(timezone.utc), block=False)
+        digest = voice_ask.build_context_snapshot(state)
+        request_id = write_request(outbox_root, question, digest,
+                                   language=language)
+        return poll(outbox_root, request_id, timeout_s=wait_s,
+                   poll_interval_s=min(1.0, wait_s / 10))
+
+    return transcribe_fn, ask_fn
+
+
 def action_runner(args, config, cache, builders, clock):
     """
     --------------------------------------------------------------------------
@@ -459,8 +515,37 @@ def action_runner(args, config, cache, builders, clock):
         return None
 
 
+def start_stt_warmup(config, warm=None, spawn=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Load and warm the speech-to-text model on a background thread as the
+        dashboard starts, so the first push-to-talk already has a live
+        preview. Measured 2026-09-26: loaded lazily, the first transcription
+        took 14.3 s; Devoir2 preloads for the same reason.
+
+    Inputs:
+        config (dict): parsed observe-config.json
+        warm (callable): config -> reason | None; defaults to stt_engine.warm
+        spawn (callable): target -> None; defaults to a daemon thread
+
+    Outputs:
+        None. A model that cannot load is not an error here: the voice route
+        reports it, with its install command, when someone presses P.
+    --------------------------------------------------------------------------
+    """
+    if warm is None:
+        import stt_engine
+        warm = stt_engine.warm
+    if spawn is None:
+        def spawn(target):
+            threading.Thread(target=target, daemon=True,
+                             name="stt-warmup").start()
+    spawn(lambda: warm(config))
+
+
 def serve(args, config, out=None, err=None, clock=None,
-          decide=None, browse=None):
+          decide=None, browse=None, warmup=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -476,6 +561,8 @@ def serve(args, config, out=None, err=None, clock=None,
         clock (callable): returns the current time (R19)
         decide (callable): rt_server.start_decision replacement, for the suite
         browse (callable): webbrowser.open replacement, for the suite
+        warmup (callable): config -> None, starts the STT warm-up; defaults
+            to start_stt_warmup, injected so the suite never loads a model
 
     Outputs:
         code (int): 0 serving or already running, 1 refused, 2 refusal by design
@@ -545,6 +632,10 @@ def serve(args, config, out=None, err=None, clock=None,
         envelope=lambda: {"repo": {"root": str(repo_root),
                                    "name": repo_root.name}})
     runner = action_runner(args, config, cache, builders, clock)
+    home = Path(args.home) if args.home else Path.home()
+    transcribe_fn, ask_fn = voice_callables(config, cache, home)
+    voice_caps = {"voice_question_chars":
+                 config_value(config, "caps", "voice_question_chars")}
     try:
         httpd = rt_server.build_server(
             host, port, cache, token, page,
@@ -555,7 +646,9 @@ def serve(args, config, out=None, err=None, clock=None,
             # request: editing observe-config.json then refreshing is enough,
             # exactly as it already was for the markup itself.
             page_vars=lambda: {rt_server.VIEW_CONFIG_PLACEHOLDER:
-                               json.dumps(view_config(load_config()))})
+                               json.dumps(view_config(load_config()))},
+            voice_transcribe=transcribe_fn, voice_ask=ask_fn,
+            caps=voice_caps)
     except rt_server.ServerRefusal as exc:
         err.write("%s\n" % exc)
         return 2
@@ -569,6 +662,7 @@ def serve(args, config, out=None, err=None, clock=None,
     # for the slowest one. Measured 2026-08-31: the services section runs
     # tier-1 `claude mcp list`, which reaches the network for 28 servers.
     cache.warm(clock())
+    (warmup or start_stt_warmup)(config)
     out.write("rt-dashboard serving  %s\n" % url)
     out.write("  session token  %s\n" % token)
     out.write("  state          %sapi/state\n" % url)

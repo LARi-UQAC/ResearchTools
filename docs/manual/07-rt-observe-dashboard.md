@@ -37,6 +37,31 @@ badge top-right and the footer strip (drawn by `rt_state.py`, generation timesta
 hash, last install, repo root) are the receipts every panel here carries per R9 — a claim with
 no stamp is not trusted.
 
+## The voice panel (2026-09-26)
+
+A fifth tab, **Voice**, next to Real-Time Process. Hold **P** to record, release to send; a
+dropdown next to the button picks the language (Auto-detect, English, Francais), which drives
+both the speech-to-text decode and the answer's own language. The transcript updates live while
+you speak, the same progressive re-transcription Devoir2 uses, and the view draws the voice
+pipeline in the Real-Time Process tab's own idiom: one agent node whose ring is your microphone
+level, four stage boxes (listening, transcribing, thinking, replying) that light up in turn with
+their measured durations, and a live spectrum strip.
+
+Speech-to-text runs locally on the GPU: `faster-whisper` large-v3-turbo in int8_float16 on
+CUDA. It won a scored comparison of four Whisper variants run beside the resident writer-role
+model: 2.5% word error on the operator's own recordings, a 19.5 s recording transcribed in
+0.74 s, and 945 MiB of VRAM (see [docs/rt-observe.md](../rt-observe.md) for the full table). Install `scripts/requirements-voice.txt`, plus
+`scripts/requirements-voice-cuda.txt` for the NVIDIA runtime on a machine without a system CUDA
+Toolkit. A machine without them sees the panel name the missing install command, never a
+broken dashboard. The model is loaded and warmed when the dashboard starts, so the first press
+already has a live transcript.
+
+The panel never opens the Obsidian vault or the `graphify` graph itself. Every question is
+relayed to the vault daemon's own read-only ask queue (`.claude/skills/obsidian-cli`'s
+`daemon_ask.py`), which searches the vault, calls the local LLM, and answers back — the same
+boundary the rest of this page already holds itself to for the vault/graph panels above. The
+answer is spoken back through the browser's own `speechSynthesis`, not a new server-side voice.
+
 ## The `/rt-dashboard` command
 
 Starts the `rt-observe` dashboard on loopback and reports the URL. With no argument it dry-runs

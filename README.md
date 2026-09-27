@@ -59,6 +59,7 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 | Catch a missing reference or a broken hypothesis flow after the reviewer does | An auditor scores the manuscript first, against the same ScholarEval rubric a committee uses |
 | Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
+| Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
 
 Not a replacement for judgment — a second pair of eyes that never gets tired of checking.
 
@@ -68,7 +69,9 @@ Not a replacement for judgment — a second pair of eyes that never gets tired o
 
 The `rt-observe` dashboard watching a live session: hook flow, fan-out to the two memories
 (Obsidian vault, `graphify` graph), and a spawned subagent, all on loopback with no external
-service. Full walkthrough: [docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
+service. A push-to-talk voice panel (hold P) lets you ask it a question about this toolkit's
+own memory out loud, answered by the local LLM through the vault daemon's ask queue and spoken
+back. Full walkthrough: [docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
 
 ## Quickstart
 
@@ -112,7 +115,7 @@ graph LR
 | 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the 5 install steps |
 | 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys |
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx` |
-| 04 | [Skills](docs/manual/04-skills.md) | All 15 skills, the two memories |
+| 04 | [Skills](docs/manual/04-skills.md) | All 22 skills, the two memories |
 | 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings |
 | 06 | [Aider nightly pipeline](docs/manual/06-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
 | 07 | [rt-observe & dashboard](docs/manual/07-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard` |

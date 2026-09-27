@@ -233,3 +233,42 @@ The **Journal** rail panel shows the identity layer's counts (persons, identifie
 and the trace stream's own shape (row count, distinct sessions, newest event) - never a
 recomputed token total, which stays owned by the usage panel's existing, already-decided
 counting rule.
+
+## The voice panel (2026-09-26)
+
+[voice_ask.py](../.claude/skills/rt-observe/scripts/voice_ask.py) writes a question into
+`~/.claude/obsidian-outbox/ask/requests/` and polls `ask/answers/` for the reply, following the
+exact file shapes [daemon_ask.py](../.claude/skills/obsidian-cli/scripts/daemon_ask.py) (the
+`obsidian-cli` skill) expects on the other side. Neither this module nor
+[stt_engine.py](../.claude/skills/rt-observe/scripts/stt_engine.py) (local speech-to-text,
+`faster-whisper` as a lazily-imported optional dependency) ever opens `OBSIDIAN_VAULT` or
+`graphify-out/`: the vault/graph reasoning is entirely the daemon's, reached only through the
+outbox files above, which already sit outside the vault boundary the rest of this skill's
+collectors observe. TTS in this phase is the browser's own `speechSynthesis`, not a new
+server-side engine.
+
+Speech-to-text runs on the GPU: Whisper large-v3-turbo, int8_float16, CUDA. It was chosen on
+2026-09-26 from four candidates, each run in its own process beside the resident writer-role
+model on the operator's three dictated recordings, scored against the operator's own reference
+text:
+
+| Model | Word error | 19.5 s buffer | Dedicated VRAM | LLM demoted | Score |
+|---|---|---|---|---|---|
+| large-v3-turbo int8_float16 | 2.5% | 0.74 s | 945 MiB | 7% | 98.8 |
+| small float16 | 10.0% | 0.58 s | 625 MiB | 2% | 95.0 |
+| medium int8_float16 | 7.5% | 1.24 s | 881 MiB | 8% | 86.6 |
+| large-v3 int8_float16 | 2.5% | 1.69 s | 1617 MiB | 24% | gated out |
+
+The score averages accuracy (100 minus word error) and live-caption speed (100 when the buffer
+transcribes within `voice.partial_refresh_ms`), and a candidate that demotes more than 10% of the
+LLM out of VRAM is gated out. VRAM is read from the per-process `GPU Process Memory` counters,
+because `nvidia-smi` under WDDM cannot tell whose memory it is, and a candidate evaluated in the
+same process as the one before it inherits that model's reserved memory. The sample is 40
+reference words, so one word is 2.5% of word error. That comparison is now the
+[opt-local-stt-vram](manual/04-skills.md#opt-local-stt-vram---measured-speech-to-text-selection-for-this-gpu)
+skill (`/opt-local-stt-vram`): rerun it with your own recordings to test another model, or after
+a GPU or LLM change, and adopt its winner by editing the two `voice.stt` keys above.
+`requirements-voice-cuda.txt` carries the NVIDIA runtime (Devoir2's pins) for a machine
+without a system CUDA Toolkit. The dashboard warms the model at startup (a lazily loaded model
+took 14.3 s on its first call), and the page re-transcribes the growing recording once per
+`voice.partial_refresh_ms`, one request at a time, so the caption stays live without queueing.

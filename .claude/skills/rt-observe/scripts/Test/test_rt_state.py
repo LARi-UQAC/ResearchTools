@@ -69,7 +69,14 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
                               "usage": value(60)},
         "timeouts_seconds": {"subprocess_default": value(20),
                              "mcp_list": value(45), "action_default": value(600),
-                             "ping": value(2)},
+                             "ping": value(2),
+                             # serve() builds the voice callables unconditionally
+                             # (Task 5, 2026-09-26), so this and the two keys
+                             # below are declared here for the same reason
+                             # identity/traces are: a caller that never touches
+                             # the voice panel must not KeyError just for
+                             # existing.
+                             "voice_ask_wait": value(20)},
         # Everything the served page reads, injected as one block so the markup
         # carries no configured number (R0). The shipped file's own keys are
         # asserted separately, against the real config rather than this one.
@@ -83,9 +90,11 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
         # binds, so a config missing these fails the REFUSAL cases too - which
         # is how this block came to be added.
         "paths": {"action_log": value("~/.claude/rt-actions.jsonl"),
-                  "inbox_root": value("~/.claude/rt-inbox")},
+                  "inbox_root": value("~/.claude/rt-inbox"),
+                  "obsidian_outbox": value("~/.claude/obsidian-outbox")},
         "caps": {"inbox_message_chars": value(4000),
-                 "output_tail_chars": value(2000)},
+                 "output_tail_chars": value(2000),
+                 "voice_question_chars": value(500)},
     }
 
 
@@ -829,6 +838,35 @@ class ServeCommand(unittest.TestCase):
         self.assertIn("api/state", out.getvalue())
         httpd.server_close.assert_called_once()
 
+    def test_the_serving_path_warms_the_stt_model_once(self):
+        """Measured 2026-09-26: with lazy loading the first transcription took
+        14.3 s, so no live preview could appear during the first push-to-talk.
+        Devoir2 preloads and warms at startup; so does the dashboard now."""
+        out, err = io.StringIO(), io.StringIO()
+        httpd = mock.Mock()
+        httpd.serve_forever.side_effect = KeyboardInterrupt
+        warmed = []
+        with mock.patch.object(rt_server, "build_server", return_value=httpd), \
+             mock.patch.object(rt_state, "section_builders", return_value={}):
+            rt_state.serve(
+                self._args(), fixture_config(), out=out, err=err,
+                clock=lambda: NOW, warmup=warmed.append,
+                decide=lambda *a: {"action": "serve", "port": 8787,
+                                   "host": "127.0.0.1",
+                                   "url": "http://127.0.0.1:8787/"})
+        self.assertEqual(len(warmed), 1)
+
+    def test_a_refused_start_never_warms_the_model(self):
+        out, err = io.StringIO(), io.StringIO()
+        warmed = []
+        rt_state.serve(
+            self._args(), fixture_config(), out=out, err=err,
+            clock=lambda: NOW, warmup=warmed.append,
+            decide=lambda *a: {"action": "refuse", "port": 8787,
+                               "host": "127.0.0.1", "reason": "held",
+                               "pid": 1, "url": "http://127.0.0.1:8787/"})
+        self.assertEqual(warmed, [])
+
     def test_open_is_not_honoured_by_a_dry_run(self):
         out, err = io.StringIO(), io.StringIO()
         browse = mock.Mock()
@@ -897,6 +935,14 @@ class SectionBuilders(unittest.TestCase):
             with self.subTest(canvas=key):
                 rt_state.config_value(fixture, "view", "canvas", key)
 
+    def test_view_config_carries_the_voice_partial_refresh_interval(self):
+        """The push-to-talk panel's periodic live-preview transcription cadence
+        (R0: config-driven, no literal in the page's JS)."""
+        shipped = rt_state.load_config()
+        ms = rt_state.view_config(shipped)["voice"]["partial_refresh_ms"]
+        self.assertIsInstance(ms, int)
+        self.assertGreater(ms, 0)
+
     def test_every_declared_ttl_is_consumed_by_a_section(self):
         """The direction the other TTL test cannot see. Measured 2026-08-31:
         ttl_seconds.mcp_live was declared at 300s with its own provenance and
@@ -943,6 +989,93 @@ class SectionBuilders(unittest.TestCase):
             mirrors = builders["mirrors"](NOW)
         self.assertEqual("unavailable", mirrors["status"])
         self.assertIn("mirror-policy.json", mirrors["reason"])
+
+
+class VoiceWiringCase(unittest.TestCase):
+    def test_ask_fn_writes_a_request_and_polls_the_answer(self):
+        import voice_ask
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        config["timeouts_seconds"]["voice_ask_wait"] = {"value": 1}
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        written = {}
+
+        def fake_write(outbox_root, question, snapshot, language="auto",
+                       ident=None, clock=None):
+            written["question"] = question
+            written["language"] = language
+            (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
+            (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
+                json.dumps({"status": "ok", "answer_text": "fine"}),
+                encoding="utf-8")
+            return "fixed"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(),
+            write_request=fake_write, poll=voice_ask.poll_answer)
+        result = ask_fn("is this stale")
+        self.assertEqual(written["question"], "is this stale")
+        self.assertEqual(written["language"], "auto")
+        self.assertEqual(result["answer_text"], "fine")
+
+    def test_ask_fn_forwards_the_chosen_language(self):
+        import voice_ask
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        config["timeouts_seconds"]["voice_ask_wait"] = {"value": 1}
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        written = {}
+
+        def fake_write(outbox_root, question, snapshot, language="auto",
+                       ident=None, clock=None):
+            written["language"] = language
+            (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
+            (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
+                json.dumps({"status": "ok", "answer_text": "fine"}),
+                encoding="utf-8")
+            return "fixed"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(),
+            write_request=fake_write, poll=voice_ask.poll_answer)
+        ask_fn("is this stale", language="fr")
+        self.assertEqual(written["language"], "fr")
+
+    def test_start_stt_warmup_runs_warm_off_the_serving_thread(self):
+        seen = {}
+
+        def fake_warm(config):
+            seen["config"] = config
+            return None
+
+        def run_now(target):
+            target()
+
+        cfg = fixture_config()
+        rt_state.start_stt_warmup(cfg, warm=fake_warm, spawn=run_now)
+        self.assertIs(seen["config"], cfg)
+
+    def test_transcribe_fn_forwards_the_chosen_language(self):
+        config = fixture_config()
+        cache = rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+        captured = {}
+
+        def fake_transcribe(audio_bytes, config, language=None):
+            captured["language"] = language
+            return "ok"
+
+        transcribe_fn, ask_fn = rt_state.voice_callables(
+            config, cache, Path.home(), transcribe=fake_transcribe)
+        transcribe_fn(b"audio", language="fr")
+        self.assertEqual(captured["language"], "fr")
 
 
 if __name__ == "__main__":

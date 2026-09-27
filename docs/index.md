@@ -41,7 +41,8 @@ packages — a ScholarEval score before the reviewer ever sees it.
 ### 🛠️ Software & hardware review
 
 Code, PCB, and 3D CAD design review, with the `rt-observe` dashboard to watch the agents work
-and log what they did.
+and log what they did - and to ask it a question out loud: hold P, and a local model answers
+from the toolkit's own memory, spoken back, nothing leaving the machine.
 
 [See it in action →](manual/07-rt-observe-dashboard.md)
 
@@ -52,7 +53,9 @@ and log what they did.
 ### ⚙️ Local-model dev loop
 
 `local-writer` / `local-coder` push routine generation to a local Ollama model instead of the
-cloud — a design/plan/code/review loop that keeps token cost down.
+cloud — a design/plan/code/review loop that keeps token cost down. Which model fits your GPU is
+measured, not guessed: `opt-local-vram-llm` tunes the LLM, `opt-local-stt-vram` scores
+speech-to-text models beside it.
 
 [Agents →](manual/10-agents.md)
 
@@ -67,6 +70,7 @@ cloud — a design/plan/code/review loop that keeps token cost down.
 | Catch a missing reference or a broken hypothesis flow after the reviewer does | An auditor scores the manuscript first, against the same ScholarEval rubric a committee uses |
 | Re-read a cited paper's abstract and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
+| Guess which local model fits your GPU | `opt-local-vram-llm` and `opt-local-stt-vram` measure it on the card, beside what already runs there, and print one table to choose from |
 
 ---
 

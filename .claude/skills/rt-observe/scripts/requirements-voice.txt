@@ -1,0 +1,10 @@
+# Voice panel speech-to-text (optional: rt-dashboard runs without it and the
+# voice route names this file when it is missing).
+# Pinned to the versions Devoir2 measured on this machine
+# (6MIG841-Lab/etudiant/Lab1/code/requirements.txt, 2026-09-19): faster-whisper
+# 1.2.1 on ctranslate2 4.8.2. ctranslate2 is pinned for itself so a future
+# faster-whisper cannot resolve an unmeasured engine version.
+# The GPU runtime (observe-config.json voice.stt.device = cuda) is in
+# requirements-voice-cuda.txt.
+faster-whisper==1.2.1
+ctranslate2==4.8.2

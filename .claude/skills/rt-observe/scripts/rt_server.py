@@ -37,7 +37,7 @@ import urllib.error
 import urllib.request
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
 
 APP_ID = "rt-observe"
@@ -429,10 +429,12 @@ def start_decision(host, port, timeout_s, subprocess_timeout_s,
 # --------------------------------------------------------------------------
 def make_handler(snapshot_fn, token, page_path, asset_roots,
                  action_runner=None, catalogue=None, log=None, started=None,
-                 port=None, page_vars=None):
+                 port=None, page_vars=None, voice_transcribe=None,
+                 voice_ask=None, caps=None):
     """Build the request handler. Everything it needs is closed over, so the
     handler class holds no module-level state and two servers in one process
     could not share a token by accident."""
+    caps = caps or {}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "rt-observe"
@@ -571,9 +573,89 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
             return self._json(404, {"status": "unavailable",
                                     "reason": "%s is in no asset root" % name})
 
+        # -- voice routes -------------------------------------------------
+        def _voice_transcribe(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            audio = self.rfile.read(length) if length > 0 else b""
+            # Same two gates as /api/action, in the same order: origin first
+            # (belt), token second (braces). Transcription runs a real local
+            # model on every call, so an ungated route would let any page a
+            # browser has open flood it with audio and burn CPU for free.
+            # The token travels in a header rather than the JSON body, since
+            # this body is raw audio.
+            if not self._origin_ok():
+                return self._json(403, {"status": "refused",
+                                        "reason": "cross-origin request refused"})
+            if self.headers.get("X-RT-Session-Token") != token:
+                return self._json(403, {"status": "refused",
+                                        "reason": "no or invalid session token "
+                                                  "(X-RT-Session-Token header)"})
+            query = parse_qs(urlsplit(self.path).query)
+            language = (query.get("language") or ["auto"])[0]
+            if language not in ("auto", "en", "fr"):
+                return self._json(400, {
+                    "status": "refused",
+                    "reason": "unsupported language %r; the voice panel's "
+                              "dropdown offers auto, en, fr only" % language})
+            if voice_transcribe is None:
+                return self._json(501, {
+                    "status": "unavailable",
+                    "reason": "no STT engine is installed on this server"})
+            try:
+                text = voice_transcribe(audio, language=language)
+            except Exception as exc:                       # noqa: BLE001
+                return self._json(503, {"status": "unavailable",
+                                        "reason": str(exc)})
+            return self._json(200, {"status": "ok", "text": text})
+
+        def _voice_ask(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            if not self._origin_ok():
+                return self._json(403, {"status": "refused",
+                                        "reason": "cross-origin request refused"})
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                return self._json(400, {"status": "refused",
+                                        "reason": "body is not JSON"})
+            if body.get("token") != token:
+                return self._json(403, {"status": "refused",
+                                        "reason": "invalid session token"})
+            question = (body.get("question") or "").strip()
+            if not question:
+                return self._json(400, {"status": "refused",
+                                        "reason": "an empty question is not sent"})
+            cap = caps.get("voice_question_chars")
+            if cap and len(question) > cap:
+                return self._json(400, {
+                    "status": "refused",
+                    "reason": "the question is %d characters and the cap is "
+                              "%d" % (len(question), cap)})
+            language = body.get("language") or "auto"
+            if language not in ("auto", "en", "fr"):
+                return self._json(400, {
+                    "status": "refused",
+                    "reason": "unsupported language %r; the voice panel's "
+                              "dropdown offers auto, en, fr only" % language})
+            if voice_ask is None:
+                return self._json(501, {
+                    "status": "unavailable",
+                    "reason": "the ask relay is not installed on this server"})
+            try:
+                result = voice_ask(question, language=language)
+            except Exception as exc:                        # noqa: BLE001
+                return self._json(500, {"status": "unavailable",
+                                        "reason": str(exc)})
+            return self._json(200, result)
+
         # -- POST -------------------------------------------------------
         def do_POST(self):                              # noqa: N802
             path = self.path.split("?", 1)[0].rstrip("/") or "/"
+            if path == "/api/voice/transcribe":
+                return self._voice_transcribe()
+            if path == "/api/voice/ask":
+                return self._voice_ask()
             if path != "/api/action":
                 return self._json(404, {"status": "unavailable",
                                         "reason": "no route %s" % path})
@@ -626,7 +708,8 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
 
 def build_server(host, port, cache, token, page_path, asset_roots,
                  action_runner=None, catalogue=None, log=None, clock=None,
-                 page_vars=None):
+                 page_vars=None, voice_transcribe=None, voice_ask=None,
+                 caps=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -657,7 +740,8 @@ def build_server(host, port, cache, token, page_path, asset_roots,
                                             max_age=max_age),
         token, page_path, asset_roots,
         action_runner=action_runner, catalogue=catalogue, log=log,
-        started=started, port=port, page_vars=page_vars)
+        started=started, port=port, page_vars=page_vars,
+        voice_transcribe=voice_transcribe, voice_ask=voice_ask, caps=caps)
     httpd = ThreadingHTTPServer((host, port), handler)
     httpd.daemon_threads = True
     httpd.rt_cache = cache

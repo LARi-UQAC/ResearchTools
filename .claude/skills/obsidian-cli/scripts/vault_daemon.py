@@ -31,12 +31,19 @@ import json
 import signal
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+CODER_SCRIPTS = SCRIPTS.parent.parent / "loop-engineer" / "scripts"
+if str(CODER_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(CODER_SCRIPTS))
+
+import context_budget  # noqa: E402
+import daemon_ask  # noqa: E402
 import daemon_states as ds  # noqa: E402
 import outbox_io  # noqa: E402
 import vault_lock  # noqa: E402
@@ -181,6 +188,173 @@ class VaultDaemon(OutboxLayout):
               file=sys.stderr)
         return report
 
+    def pending_asks(self) -> list:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            List ask requests waiting to be answered, without touching them.
+            The caller uses this to decide whether resolving a model tag is
+            worth doing at all (#6: resolving on every poll pass even with
+            an empty queue costs a model-resolution round trip per pass and,
+            worse, dies on a tag with no measured window before a single
+            real request has ever arrived).
+
+        Inputs:
+            None
+
+        Outputs:
+            requests (list): sorted Path list of outbox/ask/requests/*.json,
+            empty when the directory does not exist yet or holds nothing.
+        ----------------------------------------------------------------------
+        """
+        requests_dir = self.outbox / "ask" / "requests"
+        if not requests_dir.is_dir():
+            return []
+        return sorted(requests_dir.glob("*.json"))
+
+    def _write_answer(self, request_file: Path, result: dict) -> dict:
+        """Write one answer atomically, named after the request file (R24),
+        then consume the request."""
+        answers_dir = self.outbox / "ask" / "answers"
+        answers_dir.mkdir(parents=True, exist_ok=True)
+        result["id"] = request_file.stem
+        tmp = answers_dir / f"{request_file.stem}.json.tmp"
+        final = answers_dir / f"{request_file.stem}.json"
+        tmp.write_text(json.dumps(result, ensure_ascii=False),
+                       encoding="utf-8", newline="\n")
+        tmp.replace(final)
+        request_file.unlink(missing_ok=True)
+        return result
+
+    def fail_pending_asks(self, reason: str, now: str) -> list:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Answer every waiting request with status=error and the reason,
+            so the caller sees why instead of timing out on a daemon that is
+            running but cannot reach its model.
+
+        Inputs:
+            reason (str): what failed, shown to the caller verbatim
+            now (str): ISO 8601 stamp for answered_at (R19)
+
+        Outputs:
+            answers (list): one record per request answered
+        ----------------------------------------------------------------------
+        """
+        return [self._write_answer(request_file,
+                                   {"answered_at": now, "status": "error",
+                                    "reason": reason})
+                for request_file in self.pending_asks()]
+
+    def answer_pending_asks(self, now: str, resolve=None,
+                            window_of=None) -> list:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Resolve the writer-role model and answer every pending ask. The
+            single entry point both run_forever and --once use, so a model
+            that cannot be resolved (no state file, no measured window,
+            Ollama down) is reported to each waiting caller rather than only
+            printed to this daemon's own console.
+
+        Inputs:
+            now (str): ISO 8601 "now", injected (R19)
+            resolve (callable): role -> tag; defaults to ob.resolve_model
+            window_of (callable): tag -> retained window; defaults to
+                context_window
+
+        Outputs:
+            answers (list): one record per request handled; empty, and no
+            model resolved at all, when nothing is waiting
+        ----------------------------------------------------------------------
+        """
+        if not self.pending_asks():
+            return []
+        resolve = resolve or ob.resolve_model
+        window_of = window_of or context_window
+        try:
+            model = resolve("writer")
+            window = window_of(model)
+        except Exception as exc:  # noqa: BLE001 - reported, never substituted
+            return self.fail_pending_asks(
+                f"local model unavailable: {type(exc).__name__}: {exc}", now)
+        return self.run_ask_once(model, window, now=now)
+
+    def run_ask_once(self, model: str, window: int, now: str = None) -> list:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Drain outbox/ask/requests/, answering each with the local model
+            and vault search, then remove the request once answered so a
+            crash mid-answer simply retries it on the next poll (the answer
+            write is atomic tmp+replace, same discipline as write_note).
+            Also prunes any answer file older than the TTL that nothing has
+            polled for, so outbox/ask/answers/ does not grow forever when a
+            caller times out before reading its own answer.
+
+        Inputs:
+            model (str): the resolved writer-role tag
+            window (int): the measured retained window for that tag
+            now (str | None): ISO 8601 "now" for age/TTL math, injected by
+            the caller (R19); defaults to self.today, the same value every
+            existing caller of this method already relied on before this
+            parameter existed
+
+        Outputs:
+            answers (list): one record per request handled, for the report
+        ----------------------------------------------------------------------
+        """
+        now = now or self.today
+        requests_dir = self.outbox / "ask" / "requests"
+        answers_dir = self.outbox / "ask" / "answers"
+        requests_dir.mkdir(parents=True, exist_ok=True)
+        answers_dir.mkdir(parents=True, exist_ok=True)
+        # An answer nothing ever polled for (the caller timed out first, or
+        # never polled) sits in answers_dir forever otherwise. Pruned by
+        # real mtime age, the same class of disk-hygiene check
+        # vault_lock.py's own staleness ceiling already uses - the answer
+        # file's age is a fact about the filesystem, not something a test
+        # needs to control through the `now` this method's callers inject.
+        # An answer nothing ever polled for (the caller timed out first, or
+        # never polled) sits in answers_dir forever otherwise. Pruned by
+        # real mtime age, the same class of disk-hygiene check
+        # vault_lock.py's own staleness ceiling already uses - the answer
+        # file's age is a fact about the filesystem, not something a test
+        # needs to control through the `now` this method's callers inject.
+        ttl = outbox_io.require(self.config, "daemon", "ask_request_ttl_s")
+        for stale in answers_dir.glob("*.json"):
+            try:
+                age = time.time() - stale.stat().st_mtime
+            except OSError:
+                continue
+            if age > ttl:
+                stale.unlink(missing_ok=True)
+        timeout = outbox_io.require(self.config, "probe", "request_timeout_s")
+        handled = []
+        for request_file in self.pending_asks():
+            try:
+                request = daemon_ask.read_request(request_file)
+                result = daemon_ask.answer(
+                    request, self.vault, model, window, timeout,
+                    self.config, today=now)
+            except daemon_ask.AskRefused as exc:
+                result = {"answered_at": now, "status": "refused",
+                         "reason": str(exc)}
+            except Exception as exc:  # noqa: BLE001 - R8/R11 defence in
+                # depth: one request's unexpected failure (a bad timestamp
+                # shape, a search_vault I/O error, anything not already
+                # named above) must never take the whole poll loop down.
+                result = {"answered_at": now, "status": "error",
+                         "reason": f"internal error: {exc}"}
+            # The answer's identity is always the REQUEST FILE'S OWN name
+            # (already constrained by the glob that found it), never the
+            # payload's declared "id" (R24: an untrusted "id" of
+            # "../../evil" must not be able to name a file outside
+            # answers_dir, and an absent "id" must not collide on "None").
+            handled.append(self._write_answer(request_file, result))
+        return handled
+
     def run_once(self) -> list:
         drops = self.pending()
         if not drops:
@@ -209,6 +383,8 @@ class VaultDaemon(OutboxLayout):
         last_drain = time.monotonic()
         print(f"[DAEMON] watching {self.outbox / RAW} every {interval}s",
               file=sys.stderr)
+        ask_interval = self._cfg("ask_poll_interval_s")
+        last_ask = time.monotonic()
         while not _STOP["requested"]:
             try:
                 self.run_once()
@@ -216,6 +392,17 @@ class VaultDaemon(OutboxLayout):
                 # No fallback tag (R8). Say it and keep watching, so the drops
                 # wait in raw/ rather than being filed by something weaker.
                 print(f"[DAEMON] {exc}", file=sys.stderr)
+            if time.monotonic() - last_ask >= ask_interval:
+                # answer_pending_asks resolves a model only when a request is
+                # waiting, and a resolution failure becomes an error answer
+                # the caller reads, never just a line on this console.
+                for answer in self.answer_pending_asks(
+                        datetime.now(timezone.utc).isoformat()):
+                    if answer.get("status") != "ok":
+                        print(f"[DAEMON] ask {answer['id']}: "
+                              f"{answer['status']} - {answer.get('reason')}",
+                              file=sys.stderr)
+                last_ask = time.monotonic()
             if (time.monotonic() - last_drain >= drain_every
                     and not self.pending()):
                 # Quiet interval only: no event in flight, nothing waiting.
@@ -227,14 +414,17 @@ class VaultDaemon(OutboxLayout):
                 except (ob.BridgeError, ds.EventRefused) as exc:
                     print(f"[DAEMON] drain skipped: {exc}", file=sys.stderr)
                 last_drain = time.monotonic()
-            time.sleep(interval)
+            # The ask queue's own cadence (ask_poll_interval_s) is what
+            # plan1's Review Focus calls for: a caller waiting on
+            # /api/voice/ask should not sit behind the raw-drop poll
+            # interval, which is typically much coarser.
+            time.sleep(min(interval, ask_interval))
         singleton.release()
         print("[DAEMON] stopped", file=sys.stderr)
         return 0
 
 
 def context_window(model: str) -> int:
-    import context_budget
     return context_budget.read_retained_num_ctx(
         context_budget.DEFAULT_CONFIG_PATH, model)
 
@@ -259,8 +449,10 @@ def main(argv=None) -> int:
         return 0
     daemon = VaultDaemon(vault, Path(args.outbox), config)
     if args.dry_run:
-        print(json.dumps({"pending": [p.name for p in daemon.pending()]},
-                         ensure_ascii=False, indent=2))
+        print(json.dumps({
+            "pending": [p.name for p in daemon.pending()],
+            "pending_asks": [p.name for p in daemon.pending_asks()],
+        }, ensure_ascii=False, indent=2))
         return 0
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
@@ -272,6 +464,7 @@ def main(argv=None) -> int:
     if args.once:
         daemon.recover_working()
         daemon.run_once()
+        daemon.answer_pending_asks(datetime.now(timezone.utc).isoformat())
         return 0
     return daemon.run_forever()
 

@@ -1,0 +1,163 @@
+{
+ "_provenance": "measured 2026-09-26 on an RTX A1000 6 GB beside the resident writer-role model, one child process per candidate; reference = the operator's own words for the three 6MIG841-Lab recordings",
+ "reference": {
+  "CommandeVocale.m4a": "Le robot avance de 1 mètre à 1 mètre par seconde et tourne de 45 degrés à 0,5 rad par seconde, ensuite avance de 2 mètres à 2 mètres par seconde.",
+  "CommandeAccepte.m4a": "J'accepte.",
+  "CommandeFausse.m4a": "La dalle de béton est de 35 mégapascales."
+ },
+ "audio_s": {
+  "CommandeVocale.m4a": 19.5,
+  "CommandeAccepte.m4a": 2.11,
+  "CommandeFausse.m4a": 3.9
+ },
+ "llm_alone": {
+  "dedicated_mib": 5380,
+  "answer": {
+   "total_s": 2.48,
+   "prompt_s": 0.28,
+   "tps": 28.4
+  }
+ },
+ "candidates": [
+  {
+   "engine": "faster-whisper",
+   "model": "small",
+   "compute_type": "float16",
+   "load_s": 0.8,
+   "first_call_s": 0.7,
+   "files": {
+    "CommandeVocale.m4a": {
+     "median_s": 0.58,
+     "rtf": 0.03,
+     "text": "Le robot avance de 1 mètre à 1 mètre par seconde et tourne de 45 degrés à 0.5 grades par seconde, ensuite avance de 2 mètre à 2 mètre par seconde."
+    },
+    "CommandeAccepte.m4a": {
+     "median_s": 0.18,
+     "rtf": 0.085,
+     "text": "J'accepte."
+    },
+    "CommandeFausse.m4a": {
+     "median_s": 0.26,
+     "rtf": 0.067,
+     "text": "La tâle de béton est de 35 mégapascales."
+    }
+   },
+   "memory": {
+    "dedicated_mib": 625,
+    "shared_mib": 124,
+    "llm_dedicated_before_mib": 5380,
+    "llm_dedicated_after_mib": 5262
+   },
+   "llm_answer_after": {
+    "total_s": 2.58,
+    "prompt_s": 0.38,
+    "tps": 28.4
+   }
+  },
+  {
+   "engine": "faster-whisper",
+   "model": "medium",
+   "compute_type": "int8_float16",
+   "load_s": 3.2,
+   "first_call_s": 0.94,
+   "files": {
+    "CommandeVocale.m4a": {
+     "median_s": 1.24,
+     "rtf": 0.063,
+     "text": "Le robot avance de 1 mètre à 1 mètre par seconde et tourne de 45 degrés à 0.5 grades par seconde. Ensuite avance de 2 mètres à 2 mètres par seconde."
+    },
+    "CommandeAccepte.m4a": {
+     "median_s": 0.41,
+     "rtf": 0.193,
+     "text": "J'accepte."
+    },
+    "CommandeFausse.m4a": {
+     "median_s": 0.53,
+     "rtf": 0.137,
+     "text": "La talle de béton est de 35 MPa."
+    }
+   },
+   "memory": {
+    "dedicated_mib": 881,
+    "shared_mib": 124,
+    "llm_dedicated_before_mib": 5326,
+    "llm_dedicated_after_mib": 4878
+   },
+   "llm_answer_after": {
+    "total_s": 2.83,
+    "prompt_s": 0.46,
+    "tps": 26.4
+   }
+  },
+  {
+   "engine": "faster-whisper",
+   "model": "large-v3-turbo",
+   "compute_type": "int8_float16",
+   "load_s": 3.3,
+   "first_call_s": 0.9,
+   "files": {
+    "CommandeVocale.m4a": {
+     "median_s": 0.74,
+     "rtf": 0.038,
+     "text": "Le robot avance de 1 mètre à 1 mètre par seconde et tourne de 45 degrés à 0.5 grades par seconde. Ensuite, avance de 2 mètres à 2 mètres par seconde."
+    },
+    "CommandeAccepte.m4a": {
+     "median_s": 0.47,
+     "rtf": 0.222,
+     "text": "J'accepte."
+    },
+    "CommandeFausse.m4a": {
+     "median_s": 0.51,
+     "rtf": 0.132,
+     "text": "La dalle de béton est de 35 mégapascales."
+    }
+   },
+   "memory": {
+    "dedicated_mib": 945,
+    "shared_mib": 124,
+    "llm_dedicated_before_mib": 5326,
+    "llm_dedicated_after_mib": 4941
+   },
+   "llm_answer_after": {
+    "total_s": 2.68,
+    "prompt_s": 0.49,
+    "tps": 28.4
+   }
+  },
+  {
+   "engine": "faster-whisper",
+   "model": "large-v3",
+   "compute_type": "int8_float16",
+   "load_s": 6.0,
+   "first_call_s": 1.13,
+   "files": {
+    "CommandeVocale.m4a": {
+     "median_s": 1.69,
+     "rtf": 0.086,
+     "text": "Le robot avance de 1 mètre à 1 mètre par seconde et tourne de 45 degrés à 0.5 rad par seconde, ensuite avance de 2 mètres à 2 mètres par seconde."
+    },
+    "CommandeAccepte.m4a": {
+     "median_s": 0.63,
+     "rtf": 0.299,
+     "text": "J'accepte."
+    },
+    "CommandeFausse.m4a": {
+     "median_s": 0.81,
+     "rtf": 0.209,
+     "text": "La dalle de béton est de 35 MPa."
+    }
+   },
+   "memory": {
+    "dedicated_mib": 1617,
+    "shared_mib": 124,
+    "llm_dedicated_before_mib": 5326,
+    "llm_dedicated_after_mib": 4046
+   },
+   "llm_answer_after": {
+    "total_s": 2.86,
+    "prompt_s": 0.53,
+    "tps": 27.1
+   }
+  }
+ ]
+}

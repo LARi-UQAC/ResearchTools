@@ -1,0 +1,115 @@
+{
+  "_provenance": "opt-local-stt-vram benchmark configuration, created 2026-09-26 from the voice-panel model comparison of that day. Every value is a {value, provenance} pair (R4); a missing key is an explicit error (R3).",
+  "default_candidates": {
+    "value": ["small:float16", "medium:int8_float16", "large-v3-turbo:int8_float16", "large-v3:int8_float16"],
+    "provenance": "chosen 2026-09-26 - the four faster-whisper variants measured that day beside the resident writer-role model; the operator passes --model to test others"
+  },
+  "default_engine": {
+    "value": "faster-whisper",
+    "provenance": "chosen 2026-09-26 - the engine rt-observe's voice panel runs (observe-config.json voice.stt.engine)"
+  },
+  "device": {
+    "value": "cuda",
+    "provenance": "chosen by the operator 2026-09-26 ('no CPU, all on GPU'), the voice panel's own device"
+  },
+  "language": {
+    "value": "auto",
+    "provenance": "chosen 2026-09-26 - the voice panel's dropdown default; --language fr|en fixes it, which is what a reference in one language should use"
+  },
+  "runs_per_file": {
+    "value": 5,
+    "provenance": "chosen 2026-09-26 - the median of 5 was stable to 0.05 s on the 19.5 s recording across two full reruns that day"
+  },
+  "other_process_warn_mib": {
+    "value": 100,
+    "provenance": "measured 2026-09-26 - desktop and browser processes held 4-27 MiB of dedicated VRAM, a second Whisper left open in the dashboard held 595-929 MiB; 100 MiB separates the noise from a process that changes the measurement"
+  },
+  "live_budget_ms": {
+    "value": 1000,
+    "provenance": "equals rt-observe observe-config.json voice.partial_refresh_ms (asserted by test_engines_config.py): a candidate that transcribes the longest recording within one live refresh keeps the caption live"
+  },
+  "gate": {
+    "max_llm_demoted_pct": {
+      "value": 10,
+      "provenance": "chosen 2026-09-26 in the session, accepted by the operator with the scored table: small 2%, turbo 7%, medium 8% passed; large-v3 at 24% demoted 1.3 GB of the LLM, the 5.3 -> 4 GB drop the operator saw"
+    }
+  },
+  "weights": {
+    "accuracy": {
+      "value": 0.5,
+      "provenance": "chosen by the operator 2026-09-26 ('the main issue is the speed and error'), equal weight"
+    },
+    "speed": {
+      "value": 0.5,
+      "provenance": "chosen by the operator 2026-09-26, equal weight with accuracy"
+    }
+  },
+  "transcribe": {
+    "vad_filter": {
+      "value": true,
+      "provenance": "equals rt-observe voice.stt.vad_filter (asserted by test): the benchmark measures what the panel runs"
+    },
+    "vad_min_silence_ms": {
+      "value": 500,
+      "provenance": "equals rt-observe voice.stt.vad_min_silence_ms (asserted by test)"
+    },
+    "condition_on_previous_text": {
+      "value": false,
+      "provenance": "equals rt-observe voice.stt.condition_on_previous_text (asserted by test)"
+    }
+  },
+  "llm": {
+    "role": {
+      "value": "writer",
+      "provenance": "the vault daemon answers voice questions with the writer-role model, so that is the model resident beside Whisper"
+    },
+    "process_names": {
+      "value": ["llama-server"],
+      "provenance": "measured 2026-09-26 - Ollama 0.33.0 on Windows runs the model in a child named llama-server.exe, which holds the VRAM"
+    },
+    "probe_prompt": {
+      "value": "In two sentences, explain what a git worktree is.",
+      "provenance": "chosen 2026-09-26 - a short fixed prompt whose answer time after a transcription shows what paging the LLM back costs"
+    },
+    "probe_tokens": {
+      "value": 60,
+      "provenance": "chosen 2026-09-26 - long enough for a stable decode rate (median 28.4 tok/s over 60 tokens that day), short enough to keep a probe under 3 s"
+    }
+  },
+  "timeouts_s": {
+    "child": {
+      "value": 3600,
+      "provenance": "measured 2026-09-26 - large-v3 (about 3 GB) took 736 s to download at about 4 MB/s; one hour bounds a slower link without hanging forever (R10)"
+    },
+    "llm_call": {
+      "value": 300,
+      "provenance": "chosen 2026-09-26 - covers an LLM reload from disk after eviction, measured under 10 s on this machine"
+    },
+    "gpu_counter": {
+      "value": 60,
+      "provenance": "chosen 2026-09-26 - Get-Counter answered in 1-3 s that day; 60 s bounds a stalled PowerShell"
+    }
+  },
+  "engines": {
+    "faster-whisper": {
+      "module": {
+        "value": "faster_whisper_engine",
+        "provenance": "the adapter module under scripts/engines/"
+      },
+      "install": {
+        "value": "pip install -r .claude/skills/rt-observe/scripts/requirements-voice.txt -r .claude/skills/rt-observe/scripts/requirements-voice-cuda.txt",
+        "provenance": "the voice panel's own pinned, pip-audited requirement files"
+      }
+    },
+    "nemo": {
+      "module": {
+        "value": "nemo_engine",
+        "provenance": "declared 2026-09-26 at the operator's request, for a machine whose GPU can hold NVIDIA models such as Canary-Qwen 2.5B beside the LLM; not implemented yet"
+      },
+      "install": {
+        "value": "not available yet - the adapter must be implemented first (see SKILL.md, Known limitations)",
+        "provenance": "declared 2026-09-26"
+      }
+    }
+  }
+}

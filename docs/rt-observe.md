@@ -264,7 +264,10 @@ transcribes within `voice.partial_refresh_ms`), and a candidate that demotes mor
 LLM out of VRAM is gated out. VRAM is read from the per-process `GPU Process Memory` counters,
 because `nvidia-smi` under WDDM cannot tell whose memory it is, and a candidate evaluated in the
 same process as the one before it inherits that model's reserved memory. The sample is 40
-reference words, so one word is 2.5% of word error.
+reference words, so one word is 2.5% of word error. That comparison is now the
+[opt-local-stt-vram](manual/04-skills.md#opt-local-stt-vram---measured-speech-to-text-selection-for-this-gpu)
+skill (`/opt-local-stt-vram`): rerun it with your own recordings to test another model, or after
+a GPU or LLM change, and adopt its winner by editing the two `voice.stt` keys above.
 `requirements-voice-cuda.txt` carries the NVIDIA runtime (Devoir2's pins) for a machine
 without a system CUDA Toolkit. The dashboard warms the model at startup (a lazily loaded model
 took 14.3 s on its first call), and the page re-transcribes the growing recording once per

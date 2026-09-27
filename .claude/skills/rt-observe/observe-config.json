@@ -323,19 +323,19 @@
     "stt": {
       "engine": {
         "value": "faster-whisper",
-        "provenance": "chosen 2026-09-26 - the Devoir2 reference implementation's proven baseline (voice_input_node.py); plan3 evaluates whisper large-v3 / large-v3-turbo against it"
+        "provenance": "chosen 2026-09-26 - the Devoir2 reference implementation's proven baseline (voice_input_node.py); the Whisper variant is chosen by measurement, see model_size"
       },
       "model_size": {
-        "value": "small",
-        "provenance": "chosen 2026-09-26 - matches the Devoir2 baseline"
+        "value": "large-v3-turbo",
+        "provenance": "chosen by the operator 2026-09-26 from a scored comparison of small/float16, medium, large-v3-turbo and large-v3 (int8_float16) on the operator's 3 dictated recordings (6MIG841-Lab CommandeVocale/CommandeAccepte/CommandeFausse, scored against the operator's own reference text, not Devoir2's constants, which are Whisper small's own output), each candidate in a fresh process beside the resident writer-role model. Score = (100 - word error %) and live-caption speed (100 when a 19.5 s buffer transcribes within partial_refresh_ms) averaged, gated on demoting at most 10% of the LLM from VRAM: large-v3-turbo 98.8 (2.5% WER, 0.74 s, 945 MiB dedicated, 7% of the LLM demoted), small 95.0 (10.0% WER, 0.58 s, 625 MiB, 2%), medium 86.6 (7.5%, 1.24 s), large-v3 gated out (2.5%, 1.69 s, 1617 MiB, 24% of the LLM demoted). Sample is 40 reference words, so one word is 2.5% WER"
       },
       "compute_type": {
-        "value": "float16",
-        "provenance": "chosen by the operator 2026-09-26 ('no CPU, all on GPU') - matches Devoir2's measured config (Lab1/code/ihr_config.json speech_compute_type=float16, the native GPU type for ctranslate2); Devoir2's vram-residence-report.md measured ~673 MiB incremental VRAM for small/float16/cuda"
+        "value": "int8_float16",
+        "provenance": "measured 2026-09-26 in the same comparison as model_size: int8 weights with float16 compute keep large-v3-turbo at 945 MiB dedicated beside the resident writer-role model, which demoted 385 MiB of the LLM and delayed its next answer by 0.20 s (2.48 s -> 2.68 s on a short prompt)"
       },
       "device": {
         "value": "cuda",
-        "provenance": "chosen by the operator 2026-09-26 ('no CPU, all on GPU') - matches Devoir2's speech_device=cuda. Needs the NVIDIA runtime of requirements-voice-cuda.txt on a machine without a system CUDA Toolkit. The operator judged the ~0.7 GB left beside the resident writer-role model enough for Whisper's ~673 MiB"
+        "provenance": "chosen by the operator 2026-09-26 ('no CPU, all on GPU') - matches Devoir2's speech_device=cuda. Needs the NVIDIA runtime of requirements-voice-cuda.txt on a machine without a system CUDA Toolkit. Nothing larger than Whisper small fits beside the resident writer-role model without WDDM demoting part of the LLM to system RAM (measured 2026-09-26, per-process GPU Process Memory counters)"
       },
       "language": {
         "value": null,
@@ -356,7 +356,7 @@
     },
     "partial_refresh_ms": {
       "value": 1000,
-      "provenance": "measured 2026-09-26 - Whisper small/float16 on cuda transcribed a 6.4 s sentence in 0.51-0.71 s beside the resident writer model (.superpowers/stt_gpu_probe.py). Devoir2's 3.0 s was sized for its CPU cost of 1.44 s; on the GPU 1 s keeps the caption live, and the page's in-flight guard makes the real cadence max(this, one transcription) so previews never overlap"
+      "provenance": "measured 2026-09-26 - Whisper small/float16 on cuda transcribed a 6.4 s sentence in 0.51-0.71 s beside the resident writer model; re-checked the same day for large-v3-turbo int8_float16, which transcribes a 19.5 s buffer in 0.74 s (median of 5), so 1 s still keeps the caption live. Devoir2's 3.0 s was sized for its CPU cost of 1.44 s, and the page's in-flight guard makes the real cadence max(this, one transcription) so previews never overlap"
     }
   },
   "paths": {

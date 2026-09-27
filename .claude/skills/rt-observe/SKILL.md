@@ -86,8 +86,9 @@ identifier spoofing across containers) are in
 A push-to-talk voice panel (hold P, release to send), one place this skill adds an optional
 dependency (`requirements-voice.txt` for `faster-whisper`, lazily imported inside
 `stt_engine.py`'s default loader only, absent by default reports unavailable with the install
-command rather than breaking the dashboard). Whisper runs on the GPU (small, float16, cuda:
-Devoir2's measured configuration, operator decision 2026-09-26), which needs
+command rather than breaking the dashboard). Whisper runs on the GPU (large-v3-turbo, int8_float16,
+cuda: the winner of a scored four-model comparison beside the resident writer-role model,
+operator decision 2026-09-26, figures in `observe-config.json` `voice.stt.model_size`), which needs
 `requirements-voice-cuda.txt` for the NVIDIA runtime on a machine without a system CUDA
 Toolkit; `stt_engine.add_cuda_dll_dirs` puts those DLLs on the search path. The model is warmed
 at startup, and the transcript updates live while P is held (sequential re-transcription of the

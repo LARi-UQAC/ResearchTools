@@ -247,10 +247,24 @@ outbox files above, which already sit outside the vault boundary the rest of thi
 collectors observe. TTS in this phase is the browser's own `speechSynthesis`, not a new
 server-side engine.
 
-Speech-to-text runs on the GPU: Whisper small, float16, CUDA, the configuration Devoir2 measured
-on this RTX A1000 (its `vram-residence-report.md` records about 673 MiB of extra VRAM). Measured
-here on 2026-09-26 beside the resident writer-role model: a 6.4 s sentence transcribes in
-0.5-0.7 s, and the model's decode rate stayed at 20.4-20.9 tok/s, so neither model spilled.
+Speech-to-text runs on the GPU: Whisper large-v3-turbo, int8_float16, CUDA. It was chosen on
+2026-09-26 from four candidates, each run in its own process beside the resident writer-role
+model on the operator's three dictated recordings, scored against the operator's own reference
+text:
+
+| Model | Word error | 19.5 s buffer | Dedicated VRAM | LLM demoted | Score |
+|---|---|---|---|---|---|
+| large-v3-turbo int8_float16 | 2.5% | 0.74 s | 945 MiB | 7% | 98.8 |
+| small float16 | 10.0% | 0.58 s | 625 MiB | 2% | 95.0 |
+| medium int8_float16 | 7.5% | 1.24 s | 881 MiB | 8% | 86.6 |
+| large-v3 int8_float16 | 2.5% | 1.69 s | 1617 MiB | 24% | gated out |
+
+The score averages accuracy (100 minus word error) and live-caption speed (100 when the buffer
+transcribes within `voice.partial_refresh_ms`), and a candidate that demotes more than 10% of the
+LLM out of VRAM is gated out. VRAM is read from the per-process `GPU Process Memory` counters,
+because `nvidia-smi` under WDDM cannot tell whose memory it is, and a candidate evaluated in the
+same process as the one before it inherits that model's reserved memory. The sample is 40
+reference words, so one word is 2.5% of word error.
 `requirements-voice-cuda.txt` carries the NVIDIA runtime (Devoir2's pins) for a machine
 without a system CUDA Toolkit. The dashboard warms the model at startup (a lazily loaded model
 took 14.3 s on its first call), and the page re-transcribes the growing recording once per

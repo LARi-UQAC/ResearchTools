@@ -103,7 +103,7 @@ python .claude/skills/extract-contributions/scripts/extract_contributions.py ref
 Turn the extraction's own contribution sentence into `contribution_summary` (verbatim-grounded,
 never a paraphrase of the abstract - `extract-contributions`'s whole reason to exist), assign
 one `category` from `contribution_types.json`, at least one `clientele`, and add the co-author
-names to bold / supervised-name asterisk lists per the FRQ citation rules below. Then:
+names to bold / supervised-name asterisk lists per the variant's citation rules below. Then:
 
 ```
 python .claude/skills/narrative-cv/scripts/cv_inventory.py add --path <inventory.yaml> --from-json <item.json> --yes
@@ -146,9 +146,13 @@ asks, unless the repetition adds context the evaluators need (FRQ's own instruct
 **Section 2 (Contributions et expériences les plus importantes).** One entry per selected item:
 succinct description, the candidate's OWN role, the retombées/importance/valeur, the
 date/period, and the clientele tag(s) (milieu académique / milieu de pratique / grand public).
-For a publication entry: APA (or the discipline's recognized citation style), the candidate's
-own name AND every co-researcher named in the funding application in **bold**, a trailing `*`
-after every supervised HQP's name. For a work or performance: title, succinct description,
+For a publication entry: APA (or the discipline's recognized citation style) and a trailing `*`
+after every supervised HQP's name. Bold depends on the funder, read from the variant's
+`citation_rules` in `contribution_types.json`: the FRQ bolds the candidate's own name AND every
+co-researcher named in the application, while the CRSNG / tri-agency CV bolds only a lead author
+who is not listed first (alphabetical authorship) and nothing else. Applying the FRQ rule to a
+tri-agency CV makes a third author read as the lead author (measured 2026-09-27), and
+`cv_build.py render` lists every such bold in its `warnings`. For a work or performance: title, succinct description,
 year and place of first publication/diffusion/performance, the principal creator in bold for a
 collective work, photo/video credits when applicable.
 
@@ -195,7 +199,7 @@ unused file silently.
 ### Step 6 - Self-check (mandatory)
 
 Re-read the draft against the composition-rules checklist (R1.1/R1.2, R1.7, R1.8, and this
-file's own FRQ mechanical rules: bold names, `*` supervision marker, clientele tag present on
+file's own funder mechanical rules: bold per the variant's citation_rules, `*` supervision marker, clientele tag present on
 every section-2 item, date/period present, up to 10 items, s.o. rather than padding). Then:
 
 ```
@@ -233,7 +237,7 @@ in `.claude/rules/security.md` refuses any other caller at the tool boundary.
 - Never invent a contribution, a date, a role, or a clientele tag not traceable to the
   inventory item or the user's own answer.
 - Never exceed 10 items in section 2, regardless of how many score well.
-- Never silently drop the FRQ mechanical rules (bold names, `*` for supervised HQP, clientele
+- Never silently drop the funder mechanical rules (variant bold rule, `*` for supervised HQP, clientele
   tag, date/period) - a missing one is a defect in the draft, not a stylistic choice.
 - Never write the inventory or a CV draft inside ResearchTools; both live under
   `cv.project_dir` from the active profile.
@@ -257,7 +261,7 @@ justification. An unsanctioned ✗ (a skip not written in this file) requires th
 [ ] CV3 - cv_select.py run against the competition's own objectives/criteria; final selection
     is the agent's judgment, not the raw ranking; section 2 at or under 10 items
 [ ] CV4 - All three sections drafted per scientific-writing's composition_rules.md and this
-    file's FRQ mechanical rules (bold names, *, clientele, date/period, s.o. where applicable)
+    file's funder mechanical rules (variant bold rule, *, clientele, date/period, s.o. where applicable)
 [ ] CV5 - cv_build.py render + compile; page budget checked and satisfied; old-portal filename
     built when applicable; new-portal plain-text companion identified as the deliverable
 [ ] CV6 - Self-check run: composition-rules checklist + aiscan < 20%

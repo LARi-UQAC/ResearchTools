@@ -97,6 +97,12 @@ def print_text(command: str, result: Dict) -> None:
         for name, sig in result["signals"].items():
             print("  %-26s weight=%-6s count=%d" % (name, sig["weight"], sig["count"]))
         print("pronoun hits: %d | list environments: %d" % (len(result["pronouns"]), len(result["lists"])))
+        stats = result["sentence_stats"]
+        print("sentence length: mean %.1f, max %d words" % (stats["mean_length"], stats["max_length"]))
+        if "long_sentences" in stats:
+            print("sentences over %d words: %d" % (stats["max_words"], len(stats["long_sentences"])))
+            for entry in stats["long_sentences"]:
+                print("  [%d] %s" % (entry["words"], entry["text"][:160]))
     elif command == "wc":
         if "refused" in result:
             if result["refused"]:

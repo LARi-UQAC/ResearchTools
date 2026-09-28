@@ -84,6 +84,45 @@ class TestDoubleDash(unittest.TestCase):
         self.assertEqual(len(em_dash_hits), 2)
 
 
+class TestLongSentences(unittest.TestCase):
+    """
+    composition_rules.md R1.8: 15 to 20 words per sentence, never past roughly
+    30. aiscan already split the prose into sentences but published only their
+    mean, so a single 45-word sentence was invisible. Measured 2026-09-27 on a
+    CRSNG CV, where the check had to be improvised outside the repository.
+    """
+
+    SRC = (
+        "\\section{Intro}\n"
+        "Cette phrase courte compte huit mots en tout.\n"
+        "Cette seconde phrase est volontairement tres longue afin de depasser nettement le plafond "
+        "de trente mots impose par la regle de composition, et elle continue encore avec plusieurs "
+        "propositions subordonnees qui s'enchainent sans pause jusqu'au point final.\n"
+    )
+
+    def _scan(self, **kwargs):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write(Path(tmp), "long.tex", self.SRC)
+            return tex_aiscan.scan_aiscan([path], **kwargs)
+
+    def test_max_length_is_always_reported(self):
+        stats = self._scan()["sentence_stats"]
+        self.assertGreater(stats["max_length"], 30)
+
+    def test_max_words_lists_only_the_sentences_over_the_cap(self):
+        long = self._scan(max_words=30)["sentence_stats"]["long_sentences"]
+        self.assertEqual(len(long), 1)
+        self.assertGreater(long[0]["words"], 30)
+        self.assertIn("volontairement", long[0]["text"])
+
+    def test_without_max_words_no_list_and_no_default_cap_is_invented(self):
+        self.assertNotIn("long_sentences", self._scan()["sentence_stats"])
+
+    def test_cli_forwards_max_words(self):
+        args = tex_check.build_parser().parse_args(["aiscan", "x.tex", "--max-words", "25"])
+        self.assertEqual(args.max_words, 25)
+
+
 class TestBraceDepth(unittest.TestCase):
     """Case 5: negative brace depth reported at the offending line, not EOF."""
 

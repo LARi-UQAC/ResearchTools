@@ -52,12 +52,24 @@
       "pagination": true,
       "max_size_mb": 2,
       "filename_rule": "NOM_XXXXX1234_Titre.pdf (max 50 chars, no accent, no space, no special char, one dot before the extension)",
-      "source": "normes_presentation.pdf (FRQ, 2025-09-23)"
+      "source": "normes_presentation.pdf (FRQ, 2025-09-23)",
+      "citation_rules": {
+        "bold_candidate_and_coresearchers": true,
+        "bold_lead_author_only_if_not_first": false,
+        "asterisk_after_supervised_hqp": true,
+        "source": "CV-FRQ_instructions.pdf (FRQ, juillet 2026), p. 2: 'Identifiez vos Nom et Prenom en gras, ainsi que celui des cochercheuses et des cochercheurs identifies dans la demande de financement' and the asterisk after each supervised person."
+      }
     },
     "frq_new_portal": {
       "label": "FRQnet - Espace demande (section CV-FRQ, saisie directe)",
       "output": "plain_text",
-      "note": "No PDF: content is typed/pasted directly into the portal's CV-FRQ web fields. This skill still emits a plain-text companion for that paste-in."
+      "note": "No PDF: content is typed/pasted directly into the portal's CV-FRQ web fields. This skill still emits a plain-text companion for that paste-in.",
+      "citation_rules": {
+        "bold_candidate_and_coresearchers": true,
+        "bold_lead_author_only_if_not_first": false,
+        "asterisk_after_supervised_hqp": true,
+        "source": "CV-FRQ_instructions.pdf (FRQ, juillet 2026), p. 2, same rule as frq_old_portal."
+      }
     },
     "tri_agency": {
       "label": "CV des trois organismes (CIHR/NSERC/SSHRC, gabarit propre)",
@@ -68,8 +80,25 @@
       "margins_cm": 2,
       "max_size_mb": 5,
       "note": "True Arial is not a standard LaTeX font; the build substitutes Helvetica (helvet/sans-serif default), which is visually close but not byte-identical. Stated rather than silently approximated (R14).",
-      "source": "sshrc-crsh.canada.ca tri-agency CV instructions page, fetched 2026-09-25"
+      "source": "sshrc-crsh.canada.ca tri-agency CV instructions page, fetched 2026-09-25",
+      "running_header": false,
+      "citation_rules": {
+        "bold_candidate_and_coresearchers": false,
+        "bold_lead_author_only_if_not_first": true,
+        "asterisk_after_supervised_hqp": true,
+        "source": "NSERC tri-agency CV instructions, https://nserc-crsng.canada.ca/en/funding/research-partnerships-and-collaborations/inter-agency/tri-agency-cv/tri-agency-cv (page dated 2026-01-27, read 2026-09-27): 'Add an asterisk (*) after each of your supervised highly qualified personnel ... if you are their supervisor.' and 'If the lead author is not listed first (e.g., if authorship is alphabetical), bold the lead author's name.' No rule bolds the candidate's own name or the co-applicants: that is the FRQ rule, and applying it here makes a non-first author read as the lead author."
+      },
+      "document_heading": {"fr": "CV des trois organismes"},
+      "name_label": {"fr": "Nom"},
+      "heading_source": "modele-de-cv-des-trois-organismes-crsh-spiie.docx, read 2026-09-27: Heading 1 'CV des trois organismes', then a 'Nom :' Heading 2 line (Arial 14 bold), letter paper, 2 cm margins, empty header and footer. Only the French wording was read, so an English model renders no heading rather than a guessed translation (R14)."
     }
+  },
+
+  "item_labels": {
+    "_provenance": "Chosen 2026-09-27 (not transcribed from a funder document): the three field labels printed on every section-2 item, replacing the former ' -- ' separator, which the style-hygiene rules forbid.",
+    "role": {"fr": "Rôle", "en": "Role"},
+    "period": {"fr": "Période", "en": "Period"},
+    "clientele": {"fr": "Clientèle", "en": "Audience"}
   },
 
   "categories": [

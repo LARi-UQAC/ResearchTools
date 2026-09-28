@@ -10,7 +10,7 @@ Ask for my book (French version): Vibe Design. 30$ contribution via:
 
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.me/MartinJDOtis)
 
-ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students
+<a href="https://lari-uqac.github.io/ResearchTools/">ResearchTools</a> is an AI-assisted toolbox for researcher-professors and graduate students
 who want to design, find and fix the issues hiding in their academic design, writing before a reviewer,
 a thesis committee, or a grant panel does. It offers a Dashboard to follow the work-in-progress and has self-learning functions. 
 
@@ -21,15 +21,9 @@ a thesis committee, or a grant panel does. It offers a Dashboard to follow the w
 https://www.uqac.ca/ressourcespedago/iag/
 
 
-ResearchTools contains two loop for authoring and coding. It covers the whole process: starting
-a literature review, auditing an existing review, a complete paper, a UQAC
-thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy. Moreover, it offers the process to design the code, PCB and 3D CAD with a full Dashboard to see the agents working in background including some controls.
+<a href="https://lari-uqac.github.io/ResearchTools/">ResearchTools</a> contains two loop for authoring and coding. It covers the whole process: starting a literature review, auditing an existing review, a complete paper, a UQAC thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy. Moreover, it offers the process to design the code, PCB and 3D CAD with a full Dashboard to see the agents working in background including some controls.
 
-Every check is grounded in the same working norms: no reference enters a document
-without being validated against Scopus (no fabricated citations, no invented DOIs),
-weaknesses are reported as actionable findings with an executable improvement plan
-rather than vague encouragement, and drafts pass a multi-model deliberation (Gemini +
-GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
+Every check is grounded in the same working norms: no reference enters a document without being validated against Scopus (no fabricated citations, no invented DOIs), weaknesses are reported as actionable findings with an executable improvement plan rather than vague encouragement, and drafts pass a multi-model deliberation (Gemini + GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
 
 An agent, `\local-writer`, manage the memories with a Daemon: Obsidian Vault and Graphify. The Harness cannot access to the memories directly. A control is applied on the Harness for the code generation: when the harness needs to generate a code to overcome a weakness in ResearchTools, it is integrated in the ResearchTools clone with an auto-update in your system. Then, ResearchTools will change over time and with your specific usage.
 

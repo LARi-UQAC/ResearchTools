@@ -10,13 +10,15 @@
 [![Open issues](https://img.shields.io/github/issues/LARi-UQAC/ResearchTools?color=10243E)](https://github.com/LARi-UQAC/ResearchTools/issues)
 
 <p align="center">
+<a href="https://lari-uqac.github.io/ResearchTools/">
   <img src="docs/manual/banner/banner.png" alt="ResearchTools — find what's wrong before anyone else does" width="900">
+</a>
 </p>
 
 <table align="center" border="0" cellspacing="0" cellpadding="0">
 <tr>
-<td align="center"><img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="200"></td>
-<td align="center"><img src="docs/manual/researchtools-hero.gif" alt="ResearchTools promo, paper-auditor example" width="420"></td>
+<td align="center"><a href="https://lari-uqac.github.io/ResearchTools/"><img src="ResearchToolsLogo.png" alt="ResearchTools logo" width="200"></a></td>
+<td align="center"><a href="https://lari-uqac.github.io/ResearchTools/"><img src="docs/manual/researchtools-hero.gif" alt="ResearchTools promo, paper-auditor example" width="420"></a></td>
 </tr>
 </table>
 
@@ -34,7 +36,7 @@
 
 </details>
 
-ResearchTools is an AI-assisted toolbox for researcher-professors and graduate students. It finds and fixes what's wrong before a reviewer, a thesis committee, or a grant panel does:
+<a href="https://lari-uqac.github.io/ResearchTools/">ResearchTools</a> is an AI-assisted toolbox for researcher-professors and graduate students. It finds and fixes what's wrong before a reviewer, a thesis committee, or a grant panel does:
 
 - Literature reviews, paper and thesis audits, BibTeX cleanup, reviewer responses, submission
   packages: the academic writing side.

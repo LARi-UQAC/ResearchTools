@@ -1,6 +1,6 @@
 # Installation
 
-Chapter 01 of the ResearchTools manual. Back to [table of contents](../../README.md).
+Chapter 01 of the <a href="https://lari-uqac.github.io/ResearchTools/">ResearchTools</a> manual. Back to [table of contents](../../README.md).
 
 Follow these steps on any machine after cloning the repository.
 

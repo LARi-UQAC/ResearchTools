@@ -79,7 +79,7 @@ def _char_hits(text: str, starts: List[int], chars: str, path: str, section_map:
             for i, ch in enumerate(text) if ch in chars]
 
 
-def scan_aiscan(files: List[str]) -> Dict:
+def scan_aiscan(files: List[str], max_words: Optional[int] = None) -> Dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -87,10 +87,18 @@ def scan_aiscan(files: List[str]) -> Dict:
         with the same signals, weights, and formula as paper-auditor.md
         Step 7.5, plus section attribution, pronoun hits, and list hits.
 
+    Details:
+        sentence_stats always carries max_length. The list of sentences over
+        a cap (composition_rules.md R1.8, "never past roughly 30") appears
+        only when the caller names that cap with max_words, so no threshold
+        is ever invented here (R0).
+
     Inputs:
         files (List[str]): .tex files to scan. Section attribution runs only
             when exactly one file is given; with more than one, hits fall
             back to per-file reporting (each hit still carries "file").
+        max_words (Optional[int]): word cap per sentence; when given,
+            sentence_stats["long_sentences"] lists every sentence above it.
 
     Outputs:
         result (Dict): {"files": List[str], "single_file_mode": bool,
@@ -161,6 +169,19 @@ def scan_aiscan(files: List[str]) -> Dict:
         risk_score, raw_count, total_prose_sentences,
     )
 
+    sentence_stats = {
+        "count": total_prose_sentences,
+        "mean_length": statistics.mean(lengths) if lengths else 0,
+        "max_length": max(lengths) if lengths else 0,
+        "pstdev": statistics.pstdev(lengths) if len(lengths) > 1 else 0,
+        "min_window_stdev": uniformity["min_window_stdev"] if uniformity else None,
+        "min_window_start_sentence": uniformity["min_window_start_sentence"] if uniformity else None,
+    }
+    if max_words is not None:
+        sentence_stats["max_words"] = max_words
+        sentence_stats["long_sentences"] = [
+            {"words": n, "text": s} for s, n in zip(sentences, lengths) if n > max_words]
+
     return {
         "files": files,
         "single_file_mode": single_file_mode,
@@ -169,13 +190,7 @@ def scan_aiscan(files: List[str]) -> Dict:
         "raw_count": raw_count,
         "weight_map": WEIGHT_NUMERIC,
         "signals": signals,
-        "sentence_stats": {
-            "count": total_prose_sentences,
-            "mean_length": statistics.mean(lengths) if lengths else 0,
-            "pstdev": statistics.pstdev(lengths) if len(lengths) > 1 else 0,
-            "min_window_stdev": uniformity["min_window_stdev"] if uniformity else None,
-            "min_window_start_sentence": uniformity["min_window_start_sentence"] if uniformity else None,
-        },
+        "sentence_stats": sentence_stats,
         "pronouns": all_pronouns,
         "lists": all_lists,
         "sections": (last_section_map["sections"] if (single_file_mode and last_section_map) else []),

@@ -41,7 +41,7 @@ and accepts `--json` for machine consumption.
 | Subcommand | Input | Output |
 |---|---|---|
 | `chars` | `.tex` files/globs | per file: line number and forbidden-character name; total count |
-| `aiscan` | `.tex` files/globs | `risk_score`, weighted count per signal, lowest-deviation sentence window, a 15-word excerpt per hit |
+| `aiscan` | `.tex` files/globs | `risk_score`, weighted count per signal, lowest-deviation sentence window, a 15-word excerpt per hit, the longest sentence; with `--max-words N`, every sentence above N words (R1.8) |
 | `wc` | `.tex` files/globs | prose word count per file (floats and comments excluded), float count, total, page estimate |
 | `wc --accepted` | `.tex` files/globs, optional `--before <dir>` | word count of the accepted text (`changes` macros resolved); with `--before`, a before/after/delta/percent table |
 | `wc --section <name>` | `.tex` files/globs, optional `--accepted` and `--limit <n>` | word count of ONE named section, the shape a grant form caps; a name matching zero or several headings is refused with the candidates listed (exit 2), and `--limit` with `--strict` exits 1 over the cap |

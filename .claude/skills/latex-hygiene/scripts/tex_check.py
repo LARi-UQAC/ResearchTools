@@ -131,6 +131,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_aiscan = sub.add_parser("aiscan", parents=[common], help="AI-usage style risk score.")
     p_aiscan.add_argument("files", nargs="+", help=".tex files or globs.")
+    p_aiscan.add_argument(
+        "--max-words", type=int, default=None,
+        help="List every prose sentence longer than N words (composition_rules.md R1.8 names ~30).")
 
     p_wc = sub.add_parser("wc", parents=[common], help="Prose word count and page estimate.")
     p_wc.add_argument("files", nargs="+", help=".tex files or globs.")
@@ -224,7 +227,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if command == "chars":
         result = scan_chars(expand_globs(args.files))
     elif command == "aiscan":
-        result = scan_aiscan(expand_globs(args.files))
+        result = scan_aiscan(expand_globs(args.files), max_words=args.max_words)
     elif command == "wc":
         files = expand_globs(args.files)
         if args.section:

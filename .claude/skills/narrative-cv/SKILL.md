@@ -65,12 +65,29 @@ rules.
    criteria text, then the agent's own judgment picks up to 10 for section 2
    and the supporting threads for sections 1 and 3.
 4. **Draft the prose** via the `scientific-writing` skill's composition
-   rules (R1.7 no semicolon, R1.8 short sentences), applying FRQ's own
-   mechanical rules per item: bold the candidate's and co-researchers' names,
-   `*` after every supervised HQP name, one clientèle tag, the date/period,
-   and "s.o." rather than padding a genuinely non-applicable section.
+   rules (R1.7 no semicolon, R1.8 short sentences), applying the funder's
+   mechanical rules per item: `*` after every supervised HQP name, one
+   clientèle tag, the date/period, and "s.o." rather than padding a genuinely
+   non-applicable section. **Bold differs by funder, read it from the
+   variant's `citation_rules`:**
+   - **FRQ** (`frq_old_portal`, `frq_new_portal`): bold the candidate's name
+     and every co-researcher named in the application.
+   - **CRSNG / tri-agency** (`tri_agency`): bold **nothing** except a lead
+     author who is not listed first (alphabetical authorship). NSERC's own
+     words (instructions page dated 2026-01-27): "If the lead author is not
+     listed first (e.g., if authorship is alphabetical), bold the lead
+     author's name." No rule bolds the candidate or the co-applicants, and
+     doing so makes a third author read as the lead author.
+   The asterisk rule is the same for both.
 5. **Build**: `cv_build.py render` (LaTeX + text), compile, `check-pages`;
-   for the old portal, `cv_build.py filename` for the mandatory name.
+   for the old portal, `cv_build.py filename` for the mandatory name. The
+   `render` report carries `warnings`: under `tri_agency`, every bolded name
+   in a reference is listed for the author to confirm it is a lead author
+   not listed first. Model conveniences: `"prose_file": "section1.tex"` keeps
+   sections 1 and 3 as LaTeX files beside the model, and a section-2 item's
+   `"references": [...]` puts each citation on its own line before the
+   description; inside item fields `**Name**` is bold and a DOI URL becomes a
+   clickable link.
 6. **Self-check**: page budget, `latex-hygiene`'s `aiscan` (< 20% per this
    repo's standard), the composition-rules checklist.
 7. **Journal**: dispatch `local-writer` to append one line to the vault's
@@ -92,6 +109,12 @@ gates: `.claude/agents/narrative-cv-writer.md`.
 | Page-budget check | `python scripts/cv_build.py check-pages --pdf <cv.pdf> --language fr` |
 
 ## Common mistakes
+
+- **Applying the FRQ bold rule to a CRSNG / tri-agency CV.** Measured
+  2026-09-27 on a CRSNG Alliance CV: the candidate and a co-researcher were
+  bolded in third position, which the tri-agency convention reads as "lead
+  author". Under `tri_agency`, bold only a lead author not listed first, and
+  treat any `render` warning as a question to answer, not noise.
 
 - **Treating this as a full chronological CV.** It is not: no education/
   employment history section, no full publication list - only the three FRQ

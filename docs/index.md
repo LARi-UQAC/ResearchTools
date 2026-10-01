@@ -63,6 +63,23 @@ speech-to-text models beside it.
 
 </div>
 
+<div class="rt-book" markdown>
+
+[![Vibe Design, book cover](assets/vibe-design-cover.jpg){ width="180" }](https://ko-fi.com/s/89b1e1cc6c)
+
+<div markdown>
+
+## The book: Vibe Design
+
+*Vibe Design*, by Martin J.-D. Otis (in French). Vibe coding, vibe PCB, vibe 3D: a new way of
+designing complete systems, in which the engineer works in dialogue with coding agents.
+
+[Get the book on Ko-fi](https://ko-fi.com/s/89b1e1cc6c){ .md-button .md-button--primary }
+
+</div>
+
+</div>
+
 ## Why ResearchTools
 
 | Without | With ResearchTools |

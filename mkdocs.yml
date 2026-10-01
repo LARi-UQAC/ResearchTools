@@ -32,6 +32,12 @@ theme:
   logo: manual/banner/LogoLARI_trim.png
   favicon: assets/ResearchToolsLogo.png
 
+# The header and mobile-drawer logo (LAR.i) links to the lab's site rather than this
+# site's home page; Material reads extra.homepage for both logo anchors. The Home tab
+# still leads back to this site.
+extra:
+  homepage: https://lari.uqac.ca/
+
 extra_css:
   - assets/extra.css
 

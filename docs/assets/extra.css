@@ -108,6 +108,50 @@
   color: #7FC7D9;
 }
 
+/* Book block on the landing page: cover left, title, blurb and Ko-fi button right; stacks
+   under 600px so the cover never squeezes the text. */
+.rt-book {
+  display: flex;
+  align-items: center;
+  gap: 1.75rem;
+  margin: 2rem 0;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid rgba(16, 36, 62, 0.12);
+  border-radius: 12px;
+  background: rgba(31, 158, 143, 0.04);
+}
+[data-md-color-scheme="slate"] .rt-book {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(31, 158, 143, 0.08);
+}
+.rt-book > p {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.rt-book img {
+  display: block;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(16, 36, 62, 0.25);
+}
+.rt-book h2 {
+  margin-top: 0;
+}
+.rt-book a.md-button--primary {
+  background-color: #1F9E8F;
+  border-color: #1F9E8F;
+  border-radius: 8px;
+}
+.rt-book a.md-button--primary:hover {
+  background-color: #16776C;
+  border-color: #16776C;
+}
+@media screen and (max-width: 600px) {
+  .rt-book {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
 .rt-stats {
   display: flex;
   justify-content: center;

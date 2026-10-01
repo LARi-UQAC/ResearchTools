@@ -29,7 +29,7 @@ theme:
     - navigation.top
     - search.suggest
     - content.code.copy
-  logo: assets/ResearchToolsLogo.png
+  logo: manual/banner/LogoLARI_trim.png
   favicon: assets/ResearchToolsLogo.png
 
 extra_css:

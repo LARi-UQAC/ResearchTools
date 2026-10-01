@@ -19,6 +19,24 @@
   background-color: #10243E;
 }
 
+/* Lab logo (LAR.i / UQAC, docs/manual/banner/LogoLARI_trim.png). Its lettering is black and
+   green on a transparent PNG, invisible on the navy header and on the teal mobile drawer, so
+   it sits on a white plate. Its 3.8:1 aspect is unreadable at Material's 1.2rem default, so
+   the image takes 1.8rem and the button padding shrinks to keep the 2.4rem header height
+   (0.2 margin + 0.1 padding + 1.8 + 0.1 + 0.2). */
+.md-header__button.md-logo {
+  padding: 0.1rem;
+}
+.md-header__button.md-logo img,
+.md-nav__title .md-nav__button.md-logo img {
+  background-color: #fff;
+  border-radius: 4px;
+  padding: 0.15rem 0.3rem;
+}
+.md-header__button.md-logo img {
+  height: 1.8rem;
+}
+
 /* Custom homepage landing page (docs/index.md only, via .rt-landing) — hero, CTA buttons,
    and a feature-card grid, hand-built with plain HTML/CSS rather than Material's
    grid-cards markdown extension, so it renders identically regardless of pymdown-extensions

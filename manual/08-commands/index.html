@@ -22,7 +22,7 @@
         
       
       
-      <link rel="icon" href="../../../ResearchToolsLogo.png">
+      <link rel="icon" href="../../assets/ResearchToolsLogo.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
@@ -96,7 +96,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="../.." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../../ResearchToolsLogo.png" alt="logo">
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -305,7 +305,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="../.." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../../ResearchToolsLogo.png" alt="logo">
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     ResearchTools
@@ -1374,6 +1374,11 @@
 <td><code>/rt-dashboard</code></td>
 <td>Start the rt-observe dashboard on loopback and open it: mirror matrix, fan-out canvas, plan progression, services and sessions. Wraps <code>rt-dashboard.ps1</code> / <code>.sh</code> / <code>.bat</code>, which need no Claude Code. <code>--dry-run</code> names the interpreter, the bind address and every TTL and starts nothing</td>
 <td>Optional — <code>--dry-run</code>, <code>--open</code>, <code>--port &lt;n&gt;</code>, <code>--json</code></td>
+</tr>
+<tr>
+<td><code>/opt-local-stt-vram</code></td>
+<td>Score speech-to-text models for this GPU beside the resident local LLM and print one selection table: word error against your own reference words, live-caption speed, dedicated VRAM, and how much of the LLM each pushes out of VRAM (a gate). Downloads the models, one fresh process each; <code>--dry-run</code> writes nothing, <code>--rescore</code> recomputes a saved run. Never edits the voice panel's config</td>
+<td>Yes — <code>--reference &lt;folder&gt;/reference.txt --out &lt;dir&gt;</code>; optional <code>--model NAME:COMPUTE ...</code>, <code>--language</code>, <code>--dry-run</code>, <code>--rescore</code>, <code>--json</code></td>
 </tr>
 <tr>
 <td><code>/abstract [paper.tex]</code></td>

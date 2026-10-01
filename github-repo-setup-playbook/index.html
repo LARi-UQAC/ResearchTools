@@ -20,7 +20,7 @@
         
       
       
-      <link rel="icon" href="../../ResearchToolsLogo.png">
+      <link rel="icon" href="../assets/ResearchToolsLogo.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
@@ -94,7 +94,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href=".." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../ResearchToolsLogo.png" alt="logo">
+  <img src="../manual/banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -303,7 +303,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href=".." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../ResearchToolsLogo.png" alt="logo">
+  <img src="../manual/banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     ResearchTools
@@ -1734,6 +1734,30 @@ gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>P
 <span class="c1"># Verify</span>
 gh<span class="w"> </span>api<span class="w"> </span>repos/&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span>--jq<span class="w"> </span><span class="s1">'{description, has_wiki, has_projects, has_discussions, topics}'</span>
 </code></pre></div>
+<p><strong>Secret scanning + push protection.</strong> Free on a <strong>public</strong> repo (part of GitHub Advanced
+Security, which is paid on private); check visibility first — <code>gh repo view &lt;owner&gt;/&lt;repo&gt;
+--json visibility,isPrivate</code>. Different from a local <code>pre-commit</code> hook or this repo's own
+<code>betterleaks-hook.py</code>: those run client-side, before or after a write, and are trivially
+skipped (<code>--no-verify</code>, or simply not installed); this runs server-side on GitHub, on every
+push, unconditionally. Enable both together — scanning alone only flags a leaked secret after
+it has already landed in history; push protection refuses the push itself:</p>
+<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>repos/&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--input<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'EOF'</span>
+<span class="s">{</span>
+<span class="s">  "security_and_analysis": {</span>
+<span class="s">    "secret_scanning": {"status": "enabled"},</span>
+<span class="s">    "secret_scanning_push_protection": {"status": "enabled"}</span>
+<span class="s">  }</span>
+<span class="s">}</span>
+<span class="s">EOF</span>
+
+<span class="c1"># Verify</span>
+gh<span class="w"> </span>api<span class="w"> </span>repos/&lt;owner&gt;/&lt;repo&gt;<span class="w"> </span>--jq<span class="w"> </span>.security_and_analysis
+</code></pre></div>
+<p>The same <code>--input -</code> JSON-body pattern is the correct way to PATCH any nested
+<code>security_and_analysis</code> field — <code>gh api -f key.nested=value</code> does not build nested JSON, only
+flat top-level fields; a dotted <code>-f</code> key is sent as a literal flat key, not a nested object, and
+GitHub silently ignores it rather than erroring, so the flag being accepted proves nothing.</p>
 <p><strong>Social preview image and enabling the Pages setting itself are web-UI-only</strong> — no API path
 for either as of this writing. Prepare the asset (Phase 4a's banner is a better fit than a
 bare logo for the image, given GitHub's ~1280×640 social-card aspect ratio), then hand the

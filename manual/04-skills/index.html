@@ -22,7 +22,7 @@
         
       
       
-      <link rel="icon" href="../../../ResearchToolsLogo.png">
+      <link rel="icon" href="../../assets/ResearchToolsLogo.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
@@ -96,7 +96,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="../.." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../../ResearchToolsLogo.png" alt="logo">
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -305,7 +305,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="../.." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../../ResearchToolsLogo.png" alt="logo">
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     ResearchTools
@@ -680,6 +680,17 @@
     <span class="md-ellipsis">
       
         opt-local-vram-llm - measured VRAM tuning for the local agents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opt-local-stt-vram-measured-speech-to-text-selection-for-this-gpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        opt-local-stt-vram - measured speech-to-text selection for this GPU
       
     </span>
   </a>
@@ -1222,6 +1233,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#opt-local-stt-vram-measured-speech-to-text-selection-for-this-gpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        opt-local-stt-vram - measured speech-to-text selection for this GPU
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1273,7 +1295,8 @@ reappears under <code>.claude/skills/</code>.</p>
 <a href="#the-two-memories---the-vault-and-the-code-graph">the two memories</a> ·
 <a href="#obsidian-cli---obsidian-vault-operations">obsidian-cli</a> ·
 <a href="#latex-hygiene---mechanical-latex-manuscript-hygiene">latex-hygiene</a> ·
-<a href="#opt-local-vram-llm---measured-vram-tuning-for-the-local-agents">opt-local-vram-llm</a></p>
+<a href="#opt-local-vram-llm---measured-vram-tuning-for-the-local-agents">opt-local-vram-llm</a> ·
+<a href="#opt-local-stt-vram---measured-speech-to-text-selection-for-this-gpu">opt-local-stt-vram</a></p>
 <table>
 <thead>
 <tr>
@@ -1382,6 +1405,11 @@ reappears under <code>.claude/skills/</code>.</p>
 <td><code>opt-local-vram-llm</code></td>
 <td>Tune a local Ollama model for this GPU: retain the largest <code>num_ctx</code> that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps <code>num_ctx</code> against <code>OLLAMA_KV_CACHE_TYPE</code> (restarting the daemon per value and proving the restart took effect from <code>server.log</code>, restoring the original value on failure), then declares the tuned tag as a role candidate in <code>local-models.json</code>. Stops before qualification, which stays with <code>model_resolver.py --qualify</code>.</td>
 <td><code>/opt-local-vram-llm</code>, <code>.claude/skills/opt-local-vram-llm/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>opt-local-stt-vram</code></td>
+<td>Pick the voice panel's speech-to-text model for this GPU: download the named models (faster-whisper sizes or CTranslate2 repo ids; the four measured on 2026-09-26 by default), measure each in a fresh process BESIDE the resident local LLM, and print one scored table - word error against the operator's own reference words, live-caption speed against the panel's refresh budget, dedicated VRAM, and how much of the LLM each pushes out of VRAM (a gate). Stops before adoption: switching <code>observe-config.json</code> <code>voice.stt.*</code> stays a human edit.</td>
+<td><code>/opt-local-stt-vram</code>, <code>.claude/skills/opt-local-stt-vram/SKILL.md</code></td>
 </tr>
 <tr>
 <td><code>aider-setup</code></td>
@@ -1548,8 +1576,9 @@ re-selection over a growing corpus instead of a from-scratch rebuild each time.<
 </tbody>
 </table>
 <p>The candidate's identity (CV header/footer, filename surname) and the external project folder
-the inventory and drafts live in (<code>cv.project_dir</code>) both come from the active profile
-(<code>profiles/&lt;active&gt;.yaml</code>), never from a hardcoded path — a profile carrying neither block is a
+the inventory and drafts live in (<code>cv.project_dir</code>, where a leading <code>{{HOME}}</code> stands for your
+home directory) both come from the active profile (<code>profiles/&lt;active&gt;.yaml</code>), never from a
+hardcoded path — a profile carrying neither block is a
 stop, not a guess. Drives the <code>narrative-cv-writer</code> agent, reached via <code>/cv</code>.</p>
 <p><strong>Files:</strong>
 - <code>.claude/skills/narrative-cv/SKILL.md</code>
@@ -1862,6 +1891,75 @@ without running it.</p>
 - <code>.claude/skills/opt-local-vram-llm/scripts/Test/test_vram_probe.py</code>,
   <code>test_vram_modelfile.py</code>, <code>test_vram_daemon.py</code>, <code>test_vram_optimizer.py</code> - four offline
   suites (11 + 9 + 5 + 13 tests), no network, no GPU, no Ollama daemon</p>
+<h3 id="opt-local-stt-vram-measured-speech-to-text-selection-for-this-gpu"><code>opt-local-stt-vram</code> - measured speech-to-text selection for this GPU<a class="headerlink" href="#opt-local-stt-vram-measured-speech-to-text-selection-for-this-gpu" title="Permanent link">&para;</a></h3>
+<p>The sibling of <code>opt-local-vram-llm</code> for the voice panel of chapter
+<a href="../07-rt-observe-dashboard/">07</a>. You name the speech-to-text models; it downloads them, runs
+each one in its own process beside the resident local LLM (the way the panel runs, everything on
+VRAM), and prints a table to choose from. The first run, on 2026-09-26 with three dictated
+recordings on a 6 GB RTX A1000, read:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Word error</th>
+<th>19.5 s recording</th>
+<th>VRAM</th>
+<th>LLM pushed out</th>
+<th>Score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>large-v3-turbo int8_float16</td>
+<td>2.5%</td>
+<td>0.73 s</td>
+<td>993 MiB</td>
+<td>9.6%</td>
+<td>98.8</td>
+</tr>
+<tr>
+<td>small float16</td>
+<td>10.0%</td>
+<td>0.56 s</td>
+<td>673 MiB</td>
+<td>3.4%</td>
+<td>95.0</td>
+</tr>
+<tr>
+<td>medium int8_float16</td>
+<td>7.5%</td>
+<td>1.14 s</td>
+<td>929 MiB</td>
+<td>9.6%</td>
+<td>90.1</td>
+</tr>
+<tr>
+<td>large-v3 int8_float16</td>
+<td>2.5%</td>
+<td>1.65 s</td>
+<td>1665 MiB</td>
+<td>26.4%</td>
+<td>gated</td>
+</tr>
+</tbody>
+</table>
+<p>Word error is scored against the operator's own reference words, never a model's transcript.
+Speed is full marks when the longest recording transcribes within the panel's live refresh
+budget, because a caption that keeps up gains nothing from being faster. The LLM column comes
+from the LLM process's own dedicated-VRAM counter before and after, since Windows demotes part of
+the LLM rather than spilling the new model, and <code>nvidia-smi</code> cannot say whose memory it is. A
+candidate over the gate (10% by default) is listed without a score; one that fails to download or
+load is <code>not runnable</code> with its reason. <code>--rescore</code> recomputes the table from a saved run after a
+reference correction, with no model run. NeMo models are a declared seam for a larger GPU, not
+yet an engine.</p>
+<p><strong>Files:</strong>
+- <code>.claude/skills/opt-local-stt-vram/SKILL.md</code>, <code>stt-bench-config.json</code>
+- <code>.claude/skills/opt-local-stt-vram/scripts/stt_bench.py</code> - the CLI, one child process per candidate
+- <code>.claude/skills/opt-local-stt-vram/scripts/stt_score.py</code> - pure scoring and the table
+- <code>.claude/skills/opt-local-stt-vram/scripts/gpu_memory.py</code> - per-process GPU memory
+- <code>.claude/skills/opt-local-stt-vram/scripts/engines/</code> - <code>faster_whisper_engine.py</code>, <code>nemo_engine.py</code>
+- <code>.claude/skills/opt-local-stt-vram/scripts/Test/</code> - four offline suites (15 + 11 + 9 + 16
+  tests), no model, no GPU, no Ollama</p>
 <p><code>aider-setup</code> and <code>rt-observe</code> are big enough to get their own chapters rather than a
 subsection here: <a href="../06-aider-pipeline/">06-aider-pipeline.md</a> and
 <a href="../07-rt-observe-dashboard/">07-rt-observe-dashboard.md</a>.</p>

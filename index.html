@@ -20,7 +20,7 @@
         
       
       
-      <link rel="icon" href="../ResearchToolsLogo.png">
+      <link rel="icon" href="assets/ResearchToolsLogo.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
@@ -94,7 +94,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../ResearchToolsLogo.png" alt="logo">
+  <img src="manual/banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -305,7 +305,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../ResearchToolsLogo.png" alt="logo">
+  <img src="manual/banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     ResearchTools
@@ -1219,13 +1219,16 @@ packages — a ScholarEval score before the reviewer ever sees it.</p>
 <div class="rt-feature-card">
 <h3 id="software-hardware-review">🛠️ Software &amp; hardware review<a class="headerlink" href="#software-hardware-review" title="Permanent link">&para;</a></h3>
 <p>Code, PCB, and 3D CAD design review, with the <code>rt-observe</code> dashboard to watch the agents work
-and log what they did.</p>
+and log what they did - and to ask it a question out loud: hold P, and a local model answers
+from the toolkit's own memory, spoken back, nothing leaving the machine.</p>
 <p><a href="manual/07-rt-observe-dashboard/">See it in action →</a></p>
 </div>
 <div class="rt-feature-card">
 <h3 id="local-model-dev-loop">⚙️ Local-model dev loop<a class="headerlink" href="#local-model-dev-loop" title="Permanent link">&para;</a></h3>
 <p><code>local-writer</code> / <code>local-coder</code> push routine generation to a local Ollama model instead of the
-cloud — a design/plan/code/review loop that keeps token cost down.</p>
+cloud — a design/plan/code/review loop that keeps token cost down. Which model fits your GPU is
+measured, not guessed: <code>opt-local-vram-llm</code> tunes the LLM, <code>opt-local-stt-vram</code> scores
+speech-to-text models beside it.</p>
 <p><a href="manual/10-agents/">Agents →</a></p>
 </div>
 </div>
@@ -1249,6 +1252,10 @@ cloud — a design/plan/code/review loop that keeps token cost down.</p>
 <tr>
 <td>Burn cloud tokens on routine docstrings and refactors</td>
 <td><code>local-writer</code> / <code>local-coder</code> push that generation to a local model, for free</td>
+</tr>
+<tr>
+<td>Guess which local model fits your GPU</td>
+<td><code>opt-local-vram-llm</code> and <code>opt-local-stt-vram</code> measure it on the card, beside what already runs there, and print one table to choose from</td>
 </tr>
 </tbody>
 </table>

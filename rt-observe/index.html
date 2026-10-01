@@ -22,7 +22,7 @@
         
       
       
-      <link rel="icon" href="../../ResearchToolsLogo.png">
+      <link rel="icon" href="../assets/ResearchToolsLogo.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
@@ -96,7 +96,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href=".." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../ResearchToolsLogo.png" alt="logo">
+  <img src="../manual/banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -305,7 +305,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href=".." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../ResearchToolsLogo.png" alt="logo">
+  <img src="../manual/banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     ResearchTools
@@ -909,6 +909,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#the-voice-panel-2026-09-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The voice panel (2026-09-26)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1040,6 +1051,17 @@
     <span class="md-ellipsis">
       
         The optional journal (identity, traces, audit)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-voice-panel-2026-09-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The voice panel (2026-09-26)
       
     </span>
   </a>
@@ -1302,6 +1324,80 @@ disabled. Credentials never live in that file: <code>RT_PG_PASSWORD</code> for P
 and the trace stream's own shape (row count, distinct sessions, newest event) - never a
 recomputed token total, which stays owned by the usage panel's existing, already-decided
 counting rule.</p>
+<h2 id="the-voice-panel-2026-09-26">The voice panel (2026-09-26)<a class="headerlink" href="#the-voice-panel-2026-09-26" title="Permanent link">&para;</a></h2>
+<p><a href="../.claude/skills/rt-observe/scripts/voice_ask.py">voice_ask.py</a> writes a question into
+<code>~/.claude/obsidian-outbox/ask/requests/</code> and polls <code>ask/answers/</code> for the reply, following the
+exact file shapes <a href="../.claude/skills/obsidian-cli/scripts/daemon_ask.py">daemon_ask.py</a> (the
+<code>obsidian-cli</code> skill) expects on the other side. Neither this module nor
+<a href="../.claude/skills/rt-observe/scripts/stt_engine.py">stt_engine.py</a> (local speech-to-text,
+<code>faster-whisper</code> as a lazily-imported optional dependency) ever opens <code>OBSIDIAN_VAULT</code> or
+<code>graphify-out/</code>: the vault/graph reasoning is entirely the daemon's, reached only through the
+outbox files above, which already sit outside the vault boundary the rest of this skill's
+collectors observe. TTS in this phase is the browser's own <code>speechSynthesis</code>, not a new
+server-side engine.</p>
+<p>Speech-to-text runs on the GPU: Whisper large-v3-turbo, int8_float16, CUDA. It was chosen on
+2026-09-26 from four candidates, each run in its own process beside the resident writer-role
+model on the operator's three dictated recordings, scored against the operator's own reference
+text:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Word error</th>
+<th>19.5 s buffer</th>
+<th>Dedicated VRAM</th>
+<th>LLM demoted</th>
+<th>Score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>large-v3-turbo int8_float16</td>
+<td>2.5%</td>
+<td>0.74 s</td>
+<td>945 MiB</td>
+<td>7%</td>
+<td>98.8</td>
+</tr>
+<tr>
+<td>small float16</td>
+<td>10.0%</td>
+<td>0.58 s</td>
+<td>625 MiB</td>
+<td>2%</td>
+<td>95.0</td>
+</tr>
+<tr>
+<td>medium int8_float16</td>
+<td>7.5%</td>
+<td>1.24 s</td>
+<td>881 MiB</td>
+<td>8%</td>
+<td>86.6</td>
+</tr>
+<tr>
+<td>large-v3 int8_float16</td>
+<td>2.5%</td>
+<td>1.69 s</td>
+<td>1617 MiB</td>
+<td>24%</td>
+<td>gated out</td>
+</tr>
+</tbody>
+</table>
+<p>The score averages accuracy (100 minus word error) and live-caption speed (100 when the buffer
+transcribes within <code>voice.partial_refresh_ms</code>), and a candidate that demotes more than 10% of the
+LLM out of VRAM is gated out. VRAM is read from the per-process <code>GPU Process Memory</code> counters,
+because <code>nvidia-smi</code> under WDDM cannot tell whose memory it is, and a candidate evaluated in the
+same process as the one before it inherits that model's reserved memory. The sample is 40
+reference words, so one word is 2.5% of word error. That comparison is now the
+<a href="../manual/04-skills/#opt-local-stt-vram---measured-speech-to-text-selection-for-this-gpu">opt-local-stt-vram</a>
+skill (<code>/opt-local-stt-vram</code>): rerun it with your own recordings to test another model, or after
+a GPU or LLM change, and adopt its winner by editing the two <code>voice.stt</code> keys above.
+<code>requirements-voice-cuda.txt</code> carries the NVIDIA runtime (Devoir2's pins) for a machine
+without a system CUDA Toolkit. The dashboard warms the model at startup (a lazily loaded model
+took 14.3 s on its first call), and the page re-transcribes the growing recording once per
+<code>voice.partial_refresh_ms</code>, one request at a time, so the caption stays live without queueing.</p>
 
 
 

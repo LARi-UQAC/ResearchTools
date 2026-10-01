@@ -22,7 +22,7 @@
         
       
       
-      <link rel="icon" href="../../../ResearchToolsLogo.png">
+      <link rel="icon" href="../../assets/ResearchToolsLogo.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
@@ -96,7 +96,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="../.." title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../../ResearchToolsLogo.png" alt="logo">
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -305,7 +305,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="../.." title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
       
-  <img src="../../../ResearchToolsLogo.png" alt="logo">
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
 
     </a>
     ResearchTools
@@ -687,6 +687,17 @@
     <span class="md-ellipsis">
       
         Screenshot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-voice-panel-2026-09-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The voice panel (2026-09-26)
       
     </span>
   </a>
@@ -1080,6 +1091,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-voice-panel-2026-09-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The voice panel (2026-09-26)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-rt-dashboard-command" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1141,6 +1163,27 @@ prover), with <strong>Plan</strong>, <strong>Services</strong>, <strong>Graph</s
 badge top-right and the footer strip (drawn by <code>rt_state.py</code>, generation timestamp, policy
 hash, last install, repo root) are the receipts every panel here carries per R9 — a claim with
 no stamp is not trusted.</p>
+<h2 id="the-voice-panel-2026-09-26">The voice panel (2026-09-26)<a class="headerlink" href="#the-voice-panel-2026-09-26" title="Permanent link">&para;</a></h2>
+<p>A fifth tab, <strong>Voice</strong>, next to Real-Time Process. Hold <strong>P</strong> to record, release to send; a
+dropdown next to the button picks the language (Auto-detect, English, Francais), which drives
+both the speech-to-text decode and the answer's own language. The transcript updates live while
+you speak, the same progressive re-transcription Devoir2 uses, and the view draws the voice
+pipeline in the Real-Time Process tab's own idiom: one agent node whose ring is your microphone
+level, four stage boxes (listening, transcribing, thinking, replying) that light up in turn with
+their measured durations, and a live spectrum strip.</p>
+<p>Speech-to-text runs locally on the GPU: <code>faster-whisper</code> large-v3-turbo in int8_float16 on
+CUDA. It won a scored comparison of four Whisper variants run beside the resident writer-role
+model: 2.5% word error on the operator's own recordings, a 19.5 s recording transcribed in
+0.74 s, and 945 MiB of VRAM (see <a href="../../rt-observe/">docs/rt-observe.md</a> for the full table). Install <code>scripts/requirements-voice.txt</code>, plus
+<code>scripts/requirements-voice-cuda.txt</code> for the NVIDIA runtime on a machine without a system CUDA
+Toolkit. A machine without them sees the panel name the missing install command, never a
+broken dashboard. The model is loaded and warmed when the dashboard starts, so the first press
+already has a live transcript.</p>
+<p>The panel never opens the Obsidian vault or the <code>graphify</code> graph itself. Every question is
+relayed to the vault daemon's own read-only ask queue (<code>.claude/skills/obsidian-cli</code>'s
+<code>daemon_ask.py</code>), which searches the vault, calls the local LLM, and answers back — the same
+boundary the rest of this page already holds itself to for the vault/graph panels above. The
+answer is spoken back through the browser's own <code>speechSynthesis</code>, not a new server-side voice.</p>
 <h2 id="the-rt-dashboard-command">The <code>/rt-dashboard</code> command<a class="headerlink" href="#the-rt-dashboard-command" title="Permanent link">&para;</a></h2>
 <p>Starts the <code>rt-observe</code> dashboard on loopback and reports the URL. With no argument it dry-runs
 first, which names the interpreter it resolved, the bind address, the page and every per-section

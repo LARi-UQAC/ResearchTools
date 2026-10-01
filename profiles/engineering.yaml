@@ -68,7 +68,9 @@ author:
 # Where this profile's CV inventory and per-competition drafts live. Never
 # inside ResearchTools (R7): the value is the researcher's own external
 # project folder. Omit this block and the skill refuses to run rather than
-# guessing a location (R1, R8) - cv_common.load_cv_project_dir().
+# guessing a location (R1, R8) - cv_common.load_cv_project_dir(). A leading
+# {{HOME}} stands for the current user's home directory, so this tracked file
+# names no machine path.
 cv:
   project_dir: "{{HOME}}/Your_CV/"
 

@@ -126,6 +126,43 @@ class TestLoadCvProjectDir(unittest.TestCase):
             result = cv_common.load_cv_project_dir(path=path)
             self.assertEqual(str(result), r"C:\Example\CV_Project")
 
+    def test_home_token_resolves_against_the_home_directory(self):
+        # A tracked profile names no account folder: {{HOME}} stands for it.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_profile(tmp, 'cv:\n  project_dir: "{{HOME}}/Your_CV/"\n')
+            result = cv_common.load_cv_project_dir(path=path, home=Path(tmp) / "fakehome")
+            self.assertEqual(result, Path(tmp) / "fakehome" / "Your_CV")
+            self.assertNotIn("{{HOME}}", str(result))
+
+    def test_non_string_project_dir_is_refused_with_its_type(self):
+        # PR #37 review: str() turned these YAML values into folder names
+        # such as "['outside']" instead of refusing them; the falsy ones
+        # (false, 0, [], {}) were refused as a MISSING key, which names the
+        # wrong cause.
+        cases = {"[outside]": "list", "{a: 1}": "dict", "5": "int", "true": "bool",
+                 "2026-10-01": "date", "false": "bool", "0": "int", "[]": "list", "{}": "dict"}
+        for body, type_name in cases.items():
+            with self.subTest(value=body), tempfile.TemporaryDirectory() as tmp:
+                path = self._write_profile(tmp, "cv:\n  project_dir: %s\n" % body)
+                with self.assertRaises(cv_common.CvDataError) as ctx:
+                    cv_common.load_cv_project_dir(path=path, home=Path(tmp))
+                self.assertIn("must be a string path, got %s" % type_name, str(ctx.exception))
+
+    def test_null_or_blank_project_dir_is_reported_missing(self):
+        for body in ("null", "", '"   "'):
+            with self.subTest(value=body), tempfile.TemporaryDirectory() as tmp:
+                path = self._write_profile(tmp, "cv:\n  project_dir: %s\n" % body)
+                with self.assertRaises(cv_common.CvDataError) as ctx:
+                    cv_common.load_cv_project_dir(path=path, home=Path(tmp))
+                self.assertIn("no 'cv.project_dir'", str(ctx.exception))
+
+    def test_home_token_away_from_the_start_is_refused(self):
+        # Anywhere else it would become a literal "{{HOME}}" folder on first write.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_profile(tmp, 'cv:\n  project_dir: "C:/data/{{HOME}}/Your_CV"\n')
+            with self.assertRaises(cv_common.CvDataError):
+                cv_common.load_cv_project_dir(path=path, home=Path(tmp))
+
 
 if __name__ == "__main__":
     unittest.main()

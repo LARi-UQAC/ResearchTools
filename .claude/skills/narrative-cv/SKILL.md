@@ -20,7 +20,9 @@ stateless per-run extraction, because the pain the skill exists to remove is
 re-deriving the candidate's best contributions from scratch for every grant.
 The inventory lives in the researcher's OWN external project folder (never
 inside ResearchTools - R7), grows across grant cycles, and is re-ranked and
-re-selected for each new competition rather than rebuilt.
+re-selected for each new competition rather than rebuilt. That folder is the
+active profile's `cv.project_dir`; a leading `{{HOME}}` there stands for the
+user's home directory, so the tracked profile names no machine path.
 
 ## When to use
 

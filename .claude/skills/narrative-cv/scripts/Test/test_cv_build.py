@@ -86,10 +86,10 @@ class TestItemMarkup(unittest.TestCase):
     """
 
     def test_double_star_markup_becomes_textbf_and_single_star_survives(self):
-        source = cv_build.render_latex(_item_model("**Otis, M.**, Djogdom, G.*, & **Wick, J.** (2024)."))
+        source = cv_build.render_latex(_item_model("**Otis, M.**, Tarasov, V.*, & **Wick, J.** (2024)."))
         self.assertIn(r"\textbf{Otis, M.}", source)
         self.assertIn(r"\textbf{Wick, J.}", source)
-        self.assertIn("Djogdom, G.*", source)
+        self.assertIn("Tarasov, V.*", source)
         self.assertNotIn("**", source)
 
     def test_unbalanced_markup_is_left_literal_and_does_not_raise(self):
@@ -150,7 +150,7 @@ class TestItemReferences(unittest.TestCase):
 
     def test_each_reference_gets_its_own_line_before_the_description(self):
         source = cv_build.render_latex(self._with_refs(
-            ["**Otis, M.** (2024). Titre A. https://doi.org/10.1/a", "Djogdom, G.* (2023). Titre B."]))
+            ["**Otis, M.** (2024). Titre A. https://doi.org/10.1/a", "Tarasov, V.* (2023). Titre B."]))
         first, second = source.index("Titre A"), source.index("Titre B")
         description = source.index("Développement d'une commande")
         self.assertLess(first, second)
@@ -182,7 +182,7 @@ class TestCitationRules(unittest.TestCase):
 
     def _bold_ref(self, variant):
         model = _model(portal_variant=variant)
-        model["sections"]["2"]["items"][0]["references"] = ["Nabli, S.*, & **Otis, M.** (2025). Titre."]
+        model["sections"]["2"]["items"][0]["references"] = ["Wick, H.*, & **Otis, M.** (2025). Titre."]
         return model
 
     def test_bold_name_in_a_tri_agency_reference_is_flagged(self):
@@ -195,7 +195,7 @@ class TestCitationRules(unittest.TestCase):
 
     def test_tri_agency_reference_without_bold_is_clean(self):
         model = _model(portal_variant="tri_agency")
-        model["sections"]["2"]["items"][0]["references"] = ["Nabli, S.*, & Otis, M. (2025). Titre."]
+        model["sections"]["2"]["items"][0]["references"] = ["Wick, H.*, & Otis, M. (2025). Titre."]
         self.assertEqual(cv_build.citation_warnings(model), [])
 
     def test_shipped_variants_all_declare_their_citation_rules(self):
@@ -279,8 +279,8 @@ class TestLoadModel(unittest.TestCase):
 
 class TestRenderText(unittest.TestCase):
     def test_bold_markers_are_stripped_and_no_double_dash_is_emitted(self):
-        text = cv_build.render_text(_item_model("**Otis, M.** et Djogdom, G.* (2024)."))
-        self.assertIn("Otis, M. et Djogdom, G.*", text)
+        text = cv_build.render_text(_item_model("**Otis, M.** et Tarasov, V.* (2024)."))
+        self.assertIn("Otis, M. et Tarasov, V.*", text)
         self.assertNotIn("**", text)
         self.assertNotIn(" -- ", text)
 

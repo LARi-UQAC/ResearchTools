@@ -4,6 +4,9 @@
 *.env.*
 secrets/
 credentials/
+# Scopus API-key fallback file (.claude/rules/security.md); the key itself
+# normally comes from SCOPUS_API_KEY.
+.scopus_key
 
 *.bak
 

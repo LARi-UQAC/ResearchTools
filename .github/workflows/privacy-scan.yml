@@ -1,0 +1,64 @@
+# Privacy scan - the authoritative gate behind the local privacy-guard pre-commit hook
+# (.claude/hooks/git/). Scans the commits a push or a pull request adds with betterleaks
+# and .claude/hooks/git/privacy-rules.toml: secrets plus personal-data shapes (Quebec
+# Law 25). A local hook can be skipped with --no-verify; this check cannot.
+#
+# Reusable: another repository calls it with
+#   jobs:
+#     privacy-scan:
+#       uses: LARi-UQAC/ResearchTools/.github/workflows/privacy-scan.yml@main
+# and the rules are then fetched from this repository, so one file governs every repo.
+name: privacy-scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: privacy-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the commits to scan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the shared rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: LARi-UQAC/ResearchTools
+          ref: main
+          path: .privacy-guard
+          sparse-checkout: .claude/hooks/git/privacy-rules.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Install betterleaks 1.4.1 (checksum verified)
+        run: |
+          curl -sSfL --max-time 60 -o bl.tgz \
+            https://github.com/betterleaks/betterleaks/releases/download/v1.4.1/betterleaks_1.4.1_linux_x64.tar.gz
+          echo "2635ff988d9194cd3070155138589081a54a3438d79ca9b83268addd2fd844cc  bl.tgz" | sha256sum -c -
+          tar -xzf bl.tgz betterleaks
+          rm bl.tgz
+
+      - name: Scan the added commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # ResearchTools scans with the rules of the change under review; a caller
+          # repository uses the rules on ResearchTools main.
+          rules=.claude/hooks/git/privacy-rules.toml
+          [ -f "$rules" ] || rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            range="$HEAD"
+          else
+            range="$BASE..$HEAD"
+          fi
+          ./betterleaks git --redact --no-banner --config "$rules" --log-opts="$range" .

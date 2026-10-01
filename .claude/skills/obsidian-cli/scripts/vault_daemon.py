@@ -391,6 +391,11 @@ class VaultDaemon(OutboxLayout):
             except ob.BridgeError as exc:
                 # No fallback tag (R8). Say it and keep watching, so the drops
                 # wait in raw/ rather than being filed by something weaker.
+                # Covers an unreachable Ollama (resolve_model wraps the
+                # resolver's ResolverError) and a tag with no measured window
+                # (context_window wraps ContextBudgetError). Diagnosed
+                # 2026-10-01: before the wrapping, 11 login-time deaths in
+                # vault-daemon.log, Ollama not yet listening.
                 print(f"[DAEMON] {exc}", file=sys.stderr)
             if time.monotonic() - last_ask >= ask_interval:
                 # answer_pending_asks resolves a model only when a request is
@@ -425,8 +430,29 @@ class VaultDaemon(OutboxLayout):
 
 
 def context_window(model: str) -> int:
-    return context_budget.read_retained_num_ctx(
-        context_budget.DEFAULT_CONFIG_PATH, model)
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the measured context window retained for `model`.
+
+    Inputs:
+        model (str): the tag the resolver returned
+
+    Outputs:
+        window (int): retained num_ctx, in tokens
+
+    Raises:
+        ob.BridgeError: no usable measurement for this tag (a
+        context_budget.ContextBudgetError, chained). Surfaced as the bridge's
+        own refusal type so run_forever's existing handlers keep the daemon
+        polling; diagnosed 2026-10-01, see run_forever.
+    --------------------------------------------------------------------------
+    """
+    try:
+        return context_budget.read_retained_num_ctx(
+            context_budget.DEFAULT_CONFIG_PATH, model)
+    except context_budget.ContextBudgetError as exc:
+        raise ob.BridgeError(str(exc)) from exc
 
 
 def main(argv=None) -> int:

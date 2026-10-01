@@ -14,6 +14,7 @@ contention, which must return the drop to raw/ rather than strand it.
 """
 import io
 import json
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -187,6 +188,86 @@ class DaemonWriteTest(DaemonCase):
                     self.assertEqual(
                         vd.main(["--outbox", str(self.outbox), "--dry-run"]), 0)
         self.assertEqual(len(self.daemon.pending()), 1)
+
+
+class UnreachableOllamaTest(DaemonCase):
+    """Diagnosed 2026-10-01 from vault-daemon.log: 11 daemon deaths, each a
+    ResolverError ('ollama list' exited 1, connection refused) because Ollama
+    was not listening yet at login. The loop must wait and keep polling."""
+
+    LOOP_CONFIG = {
+        "lock": CONFIG["lock"], "probe": CONFIG["probe"],
+        "daemon": {**CONFIG["daemon"], "ask_poll_interval_s": 1},
+    }
+    ITERATIONS = 2  # a second pass proves the loop survived the first
+
+    def setUp(self):
+        super().setUp()
+        sys.path.insert(0, str(Path(vd.ob.__file__).resolve().parent))
+        self.addCleanup(sys.path.remove, str(Path(vd.ob.__file__).resolve().parent))
+        import model_resolver
+        self.mr = model_resolver
+        vd._STOP["requested"] = False
+        self.addCleanup(vd._STOP.update, requested=False)
+        self.sleeps = 0
+
+    def _daemon(self, drain_idle_s):
+        config = {**self.LOOP_CONFIG,
+                  "daemon": {**self.LOOP_CONFIG["daemon"],
+                             "drain_idle_s": drain_idle_s}}
+        return vd.VaultDaemon(self.vault, self.outbox, config, today=TODAY)
+
+    def _fake_sleep(self, _seconds):
+        self.sleeps += 1
+        if self.sleeps >= self.ITERATIONS:
+            vd._STOP["requested"] = True
+
+    def _run_loop(self, daemon):
+        down = self.mr.ResolverError(
+            "[RESOLVER] 'ollama list' exited 1: connection refused")
+        with mock.patch.object(self.mr, "resolve",
+                               side_effect=down) as resolve, \
+                mock.patch.object(vd.time, "sleep",
+                                  side_effect=self._fake_sleep), \
+                mock.patch.object(vd.ob, "_post_generate",
+                                  side_effect=AssertionError):
+            rc = daemon.run_forever()
+        return rc, resolve
+
+    def test_a_pending_drop_survives_an_unreachable_ollama(self):
+        drop = self._drop()
+        rc, resolve = self._run_loop(self._daemon(drain_idle_s=900))
+        self.assertEqual(rc, 0)
+        self.assertTrue(drop.exists(), "the drop must wait in raw/, unfiled")
+        self.assertGreaterEqual(self.sleeps, self.ITERATIONS)
+        self.assertGreaterEqual(resolve.call_count, self.ITERATIONS,
+                                "the loop must retry resolution on each pass")
+
+    def test_the_idle_drain_survives_an_unreachable_ollama(self):
+        rc, resolve = self._run_loop(self._daemon(drain_idle_s=0))
+        self.assertEqual(rc, 0)
+        self.assertGreaterEqual(self.sleeps, self.ITERATIONS)
+        self.assertGreaterEqual(resolve.call_count, self.ITERATIONS)
+
+    def test_a_missing_measured_window_is_a_bridge_error(self):
+        missing = vd.context_budget.ConfigError("no retained_num_ctx for tag")
+        with mock.patch.object(vd.context_budget, "read_retained_num_ctx",
+                               side_effect=missing):
+            with self.assertRaises(vd.ob.BridgeError) as caught:
+                vd.context_window(TAG)
+        self.assertIs(caught.exception.__cause__, missing)
+        self.assertIn("no retained_num_ctx", str(caught.exception))
+
+    def test_an_unexpected_error_is_still_not_swallowed(self):
+        """Negative control: the loop catches the two named refusals only. A
+        bug (here a KeyError out of the resolver) must still surface."""
+        self._drop()
+        with mock.patch.object(self.mr, "resolve",
+                               side_effect=KeyError("bug")), \
+                mock.patch.object(vd.time, "sleep",
+                                  side_effect=self._fake_sleep):
+            with self.assertRaises(KeyError):
+                self._daemon(drain_idle_s=900).run_forever()
 
 
 if __name__ == "__main__":

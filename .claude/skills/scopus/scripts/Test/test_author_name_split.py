@@ -44,7 +44,7 @@ class TestSplitAuthorName(unittest.TestCase):
 
     def test_compound_surname_with_comma(self):
         """A multi-word surname before the comma is preserved whole."""
-        self.assertEqual(_split_author_name("Tchane Djogdom, Gilde Vanel"), ("Tchane Djogdom", "G"))
+        self.assertEqual(_split_author_name("Dal Tarasov, Viggo Iosef"), ("Dal Tarasov", "V"))
 
     def test_surrounding_whitespace_is_stripped(self):
         self.assertEqual(_split_author_name("  Otis ,  Martin  "), ("Otis", "M"))

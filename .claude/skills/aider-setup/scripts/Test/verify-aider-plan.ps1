@@ -314,6 +314,23 @@ $budget = Join-Path $skillRoot "config\context-budget.json"
 if (-not (Test-Path -LiteralPath $budget)) {
     $budget = Join-Path $HOME ".config\aider\context-budget.json"
 }
+# The repository's config\ is the kit TEMPLATE: its always-on paths start with
+# the home placeholder that setup.ps1 substitutes on install (forward slashes,
+# as setup.ps1's $homeFwd), so the driver is handed a copy carrying this
+# machine's home - the same substitution, not a second hand-kept file. The
+# token is ASSEMBLED, never written literally, because this file ships in the
+# kit and setup.ps1 would otherwise substitute it too (see aider-night.ps1).
+$homeToken  = "{{" + "HOME" + "}}"
+$budgetText = Get-Content -LiteralPath $budget -Raw -Encoding UTF8
+if ($budgetText.Contains($homeToken)) {
+    $resolvedDir = Join-Path $env:TEMP ("aider-budget-" + [guid]::NewGuid().ToString("N").Substring(0,8))
+    New-Item -ItemType Directory -Force -Path $resolvedDir | Out-Null
+    $resolved = Join-Path $resolvedDir "context-budget.json"
+    [System.IO.File]::WriteAllText($resolved, $budgetText.Replace($homeToken, ($HOME -replace '\\', '/')),
+                                   (New-Object System.Text.UTF8Encoding $false))
+    Write-Host ("budget      : {0} (template, home substituted)" -f $budget)
+    $budget = $resolved
+}
 $testCmd = 'python -m unittest discover -s tests -p "test_*.py"'
 
 function New-Fixture {

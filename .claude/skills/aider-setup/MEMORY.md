@@ -36,8 +36,8 @@ fixture carrying this machine's real paths, used only to drive `verify-aider-pla
 - `aider-plan.ps1` dot-sources `aider-plan-core.ps1` via `$PSScriptRoot`, i.e. **flat, same
   directory** - not a `lib/` subfolder. It was moved there deliberately during this session
   after starting in `scripts/lib/`.
-- `python` on PATH on this machine resolves to `{{HOME}}\...`, a DIFFERENT account's
-  install (matches the known limitation already logged in the 2026-09-05 resumption docs, item
+- `python` on PATH on this machine resolves to another account's `{{HOME}}\...`, a DIFFERENT
+  account's install (matches the known limitation already logged in the 2026-09-05 resumption docs, item
   6.2). Use `.venv-skills\Scripts\python.exe` explicitly for anything that must run from this
   repo's own environment; it has no `pytest`, so aider's suites run as plain scripts
   (`python file.py`), not `pytest file.py`.

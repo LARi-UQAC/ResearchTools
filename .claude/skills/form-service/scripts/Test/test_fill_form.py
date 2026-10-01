@@ -103,11 +103,11 @@ SIMPLE = [
 class TestWritesValues(unittest.TestCase):
 
     def test_a_text_value_is_written(self) -> None:
-        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"})
-        self.assertEqual(str(annots_of(out)["Nom"]["/V"]), "Umuhoza")
+        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"})
+        self.assertEqual(str(annots_of(out)["Nom"]["/V"]), "Wick")
 
     def test_the_result_is_a_pdf(self) -> None:
-        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"})
+        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"})
         self.assertTrue(out.startswith(b"%PDF"))
 
     def test_a_name_with_a_space_is_used_verbatim(self) -> None:
@@ -117,7 +117,7 @@ class TestWritesValues(unittest.TestCase):
         self.assertEqual(str(annots_of(out)["code permanent"]["/V"]), "XXXX000000")
 
     def test_fields_not_named_are_left_alone(self) -> None:
-        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"})
+        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"})
         self.assertIsNone(annots_of(out)["code permanent"].get("/V"))
 
     def test_the_count_of_written_widgets_is_returned_by_write_values(self) -> None:
@@ -195,7 +195,7 @@ class TestNeedAppearances(unittest.TestCase):
     """AcroForm values do not render without appearance streams."""
 
     def test_need_appearances_is_set(self) -> None:
-        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"})
+        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"})
         acro = PdfReader(io.BytesIO(out)).trailer["/Root"]["/AcroForm"]
         self.assertTrue(bool(acro.get("/NeedAppearances")))
 
@@ -213,14 +213,14 @@ class TestSelectiveLocking(unittest.TestCase):
         return bool(flags & fill_form.READONLY_FLAG)
 
     def test_only_the_named_fields_are_locked(self) -> None:
-        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"},
+        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"},
                              flatten_fields=["Nom"])
         self.assertTrue(self.locked(out, "Nom"))
         self.assertFalse(self.locked(out, "code permanent"),
                          "a later step must still be able to write this")
 
     def test_none_locks_nothing(self) -> None:
-        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"})
+        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"})
         self.assertFalse(self.locked(out, "Nom"))
 
     def test_a_signature_field_is_never_locked_even_when_named(self) -> None:
@@ -252,7 +252,7 @@ class TestTheResultIsReadableByTheRestOfTheSkill(unittest.TestCase):
     def test_dump_widgets_still_sees_every_field_after_filling(self) -> None:
         before = field_map.dump_widgets(form_bytes(SIMPLE))
         after = field_map.dump_widgets(
-            fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"},
+            fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"},
                            flatten_fields=["Nom"]))
         self.assertEqual([w["name"] for w in before], [w["name"] for w in after])
 
@@ -260,7 +260,7 @@ class TestTheResultIsReadableByTheRestOfTheSkill(unittest.TestCase):
         # Filling a form must not look like UQAC replacing it.
         before = field_map.dump_widgets(form_bytes(SIMPLE))
         after = field_map.dump_widgets(
-            fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza", "accepte": "Oui"}))
+            fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick", "accepte": "Oui"}))
         self.assertEqual(
             field_map.diff_widgets(before, after),
             {"added": [], "removed": [], "relocated": [], "retyped": [],
@@ -278,15 +278,15 @@ class TestFillingTwiceInSequence(unittest.TestCase):
     """The multi-step case: a student fills, then a professor does."""
 
     def test_a_second_pass_adds_values_without_disturbing_the_first(self) -> None:
-        step1 = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"},
+        step1 = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"},
                                flatten_fields=["Nom"])
         step2 = fill_form.fill(step1, {"code permanent": "XXXX000000"})
         annots = annots_of(step2)
-        self.assertEqual(str(annots["Nom"]["/V"]), "Umuhoza")
+        self.assertEqual(str(annots["Nom"]["/V"]), "Wick")
         self.assertEqual(str(annots["code permanent"]["/V"]), "XXXX000000")
 
     def test_a_field_locked_in_the_first_pass_stays_locked(self) -> None:
-        step1 = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"},
+        step1 = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"},
                                flatten_fields=["Nom"])
         step2 = fill_form.fill(step1, {"code permanent": "x"})
         flags = int(annots_of(step2)["Nom"].get("/Ff", 0))
@@ -303,7 +303,7 @@ class TestSignLast(unittest.TestCase):
 
     def test_filling_an_already_signed_document_is_refused(self) -> None:
         with self.assertRaises(fill_form.FillError) as caught:
-            fill_form.fill(self.signed_form(), {"Nom": "Umuhoza"})
+            fill_form.fill(self.signed_form(), {"Nom": "Wick"})
         self.assertIn("already signed", str(caught.exception))
 
     def test_the_refusal_names_the_signature_field(self) -> None:
@@ -314,8 +314,8 @@ class TestSignLast(unittest.TestCase):
     def test_an_unsigned_signature_field_does_not_block_filling(self) -> None:
         # The field exists on every UQAC form from the start. Only a signature
         # that has actually been applied blocks a later fill.
-        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Umuhoza"})
-        self.assertEqual(str(annots_of(out)["Nom"]["/V"]), "Umuhoza")
+        out = fill_form.fill(form_bytes(SIMPLE), {"Nom": "Wick"})
+        self.assertEqual(str(annots_of(out)["Nom"]["/V"]), "Wick")
 
     def test_the_output_is_a_rewrite_not_an_incremental_update(self) -> None:
         # The fact that makes the refusal above necessary. If this ever becomes

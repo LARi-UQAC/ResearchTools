@@ -27,6 +27,9 @@ spec.loader.exec_module(vl)
 ACQUIRE_TIMEOUT_S = 0.3
 STALE_AFTER_S = 60.0
 POLL_INTERVAL_S = 0.01
+_LEGACY = object()  # sentinel: write a lock payload with no "started" key
+# A marker no real process incarnation of this test run can have (R0: fixture).
+FOREIGN_MARKER = 1
 
 
 class VaultLockTest(unittest.TestCase):
@@ -39,13 +42,16 @@ class VaultLockTest(unittest.TestCase):
                             stale_after_s=stale_after_s,
                             poll_interval_s=POLL_INTERVAL_S)
 
-    def _write_holder(self, pid, age_s=0.0, host=None):
+    def _write_holder(self, pid, age_s=0.0, host=None, started=_LEGACY):
         stamp = datetime.now(timezone.utc) - timedelta(seconds=age_s)
-        self.lock_path.write_text(json.dumps({
+        payload = {
             "pid": pid, "host": host or socket.gethostname(),
             "token": "someone-elses-token",
             "at": stamp.replace(microsecond=0).isoformat(),
-        }), encoding="utf-8")
+        }
+        if started is not _LEGACY:  # omitted = a lock written before "started"
+            payload["started"] = started
+        self.lock_path.write_text(json.dumps(payload), encoding="utf-8")
 
     def test_acquire_creates_the_lock_and_release_removes_it(self):
         with self._lock():
@@ -197,6 +203,78 @@ class VaultLockTest(unittest.TestCase):
         self._write_holder(424242, age_s=0)
         with patch.object(vl, "pid_alive", return_value=False):
             self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    # --- pid reuse after a reboot (diagnosed 2026-10-01) -------------------
+
+    def test_a_reused_pid_with_a_different_start_marker_is_reclaimed(self):
+        """Regression, the 2026-09-29 mechanism: the daemon was killed at
+        shutdown with its lock in place, and after the reboot an unrelated
+        process (most likely the daemon's own launch chain) had its pid. The pid
+        is alive, but it is a different incarnation, so the lock is stale."""
+        real = vl.process_start_marker(os.getpid())
+        if real is None:
+            self.skipTest("start marker unsupported on this platform")
+        self._write_holder(os.getpid(), started=real + 12345)
+        self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+        before = self.lock_path.read_text(encoding="utf-8")
+        vl.held_by_live_holder(self.lock_path, STALE_AFTER_S)
+        self.assertEqual(self.lock_path.read_text(encoding="utf-8"), before,
+                         "the read-only probe must not touch the file")
+        lock = self._lock()
+        with lock:
+            pass
+        self.assertEqual(len(lock.reclaimed), 1)
+        self.assertIn(str(os.getpid()), lock.reclaimed[0])
+        self.assertIn("reused", lock.reclaimed[0])
+
+    def test_a_live_holder_with_its_real_start_marker_is_still_held(self):
+        """Negative control for the case above: without it, an implementation
+        reclaiming every live holder would pass the regression."""
+        real = vl.process_start_marker(os.getpid())
+        if real is None:
+            self.skipTest("start marker unsupported on this platform")
+        self._write_holder(os.getpid(), started=real)
+        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+        with self.assertRaises(vl.LockError):
+            vl.VaultLock(self.lock_path, acquire_timeout_s=0,
+                         stale_after_s=STALE_AFTER_S,
+                         poll_interval_s=POLL_INTERVAL_S).acquire()
+
+    def test_a_legacy_lock_without_started_keeps_a_live_pid_as_holder(self):
+        self._write_holder(os.getpid())  # no "started" key
+        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_an_unreadable_current_marker_keeps_a_live_pid_as_holder(self):
+        """Conservative on purpose: when the live process cannot be queried the
+        pid decides, as before, rather than evicting a possibly real daemon."""
+        self._write_holder(os.getpid(), started=FOREIGN_MARKER)
+        with patch.object(vl, "process_start_marker", return_value=None):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_a_dead_pid_is_reclaimed_whatever_the_marker_says(self):
+        self._write_holder(424242, started=FOREIGN_MARKER)
+        with patch.object(vl, "pid_alive", return_value=False):
+            lock = self._lock()
+            with lock:
+                pass
+        self.assertIn("424242", lock.reclaimed[0])
+        self.assertIn("gone", lock.reclaimed[0])
+
+    def test_try_create_records_this_process_start_marker(self):
+        lock = self._lock()
+        with lock:
+            holder = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertIn("started", holder)
+        self.assertEqual(holder["started"], vl.process_start_marker(os.getpid()))
+
+    @unittest.skipUnless(os.name == "nt" or Path("/proc/self/stat").exists(),
+                         "start marker is implemented for Windows and Linux")
+    def test_process_start_marker_is_stable_and_none_for_a_missing_pid(self):
+        first = vl.process_start_marker(os.getpid())
+        self.assertIsInstance(first, int)
+        self.assertEqual(first, vl.process_start_marker(os.getpid()))
+        self.assertIsNone(vl.process_start_marker(2 ** 31 - 2))
+        self.assertIsNone(vl.process_start_marker(0))
 
 
 if __name__ == "__main__":

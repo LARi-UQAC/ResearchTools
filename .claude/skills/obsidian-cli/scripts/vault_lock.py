@@ -12,12 +12,24 @@ both.
 The lock file lives BESIDE the outbox and never inside the vault, so a machine
 with no vault keeps a clean no-op.
 
-Reclamation. A holder is reclaimed when its process is gone, or when the lock is
-older than a staleness ceiling. Liveness is probed with OpenProcess on Windows
-and with signal 0 on POSIX: os.kill(pid, 0) is NOT portable here, because
-Windows Python maps os.kill onto TerminateProcess, so probing with it would kill
-the very process being tested. A lock written by another HOST is never judged by
-its pid, since pids are per machine; only the age ceiling can reclaim it.
+Reclamation. A holder is reclaimed when its process is gone, when its pid now
+belongs to a different process, or when the lock is older than a staleness
+ceiling. Liveness is probed with OpenProcess on Windows and with signal 0 on
+POSIX: os.kill(pid, 0) is NOT portable here, because Windows Python maps
+os.kill onto TerminateProcess, so probing with it would kill the very process
+being tested. A lock written by another HOST is never judged by its pid, since
+pids are per machine; only the age ceiling can reclaim it.
+
+Pid reuse. A pid alone does not identify a process across a reboot. Diagnosed
+2026-10-01 from vault-daemon.log against the Windows boot log: on 2026-09-29 the
+daemon, killed at shutdown with its lock in place, found its own stale pid
+alive after the reboot (an unrelated process, most likely its own launch chain)
+and refused to start, so no daemon ran for the whole day. The lock therefore
+also records "started", the creation marker of the holder's process
+(process_start_marker); a live pid whose current marker differs is a reused pid
+and the lock is reclaimed. Remaining gap: a lock without "started" (written
+before this change), or a reused pid that this user cannot query (another
+account), is still read as the holder.
 
 Timeouts are arguments, never literals (R0). The caller reads them from
 daemon-config.json.
@@ -36,6 +48,10 @@ _WIN_QUERY_LIMITED_INFORMATION = 0x1000
 _WIN_ERROR_ACCESS_DENIED = 5
 _WIN_STILL_ACTIVE = 259
 MAX_RECLAIM_ATTEMPTS = 3  # bounded retry (R10): a livelock must end as a refusal
+
+
+class _FileTime(ctypes.Structure):
+    _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_uint32)]
 
 
 class LockError(RuntimeError):
@@ -92,6 +108,68 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+def process_start_marker(pid: int) -> "int | None":
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Identify ONE incarnation of a pid, so a lock can tell the process that
+        wrote it from an unrelated process that was later given the same pid.
+
+    Details:
+        Windows: creation time from GetProcessTimes (100 ns ticks, as an int).
+        Linux: field 22 (starttime, clock ticks since boot) of /proc/<pid>/stat,
+        parsed after the LAST ")" because comm may contain spaces and parentheses.
+        The value is opaque: compare for equality only, never across platforms.
+
+    Inputs:
+        pid (int): the process id to inspect
+
+    Outputs:
+        marker (int | None): the opaque marker, or None on any other platform
+        or whenever it cannot be read (process gone, access denied, parse
+        failure). Never raises.
+    --------------------------------------------------------------------------
+    """
+    try:
+        if pid <= 0:
+            return None
+        if os.name == "nt":
+            from ctypes import wintypes
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = [
+                wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.GetProcessTimes.argtypes = [
+                wintypes.HANDLE, ctypes.POINTER(_FileTime),
+                ctypes.POINTER(_FileTime), ctypes.POINTER(_FileTime),
+                ctypes.POINTER(_FileTime)]
+            kernel32.GetProcessTimes.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            handle = kernel32.OpenProcess(
+                _WIN_QUERY_LIMITED_INFORMATION, False, pid)
+            if not handle:
+                return None
+            try:
+                created, exited, kernel, user = (
+                    _FileTime(), _FileTime(), _FileTime(), _FileTime())
+                if not kernel32.GetProcessTimes(
+                        handle, ctypes.byref(created), ctypes.byref(exited),
+                        ctypes.byref(kernel), ctypes.byref(user)):
+                    return None
+                return (created.high << 32) | created.low
+            finally:
+                kernel32.CloseHandle(handle)
+        stat = Path(f"/proc/{pid}/stat")
+        if stat.exists():
+            tail = stat.read_text(encoding="utf-8").rsplit(")", 1)[1].split()
+            # tail[0] is field 3 (state), so field 22 sits at index 19.
+            return int(tail[19])
+    except Exception:  # contract: never raises; None means "cannot tell"
+        return None
+    return None
+
+
 class VaultLock:
     """
     --------------------------------------------------------------------------
@@ -127,6 +205,9 @@ class VaultLock:
             "host": socket.gethostname(),
             "token": token,
             "at": _utc_now_iso(),
+            # Distinguishes this process from a later one given the same pid
+            # (null where the platform cannot say).
+            "started": process_start_marker(os.getpid()),
         })
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -164,6 +245,16 @@ class VaultLock:
             Age still decides for a foreign host, where a pid means nothing
             locally, and for a holder carrying no usable pid.
 
+            A live pid is the holder only if it is the SAME process. When the lock
+            carries an int "started" and the pid's current marker is readable and
+            differs, the pid was reused and the lock is reclaimed (2026-09-29:
+            after a reboot the dead daemon's pid was alive again, most likely
+            inside the new daemon's own launch chain, and the daemon refused to
+            start behind its own ghost - inferred from the log, not observed). A
+            legacy lock with no "started", or an unreadable current marker, keeps
+            the pid-decides rule; a pid reused by a process this user cannot
+            query is therefore still read as the holder.
+
             The cost, stated: a wedged holder whose process is alive but doing
             no work is never reclaimed here. That is a different failure, and
             the log tail plus `-Status` are what surface it; silently evicting a
@@ -177,10 +268,17 @@ class VaultLock:
         same_host = holder.get("host") == socket.gethostname()
 
         if same_host and isinstance(pid, int):
-            # Whatever the timestamp says. A live pid on this machine IS the holder.
-            if pid_alive(pid):
-                return None
-            return f"holder pid {pid} is gone"
+            # Whatever the timestamp says: a live pid on this machine is the
+            # holder, unless its start marker proves it is a later process.
+            if not pid_alive(pid):
+                return f"holder pid {pid} is gone"
+            recorded = holder.get("started")
+            if isinstance(recorded, int) and not isinstance(recorded, bool):
+                current = process_start_marker(pid)
+                if current is not None and current != recorded:
+                    return (f"holder pid {pid} was reused by a different "
+                            f"process (start marker changed)")
+            return None
 
         # Foreign host, or no usable pid: age is the only thing that can reclaim.
         stamp = holder.get("at")

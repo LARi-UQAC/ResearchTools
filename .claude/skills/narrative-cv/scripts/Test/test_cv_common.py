@@ -126,6 +126,21 @@ class TestLoadCvProjectDir(unittest.TestCase):
             result = cv_common.load_cv_project_dir(path=path)
             self.assertEqual(str(result), r"C:\Example\CV_Project")
 
+    def test_home_token_resolves_against_the_home_directory(self):
+        # A tracked profile names no account folder: {{HOME}} stands for it.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_profile(tmp, 'cv:\n  project_dir: "{{HOME}}/Your_CV/"\n')
+            result = cv_common.load_cv_project_dir(path=path, home=Path(tmp) / "fakehome")
+            self.assertEqual(result, Path(tmp) / "fakehome" / "Your_CV")
+            self.assertNotIn("{{HOME}}", str(result))
+
+    def test_home_token_away_from_the_start_is_refused(self):
+        # Anywhere else it would become a literal "{{HOME}}" folder on first write.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_profile(tmp, 'cv:\n  project_dir: "C:/data/{{HOME}}/Your_CV"\n')
+            with self.assertRaises(cv_common.CvDataError):
+                cv_common.load_cv_project_dir(path=path, home=Path(tmp))
+
 
 if __name__ == "__main__":
     unittest.main()

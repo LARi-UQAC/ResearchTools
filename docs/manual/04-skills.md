@@ -161,8 +161,9 @@ re-selection over a growing corpus instead of a from-scratch rebuild each time.
 | 3 — build | `cv_build.py` | Renders ONE `cv_model.json` to LaTeX and a plain-text companion, builds the mandatory old-portal filename (`NOM_XXXXX1234_Titre.pdf`, normes_presentation.pdf), and checks the compiled page count against the 6/5-page cap. |
 
 The candidate's identity (CV header/footer, filename surname) and the external project folder
-the inventory and drafts live in (`cv.project_dir`) both come from the active profile
-(`profiles/<active>.yaml`), never from a hardcoded path — a profile carrying neither block is a
+the inventory and drafts live in (`cv.project_dir`, where a leading `{{HOME}}` stands for your
+home directory) both come from the active profile (`profiles/<active>.yaml`), never from a
+hardcoded path — a profile carrying neither block is a
 stop, not a guess. Drives the `narrative-cv-writer` agent, reached via `/cv`.
 
 **Files:**

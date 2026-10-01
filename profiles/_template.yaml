@@ -35,9 +35,10 @@ author:
 # Where this profile's narrative-CV inventory and per-competition drafts
 # live (wired consumer: narrative-cv). Never inside ResearchTools (R7).
 # Drop the whole block if you never draft a CV-FRQ / tri-agency CV: the
-# skill then refuses to run rather than guessing a location.
+# skill then refuses to run rather than guessing a location. A leading
+# {{HOME}} stands for your home directory, e.g. "{{HOME}}/Your_CV/".
 cv:
-  project_dir: "<absolute path to your own external CV project folder>"
+  project_dir: "<absolute path, or {{HOME}}/..., to your own external CV project folder>"
 
 scopus:
   subject_areas:

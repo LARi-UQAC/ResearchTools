@@ -19,6 +19,11 @@ _PROSE_LINE = re.compile(r"^\s*Profil actif\s*:\s*(\S+)\s*$", re.MULTILINE)
 
 REQUIRED_AUTHOR_KEYS = ("name", "email", "institution", "department")
 
+# A tracked profile names no machine path: `cv.project_dir` may start with this
+# token, which stands for the current user's home directory (the same token the
+# aider kit's setup.ps1 substitutes).
+HOME_TOKEN = "{{HOME}}"
+
 # normes_presentation.pdf (FRQ, 2025-09-23): "Le nom du document ne doit
 # contenir aucun espace ni aucun des caractères suivants" - this is the
 # closed set, not a generic "keep alphanumeric" guess (R14).
@@ -137,7 +142,7 @@ def load_author_identity(path=None, root=None):
     return author
 
 
-def load_cv_project_dir(path=None, root=None):
+def load_cv_project_dir(path=None, root=None, home=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -146,16 +151,25 @@ def load_cv_project_dir(path=None, root=None):
         is profile data, the same tier as `author.letter` (R1: no hardcoded
         path in repository code), with the same no-fallback refusal.
 
+    Details:
+        A value starting with HOME_TOKEN ("{{HOME}}") is resolved against the
+        user's home directory, so a tracked profile names no account or
+        machine-specific folder. The token anywhere else is refused: it would
+        otherwise become a literal "{{HOME}}" folder on the first write.
+
     Inputs:
         path (str, Path or None): explicit profile YAML, for test fixtures
         root (Path or None): repository root, used only when path is None
+        home (Path or None): home directory substituted for HOME_TOKEN;
+            defaults to Path.home(), injected by tests (R21)
 
     Outputs:
         project_dir (Path): the configured directory (existence not checked
             here - callers create it on first write)
 
     Raises:
-        CvDataError: profile missing, not a mapping, or no 'cv.project_dir' key
+        CvDataError: profile missing, not a mapping, no 'cv.project_dir' key,
+            or HOME_TOKEN placed anywhere but at the start of the value
     --------------------------------------------------------------------------
     """
     import yaml  # deferred, see load_author_identity()
@@ -177,7 +191,15 @@ def load_cv_project_dir(path=None, root=None):
             "this profile's CV inventory and drafts live in; it is not "
             "inherited from another profile, and it is never guessed." % target)
 
-    return Path(cv_block["project_dir"])
+    raw = str(cv_block["project_dir"])
+    if raw.startswith(HOME_TOKEN):
+        base = Path(home) if home is not None else Path.home()
+        return base / raw[len(HOME_TOKEN):].lstrip("/\\")
+    if HOME_TOKEN in raw:
+        raise CvDataError(
+            "cv.project_dir %r in %s uses %s away from the start of the value; "
+            "it only stands for the home directory as a prefix" % (raw, target, HOME_TOKEN))
+    return Path(raw)
 
 
 def strip_accents(text):

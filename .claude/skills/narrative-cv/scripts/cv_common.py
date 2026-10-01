@@ -186,13 +186,16 @@ def load_cv_project_dir(path=None, root=None, home=None):
         raise CvDataError("profile is not a YAML mapping: %s" % target)
 
     cv_block = data.get("cv")
-    if not isinstance(cv_block, dict) or not cv_block.get("project_dir"):
+    raw = cv_block.get("project_dir") if isinstance(cv_block, dict) else None
+    # Only an absent key, null or a blank string is "missing"; any other value,
+    # falsy ones such as false, 0, [] and {} included, gets the type message
+    # below, so the diagnostic names the real cause (R3).
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
         raise CvDataError(
             "no 'cv.project_dir' in %s. That key names the external folder "
             "this profile's CV inventory and drafts live in; it is not "
             "inherited from another profile, and it is never guessed." % target)
 
-    raw = cv_block["project_dir"]
     if not isinstance(raw, str):
         # yaml.safe_load yields lists, mappings, numbers, booleans and dates as
         # such; coercing them with str() would silently create a folder named

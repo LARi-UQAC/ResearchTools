@@ -134,6 +134,15 @@ class TestLoadCvProjectDir(unittest.TestCase):
             self.assertEqual(result, Path(tmp) / "fakehome" / "Your_CV")
             self.assertNotIn("{{HOME}}", str(result))
 
+    def test_non_string_project_dir_is_refused(self):
+        # PR #37 review: str() turned these YAML values into folder names
+        # such as "['outside']" instead of refusing them.
+        for body in ("[outside]", "{a: 1}", "5", "true", "2026-10-01"):
+            with self.subTest(value=body), tempfile.TemporaryDirectory() as tmp:
+                path = self._write_profile(tmp, "cv:\n  project_dir: %s\n" % body)
+                with self.assertRaises(cv_common.CvDataError):
+                    cv_common.load_cv_project_dir(path=path, home=Path(tmp))
+
     def test_home_token_away_from_the_start_is_refused(self):
         # Anywhere else it would become a literal "{{HOME}}" folder on first write.
         with tempfile.TemporaryDirectory() as tmp:

@@ -169,7 +169,8 @@ def load_cv_project_dir(path=None, root=None, home=None):
 
     Raises:
         CvDataError: profile missing, not a mapping, no 'cv.project_dir' key,
-            or HOME_TOKEN placed anywhere but at the start of the value
+            a value that is not a string, or HOME_TOKEN placed anywhere but at
+            the start of the value
     --------------------------------------------------------------------------
     """
     import yaml  # deferred, see load_author_identity()
@@ -191,7 +192,14 @@ def load_cv_project_dir(path=None, root=None, home=None):
             "this profile's CV inventory and drafts live in; it is not "
             "inherited from another profile, and it is never guessed." % target)
 
-    raw = str(cv_block["project_dir"])
+    raw = cv_block["project_dir"]
+    if not isinstance(raw, str):
+        # yaml.safe_load yields lists, mappings, numbers, booleans and dates as
+        # such; coercing them with str() would silently create a folder named
+        # "['outside']" or "5" on the first write (R8).
+        raise CvDataError(
+            "cv.project_dir in %s must be a string path, got %s %r"
+            % (target, type(raw).__name__, raw))
     if raw.startswith(HOME_TOKEN):
         base = Path(home) if home is not None else Path.home()
         return base / raw[len(HOME_TOKEN):].lstrip("/\\")

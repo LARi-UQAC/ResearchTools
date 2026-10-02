@@ -45,7 +45,19 @@ CONFIG = {
     "daemon": {"poll_interval_s": 0.01, "classify_confidence_min": 0.7,
                "draft_max_attempts": 2, "drain_idle_s": 900,
                "consolidate_top_n": 15, "judge_edge_max_pairs": 15,
-               "queue_max_entries": 500, "phantom_max_per_drain": 10},
+               "queue_max_entries": 500, "phantom_max_per_drain": 10,
+               "ask_poll_interval_s": 1, "ask_request_ttl_s": 90,
+               "ask_max_vault_notes": 5, "ask_note_excerpt_chars": 1200,
+               "ask_context_snapshot_max_chars": 4000,
+               "ask_search_roots": ["30_Ressources", "10_Projets"],
+               "ask_keywords_max": 12, "ask_graph_budget_tokens": 1500,
+               "ask_graph_max_chars": 4000, "ask_graph_timeout_s": 20,
+               "ask_graph_sentences": {
+                   "skipped": {"fr": "Enfin, je n'ai pas trouvé de graph.",
+                              "en": "Finally, I did not find a graph."},
+                   "error": {"fr": "Enfin, je n'ai pas pu consulter le graphe.",
+                            "en": "Finally, I could not query the graph."},
+               }},
 }
 GOOD_NOTE = "---\ntype: apprentissage\ndate: 2026-08-28\n---\n\n## Contexte\nUn cas.\n"
 

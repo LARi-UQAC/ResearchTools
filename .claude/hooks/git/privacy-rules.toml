@@ -1,0 +1,57 @@
+# Privacy guard rules - read by betterleaks (gitleaks-compatible format) in the
+# global pre-commit hook and in the privacy-scan CI workflow. Data, not code (R6):
+# add a pattern here, never in the hook or the workflow.
+#
+# Scope: personal data that is not public information under Quebec's Law 25,
+# plus betterleaks' own default secret rules. Real names are NOT detectable by
+# pattern and are deliberately out of scope (operator decision 2026-10-01): the
+# fixture rule R34 covers them. This machine's account name is checked by the
+# hook itself, since a static file cannot know it.
+#
+# A deliberate exception: put "betterleaks:allow" on the line.
+
+title = "LARi privacy guard"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "windows-home-account"
+description = "Windows home path naming an account (C:\\Users\\<name>)"
+regex = '''(?i)\b[a-z]:(?:\\\\|\\|/)+users(?:\\\\|\\|/)+([a-z0-9][a-z0-9._-]+)'''
+secretGroup = 1
+keywords = ["users"]
+[[rules.allowlists]]
+regexes = ['''(?i)^(public|default|x|you|user|username|someone|prof|example|runneradmin|plantedname)$''']
+
+[[rules]]
+id = "posix-home-account"
+description = "POSIX home path naming an account (/home/<name>)"
+regex = '''(?i)/home/([a-z0-9][a-z0-9._-]+)'''
+secretGroup = 1
+keywords = ["/home/"]
+[[rules.allowlists]]
+regexes = ['''(?i)^(user|username|runner|ubuntu|example|you|someone)$''']
+
+[[rules]]
+id = "quebec-code-permanent"
+description = "Value shaped like a Quebec student permanent code (4 letters + 8 digits)"
+regex = '''\b([A-Z]{4}[0-9]{8})\b'''
+secretGroup = 1
+[[rules.allowlists]]
+regexes = ['''^XXXX''']
+
+[[rules]]
+id = "uqac-student-email"
+description = "UQAC student email address (@etu.uqac.ca)"
+regex = '''(?i)\b([a-z0-9._%+-]+@etu\.uqac\.ca)\b'''
+secretGroup = 1
+keywords = ["@etu.uqac.ca"]
+
+[[rules]]
+id = "frq-identifier"
+description = "Value shaped like an FRQ identification number (5 letters + 4 digits)"
+regex = '''\b([A-Z]{5}[0-9]{4})\b'''
+secretGroup = 1
+[[rules.allowlists]]
+regexes = ['''^(XXXYY|ABCDE|XXXXX)1234$''']

@@ -396,4 +396,4 @@ every other harness a user-invoked skill is discoverable only via the routing ta
 ## Environments
 
 Use the correct virtual environment for the layer you are working in, and run the relevant
-tests manually before pushing (see `testing.md`). There is no CI/CD pipeline.
+tests manually before pushing (see `testing.md`). The only CI is the privacy-scan workflow.

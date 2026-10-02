@@ -1,0 +1,73 @@
+#!/bin/sh
+# Privacy guard - global git pre-commit hook, installed by install-git-hooks.ps1.
+#
+# Refuses a commit whose STAGED changes carry a secret or personal data:
+#   1. betterleaks with privacy-rules.toml beside this file (secrets + the
+#      personal-data shapes listed there), on the staged diff only;
+#   2. this machine's account name, which a static rules file cannot know.
+# Then runs the repository's own pre-commit hook, because a global
+# core.hooksPath otherwise disables every hook under .git/hooks.
+#
+# Exceptions: put "betterleaks:allow" on the line. A private repository can
+# opt out with `git config privacyguard.enabled false`. Emergency bypass:
+# `git commit --no-verify` - the privacy-scan CI workflow still checks.
+# Exit codes: 0 commit allowed, 1 refused (git aborts the commit).
+
+here=$(cd "$(dirname "$0")" && pwd)
+rules="$here/privacy-rules.toml"
+status=0
+
+if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
+    bl=$(command -v betterleaks 2>/dev/null)
+    if [ -z "$bl" ] && [ -n "$LOCALAPPDATA" ]; then
+        for c in "$LOCALAPPDATA"/Microsoft/WinGet/Links/betterleaks.exe \
+                 "$LOCALAPPDATA"/Microsoft/WinGet/Packages/Betterleaks*/betterleaks.exe; do
+            [ -x "$c" ] && { bl=$c; break; }
+        done
+    fi
+    if [ -n "$bl" ] && [ -f "$rules" ]; then
+        "$bl" git --pre-commit --staged --redact --no-banner --config "$rules" . || status=1
+    else
+        # Missing dependency: say so once and let the commit through (R11);
+        # the CI workflow is the backstop.
+        echo "privacy guard: betterleaks or its rules not found, scan skipped (CI still checks)" >&2
+    fi
+
+    # The account name is checked on ADDED lines only, so a private repository
+    # that already contains it is not blocked forever, and only as a whole token
+    # (no letter, digit or underscore on either side), so a short account such as
+    # "dev" does not match "device". File names are printed, never the line.
+    acct=${USERNAME:-$USER}
+    if [ ${#acct} -ge 3 ]; then
+        files=$(git diff --cached -U0 --no-color --diff-filter=ACMR | awk -v a="$acct" '
+            function token_hit(line, name,    l, n, s, p, pos, before, after) {
+                l = tolower(line); name = tolower(name); n = length(name); s = 1
+                while ((p = index(substr(l, s), name)) > 0) {
+                    pos = s + p - 1
+                    before = (pos > 1) ? substr(l, pos - 1, 1) : ""
+                    after = substr(l, pos + n, 1)
+                    if (before !~ /[a-z0-9_]/ && after !~ /[a-z0-9_]/) return 1
+                    s = pos + 1
+                }
+                return 0
+            }
+            /^\+\+\+ / { f = substr($0, 7); next }
+            /^\+/ && $0 !~ /betterleaks:allow/ && token_hit(substr($0, 2), a) { print f }' | sort -u)
+        if [ -n "$files" ]; then
+            echo "privacy guard: staged lines contain this machine's account name in:" >&2
+            echo "$files" | sed 's/^/  /' >&2
+            status=1
+        fi
+    fi
+fi
+
+if [ $status -ne 0 ]; then
+    echo "privacy guard: commit refused. Remove the value, or add 'betterleaks:allow' on a deliberate line." >&2
+    exit 1
+fi
+
+repo_hooks="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
+if [ -x "$repo_hooks/pre-commit" ] && [ "$(cd "$repo_hooks" && pwd)" != "$here" ]; then
+    exec "$repo_hooks/pre-commit" "$@"
+fi
+exit 0

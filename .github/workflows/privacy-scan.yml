@@ -1,0 +1,100 @@
+# Privacy scan - the authoritative gate behind the local privacy-guard pre-commit hook
+# (.claude/hooks/git/). Scans the commits a push or a pull request adds with betterleaks
+# and .claude/hooks/git/privacy-rules.toml: secrets plus personal-data shapes (Quebec
+# Law 25). A local hook can be skipped with --no-verify; this check cannot.
+#
+# Reusable: another repository calls it with
+#   jobs:
+#     privacy-scan:
+#       uses: LARi-UQAC/ResearchTools/.github/workflows/privacy-scan.yml@main
+# and the rules are then fetched from this repository, so one file governs every repo.
+name: privacy-scan
+
+on:
+  pull_request:
+  push:            # every branch: a branch with no PR is published too
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: privacy-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the commits to scan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Pick the trusted rules revision
+        env:
+          PUSH_TO_RT_MAIN: ${{ github.repository == 'LARi-UQAC/ResearchTools' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # The rules that judge a change must come from a revision the change cannot
+          # write. That is ResearchTools main in every case but one: a push TO
+          # ResearchTools main, where "main" is the commit under scan, so the commit before
+          # the push is used. Never a branch's own previous commit: a first push could
+          # weaken the rules and a second push would then be judged by them.
+          ref=main
+          if [ "$PUSH_TO_RT_MAIN" = "true" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            ref=$BEFORE
+          fi
+          echo "TRUSTED_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Fetch the shared rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: LARi-UQAC/ResearchTools
+          ref: ${{ env.TRUSTED_REF }}
+          path: .privacy-guard
+          sparse-checkout: .claude/hooks/git/privacy-rules.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Install betterleaks 1.4.1 (checksum verified)
+        run: |
+          curl -sSfL --max-time 60 -o bl.tgz \
+            https://github.com/betterleaks/betterleaks/releases/download/v1.4.1/betterleaks_1.4.1_linux_x64.tar.gz
+          echo "2635ff988d9194cd3070155138589081a54a3438d79ca9b83268addd2fd844cc  bl.tgz" | sha256sum -c -
+          tar -xzf bl.tgz betterleaks
+          rm bl.tgz
+
+      - name: Compute the commit range
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "RANGE=$HEAD" >> "$GITHUB_ENV"
+          else
+            echo "RANGE=$BASE..$HEAD" >> "$GITHUB_ENV"
+          fi
+
+      - name: Scan the added commits (authoritative, trusted rules)
+        run: |
+          # The verdict always uses the trusted revision picked above, never a rules file
+          # from the checkout under review, which a pull request, a push or a caller controls.
+          rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml
+          if [ ! -f "$rules" ]; then
+            # Bootstrap only: main has no rules file before the PR that introduces it.
+            echo "::warning::no rules on ResearchTools main yet; using the checked-out rules"
+            rules=.claude/hooks/git/privacy-rules.toml
+          fi
+          ./betterleaks git --redact --no-banner --config "$rules" --log-opts="$RANGE" .
+
+      - name: Scan with the candidate rules of this change (informational)
+        if: ${{ hashFiles('.claude/hooks/git/privacy-rules.toml') != '' }}
+        continue-on-error: true
+        run: |
+          # A pull request that edits the rules is exercised here, without being allowed
+          # to decide the verdict above.
+          trusted=.privacy-guard/.claude/hooks/git/privacy-rules.toml
+          candidate=.claude/hooks/git/privacy-rules.toml
+          if [ -f "$trusted" ] && cmp -s "$trusted" "$candidate"; then
+            echo "candidate rules identical to main; nothing extra to check"
+            exit 0
+          fi
+          ./betterleaks git --redact --no-banner --config "$candidate" --log-opts="$RANGE" .

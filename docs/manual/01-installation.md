@@ -233,6 +233,23 @@ python -m venv .venv-skills
 
 The directory name matters: name it anything else and the runner will not look there.
 
+## Step 6 — Privacy guard for every git repository (recommended)
+
+A global pre-commit hook refuses a commit that adds a secret or personal data (account paths,
+Quebec student codes, `@etu.uqac.ca` addresses, FRQ identifiers, your own account name), in
+every repository on the machine. The repository's own hooks keep running.
+
+```powershell
+winget install Betterleaks.Betterleaks                  # the scanner the hook calls
+.\.claude\hooks\git\install-git-hooks.ps1 -DryRun       # say what it would do
+.\.claude\hooks\git\install-git-hooks.ps1               # copy to ~/.config/git/hooks, set core.hooksPath
+```
+
+A deliberate exception: `betterleaks:allow` on the line. A private repository can opt out
+with `git config privacyguard.enabled false`. If another tool already owns the global
+`core.hooksPath`, the installer refuses rather than overwrite it. The `privacy-scan` CI
+workflow applies the same rules to every push and pull request.
+
 ## Contributing improvements
 
 Fork the repository, improve an agent or skill on a feature branch, and open a

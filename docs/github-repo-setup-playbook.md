@@ -12,7 +12,9 @@ than inventing one — read the cited file, don't guess its shape.
 organized, how contributions flow). It does NOT cover the lab's language/style/security rules
 for the *content* of the code or prose itself — those live in `.claude/rules/*.md` of each
 project and are out of scope here. If the target repo has its own `.claude/rules/`, read it
-first; nothing in this playbook overrides it.
+first; nothing in this playbook overrides it. One exception is in scope for every repo: the
+privacy guard (Phase 6b), because a public repo that publishes personal data can only be
+cleaned by rewriting its history.
 
 **Do not fabricate.** Every badge, count, and claim below must be verified against the actual
 repo before being written (file counts, chapter counts, license, existing assets). A number
@@ -37,6 +39,10 @@ gh api user --jq .login # confirms which account is actually authenticated
   Windows with `scoop` available: `scoop install ffmpeg-essentials`.
 - If the plan includes a themed documentation site: Python 3 for a **dedicated** virtualenv
   (never reuse a project's own test/runtime venv for doc tooling — see Phase 5).
+- The machine's privacy guard is active, so nothing personal is committed while the repo is
+  being built: `git config --global core.hooksPath` must print `~/.config/git/hooks`, and
+  `betterleaks version` must answer. If not, install it from a ResearchTools clone:
+  `winget install Betterleaks.Betterleaks`, then `.\.claude\hooks\git\install-git-hooks.ps1`.
 - Ask the user, don't guess, before starting: does this repo already have a `CONTRIBUTING.md`,
   design assets, or a documented brand? Overwriting existing work without checking is worse
   than a slow start.
@@ -295,7 +301,8 @@ folder is wasted effort.
    (add `--strict` to fail on any warning, useful for a first pass, but expect and accept two
    categories of warning as informational rather than bugs — see the gotchas below).
 
-5. **No CI/CD if the project has a "no automated pipeline" policy**: publish with a manual
+5. **No CI/CD if the project has a "no automated pipeline" policy** (the privacy-scan workflow
+   of Phase 6b is the one exception, in every repo): publish with a manual
    `mkdocs gh-deploy` (pushes a `gh-pages` branch by hand) rather than a GitHub Actions
    workflow. Document the manual command in `docs/index.md`. Enabling the Pages *setting*
    itself (Settings → Pages → Deploy from branch → `gh-pages`) is a repo-settings change for
@@ -361,6 +368,68 @@ The same `--input -` JSON-body pattern is the correct way to PATCH any nested
 `security_and_analysis` field — `gh api -f key.nested=value` does not build nested JSON, only
 flat top-level fields; a dotted `-f` key is sent as a literal flat key, not a nested object, and
 GitHub silently ignores it rather than erroring, so the flag being accepted proves nothing.
+
+### 6b. Privacy guard (every repo, before it is public)
+
+Push protection only knows secret formats (API keys, tokens). Personal data under Quebec's
+Law 25 (an account name in a path, a student's code permanent, an `@etu.uqac.ca` address, an
+FRQ identifier) needs the lab's own rules, `.claude/hooks/git/privacy-rules.toml` in
+`LARi-UQAC/ResearchTools`. Measured 2026-10-01: ResearchTools published such values in files
+AND history, and cleaning it took a `git filter-repo` rewrite, a force-push past the ruleset,
+a GitHub Support request and fork owners deleting their forks. Do the four steps below.
+
+1. **Scan the full history before the repo becomes public** (or right after creating it).
+   Zero findings is the only acceptable result; any finding is removed BEFORE the visibility
+   changes, since afterwards only a history rewrite removes it:
+
+   ```bash
+   betterleaks git --redact --no-banner \
+     --config <path-to-ResearchTools>/.claude/hooks/git/privacy-rules.toml .
+   ```
+
+2. **Add the CI check** as `.github/workflows/privacy-scan.yml`. It reuses the ResearchTools
+   workflow and its rules, so every repo follows one rules file:
+
+   ```yaml
+   name: privacy-scan
+   on:
+     pull_request:
+     push:            # every branch, not only main: a branch with no PR is public too
+   permissions:
+     contents: read
+   jobs:
+     privacy-scan:
+       uses: LARi-UQAC/ResearchTools/.github/workflows/privacy-scan.yml@main
+   ```
+
+3. **Make it a required check** once it has run once. Read the exact check name from that
+   run (`gh pr checks <pr>`; a caller usually shows `privacy-scan / privacy-scan`), then add it
+   to the branch ruleset with a read-modify-write that keeps every existing rule and bypass
+   actor, and read the ruleset back (the reference is the ResearchTools "Main protection"
+   ruleset):
+
+   ```bash
+   gh api repos/<owner>/<repo>/rulesets --jq '.[] | {id, name}'      # find the ruleset id
+   gh api repos/<owner>/<repo>/rulesets/<id> > ruleset.json
+   # add {"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,
+   #      "do_not_enforce_on_create":false,"required_status_checks":[{"context":"<check name>"}]}}
+   # to .rules, keep name/target/enforcement/conditions/bypass_actors, then:
+   gh api -X PUT repos/<owner>/<repo>/rulesets/<id> --input ruleset-new.json
+   gh api repos/<owner>/<repo>/rulesets/<id> --jq '[.rules[].type]'  # verify
+   ```
+
+   No ruleset yet: create one on `refs/heads/main` with `deletion`, `non_fast_forward`,
+   `pull_request` and this `required_status_checks` rule, admin bypass only.
+
+4. **Test data uses fictitious identities only** (ResearchTools rule R34): `Wick, J.`,
+   `student@example.org`, `XXXX000000`, `XXXYY1234`. No pattern can recognise a real name, so
+   a real student or co-author in a fixture passes every check. A deliberate sample that must
+   look real (a test of the guard itself) carries `betterleaks:allow` on its line.
+
+**Gotcha:** the CI scans EVERY commit a pull request adds, so a bad first commit stays
+flagged even after a fix commit on top. Resubmit the change as one clean commit on a new
+branch (`git merge --squash` onto a fresh branch from `main`) and close the old PR - measured
+on ResearchTools PR #39, replaced by #40.
 
 **Social preview image and enabling the Pages setting itself are web-UI-only** — no API path
 for either as of this writing. Prepare the asset (Phase 4a's banner is a better fit than a
@@ -454,6 +523,11 @@ concrete example separately, clearly marked as one instance rather than the univ
       output directory if this is a recurring pattern, so it can't be accidentally committed
       again — this repo found one such file that had been sitting committed since an earlier,
       unrelated session.
+- [ ] Privacy guard (Phase 6b), each item READ BACK, not assumed:
+  - full-history `betterleaks git` scan with the lab rules: zero findings;
+  - `security_and_analysis` shows secret scanning AND push protection `enabled`;
+  - the `privacy-scan` check is green on a real pull request;
+  - the branch ruleset lists that check under `required_status_checks`.
 - [ ] Respect the project's own git-ownership norm. Some projects want the session to commit
       and push freely; others want every commit/push left to the human. This is NOT
       universal and can change mid-session — if told "let me commit and push myself," that
@@ -480,3 +554,7 @@ repeat them:
 - Assumed a differently-named file (`LogoLARI_FINAL.png` vs `LogoLARI_trim.png`) sitting at
   the repo root was dead duplicate weight without checking — it was referenced by a separate
   pipeline. Grep before proposing a deletion, every time.
+- Treated secret scanning + push protection as the whole of "security" for a public repo.
+  On 2026-10-01 ResearchTools was found publishing an account name, a machine path,
+  code-permanent-shaped values, student emails and a real name in files and history - none of
+  which push protection recognises. Phase 6b exists because of it.

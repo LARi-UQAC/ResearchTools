@@ -257,3 +257,13 @@ refusal (an uninstalled tag: stop, exit 1, no report directory created).
 **Proven:** full offline suite 102 passed / 0 failed / 1 not run (pyhanko); `verify-no-personal-data.ps1` green; `verify-aider-plan.ps1` 33/33 before and after; `test_cv_common.py` 16 -> 18. Not run: `deploy/form-service/tests/test_api.py` (fastapi absent from `.venv-skills`, outside the offline runner).
 
 **Consequence:** `/cv` now resolves to `~/Your_CV/`, not the previous external folder that still holds the existing inventory; moving or linking it is the operator's decision. `aider-night.ps1` run straight from the repository now refuses as an uninstalled kit, by design.
+
+## 2026-10-01 - repo-wide - privacy guard: global pre-commit hook, CI workflow, push protection
+
+**Change:** `.claude/hooks/git/` holds a betterleaks rules file (`privacy-rules.toml`: the betterleaks default secret rules plus five personal-data shapes), a global `pre-commit` hook that scans the staged diff and the machine's account name and then chains the repository's own hook, `_chain` for every other hook name, and `install-git-hooks.ps1` (sets the global `core.hooksPath`, refuses another one, dry run, JSON report, read-back). `.github/workflows/privacy-scan.yml` applies the same rules to every push and pull request, reusable by the lab's other public repositories, with `actions/checkout` pinned by SHA and the betterleaks binary by checksum. New rule R34: fixtures never carry a real identity. "No CI/CD" removed from testing.md, workflows.md and CONTRIBUTING.md.
+
+**Found:** after the 2026-10-01 history purge, the operator asked for the 2026 best practice; it is three layers on one standard scanner (pre-commit, CI as the authoritative gate, GitHub push protection), not a custom scanner. Git 2.53 has no config-based hooks (probed), hence `core.hooksPath` plus chaining. Real names are out of scope by operator decision.
+
+**Proven:** `test_git_privacy_guard.py` 15 tests; the rules give zero findings on the current tree and on the full history.
+
+**PR #40 review (2026-10-02):** six Copilot findings fixed - installer ownership check, trusted CI rules, full githooks(5) list, uninstall read-back, whole-token account match, every-branch push scan. One partly declined with a measurement: `reference-transaction` and `post-index-change` are not chained, since chaining them took a commit cycle from 575 ms to 3598 ms. `test_git_privacy_guard.py` 15 -> 24 tests; four of the new ones fail on the pre-review code.

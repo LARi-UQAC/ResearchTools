@@ -1,0 +1,12 @@
+#!/bin/sh
+# Chain hook - installed by install-git-hooks.ps1 under every client-side hook
+# name except pre-commit. A global core.hooksPath disables .git/hooks, so this
+# runs the repository's own hook of the same name (Git LFS, the aider kit and
+# others install theirs there), passing arguments and stdin through.
+name=$(basename "$0")
+here=$(cd "$(dirname "$0")" && pwd)
+repo_hooks="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
+if [ -x "$repo_hooks/$name" ] && [ "$(cd "$repo_hooks" && pwd)" != "$here" ]; then
+    exec "$repo_hooks/$name" "$@"
+fi
+exit 0

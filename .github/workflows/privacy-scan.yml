@@ -74,15 +74,29 @@ jobs:
           fi
 
       - name: Scan the added commits (authoritative, trusted rules)
+        env:
+          IS_RT: ${{ github.repository == 'LARi-UQAC/ResearchTools' }}
         run: |
           # The verdict always uses the trusted revision picked above, never a rules file
           # from the checkout under review, which a pull request, a push or a caller controls.
           rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml
           if [ ! -f "$rules" ]; then
-            # Bootstrap only: main has no rules file before the PR that introduces it.
-            echo "::warning::no rules on ResearchTools main yet; using the checked-out rules"
-            rules=.claude/hooks/git/privacy-rules.toml
+            # Bootstrap only: ResearchTools main has NEVER had the rules file (the PR that
+            # introduces it). Once it has existed, a missing file fails closed, so a later
+            # move or deletion cannot hand every PR its own rules.
+            if [ "$IS_RT" = "true" ] \
+               && [ -z "$(git log --oneline -1 origin/main -- .claude/hooks/git/privacy-rules.toml)" ]; then
+              echo "::warning::no rules on ResearchTools main yet (bootstrap); using the checked-out rules"
+              rules=.claude/hooks/git/privacy-rules.toml
+            else
+              echo "::error::trusted rules missing at ResearchTools $TRUSTED_REF; refusing to judge with untrusted rules"
+              exit 1
+            fi
           fi
+          # Measured with betterleaks 1.4.1: an ignore file in the scanned checkout
+          # suppresses findings by fingerprint, and -i does not override it. The checkout
+          # is controlled by the change under review, so its ignore files are removed.
+          rm -f .gitleaksignore .betterleaksignore
           ./betterleaks git --redact --no-banner --config "$rules" --log-opts="$RANGE" .
 
       - name: Scan with the candidate rules of this change (informational)

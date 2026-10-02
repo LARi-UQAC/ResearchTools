@@ -140,6 +140,16 @@ class StaticContract(unittest.TestCase):
         picker = text[text.index("name: Pick the trusted rules revision"):text.index("name: Fetch the shared rules")]
         self.assertIn("github.event.before", picker)
 
+    def test_the_verdict_cannot_be_switched_off_by_the_change_under_review(self):
+        # Local security review of 43e380d (R35): an ignore file in the PR checkout
+        # suppressed findings (measured with betterleaks 1.4.1), and a missing trusted
+        # rules file fell back to the PR's own rules forever, not only at bootstrap.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        step = text[text.index("(authoritative, trusted rules)"):text.index("(informational)")]
+        self.assertLess(step.index("rm -f .gitleaksignore .betterleaksignore"), step.index("./betterleaks git"))
+        self.assertIn("exit 1", step)
+        self.assertIn("git log --oneline -1 origin/main -- .claude/hooks/git/privacy-rules.toml", step)
+
     def test_a_branch_never_trusts_its_own_previous_commit(self):
         # Copilot on f422053: a feature-branch push trusted github.event.before, so a
         # rules-only first push could weaken the rules for the second. The pre-push

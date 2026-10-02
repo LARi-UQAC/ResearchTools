@@ -257,3 +257,15 @@ refusal (an uninstalled tag: stop, exit 1, no report directory created).
 **Proven:** full offline suite 102 passed / 0 failed / 1 not run (pyhanko); `verify-no-personal-data.ps1` green; `verify-aider-plan.ps1` 33/33 before and after; `test_cv_common.py` 16 -> 18. Not run: `deploy/form-service/tests/test_api.py` (fastapi absent from `.venv-skills`, outside the offline runner).
 
 **Consequence:** `/cv` now resolves to `~/Your_CV/`, not the previous external folder that still holds the existing inventory; moving or linking it is the operator's decision. `aider-night.ps1` run straight from the repository now refuses as an uninstalled kit, by design.
+
+## 2026-10-02 - repo-wide rules - R34, no task runs without a skill; a missing skill is authored here, never installed
+
+**Owner:** repo-wide rule (`.claude/CLAUDE.md` exported region, `.claude/rules/workflows.md`, `security.md`); no single skill owns it.
+
+**Found:** the operator asked that every CLAUDE.md level state it: any model or harness runs a task only through a skill or an agent using a skill, an unclear or missing match goes to `AskUserQuestion`, a missing skill is built with `skill-creator` inspired by the nearest one found read-only with `find-skills`, and nothing is installed from the internet. Until then the routing table said where to reach a skill but nothing forbade acting without one. Read in `~/.agents/.skill-lock.json`: `find-skills` itself came from `vercel-labs/skills` on 2026-07-27.
+
+**Changed:** new section "Skill-first rule (R34)" inside the RT-EXPORT region, so it reaches `CLAUDE.template.md` (RT-CONTRACT block, regenerated) and the live global file at the next `-Sync`; a routing-table row for a task no skill covers; R34 in full in `workflows.md`; "Skill provenance" in `security.md`; the rule index in `code-style.md` now reads R0 to R34 and names R33; a statement of the rule in the three heredocs of `install.ps1` (Copilot master, `AGENTS.md`, `CONVENTIONS.md`) and so in their regenerated mirrors; `docs/manual/04-skills.md` and `docs/authoring-and-mirrors.md`.
+
+**Proven:** `test_skill_first_rule.py`, 13 tests, with negative controls for the region finder and the phrase finder. It proves the rule is written in each place, not that a model obeys it.
+
+**Not done:** `local-writer.md` sits at 27802 of 28000 body chars (`test_agent_mirror_ceiling.py`), so the rule was not added to any agent body; agents receive it through the CLAUDE.md files and the three master mirrors.

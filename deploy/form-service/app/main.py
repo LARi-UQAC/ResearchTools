@@ -19,7 +19,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from . import publications, skill_bridge
+from . import cv_bridge, publications, skill_bridge
 from .config import Settings, load_settings
 from .security import require_service_key
 
@@ -171,3 +171,48 @@ async def author_publications(author: str, count: int = 10,
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     return {**payload, "cached": cached}
+
+
+@app.post("/cv/build", dependencies=[Depends(require_service_key)])
+async def cv_build_route(request: Request) -> dict[str, Any]:
+    """
+    Render a CV model plus consenting HQP rows (narrative-cv). Stateless and
+    uncompiled (C2, C3): see cv_bridge.build_cv for the contract. No field of
+    the request reaches disk, and no row name reaches a log line or an error.
+    """
+    settings = load_settings()
+    raw = await request.body()
+    if len(raw) > settings.max_body_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail="Request body exceeds the configured maximum")
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"body is not valid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="body must be a JSON object")
+
+    model = payload.get("model")
+    if not isinstance(model, dict):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="model is required and must be an object")
+    hqp_rows = payload.get("hqp")
+    if not isinstance(hqp_rows, list):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="hqp is required and must be a list")
+    reference_year = payload.get("reference_year")
+    if not isinstance(reference_year, int) or isinstance(reference_year, bool):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="reference_year is required and must be an int")
+    target = payload.get("target", "both")
+    if not isinstance(target, str):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="target must be a string")
+
+    try:
+        result = cv_bridge.build_cv(model, hqp_rows, reference_year, target)
+    except cv_bridge.CvDataError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    return result

@@ -38,3 +38,80 @@ def make_data_dir(root, files):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
     return data_dir
+
+
+class FakeResponse:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        A fake requests.Response, for WpClient tests that never touch the
+        network.
+
+    Inputs:
+        status_code (int): the HTTP status to report.
+        json_data: the object .json() returns; None makes .json() raise
+            ValueError, matching a response with no JSON body.
+        text (str): the raw body, used for an error message's first 200 chars.
+
+    Outputs:
+        none (state object).
+    --------------------------------------------------------------------------
+    """
+
+    def __init__(self, status_code, json_data=None, text=""):
+        self.status_code = status_code
+        self._json_data = json_data
+        self.text = text
+
+    def json(self):
+        if self._json_data is None:
+            raise ValueError("no JSON body")
+        return self._json_data
+
+
+class _FakeCookieJar:
+    """A fake requests.Session.cookies jar: records every .set() call."""
+
+    def __init__(self):
+        self.set_calls = []
+
+    def set(self, name, value, domain="", path="/"):
+        self.set_calls.append((name, value, domain, path))
+
+
+class FakeSession:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        A fake requests.Session for WpClient tests: consumes a fixed list of
+        responses/exceptions in order, regardless of whether .get or .put
+        reads next, and records every call for assertion.
+
+    Inputs:
+        outcomes (list): FakeResponse instances or exception instances,
+            consumed in call order by whichever of .get/.put is invoked.
+
+    Outputs:
+        none (state object). `.calls` holds (method, url, params_or_json,
+        timeout) tuples in call order.
+    --------------------------------------------------------------------------
+    """
+
+    def __init__(self, outcomes):
+        self._outcomes = list(outcomes)
+        self.calls = []
+        self.auth = None
+        self.cookies = _FakeCookieJar()
+
+    def _consume(self, method, url, params_or_json, timeout):
+        self.calls.append((method, url, params_or_json, timeout))
+        outcome = self._outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    def get(self, url, params=None, timeout=None):
+        return self._consume("GET", url, params, timeout)
+
+    def put(self, url, json=None, timeout=None):
+        return self._consume("PUT", url, json, timeout)

@@ -1,0 +1,8 @@
+# wp-portfolio-sync dependencies.
+# PyYAML: parses the researcher's mapping.yaml, always with yaml.safe_load
+#   (never yaml.load), since mapping.yaml is researcher-supplied input.
+# requests: the WordPress REST API client. Imported lazily, only inside
+#   make_session(), so the offline test suite never needs it installed and
+#   never touches the network.
+PyYAML==6.0.3
+requests==2.34.2

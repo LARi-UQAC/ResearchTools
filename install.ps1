@@ -371,6 +371,13 @@ before applying an audit plan and building it, or ``obsidian-cli`` to read or
 search the Obsidian vault through its allowed command surface, since skills have
 no mirror of their own).
 
+Skill-first rule (R34): no task runs without a skill, or without an agent that uses a
+skill, whatever the model or the harness. Name the skill first. When none fits, or
+several could, ask the user with the best option first. When none exists, author one
+inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
+found read-only with ``find-skills``. Never install a skill from the internet. The full
+rule is R34 in ``.claude/rules/workflows.md``.
+
 Hard rules: validate every reference against Scopus (scripts in
 ``.claude/skills/scopus/scripts/``); never fabricate references or DOIs; LaTeX
 output goes to ``out/``.
@@ -506,6 +513,13 @@ The task-to-agent routing table lives in ``.claude/CLAUDE.md`` (section "Tooling
 Skills are repository folders the agents read directly
 (``.claude/skills/<name>/SKILL.md``), so they need no mirror.
 
+Skill-first rule (R34): no task runs without a skill, or without an agent that uses a
+skill, whatever the model or the harness. Name the skill first. When none fits, or
+several could, ask the user with the best option first. When none exists, author one
+inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
+found read-only with ``find-skills``. Never install a skill from the internet. The full
+rule is R34 in ``.claude/rules/workflows.md``.
+
 Academic writing rules: validate references against Scopus, never fabricate DOIs,
 LaTeX output in ``out/``.
 
@@ -573,6 +587,13 @@ support/recommendation/acceptance letter from a candidate's files,
 ``latex-hygiene`` (``/texcheck``) to score a manuscript's mechanical hygiene
 before applying an audit plan, or ``obsidian-cli`` to read or search the
 Obsidian vault through its allowed command surface.
+
+Skill-first rule (R34): no task runs without a skill, or without an agent that uses a
+skill, whatever the model or the harness. Name the skill first. When none fits, or
+several could, ask the user with the best option first. When none exists, author one
+inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
+found read-only with ``find-skills``. Never install a skill from the internet. The full
+rule is R34 in ``.claude/rules/workflows.md``.
 
 Obsidian vault writes go through the outbox only: deposit the note in
 ``~/.claude/obsidian-outbox/`` with a first-line directive and let the

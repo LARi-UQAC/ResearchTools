@@ -1,11 +1,14 @@
 #!/bin/sh
-# Privacy guard - global git pre-commit hook, installed by install-git-hooks.ps1.
+# Privacy guard - global git pre-commit hook, installed by install-git-hooks.ps1,
+# also installed as pre-merge-commit so a merge commit is checked too.
 #
 # Refuses a commit whose STAGED changes carry a secret or personal data:
 #   1. betterleaks with privacy-rules.toml beside this file (secrets + the
-#      personal-data shapes listed there), on the staged diff only;
-#   2. this machine's account name, which a static rules file cannot know.
-# Then runs the repository's own pre-commit hook, because a global
+#      personal-data shapes listed there), fed the staged diff as TEXT, so a
+#      .gitattributes "-diff" or "binary" cannot hide content from the scan;
+#   2. this machine's account name, in added lines and in staged file paths,
+#      which a static rules file cannot know.
+# Then runs the repository's own hook of the same name, because a global
 # core.hooksPath otherwise disables every hook under .git/hooks.
 #
 # Exceptions: put "betterleaks:allow" on the line. A private repository can
@@ -14,6 +17,7 @@
 # Exit codes: 0 commit allowed, 1 refused (git aborts the commit).
 
 here=$(cd "$(dirname "$0")" && pwd)
+name=$(basename "$0")
 rules="$here/privacy-rules.toml"
 status=0
 
@@ -26,7 +30,10 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
         done
     fi
     if [ -n "$bl" ] && [ -f "$rules" ]; then
-        "$bl" git --pre-commit --staged --redact --no-banner --config "$rules" . || status=1
+        # --text: attributes cannot turn a file into "Binary files differ";
+        # --no-ext-diff/--no-textconv: no repository-configured filter rewrites it.
+        git diff --cached --text -U0 --no-color --no-ext-diff --no-textconv \
+            | "$bl" stdin --redact --no-banner --config "$rules" || status=1
     else
         # Missing dependency: say so once and let the commit through (R11);
         # the CI workflow is the backstop.
@@ -36,10 +43,13 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
     # The account name is checked on ADDED lines only, so a private repository
     # that already contains it is not blocked forever, and only as a whole token
     # (no letter, digit or underscore on either side), so a short account such as
-    # "dev" does not match "device". File names are printed, never the line.
+    # "dev" does not match "device". File headers are recognised by position
+    # (between "diff --git" and the first "@@"), so a content line that starts
+    # with "++ " is still checked. File names are printed, never the line.
     acct=${USERNAME:-$USER}
     if [ ${#acct} -ge 3 ]; then
-        files=$(git diff --cached -U0 --no-color --diff-filter=ACMR | awk -v a="$acct" '
+        files=$( { git diff --cached -U0 --text --no-color --no-ext-diff --no-textconv --diff-filter=ACMR
+                   git diff --cached --name-only --diff-filter=ACMR | sed 's/^/@@path@@ /'; } | awk -v a="$acct" '
             function token_hit(line, name,    l, n, s, p, pos, before, after) {
                 l = tolower(line); name = tolower(name); n = length(name); s = 1
                 while ((p = index(substr(l, s), name)) > 0) {
@@ -51,10 +61,13 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
                 }
                 return 0
             }
-            /^\+\+\+ / { f = substr($0, 7); next }
-            /^\+/ && $0 !~ /betterleaks:allow/ && token_hit(substr($0, 2), a) { print f }' | sort -u)
+            /^@@path@@ / { p = substr($0, 10); if (token_hit(p, a)) print p; next }
+            /^diff --git / { header = 1; next }
+            header && /^\+\+\+ / { f = substr($0, 7); next }
+            /^@@/ { header = 0; next }
+            !header && /^\+/ && $0 !~ /betterleaks:allow/ && token_hit(substr($0, 2), a) { print f }' | sort -u)
         if [ -n "$files" ]; then
-            echo "privacy guard: staged lines contain this machine's account name in:" >&2
+            echo "privacy guard: staged lines or paths contain this machine's account name in:" >&2
             echo "$files" | sed 's/^/  /' >&2
             status=1
         fi
@@ -67,7 +80,7 @@ if [ $status -ne 0 ]; then
 fi
 
 repo_hooks="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
-if [ -x "$repo_hooks/pre-commit" ] && [ "$(cd "$repo_hooks" && pwd)" != "$here" ]; then
-    exec "$repo_hooks/pre-commit" "$@"
+if [ -x "$repo_hooks/$name" ] && [ "$(cd "$repo_hooks" && pwd)" != "$here" ]; then
+    exec "$repo_hooks/$name" "$@"
 fi
 exit 0

@@ -35,11 +35,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Every hook name githooks(5) documents (git 2.53), minus three: pre-commit, which has its
-# own script and chains at its end, and the two below. _chain stands in for the rest so a
-# repository's own .git/hooks keep running under a global core.hooksPath.
+# Every hook name githooks(5) documents (git 2.53), minus the privacy hooks and the two
+# below. _chain stands in for the rest so a repository's own .git/hooks keep running under
+# a global core.hooksPath. The privacy script itself is installed as pre-commit AND as
+# pre-merge-commit, since a clean merge runs only the latter and could otherwise carry new
+# content in unchecked; it chains to the repository's hook of its own name.
+$PrivacyHookNames = @("pre-commit", "pre-merge-commit")
 $ChainNames = @(
-    "applypatch-msg", "pre-applypatch", "post-applypatch", "pre-merge-commit",
+    "applypatch-msg", "pre-applypatch", "post-applypatch",
     "prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase", "post-checkout",
     "post-merge", "pre-push", "pre-receive", "update", "proc-receive", "post-receive",
     "post-update", "push-to-checkout", "pre-auto-gc", "post-rewrite", "sendemail-validate",
@@ -48,9 +51,10 @@ $ChainNames = @(
 )
 # NOT chained, deliberately: they fire several times per ordinary command, and a chain
 # script spawns a shell each time. Measured 2026-10-02 on Windows: 10 add+commit+status
-# cycles took 575 ms each with no hook, 3598 ms with these two chained. A repository that
-# needs its own copy of one sets `git config core.hooksPath .git/hooks` locally (its
-# commits then rely on the privacy-scan CI alone).
+# cycles took 575 ms each with no hook, 3598 ms with these two chained. A repository's own
+# copy of either one does not run while the guard is installed. Do NOT work around this with
+# a local core.hooksPath: a repo-local value overrides the global one and switches the
+# privacy guard off for that repository entirely.
 $ExcludedHooks = @("reference-transaction", "post-index-change")
 # A file in -Target is ours when it carries one of these markers; anything else belongs to
 # another hook manager and is never overwritten.
@@ -110,9 +114,8 @@ foreach ($name in @("pre-commit", "_chain", "privacy-rules.toml")) {
 }
 
 $plan = @(
-    @{ from = "pre-commit"; to = "pre-commit" },
     @{ from = "privacy-rules.toml"; to = "privacy-rules.toml" }
-) + ($ChainNames | ForEach-Object { @{ from = "_chain"; to = $_ } })
+) + ($PrivacyHookNames | ForEach-Object { @{ from = "pre-commit"; to = $_ } }) + ($ChainNames | ForEach-Object { @{ from = "_chain"; to = $_ } })
 $report.files = $plan | ForEach-Object { $_.to }
 
 # Path equality with core.hooksPath does not prove this guard owns the directory: another

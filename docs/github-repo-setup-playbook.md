@@ -41,6 +41,8 @@ gh api user --jq .login # confirms which account is actually authenticated
   (never reuse a project's own test/runtime venv for doc tooling — see Phase 5).
 - The machine's privacy guard is active, so nothing personal is committed while the repo is
   being built: `git config --global core.hooksPath` must print `~/.config/git/hooks`, and
+  `git config --local core.hooksPath` must print NOTHING inside the repo (a local value, such
+  as the one husky sets, silently switches the guard off for that repo), and
   `betterleaks version` must answer. If not, install it from a ResearchTools clone:
   `winget install Betterleaks.Betterleaks`, then `.\.claude\hooks\git\install-git-hooks.ps1`.
 - Ask the user, don't guess, before starting: does this repo already have a `CONTRIBUTING.md`,
@@ -422,7 +424,15 @@ a GitHub Support request and fork owners deleting their forks. Do the four steps
    ```
 
    No ruleset yet: create one on `refs/heads/main` with `deletion`, `non_fast_forward`,
-   `pull_request` and this `required_status_checks` rule, admin bypass only.
+   `pull_request` and this `required_status_checks` rule, admin bypass only. The
+   `pull_request` rule must require code-owner review, with a `.github/CODEOWNERS` covering
+   `.github/workflows/` (`* @<owner>` is enough): the caller workflow lives in the repo
+   itself, so without that review a PR could repoint `uses:` at a fork with empty rules, or
+   pin an old version, and still report a green `privacy-scan`.
+
+   The push runs only DETECT: a pushed branch is already public, and `[skip ci]` or an edited
+   workflow in that push suppresses the run. The merge into `main` is what the required
+   check protects; the machine hook (Phase 0) is what stops a value before it is published.
 
 4. **Test data uses fictitious identities only** (ResearchTools rule R34): `Wick, J.`,
    `student@example.org`, `XXXX000000`, `XXXYY1234`. No pattern can recognise a real name, so

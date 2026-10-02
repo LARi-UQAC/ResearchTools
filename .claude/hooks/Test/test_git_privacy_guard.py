@@ -27,8 +27,8 @@ HOOKS = Path(__file__).resolve().parents[1] / "git"
 REPO = Path(__file__).resolve().parents[3]
 RULES = HOOKS / "privacy-rules.toml"
 WORKFLOW = REPO / ".github" / "workflows" / "privacy-scan.yml"
-RULE_IDS = ("windows-home-account", "posix-home-account", "quebec-code-permanent",
-            "uqac-student-email", "frq-identifier")
+RULE_IDS = ("windows-home-account", "posix-home-account", "posix-users-account",
+            "quebec-code-permanent", "uqac-student-email", "frq-identifier")
 
 
 def find_betterleaks():
@@ -76,12 +76,20 @@ SAMPLE_HITS = {
     "quebec-code-permanent": "code ABCD12345678 here",  # betterleaks:allow (deliberate sample)
     "uqac-student-email": "mail jane.doe@etu.uqac.ca",  # betterleaks:allow (deliberate sample)
     "frq-identifier": "frq QWERT5678 id",  # betterleaks:allow (deliberate sample)
+    "posix-users-account": "log /c/Users/jdoe/x",  # betterleaks:allow (deliberate sample)
+}
+# Shapes the round-2 local review (R35) found missing; each must still be caught.
+SAMPLE_HITS_EXTRA = {
+    "posix-users-account": 'mac "/Users/jdoe/Library"',  # betterleaks:allow (deliberate sample)
+    "windows-home-account": "path C:\\Users\\Hélène\\x",  # betterleaks:allow (deliberate sample)
+    "quebec-code-permanent": "code abcd12345678 here",  # betterleaks:allow (deliberate sample)
 }
 SAMPLE_CLEAN = (
     "placeholder C:\\Users\\x\\.claude C:\\Users\\someone\\bin C:/Users/<you>/ {{HOME}}/x\n"
     "home /home/user/x\n"
+    "mac /Users/Shared/x and a url https://example.org/users/bob\n"
     "code XXXX000000 XXXX12345678\n"
-    "frq XXXYY1234 ABCDE1234\n"
+    "frq XXXYY1234 ABCDE1234 and a citation key smith2020\n"
     "allowed C:\\Users\\jdoe\\x betterleaks:allow\n"
 )
 
@@ -146,9 +154,23 @@ class StaticContract(unittest.TestCase):
         # rules file fell back to the PR's own rules forever, not only at bootstrap.
         text = WORKFLOW.read_text(encoding="utf-8")
         step = text[text.index("(authoritative, trusted rules)"):text.index("(informational)")]
-        self.assertLess(step.index("rm -f .gitleaksignore .betterleaksignore"), step.index("./betterleaks git"))
+        self.assertLess(step.index("rm -f .gitleaksignore .betterleaksignore"), step.index("./betterleaks stdin"))
         self.assertIn("exit 1", step)
-        self.assertIn("git log --oneline -1 origin/main -- .claude/hooks/git/privacy-rules.toml", step)
+        self.assertIn('git log --oneline -1 "$logref" -- .claude/hooks/git/privacy-rules.toml', step)
+
+    def test_ci_feeds_text_with_merges_and_bootstraps_on_the_trusted_ref(self):
+        # Round 2 (R35): `betterleaks git` honoured a .gitattributes -diff and skipped
+        # merge content (both reproduced); the bootstrap asked origin/main, which on the
+        # merge of this guard already has the rules, so main would have gone red; a new
+        # branch scanned the whole history, where a 2026-08-25 commit still holds a leak.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        step = text[text.index("(authoritative, trusted rules)"):text.index("(informational)")]
+        self.assertIn("git log -p --text -m --no-color --no-ext-diff --no-textconv", step)
+        self.assertIn("betterleaks stdin", step)
+        self.assertNotIn("betterleaks git", step)
+        self.assertIn("set -o pipefail", step)
+        self.assertIn('logref=$TRUSTED_REF', step)
+        self.assertIn('RANGE=origin/$DEFAULT..$HEAD', text)
 
     def test_a_branch_never_trusts_its_own_previous_commit(self):
         # Copilot on f422053: a feature-branch push trusted github.event.before, so a
@@ -178,8 +200,13 @@ class StaticContract(unittest.TestCase):
             return set(re.findall(r'"([a-z0-9-]+)"', block))
 
         chained, excluded = names("ChainNames"), names("ExcludedHooks")
+        privacy = names("PrivacyHookNames")
         self.assertEqual(excluded, {"reference-transaction", "post-index-change"})
-        self.assertEqual(chained | excluded | {"pre-commit"}, documented)
+        # Round 2 (R35): a clean merge runs only pre-merge-commit, so the privacy
+        # script is installed under that name too.
+        self.assertEqual(privacy, {"pre-commit", "pre-merge-commit"})
+        self.assertEqual(chained | excluded | privacy, documented)
+        self.assertFalse(chained & privacy)
         self.assertFalse(chained & excluded)
 
     def test_shell_scripts_have_no_carriage_return(self):
@@ -206,6 +233,11 @@ class RulesDetect(unittest.TestCase):
             with self.subTest(rule=rule_id):
                 self.assertIn(rule_id, self.scan(line + "\n"))
 
+    def test_shapes_found_missing_by_the_local_review_are_caught(self):
+        for rule_id, line in SAMPLE_HITS_EXTRA.items():
+            with self.subTest(line=line):
+                self.assertIn(rule_id, self.scan(line + "\n"))
+
     def test_placeholders_and_the_allow_marker_pass(self):
         self.assertEqual(self.scan(SAMPLE_CLEAN), [])
 
@@ -221,6 +253,7 @@ class HookEndToEnd(unittest.TestCase):
         self.hooks.mkdir()
         for name in ("pre-commit", "privacy-rules.toml"):
             shutil.copy(HOOKS / name, self.hooks / name)
+        shutil.copy(HOOKS / "pre-commit", self.hooks / "pre-merge-commit")
         shutil.copy(HOOKS / "_chain", self.hooks / "post-commit")
         shutil.copy(HOOKS / "_chain", self.hooks / "commit-msg")
         self.repo = Path(self.tmp) / "repo"
@@ -290,6 +323,37 @@ class HookEndToEnd(unittest.TestCase):
         result = self.commit("config C:\\Users\\jdoe\\.config\\x\n")  # betterleaks:allow (deliberate sample)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("privacy guard", result.stderr)
+
+    # Round 2 of the local review (R35): bypasses reproduced against the previous hook.
+
+    @unittest.skipUnless(BETTERLEAKS, "betterleaks not installed")
+    def test_a_gitattributes_no_diff_cannot_hide_content(self):
+        (self.repo / ".gitattributes").write_text("* -diff\n", encoding="utf-8")
+        run(["git", "add", ".gitattributes"], self.repo, self.env)
+        result = self.commit("config C:\\Users\\jdoe\\.config\\x\n", name="hidden.md")  # betterleaks:allow (deliberate sample)
+        self.assertNotEqual(result.returncode, 0, "a -diff attribute hid the staged content")
+
+    def test_a_content_line_starting_with_plus_plus_is_still_checked(self):
+        # With -U0 an added line "++ x" appears as "+++ x", once taken for a file header.
+        result = self.commit("++ zqacct notes\n", name="plus.md")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_the_account_name_in_a_staged_path_is_refused(self):
+        result = self.commit("nothing personal\n", name="zqacct-session.txt")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("zqacct-session.txt", result.stderr)
+
+    @unittest.skipUnless(BETTERLEAKS, "betterleaks not installed")
+    def test_a_merge_commit_is_checked(self):
+        # A clean merge runs pre-merge-commit only, never pre-commit.
+        self.assertEqual(self.commit("base\n").returncode, 0)
+        run(["git", "checkout", "-qb", "side"], self.repo, self.env)
+        (self.repo / "side.md").write_text("code ABCD12345678\n", encoding="utf-8")  # betterleaks:allow (deliberate sample)
+        run(["git", "add", "side.md"], self.repo, self.env)
+        run(["git", "commit", "-qm", "side", "--no-verify"], self.repo, self.env)
+        run(["git", "checkout", "-q", "-"], self.repo, self.env)
+        result = run(["git", "merge", "--no-ff", "-q", "-m", "merge", "side"], self.repo, self.env)
+        self.assertNotEqual(result.returncode, 0, "a clean merge brought content in unchecked")
 
 
 POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")

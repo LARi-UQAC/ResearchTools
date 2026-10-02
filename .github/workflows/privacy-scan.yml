@@ -66,9 +66,17 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
         run: |
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            echo "RANGE=$HEAD" >> "$GITHUB_ENV"
+            # A new branch: scan what it adds to the default branch, not the whole history
+            # (which the history scan of the playbook's Phase 6b covers once, before going
+            # public). Falls back to the full history only if there is no default branch.
+            if git rev-parse -q --verify "origin/$DEFAULT" >/dev/null; then
+              echo "RANGE=origin/$DEFAULT..$HEAD" >> "$GITHUB_ENV"
+            else
+              echo "RANGE=$HEAD" >> "$GITHUB_ENV"
+            fi
           else
             echo "RANGE=$BASE..$HEAD" >> "$GITHUB_ENV"
           fi
@@ -84,8 +92,13 @@ jobs:
             # Bootstrap only: ResearchTools main has NEVER had the rules file (the PR that
             # introduces it). Once it has existed, a missing file fails closed, so a later
             # move or deletion cannot hand every PR its own rules.
+            # Asked of the trusted revision itself, not of origin/main: on the push that
+            # merges this guard, TRUSTED_REF is the commit before it, which never had the
+            # file, while origin/main already does.
+            logref=$TRUSTED_REF
+            [ "$logref" = "main" ] && logref=origin/main
             if [ "$IS_RT" = "true" ] \
-               && [ -z "$(git log --oneline -1 origin/main -- .claude/hooks/git/privacy-rules.toml)" ]; then
+               && [ -z "$(git log --oneline -1 "$logref" -- .claude/hooks/git/privacy-rules.toml)" ]; then
               echo "::warning::no rules on ResearchTools main yet (bootstrap); using the checked-out rules"
               rules=.claude/hooks/git/privacy-rules.toml
             else
@@ -97,7 +110,14 @@ jobs:
           # suppresses findings by fingerprint, and -i does not override it. The checkout
           # is controlled by the change under review, so its ignore files are removed.
           rm -f .gitleaksignore .betterleaksignore
-          ./betterleaks git --redact --no-banner --config "$rules" --log-opts="$RANGE" .
+          # The patch is produced here and fed as text (not by the git subcommand): --text
+          # stops a .gitattributes "-diff" or "binary" hiding content as "Binary files
+          # differ", -m shows what a merge commit itself adds (an evil merge), and
+          # --no-ext-diff/--no-textconv keep repository filters from rewriting it.
+          # Both measured with betterleaks 1.4.1 on 2026-10-02.
+          set -o pipefail
+          git log -p --text -m --no-color --no-ext-diff --no-textconv "$RANGE" \
+            | ./betterleaks stdin --redact --no-banner --config "$rules"
 
       - name: Scan with the candidate rules of this change (informational)
         if: ${{ hashFiles('.claude/hooks/git/privacy-rules.toml') != '' }}
@@ -111,4 +131,6 @@ jobs:
             echo "candidate rules identical to main; nothing extra to check"
             exit 0
           fi
-          ./betterleaks git --redact --no-banner --config "$candidate" --log-opts="$RANGE" .
+          set -o pipefail
+          git log -p --text -m --no-color --no-ext-diff --no-textconv "$RANGE" \
+            | ./betterleaks stdin --redact --no-banner --config "$candidate"

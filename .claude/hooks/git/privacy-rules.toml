@@ -18,7 +18,7 @@ useDefault = true
 [[rules]]
 id = "windows-home-account"
 description = "Windows home path naming an account (C:\\Users\\<name>)"
-regex = '''(?i)\b[a-z]:(?:\\\\|\\|/)+users(?:\\\\|\\|/)+([a-z0-9][a-z0-9._-]+)'''
+regex = '''(?i)\b[a-z]:(?:\\\\|\\|/)+users(?:\\\\|\\|/)+([\p{L}\p{N}][\p{L}\p{N}._-]+)'''
 secretGroup = 1
 keywords = ["users"]
 [[rules.allowlists]]
@@ -27,19 +27,29 @@ regexes = ['''(?i)^(public|default|x|you|user|username|someone|prof|example|runn
 [[rules]]
 id = "posix-home-account"
 description = "POSIX home path naming an account (/home/<name>)"
-regex = '''(?i)/home/([a-z0-9][a-z0-9._-]+)'''
+regex = '''(?i)/home/([\p{L}\p{N}][\p{L}\p{N}._-]+)'''
 secretGroup = 1
 keywords = ["/home/"]
 [[rules.allowlists]]
 regexes = ['''(?i)^(user|username|runner|ubuntu|example|you|someone)$''']
 
 [[rules]]
+id = "posix-users-account"
+description = "macOS or Git Bash home path naming an account (/Users/<name>, /c/Users/<name>)"
+# "Users" is case-sensitive on purpose: a lower-case "/users/<name>" is usually a URL path.
+regex = '''(?:^|[\s"'(=:`,])(?:/[a-zA-Z])?/Users/([\p{L}\p{N}][\p{L}\p{N}._-]+)'''
+secretGroup = 1
+keywords = ["/Users/"]
+[[rules.allowlists]]
+regexes = ['''(?i)^(shared|public|default|x|you|user|username|someone|prof|example|runner|plantedname)$''']
+
+[[rules]]
 id = "quebec-code-permanent"
-description = "Value shaped like a Quebec student permanent code (4 letters + 8 digits)"
-regex = '''\b([A-Z]{4}[0-9]{8})\b'''
+description = "Value shaped like a Quebec student permanent code (4 letters + 8 digits, any case)"
+regex = '''(?i)\b([a-z]{4}[0-9]{8})\b'''
 secretGroup = 1
 [[rules.allowlists]]
-regexes = ['''^XXXX''']
+regexes = ['''(?i)^XXXX''']
 
 [[rules]]
 id = "uqac-student-email"
@@ -51,6 +61,8 @@ keywords = ["@etu.uqac.ca"]
 [[rules]]
 id = "frq-identifier"
 description = "Value shaped like an FRQ identification number (5 letters + 4 digits)"
+# Case-sensitive on purpose: FRQ issues these in capitals, and the lower-case shape is a
+# citation key (firstauthor + year: smith2020, smith2024 measured in this repo, 2026-10-02).
 regex = '''\b([A-Z]{5}[0-9]{4})\b'''
 secretGroup = 1
 [[rules.allowlists]]

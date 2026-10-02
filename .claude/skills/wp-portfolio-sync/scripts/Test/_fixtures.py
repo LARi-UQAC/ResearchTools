@@ -115,3 +115,140 @@ class FakeSession:
 
     def put(self, url, json=None, timeout=None):
         return self._consume("PUT", url, json, timeout)
+
+
+_CIHR_NS = "http://www.cihr-irsc.gc.ca/generic-cv/1.0.0"
+
+
+def _el(tag, label=None):
+    import xml.etree.ElementTree as ET
+
+    elem = ET.Element("{%s}%s" % (_CIHR_NS, tag))
+    if label:
+        elem.set("label", label)
+    return elem
+
+
+def _field(label, text):
+    import xml.etree.ElementTree as ET
+
+    f = _el("field", label)
+    value = ET.SubElement(f, "{%s}value" % _CIHR_NS)
+    value.set("type", "String")
+    value.text = text
+    return f
+
+
+def write_cihr_xml(path, include_supervision=True):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write a fictitious CIHR generic-cv XML export exercising every
+        section cihr_cv.py reads, plus (optionally) a supervision section
+        that cihr_cv.py must never read (D2: data minimisation proof).
+
+    Inputs:
+        path (Path): where to write the XML file.
+        include_supervision (bool): whether to add an
+            Activités > Activités de supervision record naming a fictitious
+            student ("Étudiante Témoin Zeta").
+
+    Outputs:
+        none. Writes the file at path.
+    --------------------------------------------------------------------------
+    """
+    import xml.etree.ElementTree as ET
+
+    ET.register_namespace("", _CIHR_NS)
+    root = _el("generic-cv")
+
+    for titre, debut, fin, statut in [
+        ("Projet fictif A", "2024/1", "2026/1", "Obtenu"),
+        ("Projet fictif B", "2010/1", "2015/1", "Terminé"),
+    ]:
+        s = _el("section", "Historique du financement de la recherche")
+        s.set("recordId", titre)
+        s.append(_field("Titre du financement", titre))
+        s.append(_field("Statut du financement", statut))
+        s.append(_field("Début de financement", debut))
+        s.append(_field("Fin de financement", fin))
+        sources = _el("section", "Sources de financement")
+        sources.append(_field("Organisme de financement", "Organisme Fictif"))
+        sources.append(_field("Nom du programme", "Programme Fictif"))
+        sources.append(_field("Montant total", "100000"))
+        s.append(sources)
+        root.append(s)
+
+    adhesions = _el("section", "Adhésions")
+    comite = _el("section", "Membre de comité")
+    comite.append(_field("Nom du comité", "Comité Fictif Alpha"))
+    comite.append(_field("Rôle", "Membre"))
+    adhesions.append(comite)
+    organisme = _el("section", "Membre d'autres organismes")
+    organisme.append(_field("Nom de l'organisme", "Organisation Fictive Beta"))
+    organisme.append(_field("Rôle", "Membre"))
+    adhesions.append(organisme)
+    root.append(adhesions)
+
+    contributions = _el("section", "Contributions")
+    medias = _el("section", "Présence dans les médias")
+    item = _el("section")
+    item.append(_field("Sujet", "Entrevue sur un sujet fictif https://example.org/a"))
+    item.append(_field("Émission", "Emission Fictive"))
+    item.append(_field("Chaîne", "Chaîne Fictive"))
+    item.append(_field("Date de la première diffusion", "2024/3"))
+    medias.append(item)
+    contributions.append(medias)
+    root.append(contributions)
+
+    activites = _el("section", "Activités")
+    wrapper = _el("section", "Activités diverses")
+    connaissances = _el("section", "Transfert de connaissances et de la technologie")
+    connaissances.append(_field("Rôle", "Responsable"))
+    connaissances.append(
+        _field(
+            "Type d'activité d'application des connaissances et de la technologie",
+            "Atelier fictif",
+        )
+    )
+    connaissances.append(
+        _field(
+            "Groupe, organisation ou entreprise bénéficiant des services",
+            "Entreprise Fictif Gamma",
+        )
+    )
+    connaissances.append(_field("Date de début", "2023/1"))
+    connaissances.append(_field("Date de fin", "2023/6"))
+    wrapper.append(connaissances)
+    activites.append(wrapper)
+
+    evenement = _el("section", "Gestion d'évènements")
+    evenement.append(_field("Rôle", "Organisateur"))
+    evenement.append(_field("Nom de l'événement", "Évènement Fictif Delta"))
+    evenement.append(_field("Date de début de l'activité", "2022/1"))
+    activites.append(evenement)
+
+    if include_supervision:
+        supervision = _el("section", "Activités de supervision")
+        record = _el("section")
+        record.append(_field("Etudiant", "Étudiante Témoin Zeta"))
+        record.append(_field("Type de diplôme ou statut postdoctoral", "Maîtrise"))
+        record.append(_field("Statut de l'étudiant", "En cours"))
+        supervision.append(record)
+        activites.append(supervision)
+
+    root.append(activites)
+
+    prix = _el("section", "Marques de reconnaissance")
+    prix.append(_field("Nom de la reconnaissance", "Prix Fictif Epsilon"))
+    prix.append(_field("Autre organisation", "Organisation Fictive Zeta"))
+    prix.append(_field("Date de début", "2021/1"))
+    root.append(prix)
+
+    cle = _el("section", "Contributions les plus importantes")
+    cle.append(_field("Titre", "Contribution fictive clé"))
+    cle.append(_field("Date du contribution", "2020/1"))
+    root.append(cle)
+
+    tree = ET.ElementTree(root)
+    tree.write(str(path), encoding="utf-8", xml_declaration=True)

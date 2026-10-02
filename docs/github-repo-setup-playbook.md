@@ -412,7 +412,10 @@ a GitHub Support request and fork owners deleting their forks. Do the four steps
    gh api repos/<owner>/<repo>/rulesets --jq '.[] | {id, name}'      # find the ruleset id
    gh api repos/<owner>/<repo>/rulesets/<id> > ruleset.json
    # add {"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,
-   #      "do_not_enforce_on_create":false,"required_status_checks":[{"context":"<check name>"}]}}
+   #      "do_not_enforce_on_create":false,"required_status_checks":[{"context":"<check name>",
+   #      "integration_id":15368}]}}
+   # integration_id 15368 is the GitHub Actions app (read from a real check run's app.id):
+   # without it, a commit status any collaborator posts by API satisfies the check.
    # to .rules, keep name/target/enforcement/conditions/bypass_actors, then:
    gh api -X PUT repos/<owner>/<repo>/rulesets/<id> --input ruleset-new.json
    gh api repos/<owner>/<repo>/rulesets/<id> --jq '[.rules[].type]'  # verify

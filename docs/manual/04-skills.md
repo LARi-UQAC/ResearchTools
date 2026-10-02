@@ -25,6 +25,16 @@ a copied `SKILL.md` fixes - a vendored copy of a CLI's skill without the CLI is 
 tool that is still absent. `test_settings_template_distribution.py` asserts that neither name
 reappears under `.claude/skills/`.
 
+**No task runs without a skill (R34).** Every task is done by a skill, or by an agent that uses
+one, whatever the model or the harness. When no skill fits, or several could, the session asks
+with `AskUserQuestion` and puts the best option first. When none exists, ResearchTools writes its
+own with the `skill-creator` skill, inspired by the nearest skill found read-only with
+`find-skills`. A skill is never installed from the internet. The rule is written in
+`.claude/CLAUDE.md`, in `.claude/rules/workflows.md` (R34) and in the generated `AGENTS.md`,
+`CONVENTIONS.md` and Copilot instructions, and `test_skill_first_rule.py` fails when it
+disappears from any of them. See [authoring-and-mirrors.md](../authoring-and-mirrors.md) for the
+registration steps of a new skill.
+
 **In this chapter:** [scopus](#scopus--scopus-academic-search) ·
 [geolocalisation](#geolocalisation--corpus-study-location-mapping) ·
 [recommendation-letter](#recommendation-letter--support--recommendation--acceptance--dispense-letters) ·

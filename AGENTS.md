@@ -39,6 +39,13 @@ support/recommendation/acceptance letter from a candidate's files,
 before applying an audit plan, or `obsidian-cli` to read or search the
 Obsidian vault through its allowed command surface.
 
+Skill-first rule (R34): no task runs without a skill, or without an agent that uses a
+skill, whatever the model or the harness. Name the skill first. When none fits, or
+several could, ask the user with the best option first. When none exists, author one
+inside ResearchTools with the `skill-creator` skill, inspired by the nearest skill
+found read-only with `find-skills`. Never install a skill from the internet. The full
+rule is R34 in `.claude/rules/workflows.md`.
+
 Obsidian vault writes go through the outbox only: deposit the note in
 `~/.claude/obsidian-outbox/` with a first-line directive and let the
 `obsidian-outbox-flush.py` hook write it through the filesystem. The Obsidian CLI

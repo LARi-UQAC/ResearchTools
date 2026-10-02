@@ -29,6 +29,13 @@ The task-to-agent routing table lives in `.claude/CLAUDE.md` (section "Tooling")
 Skills are repository folders the agents read directly
 (`.claude/skills/<name>/SKILL.md`), so they need no mirror.
 
+Skill-first rule (R34): no task runs without a skill, or without an agent that uses a
+skill, whatever the model or the harness. Name the skill first. When none fits, or
+several could, ask the user with the best option first. When none exists, author one
+inside ResearchTools with the `skill-creator` skill, inspired by the nearest skill
+found read-only with `find-skills`. Never install a skill from the internet. The full
+rule is R34 in `.claude/rules/workflows.md`.
+
 Academic writing rules: validate references against Scopus, never fabricate DOIs,
 LaTeX output in `out/`.
 

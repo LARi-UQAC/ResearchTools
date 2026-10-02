@@ -295,6 +295,44 @@ gating every read-only script behind a dry-run flag it has no destructive path t
 - Diagnose and fix LaTeX build errors with `/latex` (reads `out/*.log` first, cites the
   failing line, states whether a two-pass recompilation is needed).
 
+## Skill-first execution
+
+**R34 - no task runs without a skill, or without an agent that uses a skill; a missing skill is
+authored in ResearchTools, never installed from the internet.** Effective 2026-10-02. It binds
+every model, cloud or local, and every harness (Claude Code, Codex, Copilot, Aider, Continue,
+any other). Four parts:
+
+1. **Name the skill or agent before acting.** A task is any work that reads or writes a file,
+   runs a command, or produces a deliverable. Find the skill, or the agent that uses one, in
+   the routing table of `.claude/CLAUDE.md`, in `README.md`, or in the skill list, and state
+   which one is used. A short answer given from what is already in context is not a task, which
+   is also what R28 asks of a direct chat question.
+2. **No match, or more than one candidate: `AskUserQuestion`.** The best option comes first and
+   ends with `(Recommended)`, and each option states its origin, behaviour and cost, as R25
+   requires. Where the question cannot be asked, the work stops and says why. It does not
+   continue on a guess, and it does not substitute a skill that merely resembles the task.
+3. **No skill exists: ResearchTools improves itself.** Search for the nearest existing skill
+   with `find-skills`, read-only, as inspiration. Author the new skill with the `skill-creator`
+   skill, on the latest cloud Claude model and never on a local one (the same boundary as plan
+   authoring and `latex-writer`), shaped to this project's own needs. Register it by following
+   `docs/authoring-and-mirrors.md`, so that it carries a test (R15), an inventory line (R23) and
+   its documentation (R31).
+4. **Never install a skill from the internet.** `find-skills` can search and install; here it
+   only searches, and it is the one third-party skill the operator has chosen to keep. No `npx skills add`, no plugin, skill or agent pulled from a repository,
+   registry or marketplace, and no third-party file copied in. Read 2026-10-02 in
+   `~/.agents/.skill-lock.json`: `find-skills` was installed from `vercel-labs/skills` on
+   2026-07-27 through the skills CLI, which is the route this part closes. What is learned from
+   a third-party skill is rewritten in our own words, in our own file.
+
+Why a rule and not a habit: an agent that starts a task with no skill acts from its own
+memory of how the job is done, and that is where R14 (an invented flag) and R29 (a plan that
+transcribes unchecked code) came from. A skill is the place a verified procedure lives.
+
+Proven by `.claude/hooks/Test/test_skill_first_rule.py` (R15), which fails when the rule
+disappears from `.claude/CLAUDE.md`, from this file, or from the mirrors `install.ps1`
+generates. Its scope is stated, not hidden: it checks that the rule is written where every
+harness reads it, and cannot check that a model obeyed it.
+
 ## Calling an agent explicitly
 
 Agents are normally triggered by context. To invoke one directly, address it by name, for

@@ -157,6 +157,13 @@ the generated mirrors.
 - **Command** - a thin `/slash` wrapper that points at an agent or a skill workflow.
   Mirrored to a Copilot prompt.
 
+**Skill-first (R34).** A task with no skill, or with an agent that does not use one, is not
+started. When it is unclear which skill or agent applies, ask with `AskUserQuestion`. When none
+exists, add one here: run `find-skills` read-only to find the nearest existing skill, then author
+the new one with the `skill-creator` skill on the latest cloud Claude model, following sections 7
+and 9 below. Never install a skill from the internet; what is learned from a third-party skill is
+rewritten in our own file. The full rule is R34 in `.claude/rules/workflows.md`.
+
 A skill and its command wrapper commonly coexist (`/geolocalisation` -> the
 `geolocalisation` skill). A command may instead drive an agent (`/bibclean` -> the
 `bib-cleaner` agent).

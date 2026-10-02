@@ -300,10 +300,19 @@ any other). Four parts:
    skill, on the latest cloud Claude model and never on a local one (the same boundary as plan
    authoring and `latex-writer`), shaped to this project's own needs. Register it by following
    `docs/authoring-and-mirrors.md`, so that it carries a test (R15), an inventory line (R23) and
-   its documentation (R31).
-4. **Never install a skill from the internet.** `find-skills` can search and install; here it
-   only searches, and it is the one third-party skill the operator has chosen to keep. No `npx skills add`, no plugin, skill or agent pulled from a repository,
-   registry or marketplace, and no third-party file copied in. Read 2026-10-02 in
+   its documentation (R31). `skill-creator` is delivered to Claude Code by the
+   `skill-creator@claude-plugins-official` plugin and `find-skills` is a machine-local skill, so
+   neither ships in `.claude/skills/`. Where one is absent (Copilot, Aider, Continue, Codex, a
+   fresh clone) the work does not stop: search `.claude/skills/` and `README.md` for the nearest
+   skill, then write the `SKILL.md` by hand on the latest cloud Claude model, following section
+   7 of `docs/authoring-and-mirrors.md`. The model must be a cloud one, so a harness that can
+   run only a local model asks the user to run this step in Claude Code.
+4. **Never install a skill from the internet, ad hoc.** `find-skills` can search and install;
+   here it only searches, and it is the one third-party skill the operator has chosen to keep.
+   No `npx skills add`, and no skill, plugin or agent fetched from a repository, registry or
+   marketplace to cover a missing skill, and no third-party file copied in. Plugins that the
+   repository itself declares in `.claude/settings.template.json` (`enabledPlugins`), such as
+   the one delivering `skill-creator`, are approved and are not covered by this ban. Read 2026-10-02 in
    `~/.agents/.skill-lock.json`: `find-skills` was installed from `vercel-labs/skills` on
    2026-07-27 through the skills CLI, which is the route this part closes. What is learned from
    a third-party skill is rewritten in our own words, in our own file.

@@ -484,10 +484,17 @@ deliverable; a short answer given from what is already in context is not a task.
    `find-skills`, used read-only for inspiration. Then author the new skill with the
    `skill-creator` skill on the latest cloud Claude model, shaped to this project's needs and
    inspired by that nearest skill. Register it as `docs/authoring-and-mirrors.md` requires.
-4. **Never install a skill from the internet.** No `npx skills add`, no plugin or skill
-   installed from a repository, registry or marketplace, whatever `find-skills` suggests. Read
-   it for ideas, then write ours. A skill copied in from outside has no provenance and no
-   review (see `.claude/rules/security.md`).
+   Where `skill-creator` or `find-skills` is not available (Copilot, Aider, Continue, Codex, a
+   fresh clone), do not stop: search the repository's own `.claude/skills/` and `README.md` for
+   the nearest skill, then write the `SKILL.md` by hand on the latest cloud Claude model,
+   following section 7 of `docs/authoring-and-mirrors.md`.
+4. **Never install a skill from the internet, ad hoc.** No `npx skills add`, and no skill,
+   plugin or agent fetched from a repository, registry or marketplace to cover a missing
+   skill, whatever `find-skills` suggests. The only plugins allowed are the ones the
+   repository itself declares in `.claude/settings.template.json` (`enabledPlugins`), which
+   include the one delivering `skill-creator`. Read outside skills for ideas, then write ours.
+   A skill copied in from outside has no provenance and no review (see
+   `.claude/rules/security.md`).
 
 The full rule, with the reasoning, is R34 in `.claude/rules/workflows.md`.
 

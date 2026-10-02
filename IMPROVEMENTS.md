@@ -266,6 +266,6 @@ refusal (an uninstalled tag: stop, exit 1, no report directory created).
 
 **Changed:** new section "Skill-first rule (R34)" inside the RT-EXPORT region, so it reaches `CLAUDE.template.md` (RT-CONTRACT block, regenerated) and the live global file at the next `-Sync`; a routing-table row for a task no skill covers; R34 in full in `workflows.md`; "Skill provenance" in `security.md`; the rule index in `code-style.md` now reads R0 to R34 and names R33; a statement of the rule in the three heredocs of `install.ps1` (Copilot master, `AGENTS.md`, `CONVENTIONS.md`) and so in their regenerated mirrors; `docs/manual/04-skills.md` and `docs/authoring-and-mirrors.md`.
 
-**Proven:** `test_skill_first_rule.py`, 11 tests, with negative controls for the region finder and the phrase finder. It proves the rule is written in each place, not that a model obeys it.
+**Proven:** `test_skill_first_rule.py`, 13 tests, with negative controls for the region finder and the phrase finder. It proves the rule is written in each place, not that a model obeys it.
 
 **Not done:** `local-writer.md` sits at 27802 of 28000 body chars (`test_agent_mirror_ceiling.py`), so the rule was not added to any agent body; agents receive it through the CLAUDE.md files and the three master mirrors.

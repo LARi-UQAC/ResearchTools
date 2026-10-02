@@ -99,6 +99,30 @@ rules.
 Full contractual pipeline, exit checklist, and the AskUserQuestion/overwrite
 gates: `.claude/agents/narrative-cv-writer.md`.
 
+## Service mode (/cv/build)
+
+ThesisTracker builds a researcher's CV with consenting students' rows through
+`deploy/form-service`'s stateless `POST /cv/build`, which imports `cv_build.py`
+through `deploy/form-service/app/cv_bridge.py` (the same pattern
+`skill_bridge.py` uses for the PDF routes):
+
+- ThesisTracker sends the **inline** model (no `prose_file`, section `"3"`
+  carrying `"hqp_list": true` when it has rows to render) plus the consenting
+  students' rows and the reference year; the service returns the LaTeX
+  and/or plain text, never a PDF.
+- **The PDF and the page-budget check stay local.** The service never
+  compiles LaTeX (C2, security: the service is public-reachable and
+  compiling network input would let it read server files). Compile and run
+  `cv_build.py check-pages` on the professor's own machine as before.
+- `cv_build.py inline --model <cv_model.json> --out <file.json>` turns a
+  local model that still uses `prose_file` (the normal authoring path above)
+  into one with inline `prose`, ready to upload. It refuses an `--out` equal
+  to `--model`, and a model whose sections carry `hqp`/`hqp_rows`/`rows` -
+  student rows never travel through a file on this skill's side.
+- **Student rows are never written to the CV folder**, or anywhere else in
+  this skill: `render_hqp`/`validate_hqp_rows` run entirely in memory inside
+  the service process, and the consenting rows live only in ThesisTracker.
+
 ## Quick reference
 
 | Need | Command |

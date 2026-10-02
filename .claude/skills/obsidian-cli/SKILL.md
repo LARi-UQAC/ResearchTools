@@ -114,13 +114,13 @@ written to `ask/answers/<id>.json`.
 
 This queue is gated to requests declaring `"from": "rt-dashboard"` -
 anything else is answered `status: "refused"` rather than processed. It
-never calls `graphify query` and never reads `graphify-out/`: the vault is
-cross-project and a graph is per-project, so the daemon has no fixed notion
-of "the repository" to query (see `daemon-config.json`'s own
-`graphify_repo_root` provenance for the same reasoning). A graph-shaped
-question is answered from the `context_snapshot` the caller supplies, which
-already carries a `local-writer`-produced graph snapshot summary when one
-was collected.
+calls `graphify query` (read-only, never `update` or `save-result`) to
+answer graph-shaped questions: the vault is cross-project and a graph is
+per-project, so the daemon resolves "the repository" from the vault hit's
+own `index.md` property rather than assuming a fixed one (see the
+`daemon-config.json` `ask_search_roots` and `ask_graph_*` keys). Vault
+results and graph results are answered in two parts: vault published first
+via an injected callback, then the graph portion.
 
 This is the mechanism behind rt-dashboard's voice panel - see the
 `rt-observe` skill's own SKILL.md for the other half of the exchange.

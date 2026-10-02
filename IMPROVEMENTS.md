@@ -74,6 +74,16 @@ While updating `.claude/rules/code-style.md` to reflect the current rule roster 
 
 **Graphify:** AST-only refresh at repository root (`graphify update .`) on the three edited rule files (code-style.md, workflows.md, and two supporting files). Semantic pass deferred: rules are documentation, not code; no semantic extraction justifies the model cost.
 
+## 2026-10-02 - obsidian-cli - the voice-ask queue now reaches a project's own code graph
+
+**Change:** The ask queue, previously vault-only, now answers questions by searching both the vault AND the project code graph (read-only `graphify query`). New module `daemon_graph.py` extracts keywords from a question, resolves the repository by walking upward from a vault hit's `index.md` property to find its `repo:` key, and queries the graph deterministically (AST-only, no model cost). `daemon_ask.answer()` now publishes in two parts: vault search results published via an injected `publish` callback BEFORE the graph part runs, so partial answers appear immediately while graph queries execute in the background. The three graph outcomes (ok/skipped/error) are kept apart, and a keyword-extraction failure is "error" per spec section 6's table, never "skipped".
+
+**Files changed:** `daemon_graph.py` (new module: extract_keywords, entity_repo, query_graph), `daemon_ask.py` (answer() now wires a callable publish; docstring now correctly states "calls graphify query"), `vault_daemon.py` (_write_answer gained a `consume=False` mode to support published partials; final write overwrites a partial even if answer() crashed after publishing), `daemon-config.json` (new keys `ask_search_roots`, `ask_keywords_max`, `ask_graph_budget_tokens`, `ask_graph_max_chars`, `ask_graph_timeout_s`, `ask_graph_sentences`).
+
+**Tests:** three new test files all passing. `test_daemon_graph.py` (23 tests): extract_keywords (schema-constrained, failure modes named), entity_repo (repository resolution via index.md property walking, orphan notes), query_graph (subprocess contract: list argv, cwd, timeout, truncation gate). `test_daemon_ask.py` (28 → 50 tests): old tests + accent-folded vault search, project/resource folder ranking, graph_sentence catalogue read from config, progressive publish with three graph outcomes. `test_vault_daemon.py` (14 → 19 tests): old tests + _write_answer consume=False path, run_ask_once wiring, final write overwriting partial, crash after publish still landing as error on disk.
+
+**Project stage:** plan1a+1b of a 3-plan design (docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md). Plan2 is the dashboard side; plan3 is governance/rollout/vault repo: properties.
+
 ## 2026-08-28 - repo-wide hooks - a session now prints the hook inventory it actually loaded
 
 **Found:** a session opened showing only `Session: RTK=active | Caveman=full | git-sync=on`

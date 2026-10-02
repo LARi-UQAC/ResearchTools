@@ -13,13 +13,13 @@ not itself enforce that only rt-dashboard actually wrote the file. Path
 containment (R24) and the request/TTL/exception guards below are real; the
 "from" field is a contract between callers, not a boundary.
 
-This module never calls `graphify query` and never reads `graphify-out/`.
-daemon-config.json's `daemon.graphify_repo_root` is null on purpose (see its
-own _provenance comment): the vault is cross-project, a graph is per-project,
-and this daemon has no fixed notion of "the repository" to query. A
-graph-shaped question is answered from the `context_snapshot` the caller
-supplies, which already carries a local-writer-produced graph snapshot
-summary when rt-observe collected one.
+This module calls `graphify query` (read-only, never `update` or `save-result`)
+gated by the same `from: rt-dashboard` check as the vault read, delegating
+to daemon_graph.py for keyword extraction, repository resolution, and graph
+traversal. daemon-config.json's `daemon.ask_search_roots` and `daemon.ask_graph_*`
+keys configure the graph path and query budget; the vault is cross-project,
+a graph is per-project, and this daemon resolves the repository from a
+hit's nearest `index.md` property rather than assuming "the repository".
 
 Split from daemon_states.py rather than added to it, matching the existing
 seam: daemon_states answers "what happens to a knowledge drop", this module

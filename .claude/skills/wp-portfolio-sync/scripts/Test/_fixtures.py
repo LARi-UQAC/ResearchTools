@@ -208,6 +208,60 @@ def contribution_cle(titre="Contribution fictive clé", description="Description
     return {"titre": titre, "date": "2020/1", "description": description}
 
 
+class FakeClient:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        A fake WpClient for push_wp.py tests: serves content.raw per page
+        id and simulates every write outcome run_push must distinguish.
+
+    Inputs:
+        pages (dict[int, str]): page_id -> current raw content.
+        drop_writes (bool): when True, a PUT never actually stores content
+            (simulates a write that did not take effect, 200 or not).
+        put_raises (BaseException or None): when set, put_json stores the
+            content first (subject to put_status/drop_writes) and then
+            raises this - a write that took effect but whose answer was lost.
+        put_status (int): the status code put_json reports.
+        raw_missing (bool): when True, get_json serves only content.rendered,
+            simulating a credential without edit rights.
+
+    Outputs:
+        none (state object). `.gets` and `.puts` record every call as
+        (route, params_or_payload).
+    --------------------------------------------------------------------------
+    """
+
+    def __init__(self, pages, drop_writes=False, put_raises=None, put_status=200, raw_missing=False):
+        self.pages = dict(pages)
+        self.drop_writes = drop_writes
+        self.put_raises = put_raises
+        self.put_status = put_status
+        self.raw_missing = raw_missing
+        self.gets = []
+        self.puts = []
+
+    def _page_id(self, route):
+        return int(route.rstrip("/").rsplit("/", 1)[-1])
+
+    def get_json(self, route, params):
+        self.gets.append((route, params))
+        page_id = self._page_id(route)
+        content = self.pages.get(page_id, "")
+        if self.raw_missing:
+            return {"content": {"rendered": content}}
+        return {"content": {"raw": content}}
+
+    def put_json(self, route, payload):
+        self.puts.append((route, payload))
+        page_id = self._page_id(route)
+        if self.put_status in (200, 201) and not self.drop_writes:
+            self.pages[page_id] = payload["content"]
+        if self.put_raises is not None:
+            raise self.put_raises
+        return self.put_status, ""
+
+
 def student(
     etudiant="Étudiant Fictif Un",
     type_diplome="Doctorat",

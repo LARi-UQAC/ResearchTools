@@ -340,5 +340,131 @@ class TestCompileLatex(unittest.TestCase):
         self.assertEqual(result["returncode"], 1)
 
 
+def _row(**overrides):
+    base = {
+        "name": "Étudiante Alpha",
+        "cycle": "Maîtrise",
+        "start": "2022-09",
+        "end": "2024-08",
+        "consent_cv": "2026-09-01",
+    }
+    base.update(overrides)
+    return base
+
+
+def _hqp_model(**overrides):
+    model = _model(**overrides)
+    model["sections"]["3"]["hqp_list"] = True
+    return model
+
+
+class TestHqp(unittest.TestCase):
+    def test_no_hqp_is_byte_identical(self):
+        self.assertEqual(cv_build.render_latex(_model()), cv_build.render_latex(_model(), hqp=None))
+        self.assertEqual(cv_build.render_text(_model()), cv_build.render_text(_model(), hqp=None))
+
+    def test_rules_shipped_with_provenance(self):
+        types = cv_build.load_contribution_types()
+        rules = cv_build.load_hqp_rules(types)
+        self.assertEqual(rules["window_years"], 6)
+        for language in ("fr", "en"):
+            labels = rules["labels"][language]
+            for key in ("recent_heading", "archive_heading", "ongoing", "none"):
+                self.assertTrue(labels[key])
+        self.assertTrue(types["hqp"]["_provenance"])
+
+    def test_rules_missing_key_named(self):
+        types = {}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.load_hqp_rules(types)
+        self.assertIn("hqp", str(ctx.exception))
+
+    def test_window_split(self):
+        rows = [_row(end="2021-06"), _row(end="2020-01"), _row(end=None)]
+        validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        recent = [r for r in validated if r["in_window"]]
+        archive = [r for r in validated if not r["in_window"]]
+        self.assertEqual(len(recent), 2)
+        self.assertEqual(len(archive), 1)
+
+    def test_consent_required_in_window(self):
+        rows = [_row(end="2024-08", consent_cv=None)]
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        message = str(ctx.exception)
+        self.assertIn("row 0", message)
+        self.assertNotIn("Étudiante Alpha", message)
+
+    def test_archive_without_consent_accepted(self):
+        rows = [_row(end="2015-06", consent_cv=None)]
+        validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        self.assertFalse(validated[0]["in_window"])
+
+    def test_unknown_key_refused(self):
+        rows = [_row(email="alpha@example.org")]
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        message = str(ctx.exception)
+        self.assertIn("row 0", message)
+        self.assertNotIn("Étudiante Alpha", message)
+
+    def test_bad_dates_refused(self):
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row(start="2024/5")], reference_year=2026, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row(consent_cv="02-10-2026")], reference_year=2026, window_years=6)
+
+    def test_rows_without_hqp_list_refused(self):
+        model = _model()  # no hqp_list flag on section 3
+        with self.assertRaises(CvDataError):
+            cv_build.render_latex(model, hqp={"rows": [_row()], "reference_year": 2026})
+
+    def test_prose_file_refused(self):
+        model = _model()
+        model["sections"]["1"] = {"title": "X", "prose_file": "../x.tex"}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        message = str(ctx.exception)
+        self.assertIn("1", message)
+        self.assertNotIn("../x.tex", message)
+
+    def test_latex_escaping(self):
+        model = _hqp_model()
+        source = cv_build.render_latex(
+            model, hqp={"rows": [_row(name="A & B_C")], "reference_year": 2026})
+        self.assertIn(r"\textbf{A \& B\_C}", source)
+
+    def test_position_rendered(self):
+        model = _hqp_model()
+        rows = [
+            _row(name="Étudiante Beta", end="2024-08",
+                 current_position="Poste fictif", current_employer="Employeur fictif"),
+            _row(name="Étudiant Gamma", end=None),
+        ]
+        source = cv_build.render_latex(model, hqp={"rows": rows, "reference_year": 2026})
+        self.assertIn("Poste fictif, Employeur fictif", source)
+        self.assertIn("en cours", source)
+
+    def test_order_deterministic(self):
+        rows_a = [_row(name="Étudiante Beta", end="2024-08"), _row(name="Étudiante Alpha", end="2023-01")]
+        rows_b = list(reversed(rows_a))
+        model = _hqp_model()
+        source_a = cv_build.render_latex(model, hqp={"rows": rows_a, "reference_year": 2026})
+        source_b = cv_build.render_latex(model, hqp={"rows": rows_b, "reference_year": 2026})
+        self.assertEqual(source_a, source_b)
+
+    def test_english_labels(self):
+        model = _hqp_model(language="en")
+        source = cv_build.render_latex(model, hqp={"rows": [_row(end=None)], "reference_year": 2026})
+        self.assertIn("ongoing", source)
+        self.assertIn("HQP trained in the last 6 years", source)
+
+    def test_empty_lists_use_none_label(self):
+        model = _hqp_model()
+        source = cv_build.render_latex(model, hqp={"rows": [_row(end="2024-08")], "reference_year": 2026})
+        archive_idx = source.index("Archive")
+        self.assertIn("s.o.", source[archive_idx:])
+
+
 if __name__ == "__main__":
     unittest.main()

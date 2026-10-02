@@ -52,6 +52,11 @@ _URL_RE = re.compile(r"https?://\S+")
 _URL_TRAILING = ".,;:)"
 _BABEL_LANGUAGE = {"fr": "french", "en": "english"}
 
+HQP_ROW_KEYS = ("name", "cycle", "start", "end", "consent_cv", "current_position", "current_employer")
+HQP_REQUIRED_KEYS = ("name", "cycle", "start", "end", "consent_cv")
+_HQP_DATE_RE = re.compile(r"^\d{4}(-\d{2})?$")
+_HQP_CONSENT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 
 def escape_latex(text):
     """Escape the LaTeX special characters in `text` (never applied to raw markup callers build themselves)."""
@@ -245,7 +250,252 @@ def load_model(path):
     return model
 
 
-def render_latex(model, types_path=None):
+def load_hqp_rules(types):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Return the HQP window length and bilingual labels from a loaded
+        contribution_types.json document.
+
+    Inputs:
+        types (dict): the parsed contribution_types.json document
+
+    Outputs:
+        rules (dict): {"window_years": int, "labels": dict} (labels carries
+            both "fr" and "en", each with recent_heading/archive_heading/
+            ongoing/none)
+
+    Raises:
+        CvDataError: `types["hqp"]` or one of its keys is missing, or
+            window_years is not an int >= 1
+    --------------------------------------------------------------------------
+    """
+    try:
+        hqp = types["hqp"]
+        window_years = hqp["window_years"]
+        labels = hqp["labels"]
+    except KeyError as exc:
+        raise CvDataError("contribution_types.json is missing key %s (expected under 'hqp')" % exc)
+    if not isinstance(window_years, int) or isinstance(window_years, bool) or window_years < 1:
+        raise CvDataError("hqp.window_years must be an int >= 1, got %r" % (window_years,))
+    return {"window_years": window_years, "labels": labels}
+
+
+def assert_inline_model(model):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Refuse a cv_model.json whose sections reference a `prose_file` on
+        disk, since a request received over the network must never pick a
+        file on the server (R24, C4).
+
+    Details:
+        Dict-shape checks only: no filesystem call is made, so the refusal
+        happens identically whether or not the named file exists. The
+        message names the offending section key, never the prose_file
+        value, so a path traversal attempt is never echoed back.
+
+    Inputs:
+        model: the candidate cv_model.json document
+
+    Outputs:
+        None
+
+    Raises:
+        CvDataError: `model` is not a dict, `model["sections"]` is not a
+            dict, or any section carries a `prose_file` key
+    --------------------------------------------------------------------------
+    """
+    if not isinstance(model, dict):
+        raise CvDataError("model must be an object, got %s" % type(model).__name__)
+    sections = model.get("sections")
+    if not isinstance(sections, dict):
+        raise CvDataError("model.sections must be an object")
+    for key, section in sections.items():
+        if isinstance(section, dict) and "prose_file" in section:
+            raise CvDataError(
+                "section %s carries a prose_file key; an inline model must not "
+                "reference a file on disk" % key)
+
+
+def validate_hqp_rows(rows, reference_year, window_years):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Validate student rows against the closed HQP schema and tag each with
+        whether it falls inside the consent-required window.
+
+    Details:
+        Every error names the row's index only, never a field value, so a
+        malformed row never puts a student's name in a log or an error
+        response (C3). Rows are returned as deep copies: the caller's own
+        dicts are never mutated.
+
+    Inputs:
+        rows (list): candidate row dicts
+        reference_year (int): the year the window ends
+        window_years (int): the window length (from load_hqp_rules)
+
+    Outputs:
+        validated (list[dict]): deep copies of `rows`, each with an added
+            boolean `in_window`
+
+    Raises:
+        CvDataError: `rows` is not a list, `reference_year` is not an int, a
+            row is not a dict, carries an unknown or missing key, a field is
+            malformed, or an in-window row has no consent_cv
+    --------------------------------------------------------------------------
+    """
+    if not isinstance(reference_year, int) or isinstance(reference_year, bool):
+        raise CvDataError("reference_year must be an int, got %r" % (reference_year,))
+    if not isinstance(rows, list):
+        raise CvDataError("hqp rows must be a list, got %s" % type(rows).__name__)
+
+    validated = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise CvDataError("row %d is not an object" % index)
+        unknown = sorted(set(row) - set(HQP_ROW_KEYS))
+        if unknown:
+            raise CvDataError("row %d has unknown key(s): %s" % (index, ", ".join(unknown)))
+        missing = [key for key in HQP_REQUIRED_KEYS if key not in row]
+        if missing:
+            raise CvDataError("row %d is missing key(s): %s" % (index, ", ".join(missing)))
+        if not isinstance(row["name"], str) or not row["name"].strip():
+            raise CvDataError("row %d: name must be a non-empty string" % index)
+        if not isinstance(row["cycle"], str) or not row["cycle"].strip():
+            raise CvDataError("row %d: cycle must be a non-empty string" % index)
+        start = row["start"]
+        if not isinstance(start, str) or not _HQP_DATE_RE.match(start):
+            raise CvDataError("row %d: start must match YYYY or YYYY-MM" % index)
+        end = row["end"]
+        if end is not None and (not isinstance(end, str) or not _HQP_DATE_RE.match(end)):
+            raise CvDataError("row %d: end must be null or match YYYY or YYYY-MM" % index)
+        consent = row["consent_cv"]
+        if consent is not None and (not isinstance(consent, str) or not _HQP_CONSENT_RE.match(consent)):
+            raise CvDataError("row %d: consent_cv must be null or an ISO YYYY-MM-DD date" % index)
+        in_window = end is None or int(end[:4]) >= reference_year - window_years + 1
+        if in_window and consent is None:
+            raise CvDataError("row %d requires consent_cv (inside the consent window)" % index)
+        copy = dict(row)
+        copy["in_window"] = in_window
+        validated.append(copy)
+    return validated
+
+
+def _hqp_date_value(datestr):
+    """Return an orderable int for a 'YYYY' or 'YYYY-MM' string, most recent = largest."""
+    year = int(datestr[:4])
+    month = int(datestr[5:7]) if len(datestr) > 4 else 1
+    return year * 12 + month
+
+
+def _hqp_sort_key(row):
+    """Ongoing (end is None) first, then most recent end, then most recent start, then name."""
+    end = row["end"]
+    end_rank = 0 if end is None else 1
+    end_val = 0 if end is None else -_hqp_date_value(end)
+    start_val = -_hqp_date_value(row["start"])
+    return (end_rank, end_val, start_val, row["name"])
+
+
+def _hqp_end_label(row, heading_labels):
+    return heading_labels["ongoing"] if row["end"] is None else row["end"]
+
+
+def _hqp_position_suffix(row, escape):
+    """Return the ' — position, employer' suffix, or '' when no position is given."""
+    position = row.get("current_position")
+    if not position:
+        return ""
+    detail = escape(position)
+    employer = row.get("current_employer")
+    if employer:
+        detail += ", %s" % escape(employer)
+    return " \u2014 %s" % detail
+
+
+def _hqp_block_latex(heading, rows, heading_labels):
+    parts = ["\\section*{%s}\n" % escape_latex(heading)]
+    if not rows:
+        parts.append("%s\n\n" % escape_latex(heading_labels["none"]))
+        return "".join(parts)
+    parts.append("\\begin{itemize}\n")
+    for row in rows:
+        parts.append(
+            "\\item \\textbf{%s} (%s, %s \u2013 %s)%s\n"
+            % (
+                escape_latex(row["name"]), escape_latex(row["cycle"]), escape_latex(row["start"]),
+                escape_latex(_hqp_end_label(row, heading_labels)),
+                _hqp_position_suffix(row, escape_latex),
+            )
+        )
+    parts.append("\\end{itemize}\n\n")
+    return "".join(parts)
+
+
+def _hqp_block_text(heading, rows, heading_labels):
+    lines = [heading, "=" * len(heading)]
+    if not rows:
+        lines.append(heading_labels["none"])
+    else:
+        for row in rows:
+            lines.append(
+                "- %s (%s, %s \u2013 %s)%s"
+                % (
+                    row["name"], row["cycle"], row["start"], _hqp_end_label(row, heading_labels),
+                    _hqp_position_suffix(row, lambda text: text),
+                )
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_hqp(rows_validated, language, labels, target):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Render validated HQP rows into the two-list (recent/archive) block
+        described in spec section 4, for either the LaTeX or text renderer.
+
+    Inputs:
+        rows_validated (list[dict]): output of validate_hqp_rows()
+        language (str): "fr" or "en"
+        labels (dict): the bilingual labels dict (load_hqp_rules()["labels"])
+        target (str): "latex" or "text"
+
+    Outputs:
+        block (str): the rendered recent list followed by the archive list
+
+    Raises:
+        CvDataError: target is neither "latex" nor "text"
+    --------------------------------------------------------------------------
+    """
+    if target not in ("latex", "text"):
+        raise CvDataError("render_hqp target must be 'latex' or 'text', got %r" % (target,))
+    heading_labels = labels[language]
+    recent = sorted((row for row in rows_validated if row["in_window"]), key=_hqp_sort_key)
+    archive = sorted((row for row in rows_validated if not row["in_window"]), key=_hqp_sort_key)
+    block = _hqp_block_latex if target == "latex" else _hqp_block_text
+    return (
+        block(heading_labels["recent_heading"], recent, heading_labels)
+        + block(heading_labels["archive_heading"], archive, heading_labels)
+    )
+
+
+def _hqp_block(model, types, hqp, target):
+    """Build the HQP block for `render_latex`/`render_text`, or raise per C8."""
+    section3 = (model.get("sections") or {}).get("3") or {}
+    if not section3.get("hqp_list"):
+        raise CvDataError(
+            "hqp rows were provided but section 3 does not declare hqp_list: true (C8)")
+    rules = load_hqp_rules(types)
+    language = model.get("language", "fr")
+    rows_validated = validate_hqp_rows(hqp.get("rows", []), hqp.get("reference_year"), rules["window_years"])
+    return render_hqp(rows_validated, language, rules["labels"], target)
+
+
+def render_latex(model, types_path=None, hqp=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -255,14 +505,23 @@ def render_latex(model, types_path=None):
     Inputs:
         model (dict): a cv_model.json document (see module docstring)
         types_path (str, Path or None): contribution_types.json override
+        hqp (dict or None): {"rows": list, "reference_year": int} of
+            consenting-student rows to render into section 3 (spec section
+            4); None leaves the output byte-identical to before this
+            parameter existed (C9)
 
     Outputs:
         source (str): the LaTeX document
+
+    Raises:
+        CvDataError: `hqp` is given but section 3 does not declare
+            hqp_list: true (C8), or a row fails validate_hqp_rows()
     --------------------------------------------------------------------------
     """
     types = load_contribution_types(types_path)
     if model["portal_variant"] not in types["portal_variants"]:
         raise CvDataError("unknown portal_variant %r" % model["portal_variant"])
+    hqp_block = _hqp_block(model, types, hqp, "latex") if hqp is not None else None
 
     language = model.get("language", "fr")
     clientele_labels = _clientele_labels(types, language)
@@ -295,11 +554,13 @@ def render_latex(model, types_path=None):
             parts.append("\\end{enumerate}\n\n")
         else:
             parts.append(section.get("prose", "") + "\n\n")
+    if hqp_block is not None:
+        parts.append(hqp_block)
     parts.append("\\end{document}\n")
     return "".join(parts)
 
 
-def render_text(model, types_path=None):
+def render_text(model, types_path=None, hqp=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -311,6 +572,7 @@ def render_text(model, types_path=None):
     --------------------------------------------------------------------------
     """
     types = load_contribution_types(types_path)
+    hqp_block = _hqp_block(model, types, hqp, "text") if hqp is not None else None
     language = model.get("language", "fr")
     clientele_labels = _clientele_labels(types, language)
     role_label, period_label, clientele_label = _item_labels(types, language)
@@ -339,7 +601,10 @@ def render_text(model, types_path=None):
         else:
             lines.append(section.get("prose", ""))
         lines.append("")
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    if hqp_block is not None:
+        text = text + "\n" + hqp_block
+    return text
 
 
 def count_pdf_pages(pdf_path):

@@ -117,6 +117,121 @@ class FakeSession:
         return self._consume("PUT", url, json, timeout)
 
 
+def settings(ref_year=2026, window=6, label="Six dernières années", excluded=()):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build a fictitious RenderSettings for a render.py/verify_titles.py/
+        push_wp.py test, with the same defaults the drafted code used
+        (ref_year 2026, window 6), so a byte-identical-output test can
+        still be written without repeating these numbers everywhere.
+
+    Inputs:
+        ref_year (int), window (int), label (str), excluded (iterable[str]):
+            see render.RenderSettings.
+
+    Outputs:
+        settings (render.RenderSettings).
+    --------------------------------------------------------------------------
+    """
+    import render
+
+    return render.RenderSettings(ref_year=ref_year, window=window, recent_label=label, excluded_funding_statuses=tuple(excluded))
+
+
+def grant(titre="Projet fictif A", debut="2024/1", fin="2026/1", statut="Obtenu", montant="100000", role="Chercheur principal"):
+    """Build a fictitious financement record (parse_cihr shape)."""
+    return {
+        "titre": titre,
+        "type": "Subvention",
+        "statut": statut,
+        "role": role,
+        "debut": debut,
+        "fin": fin,
+        "sources": [
+            {
+                "organisme": "Organisme Fictif",
+                "programme": "Programme Fictif",
+                "montant_total": montant,
+                "portion_recue": "",
+                "competitif": "Oui",
+            }
+        ],
+        "cochercheurs": [],
+    }
+
+
+def implication(nom="Comité Fictif Alpha", organisation="", categorie="comite", debut="2020/1", fin=""):
+    """Build a fictitious implications record (parse_cihr shape)."""
+    return {
+        "categorie": categorie,
+        "nom": nom,
+        "role": "Membre",
+        "organisation": organisation,
+        "debut": debut,
+        "fin": fin,
+        "description": "",
+    }
+
+
+def media(sujet="Entrevue fictive https://example.org/a", diffuseur="Emission Fictive", date="2024/3"):
+    """Build a fictitious media-type services_communaute record."""
+    return {"type": "media", "sujet": sujet, "diffuseur": diffuseur, "chaine": "Chaîne Fictive", "date": date}
+
+
+def entreprise(organisation="Entreprise Fictif Gamma", role="Responsable", debut="2023/1", fin="2023/6"):
+    """Build a fictitious entreprise-type services_communaute record."""
+    return {
+        "type": "entreprise",
+        "role": role,
+        "activite": "Atelier",
+        "organisation": organisation,
+        "resultat": "Succès",
+        "retombees": "Adoption",
+        "debut": debut,
+        "fin": fin,
+    }
+
+
+def evenement(nom="Évènement Fictif Delta", debut="2022/1", fin="2022/1"):
+    """Build a fictitious evenement-type services_communaute record."""
+    return {"type": "evenement", "role": "Organisateur", "nom": nom, "debut": debut, "fin": fin}
+
+
+def prix(nom="Prix Fictif Epsilon", organisation="Organisation Fictive Zeta", fin="2024/1", montant=""):
+    """Build a fictitious distinctions/prix record."""
+    return {"nom": nom, "organisation": organisation, "debut": "2024/1", "fin": fin, "montant": montant, "description": ""}
+
+
+def contribution_cle(titre="Contribution fictive clé", description="Description fictive"):
+    """Build a fictitious distinctions/contributions_cles record."""
+    return {"titre": titre, "date": "2020/1", "description": description}
+
+
+def student(
+    etudiant="Étudiant Fictif Un",
+    type_diplome="Doctorat",
+    statut="En cours",
+    debut="2022/9",
+    fin="",
+    role="Directeur de recherche",
+    titre_projet="Projet fictif",
+    **extra,
+):
+    """Build a fictitious render_phq student record (Phase 2 shape, D3)."""
+    rec = {
+        "etudiant": etudiant,
+        "type_diplome": type_diplome,
+        "statut": statut,
+        "debut": debut,
+        "fin": fin,
+        "role": role,
+        "titre_projet": titre_projet,
+    }
+    rec.update(extra)
+    return rec
+
+
 _CIHR_NS = "http://www.cihr-irsc.gc.ca/generic-cv/1.0.0"
 
 

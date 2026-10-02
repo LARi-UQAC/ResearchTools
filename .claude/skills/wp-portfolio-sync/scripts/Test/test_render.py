@@ -16,84 +16,21 @@ import unittest
 from pathlib import Path
 
 import _fixtures  # noqa: F401
-from _fixtures import make_data_dir
+from _fixtures import (
+    make_data_dir,
+    settings as _settings,
+    grant as _grant,
+    implication as _implication,
+    media as _media,
+    entreprise as _entreprise,
+    evenement as _evenement,
+    prix as _prix,
+    contribution_cle as _contribution_cle,
+    student as _student,
+)
 
 import wp_errors
 import render
-
-
-def _settings(ref_year=2026, window=6, label="Six dernières années", excluded=()):
-    return render.RenderSettings(
-        ref_year=ref_year, window=window, recent_label=label, excluded_funding_statuses=tuple(excluded)
-    )
-
-
-def _grant(titre="Projet fictif A", debut="2024/1", fin="2026/1", statut="Obtenu", montant="100000"):
-    return {
-        "titre": titre,
-        "type": "Subvention",
-        "statut": statut,
-        "role": "Chercheur principal",
-        "debut": debut,
-        "fin": fin,
-        "sources": [{"organisme": "Organisme Fictif", "programme": "Programme Fictif", "montant_total": montant, "portion_recue": "", "competitif": "Oui"}],
-        "cochercheurs": [],
-    }
-
-
-def _implication(nom="Comité Fictif Alpha", organisation="", categorie="comite", debut="2020/1", fin=""):
-    return {
-        "categorie": categorie,
-        "nom": nom,
-        "role": "Membre",
-        "organisation": organisation,
-        "debut": debut,
-        "fin": fin,
-        "description": "",
-    }
-
-
-def _media(sujet="Entrevue fictive https://example.org/a", diffuseur="Emission Fictive", date="2024/3"):
-    return {"type": "media", "sujet": sujet, "diffuseur": diffuseur, "chaine": "Chaîne Fictive", "date": date}
-
-
-def _entreprise(organisation="Entreprise Fictif Gamma", role="Responsable", debut="2023/1", fin="2023/6"):
-    return {"type": "entreprise", "role": role, "activite": "Atelier", "organisation": organisation, "resultat": "Succès", "retombees": "Adoption", "debut": debut, "fin": fin}
-
-
-def _evenement(nom="Évènement Fictif Delta", debut="2022/1", fin="2022/1"):
-    return {"type": "evenement", "role": "Organisateur", "nom": nom, "debut": debut, "fin": fin}
-
-
-def _prix(nom="Prix Fictif Epsilon", organisation="Organisation Fictive Zeta", fin="2024/1", montant=""):
-    return {"nom": nom, "organisation": organisation, "debut": "2024/1", "fin": fin, "montant": montant, "description": ""}
-
-
-def _contribution_cle(titre="Contribution fictive clé", description="Description fictive"):
-    return {"titre": titre, "date": "2020/1", "description": description}
-
-
-def _student(
-    etudiant="Étudiant Fictif Un",
-    type_diplome="Doctorat",
-    statut="En cours",
-    debut="2022/9",
-    fin="",
-    role="Directeur de recherche",
-    titre_projet="Projet fictif",
-    **extra,
-):
-    rec = {
-        "etudiant": etudiant,
-        "type_diplome": type_diplome,
-        "statut": statut,
-        "debut": debut,
-        "fin": fin,
-        "role": role,
-        "titre_projet": titre_projet,
-    }
-    rec.update(extra)
-    return rec
 
 
 class TestRenderSettings(unittest.TestCase):

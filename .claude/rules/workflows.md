@@ -184,6 +184,26 @@ internal (a hook, a rule, a script with no end-user-visible behavior) states tha
 its doc task rather than silently skipping the step, so an empty landing-page update reads as a
 decision and not an oversight.
 
+**R35 - no pull request opens until a local security review comes back clean.** Effective
+2026-10-02. The LAST task of every plan, after its doc task, is a security gate run in the
+session, not left to the reviewer on GitHub:
+
+1. Run `/security-review` and `/code-review` at `high` effort on the branch's full diff against
+   `main`. For any change that adds a check, a hook, a CI workflow or a permission, the review
+   asks explicitly who can bypass or weaken it: a pull request, a push to a branch, a push to
+   `main`, a caller repository, a missing dependency, a second run.
+2. Every finding is fixed with a test that FAILS on the code before the fix (R20), or declined
+   with a measurement recorded in the plan's `audit.md`.
+3. The review is re-run on the fixed branch, and the loop repeats until it returns no finding.
+   Only then is the PR opened (R30), and the PR body names the review rounds and what each
+   fixed.
+
+GitHub Copilot's review stays, as a confirmation rather than the first reader. Measured
+2026-10-01/02 on PR #40, the privacy guard: Copilot found 6 issues, then 1, then 1 more, one
+round each, every one of them a bypass a local "who can weaken this?" pass would have asked
+about. Three review rounds on a public repository is three windows in which a known gap was
+already merged-ready.
+
 ## Shared working tree
 
 Every session working `C:\Martin Otis\OutilsLogiciels\ResearchTools` shares ONE working tree and

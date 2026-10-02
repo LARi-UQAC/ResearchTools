@@ -257,3 +257,11 @@ refusal (an uninstalled tag: stop, exit 1, no report directory created).
 **Proven:** full offline suite 102 passed / 0 failed / 1 not run (pyhanko); `verify-no-personal-data.ps1` green; `verify-aider-plan.ps1` 33/33 before and after; `test_cv_common.py` 16 -> 18. Not run: `deploy/form-service/tests/test_api.py` (fastapi absent from `.venv-skills`, outside the offline runner).
 
 **Consequence:** `/cv` now resolves to `~/Your_CV/`, not the previous external folder that still holds the existing inventory; moving or linking it is the operator's decision. `aider-night.ps1` run straight from the repository now refuses as an uninstalled kit, by design.
+
+## 2026-10-01 - obsidian-cli / loop-engineer - the vault daemon did not survive a reboot or a slow Ollama
+
+**Change:** `vault_lock.py` records the holder's process start marker (`process_start_marker`) in the lock and reclaims a live pid whose marker differs (pid reused after a reboot); `ollama_bridge.resolve_model` wraps `ResolverError` into `BridgeError`, and `vault_daemon.context_window` wraps `ContextBudgetError` into `BridgeError`, so `run_forever` keeps polling when Ollama is not up yet.
+
+**Found:** `~/.claude/vault-daemon.log` against the Windows boot log: on 2026-09-29 the login daemon refused to start behind its own stale singleton lock (no daemon all day, three voice questions expired after 22 h), and 11 earlier deaths were `ResolverError: 'ollama list' exited 1 ... connection refused`.
+
+**Proven:** `test_vault_lock.py` 16 -> 23, `test_vault_daemon.py` 14 -> 18, `test_ollama_bridge.py` 33 -> 36, each regression watched failing first; full offline suite green. Known gap: a pid reused by a process this user cannot query, or a lock written before this change, is still read as the holder.

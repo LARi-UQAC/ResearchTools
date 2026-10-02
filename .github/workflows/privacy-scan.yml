@@ -29,11 +29,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Pick the trusted rules revision
+        env:
+          IS_RT: ${{ github.repository == 'LARi-UQAC/ResearchTools' }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # The rules that judge a change must predate it. In ResearchTools itself a push
+          # to main makes "main" the very commit under scan, so use the revision before the
+          # change: the PR base, or the commit before the push. A caller repository's
+          # events cannot change ResearchTools, so it uses ResearchTools main.
+          ref=main
+          if [ "$IS_RT" = "true" ]; then
+            if [ -n "$PR_BASE" ]; then ref=$PR_BASE
+            elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then ref=$BEFORE
+            fi
+          fi
+          echo "TRUSTED_REF=$ref" >> "$GITHUB_ENV"
+
       - name: Fetch the shared rules
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: LARi-UQAC/ResearchTools
-          ref: main
+          ref: ${{ env.TRUSTED_REF }}
           path: .privacy-guard
           sparse-checkout: .claude/hooks/git/privacy-rules.toml
           sparse-checkout-cone-mode: false
@@ -59,8 +77,8 @@ jobs:
 
       - name: Scan the added commits (authoritative, trusted rules)
         run: |
-          # The verdict always uses the rules on ResearchTools main, never a rules file
-          # from the checkout under review, which a pull request or a caller controls.
+          # The verdict always uses the trusted revision picked above, never a rules file
+          # from the checkout under review, which a pull request, a push or a caller controls.
           rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml
           if [ ! -f "$rules" ]; then
             # Bootstrap only: main has no rules file before the PR that introduces it.

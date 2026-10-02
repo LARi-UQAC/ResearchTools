@@ -130,6 +130,17 @@ class StaticContract(unittest.TestCase):
         self.assertIn("rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml", verdict_step)
         self.assertIn("continue-on-error: true", text[candidate:])
 
+    def test_trusted_rules_predate_the_change_on_a_push_to_main(self):
+        # PR #40 review of e566eda: on a push to main, "main" IS the commit being
+        # scanned, so it could weaken its own rules. The fetch must use a pinned ref.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        fetch = text[text.index("name: Fetch the shared rules"):text.index("name: Install betterleaks")]
+        self.assertIn("ref: ${{ env.TRUSTED_REF }}", fetch)
+        self.assertNotIn("ref: main", fetch)
+        picker = text[text.index("name: Pick the trusted rules revision"):text.index("name: Fetch the shared rules")]
+        self.assertIn("github.event.before", picker)
+        self.assertIn("github.event.pull_request.base.sha", picker)
+
     def test_installer_chains_every_documented_hook_except_the_measured_two(self):
         # githooks(5) of git 2.53, read from the installed githooks.adoc on 2026-10-02.
         documented = {

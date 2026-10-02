@@ -84,6 +84,16 @@ While updating `.claude/rules/code-style.md` to reflect the current rule roster 
 
 **Project stage:** plan1a+1b of a 3-plan design (docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md). Plan2 is the dashboard side; plan3 is governance/rollout/vault repo: properties.
 
+## 2026-10-02 - obsidian-cli / rt-observe - the voice panel now polls its answer in parts instead of waiting for one final reply
+
+**Change:** `POST /api/voice/ask` returns `{status: accepted, id}` at once instead of blocking; a new `GET /api/voice/answer?id=` route is what the browser polls repeatedly for the daemon's progressive answer (plan1a+1b). `voice_ask.py`'s `read_answer` replaces the removed `poll_answer` (one non-blocking read per call, instead of an internal sleep loop). `rt_state.voice_callables` now returns THREE callables - `transcribe_fn`, `ask_fn`, `answer_fn` - instead of two. The voice panel's JS speaks each answer part as it arrives, via a new `pollAnswer`/`queueUtterance` pair, giving up only after `CFG.timeouts_seconds.voice_ask_wait` seconds with no NEW part (tracked from the last part's own arrival, not from when the question was asked).
+
+**Files changed:** `voice_ask.py` (`read_answer`, `TERMINAL_STATUSES`), `observe-config.json` (new key `voice.answer_poll_ms`), `rt_state.py` (`voice_callables`'s three-tuple return; `view_config`'s new `voice.answer_poll_ms` and `timeouts_seconds.voice_ask_wait` keys), `rt_server.py` (new `voice_answer` parameter and `GET /api/voice/answer` route; `POST /api/voice/ask` now answers 202), `assets/rt_state.html` (the poll loop: `pollAnswer`, `queueUtterance`, `stopAnswerPoll`).
+
+**Tests:** `test_voice_ask.py` (7 -> 10), `test_voice_config.py` (5 -> 6), `test_voice_routes.py` (16 -> 22), `test_rt_view.py` (71 -> 76), `test_rt_state.py` (82 -> 87, voice wiring). All green.
+
+**Project stage:** plan2 of the 3-plan design (docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md). plan1a+1b (daemon side) is committed above; plan3 (governance/rollout/vault repo: properties) is still pending.
+
 ## 2026-08-28 - repo-wide hooks - a session now prints the hook inventory it actually loaded
 
 **Found:** a session opened showing only `Session: RTK=active | Caveman=full | git-sync=on`

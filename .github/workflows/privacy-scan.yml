@@ -31,19 +31,17 @@ jobs:
 
       - name: Pick the trusted rules revision
         env:
-          IS_RT: ${{ github.repository == 'LARi-UQAC/ResearchTools' }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_TO_RT_MAIN: ${{ github.repository == 'LARi-UQAC/ResearchTools' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           BEFORE: ${{ github.event.before }}
         run: |
-          # The rules that judge a change must predate it. In ResearchTools itself a push
-          # to main makes "main" the very commit under scan, so use the revision before the
-          # change: the PR base, or the commit before the push. A caller repository's
-          # events cannot change ResearchTools, so it uses ResearchTools main.
+          # The rules that judge a change must come from a revision the change cannot
+          # write. That is ResearchTools main in every case but one: a push TO
+          # ResearchTools main, where "main" is the commit under scan, so the commit before
+          # the push is used. Never a branch's own previous commit: a first push could
+          # weaken the rules and a second push would then be judged by them.
           ref=main
-          if [ "$IS_RT" = "true" ]; then
-            if [ -n "$PR_BASE" ]; then ref=$PR_BASE
-            elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then ref=$BEFORE
-            fi
+          if [ "$PUSH_TO_RT_MAIN" = "true" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            ref=$BEFORE
           fi
           echo "TRUSTED_REF=$ref" >> "$GITHUB_ENV"
 

@@ -139,7 +139,17 @@ class StaticContract(unittest.TestCase):
         self.assertNotIn("ref: main", fetch)
         picker = text[text.index("name: Pick the trusted rules revision"):text.index("name: Fetch the shared rules")]
         self.assertIn("github.event.before", picker)
-        self.assertIn("github.event.pull_request.base.sha", picker)
+
+    def test_a_branch_never_trusts_its_own_previous_commit(self):
+        # Copilot on f422053: a feature-branch push trusted github.event.before, so a
+        # rules-only first push could weaken the rules for the second. The pre-push
+        # revision is allowed ONLY for a push to ResearchTools main.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        picker = text[text.index("name: Pick the trusted rules revision"):text.index("name: Fetch the shared rules")]
+        self.assertIn("github.ref == 'refs/heads/main'", picker)
+        self.assertIn("github.event_name == 'push'", picker)
+        self.assertNotIn("pull_request.base.sha", picker)
+        self.assertRegex(picker, r"ref=main\n")
 
     def test_installer_chains_every_documented_hook_except_the_measured_two(self):
         # githooks(5) of git 2.53, read from the installed githooks.adoc on 2026-10-02.

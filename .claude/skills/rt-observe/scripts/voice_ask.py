@@ -19,7 +19,6 @@ import io
 import json
 import os
 import secrets
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -119,41 +118,46 @@ def write_ask_request(outbox_root: Path, question: str,
     return request_id
 
 
-def poll_answer(outbox_root: Path, request_id: str, timeout_s: float,
-               poll_interval_s: float, sleep=None, clock=None) -> dict:
+# Statuses daemon_ask.answer()/vault_daemon.py never publish again after:
+# deleting the file on any of these is what lets a slow second poll land
+# just after a fast first poll without re-reading a stale terminal answer
+# (test_a_second_read_after_a_terminal_one_is_pending). "partial" is
+# deliberately excluded - it is a mid-flight state the daemon is about to
+# overwrite, not a result a caller has finished reading.
+TERMINAL_STATUSES = {"ok", "error", "expired", "refused"}
+
+
+def read_answer(outbox_root: Path, request_id: str) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Wait for the daemon's answer file, bounded (R10). The file is removed
-        once read, so a second poll for the same id never re-reads a stale
-        answer.
+        One non-blocking read of the daemon's answer file - the dashboard's
+        own poll loop calls this repeatedly, rather than this function
+        blocking internally (2026-10-02, plan2: /api/voice/ask returns
+        "accepted" at once, and the browser polls /api/voice/answer).
 
     Inputs:
         outbox_root (Path): ~/.claude/obsidian-outbox
         request_id (str): from write_ask_request
-        timeout_s (float): total wait budget
-        poll_interval_s (float): wait between checks
-        sleep, clock (callable): injected for the suite (R19, R21)
 
     Outputs:
-        answer (dict): the daemon's answer payload, or
-        {"id", "status": "timeout", "reason": ...} when the budget runs out.
+        answer (dict): the file's own JSON content when it parses, with the
+        file DELETED afterward if its "status" is terminal (TERMINAL_
+        STATUSES) - a "partial" answer is left in place so the next poll
+        sees the daemon's later overwrite. {"status": "pending"} when the
+        file is absent or does not parse as JSON (a half-written file is
+        never observable, since the daemon writes it via tmp+replace, but a
+        reader still degrades rather than raising on anything it cannot
+        parse - R8).
     --------------------------------------------------------------------------
     """
-    sleep = sleep or time.sleep
-    clock = clock or time.monotonic
     path = Path(outbox_root) / "ask" / "answers" / f"{request_id}.json"
-    deadline = clock() + timeout_s
-    while clock() < deadline:
-        if path.exists():
-            try:
-                answer = json.loads(path.read_text(encoding="utf-8"))
-            except ValueError:
-                answer = None
-            path.unlink(missing_ok=True)
-            if answer is not None:
-                return answer
-        sleep(poll_interval_s)
-    return {"id": request_id, "status": "timeout",
-           "reason": f"no answer within {timeout_s}s; is the vault daemon "
-                     "running? (vault-daemon-autostart.ps1 -Status)"}
+    if not path.exists():
+        return {"status": "pending"}
+    try:
+        answer = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {"status": "pending"}
+    if answer.get("status") in TERMINAL_STATUSES:
+        path.unlink(missing_ok=True)
+    return answer

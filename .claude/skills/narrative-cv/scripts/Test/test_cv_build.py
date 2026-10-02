@@ -466,5 +466,85 @@ class TestHqp(unittest.TestCase):
         self.assertIn("s.o.", source[archive_idx:])
 
 
+class TestInline(unittest.TestCase):
+    def _write(self, tmp, model, files):
+        import json as _json
+
+        for name, content in files.items():
+            (Path(tmp) / name).write_text(content, encoding="utf-8")
+        path = Path(tmp) / "cv_model.json"
+        path.write_text(_json.dumps(model), encoding="utf-8")
+        return path
+
+    def test_inline_resolves_prose_file(self):
+        import tempfile
+
+        model = _model()
+        model["sections"]["1"] = {"title": "Déclaration personnelle", "prose_file": "s1.tex"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, model, {"s1.tex": r"\textbf{Parcours.} Texte."})
+            result = cv_build.inline_model(path)
+        self.assertEqual(result["sections"]["1"]["prose"], r"\textbf{Parcours.} Texte.")
+        self.assertNotIn("prose_file", result["sections"]["1"])
+        cv_build.assert_inline_model(result)
+
+    def test_inline_escape_refused(self):
+        import tempfile
+
+        model = _model()
+        model["sections"]["1"] = {"title": "X", "prose_file": "../x.tex"}
+        with tempfile.TemporaryDirectory() as tmp:
+            inner = Path(tmp) / "inner"
+            inner.mkdir()
+            (Path(tmp) / "x.tex").write_text("secret", encoding="utf-8")
+            model_path = self._write(inner, model, {})
+            out_path = inner / "out.json"
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path)]):
+                code = cv_build.main()
+        self.assertEqual(code, 1)
+        self.assertFalse(out_path.exists())
+
+    def test_inline_refuses_student_rows(self):
+        import tempfile
+
+        model = _model()
+        model["sections"]["3"]["hqp_rows"] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_path = Path(tmp) / "out.json"
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path)]):
+                code = cv_build.main()
+        self.assertEqual(code, 2)
+        self.assertFalse(out_path.exists())
+
+    def test_inline_same_path_refused(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(model_path)]):
+                code = cv_build.main()
+        self.assertEqual(code, 2)
+
+    def test_render_cli_unchanged(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_base = Path(tmp) / "out"
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "render", "--model", str(model_path), "--out", str(out_base),
+                    "--target", "both"]):
+                code = cv_build.main()
+            self.assertEqual(code, 0)
+            self.assertTrue(out_base.with_suffix(".tex").is_file())
+            self.assertTrue(out_base.with_suffix(".txt").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

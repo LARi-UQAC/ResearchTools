@@ -495,6 +495,33 @@ def _hqp_block(model, types, hqp, target):
     return render_hqp(rows_validated, language, rules["labels"], target)
 
 
+def inline_model(path):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Load a cv_model.json and strip every section's `prose_file` key,
+        producing a model ready to upload to ThesisTracker's /cv/build (which
+        refuses prose_file - C4, C9).
+
+    Inputs:
+        path (str or Path): the cv_model.json file
+
+    Outputs:
+        model (dict): load_model(path), with every prose_file key removed;
+            the result passes assert_inline_model
+
+    Raises:
+        CvDataError: same as load_model() (a prose_file missing, or
+            resolving outside the model's folder)
+    --------------------------------------------------------------------------
+    """
+    model = load_model(path)
+    for section in model.get("sections", {}).values():
+        if isinstance(section, dict):
+            section.pop("prose_file", None)
+    return model
+
+
 def render_latex(model, types_path=None, hqp=None):
     """
     --------------------------------------------------------------------------
@@ -703,6 +730,10 @@ def main():
     p_pages.add_argument("--language", required=True, choices=["fr", "en"])
     p_pages.add_argument("--types")
 
+    p_inline = sub.add_parser("inline")
+    p_inline.add_argument("--model", required=True)
+    p_inline.add_argument("--out", required=True)
+
     args = parser.parse_args()
 
     try:
@@ -724,10 +755,29 @@ def main():
             print(json.dumps({"filename": build_frq_filename(args.surname, args.frq_id, args.title)}))
         elif args.command == "check-pages":
             print(json.dumps(check_page_budget(args.pdf, args.language, args.types)))
+        elif args.command == "inline":
+            model_path, out_path = Path(args.model), Path(args.out)
+            if model_path.resolve() == out_path.resolve():
+                print(json.dumps({"status": "error", "message": "--out must not equal --model"}),
+                      file=sys.stderr)
+                return 2
+            model = inline_model(args.model)
+            offending = sorted(
+                key for key, section in model.get("sections", {}).items()
+                if isinstance(section, dict) and {"hqp", "hqp_rows", "rows"} & set(section))
+            if offending:
+                print(json.dumps({
+                    "status": "error",
+                    "message": "section(s) %s carry a student-row key; student rows never "
+                               "come from a file" % ", ".join(offending)}), file=sys.stderr)
+                return 2
+            out_path.write_text(json.dumps(model, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(json.dumps({"status": "written", "file": str(out_path)}, ensure_ascii=False))
     except CvDataError as exc:
         print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
-        sys.exit(1)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1057,5 +1057,75 @@ class ServedPage(unittest.TestCase):
         self.assertIn('"poll_ms": 2000', response.text)
 
 
+class VoiceAnswerPollCase(unittest.TestCase):
+    """2026-10-02, plan2 Task 6: structural checks on the voice panel's
+    per-part poll loop, since this suite checks the served page without a
+    browser (see the module docstring)."""
+
+    def setUp(self):
+        self.page = read(PAGE)
+
+    def test_poll_cadence_comes_from_config_not_a_literal(self):
+        self.assertIn("CFG.voice.answer_poll_ms", self.page)
+        self.assertIn(
+            "answer_poll_ms",
+            rt_state.view_config(rt_state.load_config())["voice"])
+        # Negative control: no bare numeric literal is handed to
+        # setInterval/setTimeout near the answer poll - every such call in
+        # the voice panel's own IIFE must read the cadence from CFG.
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        literal_poll = re.search(
+            r"set(?:Interval|Timeout)\([^,]+,\s*\d", voice_iife)
+        self.assertIsNone(
+            literal_poll,
+            "a literal interval/timeout value was found in the voice "
+            "panel; the poll cadence must come from CFG.voice.answer_poll_ms")
+
+    def test_the_answer_route_is_fetched_with_the_session_token(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        # Find the actual fetch() call, not a prose mention of the path in
+        # a comment - those can legitimately appear earlier in the file.
+        match = re.search(r'fetch\(\s*"[^"]*/api/voice/answer', voice_iife)
+        self.assertIsNotNone(match, "no fetch(...) call to /api/voice/answer "
+                                    "found in the voice panel")
+        answer_fetch = voice_iife[match.start():]
+        # The header must appear within the same fetch call, not merely
+        # somewhere later in the file.
+        self.assertIn("X-RT-Session-Token", answer_fetch[:400])
+
+    def test_parts_already_handled_are_not_requeued(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertTrue(
+            re.search(r"(partsHandled|handledParts|partsSeen)", voice_iife),
+            "no tracked already-handled-parts counter found near the poll "
+            "loop; a re-poll seeing the same parts array would requeue them")
+
+    def test_blank_text_parts_are_not_queued_for_speech(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("SpeechSynthesisUtterance", voice_iife)
+        # The guard must sit close to (within 300 chars before) the
+        # construction it protects, not merely appear somewhere earlier in
+        # an unrelated function.
+        idx = voice_iife.index("SpeechSynthesisUtterance")
+        nearby = voice_iife[max(0, idx - 300):idx]
+        self.assertTrue(
+            re.search(r"\.text\s*&&|\.text\.trim\(\)|\.trim\(\)\s*\)", nearby),
+            "no guard found immediately before SpeechSynthesisUtterance "
+            "keeping an empty/whitespace part's text out of the speech queue")
+
+    def test_the_poll_loop_has_a_stop_condition(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("clearInterval", voice_iife)
+        self.assertIn("voice_ask_wait",
+                      rt_state.view_config(rt_state.load_config())
+                      .get("timeouts_seconds", {}))
+        self.assertIn("CFG.timeouts_seconds.voice_ask_wait", voice_iife)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -354,7 +354,8 @@ def view_config(config):
         config (dict): the parsed observe-config.json
 
     Outputs:
-        view (dict): {"poll_ms", "canvas": {...}}
+        view (dict): {"poll_ms", "canvas": {...}, "voice": {...},
+        "timeouts_seconds": {"voice_ask_wait": ...}}
     --------------------------------------------------------------------------
     """
     canvas_keys = ("settle_ticks", "settle_ms", "spring", "repulsion",
@@ -376,7 +377,15 @@ def view_config(config):
         "canvas": {key: config_value(config, "view", "canvas", key)
                    for key in canvas_keys},
         "voice": {"partial_refresh_ms": config_value(
-            config, "voice", "partial_refresh_ms")},
+                     config, "voice", "partial_refresh_ms"),
+                 "answer_poll_ms": config_value(
+                     config, "voice", "answer_poll_ms")},
+        # Added 2026-10-02 (plan2 Task 6): the voice panel's per-part poll
+        # loop needs its own give-up bound, previously read server-side
+        # only (rt_state.voice_callables used to pass it to a blocking
+        # poll_answer - the panel now owns the wait itself).
+        "timeouts_seconds": {"voice_ask_wait": config_value(
+            config, "timeouts_seconds", "voice_ask_wait")},
     }
 
 

@@ -103,7 +103,7 @@ extending its default secret rules):
 
 A global `core.hooksPath` disables every repository's own `.git/hooks`, so the installed
 `pre-commit` runs the repository's hook at its end and `_chain` stands in for every other
-hook name. A deliberate exception is a `betterleaks:allow` marker on the line; a private
+hook name, except `reference-transaction` and `post-index-change`: they fire several times per command and chaining them made a commit cycle about six times slower (measured 2026-10-02), so a repository needing its own copy sets `core.hooksPath .git/hooks` locally and relies on CI. The installer refuses a target already holding another manager's hooks. CI scans every branch, and its verdict always uses the rules on ResearchTools `main`; a pull request's own rules run only in an informational step. A deliberate exception is a `betterleaks:allow` marker on the line; a private
 repository can opt out with `git config privacyguard.enabled false`. Real names are not
 detectable by pattern: rule R34 (fictitious identities in fixtures) is their only protection.
 

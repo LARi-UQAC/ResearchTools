@@ -118,6 +118,39 @@ class StaticContract(unittest.TestCase):
             self.assertRegex(ref, r"@[0-9a-f]{40}$", ref)
         self.assertRegex(text, r"\b[0-9a-f]{64}\s+bl\.tgz")
 
+    def test_workflow_scans_every_push_and_decides_with_the_trusted_rules(self):
+        # PR #40 review: a main-only push filter left other branches unscanned, and a
+        # rules file from the checkout under review could weaken its own verdict.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("branches:", text)
+        authoritative = text.index("(authoritative, trusted rules)")
+        candidate = text.index("(informational)")
+        self.assertLess(authoritative, candidate)
+        verdict_step = text[authoritative:candidate]
+        self.assertIn("rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml", verdict_step)
+        self.assertIn("continue-on-error: true", text[candidate:])
+
+    def test_installer_chains_every_documented_hook_except_the_measured_two(self):
+        # githooks(5) of git 2.53, read from the installed githooks.adoc on 2026-10-02.
+        documented = {
+            "applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit",
+            "pre-merge-commit", "prepare-commit-msg", "commit-msg", "post-commit",
+            "pre-rebase", "post-checkout", "post-merge", "pre-push", "pre-receive", "update",
+            "proc-receive", "post-receive", "post-update", "reference-transaction",
+            "push-to-checkout", "pre-auto-gc", "post-rewrite", "sendemail-validate",
+            "fsmonitor-watchman", "p4-changelist", "p4-prepare-changelist",
+            "p4-post-changelist", "p4-pre-submit", "post-index-change"}
+        text = (HOOKS / "install-git-hooks.ps1").read_text(encoding="utf-8")
+
+        def names(var):
+            block = re.search(r"\$%s = @\((.*?)\)" % var, text, re.S).group(1)
+            return set(re.findall(r'"([a-z0-9-]+)"', block))
+
+        chained, excluded = names("ChainNames"), names("ExcludedHooks")
+        self.assertEqual(excluded, {"reference-transaction", "post-index-change"})
+        self.assertEqual(chained | excluded | {"pre-commit"}, documented)
+        self.assertFalse(chained & excluded)
+
     def test_shell_scripts_have_no_carriage_return(self):
         # Git's sh fails with '\r: command not found' on a CRLF hook.
         for name in ("pre-commit", "_chain"):
@@ -158,6 +191,7 @@ class HookEndToEnd(unittest.TestCase):
         for name in ("pre-commit", "privacy-rules.toml"):
             shutil.copy(HOOKS / name, self.hooks / name)
         shutil.copy(HOOKS / "_chain", self.hooks / "post-commit")
+        shutil.copy(HOOKS / "_chain", self.hooks / "commit-msg")
         self.repo = Path(self.tmp) / "repo"
         self.repo.mkdir()
         self.env = isolated_env(self.tmp, USERNAME="zqacct", USER="zqacct")
@@ -167,10 +201,11 @@ class HookEndToEnd(unittest.TestCase):
                     ["git", "config", "core.hooksPath", self.hooks.as_posix()]):
             run(cmd, self.repo, self.env)
 
-    def commit(self, content, name="f.txt"):
+    def commit(self, content, name="f.txt", env=None):
+        env = env or self.env
         (self.repo / name).write_text(content, encoding="utf-8")
-        run(["git", "add", name], self.repo, self.env)
-        return run(["git", "commit", "-qm", "t"], self.repo, self.env)
+        run(["git", "add", name], self.repo, env)
+        return run(["git", "commit", "-qm", "t"], self.repo, env)
 
     def repo_hook(self, name, marker):
         hook = self.repo / ".git" / "hooks" / name
@@ -185,6 +220,24 @@ class HookEndToEnd(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.repo / "pre.marker").exists(), "repository pre-commit not chained")
         self.assertTrue((self.repo / "post.marker").exists(), "repository post-commit not chained")
+
+    def test_a_third_repository_hook_is_chained_too(self):
+        self.repo_hook("commit-msg", "msg.marker")
+        result = self.commit("nothing personal here\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.repo / "msg.marker").exists(), "repository commit-msg not chained")
+
+    def test_short_account_inside_a_word_passes(self):
+        # PR #40 review: account "dev" must not match "device" or "devops".
+        env = dict(self.env, USERNAME="dev", USER="dev")
+        result = self.commit("device driver and devops notes\n", env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_short_account_as_a_token_is_refused(self):
+        env = dict(self.env, USERNAME="dev", USER="dev")
+        result = self.commit("owner dev here\n", name="owner.txt", env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("owner.txt", result.stderr)
 
     def test_account_name_is_refused_without_echoing_the_line(self):
         result = self.commit("secret line zqacct here\n", name="notes.txt")
@@ -240,6 +293,36 @@ class Installer(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for name in ("pre-commit", "privacy-rules.toml", "pre-push", "commit-msg"):
             self.assertTrue((self.target / name).is_file(), name)
+        self.assertEqual(Path(self.global_hooks_path()), self.target)
+
+    def test_foreign_hook_already_in_the_target_is_refused_not_overwritten(self):
+        # PR #40 review: core.hooksPath equal to the target does not prove ownership.
+        self.target.mkdir()
+        foreign = "#!/bin/sh\necho another manager\n"
+        (self.target / "pre-push").write_text(foreign, encoding="utf-8")
+        run(["git", "config", "--global", "core.hooksPath", self.target.as_posix()], self.tmp, self.env)
+        result = self.install()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("pre-push", result.stdout)
+        self.assertEqual((self.target / "pre-push").read_text(encoding="utf-8"), foreign)
+        self.assertFalse((self.target / "pre-commit").exists())
+
+    def test_reinstall_over_its_own_files_succeeds(self):
+        self.assertEqual(self.install().returncode, 0)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_uninstall_unsets_and_leaves_the_files(self):
+        self.assertEqual(self.install().returncode, 0)
+        result = self.install("-Uninstall")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.global_hooks_path(), "")
+        self.assertTrue((self.target / "pre-commit").is_file())
+
+    def test_uninstall_dry_run_changes_nothing(self):
+        self.assertEqual(self.install().returncode, 0)
+        result = self.install("-Uninstall", "-DryRun")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(Path(self.global_hooks_path()), self.target)
 
     def test_another_hooks_path_is_refused_not_overwritten(self):

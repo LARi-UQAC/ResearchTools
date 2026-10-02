@@ -35,13 +35,26 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Git's client-side hook names that _chain stands in for (git-scm.com/docs/githooks).
-# pre-commit is excluded: it has its own script, which chains at its end.
+# Every hook name githooks(5) documents (git 2.53), minus three: pre-commit, which has its
+# own script and chains at its end, and the two below. _chain stands in for the rest so a
+# repository's own .git/hooks keep running under a global core.hooksPath.
 $ChainNames = @(
     "applypatch-msg", "pre-applypatch", "post-applypatch", "pre-merge-commit",
     "prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase", "post-checkout",
-    "post-merge", "pre-push", "post-rewrite", "pre-auto-gc"
+    "post-merge", "pre-push", "pre-receive", "update", "proc-receive", "post-receive",
+    "post-update", "push-to-checkout", "pre-auto-gc", "post-rewrite", "sendemail-validate",
+    "fsmonitor-watchman", "p4-changelist", "p4-prepare-changelist", "p4-post-changelist",
+    "p4-pre-submit"
 )
+# NOT chained, deliberately: they fire several times per ordinary command, and a chain
+# script spawns a shell each time. Measured 2026-10-02 on Windows: 10 add+commit+status
+# cycles took 575 ms each with no hook, 3598 ms with these two chained. A repository that
+# needs its own copy of one sets `git config core.hooksPath .git/hooks` locally (its
+# commits then rely on the privacy-scan CI alone).
+$ExcludedHooks = @("reference-transaction", "post-index-change")
+# A file in -Target is ours when it carries one of these markers; anything else belongs to
+# another hook manager and is never overwritten.
+$OwnMarkers = @("installed by install-git-hooks.ps1", 'title = "LARi privacy guard"')
 
 function Get-NormalPath([string]$Path) {
     <# Purpose: compare two spellings of one directory. Inputs: Path. Outputs: full path, forward slashes, no trailing slash. #>
@@ -60,15 +73,25 @@ $source  = $PSScriptRoot
 $targetN = Get-NormalPath $Target
 $current = (& git config --global --get core.hooksPath 2>$null)
 $currentN = Get-NormalPath $current
-$report = @{ target = $targetN; previous_hooks_path = $current; dry_run = [bool]$DryRun; files = @() }
+$report = @{ target = $targetN; previous_hooks_path = $current; dry_run = [bool]$DryRun; files = @();
+             not_chained = $ExcludedHooks }
 
 if ($Uninstall) {
     if ($currentN -ne $targetN) {
         $report.status = "unchanged"; $report.message = "core.hooksPath does not point to $targetN"
         Write-Report $report 0
     }
-    if (-not $DryRun) { & git config --global --unset core.hooksPath }
-    $report.status = $(if ($DryRun) { "dry-run" } else { "uninstalled" })
+    if ($DryRun) {
+        $report.status = "dry-run"; $report.message = "would unset core.hooksPath; files would stay in $targetN"
+        Write-Report $report 0
+    }
+    & git config --global --unset core.hooksPath
+    # R9: a native command's failure does not throw in PowerShell; read the effect back.
+    if (Get-NormalPath (& git config --global --get core.hooksPath 2>$null)) {
+        $report.status = "failed"; $report.message = "core.hooksPath is still set after --unset"
+        Write-Report $report 1
+    }
+    $report.status = "uninstalled"
     $report.message = "core.hooksPath unset; files left in $targetN"
     Write-Report $report 0
 }
@@ -91,6 +114,20 @@ $plan = @(
     @{ from = "privacy-rules.toml"; to = "privacy-rules.toml" }
 ) + ($ChainNames | ForEach-Object { @{ from = "_chain"; to = $_ } })
 $report.files = $plan | ForEach-Object { $_.to }
+
+# Path equality with core.hooksPath does not prove this guard owns the directory: another
+# manager may already keep its hooks there. Refuse before writing anything.
+$foreign = @($plan | Where-Object {
+    $dest = Join-Path $Target $_.to
+    if (-not (Test-Path -LiteralPath $dest)) { return $false }
+    $text = Get-Content -LiteralPath $dest -Raw -ErrorAction SilentlyContinue
+    -not ($OwnMarkers | Where-Object { $text -and $text.Contains($_) })
+} | ForEach-Object { $_.to })
+if ($foreign.Count -gt 0) {
+    $report.status = "refused"; $report.foreign_files = $foreign
+    $report.message = "$targetN already holds hooks this guard did not install: $($foreign -join ', ')"
+    Write-Report $report 2
+}
 
 $bl = Get-Command betterleaks -ErrorAction SilentlyContinue
 if (-not $bl) {

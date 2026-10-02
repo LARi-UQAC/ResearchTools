@@ -265,3 +265,5 @@ refusal (an uninstalled tag: stop, exit 1, no report directory created).
 **Found:** after the 2026-10-01 history purge, the operator asked for the 2026 best practice; it is three layers on one standard scanner (pre-commit, CI as the authoritative gate, GitHub push protection), not a custom scanner. Git 2.53 has no config-based hooks (probed), hence `core.hooksPath` plus chaining. Real names are out of scope by operator decision.
 
 **Proven:** `test_git_privacy_guard.py` 15 tests; the rules give zero findings on the current tree and on the full history.
+
+**PR #40 review (2026-10-02):** six Copilot findings fixed - installer ownership check, trusted CI rules, full githooks(5) list, uninstall read-back, whole-token account match, every-branch push scan. One partly declined with a measurement: `reference-transaction` and `post-index-change` are not chained, since chaining them took a commit cycle from 575 ms to 3598 ms. `test_git_privacy_guard.py` 15 -> 24 tests; four of the new ones fail on the pre-review code.

@@ -394,8 +394,7 @@ a GitHub Support request and fork owners deleting their forks. Do the four steps
    name: privacy-scan
    on:
      pull_request:
-     push:
-       branches: [main]
+     push:            # every branch, not only main: a branch with no PR is public too
    permissions:
      contents: read
    jobs:

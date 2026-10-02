@@ -12,8 +12,7 @@ name: privacy-scan
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  push:            # every branch: a branch with no PR is published too
   workflow_call:
 
 permissions:
@@ -47,18 +46,39 @@ jobs:
           tar -xzf bl.tgz betterleaks
           rm bl.tgz
 
-      - name: Scan the added commits
+      - name: Compute the commit range
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          # ResearchTools scans with the rules of the change under review; a caller
-          # repository uses the rules on ResearchTools main.
-          rules=.claude/hooks/git/privacy-rules.toml
-          [ -f "$rules" ] || rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            range="$HEAD"
+            echo "RANGE=$HEAD" >> "$GITHUB_ENV"
           else
-            range="$BASE..$HEAD"
+            echo "RANGE=$BASE..$HEAD" >> "$GITHUB_ENV"
           fi
-          ./betterleaks git --redact --no-banner --config "$rules" --log-opts="$range" .
+
+      - name: Scan the added commits (authoritative, trusted rules)
+        run: |
+          # The verdict always uses the rules on ResearchTools main, never a rules file
+          # from the checkout under review, which a pull request or a caller controls.
+          rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml
+          if [ ! -f "$rules" ]; then
+            # Bootstrap only: main has no rules file before the PR that introduces it.
+            echo "::warning::no rules on ResearchTools main yet; using the checked-out rules"
+            rules=.claude/hooks/git/privacy-rules.toml
+          fi
+          ./betterleaks git --redact --no-banner --config "$rules" --log-opts="$RANGE" .
+
+      - name: Scan with the candidate rules of this change (informational)
+        if: ${{ hashFiles('.claude/hooks/git/privacy-rules.toml') != '' }}
+        continue-on-error: true
+        run: |
+          # A pull request that edits the rules is exercised here, without being allowed
+          # to decide the verdict above.
+          trusted=.privacy-guard/.claude/hooks/git/privacy-rules.toml
+          candidate=.claude/hooks/git/privacy-rules.toml
+          if [ -f "$trusted" ] && cmp -s "$trusted" "$candidate"; then
+            echo "candidate rules identical to main; nothing extra to check"
+            exit 0
+          fi
+          ./betterleaks git --redact --no-banner --config "$candidate" --log-opts="$RANGE" .

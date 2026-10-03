@@ -117,7 +117,7 @@ graph LR
 | 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the 5 install steps |
 | 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys |
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx` |
-| 04 | [Skills](docs/manual/04-skills.md) | All 22 skills, the two memories |
+| 04 | [Skills](docs/manual/04-skills.md) | All 23 skills, the two memories |
 | 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings |
 | 06 | [Aider nightly pipeline](docs/manual/06-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
 | 07 | [rt-observe & dashboard](docs/manual/07-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard` |

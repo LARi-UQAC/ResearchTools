@@ -1,0 +1,25 @@
+{
+  "_comment": "wp-portfolio-sync tuning values. Every key follows R0/R4: no numeric literal lives in the scripts themselves, and every value here carries its own provenance.",
+  "http": {
+    "timeout_s": {
+      "value": 30,
+      "provenance": "chosen by the operator on 2026-10-01 (same value as form-service)"
+    },
+    "get_retries": {
+      "value": 2,
+      "provenance": "chosen by the operator on 2026-10-01; PUT is never retried by design"
+    }
+  },
+  "rest": {
+    "per_page": {
+      "value": 100,
+      "provenance": "specified: maximum per_page accepted by the WordPress REST API"
+    }
+  },
+  "preview": {
+    "snippet_chars": {
+      "value": 400,
+      "provenance": "inherited from the drafted preview.py, 2026-09-30"
+    }
+  }
+}

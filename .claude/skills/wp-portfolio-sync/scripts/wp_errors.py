@@ -11,7 +11,20 @@ EXIT_REFUSAL = 2
 
 
 class WpSyncError(Exception):
-    """A failure (network, HTTP, parse, or unverified write). Exit 1."""
+    """
+    A failure (network, HTTP, parse, or unverified write). Exit 1.
+
+    status_code (int or None): the HTTP status that caused it, when the
+    failure came from an HTTP response. None for a parse error, a timeout,
+    or any failure with no status to carry. A caller that needs to tell an
+    HTTP status apart from another kind of failure (e.g. discover.py
+    distinguishing WordPress's own end-of-pagination 400 from a real
+    error) reads this attribute rather than parsing the message text.
+    """
+
+    def __init__(self, *args, status_code=None):
+        super().__init__(*args)
+        self.status_code = status_code
 
 
 class WpRefusal(WpSyncError):

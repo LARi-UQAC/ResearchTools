@@ -54,8 +54,11 @@ def validate_mapping(mapping):
     --------------------------------------------------------------------------
     """
     entries = mapping.get("entries")
-    if not entries:
+    if not entries or not isinstance(entries, list):
         raise WpRefusal("mapping.yaml: 'entries' must be a non-empty list")
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise WpRefusal("entry %d: must be a mapping, got %s" % (index, type(entry).__name__))
 
     page_id_counts = {}
     for entry in entries:
@@ -247,10 +250,16 @@ def plan_pages(mapping, data, data_dir, settings):
             recent, history, notes = render_entry(entry, data, data_dir, settings)
             page["notes"].extend("%s: %s" % (label, note) for note in notes)
             page["blocks"].append({"marker": entry["recent_marker"], "label": label + ":recent", "html": recent})
+            # The history marker is always planned, even when history is empty
+            # (an exclusion or a changed ref_year can empty it between runs):
+            # otherwise a block already populated by an earlier push is never
+            # revisited and stays stale on the live page indefinitely.
             if history.strip():
                 heading = entry.get("history_heading", "Historique")
                 history_html = "<h3>%s</h3>\n%s" % (html.escape(heading), history)
-                page["blocks"].append({"marker": entry["history_marker"], "label": label + ":history", "html": history_html})
+            else:
+                history_html = ""
+            page["blocks"].append({"marker": entry["history_marker"], "label": label + ":history", "html": history_html})
         elif mode == "markers":
             node = get_path(data, cv_path)
             page["blocks"].append({"marker": entry["marker"], "label": label, "html": render_block(node, entry.get("heading", ""))})
@@ -438,18 +447,18 @@ def main(argv=None, environ=None, client_factory=None):
             for cv_path, title in gate_report["unapproved"]:
                 print("TITRE NON APPROUVE [%s] %s" % (cv_path, title), file=sys.stderr)
             raise WpRefusal("%d unapproved title(s); push refused" % len(gate_report["unapproved"]))
+
+        site = site_base(mapping, environ)
+        if client_factory is not None:
+            client = client_factory(data_dir, environ, site)
+        else:
+            client = client_from_config(make_session(data_dir, environ), site, load_config())
     except WpRefusal as exc:
         print("REFUS: %s" % exc, file=sys.stderr)
         return exit_code_for(exc)
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print("ERREUR: %s" % exc, file=sys.stderr)
         return 1
-
-    site = site_base(mapping, environ)
-    if client_factory is not None:
-        client = client_factory(data_dir, environ, site)
-    else:
-        client = client_from_config(make_session(data_dir, environ), site, load_config())
 
     pages = plan_pages(mapping, data, data_dir, settings)
     results = run_push(client, pages, args.apply)

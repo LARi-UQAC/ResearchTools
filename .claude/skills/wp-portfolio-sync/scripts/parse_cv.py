@@ -14,6 +14,7 @@ try:
 except ImportError:  # pragma: no cover - degrades to stdlib
     import xml.etree.ElementTree as ET
 
+from cihr_cv import ROOT_TAG as CIHR_ROOT_TAG
 from wp_common import configure_streams
 from wp_errors import WpRefusal, exit_code_for
 from wp_paths import contained_path, resolve_data_dir
@@ -77,18 +78,20 @@ def main(argv=None):
     parser.add_argument("xml")
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--out", default="cv.json")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     try:
         data_dir = resolve_data_dir(args.data_dir)
+        xml_path = contained_path(data_dir, args.xml)
         out_path = contained_path(data_dir, args.out)
     except WpRefusal as exc:
         print("REFUS: %s" % exc, file=sys.stderr)
         return exit_code_for(exc)
 
     try:
-        root = ET.parse(args.xml).getroot()
+        root = ET.parse(str(xml_path)).getroot()
     except ET.ParseError as exc:
         print("ERROR: invalid XML: %s" % exc, file=sys.stderr)
         return 1
@@ -97,17 +100,29 @@ def main(argv=None):
         return 1
 
     root_key = _strip_ns(root.tag)
-    data = {root_key: elem_to_obj(root)}
-    with open(out_path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, ensure_ascii=False, indent=2)
+    if root_key == CIHR_ROOT_TAG:
+        print(
+            "ERROR: this is a CIHR/CCV generic-cv export - use cihr_cv.py instead, "
+            "which has no supervision parser (D2). The generic parser applies no "
+            "section filtering and would publish whatever the tree holds.",
+            file=sys.stderr,
+        )
+        return 1
 
+    data = {root_key: elem_to_obj(root)}
     top = data[root_key]
     keys = list(top.keys()) if isinstance(top, dict) else []
-    print("Wrote %s" % out_path, file=sys.stderr)
+
+    if args.dry_run:
+        print("SIMULATION: would write %s" % out_path, file=sys.stderr)
+    else:
+        with open(out_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+        print("Wrote %s" % out_path, file=sys.stderr)
     print("Top-level sections (use as cv_path in mapping.yaml): %s" % keys, file=sys.stderr)
 
     if args.json:
-        print(json.dumps({"out": str(out_path), "sections": keys}, ensure_ascii=False))
+        print(json.dumps({"out": str(out_path), "dry_run": args.dry_run, "sections": keys}, ensure_ascii=False))
     return 0
 
 

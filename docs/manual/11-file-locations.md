@@ -93,7 +93,7 @@ ResearchTools\
                            wp_common.py, cihr_cv.py, parse_cv.py, render.py, verify_titles.py,
                            push_wp.py, discover.py, preview.py,
                            templates\mapping.example.yaml, cookies.json.example,
-                           Test\ [9 offline suites])
+                           Test\ [10 offline suites])
 ```
 
 ---

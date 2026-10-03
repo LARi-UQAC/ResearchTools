@@ -84,6 +84,14 @@ class TestValidateMapping(unittest.TestCase):
         with self.assertRaises(wp_errors.WpRefusal):
             push_wp.validate_mapping({"entries": []})
 
+    def test_non_list_entries_refused_not_attributeerror(self):
+        with self.assertRaises(wp_errors.WpRefusal):
+            push_wp.validate_mapping({"entries": "not-a-list"})
+
+    def test_scalar_entry_refused_not_attributeerror(self):
+        with self.assertRaises(wp_errors.WpRefusal):
+            push_wp.validate_mapping({"entries": ["not-a-dict"]})
+
     def test_missing_key_for_mode_refused(self):
         entry = {"cv_path": "financement", "page_id": 1, "mode": "split", "renderer": "financement"}
         with self.assertRaises(wp_errors.WpRefusal):
@@ -165,7 +173,12 @@ class TestRunPush(unittest.TestCase):
 
     def test_dry_run_never_puts(self):
         with tempfile.TemporaryDirectory() as tmp:
-            pages, client = self._fixture(tmp, [_one_financement_entry(201)], {"financement": [grant()]}, pages={201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r -->"})
+            pages, client = self._fixture(
+                tmp,
+                [_one_financement_entry(201)],
+                {"financement": [grant()]},
+                pages={201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"},
+            )
             results = push_wp.run_push(client, pages, apply=False)
             self.assertEqual(results[0]["status"], "would-change")
             self.assertEqual(client.puts, [])
@@ -184,6 +197,26 @@ class TestRunPush(unittest.TestCase):
             self.assertEqual(results[0]["status"], "unchanged")
             self.assertEqual(client.puts, [])
 
+    def test_empty_history_clears_stale_marker_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # grant() is recent under the default settings, so history is empty;
+            # the page still carries content from an earlier run when it wasn't.
+            data = {"financement": [grant()]}
+            pages, client = self._fixture(
+                tmp,
+                [_one_financement_entry(201)],
+                data,
+                pages={
+                    201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r -->"
+                    "<!-- cvsync:fin-h -->Projet fictif stale, 2015<!-- /cvsync:fin-h -->"
+                },
+            )
+            markers = {block["marker"] for block in pages[0]["blocks"]}
+            self.assertIn("fin-h", markers, "the history marker must always be planned, even when empty")
+            results = push_wp.run_push(client, pages, apply=True)
+            self.assertEqual(results[0]["status"], "updated")
+            self.assertNotIn("Projet fictif stale", client.pages[201])
+
     def test_one_put_per_page(self):
         with tempfile.TemporaryDirectory() as tmp:
             entries = [_one_financement_entry(201), dict(_one_financement_entry(201), cv_path="implications", renderer="implications", recent_marker="imp-r", history_marker="imp-h")]
@@ -192,7 +225,10 @@ class TestRunPush(unittest.TestCase):
                 tmp,
                 entries,
                 data,
-                pages={201: "<!-- cvsync:fin-r --><!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h --><!-- cvsync:imp-r --><!-- /cvsync:imp-r -->"},
+                pages={
+                    201: "<!-- cvsync:fin-r --><!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"
+                    "<!-- cvsync:imp-r --><!-- /cvsync:imp-r --><!-- cvsync:imp-h --><!-- /cvsync:imp-h -->"
+                },
             )
             self.assertEqual(len(pages), 1)
             results = push_wp.run_push(client, pages, apply=True)
@@ -268,6 +304,12 @@ class TestMainCli(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(client.gets, [])
         self.assertEqual(client.puts, [])
+
+    def test_missing_credentials_refused_not_raised(self):
+        self._mapping_and_cv()
+        # No client_factory: exercises the real make_session/client_from_config path.
+        code = push_wp.main(["--data-dir", str(self.data_dir), "--allow-empty-section"], environ={})
+        self.assertEqual(code, 2)
 
     def test_empty_section_refused(self):
         self._mapping_and_cv(data={"financement": []})

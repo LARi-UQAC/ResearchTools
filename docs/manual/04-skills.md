@@ -208,7 +208,7 @@ public) — the skill ships only fictitious templates and tests. Drives the
 - `.claude/skills/wp-portfolio-sync/scripts/push_wp.py` — mapping validation, page planning, the push
 - `.claude/skills/wp-portfolio-sync/scripts/discover.py`, `preview.py` — page discovery and the offline preview
 - `.claude/skills/wp-portfolio-sync/templates/mapping.example.yaml`, `cookies.json.example` — fictitious starting points
-- `.claude/skills/wp-portfolio-sync/scripts/Test/` — offline unit tests (9 suites; no network, no real data folder, fictitious fixtures only)
+- `.claude/skills/wp-portfolio-sync/scripts/Test/` — offline unit tests (10 suites; no network, no real data folder, fictitious fixtures only)
 
 ### `paper2talk` — accepted paper to conference talk
 

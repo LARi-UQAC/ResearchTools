@@ -87,12 +87,18 @@ verification is reported exactly as `failed`, not as a partial success.
 For each mapping entry carrying a `public_path`:
 
 ```bash
-curl -s "<site><public_path>?v=<unix-seconds>"
+curl -sS --max-time 30 "<site><public_path>?v=<unix-seconds>"
 ```
 
-Count the occurrences of `cvsync:<marker>` in the response for that entry's markers.
-Report, per page: OK, or the exact discrepancy (missing marker, unexpected count). The
-cache-busting `?v=` query avoids reporting stale cached content as a failure.
+The 30 s timeout matches the skill's own `http.timeout_s`
+(`scripts/wp-sync-config.json`), so a verification call never hangs past what the push
+itself would wait (R10). `-sS` stays silent on the progress meter but prints a transport
+error instead of swallowing it. Check curl's own exit code first: non-zero means the
+request itself failed (DNS, TLS, timeout) and must be reported as a network failure, never
+as "0 markers found" — those are different discrepancies. Only on exit 0 do you count the
+occurrences of `cvsync:<marker>` in the response for that entry's markers. Report, per
+page: OK, or the exact discrepancy (network failure, missing marker, unexpected count).
+The cache-busting `?v=` query avoids reporting stale cached content as a failure.
 
 ### Step 7 — Exit checklist
 

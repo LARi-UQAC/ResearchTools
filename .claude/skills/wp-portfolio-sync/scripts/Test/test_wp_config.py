@@ -71,5 +71,13 @@ class TestExitCodeMapping(unittest.TestCase):
         self.assertEqual(wp_errors.exit_code_for(ValueError()), 1)
 
 
+class TestStatusCode(unittest.TestCase):
+    def test_default_is_none(self):
+        self.assertIsNone(wp_errors.WpSyncError("x").status_code)
+
+    def test_can_be_set(self):
+        self.assertEqual(wp_errors.WpSyncError("x", status_code=400).status_code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -38,7 +38,26 @@ class _PagingClient:
 
 class _UnauthorizedClient:
     def get_json(self, route, params):
-        raise wp_errors.WpSyncError("401 Unauthorized for %s - check WP_APP_USER/WP_APP_PASSWORD" % route)
+        raise wp_errors.WpSyncError(
+            "401 Unauthorized for %s - check WP_APP_USER/WP_APP_PASSWORD" % route, status_code=401
+        )
+
+
+class _ExactBoundaryClient:
+    """Simulates WordPress's own behaviour: a page beyond the last one answers
+    400 rest_post_invalid_page_number, never an empty batch, when the site's
+    total page count is an exact multiple of per_page."""
+
+    def __init__(self, full_batches):
+        self.full_batches = list(full_batches)
+        self.gets = []
+
+    def get_json(self, route, params):
+        self.gets.append((route, params))
+        index = params["page"] - 1
+        if index < len(self.full_batches):
+            return self.full_batches[index]
+        raise wp_errors.WpSyncError("HTTP 400 for %s" % route, status_code=400)
 
 
 def _page(id_, slug):
@@ -56,6 +75,20 @@ class TestFetchPages(unittest.TestCase):
         client = _PagingClient([[]])
         pages = discover.fetch_pages(client, 100)
         self.assertEqual(pages, [])
+
+    def test_pagination_exact_boundary_stops(self):
+        client = _ExactBoundaryClient([[_page(1, "a"), _page(2, "b")]])
+        pages = discover.fetch_pages(client, 2)
+        self.assertEqual([p["id"] for p in pages], [1, 2])
+        self.assertEqual(len(client.gets), 2)
+
+    def test_pagination_real_error_still_raises(self):
+        class _AlwaysFails:
+            def get_json(self, route, params):
+                raise wp_errors.WpSyncError("HTTP 500 for %s" % route, status_code=500)
+
+        with self.assertRaises(wp_errors.WpSyncError):
+            discover.fetch_pages(_AlwaysFails(), 100)
 
 
 class TestDiscoverMain(unittest.TestCase):
@@ -106,6 +139,30 @@ class TestDiscoverMain(unittest.TestCase):
             client_factory=lambda *a: _UnauthorizedClient(),
         )
         self.assertEqual(code, 1)
+
+    def test_missing_credentials_refused_not_raised(self):
+        # No client_factory: exercises the real make_session/client_from_config path.
+        code = discover.main(
+            ["--data-dir", str(self.data_dir), "--site", "https://portfolio.example.org/researcher"],
+            environ={},
+        )
+        self.assertEqual(code, 2)
+
+    def test_dry_run_writes_nothing(self):
+        client = _PagingClient([[_page(1, "a")]])
+        out = self.data_dir / "config" / "pages.json"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = discover.main(
+                ["--data-dir", str(self.data_dir), "--site", "https://portfolio.example.org/researcher", "--dry-run", "--json"],
+                environ={},
+                client_factory=lambda *a: client,
+            )
+        self.assertEqual(code, 0)
+        self.assertFalse(out.exists())
+        report = json.loads(buf.getvalue())
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["count"], 1)
 
 
 class TestStaleNote(unittest.TestCase):

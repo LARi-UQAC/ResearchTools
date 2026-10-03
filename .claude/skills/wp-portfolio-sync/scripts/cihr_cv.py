@@ -272,18 +272,20 @@ def main(argv=None):
     parser.add_argument("xml")
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--out", default="cihr.json")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     try:
         data_dir = resolve_data_dir(args.data_dir)
+        xml_path = contained_path(data_dir, args.xml)
         out_path = contained_path(data_dir, args.out)
     except WpRefusal as exc:
         print("REFUS: %s" % exc, file=sys.stderr)
         return exit_code_for(exc)
 
     try:
-        root = ET.parse(args.xml).getroot()
+        root = ET.parse(str(xml_path)).getroot()
     except ET.ParseError as exc:
         print("ERREUR: XML invalide: %s" % exc, file=sys.stderr)
         return 1
@@ -307,18 +309,22 @@ def main(argv=None):
         )
         return 1
 
-    with open(out_path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, ensure_ascii=False, indent=1)
-
     counts = {
         key: ({sub: len(sv) for sub, sv in value.items()} if isinstance(value, dict) else len(value))
         for key, value in data.items()
     }
+
+    if args.dry_run:
+        print("SIMULATION: would write %s" % out_path, file=sys.stderr)
+    else:
+        with open(out_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=1)
+
     for key, count in counts.items():
         print("  %-20s %s" % (key, count), file=sys.stderr)
 
     if args.json:
-        print(json.dumps({"out": str(out_path), "counts": counts}, ensure_ascii=False))
+        print(json.dumps({"out": str(out_path), "dry_run": args.dry_run, "counts": counts}, ensure_ascii=False))
     return 0
 
 

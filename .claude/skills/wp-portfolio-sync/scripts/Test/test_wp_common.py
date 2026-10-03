@@ -99,6 +99,14 @@ class TestWpClient(unittest.TestCase):
             client.get_json("/route", {})
         self.assertIn("WP_APP_PASSWORD", str(ctx.exception))
         self.assertEqual(len(session.calls), 1)
+        self.assertEqual(ctx.exception.status_code, 401)
+
+    def test_get_4xx_carries_status_code(self):
+        session = FakeSession([FakeResponse(400)])
+        client = wp_common.WpClient(session, "https://site", 5, 2, retryable=(ConnectionError_,))
+        with self.assertRaises(wp_errors.WpSyncError) as ctx:
+            client.get_json("/route", {})
+        self.assertEqual(ctx.exception.status_code, 400)
 
     def test_get_5xx_retried(self):
         session = FakeSession([FakeResponse(503), FakeResponse(200, json_data={"ok": True})])

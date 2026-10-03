@@ -226,7 +226,7 @@ exercise them, set the required environment variables, then dry-run the entry po
   built, in dry run and in `--apply`, D6); `discover.py` (`fetch_pages`, paginating until a
   batch is empty or short); `preview.py` (`stale_ref_year_note`, the injected-year CLI boundary,
   R19, and the one guarantee that matters here - it makes no network call at all, proven by
-  patching `wp_common.make_session` to raise if called). All nine offline suites are fictitious
+  patching `wp_common.make_session` to raise if called). All ten offline suites are fictitious
   data only (R21): no real CV, no real page id, no real grant or student name, per the
   2026-10-01 personal-data purge that drove D7.
 - `latex-hygiene` skill: `tex_check.py` (thin CLI dispatching to sibling modules `tex_common.py`,

@@ -3,8 +3,9 @@ test_cihr_cv.py - offline tests for cihr_cv.py.
 
 Proves: the four-key, no-supervision contract (D2), data minimisation (the
 student name is never written even though the XML carries it), nested
-section discovery, the wrong-root and zero-record refusals, and output
-containment.
+section discovery, the wrong-root and zero-record refusals, and both
+input and output containment (D7: the XML itself lives under --data-dir,
+same as cihr.json).
 """
 import contextlib
 import io
@@ -56,7 +57,7 @@ class TestMain(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.data_dir = Path(self.tmp.name) / "data"
         self.data_dir.mkdir()
-        self.xml_path = Path(self.tmp.name) / "cv.xml"
+        self.xml_path = self.data_dir / "cv.xml"
         write_cihr_xml(self.xml_path)
 
     def test_student_never_written(self):
@@ -68,14 +69,32 @@ class TestMain(unittest.TestCase):
         text = out.read_text(encoding="utf-8")
         self.assertNotIn("Étudiante Témoin Zeta", text)
 
+    def test_relative_xml_resolved_against_data_dir(self):
+        out = self.data_dir / "cihr.json"
+        code = cihr_cv.main(["cv.xml", "--data-dir", str(self.data_dir), "--out", "cihr.json"])
+        self.assertEqual(code, 0)
+        self.assertTrue(out.exists())
+
+    def test_xml_outside_data_dir_refused(self):
+        outside_xml = Path(self.tmp.name) / "outside.xml"
+        write_cihr_xml(outside_xml)
+        code = cihr_cv.main([str(outside_xml), "--data-dir", str(self.data_dir)])
+        self.assertEqual(code, 2)
+
+    def test_xml_parent_escape_refused(self):
+        outside_xml = Path(self.tmp.name) / "outside.xml"
+        write_cihr_xml(outside_xml)
+        code = cihr_cv.main(["..\\outside.xml", "--data-dir", str(self.data_dir)])
+        self.assertEqual(code, 2)
+
     def test_wrong_root_refused(self):
-        bad_xml = Path(self.tmp.name) / "bad.xml"
+        bad_xml = self.data_dir / "bad.xml"
         ET.ElementTree(ET.Element("cv")).write(str(bad_xml))
         code = cihr_cv.main([str(bad_xml), "--data-dir", str(self.data_dir)])
         self.assertEqual(code, 1)
 
     def test_zero_records_refused(self):
-        empty_xml = Path(self.tmp.name) / "empty.xml"
+        empty_xml = self.data_dir / "empty.xml"
         ET.ElementTree(ET.Element("generic-cv")).write(str(empty_xml))
         code = cihr_cv.main([str(empty_xml), "--data-dir", str(self.data_dir), "--out", "empty.json"])
         self.assertEqual(code, 1)
@@ -99,6 +118,19 @@ class TestMain(unittest.TestCase):
             )
         self.assertEqual(code, 0)
         report = json.loads(buf.getvalue())
+        self.assertEqual(report["counts"]["financement"], 2)
+
+    def test_dry_run_writes_nothing(self):
+        out = self.data_dir / "cihr.json"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cihr_cv.main(
+                [str(self.xml_path), "--data-dir", str(self.data_dir), "--out", "cihr.json", "--dry-run", "--json"]
+            )
+        self.assertEqual(code, 0)
+        self.assertFalse(out.exists())
+        report = json.loads(buf.getvalue())
+        self.assertTrue(report["dry_run"])
         self.assertEqual(report["counts"]["financement"], 2)
 
 

@@ -447,13 +447,14 @@ class WpClient:
                 continue
             if response.status_code == 401:
                 raise WpSyncError(
-                    "401 Unauthorized for %s - check WP_APP_USER/WP_APP_PASSWORD" % route
+                    "401 Unauthorized for %s - check WP_APP_USER/WP_APP_PASSWORD" % route,
+                    status_code=401,
                 )
             if response.status_code >= 500:
-                last_exc = WpSyncError("HTTP %d for %s" % (response.status_code, route))
+                last_exc = WpSyncError("HTTP %d for %s" % (response.status_code, route), status_code=response.status_code)
                 continue
             if response.status_code >= 400:
-                raise WpSyncError("HTTP %d for %s" % (response.status_code, route))
+                raise WpSyncError("HTTP %d for %s" % (response.status_code, route), status_code=response.status_code)
             try:
                 return response.json()
             except ValueError as exc:

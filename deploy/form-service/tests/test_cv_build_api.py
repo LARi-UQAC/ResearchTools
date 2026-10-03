@@ -1,0 +1,190 @@
+"""
+test_cv_build_api.py - Offline unit tests for POST /cv/build.
+
+No network, no LaTeX compilation, no disk write: the narrative-cv skill
+functions run for real (they are pure), and the FastAPI test client drives
+the app in-process. Fictitious data only (CLAUDE.md global constraint).
+Run with the service venv from the repo root:
+    & $svc deploy/form-service/tests/test_cv_build_api.py
+"""
+
+import builtins
+import json
+import os
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+VALID_KEY = "k" * 48
+
+MODEL = {
+    "language": "fr",
+    "portal_variant": "frq_old_portal",
+    "candidate_name": "Martin Otis",
+    "document_title": "CV descriptif",
+    "sections": {
+        "1": {"title": "Parcours et compétences", "prose": "Texte de parcours."},
+        "2": {"title": "Contributions et expériences les plus importantes", "items": []},
+        "3": {"title": "Activités de supervision et de mentorat", "prose": "s.o.", "hqp_list": True},
+    },
+}
+
+RECENT_ROW = {
+    "name": "Étudiante Alpha", "cycle": "Maîtrise", "start": "2022-09", "end": "2024-08",
+    "consent_cv": "2026-09-01",
+}
+ARCHIVE_ROW = {
+    "name": "Étudiant Gamma", "cycle": "Doctorat", "start": "2015-09", "end": "2016-08",
+    "consent_cv": None,
+}
+
+
+def _model_without_hqp_list():
+    model = json.loads(json.dumps(MODEL))
+    del model["sections"]["3"]["hqp_list"]
+    return model
+
+
+class TestCvBuildApi(unittest.TestCase):
+    def setUp(self) -> None:
+        os.environ["FORM_SERVICE_KEY"] = VALID_KEY
+
+        from fastapi.testclient import TestClient
+        from app import main
+
+        self.client = TestClient(main.app)
+        self.headers = {"X-Form-Service-Key": VALID_KEY}
+
+    def tearDown(self) -> None:
+        os.environ.pop("FORM_SERVICE_MAX_BODY_BYTES", None)
+
+    def _post(self, body, headers=None):
+        return self.client.post(
+            "/cv/build", headers=self.headers if headers is None else headers,
+            content=json.dumps(body))
+
+    def test_missing_key_401(self) -> None:
+        response = self.client.post("/cv/build", content=json.dumps(
+            {"model": MODEL, "hqp": [], "reference_year": 2026}))
+        self.assertEqual(response.status_code, 401)
+
+    def test_wrong_key_401(self) -> None:
+        response = self._post({"model": MODEL, "hqp": [], "reference_year": 2026},
+                              headers={"X-Form-Service-Key": "j" * 48})
+        self.assertEqual(response.status_code, 401)
+
+    def test_oversized_body_413(self) -> None:
+        os.environ["FORM_SERVICE_MAX_BODY_BYTES"] = "10"
+        response = self._post({"model": MODEL, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 413)
+
+    def test_not_json_422(self) -> None:
+        response = self.client.post("/cv/build", headers=self.headers, content=b"not json")
+        self.assertEqual(response.status_code, 422)
+
+    def test_missing_model_422(self) -> None:
+        response = self._post({"hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_hqp_not_list_422(self) -> None:
+        response = self._post({"model": MODEL, "hqp": "not-a-list", "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_reference_year_bool_422(self) -> None:
+        response = self._post({"model": MODEL, "hqp": [], "reference_year": True})
+        self.assertEqual(response.status_code, 422)
+
+    def test_prose_file_422(self) -> None:
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["1"] = {"title": "X", "prose_file": "../../etc/passwd"}
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn("passwd", response.text)
+
+    def test_missing_consent_422_names_no_person(self) -> None:
+        bad_row = dict(RECENT_ROW, consent_cv=None)
+        with self.assertLogs(level="INFO") as captured:
+            response = self._post({"model": MODEL, "hqp": [bad_row], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("row 0", response.text)
+        self.assertNotIn("Étudiante Alpha", response.text)
+        self.assertNotIn("Étudiante Alpha", "\n".join(captured.output))
+
+    def test_rows_without_hqp_list_422(self) -> None:
+        response = self._post(
+            {"model": _model_without_hqp_list(), "hqp": [RECENT_ROW], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_build_both_200(self) -> None:
+        response = self._post(
+            {"model": MODEL, "hqp": [RECENT_ROW, ARCHIVE_ROW], "reference_year": 2026})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn(r"\textbf{Étudiante Alpha}", payload["latex"])
+        self.assertIn("- Étudiante Alpha", payload["text"])
+        self.assertEqual(payload["hqp"], {"recent": 1, "archive": 1})
+
+    def test_target_text_only(self) -> None:
+        response = self._post(
+            {"model": MODEL, "hqp": [RECENT_ROW], "reference_year": 2026, "target": "text"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["latex"])
+
+    def test_empty_hqp_200(self) -> None:
+        import cv_build
+
+        response = self._post({"model": MODEL, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["latex"], cv_build.render_latex(MODEL))
+        self.assertEqual(payload["hqp"], {"recent": 0, "archive": 0})
+
+    def test_nothing_written_to_disk(self) -> None:
+        real_open = builtins.open
+
+        def guarded_open(path, mode="r", *args, **kwargs):
+            if any(flag in mode for flag in ("w", "a", "x")):
+                raise AssertionError("disk write attempted: open(%r, %r)" % (path, mode))
+            return real_open(path, mode, *args, **kwargs)
+
+        def guarded_write_text(self_path, *args, **kwargs):
+            # builtins.open alone does not intercept pathlib.Path.write_text,
+            # which calls the C-level io machinery directly: patch it too, or
+            # a route that switched to Path.write_text would pass this test
+            # while still writing to disk.
+            raise AssertionError("disk write attempted: Path.write_text(%r)" % (self_path,))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                with patch("builtins.open", guarded_open), \
+                        patch("pathlib.Path.write_text", guarded_write_text):
+                    response = self._post(
+                        {"model": MODEL, "hqp": [RECENT_ROW], "reference_year": 2026})
+                self.assertEqual(response.status_code, 200)
+                # The cwd check alone misses a write to an absolute path
+                # elsewhere on disk; the two patches above are what actually
+                # enforce the no-write invariant everywhere, not this listing.
+                self.assertEqual(os.listdir(tmp), [])
+            finally:
+                os.chdir(cwd)
+
+    def test_malformed_model_422_not_500(self) -> None:
+        # {"sections": {}} passes a prose_file-only check, then crashes
+        # render_latex on model["portal_variant"] with a bare KeyError the
+        # route's `except CvDataError` does not catch.
+        response = self._post({"model": {"sections": {}}, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_existing_routes_unaffected(self) -> None:
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

@@ -46,6 +46,7 @@ There is no CORS middleware: a browser never calls this API.
 | `POST /pdf/sign` | raw PDF body; query `field`, `reason` (both optional) | `application/pdf`, header `X-Form-Signature-Field` |
 | `POST /pdf/validate` | raw PDF body | `{"signatures": [{field, intact, valid, trusted}]}` |
 | `GET /publications` | query `author`, `count` (max 25), `refresh` | `{"query", "author", "publications", "fetched_at", "cached"}` |
+| `POST /cv/build` | JSON body `model`, `hqp`, `reference_year`, `target` (optional) | `{"latex", "text", "hqp"}` |
 
 Status codes: `401` no or wrong key, `409` a signing refusal (nothing signable,
 already signed, or ambiguous which field), `413` body over the cap, `422` not a
@@ -66,6 +67,32 @@ person has never published". `count` is capped at 25, not a round 50: Scopus's
 STANDARD view refuses a page above 25 with HTTP 400. A cache hit costs no
 Scopus quota, so a cohort report over an already-seen roster makes no network
 call at all.
+
+## CV build
+
+`POST /cv/build` renders a researcher's narrative CV (CV-FRQ / tri-agency) plus
+the consenting students' rows, copying the `/pdf/fill` pattern: ThesisTracker
+calls, the service renders and returns, and keeps nothing (spec section 1).
+
+- **Nothing is compiled here.** The route returns the `.tex` source and the
+  plain text, never a PDF. Compiling LaTeX received over the network would let
+  it read server files, and TeX Live would add several hundred MB to this
+  `python:3.13-slim` image (C2). The PDF and the page-budget check stay local,
+  through `cv_build.py compile_latex` / `check-pages`.
+- **Nothing is stored.** No disk write, no body logged, no student name in any
+  error or log line - errors name a row by its index only (C3).
+- **Consent and the window.** A row inside the 6-year window (`end` null, or
+  `end` year within that window) needs `consent_cv`, or the request is refused
+  with `422` naming the row index. A row outside the window is archive, and
+  consent is not required there (C6).
+- **The row schema is closed.** `name`, `cycle`, `start`, `end`, `consent_cv`,
+  and the optional `current_position` / `current_employer`; an unknown key is
+  refused (C5).
+- **`prose_file` is refused.** A request whose model carries a `prose_file` key
+  is refused with `422` before any disk access, since a request body must
+  never pick a file on the server (C4, R24). Run
+  `cv_build.py inline --model <cv_model.json> --out <file.json>` locally first
+  to turn a model that uses `prose_file` into one with inline `prose`.
 
 ## Personal information
 

@@ -101,6 +101,25 @@
     "clientele": {"fr": "Clientèle", "en": "Audience"}
   },
 
+  "hqp": {
+    "_provenance": "window_years (6) chosen by the operator 2026-10-02: the narrative CV covers the last 6 years plus an archive, and consent (consent_cv) is not required for a row ending before that window. The labels were chosen the same date.",
+    "window_years": 6,
+    "labels": {
+      "fr": {
+        "recent_heading": "PHQ formés au cours des 6 dernières années",
+        "archive_heading": "Archive",
+        "ongoing": "en cours",
+        "none": "s.o."
+      },
+      "en": {
+        "recent_heading": "HQP trained in the last 6 years",
+        "archive_heading": "Archive",
+        "ongoing": "ongoing",
+        "none": "n/a"
+      }
+    }
+  },
+
   "categories": [
     {"id": "publications", "label_fr": "Publications (articles, communications, monographies, rapports, affiches, soumis ou acceptés)"},
     {"id": "mobilisation_connaissances", "label_fr": "Mobilisation des connaissances (vulgarisation, médias, balados, blogues, conférences publiques)"},

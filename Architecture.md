@@ -631,7 +631,10 @@ a cohort report over an already-seen roster costs no Scopus call at all, and the
 property of the key rather than of the caller, so the bucket is shared per process rather than
 per request. `deploy/docker-compose.yml` runs it alongside a `pgvector/pgvector` Postgres
 (needed by RT-7's corpus index, unrelated to the form path) and a Caddy front door whose
-hostname is read from the environment.
+hostname is read from the environment. RT-8 adds `POST /cv/build`, importing `cv_build.py` /
+`cv_common.py` from the *narrative-cv* skill (a third COPY into the image,
+`NARRATIVE_CV_SCRIPTS_DIR`): a stateless narrative-CV render with consenting HQP rows, no LaTeX
+compiled on the service (C2) and nothing stored (C3).
 
 ```mermaid
 flowchart LR
@@ -640,11 +643,12 @@ flowchart LR
   FS --> CERT[("certs volume<br/>signing material only")]
   FS -->|"GET /publications<br/>cached, rate limited"| SCOPUS[("Elsevier Scopus API<br/>key never leaves here")]
   FS --> PUBCACHE[("publications cache volume<br/>TTL, hashed key")]
+  FS -->|"/cv/build -> narrative-cv cv_build.py"| CVBUILD["narrative-cv skill<br/>cv_build.py (pure render)"]
   RT7["RT-7 corpus index<br/>(unrelated to the form path)"] --> DB[("db<br/>Postgres 17 + pgvector")]
 
   classDef svc fill:#D6F0ED,stroke:#1F9E8F,color:#10243E
   classDef store fill:#FBE9D9,stroke:#C9762F,color:#10243E
-  class TT,CADDY,FS,RT7 svc
+  class TT,CADDY,FS,RT7,CVBUILD svc
   class CERT,DB,SCOPUS,PUBCACHE store
 ```
 

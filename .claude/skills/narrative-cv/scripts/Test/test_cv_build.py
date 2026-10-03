@@ -340,5 +340,287 @@ class TestCompileLatex(unittest.TestCase):
         self.assertEqual(result["returncode"], 1)
 
 
+def _row(**overrides):
+    base = {
+        "name": "Étudiante Alpha",
+        "cycle": "Maîtrise",
+        "start": "2022-09",
+        "end": "2024-08",
+        "consent_cv": "2026-09-01",
+    }
+    base.update(overrides)
+    return base
+
+
+def _hqp_model(**overrides):
+    model = _model(**overrides)
+    model["sections"]["3"]["hqp_list"] = True
+    return model
+
+
+class TestHqp(unittest.TestCase):
+    def test_no_hqp_is_byte_identical(self):
+        self.assertEqual(cv_build.render_latex(_model()), cv_build.render_latex(_model(), hqp=None))
+        self.assertEqual(cv_build.render_text(_model()), cv_build.render_text(_model(), hqp=None))
+
+    def test_rules_shipped_with_provenance(self):
+        types = cv_build.load_contribution_types()
+        rules = cv_build.load_hqp_rules(types)
+        self.assertEqual(rules["window_years"], 6)
+        for language in ("fr", "en"):
+            labels = rules["labels"][language]
+            for key in ("recent_heading", "archive_heading", "ongoing", "none"):
+                self.assertTrue(labels[key])
+        self.assertTrue(types["hqp"]["_provenance"])
+
+    def test_rules_missing_key_named(self):
+        types = {}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.load_hqp_rules(types)
+        self.assertIn("hqp", str(ctx.exception))
+
+    def test_window_split(self):
+        rows = [_row(end="2021-06"), _row(end="2020-01"), _row(end=None)]
+        validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        recent = [r for r in validated if r["in_window"]]
+        archive = [r for r in validated if not r["in_window"]]
+        self.assertEqual(len(recent), 2)
+        self.assertEqual(len(archive), 1)
+
+    def test_consent_required_in_window(self):
+        rows = [_row(end="2024-08", consent_cv=None)]
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        message = str(ctx.exception)
+        self.assertIn("row 0", message)
+        self.assertNotIn("Étudiante Alpha", message)
+
+    def test_archive_without_consent_accepted(self):
+        rows = [_row(end="2015-06", consent_cv=None)]
+        validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        self.assertFalse(validated[0]["in_window"])
+
+    def test_unknown_key_refused(self):
+        rows = [_row(email="alpha@example.org")]
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        message = str(ctx.exception)
+        self.assertIn("row 0", message)
+        self.assertNotIn("Étudiante Alpha", message)
+
+    def test_unknown_key_name_itself_is_not_echoed(self):
+        # The unknown KEY, not only the row's name field, must never reach the
+        # message: a caller could put a free-form value in the key position.
+        rows = [_row(**{"Étudiante Alpha": True})]
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        message = str(ctx.exception)
+        self.assertIn("row 0", message)
+        self.assertNotIn("Étudiante Alpha", message)
+
+    def test_bad_dates_refused(self):
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row(start="2024/5")], reference_year=2026, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row(consent_cv="02-10-2026")], reference_year=2026, window_years=6)
+
+    def test_consent_cv_impossible_calendar_date_refused(self):
+        # "2026-99-99" matches the \d{4}-\d{2}-\d{2} shape but is not a real
+        # date; a shape-only check would wrongly treat this row as consenting.
+        rows = [_row(end="2024-08", consent_cv="2026-99-99")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_position_and_employer_type_refused(self):
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(
+                [_row(current_position=12345)], reference_year=2026, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(
+                [_row(current_employer=["not", "a", "string"])],
+                reference_year=2026, window_years=6)
+
+    def test_rows_without_hqp_list_refused(self):
+        model = _model()  # no hqp_list flag on section 3
+        with self.assertRaises(CvDataError):
+            cv_build.render_latex(model, hqp={"rows": [_row()], "reference_year": 2026})
+
+    def test_prose_file_refused(self):
+        model = _model()
+        model["sections"]["1"] = {"title": "X", "prose_file": "../x.tex"}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        message = str(ctx.exception)
+        self.assertIn("1", message)
+        self.assertNotIn("../x.tex", message)
+
+    def test_latex_escaping(self):
+        model = _hqp_model()
+        source = cv_build.render_latex(
+            model, hqp={"rows": [_row(name="A & B_C")], "reference_year": 2026})
+        self.assertIn(r"\textbf{A \& B\_C}", source)
+
+    def test_position_rendered(self):
+        model = _hqp_model()
+        rows = [
+            _row(name="Étudiante Beta", end="2024-08",
+                 current_position="Poste fictif", current_employer="Employeur fictif"),
+            _row(name="Étudiant Gamma", end=None),
+        ]
+        source = cv_build.render_latex(model, hqp={"rows": rows, "reference_year": 2026})
+        self.assertIn("Poste fictif, Employeur fictif", source)
+        self.assertIn("en cours", source)
+
+    def test_order_deterministic(self):
+        rows_a = [_row(name="Étudiante Beta", end="2024-08"), _row(name="Étudiante Alpha", end="2023-01")]
+        rows_b = list(reversed(rows_a))
+        model = _hqp_model()
+        source_a = cv_build.render_latex(model, hqp={"rows": rows_a, "reference_year": 2026})
+        source_b = cv_build.render_latex(model, hqp={"rows": rows_b, "reference_year": 2026})
+        self.assertEqual(source_a, source_b)
+
+    def test_english_labels(self):
+        model = _hqp_model(language="en")
+        source = cv_build.render_latex(model, hqp={"rows": [_row(end=None)], "reference_year": 2026})
+        self.assertIn("ongoing", source)
+        self.assertIn("HQP trained in the last 6 years", source)
+
+    def test_empty_lists_use_none_label(self):
+        model = _hqp_model()
+        source = cv_build.render_latex(model, hqp={"rows": [_row(end="2024-08")], "reference_year": 2026})
+        archive_idx = source.index("Archive")
+        self.assertIn("s.o.", source[archive_idx:])
+
+    def test_hqp_headings_render_as_subsections_of_section_3(self):
+        # The recent/archive lists are section-3 content: rendering them as
+        # \section* would give the document five top-level sections instead
+        # of the format's required three.
+        model = _hqp_model()
+        source = cv_build.render_latex(model, hqp={"rows": [_row()], "reference_year": 2026})
+        self.assertEqual(source.count(r"\section*{"), 3)
+        self.assertIn(r"\subsection*{", source)
+
+    def test_render_model_missing_portal_variant_refused(self):
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model({"sections": {}})
+        self.assertIn("portal_variant", str(ctx.exception))
+
+    def test_render_model_missing_section_title_refused(self):
+        model = _model()
+        model["sections"]["1"] = {"prose": "no title here"}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertIn("1", str(ctx.exception))
+
+
+class TestInline(unittest.TestCase):
+    def _write(self, tmp, model, files):
+        import json as _json
+
+        for name, content in files.items():
+            (Path(tmp) / name).write_text(content, encoding="utf-8")
+        path = Path(tmp) / "cv_model.json"
+        path.write_text(_json.dumps(model), encoding="utf-8")
+        return path
+
+    def test_inline_resolves_prose_file(self):
+        import tempfile
+
+        model = _model()
+        model["sections"]["1"] = {"title": "Déclaration personnelle", "prose_file": "s1.tex"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, model, {"s1.tex": r"\textbf{Parcours.} Texte."})
+            result = cv_build.inline_model(path)
+        self.assertEqual(result["sections"]["1"]["prose"], r"\textbf{Parcours.} Texte.")
+        self.assertNotIn("prose_file", result["sections"]["1"])
+        cv_build.assert_inline_model(result)
+
+    def test_inline_escape_refused(self):
+        import tempfile
+
+        model = _model()
+        model["sections"]["1"] = {"title": "X", "prose_file": "../x.tex"}
+        with tempfile.TemporaryDirectory() as tmp:
+            inner = Path(tmp) / "inner"
+            inner.mkdir()
+            (Path(tmp) / "x.tex").write_text("secret", encoding="utf-8")
+            model_path = self._write(inner, model, {})
+            out_path = inner / "out.json"
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path)]):
+                code = cv_build.main()
+        self.assertEqual(code, 1)
+        self.assertFalse(out_path.exists())
+
+    def test_inline_refuses_student_rows(self):
+        import tempfile
+
+        model = _model()
+        model["sections"]["3"]["hqp_rows"] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_path = Path(tmp) / "out.json"
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path)]):
+                code = cv_build.main()
+        self.assertEqual(code, 2)
+        self.assertFalse(out_path.exists())
+
+    def test_inline_same_path_refused(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(model_path)]):
+                code = cv_build.main()
+        self.assertEqual(code, 2)
+
+    def test_inline_overwrite_refused_without_yes(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_path = Path(tmp) / "out.json"
+            out_path.write_text("original content", encoding="utf-8")
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path)]):
+                code = cv_build.main()
+            self.assertEqual(code, 2)
+            self.assertEqual(out_path.read_text(encoding="utf-8"), "original content")
+
+    def test_inline_overwrite_allowed_with_yes(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_path = Path(tmp) / "out.json"
+            out_path.write_text("original content", encoding="utf-8")
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path),
+                    "--yes"]):
+                code = cv_build.main()
+            self.assertEqual(code, 0)
+            self.assertNotEqual(out_path.read_text(encoding="utf-8"), "original content")
+
+    def test_render_cli_unchanged(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_base = Path(tmp) / "out"
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "render", "--model", str(model_path), "--out", str(out_base),
+                    "--target", "both"]):
+                code = cv_build.main()
+            self.assertEqual(code, 0)
+            self.assertTrue(out_base.with_suffix(".tex").is_file())
+            self.assertTrue(out_base.with_suffix(".txt").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

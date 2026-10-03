@@ -128,7 +128,7 @@ graph LR
 
 Relationship diagrams and the 7-layer execution architecture for **this** repository:
 [Architecture.md](Architecture.md). The architecture **shared with the sibling repository
-ThesisTracker** (form catalogue, twenty-unit delivery plan) is a separate file,
+ThesisTracker** (form catalogue, twenty-two-unit delivery plan) is a separate file,
 [NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 09 above; do not confuse the two.
 
 ## Supported harnesses

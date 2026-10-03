@@ -150,17 +150,35 @@ class TestCvBuildApi(unittest.TestCase):
                 raise AssertionError("disk write attempted: open(%r, %r)" % (path, mode))
             return real_open(path, mode, *args, **kwargs)
 
+        def guarded_write_text(self_path, *args, **kwargs):
+            # builtins.open alone does not intercept pathlib.Path.write_text,
+            # which calls the C-level io machinery directly: patch it too, or
+            # a route that switched to Path.write_text would pass this test
+            # while still writing to disk.
+            raise AssertionError("disk write attempted: Path.write_text(%r)" % (self_path,))
+
         with tempfile.TemporaryDirectory() as tmp:
             cwd = os.getcwd()
             os.chdir(tmp)
             try:
-                with patch("builtins.open", guarded_open):
+                with patch("builtins.open", guarded_open), \
+                        patch("pathlib.Path.write_text", guarded_write_text):
                     response = self._post(
                         {"model": MODEL, "hqp": [RECENT_ROW], "reference_year": 2026})
                 self.assertEqual(response.status_code, 200)
+                # The cwd check alone misses a write to an absolute path
+                # elsewhere on disk; the two patches above are what actually
+                # enforce the no-write invariant everywhere, not this listing.
                 self.assertEqual(os.listdir(tmp), [])
             finally:
                 os.chdir(cwd)
+
+    def test_malformed_model_422_not_500(self) -> None:
+        # {"sections": {}} passes a prose_file-only check, then crashes
+        # render_latex on model["portal_variant"] with a bare KeyError the
+        # route's `except CvDataError` does not catch.
+        response = self._post({"model": {"sections": {}}, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
 
     def test_existing_routes_unaffected(self) -> None:
         response = self.client.get("/health")

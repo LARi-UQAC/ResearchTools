@@ -14,9 +14,11 @@ being findable only by reading `Architecture.md` prose.
 - **[Architecture.md](../../Architecture.md)** — this repository's own agent/skill/command
   architecture, seven layers, entirely internal to ResearchTools.
 - **[NEW_ARCHITECTURE.md](../../NEW_ARCHITECTURE.md)** — the shared architecture document for
-  the UQAC form engine, the system the two repositories make up together. It is committed
-  identically to `main` in both repositories (byte-for-byte, checked by `sha256sum`), so either
-  checkout tells the whole story. It carries the twenty-two planned units (`RT-*` on this side,
+  the UQAC form engine, the system the two repositories make up together. It is MEANT to be
+  committed identically to `main` in both repositories (byte-for-byte, checked by `sha256sum`),
+  so either checkout tells the whole story — except for a known, currently open divergence (its
+  own section 14, "Open items", names the line-count delta and the fix is the operator's job).
+  It carries the twenty-two planned units (`RT-*` on this side,
   `TT-*` on ThesisTracker's), their delivery status, and the data model and lifecycle both
   sides agree on. That content is deliberately not repeated here: a second copy is exactly the
   kind of drift this manual split exists to avoid (see [00-purpose.md](00-purpose.md)).

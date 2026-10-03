@@ -2,7 +2,8 @@
 
 Shared architecture document for the two repositories that make up the UQAC form engine:
 **ResearchTools** (`LARi-UQAC/ResearchTools`) and **ThesisTracker** (`JdUmuhoza/ThesisTracker`).
-The same file is committed to `main` in both, so either checkout tells the whole story.
+The same file is meant to be committed to `main` in both, so either checkout tells the whole
+story — except for a known, currently open divergence, see section 14 "Open items".
 
 **Status: in progress. 12 of 22 units delivered.** Twenty-two branches carry one plan document
 each, and issues track them. Written 2026-07-29.
@@ -979,7 +980,7 @@ critical path and can land last.
 | TT-10 | `feat/workflow-engine` | ThesisTracker #12 | Step instances; actor and capability enforcement; **returns with a mandatory reason**; **forced re-approval when a modification breaks an earlier signature**; signature stacking; **submission by email to the definition's address**; reopen at a named step |
 | TT-11 | `feat/student-timeline` | ThesisTracker #13 | Timeline template and instantiation on admission; forms, reports, seminar, papers per contribution, thesis milestones; dates shifted from the subject-calendar form's stored values |
 | TT-12 | `feat/correction-plans` | ThesisTracker #14 | Intake of ResearchTools audit artifacts; `review_findings` as a student worklist; a rejected finding needs a reason; the score is stored as reported, never recomputed |
-| RT-8 | `feat/cv-build-endpoint` | ResearchTools #46 | Stateless `POST /cv/build`: narrative CV (CV-FRQ / tri-agency) with consenting HQP rows, no LaTeX compiled, nothing stored. **Planned.** |
+| RT-8 | `feat/cv-build-endpoint` | ResearchTools #46 | Stateless `POST /cv/build`: narrative CV (CV-FRQ / tri-agency) with consenting HQP rows, no LaTeX compiled, nothing stored. **Implemented 2026-10-02, PR #47 open, not yet merged.** |
 | TT-13 | (not yet branched) | (not yet opened) | `/cv/build` client and the two separate consents (web sign-in and CV inclusion, A-2.1 art. 53.1). **Planned.** |
 
 Plans live at `docs/superpowers/plans/2026-07-29-<unit>.md` on each unit's own branch. Every plan

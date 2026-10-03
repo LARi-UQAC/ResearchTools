@@ -32,6 +32,7 @@ or as `"prose_file": "section1.tex"`, a file beside the model that
 load_model() reads (no backslash doubling, no assembly script).
 """
 import argparse
+import datetime
 import json
 import re
 import subprocess
@@ -281,19 +282,34 @@ def load_hqp_rules(types):
     return {"window_years": window_years, "labels": labels}
 
 
+_RENDER_REQUIRED_STR_FIELDS = ("portal_variant", "candidate_name", "document_title")
+
+
 def assert_inline_model(model):
     """
     --------------------------------------------------------------------------
     Purpose:
-        Refuse a cv_model.json whose sections reference a `prose_file` on
-        disk, since a request received over the network must never pick a
-        file on the server (R24, C4).
+        The route's only model check (deploy/form-service/app/cv_bridge.py):
+        refuse a cv_model.json that is not inline, or that is missing a
+        field render_latex()/render_text() access unconditionally, before
+        either renderer is ever called.
 
     Details:
-        Dict-shape checks only: no filesystem call is made, so the refusal
-        happens identically whether or not the named file exists. The
-        message names the offending section key, never the prose_file
-        value, so a path traversal attempt is never echoed back.
+        Two separate concerns, both dict-shape checks with no filesystem
+        call:
+        (1) no section may carry a `prose_file` key, since a request
+            received over the network must never pick a file on the server
+            (R24, C4) - the refusal fires identically whether or not the
+            named file exists, and the message names the offending section
+            key, never the prose_file value, so a path traversal attempt is
+            never echoed back;
+        (2) the fields render_latex()/render_text() read unconditionally
+            (`model["portal_variant"]`, and `section["title"]` for every
+            section among "1"/"2"/"3" that is present) must exist and be
+            non-empty strings, or a malformed request would otherwise reach
+            a bare KeyError inside the renderer - which the route's
+            `except CvDataError` does not catch - and surface as an
+            unhandled 500 instead of a 422.
 
     Inputs:
         model: the candidate cv_model.json document
@@ -303,7 +319,9 @@ def assert_inline_model(model):
 
     Raises:
         CvDataError: `model` is not a dict, `model["sections"]` is not a
-            dict, or any section carries a `prose_file` key
+            dict, any section carries a `prose_file` key, a required
+            top-level string field is missing or empty, or a present
+            section has no non-empty `title`
     --------------------------------------------------------------------------
     """
     if not isinstance(model, dict):
@@ -316,6 +334,14 @@ def assert_inline_model(model):
             raise CvDataError(
                 "section %s carries a prose_file key; an inline model must not "
                 "reference a file on disk" % key)
+    for field in _RENDER_REQUIRED_STR_FIELDS:
+        if not isinstance(model.get(field), str) or not model[field].strip():
+            raise CvDataError("model.%s must be a non-empty string" % field)
+    for key in ("1", "2", "3"):
+        section = sections.get(key)
+        if section and (not isinstance(section, dict) or not isinstance(section.get("title"), str)
+                         or not section["title"].strip()):
+            raise CvDataError("section %s must carry a non-empty 'title' string" % key)
 
 
 def validate_hqp_rows(rows, reference_year, window_years):
@@ -355,9 +381,11 @@ def validate_hqp_rows(rows, reference_year, window_years):
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             raise CvDataError("row %d is not an object" % index)
-        unknown = sorted(set(row) - set(HQP_ROW_KEYS))
-        if unknown:
-            raise CvDataError("row %d has unknown key(s): %s" % (index, ", ".join(unknown)))
+        if set(row) - set(HQP_ROW_KEYS):
+            # The key itself, not only a field's value, could be caller-controlled
+            # free text, so the message never echoes it (C3: a row is named by
+            # its index only).
+            raise CvDataError("row %d has an unknown key" % index)
         missing = [key for key in HQP_REQUIRED_KEYS if key not in row]
         if missing:
             raise CvDataError("row %d is missing key(s): %s" % (index, ", ".join(missing)))
@@ -372,8 +400,20 @@ def validate_hqp_rows(rows, reference_year, window_years):
         if end is not None and (not isinstance(end, str) or not _HQP_DATE_RE.match(end)):
             raise CvDataError("row %d: end must be null or match YYYY or YYYY-MM" % index)
         consent = row["consent_cv"]
-        if consent is not None and (not isinstance(consent, str) or not _HQP_CONSENT_RE.match(consent)):
-            raise CvDataError("row %d: consent_cv must be null or an ISO YYYY-MM-DD date" % index)
+        if consent is not None:
+            if not isinstance(consent, str) or not _HQP_CONSENT_RE.match(consent):
+                raise CvDataError("row %d: consent_cv must be null or an ISO YYYY-MM-DD date" % index)
+            try:
+                datetime.date.fromisoformat(consent)
+            except ValueError:
+                # The regex only checks digit shape; "2026-99-99" matches it
+                # but is not a real date, and a row cannot be authorized to
+                # appear in the CV on a consent record that cannot exist.
+                raise CvDataError("row %d: consent_cv is not a real calendar date" % index)
+        for field in ("current_position", "current_employer"):
+            value = row.get(field)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise CvDataError("row %d: %s must be null or a non-empty string" % (index, field))
         in_window = end is None or int(end[:4]) >= reference_year - window_years + 1
         if in_window and consent is None:
             raise CvDataError("row %d requires consent_cv (inside the consent window)" % index)
@@ -416,7 +456,10 @@ def _hqp_position_suffix(row, escape):
 
 
 def _hqp_block_latex(heading, rows, heading_labels):
-    parts = ["\\section*{%s}\n" % escape_latex(heading)]
+    # A subsection, never \section*: the recent/archive lists are section-3
+    # content, and a top-level \section* here would give the document five
+    # top-level sections instead of the format's required three.
+    parts = ["\\subsection*{%s}\n" % escape_latex(heading)]
     if not rows:
         parts.append("%s\n\n" % escape_latex(heading_labels["none"]))
         return "".join(parts)
@@ -733,6 +776,8 @@ def main():
     p_inline = sub.add_parser("inline")
     p_inline.add_argument("--model", required=True)
     p_inline.add_argument("--out", required=True)
+    p_inline.add_argument("--yes", action="store_true",
+                          help="required to overwrite an existing --out file")
 
     args = parser.parse_args()
 
@@ -759,6 +804,12 @@ def main():
             model_path, out_path = Path(args.model), Path(args.out)
             if model_path.resolve() == out_path.resolve():
                 print(json.dumps({"status": "error", "message": "--out must not equal --model"}),
+                      file=sys.stderr)
+                return 2
+            if out_path.exists() and not args.yes:
+                print(json.dumps({
+                    "status": "error",
+                    "message": "--out already exists; pass --yes to overwrite it"}),
                       file=sys.stderr)
                 return 2
             model = inline_model(args.model)

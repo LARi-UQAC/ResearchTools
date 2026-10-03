@@ -408,11 +408,37 @@ class TestHqp(unittest.TestCase):
         self.assertIn("row 0", message)
         self.assertNotIn("Étudiante Alpha", message)
 
+    def test_unknown_key_name_itself_is_not_echoed(self):
+        # The unknown KEY, not only the row's name field, must never reach the
+        # message: a caller could put a free-form value in the key position.
+        rows = [_row(**{"Étudiante Alpha": True})]
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        message = str(ctx.exception)
+        self.assertIn("row 0", message)
+        self.assertNotIn("Étudiante Alpha", message)
+
     def test_bad_dates_refused(self):
         with self.assertRaises(CvDataError):
             cv_build.validate_hqp_rows([_row(start="2024/5")], reference_year=2026, window_years=6)
         with self.assertRaises(CvDataError):
             cv_build.validate_hqp_rows([_row(consent_cv="02-10-2026")], reference_year=2026, window_years=6)
+
+    def test_consent_cv_impossible_calendar_date_refused(self):
+        # "2026-99-99" matches the \d{4}-\d{2}-\d{2} shape but is not a real
+        # date; a shape-only check would wrongly treat this row as consenting.
+        rows = [_row(end="2024-08", consent_cv="2026-99-99")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_position_and_employer_type_refused(self):
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(
+                [_row(current_position=12345)], reference_year=2026, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(
+                [_row(current_employer=["not", "a", "string"])],
+                reference_year=2026, window_years=6)
 
     def test_rows_without_hqp_list_refused(self):
         model = _model()  # no hqp_list flag on section 3
@@ -464,6 +490,27 @@ class TestHqp(unittest.TestCase):
         source = cv_build.render_latex(model, hqp={"rows": [_row(end="2024-08")], "reference_year": 2026})
         archive_idx = source.index("Archive")
         self.assertIn("s.o.", source[archive_idx:])
+
+    def test_hqp_headings_render_as_subsections_of_section_3(self):
+        # The recent/archive lists are section-3 content: rendering them as
+        # \section* would give the document five top-level sections instead
+        # of the format's required three.
+        model = _hqp_model()
+        source = cv_build.render_latex(model, hqp={"rows": [_row()], "reference_year": 2026})
+        self.assertEqual(source.count(r"\section*{"), 3)
+        self.assertIn(r"\subsection*{", source)
+
+    def test_render_model_missing_portal_variant_refused(self):
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model({"sections": {}})
+        self.assertIn("portal_variant", str(ctx.exception))
+
+    def test_render_model_missing_section_title_refused(self):
+        model = _model()
+        model["sections"]["1"] = {"prose": "no title here"}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertIn("1", str(ctx.exception))
 
 
 class TestInline(unittest.TestCase):
@@ -529,6 +576,35 @@ class TestInline(unittest.TestCase):
                     "cv_build.py", "inline", "--model", str(model_path), "--out", str(model_path)]):
                 code = cv_build.main()
         self.assertEqual(code, 2)
+
+    def test_inline_overwrite_refused_without_yes(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_path = Path(tmp) / "out.json"
+            out_path.write_text("original content", encoding="utf-8")
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path)]):
+                code = cv_build.main()
+            self.assertEqual(code, 2)
+            self.assertEqual(out_path.read_text(encoding="utf-8"), "original content")
+
+    def test_inline_overwrite_allowed_with_yes(self):
+        import tempfile
+
+        model = _model()
+        with tempfile.TemporaryDirectory() as tmp:
+            model_path = self._write(tmp, model, {})
+            out_path = Path(tmp) / "out.json"
+            out_path.write_text("original content", encoding="utf-8")
+            with patch.object(sys, "argv", [
+                    "cv_build.py", "inline", "--model", str(model_path), "--out", str(out_path),
+                    "--yes"]):
+                code = cv_build.main()
+            self.assertEqual(code, 0)
+            self.assertNotEqual(out_path.read_text(encoding="utf-8"), "original content")
 
     def test_render_cli_unchanged(self):
         import tempfile

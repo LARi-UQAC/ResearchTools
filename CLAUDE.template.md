@@ -402,6 +402,31 @@ Claude Code remains the **single** driver of writes into the vault. Do not invok
 (competing VS Code extensions, Claudian, AgriciDaniel and so on) on the same vault within one
 session, on pain of silent write conflicts that are hard to detect.
 
+## Scripts: always in ResearchTools, never in the scratchpad
+
+User instruction from 2026-09-27, valid in **every** session, regardless of working
+directory. It overrides the harness's generic guidance to send temporary files to the
+session scratchpad.
+
+- **Any script** (Python, PowerShell, shell or other), however short and however
+  single-use, is written inside ResearchTools, in the `scripts/` of the skill that calls
+  it, with its offline test in `Test/`. Never in the scratchpad, never in the folder of a
+  paper, a thesis, a grant, or a CV.
+- The scratchpad receives only temporary **outputs** (extracted text, intermediate JSON),
+  never code.
+- A "script" whose body is a list of values (inventory items, replacement pairs, a
+  document's text) is **data**: it goes into a JSON, YAML or `.tex` file inside the
+  project folder, and the harness that reads it goes into ResearchTools.
+- When a heredoc breaks (smart quotes, apostrophes), the answer is not a throwaway
+  script: write the data file with the Write tool, or extend the relevant ResearchTools
+  script with a flag that reads that file.
+- The procedure in "Improving ResearchTools from another folder" then applies
+  (`.rt-green.json`, `.rt-undo`, test, full suite, `-Sync`, `IMPROVEMENTS.md`).
+
+Measured 2026-09-27: during a CRSNG CV, two build scripts (`make_items.py`,
+`make_model.py`) were written to the scratchpad because a heredoc broke on apostrophes.
+Both were data disguised as code.
+
 ## Precedence
 
 - For Obsidian operations, this file is the global source of truth.

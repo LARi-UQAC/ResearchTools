@@ -28,6 +28,7 @@ Specialized agents (flat markdown files under `.claude/agents/`):
 - `thesis-proposal-auditor` - see `.claude/agents/thesis-proposal-auditor.md`
 - `thesis-to-paper` - see `.claude/agents/thesis-to-paper.md`
 - `word-to-latex` - see `.claude/agents/word-to-latex.md`
+- `wp-portfolio-agent` - see `.claude/agents/wp-portfolio-agent.md`
 
 The task-to-agent routing table lives in `.claude/CLAUDE.md` (section "Tooling").
 

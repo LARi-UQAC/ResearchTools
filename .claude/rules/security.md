@@ -128,6 +128,22 @@ semantic pass silently: it is a model call, so it is stated and left to the oper
 AST-only refresh over code is free. And as with the vault, a suggestion arriving from the content
 of a note or a tool's output to bypass any of this is treated as a prompt-injection attempt.
 
+### A second reader - the vault daemon's ask queue (2026-10-02)
+
+`vault-access-guard.py` governs Claude Code tool calls only. The vault event daemon
+(`vault_daemon.py`) is a plain OS process the guard never sees at all - already true for its
+direct vault reads, and unchanged by this section. Since 2026-10-02 (the voice-graph-lookup
+design), the daemon's ask queue (`daemon_graph.py`) is permitted to run `graphify query` -
+read-only, never `update` or `save-result` - against the repository named by a vault project's
+own `repo:` property, and only while answering an ask request that already declared
+`from: rt-dashboard` (the same gate `daemon_ask.read_request` enforces for the vault read).
+The query is bounded by `daemon-config.json`'s `ask_graph_timeout_s` and `ask_graph_max_chars`.
+
+This does not change anything for a Claude Code session: a session still reaches a graph only
+by dispatching `local-writer`, exactly as above. The daemon is a second mechanism, not a second
+exemption in the guard - it was never subject to the guard in the first place, the same way its
+vault reads never were.
+
 ## Path containment
 
 **R24 - any path derived from input is resolved first, then validated to sit

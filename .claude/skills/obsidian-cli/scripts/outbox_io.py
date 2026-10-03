@@ -32,9 +32,23 @@ CONFIG_PATH = Path(__file__).resolve().parents[1] / "daemon-config.json"
 DIRECTIVE = re.compile(
     r'^<!--\s*obsidian:\s*(create|append)\s+path="([^"]+)"\s*-->\s*$'
 )
+# A third, narrower directive (R5: one new literal, not a second regex
+# dialect): edit ONE frontmatter key of an EXISTING note in place, added
+# 2026-10-02 because create/append can only ever ADD a block after the
+# existing content - never usable for a key that must live in the block
+# Obsidian (and daemon_graph.read_repo_property) actually reads.
+SET_PROPERTY_DIRECTIVE = re.compile(
+    r'^<!--\s*obsidian:\s*set-property\s+path="([^"]+)"\s+key="([^"]+)"\s*-->\s*$'
+)
+FRONT_BLOCK = re.compile(r"(?s)\A---\n(.*?)\n---\n")
 LINK = re.compile(r"\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
 FENCE = re.compile(r"(?ms)^```.*?^```")
 CODE_SPAN = re.compile(r"`[^`\n]*`")
+
+
+class FrontmatterError(RuntimeError):
+    """set_frontmatter_property cannot apply: the target is missing, or its
+    first block is not a `---`-delimited frontmatter block."""
 
 
 class ConfigError(RuntimeError):
@@ -259,15 +273,85 @@ def write_note(action: str, target: Path, content: str) -> tuple:
 
 
 def parse_directive(text: str) -> tuple:
-    """Split a staged note into (action, relative path, content), or
-    (None, None, None) when the first line is not a directive."""
+    """Split a staged note into (action, relative path, content, key), or
+    (None, None, None, None) when the first line is not a directive. `key`
+    is non-None only for action == "set-property"; create/append always
+    return None there, so flush_one can route on `action` alone without a
+    second parse."""
     lines = text.splitlines()
     if not lines:
-        return None, None, None
+        return None, None, None, None
     match = DIRECTIVE.match(lines[0])
+    if match:
+        return (match.group(1), match.group(2),
+                "\n".join(lines[1:]).lstrip("\n"), None)
+    match = SET_PROPERTY_DIRECTIVE.match(lines[0])
+    if match:
+        return ("set-property", match.group(1),
+                "\n".join(lines[1:]).lstrip("\n"), match.group(2))
+    return None, None, None, None
+
+
+def set_frontmatter_property(target: Path, key: str, value: str) -> tuple:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Add or replace ONE frontmatter property of an EXISTING note, in
+        place, leaving every other key, the body, and the line order
+        untouched. append, and create on an existing file (which degrades
+        to append), both add a SECOND `---` block after the real one,
+        which nothing reads as frontmatter - this is the operation that
+        edits the first block, the one Obsidian and
+        daemon_graph.read_repo_property actually read. Measured 2026-10-02:
+        a staged `repo:` addition went out as `append` and would have
+        landed as dead text in a second, unread block.
+
+    Inputs:
+        target (Path): absolute path of an EXISTING note inside the vault
+        key (str): the frontmatter key to set, e.g. "repo"
+        value (str): the value to write, verbatim, on one line
+
+    Outputs:
+        result (tuple): (ok, before, after), the same shape write_note
+        returns (R9). `ok` is verified by RE-READING the file after the
+        write and confirming the key now holds `value` in its first block -
+        never inferred from a size delta, since replacing a long value with
+        a shorter one shrinks the file.
+
+    Raises:
+        FrontmatterError: `target` does not exist (this action never
+        creates a file - "create" exists for that), or its first block is
+        not a `---`-delimited frontmatter block.
+    --------------------------------------------------------------------------
+    """
+    if not target.exists():
+        raise FrontmatterError(f"set-property target does not exist: {target}")
+    text = target.read_text(encoding="utf-8")
+    match = FRONT_BLOCK.match(text)
     if not match:
-        return None, None, None
-    return match.group(1), match.group(2), "\n".join(lines[1:]).lstrip("\n")
+        raise FrontmatterError(f"{target} has no frontmatter block to edit")
+    before = target.stat().st_size
+
+    front_lines = match.group(1).split("\n")
+    key_line = re.compile(r"^%s:\s*.*$" % re.escape(key))
+    new_line = f"{key}: {value}"
+    replaced = False
+    for i, line in enumerate(front_lines):
+        if key_line.match(line):
+            front_lines[i] = new_line
+            replaced = True
+            break
+    if not replaced:
+        front_lines.append(new_line)
+
+    new_text = (text[:match.start(1)] + "\n".join(front_lines)
+               + text[match.end(1):])
+    target.write_text(new_text, encoding="utf-8", newline="")
+    after = target.stat().st_size
+
+    verify = FRONT_BLOCK.match(target.read_text(encoding="utf-8"))
+    ok = bool(verify) and new_line in verify.group(1).split("\n")
+    return ok, before, after
 
 
 def contained_target(vault: Path, rel: str):
@@ -327,7 +411,8 @@ def flush_one(md_file: Path, vault: Path, sent: Path, journal_path=None) -> bool
         ok (bool): True if the note was written and archived, else False
     --------------------------------------------------------------------------
     """
-    action, rel, content = parse_directive(md_file.read_text(encoding="utf-8"))
+    action, rel, content, key = parse_directive(
+        md_file.read_text(encoding="utf-8"))
     if action is None:
         print(f"[OUTBOX] skip (no directive): {md_file.name}", file=sys.stderr)
         return False
@@ -337,7 +422,10 @@ def flush_one(md_file: Path, vault: Path, sent: Path, journal_path=None) -> bool
         print(f"[OUTBOX] refused (outside vault): {rel}", file=sys.stderr)
         return False
 
-    warn_unresolved_links(rel, content, vault)
+    # set-property edits one existing key, in place; it has no note BODY to
+    # scan for a [[link]] the way create/append do.
+    if action != "set-property":
+        warn_unresolved_links(rel, content, vault)
 
     if journal_path is not None:
         import vault_journal
@@ -345,8 +433,12 @@ def flush_one(md_file: Path, vault: Path, sent: Path, journal_path=None) -> bool
                              target.stat().st_size if target.exists() else 0,
                              None, md_file.name, vault_journal.STATE_PENDING)
     try:
-        ok, before, after = write_note(action, target, content)
-    except OSError as exc:
+        if action == "set-property":
+            ok, before, after = set_frontmatter_property(
+                target, key, content.strip())
+        else:
+            ok, before, after = write_note(action, target, content)
+    except (OSError, FrontmatterError) as exc:
         print(f"[OUTBOX] write failed, keep {md_file.name}: {exc}", file=sys.stderr)
         return False
     if not ok:

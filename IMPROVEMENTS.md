@@ -74,6 +74,26 @@ While updating `.claude/rules/code-style.md` to reflect the current rule roster 
 
 **Graphify:** AST-only refresh at repository root (`graphify update .`) on the three edited rule files (code-style.md, workflows.md, and two supporting files). Semantic pass deferred: rules are documentation, not code; no semantic extraction justifies the model cost.
 
+## 2026-10-02 - obsidian-cli - the voice-ask queue now reaches a project's own code graph
+
+**Change:** The ask queue, previously vault-only, now answers questions by searching both the vault AND the project code graph (read-only `graphify query`). New module `daemon_graph.py` extracts keywords from a question, resolves the repository by walking upward from a vault hit's `index.md` property to find its `repo:` key, and queries the graph deterministically (AST-only, no model cost). `daemon_ask.answer()` now publishes in two parts: vault search results published via an injected `publish` callback BEFORE the graph part runs, so partial answers appear immediately while graph queries execute in the background. The three graph outcomes (ok/skipped/error) are kept apart, and a keyword-extraction failure is "error" per spec section 6's table, never "skipped".
+
+**Files changed:** `daemon_graph.py` (new module: extract_keywords, entity_repo, query_graph), `daemon_ask.py` (answer() now wires a callable publish; docstring now correctly states "calls graphify query"), `vault_daemon.py` (_write_answer gained a `consume=False` mode to support published partials; final write overwrites a partial even if answer() crashed after publishing), `daemon-config.json` (new keys `ask_search_roots`, `ask_keywords_max`, `ask_graph_budget_tokens`, `ask_graph_max_chars`, `ask_graph_timeout_s`, `ask_graph_sentences`).
+
+**Tests:** three new test files all passing. `test_daemon_graph.py` (23 tests): extract_keywords (schema-constrained, failure modes named), entity_repo (repository resolution via index.md property walking, orphan notes), query_graph (subprocess contract: list argv, cwd, timeout, truncation gate). `test_daemon_ask.py` (28 → 50 tests): old tests + accent-folded vault search, project/resource folder ranking, graph_sentence catalogue read from config, progressive publish with three graph outcomes. `test_vault_daemon.py` (14 → 19 tests): old tests + _write_answer consume=False path, run_ask_once wiring, final write overwriting partial, crash after publish still landing as error on disk.
+
+**Project stage:** plan1a+1b of a 3-plan design (docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md). Plan2 is the dashboard side; plan3 is governance/rollout/vault repo: properties.
+
+## 2026-10-02 - obsidian-cli / rt-observe - the voice panel now polls its answer in parts instead of waiting for one final reply
+
+**Change:** `POST /api/voice/ask` returns `{status: accepted, id}` at once instead of blocking; a new `GET /api/voice/answer?id=` route is what the browser polls repeatedly for the daemon's progressive answer (plan1a+1b). `voice_ask.py`'s `read_answer` replaces the removed `poll_answer` (one non-blocking read per call, instead of an internal sleep loop). `rt_state.voice_callables` now returns THREE callables - `transcribe_fn`, `ask_fn`, `answer_fn` - instead of two. The voice panel's JS speaks each answer part as it arrives, via a new `pollAnswer`/`queueUtterance` pair, giving up only after `CFG.timeouts_seconds.voice_ask_wait` seconds with no NEW part (tracked from the last part's own arrival, not from when the question was asked).
+
+**Files changed:** `voice_ask.py` (`read_answer`, `TERMINAL_STATUSES`), `observe-config.json` (new key `voice.answer_poll_ms`), `rt_state.py` (`voice_callables`'s three-tuple return; `view_config`'s new `voice.answer_poll_ms` and `timeouts_seconds.voice_ask_wait` keys), `rt_server.py` (new `voice_answer` parameter and `GET /api/voice/answer` route; `POST /api/voice/ask` now answers 202), `assets/rt_state.html` (the poll loop: `pollAnswer`, `queueUtterance`, `stopAnswerPoll`).
+
+**Tests:** `test_voice_ask.py` (7 -> 10), `test_voice_config.py` (5 -> 6), `test_voice_routes.py` (16 -> 22), `test_rt_view.py` (71 -> 76), `test_rt_state.py` (82 -> 87, voice wiring). All green.
+
+**Project stage:** plan2 of the 3-plan design (docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md). plan1a+1b (daemon side) is committed above; plan3 (governance/rollout/vault repo: properties) is still pending.
+
 ## 2026-08-28 - repo-wide hooks - a session now prints the hook inventory it actually loaded
 
 **Found:** a session opened showing only `Session: RTK=active | Caveman=full | git-sync=on`
@@ -257,3 +277,13 @@ refusal (an uninstalled tag: stop, exit 1, no report directory created).
 **Proven:** full offline suite 102 passed / 0 failed / 1 not run (pyhanko); `verify-no-personal-data.ps1` green; `verify-aider-plan.ps1` 33/33 before and after; `test_cv_common.py` 16 -> 18. Not run: `deploy/form-service/tests/test_api.py` (fastapi absent from `.venv-skills`, outside the offline runner).
 
 **Consequence:** `/cv` now resolves to `~/Your_CV/`, not the previous external folder that still holds the existing inventory; moving or linking it is the operator's decision. `aider-night.ps1` run straight from the repository now refuses as an uninstalled kit, by design.
+
+## 2026-10-02 - security.md / CLAUDE.md / CLAUDE.template.md / obsidian-cli vault properties - voice-graph-lookup governance, rollout, and vault mapping
+
+**Change:** `.claude/rules/security.md` names the vault daemon as a second, narrowly gated graph reader (read-only graph query only, gated on `from: rt-dashboard`); `.claude/CLAUDE.md`'s graphify routing row gained one sentence on the same mechanism, regenerated into `CLAUDE.template.md`'s RT-CONTRACT block via `rt-contract.ps1`. `README.md` and `docs/manual/07-rt-observe-dashboard.md` document the two-part spoken answer. Three vault projects (`Assistive-feeding-robot`, `CostEstimator`, `ResearchTools`) gained a `repo:` frontmatter property, mapping them to their code repositories. `CLAUDE.template.md` gained the one heading the live global `~/.claude/CLAUDE.md` had that the English template (translated 2026-08-30, U5) did not yet carry: "Scripts: always in ResearchTools, never in the scratchpad" (the live 2026-09-27 rule). With the operator's explicit go-ahead, `~/.claude/CLAUDE.md` was backed up to `~/.claude/CLAUDE.md.fr.bak` and replaced by the substituted English template, confirmed byte-identical by `check-claude-template.ps1` (0 differing lines).
+
+**Found:** while building the vault-to-repo mapping, a real data-integrity defect (see the 2026-10-02 entry above on the voice-ask queue): the first `repo:` staging attempt used append on an existing note, which always writes a second, never-read frontmatter block rather than editing in place. Caught by reading the staged outbox files directly rather than trusting the dispatching agent's own summary; the fix landed in `outbox_io.py` (commit `e22608a`). The first broken drafts had already auto-flushed before they could be deleted, corrupting both `Assistive-feeding-robot/index.md` and `CostEstimator/index.md` with a duplicate frontmatter+body block; a second dispatch repaired them directly, and a THIRD, independent read-only dispatch confirmed the repair clean (one frontmatter block each, `repo:` present, no duplicate body) rather than trusting the repair agent's own report.
+
+**Proven:** `test_graph_routing.py` 18/18, `test_vault_access_guard.py` 31/31, `verify-rt-contract.ps1` and `verify-template-audit.ps1` all passed after the template port, `check-claude-template.ps1` reporting 0 unclassified differences against the newly installed live global file.
+
+**Project stage:** plan3 of the 3-plan design (`docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md`), closing the feature. Tasks 1, 2, 3, 4, 5 and 6 done; Task 7 (live verification against the real running daemon) deferred to a dedicated session by operator choice, since it needs the branch merged or the live daemon pointed at this worktree.

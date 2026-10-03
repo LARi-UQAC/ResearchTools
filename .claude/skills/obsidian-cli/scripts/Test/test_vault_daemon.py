@@ -20,6 +20,8 @@ from unittest import mock
 
 from _daemon_fixtures import CONFIG, DaemonCase, GOOD_NOTE, TAG, TODAY, WINDOW, ds, reply, vd  # noqa: F401
 
+import daemon_ask  # noqa: E402
+
 
 class DaemonWriteTest(DaemonCase):
     # ---------- the happy paths, one per scope ----------
@@ -187,6 +189,86 @@ class DaemonWriteTest(DaemonCase):
                     self.assertEqual(
                         vd.main(["--outbox", str(self.outbox), "--dry-run"]), 0)
         self.assertEqual(len(self.daemon.pending()), 1)
+
+
+class AskPublishTest(DaemonCase):
+    """Non-consuming publish (vault_daemon._write_answer's `consume` flag)
+    and run_ask_once's wiring of it into daemon_ask.answer's `publish`."""
+
+    def _request_file(self, name="abc123"):
+        (self.outbox / "ask" / "requests").mkdir(parents=True, exist_ok=True)
+        path = self.outbox / "ask" / "requests" / f"{name}.json"
+        path.write_text(json.dumps({
+            "id": name, "from": "rt-dashboard",
+            "asked_at": "2026-08-28T12:00:00+00:00",
+            "question": "is this repo stale", "context_snapshot": {}}),
+            encoding="utf-8")
+        return path
+
+    def test_consume_false_writes_the_answer_and_keeps_the_request(self):
+        request_file = self._request_file()
+        self.daemon._write_answer(
+            request_file, {"status": "partial", "parts": []}, consume=False)
+        self.assertTrue(request_file.exists())
+        answer = json.loads(
+            (self.outbox / "ask" / "answers" / "abc123.json")
+            .read_text(encoding="utf-8"))
+        self.assertEqual(answer["status"], "partial")
+
+    def test_consume_default_true_removes_the_request(self):
+        request_file = self._request_file()
+        self.daemon._write_answer(request_file, {"status": "ok"})
+        self.assertFalse(request_file.exists())
+
+    def test_run_ask_once_wires_a_callable_publish_into_answer(self):
+        self._request_file()
+        captured = {}
+
+        def fake_answer(request, vault, model, window, timeout, config,
+                        today, publish=None):
+            captured["publish"] = publish
+            return {"status": "ok", "parts": [], "answer_text": "done",
+                   "sources": {}, "model_calls": 1}
+
+        with mock.patch.object(daemon_ask, "answer", side_effect=fake_answer):
+            self.daemon.run_ask_once(TAG, WINDOW)
+        self.assertTrue(callable(captured["publish"]))
+
+    def test_the_final_write_overwrites_a_published_partial_and_consumes(self):
+        request_file = self._request_file()
+
+        def fake_answer(request, vault, model, window, timeout, config,
+                        today, publish=None):
+            publish({"status": "partial", "parts": [{"stage": "vault"}]})
+            return {"status": "ok", "parts": [{"stage": "vault"},
+                                              {"stage": "graph"}],
+                   "answer_text": "final", "sources": {}, "model_calls": 2}
+
+        with mock.patch.object(daemon_ask, "answer", side_effect=fake_answer):
+            self.daemon.run_ask_once(TAG, WINDOW)
+        self.assertFalse(request_file.exists())
+        answer = json.loads(
+            (self.outbox / "ask" / "answers" / "abc123.json")
+            .read_text(encoding="utf-8"))
+        self.assertEqual(answer["status"], "ok")
+        self.assertEqual(len(answer["parts"]), 2)
+
+    def test_a_crash_after_publish_still_writes_a_final_error_not_partial(self):
+        request_file = self._request_file()
+
+        def fake_answer(request, vault, model, window, timeout, config,
+                        today, publish=None):
+            publish({"status": "partial", "parts": [{"stage": "vault"}]})
+            raise RuntimeError("boom after publish")
+
+        with mock.patch.object(daemon_ask, "answer", side_effect=fake_answer):
+            self.daemon.run_ask_once(TAG, WINDOW)
+        self.assertFalse(request_file.exists())
+        answer = json.loads(
+            (self.outbox / "ask" / "answers" / "abc123.json")
+            .read_text(encoding="utf-8"))
+        self.assertEqual(answer["status"], "error")
+        self.assertIn("boom after publish", answer["reason"])
 
 
 if __name__ == "__main__":

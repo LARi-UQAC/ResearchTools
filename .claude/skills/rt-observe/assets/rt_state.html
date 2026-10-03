@@ -5118,6 +5118,11 @@ renderRefresh();
   var pendingStop = false;
   var lastPartialText = "";
   var partialTimer = null;
+  var answerPollTimer = null;
+  // The four terminal statuses daemon_ask.answer()/voice_ask.read_answer
+  // agree on (voice_ask.TERMINAL_STATUSES) - "partial" is deliberately
+  // absent, since it means more parts are still coming.
+  var ANSWER_TERMINAL = { ok: 1, error: 1, expired: 1, refused: 1 };
 
   function setStatus(text) { if (status) { status.textContent = text; } }
 
@@ -5389,32 +5394,87 @@ renderRefresh();
     });
   }
 
+  function stopAnswerPoll() {
+    if (answerPollTimer) { window.clearInterval(answerPollTimer); answerPollTimer = null; }
+  }
+
+  // Shared by every part a poll delivers: a part with no text (or only
+  // whitespace) is shown but never queued, since most speech engines
+  // either no-op or raise on an empty utterance.
+  function queueUtterance(text, language) {
+    if (!window.speechSynthesis || !text || !text.trim()) { return; }
+    var utter = new SpeechSynthesisUtterance(text);
+    var tag = { en: "en-US", fr: "fr-FR" }[language];
+    if (tag) { utter.lang = tag; }
+    utter.onstart = function () { orbState = "speaking"; };
+    utter.onend = function () { orbState = "idle"; };
+    utter.onerror = function () { orbState = "idle"; };
+    window.speechSynthesis.speak(utter);
+  }
+
+  // Polls GET /api/voice/answer for one request id until a terminal status
+  // or until CFG.timeouts_seconds.voice_ask_wait seconds pass with no NEW
+  // part (tracked from the last part that arrived, not from when the
+  // question was asked - a slow graph part must not be cut off by a timer
+  // that started before the vault part even came back).
+  function pollAnswer(id, language) {
+    var partsHandled = 0;
+    var lastProgress = Date.now();
+    stopAnswerPoll();
+    answerPollTimer = window.setInterval(function () {
+      window.fetch("/api/voice/answer?id=" + encodeURIComponent(id), {
+        headers: { "X-RT-Session-Token": TOKEN },
+      }).then(function (r) { return r.json(); }).then(function (body) {
+        var parts = body.parts || [];
+        if (parts.length > partsHandled) {
+          lastProgress = Date.now();
+          for (; partsHandled < parts.length; partsHandled++) {
+            var part = parts[partsHandled];
+            if (part.text) {
+              answerEl.textContent += (answerEl.textContent ? " " : "") + part.text;
+            }
+            queueUtterance(part.text, language);
+          }
+        }
+        if (ANSWER_TERMINAL[body.status]) {
+          stopAnswerPoll();
+          if (!parts.length) {
+            setStatus(body.reason || ("answer status: " + body.status));
+            orbState = "idle";
+          } else {
+            setStatus("idle");
+          }
+          return;
+        }
+        if (Date.now() - lastProgress >
+            CFG.timeouts_seconds.voice_ask_wait * 1000) {
+          stopAnswerPoll();
+          setStatus("no answer within " + CFG.timeouts_seconds.voice_ask_wait + "s");
+          orbState = "idle";
+        }
+      }).catch(function (err) {
+        stopAnswerPoll();
+        setStatus("ask failed: " + err);
+        orbState = "idle";
+      });
+    }, CFG.voice.answer_poll_ms);
+  }
+
   function askQuestion(question, language) {
     setStatus("asking...");
     orbState = "asking";
+    answerEl.textContent = "";
     window.fetch("/api/voice/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN, question: question, language: language }),
     }).then(function (r) { return r.json(); }).then(function (body) {
-      if (body.status !== "ok") {
+      if (body.status !== "accepted") {
         setStatus(body.reason || ("answer status: " + body.status));
         orbState = "idle";
         return;
       }
-      answerEl.textContent = body.answer_text;
-      setStatus("idle");
-      if (window.speechSynthesis) {
-        var utter = new SpeechSynthesisUtterance(body.answer_text);
-        var tag = { en: "en-US", fr: "fr-FR" }[language];
-        if (tag) { utter.lang = tag; }
-        utter.onstart = function () { orbState = "speaking"; };
-        utter.onend = function () { orbState = "idle"; };
-        utter.onerror = function () { orbState = "idle"; };
-        window.speechSynthesis.speak(utter);
-      } else {
-        orbState = "idle";
-      }
+      pollAnswer(body.id, language);
     }).catch(function (err) {
       setStatus("ask failed: " + err);
       orbState = "idle";

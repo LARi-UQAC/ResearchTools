@@ -73,7 +73,9 @@ The `rt-observe` dashboard watching a live session: hook flow, fan-out to the tw
 (Obsidian vault, `graphify` graph), and a spawned subagent, all on loopback with no external
 service. A push-to-talk voice panel (hold P) lets you ask it a question about this toolkit's
 own memory out loud, answered by the local LLM through the vault daemon's ask queue and spoken
-back. Full walkthrough: [docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
+back in two parts: the vault answer first, then a code-structure note from the matched
+project's own `graphify` graph when its vault folder names a `repo:`. Full walkthrough:
+[docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
 
 ## Quickstart
 

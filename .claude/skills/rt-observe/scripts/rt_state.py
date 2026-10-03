@@ -14,6 +14,7 @@ rather than blanked.
 import argparse
 import io
 import json
+import re
 import secrets
 import sys
 import threading
@@ -353,7 +354,8 @@ def view_config(config):
         config (dict): the parsed observe-config.json
 
     Outputs:
-        view (dict): {"poll_ms", "canvas": {...}}
+        view (dict): {"poll_ms", "canvas": {...}, "voice": {...},
+        "timeouts_seconds": {"voice_ask_wait": ...}}
     --------------------------------------------------------------------------
     """
     canvas_keys = ("settle_ticks", "settle_ms", "spring", "repulsion",
@@ -375,7 +377,15 @@ def view_config(config):
         "canvas": {key: config_value(config, "view", "canvas", key)
                    for key in canvas_keys},
         "voice": {"partial_refresh_ms": config_value(
-            config, "voice", "partial_refresh_ms")},
+                     config, "voice", "partial_refresh_ms"),
+                 "answer_poll_ms": config_value(
+                     config, "voice", "answer_poll_ms")},
+        # Added 2026-10-02 (plan2 Task 6): the voice panel's per-part poll
+        # loop needs its own give-up bound, previously read server-side
+        # only (rt_state.voice_callables used to pass it to a blocking
+        # poll_answer - the panel now owns the wait itself).
+        "timeouts_seconds": {"voice_ask_wait": config_value(
+            config, "timeouts_seconds", "voice_ask_wait")},
     }
 
 
@@ -428,44 +438,57 @@ def audit_remote_sink(config, home, err=None):
     return rt_actions.build_remote_sink(values, home, timeout_s)
 
 
-def voice_callables(config, cache, home, write_request=None, poll=None,
+# The exact shape secrets.token_hex(8) produces (voice_ask.write_ask_request's
+# default ident), checked before any path is built from a caller-supplied id
+# (R24 defence in depth - the server route checks the SAME shape again,
+# independently, before ever calling answer_fn).
+_ANSWER_ID = re.compile(r"^[0-9a-f]{16}$")
+
+
+def voice_callables(config, cache, home, write_request=None, read=None,
                     transcribe=None):
     """
     --------------------------------------------------------------------------
     Purpose:
-        Build the two callables rt_server.build_server wires into the voice
-        routes, closing over the current cache snapshot so the ask relay's
-        context digest is always the freshest one this process has, with no
-        second collection pass.
+        Build the three callables rt_server.build_server wires into the
+        voice routes, closing over the current cache snapshot so the ask
+        relay's context digest is always the freshest one this process has,
+        with no second collection pass.
+
+        Since 2026-10-02 (plan2, voice-graph-lookup) `ask_fn` no longer
+        blocks: it writes the request and returns at once, and the browser
+        polls the new `answer_fn` repeatedly through GET /api/voice/answer
+        (plan1b's daemon now publishes the answer in parts, so a route that
+        blocked for one final answer could not show them as they arrive).
 
     Inputs:
         config (dict): parsed observe-config.json
         cache (rt_server.SnapshotCache): this process's live cache
         home (Path): for resolving paths.obsidian_outbox's "~/" spelling
-        write_request, poll, transcribe (callable): injected for the suite;
-        default to voice_ask.write_ask_request, voice_ask.poll_answer and
+        write_request, read, transcribe (callable): injected for the suite;
+        default to voice_ask.write_ask_request, voice_ask.read_answer and
         stt_engine.transcribe
 
     Outputs:
-        (transcribe_fn, ask_fn) (tuple): transcribe_fn(audio_bytes,
-        language="auto") -> str, ask_fn(question, language="auto") -> dict.
-        Both forward the voice panel's dropdown value end to end - to the
-        STT decode hint AND to the daemon's answer language - rather than
-        defaulting silently, since a route that reads the dropdown and a
-        callable that ignores it is a wiring gap this dashboard's own
-        docs would then be lying about.
+        (transcribe_fn, ask_fn, answer_fn) (tuple):
+        transcribe_fn(audio_bytes, language="auto") -> str forwards the
+        voice panel's dropdown value to the STT decode hint;
+        ask_fn(question, language="auto") -> {"status": "accepted", "id"};
+        answer_fn(request_id) -> dict, the request's current answer (from
+        `read`), or {"status": "refused", "reason"} when `request_id` does
+        not match the 16-lowercase-hex shape write_ask_request's own ids
+        always have - `read` is never called in that case.
     --------------------------------------------------------------------------
     """
     import stt_engine
     import voice_ask
 
     write_request = write_request or voice_ask.write_ask_request
-    poll = poll or voice_ask.poll_answer
+    read = read or voice_ask.read_answer
     transcribe = transcribe or stt_engine.transcribe
 
     text = config_value(config, "paths", "obsidian_outbox")
     outbox_root = (home / text[2:]) if text.startswith("~/") else Path(text)
-    wait_s = config_value(config, "timeouts_seconds", "voice_ask_wait")
 
     def transcribe_fn(audio_bytes, language="auto"):
         return transcribe(audio_bytes, config, language=language)
@@ -475,10 +498,15 @@ def voice_callables(config, cache, home, write_request=None, poll=None,
         digest = voice_ask.build_context_snapshot(state)
         request_id = write_request(outbox_root, question, digest,
                                    language=language)
-        return poll(outbox_root, request_id, timeout_s=wait_s,
-                   poll_interval_s=min(1.0, wait_s / 10))
+        return {"status": "accepted", "id": request_id}
 
-    return transcribe_fn, ask_fn
+    def answer_fn(request_id):
+        if not _ANSWER_ID.match(request_id or ""):
+            return {"status": "refused",
+                   "reason": f"invalid answer id {request_id!r}"}
+        return read(outbox_root, request_id)
+
+    return transcribe_fn, ask_fn, answer_fn
 
 
 def action_runner(args, config, cache, builders, clock):
@@ -633,7 +661,7 @@ def serve(args, config, out=None, err=None, clock=None,
                                    "name": repo_root.name}})
     runner = action_runner(args, config, cache, builders, clock)
     home = Path(args.home) if args.home else Path.home()
-    transcribe_fn, ask_fn = voice_callables(config, cache, home)
+    transcribe_fn, ask_fn, answer_fn = voice_callables(config, cache, home)
     voice_caps = {"voice_question_chars":
                  config_value(config, "caps", "voice_question_chars")}
     try:
@@ -648,7 +676,7 @@ def serve(args, config, out=None, err=None, clock=None,
             page_vars=lambda: {rt_server.VIEW_CONFIG_PLACEHOLDER:
                                json.dumps(view_config(load_config()))},
             voice_transcribe=transcribe_fn, voice_ask=ask_fn,
-            caps=voice_caps)
+            voice_answer=answer_fn, caps=voice_caps)
     except rt_server.ServerRefusal as exc:
         err.write("%s\n" % exc)
         return 2

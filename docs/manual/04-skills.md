@@ -175,6 +175,41 @@ stop, not a guess. Drives the `narrative-cv-writer` agent, reached via `/cv`.
 - `.claude/skills/narrative-cv/scripts/contribution_types.json` — section titles, clientele/category vocabularies, page budget, portal/font variants (data, not code)
 - `.claude/skills/narrative-cv/scripts/Test/test_cv_common.py`, `test_cv_inventory.py`, `test_cv_select.py`, `test_cv_build.py` — offline unit tests (61 cases; no network, no LaTeX install, no machine-local profile dependency)
 
+### `wp-portfolio-sync` — one-shot CIHR XML to WordPress migration
+
+Migrates a researcher's final CIHR / Canadian Common CV XML export into their WordPress
+portfolio exactly once, through the WordPress REST API, between `<!-- cvsync:MARKER -->`
+comments. After the push, the website is the source of truth for that content; the XML is
+never read again. No student data is parsed from the XML at all (no supervision parser
+exists in `cihr_cv.py`): student data is published from ThesisTracker once its own consent
+flow ships (Phase 2), and a mapping entry naming `renderer: phq` is refused everywhere a
+mapping is validated.
+
+| Stage | Script | Job |
+|---|---|---|
+| 1 — parse | `cihr_cv.py` / `parse_cv.py` | CIHR generic-cv XML (or a generic XML export) into a clean JSON document, refusing an XML with zero recognised sections rather than publishing "0 subventions" |
+| 2 — discover | `discover.py` | Lists WordPress pages (id, slug, title, link), first run only, to fill `mapping.yaml`'s `page_id` values |
+| 3 — render | `render.py` | Pure HTML renderers for financement/implications/services/distinctions, driven entirely by `mapping.yaml`'s `ref_year`/`recent_window`/`recent_label` (no hardcoded year); `render_phq` is a tested, unwired pure function reserved for Phase 2 |
+| 4 — gate | `verify_titles.py` | The anti-fabrication gate: every `<strong>` title a renderer produced must exist in the parsed CV, the entry's own extras file, or an approved static seed |
+| 5 — push | `push_wp.py` | Validates the mapping, runs the gate before any network call (in dry run and `--apply`), reads and writes `content.raw` only (never `content.rendered`), and verifies every write with a read-back GET |
+| — preview | `preview.py` | Offline report of what the push would change; makes no network call at all |
+
+All researcher data (the XML, `cihr.json`, `config/`) lives under an explicit `--data-dir`
+given on every command, which must resolve outside this repository (the repository is
+public) — the skill ships only fictitious templates and tests. Drives the
+`wp-portfolio-agent` agent, reached via `/portfolio`.
+
+**Files:**
+- `.claude/skills/wp-portfolio-sync/SKILL.md`
+- `.claude/skills/wp-portfolio-sync/scripts/wp_errors.py`, `wp_config.py`, `wp_paths.py`, `wp_common.py` — exceptions, the `{value, provenance}` config reader, data-folder containment, shared helpers and the bounded HTTP client (GET retries, PUT never retried)
+- `.claude/skills/wp-portfolio-sync/scripts/cihr_cv.py`, `parse_cv.py` — the two XML parsers
+- `.claude/skills/wp-portfolio-sync/scripts/render.py` — the HTML renderers and `render_entry`, the only function reading `config/`
+- `.claude/skills/wp-portfolio-sync/scripts/verify_titles.py` — the anti-fabrication gate
+- `.claude/skills/wp-portfolio-sync/scripts/push_wp.py` — mapping validation, page planning, the push
+- `.claude/skills/wp-portfolio-sync/scripts/discover.py`, `preview.py` — page discovery and the offline preview
+- `.claude/skills/wp-portfolio-sync/templates/mapping.example.yaml`, `cookies.json.example` — fictitious starting points
+- `.claude/skills/wp-portfolio-sync/scripts/Test/` — offline unit tests (9 suites; no network, no real data folder, fictitious fixtures only)
+
 ### `paper2talk` — accepted paper to conference talk
 
 Starts where `submit-checker` and `cover-paper` stop: the paper is accepted, the talk is the

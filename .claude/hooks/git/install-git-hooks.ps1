@@ -39,12 +39,14 @@ $ErrorActionPreference = "Stop"
 # below. _chain stands in for the rest so a repository's own .git/hooks keep running under
 # a global core.hooksPath. The privacy script itself is installed as pre-commit AND as
 # pre-merge-commit, since a clean merge runs only the latter and could otherwise carry new
-# content in unchecked; it chains to the repository's hook of its own name.
+# content in unchecked; it chains to the repository's hook of its own name. pre-push has its
+# own script: it scans every outgoing commit (--no-verify, cherry-pick, rebase never ran
+# pre-commit) and chains the repository's pre-push with the same stdin.
 $PrivacyHookNames = @("pre-commit", "pre-merge-commit")
 $ChainNames = @(
     "applypatch-msg", "pre-applypatch", "post-applypatch",
     "prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase", "post-checkout",
-    "post-merge", "pre-push", "pre-receive", "update", "proc-receive", "post-receive",
+    "post-merge", "pre-receive", "update", "proc-receive", "post-receive",
     "post-update", "push-to-checkout", "pre-auto-gc", "post-rewrite", "sendemail-validate",
     "fsmonitor-watchman", "p4-changelist", "p4-prepare-changelist", "p4-post-changelist",
     "p4-pre-submit"
@@ -75,7 +77,7 @@ function Write-Report([hashtable]$Report, [int]$Code) {
 
 $source  = $PSScriptRoot
 $targetN = Get-NormalPath $Target
-$current = (& git config --global --get core.hooksPath 2>$null)
+$current = (& git config --global --includes --get core.hooksPath 2>$null)
 $currentN = Get-NormalPath $current
 $report = @{ target = $targetN; previous_hooks_path = $current; dry_run = [bool]$DryRun; files = @();
              not_chained = $ExcludedHooks }
@@ -91,7 +93,7 @@ if ($Uninstall) {
     }
     & git config --global --unset core.hooksPath
     # R9: a native command's failure does not throw in PowerShell; read the effect back.
-    if (Get-NormalPath (& git config --global --get core.hooksPath 2>$null)) {
+    if (Get-NormalPath (& git config --global --includes --get core.hooksPath 2>$null)) {
         $report.status = "failed"; $report.message = "core.hooksPath is still set after --unset"
         Write-Report $report 1
     }
@@ -106,7 +108,7 @@ if ($current -and $currentN -ne $targetN) {
     Write-Report $report 2
 }
 
-foreach ($name in @("pre-commit", "_chain", "privacy-rules.toml")) {
+foreach ($name in @("pre-commit", "pre-push", "_chain", "privacy-rules.toml")) {
     if (-not (Test-Path -LiteralPath (Join-Path $source $name))) {
         $report.status = "refused"; $report.message = "source file missing: $name"
         Write-Report $report 2
@@ -115,7 +117,9 @@ foreach ($name in @("pre-commit", "_chain", "privacy-rules.toml")) {
 
 $plan = @(
     @{ from = "privacy-rules.toml"; to = "privacy-rules.toml" }
-) + ($PrivacyHookNames | ForEach-Object { @{ from = "pre-commit"; to = $_ } }) + ($ChainNames | ForEach-Object { @{ from = "_chain"; to = $_ } })
+) + ($PrivacyHookNames | ForEach-Object { @{ from = "pre-commit"; to = $_ } }) + @(
+    @{ from = "pre-push"; to = "pre-push" }
+) + ($ChainNames | ForEach-Object { @{ from = "_chain"; to = $_ } })
 $report.files = $plan | ForEach-Object { $_.to }
 
 # Path equality with core.hooksPath does not prove this guard owns the directory: another
@@ -151,7 +155,7 @@ foreach ($step in $plan) {
 & git config --global core.hooksPath $targetN
 
 # R9: verify the effect, not the exit codes.
-$after = Get-NormalPath (& git config --global --get core.hooksPath)
+$after = Get-NormalPath (& git config --global --includes --get core.hooksPath)
 $bad = $plan | Where-Object {
     (Get-FileHash -LiteralPath (Join-Path $Target $_.to)).Hash -ne (Get-FileHash -LiteralPath (Join-Path $source $_.from)).Hash
 }

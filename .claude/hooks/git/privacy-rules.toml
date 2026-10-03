@@ -37,7 +37,8 @@ regexes = ['''(?i)^(user|username|runner|ubuntu|example|you|someone)$''']
 id = "posix-users-account"
 description = "macOS or Git Bash home path naming an account (/Users/<name>, /c/Users/<name>)"
 # "Users" is case-sensitive on purpose: a lower-case "/users/<name>" is usually a URL path.
-regex = '''(?:^|[\s"'(=:`,])(?:/[a-zA-Z])?/Users/([\p{L}\p{N}][\p{L}\p{N}._-]+)'''
+# "+" because the hooks feed added diff lines ("+/Users/..."); "/" for file:///Users/...
+regex = '''(?:^|[\s"'(=:`,+/])(?:/[a-zA-Z])?/Users/([\p{L}\p{N}][\p{L}\p{N}._-]+)'''
 secretGroup = 1
 keywords = ["/Users/"]
 [[rules.allowlists]]

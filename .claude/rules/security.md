@@ -98,6 +98,7 @@ extending its default secret rules):
 | Layer | Where | Blocks |
 |---|---|---|
 | Global pre-commit hook | `core.hooksPath` -> `~/.config/git/hooks`, installed by `.claude/hooks/git/install-git-hooks.ps1` | the staged diff of every repository on this machine; also this machine's account name, which no static file can know |
+| Global pre-push hook | same directory, same installer | every commit a push would publish, messages included, whatever made it (`--no-verify`, cherry-pick, rebase, am never run pre-commit) |
 | CI | `.github/workflows/privacy-scan.yml`, reusable by the lab's other public repositories | the merge into `main`: as a required PR check it cannot be skipped by `--no-verify`. A push run only DETECTS: a pushed branch is already public, and `[skip ci]` or an edited workflow in that push can suppress the run |
 | GitHub push protection | repository setting, free on public repositories | standard secret formats, server side |
 
@@ -106,6 +107,12 @@ A global `core.hooksPath` disables every repository's own `.git/hooks`, so the i
 hook name, except `reference-transaction` and `post-index-change`: they fire several times per command and chaining them made a commit cycle about six times slower (measured 2026-10-02), so a repository's own copy of either does not run. The privacy script is also installed as `pre-commit`'s sibling `pre-merge-commit`, since a clean merge runs only that one. A repo-LOCAL `core.hooksPath` (husky sets one on `npm install`) overrides the global one and switches the guard off for that repository with no message: check `git config --local core.hooksPath` is empty. The hook and CI feed the scanner the diff as text (`--text`, `-m` in CI), so a `.gitattributes` `-diff` or a merge commit cannot hide content, and CI removes ignore files from the checkout. The installer refuses a target already holding another manager's hooks. CI's verdict uses rules the change under review cannot write: ResearchTools `main`, or the commit before a push to `main`; a pull request's own rules run only in an informational step. A deliberate exception is a `betterleaks:allow` marker on the line; a private
 repository can opt out with `git config privacyguard.enabled false`. Real names are not
 detectable by pattern: rule R34 (fictitious identities in fixtures) is their only protection.
+Only ADDED lines (and commit messages) are scanned, so a change that removes old data passes.
+
+Known limits, not covered by any layer: text stored as UTF-16, and the content or metadata of
+`.docx`, `.pdf` and other binary formats (author fields included), since the scanner reads the
+diff as text. The installed rules are a COPY in `~/.config/git/hooks`: a rules change reaches
+this machine's hooks only when `install-git-hooks.ps1` is run again (CI always uses `main`).
 
 ## Obsidian command safety
 

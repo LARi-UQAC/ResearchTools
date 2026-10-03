@@ -4,7 +4,7 @@
 # The last local chokepoint before a branch becomes public: scans every commit the
 # push would publish, whatever made it - a commit with --no-verify, cherry-pick,
 # revert, am, rebase or stash never pass through pre-commit. Same rules and the same
-# added-lines-only text diff as the pre-commit hook. Then runs the repository's own
+# added-lines-only text diff as the pre-commit hook, plus each commit's message. Then runs the repository's own
 # pre-push hook with the same arguments and the same stdin, because a global
 # core.hooksPath otherwise disables it.
 #
@@ -33,7 +33,7 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
                 set -- "$lsha" --not --remotes                       # new branch: what no remote has
             fi
             git log -p --text -m -U0 --no-color --no-ext-diff --no-textconv "$@" \
-                | awk '/^diff --git /{h=1; next} h && /^@@/{h=0; next} h{next} /^\+/{print}' \
+                | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
                 | (cd "${TMPDIR:-/tmp}" && "$bl" stdin --redact --no-banner --config "$rules") || exit 1
         done || {
             echo "privacy guard: push refused - an outgoing commit carries a secret or personal data." >&2

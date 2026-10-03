@@ -32,8 +32,12 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
     if [ -n "$bl" ] && [ -f "$rules" ]; then
         # --text: attributes cannot turn a file into "Binary files differ";
         # --no-ext-diff/--no-textconv: no repository-configured filter rewrites it.
+        # Only ADDED lines are scanned, so a commit that removes old personal data is
+        # not refused for it. betterleaks runs from an empty directory, so an ignore
+        # file shipped in the repository (.gitleaksignore/.betterleaksignore) is not read.
         git diff --cached --text -U0 --no-color --no-ext-diff --no-textconv \
-            | "$bl" stdin --redact --no-banner --config "$rules" || status=1
+            | awk '/^diff --git /{h=1; next} h && /^@@/{h=0; next} h{next} /^\+/{print}' \
+            | (cd "${TMPDIR:-/tmp}" && "$bl" stdin --redact --no-banner --config "$rules") || status=1
     else
         # Missing dependency: say so once and let the commit through (R11);
         # the CI workflow is the backstop.

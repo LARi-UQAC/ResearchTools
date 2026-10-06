@@ -1,6 +1,6 @@
 # ResearchTools — Manual
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-10243E.svg)](LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-10243E.svg)](LICENSE)
 [![Python 3.x](https://img.shields.io/badge/python-3.x-1F9E8F.svg)](docs/manual/01-installation.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-1F9E8F.svg)](docs/manual/01-installation.md)
 [![Docs](https://img.shields.io/badge/docs-12%20chapters-10243E.svg)](docs/manual/00-purpose.md)

@@ -32,7 +32,11 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
             else
                 set -- "$lsha" --not --remotes                       # new branch: what no remote has
             fi
-            git log -p --text -m -U0 --no-color --no-ext-diff --no-textconv "$@" \
+            # Captured first: sh has no pipefail, and a failing git log would otherwise feed
+            # an empty stream that betterleaks passes. --pretty=medium overrides a user's
+            # format.pretty, which could move the message out of the indented lines.
+            patch=$(git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$@") || exit 1
+            printf '%s\n' "$patch" \
                 | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
                 | (cd "${TMPDIR:-/tmp}" && "$bl" stdin --redact --no-banner --config "$rules") || exit 1
         done || {

@@ -165,7 +165,7 @@ class StaticContract(unittest.TestCase):
         # branch scanned the whole history, where a 2026-08-25 commit still holds a leak.
         text = WORKFLOW.read_text(encoding="utf-8")
         step = text[text.index("(authoritative, trusted rules)"):text.index("(informational)")]
-        self.assertIn("git log -p --text -m -U0 --no-color --no-ext-diff --no-textconv", step)
+        self.assertIn("git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv", step)
         self.assertIn("\"$bl\" stdin", step)
         self.assertNotIn("betterleaks git", step)
         self.assertIn("set -o pipefail", step)
@@ -191,7 +191,7 @@ class StaticContract(unittest.TestCase):
         self.assertIn('range="origin/$BASE_REF..$HEAD"', text)
         self.assertIn('range="origin/$DEFAULT..$HEAD"', text)
         self.assertNotIn("pull_request.base.sha", text)
-        self.assertEqual(text.count("-U0 --no-color"), 2)
+        self.assertEqual(text.count("-U0 --pretty=medium --no-color"), 2)
         self.assertEqual(text.count('cd "$RUNNER_TEMP"'), 2)
 
     def test_installer_chains_every_documented_hook_except_the_measured_two(self):
@@ -434,6 +434,12 @@ class PrePushEndToEnd(unittest.TestCase):
         self.assertIn("privacy guard", result.stderr)
 
     def test_a_leak_in_a_commit_message_is_refused_at_push(self):
+        self.commit("nothing personal\n", message="from C:\\Users\\jdoe\\x")  # betterleaks:allow (deliberate sample)
+        self.assertNotEqual(self.push().returncode, 0)
+
+    def test_a_oneline_pretty_config_cannot_hide_a_message(self):
+        # Round-3 review: format.pretty=oneline put the message on the commit line, unscanned.
+        run(["git", "config", "format.pretty", "oneline"], self.repo, self.env)
         self.commit("nothing personal\n", message="from C:\\Users\\jdoe\\x")  # betterleaks:allow (deliberate sample)
         self.assertNotEqual(self.push().returncode, 0)
 

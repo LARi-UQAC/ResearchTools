@@ -129,7 +129,7 @@ jobs:
           # Author/Date headers are not content. betterleaks runs from an empty directory.
           set -o pipefail
           bl=$PWD/betterleaks; rules=$(realpath "$rules")
-          git log -p --text -m -U0 --no-color --no-ext-diff --no-textconv "$RANGE" \
+          git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$RANGE" \
             | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
             | (cd "$RUNNER_TEMP" && "$bl" stdin --redact --no-banner --config "$rules")
 
@@ -147,6 +147,6 @@ jobs:
           fi
           set -o pipefail
           bl=$PWD/betterleaks; candidate=$(realpath "$candidate")
-          git log -p --text -m -U0 --no-color --no-ext-diff --no-textconv "$RANGE" \
+          git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$RANGE" \
             | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
             | (cd "$RUNNER_TEMP" && "$bl" stdin --redact --no-banner --config "$candidate")

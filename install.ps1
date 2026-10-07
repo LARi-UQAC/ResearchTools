@@ -372,16 +372,20 @@ search the Obsidian vault through its allowed command surface, since skills have
 no mirror of their own).
 
 Skill-first rule (R36): no task runs without a skill, or without an agent that uses a
-skill, whatever the model or the harness. Name the skill first. When none fits, or
-several could, ask the user with the best option first. When none exists, author one
-inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
-found read-only with ``find-skills``. Never install a skill ad hoc from a repository,
-registry or marketplace to cover a gap -- plugins the repo itself declares in
-``.claude/settings.template.json`` (``enabledPlugins``), such as the one delivering
-``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills`` is
-unavailable (Copilot, Aider, Continue, Codex, a fresh clone), search
-``.claude/skills/`` and ``README.md`` by hand instead of stopping. The full rule is
-R36 in ``.claude/rules/workflows.md``.
+skill, in any interactive session (not a headless/nightly run with no human in the loop,
+such as aider-setup's pipeline). This binds the one choice of what covers the whole
+request, not a step a skill or agent already named then runs on its own. Name the skill first. When none
+fits, or several could, ask the user with the best option first. When none exists at
+all, ask first too -- a gap with no owner is often specific to the task at hand --
+then author one on the latest cloud model, inspired by the nearest skill found
+read-only with ``skill-creator``/``find-skills``. Never install a skill ad hoc from a
+repository, registry or marketplace to cover a gap -- plugins ResearchTools' own
+``.claude/settings.template.json`` declares (``enabledPlugins``), such as the one
+delivering ``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills``
+is unavailable (Copilot, Aider, Continue, Codex, a fresh clone), do not stop: search
+``.claude/skills/`` and ``README.md`` by hand, then write the ``SKILL.md`` by hand on
+the latest cloud model. The full rule is R36 in ResearchTools' own
+``.claude/rules/workflows.md``.
 
 Hard rules: validate every reference against Scopus (scripts in
 ``.claude/skills/scopus/scripts/``); never fabricate references or DOIs; LaTeX
@@ -519,16 +523,20 @@ Skills are repository folders the agents read directly
 (``.claude/skills/<name>/SKILL.md``), so they need no mirror.
 
 Skill-first rule (R36): no task runs without a skill, or without an agent that uses a
-skill, whatever the model or the harness. Name the skill first. When none fits, or
-several could, ask the user with the best option first. When none exists, author one
-inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
-found read-only with ``find-skills``. Never install a skill ad hoc from a repository,
-registry or marketplace to cover a gap -- plugins the repo itself declares in
-``.claude/settings.template.json`` (``enabledPlugins``), such as the one delivering
-``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills`` is
-unavailable (Copilot, Aider, Continue, Codex, a fresh clone), search
-``.claude/skills/`` and ``README.md`` by hand instead of stopping. The full rule is
-R36 in ``.claude/rules/workflows.md``.
+skill, in any interactive session (not a headless/nightly run with no human in the loop,
+such as aider-setup's pipeline). This binds the one choice of what covers the whole
+request, not a step a skill or agent already named then runs on its own. Name the skill first. When none
+fits, or several could, ask the user with the best option first. When none exists at
+all, ask first too -- a gap with no owner is often specific to the task at hand --
+then author one on the latest cloud model, inspired by the nearest skill found
+read-only with ``skill-creator``/``find-skills``. Never install a skill ad hoc from a
+repository, registry or marketplace to cover a gap -- plugins ResearchTools' own
+``.claude/settings.template.json`` declares (``enabledPlugins``), such as the one
+delivering ``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills``
+is unavailable (Copilot, Aider, Continue, Codex, a fresh clone), do not stop: search
+``.claude/skills/`` and ``README.md`` by hand, then write the ``SKILL.md`` by hand on
+the latest cloud model. The full rule is R36 in ResearchTools' own
+``.claude/rules/workflows.md``.
 
 Academic writing rules: validate references against Scopus, never fabricate DOIs,
 LaTeX output in ``out/``.
@@ -599,16 +607,20 @@ before applying an audit plan, or ``obsidian-cli`` to read or search the
 Obsidian vault through its allowed command surface.
 
 Skill-first rule (R36): no task runs without a skill, or without an agent that uses a
-skill, whatever the model or the harness. Name the skill first. When none fits, or
-several could, ask the user with the best option first. When none exists, author one
-inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
-found read-only with ``find-skills``. Never install a skill ad hoc from a repository,
-registry or marketplace to cover a gap -- plugins the repo itself declares in
-``.claude/settings.template.json`` (``enabledPlugins``), such as the one delivering
-``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills`` is
-unavailable (Copilot, Aider, Continue, Codex, a fresh clone), search
-``.claude/skills/`` and ``README.md`` by hand instead of stopping. The full rule is
-R36 in ``.claude/rules/workflows.md``.
+skill, in any interactive session (not a headless/nightly run with no human in the loop,
+such as aider-setup's pipeline). This binds the one choice of what covers the whole
+request, not a step a skill or agent already named then runs on its own. Name the skill first. When none
+fits, or several could, ask the user with the best option first. When none exists at
+all, ask first too -- a gap with no owner is often specific to the task at hand --
+then author one on the latest cloud model, inspired by the nearest skill found
+read-only with ``skill-creator``/``find-skills``. Never install a skill ad hoc from a
+repository, registry or marketplace to cover a gap -- plugins ResearchTools' own
+``.claude/settings.template.json`` declares (``enabledPlugins``), such as the one
+delivering ``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills``
+is unavailable (Copilot, Aider, Continue, Codex, a fresh clone), do not stop: search
+``.claude/skills/`` and ``README.md`` by hand, then write the ``SKILL.md`` by hand on
+the latest cloud model. The full rule is R36 in ResearchTools' own
+``.claude/rules/workflows.md``.
 
 Obsidian vault writes go through the outbox only: deposit the note in
 ``~/.claude/obsidian-outbox/`` with a first-line directive and let the

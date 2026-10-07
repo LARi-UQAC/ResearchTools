@@ -157,12 +157,18 @@ the generated mirrors.
 - **Command** - a thin `/slash` wrapper that points at an agent or a skill workflow.
   Mirrored to a Copilot prompt.
 
-**Skill-first (R36).** A task with no skill, or with an agent that does not use one, is not
-started. When it is unclear which skill or agent applies, ask with `AskUserQuestion`. When none
-exists, add one here: run `find-skills` read-only to find the nearest existing skill, then author
-the new one with the `skill-creator` skill on the latest cloud Claude model, following sections 7
-and 9 below. Never install a skill from the internet; what is learned from a third-party skill is
-rewritten in our own file. The full rule is R36 in `.claude/rules/workflows.md`.
+**Skill-first (R36).** In an interactive session (not a headless/nightly run with no human
+in the loop, such as aider-setup's pipeline), a task - the piece of work the session is asked to do,
+not each file read or command inside it - does not start with no skill, or with an agent that
+does not use one; this is the one choice of what covers the whole request, not every step a
+named skill or agent then runs on its own. When it is unclear which skill or agent applies, ask with
+`AskUserQuestion`. When none exists at all, ask first too - a gap with no owner is often
+specific to the task at hand, the same `AskUserQuestion` call, per step 1 of "Improving
+ResearchTools from another folder" in `.claude/CLAUDE.md`. Once confirmed, run `find-skills`
+read-only to find the nearest existing skill, then author the new one with the `skill-creator`
+skill on the latest cloud Claude model, following sections 7 and 9 below. Never install a skill
+from the internet; what is learned from a third-party skill is rewritten in our own file. The
+full rule is R36 in `.claude/rules/workflows.md`.
 
 A skill and its command wrapper commonly coexist (`/geolocalisation` -> the
 `geolocalisation` skill). A command may instead drive an agent (`/bibclean` -> the

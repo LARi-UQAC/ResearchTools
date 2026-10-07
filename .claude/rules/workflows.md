@@ -299,20 +299,24 @@ gating every read-only script behind a dry-run flag it has no destructive path t
 
 **R36 - no task runs without a skill, or without an agent that uses a skill; a missing skill is
 authored in ResearchTools, never installed from the internet.** Effective 2026-10-02. It binds
-every model, cloud or local, and every harness (Claude Code, Codex, Copilot, Aider, Continue,
-any other). Four parts:
+every model, cloud or local, in every interactive harness capable of asking the user a question
+before acting (Claude Code, Codex, Copilot in a Claude Code or similar session). A harness with
+no human in the loop (a scheduled or nightly run with no `AskUserQuestion` capability, such as
+the aider pipeline of `aider-setup`) is a separate concern this rule does not reach. Four parts:
 
-1. **Name the skill or agent before acting.** A task is any work that reads or writes a file,
-   runs a command, or produces a deliverable. Find the skill, or the agent that uses one, in
-   the routing table of `.claude/CLAUDE.md`, in `README.md`, or in the skill list, and state
-   which one is used. A short answer given from what is already in context is not a task, which
-   is also what R28 asks of a direct chat question. This binds the top-level choice of what
-   covers the work, not every file read or command a skill or an agent then runs to carry it
-   out: once a skill or an agent is named, its own internal steps (a helper script reading a
-   config file, `local-coder` writing the code a plan already specifies) do not each need a
-   fresh skill lookup. An agent whose definition carries the `Skill` tool but does not require
-   using it for a given task (`local-coder`, which drives `ollama_bridge.py` directly) is
-   compliant through the dispatch that named it, not through using that tool on every run.
+1. **Name the skill or agent before starting the work.** A task is the piece of work the
+   session is asked to do - the request, or the goal it is pursuing - not each individual file
+   read, write, or command performed while carrying it out. Find the skill, or the agent that
+   uses one, in the routing table of `.claude/CLAUDE.md`, in `README.md`, or in the skill list,
+   and state which one is used. A short answer given from what is already in context is not a
+   task either, which is also what R28 asks of a direct chat question. This binds that one
+   choice for the whole piece of work, not each step performed while carrying it out: once a
+   skill or an agent is named, its own reads, writes and commands (a helper script reading a
+   config file, `local-coder` writing the code a plan already specifies) are part of doing
+   that one task, not separate tasks of their own needing a fresh skill lookup. An agent whose
+   definition carries the `Skill` tool but does not require using it for a given task
+   (`local-coder`, which drives `ollama_bridge.py` directly) is compliant through the dispatch
+   that named it, not through using that tool on every run.
 2. **No match, or more than one candidate: `AskUserQuestion`.** The best option comes first and
    ends with `(Recommended)`, and each option states its origin, behaviour and cost, as R25
    requires. Where the question cannot be asked, the work stops and says why. It does not

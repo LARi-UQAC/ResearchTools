@@ -470,15 +470,20 @@ folder as the only trace.
 ## Skill-first rule (R36)
 
 No task runs without a skill, or without an agent that itself uses a skill. This binds every
-model (cloud or local) and every harness (Claude Code, Codex, Copilot, Aider, Continue, any
-other). A task is any work that reads or writes a file, runs a command, or produces a
-deliverable; a short answer given from what is already in context is not a task.
+model (cloud or local) and every harness capable of asking the user a question before acting
+(Claude Code, Codex, Copilot in a Claude Code or similar interactive session). A task is the
+piece of work the session is asked to do - the request, or the goal it is pursuing - not each
+individual file read, write, or command performed while carrying it out; a short answer given
+from what is already in context is not a task either. A harness with no human in the loop
+(a scheduled or nightly run with no `AskUserQuestion` capability, such as the aider pipeline)
+is a separate concern, outside this rule's reach.
 
-1. **Name the skill or agent first.** Before acting, find the skill or the agent (using a
-   skill) that covers the task in the Tooling routing table below, in `README.md`, or in the
-   skill list. State which one is used. This binds the top-level choice, not every step a
-   named skill or agent then runs on its own (`local-coder` carries the `Skill` tool but is
-   not required to use it on a task its own dispatch already covers).
+1. **Name the skill or agent before starting the work.** Before acting on a request, find the
+   skill or the agent (using a skill) that covers it, in the Tooling routing table below, in
+   `README.md`, or in the skill list. State which one is used. This binds that one choice for
+   the whole piece of work, not each step performed while carrying it out (`local-coder` reads
+   and writes files to do its job; those reads and writes are not separate tasks needing their
+   own skill).
 2. **No match, or more than one candidate: ask.** Use `AskUserQuestion` with the best option
    first, marked `(Recommended)`, and the origin, behaviour and cost of each option (R25). If
    the question cannot be asked, stop and say so. Do not proceed without a skill.
@@ -492,16 +497,17 @@ deliverable; a short answer given from what is already in context is not a task.
    `docs/authoring-and-mirrors.md` requires (a project with no such guide documents the new
    skill the same way, locally).
    Where `skill-creator` or `find-skills` is not available (Copilot, Aider, Continue, Codex, a
-   fresh clone), do not stop: search the repository's own `.claude/skills/` and `README.md` for
-   the nearest skill, then write the `SKILL.md` by hand on the latest cloud Claude model,
-   following section 7 of `docs/authoring-and-mirrors.md`.
+   fresh clone), do not stop: search the current project's own `.claude/skills/` and
+   `README.md` for the nearest skill, then write the `SKILL.md` by hand on the latest cloud
+   Claude model, following section 7 of ResearchTools' own `docs/authoring-and-mirrors.md`
+   (a project with no such guide follows the same shape: a test, a registration, a doc line).
 4. **Never install a skill from the internet, ad hoc.** No `npx skills add`, and no skill,
    plugin or agent fetched from a repository, registry or marketplace to cover a missing
-   skill, whatever `find-skills` suggests. The only plugins allowed are the ones the
-   repository itself declares in `.claude/settings.template.json` (`enabledPlugins`), which
-   include the one delivering `skill-creator`. Read outside skills for ideas, then write ours.
-   A skill copied in from outside has no provenance and no review (see
-   `.claude/rules/security.md`).
+   skill, whatever `find-skills` suggests. The only plugins allowed are the ones a project
+   itself declares (for ResearchTools, `.claude/settings.template.json`'s `enabledPlugins`,
+   which include the one delivering `skill-creator`). Read outside skills for ideas, then
+   write ours. A skill copied in from outside has no provenance and no review (see
+   ResearchTools' own `.claude/rules/security.md`).
 
 The full rule, with the reasoning, is R36 in ResearchTools' own
 `.claude/rules/workflows.md`.
@@ -628,7 +634,7 @@ README.md and Architecture.md.
 | Ask what THIS repository's code IS or how it connects - what calls X, how A reaches B, where a symbol lives, what a module depends on - rather than grepping file by file. That is the graphify knowledge graph in `graphify-out/`, and `query`, `path` and `explain` are deterministic traversals that cost no model at all. Routing rule: a question about **this code** goes to the graph first, a question about a failure mode, a tool that misbehaves or a past decision goes to the **vault** first, and many tasks want both in that order. The graph is refreshed by writing the file and then pointing `graphify update <path>` at it, never by editing `graph.json` - and `graphify update` takes a DIRECTORY, not a single file, which returns `[WinError 267]` and refreshes nothing. And the directory is ALWAYS the REPOSITORY ROOT. Measured 2026-08-31, twice in two sessions: pointed at a SUBdirectory the tool silently treats that subdirectory as its own project root, writes a second partial graph there, and leaves the repository graph untouched - no error, no warning, and no flag to prevent it. One stray root sat undetected for a day holding 130 nodes, the second held 525. A test now fails when a second graph root appears anywhere but the repository root, because prose alone did not stop this happening a second time. Its own state (contents, coverage, staleness) is reported read-only by `scripts/audit/check-graph-health.ps1`. **Enforced, not merely stated, since 2026-08-30**: `vault-access-guard.py` refuses `graphify-out/` paths, the `graphify` CLI, and BOTH graph audit scripts by name to any caller other than `local-writer`. Read-only is not an exemption - the rule was prose here for as long as the vault rule was enforced, and it was bypassed in three sessions, the last of which ran `check-graph-health.ps1` twice to learn the graph's state without the graph's path ever appearing in the command. **What it does NOT answer**: measured 2026-08-30, every node carries `_origin: ast`, so the graph holds the code and the STRUCTURE of each `.md` file and no layer that read what those files say. Asked why the Obsidian CLI write path is forbidden, it returned 109 nodes of file, command and test-class names and none of the three measured reasons. So a why-question goes to the vault, and asking the graph for intent returns names that read like an answer | `graphify` skill, reached ONLY through the `local-writer` agent, which keeps BOTH memories - consulting or refreshing the graph by hand is the same breach as reading the vault by hand | dispatch `local-writer` |
 | Budget-bounded develop-and-improve loop (design→code→review→score→correct until a composite gate or budget cap) | `loop-engineer` skill (Agent SDK; Fable 5 orchestrates, Opus/Sonnet act, local agents generate) | `/loopdev` |
 | ScholarEval-gated authoring loop (define→author→audit→loop→memory until min_score or max_budget) | `authoring-loop` agent (author on Fable 5, `scholar-evaluation` on Sonnet/Haiku, memory via `local-writer`) | by name |
-| A task that no skill or agent covers, or that two of them could cover (R36): ask with `AskUserQuestion` when it is ambiguous, otherwise author the missing skill ourselves, modeled on the nearest skill found read-only with `find-skills`, and never install one from the internet | `skill-creator` skill (latest cloud Claude model), `find-skills` skill for inspiration only | by name |
+| A task that no skill or agent covers, or that two of them could cover (R36): ask with `AskUserQuestion` first in both cases - which candidate when it is ambiguous, whether to build at all when none exists - then author the missing skill ourselves, modeled on the nearest skill found read-only with `find-skills`, and never install one from the internet | `skill-creator` skill (latest cloud Claude model), `find-skills` skill for inspiration only | by name |
 | Convert a Word `.docx` template to LaTeX | `word2latex` skill / `word-to-latex` agent | `/word2latex` |
 | Validate TiKZ code, diagnose LaTeX errors | - | `/tikz`, `/latex` |
 | Measure LaTeX manuscript hygiene mechanically (forbidden characters, AI-usage risk score, prose/accepted word counts, abstract length, brace balance, citation-key coverage), apply a machine-readable audit plan to a `.tex`, post-write scan, resolve to accepted text, and build the PDF | `latex-hygiene` skill | `/texcheck` |

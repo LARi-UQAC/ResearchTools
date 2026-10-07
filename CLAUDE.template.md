@@ -474,33 +474,44 @@ model (cloud or local) and every harness capable of asking the user a question b
 (Claude Code, Codex, Copilot in a Claude Code or similar interactive session). A task is the
 piece of work the session is asked to do - the request, or the goal it is pursuing - not each
 individual file read, write, or command performed while carrying it out; a short answer given
-from what is already in context is not a task either. A harness with no human in the loop
-(a scheduled or nightly run with no `AskUserQuestion` capability, such as the aider pipeline)
-is a separate concern, outside this rule's reach.
+from what is already in context is not a task either. Floor: a single-step request with no
+deliverable of its own - reading one file to answer a question, running one check such as
+`git status` - is answered directly and never triggers steps 2 or 3 below. A harness with no
+human in the loop (a scheduled or nightly run with no `AskUserQuestion` capability at all,
+such as the aider pipeline) is a separate concern, outside this rule's reach; a subagent or a
+scheduled run that is otherwise interactive but simply cannot ask a question right now follows
+step 2's fallback below instead. Part 4 (never install ad hoc) and `.claude/rules/security.md`
+bind everywhere, with no exemption for either case.
 
 1. **Name the skill or agent before starting the work.** Before acting on a request, find the
-   skill or the agent (using a skill) that covers it, in the Tooling routing table below, in
+   skill or the agent (using a skill) that covers it, in ResearchTools' own Tooling routing
+   table below (a different project reads its own equivalent table or skill list instead), in
    `README.md`, or in the skill list. State which one is used. This binds that one choice for
    the whole piece of work, not each step performed while carrying it out (`local-coder` reads
    and writes files to do its job; those reads and writes are not separate tasks needing their
    own skill).
 2. **No match, or more than one candidate: ask.** Use `AskUserQuestion` with the best option
-   first, marked `(Recommended)`, and the origin, behaviour and cost of each option (R25). If
-   the question cannot be asked, stop and say so. Do not proceed without a skill.
+   first, marked `(Recommended)`, and the origin, behaviour and cost of each option (R25).
+   Where the question genuinely cannot be asked (a subagent, a scheduled run with no
+   interactive turn), follow step 1 of "Improving ResearchTools from another folder" above:
+   log `OWNER UNKNOWN` in `IMPROVEMENTS.md`, do the minimum needed to unblock the task, and say
+   so. Never guess a skill and continue silently.
 3. **No skill exists: ask first, then ResearchTools builds its own.** A gap with no obvious
    owner is often specific to the task at hand, so ask the user before authoring an entirely
-   new skill, the same `AskUserQuestion` call as step 2. Once confirmed, look for the nearest
-   existing skill with `find-skills`, used read-only for inspiration. Then author the new
-   skill with the
+   new skill, the same `AskUserQuestion` call as step 2, with the same `OWNER UNKNOWN` fallback
+   when the question cannot be asked. Once confirmed, look for the nearest existing skill with
+   `find-skills`, used read-only for inspiration. Then author the new skill, inside
+   ResearchTools, never inside the project the task is for (see "Where code belongs" in
+   `.claude/rules/workflows.md`), with the
    `skill-creator` skill on the latest cloud Claude model, shaped to this project's needs and
    inspired by that nearest skill. Register it as ResearchTools' own
-   `docs/authoring-and-mirrors.md` requires (a project with no such guide documents the new
-   skill the same way, locally).
+   `docs/authoring-and-mirrors.md` requires, and follow the full 8-step protocol above (green
+   stamp, `.rt-undo` copy, test plus `run-offline-tests.ps1`, `-Sync`, `IMPROVEMENTS.md`).
    Where `skill-creator` or `find-skills` is not available (Copilot, Aider, Continue, Codex, a
-   fresh clone), do not stop: search the current project's own `.claude/skills/` and
-   `README.md` for the nearest skill, then write the `SKILL.md` by hand on the latest cloud
-   Claude model, following section 7 of ResearchTools' own `docs/authoring-and-mirrors.md`
-   (a project with no such guide follows the same shape: a test, a registration, a doc line).
+   fresh clone), do not stop: search ResearchTools' own `.claude/skills/` and `README.md` for
+   the nearest skill, then write the `SKILL.md` by hand on the latest cloud Claude model, still
+   inside ResearchTools, following section 7 of ResearchTools' own
+   `docs/authoring-and-mirrors.md`.
 4. **Never install a skill from the internet, ad hoc.** No `npx skills add`, and no skill,
    plugin or agent fetched from a repository, registry or marketplace to cover a missing
    skill, whatever `find-skills` suggests. The only plugins allowed are the ones a project

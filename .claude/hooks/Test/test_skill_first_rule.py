@@ -50,6 +50,18 @@ MIRROR_PHRASES = (
 # model skip the ask gate for a genuine no-owner gap because the row disagreed with
 # part 3's own text.
 FORBIDDEN_PHRASE = "otherwise author the missing skill"
+# 2026-10-07 third re-review (N1/N2/N4, O1/O2): the headless exemption contradicted
+# part 2's old "stop" clause, so part 2 now shares part 3's OWNER UNKNOWN fallback
+# (the operator's own answer to O2); the operator's own answer to O1 adds a one-line
+# floor so a single-step request (reading one file, "git status") never reaches the
+# ask gate at all; and the fallback search for an entirely new skill now says
+# explicitly where it is authored, closing the loophole where a non-ResearchTools
+# session's fallback read as writing the SKILL.md into that project.
+FLOOR_AND_FALLBACK_PHRASES = ("git status", "OWNER UNKNOWN", "inside ResearchTools")
+FLOOR_AND_FALLBACK_FILES = (
+    ".claude/CLAUDE.md", ".claude/rules/workflows.md", "install.ps1",
+    "docs/authoring-and-mirrors.md", "docs/manual/04-skills.md",
+)
 # The generator holds one heredoc per mirror, so the phrases must occur once for each.
 INSTALLER = "install.ps1"
 INSTALLER_HEREDOCS = 3
@@ -165,14 +177,32 @@ class TestRuleIsWritten(unittest.TestCase):
         # rule now says a task is the request/goal the session is pursuing, and
         # scopes itself to interactive harnesses, aider-setup's headless pipeline
         # named as the explicit example of what is out of reach.
-        for rel in (".claude/CLAUDE.md", ".claude/rules/workflows.md",
-                    "install.ps1", "docs/authoring-and-mirrors.md"):
+        for rel in FLOOR_AND_FALLBACK_FILES:
             with self.subTest(file=rel):
                 # Hard-wrapped prose can split a phrase across a line break, so the
                 # check is done on text with newlines folded to spaces, not the raw file.
                 flat = " ".join(read(rel).split())
                 self.assertIn("no human in the loop", flat)
                 self.assertIn("aider-setup", flat)
+
+    def test_floor_and_owner_unknown_fallback_are_stated(self):
+        # 2026-10-07 operator answers to O1 (floor) and O2 (can't-ask-but-not-headless
+        # fallback): a single-step request never reaches the ask gate, and a run that
+        # cannot ask logs OWNER UNKNOWN and continues rather than stopping (closing N1,
+        # the contradiction between the headless exemption and part 2's old "stop").
+        for rel in FLOOR_AND_FALLBACK_FILES:
+            with self.subTest(file=rel):
+                flat = " ".join(read(rel).split())
+                for phrase in FLOOR_AND_FALLBACK_PHRASES:
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, flat)
+
+    def test_no_file_says_the_work_merely_stops(self):
+        # The old part-2 clause this replaces; its survival anywhere would mean the
+        # OWNER UNKNOWN fallback above was added beside it rather than instead of it.
+        for rel in FLOOR_AND_FALLBACK_FILES:
+            with self.subTest(file=rel):
+                self.assertNotIn("stop and say so", " ".join(read(rel).split()))
 
     def test_missing_skill_fallback_and_approved_plugin_are_stated(self):
         # Copilot review of PR 44: the branch must not dead-end on a harness without
@@ -228,6 +258,11 @@ class TestFinderCanFail(unittest.TestCase):
     def test_the_forbidden_phrase_check_can_fail(self):
         # A planted copy of the contradiction must be caught, or the check proves nothing.
         self.assertIn(FORBIDDEN_PHRASE, "ask when ambiguous, otherwise author the missing skill")
+
+    def test_the_stop_clause_check_can_fail(self):
+        # A planted copy of the old "stop" clause must be caught by the negative test
+        # above, or it proves nothing.
+        self.assertIn("stop and say so", "if the question cannot be asked, stop and say so.")
 
 
 if __name__ == "__main__":

@@ -25,11 +25,18 @@ a copied `SKILL.md` fixes - a vendored copy of a CLI's skill without the CLI is 
 tool that is still absent. `test_settings_template_distribution.py` asserts that neither name
 reappears under `.claude/skills/`.
 
-**No task runs without a skill (R36).** Every task is done by a skill, or by an agent that uses
-one, whatever the model or the harness. When no skill fits, or several could, the session asks
-with `AskUserQuestion` and puts the best option first. When none exists, ResearchTools writes its
-own with the `skill-creator` skill, inspired by the nearest skill found read-only with
-`find-skills`. A skill is never installed from the internet. The rule is written in
+**No task runs without a skill (R36).** In an interactive session (not a headless/nightly run
+with no human in the loop at all, such as `aider-setup`'s pipeline), every task - the piece of
+work the session is asked to do, not each file read or command inside it - is done by a
+skill, or by an agent that uses one. A single-step request with no deliverable (reading one
+file, running `git status`) is answered directly, no skill lookup. When no skill fits, or
+several could, the session asks with `AskUserQuestion` and puts the best option first; where
+the question cannot be asked, it logs `OWNER UNKNOWN` and does the minimum instead of
+guessing. When none exists at all, the session asks first too, then ResearchTools writes its
+own **inside ResearchTools, never inside the project the task is for**, with the
+`skill-creator` skill, inspired by the nearest skill found read-only with `find-skills`. A
+skill is never installed from the internet, ad hoc - this binds even a headless run. The rule
+is written in
 `.claude/CLAUDE.md`, in `.claude/rules/workflows.md` (R36) and in the generated `AGENTS.md`,
 `CONVENTIONS.md` and Copilot instructions, and `test_skill_first_rule.py` fails when it
 disappears from any of them. See [authoring-and-mirrors.md](../authoring-and-mirrors.md) for the

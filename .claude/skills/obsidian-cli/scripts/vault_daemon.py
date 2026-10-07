@@ -393,7 +393,9 @@ class VaultDaemon(OutboxLayout):
             most once per interval for a repeated message.
         ----------------------------------------------------------------------
         """
-        last = self._last_bridge_error
+        last = getattr(self, "_last_bridge_error", None)
+        if last is None:
+            last = self._last_bridge_error = {"message": None, "at": 0.0}
         now = time.monotonic()
         if message == last["message"] and (now - last["at"]) < interval_s:
             return
@@ -409,7 +411,6 @@ class VaultDaemon(OutboxLayout):
             print("[DAEMON] another daemon is already watching this outbox; "
                   "refusing to start a second one", file=sys.stderr)
             return 1
-        self._last_bridge_error = {"message": None, "at": 0.0}
         bridge_error_log_interval_s = self._cfg("bridge_error_log_interval_s")
         self.recover_working()
         drain_every = self._cfg("drain_idle_s")

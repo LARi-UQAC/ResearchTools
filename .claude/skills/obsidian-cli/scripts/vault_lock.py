@@ -27,9 +27,15 @@ alive after the reboot (an unrelated process, most likely its own launch chain)
 and refused to start, so no daemon ran for the whole day. The lock therefore
 also records "started", the creation marker of the holder's process
 (process_start_marker); a live pid whose current marker differs is a reused pid
-and the lock is reclaimed. Remaining gap: a lock without "started" (written
-before this change), or a reused pid that this user cannot query (another
-account), is still read as the holder.
+and the lock is reclaimed. A SECOND, independent check (_boot_time_utc, added
+2026-10-07 from the PR #42 review) reclaims any same-host lock whose own "at"
+predates this boot, regardless of whether "started" was ever recorded - so a
+lock written before process_start_marker existed is covered too, on a full
+restart. Remaining gaps: Windows Fast Startup's hybrid shutdown does not reset
+the tick counter the boot check reads (stated limit, see _boot_time_utc; a
+one-time daemon restart after this fix lands closes it, since every lock from
+then on carries "started"), and a reused pid that this user cannot query
+(another account) is still read as the holder.
 
 Timeouts are arguments, never literals (R0). The caller reads them from
 daemon-config.json.
@@ -116,10 +122,19 @@ def _boot_time_utc() -> "datetime | None":
         check, independent of whether "started" was ever recorded in a given
         lock file. PR #42's review named the gap this closes - a lock
         written before process_start_marker existed keeps the old
-        pid-decides rule through the very first reboot after this fix lands,
-        since there is no marker in it to compare. A lock's own "at"
+        pid-decides rule through the first FULL RESTART after this fix
+        lands, since there is no marker in it to compare. A lock's own "at"
         timestamp predating the boot, with its pid alive now, is reused
-        whatever the lock carries.
+        whatever the lock carries. Stated limit (round 2 of the review,
+        M1): Windows Fast Startup hibernates the kernel session on
+        "shut down then power on" rather than resetting it, so
+        GetTickCount64 does NOT reset there the way it does on a real
+        restart - a legacy lock survives that specific shutdown path even
+        after this fix. New locks are unaffected, since they always carry
+        "started". Confirmed on this machine (Fast Startup is enabled, per
+        the PR thread): restart the vault daemon once after this fix lands,
+        so every lock it holds from then on carries "started" and is
+        reboot-safe whichever way the machine is powered off.
 
     Inputs:
         none.
@@ -141,7 +156,11 @@ def _boot_time_utc() -> "datetime | None":
         if uptime_path.exists():
             uptime_s = float(uptime_path.read_text(encoding="utf-8").split()[0])
             return datetime.now(timezone.utc) - timedelta(seconds=uptime_s)
-    except Exception:  # contract: never raises; None means "cannot tell"
+    except (OSError, ValueError, IndexError, AttributeError):
+        # Same width as process_start_marker's own narrowing, round-2 review
+        # (mutation-testing gap #2): a ctypes/WinError failure (OSError), a
+        # garbage /proc/uptime (ValueError from float(), IndexError from an
+        # empty split()), or a missing ctypes binding (AttributeError).
         return None
     return None
 
@@ -234,11 +253,24 @@ class VaultLock:
     """
 
     def __init__(self, lock_path, acquire_timeout_s, stale_after_s,
-                 poll_interval_s):
+                 poll_interval_s, boot_skew_tolerance_s=0.0):
         self.lock_path = Path(lock_path)
         self.acquire_timeout_s = float(acquire_timeout_s)
         self.stale_after_s = float(stale_after_s)
         self.poll_interval_s = float(poll_interval_s)
+        # PR #42 review (Medium M2, owner-decided 2026-10-07): a lock's "at"
+        # and the computed boot time are both wall-clock-derived, so a clock
+        # step forward after the daemon wrote its lock (an NTP correction
+        # shortly after boot, no RTC, a manual set) could make a genuinely
+        # live daemon's lock look like it predates boot and get reclaimed -
+        # a second daemon on the outbox, the exact collision the singleton
+        # exists to prevent. Reused only when "at" predates boot by MORE
+        # than this margin. Kept a float default rather than a required
+        # parameter so a caller that has not been updated (an external
+        # drill script, say) still runs - at the old, zero-margin behavior -
+        # instead of raising; every caller inside this repository passes the
+        # configured value (R0).
+        self.boot_skew_tolerance_s = float(boot_skew_tolerance_s)
         self.reclaimed: list[str] = []
         self._token: str | None = None
 
@@ -317,9 +349,13 @@ class VaultLock:
             # started after the lock was written, so it is a reused pid
             # regardless of whether "started" was ever recorded. Checked
             # before pid_alive/started so a legacy lock (written before that
-            # field existed) is still reboot-safe - the High finding from
-            # the PR #42 review: without this, the FIRST reboot after this
-            # fix ships still reproduced #41 for any lock already on disk.
+            # field existed) is safe across a full restart - the High
+            # finding from the PR #42 review: without this, the first full
+            # restart after this fix ships still reproduced #41 for any
+            # lock already on disk. Does NOT cover Windows Fast Startup's
+            # hybrid shutdown (M1, stated limit, see _boot_time_utc); a
+            # one-time daemon restart after this fix lands closes that gap
+            # too, since every lock from then on carries "started".
             # Only when boot time is actually readable (R11): an unavailable
             # boot time degrades to the rule below rather than refusing to
             # judge the lock.
@@ -327,10 +363,24 @@ class VaultLock:
             boot = _boot_time_utc()
             if boot is not None and stamp:
                 try:
+                    # Both operands must be aware for the comparison below, or
+                    # a hand-edited or foreign-shaped "at" with no offset
+                    # raises TypeError here exactly as it does on the
+                    # foreign-host branch's subtraction further down -
+                    # reproduced live during the PR #42 review (L1) and
+                    # otherwise escaping acquire() and held_by_live_holder,
+                    # which the flush hook calls (R11). A naive stamp is
+                    # treated as UTC, matching how _utc_now_iso always writes
+                    # one with an explicit offset, so only a value this
+                    # module never produced itself takes this branch.
                     at = datetime.fromisoformat(str(stamp))
+                    if at.tzinfo is None:
+                        at = at.replace(tzinfo=timezone.utc)
+                    margin = timedelta(seconds=self.boot_skew_tolerance_s)
+                    is_before_boot = at < (boot - margin)
                 except (TypeError, ValueError):
-                    at = None
-                if at is not None and at < boot:
+                    is_before_boot = False
+                if is_before_boot:
                     return (f"holder pid {pid}'s lock was recorded at {stamp}, "
                             f"before this boot ({boot.replace(microsecond=0).isoformat()}); "
                             f"a live pid now is necessarily a reused pid")
@@ -406,7 +456,7 @@ class VaultLock:
         return False
 
 
-def held_by_live_holder(lock_path, stale_after_s) -> bool:
+def held_by_live_holder(lock_path, stale_after_s, boot_skew_tolerance_s=0.0) -> bool:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -419,6 +469,10 @@ def held_by_live_holder(lock_path, stale_after_s) -> bool:
     Inputs:
         lock_path (Path | str): the lock file to inspect
         stale_after_s (float): age past which a holder is judged gone
+        boot_skew_tolerance_s (float): see VaultLock's own docstring (R0:
+            read from daemon-config.json's lock.boot_skew_tolerance_s by
+            every caller inside this repository; defaulted here only so an
+            external caller not yet updated still runs)
 
     Outputs:
         live (bool): True only when a holder exists and is neither dead nor
@@ -426,7 +480,7 @@ def held_by_live_holder(lock_path, stale_after_s) -> bool:
     --------------------------------------------------------------------------
     """
     probe = VaultLock(lock_path, acquire_timeout_s=0, stale_after_s=stale_after_s,
-                      poll_interval_s=0)
+                      poll_interval_s=0, boot_skew_tolerance_s=boot_skew_tolerance_s)
     if not probe.lock_path.exists():
         return False
     return probe._stale_reason(probe._read_holder()) is None

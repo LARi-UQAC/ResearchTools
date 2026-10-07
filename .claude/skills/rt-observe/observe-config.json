@@ -310,6 +310,11 @@
       "value": 900,
       "unit": "seconds",
       "provenance": "chosen - passed to vault_lock.held_by_live_holder as its staleness ceiling; a lock older than this with a dead holder is reported not-running"
+    },
+    "daemon_lock_boot_skew_tolerance": {
+      "value": 300,
+      "unit": "seconds",
+      "provenance": "chosen 2026-10-07, mirrors obsidian-cli/daemon-config.json's lock.boot_skew_tolerance_s (PR #42 review, Medium M2): passed to the same held_by_live_holder call so this panel's own liveness read applies the identical clock-skew margin the daemon's own lock acquisition uses, rather than reporting a momentary false not-running right after a clock correction near boot"
     }
   },
   "privacy": {

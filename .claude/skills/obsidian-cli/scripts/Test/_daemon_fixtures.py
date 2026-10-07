@@ -40,7 +40,8 @@ WINDOW = 16384          # injected fixture, never read from the machine (R21)
 TAG = "a-tag-from-the-resolver"
 TODAY = "2026-08-28"
 CONFIG = {
-    "lock": {"acquire_timeout_s": 1, "stale_after_s": 300, "poll_interval_s": 0.01},
+    "lock": {"acquire_timeout_s": 1, "stale_after_s": 300, "poll_interval_s": 0.01,
+             "boot_skew_tolerance_s": 0},
     "probe": {"request_timeout_s": 5},
     "daemon": {"poll_interval_s": 0.01, "classify_confidence_min": 0.7,
                "draft_max_attempts": 2, "drain_idle_s": 900,

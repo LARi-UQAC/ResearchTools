@@ -297,6 +297,90 @@ class VaultLockTest(unittest.TestCase):
         if boot is not None:
             self.assertLess(boot, datetime.now(timezone.utc))
 
+    # --- round-2 review (2026-10-07): M1/M2/L1 and the mutation-testing gaps
+
+    def test_a_naive_timestamp_degrades_instead_of_raising_typeerror(self):
+        """L1: a hand-edited or foreign-shaped "at" with no UTC offset used
+        to raise TypeError out of the comparison itself (naive vs aware),
+        reproduced live by the reviewer and escaping acquire() and
+        held_by_live_holder, which the flush hook calls (R11)."""
+        self._write_holder(os.getpid(), age_s=3600)
+        note = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        note["at"] = "2020-01-01T00:00:00"  # no offset - naive
+        self.lock_path.write_text(json.dumps(note), encoding="utf-8")
+        booted_recently = datetime.now(timezone.utc) - timedelta(seconds=10)
+        with patch.object(vl, "_boot_time_utc", return_value=booted_recently):
+            # Must not raise, and a naive stamp this far in the past is
+            # correctly treated as UTC and therefore before boot.
+            self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_a_lock_within_the_skew_margin_of_boot_is_not_reclaimed(self):
+        """M2 (owner-decided): the clock-step edge case. A lock written a
+        few seconds before the computed boot (an NTP correction right after
+        startup moved the clock forward) must NOT be read as reused - that
+        would reclaim a genuinely live daemon's lock, letting a second one
+        start on the same outbox, the exact collision the singleton
+        prevents."""
+        self._write_holder(os.getpid(), age_s=30)  # "at" 30s before boot below
+        boot = datetime.now(timezone.utc) - timedelta(seconds=20)
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            self.assertIsNone(lock._stale_reason(lock._read_holder()))
+
+    def test_a_lock_well_before_boot_is_still_reclaimed_despite_the_margin(self):
+        """Negative control: the margin must not swallow the real scenario
+        (a lock from hours or days before a genuine reboot), or M2's fix
+        would quietly undo the High finding's own fix."""
+        self._write_holder(os.getpid(), age_s=3600)
+        boot = datetime.now(timezone.utc) - timedelta(seconds=10)
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            reason = lock._stale_reason(lock._read_holder())
+        self.assertIsNotNone(reason)
+        self.assertIn("reused", reason)
+
+    def test_the_skew_margin_defaults_to_zero_for_an_unupdated_caller(self):
+        """A caller that does not pass boot_skew_tolerance_s (an external
+        drill script, say) keeps the pre-M2 exact-boundary behaviour rather
+        than raising, so this is a default and not a required parameter."""
+        self.assertEqual(
+            vl.VaultLock(self.lock_path, acquire_timeout_s=0,
+                        stale_after_s=STALE_AFTER_S,
+                        poll_interval_s=0).boot_skew_tolerance_s, 0.0)
+
+    @unittest.skipIf(os.name != "nt", "exercises the Windows ctypes path")
+    def test_boot_time_utc_degrades_on_a_windows_api_failure(self):
+        """Mutation-testing gap #2 from the round-2 review: nothing forced
+        a failure inside the try block, so narrowing its except clause
+        incorrectly would go unnoticed. ctypes.windll.kernel32 raising
+        is the realistic Windows failure shape."""
+        with patch.object(vl.ctypes.windll.kernel32, "GetTickCount64",
+                          side_effect=OSError("boom")):
+            self.assertIsNone(vl._boot_time_utc())
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc/uptime path")
+    def test_boot_time_utc_degrades_on_a_malformed_proc_uptime(self):
+        """Mutation-testing gap #2, the Linux path: a garbage /proc/uptime
+        must not raise ValueError out of float()."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value="not a number"):
+            self.assertIsNone(vl._boot_time_utc())
+
+    @unittest.skipIf(os.name != "nt", "exercises the Windows pid-reuse path")
+    def test_process_start_marker_degrades_on_a_windows_api_failure(self):
+        """Mutation-testing gap #3: dropping OSError from this function's
+        except clause is a Windows/race-only gap, untested because every
+        existing case here exercises the real, working ctypes calls on
+        this machine rather than a forced failure."""
+        with patch.object(vl.ctypes, "WinDLL", side_effect=OSError("boom")):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
     def test_an_unreadable_current_marker_keeps_a_live_pid_as_holder(self):
         """Conservative on purpose: when the live process cannot be queried the
         pid decides, as before, rather than evicting a possibly real daemon."""

@@ -285,6 +285,26 @@ class UnreachableOllamaTest(DaemonCase):
         self.assertEqual(rc, 0)
         self.assertEqual(buf.getvalue().count("connection refused"), 1)
 
+    def test_the_throttle_logs_again_once_the_interval_elapses(self):
+        """Mutation-testing gap #1 from the round-2 review: only the
+        'suppressed within the interval' half was tested. This proves the
+        other half directly against _log_bridge_error (not through the
+        full loop, whose drain/ask timers also call time.monotonic and
+        would make a shared fake clock ambiguous) - an unchanging message
+        logs AGAIN once the interval has actually elapsed, so an outage
+        gets a periodic heartbeat rather than going silent forever."""
+        daemon = self._daemon(drain_idle_s=900)
+        buf = io.StringIO()
+        with mock.patch.object(vd.time, "monotonic",
+                               side_effect=[0.0, 5.0, 11.0]), \
+                mock.patch("sys.stderr", buf):
+            daemon._log_bridge_error("connection refused", 10)
+            daemon._log_bridge_error("connection refused", 10)
+            daemon._log_bridge_error("connection refused", 10)
+        self.assertEqual(buf.getvalue().count("connection refused"), 2,
+                         "logged at t=0, suppressed at t=5 (within 10s), "
+                         "logged again at t=11 (past the interval)")
+
     def test_a_changed_bridge_error_message_still_logs_immediately(self):
         """Negative control: suppression must key on the MESSAGE, or a
         genuinely new failure (Ollama came back with a different error)
@@ -350,6 +370,25 @@ class OnceAndDrainRefusalTest(DaemonCase):
             rc = vd.main(["--outbox", str(self.outbox), "--drain"])
         self.assertEqual(rc, 2)
         self.assertIn("connection refused", buf.getvalue())
+
+    def test_drain_also_exits_2_on_an_event_refused(self):
+        """Mutation-testing gap #4 from the round-2 review: only
+        ob.BridgeError was exercised for --drain's except clause, so
+        dropping ds.EventRefused from it (the drain's OWN refusal type,
+        daemon_states.py:43) went unnoticed."""
+        down = vd.ds.EventRefused("nothing queued to drain")
+        buf = io.StringIO()
+        with mock.patch.object(vd.ob, "resolve_model", return_value=TAG), \
+                mock.patch.object(vd, "context_window", return_value=16384), \
+                mock.patch.object(vd.VaultDaemon, "drain", side_effect=down), \
+                mock.patch.object(vd.outbox_io, "resolve_vault",
+                                  return_value=self.vault), \
+                mock.patch.object(vd.outbox_io, "load_config",
+                                  return_value=CONFIG), \
+                mock.patch("sys.stderr", buf):
+            rc = vd.main(["--outbox", str(self.outbox), "--drain"])
+        self.assertEqual(rc, 2)
+        self.assertIn("nothing queued to drain", buf.getvalue())
 
 
 if __name__ == "__main__":

@@ -461,7 +461,7 @@ class ServicesTest(TempTree):
         lock_module = mock.Mock()
         lock_module.held_by_live_holder.return_value = False
         write(self.repo / ".claude" / "skills" / "obsidian-cli" / "scripts"
-              / "vault_lock.py", "def held_by_live_holder(p, s):\n    return False\n")
+              / "vault_lock.py", "def held_by_live_holder(p, s, t=0):\n    return False\n")
         (self.home / "outbox" / "raw").mkdir(parents=True)
         write(self.home / "outbox" / "raw" / "drop.md", "x")
         with no_binaries():
@@ -473,7 +473,7 @@ class ServicesTest(TempTree):
 
     def test_a_live_holder_reports_running_and_raises_no_alert(self):
         write(self.repo / ".claude" / "skills" / "obsidian-cli" / "scripts"
-              / "vault_lock.py", "def held_by_live_holder(p, s):\n    return True\n")
+              / "vault_lock.py", "def held_by_live_holder(p, s, t=0):\n    return True\n")
         (self.home / "outbox" / "raw").mkdir(parents=True)
         write(self.home / "outbox" / "raw" / "drop.md", "x")
         with no_binaries():

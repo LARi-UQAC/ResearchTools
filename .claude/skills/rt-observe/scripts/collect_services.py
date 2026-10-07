@@ -221,7 +221,7 @@ def _load_module(path, name):
 
 
 def _vault_daemon(repo_root, home, outbox_root, lock_path_value, stale_after_s,
-                  now=None, outbox_listed=0):
+                  now=None, outbox_listed=0, boot_skew_tolerance_s=0.0):
     """Liveness and queue depth. Never note content, never the vault.
 
     The lock asked here is the SINGLETON lock, and getting that wrong reports
@@ -247,7 +247,8 @@ def _vault_daemon(repo_root, home, outbox_root, lock_path_value, stale_after_s,
                       "held_by_live_holder, the read-only liveness check")
         else:
             try:
-                running = bool(module.held_by_live_holder(lock_path, stale_after_s))
+                running = bool(module.held_by_live_holder(
+                    lock_path, stale_after_s, boot_skew_tolerance_s))
             except Exception as exc:                   # noqa: BLE001
                 reason = "the liveness check failed: %s" % exc
 
@@ -361,7 +362,8 @@ def collect(repo_root, home, config_values, now=None):
         repo_root (Path): repository root
         home (Path): home directory, injected (R21)
         config_values (dict): {"subprocess_timeout_s", "outbox_root",
-                               "daemon_lock_path", "lock_stale_after_s"}
+                               "daemon_lock_path", "lock_stale_after_s",
+                               "lock_boot_skew_tolerance_s"}
         now (datetime): injected clock (R19)
 
     Outputs:
@@ -379,5 +381,7 @@ def collect(repo_root, home, config_values, now=None):
             config_values["daemon_lock_path"],
             config_values["lock_stale_after_s"],
             now=now,
-            outbox_listed=config_values.get("outbox_listed", 0)),
+            outbox_listed=config_values.get("outbox_listed", 0),
+            boot_skew_tolerance_s=config_values.get(
+                "lock_boot_skew_tolerance_s", 0.0)),
     }

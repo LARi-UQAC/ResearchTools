@@ -1094,11 +1094,6 @@ DNS, run the acceptance checklist, then delete the Vercel project. Order matters
 up the real target; nothing needs to survive a transition since nothing real ran on Vercel to begin
 with.
 
-### Open items
-
-- The TT copy of this file has diverged (1044 vs 1111 lines on 2026-10-02). Reconciling the two is
-  the operator's job.
-
 **The rollback is free at every step: stop the new stack.** That was already true before this
 confirmation, and now doubly so: there is no live data anywhere to lose. The original step 4
 (before TT-7) was repointing the GitHub OAuth callback, the one step that could not be undone by

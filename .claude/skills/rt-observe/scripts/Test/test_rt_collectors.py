@@ -329,7 +329,8 @@ class ServicesTest(TempTree):
                 "outbox_root": str(self.home / "outbox"),
                 "daemon_lock_path": str(self.home / "vault-daemon.lock"),
                 "lock_stale_after_s": 900,
-                "outbox_listed": 3}
+                "outbox_listed": 3,
+                "lock_boot_skew_tolerance_s": 0}
 
     def _mcp_values(self):
         return {"mcp_timeout_s": 5}
@@ -481,6 +482,19 @@ class ServicesTest(TempTree):
                                              self._values(), now=NOW)
         self.assertTrue(state["vault_daemon"]["running"])
         self.assertIsNone(state["vault_daemon"]["alert"])
+
+    def test_a_missing_boot_skew_key_is_not_silently_read_as_zero(self):
+        """R8/M-B from the round-4 review: collect()'s own
+        config_values.get("lock_boot_skew_tolerance_s", 0.0) used to read a
+        missing key as 0 silently, exactly the failure class the margin
+        itself exists to prevent - a clock step read as a real reboot. Now
+        a bare KeyError, which _guarded (rt_state.py) turns into an
+        unavailable services panel rather than a wrong answer."""
+        values = self._values()
+        del values["lock_boot_skew_tolerance_s"]
+        with no_binaries():
+            with self.assertRaises(KeyError):
+                collect_services.collect(self.repo, self.home, values, now=NOW)
 
     def test_the_liveness_read_carries_the_configured_boot_skew_margin(self):
         """PR #42 round-2 review (M-B, mutation-testing gap S1): dropping

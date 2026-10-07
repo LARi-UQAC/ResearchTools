@@ -410,6 +410,25 @@ class VaultLockTest(unittest.TestCase):
              patch.object(vl.Path, "read_text", return_value="not a number"):
             self.assertIsNone(vl._boot_time_utc())
 
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc/uptime path")
+    def test_boot_time_utc_degrades_on_an_empty_proc_uptime(self):
+        """Round-4 review survivor: dropping IndexError from this except
+        clause went untested - an EMPTY /proc/uptime makes split()[0] raise
+        IndexError rather than ValueError, a different exception type the
+        malformed-content case above never exercises."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value=""):
+            self.assertIsNone(vl._boot_time_utc())
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc/uptime path")
+    def test_boot_time_utc_degrades_on_an_unreadable_proc_uptime(self):
+        """Round-4 review survivor: dropping OSError from this except
+        clause was only proven on the WINDOWS ctypes path above; this is
+        the same failure type on the Linux file-read path."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", side_effect=OSError("boom")):
+            self.assertIsNone(vl._boot_time_utc())
+
     @unittest.skipIf(os.name != "nt", "exercises the Windows pid-reuse path")
     def test_process_start_marker_degrades_on_a_windows_api_failure(self):
         """Mutation-testing gap #3: dropping OSError from this function's
@@ -417,6 +436,16 @@ class VaultLockTest(unittest.TestCase):
         existing case here exercises the real, working ctypes calls on
         this machine rather than a forced failure."""
         with patch.object(vl.ctypes, "WinDLL", side_effect=OSError("boom")):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name != "nt", "exercises the Windows pid-reuse path")
+    def test_process_start_marker_degrades_on_a_missing_ctypes_attribute(self):
+        """Round-4 review survivor: dropping AttributeError from this
+        except clause went untested - the shape it guards is a ctypes
+        binding gap (an exotic Windows build missing a kernel32 export),
+        reproduced here by making the attribute assignment itself fail."""
+        with patch.object(vl.ctypes, "WinDLL",
+                          side_effect=AttributeError("boom")):
             self.assertIsNone(vl.process_start_marker(os.getpid()))
 
     def test_an_unreadable_current_marker_keeps_a_live_pid_as_holder(self):
@@ -452,6 +481,21 @@ class VaultLockTest(unittest.TestCase):
         propagate rather than silently returning None."""
         with patch.object(vl.Path, "exists", return_value=True), \
              patch.object(vl.Path, "read_text", return_value="not a stat line"):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc parse path")
+    def test_process_start_marker_degrades_on_a_non_numeric_stat_field(self):
+        """Round-4 review survivor: the malformed-stat test above exercises
+        IndexError (no ")" at all); this is the OTHER shape the narrowed
+        except names - a well-formed stat line whose field 22 is not a
+        number, raising ValueError out of int() instead."""
+        fields = ["0"] * 25
+        # tail = "R <fields...>".split(), so tail[19] (field 22) is
+        # fields[18] here, one position back for the state field "R".
+        fields[18] = "not-a-number"
+        line = "1 (comm) R " + " ".join(fields)
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value=line):
             self.assertIsNone(vl.process_start_marker(os.getpid()))
 
     @unittest.skipIf(os.name == "nt", "exercises the Linux /proc parse path")

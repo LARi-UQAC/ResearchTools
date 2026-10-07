@@ -382,6 +382,11 @@ def collect(repo_root, home, config_values, now=None):
             config_values["lock_stale_after_s"],
             now=now,
             outbox_listed=config_values.get("outbox_listed", 0),
-            boot_skew_tolerance_s=config_values.get(
-                "lock_boot_skew_tolerance_s", 0.0)),
+            # Required, not .get(..., 0.0): a silent 0.0 here would read a
+            # genuinely live daemon as reclaimable on a clock step exactly
+            # as badly as the lock's own missing margin would (R8, round-4
+            # PR #42 review) - the one caller (rt_state.py) always supplies
+            # it via config_value(), so a KeyError here means a NEW caller
+            # skipped that, not an ordinary missing-config case.
+            boot_skew_tolerance_s=config_values["lock_boot_skew_tolerance_s"]),
     }

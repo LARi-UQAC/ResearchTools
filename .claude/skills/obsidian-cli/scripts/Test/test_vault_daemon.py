@@ -311,18 +311,29 @@ class UnreachableOllamaTest(DaemonCase):
         full loop, whose drain/ask timers also call time.monotonic and
         would make a shared fake clock ambiguous) - an unchanging message
         logs AGAIN once the interval has actually elapsed, so an outage
-        gets a periodic heartbeat rather than going silent forever."""
+        gets a periodic heartbeat rather than going silent forever.
+
+        Round-4 review: the clock started at 0.0, which coincides with
+        _last_bridge_error's own uninitialized "at" default, so dropping
+        the "last['at'] = now" update entirely was INVISIBLE here -
+        every call still compared against 0.0 either way, by the same
+        accident. Starting the clock far above the interval instead means
+        a dropped update makes the SECOND call also log (comparing
+        against the stale 0.0 default, not the real last log time),
+        which this test now forces and checks for directly."""
         daemon = self._daemon(drain_idle_s=900)
         buf = io.StringIO()
         with mock.patch.object(vd.time, "monotonic",
-                               side_effect=[0.0, 5.0, 11.0]), \
+                               side_effect=[1000.0, 1005.0, 1011.0]), \
                 mock.patch("sys.stderr", buf):
             daemon._log_bridge_error("connection refused", 10)
             daemon._log_bridge_error("connection refused", 10)
             daemon._log_bridge_error("connection refused", 10)
         self.assertEqual(buf.getvalue().count("connection refused"), 2,
-                         "logged at t=0, suppressed at t=5 (within 10s), "
-                         "logged again at t=11 (past the interval)")
+                         "logged at t=1000, suppressed at t=1005 (within "
+                         "10s of t=1000), logged again at t=1011 (past "
+                         "the interval) - exactly 2, not 3, which is what "
+                         "a dropped 'last[\"at\"] = now' would produce")
 
     def test_a_changed_bridge_error_message_still_logs_immediately(self):
         """Negative control: suppression must key on the MESSAGE, or a

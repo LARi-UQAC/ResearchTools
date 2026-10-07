@@ -404,20 +404,31 @@ class VaultDaemon(OutboxLayout):
         last["at"] = now
 
     def run_forever(self) -> int:
-        interval = self._cfg("poll_interval_s")
         try:
-            singleton = self.singleton_lock().acquire()
+            # Every required key read BEFORE anything is acquired (R12,
+            # round-2 PR #42 review L-B): singleton_lock() itself reads
+            # lock.boot_skew_tolerance_s, so a stale config beside new code
+            # used to raise ConfigError as a bare traceback mid-acquire,
+            # which would also have left the lock orphaned had the failure
+            # landed one line later.
+            interval = self._cfg("poll_interval_s")
+            bridge_error_log_interval_s = self._cfg("bridge_error_log_interval_s")
+            drain_every = self._cfg("drain_idle_s")
+            ask_interval = self._cfg("ask_poll_interval_s")
+            singleton_lock = self.singleton_lock()
+        except outbox_io.ConfigError as exc:
+            print(f"[DAEMON] {exc}", file=sys.stderr)
+            return 2
+        try:
+            singleton = singleton_lock.acquire()
         except vault_lock.LockError:
             print("[DAEMON] another daemon is already watching this outbox; "
                   "refusing to start a second one", file=sys.stderr)
             return 1
-        bridge_error_log_interval_s = self._cfg("bridge_error_log_interval_s")
         self.recover_working()
-        drain_every = self._cfg("drain_idle_s")
         last_drain = time.monotonic()
         print(f"[DAEMON] watching {self.outbox / RAW} every {interval}s",
               file=sys.stderr)
-        ask_interval = self._cfg("ask_poll_interval_s")
         last_ask = time.monotonic()
         while not _STOP["requested"]:
             try:

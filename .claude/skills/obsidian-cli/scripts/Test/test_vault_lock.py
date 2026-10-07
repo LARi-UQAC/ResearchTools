@@ -330,6 +330,44 @@ class VaultLockTest(unittest.TestCase):
         with patch.object(vl, "_boot_time_utc", return_value=boot):
             self.assertIsNone(lock._stale_reason(lock._read_holder()))
 
+    def test_a_lock_exactly_at_the_margin_boundary_survives(self):
+        """L-C from the round-2 review: no test pinned the exact boundary.
+        The comparison is strict ("<"), so an "at" exactly `margin` seconds
+        before boot is NOT reclaimed - only a lock strictly older than the
+        margin is. Built from a fixed boot time rather than age_s, since
+        age_s and "now" are both live clock reads and would make "exactly
+        the margin" only approximately true."""
+        boot = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        at_boundary = boot - timedelta(seconds=300)
+        self._write_holder(os.getpid(), age_s=0)
+        note = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        note["at"] = at_boundary.isoformat()
+        self.lock_path.write_text(json.dumps(note), encoding="utf-8")
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            self.assertIsNone(lock._stale_reason(lock._read_holder()))
+
+    def test_a_lock_one_second_past_the_margin_boundary_is_reclaimed(self):
+        """The other side of the same boundary: one second older than the
+        margin is reused."""
+        boot = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        past_boundary = boot - timedelta(seconds=301)
+        self._write_holder(os.getpid(), age_s=0)
+        note = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        note["at"] = past_boundary.isoformat()
+        self.lock_path.write_text(json.dumps(note), encoding="utf-8")
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            reason = lock._stale_reason(lock._read_holder())
+        self.assertIsNotNone(reason)
+        self.assertIn("reused", reason)
+
     def test_a_lock_well_before_boot_is_still_reclaimed_despite_the_margin(self):
         """Negative control: the margin must not swallow the real scenario
         (a lock from hours or days before a genuine reboot), or M2's fix

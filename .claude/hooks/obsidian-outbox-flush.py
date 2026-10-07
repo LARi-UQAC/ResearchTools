@@ -203,9 +203,12 @@ def _report_raw_waiting(outbox_io, vault_lock) -> None:
     try:
         config = outbox_io.load_config()
         stale_after_s = outbox_io.require(config, "lock", "stale_after_s")
+        boot_skew_tolerance_s = outbox_io.require(
+            config, "lock", "boot_skew_tolerance_s")
     except outbox_io.ConfigError:
         return
-    if vault_lock.held_by_live_holder(_daemon_lock_path(), stale_after_s):
+    if vault_lock.held_by_live_holder(_daemon_lock_path(), stale_after_s,
+                                      boot_skew_tolerance_s):
         return
     scripts = _skills_dir()
     start = f"python {scripts / 'vault_daemon.py'}" if scripts else "vault_daemon.py"
@@ -237,6 +240,8 @@ def main() -> int:
             acquire_timeout_s=outbox_io.require(config, "lock", "hook_acquire_timeout_s"),
             stale_after_s=outbox_io.require(config, "lock", "stale_after_s"),
             poll_interval_s=outbox_io.require(config, "lock", "poll_interval_s"),
+            boot_skew_tolerance_s=outbox_io.require(
+                config, "lock", "boot_skew_tolerance_s"),
         )
     except outbox_io.ConfigError as exc:
         print(f"[OUTBOX] {exc}; leaving outbox intact", file=sys.stderr)

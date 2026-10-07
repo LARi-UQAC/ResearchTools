@@ -285,6 +285,25 @@ class UnreachableOllamaTest(DaemonCase):
         self.assertEqual(rc, 0)
         self.assertEqual(buf.getvalue().count("connection refused"), 1)
 
+    def test_run_forever_exits_2_on_a_missing_config_key_rather_than_a_traceback(self):
+        """L-B from the round-2 review: a stale config beside new code (a
+        clone that has not picked up lock.boot_skew_tolerance_s, say) used
+        to raise outbox_io.ConfigError as a bare traceback inside
+        singleton_lock(), before any handler existed for it. Now every
+        required key is read before anything is acquired, and a missing one
+        is a stated exit-2 refusal (R12)."""
+        incomplete = {**self.LOOP_CONFIG,
+                      "lock": {k: v for k, v in CONFIG["lock"].items()
+                              if k != "boot_skew_tolerance_s"}}
+        daemon = vd.VaultDaemon(self.vault, self.outbox, incomplete, today=TODAY)
+        buf = io.StringIO()
+        with mock.patch("sys.stderr", buf):
+            rc = daemon.run_forever()
+        self.assertEqual(rc, 2)
+        self.assertIn("boot_skew_tolerance_s", buf.getvalue())
+        # Nothing was left acquired for a later start to collide with.
+        self.assertFalse((self.outbox.parent / "vault-daemon.lock").exists())
+
     def test_the_throttle_logs_again_once_the_interval_elapses(self):
         """Mutation-testing gap #1 from the round-2 review: only the
         'suppressed within the interval' half was tested. This proves the

@@ -306,23 +306,36 @@ any other). Four parts:
    runs a command, or produces a deliverable. Find the skill, or the agent that uses one, in
    the routing table of `.claude/CLAUDE.md`, in `README.md`, or in the skill list, and state
    which one is used. A short answer given from what is already in context is not a task, which
-   is also what R28 asks of a direct chat question.
+   is also what R28 asks of a direct chat question. This binds the top-level choice of what
+   covers the work, not every file read or command a skill or an agent then runs to carry it
+   out: once a skill or an agent is named, its own internal steps (a helper script reading a
+   config file, `local-coder` writing the code a plan already specifies) do not each need a
+   fresh skill lookup. An agent whose definition carries the `Skill` tool but does not require
+   using it for a given task (`local-coder`, which drives `ollama_bridge.py` directly) is
+   compliant through the dispatch that named it, not through using that tool on every run.
 2. **No match, or more than one candidate: `AskUserQuestion`.** The best option comes first and
    ends with `(Recommended)`, and each option states its origin, behaviour and cost, as R25
    requires. Where the question cannot be asked, the work stops and says why. It does not
    continue on a guess, and it does not substitute a skill that merely resembles the task.
-3. **No skill exists: ResearchTools improves itself.** Search for the nearest existing skill
-   with `find-skills`, read-only, as inspiration. Author the new skill with the `skill-creator`
-   skill, on the latest cloud Claude model and never on a local one (the same boundary as plan
-   authoring and `latex-writer`), shaped to this project's own needs. Register it by following
-   `docs/authoring-and-mirrors.md`, so that it carries a test (R15), an inventory line (R23) and
-   its documentation (R31). `skill-creator` is delivered to Claude Code by the
-   `skill-creator@claude-plugins-official` plugin and `find-skills` is a machine-local skill, so
-   neither ships in `.claude/skills/`. Where one is absent (Copilot, Aider, Continue, Codex, a
-   fresh clone) the work does not stop: search `.claude/skills/` and `README.md` for the nearest
-   skill, then write the `SKILL.md` by hand on the latest cloud Claude model, following section
-   7 of `docs/authoring-and-mirrors.md`. The model must be a cloud one, so a harness that can
-   run only a local model asks the user to run this step in Claude Code.
+3. **No skill exists: ask first, the same gate as a new tool anywhere else, then
+   ResearchTools improves itself.** A genuine gap with no owner follows step 1 of "Improving
+   ResearchTools from another folder" above: ask the user before authoring an entirely new
+   skill, since a gap with no obvious owner is often specific to the task at hand and does
+   not belong in the toolbox; this is the same `AskUserQuestion` call as part 2, asked about
+   whether to build at all rather than which candidate to pick. Once the user confirms a new
+   skill belongs here, search for the nearest existing one with `find-skills`, read-only, as
+   inspiration. Author the new skill with the `skill-creator` skill, on the latest cloud
+   Claude model and never on a local one (the same boundary as plan authoring and
+   `latex-writer`), shaped to this project's own needs. Register it by following
+   ResearchTools' own `docs/authoring-and-mirrors.md`, so that it carries a test (R15), an
+   inventory line (R23) and its documentation (R31). `skill-creator` is delivered to Claude
+   Code by the `skill-creator@claude-plugins-official` plugin and `find-skills` is a
+   machine-local skill, so neither ships in `.claude/skills/`. Where one is absent (Copilot,
+   Aider, Continue, Codex, a fresh clone) the work does not stop: search `.claude/skills/` and
+   `README.md` for the nearest skill, then write the `SKILL.md` by hand on the latest cloud
+   Claude model, following section 7 of `docs/authoring-and-mirrors.md`. The model must be a
+   cloud one, so a harness that can run only a local model asks the user to run this step in
+   Claude Code.
 4. **Never install a skill from the internet, ad hoc.** `find-skills` can search and install;
    here it only searches, and it is the one third-party skill the operator has chosen to keep.
    No `npx skills add`, and no skill, plugin or agent fetched from a repository, registry or

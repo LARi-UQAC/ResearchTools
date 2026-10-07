@@ -375,8 +375,13 @@ Skill-first rule (R36): no task runs without a skill, or without an agent that u
 skill, whatever the model or the harness. Name the skill first. When none fits, or
 several could, ask the user with the best option first. When none exists, author one
 inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
-found read-only with ``find-skills``. Never install a skill from the internet. The full
-rule is R36 in ``.claude/rules/workflows.md``.
+found read-only with ``find-skills``. Never install a skill ad hoc from a repository,
+registry or marketplace to cover a gap -- plugins the repo itself declares in
+``.claude/settings.template.json`` (``enabledPlugins``), such as the one delivering
+``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills`` is
+unavailable (Copilot, Aider, Continue, Codex, a fresh clone), search
+``.claude/skills/`` and ``README.md`` by hand instead of stopping. The full rule is
+R36 in ``.claude/rules/workflows.md``.
 
 Hard rules: validate every reference against Scopus (scripts in
 ``.claude/skills/scopus/scripts/``); never fabricate references or DOIs; LaTeX
@@ -517,8 +522,13 @@ Skill-first rule (R36): no task runs without a skill, or without an agent that u
 skill, whatever the model or the harness. Name the skill first. When none fits, or
 several could, ask the user with the best option first. When none exists, author one
 inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
-found read-only with ``find-skills``. Never install a skill from the internet. The full
-rule is R36 in ``.claude/rules/workflows.md``.
+found read-only with ``find-skills``. Never install a skill ad hoc from a repository,
+registry or marketplace to cover a gap -- plugins the repo itself declares in
+``.claude/settings.template.json`` (``enabledPlugins``), such as the one delivering
+``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills`` is
+unavailable (Copilot, Aider, Continue, Codex, a fresh clone), search
+``.claude/skills/`` and ``README.md`` by hand instead of stopping. The full rule is
+R36 in ``.claude/rules/workflows.md``.
 
 Academic writing rules: validate references against Scopus, never fabricate DOIs,
 LaTeX output in ``out/``.
@@ -592,8 +602,13 @@ Skill-first rule (R36): no task runs without a skill, or without an agent that u
 skill, whatever the model or the harness. Name the skill first. When none fits, or
 several could, ask the user with the best option first. When none exists, author one
 inside ResearchTools with the ``skill-creator`` skill, inspired by the nearest skill
-found read-only with ``find-skills``. Never install a skill from the internet. The full
-rule is R36 in ``.claude/rules/workflows.md``.
+found read-only with ``find-skills``. Never install a skill ad hoc from a repository,
+registry or marketplace to cover a gap -- plugins the repo itself declares in
+``.claude/settings.template.json`` (``enabledPlugins``), such as the one delivering
+``skill-creator``, are approved. Where ``skill-creator`` or ``find-skills`` is
+unavailable (Copilot, Aider, Continue, Codex, a fresh clone), search
+``.claude/skills/`` and ``README.md`` by hand instead of stopping. The full rule is
+R36 in ``.claude/rules/workflows.md``.
 
 Obsidian vault writes go through the outbox only: deposit the note in
 ``~/.claude/obsidian-outbox/`` with a first-line directive and let the

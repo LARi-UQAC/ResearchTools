@@ -107,14 +107,21 @@ deliverable; a short answer given from what is already in context is not a task.
 
 1. **Name the skill or agent first.** Before acting, find the skill or the agent (using a
    skill) that covers the task in the Tooling routing table below, in `README.md`, or in the
-   skill list. State which one is used.
+   skill list. State which one is used. This binds the top-level choice, not every step a
+   named skill or agent then runs on its own (`local-coder` carries the `Skill` tool but is
+   not required to use it on a task its own dispatch already covers).
 2. **No match, or more than one candidate: ask.** Use `AskUserQuestion` with the best option
    first, marked `(Recommended)`, and the origin, behaviour and cost of each option (R25). If
    the question cannot be asked, stop and say so. Do not proceed without a skill.
-3. **No skill exists: ResearchTools builds its own.** Look for the nearest existing skill with
-   `find-skills`, used read-only for inspiration. Then author the new skill with the
+3. **No skill exists: ask first, then ResearchTools builds its own.** A gap with no obvious
+   owner is often specific to the task at hand, so ask the user before authoring an entirely
+   new skill, the same `AskUserQuestion` call as step 2. Once confirmed, look for the nearest
+   existing skill with `find-skills`, used read-only for inspiration. Then author the new
+   skill with the
    `skill-creator` skill on the latest cloud Claude model, shaped to this project's needs and
-   inspired by that nearest skill. Register it as `docs/authoring-and-mirrors.md` requires.
+   inspired by that nearest skill. Register it as ResearchTools' own
+   `docs/authoring-and-mirrors.md` requires (a project with no such guide documents the new
+   skill the same way, locally).
    Where `skill-creator` or `find-skills` is not available (Copilot, Aider, Continue, Codex, a
    fresh clone), do not stop: search the repository's own `.claude/skills/` and `README.md` for
    the nearest skill, then write the `SKILL.md` by hand on the latest cloud Claude model,
@@ -127,7 +134,8 @@ deliverable; a short answer given from what is already in context is not a task.
    A skill copied in from outside has no provenance and no review (see
    `.claude/rules/security.md`).
 
-The full rule, with the reasoning, is R36 in `.claude/rules/workflows.md`.
+The full rule, with the reasoning, is R36 in ResearchTools' own
+`.claude/rules/workflows.md`.
 
 ## Role and mission
 

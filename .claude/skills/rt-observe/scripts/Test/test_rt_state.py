@@ -1076,6 +1076,32 @@ class VoiceWiringCase(unittest.TestCase):
         self.assertEqual(captured["id"], "0123456789abcdef")
         self.assertEqual(result, {"status": "partial", "parts": []})
 
+    def test_answer_fn_redacts_a_home_rooted_path_in_the_answer(self):
+        """PR #49 re-review M3: a graph-part refusal reason can embed an
+        absolute repo: path under the operator's home (an R24 allowlist
+        refusal, say), and this answer is served to a browser. The home
+        prefix must be rewritten to ~ before it leaves the process, the same
+        way every other path-bearing rt-observe section already is."""
+        home = Path.home()
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        leaky_reason = (f"repo: {home / 'secret-project'!s} resolves "
+                        "outside the configured allowlist")
+
+        def fake_read(outbox_root, request_id):
+            return {"status": "ok", "parts": [
+                {"stage": "graph", "status": "error", "text": None,
+                 "reason": leaky_reason}]}
+
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), home, read=fake_read)
+        result = answer_fn("0123456789abcdef")
+        reason = result["parts"][0]["reason"]
+        self.assertNotIn(str(home), reason)
+        self.assertIn("~", reason)
+        self.assertIn("secret-project", reason)
+
     def test_answer_fn_refuses_a_path_traversal_id_without_calling_read(self):
         tmp = Path(tempfile.mkdtemp())
         config = fixture_config()
@@ -1099,6 +1125,22 @@ class VoiceWiringCase(unittest.TestCase):
             config, self._cache(), Path.home(),
             read=lambda *a, **kw: read_calls.append(a))
         result = answer_fn("not-hex-at-all")
+        self.assertEqual(result["status"], "refused")
+        self.assertEqual(read_calls, [])
+
+    def test_answer_fn_refuses_a_valid_id_with_a_trailing_newline(self):
+        """PR #49 re-review L2: re.match's `$` matches just before a trailing
+        newline as well as end-of-string, so "<16 valid hex chars>\\n" used
+        to pass this check. fullmatch() closes it."""
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        read_calls = []
+
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), Path.home(),
+            read=lambda *a, **kw: read_calls.append(a))
+        result = answer_fn("0123456789abcdef\n")
         self.assertEqual(result["status"], "refused")
         self.assertEqual(read_calls, [])
 

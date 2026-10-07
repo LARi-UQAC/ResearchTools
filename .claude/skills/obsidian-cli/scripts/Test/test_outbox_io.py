@@ -101,6 +101,24 @@ class SetFrontmatterPropertyCase(unittest.TestCase):
             outbox_io.set_frontmatter_property(absent, "repo", "x")
         self.assertFalse(absent.exists())
 
+    def test_a_value_starting_with_hash_or_colon_round_trips_verbatim(self):
+        """PR #49 re-review M8: a value beginning with # or : is still a
+        single line (no CR/LF), so it is written and read back verbatim by
+        this module's own regex-based reader - a real YAML engine (Obsidian's
+        own) might read a leading # as a comment, which is a presentation
+        difference from Obsidian's rendering, not a corruption of what this
+        module itself writes or reads."""
+        import daemon_graph
+        import outbox_io
+        for value in ("#not-a-comment-here", ":looks-like-a-mapping"):
+            with self.subTest(value=value):
+                note = self._note("n.md", "---\ntype: projet\n---\n\nbody\n")
+                ok, before, after = outbox_io.set_frontmatter_property(
+                    note, "repo", value)
+                self.assertTrue(ok)
+                self.assertEqual(
+                    daemon_graph.read_repo_property(note), value)
+
     def test_a_file_with_no_frontmatter_block_raises(self):
         import outbox_io
         note = self._note("n.md", "# Title\n\nno frontmatter at all\n")

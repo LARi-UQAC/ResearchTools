@@ -169,6 +169,18 @@ own `repo:` property, and only while answering an ask request that already decla
 `from: rt-dashboard` (the same gate `daemon_ask.read_request` enforces for the vault read).
 The query is bounded by `daemon-config.json`'s `ask_graph_timeout_s` and `ask_graph_max_chars`.
 
+**R24, fixed 2026-10-07 (PR #49 re-review, High).** A `repo:` value is untrusted input - any
+local process able to write a vault note (or a future consolidation/phantom-repair edit) could
+name an arbitrary directory, and the daemon would run `graphify query` with that directory as
+the subprocess `cwd`. `daemon_graph._resolve_repo_claim` now additionally requires the resolved
+path to appear, by exact match, in `daemon_graph.load_allowed_roots()` - the machine-local,
+gitignored `.claude/local-ask-graph-roots.json` (`{"allowed_roots": ["<absolute path>", ...]}`).
+Absent, unparsable, or empty is a fail-closed empty allowlist (R8), not a fail-open pass. The
+file is gitignored rather than part of `daemon-config.json` because the mapped repos sit under
+the operator's own account directory, and committing them to the public repo would leak the
+account path (R34, `verify-no-personal-data.ps1`). An operator enabling this ask-queue feature
+must create that file naming the repositories they want reachable.
+
 This does not change anything for a Claude Code session: a session still reaches a graph only
 by dispatching `local-writer`, exactly as above. The daemon is a second mechanism, not a second
 exemption in the guard - it was never subject to the guard in the first place, the same way its

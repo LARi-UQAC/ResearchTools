@@ -395,6 +395,16 @@ class GraphPartCase(unittest.TestCase):
             "{}", encoding="utf-8")
         (proj / "index.md").write_text(
             f"---\nrepo: {self.repo}\n---\n\nbody\n", encoding="utf-8")
+        # R24: entity_repo now refuses a repo: claim outside a configured
+        # allowlist (daemon_graph.load_allowed_roots), which is empty by
+        # default on a machine with no .claude/local-ask-graph-roots.json.
+        # This fixture's own repo is allowlisted so the rest of the class can
+        # exercise the real entity_repo rather than mocking it away.
+        allowlist_patcher = mock.patch(
+            "daemon_graph.load_allowed_roots",
+            return_value=[self.repo.resolve()])
+        allowlist_patcher.start()
+        self.addCleanup(allowlist_patcher.stop)
         self.config = {"daemon": {
             "ask_request_ttl_s": 90, "ask_max_vault_notes": 5,
             "ask_note_excerpt_chars": 1200,
@@ -482,6 +492,32 @@ class GraphPartCase(unittest.TestCase):
         self.assertEqual(publish_calls[0]["status"], "partial")
         self.assertEqual(len(publish_calls[0]["parts"]), 1)
         self.assertLess(order.index("publish"), order.index("query_graph"))
+
+    def test_a_repo_not_on_the_allowlist_is_skipped_through_the_real_answer_path(self):
+        """H3 end to end: the same vault note and repo as every other test in
+        this class, but with the class-wide allowlist patch overridden back
+        to empty for this one test - the full answer() path must still
+        refuse to query a graph outside the allowlist, not only the unit
+        under test_daemon_graph.py."""
+        import daemon_ask
+        calls = []
+
+        def fake(prompt, *a, **kw):
+            calls.append(prompt)
+            if len(calls) == 1:
+                return "vault answer"
+            return self._keywords_reply()
+
+        with mock.patch("daemon_ask.daemon_states.call_model",
+                        side_effect=fake), \
+                mock.patch("daemon_graph.load_allowed_roots",
+                          return_value=[]), \
+                mock.patch("daemon_graph.query_graph") as query:
+            result = daemon_ask.answer(
+                self._request(), self.vault, "a-tag", 16384, 5.0,
+                self.config, today="2026-09-26T12:00:03+00:00")
+        self.assertEqual(result["parts"][1]["status"], "skipped")
+        self.assertFalse(query.called)
 
     def test_entity_repo_failure_is_skipped_not_error(self):
         import daemon_ask

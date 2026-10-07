@@ -199,7 +199,7 @@
     },
     "voice_ask_wait": {
       "value": 85,
-      "unit": "seconds the /api/voice/ask route blocks waiting for the daemon's answer file before giving up",
+      "unit": "seconds the voice panel's own poll loop keeps calling GET /api/voice/answer for one part before giving up on it (POST /api/voice/ask itself returns at once, 202 accepted, since 2026-10-02)",
       "provenance": "measured 2026-09-26 - the original 20 s timed out before any answer could arrive: daemon-config.json records a 36.991 s median writer-role call, and the resident ornith:9b-gpu decoded at 20.3 tok/s that day. Kept just under the daemon's own ask_request_ttl_s (90 s) so the dashboard never waits on a request the daemon has already expired. Since 2026-10-02 (plan2, voice-graph-lookup) this is a PER-PART wait, not a single total: the vault part and the graph part (plan1b) each get up to this long since their own last published part, so a slow graph query does not cut off a vault answer that already arrived"
     }
   },

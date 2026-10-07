@@ -37,6 +37,7 @@ import collect_traces  # noqa: E402
 import collect_usage  # noqa: E402
 import rt_actions  # noqa: E402
 import rt_openobserve  # noqa: E402
+import rt_redact  # noqa: E402
 import rt_server  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -503,10 +504,15 @@ def voice_callables(config, cache, home, write_request=None, read=None,
         return {"status": "accepted", "id": request_id}
 
     def answer_fn(request_id):
-        if not _ANSWER_ID.match(request_id or ""):
+        if not _ANSWER_ID.fullmatch(request_id or ""):
             return {"status": "refused",
                    "reason": f"invalid answer id {request_id!r}"}
-        return read(outbox_root, request_id)
+        # A graph-part refusal reason can embed an absolute repo: path (R24
+        # allowlist refusal, a missing graph, ...), and this answer is served
+        # to a browser and can be screenshotted - redact before it leaves the
+        # process (PR #49 re-review M3), same as every other path-bearing
+        # section rt-observe already redacts.
+        return rt_redact.redact_json(read(outbox_root, request_id), home)
 
     return transcribe_fn, ask_fn, answer_fn
 

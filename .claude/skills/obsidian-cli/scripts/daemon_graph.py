@@ -15,6 +15,12 @@ caller of this module is daemon_ask.answer(), itself reached only for an ask
 request that already declared `from: rt-dashboard` (daemon_ask.read_request's
 gate). This module never runs `graphify update` or `graphify save-result` -
 only `query` - and never writes to the vault or to graphify-out/ itself.
+
+A vault note's `repo:` property is untrusted input (R24): `_resolve_repo_claim`
+only runs `graphify query` with a `repo:` value's resolved path as cwd when
+that path also appears in `load_allowed_roots()`'s machine-local, gitignored
+allowlist (`.claude/local-ask-graph-roots.json`) - absent or unparsable
+degrades to an empty allowlist, refusing every claim, never to an open one.
 """
 import json
 import shutil
@@ -155,23 +161,89 @@ def read_repo_property(index_path: Path) -> "str | None":
     return value or None
 
 
-def _resolve_repo_claim(value: str) -> dict:
+_ALLOWED_ROOTS_FILENAME = "local-ask-graph-roots.json"
+
+
+def allowed_roots_path() -> Path:
+    """The machine-local allowlist's fixed location, `.claude/` beside the
+    repo's other machine-local config (`local-model-config.json` and
+    siblings), derived from this file's own location rather than a literal
+    (R18)."""
+    return SCRIPTS.parents[2] / _ALLOWED_ROOTS_FILENAME
+
+
+def load_allowed_roots(path: "Path | None" = None) -> list:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the machine-local allowlist of repository roots daemon_graph may
+        point `graphify query`'s cwd at (R24). A vault note's `repo:` value is
+        untrusted input - it may name any absolute path a local process can
+        write, including a future consolidation or phantom-repair edit - so
+        the daemon trusts only a root that ALSO appears here, a file the vault
+        itself cannot write.
+
+    Details:
+        Gitignored and absent from a fresh clone by design: the mapped repos
+        sit under this operator's own account directory, and committing their
+        absolute paths to the public repo would leak the account path
+        (R34, `verify-no-personal-data.ps1`). An absent or unparsable file
+        degrades to an empty allowlist (R8: fail closed, not fail open) rather
+        than raising, since every ask call must still answer the vault part
+        even when the graph part cannot be trusted this call.
+
+    Inputs:
+        path (Path | None): override for tests; defaults to
+        `.claude/local-ask-graph-roots.json`.
+
+    Outputs:
+        roots (list[Path]): each configured entry, resolved once. Empty when
+        the file is absent, is not valid JSON, is not a `{"allowed_roots":
+        [...]}` object, or names no usable string entries.
+    --------------------------------------------------------------------------
+    """
+    target = path or allowed_roots_path()
+    try:
+        raw = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entries = raw.get("allowed_roots") if isinstance(raw, dict) else None
+    if not isinstance(entries, list):
+        return []
+    return [Path(p).resolve() for p in entries
+           if isinstance(p, str) and p.strip()]
+
+
+def _resolve_repo_claim(value: str, allowed_roots: list) -> dict:
     """One `repo:` value's own validation, independent of which hit or
-    folder produced it: absolute, exists, holds a graph."""
+    folder produced it: absolute, resolves inside the configured allowlist
+    (R24 - resolved first, then compared, never clamped), exists, holds a
+    graph."""
     path = Path(value)
     if not path.is_absolute():
         return {"entity": None, "reason": f"repo: {value!r} is not absolute"}
-    if not path.is_dir():
+    resolved = path.resolve()
+    if not allowed_roots:
+        return {"entity": None,
+               "reason": "no repository is allowlisted "
+                         f"({_ALLOWED_ROOTS_FILENAME} is absent, unparsable, "
+                         "or empty) - refusing by default"}
+    if resolved not in allowed_roots:
+        return {"entity": None,
+               "reason": f"repo: {value!r} resolves outside the configured "
+                         "allowlist"}
+    if not resolved.is_dir():
         return {"entity": None,
                "reason": f"repo: {value!r} does not exist"}
-    if not (path / "graphify-out" / "graph.json").is_file():
+    if not (resolved / "graphify-out" / "graph.json").is_file():
         return {"entity": None,
                "reason": f"repo: {value!r} has no graph "
                          "(graphify-out/graph.json)"}
-    return {"repo": path}
+    return {"repo": resolved}
 
 
-def _resolve_one_hit(vault: Path, hit: dict, search_roots: list) -> dict:
+def _resolve_one_hit(vault: Path, hit: dict, search_roots: list,
+                     allowed_roots: list) -> dict:
     """Walk one hit's path upward from its own folder toward its matching
     search root, returning the first index.md's repo: claim (valid or not -
     the nearest claim decides, never a more distant one)."""
@@ -193,7 +265,7 @@ def _resolve_one_hit(vault: Path, hit: dict, search_roots: list) -> dict:
         value = read_repo_property(index_path)
         if value is None:
             continue
-        claim = _resolve_repo_claim(value)
+        claim = _resolve_repo_claim(value, allowed_roots)
         if "repo" in claim:
             return {"entity": Path(folder_rel).name, "repo": claim["repo"]}
         return claim
@@ -201,7 +273,8 @@ def _resolve_one_hit(vault: Path, hit: dict, search_roots: list) -> dict:
            "reason": f"{hit['rel']}: no repo: property found above it"}
 
 
-def entity_repo(vault: Path, hits: list, search_roots: list) -> dict:
+def entity_repo(vault: Path, hits: list, search_roots: list,
+               allowed_roots: "list | None" = None) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -213,6 +286,10 @@ def entity_repo(vault: Path, hits: list, search_roots: list) -> dict:
         vault (Path): the vault root
         hits (list): daemon_ask.search_vault's own hit shape, in rank order
         search_roots (list): the configured vault-relative search roots
+        allowed_roots (list[Path] | None): the resolved allowlist a `repo:`
+        claim must land inside (R24); `None` loads `load_allowed_roots()`'s
+        default location, so a caller can inject a fixture allowlist in tests
+        without touching the real machine-local file.
 
     Outputs:
         result (dict): {"entity": <folder name>, "repo": Path} on success,
@@ -224,9 +301,11 @@ def entity_repo(vault: Path, hits: list, search_roots: list) -> dict:
     """
     if not hits:
         return {"entity": None, "reason": "no vault hit to resolve"}
+    if allowed_roots is None:
+        allowed_roots = load_allowed_roots()
     last_reason = None
     for hit in hits:
-        result = _resolve_one_hit(vault, hit, search_roots)
+        result = _resolve_one_hit(vault, hit, search_roots, allowed_roots)
         if "repo" in result:
             return result
         last_reason = result["reason"]

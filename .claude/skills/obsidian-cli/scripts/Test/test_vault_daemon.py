@@ -211,10 +211,11 @@ class UnreachableOllamaTest(DaemonCase):
         self.addCleanup(vd._STOP.update, requested=False)
         self.sleeps = 0
 
-    def _daemon(self, drain_idle_s):
-        config = {**self.LOOP_CONFIG,
-                  "daemon": {**self.LOOP_CONFIG["daemon"],
-                             "drain_idle_s": drain_idle_s}}
+    def _daemon(self, drain_idle_s, bridge_error_log_interval_s=None):
+        daemon_cfg = {**self.LOOP_CONFIG["daemon"], "drain_idle_s": drain_idle_s}
+        if bridge_error_log_interval_s is not None:
+            daemon_cfg["bridge_error_log_interval_s"] = bridge_error_log_interval_s
+        config = {**self.LOOP_CONFIG, "daemon": daemon_cfg}
         return vd.VaultDaemon(self.vault, self.outbox, config, today=TODAY)
 
     def _fake_sleep(self, _seconds):
@@ -268,6 +269,87 @@ class UnreachableOllamaTest(DaemonCase):
                                   side_effect=self._fake_sleep):
             with self.assertRaises(KeyError):
                 self._daemon(drain_idle_s=900).run_forever()
+
+    # ---------- PR #42 review (Medium): the log must not grow unbounded ----
+
+    def test_an_identical_bridge_error_is_rate_limited(self):
+        """poll_interval_s is 5s in production; five identical failures in a
+        row used to write five identical lines. With the interval set wide,
+        only the first is printed."""
+        drop = self._drop()
+        daemon = self._daemon(drain_idle_s=900,
+                              bridge_error_log_interval_s=3600)
+        buf = io.StringIO()
+        with mock.patch("sys.stderr", buf):
+            rc, _resolve = self._run_loop(daemon)
+        self.assertEqual(rc, 0)
+        self.assertEqual(buf.getvalue().count("connection refused"), 1)
+
+    def test_a_changed_bridge_error_message_still_logs_immediately(self):
+        """Negative control: suppression must key on the MESSAGE, or a
+        genuinely new failure (Ollama came back with a different error)
+        would be silently hidden behind an older, unrelated one."""
+        self._drop()
+        daemon = self._daemon(drain_idle_s=900,
+                              bridge_error_log_interval_s=3600)
+        down_a = self.mr.ResolverError("[RESOLVER] connection refused")
+        down_b = self.mr.ResolverError("[RESOLVER] a different failure")
+        buf = io.StringIO()
+        with mock.patch.object(self.mr, "resolve",
+                               side_effect=[down_a, down_b, down_b, down_b]), \
+                mock.patch.object(vd.time, "sleep",
+                                  side_effect=self._fake_sleep), \
+                mock.patch.object(vd.ob, "_post_generate",
+                                  side_effect=AssertionError), \
+                mock.patch("sys.stderr", buf):
+            daemon.run_forever()
+        out = buf.getvalue()
+        self.assertEqual(out.count("connection refused"), 1)
+        self.assertEqual(out.count("a different failure"), 1,
+                         "the changed message must print once, not be "
+                         "suppressed by the interval the OLD message set")
+
+
+class OnceAndDrainRefusalTest(DaemonCase):
+    """PR #42 review (Low): --once and --drain used to let an unreachable
+    Ollama propagate as a bare traceback instead of the exit-2 refusal
+    run_forever's own loop already gives the same failure. resolve_model
+    itself is patched (rather than the resolver underneath it) because the
+    contract under test is main()'s own except clause, and resolve_model
+    always hands its caller a BridgeError - never the resolver's raw
+    ResolverError - per ollama_bridge.py's own wrapping."""
+
+    def _drop(self):
+        path = self.outbox / "raw" / "evt.md"
+        path.write_text("Some content.\n", encoding="utf-8")
+        return path
+
+    def test_once_exits_2_on_an_unreachable_ollama_rather_than_a_traceback(self):
+        self._drop()
+        down = vd.ob.BridgeError("[RESOLVER] connection refused")
+        buf = io.StringIO()
+        with mock.patch.object(vd.ob, "resolve_model", side_effect=down), \
+                mock.patch.object(vd.outbox_io, "resolve_vault",
+                                  return_value=self.vault), \
+                mock.patch.object(vd.outbox_io, "load_config",
+                                  return_value=CONFIG), \
+                mock.patch("sys.stderr", buf):
+            rc = vd.main(["--outbox", str(self.outbox), "--once"])
+        self.assertEqual(rc, 2)
+        self.assertIn("connection refused", buf.getvalue())
+
+    def test_drain_exits_2_on_an_unreachable_ollama_rather_than_a_traceback(self):
+        down = vd.ob.BridgeError("[RESOLVER] connection refused")
+        buf = io.StringIO()
+        with mock.patch.object(vd.ob, "resolve_model", side_effect=down), \
+                mock.patch.object(vd.outbox_io, "resolve_vault",
+                                  return_value=self.vault), \
+                mock.patch.object(vd.outbox_io, "load_config",
+                                  return_value=CONFIG), \
+                mock.patch("sys.stderr", buf):
+            rc = vd.main(["--outbox", str(self.outbox), "--drain"])
+        self.assertEqual(rc, 2)
+        self.assertIn("connection refused", buf.getvalue())
 
 
 if __name__ == "__main__":

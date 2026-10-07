@@ -370,6 +370,37 @@ class VaultDaemon(OutboxLayout):
             reports.append(self.handle(claimed, model, window))
         return reports
 
+    def _log_bridge_error(self, message: str, interval_s: float) -> None:
+        """
+        ----------------------------------------------------------------------
+        Purpose:
+            Print a BridgeError at most once per `interval_s` for an
+            UNCHANGED message; a changed message always prints at once. PR
+            #42 review (Medium): poll_interval_s is a few seconds, so an
+            extended Ollama outage used to write one identical line per poll
+            pass - unbounded growth between daemon restarts, since the log
+            only rotates at the NEXT start (vault-daemon-autostart.ps1), not
+            while a long-running daemon (this PR's whole point) keeps
+            polling through the outage.
+
+        Inputs:
+            message (str): the exception text to show
+            interval_s (float): minimum seconds between two IDENTICAL
+            messages (R0, read by the caller from daemon-config.json)
+
+        Outputs:
+            None. Side effect: writes "[DAEMON] <message>" to stderr, at
+            most once per interval for a repeated message.
+        ----------------------------------------------------------------------
+        """
+        last = self._last_bridge_error
+        now = time.monotonic()
+        if message == last["message"] and (now - last["at"]) < interval_s:
+            return
+        print(f"[DAEMON] {message}", file=sys.stderr)
+        last["message"] = message
+        last["at"] = now
+
     def run_forever(self) -> int:
         interval = self._cfg("poll_interval_s")
         try:
@@ -378,6 +409,8 @@ class VaultDaemon(OutboxLayout):
             print("[DAEMON] another daemon is already watching this outbox; "
                   "refusing to start a second one", file=sys.stderr)
             return 1
+        self._last_bridge_error = {"message": None, "at": 0.0}
+        bridge_error_log_interval_s = self._cfg("bridge_error_log_interval_s")
         self.recover_working()
         drain_every = self._cfg("drain_idle_s")
         last_drain = time.monotonic()
@@ -396,7 +429,7 @@ class VaultDaemon(OutboxLayout):
                 # (context_window wraps ContextBudgetError). Diagnosed
                 # 2026-10-01: before the wrapping, 11 login-time deaths in
                 # vault-daemon.log, Ollama not yet listening.
-                print(f"[DAEMON] {exc}", file=sys.stderr)
+                self._log_bridge_error(str(exc), bridge_error_log_interval_s)
             if time.monotonic() - last_ask >= ask_interval:
                 # answer_pending_asks resolves a model only when a request is
                 # waiting, and a resolution failure becomes an error answer
@@ -483,13 +516,29 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
     if args.drain:
-        model = ob.resolve_model("writer")
-        print(json.dumps(daemon.drain(model, context_window(model)),
-                         ensure_ascii=False, indent=2))
+        try:
+            model = ob.resolve_model("writer")
+            window = context_window(model)
+            result = daemon.drain(model, window)
+        except (ob.BridgeError, ds.EventRefused) as exc:
+            # PR #42 review (Low): --drain used to let this propagate as a
+            # bare traceback when Ollama was down, rather than the explicit
+            # refusal run_forever already gives the same failure (R12: 2 is
+            # a refusal by design, not a crash).
+            print(f"[DAEMON] drain refused: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.once:
         daemon.recover_working()
-        daemon.run_once()
+        try:
+            daemon.run_once()
+        except ob.BridgeError as exc:
+            # Same refusal run_forever's own loop already catches (R12); only
+            # run_once's model resolution can raise here, and only when a
+            # drop is actually pending - an empty raw/ never touches Ollama.
+            print(f"[DAEMON] once refused: {exc}", file=sys.stderr)
+            return 2
         daemon.answer_pending_asks(datetime.now(timezone.utc).isoformat())
         return 0
     return daemon.run_forever()

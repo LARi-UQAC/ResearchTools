@@ -89,16 +89,24 @@ class VaultLockTest(unittest.TestCase):
         "not running", and acquire() would have deleted it and started a second
         daemon on the same outbox. On this host the pid decides."""
         self._write_holder(os.getpid(), age_s=STALE_AFTER_S + 30)
-        with self.assertRaises(vl.LockError):
-            self._lock().acquire()
+        long_ago = datetime.now(timezone.utc) - timedelta(days=365)
+        with patch.object(vl, "_boot_time_utc", return_value=long_ago):
+            with self.assertRaises(vl.LockError):
+                self._lock().acquire()
         self.assertTrue(self.lock_path.exists(), "a live holder's lock must survive")
 
     def test_a_very_old_lock_with_a_live_holder_still_survives(self):
         """The real scale of the case, not just one tick over the ceiling: the
-        measured lock was 6h36m old against a 300s ceiling."""
+        measured lock was 6h36m old against a 300s ceiling. Boot time is
+        pinned far in the past so this does not depend on the TEST machine's
+        own real uptime (R19/R21) - without that pin, a test host rebooted
+        less than 6h36m before the suite runs would make the new boot-reuse
+        check below misfire on this very test."""
         self._write_holder(os.getpid(), age_s=6 * 3600 + 36 * 60)
-        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S),
-                        "a running daemon must not be reported dead by age alone")
+        long_ago = datetime.now(timezone.utc) - timedelta(days=365)
+        with patch.object(vl, "_boot_time_utc", return_value=long_ago):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S),
+                            "a running daemon must not be reported dead by age alone")
 
     def test_an_old_lock_whose_holder_is_DEAD_is_still_reclaimed(self):
         """The reorder must not cost the reclamation that matters: a crashed
@@ -244,6 +252,51 @@ class VaultLockTest(unittest.TestCase):
         self._write_holder(os.getpid())  # no "started" key
         self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
 
+    # --- the PR #42 review's High finding: a lock with no "started" field,
+    # on the FIRST reboot after this fix lands, must still be reboot-safe ---
+
+    def test_a_legacy_lock_from_before_this_boot_is_reclaimed_even_with_a_live_pid(self):
+        """The gap the review named: vault_lock.py's old pid-decides rule for
+        a holder with no "started" key meant the first reboot after this fix
+        ships still reproduced #41, since nothing told a legacy lock apart
+        from a genuine live holder. A lock recorded before the CURRENT boot
+        cannot belong to a process still running now - whatever owns `pid`
+        today necessarily started after the lock was written - so this is
+        checked independently of whether "started" was ever recorded."""
+        self._write_holder(os.getpid(), age_s=3600)  # written 1h ago, no "started"
+        booted_recently = datetime.now(timezone.utc) - timedelta(seconds=10)
+        with patch.object(vl, "_boot_time_utc", return_value=booted_recently):
+            self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+            lock = self._lock()
+            with lock:
+                pass
+        self.assertEqual(len(lock.reclaimed), 1)
+        self.assertIn(str(os.getpid()), lock.reclaimed[0])
+        self.assertIn("boot", lock.reclaimed[0])
+
+    def test_a_lock_written_after_boot_is_not_reclaimed_by_the_boot_check(self):
+        """Negative control: an ordinary lock, written well after the machine
+        booted, by a genuinely live holder, must survive the new check -
+        without this, an implementation reclaiming every lock older than
+        boot time would pass the regression above for the wrong reason."""
+        self._write_holder(os.getpid(), age_s=3600)
+        booted_long_ago = datetime.now(timezone.utc) - timedelta(days=1)
+        with patch.object(vl, "_boot_time_utc", return_value=booted_long_ago):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_boot_check_degrades_when_boot_time_is_unreadable(self):
+        """R11: a platform or permission failure that cannot report boot time
+        falls back to the existing started-marker/pid rule rather than
+        refusing to judge the lock at all."""
+        self._write_holder(os.getpid(), age_s=3600)  # legacy, no "started"
+        with patch.object(vl, "_boot_time_utc", return_value=None):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_boot_time_utc_reads_a_plausible_value_or_degrades_to_none(self):
+        boot = vl._boot_time_utc()
+        if boot is not None:
+            self.assertLess(boot, datetime.now(timezone.utc))
+
     def test_an_unreadable_current_marker_keeps_a_live_pid_as_holder(self):
         """Conservative on purpose: when the live process cannot be queried the
         pid decides, as before, rather than evicting a possibly real daemon."""
@@ -266,6 +319,27 @@ class VaultLockTest(unittest.TestCase):
             holder = json.loads(self.lock_path.read_text(encoding="utf-8"))
         self.assertIn("started", holder)
         self.assertEqual(holder["started"], vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc parse path")
+    def test_process_start_marker_degrades_on_a_malformed_proc_stat(self):
+        """PR #42 review (Low): the bare `except Exception` around this
+        function's body used to swallow everything, including a real bug.
+        Narrowed to the failure shapes this parse can actually produce -
+        proven here with a malformed /proc/<pid>/stat (IndexError from the
+        rsplit) and with an unrelated exception type, which must still
+        propagate rather than silently returning None."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value="not a stat line"):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc parse path")
+    def test_process_start_marker_does_not_swallow_an_unrelated_bug(self):
+        """Negative control for the narrowing above: a bare `except
+        Exception` would also pass this, which is exactly what made it the
+        wrong width."""
+        with patch.object(vl.Path, "exists", side_effect=KeyError("boom")):
+            with self.assertRaises(KeyError):
+                vl.process_start_marker(os.getpid())
 
     @unittest.skipUnless(os.name == "nt" or Path("/proc/self/stat").exists(),
                          "start marker is implemented for Windows and Linux")

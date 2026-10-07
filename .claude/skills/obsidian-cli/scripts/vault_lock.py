@@ -40,7 +40,7 @@ import os
 import socket
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _WIN_SYNCHRONIZE = 0x00100000
@@ -108,6 +108,44 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+def _boot_time_utc() -> "datetime | None":
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        This machine's boot time, UTC: the general form of the pid-reuse
+        check, independent of whether "started" was ever recorded in a given
+        lock file. PR #42's review named the gap this closes - a lock
+        written before process_start_marker existed keeps the old
+        pid-decides rule through the very first reboot after this fix lands,
+        since there is no marker in it to compare. A lock's own "at"
+        timestamp predating the boot, with its pid alive now, is reused
+        whatever the lock carries.
+
+    Inputs:
+        none.
+
+    Outputs:
+        boot (datetime | None): UTC boot time, or None when it cannot be
+        read (unsupported platform, permission, parse failure). Never
+        raises; the caller degrades to the existing started-marker/pid rule
+        rather than refuse to judge the lock (R11).
+    --------------------------------------------------------------------------
+    """
+    try:
+        if os.name == "nt":
+            kernel32 = ctypes.windll.kernel32
+            kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+            uptime_ms = kernel32.GetTickCount64()
+            return datetime.now(timezone.utc) - timedelta(milliseconds=uptime_ms)
+        uptime_path = Path("/proc/uptime")
+        if uptime_path.exists():
+            uptime_s = float(uptime_path.read_text(encoding="utf-8").split()[0])
+            return datetime.now(timezone.utc) - timedelta(seconds=uptime_s)
+    except Exception:  # contract: never raises; None means "cannot tell"
+        return None
+    return None
+
+
 def process_start_marker(pid: int) -> "int | None":
     """
     --------------------------------------------------------------------------
@@ -165,7 +203,13 @@ def process_start_marker(pid: int) -> "int | None":
             tail = stat.read_text(encoding="utf-8").rsplit(")", 1)[1].split()
             # tail[0] is field 3 (state), so field 22 sits at index 19.
             return int(tail[19])
-    except Exception:  # contract: never raises; None means "cannot tell"
+    except (OSError, ValueError, IndexError, AttributeError):
+        # Every realistic failure here: a dead/inaccessible pid (OSError), a
+        # malformed /proc/<pid>/stat parse (IndexError/ValueError), or a
+        # ctypes binding gap on an exotic platform (AttributeError). Narrowed
+        # from a bare `except Exception` per the PR #42 review (Low): that
+        # caught a real bug here exactly like it degrades an expected one,
+        # which is the silent-failure class R11 exists to keep visible.
         return None
     return None
 
@@ -268,8 +312,31 @@ class VaultLock:
         same_host = holder.get("host") == socket.gethostname()
 
         if same_host and isinstance(pid, int):
-            # Whatever the timestamp says: a live pid on this machine is the
-            # holder, unless its start marker proves it is a later process.
+            # A lock recorded before THIS boot cannot belong to a process
+            # still running now: whatever owns `pid` today necessarily
+            # started after the lock was written, so it is a reused pid
+            # regardless of whether "started" was ever recorded. Checked
+            # before pid_alive/started so a legacy lock (written before that
+            # field existed) is still reboot-safe - the High finding from
+            # the PR #42 review: without this, the FIRST reboot after this
+            # fix ships still reproduced #41 for any lock already on disk.
+            # Only when boot time is actually readable (R11): an unavailable
+            # boot time degrades to the rule below rather than refusing to
+            # judge the lock.
+            stamp = holder.get("at")
+            boot = _boot_time_utc()
+            if boot is not None and stamp:
+                try:
+                    at = datetime.fromisoformat(str(stamp))
+                except (TypeError, ValueError):
+                    at = None
+                if at is not None and at < boot:
+                    return (f"holder pid {pid}'s lock was recorded at {stamp}, "
+                            f"before this boot ({boot.replace(microsecond=0).isoformat()}); "
+                            f"a live pid now is necessarily a reused pid")
+            # Whatever the timestamp says otherwise: a live pid on this
+            # machine is the holder, unless its start marker proves it is a
+            # later process.
             if not pid_alive(pid):
                 return f"holder pid {pid} is gone"
             recorded = holder.get("started")

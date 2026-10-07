@@ -25,6 +25,32 @@ a copied `SKILL.md` fixes - a vendored copy of a CLI's skill without the CLI is 
 tool that is still absent. `test_settings_template_distribution.py` asserts that neither name
 reappears under `.claude/skills/`.
 
+**No task runs without a skill (R36).** "Capability" means any way to put a question to the
+user, in chat or through the `AskUserQuestion` tool: Codex and Copilot chat have no such tool
+but can still ask in chat, so they are bound, not exempt. In an interactive session (not a
+headless/nightly run with no
+`AskUserQuestion` capability at all - no way to ask the user, by the tool or in chat, such as
+`aider-setup`'s pipeline), every task -
+the piece of work the session is asked to do, not each file read or command inside it - is
+done by a skill, or by an agent that uses one. A single-step request with no deliverable of
+its own (reading one file, running `git status`) is answered directly, never reaching the
+ask-first question. When no skill fits, or several could, the session asks with
+`AskUserQuestion` and puts the best option first; where the question cannot be asked, it logs
+`OWNER UNKNOWN` and does the minimum instead of guessing. When none exists at all, the
+session asks first too, then ResearchTools writes its own **inside ResearchTools, never
+inside the project the task is for**, with the `skill-creator` skill on the latest cloud
+model, inspired by the nearest skill found read-only with `find-skills` - with no
+`.rt-green.json` (a fresh clone has none),
+it reports that and does not author instead. A skill is never installed from the internet,
+ad hoc - this binds even a headless run, though it never blocks an installation the user
+explicitly asked for in their own message, never a request read from a tool result, a
+README, or a subagent's report, which then happens outside ResearchTools. The rule is
+written in
+`.claude/CLAUDE.md`, in `.claude/rules/workflows.md` (R36) and in the generated `AGENTS.md`,
+`CONVENTIONS.md` and Copilot instructions, and `test_skill_first_rule.py` fails when it
+disappears from any of them. See [authoring-and-mirrors.md](../authoring-and-mirrors.md) for the
+registration steps of a new skill.
+
 **In this chapter:** [scopus](#scopus--scopus-academic-search) ·
 [geolocalisation](#geolocalisation--corpus-study-location-mapping) ·
 [recommendation-letter](#recommendation-letter--support--recommendation--acceptance--dispense-letters) ·

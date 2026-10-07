@@ -14,6 +14,7 @@ contention, which must return the drop to raw/ rather than strand it.
 """
 import io
 import json
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -269,6 +270,237 @@ class AskPublishTest(DaemonCase):
             .read_text(encoding="utf-8"))
         self.assertEqual(answer["status"], "error")
         self.assertIn("boom after publish", answer["reason"])
+
+
+class UnreachableOllamaTest(DaemonCase):
+    """Diagnosed 2026-10-01 from vault-daemon.log: 11 daemon deaths, each a
+    ResolverError ('ollama list' exited 1, connection refused) because Ollama
+    was not listening yet at login. The loop must wait and keep polling."""
+
+    LOOP_CONFIG = {
+        "lock": CONFIG["lock"], "probe": CONFIG["probe"],
+        "daemon": {**CONFIG["daemon"], "ask_poll_interval_s": 1},
+    }
+    ITERATIONS = 2  # a second pass proves the loop survived the first
+
+    def setUp(self):
+        super().setUp()
+        sys.path.insert(0, str(Path(vd.ob.__file__).resolve().parent))
+        self.addCleanup(sys.path.remove, str(Path(vd.ob.__file__).resolve().parent))
+        import model_resolver
+        self.mr = model_resolver
+        vd._STOP["requested"] = False
+        self.addCleanup(vd._STOP.update, requested=False)
+        self.sleeps = 0
+
+    def _daemon(self, drain_idle_s, bridge_error_log_interval_s=None):
+        daemon_cfg = {**self.LOOP_CONFIG["daemon"], "drain_idle_s": drain_idle_s}
+        if bridge_error_log_interval_s is not None:
+            daemon_cfg["bridge_error_log_interval_s"] = bridge_error_log_interval_s
+        config = {**self.LOOP_CONFIG, "daemon": daemon_cfg}
+        return vd.VaultDaemon(self.vault, self.outbox, config, today=TODAY)
+
+    def _fake_sleep(self, _seconds):
+        self.sleeps += 1
+        if self.sleeps >= self.ITERATIONS:
+            vd._STOP["requested"] = True
+
+    def _run_loop(self, daemon):
+        down = self.mr.ResolverError(
+            "[RESOLVER] 'ollama list' exited 1: connection refused")
+        with mock.patch.object(self.mr, "resolve",
+                               side_effect=down) as resolve, \
+                mock.patch.object(vd.time, "sleep",
+                                  side_effect=self._fake_sleep), \
+                mock.patch.object(vd.ob, "_post_generate",
+                                  side_effect=AssertionError):
+            rc = daemon.run_forever()
+        return rc, resolve
+
+    def test_a_pending_drop_survives_an_unreachable_ollama(self):
+        drop = self._drop()
+        rc, resolve = self._run_loop(self._daemon(drain_idle_s=900))
+        self.assertEqual(rc, 0)
+        self.assertTrue(drop.exists(), "the drop must wait in raw/, unfiled")
+        self.assertGreaterEqual(self.sleeps, self.ITERATIONS)
+        self.assertGreaterEqual(resolve.call_count, self.ITERATIONS,
+                                "the loop must retry resolution on each pass")
+
+    def test_the_idle_drain_survives_an_unreachable_ollama(self):
+        rc, resolve = self._run_loop(self._daemon(drain_idle_s=0))
+        self.assertEqual(rc, 0)
+        self.assertGreaterEqual(self.sleeps, self.ITERATIONS)
+        self.assertGreaterEqual(resolve.call_count, self.ITERATIONS)
+
+    def test_a_missing_measured_window_is_a_bridge_error(self):
+        missing = vd.context_budget.ConfigError("no retained_num_ctx for tag")
+        with mock.patch.object(vd.context_budget, "read_retained_num_ctx",
+                               side_effect=missing):
+            with self.assertRaises(vd.ob.BridgeError) as caught:
+                vd.context_window(TAG)
+        self.assertIs(caught.exception.__cause__, missing)
+        self.assertIn("no retained_num_ctx", str(caught.exception))
+
+    def test_an_unexpected_error_is_still_not_swallowed(self):
+        """Negative control: the loop catches the two named refusals only. A
+        bug (here a KeyError out of the resolver) must still surface."""
+        self._drop()
+        with mock.patch.object(self.mr, "resolve",
+                               side_effect=KeyError("bug")), \
+                mock.patch.object(vd.time, "sleep",
+                                  side_effect=self._fake_sleep):
+            with self.assertRaises(KeyError):
+                self._daemon(drain_idle_s=900).run_forever()
+
+    # ---------- PR #42 review (Medium): the log must not grow unbounded ----
+
+    def test_an_identical_bridge_error_is_rate_limited(self):
+        """poll_interval_s is 5s in production; five identical failures in a
+        row used to write five identical lines. With the interval set wide,
+        only the first is printed."""
+        drop = self._drop()
+        daemon = self._daemon(drain_idle_s=900,
+                              bridge_error_log_interval_s=3600)
+        buf = io.StringIO()
+        with mock.patch("sys.stderr", buf):
+            rc, _resolve = self._run_loop(daemon)
+        self.assertEqual(rc, 0)
+        self.assertEqual(buf.getvalue().count("connection refused"), 1)
+
+    def test_run_forever_exits_2_on_a_missing_config_key_rather_than_a_traceback(self):
+        """L-B from the round-2 review: a stale config beside new code (a
+        clone that has not picked up lock.boot_skew_tolerance_s, say) used
+        to raise outbox_io.ConfigError as a bare traceback inside
+        singleton_lock(), before any handler existed for it. Now every
+        required key is read before anything is acquired, and a missing one
+        is a stated exit-2 refusal (R12)."""
+        incomplete = {**self.LOOP_CONFIG,
+                      "lock": {k: v for k, v in CONFIG["lock"].items()
+                              if k != "boot_skew_tolerance_s"}}
+        daemon = vd.VaultDaemon(self.vault, self.outbox, incomplete, today=TODAY)
+        buf = io.StringIO()
+        with mock.patch("sys.stderr", buf):
+            rc = daemon.run_forever()
+        self.assertEqual(rc, 2)
+        self.assertIn("boot_skew_tolerance_s", buf.getvalue())
+        # Nothing was left acquired for a later start to collide with.
+        self.assertFalse((self.outbox.parent / "vault-daemon.lock").exists())
+
+    def test_the_throttle_logs_again_once_the_interval_elapses(self):
+        """Mutation-testing gap #1 from the round-2 review: only the
+        'suppressed within the interval' half was tested. This proves the
+        other half directly against _log_bridge_error (not through the
+        full loop, whose drain/ask timers also call time.monotonic and
+        would make a shared fake clock ambiguous) - an unchanging message
+        logs AGAIN once the interval has actually elapsed, so an outage
+        gets a periodic heartbeat rather than going silent forever.
+
+        Round-4 review: the clock started at 0.0, which coincides with
+        _last_bridge_error's own uninitialized "at" default, so dropping
+        the "last['at'] = now" update entirely was INVISIBLE here -
+        every call still compared against 0.0 either way, by the same
+        accident. Starting the clock far above the interval instead means
+        a dropped update makes the SECOND call also log (comparing
+        against the stale 0.0 default, not the real last log time),
+        which this test now forces and checks for directly."""
+        daemon = self._daemon(drain_idle_s=900)
+        buf = io.StringIO()
+        with mock.patch.object(vd.time, "monotonic",
+                               side_effect=[1000.0, 1005.0, 1011.0]), \
+                mock.patch("sys.stderr", buf):
+            daemon._log_bridge_error("connection refused", 10)
+            daemon._log_bridge_error("connection refused", 10)
+            daemon._log_bridge_error("connection refused", 10)
+        self.assertEqual(buf.getvalue().count("connection refused"), 2,
+                         "logged at t=1000, suppressed at t=1005 (within "
+                         "10s of t=1000), logged again at t=1011 (past "
+                         "the interval) - exactly 2, not 3, which is what "
+                         "a dropped 'last[\"at\"] = now' would produce")
+
+    def test_a_changed_bridge_error_message_still_logs_immediately(self):
+        """Negative control: suppression must key on the MESSAGE, or a
+        genuinely new failure (Ollama came back with a different error)
+        would be silently hidden behind an older, unrelated one."""
+        self._drop()
+        daemon = self._daemon(drain_idle_s=900,
+                              bridge_error_log_interval_s=3600)
+        down_a = self.mr.ResolverError("[RESOLVER] connection refused")
+        down_b = self.mr.ResolverError("[RESOLVER] a different failure")
+        buf = io.StringIO()
+        with mock.patch.object(self.mr, "resolve",
+                               side_effect=[down_a, down_b, down_b, down_b]), \
+                mock.patch.object(vd.time, "sleep",
+                                  side_effect=self._fake_sleep), \
+                mock.patch.object(vd.ob, "_post_generate",
+                                  side_effect=AssertionError), \
+                mock.patch("sys.stderr", buf):
+            daemon.run_forever()
+        out = buf.getvalue()
+        self.assertEqual(out.count("connection refused"), 1)
+        self.assertEqual(out.count("a different failure"), 1,
+                         "the changed message must print once, not be "
+                         "suppressed by the interval the OLD message set")
+
+
+class OnceAndDrainRefusalTest(DaemonCase):
+    """PR #42 review (Low): --once and --drain used to let an unreachable
+    Ollama propagate as a bare traceback instead of the exit-2 refusal
+    run_forever's own loop already gives the same failure. resolve_model
+    itself is patched (rather than the resolver underneath it) because the
+    contract under test is main()'s own except clause, and resolve_model
+    always hands its caller a BridgeError - never the resolver's raw
+    ResolverError - per ollama_bridge.py's own wrapping."""
+
+    def _drop(self):
+        path = self.outbox / "raw" / "evt.md"
+        path.write_text("Some content.\n", encoding="utf-8")
+        return path
+
+    def test_once_exits_2_on_an_unreachable_ollama_rather_than_a_traceback(self):
+        self._drop()
+        down = vd.ob.BridgeError("[RESOLVER] connection refused")
+        buf = io.StringIO()
+        with mock.patch.object(vd.ob, "resolve_model", side_effect=down), \
+                mock.patch.object(vd.outbox_io, "resolve_vault",
+                                  return_value=self.vault), \
+                mock.patch.object(vd.outbox_io, "load_config",
+                                  return_value=CONFIG), \
+                mock.patch("sys.stderr", buf):
+            rc = vd.main(["--outbox", str(self.outbox), "--once"])
+        self.assertEqual(rc, 2)
+        self.assertIn("connection refused", buf.getvalue())
+
+    def test_drain_exits_2_on_an_unreachable_ollama_rather_than_a_traceback(self):
+        down = vd.ob.BridgeError("[RESOLVER] connection refused")
+        buf = io.StringIO()
+        with mock.patch.object(vd.ob, "resolve_model", side_effect=down), \
+                mock.patch.object(vd.outbox_io, "resolve_vault",
+                                  return_value=self.vault), \
+                mock.patch.object(vd.outbox_io, "load_config",
+                                  return_value=CONFIG), \
+                mock.patch("sys.stderr", buf):
+            rc = vd.main(["--outbox", str(self.outbox), "--drain"])
+        self.assertEqual(rc, 2)
+        self.assertIn("connection refused", buf.getvalue())
+
+    def test_drain_also_exits_2_on_an_event_refused(self):
+        """Mutation-testing gap #4 from the round-2 review: only
+        ob.BridgeError was exercised for --drain's except clause, so
+        dropping ds.EventRefused from it (the drain's OWN refusal type,
+        daemon_states.py:43) went unnoticed."""
+        down = vd.ds.EventRefused("nothing queued to drain")
+        buf = io.StringIO()
+        with mock.patch.object(vd.ob, "resolve_model", return_value=TAG), \
+                mock.patch.object(vd, "context_window", return_value=16384), \
+                mock.patch.object(vd.VaultDaemon, "drain", side_effect=down), \
+                mock.patch.object(vd.outbox_io, "resolve_vault",
+                                  return_value=self.vault), \
+                mock.patch.object(vd.outbox_io, "load_config",
+                                  return_value=CONFIG), \
+                mock.patch("sys.stderr", buf):
+            rc = vd.main(["--outbox", str(self.outbox), "--drain"])
+        self.assertEqual(rc, 2)
+        self.assertIn("nothing queued to drain", buf.getvalue())
 
 
 if __name__ == "__main__":

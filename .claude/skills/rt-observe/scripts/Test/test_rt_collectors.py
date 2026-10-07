@@ -329,7 +329,8 @@ class ServicesTest(TempTree):
                 "outbox_root": str(self.home / "outbox"),
                 "daemon_lock_path": str(self.home / "vault-daemon.lock"),
                 "lock_stale_after_s": 900,
-                "outbox_listed": 3}
+                "outbox_listed": 3,
+                "lock_boot_skew_tolerance_s": 0}
 
     def _mcp_values(self):
         return {"mcp_timeout_s": 5}
@@ -461,7 +462,7 @@ class ServicesTest(TempTree):
         lock_module = mock.Mock()
         lock_module.held_by_live_holder.return_value = False
         write(self.repo / ".claude" / "skills" / "obsidian-cli" / "scripts"
-              / "vault_lock.py", "def held_by_live_holder(p, s):\n    return False\n")
+              / "vault_lock.py", "def held_by_live_holder(p, s, t=0):\n    return False\n")
         (self.home / "outbox" / "raw").mkdir(parents=True)
         write(self.home / "outbox" / "raw" / "drop.md", "x")
         with no_binaries():
@@ -473,7 +474,7 @@ class ServicesTest(TempTree):
 
     def test_a_live_holder_reports_running_and_raises_no_alert(self):
         write(self.repo / ".claude" / "skills" / "obsidian-cli" / "scripts"
-              / "vault_lock.py", "def held_by_live_holder(p, s):\n    return True\n")
+              / "vault_lock.py", "def held_by_live_holder(p, s, t=0):\n    return True\n")
         (self.home / "outbox" / "raw").mkdir(parents=True)
         write(self.home / "outbox" / "raw" / "drop.md", "x")
         with no_binaries():
@@ -481,6 +482,42 @@ class ServicesTest(TempTree):
                                              self._values(), now=NOW)
         self.assertTrue(state["vault_daemon"]["running"])
         self.assertIsNone(state["vault_daemon"]["alert"])
+
+    def test_a_missing_boot_skew_key_is_not_silently_read_as_zero(self):
+        """R8/M-B from the round-4 review: collect()'s own
+        config_values.get("lock_boot_skew_tolerance_s", 0.0) used to read a
+        missing key as 0 silently, exactly the failure class the margin
+        itself exists to prevent - a clock step read as a real reboot. Now
+        a bare KeyError, which _guarded (rt_state.py) turns into an
+        unavailable services panel rather than a wrong answer."""
+        values = self._values()
+        del values["lock_boot_skew_tolerance_s"]
+        with no_binaries():
+            with self.assertRaises(KeyError):
+                collect_services.collect(self.repo, self.home, values, now=NOW)
+
+    def test_the_liveness_read_carries_the_configured_boot_skew_margin(self):
+        """PR #42 round-2 review (M-B, mutation-testing gap S1): dropping
+        the margin from this call site survived every existing test, since
+        none of them read back what argument actually reached
+        held_by_live_holder - only whether it returned True or False.
+        collect_services._load_module re-execs the fake module fresh on
+        every call and registers it under a fixed name in sys.modules
+        (collect_services.py:215), which is what lets this test read the
+        SAME instance collect() just used, straight after the call."""
+        write(self.repo / ".claude" / "skills" / "obsidian-cli" / "scripts"
+              / "vault_lock.py",
+              "calls = []\n"
+              "def held_by_live_holder(p, s, t=0):\n"
+              "    calls.append((p, s, t))\n"
+              "    return True\n")
+        values = self._values()
+        values["lock_boot_skew_tolerance_s"] = 123
+        with no_binaries():
+            collect_services.collect(self.repo, self.home, values, now=NOW)
+        spy = sys.modules["rt_observe_vault_lock"]
+        self.assertEqual(spy.calls, [spy.calls[0]])
+        self.assertEqual(spy.calls[0][2], 123)
 
     def test_the_outbox_names_what_is_waiting_and_not_only_how_much(self):
         """A count answers whether the queue is moving; the NAMES answer whether

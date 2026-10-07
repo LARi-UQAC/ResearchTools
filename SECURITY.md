@@ -38,3 +38,12 @@ lockfile verification: [.claude/rules/security.md](.claude/rules/security.md).
 on a CVE in a modified `requirements.txt`), and `prompt-injection-defender.py` (warns on
 suspicious tool output) run automatically in every Claude Code session working in this
 repository. They protect the Claude Code workflow, not an external contributor using plain git.
+
+## Privacy guard (plain git)
+
+For plain git, a global pre-commit hook (`.claude/hooks/git/`, installed by
+`install-git-hooks.ps1`) refuses a commit that adds a secret or personal data - account
+paths, Quebec student codes, `@etu.uqac.ca` addresses, FRQ identifiers, and the machine's own
+account name. The `privacy-scan` CI workflow applies the same rules to every push and pull
+request, so a skipped hook is still caught. Real names cannot be detected by pattern: test data
+uses fictitious identities only.

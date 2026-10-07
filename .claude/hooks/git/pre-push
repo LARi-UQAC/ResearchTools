@@ -1,0 +1,57 @@
+#!/bin/sh
+# Privacy guard - global git pre-push hook, installed by install-git-hooks.ps1.
+#
+# The last local chokepoint before a branch becomes public: scans every commit the
+# push would publish, whatever made it - a commit with --no-verify, cherry-pick,
+# revert, am, rebase or stash never pass through pre-commit. Same rules and the same
+# added-lines-only text diff as the pre-commit hook, plus each commit's message. Then runs the repository's own
+# pre-push hook with the same arguments and the same stdin, because a global
+# core.hooksPath otherwise disables it.
+#
+# Opt-out for a private repository: `git config privacyguard.enabled false`.
+# Exit codes: 0 push allowed, 1 refused (git aborts the push).
+
+here=$(cd "$(dirname "$0")" && pwd)
+rules="$here/privacy-rules.toml"
+zero=0000000000000000000000000000000000000000
+updates=$(cat)
+
+if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
+    bl=$(command -v betterleaks 2>/dev/null)
+    if [ -z "$bl" ] && [ -n "$LOCALAPPDATA" ]; then
+        for c in "$LOCALAPPDATA"/Microsoft/WinGet/Links/betterleaks.exe \
+                 "$LOCALAPPDATA"/Microsoft/WinGet/Packages/Betterleaks*/betterleaks.exe; do
+            [ -x "$c" ] && { bl=$c; break; }
+        done
+    fi
+    if [ -n "$bl" ] && [ -f "$rules" ]; then
+        printf '%s\n' "$updates" | while read -r lref lsha rref rsha; do
+            [ -z "$lsha" ] || [ "$lsha" = "$zero" ] && continue      # a branch deletion
+            if [ "$rsha" != "$zero" ] && git cat-file -e "$rsha^{commit}" 2>/dev/null; then
+                set -- "$rsha..$lsha"
+            else
+                set -- "$lsha" --not --remotes                       # new branch: what no remote has
+            fi
+            # Captured first: sh has no pipefail, and a failing git log would otherwise feed
+            # an empty stream that betterleaks passes. --pretty=medium overrides a user's
+            # format.pretty, which could move the message out of the indented lines.
+            patch=$(git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$@") || exit 1
+            printf '%s\n' "$patch" \
+                | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
+                | (cd "${TMPDIR:-/tmp}" && "$bl" stdin --redact --no-banner --config "$rules") || exit 1
+        done || {
+            echo "privacy guard: push refused - an outgoing commit carries a secret or personal data." >&2
+            echo "privacy guard: rewrite the commit (the value is not public yet), or mark a deliberate line 'betterleaks:allow'." >&2
+            exit 1
+        }
+    else
+        echo "privacy guard: betterleaks or its rules not found, push scan skipped (CI still checks)" >&2
+    fi
+fi
+
+repo_hooks="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
+if [ -x "$repo_hooks/pre-push" ] && [ "$(cd "$repo_hooks" && pwd)" != "$here" ]; then
+    printf '%s\n' "$updates" | "$repo_hooks/pre-push" "$@"
+    exit $?
+fi
+exit 0

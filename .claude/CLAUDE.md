@@ -292,6 +292,12 @@ Full design and rationale: [docs/contributor-notes.md](../docs/contributor-notes
 for the vault, and section 6 for the graphify code graph, which is governed identically and
 guarded by the same hook.
 
+## Security gate before a pull request
+
+Every plan ends with a local security review loop before its PR opens: `/security-review` plus
+`/code-review` at high effort, every finding fixed with a test that fails on the old code, re-run
+until clean. Full rule: R35 in [rules/workflows.md](rules/workflows.md).
+
 ## Agent pipeline integrity
 
 These rules bind the orchestrator (main session, command wrappers) AND the agents of this

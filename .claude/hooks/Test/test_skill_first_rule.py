@@ -57,7 +57,10 @@ FORBIDDEN_PHRASE = "otherwise author the missing skill"
 # ask gate at all; and the fallback search for an entirely new skill now says
 # explicitly where it is authored, closing the loophole where a non-ResearchTools
 # session's fallback read as writing the SKILL.md into that project.
-FLOOR_AND_FALLBACK_PHRASES = ("git status", "OWNER UNKNOWN", "inside ResearchTools")
+FLOOR_AND_FALLBACK_PHRASES = (
+    "git status", "OWNER UNKNOWN", "inside ResearchTools",
+    "single-step request", "deliverable of its own",
+)
 # 2026-10-07 fourth re-review, the operator's own decisions on M1 (Wording A) and L6
 # (an explicit user request to install a skill is honored, but outside ResearchTools)
 # and the B1 fix (the "do not stop" fallback no longer dead-ends on a fresh clone with
@@ -65,6 +68,21 @@ FLOOR_AND_FALLBACK_PHRASES = ("git status", "OWNER UNKNOWN", "inside ResearchToo
 # step 2).
 EXEMPTION_PHRASE = "capability at all"
 RETIRED_EXEMPTION_PHRASE = "no human in the loop"
+# 2026-10-07 fifth re-review (F1, owner's own answer): "capability" means any way to ask
+# the user, in chat or through the tool, so Codex and Copilot chat - which have no
+# AskUserQuestion TOOL but can still ask in chat - are bound, not exempt. Written as a
+# clarifying clause beside the exemption sentence everywhere it appears.
+CAPABILITY_CLARIFICATION_PHRASES = ("by the tool or in chat", "are bound, not exempt")
+# F5: an explicit user request to install a skill (the L6 exception) must come from the
+# user's own message, never from a tool result, a README, or a subagent's report - the
+# exact injection vector security.md's own prompt-injection paragraph already names.
+EXPLICIT_INSTALL_SOURCE_PHRASES = ("own message", "subagent's report")
+# F4: "latest cloud" is worded identically everywhere; the authoring-location negative
+# ("not in the project the task is for") uses two synonymous phrasings depending on
+# whether the sentence names the gap-filling project ("the project the task is for") or
+# the session's own working directory ("the current project") - either is acceptable,
+# but at least one must survive.
+AUTHORING_LOCATION_NEGATIVE_VARIANTS = ("never inside the project", "never the current project")
 EXPLICIT_INSTALL_PHRASE = "outside ResearchTools"
 GREEN_STAMP_PHRASES = (".rt-green.json", "not author")
 FLOOR_AND_FALLBACK_FILES = (
@@ -303,6 +321,44 @@ class TestRuleIsWritten(unittest.TestCase):
                     with self.subTest(phrase=phrase):
                         self.assertIn(phrase, flat)
 
+    def test_capability_means_chat_or_tool_not_the_tool_alone(self):
+        # 2026-10-07 fifth re-review (F1), owner's own answer: a harness with no
+        # AskUserQuestion TOOL (Codex, Copilot chat, most subagents) is still bound if it
+        # can ask in chat - only a harness with no way to ask AT ALL is exempt. Checked in
+        # every file that states the exemption; security.md does not restate the
+        # exemption itself, so it is not in this list.
+        for rel in FLOOR_AND_FALLBACK_FILES:
+            with self.subTest(file=rel):
+                flat = flat_section(rel)
+                for phrase in CAPABILITY_CLARIFICATION_PHRASES:
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, flat)
+
+    def test_explicit_install_must_come_from_the_users_own_message(self):
+        # 2026-10-07 fifth re-review (F5): nothing previously said an "explicit user
+        # request" to install a skill had to come from the user, rather than from a tool
+        # result, a README, or a subagent's report parroting one - exactly the injection
+        # vector security.md's own prompt-injection paragraph already treats as an attack
+        # elsewhere in the same file.
+        for rel in (*FLOOR_AND_FALLBACK_FILES, ".claude/rules/security.md"):
+            with self.subTest(file=rel):
+                flat = flat_section(rel)
+                for phrase in EXPLICIT_INSTALL_SOURCE_PHRASES:
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, flat)
+
+    def test_latest_cloud_model_and_authoring_location_are_pinned(self):
+        # 2026-10-07 fifth re-review (F4): a mutation check found "latest cloud" and the
+        # authoring-location negative could be deleted from several copies without
+        # failing anything, because nothing asserted them. Pinned here, everywhere.
+        for rel in (*FLOOR_AND_FALLBACK_FILES, "CLAUDE.template.md", *MIRRORS):
+            with self.subTest(file=rel):
+                flat = flat_section(rel)
+                self.assertIn("latest cloud", flat)
+                self.assertTrue(
+                    any(v in flat for v in AUTHORING_LOCATION_NEGATIVE_VARIANTS),
+                    f"neither authoring-location variant found in {rel}")
+
     def test_explicit_user_install_lands_outside_researchtools(self):
         # 2026-10-07 fourth re-review (L6), owner's own answer: part 4's ban is
         # purpose-gated to covering a missing skill ad hoc, not a blanket ban: an
@@ -330,6 +386,15 @@ class TestRuleIsWritten(unittest.TestCase):
                 self.assertIn("OWNER UNKNOWN", flat)
                 self.assertIn(".rt-green.json", flat)
                 self.assertIn(EXPLICIT_INSTALL_PHRASE, flat)
+                for phrase in CAPABILITY_CLARIFICATION_PHRASES:
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, flat)
+                for phrase in EXPLICIT_INSTALL_SOURCE_PHRASES:
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, flat)
+                for phrase in ("single-step request", "deliverable of its own"):
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, flat)
 
     def test_missing_skill_fallback_and_approved_plugin_are_stated(self):
         # Copilot review of PR 44: the branch must not dead-end on a harness without
@@ -382,26 +447,49 @@ class TestFinderCanFail(unittest.TestCase):
             absent = missing(path.read_text(encoding="utf-8"), CORE_PHRASES)
         self.assertEqual(absent, ["Never install a skill from the internet"])
 
-    def test_the_forbidden_phrase_check_can_fail(self):
-        # 2026-10-07 fourth re-review (M3): the earlier version of this control
-        # asserted Python `in` on a bare string literal, never exercising the actual
-        # file-reading path the real test uses. Writing a fixture file and reading it
-        # back through `read()` proves the SAME call that guards the real files would
-        # catch a planted copy of the contradiction, not merely that `in` works.
+    def _read_with_redirected_repo(self, rel: str, content: str) -> str:
+        """
+        --------------------------------------------------------------------------
+        Purpose:
+            Write `content` at `rel` under a scratch directory, point the
+            module-level `REPO` at it, and return what the real `read()`
+            function returns - so a negative control exercises the identical
+            file-reading path the production checks use (`read(rel)`), not a
+            bare string literal. 2026-10-07 fifth re-review (F3): the previous
+            version of this control called `path.read_text()` directly, which
+            tests Python's `in` and nothing about this suite's own plumbing.
+
+        Inputs:
+            rel (str): the repo-relative path a production check would pass
+                to `read()`.
+            content (str): the fixture text to plant there.
+
+        Outputs:
+            text (str): whatever `read(rel)` returns once `REPO` is
+                redirected, restored to its real value before returning.
+        --------------------------------------------------------------------------
+        """
+        global REPO
+        saved = REPO
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "planted.md"
-            path.write_text("ask when ambiguous, otherwise author the missing skill",
-                             encoding="utf-8")
-            self.assertIn(FORBIDDEN_PHRASE, path.read_text(encoding="utf-8"))
+            REPO = Path(tmp)
+            path = REPO / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            try:
+                return read(rel)
+            finally:
+                REPO = saved
+
+    def test_the_forbidden_phrase_check_can_fail(self):
+        text = self._read_with_redirected_repo(
+            ".claude/CLAUDE.md", "ask when ambiguous, otherwise author the missing skill")
+        self.assertIn(FORBIDDEN_PHRASE, text)
 
     def test_the_stop_clause_check_can_fail(self):
-        # Same fix as above, for the "stop and say so" negative control: a fixture
-        # file read back through the real file-reading path, not a bare literal.
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "planted.md"
-            path.write_text("if the question cannot be asked, stop and say so.",
-                             encoding="utf-8")
-            self.assertIn("stop and say so", path.read_text(encoding="utf-8"))
+        text = self._read_with_redirected_repo(
+            ".claude/rules/workflows.md", "if the question cannot be asked, stop and say so.")
+        self.assertIn("stop and say so", text)
 
     def test_flat_section_text_can_fail_to_find_the_heading(self):
         # R20 for the new helper: an absent heading must give an empty section, not

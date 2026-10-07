@@ -236,7 +236,7 @@ class RunAskOnceCase(unittest.TestCase):
         (self.outbox / "ask" / "answers").mkdir(parents=True)
         self.config = {
             "lock": {"acquire_timeout_s": 1, "stale_after_s": 300,
-                     "poll_interval_s": 0.01},
+                     "poll_interval_s": 0.01, "boot_skew_tolerance_s": 0},
             "probe": {"request_timeout_s": 5},
             "daemon": {"poll_interval_s": 0.01, "classify_confidence_min": 0.7,
                       "draft_max_attempts": 2, "drain_idle_s": 900,

@@ -204,7 +204,8 @@ class OutboxFlushTest(unittest.TestCase):
     LOCK_FIXTURE = {"lock": {"stale_after_s": 300.0,
                              "hook_acquire_timeout_s": 0.2,
                              "acquire_timeout_s": 0.2,
-                             "poll_interval_s": 0.01}}
+                             "poll_interval_s": 0.01,
+                             "boot_skew_tolerance_s": 0}}
 
     def _raw_drop(self, name="unrouted.md"):
         raw = self.outbox / "raw"
@@ -327,7 +328,7 @@ class OutboxFlushTest(unittest.TestCase):
         # A short timeout injected as a fixture, so the case proves the refusal
         # without paying the configured hook wait (R21: never read the live config).
         fast = {"lock": {"hook_acquire_timeout_s": 0.2, "stale_after_s": 300,
-                         "poll_interval_s": 0.01}}
+                         "poll_interval_s": 0.01, "boot_skew_tolerance_s": 0}}
         outbox_io, _ = self.mod._load()
         with mock.patch.object(outbox_io, "load_config", return_value=fast):
             with mock.patch("sys.stderr", new=io.StringIO()) as err:
@@ -336,6 +337,67 @@ class OutboxFlushTest(unittest.TestCase):
         self.assertTrue(note.exists(), "a note must never be lost to lock contention")
         self.assertFalse((self.vault / "30_Ressources/Obsidian/n.md").exists())
         self.assertIn("Notes kept for the next run", messages)
+
+    # ---------- PR #42 round-4 review (M-B survivors): pin this hook's wiring
+
+    def test_the_raw_waiting_probe_carries_the_configured_boot_skew_margin(self):
+        """_report_raw_waiting's held_by_live_holder call survived every
+        prior test here, since none of them read back the argument it
+        actually received - only the printed message. Reproduces the same
+        gap M-B already closed for daemon_outbox.py and collect_services.py,
+        for this hook's OWN probe."""
+        self._raw_drop()
+        outbox_io, vault_lock = self.mod._load()
+        calls = []
+        real = vault_lock.held_by_live_holder
+
+        def spy(path, stale, skew=0):
+            calls.append(skew)
+            return real(path, stale, skew)
+
+        config = {**self.LOCK_FIXTURE,
+                 "lock": {**self.LOCK_FIXTURE["lock"], "boot_skew_tolerance_s": 123}}
+        with mock.patch.object(outbox_io, "load_config", return_value=config), \
+                mock.patch.object(vault_lock, "held_by_live_holder", side_effect=spy), \
+                mock.patch("sys.stderr", new=io.StringIO()):
+            self.mod.main()
+        self.assertEqual(calls, [123])
+
+    def test_the_flush_lock_carries_the_configured_boot_skew_margin(self):
+        """Same gap, the hook's OTHER real lock - the one it actually
+        acquires to flush the outbox, not just the liveness probe."""
+        self._note("n.md", DIRECTIVE_N, "body")
+        outbox_io, vault_lock = self.mod._load()
+        calls = []
+        real_cls = vault_lock.VaultLock
+
+        def spy_lock(*args, **kwargs):
+            calls.append(kwargs.get("boot_skew_tolerance_s"))
+            return real_cls(*args, **kwargs)
+
+        config = {**self.LOCK_FIXTURE,
+                 "lock": {**self.LOCK_FIXTURE["lock"], "boot_skew_tolerance_s": 123}}
+        with mock.patch.object(outbox_io, "load_config", return_value=config), \
+                mock.patch.object(vault_lock, "VaultLock", side_effect=spy_lock), \
+                mock.patch("sys.stderr", new=io.StringIO()):
+            self.mod.main()
+        self.assertEqual(calls, [123])
+
+    def test_a_missing_boot_skew_key_is_a_degraded_report_not_a_wrong_answer(self):
+        """R8/R11: a missing lock.boot_skew_tolerance_s in _report_raw_waiting's
+        config must not read as 0 - this hook already catches
+        outbox_io.ConfigError and returns silently (R11, the probe's own
+        docstring), so the correct behaviour is silence, not a wrong
+        liveness verdict."""
+        self._raw_drop()
+        outbox_io, _ = self.mod._load()
+        incomplete = {"lock": {k: v for k, v in self.LOCK_FIXTURE["lock"].items()
+                               if k != "boot_skew_tolerance_s"}}
+        with mock.patch.object(outbox_io, "load_config", return_value=incomplete):
+            with mock.patch("sys.stderr", new=io.StringIO()) as err:
+                code = self.mod.main()
+        self.assertEqual(code, 0)
+        self.assertNotIn("raw drop(s) waiting", err.getvalue())
 
     def test_a_missing_skill_makes_the_hook_a_silent_noop(self):
         """R11: a hook whose dependency is absent exits 0 and says nothing. A

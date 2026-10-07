@@ -588,8 +588,13 @@ def resolve_model(role: str | None = None) -> str:
         result (str): the resolved Ollama model tag.
 
     Raises:
-        BridgeError: the resolver module is not importable, or it resolved to
-        no tag. Both cases refuse rather than substitute a default.
+        BridgeError: the resolver module is not importable, the resolver
+        itself failed (model_resolver.ResolverError, chained as __cause__ with
+        its message kept - e.g. 'ollama list' refused because the daemon is not
+        up yet), or it resolved to no tag. Every case refuses rather than
+        substitute a default. Before 2026-10-01 a ResolverError escaped
+        unwrapped, against this contract, and killed the vault daemon's loop
+        eleven times at login.
     --------------------------------------------------------------------------
     """
     scripts_dir = str(Path(__file__).resolve().parent)
@@ -602,7 +607,10 @@ def resolve_model(role: str | None = None) -> str:
             "[BRIDGE] no model resolver available (Task 3 module 'model_resolver' not "
             "found); refusing to substitute a default or weaker tag (D7)."
         ) from exc
-    tag = model_resolver.resolve(role)
+    try:
+        tag = model_resolver.resolve(role)
+    except model_resolver.ResolverError as exc:
+        raise BridgeError(str(exc)) from exc
     if not tag:
         raise BridgeError(
             "[BRIDGE] model resolver returned no tag; refusing to substitute a default "

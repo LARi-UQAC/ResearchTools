@@ -261,7 +261,9 @@ def check_lock(vault, outbox, config, timeout_s) -> dict:
         outbox.parent / "obsidian-outbox.lock",
         acquire_timeout_s=outbox_io.require(config, "lock", "acquire_timeout_s"),
         stale_after_s=outbox_io.require(config, "lock", "stale_after_s"),
-        poll_interval_s=outbox_io.require(config, "lock", "poll_interval_s"))
+        poll_interval_s=outbox_io.require(config, "lock", "poll_interval_s"),
+        boot_skew_tolerance_s=outbox_io.require(
+            config, "lock", "boot_skew_tolerance_s"))
     staged = drop(outbox, "contended", "a second writer held the lock",
                   "The daemon must defer this drop, not park it and not lose it.")
     with lock:

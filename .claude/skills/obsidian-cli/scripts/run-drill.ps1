@@ -144,8 +144,9 @@ import outbox_io, vault_lock
 from pathlib import Path
 cfg = outbox_io.load_config()
 stale = outbox_io.require(cfg, 'lock', 'stale_after_s')
+skew = outbox_io.require(cfg, 'lock', 'boot_skew_tolerance_s')
 lock = Path.home() / '.claude' / 'vault-daemon.lock'
-print('LIVE' if vault_lock.held_by_live_holder(lock, stale) else 'FREE')
+print('LIVE' if vault_lock.held_by_live_holder(lock, stale, skew) else 'FREE')
 "@
 $state = (& $Python -c $liveCheck).Trim()
 if ($state -eq "LIVE") {

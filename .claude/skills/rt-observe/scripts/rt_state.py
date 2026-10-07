@@ -144,6 +144,8 @@ def section_builders(repo_root=None, home=None, config=None):
                 config, "paths", "daemon_singleton_lock"),
             "lock_stale_after_s": config_value(
                 config, "staleness_seconds", "daemon_lock"),
+            "lock_boot_skew_tolerance_s": config_value(
+                config, "staleness_seconds", "daemon_lock_boot_skew_tolerance"),
         }, now=now)
 
     return OrderedDict((

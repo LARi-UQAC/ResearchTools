@@ -86,7 +86,8 @@ from pathlib import Path
 cfg = outbox_io.load_config()
 print('LIVE' if vault_lock.held_by_live_holder(
     Path.home() / '.claude' / 'vault-daemon.lock',
-    outbox_io.require(cfg, 'lock', 'stale_after_s')) else 'FREE')
+    outbox_io.require(cfg, 'lock', 'stale_after_s'),
+    outbox_io.require(cfg, 'lock', 'boot_skew_tolerance_s')) else 'FREE')
 "@
 
 function Get-DaemonState { (& $Python -c $LiveCheck).Trim() }

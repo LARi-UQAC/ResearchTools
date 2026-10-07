@@ -301,17 +301,17 @@ gating every read-only script behind a dry-run flag it has no destructive path t
 authored in ResearchTools, never installed from the internet.** Effective 2026-10-02. It binds
 every model, cloud or local, in every interactive harness capable of asking the user a question
 before acting (Claude Code, Codex, Copilot in a Claude Code or similar session). A harness with
-no human in the loop at all (a scheduled or nightly run with no `AskUserQuestion` capability,
-such as the aider pipeline of `aider-setup`) is a separate concern this rule does not reach; a
-subagent or a scheduled run that is otherwise interactive but simply cannot ask a question right
-now follows part 2's fallback instead. Part 4 (never install ad hoc) and `security.md` bind
-everywhere, with no exemption for either case. Four parts:
+no `AskUserQuestion` capability at all (such as the aider pipeline of `aider-setup`) is a
+separate concern this rule does not reach; a subagent or a scheduled run that has the
+capability but simply cannot use it right now follows part 2's fallback instead. Part 4 (never
+install ad hoc) and ResearchTools' own `security.md` bind everywhere, with no exemption for
+either case. Four parts:
 
 1. **Name the skill or agent before starting the work.** A task is the piece of work the
    session is asked to do - the request, or the goal it is pursuing - not each individual file
    read, write, or command performed while carrying it out. Floor: a single-step request with
-   no deliverable of its own (reading one file, running one check such as `git status`) is
-   answered directly and never reaches parts 2 or 3. Find the skill, or the agent that uses
+   no deliverable of its own (reading one file, running `git status`) is answered directly and
+   never reaches the ask-first question in parts 2 or 3. Find the skill, or the agent that uses
    one, in ResearchTools' own routing table of `.claude/CLAUDE.md` (a different project reads
    its own equivalent instead), in `README.md`, or in the skill list, and state which one is
    used. A short answer given from what is already in context is not a task either, which is
@@ -327,9 +327,9 @@ everywhere, with no exemption for either case. Four parts:
    ends with `(Recommended)`, and each option states its origin, behaviour and cost, as R25
    requires. Where the question genuinely cannot be asked (a subagent, a scheduled run with no
    interactive turn), follow step 1 of "Improving ResearchTools from another folder" in
-   `.claude/CLAUDE.md`: log `OWNER UNKNOWN` in `IMPROVEMENTS.md`, do the minimum needed to
-   unblock the task, and say so. Never guess a skill and continue silently, and never
-   substitute a skill that merely resembles the task.
+   ResearchTools' own `.claude/CLAUDE.md`: log `OWNER UNKNOWN` in ResearchTools' own
+   `IMPROVEMENTS.md`, do the minimum needed to unblock the task, and say so. Never guess a
+   skill and continue silently, and never substitute a skill that merely resembles the task.
 3. **No skill exists: ask first, the same gate as a new tool anywhere else, then
    ResearchTools improves itself.** A genuine gap with no owner follows step 1 of "Improving
    ResearchTools from another folder" in `.claude/CLAUDE.md`: ask the user before authoring an
@@ -345,10 +345,14 @@ everywhere, with no exemption for either case. Four parts:
    "Improving ResearchTools from another folder" (green stamp, `.rt-undo` copy, a test plus
    `run-offline-tests.ps1`, `-Sync`, `IMPROVEMENTS.md`) and ResearchTools' own
    `docs/authoring-and-mirrors.md`, so that it carries a test (R15), an inventory line (R23)
-   and its documentation (R31). `skill-creator` is delivered to Claude Code by the
+   and its documentation (R31). That protocol's own step 2 still governs: with no
+   `.rt-green.json` (a fresh clone has none), the session reports that, logs `OWNER UNKNOWN`,
+   and does not author - it does not build on a failure it did not cause just because
+   `skill-creator` happens to be absent too. `skill-creator` is delivered to Claude Code by the
    `skill-creator@claude-plugins-official` plugin and `find-skills` is a machine-local skill,
-   so neither ships in `.claude/skills/`. Where one is absent (Copilot, Aider, Continue, Codex,
-   a fresh clone) the work does not stop: search ResearchTools' own `.claude/skills/` and
+   so neither ships in `.claude/skills/`. Where one of them specifically is absent but the
+   green stamp IS present (Copilot, Aider, Continue, Codex on an otherwise proven checkout),
+   do not stop over the missing tool: search ResearchTools' own `.claude/skills/` and
    `README.md` for the nearest skill, then write the `SKILL.md` by hand on the latest cloud
    Claude model, still inside ResearchTools, following section 7 of
    `docs/authoring-and-mirrors.md`. The model must be a cloud one, so a harness that can run
@@ -363,7 +367,11 @@ everywhere, with no exemption for either case. Four parts:
    `find-skills`'s own provenance (installed from `vercel-labs/skills` on 2026-07-27 through
    the skills CLI, which is the route this part closes) is logged in `IMPROVEMENTS.md` rather
    than cited here, since a machine-local path under `~/.agents/` is not something another
-   clone can check.
+   clone can check. This ban is purpose-gated: it covers installing a skill, plugin or agent
+   ad hoc to cover a missing skill, never a blanket ban on installing anything. Where the user
+   explicitly asks for a skill to be installed, that installation happens outside
+   ResearchTools - never added to this repository, its mirrors, or its junctions, and never a
+   ResearchTools dependency.
 
 Why a rule and not a habit: an agent that starts a task with no skill acts from its own
 memory of how the job is done, and that is where R14 (an invented flag) and R29 (a plan that

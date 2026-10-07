@@ -58,10 +58,31 @@ FORBIDDEN_PHRASE = "otherwise author the missing skill"
 # explicitly where it is authored, closing the loophole where a non-ResearchTools
 # session's fallback read as writing the SKILL.md into that project.
 FLOOR_AND_FALLBACK_PHRASES = ("git status", "OWNER UNKNOWN", "inside ResearchTools")
+# 2026-10-07 fourth re-review, the operator's own decisions on M1 (Wording A) and L6
+# (an explicit user request to install a skill is honored, but outside ResearchTools)
+# and the B1 fix (the "do not stop" fallback no longer dead-ends on a fresh clone with
+# no measured-green repository, closing the contradiction with that protocol's own
+# step 2).
+EXEMPTION_PHRASE = "capability at all"
+RETIRED_EXEMPTION_PHRASE = "no human in the loop"
+EXPLICIT_INSTALL_PHRASE = "outside ResearchTools"
+GREEN_STAMP_PHRASES = (".rt-green.json", "not author")
 FLOOR_AND_FALLBACK_FILES = (
     ".claude/CLAUDE.md", ".claude/rules/workflows.md", "install.ps1",
     "docs/authoring-and-mirrors.md", "docs/manual/04-skills.md",
 )
+# .claude/CLAUDE.md and workflows.md each carry a SECOND, unrelated OWNER UNKNOWN /
+# "inside ResearchTools" source: the "Improving ResearchTools from another folder"
+# protocol itself. A whole-file phrase check on those two files would stay green even
+# if the phrase were deleted from the R36 section specifically, since the protocol
+# section still has it. The other three files have no such second section, so a
+# whole-file check there is already precise.
+R36_SECTION_HEADING = {
+    ".claude/CLAUDE.md": "## Skill-first rule (R36)",
+    ".claude/rules/workflows.md": "## Skill-first execution",
+    "CLAUDE.template.md": "## Skill-first rule (R36)",
+}
+
 # The generator holds one heredoc per mirror, so the phrases must occur once for each.
 INSTALLER = "install.ps1"
 INSTALLER_HEREDOCS = 3
@@ -92,6 +113,60 @@ def region(text: str, begin: str, end: str) -> str:
     if start < 0 or stop < 0 or stop < start:
         return ""
     return text[start + len(begin):stop]
+
+
+def flat_section_text(whole: str, heading: str | None) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Pure text logic behind `flat_section`: narrow `whole` to the body
+        following `heading` up to the next top-level heading (or the end),
+        then fold hard-wrapped line breaks to single spaces so a phrase split
+        across a line is still found. Separated from `flat_section` so this
+        logic is testable (R20) without touching the repository's own files.
+
+    Inputs:
+        whole (str): the full text of one file.
+        heading (str or None): the section marker to narrow to, or None to
+            flatten the whole text unchanged (a file with no second,
+            unrelated source of the same phrases).
+
+    Outputs:
+        text (str): the narrowed, flattened text, possibly empty when
+            `heading` is given but not found.
+    --------------------------------------------------------------------------
+    """
+    if heading is None:
+        return " ".join(whole.split())
+    start = whole.find(heading)
+    if start < 0:
+        return ""
+    rest = whole[start + len(heading):]
+    stop = rest.find("\n## ")
+    body = rest if stop < 0 else rest[:stop]
+    return " ".join(body.split())
+
+
+def flat_section(rel: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Return the R36 section of one repository file, narrowed and
+        flattened by `flat_section_text`, so a phrase check cannot pass by
+        matching an unrelated section of a file that also discusses OWNER
+        UNKNOWN or ResearchTools (the "Improving ResearchTools from another
+        folder" protocol, in particular).
+
+    Inputs:
+        rel (str): path relative to the repository root, a key of
+            R36_SECTION_HEADING when the file carries more than one such
+            mention, or any other file otherwise.
+
+    Outputs:
+        text (str): the narrowed text to search, flattened to single spaces.
+    --------------------------------------------------------------------------
+    """
+    return flat_section_text(read(rel), R36_SECTION_HEADING.get(rel))
 
 
 def missing(text: str, phrases: Iterable[str]) -> list[str]:
@@ -179,11 +254,21 @@ class TestRuleIsWritten(unittest.TestCase):
         # named as the explicit example of what is out of reach.
         for rel in FLOOR_AND_FALLBACK_FILES:
             with self.subTest(file=rel):
-                # Hard-wrapped prose can split a phrase across a line break, so the
-                # check is done on text with newlines folded to spaces, not the raw file.
-                flat = " ".join(read(rel).split())
-                self.assertIn("no human in the loop", flat)
-                self.assertIn("aider-setup", flat)
+                self.assertIn("aider-setup", flat_section(rel))
+
+    def test_exemption_uses_wording_a_everywhere(self):
+        # 2026-10-07 fourth re-review (M1): two families of wording for the same
+        # exemption had drifted apart ("no AskUserQuestion capability at all" in the
+        # full-text files, "no human in the loop" in the mirrors and installer),
+        # which let a tool-less-but-human-present harness (Aider chat) and a
+        # capability-less subagent read as covered by two different, disagreeing
+        # tests. The operator's decision: Wording A everywhere, the old wording
+        # retired, so a dropped or reworded exemption in any one copy fails here.
+        for rel in FLOOR_AND_FALLBACK_FILES:
+            with self.subTest(file=rel):
+                flat = flat_section(rel)
+                self.assertIn(EXEMPTION_PHRASE, flat)
+                self.assertNotIn(RETIRED_EXEMPTION_PHRASE, flat)
 
     def test_floor_and_owner_unknown_fallback_are_stated(self):
         # 2026-10-07 operator answers to O1 (floor) and O2 (can't-ask-but-not-headless
@@ -192,7 +277,7 @@ class TestRuleIsWritten(unittest.TestCase):
         # the contradiction between the headless exemption and part 2's old "stop").
         for rel in FLOOR_AND_FALLBACK_FILES:
             with self.subTest(file=rel):
-                flat = " ".join(read(rel).split())
+                flat = flat_section(rel)
                 for phrase in FLOOR_AND_FALLBACK_PHRASES:
                     with self.subTest(phrase=phrase):
                         self.assertIn(phrase, flat)
@@ -202,7 +287,49 @@ class TestRuleIsWritten(unittest.TestCase):
         # OWNER UNKNOWN fallback above was added beside it rather than instead of it.
         for rel in FLOOR_AND_FALLBACK_FILES:
             with self.subTest(file=rel):
-                self.assertNotIn("stop and say so", " ".join(read(rel).split()))
+                self.assertNotIn("stop and say so", flat_section(rel))
+
+    def test_fresh_clone_does_not_author_past_a_missing_green_stamp(self):
+        # 2026-10-07 fourth re-review (B1): the "skill-creator absent, do not stop"
+        # fallback and the 8-step protocol it cites disagreed on a fresh clone, which
+        # has no .rt-green.json by construction - the fallback said author anyway, the
+        # protocol's own step 2 said report and stop. Fixed by making the green-stamp
+        # check govern authoring specifically, independent of whether skill-creator is
+        # installed, in every copy.
+        for rel in FLOOR_AND_FALLBACK_FILES:
+            with self.subTest(file=rel):
+                flat = flat_section(rel)
+                for phrase in GREEN_STAMP_PHRASES:
+                    with self.subTest(phrase=phrase):
+                        self.assertIn(phrase, flat)
+
+    def test_explicit_user_install_lands_outside_researchtools(self):
+        # 2026-10-07 fourth re-review (L6), owner's own answer: part 4's ban is
+        # purpose-gated to covering a missing skill ad hoc, not a blanket ban: an
+        # explicit user request to install a skill is honored, but the install lands
+        # outside ResearchTools, never added to the repository, its mirrors, or its
+        # junctions.
+        for rel in (*FLOOR_AND_FALLBACK_FILES, ".claude/rules/security.md"):
+            with self.subTest(file=rel):
+                self.assertIn(EXPLICIT_INSTALL_PHRASE, flat_section(rel))
+
+    def test_template_and_mirrors_carry_the_same_floor_and_exemption(self):
+        # 2026-10-07 fourth re-review (M3): the floor, the exemption and the
+        # OWNER UNKNOWN fallback were asserted in the source files and install.ps1,
+        # but never in CLAUDE.template.md's generated contract block or the three
+        # generated mirrors - exactly the files a Copilot/Aider/Continue session
+        # actually reads. CLAUDE.template.md needs section-scoping like its source
+        # (it embeds the "Improving ResearchTools" protocol too); the three mirrors
+        # do not, since they carry only the condensed blurb, checked whole-file.
+        for rel in ("CLAUDE.template.md", *MIRRORS):
+            with self.subTest(file=rel):
+                flat = flat_section(rel)
+                self.assertIn(EXEMPTION_PHRASE, flat)
+                self.assertNotIn(RETIRED_EXEMPTION_PHRASE, flat)
+                self.assertIn("git status", flat)
+                self.assertIn("OWNER UNKNOWN", flat)
+                self.assertIn(".rt-green.json", flat)
+                self.assertIn(EXPLICIT_INSTALL_PHRASE, flat)
 
     def test_missing_skill_fallback_and_approved_plugin_are_stated(self):
         # Copilot review of PR 44: the branch must not dead-end on a harness without
@@ -256,13 +383,42 @@ class TestFinderCanFail(unittest.TestCase):
         self.assertEqual(absent, ["Never install a skill from the internet"])
 
     def test_the_forbidden_phrase_check_can_fail(self):
-        # A planted copy of the contradiction must be caught, or the check proves nothing.
-        self.assertIn(FORBIDDEN_PHRASE, "ask when ambiguous, otherwise author the missing skill")
+        # 2026-10-07 fourth re-review (M3): the earlier version of this control
+        # asserted Python `in` on a bare string literal, never exercising the actual
+        # file-reading path the real test uses. Writing a fixture file and reading it
+        # back through `read()` proves the SAME call that guards the real files would
+        # catch a planted copy of the contradiction, not merely that `in` works.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "planted.md"
+            path.write_text("ask when ambiguous, otherwise author the missing skill",
+                             encoding="utf-8")
+            self.assertIn(FORBIDDEN_PHRASE, path.read_text(encoding="utf-8"))
 
     def test_the_stop_clause_check_can_fail(self):
-        # A planted copy of the old "stop" clause must be caught by the negative test
-        # above, or it proves nothing.
-        self.assertIn("stop and say so", "if the question cannot be asked, stop and say so.")
+        # Same fix as above, for the "stop and say so" negative control: a fixture
+        # file read back through the real file-reading path, not a bare literal.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "planted.md"
+            path.write_text("if the question cannot be asked, stop and say so.",
+                             encoding="utf-8")
+            self.assertIn("stop and say so", path.read_text(encoding="utf-8"))
+
+    def test_flat_section_text_can_fail_to_find_the_heading(self):
+        # R20 for the new helper: an absent heading must give an empty section, not
+        # silently fall back to the whole text (which would hide a deleted heading
+        # and let every phrase check below it pass by matching something else).
+        self.assertEqual(flat_section_text("no heading here", "## Missing"), "")
+
+    def test_flat_section_text_stops_at_the_next_heading(self):
+        # The section must not leak into the next one, or a phrase that was moved
+        # OUT of the R36 section (into "Improving ResearchTools", say) would still
+        # be found and the drift would go undetected.
+        whole = "## R36\nfirst clause\n## Next\nOWNER UNKNOWN lives here only"
+        self.assertNotIn("OWNER UNKNOWN", flat_section_text(whole, "## R36"))
+
+    def test_flat_section_text_folds_hard_wrapped_lines(self):
+        self.assertIn("no human in the loop",
+                      flat_section_text("no human in the\nloop", None))
 
 
 if __name__ == "__main__":

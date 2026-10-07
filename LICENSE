@@ -1,13 +1,10 @@
-Polyform Noncommercial License 1.0.0
+SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+
+PolyForm Noncommercial License 1.0.0
 
 <https://polyformproject.org/licenses/noncommercial/1.0.0>
 
 Required Notice: Copyright (c) 2026 Martin J.-D. Otis (https://github.com/LARi-UQAC/ResearchTools)
-
-Commercial use (any use intended for or directed toward commercial
-advantage or monetary compensation) requires a separate written
-licensing agreement with the copyright holder before use begins.
-Contact: martin_otis@uqac.ca
 
 ## Acceptance
 
@@ -40,7 +37,9 @@ You must ensure that anyone who gets a copy of any part of
 the software from you also gets a copy of these terms or the
 URL for them above, as well as copies of any plain-text lines
 beginning with `Required Notice:` that the licensor provided
-with the software.
+with the software. For example:
+
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
 
 ## Changes and New Works License
 
@@ -134,6 +133,3 @@ software under these terms.
 
 **Use** means anything you do with the software requiring one
 of your licenses.
-
-**Trademark** means trademarks, service marks, and similar
-rights.

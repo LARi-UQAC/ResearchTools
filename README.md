@@ -32,6 +32,7 @@
   - [The two memories](#the-two-memories)
   - [Manual chapters](#manual-chapters)
   - [Supported harnesses](#supported-harnesses)
+  - [License](#license)
   - [Support this project](#support-this-project)
 
 </details>
@@ -143,6 +144,21 @@ One canonical `.claude/` source, mirrored everywhere below (detail:
 [![Aider](https://img.shields.io/badge/Aider-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
 [![Codex](https://img.shields.io/badge/Codex-mirrored-1F9E8F.svg?logo=openai&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
 [![AGENTS.md readers](https://img.shields.io/badge/AGENTS.md-generic%20readers-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+
+## License
+
+ResearchTools is source-available under [PolyForm Noncommercial 1.0.0](LICENSE): free to
+use, copy, and modify for any noncommercial purpose, including academic and research use.
+It is not an OSI-approved "open source" licence (OSI requires permitting commercial use),
+so it is described here as source-available rather than open source.
+
+Commercial use — any use intended for or directed toward commercial advantage or monetary
+compensation — needs a separate written licensing agreement with the copyright holder
+before use begins. Contact martin_otis@uqac.ca to discuss terms.
+
+v0.1.0 and earlier were released under the MIT License; that release is unaffected and
+keeps its original terms. The cut-over to PolyForm Noncommercial took effect in the commit
+that introduced this LICENSE file.
 
 ## Support this project
 

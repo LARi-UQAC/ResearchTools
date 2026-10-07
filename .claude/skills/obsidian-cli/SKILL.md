@@ -43,6 +43,30 @@ Write sequence:
 
 This is the write path, not a fallback.
 
+### Editing one frontmatter property in place
+
+`create`/`append` can only ADD a block after whatever is already in the file,
+so both degrade to a second, dead `---` block on a note that already has
+frontmatter - never the first block Obsidian and `daemon_graph.read_repo_property`
+actually read. Setting or replacing a single existing key (for example `repo:`
+on a project note) uses a third directive instead, added 2026-10-02 after a
+staged `repo:` addition went out as `append` and would have landed in that
+unread second block:
+
+```
+<!-- obsidian: set-property path="..." key="repo" -->
+the-single-line-value
+```
+
+- `path=` is the same vault-relative rule as above, and the target note MUST
+  already exist - this directive never creates a file.
+- `key=` is the frontmatter key to set or replace; every other key, the body,
+  and the line order are left untouched.
+- The value is everything after the directive line, and it MUST be one line:
+  a value containing a CR or LF is refused before the file is touched, since
+  embedding it verbatim would insert extra frontmatter lines that a later
+  parse would misread as separate keys.
+
 ## Forbidden commands
 
 `create`, `append`, `prepend` - including `daily:*` writes (`daily:append`,

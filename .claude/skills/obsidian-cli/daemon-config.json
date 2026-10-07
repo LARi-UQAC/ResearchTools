@@ -38,7 +38,7 @@
     "ask_graph_timeout_s": 20,
     "ask_graph_sentences": {
       "skipped": {
-        "fr": "Enfin, je n'ai pas trouvé de graph.",
+        "fr": "Enfin, je n'ai pas trouvé de graphe.",
         "en": "Finally, I did not find a graph."
       },
       "error": {

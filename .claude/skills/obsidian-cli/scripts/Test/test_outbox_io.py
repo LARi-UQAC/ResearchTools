@@ -74,6 +74,26 @@ class SetFrontmatterPropertyCase(unittest.TestCase):
         self.assertTrue(ok)
         self.assertLess(after, before)
 
+    def test_a_multiline_value_is_refused_before_writing(self):
+        """A staged directive's body can carry more than one content line (a
+        malformed stage, or a future caller forgetting the one-line rule).
+        Embedding it verbatim would insert extra frontmatter lines; refuse
+        before the file is touched rather than after a corrupting write that
+        the outbox would then replay forever."""
+        import outbox_io
+        note = self._note("n.md", "---\ntype: projet\n---\n\nbody\n")
+        original = note.read_text(encoding="utf-8")
+        with self.assertRaises(outbox_io.FrontmatterError):
+            outbox_io.set_frontmatter_property(
+                note, "repo", "first-line\nsecond-line")
+        self.assertEqual(note.read_text(encoding="utf-8"), original)
+
+    def test_a_cr_only_value_is_also_refused(self):
+        import outbox_io
+        note = self._note("n.md", "---\ntype: projet\n---\n\nbody\n")
+        with self.assertRaises(outbox_io.FrontmatterError):
+            outbox_io.set_frontmatter_property(note, "repo", "a\rb")
+
     def test_missing_file_raises_rather_than_creating_one(self):
         import outbox_io
         absent = self.tmp / "absent.md"
@@ -133,6 +153,72 @@ class ParseDirectiveSetPropertyCase(unittest.TestCase):
         import outbox_io
         self.assertEqual(outbox_io.parse_directive("no directive here\n"),
                          (None, None, None, None))
+
+
+class FlushOneSetPropertyJournalCase(unittest.TestCase):
+    """flush_one journals a set-property write as a SNAPSHOT (full pre-edit
+    text), not a size-based WRITE record. vault_journal.undo() reverses a
+    WRITE by truncating to the old byte count, which only reverses an
+    append; a set-property edit happens in the MIDDLE of the file and can
+    shrink it (a shorter value replacing a longer one), so a WRITE record
+    would make undo() either corrupt the note (chop bytes off the body
+    while leaving the new value in place) or refuse outright."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.vault = self.tmp / "vault"
+        self.vault.mkdir()
+        self.outbox = self.tmp / "outbox"
+        self.sent = self.outbox / "sent"
+        self.journal = self.tmp / "journal.jsonl"
+
+    def _note(self, rel, text):
+        path = self.vault / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def _stage(self, directive, content):
+        self.outbox.mkdir(parents=True, exist_ok=True)
+        path = self.outbox / "item.md"
+        path.write_text(f"{directive}\n{content}", encoding="utf-8")
+        return path
+
+    def test_set_property_is_journaled_as_a_snapshot_not_a_write(self):
+        import outbox_io
+        import vault_journal
+        self._note("n.md",
+                  "---\nrepo: a-very-long-previous-value-indeed\n---\n\nbody\n")
+        md = self._stage(
+            '<!-- obsidian: set-property path="n.md" key="repo" -->', "x")
+        ok = outbox_io.flush_one(md, self.vault, self.sent, self.journal)
+        self.assertTrue(ok)
+        records = vault_journal.read_records(self.journal)
+        states = [r["state"] for r in records]
+        self.assertIn(vault_journal.STATE_SNAPSHOT, states)
+        self.assertNotIn(vault_journal.STATE_WRITE, states)
+
+    def test_undo_restores_the_exact_text_even_when_the_edit_shrank_the_file(self):
+        """The failure mode a size-based record would reproduce: the
+        replacement ("x") is shorter than the original value, so a
+        before/after byte count and a truncate-based undo land on the wrong
+        bytes. The snapshot-based undo must restore byte-for-byte."""
+        import outbox_io
+        import vault_journal
+        original = "---\nrepo: a-very-long-previous-value-indeed\n---\n\nbody\n"
+        note = self._note("n.md", original)
+        md = self._stage(
+            '<!-- obsidian: set-property path="n.md" key="repo" -->', "x")
+        ok = outbox_io.flush_one(md, self.vault, self.sent, self.journal)
+        self.assertTrue(ok)
+        self.assertNotEqual(note.read_text(encoding="utf-8"), original)
+
+        records = vault_journal.read_records(self.journal)
+        snapshot = next(r for r in records
+                        if r["state"] == vault_journal.STATE_SNAPSHOT)
+        report = vault_journal.undo(self.vault, snapshot, write=True)
+        self.assertEqual(report["action"], "restore")
+        self.assertEqual(note.read_text(encoding="utf-8"), original)
 
 
 if __name__ == "__main__":

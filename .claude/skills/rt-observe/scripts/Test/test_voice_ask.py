@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
@@ -127,6 +128,26 @@ class ReadAnswerCase(unittest.TestCase):
         voice_ask.read_answer(self.outbox, "req1")
         self.assertEqual(voice_ask.read_answer(self.outbox, "req1"),
                          {"status": "pending"})
+
+    def test_a_concurrent_unlink_between_exists_and_read_is_pending(self):
+        """Two overlapping GETs can both pass path.exists(), then the first
+        one's terminal-status unlink races the second one's read_text(),
+        which would otherwise surface as an unhandled FileNotFoundError
+        instead of closing the HTTP request with "pending"."""
+        import voice_ask
+        self._write("req1", {"id": "req1", "status": "ok"})
+        path = self.outbox / "ask" / "answers" / "req1.json"
+        real_exists = Path.exists
+
+        def faked_exists(self_path, *args, **kwargs):
+            if self_path == path:
+                return True
+            return real_exists(self_path, *args, **kwargs)
+
+        path.unlink()  # simulates the other poll's terminal-status unlink
+        with mock.patch.object(Path, "exists", faked_exists):
+            result = voice_ask.read_answer(self.outbox, "req1")
+        self.assertEqual(result, {"status": "pending"})
 
 
 if __name__ == "__main__":

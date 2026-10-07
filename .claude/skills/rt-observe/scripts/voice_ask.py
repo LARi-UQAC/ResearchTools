@@ -145,10 +145,15 @@ def read_answer(outbox_root: Path, request_id: str) -> dict:
         file DELETED afterward if its "status" is terminal (TERMINAL_
         STATUSES) - a "partial" answer is left in place so the next poll
         sees the daemon's later overwrite. {"status": "pending"} when the
-        file is absent or does not parse as JSON (a half-written file is
-        never observable, since the daemon writes it via tmp+replace, but a
-        reader still degrades rather than raising on anything it cannot
-        parse - R8).
+        file is absent, disappears between the existence check and the read,
+        or does not parse as JSON. The disappearing case is real, not
+        theoretical: two overlapping polls can both see the file exist, and
+        the first one's terminal-status unlink can race the second one's
+        read, which would otherwise surface as an unhandled FileNotFoundError
+        instead of the pending result a slightly slower poll should see
+        (a half-written file is never observable, since the daemon writes it
+        via tmp+replace, but a reader still degrades rather than raising on
+        anything it cannot read or parse - R8).
     --------------------------------------------------------------------------
     """
     path = Path(outbox_root) / "ask" / "answers" / f"{request_id}.json"
@@ -156,7 +161,7 @@ def read_answer(outbox_root: Path, request_id: str) -> dict:
         return {"status": "pending"}
     try:
         answer = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
+    except (OSError, ValueError):
         return {"status": "pending"}
     if answer.get("status") in TERMINAL_STATUSES:
         path.unlink(missing_ok=True)

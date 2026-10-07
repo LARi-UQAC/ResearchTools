@@ -320,10 +320,21 @@ def set_frontmatter_property(target: Path, key: str, value: str) -> tuple:
 
     Raises:
         FrontmatterError: `target` does not exist (this action never
-        creates a file - "create" exists for that), or its first block is
-        not a `---`-delimited frontmatter block.
+        creates a file - "create" exists for that); its first block is not
+        a `---`-delimited frontmatter block; or `value` contains a CR or LF.
+        A staged directive's body can carry more than one content line, and
+        embedding that whole blob into `new_line` would insert extra
+        frontmatter lines - caught here, before the file is touched, rather
+        than at the post-write verification, where the target would already
+        be corrupted and the outbox item would replay the same corruption
+        forever.
     --------------------------------------------------------------------------
     """
+    if "\n" in value or "\r" in value:
+        raise FrontmatterError(
+            f"set-property value for {key!r} contains a newline; "
+            "refusing to write a multiline value into one frontmatter line"
+        )
     if not target.exists():
         raise FrontmatterError(f"set-property target does not exist: {target}")
     text = target.read_text(encoding="utf-8")
@@ -427,6 +438,16 @@ def flush_one(md_file: Path, vault: Path, sent: Path, journal_path=None) -> bool
     if action != "set-property":
         warn_unresolved_links(rel, content, vault)
 
+    # set-property edits the file IN PLACE: the written byte count can be
+    # smaller than before (a shorter value replacing a longer one), so a
+    # size-based WRITE record would make vault_journal.undo() truncate the
+    # note - reversing only an append, never a middle-of-file substitution -
+    # and either leave the new value in place while chopping the body, or
+    # refuse outright. Capture the full pre-edit text so the undo can be a
+    # restore instead (vault_journal.STATE_SNAPSHOT).
+    pre_text = (target.read_text(encoding="utf-8")
+               if action == "set-property" and target.exists() else None)
+
     if journal_path is not None:
         import vault_journal
         vault_journal.record(journal_path, rel,
@@ -446,8 +467,11 @@ def flush_one(md_file: Path, vault: Path, sent: Path, journal_path=None) -> bool
         return False
     if journal_path is not None:
         import vault_journal
-        vault_journal.record(journal_path, rel, before, after,
-                             md_file.name, vault_journal.STATE_WRITE)
+        if action == "set-property":
+            vault_journal.snapshot(journal_path, rel, pre_text, md_file.name)
+        else:
+            vault_journal.record(journal_path, rel, before, after,
+                                 md_file.name, vault_journal.STATE_WRITE)
 
     sent.mkdir(parents=True, exist_ok=True)
     md_file.replace(sent / md_file.name)

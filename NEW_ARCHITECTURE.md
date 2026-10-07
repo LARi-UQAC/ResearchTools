@@ -553,6 +553,33 @@ Rules, each enforced server-side:
   answerable question.
 - A field bound to a literal or marked as not filled is never written back.
 
+**Fields that only the student provides** (decision of 2026-10-07). The student enters and
+corrects them; the professor's write-back above never overwrites them.
+
+| Field | Where it lives | Note |
+|---|---|---|
+| UQAC email | `users.email` | The login, never typed again |
+| Personal email | `users.recovery_email` | Recovery sign-in |
+| Matricule, code permanent, last name, given names, address, phone number | `profile_values` | Pre-fill every form |
+| Date of birth | `profile_values` | Sensitive: never in a CV, a web page or an export |
+| Social insurance number (NAS) | `profile_values`, **encrypted** | See below |
+
+**The NAS is stored**, because UQAC's PDF forms ask for it every session, and the alternative in
+practice is a copy in the student's OneDrive folder plus one in every email that carries a filled
+form. One encrypted copy in ThesisTracker is the smaller exposure. It carries rules no other field
+has:
+
+- Encrypted at rest at column level, with the key held outside the database (environment, like
+  `SESSION_SECRET`).
+- Shown masked (last three digits) to everyone but the student. It is written into a PDF only for
+  a form whose field map binds it, and only at that form's own step.
+- Sent to the form service only as a fill value; the service already persists nothing and logs no
+  field value (section 13).
+- Never in a CV, a web page, an export, a log or an audit-trail value. The audit trail records
+  that it was read or changed, never what it is.
+- A signed PDF that carries it stays in `form_documents`, so the retention policy of those
+  documents covers it too (section 14).
+
 The profile store also holds the student's **career record**: cycle, period, status, project
 title, co-director, professional title (such as the OIQ "ing."), and after graduation the current
 position and employer. This is the only place these values live (decision of 2026-10-01).
@@ -1146,6 +1173,8 @@ Binding rules, each enforced by a test or a startup check:
 | Only `owner` or `direction` may create a `services` row or change its `parent_service_id`, `service_type` or `hierarchy_level` (2026-09-25); a service's own `assigned_login` may edit only that row's `email`/`responsibility`, never its place in the hierarchy | TT-8 UI, asserted by test |
 | A profile write-back updates the **form owner's** profile, never the editor's, and records who did it | TT-9 |
 | A consent row is written only by the student it belongs to; a profile write-back never touches it | section 6a |
+| Student-provided identity fields (matricule, code permanent, names, date of birth, address, phone, NAS) are written only by the student | section 6 |
+| The NAS is encrypted at rest with a key outside the database, shown masked to everyone but the student, and never logged or exported | section 6 |
 | No consent, no publication: the `/etudiants/` page and any CV list only students whose consent for that purpose is in force | section 6a |
 | `POST /cv/build` refuses (422) a student row inside the 6-year window with no CV consent, naming the row index, never the name. No consent is required beyond 6 years (decision of 2026-10-02) | RT-8 |
 | No student data are stored on the ResearchTools side: no YAML copy, no vault copy, no cache of a request's rows | RT-8, RT-9 |
@@ -1220,6 +1249,7 @@ stopping a container; TT-7 removed it, so nothing outside the Docker host has to
 | Which institutional Docker host, and who administers it? | **Undecided by choice.** The stack is host-agnostic | The professor, with UQAC IT |
 | Phase 2: the public `/etudiants/` page fed from ThesisTracker (section 4). Which request payload, who holds the WordPress credential, and the field names of the two consents | **Open.** `render_phq`'s record contract is fixed; the rest is not | The professor |
 | The ThesisTracker copy of this file has diverged (1044 lines against 1111 on 2026-10-02) | **Open.** Copy this file to ThesisTracker `main` once the pending revisions land | The professor |
+| Retention of signed PDFs that carry a NAS or a date of birth, and whether UQAC's privacy officer accepts ThesisTracker as the NAS's single store | Open. Storage is decided (2026-10-07); retention and the officer's sign-off are not | The professor, with UQAC's privacy officer |
 | Backup policy for the institutional Postgres | Open. A `pg_dump` cron container is the intended answer and needs no n8n | Whoever administers the host |
 | Who holds the `direction` account, and does one account serve the whole Direction de programme or one per person? | Open. One per person gives a real audit trail; a shared account does not | The professor, with the Direction |
 

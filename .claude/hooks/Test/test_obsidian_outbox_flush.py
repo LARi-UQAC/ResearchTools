@@ -204,7 +204,8 @@ class OutboxFlushTest(unittest.TestCase):
     LOCK_FIXTURE = {"lock": {"stale_after_s": 300.0,
                              "hook_acquire_timeout_s": 0.2,
                              "acquire_timeout_s": 0.2,
-                             "poll_interval_s": 0.01}}
+                             "poll_interval_s": 0.01,
+                             "boot_skew_tolerance_s": 0}}
 
     def _raw_drop(self, name="unrouted.md"):
         raw = self.outbox / "raw"
@@ -327,7 +328,7 @@ class OutboxFlushTest(unittest.TestCase):
         # A short timeout injected as a fixture, so the case proves the refusal
         # without paying the configured hook wait (R21: never read the live config).
         fast = {"lock": {"hook_acquire_timeout_s": 0.2, "stale_after_s": 300,
-                         "poll_interval_s": 0.01}}
+                         "poll_interval_s": 0.01, "boot_skew_tolerance_s": 0}}
         outbox_io, _ = self.mod._load()
         with mock.patch.object(outbox_io, "load_config", return_value=fast):
             with mock.patch("sys.stderr", new=io.StringIO()) as err:

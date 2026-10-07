@@ -41,7 +41,8 @@ CONFIG = {
     "daemon": {"poll_interval_s": 0.01, "classify_confidence_min": 0.7,
                "draft_max_attempts": 2, "drain_idle_s": 900,
                "consolidate_top_n": 15, "judge_edge_max_pairs": 15,
-               "queue_max_entries": 500, "phantom_max_per_drain": 10},
+               "queue_max_entries": 500, "phantom_max_per_drain": 10,
+               "ask_poll_interval_s": 1, "bridge_error_log_interval_s": 0},
 }
 GOOD_NOTE = "---\ntype: apprentissage\ndate: 2026-08-28\n---\n\n## Contexte\nUn cas.\n"
 

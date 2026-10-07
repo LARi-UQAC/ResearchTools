@@ -46,7 +46,7 @@ disk-cached, rate-limited publications cache. Full diagram and detail: `Architec
 | PDF ingest contract, widget dump, filling, PAdES signing, HTTP transport | ResearchTools (`form-service` skill + `deploy/form-service/`) |
 | Form catalogue, field maps, student profile | ThesisTracker |
 | CV rendering (`POST /cv/build`, stateless, no LaTeX compiled, nothing stored) | ResearchTools (`narrative-cv` skill) |
-| Student HQP rows, both consents (web sign-in and CV inclusion) | ThesisTracker |
+| Student HQP rows, both consents (web publication and CV inclusion) | ThesisTracker |
 | Twenty-two-unit delivery plan, shared data model, cross-repo decisions | `NEW_ARCHITECTURE.md` (both repos) |
 
 When a plan changes something both sides depend on, `NEW_ARCHITECTURE.md` is the file that

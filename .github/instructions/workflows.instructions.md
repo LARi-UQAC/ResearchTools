@@ -301,7 +301,7 @@ gating every read-only script behind a dry-run flag it has no destructive path t
 
 ## Skill-first execution
 
-**R34 - no task runs without a skill, or without an agent that uses a skill; a missing skill is
+**R36 - no task runs without a skill, or without an agent that uses a skill; a missing skill is
 authored in ResearchTools, never installed from the internet.** Effective 2026-10-02. It binds
 every model, cloud or local, and every harness (Claude Code, Codex, Copilot, Aider, Continue,
 any other). Four parts:

@@ -131,9 +131,16 @@ class EntityRepoCase(unittest.TestCase):
         """The ghost path is deliberately ADDED to the allowlist, so the
         reason asserted is the existence check, not the allowlist refusal -
         an allowlisted root can still be absent (removed, or misconfigured),
-        and that case must still be distinguishable."""
+        and that case must still be distinguishable.
+
+        PR #49 third re-review: a literal Windows-style string
+        (r"C:\\does\\not\\exist\\anywhere") is not absolute on POSIX, so this
+        test failed there with "is not absolute" instead of "does not
+        exist". Built from tempfile.mkdtemp() plus a child name that is
+        never created, so the path is absolute AND nonexistent on every
+        platform the suite runs on (R21 spirit)."""
         import daemon_graph
-        ghost = Path(r"C:\does\not\exist\anywhere")
+        ghost = Path(tempfile.mkdtemp()) / "never-created"
         proj = self.vault / "10_Projets" / "Logiciels" / "Ghost"
         proj.mkdir(parents=True)
         (proj / "index.md").write_text(
@@ -201,6 +208,27 @@ class EntityRepoCase(unittest.TestCase):
         self.assertIsNone(result["entity"])
         self.assertIn("no repository is allowlisted", result["reason"])
 
+    def test_the_refusal_reason_names_the_path_plainly_not_via_repr(self):
+        """PR #49 third re-review, F1 (Medium-High): the refusal reason used
+        to interpolate the raw repo: value with `!r`, which on Windows
+        DOUBLES every backslash in the printed text (repr escaping). The
+        reason is later redacted by rt_state.redact_json/home_tilde, a plain
+        substring replace of the operator's home path - a doubled-backslash
+        rendering is not a substring match for the single-backslash home
+        text, so the account path would survive redaction and reach a
+        browser. A real, OS-native absolute path (not a literal Windows-style
+        string) is used so the "outside the allowlist" branch - the one that
+        actually interpolates the value - fires on every platform the suite
+        runs on, rather than "is not absolute" on POSIX or "no repository is
+        allowlisted" (which embeds nothing) on Windows."""
+        import daemon_graph
+        outside = Path(tempfile.mkdtemp())
+        not_this_one = Path(tempfile.mkdtemp())
+        result = daemon_graph._resolve_repo_claim(
+            str(outside), [not_this_one.resolve()])
+        self.assertIn(str(outside), result["reason"])
+        self.assertNotIn(repr(str(outside)), result["reason"])
+
     def test_an_empty_allowlist_names_itself_rather_than_the_target_path(self):
         import daemon_graph
         hits = [self._hit("10_Projets/Logiciels/DemoRepo/some-note.md")]
@@ -231,6 +259,48 @@ class EntityRepoCase(unittest.TestCase):
                                           self.allowed_roots)
         self.assertIsNone(result["entity"])
         self.assertIn("outside the configured allowlist", result["reason"])
+
+    def test_a_sibling_directory_sharing_a_string_prefix_is_refused(self):
+        """PR #49 third re-review mutation S1 (survived): replacing the
+        resolved EQUALITY check with a string prefix test (startswith)
+        would let a SIBLING directory whose name merely starts with the
+        allowed root's own name pass, since '<repo>' is a string-prefix of
+        '<repo>-evil'. Resolved equality has no such hole."""
+        import daemon_graph
+        sibling = Path(str(self.repo) + "-evil")
+        sibling.mkdir()
+        (sibling / "graphify-out").mkdir()
+        (sibling / "graphify-out" / "graph.json").write_text(
+            "{}", encoding="utf-8")
+        result = daemon_graph._resolve_repo_claim(
+            str(sibling), self.allowed_roots)
+        self.assertIsNone(result.get("repo"))
+        self.assertIn("outside the configured allowlist", result["reason"])
+
+    def test_a_trailing_dot_spelling_of_an_allowed_root_still_resolves(self):
+        """PR #49 third re-review mutation S2 (survived): if the CLAIM's
+        own path were compared WITHOUT resolve(), an equivalent-but-
+        differently-spelled path to an allowed root (here, a trailing '.')
+        would be refused instead of accepted, since the raw strings differ
+        even though they name the same directory."""
+        import daemon_graph
+        dotted = str(self.repo / ".")
+        result = daemon_graph._resolve_repo_claim(dotted, self.allowed_roots)
+        self.assertEqual(result.get("repo"), self.repo.resolve())
+
+    def test_load_allowed_roots_resolves_a_trailing_dot_entry(self):
+        """PR #49 third re-review mutation S3 (survived): if
+        load_allowed_roots stored its entries RAW (no resolve()), an
+        operator-configured root spelled with a trailing '.' would never
+        equal a plain, cleanly-spelled claim for the same directory."""
+        import daemon_graph
+        config_path = Path(tempfile.mkdtemp()) / "local-ask-graph-roots.json"
+        config_path.write_text(
+            json.dumps({"allowed_roots": [str(self.repo / ".")]}),
+            encoding="utf-8")
+        roots = daemon_graph.load_allowed_roots(config_path)
+        result = daemon_graph._resolve_repo_claim(str(self.repo), roots)
+        self.assertEqual(result.get("repo"), self.repo.resolve())
 
     def test_entity_repo_with_no_allowed_roots_argument_loads_the_real_file(self):
         """The default (omitted) allowed_roots argument calls
@@ -320,6 +390,35 @@ class QueryGraphCase(unittest.TestCase):
         self.assertIsNone(result["text"])
         self.assertIn("not found", result["reason"])
         self.assertFalse(run.called)
+
+    def test_a_leading_dash_keyword_never_reaches_argv(self):
+        """PR #49 third re-review L8: a keyword beginning with '-' could be
+        read as an option by whatever parser graphify uses, even as a single
+        joined token (true of argparse positionals). Unverifiable without
+        the real CLI (R14), so this refuses rather than guesses at a `--`
+        separator - cheap, and needs no knowledge of graphify's own
+        parsing."""
+        import daemon_graph
+        with mock.patch("daemon_graph.shutil.which",
+                        return_value="/usr/bin/graphify"), \
+                mock.patch("daemon_graph.subprocess.run") as run:
+            result = daemon_graph.query_graph(
+                self.repo, ["-rf", "--budget=0"], 1500, 4000, 20.0)
+        self.assertIsNone(result["text"])
+        self.assertIn("begins with '-'", result["reason"])
+        self.assertFalse(run.called)
+
+    def test_a_mix_of_safe_and_dashed_keywords_drops_only_the_dashed_ones(self):
+        import daemon_graph
+        fake = mock.Mock(returncode=0, stdout="x", stderr="")
+        with mock.patch("daemon_graph.shutil.which",
+                        return_value="/usr/bin/graphify"), \
+                mock.patch("daemon_graph.subprocess.run",
+                          return_value=fake) as run:
+            daemon_graph.query_graph(
+                self.repo, ["-rf", "vault", "lock"], 1500, 4000, 20.0)
+        args, kwargs = run.call_args
+        self.assertEqual(args[0][2], "vault lock")
 
     def test_a_successful_run_returns_text_and_built(self):
         import daemon_graph

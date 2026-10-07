@@ -1126,6 +1126,55 @@ class VoiceAnswerPollCase(unittest.TestCase):
                       .get("timeouts_seconds", {}))
         self.assertIn("CFG.timeouts_seconds.voice_ask_wait", voice_iife)
 
+    def test_an_in_flight_fetch_guard_sits_inside_the_poll_interval(self):
+        """PR #49 third re-review F2: setInterval fired a new fetch every
+        tick regardless of whether the previous one had resolved, so a
+        response slower than the poll cadence could arrive out of order and
+        requeue parts twice. A boolean flag set before fetch() and cleared
+        in both then() and catch() closes this."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("fetchInFlight", voice_iife)
+        poll_fn = voice_iife[voice_iife.index("function pollAnswer"):]
+        interval_body = poll_fn[poll_fn.index("setInterval"):]
+        self.assertTrue(
+            re.search(r"if\s*\(\s*fetchInFlight\s*\)\s*\{\s*return",
+                     interval_body[:400]),
+            "no early-return guard on fetchInFlight at the top of the "
+            "poll's setInterval callback")
+
+    def test_a_new_question_invalidates_a_stale_in_flight_response(self):
+        """A late response from a SUPERSEDED poll (a new question already
+        started) must not append its old text or speak it - stopAnswerPoll()
+        clears the timer but cannot abort a fetch already sent. A generation
+        counter, bumped once per pollAnswer() call and checked in both the
+        success and error handlers, discards a stale result instead."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("answerPollGeneration", voice_iife)
+        poll_fn = voice_iife[voice_iife.index("function pollAnswer"):]
+        # The generation must be captured into a per-call variable (not read
+        # fresh each time, which would defeat the comparison) and compared
+        # against the shared counter before a response is acted on.
+        self.assertTrue(
+            re.search(r"myGeneration\s*=\s*\+\+answerPollGeneration", poll_fn[:600]),
+            "pollAnswer does not capture its own generation at call time")
+        self.assertGreaterEqual(
+            poll_fn.count("myGeneration !== answerPollGeneration"), 2,
+            "a stale response must be discarded in BOTH the success and "
+            "the error handler, not only one")
+
+    def test_a_new_question_cancels_the_previous_speech_queue(self):
+        """L6: without this, starting a new question while the previous
+        answer is still being spoken queues the new parts BEHIND the old
+        ones rather than replacing them."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        poll_start = voice_iife.index("function pollAnswer")
+        poll_fn = voice_iife[poll_start:
+                             voice_iife.index("setInterval", poll_start)]
+        self.assertIn("speechSynthesis.cancel()", poll_fn)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

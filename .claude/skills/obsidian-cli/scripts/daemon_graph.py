@@ -221,7 +221,7 @@ def _resolve_repo_claim(value: str, allowed_roots: list) -> dict:
     graph."""
     path = Path(value)
     if not path.is_absolute():
-        return {"entity": None, "reason": f"repo: {value!r} is not absolute"}
+        return {"entity": None, "reason": f"repo: '{value}' is not absolute"}
     resolved = path.resolve()
     if not allowed_roots:
         return {"entity": None,
@@ -230,14 +230,14 @@ def _resolve_repo_claim(value: str, allowed_roots: list) -> dict:
                          "or empty) - refusing by default"}
     if resolved not in allowed_roots:
         return {"entity": None,
-               "reason": f"repo: {value!r} resolves outside the configured "
+               "reason": f"repo: '{value}' resolves outside the configured "
                          "allowlist"}
     if not resolved.is_dir():
         return {"entity": None,
-               "reason": f"repo: {value!r} does not exist"}
+               "reason": f"repo: '{value}' does not exist"}
     if not (resolved / "graphify-out" / "graph.json").is_file():
         return {"entity": None,
-               "reason": f"repo: {value!r} has no graph "
+               "reason": f"repo: '{value}' has no graph "
                          "(graphify-out/graph.json)"}
     return {"repo": resolved}
 
@@ -331,14 +331,31 @@ def query_graph(repo: Path, keywords: list, budget_tokens: int,
     Outputs:
         result (dict): {"text": str, "built": "<ISO date or None>"} on
         success, or {"text": None, "reason": str} on failure (the CLI not
-        on PATH, a timeout, a non-zero exit, or empty output).
+        on PATH, a timeout, a non-zero exit, empty output, or every keyword
+        refused - see Details).
+
+    Details:
+        `keywords` comes from a local model's own output, not a fixed
+        catalogue, and the joined string becomes the ONE positional argv
+        element graphify's "query" subcommand reads. A keyword beginning
+        with "-" could be read as an option by whatever argument parser
+        graphify uses even as a single token (true of argparse positionals,
+        for instance) - unverifiable here since the CLI is not installed in
+        this sandbox (R14), so rather than guess at a `--` separator this
+        refuses any keyword starting with "-" before the join, which needs
+        no knowledge of graphify's own parsing.
     --------------------------------------------------------------------------
     """
     binary = shutil.which("graphify")
     if binary is None:
         return {"text": None,
                "reason": "graphify CLI not found on PATH"}
-    argv = [binary, "query", " ".join(keywords), "--budget",
+    safe_keywords = [k for k in keywords if not k.startswith("-")]
+    if not safe_keywords:
+        return {"text": None,
+               "reason": "every keyword begins with '-', refused rather "
+                         "than risk it being read as an option by graphify"}
+    argv = [binary, "query", " ".join(safe_keywords), "--budget",
            str(budget_tokens)]
     try:
         result = subprocess.run(argv, cwd=repo, timeout=timeout,
@@ -357,7 +374,7 @@ def query_graph(repo: Path, keywords: list, budget_tokens: int,
     if not text:
         return {"text": None,
                "reason": f"graphify query returned no output for "
-                         f"{' '.join(keywords)!r}"}
+                         f"{' '.join(safe_keywords)!r}"}
     built = None
     try:
         mtime = (repo / "graphify-out" / "graph.json").stat().st_mtime

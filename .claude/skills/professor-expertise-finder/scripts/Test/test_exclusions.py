@@ -71,6 +71,9 @@ def test_duplicate_identical_exclusion_entries_still_confidently_excluded():
                         "reason": "unavailable"}]
     kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
     assert kept == [] and len(excluded) == 1 and ambiguous == []
+    # Fifth round: the sibling duplicate agreeing with the chosen one must
+    # not be reported as a typo that "matched nobody".
+    assert unmatched == []
 
 
 def test_name_match_still_excludes_when_either_side_lacks_university():

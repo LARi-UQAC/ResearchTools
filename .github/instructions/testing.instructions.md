@@ -248,7 +248,10 @@ exercise them, set the required environment variables, then dry-run the entry po
   order being silently chosen (second round, `_resolve_exclusion_match()`), which asks whether
   the PLAUSIBLE candidates agree with each other rather than merely counting them (fourth round -
   two identical duplicate exclusion-file rows used to be flagged ambiguous for having two
-  indices, even with no actual disagreement); an AMBIGUOUS row stays in `kept` (fourth round - it
+  indices, even with no actual disagreement - and every candidate CONSISTENT with an exclude,
+  not only the one chosen for the reported reason, is marked matched, fifth round: a duplicate
+  or empty-university sibling agreeing with the chosen one used to be reported as
+  "UNMATCHED EXCLUSION (matched nobody)"); an AMBIGUOUS row stays in `kept` (fourth round - it
   used to vanish from both lists, silently dropped from the written CSV); the ranking CSV is read
   as utf-8-sig like every other externally-sourced file here (fourth round - a BOM-prefixed export
   used to key the first column as `﻿professor` and refuse the file); `pick()` normalizes its

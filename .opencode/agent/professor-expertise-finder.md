@@ -35,8 +35,9 @@ workflow exactly. Key points:
    approved-publisher journal articles in the field**. Article discovery
    goes through the `scopus` skill, never ad hoc web search — resolve the
    professor's AU-ID once with `author` mode, then list their documents
-   with the `publications` mode (not `author` — it has no `--sort`, since
-   it is always sorted most-recent-first already):
+   with the `publications` mode (not `author` — `--sort` is parsed but
+   silently ignored by this mode, which is always sorted most-recent-first
+   already):
    `../scopus/scripts/scopus_api.py publications "<name>" --au-id <id> --count 25`,
    filtering to `recent_years_window` years and `approved_publisher`.
    For the chosen candidates retrieve full text

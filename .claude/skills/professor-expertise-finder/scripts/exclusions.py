@@ -171,13 +171,18 @@ def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[l
         key = name_key(row.get("professor", ""))
         candidates = by_key.get(key, [])
         row_uni = norm(row.get("university", ""))
-        outcome, chosen = _resolve_exclusion_match(row_uni, exclusions, candidates)
+        outcome, chosen, consistent = _resolve_exclusion_match(row_uni, exclusions, candidates)
         if outcome == "exclude":
-            matched.add(chosen)
+            # Every candidate judged CONSISTENT with this match - not only
+            # the one `chosen` for the reported reason - is marked matched.
+            # A duplicate or an empty-university sibling that agreed with
+            # the chosen one is not a typo (fifth 2026-10-08 round: it was
+            # wrongly reported as "UNMATCHED EXCLUSION (matched nobody)").
+            matched.update(consistent)
             excluded.append((row, exclusions[chosen]))
         elif outcome == "ambiguous":
-            matched.update(candidates)
-            ambiguous.append((row, exclusions[candidates[0]]))
+            matched.update(consistent)
+            ambiguous.append((row, exclusions[consistent[0]]))
             # An ambiguous row is NOT excluded - it stays in the deliverable
             # pending a human decision, exactly as the module docstring and
             # the printed "(kept)" message already say (bug: it was only
@@ -192,7 +197,8 @@ def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[l
 
 
 def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
-                               candidates: list[int]) -> tuple[str, int | None]:
+                               candidates: list[int]
+                               ) -> tuple[str, int | None, list[int]]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -215,6 +221,12 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
             be told apart from the data available; never auto-excluded).
         index (int | None): the chosen exclusions[] index when outcome is
             "exclude", else None.
+        consistent (list[int]): every candidate judged consistent with
+            this outcome - for "exclude", every plausible candidate, not
+            only the one `chosen` for the reported reason (a duplicate or
+            empty-university sibling agreeing with the chosen one is not
+            a typo, fifth 2026-10-08 round); for "ambiguous", the full
+            `candidates`; empty for "no_match".
 
     Details:
         A KNOWN disagreement is never read as "confidently not a match":
@@ -239,7 +251,7 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
     --------------------------------------------------------------------------
     """
     if not candidates:
-        return "no_match", None
+        return "no_match", None, []
     known = [(i, norm(exclusions[i]["university"])) for i in candidates]
     if row_uni:
         # A candidate with no recorded university is still POSSIBLY this
@@ -249,13 +261,13 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
     else:
         plausible = candidates
     if not plausible:
-        return "ambiguous", None
+        return "ambiguous", None, candidates
     distinct_unis = {u for i, u in known if i in plausible and u}
     if len(distinct_unis) <= 1:
         chosen = next((i for i in plausible if norm(exclusions[i]["university"])),
                        plausible[0])
-        return "exclude", chosen
-    return "ambiguous", None
+        return "exclude", chosen, plausible
+    return "ambiguous", None, candidates
 
 
 def main(argv: list[str]) -> int:

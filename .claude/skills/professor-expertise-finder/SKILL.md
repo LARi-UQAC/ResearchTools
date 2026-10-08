@@ -189,7 +189,8 @@ take `--json <path>` for a machine-readable report alongside the printed text.
       this professor's articles cannot be Scopus-verified; say so rather
       than guessing one of the candidates).
    b. List their documents with the `publications` mode (NOT `author` —
-      different mode, no `--sort` flag needed or accepted: it is always
+      different mode: `--sort` is a global argparse flag parsed without
+      error but silently IGNORED by this mode, which is always
       sorted most-recent-first server-side), passing the resolved AU-ID so
       it is never re-resolved by name:
       `python3 ../scopus/scripts/scopus_api.py publications "<name>" --au-id <id> --count 25`

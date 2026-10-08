@@ -77,7 +77,7 @@ def load_config() -> dict:
     except json.JSONDecodeError as exc:
         raise ValueError(f"malformed policy config {CONFIG_PATH}: {exc}") from exc
     for key in ("subscore_values", "retain_threshold", "max_per_university",
-                "default_data_root"):
+                "default_data_root", "recent_years_window"):
         if key not in config:
             raise ValueError(f"policy config {CONFIG_PATH} is missing key {key!r}")
     return config

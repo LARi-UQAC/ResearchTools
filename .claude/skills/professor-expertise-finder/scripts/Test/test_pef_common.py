@@ -45,6 +45,7 @@ def test_data_root_reads_a_custom_config_default(tmp_path, monkeypatch):
     custom.write_text(json.dumps({
         "subscore_values": [0, 0.5, 1], "retain_threshold": 1.5,
         "max_per_university": 1, "default_data_root": str(tmp_path / "custom"),
+        "recent_years_window": 5,
     }), encoding="utf-8")
     monkeypatch.setattr(pef_common, "CONFIG_PATH", custom)
     assert data_root() == tmp_path / "custom"
@@ -56,6 +57,7 @@ def test_load_config_reads_the_shipped_file():
     assert config["max_per_university"] == 1
     assert config["retain_threshold"] == 1.5
     assert config["default_data_root"] == "~/workspace/professor-expertise"
+    assert config["recent_years_window"] == 5
 
 
 def test_load_config_missing_file_raises(monkeypatch):

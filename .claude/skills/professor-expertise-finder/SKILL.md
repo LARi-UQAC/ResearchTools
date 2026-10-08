@@ -166,17 +166,51 @@ take `--json <path>` for a machine-readable report alongside the printed text.
    subscores A–E worth 0, 0.5, or 1 each (application domain, core method,
    deployment context, measurement/uncertainty, verified publications),
    based on, in order of weight: (1) stated research areas on the official
-   profile, (2) article titles and abstracts, (3) lab affiliation. Compute
+   profile, (2) the Scopus-verified articles' own stated contribution
+   (Workflow 6 — never a guessed title match), (3) lab affiliation. Compute
    every total with `scripts/score.py` — never by hand. Publish the total
    **with** its subscores, e.g. `3.5/5 (A 1, B 1, C 0.5, D 0, E 1)`. The
    score measures closeness to this run's keywords only, never quality or
    reputation. Professors below `pef_config.json`'s `retain_threshold`
    (currently 1.5) are not retained; E = 0 (fewer than two verified
    in-field articles) excludes outright.
-6. **Article proof** — for each retained professor, find **at least two
-   articles in the field** of the keywords. A professor without two verified
-   articles is dropped from the final list (or explicitly flagged as
-   unverified, never silently kept).
+6. **Article proof — through the `scopus` skill, never ad hoc web search.**
+   The repo's own working norm already requires every piece of information
+   to be verified through `scopus`; this step is where that applies here.
+   For each retained professor, find **at least two recent journal articles
+   in a good-quality venue** in the field of the keywords:
+   a. Resolve the professor's Scopus Author ID and resolve it once per
+      professor (`AU-ID(...)`, never a bare-name query, which answers only
+      the author-claimed subset):
+      `python3 ../scopus/scripts/scopus_api.py author "<name>"` (resolves
+      AU-ID from the name when not already known from an earlier step).
+   b. List their documents, most recent first, and keep only those within
+      `pef_config.json`'s `recent_years_window` (currently 5) years:
+      `python3 ../scopus/scripts/scopus_api.py author "AU-ID(<id>)" --sort recent`.
+      Each returned document already carries `approved_publisher` (the
+      CLAUDE.md publisher list) — this is the "good-quality venue" bar;
+      do not invent a separate SJR/quartile threshold, which `scopus` does
+      not need for this check.
+   c. Among the recent, approved-publisher documents, pick the candidates
+      closest to the keyword clusters by title; for each, retrieve full
+      text (`python3 ../scopus/scripts/download_pdf.py` or the article's
+      DOI landing page) and run
+      `python3 ../extract-contributions/scripts/extract_contributions.py`
+      on it to get the paper's OWN stated contribution. Score the article's
+      relevance to the keyword clusters from THAT contribution statement,
+      never from a guessed title match. A status other than `ok` (no
+      full text, `no-contribution`, `empty`, `unreadable`) means this
+      article's correspondence could not be independently verified —
+      record it as "verified by Scopus metadata only (DOI/venue), full-text
+      correspondence not established" rather than silently counting it as
+      fully verified.
+   d. A professor without two such articles (recent, approved-publisher,
+      and resolved via Scopus) is dropped from the final list, or
+      explicitly flagged as unverified — never silently kept. When Scopus
+      cannot resolve the professor at all (common outside some fields or
+      countries), say so explicitly; their stated profile expertise may
+      still inform the other subscores, but E stays 0 and they are
+      excluded per Workflow 5.
 6b. **Exclusions** — if the user supplied an exclusion list, apply it to
    the ranked CSV before delivery:
    `python3 scripts/exclusions.py --ranking <ranking.csv> --exclusions <file.xlsx|.csv> --out <filtered.csv>`.
@@ -271,10 +305,15 @@ excluded professor: `professor, university, reason`.
    list, profile, article) is copied exactly from a search result or an
    opened page. A URL that could not be verified is marked unverified in
    `note`, never presented as checked.
-2. **Anti-fabrication.** Every article title is checked title-by-title
-   against its source page (publisher, conference, journal, Scholar/Scopus
-   profile) before it enters the output. Never invent articles, expertise
-   areas, department names, or affiliations.
+2. **Anti-fabrication, and article discovery goes through `scopus`.** Every
+   article is found and checked through the `scopus` skill (Workflow 6) —
+   title, DOI, venue, and `approved_publisher` all come from
+   `scopus_api.py`'s own data, never a web search guess, matching the
+   repo's own working norm that every piece of information is verified
+   through that skill. Correspondence to the keywords comes from the
+   article's own stated contribution via `extract-contributions`, never a
+   guessed title match. Never invent articles, expertise areas, department
+   names, or affiliations.
 3. **No hardcoded location.** Place names appear only in data instances and
    in the user's request — never in this skill, its scripts, or its config.
 4. **Ask, don't assume.** Location first, keywords second, in that order.
@@ -329,7 +368,7 @@ excluded professor: `professor, university, reason`.
   `norm`, `name_key`, `load_config()`, `load_column_hints()`, `write_json()`.
 - `scripts/pef_config.json` — policy constants with provenance:
   `subscore_values`, `retain_threshold`, `max_per_university`,
-  `default_data_root` (R0, R6).
+  `default_data_root`, `recent_years_window` (R0, R6).
 - `scripts/pef_column_hints.json` — column-name synonyms `file_search.py`
   and `exclusions.py` look for in a reference/exclusion spreadsheet's
   header, as data rather than code (R6): extend this file, not the
@@ -337,3 +376,12 @@ excluded professor: `professor, university, reason`.
 - `scripts/table.py`, `scripts/score.py`, `scripts/exclusions.py`,
   `scripts/file_search.py`, `scripts/selections.py` — see Workflow above.
 - `scripts/Test/` — offline unit tests (no network, no API key).
+
+This skill reuses two sibling skills rather than reimplementing them
+(Workflow 6, R18): `../scopus/scripts/scopus_api.py` (author resolution,
+recent document list, `approved_publisher`) and
+`../scopus/scripts/download_pdf.py` plus
+`../extract-contributions/scripts/extract_contributions.py` (an article's
+own stated contribution, checked against the keyword clusters). Neither
+is vendored here; both are called by path, same as any other agent in
+this repo reaching a sibling skill's script.

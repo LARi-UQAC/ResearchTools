@@ -210,8 +210,13 @@ Location-agnostic by design: the skill contains no place name. Given a search lo
 of expertise keywords, it reuses or builds a verified `university, department, department_url,
 faculty_list_url, note` table for that location, extracts professors from each faculty-list
 page, and scores each one's closeness to the keywords with a /5 rubric (five subscores A–E,
-each 0/0.5/1, computed by `score.py` — never by hand). A professor without at least two
-articles verified title-by-title against their source page is dropped. The output links each
+each 0/0.5/1, computed by `score.py` — never by hand). Article discovery goes through the
+`scopus` skill rather than ad hoc web search (an AU-ID resolution, the professor's recent
+documents, `approved_publisher` as the quality bar), and correspondence to the keywords is
+checked against each article's own stated contribution via `extract-contributions`, never a
+guessed title match — matching this repo's own working norm that every piece of information is
+verified through `scopus`. A professor without at least two such recent (`pef_config.json`'s
+`recent_years_window`), approved-publisher articles is dropped. The output links each
 professor's name to their official page, their professional email as published there (with its
 source link — never a `mailto:` or a name-pattern guess), the score with subscores, and the two
 articles.
@@ -229,8 +234,10 @@ application's own (applicant) university once that origin is declared.
 The data root (`<root>/<location-slug>/departments.csv`, `<root>/batches/<batch-slug>/
 selections.csv`) resolves from the `PROFESSOR_EXPERTISE_DATA` environment variable, defaulting
 to `~/workspace/professor-expertise` — repoint it by setting the variable, never by editing a
-script. The rubric's enforced constants (subscore values, retain threshold, university cap)
-live in `scripts/pef_config.json` with their provenance, not as literals in code.
+script. The rubric's enforced constants (subscore values, retain threshold, university cap,
+recent-years window) live in `scripts/pef_config.json` with their provenance, not as literals in
+code. The skill reuses two sibling skills rather than reimplementing them: `scopus`
+(`scopus_api.py`, `download_pdf.py`) and `extract-contributions`.
 
 **Files:**
 - `.claude/skills/professor-expertise-finder/SKILL.md`

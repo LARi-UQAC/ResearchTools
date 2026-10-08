@@ -32,8 +32,19 @@ workflow exactly. Key points:
    closeness to the keywords with the /5 rubric in
    `references/scoring.md` (subscores A–E; totals computed with
    `scripts/score.py`, published with their subscores), and keep only
-   professors for whom you can verify **at least two articles in the
-   field**, title-by-title against the source page.
+   professors for whom you can verify **at least two recent
+   (`pef_config.json`'s `recent_years_window`, currently 5 years)
+   approved-publisher journal articles in the field**. Article discovery
+   goes through the `scopus` skill, never ad hoc web search — resolve the
+   professor's AU-ID, list their recent documents
+   (`../scopus/scripts/scopus_api.py author "AU-ID(<id>)" --sort recent`),
+   and for the chosen candidates retrieve full text
+   (`../scopus/scripts/download_pdf.py`) and run
+   `../extract-contributions/scripts/extract_contributions.py` to check
+   the article's OWN stated contribution against the keyword clusters —
+   never a guessed title match. The repo's own working norm already
+   requires every piece of information to be verified through `scopus`;
+   this is where it applies to this skill.
 5. Deliver the ranked table defined in the skill's Output Contract, in chat
    and as an XLSX stored with the location's data instance.
 6. Variants the user may invoke at any point: **test mode** — a list of

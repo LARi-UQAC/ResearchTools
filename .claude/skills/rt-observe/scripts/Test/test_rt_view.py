@@ -1138,6 +1138,28 @@ class VoiceAnswerPollCase(unittest.TestCase):
         self.assertIsNotNone(match, "no ANSWER_TERMINAL table found")
         self.assertIn("unavailable", match.group(1))
 
+    def test_every_daemon_terminal_status_stays_in_answer_terminal(self):
+        """PR #49 fifth re-review (non-blocking, closed anyway): the
+        previous test only pinned `unavailable`, so removing `ok` (or any
+        of the other three statuses voice_ask.TERMINAL_STATUSES/daemon_ask
+        can publish) survived every test in this suite - the page would
+        silently stop recognising a normal answer as terminal and poll the
+        full 85s wait for nothing. Pin all five statuses the server can
+        actually send: voice_ask.TERMINAL_STATUSES (ok/error/expired/
+        refused) plus the page's own client-side "unavailable" (the 501
+        when no ask relay is wired in, which never reaches
+        TERMINAL_STATUSES since that constant governs the daemon's own
+        answer file, not the HTTP route's degraded response)."""
+        import voice_ask
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        match = re.search(r"var ANSWER_TERMINAL\s*=\s*\{([^}]*)\}", voice_iife)
+        self.assertIsNotNone(match, "no ANSWER_TERMINAL table found")
+        table_text = match.group(1)
+        for status in voice_ask.TERMINAL_STATUSES | {"unavailable"}:
+            self.assertIn(status, table_text,
+                         f"{status!r} is missing from ANSWER_TERMINAL")
+
     def test_an_in_flight_fetch_guard_sits_inside_the_poll_interval(self):
         """PR #49 third re-review F2: setInterval fired a new fetch every
         tick regardless of whether the previous one had resolved, so a

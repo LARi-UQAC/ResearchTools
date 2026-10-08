@@ -3,7 +3,8 @@
 Shared architecture document for the two repositories that make up the UQAC form engine:
 **ResearchTools** (`LARi-UQAC/ResearchTools`) and **ThesisTracker** (`JdUmuhoza/ThesisTracker`).
 The same file is meant to be committed to `main` in both, so either checkout tells the whole
-story — except for a known, currently open divergence, see section 14 "Open items".
+story — except for a known divergence between the two checkouts' copies as of 2026-10-02;
+reconciling them is the operator's job.
 
 **Status: in progress. 12 of 22 units delivered.** Twenty-two branches carry one plan document
 each, and issues track them. Written 2026-07-29.

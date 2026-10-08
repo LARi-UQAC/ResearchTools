@@ -210,24 +210,35 @@ class EntityRepoCase(unittest.TestCase):
 
     def test_the_refusal_reason_names_the_path_plainly_not_via_repr(self):
         """PR #49 third re-review, F1 (Medium-High): the refusal reason used
-        to interpolate the raw repo: value with `!r`, which on Windows
-        DOUBLES every backslash in the printed text (repr escaping). The
-        reason is later redacted by rt_state.redact_json/home_tilde, a plain
-        substring replace of the operator's home path - a doubled-backslash
-        rendering is not a substring match for the single-backslash home
-        text, so the account path would survive redaction and reach a
-        browser. A real, OS-native absolute path (not a literal Windows-style
-        string) is used so the "outside the allowlist" branch - the one that
-        actually interpolates the value - fires on every platform the suite
-        runs on, rather than "is not absolute" on POSIX or "no repository is
-        allowlisted" (which embeds nothing) on Windows."""
+        to interpolate the raw repo: value with `!r`, which DOUBLES every
+        backslash character in the printed text (Python's repr() escaping -
+        a universal string semantic, not a Windows-only one: an ordinary
+        POSIX path simply has no backslashes to double, which is what made
+        the original regression test pass vacuously there). The reason is
+        later redacted by rt_state.redact_json/home_tilde, a plain substring
+        replace of the operator's home path - a doubled-backslash rendering
+        is not a substring match for the single-backslash home text, so the
+        account path would survive redaction and reach a browser.
+
+        PR #49 fourth re-review (B1): the previous version of this test
+        asserted `assertNotIn(repr(str(outside)), reason)`, which on POSIX
+        is a no-op - repr() of a backslash-free path equals its own plain
+        quoted form, so the assertion could never distinguish `!r` from a
+        plain `{value}`. Fixed by embedding a LITERAL backslash character in
+        the claim itself (legal in a POSIX path component, the ordinary
+        separator on Windows) and asserting the single-backslash form is
+        present while the repr-doubled form is explicitly absent - this
+        depends only on Python's own repr() semantics, never on which OS
+        the suite runs on."""
         import daemon_graph
         outside = Path(tempfile.mkdtemp())
         not_this_one = Path(tempfile.mkdtemp())
+        value = str(outside) + "\\contains\\a\\literal\\backslash"
+        doubled = value.replace("\\", "\\\\")
         result = daemon_graph._resolve_repo_claim(
-            str(outside), [not_this_one.resolve()])
-        self.assertIn(str(outside), result["reason"])
-        self.assertNotIn(repr(str(outside)), result["reason"])
+            value, [not_this_one.resolve()])
+        self.assertIn(value, result["reason"])
+        self.assertNotIn(doubled, result["reason"])
 
     def test_an_empty_allowlist_names_itself_rather_than_the_target_path(self):
         import daemon_graph
@@ -277,27 +288,38 @@ class EntityRepoCase(unittest.TestCase):
         self.assertIsNone(result.get("repo"))
         self.assertIn("outside the configured allowlist", result["reason"])
 
-    def test_a_trailing_dot_spelling_of_an_allowed_root_still_resolves(self):
-        """PR #49 third re-review mutation S2 (survived): if the CLAIM's
-        own path were compared WITHOUT resolve(), an equivalent-but-
-        differently-spelled path to an allowed root (here, a trailing '.')
-        would be refused instead of accepted, since the raw strings differ
-        even though they name the same directory."""
+    def test_a_dot_dot_spelling_of_an_allowed_root_still_resolves(self):
+        """PR #49 third re-review mutation S2, actually closed on the
+        fourth re-review (B2): the original test used `self.repo / "."`,
+        but pathlib COLLAPSES a trailing '.' segment the moment the Path
+        object is constructed - `str(repo / ".") == str(repo)` already,
+        before resolve() is ever called - so that test passed whether or
+        not resolve() ran on the claim, killing nothing. A '..' segment
+        through a directory that is never created is NOT collapsed at
+        construction (the string differs from the plain path) and is only
+        collapsed by resolve()'s own normalisation, which does not require
+        the intermediate to exist - so this one genuinely requires
+        resolve() on the CLAIM to be accepted."""
         import daemon_graph
-        dotted = str(self.repo / ".")
-        result = daemon_graph._resolve_repo_claim(dotted, self.allowed_roots)
+        escaped = str(self.repo.parent / "never-created-intermediate"
+                     / ".." / self.repo.name)
+        self.assertNotEqual(escaped, str(self.repo))
+        result = daemon_graph._resolve_repo_claim(escaped, self.allowed_roots)
         self.assertEqual(result.get("repo"), self.repo.resolve())
 
-    def test_load_allowed_roots_resolves_a_trailing_dot_entry(self):
-        """PR #49 third re-review mutation S3 (survived): if
-        load_allowed_roots stored its entries RAW (no resolve()), an
-        operator-configured root spelled with a trailing '.' would never
-        equal a plain, cleanly-spelled claim for the same directory."""
+    def test_load_allowed_roots_resolves_a_dot_dot_entry(self):
+        """PR #49 third re-review mutation S3, actually closed on the
+        fourth re-review (B2): same vacuous-trailing-dot defect as S2, now
+        fixed the same way - a '..' segment through a never-created
+        directory, which only resolve() can collapse back to the real
+        root."""
         import daemon_graph
+        escaped = str(self.repo.parent / "never-created-intermediate"
+                     / ".." / self.repo.name)
+        self.assertNotEqual(escaped, str(self.repo))
         config_path = Path(tempfile.mkdtemp()) / "local-ask-graph-roots.json"
         config_path.write_text(
-            json.dumps({"allowed_roots": [str(self.repo / ".")]}),
-            encoding="utf-8")
+            json.dumps({"allowed_roots": [escaped]}), encoding="utf-8")
         roots = daemon_graph.load_allowed_roots(config_path)
         result = daemon_graph._resolve_repo_claim(str(self.repo), roots)
         self.assertEqual(result.get("repo"), self.repo.resolve())

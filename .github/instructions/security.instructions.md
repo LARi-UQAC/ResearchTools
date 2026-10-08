@@ -179,7 +179,22 @@ Absent, unparsable, or empty is a fail-closed empty allowlist (R8), not a fail-o
 file is gitignored rather than part of `daemon-config.json` because the mapped repos sit under
 the operator's own account directory, and committing them to the public repo would leak the
 account path (R34, `verify-no-personal-data.ps1`). An operator enabling this ask-queue feature
-must create that file naming the repositories they want reachable.
+must create that file naming the repositories they want reachable - naming the repo root
+EXACTLY: the allowlist check is equality against a resolved root, not containment, so a
+`repo:` value one level inside an allowlisted root (a subdirectory of it) is refused the same
+as one entirely outside it.
+
+**Accepted residual risk (F4/Q3, PR #49 re-review, Medium, operator-decided 2026-10-07).**
+`daemon_ask.read_request`'s `from: rt-dashboard` check is a routing label, not access control
+(stated in `daemon_ask.py`'s own module docstring): any local process able to write a file
+into `~/.claude/obsidian-outbox/ask/requests/` can declare `from: rt-dashboard` and receive a
+vault-grounded answer, now extended by this section to a graph-grounded one for an allowlisted
+repository - without going through `local-writer` or `vault-access-guard.py` at all. This is
+accepted as consistent with the outbox's existing single-user, trusted-local-machine threat
+model (this file's own opening paragraph): it was already true of every other write into the
+outbox before this feature, and is not treated as a gap this feature introduces. See issue #58
+for the separate, accepted-as-a-gap concurrency limit (no cap on pending requests, no sweep for
+orphaned answer files) this same review round raised.
 
 This does not change anything for a Claude Code session: a session still reaches a graph only
 by dispatching `local-writer`, exactly as above. The daemon is a second mechanism, not a second

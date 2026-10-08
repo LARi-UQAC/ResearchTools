@@ -5123,7 +5123,11 @@ renderRefresh();
   // The four terminal statuses daemon_ask.answer()/voice_ask.read_answer
   // agree on (voice_ask.TERMINAL_STATUSES) - "partial" is deliberately
   // absent, since it means more parts are still coming.
-  var ANSWER_TERMINAL = { ok: 1, error: 1, expired: 1, refused: 1 };
+  // "unavailable" (GET /api/voice/answer's 501 when no ask relay is wired
+  // in) was missing until PR #49's fourth re-review (L5/F8): without it,
+  // the poll loop ran the full CFG.timeouts_seconds.voice_ask_wait (85s)
+  // on a condition that will never resolve, instead of stopping at once.
+  var ANSWER_TERMINAL = { ok: 1, error: 1, expired: 1, refused: 1, unavailable: 1 };
 
   function setStatus(text) { if (status) { status.textContent = text; } }
 

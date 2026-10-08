@@ -1126,6 +1126,18 @@ class VoiceAnswerPollCase(unittest.TestCase):
                       .get("timeouts_seconds", {}))
         self.assertIn("CFG.timeouts_seconds.voice_ask_wait", voice_iife)
 
+    def test_unavailable_is_a_terminal_answer_status(self):
+        """PR #49 fourth re-review L5/F8: GET /api/voice/answer's 501 body
+        (no ask relay wired in) carries status "unavailable", which was
+        missing from ANSWER_TERMINAL - the poll loop ran the full 85s
+        voice_ask_wait on a condition that will never resolve instead of
+        stopping at once."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        match = re.search(r"var ANSWER_TERMINAL\s*=\s*\{([^}]*)\}", voice_iife)
+        self.assertIsNotNone(match, "no ANSWER_TERMINAL table found")
+        self.assertIn("unavailable", match.group(1))
+
     def test_an_in_flight_fetch_guard_sits_inside_the_poll_interval(self):
         """PR #49 third re-review F2: setInterval fired a new fetch every
         tick regardless of whether the previous one had resolved, so a

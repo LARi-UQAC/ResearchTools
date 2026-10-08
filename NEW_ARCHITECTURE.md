@@ -606,7 +606,7 @@ Université du Québec and its constituent universities.
 |---|---|---|
 | Consent is "demandé à chacune de ces fins" | art. 53.1 | Two boxes, one per purpose. Never one box for both. |
 | A written request is presented "distinctement de toute autre information" | art. 53.1 | Its own titled block on the page, not mixed with the email and phone fields, and never inside the sign-up terms |
-| Consent is valid only "pour la durée nécessaire" | art. 53.1 | Each consent states its duration. The CV consent is required only within the 6-year window `/cv/build` applies (decision of 2026-10-02). |
+| Consent is valid only "pour la durée nécessaire" | art. 53.1 | Each consent states its duration. The CV consent is required for every student listed, whatever the dates (decision of 2026-10-08, replacing the 6-year exemption of 2026-10-02). The funder's window (6 years NSERC/tri-agency, 5 years FRQ) only decides whether a student is listed as recent or archive. |
 | A consent not given in conformity "est sans effet" | art. 53.1 | Each grant stores its date and the version of the text shown, so it can be proven |
 | Privacy settings give the highest confidentiality "par défaut" | art. 63.7 | Both boxes start unticked |
 | At collection, say whether it is optional and what refusing or withdrawing does | art. 65 | The note under the boxes |
@@ -1176,7 +1176,7 @@ Binding rules, each enforced by a test or a startup check:
 | Student-provided identity fields (matricule, code permanent, names, date of birth, address, phone, NAS) are written only by the student | section 6 |
 | The NAS is encrypted at rest with a key outside the database, shown masked to everyone but the student, and never logged or exported | section 6 |
 | No consent, no publication: the `/etudiants/` page and any CV list only students whose consent for that purpose is in force | section 6a |
-| `POST /cv/build` refuses (422) a student row inside the 6-year window with no CV consent, naming the row index, never the name. No consent is required beyond 6 years (decision of 2026-10-02) | RT-8 |
+| `POST /cv/build` refuses (422) any student row with no CV consent, whatever its dates, naming the row index, never the name. The funder's window (`cv_window_years` per portal variant: 6 NSERC/tri-agency, 5 FRQ) only splits recent from archive (decision of 2026-10-08) | RT-8 |
 | No student data are stored on the ResearchTools side: no YAML copy, no vault copy, no cache of a request's rows | RT-8, RT-9 |
 | A new signature preserves every previous one; the chain is verifiable in step order | RT-4, asserted by test |
 | A signature's intact, valid and trusted status are reported separately, never collapsed into one pass/fail | RT-5 `sign_form.validate_signatures`, asserted by test |

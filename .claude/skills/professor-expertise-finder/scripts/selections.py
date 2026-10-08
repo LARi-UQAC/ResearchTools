@@ -25,9 +25,11 @@ Commands:
     list   --batch B                               final choices per application
 
 Rules enforced here, not in prose:
-  - `add --status final` REQUIRES --university: without it, neither the
-    conflict-of-interest check nor the per-university cap below can run,
-    so the add is refused rather than silently skipping both.
+  - `add` REQUIRES --university, whatever the status: a `proposed` add
+    needs it to disambiguate a same-named evaluator in the no-reuse check
+    below, and a `final` add additionally needs it to enforce the
+    per-university cap and conflict-of-interest - omitting it is refused
+    rather than silently skipping any of the three.
   - `add --status final` is REJECTED (exit 1) if the professor is already
     final in a DIFFERENT application of the same batch - disambiguated by
     university, so a different person sharing a name is not blocked by
@@ -353,14 +355,18 @@ def main(argv: list[str]) -> int:
         if not args.professor or not args.application:
             print("INVALID: --professor and --application are required")
             return 1
-        if args.status == "final" and not args.university:
-            # Without a university, neither the conflict-of-interest check
-            # nor the per-university cap below can run at all - they were
-            # SILENTLY skipped rather than refused (2026-10-08 code review:
-            # two application rules would otherwise pass unenforced simply
-            # because the caller forgot --university).
-            print("INVALID: --university is required for a final add "
-                  "(needed to enforce the university cap and conflict of interest)")
+        if not args.university:
+            # Required for EVERY add, not just final (third 2026-10-08
+            # code-review round): a proposed add with no university made
+            # finals_for()'s university disambiguation see an "unknown"
+            # value, which _same_person() treats as a possible match -
+            # so a different person sharing a name with an already-final
+            # evaluator was wrongly rejected as reuse. A final add without
+            # one also cannot enforce the university cap or
+            # conflict-of-interest (the original, first-round finding).
+            print("INVALID: --university is required for add "
+                  "(needed to disambiguate a same-named evaluator, and, for "
+                  "a final add, to enforce the university cap and conflict of interest)")
             return 1
         try:
             max_per_university = load_config()["max_per_university"]

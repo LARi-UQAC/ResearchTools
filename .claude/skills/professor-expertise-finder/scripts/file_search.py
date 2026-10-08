@@ -41,7 +41,11 @@ EXPERTISE_HINTS = _HINTS["expertise_hints"]
 INSTITUTION_HINTS = _HINTS["institution_hints"]
 DEPARTMENT_HINTS = _HINTS["department_hints"]
 AVAILABILITY_HINTS = _HINTS["availability_hints"]
-NOT_AVAILABLE = "not available"
+# Both phrases SKILL.md documents ("Not available this year / Non disponible
+# cette annee") must be recognized - a French-only export used to surface an
+# unavailable professor as a plain candidate (2026-10-08, third code-review
+# round: only the English phrase was checked).
+NOT_AVAILABLE_PHRASES = _HINTS["not_available_phrases"]
 
 OUTPUT_FIELDS = ["name", "institution", "department", "areas_of_expertise",
                   "matched_terms", "match_count", "languages_declared",
@@ -100,25 +104,47 @@ def find_header(grid: list[list[str]]) -> int:
     raise ValueError("header row not found (no name + expertise columns)")
 
 
-def col_index(header: list[str], hints: list[str]) -> int | None:
+def col_index(header: list[str], hints: list[str],
+               exclude: frozenset[int] = frozenset()) -> int | None:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Find the first header cell matching one of a set of candidate
-        column-name hints.
+        Find a header cell matching one of a set of candidate column-name
+        hints, preferring a cell that matches a hint EXACTLY over one that
+        merely contains it as a substring.
 
     Inputs:
         header (list[str]): the header row's raw cells.
         hints (list[str]): candidate substrings, in priority order.
+        exclude (frozenset[int]): column indices already claimed by
+            another field (e.g. institution/department/availability),
+            never returned here.
 
     Outputs:
         index (int | None): the matching column's 0-based index, or None.
+
+    Details:
+        Exact match first (across every hint, before any substring match)
+        fixes a real collision (2026-10-08, third code-review round): the
+        French name hint "nom d" is a substring of "Nom de l'établissement"
+        (institution), so a plain "Nom" column could lose to the
+        institution column under pure substring/hint-order matching. A
+        header reading exactly "Nom" matches the "nom" hint exactly and
+        wins regardless of hint order or which column comes first; `main`
+        additionally resolves institution/department/availability BEFORE
+        name/expertise and excludes their columns here, so even a
+        substring-only collision on a less literal header is still ruled
+        out.
     --------------------------------------------------------------------------
     """
     cells = [norm(c) for c in header]
     for hint in hints:
         for i, cell in enumerate(cells):
-            if hint in cell:
+            if i not in exclude and cell == hint:
+                return i
+    for hint in hints:
+        for i, cell in enumerate(cells):
+            if i not in exclude and hint in cell:
                 return i
     return None
 
@@ -219,11 +245,18 @@ def main(argv: list[str]) -> int:
         print(f"INVALID: {exc}")
         return 1
     header = grid[h]
-    ci_name = col_index(header, NAME_HINTS)
-    ci_exp = col_index(header, EXPERTISE_HINTS)
+    # Institution/department/availability first: their hints ("etablissement",
+    # "departement", "disponibilite") are specific enough to resolve safely on
+    # their own, and excluding their columns before resolving name/expertise
+    # is what stops a name hint from ever claiming the institution column
+    # (2026-10-08, third code-review round).
     ci_inst = col_index(header, INSTITUTION_HINTS)
     ci_dept = col_index(header, DEPARTMENT_HINTS)
     ci_avail = col_index(header, AVAILABILITY_HINTS)
+    claimed = frozenset(i for i in (ci_inst, ci_dept, ci_avail) if i is not None)
+    ci_name = col_index(header, NAME_HINTS, exclude=claimed)
+    ci_exp = col_index(header, EXPERTISE_HINTS,
+                        exclude=claimed | ({ci_name} if ci_name is not None else frozenset()))
     lang_cols = language_columns(header)
     if ci_name is None or ci_exp is None:
         print("INVALID: name or expertise column not found in header:", header)
@@ -246,7 +279,8 @@ def main(argv: list[str]) -> int:
         # workflow (6c) and this script's own docstring promise the file's
         # declared data is surfaced, not summarized (2026-10-08 code review).
         availability = get(row, ci_avail)
-        if NOT_AVAILABLE in norm(availability):
+        avail_norm = norm(availability)
+        if any(phrase in avail_norm for phrase in NOT_AVAILABLE_PHRASES):
             availability = "Not available this year"
             unavailable += 1
         langs = sorted({label for idx, label in lang_cols

@@ -79,6 +79,31 @@ def test_final_add_without_university_is_rejected(tmp_path, monkeypatch, capsys)
     assert rc == 0  # the rejected add wrote nothing
 
 
+def test_proposed_add_without_university_is_rejected(tmp_path, monkeypatch, capsys):
+    # Third 2026-10-08 code-review round: only `final` required
+    # --university, so a `proposed` add with none let finals_for()'s
+    # disambiguation see an "unknown" university - which _same_person()
+    # treats as a possible match - wrongly rejecting a different,
+    # same-named professor as reuse.
+    batch = init(tmp_path, monkeypatch)
+    rc = main(["add", "--batch", batch, "--application", "Set 1",
+               "--professor", "Test Person", "--score", "3/5", "--status", "proposed"])
+    assert rc == 1
+    assert "INVALID" in capsys.readouterr().out
+
+
+def test_homonym_not_rejected_on_a_proposed_add(tmp_path, monkeypatch):
+    batch = init(tmp_path, monkeypatch)
+    rc = main(["add", "--batch", batch, "--application", "Set 1",
+               "--professor", "John Smith", "--university", "University A",
+               "--score", "4/5", "--status", "final"])
+    assert rc == 0
+    rc = main(["add", "--batch", batch, "--application", "Set 2",
+               "--professor", "John Smith", "--university", "University B",
+               "--score", "3/5", "--status", "proposed"])
+    assert rc == 0
+
+
 def test_university_cap_rejected_past_configured_max(tmp_path, monkeypatch):
     # max_per_university is 1 (SKILL.md Operating Rule 9, 2026-10-08): all
     # evaluators of one application must come from distinct universities.

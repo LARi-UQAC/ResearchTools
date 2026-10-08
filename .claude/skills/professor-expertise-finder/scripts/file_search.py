@@ -134,6 +134,15 @@ def language_columns(header: list[str]) -> list[tuple[int, str]]:
     Outputs:
         columns (list[tuple[int, str]]): (column index, label) pairs,
             e.g. (4, "read EN").
+
+    Known limitation (declined, 2026-10-02 code review): only English and
+    French are recognized. A reference file declaring a third language
+    (e.g. "Write Spanish" for a worldwide search) has that column silently
+    ignored rather than reported - this skill's professors are presumed
+    EN/FR in Workflow 6c for the same reason, and generalizing to arbitrary
+    language names would need a maintained language-name table this skill
+    does not otherwise carry. Not fixed here; flagged for the professor to
+    decide whether a third language is worth that table.
     --------------------------------------------------------------------------
     """
     out = []
@@ -230,12 +239,15 @@ def main(argv: list[str]) -> int:
         hit = [orig for orig, nt in norm_terms if nt and nt in exp_norm]
         if len(hit) < args.min_matches:
             continue
+        # Only the "not available" flag is normalized to a fixed label; any
+        # other declared text (e.g. "Available for 2 reviews max") is kept
+        # VERBATIM rather than flattened to a bare "Available" - the SKILL.md
+        # workflow (6c) and this script's own docstring promise the file's
+        # declared data is surfaced, not summarized (2026-10-08 code review).
         availability = get(row, ci_avail)
         if NOT_AVAILABLE in norm(availability):
             availability = "Not available this year"
             unavailable += 1
-        elif availability:
-            availability = "Available"
         langs = sorted({label for idx, label in lang_cols
                         if idx < len(row) and row[idx].strip()})
         matches.append({

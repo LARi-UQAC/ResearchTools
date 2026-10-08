@@ -9,9 +9,15 @@ columns ignored:
   - optionally `university` / `universite`
   - optionally `reason` / `raison`
 
-Matching is by normalized name only (accent/case-insensitive,
-first/last order-insensitive); university is reported, not used to block
-a match, so an exclusion is never lost over a spelling variant.
+Matching is by normalized name (accent/case-insensitive, first/last
+order-insensitive). University disambiguates a homonym: when BOTH the
+exclusion entry and the ranking row carry a university and they do not
+match, the pair is reported AMBIGUOUS rather than excluded - a name match
+alone is not proof of identity once two different universities are on
+record, and excluding the wrong "Jane Doe" would be silent. When either
+side has no recorded university, the name match still excludes (an
+exclusion is never lost over a spelling variant, or over a file that
+never recorded an institution).
 
 Usage:
   python3 exclusions.py --ranking ranking.csv --exclusions list.xlsx --out filtered.csv
@@ -25,11 +31,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 
-from pef_common import name_key, norm
+from pef_common import name_key, norm, write_json
 
 NAME_COLS = ["name", "professor", "nom", "full_name", "professeur"]
 FIRST_COLS = ["first_name", "prenom", "given_name", "first"]
@@ -55,8 +61,16 @@ def pick(row: dict, cols: list[str]) -> str:
     """
     lowered = {norm(k): v for k, v in row.items() if k}
     for col in cols:
-        if col in lowered and str(lowered[col]).strip():
-            return str(lowered[col]).strip()
+        # col itself must be normalized before the lookup: norm() folds an
+        # underscore to a space exactly like any other non-alphanumeric
+        # run, so "first_name" (as literally written in FIRST_COLS) never
+        # matched a normalized header key "first name" until this fixed it
+        # (2026-10-08 code review - every first_name/last_name exclusion
+        # file silently resolved to no name at all, and not even to an
+        # "unmatched" entry, since row_name() returned "").
+        ncol = norm(col)
+        if ncol in lowered and str(lowered[ncol]).strip():
+            return str(lowered[ncol]).strip()
     return ""
 
 
@@ -111,12 +125,14 @@ def read_rows(path: Path) -> list[dict]:
         return list(csv.DictReader(fh))
 
 
-def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[list[dict], list[tuple[dict, dict]], list[dict]]:
+def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[list[dict], list[tuple[dict, dict]], list[dict], list[tuple[dict, dict]]]:
     """
     --------------------------------------------------------------------------
     Purpose:
         Partition a ranking into kept and excluded rows against a parsed
-        exclusion list, and report which exclusion entries matched nobody.
+        exclusion list, disambiguating a same-name match by university
+        when both sides have recorded one, and report which exclusion
+        entries matched nobody.
 
     Inputs:
         ranking (list[dict]): parsed ranking CSV rows; each must carry a
@@ -125,10 +141,15 @@ def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[l
             read_rows returns them).
 
     Outputs:
-        kept (list[dict]): ranking rows not matched by any exclusion.
+        kept (list[dict]): ranking rows not matched by any exclusion
+            (ambiguous pairs are also kept, pending a human decision).
         excluded (list[tuple[dict, dict]]): (ranking_row, exclusion_entry)
-            pairs for each match.
+            pairs excluded with confidence.
         unmatched (list[dict]): exclusion entries that matched nobody.
+        ambiguous (list[tuple[dict, dict]]): (ranking_row, exclusion_entry)
+            pairs sharing a name but recording two different universities -
+            never auto-excluded, since a name match alone is not proof of
+            identity once the two universities disagree.
     --------------------------------------------------------------------------
     """
     exclusions = []
@@ -139,18 +160,38 @@ def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[l
                                "university": pick(row, UNI_COLS),
                                "reason": pick(row, REASON_COLS)})
 
-    kept, excluded = [], []
+    by_key: dict[tuple, list[int]] = defaultdict(list)
+    for i, ex in enumerate(exclusions):
+        by_key[ex["key"]].append(i)
+
+    kept, excluded, ambiguous = [], [], []
     matched: set[int] = set()
     for row in ranking:
         key = name_key(row.get("professor", ""))
-        hit = next((i for i, ex in enumerate(exclusions) if ex["key"] == key), None)
-        if hit is None:
+        candidates = by_key.get(key, [])
+        row_uni = norm(row.get("university", ""))
+        chosen = None
+        was_ambiguous = False
+        for i in candidates:
+            ex_uni = norm(exclusions[i]["university"])
+            if row_uni and ex_uni and row_uni != ex_uni:
+                continue  # different recorded university: not this one
+            chosen = i
+            break
+        if chosen is None and candidates and row_uni:
+            # every candidate recorded a university, and none matched:
+            # same name, disagreeing universities - flag, do not exclude.
+            was_ambiguous = all(norm(exclusions[i]["university"]) for i in candidates)
+            if was_ambiguous:
+                matched.update(candidates)
+                ambiguous.append((row, exclusions[candidates[0]]))
+        if chosen is not None:
+            matched.add(chosen)
+            excluded.append((row, exclusions[chosen]))
+        elif not was_ambiguous:
             kept.append(row)
-        else:
-            matched.add(hit)
-            excluded.append((row, exclusions[hit]))
     unmatched = [ex for i, ex in enumerate(exclusions) if i not in matched]
-    return kept, excluded, unmatched
+    return kept, excluded, unmatched, ambiguous
 
 
 def main(argv: list[str]) -> int:
@@ -188,7 +229,7 @@ def main(argv: list[str]) -> int:
         print("INVALID: ranking CSV has no 'professor' column")
         return 1
 
-    kept, excluded, unmatched = apply_exclusions(ranking, read_rows(excl_path))
+    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, read_rows(excl_path))
 
     if args.dry_run:
         print(f"DRY RUN - KEPT: {len(kept)}  EXCLUDED: {len(excluded)}  (would write {out_path})")
@@ -202,17 +243,23 @@ def main(argv: list[str]) -> int:
     for row, ex in excluded:
         reason = ex["reason"] or "raison non précisée"
         print(f"  EXCLUDED: {row.get('professor')} ({row.get('university', '')}) - {reason}")
+    for row, ex in ambiguous:
+        print(f"  AMBIGUOUS (kept): {row.get('professor')} - ranking says "
+              f"{row.get('university', '')}, exclusion file says {ex['university']} - verify by hand")
     for ex in unmatched:
         print(f"  UNMATCHED EXCLUSION (matched nobody): {ex['name']}")
 
-    if args.json_path:
-        Path(args.json_path).write_text(json.dumps({
-            "kept_count": len(kept), "excluded_count": len(excluded),
-            "excluded": [{"professor": row.get("professor"), "reason": ex["reason"]}
-                         for row, ex in excluded],
-            "unmatched": [ex["name"] for ex in unmatched],
-            "dry_run": args.dry_run, "out": str(out_path),
-        }, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_json(args.json_path, {
+        "kept_count": len(kept), "excluded_count": len(excluded),
+        "excluded": [{"professor": row.get("professor"), "reason": ex["reason"]}
+                     for row, ex in excluded],
+        "ambiguous": [{"professor": row.get("professor"),
+                       "ranking_university": row.get("university", ""),
+                       "exclusion_university": ex["university"]}
+                      for row, ex in ambiguous],
+        "unmatched": [ex["name"] for ex in unmatched],
+        "dry_run": args.dry_run, "out": str(out_path),
+    })
     return 0
 
 

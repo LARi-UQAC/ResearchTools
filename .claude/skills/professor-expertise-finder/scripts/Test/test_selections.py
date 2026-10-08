@@ -19,14 +19,42 @@ def test_no_reuse_across_applications_is_rejected(tmp_path, monkeypatch, capsys)
                "--professor", "Test Person", "--university", "Example University",
                "--score", "4/5", "--status", "final"])
     assert rc == 0
+    # same person (name AND university both match a FINAL row elsewhere)
     rc = main(["add", "--batch", batch, "--application", "Set 2",
-               "--professor", "Test Person", "--university", "Other University",
+               "--professor", "Test Person", "--university", "Example University",
                "--score", "4/5", "--status", "final"])
     assert rc == 1
     assert "REJECTED" in capsys.readouterr().out
     rc = main(["check", "--batch", batch, "--professor", "Test Person"])
     assert rc == 1
     assert "TAKEN" in capsys.readouterr().out
+
+
+def test_homonym_at_a_different_university_is_not_rejected(tmp_path, monkeypatch):
+    # Two different real people can share a name - university disambiguates
+    # (2026-10-08 code review finding: this used to be wrongly rejected).
+    batch = init(tmp_path, monkeypatch)
+    rc = main(["add", "--batch", batch, "--application", "Set 1",
+               "--professor", "John Smith", "--university", "University A",
+               "--score", "4/5", "--status", "final"])
+    assert rc == 0
+    rc = main(["add", "--batch", batch, "--application", "Set 2",
+               "--professor", "John Smith", "--university", "University B",
+               "--score", "4/5", "--status", "final"])
+    assert rc == 0
+
+
+def test_final_add_without_university_is_rejected(tmp_path, monkeypatch, capsys):
+    # Without --university neither the conflict-of-interest check nor the
+    # per-university cap can run at all - both used to be silently skipped
+    # rather than refused (2026-10-08 code review finding).
+    batch = init(tmp_path, monkeypatch)
+    rc = main(["add", "--batch", batch, "--application", "Set 1",
+               "--professor", "Test Person", "--score", "4/5", "--status", "final"])
+    assert rc == 1
+    assert "INVALID" in capsys.readouterr().out
+    rc = main(["check", "--batch", batch, "--professor", "Test Person"])
+    assert rc == 0  # the rejected add wrote nothing
 
 
 def test_university_cap_rejected_past_configured_max(tmp_path, monkeypatch):

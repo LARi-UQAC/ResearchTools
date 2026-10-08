@@ -120,8 +120,11 @@ take `--json <path>` for a machine-readable report alongside the printed text.
 3b. **File first (only when a reference list was supplied)** — run
    `python3 scripts/file_search.py --file <list.xlsx> --terms <terms.txt> --out <matches.csv>`
    with the keyword clusters (plus close synonyms reviewers actually write
-   in expertise fields, in both languages). The output is a **shortlist,
-   not a result**: for each match it carries the file's stated expertise,
+   in expertise fields, in both languages). `--min-matches N` (default 1)
+   raises how many of those terms a row must hit to be shortlisted - rarely
+   needed, since a low bar here only widens the web-phase candidate set, not
+   the final output. The output is a **shortlist, not a result**: for each
+   match it carries the file's stated expertise,
    its declared language capabilities, and its availability flag.
    - A row flagged « Not available this year / Non disponible cette
      année » (or the file's equivalent) is treated as an **exclusion**
@@ -129,7 +132,9 @@ take `--json <path>` for a machine-readable report alongside the printed text.
    - **Declared languages in the file outrank web presumption** (6c):
      when the file states read/write/speak per language, report those as
      *declared (source: file)*; use web presumption only for professors
-     the file does not cover.
+     the file does not cover. `file_search.py` recognizes English and
+     French declared-language columns only (known limitation); a third
+     language in the file falls back to web presumption for that professor.
    - Expertise text from the file seeds scoring (it is the professor's
      own declared areas), but affiliation, email, articles and the final
      /5 score are still established in the web phase — and any email

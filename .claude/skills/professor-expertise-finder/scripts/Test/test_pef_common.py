@@ -27,8 +27,11 @@ def test_name_key_is_order_insensitive():
 
 
 def test_data_root_defaults_when_env_unset(monkeypatch):
+    # The default lives in pef_config.json's default_data_root, never as a
+    # Python literal in this module (R1, 2026-10-08 code review finding).
     monkeypatch.delenv("PROFESSOR_EXPERTISE_DATA", raising=False)
-    assert data_root() == pef_common.DEFAULT_DATA_ROOT
+    assert "DEFAULT_DATA_ROOT" not in dir(pef_common)
+    assert data_root() == Path("~/workspace/professor-expertise").expanduser()
 
 
 def test_data_root_honors_env_override(tmp_path, monkeypatch):
@@ -36,11 +39,23 @@ def test_data_root_honors_env_override(tmp_path, monkeypatch):
     assert data_root() == tmp_path
 
 
+def test_data_root_reads_a_custom_config_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("PROFESSOR_EXPERTISE_DATA", raising=False)
+    custom = tmp_path / "pef_config.json"
+    custom.write_text(json.dumps({
+        "subscore_values": [0, 0.5, 1], "retain_threshold": 1.5,
+        "max_per_university": 1, "default_data_root": str(tmp_path / "custom"),
+    }), encoding="utf-8")
+    monkeypatch.setattr(pef_common, "CONFIG_PATH", custom)
+    assert data_root() == tmp_path / "custom"
+
+
 def test_load_config_reads_the_shipped_file():
     config = load_config()
     assert config["subscore_values"] == [0, 0.5, 1]
     assert config["max_per_university"] == 1
     assert config["retain_threshold"] == 1.5
+    assert config["default_data_root"] == "~/workspace/professor-expertise"
 
 
 def test_load_config_missing_file_raises(monkeypatch):

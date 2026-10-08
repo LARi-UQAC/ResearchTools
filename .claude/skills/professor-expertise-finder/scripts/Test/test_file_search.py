@@ -42,6 +42,25 @@ def test_match_and_unavailable_flag(tmp_path, capsys):
     assert rows[0]["availability"] == "Not available this year"
 
 
+def test_availability_text_kept_verbatim_not_flattened(tmp_path):
+    # 2026-10-08 code review: any non-empty, non-"not available" cell used
+    # to collapse to the bare literal "Available", discarding detail like
+    # "Available for 2 reviews max".
+    reviewers = tmp_path / "reviewers.csv"
+    with reviewers.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["Name", "Institution", "Areas of Expertise", "Availability"])
+        w.writerow(["Jane Doe", "Example University", "computer vision",
+                     "Available for 2 reviews max"])
+    out_path = tmp_path / "matches.csv"
+    rc = main(["--file", str(reviewers), "--terms", "computer vision",
+               "--out", str(out_path)])
+    assert rc == 0
+    with out_path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert rows[0]["availability"] == "Available for 2 reviews max"
+
+
 def test_dry_run_writes_nothing(tmp_path, capsys):
     reviewers = tmp_path / "reviewers.csv"
     write_reviewers(reviewers)

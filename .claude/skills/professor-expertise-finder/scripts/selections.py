@@ -9,7 +9,7 @@ three applications. This script is the single source of truth:
     <data root>/batches/<batch-slug>/selections.csv
 
 where <data root> is pef_common.data_root() (PROFESSOR_EXPERTISE_DATA, or
-~/workspace/professor-expertise by default, R1).
+pef_config.json's default_data_root when unset, R1).
 
 Commands:
     init   --batch "concours-2027"                 create registry if missing
@@ -25,8 +25,13 @@ Commands:
     list   --batch B                               final choices per application
 
 Rules enforced here, not in prose:
+  - `add --status final` REQUIRES --university: without it, neither the
+    conflict-of-interest check nor the per-university cap below can run,
+    so the add is refused rather than silently skipping both.
   - `add --status final` is REJECTED (exit 1) if the professor is already
-    final in a DIFFERENT application of the same batch.
+    final in a DIFFERENT application of the same batch - disambiguated by
+    university, so a different person sharing a name is not blocked by
+    someone else's registration elsewhere.
   - A `proposed` entry for a professor already final elsewhere is also
     rejected; `proposed` entries do not block, but `check` reports them.
   - Matching is by normalized name (accent/case-insensitive,
@@ -49,12 +54,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import sys
 from datetime import date
 from pathlib import Path
 
-from pef_common import data_root, load_config, name_key, norm, slugify
+from pef_common import data_root, load_config, name_key, norm, slugify, write_json
 
 HEADER = ["batch", "application", "keywords", "professor", "university",
           "score", "status", "date"]
@@ -188,22 +192,57 @@ def write_rows(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-def finals_for(rows: list[dict], key: tuple[str, ...]) -> list[dict]:
+def _same_person(recorded_university: str, candidate_university: str) -> bool:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Find every FINAL row for a given normalized professor-name key.
+        Decide whether a name match found in the registry is plausibly the
+        SAME person as a candidate being added, using university as a
+        disambiguator for homonyms (2026-10-08 code review finding: two
+        different real people can share a name, and matching on name alone
+        wrongly blocked a legitimate second "John Smith" at a different
+        university).
+
+    Inputs:
+        recorded_university (str): the registry row's university field.
+        candidate_university (str): the university being checked against.
+
+    Outputs:
+        same (bool): False only when BOTH sides name a university and they
+            differ after normalization; True whenever either side is
+            unknown (errs toward treating a name match as the same person
+            when there is not enough information to tell them apart,
+            which keeps the no-reuse rule's existing protection intact).
+    --------------------------------------------------------------------------
+    """
+    a, b = norm(recorded_university), norm(candidate_university)
+    return not (a and b and a != b)
+
+
+def finals_for(rows: list[dict], key: tuple[str, ...],
+                university: str | None = None) -> list[dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Find every FINAL row for a given normalized professor-name key,
+        optionally disambiguated by university.
 
     Inputs:
         rows (list[dict]): the registry's rows.
         key (tuple[str, ...]): a name_key() result.
+        university (str | None): when given, a row whose own university
+            disagrees with it (both sides known, both non-empty) is
+            excluded from the match - see _same_person(). None keeps the
+            name-only behaviour used by `check`, which has no university
+            of its own to disambiguate with.
 
     Outputs:
         matches (list[dict]): the matching final rows.
     --------------------------------------------------------------------------
     """
     return [r for r in rows if r["status"] == "final"
-            and name_key(r["professor"]) == key]
+            and name_key(r["professor"]) == key
+            and (university is None or _same_person(r["university"], university))]
 
 
 def main(argv: list[str]) -> int:
@@ -268,10 +307,8 @@ def main(argv: list[str]) -> int:
         if finals:
             apps = sorted({r["application"] for r in finals})
             print(f"TAKEN: {args.professor} is already FINAL for: {', '.join(apps)}")
-            if args.json_path:
-                Path(args.json_path).write_text(json.dumps(
-                    {"status": "taken", "professor": args.professor, "applications": apps}),
-                    encoding="utf-8")
+            write_json(args.json_path,
+                       {"status": "taken", "professor": args.professor, "applications": apps})
             return 1
         proposed = sorted({r["application"] for r in rows if r["status"] == "proposed"
                            and name_key(r["professor"]) == key})
@@ -280,10 +317,8 @@ def main(argv: list[str]) -> int:
             print(f"AVAILABLE (but proposed for: {', '.join(proposed)})")
         else:
             print("AVAILABLE")
-        if args.json_path:
-            Path(args.json_path).write_text(json.dumps(
-                {"status": status, "professor": args.professor, "proposed_for": proposed}),
-                encoding="utf-8")
+        write_json(args.json_path,
+                   {"status": status, "professor": args.professor, "proposed_for": proposed})
         return 0
 
     if args.command == "origin":
@@ -318,6 +353,15 @@ def main(argv: list[str]) -> int:
         if not args.professor or not args.application:
             print("INVALID: --professor and --application are required")
             return 1
+        if args.status == "final" and not args.university:
+            # Without a university, neither the conflict-of-interest check
+            # nor the per-university cap below can run at all - they were
+            # SILENTLY skipped rather than refused (2026-10-08 code review:
+            # two application rules would otherwise pass unenforced simply
+            # because the caller forgot --university).
+            print("INVALID: --university is required for a final add "
+                  "(needed to enforce the university cap and conflict of interest)")
+            return 1
         try:
             max_per_university = load_config()["max_per_university"]
         except (FileNotFoundError, ValueError) as exc:
@@ -332,7 +376,10 @@ def main(argv: list[str]) -> int:
                   f"{args.university}, the applicant university of "
                   f"{args.application}.")
             return 1
-        finals = finals_for(rows, key)
+        # No-reuse, disambiguated by university so a different person who
+        # happens to share a name is not blocked by someone else's FINAL
+        # registration elsewhere (2026-10-08 code review).
+        finals = finals_for(rows, key, university=args.university)
         other_finals = [r for r in finals if r["application"] != args.application]
         if other_finals:
             apps = ", ".join(sorted({r["application"] for r in other_finals}))
@@ -341,7 +388,7 @@ def main(argv: list[str]) -> int:
             return 1
         # University cap: at most max_per_university professors from the
         # same university in the FINAL selection of one application.
-        if args.status == "final" and args.university:
+        if args.status == "final":
             same_uni = [r for r in rows
                         if r["status"] == "final"
                         and r["application"] == args.application
@@ -365,11 +412,9 @@ def main(argv: list[str]) -> int:
                      "status": args.status, "date": date.today().isoformat()})
         write_rows(path, rows)
         print(f"ADDED ({args.status}): {args.professor} -> {args.application}")
-        if args.json_path:
-            Path(args.json_path).write_text(json.dumps(
-                {"status": "added", "professor": args.professor,
-                 "application": args.application, "add_status": args.status}),
-                encoding="utf-8")
+        write_json(args.json_path,
+                   {"status": "added", "professor": args.professor,
+                    "application": args.application, "add_status": args.status})
         return 0
 
     if args.command == "list":
@@ -388,15 +433,14 @@ def main(argv: list[str]) -> int:
             print(f"\n{app} (keywords: {apps[app][0]['keywords']}){suffix}")
             for r in apps[app]:
                 print(f"  - {r['professor']} ({r['university']}) {r['score']}")
-        if args.json_path:
-            Path(args.json_path).write_text(json.dumps({
-                "batch": args.batch, "final_count": len(finals),
-                "proposed_count": len(proposed), "distinct_professors": distinct,
-                "applications": {app: [{"professor": r["professor"],
-                                         "university": r["university"],
-                                         "score": r["score"]} for r in rs]
-                                 for app, rs in apps.items()},
-            }, indent=2, ensure_ascii=False), encoding="utf-8")
+        write_json(args.json_path, {
+            "batch": args.batch, "final_count": len(finals),
+            "proposed_count": len(proposed), "distinct_professors": distinct,
+            "applications": {app: [{"professor": r["professor"],
+                                     "university": r["university"],
+                                     "score": r["score"]} for r in rs]
+                             for app, rs in apps.items()},
+        })
         return 0
 
     return 2

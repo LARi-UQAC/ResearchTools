@@ -12,10 +12,9 @@ other subscores).
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
-from pef_common import load_config
+from pef_common import load_config, write_json
 
 NAMES = ["a", "b", "c", "d", "e"]
 
@@ -137,12 +136,10 @@ def main(argv: list[str]) -> int:
     print(f"{fmt(t)}/5 ({detail}) - {label}"
           + ("" if retained else f"  [below retain threshold {fmt(retain_threshold)}]"))
 
-    if args.json_path:
-        from pathlib import Path
-        Path(args.json_path).write_text(json.dumps({
-            "subscores": sub, "total": t, "band": label,
-            "retain_threshold": retain_threshold, "retained": retained,
-        }, indent=2), encoding="utf-8")
+    write_json(args.json_path, {
+        "subscores": sub, "total": t, "band": label,
+        "retain_threshold": retain_threshold, "retained": retained,
+    })
     return 0
 
 

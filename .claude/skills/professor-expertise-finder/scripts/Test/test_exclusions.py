@@ -23,10 +23,43 @@ def test_apply_exclusions_matches_and_reports_unmatched():
                {"professor": "John Smith", "university": "U2"}]
     exclusion_rows = [{"name": "Doe, Jane", "reason": "unavailable"},
                        {"name": "Nobody Here", "reason": "typo"}]
-    kept, excluded, unmatched = apply_exclusions(ranking, exclusion_rows)
+    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
     assert [r["professor"] for r in kept] == ["John Smith"]
     assert len(excluded) == 1 and excluded[0][1]["reason"] == "unavailable"
     assert unmatched[0]["name"] == "Nobody Here"
+    assert ambiguous == []
+
+
+def test_homonym_with_different_university_is_ambiguous_not_excluded():
+    # Two different real people can share a name; university disambiguates
+    # (2026-10-08 code review finding).
+    ranking = [{"professor": "Jane Doe", "university": "University Y"}]
+    exclusion_rows = [{"name": "Jane Doe", "university": "University X",
+                        "reason": "unavailable"}]
+    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
+    assert kept == [] and excluded == []
+    assert len(ambiguous) == 1
+    assert ambiguous[0][1]["university"] == "University X"
+
+
+def test_name_match_still_excludes_when_either_side_lacks_university():
+    ranking = [{"professor": "Jane Doe", "university": ""}]
+    exclusion_rows = [{"name": "Jane Doe", "university": "University X",
+                        "reason": "unavailable"}]
+    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
+    assert kept == [] and len(excluded) == 1 and ambiguous == []
+
+
+def test_first_name_last_name_columns_are_matched():
+    # pick() must normalize its OWN candidate column names (first_name ->
+    # "first name") to compare against a normalized header - regression
+    # for the bug where every first_name/last_name exclusion file row
+    # silently resolved to no name and not even an "unmatched" entry.
+    ranking = [{"professor": "Jane Doe", "university": "U1"}]
+    exclusion_rows = [{"first_name": "Jane", "last_name": "Doe",
+                        "reason": "unavailable"}]
+    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
+    assert kept == [] and len(excluded) == 1
 
 
 def test_cli_dry_run_writes_nothing(tmp_path, capsys):

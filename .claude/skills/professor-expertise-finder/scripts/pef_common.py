@@ -15,7 +15,6 @@ import re
 import unicodedata
 from pathlib import Path
 
-DEFAULT_DATA_ROOT = Path.home() / "workspace" / "professor-expertise"
 DATA_ROOT_ENV = "PROFESSOR_EXPERTISE_DATA"
 
 CONFIG_PATH = Path(__file__).resolve().parent / "pef_config.json"
@@ -33,13 +32,21 @@ def data_root() -> Path:
 
     Outputs:
         root (Path): the value of PROFESSOR_EXPERTISE_DATA when set, else
-            the documented default ~/workspace/professor-expertise (R1 - no
-            hardcoded path; a professor who wants a different root sets the
-            environment variable rather than editing this file).
+            pef_config.json's documented `default_data_root` (R1 - the
+            default lives in a config file, never as a literal inside this
+            script; a professor who wants a different root sets the
+            environment variable rather than editing any file).
+
+    Raises:
+        FileNotFoundError, ValueError: see load_config() - raised only when
+            PROFESSOR_EXPERTISE_DATA is unset, since the env var path never
+            needs the config file at all.
     --------------------------------------------------------------------------
     """
     value = os.environ.get(DATA_ROOT_ENV)
-    return Path(value) if value else DEFAULT_DATA_ROOT
+    if value:
+        return Path(value)
+    return Path(load_config()["default_data_root"]).expanduser()
 
 
 def load_config() -> dict:
@@ -68,10 +75,36 @@ def load_config() -> dict:
         config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"malformed policy config {CONFIG_PATH}: {exc}") from exc
-    for key in ("subscore_values", "retain_threshold", "max_per_university"):
+    for key in ("subscore_values", "retain_threshold", "max_per_university",
+                "default_data_root"):
         if key not in config:
             raise ValueError(f"policy config {CONFIG_PATH} is missing key {key!r}")
     return config
+
+
+def write_json(json_path: str | None, payload: dict) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write a command's machine-readable report, when one was requested
+        (R17). One implementation shared by every script in this skill,
+        rather than a near-copy per call site - a 2026-10-08 code-review
+        finding noted one such copy had silently dropped
+        `ensure_ascii=False`, escaping accented names in that one report
+        only.
+
+    Inputs:
+        json_path (str | None): destination path, or None to skip. The
+            human stdout lines are always printed regardless of this flag.
+        payload (dict): the structured result to serialize.
+
+    Outputs:
+        None. Writes json_path when given, as UTF-8 with no ASCII escaping.
+    --------------------------------------------------------------------------
+    """
+    if json_path:
+        Path(json_path).write_text(json.dumps(payload, indent=2, ensure_ascii=False),
+                                    encoding="utf-8")
 
 
 def slugify(text: str) -> str:

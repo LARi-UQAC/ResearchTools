@@ -2,9 +2,11 @@
   "subscore_values": [0, 0.5, 1],
   "retain_threshold": 1.5,
   "max_per_university": 1,
+  "default_data_root": "~/workspace/professor-expertise",
   "_provenance": {
     "subscore_values": "professor's own /5 rubric, references/scoring.md",
     "retain_threshold": "professor's own rubric interpretation bands, references/scoring.md (below 1.5 = 'Do not retain')",
-    "max_per_university": "professor's own batch-allocation rule, SKILL.md Operating Rule 9 - changed 2026-10-08 from 2 to 1: every application's evaluators must now come from distinct universities (not merely capped at 2 from the same one)"
+    "max_per_university": "professor's own batch-allocation rule, SKILL.md Operating Rule 9 - changed 2026-10-08 from 2 to 1: every application's evaluators must now come from distinct universities (not merely capped at 2 from the same one)",
+    "default_data_root": "documented fallback when PROFESSOR_EXPERTISE_DATA is unset (R1: a path's default lives in a config file, never as a literal inside a script - code-review finding, 2026-10-08)"
   }
 }

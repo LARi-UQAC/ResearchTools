@@ -1,0 +1,65 @@
+import csv
+import json
+import sys
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from exclusions import apply_exclusions, main  # noqa: E402
+
+RANKING_FIELDS = ["professor", "university"]
+
+
+def write_csv(path: Path, header: list[str], rows: list[list[str]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(header)
+        w.writerows(rows)
+
+
+def test_apply_exclusions_matches_and_reports_unmatched():
+    ranking = [{"professor": "Jane Doe", "university": "U1"},
+               {"professor": "John Smith", "university": "U2"}]
+    exclusion_rows = [{"name": "Doe, Jane", "reason": "unavailable"},
+                       {"name": "Nobody Here", "reason": "typo"}]
+    kept, excluded, unmatched = apply_exclusions(ranking, exclusion_rows)
+    assert [r["professor"] for r in kept] == ["John Smith"]
+    assert len(excluded) == 1 and excluded[0][1]["reason"] == "unavailable"
+    assert unmatched[0]["name"] == "Nobody Here"
+
+
+def test_cli_dry_run_writes_nothing(tmp_path, capsys):
+    ranking = tmp_path / "ranking.csv"
+    write_csv(ranking, RANKING_FIELDS, [["Jane Doe", "U1"], ["John Smith", "U2"]])
+    excl = tmp_path / "excl.csv"
+    write_csv(excl, ["name", "reason"], [["Jane Doe", "unavailable"]])
+    out_path = tmp_path / "filtered.csv"
+    rc = main(["--ranking", str(ranking), "--exclusions", str(excl),
+               "--out", str(out_path), "--dry-run"])
+    assert rc == 0
+    assert "DRY RUN" in capsys.readouterr().out
+    assert not out_path.exists()
+
+
+def test_cli_missing_professor_column_rejected(tmp_path):
+    ranking = tmp_path / "ranking.csv"
+    write_csv(ranking, ["name"], [["Jane Doe"]])
+    excl = tmp_path / "excl.csv"
+    write_csv(excl, ["name"], [["Jane Doe"]])
+    rc = main(["--ranking", str(ranking), "--exclusions", str(excl),
+               "--out", str(tmp_path / "out.csv")])
+    assert rc == 1
+
+
+def test_cli_json_report(tmp_path):
+    ranking = tmp_path / "ranking.csv"
+    write_csv(ranking, RANKING_FIELDS, [["Jane Doe", "U1"]])
+    excl = tmp_path / "excl.csv"
+    write_csv(excl, ["name", "reason"], [["Jane Doe", "unavailable"]])
+    report = tmp_path / "report.json"
+    rc = main(["--ranking", str(ranking), "--exclusions", str(excl),
+               "--out", str(tmp_path / "out.csv"), "--json", str(report)])
+    assert rc == 0
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert data["excluded_count"] == 1 and data["kept_count"] == 0

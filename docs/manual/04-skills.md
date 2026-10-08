@@ -55,6 +55,7 @@ registration steps of a new skill.
 [geolocalisation](#geolocalisation--corpus-study-location-mapping) ·
 [recommendation-letter](#recommendation-letter--support--recommendation--acceptance--dispense-letters) ·
 [narrative-cv](#narrative-cv--frq--tri-agency-narrative-cv) ·
+[professor-expertise-finder](#professor-expertise-finder--university-professor-expertise-matching) ·
 [paper2talk](#paper2talk--accepted-paper-to-conference-talk) ·
 [the two memories](#the-two-memories---the-vault-and-the-code-graph) ·
 [obsidian-cli](#obsidian-cli---obsidian-vault-operations) ·
@@ -79,6 +80,7 @@ registration steps of a new skill.
 | `loop-engineer` | Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score `>=` min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; `local-coder`/`local-writer` do local generation. `loop_audit.py` aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated. | `/loopdev`, `.claude/skills/loop-engineer/SKILL.md` |
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 | `narrative-cv` | Draft, refresh, or tailor the narrative "CV descriptif" (FRQ CV-FRQ, structurally identical to the tri-agency CIHR/NSERC/SSHRC CV commun des trois organismes) to one grant competition: three sections, up to 10 items in section 2, 6-page FR / 5-page EN cap. Built around a durable master contributions inventory in the researcher's own external project folder, refreshed via Scopus (AU-ID two-step) + `extract-contributions` and re-ranked per competition by keyword overlap against that program's own objectives/evaluation criteria rather than rebuilt from scratch each time. Renders LaTeX/PDF and a plain-text companion for the new-FRQnet-portal paste-in channel from one JSON model (`paper2talk`'s one-model-many-renderers pattern). | `/cv`, `.claude/skills/narrative-cv/SKILL.md` |
+| `professor-expertise-finder` | Find university professors closest to a set of expertise keywords, in any location (country, province/state, region, or worldwide — never hardcoded). Reuses or builds a verified university/department/faculty-list table, ranks professors with a /5 correspondence rubric (`score.py`), and keeps only professors with at least two verified in-field articles. Also: a test mode scoring named candidates anywhere, a user-supplied exclusion list (`exclusions.py`), an optional reviewers reference file searched first (`file_search.py`), and a batch allocation mode (`selections.py`) enforcing no-reuse across applications, all evaluators of one application from distinct universities, and conflict-of-interest exclusion of the applicant's own university. The data root (location tables, batch registries) resolves from `PROFESSOR_EXPERTISE_DATA`, defaulting to `~/workspace/professor-expertise` — never a hardcoded path. | `/expertfinder`, `.claude/skills/professor-expertise-finder/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 | `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
 | `form-service` (was `uqac-forms`, renamed 2026-09-25) | Stateless mechanics for official PDF forms from any institution. RT-1 ships the validated ingest contract: https only re-checked on every redirect hop, at most 5 redirects followed manually, a 25 MiB cap enforced during the stream, `%PDF` magic bytes, a 30 s timeout, and an atomic write. The form catalogue, field maps and profile live in ThesisTracker, not here. Filling (RT-3), PAdES signing (RT-4) and signature validation follow. RT-5 exposes all of it as a stateless HTTP API in `deploy/form-service/` (`/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`), shared-secret gated, no CORS, nothing persisted. See chapter [09](09-thesistracker-integration.md) for the boundary with ThesisTracker. | Yes |
@@ -200,6 +202,47 @@ stop, not a guess. Drives the `narrative-cv-writer` agent, reached via `/cv`.
 - `.claude/skills/narrative-cv/scripts/cv_build.py` — LaTeX/text rendering, filename, page-budget check
 - `.claude/skills/narrative-cv/scripts/contribution_types.json` — section titles, clientele/category vocabularies, page budget, portal/font variants (data, not code)
 - `.claude/skills/narrative-cv/scripts/Test/test_cv_common.py`, `test_cv_inventory.py`, `test_cv_select.py`, `test_cv_build.py` — offline unit tests (61 cases; no network, no LaTeX install, no machine-local profile dependency)
+
+### `professor-expertise-finder` — university-professor expertise matching
+
+Location-agnostic by design: the skill contains no place name. Given a search location
+(country, province/state, region, city, or worldwide — always asked, never assumed) and a set
+of expertise keywords, it reuses or builds a verified `university, department, department_url,
+faculty_list_url, note` table for that location, extracts professors from each faculty-list
+page, and scores each one's closeness to the keywords with a /5 rubric (five subscores A–E,
+each 0/0.5/1, computed by `score.py` — never by hand). A professor without at least two
+articles verified title-by-title against their source page is dropped. The output links each
+professor's name to their official page, their professional email as published there (with its
+source link — never a `mailto:` or a name-pattern guess), the score with subscores, and the two
+articles.
+
+Variants layer on top of the same workflow: **test mode** scores named candidates directly
+(any location); an **exclusion list** (Excel/CSV) removes professors via `exclusions.py`; an
+optional **reference file** of known reviewers is searched first via `file_search.py` (its
+declared languages and availability outrank web presumption, but never limit the search); and
+**batch allocation mode** processes several keyword sets at once (e.g. several funding
+applications) through `selections.py`'s registry, which enforces three hard rules by script,
+not by prose: a professor final for one set cannot be reused for another, every application's
+evaluators must come from distinct universities, and no evaluator may come from the
+application's own (applicant) university once that origin is declared.
+
+The data root (`<root>/<location-slug>/departments.csv`, `<root>/batches/<batch-slug>/
+selections.csv`) resolves from the `PROFESSOR_EXPERTISE_DATA` environment variable, defaulting
+to `~/workspace/professor-expertise` — repoint it by setting the variable, never by editing a
+script. The rubric's enforced constants (subscore values, retain threshold, university cap)
+live in `scripts/pef_config.json` with their provenance, not as literals in code.
+
+**Files:**
+- `.claude/skills/professor-expertise-finder/SKILL.md`
+- `.claude/skills/professor-expertise-finder/references/scoring.md` — the /5 rubric and its interpretation bands
+- `.claude/skills/professor-expertise-finder/scripts/pef_common.py` — shared helpers: `data_root()`, `slugify`, `norm`, `name_key`, `load_config()`
+- `.claude/skills/professor-expertise-finder/scripts/pef_config.json` — enforced policy constants with provenance
+- `.claude/skills/professor-expertise-finder/scripts/table.py` — location department-table lifecycle (check/init/validate)
+- `.claude/skills/professor-expertise-finder/scripts/score.py` — the /5 total, band, and retain-threshold check
+- `.claude/skills/professor-expertise-finder/scripts/exclusions.py` — apply an exclusion list to a ranking
+- `.claude/skills/professor-expertise-finder/scripts/file_search.py` — search an optional reviewers reference file first
+- `.claude/skills/professor-expertise-finder/scripts/selections.py` — the batch no-reuse / one-university / conflict-of-interest registry
+- `.claude/skills/professor-expertise-finder/scripts/Test/` — offline unit tests (no network, no API key)
 
 ### `paper2talk` — accepted paper to conference talk
 

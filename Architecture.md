@@ -31,6 +31,7 @@ graph TD
     c10["/litupdate"]
     c11["/talk"]
     c12["/cv"]
+    c13["/expertfinder"]
   end
 
   subgraph AG["Agents — agents/"]
@@ -47,6 +48,7 @@ graph TD
     a11["litreview-updater<br/>incremental review refresh"]
     a12["talk-builder<br/>accepted paper -> conference talk"]
     a13["narrative-cv-writer<br/>FRQ / tri-agency narrative CV"]
+    a14["professor-expertise-finder<br/>faculty expertise matching"]
   end
 
   subgraph SK["Skills — skills/"]
@@ -63,6 +65,7 @@ graph TD
     s10["paper2talk<br/>talk_model.py · talk_render.py · talk_notes.py"]
     s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
     s12["narrative-cv<br/>cv_inventory.py · cv_select.py · cv_build.py"]
+    s13["professor-expertise-finder<br/>table.py · score.py · selections.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -84,9 +87,11 @@ graph TD
   c10 --> a11
   c11 --> a12
   c12 --> a13
+  c13 --> a14
   a12 --> s10
   a12 --> s1
   a13 --> s12 & s1
+  a14 --> s13
   a4 -.->|"invoked by name<br/>(no command)"| a4
   a9 -.->|"invoked by name<br/>(no command)"| a9
   a10 -.->|"invoked by context<br/>(no command)"| a10
@@ -133,6 +138,8 @@ graph TD
 `/recommendation-letter` likewise invokes the [recommendation-letter](skills/recommendation-letter) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix; its `generate_letter.py` is standard-library only and compiles the letter with `pdflatex`.
 
 `/cv` drives the [narrative-cv-writer](agents/narrative-cv-writer.md) agent, which is also omitted from this matrix: it consumes [scopus](skills/scopus) and [scientific-writing](skills/scientific-writing) like the matrix's other rows, plus [extract-contributions](skills/extract-contributions) (not one of this matrix's columns) and its own [narrative-cv](skills/narrative-cv) skill, but none of `deliberation`, `scholar-evaluation`, `extract-statistic`, or `extract-futureworks` - a CV has no reference list to deliberate over or ScholarEval score.
+
+`/expertfinder` drives the [professor-expertise-finder](agents/professor-expertise-finder.md) agent, omitted from this matrix because it consumes none of its columns: it verifies faculty directory pages and article titles directly (`WebFetch`/`WebSearch`), not through the [scopus](skills/scopus) skill, since matching a professor's expertise to a keyword set is not the manuscript-reference-validation task that skill exists for. It consumes only its own [professor-expertise-finder](skills/professor-expertise-finder) skill (`table.py`, `score.py`, `exclusions.py`, `file_search.py`, `selections.py`), and nothing from `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks`.
 
 ### Domain profiles
 

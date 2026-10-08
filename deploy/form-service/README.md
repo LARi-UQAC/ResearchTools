@@ -81,10 +81,16 @@ calls, the service renders and returns, and keeps nothing (spec section 1).
   through `cv_build.py compile_latex` / `check-pages`.
 - **Nothing is stored.** No disk write, no body logged, no student name in any
   error or log line - errors name a row by its index only (C3).
-- **Consent and the window.** A row inside the 6-year window (`end` null, or
-  `end` year within that window) needs `consent_cv`, or the request is refused
-  with `422` naming the row index. A row outside the window is archive, and
-  consent is not required there (C6).
+- **Consent is mandatory for every row, whatever its date** (C6 revised,
+  operator 2026-10-08). A row with no `consent_cv` is refused with `422`
+  naming the row index; so are a future-dated `consent_cv`, an impossible
+  calendar date, `start` after `end`, or `end` after `reference_year`. The
+  window (`end` null, or `end` year inside it) only decides whether a row
+  prints under the recent or the archive heading - it was never a consent
+  exemption. The window itself is per-funder: 6 years for NSERC/tri-agency,
+  5 for FRQ (`portal_variants.*.cv_window_years`), distinct from UQAC's
+  unrelated 7-year data-retention period. `reference_year` is sane-ranged
+  (2000-2100).
 - **The row schema is closed.** `name`, `cycle`, `start`, `end`, `consent_cv`,
   and the optional `current_position` / `current_employer`; an unknown key is
   refused (C5).
@@ -93,6 +99,12 @@ calls, the service renders and returns, and keeps nothing (spec section 1).
   never pick a file on the server (C4, R24). Run
   `cv_build.py inline --model <cv_model.json> --out <file.json>` locally first
   to turn a model that uses `prose_file` into one with inline `prose`.
+- **Section prose is raw LaTeX, trusted by design - an accepted risk, not a
+  gap.** Student rows are escaped; a model's own section 1/3 prose is not,
+  so a `\input`/`\write18`-style command in it reaches the returned `.tex`
+  verbatim. Accepted because until TT-13 only the researcher can write that
+  prose. Never compile a model whose source is not trusted, and revisit a
+  control (strip or allowlist) once TT-13 widens who can supply the model.
 
 ## Personal information
 

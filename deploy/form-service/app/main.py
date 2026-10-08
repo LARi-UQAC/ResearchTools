@@ -19,7 +19,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from . import cv_bridge, publications, skill_bridge
+from . import publications, skill_bridge
 from .config import Settings, load_settings
 from .security import require_service_key
 
@@ -179,7 +179,20 @@ async def cv_build_route(request: Request) -> dict[str, Any]:
     Render a CV model plus consenting HQP rows (narrative-cv). Stateless and
     uncompiled (C2, C3): see cv_bridge.build_cv for the contract. No field of
     the request reaches disk, and no row name reaches a log line or an error.
+
+    cv_bridge is imported HERE, lazily, rather than at module level (M3): it
+    pulls in cv_build from the narrative-cv checkout, and a missing checkout
+    must stop only this route, never the whole app - /pdf/fill and /pdf/sign
+    import nothing from narrative-cv and must keep working.
     """
+    try:
+        from . import cv_bridge
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="CV build is unavailable: the narrative-cv scripts could not be imported"
+        ) from exc
+
     settings = load_settings()
     raw = await request.body()
     if len(raw) > settings.max_body_bytes:
@@ -187,7 +200,7 @@ async def cv_build_route(request: Request) -> dict[str, Any]:
                             detail="Request body exceeds the configured maximum")
     try:
         payload = json.loads(raw)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail=f"body is not valid JSON: {exc}") from exc
     if not isinstance(payload, dict):

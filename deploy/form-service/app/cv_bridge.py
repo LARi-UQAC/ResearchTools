@@ -55,8 +55,9 @@ def build_cv(model: dict, rows: list, reference_year: int, target: str = "both")
     Raises:
         CvDataError: target is not one of "latex"/"text"/"both", the model
             is not inline (assert_inline_model), or a row fails
-            validate_hqp_rows (unknown key, bad date, missing consent inside
-            the window, ...)
+            validate_hqp_rows (unknown key, bad date, missing consent - now
+            mandatory for every row regardless of the window, C6 revised -
+            ...)
     --------------------------------------------------------------------------
     """
     if target not in _TARGETS:
@@ -72,7 +73,7 @@ def build_cv(model: dict, rows: list, reference_year: int, target: str = "both")
         result["text"] = cv_build.render_text(model, hqp=hqp)
 
     if rows:
-        rules = cv_build.load_hqp_rules(cv_build.load_contribution_types())
+        rules = cv_build.load_hqp_rules(cv_build.load_contribution_types(), model["portal_variant"])
         validated = cv_build.validate_hqp_rows(rows, reference_year, rules["window_years"])
         recent = sum(1 for row in validated if row["in_window"])
         archive = len(validated) - recent

@@ -365,7 +365,7 @@ class TestHqp(unittest.TestCase):
 
     def test_rules_shipped_with_provenance(self):
         types = cv_build.load_contribution_types()
-        rules = cv_build.load_hqp_rules(types)
+        rules = cv_build.load_hqp_rules(types, "tri_agency")
         self.assertEqual(rules["window_years"], 6)
         for language in ("fr", "en"):
             labels = rules["labels"][language]
@@ -373,14 +373,33 @@ class TestHqp(unittest.TestCase):
                 self.assertTrue(labels[key])
         self.assertTrue(types["hqp"]["_provenance"])
 
+    def test_window_is_per_funder(self):
+        # NSERC/tri-agency: 6 years. FRQ (both portals): 5 years. Operator,
+        # 2026-10-08: one fixed window_years was wrong, the CV window
+        # depends on which funder's template is being built.
+        types = cv_build.load_contribution_types()
+        self.assertEqual(cv_build.load_hqp_rules(types, "tri_agency")["window_years"], 6)
+        self.assertEqual(cv_build.load_hqp_rules(types, "frq_old_portal")["window_years"], 5)
+        self.assertEqual(cv_build.load_hqp_rules(types, "frq_new_portal")["window_years"], 5)
+
     def test_rules_missing_key_named(self):
         types = {}
         with self.assertRaises(CvDataError) as ctx:
-            cv_build.load_hqp_rules(types)
+            cv_build.load_hqp_rules(types, "tri_agency")
         self.assertIn("hqp", str(ctx.exception))
 
+    def test_rules_unknown_portal_variant_named(self):
+        types = cv_build.load_contribution_types()
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.load_hqp_rules(types, "not-a-real-variant")
+        self.assertIn("not-a-real-variant", str(ctx.exception))
+
     def test_window_split(self):
-        rows = [_row(end="2021-06"), _row(end="2020-01"), _row(end=None)]
+        rows = [
+            _row(start="2019-09", end="2021-06", consent_cv="2026-01-01"),
+            _row(start="2018-09", end="2020-01", consent_cv="2026-01-01"),
+            _row(end=None, consent_cv="2026-01-01"),
+        ]
         validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
         recent = [r for r in validated if r["in_window"]]
         archive = [r for r in validated if not r["in_window"]]
@@ -395,10 +414,51 @@ class TestHqp(unittest.TestCase):
         self.assertIn("row 0", message)
         self.assertNotIn("Étudiante Alpha", message)
 
-    def test_archive_without_consent_accepted(self):
-        rows = [_row(end="2015-06", consent_cv=None)]
+    def test_archive_without_consent_now_refused(self):
+        # C6 revised, operator 2026-10-08: consent is mandatory for EVERY
+        # row regardless of the window. The window only decides whether a
+        # row is listed as recent or archive, never whether consent is
+        # required.
+        rows = [_row(start="2013-09", end="2015-06", consent_cv=None)]
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        self.assertIn("row 0", str(ctx.exception))
+
+    def test_archive_with_consent_still_accepted(self):
+        rows = [_row(start="2013-09", end="2015-06", consent_cv="2015-07-01")]
         validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
         self.assertFalse(validated[0]["in_window"])
+
+    def test_reference_year_out_of_bounds_refused(self):
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row()], reference_year=9999, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row()], reference_year=0, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row()], reference_year=-5, window_years=6)
+
+    def test_start_after_end_refused(self):
+        rows = [_row(start="2024-08", end="2020-01")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_end_after_reference_year_refused(self):
+        rows = [_row(start="2024-01", end="2031-01")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_impossible_month_refused(self):
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(
+                [_row(start="2024-13")], reference_year=2026, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(
+                [_row(end="2024-00")], reference_year=2026, window_years=6)
+
+    def test_future_dated_consent_refused(self):
+        rows = [_row(end="2024-08", consent_cv="2031-01-01")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
 
     def test_unknown_key_refused(self):
         rows = [_row(email="alpha@example.org")]
@@ -450,9 +510,29 @@ class TestHqp(unittest.TestCase):
         model["sections"]["1"] = {"title": "X", "prose_file": "../x.tex"}
         with self.assertRaises(CvDataError) as ctx:
             cv_build.assert_inline_model(model)
-        message = str(ctx.exception)
-        self.assertIn("1", message)
-        self.assertNotIn("../x.tex", message)
+        self.assertNotIn("../x.tex", str(ctx.exception))
+
+    def test_prose_file_refusal_does_not_echo_the_section_key_either(self):
+        # N3 (reviewer, 2026-10-08): the section KEY can be caller-controlled
+        # free text too, same class as the row-key finding already fixed.
+        model = _model()
+        del model["sections"]["1"]
+        model["sections"]["Étudiante Alpha"] = {"title": "X", "prose_file": "y.tex"}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertNotIn("Étudiante Alpha", str(ctx.exception))
+
+    def test_section_items_not_a_list_refused(self):
+        model = _model()
+        model["sections"]["2"]["items"] = "not-a-list"
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_section_prose_not_a_string_refused(self):
+        model = _model()
+        model["sections"]["1"] = {"title": "X", "prose": ["not", "a", "string"]}
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
 
     def test_latex_escaping(self):
         model = _hqp_model()
@@ -480,10 +560,15 @@ class TestHqp(unittest.TestCase):
         self.assertEqual(source_a, source_b)
 
     def test_english_labels(self):
-        model = _hqp_model(language="en")
+        model = _hqp_model(language="en")  # default portal_variant: frq_old_portal, 5-year window
         source = cv_build.render_latex(model, hqp={"rows": [_row(end=None)], "reference_year": 2026})
         self.assertIn("ongoing", source)
-        self.assertIn("HQP trained in the last 6 years", source)
+        self.assertIn("HQP trained in the last 5 years", source)
+
+    def test_recent_heading_shows_the_funder_specific_window(self):
+        model = _hqp_model(portal_variant="tri_agency")
+        source = cv_build.render_latex(model, hqp={"rows": [_row(end=None)], "reference_year": 2026})
+        self.assertIn("PHQ formés au cours des 6 dernières années", source)
 
     def test_empty_lists_use_none_label(self):
         model = _hqp_model()

@@ -122,6 +122,20 @@ through `deploy/form-service/app/cv_bridge.py` (the same pattern
 - **Student rows are never written to the CV folder**, or anywhere else in
   this skill: `render_hqp`/`validate_hqp_rows` run entirely in memory inside
   the service process, and the consenting rows live only in ThesisTracker.
+- **Every row needs `consent_cv`, whatever its date** (operator, 2026-10-08,
+  revising C6): the recent/archive window no longer exempts an older row
+  from consent, it only decides which of the two lists a row is printed
+  under. The window itself is per-funder, not one fixed number: 6 years for
+  NSERC/tri-agency, 5 years for FRQ (`portal_variants.*.cv_window_years`),
+  distinct from UQAC's unrelated 7-year data-retention period.
+- **Section prose is trusted, raw LaTeX, by design - accepted risk, not a
+  gap.** `render_latex` carries a model's section 1/3 prose through
+  unescaped (student rows are the only part escaped). Until TT-13 exists, no
+  one but the researcher who authors the `cv_model.json` can write that
+  prose, so a `\input`/`\write18`-style command reaching the output is an
+  accepted risk, not a bug. Never compile a model from a source that is not
+  trusted, and reconsider a control (strip or allowlist) the day TT-13 lets
+  anyone else supply the model.
 
 ## Quick reference
 

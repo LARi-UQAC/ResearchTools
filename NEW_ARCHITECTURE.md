@@ -261,11 +261,14 @@ as the table states.
 `POST /cv/build` (RT-8) follows the same shape as `/pdf/fill`: ThesisTracker calls, ResearchTools
 renders and keeps nothing. Request: `model` (a `cv_model.json` document with inline `prose`, no
 `prose_file`), `hqp` (the consenting students' rows: `name`, `cycle`, `start`, `end`, `consent_cv`,
-and optionally `current_position` / `current_employer`), `reference_year` (the year the 6-year
-consent window ends), and `target` (`latex` | `text` | `both`, default `both`). Response:
+and optionally `current_position` / `current_employer`), `reference_year` (the year the recent/
+archive window ends), and `target` (`latex` | `text` | `both`, default `both`). Response:
 `{"latex": str | null, "text": str | null, "hqp": {"recent": int, "archive": int}}`. No LaTeX is
 compiled on the service (C2): the PDF and the page-budget check stay local to the
-`narrative-cv` skill.
+`narrative-cv` skill. **Consent is mandatory for every row, whatever its date** (C6 revised,
+operator 2026-10-08): the window is per-funder (6 years NSERC/tri-agency, 5 FRQ) and decides only
+which heading a row prints under, never whether consent is required - distinct from UQAC's
+unrelated 7-year data-retention period, which stays outside this endpoint.
 
 ---
 

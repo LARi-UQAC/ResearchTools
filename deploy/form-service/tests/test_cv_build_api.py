@@ -23,7 +23,7 @@ VALID_KEY = "k" * 48
 MODEL = {
     "language": "fr",
     "portal_variant": "frq_old_portal",
-    "candidate_name": "Martin Otis",
+    "candidate_name": "Camille Exemple",
     "document_title": "CV descriptif",
     "sections": {
         "1": {"title": "Parcours et compétences", "prose": "Texte de parcours."},
@@ -37,8 +37,10 @@ RECENT_ROW = {
     "consent_cv": "2026-09-01",
 }
 ARCHIVE_ROW = {
+    # C6 revised 2026-10-08: consent is mandatory for every row, archive
+    # included - the window only decides the recent/archive LISTING.
     "name": "Étudiant Gamma", "cycle": "Doctorat", "start": "2015-09", "end": "2016-08",
-    "consent_cv": None,
+    "consent_cv": "2016-09-01",
 }
 
 
@@ -184,6 +186,48 @@ class TestCvBuildApi(unittest.TestCase):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_section_items_not_a_list_422_not_500(self) -> None:
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["2"]["items"] = "not-a-list"
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_section_prose_not_a_string_422_not_500(self) -> None:
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["1"] = {"title": "X", "prose": ["not", "a", "string"]}
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_deeply_nested_json_422_not_500(self) -> None:
+        # json.loads raises RecursionError (a RuntimeError, not a ValueError)
+        # on pathologically deep nesting; the route must catch it too.
+        deep = b"[" * 100000 + b"]" * 100000
+        response = self.client.post("/cv/build", headers=self.headers, content=deep)
+        self.assertEqual(response.status_code, 422)
+
+    def test_cv_build_unavailable_when_narrative_cv_missing_503(self) -> None:
+        # M3: cv_bridge is imported lazily inside the route so a missing
+        # narrative-cv checkout stops only /cv/build, never /pdf/fill or
+        # /pdf/sign. Setting the module to None in sys.modules forces the
+        # next "from . import cv_bridge" to raise ImportError - but only if
+        # the `app` package object does not ALSO carry `cv_bridge` as an
+        # already-bound attribute from an earlier successful import in this
+        # process, which "from X import Y" falls back to even when
+        # sys.modules["X.Y"] is None. Both have to be cleared.
+        import app as app_pkg
+
+        had_attr = hasattr(app_pkg, "cv_bridge")
+        saved = getattr(app_pkg, "cv_bridge", None)
+        if had_attr:
+            delattr(app_pkg, "cv_bridge")
+        try:
+            with patch.dict(sys.modules, {"app.cv_bridge": None}):
+                response = self._post({"model": MODEL, "hqp": [], "reference_year": 2026})
+        finally:
+            if had_attr:
+                app_pkg.cv_bridge = saved
+        self.assertEqual(response.status_code, 503)
 
 
 if __name__ == "__main__":

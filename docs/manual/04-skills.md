@@ -169,8 +169,10 @@ stop, not a guess. Drives the `narrative-cv-writer` agent, reached via `/cv`.
 ThesisTracker builds a CV with consenting students' rows through form-service's stateless
 `POST /cv/build`, which imports `cv_build.py` directly (`cv_bridge.py`). No LaTeX is compiled on
 the service and nothing is stored: the service returns LaTeX and/or plain text only, and the PDF
-and the page-budget check stay local. A row inside the 6-year consent window needs `consent_cv` or
-the request is refused, naming the row's index only, never a name. `cv_build.py inline --model
+and the page-budget check stay local. Every row needs `consent_cv`, whatever its date (C6
+revised); the recent/archive window is per-funder (6 years NSERC/tri-agency, 5 FRQ) and decides
+only the heading a row prints under. A missing or malformed field refuses the request, naming the
+row's index only, never a name. `cv_build.py inline --model
 <cv_model.json> --out <file.json>` turns a locally-authored model (which keeps its prose in
 `prose_file` files) into the inline form the service requires, since a request body must never
 name a file on the server.

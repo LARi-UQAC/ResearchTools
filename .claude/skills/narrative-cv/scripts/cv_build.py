@@ -251,15 +251,18 @@ def load_model(path):
     return model
 
 
-def load_hqp_rules(types):
+def load_hqp_rules(types, portal_variant):
     """
     --------------------------------------------------------------------------
     Purpose:
         Return the HQP window length and bilingual labels from a loaded
-        contribution_types.json document.
+        contribution_types.json document. The window is per-funder (operator,
+        2026-10-08): NSERC/tri-agency uses 6 years, FRQ uses 5, so it is read
+        from the chosen portal variant rather than one fixed value.
 
     Inputs:
         types (dict): the parsed contribution_types.json document
+        portal_variant (str): the model's chosen variant, e.g. "tri_agency"
 
     Outputs:
         rules (dict): {"window_years": int, "labels": dict} (labels carries
@@ -267,18 +270,24 @@ def load_hqp_rules(types):
             ongoing/none)
 
     Raises:
-        CvDataError: `types["hqp"]` or one of its keys is missing, or
-            window_years is not an int >= 1
+        CvDataError: `types["hqp"]["labels"]` is missing, `portal_variant` is
+            not a known variant, or its `cv_window_years` is not an int >= 1
     --------------------------------------------------------------------------
     """
     try:
-        hqp = types["hqp"]
-        window_years = hqp["window_years"]
-        labels = hqp["labels"]
+        labels = types["hqp"]["labels"]
     except KeyError as exc:
         raise CvDataError("contribution_types.json is missing key %s (expected under 'hqp')" % exc)
+    try:
+        variant = types["portal_variants"][portal_variant]
+    except KeyError:
+        raise CvDataError(
+            "contribution_types.json has no portal_variants entry for %r" % portal_variant)
+    window_years = variant.get("cv_window_years")
     if not isinstance(window_years, int) or isinstance(window_years, bool) or window_years < 1:
-        raise CvDataError("hqp.window_years must be an int >= 1, got %r" % (window_years,))
+        raise CvDataError(
+            "portal_variants.%s.cv_window_years must be an int >= 1, got %r"
+            % (portal_variant, window_years))
     return {"window_years": window_years, "labels": labels}
 
 
@@ -295,21 +304,27 @@ def assert_inline_model(model):
         either renderer is ever called.
 
     Details:
-        Two separate concerns, both dict-shape checks with no filesystem
-        call:
+        Several dict-shape checks, none making a filesystem call or a
+        network call:
         (1) no section may carry a `prose_file` key, since a request
             received over the network must never pick a file on the server
             (R24, C4) - the refusal fires identically whether or not the
-            named file exists, and the message names the offending section
-            key, never the prose_file value, so a path traversal attempt is
-            never echoed back;
+            named file exists;
         (2) the fields render_latex()/render_text() read unconditionally
             (`model["portal_variant"]`, and `section["title"]` for every
             section among "1"/"2"/"3" that is present) must exist and be
             non-empty strings, or a malformed request would otherwise reach
             a bare KeyError inside the renderer - which the route's
             `except CvDataError` does not catch - and surface as an
-            unhandled 500 instead of a 422.
+            unhandled 500 instead of a 422;
+        (3) a present section's `items` must be a list and its `prose` (when
+            there are no items) must be a string, for the same reason -
+            `for item in section["items"]` and `section.get("prose","") +
+            "\\n\\n"` both crash on the wrong type.
+        No message ever names a section key or echoes a value: a caller
+        controls the keys of `model["sections"]`, not only field values
+        inside it (the same class of leak the row-key finding fixed), so
+        every refusal here is silent on which section or what it contained.
 
     Inputs:
         model: the candidate cv_model.json document
@@ -320,8 +335,9 @@ def assert_inline_model(model):
     Raises:
         CvDataError: `model` is not a dict, `model["sections"]` is not a
             dict, any section carries a `prose_file` key, a required
-            top-level string field is missing or empty, or a present
-            section has no non-empty `title`
+            top-level string field is missing or empty, a present section
+            has no non-empty `title`, its `items` is not a list, or its
+            `prose` is not a string
     --------------------------------------------------------------------------
     """
     if not isinstance(model, dict):
@@ -329,19 +345,40 @@ def assert_inline_model(model):
     sections = model.get("sections")
     if not isinstance(sections, dict):
         raise CvDataError("model.sections must be an object")
-    for key, section in sections.items():
+    for section in sections.values():
         if isinstance(section, dict) and "prose_file" in section:
             raise CvDataError(
-                "section %s carries a prose_file key; an inline model must not "
-                "reference a file on disk" % key)
+                "a section carries a prose_file key; an inline model must not "
+                "reference a file on disk")
     for field in _RENDER_REQUIRED_STR_FIELDS:
         if not isinstance(model.get(field), str) or not model[field].strip():
             raise CvDataError("model.%s must be a non-empty string" % field)
     for key in ("1", "2", "3"):
         section = sections.get(key)
-        if section and (not isinstance(section, dict) or not isinstance(section.get("title"), str)
-                         or not section["title"].strip()):
+        if not section:
+            continue
+        if (not isinstance(section, dict) or not isinstance(section.get("title"), str)
+                or not section["title"].strip()):
             raise CvDataError("section %s must carry a non-empty 'title' string" % key)
+        if "items" in section:
+            if not isinstance(section["items"], list):
+                raise CvDataError("section %s 'items' must be a list" % key)
+        elif not isinstance(section.get("prose", ""), str):
+            raise CvDataError("section %s 'prose' must be a string" % key)
+
+
+_MIN_REFERENCE_YEAR = 2000
+_MAX_REFERENCE_YEAR = 2100  # Operator, 2026-10-08: a sanity bound, not a measurement -
+                            # blocks an absurd reference_year (e.g. 9999) from pushing
+                            # every row into "archive" (N1).
+
+
+def _parse_hqp_year_month(datestr):
+    """Parse 'YYYY' or 'YYYY-MM' into (year, month), raising ValueError on an impossible one."""
+    year = int(datestr[:4])
+    month = int(datestr[5:7]) if len(datestr) > 4 else 1
+    datetime.date(year, month, 1)  # raises ValueError on a real-calendar violation
+    return year, month
 
 
 def validate_hqp_rows(rows, reference_year, window_years):
@@ -349,13 +386,19 @@ def validate_hqp_rows(rows, reference_year, window_years):
     --------------------------------------------------------------------------
     Purpose:
         Validate student rows against the closed HQP schema and tag each with
-        whether it falls inside the consent-required window.
+        whether it falls inside the recent/archive window.
 
     Details:
         Every error names the row's index only, never a field value, so a
         malformed row never puts a student's name in a log or an error
         response (C3). Rows are returned as deep copies: the caller's own
         dicts are never mutated.
+
+        C6 revised (operator, 2026-10-08): consent_cv is mandatory for
+        EVERY row regardless of the window. `window_years` only decides
+        whether a row is listed as recent or archive on the rendered page,
+        never whether consent is required - the window-gated exemption this
+        function used to apply to archive rows is gone.
 
     Inputs:
         rows (list): candidate row dicts
@@ -367,15 +410,24 @@ def validate_hqp_rows(rows, reference_year, window_years):
             boolean `in_window`
 
     Raises:
-        CvDataError: `rows` is not a list, `reference_year` is not an int, a
-            row is not a dict, carries an unknown or missing key, a field is
-            malformed, or an in-window row has no consent_cv
+        CvDataError: `rows` is not a list, `reference_year` is not an int or
+            out of its sane bound, a row is not a dict, carries an unknown
+            or missing key, a field is malformed (including an impossible
+            calendar date, start after end, end after reference_year, or
+            consent_cv dated after reference_year), or any row has no
+            consent_cv
     --------------------------------------------------------------------------
     """
     if not isinstance(reference_year, int) or isinstance(reference_year, bool):
         raise CvDataError("reference_year must be an int, got %r" % (reference_year,))
+    if not (_MIN_REFERENCE_YEAR <= reference_year <= _MAX_REFERENCE_YEAR):
+        raise CvDataError(
+            "reference_year must be between %d and %d, got %d"
+            % (_MIN_REFERENCE_YEAR, _MAX_REFERENCE_YEAR, reference_year))
     if not isinstance(rows, list):
         raise CvDataError("hqp rows must be a list, got %s" % type(rows).__name__)
+
+    reference_value = reference_year * 12 + 12  # December of reference_year
 
     validated = []
     for index, row in enumerate(rows):
@@ -396,27 +448,43 @@ def validate_hqp_rows(rows, reference_year, window_years):
         start = row["start"]
         if not isinstance(start, str) or not _HQP_DATE_RE.match(start):
             raise CvDataError("row %d: start must match YYYY or YYYY-MM" % index)
+        try:
+            _parse_hqp_year_month(start)
+        except ValueError:
+            raise CvDataError("row %d: start is not a real calendar year/month" % index)
         end = row["end"]
-        if end is not None and (not isinstance(end, str) or not _HQP_DATE_RE.match(end)):
-            raise CvDataError("row %d: end must be null or match YYYY or YYYY-MM" % index)
-        consent = row["consent_cv"]
-        if consent is not None:
-            if not isinstance(consent, str) or not _HQP_CONSENT_RE.match(consent):
-                raise CvDataError("row %d: consent_cv must be null or an ISO YYYY-MM-DD date" % index)
+        if end is not None:
+            if not isinstance(end, str) or not _HQP_DATE_RE.match(end):
+                raise CvDataError("row %d: end must be null or match YYYY or YYYY-MM" % index)
             try:
-                datetime.date.fromisoformat(consent)
+                _parse_hqp_year_month(end)
             except ValueError:
-                # The regex only checks digit shape; "2026-99-99" matches it
-                # but is not a real date, and a row cannot be authorized to
-                # appear in the CV on a consent record that cannot exist.
-                raise CvDataError("row %d: consent_cv is not a real calendar date" % index)
+                raise CvDataError("row %d: end is not a real calendar year/month" % index)
+            if _hqp_date_value(start) > _hqp_date_value(end):
+                raise CvDataError("row %d: start must not be after end" % index)
+            if _hqp_date_value(end) > reference_value:
+                raise CvDataError("row %d: end must not be after reference_year" % index)
+        elif _hqp_date_value(start) > reference_value:
+            raise CvDataError("row %d: start must not be after reference_year" % index)
+        consent = row["consent_cv"]
+        if consent is None:
+            raise CvDataError("row %d requires consent_cv" % index)
+        if not isinstance(consent, str) or not _HQP_CONSENT_RE.match(consent):
+            raise CvDataError("row %d: consent_cv must be an ISO YYYY-MM-DD date" % index)
+        try:
+            consent_date = datetime.date.fromisoformat(consent)
+        except ValueError:
+            # The regex only checks digit shape; "2026-99-99" matches it
+            # but is not a real date, and a row cannot be authorized to
+            # appear in the CV on a consent record that cannot exist.
+            raise CvDataError("row %d: consent_cv is not a real calendar date" % index)
+        if consent_date.year > reference_year:
+            raise CvDataError("row %d: consent_cv must not be dated after reference_year" % index)
         for field in ("current_position", "current_employer"):
             value = row.get(field)
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise CvDataError("row %d: %s must be null or a non-empty string" % (index, field))
         in_window = end is None or int(end[:4]) >= reference_year - window_years + 1
-        if in_window and consent is None:
-            raise CvDataError("row %d requires consent_cv (inside the consent window)" % index)
         copy = dict(row)
         copy["in_window"] = in_window
         validated.append(copy)
@@ -494,7 +562,7 @@ def _hqp_block_text(heading, rows, heading_labels):
     return "\n".join(lines)
 
 
-def render_hqp(rows_validated, language, labels, target):
+def render_hqp(rows_validated, language, labels, target, window_years):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -506,6 +574,9 @@ def render_hqp(rows_validated, language, labels, target):
         language (str): "fr" or "en"
         labels (dict): the bilingual labels dict (load_hqp_rules()["labels"])
         target (str): "latex" or "text"
+        window_years (int): the funder-specific window (load_hqp_rules()
+            ["window_years"]), formatted into the recent heading's "{years}"
+            placeholder
 
     Outputs:
         block (str): the rendered recent list followed by the archive list
@@ -517,11 +588,12 @@ def render_hqp(rows_validated, language, labels, target):
     if target not in ("latex", "text"):
         raise CvDataError("render_hqp target must be 'latex' or 'text', got %r" % (target,))
     heading_labels = labels[language]
+    recent_heading = heading_labels["recent_heading"].format(years=window_years)
     recent = sorted((row for row in rows_validated if row["in_window"]), key=_hqp_sort_key)
     archive = sorted((row for row in rows_validated if not row["in_window"]), key=_hqp_sort_key)
     block = _hqp_block_latex if target == "latex" else _hqp_block_text
     return (
-        block(heading_labels["recent_heading"], recent, heading_labels)
+        block(recent_heading, recent, heading_labels)
         + block(heading_labels["archive_heading"], archive, heading_labels)
     )
 
@@ -532,10 +604,10 @@ def _hqp_block(model, types, hqp, target):
     if not section3.get("hqp_list"):
         raise CvDataError(
             "hqp rows were provided but section 3 does not declare hqp_list: true (C8)")
-    rules = load_hqp_rules(types)
+    rules = load_hqp_rules(types, model["portal_variant"])
     language = model.get("language", "fr")
     rows_validated = validate_hqp_rows(hqp.get("rows", []), hqp.get("reference_year"), rules["window_years"])
-    return render_hqp(rows_validated, language, rules["labels"], target)
+    return render_hqp(rows_validated, language, rules["labels"], target, rules["window_years"])
 
 
 def inline_model(path):

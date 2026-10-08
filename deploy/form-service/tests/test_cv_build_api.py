@@ -206,6 +206,23 @@ class TestCvBuildApi(unittest.TestCase):
         response = self.client.post("/cv/build", headers=self.headers, content=deep)
         self.assertEqual(response.status_code, 422)
 
+    def test_unknown_top_level_key_422(self) -> None:
+        # N-B (reviewer, 2026-10-08): a stray "funder" key must not be
+        # silently ignored - the window always comes from portal_variant.
+        response = self._post(
+            {"model": MODEL, "hqp": [], "reference_year": 2026, "funder": "nserc"})
+        self.assertEqual(response.status_code, 422)
+
+    def test_language_de_with_rows_422_not_500(self) -> None:
+        # F1 (reviewer, 2026-10-08): render_hqp's bare labels[language]
+        # lookup raised a bare KeyError, not CvDataError, for an unsupported
+        # language once rows made the HQP block render at all.
+        model = json.loads(json.dumps(MODEL))
+        model["language"] = "de"
+        response = self._post(
+            {"model": model, "hqp": [RECENT_ROW], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
     def test_cv_build_unavailable_when_narrative_cv_missing_503(self) -> None:
         # M3: cv_bridge is imported lazily inside the route so a missing
         # narrative-cv checkout stops only /cv/build, never /pdf/fill or

@@ -292,6 +292,7 @@ def load_hqp_rules(types, portal_variant):
 
 
 _RENDER_REQUIRED_STR_FIELDS = ("portal_variant", "candidate_name", "document_title")
+_VALID_LANGUAGES = ("fr", "en")
 
 
 def assert_inline_model(model):
@@ -317,10 +318,15 @@ def assert_inline_model(model):
             a bare KeyError inside the renderer - which the route's
             `except CvDataError` does not catch - and surface as an
             unhandled 500 instead of a 422;
-        (3) a present section's `items` must be a list and its `prose` (when
-            there are no items) must be a string, for the same reason -
-            `for item in section["items"]` and `section.get("prose","") +
-            "\\n\\n"` both crash on the wrong type.
+        (3) a present section's `items` must be a list, each item an object
+            whose `description`/`role`/`date` are strings and whose
+            `clienteles` is a list when present, and a section's `prose`
+            (when there are no items) must be a string - the same crash
+            class: `for item in section["items"]`, `inline_latex()` and
+            `escape_latex()` all assume a string or an iterable;
+        (4) `model.language`, when present, must be `"fr"` or `"en"` -
+            `render_hqp` does a bare `labels[language]` lookup that raises
+            `KeyError`, not `CvDataError`, on anything else (F1).
         No message ever names a section key or echoes a value: a caller
         controls the keys of `model["sections"]`, not only field values
         inside it (the same class of leak the row-key finding fixed), so
@@ -335,9 +341,10 @@ def assert_inline_model(model):
     Raises:
         CvDataError: `model` is not a dict, `model["sections"]` is not a
             dict, any section carries a `prose_file` key, a required
-            top-level string field is missing or empty, a present section
-            has no non-empty `title`, its `items` is not a list, or its
-            `prose` is not a string
+            top-level string field is missing or empty, `language` is
+            neither `"fr"`/`"en"` nor absent, a present section has no
+            non-empty `title`, its `items` is not a list (or an item's
+            fields are the wrong type), or its `prose` is not a string
     --------------------------------------------------------------------------
     """
     if not isinstance(model, dict):
@@ -353,6 +360,12 @@ def assert_inline_model(model):
     for field in _RENDER_REQUIRED_STR_FIELDS:
         if not isinstance(model.get(field), str) or not model[field].strip():
             raise CvDataError("model.%s must be a non-empty string" % field)
+    language = model.get("language")
+    if language is not None and language not in _VALID_LANGUAGES:
+        # render_hqp does a bare dict lookup (labels[language]) that raises
+        # KeyError, not CvDataError, on anything else - which the route's
+        # `except CvDataError` does not catch (F1).
+        raise CvDataError("model.language must be one of %s or absent" % (_VALID_LANGUAGES,))
     for key in ("1", "2", "3"):
         section = sections.get(key)
         if not section:
@@ -363,6 +376,15 @@ def assert_inline_model(model):
         if "items" in section:
             if not isinstance(section["items"], list):
                 raise CvDataError("section %s 'items' must be a list" % key)
+            for item in section["items"]:
+                if not isinstance(item, dict):
+                    raise CvDataError("section %s item must be an object" % key)
+                for item_field in ("description", "role", "date"):
+                    if item_field in item and not isinstance(item[item_field], str):
+                        raise CvDataError(
+                            "section %s item field %r must be a string" % (key, item_field))
+                if "clienteles" in item and not isinstance(item["clienteles"], list):
+                    raise CvDataError("section %s item 'clienteles' must be a list" % key)
         elif not isinstance(section.get("prose", ""), str):
             raise CvDataError("section %s 'prose' must be a string" % key)
 

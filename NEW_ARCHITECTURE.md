@@ -268,7 +268,10 @@ compiled on the service (C2): the PDF and the page-budget check stay local to th
 `narrative-cv` skill. **Consent is mandatory for every row, whatever its date** (C6 revised,
 operator 2026-10-08): the window is per-funder (6 years NSERC/tri-agency, 5 FRQ) and decides only
 which heading a row prints under, never whether consent is required - distinct from UQAC's
-unrelated 7-year data-retention period, which stays outside this endpoint.
+unrelated 7-year data-retention period, which stays outside this endpoint. A model's own section
+1/3 prose is trusted, raw LaTeX by design (M4): until TT-13 only the researcher authoring the
+`cv_model.json` can write it, so no control strips or sandboxes it here - an accepted risk,
+reconsidered the day TT-13 lets someone else supply the model.
 
 ---
 

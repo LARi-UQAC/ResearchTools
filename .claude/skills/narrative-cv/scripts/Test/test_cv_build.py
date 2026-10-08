@@ -437,6 +437,20 @@ class TestHqp(unittest.TestCase):
         with self.assertRaises(CvDataError):
             cv_build.validate_hqp_rows([_row()], reference_year=-5, window_years=6)
 
+    def test_reference_year_bound_is_exact(self):
+        # Reviewer, 2026-10-08 (mutation survivor): 9999/0/-5 are far enough
+        # out that an unrelated check could coincidentally catch them too.
+        # Pin the exact boundary instead: 1999 and 2101 are each one year
+        # outside the [2000, 2100] bound and nothing else about them is
+        # malformed.
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row()], reference_year=1999, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([_row()], reference_year=2101, window_years=6)
+        early_row = _row(start="1999-01", end=None, consent_cv="1999-06-01")
+        cv_build.validate_hqp_rows([early_row], reference_year=2000, window_years=6)
+        cv_build.validate_hqp_rows([_row()], reference_year=2100, window_years=6)
+
     def test_start_after_end_refused(self):
         rows = [_row(start="2024-08", end="2020-01")]
         with self.assertRaises(CvDataError):
@@ -455,10 +469,68 @@ class TestHqp(unittest.TestCase):
             cv_build.validate_hqp_rows(
                 [_row(end="2024-00")], reference_year=2026, window_years=6)
 
+    def test_impossible_start_month_refused_on_its_own(self):
+        # Reviewer, 2026-10-08 (mutation survivor): the previous case paired
+        # a bad start with a later default end, so removing JUST the
+        # start-side calendar check still raised - through the start>end
+        # ordering check instead, for the wrong reason. end=None removes
+        # that side effect, so only the start calendar check can catch it.
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(
+                [_row(start="2024-13", end=None)], reference_year=2026, window_years=6)
+
     def test_future_dated_consent_refused(self):
         rows = [_row(end="2024-08", consent_cv="2031-01-01")]
         with self.assertRaises(CvDataError):
             cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_no_row_value_leaks_into_any_row_error(self):
+        # Reviewer, 2026-10-08: only the missing-consent and unknown-key
+        # messages were proven name-free. Parametrise over every malformed
+        # field so a future edit cannot quietly put a value back into ONE
+        # of the others.
+        name = "Étudiante Alpha"
+        bad_rows = {
+            # "name" itself is excluded: making it invalid (empty) and then
+            # overwriting it with the fictitious name for the leak probe
+            # would make the row valid again, defeating the case.
+            "cycle": _row(cycle=""),
+            "start": _row(start="not-a-date"),
+            "end": _row(end="not-a-date"),
+            "consent_cv_future": _row(end="2024-08", consent_cv="2031-01-01"),
+            "position_type": _row(current_position=123),
+            "employer_type": _row(current_employer=123),
+        }
+        for label, row in bad_rows.items():
+            row["name"] = name
+            with self.assertRaises(CvDataError) as ctx:
+                cv_build.validate_hqp_rows([row], reference_year=2026, window_years=6)
+            self.assertNotIn(name, str(ctx.exception), label)
+
+    def test_language_must_be_fr_or_en(self):
+        # F1 (reviewer, 2026-10-08): render_hqp does a bare labels[language]
+        # lookup that raises KeyError, not CvDataError, for anything else -
+        # assert_inline_model is the route's only check (cv_bridge.build_cv
+        # calls it before either renderer), so it has to catch this, not
+        # render_latex itself (the local CLI's `render` calls render_latex
+        # directly, with no assert_inline_model gate, by design).
+        model = _model(language="de")
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(_model(language=3))
+
+    def test_item_description_type_refused(self):
+        model = _model()
+        model["sections"]["2"]["items"][0]["description"] = 12345
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_item_clienteles_type_refused(self):
+        model = _model()
+        model["sections"]["2"]["items"][0]["clienteles"] = "not-a-list"
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
 
     def test_unknown_key_refused(self):
         rows = [_row(email="alpha@example.org")]

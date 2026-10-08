@@ -173,6 +173,9 @@ async def author_publications(author: str, count: int = 10,
     return {**payload, "cached": cached}
 
 
+_CV_BUILD_BODY_KEYS = {"model", "hqp", "reference_year", "target"}
+
+
 @app.post("/cv/build", dependencies=[Depends(require_service_key)])
 async def cv_build_route(request: Request) -> dict[str, Any]:
     """
@@ -206,6 +209,13 @@ async def cv_build_route(request: Request) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail="body must be a JSON object")
+    unknown = set(payload) - _CV_BUILD_BODY_KEYS
+    if unknown:
+        # N-B (reviewer, 2026-10-08): a caller sending an extra key such as
+        # "funder" believing it selects the window would otherwise be
+        # silently ignored - the window always comes from model.portal_variant.
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="body has unknown key(s): %s" % ", ".join(sorted(unknown)))
 
     model = payload.get("model")
     if not isinstance(model, dict):

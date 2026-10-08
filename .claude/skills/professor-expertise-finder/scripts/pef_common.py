@@ -46,7 +46,12 @@ def data_root() -> Path:
     """
     value = os.environ.get(DATA_ROOT_ENV)
     if value:
-        return Path(value)
+        # expanduser() too: SKILL.md and pef_config.json's own documented
+        # default use the ~/... tilde form, and a user following that
+        # exact syntax for the env var must not get a literal "~"
+        # subdirectory of the current working directory (2026-10-08,
+        # fourth code-review round).
+        return Path(value).expanduser()
     return Path(load_config()["default_data_root"]).expanduser()
 
 

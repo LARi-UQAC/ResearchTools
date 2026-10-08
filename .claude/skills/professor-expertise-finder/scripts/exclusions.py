@@ -178,6 +178,13 @@ def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[l
         elif outcome == "ambiguous":
             matched.update(candidates)
             ambiguous.append((row, exclusions[candidates[0]]))
+            # An ambiguous row is NOT excluded - it stays in the deliverable
+            # pending a human decision, exactly as the module docstring and
+            # the printed "(kept)" message already say (bug: it was only
+            # appended to `ambiguous`, never to `kept`, so it silently
+            # vanished from the written CSV - third 2026-10-08 code-review
+            # round).
+            kept.append(row)
         else:  # "no_match"
             kept.append(row)
     unmatched = [ex for i, ex in enumerate(exclusions) if i not in matched]
@@ -211,20 +218,24 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
 
     Details:
         A KNOWN disagreement is never read as "confidently not a match":
-        once a name matches at all, the only confident outcome is
-        "exactly one candidate is consistent with what we know" -
-        anything else (zero consistent candidates because every one
-        disagrees, or more than one still possible) is ambiguous, not a
-        silent "this must be someone else". That is what keeps the
-        original round-1 case intact (single candidate, both universities
-        known and disagreeing -> ambiguous) while also closing the second
-        2026-10-08 code-review round's gap: when the RANKING row's own
-        university is unknown, the exclusion file's own candidates must
-        agree with EACH OTHER for a confident exclude - two DIFFERENT
-        recorded universities among same-named candidates means the file
-        lists two different real people, and nothing here can tell which
-        one the ranking row is, so the old code picked the first one in
-        file order instead of flagging it.
+        once a name matches at all, "every candidate disagrees with the
+        row's own university" is ambiguous, not a silent "this must be
+        someone else" (single candidate, both universities known and
+        disagreeing -> ambiguous, the original round-1 case).
+
+        Among the candidates still PLAUSIBLE given what is known, the
+        exclude/ambiguous split is decided by whether they agree with
+        EACH OTHER, not by how many of them there are - fixed 2026-10-08,
+        third code-review round, after the original `len(matches) == 1`
+        rule flagged two IDENTICAL duplicate exclusion-file rows (a
+        plausible export glitch, no actual disagreement) as ambiguous
+        merely for having two indices, silently dropping a professor who
+        should have been cleanly excluded (combined with the companion
+        fix above). Zero distinct non-empty universities among the
+        plausible candidates, or exactly one, is still a confident
+        exclude; two or more distinct ones is the real ambiguity - the
+        exclusion file itself lists two different real people under this
+        name, and nothing here can tell which one the ranking row is.
     --------------------------------------------------------------------------
     """
     if not candidates:
@@ -234,12 +245,16 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
         # A candidate with no recorded university is still POSSIBLY this
         # row (missing data, not a mismatch); one with a DIFFERENT known
         # university is ruled out.
-        matches = [i for i, u in known if not u or u == row_uni]
+        plausible = [i for i, u in known if not u or u == row_uni]
     else:
-        distinct_known = {u for _, u in known if u}
-        matches = candidates if len(distinct_known) <= 1 else []
-    if len(matches) == 1:
-        return "exclude", matches[0]
+        plausible = candidates
+    if not plausible:
+        return "ambiguous", None
+    distinct_unis = {u for i, u in known if i in plausible and u}
+    if len(distinct_unis) <= 1:
+        chosen = next((i for i in plausible if norm(exclusions[i]["university"])),
+                       plausible[0])
+        return "exclude", chosen
     return "ambiguous", None
 
 
@@ -270,7 +285,11 @@ def main(argv: list[str]) -> int:
 
     ranking_path, excl_path, out_path = (Path(args.ranking),
                                          Path(args.exclusions), Path(args.out))
-    with ranking_path.open(newline="", encoding="utf-8") as fh:
+    # utf-8-sig, same as read_rows() below: a BOM-prefixed export (Excel's
+    # "CSV UTF-8", or a PowerShell redirect) would otherwise key the first
+    # column as "﻿professor" instead of "professor" (2026-10-08,
+    # fourth code-review round).
+    with ranking_path.open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         fieldnames = reader.fieldnames or []
         ranking = list(reader)

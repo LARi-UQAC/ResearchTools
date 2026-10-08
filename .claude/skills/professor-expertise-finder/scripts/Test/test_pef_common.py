@@ -39,6 +39,16 @@ def test_data_root_honors_env_override(tmp_path, monkeypatch):
     assert data_root() == tmp_path
 
 
+def test_data_root_env_override_expands_tilde(monkeypatch):
+    # Fourth 2026-10-08 round: SKILL.md and pef_config.json's own default
+    # use the ~/... syntax, but the env-var path skipped expanduser(), so
+    # following that exact documented syntax for the env var produced a
+    # literal "~" subdirectory instead of the home directory.
+    monkeypatch.setenv("PROFESSOR_EXPERTISE_DATA", "~/workspace/professor-expertise")
+    assert data_root() == Path("~/workspace/professor-expertise").expanduser()
+    assert "~" not in str(data_root())
+
+
 def test_data_root_reads_a_custom_config_default(tmp_path, monkeypatch):
     monkeypatch.delenv("PROFESSOR_EXPERTISE_DATA", raising=False)
     custom = tmp_path / "pef_config.json"

@@ -36,10 +36,13 @@
 #>
 
 # Modele Ollama par defaut pour la bascule locale. Choix personnel de
-# l'operateur, pas une mesure GPU : voir .claude/local-model-config.json et
-# le pont local-writer/local-coder pour les tags realement mesures sur cette
-# carte.
-$script:DefaultLocalModel = "qwen2.5-coder:7b"
+# l'operateur, pas une mesure du pont local-writer/local-coder (voir
+# .claude/local-model-config.json pour les tags mesures pour CE pont) : ce
+# tag-ci a son propre Modelfile (hors depot), mesure separement pour l'usage
+# /auditthesis local - num_ctx 262144, num_thread 14, mesure le 2026-10-08 :
+# 0 des 66 layers sur GPU, ~2.4 tok/s, forte pagination. Fenetre maximale
+# choisie deliberement, pas la vitesse.
+$script:DefaultLocalModel = "qwen3.8-maxctx:latest"
 
 function claude-ollama {
     param(

@@ -68,7 +68,7 @@ claude-ollama
 
 Check "base url set"            ($env:ANTHROPIC_BASE_URL -eq "http://localhost:11434")
 Check "auth token is 'ollama'"  ($env:ANTHROPIC_AUTH_TOKEN -eq "ollama")
-Check "model defaults"          ($env:ANTHROPIC_MODEL -eq "qwen2.5-coder:7b")
+Check "model defaults"          ($env:ANTHROPIC_MODEL -eq "qwen3.8-maxctx:latest")
 Check "small-fast model mirrors main"  ($env:ANTHROPIC_SMALL_FAST_MODEL -eq $env:ANTHROPIC_MODEL)
 Check "timeout set"              ($env:API_TIMEOUT_MS -eq "600000")
 Check "offline mode set"         ($env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC -eq "1")

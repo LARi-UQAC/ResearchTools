@@ -442,14 +442,19 @@ class TestHqp(unittest.TestCase):
         # out that an unrelated check could coincidentally catch them too.
         # Pin the exact boundary instead: 1999 and 2101 are each one year
         # outside the [2000, 2100] bound and nothing else about them is
-        # malformed.
-        with self.assertRaises(CvDataError):
-            cv_build.validate_hqp_rows([_row()], reference_year=1999, window_years=6)
-        with self.assertRaises(CvDataError):
-            cv_build.validate_hqp_rows([_row()], reference_year=2101, window_years=6)
+        # malformed. A SECOND mutation-survivor round (same date) found that
+        # the 1999 case still used the plain `_row()` default (end="2024-08"),
+        # so it raised via "end must not be after reference_year" instead of
+        # the bound itself - the exact failure mode this test exists to
+        # catch. Every case now uses a row whose own dates are valid for
+        # EVERY reference_year under test, so only the bound can fire.
         early_row = _row(start="1999-01", end=None, consent_cv="1999-06-01")
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([early_row], reference_year=1999, window_years=6)
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows([early_row], reference_year=2101, window_years=6)
         cv_build.validate_hqp_rows([early_row], reference_year=2000, window_years=6)
-        cv_build.validate_hqp_rows([_row()], reference_year=2100, window_years=6)
+        cv_build.validate_hqp_rows([early_row], reference_year=2100, window_years=6)
 
     def test_start_after_end_refused(self):
         rows = [_row(start="2024-08", end="2020-01")]
@@ -605,6 +610,130 @@ class TestHqp(unittest.TestCase):
         model["sections"]["1"] = {"title": "X", "prose": ["not", "a", "string"]}
         with self.assertRaises(CvDataError):
             cv_build.assert_inline_model(model)
+
+    def test_language_explicit_null_refused(self):
+        # M1 (reviewer, 2026-10-08): model.get("language") cannot tell "key
+        # absent" from "key present with value None" apart, and the earlier
+        # fix (`if language is not None and ...`) let an explicit null
+        # through, which then crashed deeper in render_hqp's labels[None]
+        # lookup. "language" in model is checked instead, so this must be
+        # refused here rather than reaching that KeyError.
+        model = _model()
+        model["language"] = None
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_item_clienteles_element_type_refused(self):
+        # M2: the existing test only covers the whole field being the wrong
+        # type (a string instead of a list); a list carrying a non-string
+        # element must be refused too.
+        model = _model()
+        model["sections"]["2"]["items"][0]["clienteles"] = ["milieu_academique", 123]
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_consent_on_december_31_of_reference_year_accepted(self):
+        # Q1a: the full-date boundary, upper edge.
+        rows = [_row(end="2024-08", consent_cv="2026-12-31")]
+        validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        self.assertTrue(validated[0]["in_window"])
+
+    def test_consent_on_january_1_of_next_year_refused(self):
+        # Q1a: one day past the December 31 boundary must still be refused.
+        rows = [_row(end="2024-08", consent_cv="2027-01-01")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_consent_before_start_refused(self):
+        # Q1b: consent_cv predating the row's own start is refused even
+        # though it is not "after reference_year" - a consent form signed
+        # before the training period began cannot be valid for it.
+        rows = [_row(start="2022-09", end="2024-08", consent_cv="2020-01-01")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_section2_item_cap_exceeded_refused(self):
+        # Q2: contribution_types.json caps section 2 at 10 items.
+        model = _model()
+        model["sections"]["2"]["items"] = [
+            dict(model["sections"]["2"]["items"][0], date=str(year)) for year in range(2015, 2026)
+        ]
+        self.assertEqual(len(model["sections"]["2"]["items"]), 11)
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_unknown_top_level_model_key_named(self):
+        # Q3a: a stray top-level key (not caller-controlled free text - the
+        # model's top level is a fixed schema) is named in the refusal.
+        model = _model()
+        model["funder"] = "nserc"
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertIn("funder", str(ctx.exception))
+
+    def test_unknown_numeric_section_key_named(self):
+        # Q3b: a plain structural typo ("4" instead of "1"/"2"/"3") is a
+        # digit-shaped key, safe to name - the companion test
+        # test_prose_file_refusal_does_not_echo_the_section_key_either pins
+        # the opposite case, where the stray key is free text and must not
+        # be named.
+        model = _model()
+        model["sections"]["4"] = model["sections"].pop("3")
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertIn("4", str(ctx.exception))
+
+    def test_unknown_item_key_named(self):
+        # Q3d: an item field name is part of the caller's own fixed
+        # vocabulary, not free text, so it is named.
+        model = _model()
+        model["sections"]["2"]["items"][0]["funding_source"] = "CRSNG"
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertIn("funding_source", str(ctx.exception))
+
+    def test_hqp_list_non_bool_refused(self):
+        # A truthy non-bool such as "no" would otherwise read as True.
+        model = _model()
+        model["sections"]["3"]["hqp_list"] = "no"
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_item_missing_description_refused(self):
+        # F2 residue: the existing test covers a wrong-typed description;
+        # a missing key must be refused the same way.
+        model = _model()
+        del model["sections"]["2"]["items"][0]["description"]
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_item_empty_description_refused(self):
+        model = _model()
+        model["sections"]["2"]["items"][0]["description"] = "   "
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_item_not_a_dict_refused(self):
+        # M-A: an item list carrying a bare string rather than an object.
+        model = _model()
+        model["sections"]["2"]["items"] = ["not-an-object"]
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_start_with_unicode_digit_refused(self):
+        # L1: Python's \d matches non-ASCII digit characters (e.g.
+        # Arabic-Indic) under default Unicode mode; the date regexes use
+        # the ASCII-only [0-9] class instead.
+        rows = [_row(start="۲۰۲۲-09")]  # Extended Arabic-Indic "2022"
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_consent_with_trailing_newline_refused(self):
+        # L1: .fullmatch() anchors to the whole string, so a value carrying
+        # a trailing newline must not slip through a $-anchored pattern.
+        rows = [_row(end="2024-08", consent_cv="2026-09-01\n")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
 
     def test_latex_escaping(self):
         model = _hqp_model()

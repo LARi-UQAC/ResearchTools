@@ -55,8 +55,8 @@ _BABEL_LANGUAGE = {"fr": "french", "en": "english"}
 
 HQP_ROW_KEYS = ("name", "cycle", "start", "end", "consent_cv", "current_position", "current_employer")
 HQP_REQUIRED_KEYS = ("name", "cycle", "start", "end", "consent_cv")
-_HQP_DATE_RE = re.compile(r"^\d{4}(-\d{2})?$")
-_HQP_CONSENT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HQP_DATE_RE = re.compile(r"[0-9]{4}(-[0-9]{2})?")
+_HQP_CONSENT_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 def escape_latex(text):
@@ -293,9 +293,13 @@ def load_hqp_rules(types, portal_variant):
 
 _RENDER_REQUIRED_STR_FIELDS = ("portal_variant", "candidate_name", "document_title")
 _VALID_LANGUAGES = ("fr", "en")
+_MODEL_ALLOWED_KEYS = {"language", "portal_variant", "candidate_name", "document_title",
+                       "frq_id", "sections"}
+_SECTION_ALLOWED_KEYS = {"title", "prose", "prose_file", "items", "hqp_list"}
+_ITEM_ALLOWED_KEYS = {"description", "role", "date", "clienteles", "references"}
 
 
-def assert_inline_model(model):
+def assert_inline_model(model, types_path=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -324,16 +328,32 @@ def assert_inline_model(model):
             (when there are no items) must be a string - the same crash
             class: `for item in section["items"]`, `inline_latex()` and
             `escape_latex()` all assume a string or an iterable;
-        (4) `model.language`, when present, must be `"fr"` or `"en"` -
-            `render_hqp` does a bare `labels[language]` lookup that raises
-            `KeyError`, not `CvDataError`, on anything else (F1).
-        No message ever names a section key or echoes a value: a caller
-        controls the keys of `model["sections"]`, not only field values
-        inside it (the same class of leak the row-key finding fixed), so
-        every refusal here is silent on which section or what it contained.
+        (4) `model.language`, when the key is present (an explicit `null`
+            included - M1), must be `"fr"` or `"en"` - `render_hqp` does a
+            bare `labels[language]` lookup that raises `KeyError`, not
+            `CvDataError`, on anything else, `None` included (F1);
+        (5) every top-level model key, every section key, and every item
+            key must belong to the model's own closed vocabulary (Q3) - an
+            unknown key such as a stray `model.foo`, a section `"4"`, or an
+            item `bogus` is refused rather than silently ignored; `prose_file`
+            is a KNOWN key, refused by (1), not an unknown one;
+        (6) `hqp_list`, when present, must be a bool - a truthy non-bool
+            such as `"no"` would otherwise read as `true`;
+        (7) section 2's item count must not exceed `contribution_types.json`
+            `sections.2.max_items` (Q2), and every item needs a non-empty
+            `description` (F2 residue) - `main()` never gets this far for a
+            malformed item; it crashed, or silently rendered a blank line.
+        Unknown-key and section/item-key messages name the KEY, never a
+        value: a key is part of the model's own fixed vocabulary or a
+        caller-chosen label (a section number, an item field name), never
+        free-form student text, so naming it does not repeat the leak the
+        row-key finding fixed - row VALUES are a different matter and stay
+        unnamed throughout.
 
     Inputs:
         model: the candidate cv_model.json document
+        types_path (str, Path or None): contribution_types.json override,
+            used to read `sections.2.max_items`
 
     Outputs:
         None
@@ -342,16 +362,33 @@ def assert_inline_model(model):
         CvDataError: `model` is not a dict, `model["sections"]` is not a
             dict, any section carries a `prose_file` key, a required
             top-level string field is missing or empty, `language` is
-            neither `"fr"`/`"en"` nor absent, a present section has no
-            non-empty `title`, its `items` is not a list (or an item's
-            fields are the wrong type), or its `prose` is not a string
+            present and neither `"fr"` nor `"en"`, an unknown top-level,
+            section or item key is present, `hqp_list` is present and not a
+            bool, a present section has no non-empty `title`, its `items`
+            is not a list (or an item's fields are the wrong type, an item
+            has no non-empty `description`, or section 2 has more items
+            than `max_items`), or its `prose` is not a string
     --------------------------------------------------------------------------
     """
     if not isinstance(model, dict):
         raise CvDataError("model must be an object, got %s" % type(model).__name__)
+    unknown_model_keys = set(model) - _MODEL_ALLOWED_KEYS
+    if unknown_model_keys:
+        raise CvDataError("model has unknown key(s): %s" % ", ".join(sorted(unknown_model_keys)))
     sections = model.get("sections")
     if not isinstance(sections, dict):
         raise CvDataError("model.sections must be an object")
+    unknown_section_keys = set(sections) - {"1", "2", "3"}
+    if unknown_section_keys:
+        # N3 (reviewer, 2026-10-08): a section key can be caller-controlled
+        # free text (test_prose_file_refusal_does_not_echo_the_section_key_either
+        # simulates exactly this), so it is named only when every stray key is
+        # digit-shaped - a plain structural typo like "4" - never otherwise.
+        if all(key.isdigit() for key in unknown_section_keys):
+            raise CvDataError(
+                "model.sections has unknown key(s): %s"
+                % ", ".join(sorted(unknown_section_keys)))
+        raise CvDataError("model.sections has an unknown, non-numeric key")
     for section in sections.values():
         if isinstance(section, dict) and "prose_file" in section:
             raise CvDataError(
@@ -360,39 +397,91 @@ def assert_inline_model(model):
     for field in _RENDER_REQUIRED_STR_FIELDS:
         if not isinstance(model.get(field), str) or not model[field].strip():
             raise CvDataError("model.%s must be a non-empty string" % field)
-    language = model.get("language")
-    if language is not None and language not in _VALID_LANGUAGES:
+    if "language" in model and model["language"] not in _VALID_LANGUAGES:
         # render_hqp does a bare dict lookup (labels[language]) that raises
-        # KeyError, not CvDataError, on anything else - which the route's
-        # `except CvDataError` does not catch (F1).
+        # KeyError, not CvDataError, on anything else, including an explicit
+        # null - which the route's `except CvDataError` does not catch (F1,
+        # M1). model.get("language") alone cannot tell "absent" from
+        # "present and null" apart, so the key's PRESENCE is checked first.
         raise CvDataError("model.language must be one of %s or absent" % (_VALID_LANGUAGES,))
+    types = load_contribution_types(types_path)
     for key in ("1", "2", "3"):
         section = sections.get(key)
         if not section:
             continue
+        unknown_keys = set(section) - _SECTION_ALLOWED_KEYS
+        if unknown_keys:
+            raise CvDataError(
+                "section %s has unknown key(s): %s" % (key, ", ".join(sorted(unknown_keys))))
         if (not isinstance(section, dict) or not isinstance(section.get("title"), str)
                 or not section["title"].strip()):
             raise CvDataError("section %s must carry a non-empty 'title' string" % key)
+        if "hqp_list" in section and not isinstance(section["hqp_list"], bool):
+            raise CvDataError("section %s 'hqp_list' must be a bool" % key)
         if "items" in section:
             if not isinstance(section["items"], list):
                 raise CvDataError("section %s 'items' must be a list" % key)
+            max_items = types.get("sections", {}).get(key, {}).get("max_items")
+            if isinstance(max_items, int) and len(section["items"]) > max_items:
+                raise CvDataError(
+                    "section %s has %d items, more than the %d-item cap"
+                    % (key, len(section["items"]), max_items))
             for item in section["items"]:
                 if not isinstance(item, dict):
                     raise CvDataError("section %s item must be an object" % key)
-                for item_field in ("description", "role", "date"):
+                unknown_item_keys = set(item) - _ITEM_ALLOWED_KEYS
+                if unknown_item_keys:
+                    raise CvDataError(
+                        "section %s item has unknown key(s): %s"
+                        % (key, ", ".join(sorted(unknown_item_keys))))
+                if not isinstance(item.get("description"), str) or not item["description"].strip():
+                    raise CvDataError("section %s item must carry a non-empty 'description'" % key)
+                for item_field in ("role", "date"):
                     if item_field in item and not isinstance(item[item_field], str):
                         raise CvDataError(
                             "section %s item field %r must be a string" % (key, item_field))
-                if "clienteles" in item and not isinstance(item["clienteles"], list):
-                    raise CvDataError("section %s item 'clienteles' must be a list" % key)
+                if "clienteles" in item:
+                    clienteles = item["clienteles"]
+                    if (not isinstance(clienteles, list)
+                            or not all(isinstance(c, str) for c in clienteles)):
+                        raise CvDataError(
+                            "section %s item 'clienteles' must be a list of strings" % key)
         elif not isinstance(section.get("prose", ""), str):
             raise CvDataError("section %s 'prose' must be a string" % key)
 
 
 _MIN_REFERENCE_YEAR = 2000
-_MAX_REFERENCE_YEAR = 2100  # Operator, 2026-10-08: a sanity bound, not a measurement -
-                            # blocks an absurd reference_year (e.g. 9999) from pushing
-                            # every row into "archive" (N1).
+_MAX_REFERENCE_YEAR = 2100  # Fallback defaults for a direct call with no `types` - the
+                            # authoritative values live in contribution_types.json
+                            # "reference_year_bounds" (R0, reviewer finding F4, 2026-10-08)
+                            # and are what _hqp_block actually passes in.
+
+
+def reference_year_bounds(types):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the (min, max) sane bound for `reference_year` from a loaded
+        contribution_types.json document (R0: not a code literal).
+
+    Inputs:
+        types (dict): the parsed contribution_types.json document
+
+    Outputs:
+        bounds (tuple): (min_reference_year, max_reference_year), both int
+
+    Raises:
+        CvDataError: `types["reference_year_bounds"]` or one of its keys is
+            missing
+    --------------------------------------------------------------------------
+    """
+    try:
+        bounds = types["reference_year_bounds"]
+        return bounds["min"], bounds["max"]
+    except KeyError as exc:
+        raise CvDataError(
+            "contribution_types.json is missing key %s (expected under "
+            "'reference_year_bounds')" % exc)
 
 
 def _parse_hqp_year_month(datestr):
@@ -403,7 +492,9 @@ def _parse_hqp_year_month(datestr):
     return year, month
 
 
-def validate_hqp_rows(rows, reference_year, window_years):
+def validate_hqp_rows(rows, reference_year, window_years,
+                       min_reference_year=_MIN_REFERENCE_YEAR,
+                       max_reference_year=_MAX_REFERENCE_YEAR):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -422,10 +513,17 @@ def validate_hqp_rows(rows, reference_year, window_years):
         never whether consent is required - the window-gated exemption this
         function used to apply to archive rows is gone.
 
+        Q1 revised (owner, 2026-10-08): `consent_cv` is compared to
+        `reference_year` as a full date (not later than December 31 of that
+        year), and must not predate the row's own `start`.
+
     Inputs:
         rows (list): candidate row dicts
         reference_year (int): the year the window ends
         window_years (int): the window length (from load_hqp_rules)
+        min_reference_year, max_reference_year (int): the sane bound for
+            `reference_year` (reference_year_bounds(), R0); the module
+            defaults are for a direct call with no loaded `types`
 
     Outputs:
         validated (list[dict]): deep copies of `rows`, each with an added
@@ -436,16 +534,16 @@ def validate_hqp_rows(rows, reference_year, window_years):
             out of its sane bound, a row is not a dict, carries an unknown
             or missing key, a field is malformed (including an impossible
             calendar date, start after end, end after reference_year, or
-            consent_cv dated after reference_year), or any row has no
-            consent_cv
+            consent_cv dated after reference_year or before start), or any
+            row has no consent_cv
     --------------------------------------------------------------------------
     """
     if not isinstance(reference_year, int) or isinstance(reference_year, bool):
         raise CvDataError("reference_year must be an int, got %r" % (reference_year,))
-    if not (_MIN_REFERENCE_YEAR <= reference_year <= _MAX_REFERENCE_YEAR):
+    if not (min_reference_year <= reference_year <= max_reference_year):
         raise CvDataError(
             "reference_year must be between %d and %d, got %d"
-            % (_MIN_REFERENCE_YEAR, _MAX_REFERENCE_YEAR, reference_year))
+            % (min_reference_year, max_reference_year, reference_year))
     if not isinstance(rows, list):
         raise CvDataError("hqp rows must be a list, got %s" % type(rows).__name__)
 
@@ -468,7 +566,7 @@ def validate_hqp_rows(rows, reference_year, window_years):
         if not isinstance(row["cycle"], str) or not row["cycle"].strip():
             raise CvDataError("row %d: cycle must be a non-empty string" % index)
         start = row["start"]
-        if not isinstance(start, str) or not _HQP_DATE_RE.match(start):
+        if not isinstance(start, str) or not _HQP_DATE_RE.fullmatch(start):
             raise CvDataError("row %d: start must match YYYY or YYYY-MM" % index)
         try:
             _parse_hqp_year_month(start)
@@ -476,7 +574,7 @@ def validate_hqp_rows(rows, reference_year, window_years):
             raise CvDataError("row %d: start is not a real calendar year/month" % index)
         end = row["end"]
         if end is not None:
-            if not isinstance(end, str) or not _HQP_DATE_RE.match(end):
+            if not isinstance(end, str) or not _HQP_DATE_RE.fullmatch(end):
                 raise CvDataError("row %d: end must be null or match YYYY or YYYY-MM" % index)
             try:
                 _parse_hqp_year_month(end)
@@ -491,7 +589,7 @@ def validate_hqp_rows(rows, reference_year, window_years):
         consent = row["consent_cv"]
         if consent is None:
             raise CvDataError("row %d requires consent_cv" % index)
-        if not isinstance(consent, str) or not _HQP_CONSENT_RE.match(consent):
+        if not isinstance(consent, str) or not _HQP_CONSENT_RE.fullmatch(consent):
             raise CvDataError("row %d: consent_cv must be an ISO YYYY-MM-DD date" % index)
         try:
             consent_date = datetime.date.fromisoformat(consent)
@@ -500,8 +598,11 @@ def validate_hqp_rows(rows, reference_year, window_years):
             # but is not a real date, and a row cannot be authorized to
             # appear in the CV on a consent record that cannot exist.
             raise CvDataError("row %d: consent_cv is not a real calendar date" % index)
-        if consent_date.year > reference_year:
+        if consent_date > datetime.date(reference_year, 12, 31):
             raise CvDataError("row %d: consent_cv must not be dated after reference_year" % index)
+        start_year, start_month = _parse_hqp_year_month(start)
+        if consent_date < datetime.date(start_year, start_month, 1):
+            raise CvDataError("row %d: consent_cv must not be dated before start" % index)
         for field in ("current_position", "current_employer"):
             value = row.get(field)
             if value is not None and (not isinstance(value, str) or not value.strip()):
@@ -628,7 +729,9 @@ def _hqp_block(model, types, hqp, target):
             "hqp rows were provided but section 3 does not declare hqp_list: true (C8)")
     rules = load_hqp_rules(types, model["portal_variant"])
     language = model.get("language", "fr")
-    rows_validated = validate_hqp_rows(hqp.get("rows", []), hqp.get("reference_year"), rules["window_years"])
+    min_ref, max_ref = reference_year_bounds(types)
+    rows_validated = validate_hqp_rows(
+        hqp.get("rows", []), hqp.get("reference_year"), rules["window_years"], min_ref, max_ref)
     return render_hqp(rows_validated, language, rules["labels"], target, rules["window_years"])
 
 

@@ -73,8 +73,11 @@ def build_cv(model: dict, rows: list, reference_year: int, target: str = "both")
         result["text"] = cv_build.render_text(model, hqp=hqp)
 
     if rows:
-        rules = cv_build.load_hqp_rules(cv_build.load_contribution_types(), model["portal_variant"])
-        validated = cv_build.validate_hqp_rows(rows, reference_year, rules["window_years"])
+        types = cv_build.load_contribution_types()
+        rules = cv_build.load_hqp_rules(types, model["portal_variant"])
+        min_ref, max_ref = cv_build.reference_year_bounds(types)
+        validated = cv_build.validate_hqp_rows(
+            rows, reference_year, rules["window_years"], min_ref, max_ref)
         recent = sum(1 for row in validated if row["in_window"])
         archive = len(validated) - recent
     else:

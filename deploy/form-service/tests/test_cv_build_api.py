@@ -223,6 +223,54 @@ class TestCvBuildApi(unittest.TestCase):
             {"model": model, "hqp": [RECENT_ROW], "reference_year": 2026})
         self.assertEqual(response.status_code, 422)
 
+    def test_language_explicit_null_422(self) -> None:
+        # M1: an explicit null (not merely absent) must stop at
+        # assert_inline_model with 422, not crash deeper with 500.
+        model = json.loads(json.dumps(MODEL))
+        model["language"] = None
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_item_clienteles_element_type_422(self) -> None:
+        # M2: a non-string element inside an otherwise-list clienteles field.
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["2"]["items"] = [{
+            "description": "X", "clienteles": ["milieu_academique", 123]}]
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_section2_item_cap_exceeded_422(self) -> None:
+        # Q2: section 2 is capped at 10 items.
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["2"]["items"] = [
+            {"description": "Item %d" % i} for i in range(11)]
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_unknown_top_level_model_key_422_names_it(self) -> None:
+        # Q3a: a stray model-level key is named rather than silently ignored.
+        model = json.loads(json.dumps(MODEL))
+        model["funder"] = "nserc"
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("funder", response.text)
+
+    def test_unknown_item_key_422_names_it(self) -> None:
+        # Q3d: an item field name is caller-fixed vocabulary, safe to name.
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["2"]["items"] = [
+            {"description": "X", "funding_source": "CRSNG"}]
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("funding_source", response.text)
+
+    def test_invalid_target_422(self) -> None:
+        # M-E: cv_bridge.build_cv's own _TARGETS whitelist, reached through
+        # the route, not only as unit-tested code with no caller.
+        response = self._post(
+            {"model": MODEL, "hqp": [], "reference_year": 2026, "target": "pdf"})
+        self.assertEqual(response.status_code, 422)
+
     def test_cv_build_unavailable_when_narrative_cv_missing_503(self) -> None:
         # M3: cv_bridge is imported lazily inside the route so a missing
         # narrative-cv checkout stops only /cv/build, never /pdf/fill or

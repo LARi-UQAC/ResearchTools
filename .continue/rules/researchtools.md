@@ -17,6 +17,7 @@ read the corresponding file in full and follow it exactly:
 - `local-writer` - see `.claude/agents/local-writer.md`
 - `narrative-cv-writer` - see `.claude/agents/narrative-cv-writer.md`
 - `paper-auditor` - see `.claude/agents/paper-auditor.md`
+- `professor-expertise-finder` - see `.claude/agents/professor-expertise-finder.md`
 - `reviewer-response` - see `.claude/agents/reviewer-response.md`
 - `scopus-auditor` - see `.claude/agents/scopus-auditor.md`
 - `scopus-researcher` - see `.claude/agents/scopus-researcher.md`

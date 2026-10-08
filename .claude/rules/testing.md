@@ -204,6 +204,76 @@ exercise them, set the required environment variables, then dry-run the entry po
   dependencies, PyYAML and pypdf, pinned in `scripts/requirements.txt`; pypdf is pinned to 6.16.1
   rather than the 6.15.0 pinned elsewhere in this repo (`paper2talk`), since `pip-audit` on
   2026-09-25 found PYSEC-2026-3910/3911/3913 against 6.15.0, fixed in 6.16.0/6.16.1.
+- `professor-expertise-finder` skill (article discovery and validation reuse the `scopus` and
+  `extract-contributions` skills by calling their scripts directly -
+  `../scopus/scripts/scopus_api.py`'s `author` mode (AU-ID resolution) then its `publications`
+  mode (the recent document list, `approved_publisher`), `../scopus/scripts/download_pdf.py`,
+  and `../extract-contributions/scripts/extract_contributions.py` - rather than ad hoc web
+  search, matching the
+  repo's own working norm that every piece of information is verified through `scopus`;
+  2026-10-08, closing a gap in the original draft): `pef_common.py` (shared helpers every other script here
+  imports rather than redefining its own near-copy - `slugify`, `norm`, `name_key`,
+  `write_json()` (R17, one implementation after a 2026-10-08 code review found a near-copy in
+  `selections.py`'s `list` command had silently dropped `ensure_ascii=False`), `data_root()`
+  reading `PROFESSOR_EXPERTISE_DATA` - expanding a leading `~` on BOTH that value and the
+  config-file fallback (fourth 2026-10-08 round: only the fallback path called `expanduser()`,
+  so setting the env var to the exact `~/...` syntax this skill's own docs document produced a
+  literal "~" subdirectory of the cwd instead of the home directory) - falling back to
+  `pef_config.json`'s `default_data_root` (currently `~/workspace/professor-expertise`) rather
+  than a hardcoded literal (R1), and `load_config()` reading `pef_config.json`'s enforced
+  constants with a named error on a missing file, bad JSON, or a missing key, R3),
+  `pef_config.json` (`subscore_values`, `retain_threshold`, `max_per_university` - currently 1:
+  all evaluators of one application must come from distinct universities, changed 2026-10-08
+  from a cap of 2 - `default_data_root`, and `recent_years_window` (currently 5 - the two
+  required articles must be this recent, 2026-10-08, the professor's own requirement), all with
+  provenance, R0/R6), `pef_column_hints.json`
+  (the reference/exclusion-file column-name synonyms `file_search.py` and `exclusions.py` look
+  for, data rather than code, R6 - a 2026-10-08 code-review finding against the scripts' own
+  hardcoded lists), `table.py` (location
+  department-table lifecycle: `path`/`check`/`init`/`validate`, `init` never overwriting,
+  `--dry-run` previewing, `--json` reporting; `check` and `validate` share one body via
+  `_validate_with_rows()` rather than two near-duplicates each re-parsing the CSV, a 2026-10-08
+  code-review finding), `score.py` (the /5 total from `pef_config.json`'s subscore values, the
+  E=0 hard exclusion, the band label, and the retain-threshold flag), `exclusions.py` (apply an
+  exclusion file to a ranking by normalized name match, university disambiguating a homonym -
+  two different people sharing a name are never silently merged once both sides record a
+  different university, reported AMBIGUOUS instead (2026-10-08 code-review finding) - and
+  reporting excluded AND unmatched-exclusion entries so a typo surfaces instead of silently
+  excluding nobody; when the RANKING side's university is unknown, two exclusion-file entries
+  that disagree with EACH OTHER are also reported ambiguous rather than the first one in file
+  order being silently chosen (second round, `_resolve_exclusion_match()`), which asks whether
+  the PLAUSIBLE candidates agree with each other rather than merely counting them (fourth round -
+  two identical duplicate exclusion-file rows used to be flagged ambiguous for having two
+  indices, even with no actual disagreement - and every candidate CONSISTENT with an exclude,
+  not only the one chosen for the reported reason, is marked matched, fifth round: a duplicate
+  or empty-university sibling agreeing with the chosen one used to be reported as
+  "UNMATCHED EXCLUSION (matched nobody)"); an AMBIGUOUS row stays in `kept` (fourth round - it
+  used to vanish from both lists, silently dropped from the written CSV); the ranking CSV is read
+  as utf-8-sig like every other externally-sourced file here (fourth round - a BOM-prefixed export
+  used to key the first column as `﻿professor` and refuse the file); `pick()` normalizes its
+  OWN candidate column names before comparing, fixing a 2026-10-08 bug where every
+  `first_name`/`last_name` exclusion file resolved to no name at all), `file_search.py`
+  (search an optional reviewers reference file first, header row located by hint rather than a
+  fixed row number; institution/department/availability resolved and EXCLUDED before
+  name/expertise, and `col_index()` preferring an exact hint match over a substring one, so a
+  French name hint ("nom d") can never claim the institution column (third 2026-10-08
+  code-review round - a real collision, since "nom d" is a substring of "Nom de
+  l'etablissement"); the "not available" flag recognized in English AND French (same round -
+  only English was checked before); availability text otherwise kept VERBATIM rather than
+  flattened to a bare "Available" (second round); and declared languages - English/French only,
+  a stated limitation - surfaced for the web phase to outrank or seed), and `selections.py`
+  (the batch registry: no-reuse across applications and the per-university cap, both
+  disambiguated by university so a homonym is never wrongly blocked, conflict-of-interest once
+  an application's origin is declared, `--university` now required for EVERY add regardless of
+  status (third round: a `proposed` add without one let the no-reuse check read "unknown" as "a
+  possible match", wrongly rejecting a different same-named professor; a `final` add without one
+  also cannot enforce the cap or conflict-of-interest, the original finding), and
+  the idempotent-replace step on `add` now ALSO requiring `_same_person()` before overwriting an
+  existing row - second 2026-10-08 code-review round: matching by name + application alone had
+  let a second homonym added to the same application silently delete the first one's own
+  registration, exactly the protection the first round's fix was supposed to give - with the
+  `list` command's distinct-professor count keyed on (name, university) for the same reason -
+  all enforced by the script, never by the conversation).
 - `latex-hygiene` skill: `tex_check.py` (thin CLI dispatching to sibling modules `tex_common.py`,
   `tex_chars.py`, `tex_braces.py`, `tex_par.py`, `tex_citecov.py`, `tex_abstract.py`, `tex_wc.py`,
   `tex_aiscan.py`, `tex_aiscan_text.py`; `chars` answers which forbidden characters and where,
@@ -693,6 +763,12 @@ python .claude/skills/narrative-cv/scripts/Test/test_cv_common.py          # 20 
 python .claude/skills/narrative-cv/scripts/Test/test_cv_inventory.py        # 21 tests: the master inventory's CRUD, offline and network-free because this module never calls Scopus itself. Validation against contribution_types.json's closed category/clientele vocabularies (unknown category, unknown clientele, empty clienteles, malformed date, missing key each refused before a byte is written); dedup by id AND by DOI under a different id (both refused as "duplicate", never appended twice); add/mark-used both dry-run by default and requiring --yes to write (R16); a malformed inventory file refused rather than silently read as empty; stats() counting by kind/category and reporting the days-since-last-Scopus-refresh staleness signal, with the no-scopus-item-at-all case asserted to return None rather than a misleading zero
 python .claude/skills/narrative-cv/scripts/Test/test_cv_select.py           # 11 tests: the deterministic keyword-overlap ranking that sits between the inventory and the drafting agent's own judgment. Stopword/short-token removal, zero-overlap scoring zero rather than crashing, ranking order (score descending, ties broken by date descending, full ties broken by id ascending for a fully deterministic order per R19), and an empty inventory or an unreadable inventory path both returning an empty list rather than raising - the ranking is a SIGNAL the agent weighs, so a script that cannot compute one must not block the run
 python .claude/skills/narrative-cv/scripts/Test/test_cv_build.py            # 35 tests (13 before 2026-09-27): rendering ONE cv_model.json to LaTeX and to plain text (paper2talk's talk_model.py pattern) without ever compiling LaTeX or reading a real PDF. LaTeX-escaping proven both ways (a `%` or `&` in the input never reaches the output unescaped, and the escaped form IS present); the Times-New-Roman-substitute (mathptmx) and the tri-agency Arial-substitute (helvet) selected by portal_variant, an unknown variant refused; an empty section-2 item list rendering "s.o." rather than an empty enumerate; the plain-text renderer proven to carry NO LaTeX markup at all; the page-budget check exercised with count_pdf_pages patched out entirely (6-page French pass, 5-page English fail) plus the real ImportError path when pypdf is absent; and compile_latex's injected fake subprocess runner proving pdflatex is invoked exactly twice and a non-zero return code propagates rather than being swallowed. The 22 added 2026-09-27 come from one CRSNG Alliance CV whose section-2 names could not be bolded at all (every item field was escaped wholesale, so `	extbf{...}` came out as `	extbf{...}`): `**bold**` markup and clickable DOI URLs, the trailing period kept outside the link, an unbalanced `**` left literal, a backslash that can no longer inject a command, no double-dash separator, labels in the model language, a missing `item_labels` key named rather than defaulted, `letterpaper`, the tri-agency heading and name line with the FRQ header and footer kept as a control, `prose_file` read relative to the model with a missing file named and a `..` escape refused (R24), `references` on their own lines before the description with a non-list refused, and `citation_warnings` flagging a bolded name under `tri_agency` but not under the FRQ rule (NSERC instructions dated 2026-01-27 bold only a lead author not listed first), with every shipped variant asserted to declare its `citation_rules`
+python .claude/skills/professor-expertise-finder/scripts/Test/test_pef_common.py     # 14 tests: slugify/norm/name_key, PROFESSOR_EXPERTISE_DATA env-var override and its config-file default fallback (both directions, including a custom default_data_root), the env-var override EXPANDING A TILDE too (fourth 2026-10-08 round - it used to skip expanduser(), so the exact ~/... syntax SKILL.md itself documents produced a literal "~" subdirectory), the absence of any DEFAULT_DATA_ROOT literal on the module (R1), load_config() against the shipped pef_config.json plus its three refusals (missing file, malformed JSON, missing key) - never a silent default (R3), and load_column_hints() reading the shipped file_search/exclusions sections plus its own missing-file and missing-section refusals
+python .claude/skills/professor-expertise-finder/scripts/Test/test_table.py          # 6 tests: slugify, the data-root env override reaching csv_path, init never overwriting an existing table, init --dry-run writing nothing, check --json's report, and validate flagging a bad URL and a duplicate row
+python .claude/skills/professor-expertise-finder/scripts/Test/test_score.py          # 8 tests: the happy-path /5 total and band, the invalid-subscore rejection, the E=0 hard exclusion, a total below pef_config.json's retain_threshold flagged in both the human line and the --json report, and fmt's trailing-zero drop
+python .claude/skills/professor-expertise-finder/scripts/Test/test_exclusions.py     # 11 tests: apply_exclusions matching and reporting an unmatched entry (and the no-ambiguity control), a same-name-different-university pair reported AMBIGUOUS rather than excluded AND surviving into `kept` (fourth 2026-10-08 round - it used to vanish from BOTH lists, silently dropped from the written CSV, proven at the CLI level too), an UNKNOWN ranking university against two exclusion-file entries that disagree with EACH OTHER also reported ambiguous rather than silently picking the first in file order (second round), two IDENTICAL duplicate exclusion-file rows still confidently excluded rather than flagged ambiguous merely for being two indices (fourth round - the original `len(matches) == 1` rule counted candidates instead of asking whether they agreed), a same-name match still excluding when either side lacks a university, first_name/last_name columns actually matched (the pick()-normalization regression), a BOM-prefixed ranking CSV read correctly via utf-8-sig (fourth round - it used to key the first column as "﻿professor" and refuse the file), --dry-run writing nothing, a ranking CSV with no 'professor' column rejected, and the --json report's kept/excluded counts
+python .claude/skills/professor-expertise-finder/scripts/Test/test_file_search.py    # 6 tests: a header with no name/expertise column rejected (main() now catches find_header's ValueError instead of crashing - the gap this test caught), a match plus its 'Not available this year' flag, the FRENCH phrase ("Non disponible cette annee") recognized too - not only English (third 2026-10-08 code-review round), declared availability text kept VERBATIM rather than flattened to a bare "Available", the institution column never claimed as the name column even when the French hint "nom d" is a substring of "Nom de l'etablissement" (col_index's exact-match-first pass plus resolving institution/department/availability before name/expertise, third round), and --dry-run writing nothing
+python .claude/skills/professor-expertise-finder/scripts/Test/test_selections.py     # 9 tests: no-reuse rejected across applications for the SAME person (name and university both matching, and check reporting TAKEN), a homonym at a DIFFERENT university NOT rejected, two homonyms added FINAL to the SAME application both surviving rather than the second overwriting the first's row (second round: the idempotent-replace step used to match by name+application alone) - plus the `list` distinct-professor count correctly reading 2, not 1, --university required for ANY add - final or proposed (third round: a proposed add with none let the no-reuse check's university disambiguation see "unknown", which is read as a possible match, wrongly rejecting a different same-named professor) - and a homonym correctly NOT rejected on a proposed add once --university is supplied, the university cap rejected past pef_config.json's max_per_university (1 since 2026-10-08: every application's evaluators must come from distinct universities), conflict-of-interest rejected once an application's origin is declared, and --dry-run on add writing nothing
 python .claude/skills/obsidian-cli/scripts/Test/test_vault_daemon_e2e.py      # 20 tests. Four cover the drain step's own verdict, added 2026-08-30 after `-Only drain` reported zero accepted, zero rejected and pass FALSE on a healthy daemon: a drain judges what FILING enqueued, so an empty consolidate queue makes the daemon return a null consolidation and do nothing wrong. That is now `pass: null`, the same answer the collision step already gives when nothing filed first, and the drill's exit code counts only `pass is False`. The hairball warning keeps its teeth: a consolidation that RAN and produced neither an acceptance nor a rejection still fails. Five more on `outbox_io.tail`, the one implementation of "quote a failed subprocess" this skill now shares: a captured stderr is truncated from the END, because a Python traceback names its exception on the LAST line while its opening frames are identical on every failure. Measured 2026-08-30: three nested layers each cut from the front (300, then 200 characters), and two full drill runs were spent reaching a one-line NameError that had been in the discarded tail all along; the suite carries the negative control proving the old head truncation would have lost it. Plus the end-to-end drill's own harness, which is all that CAN be tested offline since the steps themselves only run against the real vault, daemon and model - a run without `--yes` writes nothing and reports what it would do, no configured vault is a stop rather than a guess, an unknown step name is recorded without aborting the rest, a step that raises is recorded rather than crashing the drill, every drop it stages carries the identifying prefix so an interrupted run leaves something recognisable as the drill's rather than a real learning, `wait_for` gives up on its bound instead of hanging and returns the elapsed time on a hit, the collision step says so when there is nothing to collide with, and containment reports anything created beside the vault
 .\scripts\audit\check-claude-template.ps1                 # template vs live global, plus the write-path invariants
 .\scripts\test\run-offline-tests.ps1                       # runs EVERY Python suite above; writes .rt-green.json on a full pass, deletes it on any failure

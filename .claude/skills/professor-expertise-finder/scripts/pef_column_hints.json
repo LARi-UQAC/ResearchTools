@@ -1,0 +1,20 @@
+{
+  "file_search": {
+    "name_hints": ["external reviewer name", "reviewer name", "nom d", "name", "nom", "professor", "professeur"],
+    "expertise_hints": ["areas of expertise", "domaines de competence", "expertise", "competence"],
+    "institution_hints": ["institution", "etablissement", "university", "universite"],
+    "department_hints": ["department", "departement"],
+    "availability_hints": ["availability", "disponibilite"],
+    "not_available_phrases": ["not available", "non disponible"]
+  },
+  "exclusions": {
+    "name_cols": ["name", "professor", "nom", "full_name", "professeur"],
+    "first_cols": ["first_name", "prenom", "given_name", "first"],
+    "last_cols": ["last_name", "family_name", "last", "surname"],
+    "uni_cols": ["university", "universite", "institution", "etablissement"],
+    "reason_cols": ["reason", "raison", "motif", "note"]
+  },
+  "_provenance": {
+    "all": "column-name synonyms a reference/exclusion spreadsheet (English or French export) is observed to use, data rather than code per R6 (.claude/rules/code-style.md) - extend this file, not the scripts, when a new source file's header uses a synonym not yet listed (2026-10-08 code review)"
+  }
+}

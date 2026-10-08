@@ -73,6 +73,39 @@ were seen this way, and they produced a false throughput measurement before anyo
 the card was shared. The script kills both names, verifies against `nvidia-smi` that the
 memory actually came back, and prints the `OLLAMA_*` values the restarted daemon now has.
 
+### Switching the Claude Code session itself to a local model
+
+Separate from the bridge above: this redirects the Claude Code SESSION itself, not an agent -
+there is no cloud orchestrator in this mode, and `model_resolver.py` is not consulted.
+`scripts/local/claude-switch.ps1`, dot-sourced, exposes `claude-ollama` (alias `claude-local`)
+and `claude-cloud`. Since Ollama's 2026-01-16 update exposes a native Anthropic-compatible
+`/v1/messages` endpoint, no LiteLLM proxy is needed: Claude Code points `ANTHROPIC_BASE_URL`
+straight at `http://localhost:11434`.
+
+Two-step process, always in this order:
+
+1. **Measure the candidate tag for this GPU before switching to it.** Which tool depends on
+   whether the model is GPU-resident:
+   - Fits in VRAM: `opt-local-vram-llm` skill (`/opt-local-vram-llm` or `tune-new-model.ps1`),
+     sweeps `num_ctx` against the KV cache type via `vram_optimizer.py`, writes the result to
+     `.claude/local-model-config.json`.
+   - Too large for VRAM, runs on CPU/RAM (e.g. a 27B model on a 6GB card):
+     `aider-thread-probe.py --mode sweep --model <tag> --num-ctx <n> --threads <rungs>
+     --repeats 3 --json <out>` (in `.claude/skills/aider-setup/scripts/`), which sweeps thread
+     counts and reads back decode tok/s, CPU percent, and page-in rate from the real
+     daemon/OS counters rather than guessing. Bake the chosen values into a Modelfile
+     (`FROM <base-tag>`, `PARAMETER num_ctx ...`, `PARAMETER num_thread ...`, the measurement
+     and its date in a comment) and `ollama create <new-tag> -f <Modelfile>`.
+2. **Switch.** `. .\scripts\local\claude-switch.ps1` once per shell, then:
+   - `claude-local` (or `claude-ollama -Model <tag>`) - refuses to switch, and never launches
+     `claude`, when Ollama is not answering on `:11434`.
+   - `claude-cloud` - clears every local-routing env var and returns to Anthropic.
+
+Measured and baked 2026-10-08: `qwen3.8-maxctx:latest` (`num_ctx=262144`, `num_thread=14`),
+chosen for maximum context window (a 170-page thesis for `/auditthesis`) over speed - 0 of 66
+layers fit on a 6GB card at that window, about 2.4 tok/s decode, heavy pagefile thrashing. The
+script's own `$script:DefaultLocalModel` carries the full measurement as a comment.
+
 LaTeX boundary: `local-writer` may add `%` comments in a `.tex` file but never authors
 LaTeX or scientific prose - that stays with `latex-writer` + `scientific-writing` on the
 latest cloud Claude model.

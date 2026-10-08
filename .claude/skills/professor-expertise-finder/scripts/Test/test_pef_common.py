@@ -8,7 +8,7 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import pef_common  # noqa: E402
-from pef_common import data_root, load_config, name_key, norm, slugify  # noqa: E402
+from pef_common import data_root, load_column_hints, load_config, name_key, norm, slugify  # noqa: E402
 
 
 def test_slugify_strips_accents_and_collapses():
@@ -78,3 +78,24 @@ def test_load_config_missing_key_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(pef_common, "CONFIG_PATH", incomplete)
     with pytest.raises(ValueError):
         load_config()
+
+
+def test_load_column_hints_reads_the_shipped_sections():
+    file_search_hints = load_column_hints("file_search")
+    assert "name" in file_search_hints["name_hints"]
+    exclusions_hints = load_column_hints("exclusions")
+    assert "first_name" in exclusions_hints["first_cols"]
+
+
+def test_load_column_hints_missing_section_raises(tmp_path, monkeypatch):
+    partial = tmp_path / "pef_column_hints.json"
+    partial.write_text(json.dumps({"file_search": {}}), encoding="utf-8")
+    monkeypatch.setattr(pef_common, "COLUMN_HINTS_PATH", partial)
+    with pytest.raises(ValueError):
+        load_column_hints("exclusions")
+
+
+def test_load_column_hints_missing_file_raises(monkeypatch):
+    monkeypatch.setattr(pef_common, "COLUMN_HINTS_PATH", Path("/does/not/exist.json"))
+    with pytest.raises(FileNotFoundError):
+        load_column_hints("file_search")

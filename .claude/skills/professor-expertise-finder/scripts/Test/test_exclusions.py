@@ -42,6 +42,22 @@ def test_homonym_with_different_university_is_ambiguous_not_excluded():
     assert ambiguous[0][1]["university"] == "University X"
 
 
+def test_unknown_ranking_university_with_two_conflicting_candidates_is_ambiguous():
+    # Second 2026-10-08 code-review round: when the ranking row's own
+    # university is unknown and the exclusion FILE ITSELF lists two
+    # different "Jane Doe" entries at two different universities, the old
+    # code silently picked the first one in file order instead of
+    # flagging the ambiguity.
+    ranking = [{"professor": "Jane Doe", "university": ""}]
+    exclusion_rows = [{"name": "Jane Doe", "university": "University X",
+                        "reason": "unavailable"},
+                       {"name": "Jane Doe", "university": "University Y",
+                        "reason": "sabbatical"}]
+    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
+    assert kept == [] and excluded == []
+    assert len(ambiguous) == 1
+
+
 def test_name_match_still_excludes_when_either_side_lacks_university():
     ranking = [{"professor": "Jane Doe", "university": ""}]
     exclusion_rows = [{"name": "Jane Doe", "university": "University X",

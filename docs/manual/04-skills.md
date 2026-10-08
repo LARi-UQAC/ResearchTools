@@ -235,8 +235,9 @@ live in `scripts/pef_config.json` with their provenance, not as literals in code
 **Files:**
 - `.claude/skills/professor-expertise-finder/SKILL.md`
 - `.claude/skills/professor-expertise-finder/references/scoring.md` — the /5 rubric and its interpretation bands
-- `.claude/skills/professor-expertise-finder/scripts/pef_common.py` — shared helpers: `data_root()`, `slugify`, `norm`, `name_key`, `load_config()`
+- `.claude/skills/professor-expertise-finder/scripts/pef_common.py` — shared helpers: `data_root()`, `slugify`, `norm`, `name_key`, `load_config()`, `load_column_hints()`, `write_json()`
 - `.claude/skills/professor-expertise-finder/scripts/pef_config.json` — enforced policy constants with provenance
+- `.claude/skills/professor-expertise-finder/scripts/pef_column_hints.json` — reference/exclusion-file column-name synonyms, as data rather than code
 - `.claude/skills/professor-expertise-finder/scripts/table.py` — location department-table lifecycle (check/init/validate)
 - `.claude/skills/professor-expertise-finder/scripts/score.py` — the /5 total, band, and retain-threshold check
 - `.claude/skills/professor-expertise-finder/scripts/exclusions.py` — apply an exclusion list to a ranking

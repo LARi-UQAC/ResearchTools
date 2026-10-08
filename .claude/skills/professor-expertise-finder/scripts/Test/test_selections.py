@@ -44,6 +44,28 @@ def test_homonym_at_a_different_university_is_not_rejected(tmp_path, monkeypatch
     assert rc == 0
 
 
+def test_homonyms_on_the_same_application_do_not_overwrite_each_other(tmp_path, monkeypatch, capsys):
+    # 2026-10-08, second code-review round: the idempotent-replace step
+    # matched by name+application only, so adding a second "Alice Brown"
+    # (a different person, different university) to the SAME application
+    # silently deleted the first Alice Brown's own registration.
+    batch = init(tmp_path, monkeypatch)
+    rc = main(["add", "--batch", batch, "--application", "Set 1",
+               "--professor", "Alice Brown", "--university", "University A",
+               "--score", "4/5", "--status", "final"])
+    assert rc == 0
+    rc = main(["add", "--batch", batch, "--application", "Set 1",
+               "--professor", "Alice Brown", "--university", "University B",
+               "--score", "3/5", "--status", "final"])
+    assert rc == 0
+    capsys.readouterr()  # discard the two ADDED lines above
+    main(["list", "--batch", batch])
+    out = capsys.readouterr().out
+    assert out.count("Alice Brown") == 2
+    assert "University A" in out and "University B" in out
+    assert "2 distinct professors" in out
+
+
 def test_final_add_without_university_is_rejected(tmp_path, monkeypatch, capsys):
     # Without --university neither the conflict-of-interest check nor the
     # per-university cap can run at all - both used to be silently skipped

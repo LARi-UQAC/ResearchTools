@@ -326,9 +326,14 @@ excluded professor: `professor, university, reason`.
 - `references/scoring.md` — the /5 rubric, its interpretation bands, and
   the provenance of its enforced constants (`scripts/pef_config.json`).
 - `scripts/pef_common.py` — shared helpers: `data_root()` (R1), `slugify`,
-  `norm`, `name_key`, `load_config()`.
+  `norm`, `name_key`, `load_config()`, `load_column_hints()`, `write_json()`.
 - `scripts/pef_config.json` — policy constants with provenance:
-  `subscore_values`, `retain_threshold`, `max_per_university` (R0, R6).
+  `subscore_values`, `retain_threshold`, `max_per_university`,
+  `default_data_root` (R0, R6).
+- `scripts/pef_column_hints.json` — column-name synonyms `file_search.py`
+  and `exclusions.py` look for in a reference/exclusion spreadsheet's
+  header, as data rather than code (R6): extend this file, not the
+  scripts, when a new source uses a synonym not yet listed.
 - `scripts/table.py`, `scripts/score.py`, `scripts/exclusions.py`,
   `scripts/file_search.py`, `scripts/selections.py` — see Workflow above.
 - `scripts/Test/` — offline unit tests (no network, no API key).

@@ -33,13 +33,14 @@ import re
 import sys
 from pathlib import Path
 
-from pef_common import norm
+from pef_common import load_column_hints, norm
 
-NAME_HINTS = ["external reviewer name", "reviewer name", "nom d", "name", "nom", "professor", "professeur"]
-EXPERTISE_HINTS = ["areas of expertise", "domaines de competence", "expertise", "competence"]
-INSTITUTION_HINTS = ["institution", "etablissement", "university", "universite"]
-DEPARTMENT_HINTS = ["department", "departement"]
-AVAILABILITY_HINTS = ["availability", "disponibilite"]
+_HINTS = load_column_hints("file_search")
+NAME_HINTS = _HINTS["name_hints"]
+EXPERTISE_HINTS = _HINTS["expertise_hints"]
+INSTITUTION_HINTS = _HINTS["institution_hints"]
+DEPARTMENT_HINTS = _HINTS["department_hints"]
+AVAILABILITY_HINTS = _HINTS["availability_hints"]
 NOT_AVAILABLE = "not available"
 
 OUTPUT_FIELDS = ["name", "institution", "department", "areas_of_expertise",

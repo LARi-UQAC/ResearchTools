@@ -403,9 +403,15 @@ def main(argv: list[str]) -> int:
         if args.dry_run:
             print(f"DRY RUN - would add ({args.status}): {args.professor} -> {args.application}")
             return 0
-        # idempotent within the same application: replace the existing row
+        # Idempotent within the same application: replace the existing row
+        # for the SAME person only. Matching by name_key + application
+        # alone (dropped 2026-10-08, second code-review round) would have
+        # deleted a different homonym's own registration on the same
+        # application - exactly the protection _same_person() exists to
+        # give, bypassed at the one place that actually writes the file.
         rows = [r for r in rows if not (name_key(r["professor"]) == key
-                                        and r["application"] == args.application)]
+                                        and r["application"] == args.application
+                                        and _same_person(r["university"], args.university))]
         rows.append({"batch": args.batch, "application": args.application,
                      "keywords": args.keywords, "professor": args.professor,
                      "university": args.university, "score": args.score,
@@ -423,7 +429,11 @@ def main(argv: list[str]) -> int:
         apps: dict[str, list[dict]] = {}
         for r in finals:
             apps.setdefault(r["application"], []).append(r)
-        distinct = len({name_key(r["professor"]) for r in finals})
+        # Keyed on (name, university), not name alone: two different
+        # people sharing a name (the same homonym case _same_person()
+        # disambiguates elsewhere in this file) must count as two, not
+        # collapse into one distinct professor.
+        distinct = len({(name_key(r["professor"]), norm(r["university"])) for r in finals})
         print(f"BATCH: {args.batch} - {len(finals)} final, {len(proposed)} proposed, "
               f"{distinct} distinct professors")
         origins = read_origins(args.batch)

@@ -35,13 +35,14 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from pef_common import name_key, norm, write_json
+from pef_common import load_column_hints, name_key, norm, write_json
 
-NAME_COLS = ["name", "professor", "nom", "full_name", "professeur"]
-FIRST_COLS = ["first_name", "prenom", "given_name", "first"]
-LAST_COLS = ["last_name", "family_name", "last", "surname"]
-UNI_COLS = ["university", "universite", "institution", "etablissement"]
-REASON_COLS = ["reason", "raison", "motif", "note"]
+_HINTS = load_column_hints("exclusions")
+NAME_COLS = _HINTS["name_cols"]
+FIRST_COLS = _HINTS["first_cols"]
+LAST_COLS = _HINTS["last_cols"]
+UNI_COLS = _HINTS["uni_cols"]
+REASON_COLS = _HINTS["reason_cols"]
 
 
 def pick(row: dict, cols: list[str]) -> str:
@@ -170,28 +171,76 @@ def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[l
         key = name_key(row.get("professor", ""))
         candidates = by_key.get(key, [])
         row_uni = norm(row.get("university", ""))
-        chosen = None
-        was_ambiguous = False
-        for i in candidates:
-            ex_uni = norm(exclusions[i]["university"])
-            if row_uni and ex_uni and row_uni != ex_uni:
-                continue  # different recorded university: not this one
-            chosen = i
-            break
-        if chosen is None and candidates and row_uni:
-            # every candidate recorded a university, and none matched:
-            # same name, disagreeing universities - flag, do not exclude.
-            was_ambiguous = all(norm(exclusions[i]["university"]) for i in candidates)
-            if was_ambiguous:
-                matched.update(candidates)
-                ambiguous.append((row, exclusions[candidates[0]]))
-        if chosen is not None:
+        outcome, chosen = _resolve_exclusion_match(row_uni, exclusions, candidates)
+        if outcome == "exclude":
             matched.add(chosen)
             excluded.append((row, exclusions[chosen]))
-        elif not was_ambiguous:
+        elif outcome == "ambiguous":
+            matched.update(candidates)
+            ambiguous.append((row, exclusions[candidates[0]]))
+        else:  # "no_match"
             kept.append(row)
     unmatched = [ex for i, ex in enumerate(exclusions) if i not in matched]
     return kept, excluded, unmatched, ambiguous
+
+
+def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
+                               candidates: list[int]) -> tuple[str, int | None]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide what a ranking row's name match against the exclusion list
+        means, when the exclusion file can itself carry more than one
+        entry for the same normalized name (its own homonyms).
+
+    Inputs:
+        row_uni (str): the ranking row's university, already norm()-ed (""
+            when unknown).
+        exclusions (list[dict]): every parsed exclusion entry.
+        candidates (list[int]): indices into `exclusions` sharing the
+            ranking row's name key; [] when the name matched nobody.
+
+    Outputs:
+        outcome (str): "no_match" (the name matched no exclusion entry at
+            all), "exclude" (exactly one candidate identified with
+            confidence), or "ambiguous" (the name matches, but which
+            recorded person it is - or whether it is any of them - cannot
+            be told apart from the data available; never auto-excluded).
+        index (int | None): the chosen exclusions[] index when outcome is
+            "exclude", else None.
+
+    Details:
+        A KNOWN disagreement is never read as "confidently not a match":
+        once a name matches at all, the only confident outcome is
+        "exactly one candidate is consistent with what we know" -
+        anything else (zero consistent candidates because every one
+        disagrees, or more than one still possible) is ambiguous, not a
+        silent "this must be someone else". That is what keeps the
+        original round-1 case intact (single candidate, both universities
+        known and disagreeing -> ambiguous) while also closing the second
+        2026-10-08 code-review round's gap: when the RANKING row's own
+        university is unknown, the exclusion file's own candidates must
+        agree with EACH OTHER for a confident exclude - two DIFFERENT
+        recorded universities among same-named candidates means the file
+        lists two different real people, and nothing here can tell which
+        one the ranking row is, so the old code picked the first one in
+        file order instead of flagging it.
+    --------------------------------------------------------------------------
+    """
+    if not candidates:
+        return "no_match", None
+    known = [(i, norm(exclusions[i]["university"])) for i in candidates]
+    if row_uni:
+        # A candidate with no recorded university is still POSSIBLY this
+        # row (missing data, not a mismatch); one with a DIFFERENT known
+        # university is ruled out.
+        matches = [i for i, u in known if not u or u == row_uni]
+    else:
+        distinct_known = {u for _, u in known if u}
+        matches = candidates if len(distinct_known) <= 1 else []
+    if len(matches) == 1:
+        return "exclude", matches[0]
+    return "ambiguous", None
 
 
 def main(argv: list[str]) -> int:

@@ -18,6 +18,7 @@ from pathlib import Path
 DATA_ROOT_ENV = "PROFESSOR_EXPERTISE_DATA"
 
 CONFIG_PATH = Path(__file__).resolve().parent / "pef_config.json"
+COLUMN_HINTS_PATH = Path(__file__).resolve().parent / "pef_column_hints.json"
 
 
 def data_root() -> Path:
@@ -80,6 +81,39 @@ def load_config() -> dict:
         if key not in config:
             raise ValueError(f"policy config {CONFIG_PATH} is missing key {key!r}")
     return config
+
+
+def load_column_hints(section: str) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read one script's column-name synonym lists (e.g. exclusions.py's
+        NAME_COLS) from pef_column_hints.json, so a new synonym from a
+        reference file's export is a data-file edit, not a code change
+        (R6 - a list of literals is data; 2026-10-08 code review finding).
+
+    Inputs:
+        section (str): "file_search" or "exclusions" - the top-level key
+            of pef_column_hints.json this caller owns.
+
+    Outputs:
+        hints (dict): that section's synonym lists, e.g.
+            {"name_hints": [...], "expertise_hints": [...]}.
+
+    Raises:
+        FileNotFoundError: pef_column_hints.json is missing.
+        ValueError: the file is not valid JSON, or `section` is absent.
+    --------------------------------------------------------------------------
+    """
+    if not COLUMN_HINTS_PATH.exists():
+        raise FileNotFoundError(f"missing column-hints config: {COLUMN_HINTS_PATH}")
+    try:
+        data = json.loads(COLUMN_HINTS_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"malformed column-hints config {COLUMN_HINTS_PATH}: {exc}") from exc
+    if section not in data:
+        raise ValueError(f"column-hints config {COLUMN_HINTS_PATH} is missing section {section!r}")
+    return data[section]
 
 
 def write_json(json_path: str | None, payload: dict) -> None:

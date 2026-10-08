@@ -209,9 +209,11 @@ exercise them, set the required environment variables, then dry-run the entry po
   rather than the 6.15.0 pinned elsewhere in this repo (`paper2talk`), since `pip-audit` on
   2026-09-25 found PYSEC-2026-3910/3911/3913 against 6.15.0, fixed in 6.16.0/6.16.1.
 - `professor-expertise-finder` skill (article discovery and validation reuse the `scopus` and
-  `extract-contributions` skills by calling their scripts directly - `../scopus/scripts/
-  scopus_api.py`'s `author` mode, `../scopus/scripts/download_pdf.py`, and `../extract-
-  contributions/scripts/extract_contributions.py` - rather than ad hoc web search, matching the
+  `extract-contributions` skills by calling their scripts directly -
+  `../scopus/scripts/scopus_api.py`'s `author` mode (AU-ID resolution) then its `publications`
+  mode (the recent document list, `approved_publisher`), `../scopus/scripts/download_pdf.py`,
+  and `../extract-contributions/scripts/extract_contributions.py` - rather than ad hoc web
+  search, matching the
   repo's own working norm that every piece of information is verified through `scopus`;
   2026-10-08, closing a gap in the original draft): `pef_common.py` (shared helpers every other script here
   imports rather than redefining its own near-copy - `slugify`, `norm`, `name_key`,

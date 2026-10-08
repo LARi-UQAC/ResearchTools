@@ -179,18 +179,26 @@ take `--json <path>` for a machine-readable report alongside the printed text.
    to be verified through `scopus`; this step is where that applies here.
    For each retained professor, find **at least two recent journal articles
    in a good-quality venue** in the field of the keywords:
-   a. Resolve the professor's Scopus Author ID and resolve it once per
-      professor (`AU-ID(...)`, never a bare-name query, which answers only
-      the author-claimed subset):
-      `python3 ../scopus/scripts/scopus_api.py author "<name>"` (resolves
-      AU-ID from the name when not already known from an earlier step).
-   b. List their documents, most recent first, and keep only those within
-      `pef_config.json`'s `recent_years_window` (currently 5) years:
-      `python3 ../scopus/scripts/scopus_api.py author "AU-ID(<id>)" --sort recent`.
-      Each returned document already carries `approved_publisher` (the
-      CLAUDE.md publisher list) — this is the "good-quality venue" bar;
-      do not invent a separate SJR/quartile threshold, which `scopus` does
-      not need for this check.
+   a. Resolve the professor's Scopus Author ID ONCE per professor, never a
+      bare-name query every time (which answers only the author-claimed
+      subset): `python3 ../scopus/scripts/scopus_api.py author "<name>"`.
+      Its JSON output's `author_id` field is the AU-ID (resolved via the
+      Author Search API when the key is entitled; when it degrades to
+      Semantic Scholar candidates instead — AUTHORIZATION_ERROR, the
+      mode's own documented fallback — there is no reliable AU-ID, and
+      this professor's articles cannot be Scopus-verified; say so rather
+      than guessing one of the candidates).
+   b. List their documents with the `publications` mode (NOT `author` —
+      different mode, no `--sort` flag needed or accepted: it is always
+      sorted most-recent-first server-side), passing the resolved AU-ID so
+      it is never re-resolved by name:
+      `python3 ../scopus/scripts/scopus_api.py publications "<name>" --au-id <id> --count 25`
+      (25 is the mode's own cap). Each returned document already carries
+      `year`, `doi`, and `approved_publisher` (the CLAUDE.md publisher
+      list) — this is the "good-quality venue" bar; do not invent a
+      separate SJR/quartile threshold, which this check does not need.
+      Keep only documents within `pef_config.json`'s `recent_years_window`
+      (currently 5) years of the current year.
    c. Among the recent, approved-publisher documents, pick the candidates
       closest to the keyword clusters by title; for each, retrieve full
       text (`python3 ../scopus/scripts/download_pdf.py` or the article's

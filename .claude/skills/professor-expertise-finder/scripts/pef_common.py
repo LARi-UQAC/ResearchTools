@@ -55,7 +55,8 @@ def load_config() -> dict:
     --------------------------------------------------------------------------
     Purpose:
         Read the skill's policy constants (rubric subscore values, the
-        retain threshold, the per-university cap) from pef_config.json.
+        retain threshold, the per-university cap, the data-root default,
+        the recent-years window) from pef_config.json.
 
     Inputs:
         None.

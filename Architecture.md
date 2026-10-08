@@ -17,7 +17,8 @@ runs none of the deliberation/scholar-evaluation pipeline the four auditors and 
 share, since a CV carries no reference list to cross-review or score. The
 [professor-expertise-finder](agents/professor-expertise-finder.md) agent, reached via
 `/expertfinder`, now also consumes [scopus](skills/scopus) (`scopus_api.py`'s `author` mode to
-resolve a professor's AU-ID and recent document list, `approved_publisher` as the "good-quality
+resolve a professor's AU-ID, then its `publications` mode for their recent document list -
+already sorted most-recent-first, each carrying `approved_publisher` as the "good-quality
 venue" bar rather than inventing a separate threshold) and
 [extract-contributions](skills/extract-contributions) (each candidate article's own stated
 contribution, checked against the keyword clusters, rather than guessed from its title) -
@@ -148,7 +149,7 @@ graph TD
 
 `/cv` drives the [narrative-cv-writer](agents/narrative-cv-writer.md) agent, which is also omitted from this matrix: it consumes [scopus](skills/scopus) and [scientific-writing](skills/scientific-writing) like the matrix's other rows, plus [extract-contributions](skills/extract-contributions) (not one of this matrix's columns) and its own [narrative-cv](skills/narrative-cv) skill, but none of `deliberation`, `scholar-evaluation`, `extract-statistic`, or `extract-futureworks` - a CV has no reference list to deliberate over or ScholarEval score.
 
-`/expertfinder` drives the [professor-expertise-finder](agents/professor-expertise-finder.md) agent, omitted from this matrix because it consumes none of its columns: it verifies faculty/department directory pages directly (`WebFetch`/`WebSearch` - Scopus does not index a university's own site), but ARTICLE discovery and validation go through [scopus](skills/scopus) (`author` mode for a professor's recent document list, `approved_publisher` as the quality bar) and [extract-contributions](skills/extract-contributions) (each candidate article's own stated contribution, checked against the keyword clusters) - 2026-10-08, matching the repo's own working norm that every piece of information is verified through the `scopus` skill. It consumes its own [professor-expertise-finder](skills/professor-expertise-finder) skill (`table.py`, `score.py`, `exclusions.py`, `file_search.py`, `selections.py`) plus those two, and nothing from `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks`.
+`/expertfinder` drives the [professor-expertise-finder](agents/professor-expertise-finder.md) agent, omitted from this matrix because it consumes none of its columns: it verifies faculty/department directory pages directly (`WebFetch`/`WebSearch` - Scopus does not index a university's own site), but ARTICLE discovery and validation go through [scopus](skills/scopus) (`author` mode to resolve the AU-ID, `publications` mode for the recent document list, `approved_publisher` as the quality bar) and [extract-contributions](skills/extract-contributions) (each candidate article's own stated contribution, checked against the keyword clusters) - 2026-10-08, matching the repo's own working norm that every piece of information is verified through the `scopus` skill. It consumes its own [professor-expertise-finder](skills/professor-expertise-finder) skill (`table.py`, `score.py`, `exclusions.py`, `file_search.py`, `selections.py`) plus those two, and nothing from `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks`.
 
 ### Domain profiles
 

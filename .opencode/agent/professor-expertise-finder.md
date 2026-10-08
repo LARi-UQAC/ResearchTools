@@ -34,9 +34,12 @@ workflow exactly. Key points:
    (`pef_config.json`'s `recent_years_window`, currently 5 years)
    approved-publisher journal articles in the field**. Article discovery
    goes through the `scopus` skill, never ad hoc web search — resolve the
-   professor's AU-ID, list their recent documents
-   (`../scopus/scripts/scopus_api.py author "AU-ID(<id>)" --sort recent`),
-   and for the chosen candidates retrieve full text
+   professor's AU-ID once with `author` mode, then list their documents
+   with the `publications` mode (not `author` — it has no `--sort`, since
+   it is always sorted most-recent-first already):
+   `../scopus/scripts/scopus_api.py publications "<name>" --au-id <id> --count 25`,
+   filtering to `recent_years_window` years and `approved_publisher`.
+   For the chosen candidates retrieve full text
    (`../scopus/scripts/download_pdf.py`) and run
    `../extract-contributions/scripts/extract_contributions.py` to check
    the article's OWN stated contribution against the keyword clusters —

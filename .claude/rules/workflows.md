@@ -427,9 +427,11 @@ Language is not a criterion, and neither is size. Python, PowerShell, shell, and
 else follow the same rule. The default home is the owning skill's
 `.claude/skills/<skill>/scripts/` directory, with an offline test beside it in `Test/`. Code
 the whole repo owns rather than one skill has its own established homes - `.claude/hooks/`
-for hooks, `profiles/` for domain profiles, `install.ps1` and `setup.ps1` at the root - and
-belongs there instead; a repository-wide `scripts/` directory is not a home for code that
-exactly one skill drives.
+for hooks, `profiles/` for domain profiles, `install.ps1` and `setup.ps1` at the root, and the
+repo-root `scripts/` tree's own named subfolders (`scripts/audit/`, `scripts/test/`,
+`scripts/lib/`, `scripts/local/` for personal Claude-Code routing utilities such as
+`claude-switch.ps1`) - and belongs there instead; what `scripts/` is not a home for is code
+that exactly one SKILL drives, which belongs beside that skill instead.
 
 The test of ownership is who calls it. Measured 2026-08-28: a PowerShell script restarting a
 local daemon sat in `scripts/dev/` although exactly one module called it, and the earlier

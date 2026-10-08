@@ -14,7 +14,14 @@ sentence, never a paraphrase of its abstract), [scientific-writing](skills/scien
 [narrative-cv](skills/narrative-cv) skill for the durable master-inventory CRUD, the keyword-
 overlap ranking against one competition's own objectives, and the LaTeX/plain-text rendering. It
 runs none of the deliberation/scholar-evaluation pipeline the four auditors and the researcher
-share, since a CV carries no reference list to cross-review or score.
+share, since a CV carries no reference list to cross-review or score. The
+[wp-portfolio-agent](agents/wp-portfolio-agent.md) agent, reached via `/portfolio`, runs a
+one-shot migration of a researcher's final CIHR / Canadian Common CV XML export into their
+WordPress portfolio: it consumes only its own [wp-portfolio-sync](skills/wp-portfolio-sync)
+skill (XML parsing, rendering, the anti-fabrication gate, and the push itself) and none of the
+shared academic skills above, since nothing here touches Scopus, deliberation, or
+ScholarEval. The agent has no `Write` or `Edit` tool (`Read, Bash` only): `push_wp.py` is the
+sole writer, and every write is verified by a read-back after the PUT.
 
 ```mermaid
 graph TD
@@ -31,6 +38,7 @@ graph TD
     c10["/litupdate"]
     c11["/talk"]
     c12["/cv"]
+    c13["/portfolio"]
   end
 
   subgraph AG["Agents — agents/"]
@@ -47,6 +55,7 @@ graph TD
     a11["litreview-updater<br/>incremental review refresh"]
     a12["talk-builder<br/>accepted paper -> conference talk"]
     a13["narrative-cv-writer<br/>FRQ / tri-agency narrative CV"]
+    a14["wp-portfolio-agent<br/>one-shot CIHR XML -> WordPress"]
   end
 
   subgraph SK["Skills — skills/"]
@@ -63,6 +72,7 @@ graph TD
     s10["paper2talk<br/>talk_model.py · talk_render.py · talk_notes.py"]
     s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
     s12["narrative-cv<br/>cv_inventory.py · cv_select.py · cv_build.py"]
+    s13["wp-portfolio-sync<br/>cihr_cv.py · render.py · push_wp.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -84,6 +94,8 @@ graph TD
   c10 --> a11
   c11 --> a12
   c12 --> a13
+  c13 --> a14
+  a14 --> s13
   a12 --> s10
   a12 --> s1
   a13 --> s12 & s1
@@ -133,6 +145,8 @@ graph TD
 `/recommendation-letter` likewise invokes the [recommendation-letter](skills/recommendation-letter) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix; its `generate_letter.py` is standard-library only and compiles the letter with `pdflatex`.
 
 `/cv` drives the [narrative-cv-writer](agents/narrative-cv-writer.md) agent, which is also omitted from this matrix: it consumes [scopus](skills/scopus) and [scientific-writing](skills/scientific-writing) like the matrix's other rows, plus [extract-contributions](skills/extract-contributions) (not one of this matrix's columns) and its own [narrative-cv](skills/narrative-cv) skill, but none of `deliberation`, `scholar-evaluation`, `extract-statistic`, or `extract-futureworks` - a CV has no reference list to deliberate over or ScholarEval score.
+
+`/portfolio` drives the [wp-portfolio-agent](agents/wp-portfolio-agent.md) agent, likewise omitted from this matrix: it consumes only its own [wp-portfolio-sync](skills/wp-portfolio-sync) skill, none of `scopus`, `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks` - the push is a deterministic migration, not an authoring or audit pipeline.
 
 ### Domain profiles
 

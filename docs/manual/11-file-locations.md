@@ -7,7 +7,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (18 agents; not all listed below -- see the
+    ├── agents\                              (19 agents; not all listed below -- see the
     │                                          Agents chapter for the current, complete list)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── litreview-updater.md       ← /litupdate
@@ -26,8 +26,9 @@ ResearchTools\
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (bridge)
     │   ├── local-coder.md             ← local code gen (bridge)
-    │   └── narrative-cv-writer.md     ← /cv
-    ├── commands\                            (25 commands; not all listed below -- see the
+    │   ├── narrative-cv-writer.md     ← /cv
+    │   └── wp-portfolio-agent.md      ← /portfolio
+    ├── commands\                            (26 commands; not all listed below -- see the
     │                                          Commands chapter for the current, complete list)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
@@ -38,9 +39,10 @@ ResearchTools\
     │   ├── word2latex.md               ├── geolocalisation.md
     │   ├── loopdev.md                  ├── talk.md
     │   ├── recommendation-letter.md
-    │   └── cv.md
+    │   ├── cv.md
+    │   └── portfolio.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (18 skills; not all listed below -- see the
+    └── skills\                              (19 skills; not all listed below -- see the
                                                Skills chapter for the current, complete list)
         ├── scopus\
         │   ├── SKILL.md
@@ -82,11 +84,16 @@ ResearchTools\
                            vram_daemon.py, vram_optimizer.py, Test\test_vram_probe.py,
                            Test\test_vram_modelfile.py, Test\test_vram_daemon.py,
                            Test\test_vram_optimizer.py)
-        └── opt-local-stt-vram\SKILL.md      (+ stt-bench-config.json, scripts\stt_bench.py,
-                           stt_score.py, gpu_memory.py, bench_config.py,
-                           engines\faster_whisper_engine.py, engines\nemo_engine.py,
-                           Test\test_stt_bench.py, Test\test_stt_score.py,
-                           Test\test_gpu_memory.py, Test\test_engines_config.py)
+        ├── opt-local-stt-vram\SKILL.md      (+ stt-bench-config.json, scripts\stt_bench.py,
+        │                  stt_score.py, gpu_memory.py, bench_config.py,
+        │                  engines\faster_whisper_engine.py, engines\nemo_engine.py,
+        │                  Test\test_stt_bench.py, Test\test_stt_score.py,
+        │                  Test\test_gpu_memory.py, Test\test_engines_config.py)
+        └── wp-portfolio-sync\SKILL.md       (+ scripts\wp_errors.py, wp_config.py, wp_paths.py,
+                           wp_common.py, cihr_cv.py, parse_cv.py, render.py, verify_titles.py,
+                           push_wp.py, discover.py, preview.py,
+                           templates\mapping.example.yaml, cookies.json.example,
+                           Test\ [10 offline suites])
 ```
 
 ---

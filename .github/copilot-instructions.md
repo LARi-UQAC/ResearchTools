@@ -27,6 +27,7 @@ CLI, or `copilot --agent <name>`):
 - `thesis-proposal-auditor`: see `.github/agents/thesis-proposal-auditor.agent.md` (full definition in `.claude/agents/thesis-proposal-auditor.md`)
 - `thesis-to-paper`: see `.github/agents/thesis-to-paper.agent.md` (full definition in `.claude/agents/thesis-to-paper.md`)
 - `word-to-latex`: see `.github/agents/word-to-latex.agent.md` (full definition in `.claude/agents/word-to-latex.md`)
+- `wp-portfolio-agent`: see `.github/agents/wp-portfolio-agent.agent.md` (full definition in `.claude/agents/wp-portfolio-agent.md`)
 
 Task prompt files are available as slash commands in Copilot Chat (see
 `.github/prompts/`). Helper skills (Scopus API scripts, statistics extraction,

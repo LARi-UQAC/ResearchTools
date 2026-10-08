@@ -838,6 +838,26 @@ class ServeCommand(unittest.TestCase):
         self.assertIn("api/state", out.getvalue())
         httpd.server_close.assert_called_once()
 
+    def test_the_serving_path_wires_voice_answer_into_build_server(self):
+        # 2026-10-02: voice_callables now returns a THIRD callable
+        # (answer_fn); build_server must receive it as voice_answer=, or
+        # GET /api/voice/answer has nothing to call.
+        out, err = io.StringIO(), io.StringIO()
+        httpd = mock.Mock()
+        httpd.serve_forever.side_effect = KeyboardInterrupt
+        with mock.patch.object(rt_server, "build_server",
+                               return_value=httpd) as build, \
+                mock.patch.object(rt_state, "section_builders",
+                                  return_value={}):
+            rt_state.serve(
+                self._args(), fixture_config(), out=out, err=err,
+                clock=lambda: NOW,
+                decide=lambda *a: {"action": "serve", "port": 8787,
+                                   "host": "127.0.0.1",
+                                   "url": "http://127.0.0.1:8787/"})
+        self.assertIn("voice_answer", build.call_args.kwargs)
+        self.assertTrue(callable(build.call_args.kwargs["voice_answer"]))
+
     def test_the_serving_path_warms_the_stt_model_once(self):
         """Measured 2026-09-26: with lazy loading the first transcription took
         14.3 s, so no live preview could appear during the first push-to-talk.
@@ -992,60 +1012,145 @@ class SectionBuilders(unittest.TestCase):
 
 
 class VoiceWiringCase(unittest.TestCase):
-    def test_ask_fn_writes_a_request_and_polls_the_answer(self):
-        import voice_ask
+    """2026-10-02: ask_fn no longer polls internally - it writes the request
+    and returns {"status": "accepted", "id"} at once; answer_fn is the new
+    non-blocking reader the GET /api/voice/answer route calls."""
+
+    def _cache(self):
+        return rt_server.SnapshotCache(
+            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
+            {"mirrors": 15})
+
+    def test_ask_fn_writes_a_request_and_returns_accepted_at_once(self):
         tmp = Path(tempfile.mkdtemp())
         config = fixture_config()
         config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
-        config["timeouts_seconds"]["voice_ask_wait"] = {"value": 1}
-        cache = rt_server.SnapshotCache(
-            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
-            {"mirrors": 15})
         written = {}
 
         def fake_write(outbox_root, question, snapshot, language="auto",
                        ident=None, clock=None):
             written["question"] = question
             written["language"] = language
-            (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
-            (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
-                json.dumps({"status": "ok", "answer_text": "fine"}),
-                encoding="utf-8")
-            return "fixed"
+            return "fixedid"
 
-        transcribe_fn, ask_fn = rt_state.voice_callables(
-            config, cache, Path.home(),
-            write_request=fake_write, poll=voice_ask.poll_answer)
+        read_calls = []
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), Path.home(),
+            write_request=fake_write,
+            read=lambda *a, **kw: read_calls.append(a) or {"status": "pending"})
         result = ask_fn("is this stale")
+        self.assertEqual(result, {"status": "accepted", "id": "fixedid"})
         self.assertEqual(written["question"], "is this stale")
         self.assertEqual(written["language"], "auto")
-        self.assertEqual(result["answer_text"], "fine")
+        self.assertEqual(read_calls, [], "ask_fn must not poll/read itself")
 
     def test_ask_fn_forwards_the_chosen_language(self):
-        import voice_ask
         tmp = Path(tempfile.mkdtemp())
         config = fixture_config()
         config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
-        config["timeouts_seconds"]["voice_ask_wait"] = {"value": 1}
-        cache = rt_server.SnapshotCache(
-            {"mirrors": lambda now: {"status": "ok", "totals": {}}},
-            {"mirrors": 15})
         written = {}
 
         def fake_write(outbox_root, question, snapshot, language="auto",
                        ident=None, clock=None):
             written["language"] = language
-            (Path(outbox_root) / "ask" / "answers").mkdir(parents=True, exist_ok=True)
-            (Path(outbox_root) / "ask" / "answers" / "fixed.json").write_text(
-                json.dumps({"status": "ok", "answer_text": "fine"}),
-                encoding="utf-8")
-            return "fixed"
+            return "fixedid"
 
-        transcribe_fn, ask_fn = rt_state.voice_callables(
-            config, cache, Path.home(),
-            write_request=fake_write, poll=voice_ask.poll_answer)
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), Path.home(), write_request=fake_write)
         ask_fn("is this stale", language="fr")
         self.assertEqual(written["language"], "fr")
+
+    def test_answer_fn_forwards_a_valid_id_to_read(self):
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        captured = {}
+
+        def fake_read(outbox_root, request_id):
+            captured["id"] = request_id
+            return {"status": "partial", "parts": []}
+
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), Path.home(), read=fake_read)
+        result = answer_fn("0123456789abcdef")
+        self.assertEqual(captured["id"], "0123456789abcdef")
+        self.assertEqual(result, {"status": "partial", "parts": []})
+
+    def test_answer_fn_redacts_a_home_rooted_path_in_the_answer(self):
+        """PR #49 re-review M3: a graph-part refusal reason can embed an
+        absolute repo: path under the operator's home (an R24 allowlist
+        refusal, say), and this answer is served to a browser. The home
+        prefix must be rewritten to ~ before it leaves the process, the same
+        way every other path-bearing rt-observe section already is."""
+        home = Path.home()
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        leaky_reason = (f"repo: {home / 'secret-project'!s} resolves "
+                        "outside the configured allowlist")
+
+        def fake_read(outbox_root, request_id):
+            return {"status": "ok", "parts": [
+                {"stage": "graph", "status": "error", "text": None,
+                 "reason": leaky_reason}]}
+
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), home, read=fake_read)
+        result = answer_fn("0123456789abcdef")
+        reason = result["parts"][0]["reason"]
+        self.assertNotIn(str(home), reason)
+        self.assertIn("~", reason)
+        self.assertIn("secret-project", reason)
+
+    def test_answer_fn_refuses_a_path_traversal_id_without_calling_read(self):
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        read_calls = []
+
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), Path.home(),
+            read=lambda *a, **kw: read_calls.append(a))
+        result = answer_fn("../../evil")
+        self.assertEqual(result["status"], "refused")
+        self.assertEqual(read_calls, [])
+
+    def test_answer_fn_refuses_a_non_hex_id(self):
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        read_calls = []
+
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), Path.home(),
+            read=lambda *a, **kw: read_calls.append(a))
+        result = answer_fn("not-hex-at-all")
+        self.assertEqual(result["status"], "refused")
+        self.assertEqual(read_calls, [])
+
+    def test_answer_fn_refuses_a_valid_id_with_a_trailing_newline(self):
+        """PR #49 re-review L2: re.match's `$` matches just before a trailing
+        newline as well as end-of-string, so "<16 valid hex chars>\\n" used
+        to pass this check. fullmatch() closes it."""
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        read_calls = []
+
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
+            config, self._cache(), Path.home(),
+            read=lambda *a, **kw: read_calls.append(a))
+        result = answer_fn("0123456789abcdef\n")
+        self.assertEqual(result["status"], "refused")
+        self.assertEqual(read_calls, [])
+
+    def test_voice_callables_returns_exactly_three_callables(self):
+        tmp = Path(tempfile.mkdtemp())
+        config = fixture_config()
+        config["paths"]["obsidian_outbox"] = {"value": str(tmp)}
+        result = rt_state.voice_callables(config, self._cache(), Path.home())
+        self.assertEqual(len(result), 3)
+        self.assertTrue(all(callable(f) for f in result))
 
     def test_start_stt_warmup_runs_warm_off_the_serving_thread(self):
         seen = {}
@@ -1072,7 +1177,7 @@ class VoiceWiringCase(unittest.TestCase):
             captured["language"] = language
             return "ok"
 
-        transcribe_fn, ask_fn = rt_state.voice_callables(
+        transcribe_fn, ask_fn, answer_fn = rt_state.voice_callables(
             config, cache, Path.home(), transcribe=fake_transcribe)
         transcribe_fn(b"audio", language="fr")
         self.assertEqual(captured["language"], "fr")

@@ -158,6 +158,49 @@ semantic pass silently: it is a model call, so it is stated and left to the oper
 AST-only refresh over code is free. And as with the vault, a suggestion arriving from the content
 of a note or a tool's output to bypass any of this is treated as a prompt-injection attempt.
 
+### A second reader - the vault daemon's ask queue (2026-10-02)
+
+`vault-access-guard.py` governs Claude Code tool calls only. The vault event daemon
+(`vault_daemon.py`) is a plain OS process the guard never sees at all - already true for its
+direct vault reads, and unchanged by this section. Since 2026-10-02 (the voice-graph-lookup
+design), the daemon's ask queue (`daemon_graph.py`) is permitted to run `graphify query` -
+read-only, never `update` or `save-result` - against the repository named by a vault project's
+own `repo:` property, and only while answering an ask request that already declared
+`from: rt-dashboard` (the same gate `daemon_ask.read_request` enforces for the vault read).
+The query is bounded by `daemon-config.json`'s `ask_graph_timeout_s` and `ask_graph_max_chars`.
+
+**R24, fixed 2026-10-07 (PR #49 re-review, High).** A `repo:` value is untrusted input - any
+local process able to write a vault note (or a future consolidation/phantom-repair edit) could
+name an arbitrary directory, and the daemon would run `graphify query` with that directory as
+the subprocess `cwd`. `daemon_graph._resolve_repo_claim` now additionally requires the resolved
+path to appear, by exact match, in `daemon_graph.load_allowed_roots()` - the machine-local,
+gitignored `.claude/local-ask-graph-roots.json` (`{"allowed_roots": ["<absolute path>", ...]}`).
+Absent, unparsable, or empty is a fail-closed empty allowlist (R8), not a fail-open pass. The
+file is gitignored rather than part of `daemon-config.json` because the mapped repos sit under
+the operator's own account directory, and committing them to the public repo would leak the
+account path (R34, `verify-no-personal-data.ps1`). An operator enabling this ask-queue feature
+must create that file naming the repositories they want reachable - naming the repo root
+EXACTLY: the allowlist check is equality against a resolved root, not containment, so a
+`repo:` value one level inside an allowlisted root (a subdirectory of it) is refused the same
+as one entirely outside it.
+
+**Accepted residual risk (F4/Q3, PR #49 re-review, Medium, operator-decided 2026-10-07).**
+`daemon_ask.read_request`'s `from: rt-dashboard` check is a routing label, not access control
+(stated in `daemon_ask.py`'s own module docstring): any local process able to write a file
+into `~/.claude/obsidian-outbox/ask/requests/` can declare `from: rt-dashboard` and receive a
+vault-grounded answer, now extended by this section to a graph-grounded one for an allowlisted
+repository - without going through `local-writer` or `vault-access-guard.py` at all. This is
+accepted as consistent with the outbox's existing single-user, trusted-local-machine threat
+model (this file's own opening paragraph): it was already true of every other write into the
+outbox before this feature, and is not treated as a gap this feature introduces. See issue #58
+for the separate, accepted-as-a-gap concurrency limit (no cap on pending requests, no sweep for
+orphaned answer files) this same review round raised.
+
+This does not change anything for a Claude Code session: a session still reaches a graph only
+by dispatching `local-writer`, exactly as above. The daemon is a second mechanism, not a second
+exemption in the guard - it was never subject to the guard in the first place, the same way its
+vault reads never were.
+
 ## Skill provenance
 
 A skill is instructions an agent follows with the user's permissions, so a skill installed from

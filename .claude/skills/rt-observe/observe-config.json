@@ -199,8 +199,8 @@
     },
     "voice_ask_wait": {
       "value": 85,
-      "unit": "seconds the /api/voice/ask route blocks waiting for the daemon's answer file before giving up",
-      "provenance": "measured 2026-09-26 - the original 20 s timed out before any answer could arrive: daemon-config.json records a 36.991 s median writer-role call, and the resident ornith:9b-gpu decoded at 20.3 tok/s that day. Kept just under the daemon's own ask_request_ttl_s (90 s) so the dashboard never waits on a request the daemon has already expired"
+      "unit": "seconds the voice panel's own poll loop keeps calling GET /api/voice/answer for one part before giving up on it (POST /api/voice/ask itself returns at once, 202 accepted, since 2026-10-02)",
+      "provenance": "measured 2026-09-26 - the original 20 s timed out before any answer could arrive: daemon-config.json records a 36.991 s median writer-role call, and the resident ornith:9b-gpu decoded at 20.3 tok/s that day. Kept just under the daemon's own ask_request_ttl_s (90 s) so the dashboard never waits on a request the daemon has already expired. Since 2026-10-02 (plan2, voice-graph-lookup) this is a PER-PART wait, not a single total: the vault part and the graph part (plan1b) each get up to this long since their own last published part, so a slow graph query does not cut off a vault answer that already arrived"
     }
   },
   "caps": {
@@ -362,6 +362,11 @@
     "partial_refresh_ms": {
       "value": 1000,
       "provenance": "measured 2026-09-26 - Whisper small/float16 on cuda transcribed a 6.4 s sentence in 0.51-0.71 s beside the resident writer model; re-checked the same day for large-v3-turbo int8_float16, which transcribes a 19.5 s buffer in 0.74 s (median of 5), so 1 s still keeps the caption live. Devoir2's 3.0 s was sized for its CPU cost of 1.44 s, and the page's in-flight guard makes the real cadence max(this, one transcription) so previews never overlap"
+    },
+    "answer_poll_ms": {
+      "value": 1000,
+      "unit": "milliseconds",
+      "provenance": "chosen 2026-10-02 at the voice-graph-lookup design review (docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md section 7): fast enough that a held-P push-to-talk turn does not feel stalled, matching the existing daemon.ask_poll_interval_s=1s cadence on the daemon's own side"
     }
   },
   "paths": {

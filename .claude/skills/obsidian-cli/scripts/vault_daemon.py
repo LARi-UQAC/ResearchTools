@@ -212,9 +212,31 @@ class VaultDaemon(OutboxLayout):
             return []
         return sorted(requests_dir.glob("*.json"))
 
-    def _write_answer(self, request_file: Path, result: dict) -> dict:
-        """Write one answer atomically, named after the request file (R24),
-        then consume the request."""
+    def _write_answer(self, request_file: Path, result: dict,
+                      consume: bool = True) -> dict:
+        """
+        --------------------------------------------------------------------------
+        Purpose:
+            Write one answer atomically, named after the request file
+            (R24). `consume=True` (every call site before 2026-10-02) also
+            removes the request file; `consume=False` leaves it in place,
+            for a PARTIAL (vault-only) answer published while the graph
+            part is still being computed - the request stays claimed
+            either way (it already left outbox/ask/requests/'s glob the
+            moment run_ask_once started iterating it), this flag only
+            decides whether the REQUEST FILE on disk is deleted.
+
+        Inputs:
+            request_file (Path): names the answer file (R24)
+            result (dict): the answer payload; `result["id"]` is
+            overwritten with `request_file.stem`
+            consume (bool): remove `request_file` after writing (default
+            True, matching every pre-2026-10-02 caller)
+
+        Outputs:
+            result (dict): the same dict, with "id" set.
+        --------------------------------------------------------------------------
+        """
         answers_dir = self.outbox / "ask" / "answers"
         answers_dir.mkdir(parents=True, exist_ok=True)
         result["id"] = request_file.stem
@@ -223,7 +245,8 @@ class VaultDaemon(OutboxLayout):
         tmp.write_text(json.dumps(result, ensure_ascii=False),
                        encoding="utf-8", newline="\n")
         tmp.replace(final)
-        request_file.unlink(missing_ok=True)
+        if consume:
+            request_file.unlink(missing_ok=True)
         return result
 
     def fail_pending_asks(self, reason: str, now: str) -> list:
@@ -335,9 +358,13 @@ class VaultDaemon(OutboxLayout):
         for request_file in self.pending_asks():
             try:
                 request = daemon_ask.read_request(request_file)
+
+                def publisher(partial, _file=request_file):
+                    self._write_answer(_file, partial, consume=False)
+
                 result = daemon_ask.answer(
                     request, self.vault, model, window, timeout,
-                    self.config, today=now)
+                    self.config, today=now, publish=publisher)
             except daemon_ask.AskRefused as exc:
                 result = {"answered_at": now, "status": "refused",
                          "reason": str(exc)}

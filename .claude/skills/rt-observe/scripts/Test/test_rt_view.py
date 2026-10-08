@@ -1057,5 +1057,158 @@ class ServedPage(unittest.TestCase):
         self.assertIn('"poll_ms": 2000', response.text)
 
 
+class VoiceAnswerPollCase(unittest.TestCase):
+    """2026-10-02, plan2 Task 6: structural checks on the voice panel's
+    per-part poll loop, since this suite checks the served page without a
+    browser (see the module docstring)."""
+
+    def setUp(self):
+        self.page = read(PAGE)
+
+    def test_poll_cadence_comes_from_config_not_a_literal(self):
+        self.assertIn("CFG.voice.answer_poll_ms", self.page)
+        self.assertIn(
+            "answer_poll_ms",
+            rt_state.view_config(rt_state.load_config())["voice"])
+        # Negative control: no bare numeric literal is handed to
+        # setInterval/setTimeout near the answer poll - every such call in
+        # the voice panel's own IIFE must read the cadence from CFG.
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        literal_poll = re.search(
+            r"set(?:Interval|Timeout)\([^,]+,\s*\d", voice_iife)
+        self.assertIsNone(
+            literal_poll,
+            "a literal interval/timeout value was found in the voice "
+            "panel; the poll cadence must come from CFG.voice.answer_poll_ms")
+
+    def test_the_answer_route_is_fetched_with_the_session_token(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        # Find the actual fetch() call, not a prose mention of the path in
+        # a comment - those can legitimately appear earlier in the file.
+        match = re.search(r'fetch\(\s*"[^"]*/api/voice/answer', voice_iife)
+        self.assertIsNotNone(match, "no fetch(...) call to /api/voice/answer "
+                                    "found in the voice panel")
+        answer_fetch = voice_iife[match.start():]
+        # The header must appear within the same fetch call, not merely
+        # somewhere later in the file.
+        self.assertIn("X-RT-Session-Token", answer_fetch[:400])
+
+    def test_parts_already_handled_are_not_requeued(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertTrue(
+            re.search(r"(partsHandled|handledParts|partsSeen)", voice_iife),
+            "no tracked already-handled-parts counter found near the poll "
+            "loop; a re-poll seeing the same parts array would requeue them")
+
+    def test_blank_text_parts_are_not_queued_for_speech(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("SpeechSynthesisUtterance", voice_iife)
+        # The guard must sit close to (within 300 chars before) the
+        # construction it protects, not merely appear somewhere earlier in
+        # an unrelated function.
+        idx = voice_iife.index("SpeechSynthesisUtterance")
+        nearby = voice_iife[max(0, idx - 300):idx]
+        self.assertTrue(
+            re.search(r"\.text\s*&&|\.text\.trim\(\)|\.trim\(\)\s*\)", nearby),
+            "no guard found immediately before SpeechSynthesisUtterance "
+            "keeping an empty/whitespace part's text out of the speech queue")
+
+    def test_the_poll_loop_has_a_stop_condition(self):
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("clearInterval", voice_iife)
+        self.assertIn("voice_ask_wait",
+                      rt_state.view_config(rt_state.load_config())
+                      .get("timeouts_seconds", {}))
+        self.assertIn("CFG.timeouts_seconds.voice_ask_wait", voice_iife)
+
+    def test_unavailable_is_a_terminal_answer_status(self):
+        """PR #49 fourth re-review L5/F8: GET /api/voice/answer's 501 body
+        (no ask relay wired in) carries status "unavailable", which was
+        missing from ANSWER_TERMINAL - the poll loop ran the full 85s
+        voice_ask_wait on a condition that will never resolve instead of
+        stopping at once."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        match = re.search(r"var ANSWER_TERMINAL\s*=\s*\{([^}]*)\}", voice_iife)
+        self.assertIsNotNone(match, "no ANSWER_TERMINAL table found")
+        self.assertIn("unavailable", match.group(1))
+
+    def test_every_daemon_terminal_status_stays_in_answer_terminal(self):
+        """PR #49 fifth re-review (non-blocking, closed anyway): the
+        previous test only pinned `unavailable`, so removing `ok` (or any
+        of the other three statuses voice_ask.TERMINAL_STATUSES/daemon_ask
+        can publish) survived every test in this suite - the page would
+        silently stop recognising a normal answer as terminal and poll the
+        full 85s wait for nothing. Pin all five statuses the server can
+        actually send: voice_ask.TERMINAL_STATUSES (ok/error/expired/
+        refused) plus the page's own client-side "unavailable" (the 501
+        when no ask relay is wired in, which never reaches
+        TERMINAL_STATUSES since that constant governs the daemon's own
+        answer file, not the HTTP route's degraded response)."""
+        import voice_ask
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        match = re.search(r"var ANSWER_TERMINAL\s*=\s*\{([^}]*)\}", voice_iife)
+        self.assertIsNotNone(match, "no ANSWER_TERMINAL table found")
+        table_text = match.group(1)
+        for status in voice_ask.TERMINAL_STATUSES | {"unavailable"}:
+            self.assertIn(status, table_text,
+                         f"{status!r} is missing from ANSWER_TERMINAL")
+
+    def test_an_in_flight_fetch_guard_sits_inside_the_poll_interval(self):
+        """PR #49 third re-review F2: setInterval fired a new fetch every
+        tick regardless of whether the previous one had resolved, so a
+        response slower than the poll cadence could arrive out of order and
+        requeue parts twice. A boolean flag set before fetch() and cleared
+        in both then() and catch() closes this."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("fetchInFlight", voice_iife)
+        poll_fn = voice_iife[voice_iife.index("function pollAnswer"):]
+        interval_body = poll_fn[poll_fn.index("setInterval"):]
+        self.assertTrue(
+            re.search(r"if\s*\(\s*fetchInFlight\s*\)\s*\{\s*return",
+                     interval_body[:400]),
+            "no early-return guard on fetchInFlight at the top of the "
+            "poll's setInterval callback")
+
+    def test_a_new_question_invalidates_a_stale_in_flight_response(self):
+        """A late response from a SUPERSEDED poll (a new question already
+        started) must not append its old text or speak it - stopAnswerPoll()
+        clears the timer but cannot abort a fetch already sent. A generation
+        counter, bumped once per pollAnswer() call and checked in both the
+        success and error handlers, discards a stale result instead."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        self.assertIn("answerPollGeneration", voice_iife)
+        poll_fn = voice_iife[voice_iife.index("function pollAnswer"):]
+        # The generation must be captured into a per-call variable (not read
+        # fresh each time, which would defeat the comparison) and compared
+        # against the shared counter before a response is acted on.
+        self.assertTrue(
+            re.search(r"myGeneration\s*=\s*\+\+answerPollGeneration", poll_fn[:600]),
+            "pollAnswer does not capture its own generation at call time")
+        self.assertGreaterEqual(
+            poll_fn.count("myGeneration !== answerPollGeneration"), 2,
+            "a stale response must be discarded in BOTH the success and "
+            "the error handler, not only one")
+
+    def test_a_new_question_cancels_the_previous_speech_queue(self):
+        """L6: without this, starting a new question while the previous
+        answer is still being spoken queues the new parts BEHIND the old
+        ones rather than replacing them."""
+        voice_iife = self.page[self.page.index(
+            "voice panel: push-to-talk"):]
+        poll_start = voice_iife.index("function pollAnswer")
+        poll_fn = voice_iife[poll_start:
+                             voice_iife.index("setInterval", poll_start)]
+        self.assertIn("speechSynthesis.cancel()", poll_fn)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

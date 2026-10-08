@@ -56,11 +56,18 @@ Toolkit. A machine without them sees the panel name the missing install command,
 broken dashboard. The model is loaded and warmed when the dashboard starts, so the first press
 already has a live transcript.
 
-The panel never opens the Obsidian vault or the `graphify` graph itself. Every question is
+The panel never opens the Obsidian vault or the `graphify` graph itself: every question is
 relayed to the vault daemon's own read-only ask queue (`.claude/skills/obsidian-cli`'s
-`daemon_ask.py`), which searches the vault, calls the local LLM, and answers back — the same
-boundary the rest of this page already holds itself to for the vault/graph panels above. The
-answer is spoken back through the browser's own `speechSynthesis`, not a new server-side voice.
+`daemon_ask.py`), the same boundary this page's vault/graph panels already hold themselves to.
+Since 2026-10-02 that queue answers in two spoken parts. It searches the vault first and speaks
+that answer right away; then, if the matched vault note's project folder names a `repo:`
+property, it asks a short English-keyword question and queries that project's own `graphify`
+graph (`daemon_graph.py`), read-only, and speaks a short code-structure note on top - labelled
+as code structure, not progress, since the graph is AST-only and holds no decision log. No
+`repo:`, or no graph for that repository, says so plainly instead of guessing. `POST
+/api/voice/ask` returns at once; the panel polls `GET /api/voice/answer` until a part arrives
+or the per-part wait (`timeouts_seconds.voice_ask_wait`) runs out. Every spoken part is read
+back through the browser's own `speechSynthesis`, not a new server-side voice.
 
 ## The `/rt-dashboard` command
 

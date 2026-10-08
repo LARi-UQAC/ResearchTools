@@ -50,7 +50,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from rt_redact import home_tilde  # noqa: E402
+from rt_redact import redact_json as _redact  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 
@@ -70,19 +70,6 @@ INGEST_WINDOW_ENV_VAR = "ZO_INGEST_ALLOWED_UPTO"
 
 class OpenObserveError(RuntimeError):
     """A declared 'openobserve' block is incomplete. Named, never defaulted (R3)."""
-
-
-def _redact(value, home):
-    """Recursively apply home_tilde to every string in a JSON-shaped value, so a
-    payload is redacted BEFORE it is serialized into a request body (Phase 2's
-    confidentiality requirement: before the send, not after)."""
-    if isinstance(value, str):
-        return home_tilde(value, home)
-    if isinstance(value, dict):
-        return {k: _redact(v, home) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_redact(v, home) for v in value]
-    return value
 
 
 def load_oo_config(config, env=None):

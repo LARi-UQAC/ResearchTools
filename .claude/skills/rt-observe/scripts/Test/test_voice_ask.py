@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
@@ -73,34 +74,80 @@ class WriteRequestCase(unittest.TestCase):
         self.assertNotEqual(first, second)
 
 
-class PollAnswerCase(unittest.TestCase):
+class ReadAnswerCase(unittest.TestCase):
+    """read_answer: one non-blocking read, deleting the file only on a
+    terminal status - a partial answer stays on disk so the next poll can
+    see the daemon's later overwrite (plan1b's progressive publish)."""
+
     def setUp(self):
         self.outbox = Path(tempfile.mkdtemp())
         (self.outbox / "ask" / "answers").mkdir(parents=True)
 
-    def test_returns_the_answer_once_it_appears_and_removes_it(self):
+    def _write(self, name, payload):
+        (self.outbox / "ask" / "answers" / f"{name}.json").write_text(
+            json.dumps(payload), encoding="utf-8")
+
+    def test_no_answer_file_is_pending(self):
         import voice_ask
-        answer_path = self.outbox / "ask" / "answers" / "req1.json"
-        ticks = {"n": 0}
+        self.assertEqual(voice_ask.read_answer(self.outbox, "absent"),
+                         {"status": "pending"})
 
-        def fake_sleep(_seconds):
-            ticks["n"] += 1
-            if ticks["n"] == 2:
-                answer_path.write_text(
-                    json.dumps({"id": "req1", "status": "ok",
-                               "answer_text": "fine"}), encoding="utf-8")
-
-        result = voice_ask.poll_answer(self.outbox, "req1", timeout_s=5,
-                                       poll_interval_s=0.01, sleep=fake_sleep)
-        self.assertEqual(result["status"], "ok")
-        self.assertFalse(answer_path.exists())
-
-    def test_gives_up_after_the_timeout(self):
+    def test_a_partial_answer_is_returned_and_kept_on_disk(self):
         import voice_ask
-        result = voice_ask.poll_answer(
-            self.outbox, "never-answered", timeout_s=0.05,
-            poll_interval_s=0.01, sleep=lambda s: None)
-        self.assertEqual(result["status"], "timeout")
+        payload = {"id": "req1", "status": "partial", "parts": []}
+        self._write("req1", payload)
+        result = voice_ask.read_answer(self.outbox, "req1")
+        self.assertEqual(result, payload)
+        self.assertTrue(
+            (self.outbox / "ask" / "answers" / "req1.json").exists())
+
+    def test_each_terminal_status_is_returned_and_then_deleted(self):
+        import voice_ask
+        for status in ("ok", "error", "expired", "refused"):
+            with self.subTest(status=status):
+                name = f"req-{status}"
+                payload = {"id": name, "status": status}
+                self._write(name, payload)
+                result = voice_ask.read_answer(self.outbox, name)
+                self.assertEqual(result, payload)
+                self.assertFalse(
+                    (self.outbox / "ask" / "answers" / f"{name}.json")
+                    .exists())
+
+    def test_unparsable_json_is_pending_and_left_on_disk(self):
+        import voice_ask
+        path = self.outbox / "ask" / "answers" / "bad.json"
+        path.write_text("not json", encoding="utf-8")
+        self.assertEqual(voice_ask.read_answer(self.outbox, "bad"),
+                         {"status": "pending"})
+        self.assertTrue(path.exists())
+
+    def test_a_second_read_after_a_terminal_one_is_pending(self):
+        import voice_ask
+        self._write("req1", {"id": "req1", "status": "ok"})
+        voice_ask.read_answer(self.outbox, "req1")
+        self.assertEqual(voice_ask.read_answer(self.outbox, "req1"),
+                         {"status": "pending"})
+
+    def test_a_concurrent_unlink_between_exists_and_read_is_pending(self):
+        """Two overlapping GETs can both pass path.exists(), then the first
+        one's terminal-status unlink races the second one's read_text(),
+        which would otherwise surface as an unhandled FileNotFoundError
+        instead of closing the HTTP request with "pending"."""
+        import voice_ask
+        self._write("req1", {"id": "req1", "status": "ok"})
+        path = self.outbox / "ask" / "answers" / "req1.json"
+        real_exists = Path.exists
+
+        def faked_exists(self_path, *args, **kwargs):
+            if self_path == path:
+                return True
+            return real_exists(self_path, *args, **kwargs)
+
+        path.unlink()  # simulates the other poll's terminal-status unlink
+        with mock.patch.object(Path, "exists", faked_exists):
+            result = voice_ask.read_answer(self.outbox, "req1")
+        self.assertEqual(result, {"status": "pending"})
 
 
 if __name__ == "__main__":

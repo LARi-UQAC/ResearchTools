@@ -5118,6 +5118,16 @@ renderRefresh();
   var pendingStop = false;
   var lastPartialText = "";
   var partialTimer = null;
+  var answerPollTimer = null;
+  var answerPollGeneration = 0;
+  // The four terminal statuses daemon_ask.answer()/voice_ask.read_answer
+  // agree on (voice_ask.TERMINAL_STATUSES) - "partial" is deliberately
+  // absent, since it means more parts are still coming.
+  // "unavailable" (GET /api/voice/answer's 501 when no ask relay is wired
+  // in) was missing until PR #49's fourth re-review (L5/F8): without it,
+  // the poll loop ran the full CFG.timeouts_seconds.voice_ask_wait (85s)
+  // on a condition that will never resolve, instead of stopping at once.
+  var ANSWER_TERMINAL = { ok: 1, error: 1, expired: 1, refused: 1, unavailable: 1 };
 
   function setStatus(text) { if (status) { status.textContent = text; } }
 
@@ -5389,32 +5399,105 @@ renderRefresh();
     });
   }
 
+  function stopAnswerPoll() {
+    if (answerPollTimer) { window.clearInterval(answerPollTimer); answerPollTimer = null; }
+  }
+
+  // Shared by every part a poll delivers: a part with no text (or only
+  // whitespace) is shown but never queued, since most speech engines
+  // either no-op or raise on an empty utterance.
+  function queueUtterance(text, language) {
+    if (!window.speechSynthesis || !text || !text.trim()) { return; }
+    var utter = new SpeechSynthesisUtterance(text);
+    var tag = { en: "en-US", fr: "fr-FR" }[language];
+    if (tag) { utter.lang = tag; }
+    utter.onstart = function () { orbState = "speaking"; };
+    utter.onend = function () { orbState = "idle"; };
+    utter.onerror = function () { orbState = "idle"; };
+    window.speechSynthesis.speak(utter);
+  }
+
+  // Polls GET /api/voice/answer for one request id until a terminal status
+  // or until CFG.timeouts_seconds.voice_ask_wait seconds pass with no NEW
+  // part (tracked from the last part that arrived, not from when the
+  // question was asked - a slow graph part must not be cut off by a timer
+  // that started before the vault part even came back).
+  function pollAnswer(id, language) {
+    // A new question supersedes whatever the previous one was still
+    // speaking or still waiting on. generation lets an in-flight fetch from
+    // a SUPERSEDED poll (not merely a superseded id - stopAnswerPoll()
+    // clears the timer but cannot abort a fetch already in flight) detect
+    // that it is stale and discard its own result instead of appending old
+    // text after a newer question already started.
+    var myGeneration = ++answerPollGeneration;
+    var partsHandled = 0;
+    var lastProgress = Date.now();
+    var fetchInFlight = false;
+    stopAnswerPoll();
+    if (window.speechSynthesis) { window.speechSynthesis.cancel(); }
+    answerPollTimer = window.setInterval(function () {
+      // Network latency can exceed the poll cadence; never start a second
+      // fetch for this SAME poll while one is still outstanding, or
+      // responses can arrive out of order and requeue parts twice.
+      if (fetchInFlight) { return; }
+      fetchInFlight = true;
+      window.fetch("/api/voice/answer?id=" + encodeURIComponent(id), {
+        headers: { "X-RT-Session-Token": TOKEN },
+      }).then(function (r) { return r.json(); }).then(function (body) {
+        fetchInFlight = false;
+        if (myGeneration !== answerPollGeneration) { return; }
+        var parts = body.parts || [];
+        if (parts.length > partsHandled) {
+          lastProgress = Date.now();
+          for (; partsHandled < parts.length; partsHandled++) {
+            var part = parts[partsHandled];
+            if (part.text) {
+              answerEl.textContent += (answerEl.textContent ? " " : "") + part.text;
+            }
+            queueUtterance(part.text, language);
+          }
+        }
+        if (ANSWER_TERMINAL[body.status]) {
+          stopAnswerPoll();
+          if (!parts.length) {
+            setStatus(body.reason || ("answer status: " + body.status));
+            orbState = "idle";
+          } else {
+            setStatus("idle");
+          }
+          return;
+        }
+        if (Date.now() - lastProgress >
+            CFG.timeouts_seconds.voice_ask_wait * 1000) {
+          stopAnswerPoll();
+          setStatus("no answer within " + CFG.timeouts_seconds.voice_ask_wait + "s");
+          orbState = "idle";
+        }
+      }).catch(function (err) {
+        fetchInFlight = false;
+        if (myGeneration !== answerPollGeneration) { return; }
+        stopAnswerPoll();
+        setStatus("ask failed: " + err);
+        orbState = "idle";
+      });
+    }, CFG.voice.answer_poll_ms);
+  }
+
   function askQuestion(question, language) {
     setStatus("asking...");
     orbState = "asking";
+    answerEl.textContent = "";
     window.fetch("/api/voice/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN, question: question, language: language }),
     }).then(function (r) { return r.json(); }).then(function (body) {
-      if (body.status !== "ok") {
+      if (body.status !== "accepted") {
         setStatus(body.reason || ("answer status: " + body.status));
         orbState = "idle";
         return;
       }
-      answerEl.textContent = body.answer_text;
-      setStatus("idle");
-      if (window.speechSynthesis) {
-        var utter = new SpeechSynthesisUtterance(body.answer_text);
-        var tag = { en: "en-US", fr: "fr-FR" }[language];
-        if (tag) { utter.lang = tag; }
-        utter.onstart = function () { orbState = "speaking"; };
-        utter.onend = function () { orbState = "idle"; };
-        utter.onerror = function () { orbState = "idle"; };
-        window.speechSynthesis.speak(utter);
-      } else {
-        orbState = "idle";
-      }
+      pollAnswer(body.id, language);
     }).catch(function (err) {
       setStatus("ask failed: " + err);
       orbState = "idle";

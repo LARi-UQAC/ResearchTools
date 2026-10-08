@@ -31,6 +31,22 @@
     "ask_max_vault_notes": 5,
     "ask_note_excerpt_chars": 1200,
     "ask_context_snapshot_max_chars": 4000,
+    "_provenance_voice_graph_lookup": "ask_search_roots through ask_graph_sentences CHOSEN 2026-10-02 at the voice-graph-lookup design review (docs/superpowers/plans/2026-10-02-voice-graph-lookup/spec.md section 7), not measured: ask_search_roots mirrors search_vault's prior hardcoded 30_Ressources/10_Projets pair, now config-driven per D8; ask_keywords_max=12 and ask_graph_budget_tokens=1500/ask_graph_max_chars=4000 are review-sized bounds matching the existing ask_max_vault_notes/ask_note_excerpt_chars shape above; ask_graph_timeout_s=20 keeps the worst-case per-part wait (3s keyword call + 20s graph query + 37s median answer call) under the 85s timeouts_seconds.voice_ask_wait; ask_graph_sentences are the four catalogue strings the operator approved (D7) for the two graph-part outcomes (skipped, error) in each dropdown language (fr, en).",
+    "ask_search_roots": ["30_Ressources", "10_Projets"],
+    "ask_keywords_max": 12,
+    "ask_graph_budget_tokens": 1500,
+    "ask_graph_max_chars": 4000,
+    "ask_graph_timeout_s": 20,
+    "ask_graph_sentences": {
+      "skipped": {
+        "fr": "Enfin, je n'ai pas trouvé de graphe.",
+        "en": "Finally, I did not find a graph."
+      },
+      "error": {
+        "fr": "Enfin, je n'ai pas pu consulter le graphe.",
+        "en": "Finally, I could not query the graph."
+      }
+    },
     "bridge_error_log_interval_s": 300
   }
 }

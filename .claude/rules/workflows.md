@@ -76,13 +76,15 @@ memory actually came back, and prints the `OLLAMA_*` values the restarted daemon
 ### Switching the Claude Code session itself to a local model
 
 Separate from the bridge above: this redirects the Claude Code SESSION itself, not an agent -
-there is no cloud orchestrator in this mode, and `model_resolver.py` is not consulted.
+there is no cloud orchestrator in this mode. `model_resolver.py` IS consulted, though, since
+the PR #61 review (R2): `scripts/local/claude-switch.ps1`'s default tag is never a hardcoded
+literal, it is resolved the same way local-writer/local-coder resolve theirs.
 `scripts/local/claude-switch.ps1`, dot-sourced, exposes `claude-ollama` (alias `claude-local`)
 and `claude-cloud`. Since Ollama's 2026-01-16 update exposes a native Anthropic-compatible
 `/v1/messages` endpoint, no LiteLLM proxy is needed: Claude Code points `ANTHROPIC_BASE_URL`
-straight at `http://localhost:11434`.
+straight at Ollama.
 
-Two-step process, always in this order:
+Three-step process, always in this order:
 
 1. **Measure the candidate tag for this GPU before switching to it.** Which tool depends on
    whether the model is GPU-resident:
@@ -96,15 +98,35 @@ Two-step process, always in this order:
      daemon/OS counters rather than guessing. Bake the chosen values into a Modelfile
      (`FROM <base-tag>`, `PARAMETER num_ctx ...`, `PARAMETER num_thread ...`, the measurement
      and its date in a comment) and `ollama create <new-tag> -f <Modelfile>`.
-2. **Switch.** `. .\scripts\local\claude-switch.ps1` once per shell, then:
-   - `claude-local` (or `claude-ollama -Model <tag>`) - refuses to switch, and never launches
-     `claude`, when Ollama is not answering on `:11434`.
-   - `claude-cloud` - clears every local-routing env var and returns to Anthropic.
+2. **Register the measured tag with the resolver.**
+   `model_resolver.py --adopt-role session <tag> --reason "<measurement, verbatim>"` writes
+   `current_by_role.session` in the gitignored, machine-local `local-model-state.json` - no
+   qualification run, since there is no `session`-kind task in `qualification/tasks.json` to
+   grade it against (unlike `writer`/`coder`, this role has no executable oracle: "is this a
+   good interactive chat session" is not a thing a frozen task set can check). Refuses without
+   `--reason` (R4) and refuses a tag that is not installed. Deliberately NOT declared in
+   `local-models.json`: that file's candidates feed `--matrix`, which checks every entry
+   against `local-model-config.json`'s GPU-residency sweep, and a thread-sweep-measured tag has
+   no entry there - declaring it would print a false "NOT RUNNABLE".
+3. **Switch.** `. .\scripts\local\claude-switch.ps1` once per shell, then:
+   - `claude-local` (or `claude-ollama -Model <tag>`) - with no `-Model`, resolves the
+     adopted `session` tag; refuses to switch, and never launches `claude`, when Ollama is not
+     reachable, when the resolver has nothing to offer and no `-Model` was given either, or
+     when the resolved/given tag is not actually in `ollama list` (a reachable port is not
+     proof the MODEL is there).
+   - `claude-cloud -SessionName <name>` - clears every local-routing env var, restores the
+     `ANTHROPIC_API_KEY` `claude-ollama` had removed, and returns to Anthropic. `-SessionName`
+     on either function sets the terminal window title only (`[LOCAL]`/`[CLOUD] <name>`), for
+     telling parallel terminal windows apart when several Claude Code sessions run at once -
+     it has no functional effect, since each PowerShell process already has its own isolated
+     environment.
 
-Measured and baked 2026-10-08: `qwen3.8-maxctx:latest` (`num_ctx=262144`, `num_thread=14`),
-chosen for maximum context window (a 170-page thesis for `/auditthesis`) over speed - 0 of 66
-layers fit on a 6GB card at that window, about 2.4 tok/s decode, heavy pagefile thrashing. The
-script's own `$script:DefaultLocalModel` carries the full measurement as a comment.
+Measured and baked 2026-10-08, adopted for the `session` role 2026-10-09: `qwen3.8-maxctx:latest`
+(`num_ctx=262144`, `num_thread=14`), chosen for maximum context window (a 170-page thesis for
+`/auditthesis`) over speed - 0 of 66 layers fit on a 6GB card at that window, about 2.4 tok/s
+decode, heavy pagefile thrashing. The full measurement is the `--reason` string recorded in
+`local-model-state.json`'s `current_by_role.session`, not a comment in the script - the script
+no longer names a tag at all.
 
 LaTeX boundary: `local-writer` may add `%` comments in a `.tex` file but never authors
 LaTeX or scientific prose - that stays with `latex-writer` + `scientific-writing` on the

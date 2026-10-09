@@ -1076,5 +1076,103 @@ class TestMeasuredBudgetTieBreak(unittest.TestCase):
         self.assertIsNone(mr.measured_budget("absent", self._config({})))
 
 
+class TestAdoptRole(unittest.TestCase):
+    """--adopt-role ROLE TAG --reason "...": manual adoption with no qualification run, for a
+    role (e.g. "session") qualification/tasks.json has no oracle for. R20: every refusal path
+    asserted, not only the success path."""
+
+    def _seeded_state(self, d: Path) -> Path:
+        state_path = d / "local-model-state.json"
+        _write_json(state_path, {
+            "current": "vendor-a:9b",
+            "current_by_role": {"writer": {"tag": "vendor-a:9b", "passed": 3, "total": 3, "adopted": "2026-08-14"}},
+            "score": {"passed": 6, "total": 6, "ratio": 1.0, "by_kind": _by_kind(3, 3, 3, 3)},
+            "qualified_at": "2026-08-14T00:00:00+00:00",
+            "history": [],
+        })
+        return state_path
+
+    def test_adopt_role_writes_current_by_role_and_resolves(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._seeded_state(d)
+
+            out = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stdout(out):
+                rc = mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "measured 2026-10-09"])
+
+            self.assertEqual(rc, 0)
+            self.assertIn("manually adopted", out.getvalue())
+
+            # Pre-existing role untouched, new role present, overall "current" unchanged.
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["current"], "vendor-a:9b")
+            self.assertEqual(state["current_by_role"]["writer"]["tag"], "vendor-a:9b")
+            session_entry = state["current_by_role"]["session"]
+            self.assertEqual(session_entry["tag"], "vendor-a:9b")
+            self.assertTrue(session_entry["manual"])
+            self.assertEqual(session_entry["reason"], "measured 2026-10-09")
+            self.assertEqual(state["history"][-1]["action"], "manual-adopt-role:session")
+
+            # resolve()'s existing per-role lookup already handles any role string, no new
+            # code path needed there - this is the round-trip proof of that claim.
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST):
+                self.assertEqual(mr.resolve("session"), "vendor-a:9b")
+
+    def test_adopt_role_refuses_without_reason(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._seeded_state(d)
+            before = state_path.read_text(encoding="utf-8")
+
+            err = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stderr(err):
+                rc = mr.main(["--adopt-role", "session", "vendor-a:9b"])
+
+            self.assertNotEqual(rc, 0)
+            self.assertIn("no --reason", err.getvalue())
+            self.assertEqual(state_path.read_text(encoding="utf-8"), before, "refusal must write nothing")
+
+    def test_adopt_role_refuses_uninstalled_tag(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._seeded_state(d)
+            before = state_path.read_text(encoding="utf-8")
+
+            err = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stderr(err):
+                rc = mr.main(["--adopt-role", "session", "phantom:not-installed", "--reason", "x"])
+
+            self.assertNotEqual(rc, 0)
+            self.assertIn("not installed", err.getvalue())
+            self.assertEqual(state_path.read_text(encoding="utf-8"), before, "refusal must write nothing")
+
+    def test_adopt_role_refuses_with_no_incumbent_state_at_all(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = d / "does-not-exist.json"
+
+            err = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stderr(err):
+                rc = mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "x"])
+
+            self.assertNotEqual(rc, 0)
+            self.assertIn("no incumbent at all", err.getvalue())
+            self.assertFalse(state_path.exists(), "refusal must not create the state file")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

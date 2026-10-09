@@ -6,11 +6,13 @@ Markdown-to-HTML converter, site_base's single-source/disagreement/scheme
 refusals (D9), the bounded HTTP client's retry/no-retry rules, and that the
 module never imports requests at module scope (lazy import only).
 """
+import builtins
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 import _fixtures  # noqa: F401
@@ -22,6 +24,32 @@ import wp_common
 
 class ConnectionError_(Exception):
     """Stand-in exception used as the injected retryable type in these tests."""
+
+
+class TestAtomicWriteText(unittest.TestCase):
+    def test_writes_full_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.json"
+            wp_common.atomic_write_text(path, '{"a": 1}')
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"a": 1}')
+
+    def test_no_tmp_file_left_behind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.json"
+            wp_common.atomic_write_text(path, "x")
+            self.assertFalse((Path(tmp) / "out.json.tmp").exists())
+
+    def test_overwrites_existing_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.json"
+            path.write_text("old", encoding="utf-8")
+            wp_common.atomic_write_text(path, "new")
+            self.assertEqual(path.read_text(encoding="utf-8"), "new")
+
+
+class TestErrorReport(unittest.TestCase):
+    def test_error_report_shape(self):
+        self.assertEqual(wp_common.error_report("boom", 2), {"error": "boom", "exit_code": 2})
 
 
 class TestSplitRecentHistory(unittest.TestCase):
@@ -115,6 +143,30 @@ class TestWpClient(unittest.TestCase):
         self.assertEqual(result, {"ok": True})
         self.assertEqual(len(session.calls), 2)
 
+    def test_get_429_retried(self):
+        session = FakeSession([FakeResponse(429), FakeResponse(200, json_data={"ok": True})])
+        client = wp_common.WpClient(session, "https://site", 5, 2, retryable=(ConnectionError_,))
+        result = client.get_json("/route", {})
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(len(session.calls), 2)
+
+    def test_backoff_sleeps_between_retries_not_before_first(self):
+        session = FakeSession([FakeResponse(503), FakeResponse(200, json_data={"ok": True})])
+        client = wp_common.WpClient(
+            session, "https://site", 5, 2, retry_backoff_s=1.5, retryable=(ConnectionError_,)
+        )
+        sleeps = []
+        with unittest.mock.patch.object(wp_common.time, "sleep", side_effect=sleeps.append):
+            client.get_json("/route", {})
+        self.assertEqual(sleeps, [1.5])
+
+    def test_no_backoff_sleep_when_configured_zero(self):
+        session = FakeSession([FakeResponse(503), FakeResponse(200, json_data={"ok": True})])
+        client = wp_common.WpClient(session, "https://site", 5, 2, retryable=(ConnectionError_,))
+        with unittest.mock.patch.object(wp_common.time, "sleep") as fake_sleep:
+            client.get_json("/route", {})
+        fake_sleep.assert_not_called()
+
     def test_timeout_forwarded(self):
         session = FakeSession([FakeResponse(200, json_data={})])
         client = wp_common.WpClient(session, "https://site", 7.5, 0, retryable=(ConnectionError_,))
@@ -163,6 +215,83 @@ class TestMakeSession(unittest.TestCase):
             session = wp_common.make_session(data_dir, {}, session_factory=_FakeSessionFactory)
             self.assertEqual(session.cookies.set_calls, [("sess", "abc", "example.org", "/")])
 
+    def test_session_cookie_sets_nonce_header_when_given(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config_dir = data_dir / "config"
+            config_dir.mkdir()
+            (config_dir / "cookies.json").write_text(
+                json.dumps([{"name": "sess", "value": "abc"}]), encoding="utf-8"
+            )
+            session = wp_common.make_session(
+                data_dir, {"WP_NONCE": "abc123nonce"}, session_factory=_FakeSessionFactory
+            )
+            self.assertEqual(session.headers["X-WP-Nonce"], "abc123nonce")
+
+    def test_session_cookie_write_without_nonce_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config_dir = data_dir / "config"
+            config_dir.mkdir()
+            (config_dir / "cookies.json").write_text(
+                json.dumps([{"name": "sess", "value": "abc"}]), encoding="utf-8"
+            )
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                wp_common.make_session(
+                    data_dir, {}, session_factory=_FakeSessionFactory, require_nonce=True
+                )
+            self.assertIn("WP_NONCE", str(ctx.exception))
+
+    def test_session_cookie_read_without_nonce_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config_dir = data_dir / "config"
+            config_dir.mkdir()
+            (config_dir / "cookies.json").write_text(
+                json.dumps([{"name": "sess", "value": "abc"}]), encoding="utf-8"
+            )
+            session = wp_common.make_session(data_dir, {}, session_factory=_FakeSessionFactory)
+            self.assertNotIn("X-WP-Nonce", session.headers)
+
+    def test_wp_cookies_outside_data_dir_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "data"
+            data_dir.mkdir()
+            outside = Path(tmp) / "outside-cookies.json"
+            outside.write_text(json.dumps([{"name": "sess", "value": "abc"}]), encoding="utf-8")
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                wp_common.make_session(
+                    data_dir,
+                    {"WP_COOKIES": "../outside-cookies.json"},
+                    session_factory=_FakeSessionFactory,
+                )
+            self.assertIn("escapes the data folder", str(ctx.exception))
+
+    def test_wp_cookies_relative_path_inside_data_dir_used(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            custom = data_dir / "mycookies.json"
+            custom.write_text(json.dumps([{"name": "sess", "value": "xyz"}]), encoding="utf-8")
+            session = wp_common.make_session(
+                data_dir, {"WP_COOKIES": "mycookies.json"}, session_factory=_FakeSessionFactory
+            )
+            self.assertEqual(session.cookies.set_calls, [("sess", "xyz", "", "/")])
+
+    def test_requests_missing_is_a_refusal(self):
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "requests":
+                raise ImportError("no module named requests")
+            return real_import(name, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            with unittest.mock.patch.object(builtins, "__import__", side_effect=fake_import):
+                with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                    wp_common.make_session(data_dir, {"WP_APP_USER": "a", "WP_APP_PASSWORD": "b"})
+            self.assertIn("requests", str(ctx.exception))
+
     def test_session_no_credentials_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
@@ -208,6 +337,7 @@ class _FakeSessionFactory:
     def __init__(self):
         self.auth = None
         self.cookies = _FakeCookieJar()
+        self.headers = {}
 
 
 if __name__ == "__main__":

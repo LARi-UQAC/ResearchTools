@@ -98,6 +98,24 @@ class TestMain(unittest.TestCase):
         report = json.loads(buf.getvalue())
         self.assertTrue(report["dry_run"])
 
+    def test_json_report_on_refusal(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = parse_cv.main([str(self.xml_path), "--data-dir", str(self.data_dir), "--out", "..\\x.json", "--json"])
+        self.assertEqual(code, 2)
+        report = json.loads(buf.getvalue())
+        self.assertEqual(report["exit_code"], 2)
+
+    def test_json_report_on_invalid_xml(self):
+        bad = self.data_dir / "bad.xml"
+        bad.write_text("<cv><unclosed>", encoding="utf-8")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = parse_cv.main([str(bad), "--data-dir", str(self.data_dir), "--json"])
+        self.assertEqual(code, 1)
+        report = json.loads(buf.getvalue())
+        self.assertEqual(report["exit_code"], 1)
+
     def test_cihr_export_refused(self):
         cihr_xml = self.data_dir / "cihr_export.xml"
         write_cihr_xml(cihr_xml)

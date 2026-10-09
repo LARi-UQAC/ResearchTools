@@ -145,6 +145,32 @@ class TestSectionSize(unittest.TestCase):
         self.assertEqual(push_wp.section_size({"financement": []}, _one_financement_entry()), 0)
 
 
+class TestPlanPagesMissingPath(unittest.TestCase):
+    """M4 (PR #50 review): a markers/replace cv_path absent from the CV JSON
+    must not crash plan_pages with an uncaught KeyError - --allow-empty-section
+    exists precisely to let this case through as an empty block."""
+
+    def test_markers_missing_path_renders_empty_not_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            import render
+
+            settings = render.RenderSettings(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+            mapping = {"entries": [{"cv_path": "absent", "page_id": 301, "mode": "markers", "marker": "m"}]}
+            pages = push_wp.plan_pages(mapping, {}, data_dir, settings)
+            self.assertEqual(pages[0]["blocks"][0]["html"], "")
+
+    def test_replace_missing_path_renders_empty_not_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            import render
+
+            settings = render.RenderSettings(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+            mapping = {"entries": [{"cv_path": "absent", "page_id": 302, "mode": "replace"}]}
+            pages = push_wp.plan_pages(mapping, {}, data_dir, settings)
+            self.assertEqual(pages[0]["blocks"][0]["html"], "")
+
+
 class TestNormalizeBlock(unittest.TestCase):
     def test_crlf_and_strip(self):
         self.assertEqual(push_wp.normalize_block("  a\r\nb  \r\n"), "a\nb")
@@ -278,6 +304,46 @@ class TestRunPush(unittest.TestCase):
             self.assertEqual(results[0]["status"], "failed")
             self.assertIn("403", results[0]["error"])
 
+    def test_backup_written_before_put_when_data_dir_given(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            import render
+
+            settings = render.RenderSettings(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+            pages = push_wp.plan_pages({"entries": [_one_financement_entry(201)]}, {"financement": [grant()]}, data_dir, settings)
+            client = _fixtures.FakeClient(
+                pages={201: "<!-- cvsync:fin-r -->old pre-image<!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"}
+            )
+            fixed_now = unittest.mock.Mock(return_value=unittest.mock.Mock(strftime=lambda fmt: "20261006T120000Z"))
+            results = push_wp.run_push(client, pages, apply=True, data_dir=data_dir, now=fixed_now)
+            self.assertEqual(results[0]["status"], "updated")
+            backup_file = data_dir / "backups" / "page-201-20261006T120000Z.html"
+            self.assertTrue(backup_file.is_file())
+            self.assertIn("old pre-image", backup_file.read_text(encoding="utf-8"))
+
+    def test_no_backup_without_data_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pages, client = self._fixture(
+                tmp, [_one_financement_entry(201)], {"financement": [grant()]},
+                pages={201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"},
+            )
+            results = push_wp.run_push(client, pages, apply=True)
+            self.assertEqual(results[0]["status"], "updated")
+
+    def test_no_backup_on_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            import render
+
+            settings = render.RenderSettings(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+            pages = push_wp.plan_pages({"entries": [_one_financement_entry(201)]}, {"financement": [grant()]}, data_dir, settings)
+            client = _fixtures.FakeClient(
+                pages={201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"}
+            )
+            results = push_wp.run_push(client, pages, apply=False, data_dir=data_dir)
+            self.assertEqual(results[0]["status"], "would-change")
+            self.assertFalse((data_dir / "backups").exists())
+
 
 class TestMainCli(unittest.TestCase):
     def setUp(self):
@@ -304,6 +370,21 @@ class TestMainCli(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(client.gets, [])
         self.assertEqual(client.puts, [])
+
+    def test_json_report_on_refusal(self):
+        self._mapping_and_cv()
+        client = _fixtures.FakeClient(pages={201: "<!-- cvsync:fin-r --><!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"})
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = push_wp.main(
+                ["--data-dir", str(self.data_dir), "--apply", "--json"],
+                environ={},
+                client_factory=lambda *a: client,
+            )
+        self.assertEqual(code, 2)
+        report = json.loads(buf.getvalue())
+        self.assertEqual(report["exit_code"], 2)
+        self.assertIn("--yes", report["error"])
 
     def test_missing_credentials_refused_not_raised(self):
         self._mapping_and_cv()

@@ -48,6 +48,14 @@ class TestAgentContract(unittest.TestCase):
         self.assertIn("--apply --yes", self.text)
         self.assertIn("PIPELINE INCOMPLETE", self.text)
 
+    def test_agent_has_two_distinct_approval_pauses(self):
+        # PR #50 review, M6: a clean preview (Step 3) must not by itself authorize
+        # the write (Step 5) - Step 4's own dry run needs its own pause.
+        self.assertIn("PIPELINE-PAUSED @ apply-approval", self.text)
+        step4_index = self.text.index("### Step 4")
+        step5_index = self.text.index("### Step 5")
+        self.assertIn("PIPELINE-PAUSED @ apply-approval", self.text[step4_index:step5_index])
+
     def test_agent_one_shot_rule(self):
         step4_index = self.text.index("### Step 4")
         step5_index = self.text.index("### Step 5")

@@ -1,0 +1,16 @@
+{
+  "_comment": "R6: key fragments (case-insensitive substring match) that a 'markers' or 'replace' mapping.yaml entry must never resolve to, directly or nested. 'markers'/'replace' dump a raw cihr.json node with no per-title approval gate (verify_titles.py only checks 'split' entries that way), so this is the structural guard for those two modes: it names the key itself, never its value, and extends D2 (no student/supervision data is ever published) to parse_cv.py's generic output, not only cihr_cv.py's fixed CIHR schema. Extend this list rather than the code that reads it (PR #50 review, H1, 2026-10-06).",
+  "denylist": [
+    "etudiant",
+    "student",
+    "supervis",
+    "stagiaire",
+    "doctorant",
+    "doctorat",
+    "maitrise",
+    "encadr",
+    "matricule",
+    "dossier_academique",
+    "academic_record"
+  ]
+}

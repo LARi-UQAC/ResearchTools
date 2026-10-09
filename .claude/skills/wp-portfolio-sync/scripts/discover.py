@@ -12,7 +12,7 @@ import sys
 
 import yaml
 
-from wp_common import configure_streams, client_from_config, make_session, site_base
+from wp_common import atomic_write_text, configure_streams, client_from_config, error_report, make_session, site_base
 from wp_config import CONFIG_NAME, config_value, load_config
 from wp_errors import WpRefusal, WpSyncError, exit_code_for
 from wp_paths import contained_path, resolve_data_dir
@@ -90,6 +90,12 @@ def main(argv=None, environ=None, client_factory=None):
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
+    def _fail(line, message, code):
+        print(line, file=sys.stderr)
+        if args.json:
+            print(json.dumps(error_report(message, code), ensure_ascii=False))
+        return code
+
     try:
         data_dir = resolve_data_dir(args.data_dir)
         out_path = contained_path(data_dir, args.out)
@@ -106,20 +112,17 @@ def main(argv=None, environ=None, client_factory=None):
         else:
             client = client_from_config(make_session(data_dir, environ), site, config)
     except WpRefusal as exc:
-        print("REFUS: %s" % exc, file=sys.stderr)
-        return exit_code_for(exc)
+        return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
 
     try:
         pages = fetch_pages(client, per_page)
     except WpSyncError as exc:
-        print("ERREUR: %s" % exc, file=sys.stderr)
-        return 1
+        return _fail("ERREUR: %s" % exc, str(exc), 1)
 
     if args.dry_run:
         print("SIMULATION: would write %d pages -> %s" % (len(pages), out_path), file=sys.stderr)
     else:
-        with open(out_path, "w", encoding="utf-8") as handle:
-            json.dump(pages, handle, ensure_ascii=False, indent=2)
+        atomic_write_text(out_path, json.dumps(pages, ensure_ascii=False, indent=2))
         print("%d pages -> %s" % (len(pages), out_path), file=sys.stderr)
 
     for p in pages:

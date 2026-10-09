@@ -90,7 +90,8 @@ ResearchTools\
         │                  Test\test_stt_bench.py, Test\test_stt_score.py,
         │                  Test\test_gpu_memory.py, Test\test_engines_config.py)
         └── wp-portfolio-sync\SKILL.md       (+ scripts\wp_errors.py, wp_config.py, wp_paths.py,
-                           wp_common.py, cihr_cv.py, parse_cv.py, render.py, verify_titles.py,
+                           wp_common.py, cihr_cv.py, parse_cv.py, cihr_labels.json,
+                           sensitive_keys.json, render.py, verify_titles.py,
                            push_wp.py, discover.py, preview.py,
                            templates\mapping.example.yaml, cookies.json.example,
                            Test\ [10 offline suites])

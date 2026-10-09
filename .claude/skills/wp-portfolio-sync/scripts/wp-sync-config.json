@@ -8,6 +8,10 @@
     "get_retries": {
       "value": 2,
       "provenance": "chosen by the operator on 2026-10-01; PUT is never retried by design"
+    },
+    "retry_backoff_s": {
+      "value": 2,
+      "provenance": "chosen by the operator on 2026-10-06 (PR #50 review, L2): a pause between GET retries so a 429 (rate limited) or a 5xx is not hammered immediately"
     }
   },
   "rest": {

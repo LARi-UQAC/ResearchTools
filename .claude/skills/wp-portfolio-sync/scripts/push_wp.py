@@ -8,6 +8,7 @@ here before any network call, in both dry run and --apply (D6). Every
 write is verified by a read-back GET (spec section 9, review focus 5).
 """
 import argparse
+import datetime
 import html
 import json
 import os
@@ -19,8 +20,10 @@ import yaml
 from render import PHASE1_RENDERERS, load_render_settings, render_entry
 from verify_titles import verify_mapping
 from wp_common import (
+    atomic_write_text,
     configure_streams,
     client_from_config,
+    error_report,
     get_path,
     make_session,
     render_block,
@@ -261,16 +264,51 @@ def plan_pages(mapping, data, data_dir, settings):
                 history_html = ""
             page["blocks"].append({"marker": entry["history_marker"], "label": label + ":history", "html": history_html})
         elif mode == "markers":
-            node = get_path(data, cv_path)
+            try:
+                node = get_path(data, cv_path)
+            except KeyError:
+                node = None
             page["blocks"].append({"marker": entry["marker"], "label": label, "html": render_block(node, entry.get("heading", ""))})
         else:  # replace
-            node = get_path(data, cv_path)
+            try:
+                node = get_path(data, cv_path)
+            except KeyError:
+                node = None
             page["blocks"].append({"marker": None, "label": label, "html": render_block(node, entry.get("heading", ""))})
 
     return [pages_by_id[page_id] for page_id in order]
 
 
-def _process_page(client, page, apply):
+def _write_backup(data_dir, page_id, raw_content, now):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Snapshot a page's content.raw exactly as it was read, before any
+        PUT touches it (M5, PR #50 review: a hand-edit overwritten with no
+        warning had no way back).
+
+    Inputs:
+        data_dir (Path): the resolved researcher data folder.
+        page_id (int): the WordPress page id.
+        raw_content (str): the page's content.raw before this push's edits.
+        now (callable): takes no arguments, returns an object with
+        strftime (tests inject a fixed one; datetime.datetime.utcnow by
+        default - R19: never read directly inside the logic under test).
+
+    Outputs:
+        path (Path): the backup file written, under
+        <data_dir>/backups/page-<page_id>-<timestamp>.html.
+    --------------------------------------------------------------------------
+    """
+    backups_dir = contained_path(data_dir, "backups")
+    backups_dir.mkdir(parents=True, exist_ok=True)
+    stamp = now().strftime("%Y%m%dT%H%M%SZ")
+    path = backups_dir / ("page-%d-%s.html" % (page_id, stamp))
+    atomic_write_text(path, raw_content)
+    return path
+
+
+def _process_page(client, page, apply, data_dir=None, now=None):
     page_id = page["page_id"]
     route = "/wp-json/wp/v2/pages/%d" % page_id
     notes = list(page.get("notes", []))
@@ -320,6 +358,10 @@ def _process_page(client, page, apply):
     if not apply:
         return {"page_id": page_id, "labels": page["labels"], "status": "would-change", "blocks": block_reports, "error": None, "notes": notes}
 
+    if data_dir is not None:
+        backup_path = _write_backup(data_dir, page_id, raw, now or datetime.datetime.utcnow)
+        notes = notes + ["pre-image backed up to %s" % backup_path]
+
     status_code = None
     body_text = ""
     try:
@@ -359,7 +401,7 @@ def _process_page(client, page, apply):
     return {"page_id": page_id, "labels": page["labels"], "status": "updated", "blocks": block_reports, "error": None, "notes": notes}
 
 
-def run_push(client, pages, apply):
+def run_push(client, pages, apply, data_dir=None, now=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -370,6 +412,10 @@ def run_push(client, pages, apply):
         client: a WpClient (or a fake with the same get_json/put_json contract).
         pages (list[dict]): plan_pages' result.
         apply (bool): False means dry run - no PUT is ever sent.
+        data_dir (Path or None): when given, content.raw is snapshotted to
+        <data_dir>/backups/ before each PUT (M5); None skips the backup
+        (a caller with no researcher data folder at hand, e.g. a test).
+        now (callable or None): see _write_backup; None uses the real clock.
 
     Outputs:
         results (list[dict]): one {"page_id", "labels", "status", "blocks",
@@ -377,7 +423,7 @@ def run_push(client, pages, apply):
         "would-change", "updated" or "failed".
     --------------------------------------------------------------------------
     """
-    return [_process_page(client, page, apply) for page in pages]
+    return [_process_page(client, page, apply, data_dir=data_dir, now=now) for page in pages]
 
 
 def main(argv=None, environ=None, client_factory=None):
@@ -413,6 +459,12 @@ def main(argv=None, environ=None, client_factory=None):
     parser.add_argument("--allow-empty-section", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+
+    def _fail(line, message, code):
+        print(line, file=sys.stderr)
+        if args.json:
+            print(json.dumps(error_report(message, code), ensure_ascii=False))
+        return code
 
     try:
         data_dir = resolve_data_dir(args.data_dir)
@@ -452,16 +504,14 @@ def main(argv=None, environ=None, client_factory=None):
         if client_factory is not None:
             client = client_factory(data_dir, environ, site)
         else:
-            client = client_from_config(make_session(data_dir, environ), site, load_config())
+            client = client_from_config(make_session(data_dir, environ, require_nonce=True), site, load_config())
+        pages = plan_pages(mapping, data, data_dir, settings)
     except WpRefusal as exc:
-        print("REFUS: %s" % exc, file=sys.stderr)
-        return exit_code_for(exc)
+        return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
     except (OSError, ValueError, yaml.YAMLError) as exc:
-        print("ERREUR: %s" % exc, file=sys.stderr)
-        return 1
+        return _fail("ERREUR: %s" % exc, str(exc), 1)
 
-    pages = plan_pages(mapping, data, data_dir, settings)
-    results = run_push(client, pages, args.apply)
+    results = run_push(client, pages, args.apply, data_dir=data_dir)
 
     print("Site : %s  (--apply=%s)" % (site, "OUI" if args.apply else "non, simulation"), file=sys.stderr)
     for result in results:

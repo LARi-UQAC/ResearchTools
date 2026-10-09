@@ -10,12 +10,15 @@ because each skill's import boundary differs).
 """
 import html
 import json
+import os
 import re
 import sys
+import time
 from pathlib import Path
 
 from wp_errors import WpRefusal, WpSyncError, WpWriteUnconfirmed
 from wp_config import CONFIG_NAME, config_value
+from wp_paths import contained_path
 
 
 def configure_streams():
@@ -128,6 +131,53 @@ def fmt_amount(val):
     except (ValueError, TypeError):
         return str(val)
     return "{:,}".format(number).replace(",", " ") + " $"
+
+
+def atomic_write_text(path, text, encoding="utf-8"):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write text to path atomically - a reader of path never observes a
+        partially written file (L1, PR #50 review). A sibling `.tmp` file
+        is written in full, then renamed over path in one filesystem call.
+
+    Inputs:
+        path (Path or str): the destination file.
+        text (str): the full content to write.
+        encoding (str): the text encoding (default utf-8).
+
+    Outputs:
+        none. path exists with exactly text in it, or the write raised
+        before path was ever touched.
+    --------------------------------------------------------------------------
+    """
+    path = Path(path)
+    tmp_path = path.with_name(path.name + ".tmp")
+    with open(tmp_path, "w", encoding=encoding) as handle:
+        handle.write(text)
+    os.replace(tmp_path, path)
+
+
+def error_report(message, exit_code):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the one machine-readable shape every CLI script in this
+        skill prints under --json on a refusal or a failure (L7, PR #50
+        review): before this, --json only ever emitted a report on
+        success, so a caller scripting against it saw nothing at all on
+        the exact runs it most needed to detect (R17).
+
+    Inputs:
+        message (str): the human-readable error text (REFUS:/ERREUR:
+        without that prefix).
+        exit_code (int): the exit code this run is about to return.
+
+    Outputs:
+        report (dict): {"error": message, "exit_code": exit_code}.
+    --------------------------------------------------------------------------
+    """
+    return {"error": message, "exit_code": exit_code}
 
 
 def split_recent_history(items, date_key, ref_year, window):
@@ -380,6 +430,8 @@ class WpClient:
         base_url (str): the site's REST API base, no trailing slash.
         timeout_s (float): per-request timeout in seconds.
         get_retries (int): extra GET attempts beyond the first.
+        retry_backoff_s (float): seconds slept before each GET retry (never
+        before the first attempt); 0 sleeps nothing (R0, from config).
         retryable (tuple[type, ...] or None): exception types to retry on;
         None resolves lazily to requests' ConnectionError/Timeout.
 
@@ -388,11 +440,12 @@ class WpClient:
     --------------------------------------------------------------------------
     """
 
-    def __init__(self, session, base_url, timeout_s, get_retries, retryable=None):
+    def __init__(self, session, base_url, timeout_s, get_retries, retry_backoff_s=0, retryable=None):
         self.session = session
         self.base_url = base_url
         self.timeout_s = timeout_s
         self.get_retries = get_retries
+        self.retry_backoff_s = retry_backoff_s
         self._retryable = retryable
 
     @property
@@ -433,13 +486,16 @@ class WpClient:
 
         Raises:
             WpSyncError: a 401 (naming WP_APP_USER/WP_APP_PASSWORD), any
-            other 4xx (naming the status), a non-JSON body, or attempts
-            exhausted (naming the route and the last cause).
+            other 4xx but 429 (naming the status), a non-JSON body, or
+            attempts exhausted (naming the route and the last cause). A 429
+            (rate limited) is retried like a 5xx rather than raised.
         --------------------------------------------------------------------------
         """
         last_exc = None
         attempts = 1 + self.get_retries
-        for _ in range(attempts):
+        for attempt in range(attempts):
+            if attempt > 0 and self.retry_backoff_s:
+                time.sleep(self.retry_backoff_s)
             try:
                 response = self.session.get(self.base_url + route, params=params, timeout=self.timeout_s)
             except self.retryable as exc:
@@ -450,7 +506,7 @@ class WpClient:
                     "401 Unauthorized for %s - check WP_APP_USER/WP_APP_PASSWORD" % route,
                     status_code=401,
                 )
-            if response.status_code >= 500:
+            if response.status_code == 429 or response.status_code >= 500:
                 last_exc = WpSyncError("HTTP %d for %s" % (response.status_code, route), status_code=response.status_code)
                 continue
             if response.status_code >= 400:
@@ -499,15 +555,17 @@ def client_from_config(session, base_url, config):
         config (dict): the document returned by wp_config.load_config.
 
     Outputs:
-        client (WpClient): configured from http.timeout_s and http.get_retries.
+        client (WpClient): configured from http.timeout_s, http.get_retries
+        and http.retry_backoff_s.
     --------------------------------------------------------------------------
     """
     timeout_s = config_value(config, "http.timeout_s", CONFIG_NAME)
     get_retries = config_value(config, "http.get_retries", CONFIG_NAME)
-    return WpClient(session, base_url, timeout_s, get_retries)
+    retry_backoff_s = config_value(config, "http.retry_backoff_s", CONFIG_NAME)
+    return WpClient(session, base_url, timeout_s, get_retries, retry_backoff_s=retry_backoff_s)
 
 
-def make_session(data_dir, environ, session_factory=None):
+def make_session(data_dir, environ, session_factory=None, require_nonce=False):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -521,21 +579,37 @@ def make_session(data_dir, environ, session_factory=None):
         arguments to build the session object (tests inject a fake); when
         None, requests is imported here, and only here, and
         requests.Session() is used.
+        require_nonce (bool): True for a caller that will PUT (push_wp.py);
+        when cookie authentication is used with no WP_NONCE set, a read-only
+        caller (discover.py) is let through unchanged (a nonce is only
+        checked by WordPress on a write), but a write-capable caller is
+        refused up front rather than failing later on each PUT.
 
     Outputs:
-        session: the built, authenticated session object.
+        session: the built, authenticated session object. Under cookie
+        authentication, session.headers["X-WP-Nonce"] is set from WP_NONCE
+        when that variable is present, whatever require_nonce is.
 
     Raises:
-        WpRefusal: the cookie file is malformed (named by path only, never
-        by content), or no credentials are configured at all (naming the
-        two environment variables and the cookie path). No message ever
-        contains a password or a cookie value.
+        WpRefusal: the 'requests' package is not installed (naming the pip
+        command); WP_COOKIES names a path escaping data_dir (R24); the
+        cookie file is malformed (named by path only, never by content);
+        cookie authentication is used with require_nonce=True and no
+        WP_NONCE is set; or no credentials are configured at all (naming
+        the two environment variables and the cookie path). No message
+        ever contains a password, a cookie value, or a nonce.
     --------------------------------------------------------------------------
     """
     if session_factory is not None:
         session = session_factory()
     else:
-        import requests
+        try:
+            import requests
+        except ImportError as exc:
+            raise WpRefusal(
+                "the 'requests' package is not installed: run "
+                "'pip install -r requirements.txt' in this skill's scripts/ directory"
+            ) from exc
 
         session = requests.Session()
 
@@ -545,8 +619,11 @@ def make_session(data_dir, environ, session_factory=None):
         session.auth = (user, password)
         return session
 
-    cookie_path = environ.get("WP_COOKIES") or str(Path(data_dir) / "config" / "cookies.json")
-    cookie_file = Path(cookie_path)
+    cookie_path_raw = environ.get("WP_COOKIES")
+    if cookie_path_raw:
+        cookie_file = contained_path(data_dir, cookie_path_raw)
+    else:
+        cookie_file = Path(data_dir) / "config" / "cookies.json"
     if cookie_file.is_file():
         try:
             with open(cookie_file, "r", encoding="utf-8") as handle:
@@ -559,6 +636,17 @@ def make_session(data_dir, environ, session_factory=None):
                 session.cookies.set(name, value, domain=entry.get("domain", ""), path=entry.get("path", "/"))
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise WpRefusal("cookie file is malformed: %s" % cookie_file) from exc
+
+        nonce = environ.get("WP_NONCE")
+        if nonce:
+            session.headers["X-WP-Nonce"] = nonce
+        elif require_nonce:
+            raise WpRefusal(
+                "cookie authentication cannot write without WP_NONCE: set it to the "
+                "nonce a logged-in WordPress session returns (the 'X-WP-Nonce' header "
+                "of a GET to /wp-json with that session's cookies), or use "
+                "WP_APP_USER/WP_APP_PASSWORD instead"
+            )
         return session
 
     raise WpRefusal(

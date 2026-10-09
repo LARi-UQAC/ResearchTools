@@ -11,11 +11,12 @@ import html
 import json
 import re
 import sys
+from pathlib import Path
 
 import yaml
 
 from render import item_title, load_render_settings, render_entry
-from wp_common import configure_streams, norm_ws
+from wp_common import configure_streams, error_report, norm_ws, get_path
 from wp_errors import WpRefusal, WpSyncError, exit_code_for
 from wp_paths import contained_path, resolve_data_dir
 
@@ -27,6 +28,73 @@ _EXTRA_FILE_FOR_RENDERER = {
     "implications": "config/implications_extra.yaml",
     "services": "config/services_extra.yaml",
 }
+
+_SENSITIVE_KEYS_FILE = Path(__file__).resolve().parent / "sensitive_keys.json"
+
+
+def _load_denylist(path=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Load the sensitive-key denylist (R6) a markers/replace entry is
+        checked against (H1, PR #50 review: those two modes have no
+        per-title approval gate, unlike 'split').
+
+    Inputs:
+        path (Path or None): override for the denylist file; None reads
+        sensitive_keys.json beside this module.
+
+    Outputs:
+        denylist (list[str]): lower-cased key fragments.
+
+    Raises:
+        WpRefusal: the file is missing, not JSON, or its "denylist" is not
+        a non-empty list (R3: never a silently empty gate).
+    --------------------------------------------------------------------------
+    """
+    resolved = path if path is not None else _SENSITIVE_KEYS_FILE
+    try:
+        with open(resolved, "r", encoding="utf-8") as handle:
+            doc = json.load(handle)
+        denylist = doc["denylist"]
+        if not isinstance(denylist, list) or not denylist:
+            raise ValueError("'denylist' must be a non-empty list")
+        return [str(term).lower() for term in denylist]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise WpRefusal("sensitive_keys.json is missing or malformed: %s" % resolved) from exc
+
+
+def find_sensitive_keys(node, denylist, path=""):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Recursively find every dict key, anywhere under node, whose own
+        name contains a denylisted term - never its value, which a
+        markers/replace entry has no business having in the first place
+        (D2 extended to parse_cv.py's generic output).
+
+    Inputs:
+        node: a dict, list, or scalar (the parsed cihr.json subtree at one
+        mapping entry's cv_path).
+        denylist (list[str]): lower-cased key fragments to match as a
+        substring of each key, case-insensitively.
+        path (str): the dotted path accumulated so far (internal use).
+
+    Outputs:
+        hits (list[str]): dotted key paths matched, in traversal order.
+    --------------------------------------------------------------------------
+    """
+    hits = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            key_path = "%s.%s" % (path, key) if path else str(key)
+            if any(term in str(key).lower() for term in denylist):
+                hits.append(key_path)
+            hits.extend(find_sensitive_keys(value, denylist, key_path))
+    elif isinstance(node, list):
+        for item in node:
+            hits.extend(find_sensitive_keys(item, denylist, path))
+    return hits
 
 
 def seed_titles(markdown):
@@ -161,17 +229,30 @@ def verify_mapping(data, mapping, data_dir, settings):
     Outputs:
         report (dict): {"unapproved": [[cv_path, title], ...],
         "not_covered": [cv_path, ...]}. A markers/replace entry is
-        not_covered rather than checked, since its generic HTML puts JSON
-        keys in <strong>. A render error is recorded as
-        [cv_path, "<render failed: message>"].
+        not_covered rather than title-checked, since its generic HTML puts
+        JSON keys in <strong>; it is instead scanned for a denylisted
+        sensitive key (H1) and, on a hit, ALSO added to unapproved so
+        push_wp.py's existing refusal covers it. A render error is
+        recorded as [cv_path, "<render failed: message>"].
     --------------------------------------------------------------------------
     """
     unapproved = []
     not_covered = []
+    denylist = None
     for entry in mapping.get("entries", []):
         cv_path = entry["cv_path"]
         if entry.get("mode") != "split":
             not_covered.append(cv_path)
+            if denylist is None:
+                denylist = _load_denylist()
+            try:
+                node = get_path(data, cv_path)
+            except KeyError:
+                node = None
+            for key_path in find_sensitive_keys(node, denylist):
+                unapproved.append(
+                    [cv_path, "<sensitive key %r reachable via mode %r>" % (key_path, entry.get("mode"))]
+                )
             continue
 
         static_text = ""
@@ -221,6 +302,12 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
+    def _fail(line, message, code):
+        print(line, file=sys.stderr)
+        if args.json:
+            print(json.dumps(error_report(message, code), ensure_ascii=False))
+        return code
+
     try:
         data_dir = resolve_data_dir(args.data_dir)
         mapping_file = contained_path(data_dir, args.mapping)
@@ -236,14 +323,12 @@ def main(argv=None):
         settings = load_render_settings(mapping, str(mapping_file))
         with open(cv_file, "r", encoding="utf-8") as handle:
             data = json.load(handle)
+        report = verify_mapping(data, mapping, data_dir, settings)
     except WpRefusal as exc:
-        print("REFUS: %s" % exc, file=sys.stderr)
-        return exit_code_for(exc)
+        return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
     except (OSError, ValueError, yaml.YAMLError) as exc:
-        print("ERREUR: %s" % exc, file=sys.stderr)
-        return 1
+        return _fail("ERREUR: %s" % exc, str(exc), 1)
 
-    report = verify_mapping(data, mapping, data_dir, settings)
     for cv_path, title in report["unapproved"]:
         print("TITRE NON APPROUVE [%s] %s" % (cv_path, title), file=sys.stderr)
     for cv_path in report["not_covered"]:

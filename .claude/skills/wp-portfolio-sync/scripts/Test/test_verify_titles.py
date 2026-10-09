@@ -43,6 +43,22 @@ class TestFindUnapproved(unittest.TestCase):
         self.assertEqual(bad, [])
 
 
+class TestFindSensitiveKeys(unittest.TestCase):
+    def test_nested_sensitive_key_found(self):
+        node = {"supervision": {"doctorat": [{"etudiant": "Fictif"}]}}
+        hits = verify_titles.find_sensitive_keys(node, ["supervis", "etudiant"])
+        self.assertTrue(any("supervision" in h for h in hits))
+        self.assertTrue(any("etudiant" in h for h in hits))
+
+    def test_clean_node_no_hits(self):
+        node = {"financement": [{"titre": "Projet A", "montant": 1000}]}
+        hits = verify_titles.find_sensitive_keys(node, ["supervis", "etudiant"])
+        self.assertEqual(hits, [])
+
+    def test_none_node_no_hits(self):
+        self.assertEqual(verify_titles.find_sensitive_keys(None, ["supervis"]), [])
+
+
 class TestApprovedTitlesScoping(unittest.TestCase):
     def test_approvals_scoped(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -100,6 +116,39 @@ class TestVerifyMapping(unittest.TestCase):
             self.assertEqual(report["not_covered"], ["cv.notes"])
             self.assertEqual(report["unapproved"], [])
 
+    def test_markers_entry_with_sensitive_key_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            data = {"supervision": {"doctorat": ["Etudiant Fictif"]}}
+            mapping = {
+                "entries": [{"cv_path": "supervision", "page_id": 104, "mode": "markers", "marker": "sup"}]
+            }
+            report = verify_titles.verify_mapping(data, mapping, data_dir, _settings())
+            self.assertEqual(report["not_covered"], ["supervision"])
+            flagged_cv_paths = [cv_path for cv_path, _text in report["unapproved"]]
+            self.assertEqual(flagged_cv_paths, ["supervision"])
+            self.assertIn("doctorat", report["unapproved"][0][1])
+
+    def test_replace_entry_with_sensitive_key_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            data = {"profil": {"matricule": "A1234567"}}
+            mapping = {"entries": [{"cv_path": "profil", "page_id": 105, "mode": "replace"}]}
+            report = verify_titles.verify_mapping(data, mapping, data_dir, _settings())
+            self.assertEqual(len(report["unapproved"]), 1)
+
+    def test_markers_entry_with_no_sensitive_key_still_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            data = {"cv": {"notes": "x"}}
+            mapping = {"entries": [{"cv_path": "cv.notes", "page_id": 103, "mode": "markers", "marker": "notes"}]}
+            report = verify_titles.verify_mapping(data, mapping, data_dir, _settings())
+            self.assertEqual(report["unapproved"], [])
+
+    def test_denylist_missing_file_is_a_refusal(self):
+        with self.assertRaises(wp_errors.WpRefusal):
+            verify_titles._load_denylist(Path("/does/not/exist/sensitive_keys.json"))
+
 
 class TestCli(unittest.TestCase):
     def setUp(self):
@@ -144,6 +193,16 @@ class TestCli(unittest.TestCase):
             ["--data-dir", str(self.data_dir), "--mapping", "config/nope.yaml"]
         )
         self.assertEqual(code, 2)
+
+    def test_json_report_on_refusal(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = verify_titles.main(
+                ["--data-dir", str(self.data_dir), "--mapping", "config/nope.yaml", "--json"]
+            )
+        self.assertEqual(code, 2)
+        report = json.loads(buf.getvalue())
+        self.assertEqual(report["exit_code"], 2)
 
 
 if __name__ == "__main__":

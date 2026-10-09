@@ -16,7 +16,7 @@ import yaml
 
 from render import load_render_settings, render_entry
 from verify_titles import verify_mapping
-from wp_common import configure_streams, site_base
+from wp_common import configure_streams, error_report, site_base
 from wp_config import CONFIG_NAME, config_value, load_config
 from wp_errors import WpRefusal, WpSyncError, exit_code_for
 from wp_paths import contained_path, resolve_data_dir
@@ -74,6 +74,12 @@ def main(argv=None, today_year=None, environ=None):
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
+    def _fail(line, message, code):
+        print(line, file=sys.stderr)
+        if args.json:
+            print(json.dumps(error_report(message, code), ensure_ascii=False))
+        return code
+
     try:
         data_dir = resolve_data_dir(args.data_dir)
         mapping_file = contained_path(data_dir, args.mapping)
@@ -93,11 +99,9 @@ def main(argv=None, today_year=None, environ=None):
         config = load_config()
         snippet_chars = config_value(config, "preview.snippet_chars", CONFIG_NAME)
     except WpRefusal as exc:
-        print("REFUS: %s" % exc, file=sys.stderr)
-        return exit_code_for(exc)
+        return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
     except (OSError, ValueError, yaml.YAMLError) as exc:
-        print("ERREUR: %s" % exc, file=sys.stderr)
-        return 1
+        return _fail("ERREUR: %s" % exc, str(exc), 1)
 
     print("Site : %s" % site, file=sys.stderr)
     entries_report = []
@@ -144,7 +148,10 @@ def main(argv=None, today_year=None, environ=None):
         print(stale_note, file=sys.stderr)
         notes_out.append(stale_note)
 
-    gate_report = verify_mapping(data, mapping, data_dir, settings)
+    try:
+        gate_report = verify_mapping(data, mapping, data_dir, settings)
+    except WpRefusal as exc:
+        return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
     for cv_path, title in gate_report["unapproved"]:
         print("TITRE NON APPROUVE [%s] %s" % (cv_path, title), file=sys.stderr)
 

@@ -11,11 +11,20 @@ import sys
 
 try:
     import defusedxml.ElementTree as ET
-except ImportError:  # pragma: no cover - degrades to stdlib
+    from defusedxml.common import DefusedXmlException
+except ImportError:  # degrades to stdlib: no entity-expansion guard, but never silent (R8)
     import xml.etree.ElementTree as ET
 
+    DefusedXmlException = ()  # an empty except-tuple: nothing extra to catch without defusedxml
+    print(
+        "WARNING: defusedxml is not installed - falling back to plain xml.etree.ElementTree, "
+        "with no protection against malicious XML entities ('pip install -r requirements.txt' "
+        "in scripts/ to install it)",
+        file=sys.stderr,
+    )
+
 from cihr_cv import ROOT_TAG as CIHR_ROOT_TAG
-from wp_common import configure_streams
+from wp_common import atomic_write_text, configure_streams, error_report
 from wp_errors import WpRefusal, exit_code_for
 from wp_paths import contained_path, resolve_data_dir
 
@@ -82,32 +91,36 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
+    def _fail(line, message, code):
+        print(line, file=sys.stderr)
+        if args.json:
+            print(json.dumps(error_report(message, code), ensure_ascii=False))
+        return code
+
     try:
         data_dir = resolve_data_dir(args.data_dir)
         xml_path = contained_path(data_dir, args.xml)
         out_path = contained_path(data_dir, args.out)
     except WpRefusal as exc:
-        print("REFUS: %s" % exc, file=sys.stderr)
-        return exit_code_for(exc)
+        return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
 
     try:
         root = ET.parse(str(xml_path)).getroot()
     except ET.ParseError as exc:
-        print("ERROR: invalid XML: %s" % exc, file=sys.stderr)
-        return 1
+        return _fail("ERROR: invalid XML: %s" % exc, str(exc), 1)
+    except DefusedXmlException as exc:
+        return _fail("ERROR: XML refused (entity-expansion guard): %s" % exc, str(exc), 1)
     except OSError as exc:
-        print("ERROR: cannot read file: %s" % exc, file=sys.stderr)
-        return 1
+        return _fail("ERROR: cannot read file: %s" % exc, str(exc), 1)
 
     root_key = _strip_ns(root.tag)
     if root_key == CIHR_ROOT_TAG:
-        print(
-            "ERROR: this is a CIHR/CCV generic-cv export - use cihr_cv.py instead, "
+        message = (
+            "this is a CIHR/CCV generic-cv export - use cihr_cv.py instead, "
             "which has no supervision parser (D2). The generic parser applies no "
-            "section filtering and would publish whatever the tree holds.",
-            file=sys.stderr,
+            "section filtering and would publish whatever the tree holds."
         )
-        return 1
+        return _fail("ERROR: %s" % message, message, 1)
 
     data = {root_key: elem_to_obj(root)}
     top = data[root_key]
@@ -116,8 +129,7 @@ def main(argv=None):
     if args.dry_run:
         print("SIMULATION: would write %s" % out_path, file=sys.stderr)
     else:
-        with open(out_path, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
+        atomic_write_text(out_path, json.dumps(data, ensure_ascii=False, indent=2))
         print("Wrote %s" % out_path, file=sys.stderr)
     print("Top-level sections (use as cv_path in mapping.yaml): %s" % keys, file=sys.stderr)
 

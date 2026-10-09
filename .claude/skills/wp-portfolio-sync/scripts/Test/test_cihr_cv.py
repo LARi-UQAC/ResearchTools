@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import _fixtures  # noqa: F401
-from _fixtures import write_cihr_xml
+from _fixtures import write_cihr_xml, write_cihr_xml_en
 
 import cihr_cv
 import wp_paths
@@ -49,6 +49,46 @@ class TestParseCihr(unittest.TestCase):
         data = cihr_cv.parse_cihr(self.root)
         kinds = {item["type"] for item in data["services_communaute"]}
         self.assertEqual(kinds, {"media", "entreprise", "evenement"})
+
+
+class TestParseCihrEnglish(unittest.TestCase):
+    """English-label CCV export (Q6, PR #50 review, 2026-10-06)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.xml_path = Path(self.tmp.name) / "cv_en.xml"
+        write_cihr_xml_en(self.xml_path)
+        self.root = ET.parse(str(self.xml_path)).getroot()
+
+    def test_keys_and_counts_english(self):
+        data = cihr_cv.parse_cihr(self.root)
+        self.assertEqual(len(data["financement"]), 1)
+        self.assertEqual(len(data["implications"]), 1)
+        self.assertEqual(len(data["services_communaute"]), 3)
+        self.assertEqual(len(data["distinctions"]["prix"]), 1)
+        self.assertEqual(len(data["distinctions"]["contributions_cles"]), 1)
+
+    def test_field_values_extracted_english(self):
+        data = cihr_cv.parse_cihr(self.root)
+        self.assertEqual(data["financement"][0]["titre"], "Fictitious Project EN")
+        self.assertEqual(data["financement"][0]["sources"][0]["organisme"], "Fictitious Agency")
+        self.assertEqual(data["implications"][0]["nom"], "Fictitious Committee EN")
+
+    def test_no_supervision_key_english(self):
+        data = cihr_cv.parse_cihr(self.root)
+        self.assertNotIn("supervision", data)
+
+    def test_student_never_written_english(self):
+        out_dir = Path(self.tmp.name) / "data"
+        out_dir.mkdir()
+        xml_path = out_dir / "cv_en.xml"
+        write_cihr_xml_en(xml_path)
+        out = out_dir / "cihr.json"
+        code = cihr_cv.main([str(xml_path), "--data-dir", str(out_dir), "--out", "cihr.json"])
+        self.assertEqual(code, 0)
+        text = out.read_text(encoding="utf-8")
+        self.assertNotIn("Fictitious Witness Student EN", text)
 
 
 class TestMain(unittest.TestCase):
@@ -119,6 +159,27 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 0)
         report = json.loads(buf.getvalue())
         self.assertEqual(report["counts"]["financement"], 2)
+
+    def test_json_report_on_refusal(self):
+        outside_xml = Path(self.tmp.name) / "outside.xml"
+        write_cihr_xml(outside_xml)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cihr_cv.main([str(outside_xml), "--data-dir", str(self.data_dir), "--json"])
+        self.assertEqual(code, 2)
+        report = json.loads(buf.getvalue())
+        self.assertEqual(report["exit_code"], 2)
+        self.assertIn("escapes the data folder", report["error"])
+
+    def test_json_report_on_zero_records(self):
+        empty_xml = self.data_dir / "empty.xml"
+        ET.ElementTree(ET.Element("generic-cv")).write(str(empty_xml))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cihr_cv.main([str(empty_xml), "--data-dir", str(self.data_dir), "--json"])
+        self.assertEqual(code, 1)
+        report = json.loads(buf.getvalue())
+        self.assertEqual(report["exit_code"], 1)
 
     def test_dry_run_writes_nothing(self):
         out = self.data_dir / "cihr.json"

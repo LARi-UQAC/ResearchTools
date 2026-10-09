@@ -22,12 +22,19 @@ class TestShippedConfig(unittest.TestCase):
         cfg = wp_config.load_config()
         self.assertEqual(wp_config.config_value(cfg, "http.timeout_s", "x.json"), 30)
         self.assertEqual(wp_config.config_value(cfg, "http.get_retries", "x.json"), 2)
+        self.assertEqual(wp_config.config_value(cfg, "http.retry_backoff_s", "x.json"), 2)
         self.assertEqual(wp_config.config_value(cfg, "rest.per_page", "x.json"), 100)
         self.assertEqual(wp_config.config_value(cfg, "preview.snippet_chars", "x.json"), 400)
 
     def test_every_key_has_provenance(self):
         cfg = wp_config.load_config()
-        for dotted in ("http.timeout_s", "http.get_retries", "rest.per_page", "preview.snippet_chars"):
+        for dotted in (
+            "http.timeout_s",
+            "http.get_retries",
+            "http.retry_backoff_s",
+            "rest.per_page",
+            "preview.snippet_chars",
+        ):
             parts = dotted.split(".")
             node = cfg
             for part in parts:

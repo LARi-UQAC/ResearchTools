@@ -73,27 +73,39 @@ No `--apply` writes nothing. Present each page's status (`unchanged`, `would-cha
 researcher says they edited by hand after an earlier migration, stop here** — the website
 is now the source of truth for that page (D1), and a new push would overwrite the edit.
 
+End this step with exactly: `PIPELINE-PAUSED @ apply-approval`
+
+Wait for the researcher's explicit approval before Step 5. This is a SEPARATE checkpoint
+from Step 3's `preview-approval` pause — a clean preview does not by itself authorize the
+write, since Step 4's dry run is what names the exact pages and blocks about to change.
+
 ### Step 5 — Push, for real (only after explicit approval)
 
 ```bash
 python scripts/push_wp.py --data-dir <data-dir> --apply --yes --json
 ```
 
-Run this only once the researcher has approved the Step 4 dry run. Report every page's
-final status. `failed` is never rounded up to success, and a page that failed its read-back
-verification is reported exactly as `failed`, not as a partial success.
+Run this only once the researcher has approved the Step 4 dry run's own
+`apply-approval` pause above. Report every page's final status. `failed` is never rounded up
+to success, and a page that failed its read-back verification is reported exactly as
+`failed`, not as a partial success. `push_wp.py` snapshots every page's prior `content.raw`
+to `<data-dir>/backups/page-<id>-<timestamp>.html` immediately before writing it, so mention
+that backup location when reporting each `updated` page: a hand-edit this push overwrote can
+be restored from there.
 
 ### Step 6 — Verify the public pages
 
 For each mapping entry carrying a `public_path`:
 
 ```bash
-curl -sS --max-time 30 "<site><public_path>?v=<unix-seconds>"
+TIMEOUT=$(python -c "import sys; sys.path.insert(0, 'scripts'); from wp_config import load_config, config_value, CONFIG_NAME; print(config_value(load_config(), 'http.timeout_s', CONFIG_NAME))")
+curl -sS --max-time "$TIMEOUT" "<site><public_path>?v=<unix-seconds>"
 ```
 
-The 30 s timeout matches the skill's own `http.timeout_s`
-(`scripts/wp-sync-config.json`), so a verification call never hangs past what the push
-itself would wait (R10). `-sS` stays silent on the progress meter but prints a transport
+The timeout is READ from the skill's own `http.timeout_s` (`scripts/wp-sync-config.json`)
+rather than restated as a literal here (R0), so a verification call never hangs past what
+the push itself would wait (R10) even after that value is tuned. `-sS` stays silent on the
+progress meter but prints a transport
 error instead of swallowing it. Check curl's own exit code first: non-zero means the
 request itself failed (DNS, TLS, timeout) and must be reported as a network failure, never
 as "0 markers found" — those are different discrepancies. Only on exit 0 do you count the

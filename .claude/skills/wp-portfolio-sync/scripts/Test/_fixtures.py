@@ -421,3 +421,106 @@ def write_cihr_xml(path, include_supervision=True):
 
     tree = ET.ElementTree(root)
     tree.write(str(path), encoding="utf-8", xml_declaration=True)
+
+
+def write_cihr_xml_en(path, include_supervision=True):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write a fictitious CIHR generic-cv XML export in English, one
+        record per section cihr_cv.py reads, so the English label tables
+        (Q6, PR #50 review, 2026-10-06) are exercised the same way
+        write_cihr_xml exercises the French ones.
+
+    Inputs:
+        path (Path): where to write the XML file.
+        include_supervision (bool): whether to add a supervision record
+            naming a fictitious student, mirroring write_cihr_xml's D2
+            data-minimisation proof.
+
+    Outputs:
+        none. Writes the file at path.
+    --------------------------------------------------------------------------
+    """
+    import xml.etree.ElementTree as ET
+
+    ET.register_namespace("", _CIHR_NS)
+    root = _el("generic-cv")
+
+    s = _el("section", "Research Funding History")
+    s.set("recordId", "Fictitious Project EN")
+    s.append(_field("Title of Funding", "Fictitious Project EN"))
+    s.append(_field("Status of Funding", "Awarded"))
+    s.append(_field("Start of Funding", "2024/1"))
+    s.append(_field("End of Funding", "2026/1"))
+    sources = _el("section", "Funding Sources")
+    sources.append(_field("Funding Organization", "Fictitious Agency"))
+    sources.append(_field("Program Name", "Fictitious Program"))
+    sources.append(_field("Total Funding", "100000"))
+    s.append(sources)
+    root.append(s)
+
+    adhesions = _el("section", "Memberships")
+    comite = _el("section", "Committee Member")
+    comite.append(_field("Committee Name", "Fictitious Committee EN"))
+    comite.append(_field("Role", "Member"))
+    adhesions.append(comite)
+    root.append(adhesions)
+
+    contributions = _el("section", "Contributions")
+    medias = _el("section", "Media Presence")
+    item = _el("section")
+    item.append(_field("Subject", "Fictitious media interview EN"))
+    item.append(_field("Program", "Fictitious Program EN"))
+    item.append(_field("Channel", "Fictitious Channel EN"))
+    item.append(_field("Date of First Broadcast", "2024/3"))
+    medias.append(item)
+    contributions.append(medias)
+    root.append(contributions)
+
+    activites = _el("section", "Activities")
+    connaissances = _el("section", "Knowledge and Technology Transfer")
+    connaissances.append(_field("Role", "Lead"))
+    connaissances.append(
+        _field(
+            "Type of Knowledge and Technology Application Activity",
+            "Fictitious workshop EN",
+        )
+    )
+    connaissances.append(
+        _field(
+            "Group, Organization or Company Benefiting from the Services",
+            "Fictitious Company EN",
+        )
+    )
+    connaissances.append(_field("Start Date", "2023/1"))
+    connaissances.append(_field("End Date", "2023/6"))
+    activites.append(connaissances)
+
+    evenement = _el("section", "Event Management")
+    evenement.append(_field("Role", "Organizer"))
+    evenement.append(_field("Event Name", "Fictitious Event EN"))
+    evenement.append(_field("Activity Start Date", "2022/1"))
+    activites.append(evenement)
+
+    if include_supervision:
+        supervision = _el("section", "Supervisory Activities")
+        record = _el("section")
+        record.append(_field("Student", "Fictitious Witness Student EN"))
+        supervision.append(record)
+        activites.append(supervision)
+
+    root.append(activites)
+
+    prix = _el("section", "Recognitions")
+    prix.append(_field("Name of Recognition", "Fictitious Prize EN"))
+    prix.append(_field("Start Date", "2021/1"))
+    root.append(prix)
+
+    cle = _el("section", "Most Significant Contributions")
+    cle.append(_field("Title", "Fictitious key contribution EN"))
+    cle.append(_field("Contribution Date", "2020/1"))
+    root.append(cle)
+
+    tree = ET.ElementTree(root)
+    tree.write(str(path), encoding="utf-8", xml_declaration=True)

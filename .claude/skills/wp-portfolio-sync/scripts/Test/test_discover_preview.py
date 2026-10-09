@@ -216,6 +216,29 @@ class TestPreviewMain(unittest.TestCase):
             code = preview.main(["--data-dir", str(self.data_dir)], today_year=2026, environ={})
         self.assertEqual(code, 0)
 
+    def test_json_report_on_refusal(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = preview.main(
+                ["--data-dir", str(self.data_dir), "--mapping", "config/nope.yaml", "--json"],
+                today_year=2026,
+                environ={},
+            )
+        self.assertEqual(code, 2)
+        report = json.loads(buf.getvalue())
+        self.assertEqual(report["exit_code"], 2)
+
+    def test_gate_refusal_caught_not_raised(self):
+        with unittest.mock.patch("preview.verify_mapping", side_effect=wp_errors.WpRefusal("denylist missing")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = preview.main(
+                    ["--data-dir", str(self.data_dir), "--json"], today_year=2026, environ={}
+                )
+        self.assertEqual(code, 2)
+        report = json.loads(buf.getvalue())
+        self.assertIn("denylist missing", report["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

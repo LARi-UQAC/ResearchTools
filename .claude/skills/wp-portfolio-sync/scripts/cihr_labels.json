@@ -1,0 +1,70 @@
+{
+  "_comment": "R6: French/English label synonyms for the Canadian Common CV (CCV) / CIHR generic-cv export, read by cihr_cv.py's section and field matchers (Q6, PR #50 review, 2026-10-06). The French strings are proven against a real export (write_cihr_xml fixture); the English strings are the CCV's standard, long-stable module and field names and are proven here only against a fictitious fixture (write_cihr_xml_en) built from them - verify against a live English CCV export before relying on a label not already covered by one of those two fixtures.",
+  "sections": {
+    "financement": ["Historique du financement de la recherche", "Research Funding History"],
+    "sources": ["Sources de financement", "Funding Sources"],
+    "cochercheurs": ["Autres chercheurs", "Other Researchers", "Other Investigators"],
+    "adhesions": ["Adhésions", "Memberships"],
+    "membre_comite": ["Membre de comité", "Committee Member"],
+    "membre_organisme": ["Membre d'autres organismes", "Member of Other Organizations"],
+    "contributions": ["Contributions"],
+    "activites": ["Activités", "Activities"],
+    "distinctions_marques": ["Marques de reconnaissance", "Recognitions"],
+    "distinctions_cles": ["Contributions les plus importantes", "Most Significant Contributions"]
+  },
+  "substrings": {
+    "medias": ["médias", "media"],
+    "connaissances": ["connaissances", "knowledge"]
+  },
+  "evenements": [
+    ["Gestion d", "vènements"],
+    ["Event", "Management"]
+  ],
+  "fields": {
+    "titre_financement": ["Titre du financement", "Title of Funding"],
+    "type_financement": ["Type de financement", "Type of Funding"],
+    "statut_financement": ["Statut du financement", "Status of Funding"],
+    "role": ["Rôle", "Role"],
+    "debut_financement": ["Début de financement", "Start of Funding"],
+    "fin_financement": ["Fin de financement", "End of Funding"],
+    "organisme_financement": ["Organisme de financement", "Funding Organization"],
+    "nom_programme": ["Nom du programme", "Program Name"],
+    "montant_total": ["Montant total", "Total Funding"],
+    "portion_recue": ["Portion de financement reçu", "Portion of Funding Received"],
+    "competitif": ["Est-ce que le financement est compétitif?", "Is the Funding Competitive?"],
+    "nom_chercheur": ["Nom du chercheur", "Researcher's Name"],
+    "nom": ["Nom", "Name"],
+    "nom_comite": ["Nom du comité", "Committee Name"],
+    "nom_organisme": ["Nom de l'organisme", "Organization Name"],
+    "autre_organisation": ["Autre organisation", "Other Organization"],
+    "organisation": ["Organisation", "Organization"],
+    "debut_adhesion": ["Date de début de l'adhésion", "Membership Start Date"],
+    "fin_adhesion": ["Date de fin de l'adhésion", "Membership End Date"],
+    "description": ["Description"],
+    "sujet": ["Sujet", "Subject"],
+    "emission": ["Émission", "Program"],
+    "tribune": ["Tribune", "Forum"],
+    "chaine": ["Chaîne", "Channel"],
+    "date_diffusion": ["Date de la première diffusion", "Date of First Broadcast"],
+    "date_publication": ["Date de publication", "Publication Date"],
+    "type_activite_connaissances": [
+      "Type d'activité d'application des connaissances et de la technologie",
+      "Type of Knowledge and Technology Application Activity"
+    ],
+    "organisation_beneficiaire": [
+      "Groupe, organisation ou entreprise bénéficiant des services",
+      "Group, Organization or Company Benefiting from the Services"
+    ],
+    "resultat": ["Résultat", "Result"],
+    "retombees": ["Preuve de l'adoption ou des retombées", "Evidence of Adoption or Impact"],
+    "date_debut": ["Date de début", "Start Date"],
+    "date_fin": ["Date de fin", "End Date"],
+    "nom_evenement": ["Nom de l'événement", "Event Name"],
+    "debut_activite": ["Date de début de l'activité", "Activity Start Date"],
+    "fin_activite": ["Date de fin de l'activité", "Activity End Date"],
+    "nom_reconnaissance": ["Nom de la reconnaissance", "Name of Recognition"],
+    "montant": ["Montant", "Amount"],
+    "titre": ["Titre", "Title"],
+    "date_contribution": ["Date du contribution", "Contribution Date"]
+  }
+}

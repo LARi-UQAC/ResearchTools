@@ -644,6 +644,14 @@ class TestHqp(unittest.TestCase):
         with self.assertRaises(CvDataError):
             cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
 
+    def test_consent_on_first_day_of_start_month_accepted(self):
+        # Mutation survivor (reviewer, 2026-10-09): the consent-before-start
+        # check uses a strict "<"; consent dated exactly on the first day of
+        # the start month must be the boundary's accepted side.
+        rows = [_row(start="2022-09", end="2024-08", consent_cv="2022-09-01")]
+        validated = cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+        self.assertTrue(validated[0]["in_window"])
+
     def test_consent_before_start_refused(self):
         # Q1b: consent_cv predating the row's own start is refused even
         # though it is not "after reference_year" - a consent form signed
@@ -662,6 +670,17 @@ class TestHqp(unittest.TestCase):
         with self.assertRaises(CvDataError):
             cv_build.assert_inline_model(model)
 
+    def test_section2_exactly_ten_items_accepted(self):
+        # Mutation survivor (reviewer, 2026-10-09): the existing cap test
+        # only proves 11 is refused; exactly 10 (the cap itself) must stay
+        # on the accepted side of the ">" comparison.
+        model = _model()
+        model["sections"]["2"]["items"] = [
+            dict(model["sections"]["2"]["items"][0], date=str(year)) for year in range(2015, 2025)
+        ]
+        self.assertEqual(len(model["sections"]["2"]["items"]), 10)
+        cv_build.assert_inline_model(model)  # must not raise
+
     def test_unknown_top_level_model_key_named(self):
         # Q3a: a stray top-level key (not caller-controlled free text - the
         # model's top level is a fixed schema) is named in the refusal.
@@ -670,6 +689,86 @@ class TestHqp(unittest.TestCase):
         with self.assertRaises(CvDataError) as ctx:
             cv_build.assert_inline_model(model)
         self.assertIn("funder", str(ctx.exception))
+
+    def test_section_as_int_refused_not_500(self):
+        # R1 (reviewer, 2026-10-09, regression from the Q3 fix): the
+        # isinstance(dict) check ran AFTER set(section), so a truthy
+        # non-dict section reached set()/join() and crashed with a bare
+        # TypeError instead of a clean CvDataError.
+        model = _model()
+        model["sections"]["1"] = 1
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_section_as_list_refused_not_500(self):
+        model = _model()
+        model["sections"]["1"] = [1]
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_section_as_bool_refused_not_500(self):
+        model = _model()
+        model["sections"]["1"] = True
+        with self.assertRaises(CvDataError):
+            cv_build.assert_inline_model(model)
+
+    def test_section_as_string_refused_without_echoing_its_characters(self):
+        # The measured 500-adjacent defect: set("Jean Tremblay") iterates
+        # the string's CHARACTERS, and the old check order let that reach
+        # the "unknown key(s): ..." message - caller free text, scrambled
+        # but recoverable, echoed through a section value.
+        model = _model()
+        model["sections"]["1"] = "Jean Tremblay"
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertNotIn("Jean", str(ctx.exception))
+        self.assertNotIn("Tremblay", str(ctx.exception))
+
+    def test_unknown_numeric_section_key_two_digits_named(self):
+        # L1 (reviewer, 2026-10-09): the digit-shaped exception is capped
+        # at two ASCII digits, not any length `str.isdigit()` would accept.
+        model = _model()
+        model["sections"]["12"] = model["sections"].pop("3")
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertIn("12", str(ctx.exception))
+
+    def test_unknown_section_key_three_digits_not_named(self):
+        # L1: three ASCII digits is past the 1-2 digit cap, so it is read
+        # the same as free text and stays unnamed.
+        model = _model()
+        model["sections"]["123"] = model["sections"].pop("3")
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertNotIn("123", str(ctx.exception))
+
+    def test_unknown_section_key_long_digit_string_not_named(self):
+        # L1: a long digit string (a student number, say) must not be
+        # read as a structural typo just because it is all digits.
+        model = _model()
+        model["sections"]["123456789"] = model["sections"].pop("3")
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertNotIn("123456789", str(ctx.exception))
+
+    def test_unknown_section_key_unicode_digit_not_named(self):
+        # L1: str.isdigit() accepted non-ASCII digits (Extended Arabic-Indic
+        # "4" below); the ASCII-only regex does not.
+        model = _model()
+        model["sections"]["۴"] = model["sections"].pop("3")
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertNotIn("۴", str(ctx.exception))
+
+    def test_unknown_key_inside_section_named(self):
+        # Q3, section level (distinct from an unknown SECTION key like "4"
+        # above): a field inside a present section, not caller-controlled
+        # free text - the section's own fixed vocabulary - so it is named.
+        model = _model()
+        model["sections"]["1"]["funding_source"] = "CRSNG"
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertIn("funding_source", str(ctx.exception))
 
     def test_unknown_numeric_section_key_named(self):
         # Q3b: a plain structural typo ("4" instead of "1"/"2"/"3") is a
@@ -734,6 +833,37 @@ class TestHqp(unittest.TestCase):
         rows = [_row(end="2024-08", consent_cv="2026-09-01\n")]
         with self.assertRaises(CvDataError):
             cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_end_with_trailing_newline_refused(self):
+        # Mutation survivor (reviewer, 2026-10-09): the trailing-newline
+        # case was proven for `start` only; `end` shares the same regex
+        # and must be checked the same way.
+        rows = [_row(end="2024-08\n")]
+        with self.assertRaises(CvDataError):
+            cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
+
+    def test_reference_year_bounds_come_from_config_not_hardcoded(self):
+        # C7 (reviewer, 2026-10-09): nothing proved the bound _hqp_block
+        # actually reads is the configured one rather than the module's
+        # own fallback literals - hardcoding 2000/2100 in _hqp_block, or
+        # changing contribution_types.json's max to some other value,
+        # would have passed every other test unnoticed.
+        import json
+        import tempfile
+
+        types = json.loads(
+            Path(cv_build.__file__).with_name("contribution_types.json").read_text(encoding="utf-8"))
+        types["reference_year_bounds"] = {"min": 2050, "max": 2050}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "types.json"
+            path.write_text(json.dumps(types), encoding="utf-8")
+            model = _hqp_model()
+            rows = [_row(start="2049-09", end=None, consent_cv="2049-09-01")]
+            # The module default [2000, 2100] would accept 2026; the
+            # configured [2050, 2050] must be what actually decides.
+            with self.assertRaises(CvDataError):
+                cv_build.render_latex(model, types_path=path, hqp={"rows": rows, "reference_year": 2026})
+            cv_build.render_latex(model, types_path=path, hqp={"rows": rows, "reference_year": 2050})
 
     def test_latex_escaping(self):
         model = _hqp_model()

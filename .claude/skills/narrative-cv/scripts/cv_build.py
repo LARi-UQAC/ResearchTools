@@ -57,6 +57,7 @@ HQP_ROW_KEYS = ("name", "cycle", "start", "end", "consent_cv", "current_position
 HQP_REQUIRED_KEYS = ("name", "cycle", "start", "end", "consent_cv")
 _HQP_DATE_RE = re.compile(r"[0-9]{4}(-[0-9]{2})?")
 _HQP_CONSENT_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_SHORT_DIGIT_KEY_RE = re.compile(r"[0-9]{1,2}")  # L1 (reviewer, 2026-10-09): ASCII-only, 1-2 digits
 
 
 def escape_latex(text):
@@ -383,8 +384,12 @@ def assert_inline_model(model, types_path=None):
         # N3 (reviewer, 2026-10-08): a section key can be caller-controlled
         # free text (test_prose_file_refusal_does_not_echo_the_section_key_either
         # simulates exactly this), so it is named only when every stray key is
-        # digit-shaped - a plain structural typo like "4" - never otherwise.
-        if all(key.isdigit() for key in unknown_section_keys):
+        # a plain structural typo - one or two ASCII digits, like "4" or
+        # "12" - never otherwise. L1 (reviewer, 2026-10-09): `str.isdigit()`
+        # accepts Unicode digits and any length, so a long digit string (a
+        # student number, say) would have been echoed; `_SHORT_DIGIT_KEY_RE`
+        # with `.fullmatch()` is ASCII-only and length-capped at 2.
+        if all(_SHORT_DIGIT_KEY_RE.fullmatch(key) for key in unknown_section_keys):
             raise CvDataError(
                 "model.sections has unknown key(s): %s"
                 % ", ".join(sorted(unknown_section_keys)))
@@ -409,12 +414,20 @@ def assert_inline_model(model, types_path=None):
         section = sections.get(key)
         if not section:
             continue
+        if not isinstance(section, dict):
+            # R1 (reviewer, 2026-10-09, regression from the Q3 fix): this
+            # check MUST run before set(section) below, or a truthy
+            # non-dict section (an int, a list, a bare string) reaches
+            # `set()`/`join()` and crashes with a 500 instead of a clean
+            # 422 - and for a string, `set()` iterates its CHARACTERS,
+            # echoing caller text through the "unknown key(s)" message.
+            # The value itself is never shown here.
+            raise CvDataError("section %s must be an object" % key)
         unknown_keys = set(section) - _SECTION_ALLOWED_KEYS
         if unknown_keys:
             raise CvDataError(
                 "section %s has unknown key(s): %s" % (key, ", ".join(sorted(unknown_keys))))
-        if (not isinstance(section, dict) or not isinstance(section.get("title"), str)
-                or not section["title"].strip()):
+        if not isinstance(section.get("title"), str) or not section["title"].strip():
             raise CvDataError("section %s must carry a non-empty 'title' string" % key)
         if "hqp_list" in section and not isinstance(section["hqp_list"], bool):
             raise CvDataError("section %s 'hqp_list' must be a bool" % key)

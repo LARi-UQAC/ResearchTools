@@ -264,6 +264,38 @@ class TestCvBuildApi(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertIn("funding_source", response.text)
 
+    def test_section_as_int_422_not_500(self) -> None:
+        # R1: regression from the Q3 unknown-section-key fix - the
+        # isinstance(dict) check ran AFTER set(section), so a truthy
+        # non-dict section crashed with a bare 500 instead of a 422.
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["1"] = 1
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_section_as_list_422_not_500(self) -> None:
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["1"] = [1]
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_section_as_list_with_null_422_not_500(self) -> None:
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["1"] = [None]
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+
+    def test_section_as_string_422_does_not_echo_its_characters(self) -> None:
+        # The measured defect: set("Jean Tremblay") iterates the string's
+        # CHARACTERS, and the old check order let that reach the response
+        # body through the "unknown key(s): ..." message.
+        model = json.loads(json.dumps(MODEL))
+        model["sections"]["1"] = "Jean Tremblay"
+        response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn("Jean", response.text)
+        self.assertNotIn("Tremblay", response.text)
+
     def test_invalid_target_422(self) -> None:
         # M-E: cv_bridge.build_cv's own _TARGETS whitelist, reached through
         # the route, not only as unit-tested code with no caller.

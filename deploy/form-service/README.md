@@ -90,10 +90,24 @@ calls, the service renders and returns, and keeps nothing (spec section 1).
   exemption. The window itself is per-funder: 6 years for NSERC/tri-agency,
   5 for FRQ (`portal_variants.*.cv_window_years`), distinct from UQAC's
   unrelated 7-year data-retention period. `reference_year` is sane-ranged
-  (2000-2100).
+  per `contribution_types.json`'s `reference_year_bounds` key (owner,
+  2026-10-08: a sanity bound, not a measurement, moved into configuration
+  per R0 - not a value to copy here, since a second copy would drift).
+- **`consent_cv` is checked by full date, not by year alone** (owner
+  decision Q1, 2026-10-08). A consent dated after December 31 of
+  `reference_year`, or dated before the row's own `start`, is refused.
+- **Section 2 is capped at 10 items** (owner decision Q2, 2026-10-08),
+  read from `contribution_types.json`'s `sections.2.max_items` rather than
+  a literal; the 11th item is refused with `422` before anything renders.
 - **The row schema is closed.** `name`, `cycle`, `start`, `end`, `consent_cv`,
   and the optional `current_position` / `current_employer`; an unknown key is
-  refused (C5).
+  refused (C5). The model itself is closed the same way (owner decision Q3,
+  2026-10-08): an unknown top-level key, an unknown item key, or a
+  digit-shaped stray section key (such as `"4"` instead of `"1"`/`"2"`/`"3"`)
+  is refused with the key named in the response - a key is the model's own
+  fixed vocabulary, not student data. The one exception: a *non-digit*
+  section key is refused without being named, since it can itself be
+  caller-controlled free text.
 - **`prose_file` is refused.** A request whose model carries a `prose_file` key
   is refused with `422` before any disk access, since a request body must
   never pick a file on the server (C4, R24). Run

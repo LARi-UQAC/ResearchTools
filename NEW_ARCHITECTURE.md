@@ -6,7 +6,7 @@ The same file is meant to be committed to `main` in both, so either checkout tel
 story — except for a known divergence between the two checkouts' copies as of 2026-10-02;
 reconciling them is the operator's job.
 
-**Status: in progress. 12 of 22 units delivered.** Twenty-two branches carry one plan document
+**Status: in progress. 13 of 23 units delivered.** Twenty-three branches carry one plan document
 each, and issues track them. Written 2026-07-29.
 
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
@@ -28,9 +28,8 @@ RT-5). The command is now `/fetchform`. This document's own project name ("the U
 is unchanged: the first deployment is UQAC-specific by design (Décanat, SRF, `uqac.ca`, Quebec
 Law 25), even though the underlying skill is not.
 
-This file is meant to be identical on `main` in both repositories. It is not, at the moment: on
-2026-10-02 the ThesisTracker copy held 1044 lines against 1111 here, with an older status line.
-Section 14 tracks the re-sync.
+This file is meant to be identical on `main` in both repositories; section 14 tracks the
+re-sync of the divergence noted at the top.
 
 **Revision note, 2026-10-01 and 2026-10-02.** Student data and their consent. Four operator
 decisions, recorded in section 1 and detailed in sections 6a, 11 and 13:
@@ -1113,7 +1112,7 @@ critical path and can land last.
 | TT-10 | `feat/workflow-engine` | ThesisTracker #12 | Step instances; actor and capability enforcement; **returns with a mandatory reason**; **forced re-approval when a modification breaks an earlier signature**; signature stacking; **submission by email to the definition's address**; reopen at a named step |
 | TT-11 | `feat/student-timeline` | ThesisTracker #13 | Timeline template and instantiation on admission; forms, reports, seminar, papers per contribution, thesis milestones; dates shifted from the subject-calendar form's stored values |
 | TT-12 | `feat/correction-plans` | ThesisTracker #14 | Intake of ResearchTools audit artifacts; `review_findings` as a student worklist; a rejected finding needs a reason; the score is stored as reported, never recomputed |
-| RT-8 | `feat/cv-build-endpoint` | ResearchTools #46 | Stateless `POST /cv/build`: narrative CV (CV-FRQ / tri-agency) with consenting HQP rows, no LaTeX compiled, nothing stored. **Implemented 2026-10-02, PR #47 open, not yet merged.** |
+| RT-8 | `feat/cv-build-endpoint` | ResearchTools #46 | Stateless `POST /cv/build`: narrative CV (CV-FRQ / tri-agency) with consenting HQP rows, no LaTeX compiled, nothing stored. **Delivered 2026-10-09** (PR #47, merged to `main`). |
 | TT-13 | (not yet branched) | (not yet opened) | `/cv/build` client and the two separate consents (web publication on /etudiants/ and CV inclusion, A-2.1 art. 53.1). **Planned.** |
 
 Plans live at `docs/superpowers/plans/2026-07-29-<unit>.md` on each unit's own branch. Every plan

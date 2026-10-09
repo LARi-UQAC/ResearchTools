@@ -2,10 +2,12 @@
 
 Shared architecture document for the two repositories that make up the UQAC form engine:
 **ResearchTools** (`LARi-UQAC/ResearchTools`) and **ThesisTracker** (`JdUmuhoza/ThesisTracker`).
-The same file is committed to `main` in both, so either checkout tells the whole story.
+The same file is meant to be committed to `main` in both, so either checkout tells the whole
+story — except for a known divergence between the two checkouts' copies as of 2026-10-02;
+reconciling them is the operator's job.
 
-**Status: in progress. 12 of 20 units delivered.** Twenty branches carry one plan document each,
-and twenty-one issues track them. Written 2026-07-29.
+**Status: in progress. 12 of 22 units delivered.** Twenty-two branches carry one plan document
+each, and issues track them. Written 2026-07-29.
 
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
 with the ingest-contract fix that RT-1 and RT-2 found. RT-1 through RT-6 are all merged to
@@ -253,6 +255,32 @@ the table above, not `.claude/skills/form-service/`. The pgvector store does rid
 service RT-5 already added to `deploy/docker-compose.yml`, so no separate vector vendor or
 Postgres instance is introduced - but the form-service function itself stays exactly as stateless
 as the table states.
+
+### 3.x CV build boundary
+
+`POST /cv/build` (RT-8) follows the same shape as `/pdf/fill`: ThesisTracker calls, ResearchTools
+renders and keeps nothing. Request: `model` (a `cv_model.json` document with inline `prose`, no
+`prose_file`), `hqp` (the consenting students' rows: `name`, `cycle`, `start`, `end`, `consent_cv`,
+and optionally `current_position` / `current_employer`), `reference_year` (the year the recent/
+archive window ends), and `target` (`latex` | `text` | `both`, default `both`). Response:
+`{"latex": str | null, "text": str | null, "hqp": {"recent": int, "archive": int}}`. No LaTeX is
+compiled on the service (C2): the PDF and the page-budget check stay local to the
+`narrative-cv` skill. **Consent is mandatory for every row, whatever its date** (C6 revised,
+operator 2026-10-08): the window is per-funder (6 years NSERC/tri-agency, 5 FRQ) and decides only
+which heading a row prints under, never whether consent is required - distinct from UQAC's
+unrelated 7-year data-retention period, which stays outside this endpoint. `consent_cv` is
+checked by full date against `reference_year` and must not predate the row's own `start` (owner
+decision Q1, 2026-10-08). Section 2 of the model is capped at 10 items (Q2), and an unknown key
+anywhere in the model - top level, an item, or a digit-shaped stray section key - is refused with
+the key named, since a key is the model's own fixed vocabulary rather than student data; a
+non-digit section key is the one exception, refused without being named, since it can itself
+carry caller-controlled free text (Q3). A section value that is not an object is refused the
+same way, whether truthy (an int, a string) or falsy (`0`, `false`, `""`, `[]`, `{}`) - only an
+absent key or an explicit `null` reads as "no section" (owner decision, Low-3, 2026-10-09). A
+model's own section 1/3 prose is trusted, raw LaTeX by
+design (M4): until TT-13 only the researcher authoring the `cv_model.json` can write it, so no
+control strips or sandboxes it here - an accepted risk, reconsidered the day TT-13 lets someone
+else supply the model.
 
 ---
 
@@ -968,6 +996,8 @@ critical path and can land last.
 | TT-10 | `feat/workflow-engine` | ThesisTracker #12 | Step instances; actor and capability enforcement; **returns with a mandatory reason**; **forced re-approval when a modification breaks an earlier signature**; signature stacking; **submission by email to the definition's address**; reopen at a named step |
 | TT-11 | `feat/student-timeline` | ThesisTracker #13 | Timeline template and instantiation on admission; forms, reports, seminar, papers per contribution, thesis milestones; dates shifted from the subject-calendar form's stored values |
 | TT-12 | `feat/correction-plans` | ThesisTracker #14 | Intake of ResearchTools audit artifacts; `review_findings` as a student worklist; a rejected finding needs a reason; the score is stored as reported, never recomputed |
+| RT-8 | `feat/cv-build-endpoint` | ResearchTools #46 | Stateless `POST /cv/build`: narrative CV (CV-FRQ / tri-agency) with consenting HQP rows, no LaTeX compiled, nothing stored. **Implemented 2026-10-02, PR #47 open, not yet merged.** |
+| TT-13 | (not yet branched) | (not yet opened) | `/cv/build` client and the two separate consents (web publication on /etudiants/ and CV inclusion, A-2.1 art. 53.1). **Planned.** |
 
 Plans live at `docs/superpowers/plans/2026-07-29-<unit>.md` on each unit's own branch. Every plan
 whose scope the 2026-07-29 revision changed carries a scope-change block at the top pointing here.
@@ -1041,6 +1071,7 @@ Binding rules, each enforced by a test or a startup check:
 | Dependencies pinned exactly, `pip-audit --strict` before use | both requirements files |
 | TLS verified against the system trust store for any remote database host | `api/_lib/db.js` |
 | No email address, code, session token, profile value, or PDF byte is ever logged | asserted by tests across RT-3, RT-5, TT-2, TT-3, TT-7, TT-9 |
+| CV inclusion is a separate consent from the web publication consent (A-2.1 art. 53.1); a student may be in ThesisTracker without appearing in any professor's CV | Operator, 2026-10-02; TT-13 |
 
 Law 25 drives the runtime decision: matricules, addresses, and signed expense claims stay on the
 institutional host. Vercel never held any of it (confirmed 2026-09-25), so decommissioning it closes

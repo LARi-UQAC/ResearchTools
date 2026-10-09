@@ -53,6 +53,8 @@
       "max_size_mb": 2,
       "filename_rule": "NOM_XXXXX1234_Titre.pdf (max 50 chars, no accent, no space, no special char, one dot before the extension)",
       "source": "normes_presentation.pdf (FRQ, 2025-09-23)",
+      "cv_window_years": 5,
+      "cv_window_source": "Operator, 2026-10-08: the CV window is 5 years at FRQ, distinct from the 6-year NSERC/tri-agency window and from UQAC's unrelated 7-year data-retention period (a retention rule, not a CV-content rule, and out of scope for this endpoint).",
       "citation_rules": {
         "bold_candidate_and_coresearchers": true,
         "bold_lead_author_only_if_not_first": false,
@@ -64,6 +66,8 @@
       "label": "FRQnet - Espace demande (section CV-FRQ, saisie directe)",
       "output": "plain_text",
       "note": "No PDF: content is typed/pasted directly into the portal's CV-FRQ web fields. This skill still emits a plain-text companion for that paste-in.",
+      "cv_window_years": 5,
+      "cv_window_source": "Operator, 2026-10-08: the CV window is 5 years at FRQ, same rule as frq_old_portal.",
       "citation_rules": {
         "bold_candidate_and_coresearchers": true,
         "bold_lead_author_only_if_not_first": false,
@@ -81,6 +85,8 @@
       "max_size_mb": 5,
       "note": "True Arial is not a standard LaTeX font; the build substitutes Helvetica (helvet/sans-serif default), which is visually close but not byte-identical. Stated rather than silently approximated (R14).",
       "source": "sshrc-crsh.canada.ca tri-agency CV instructions page, fetched 2026-09-25",
+      "cv_window_years": 6,
+      "cv_window_source": "Operator, 2026-10-08: the CV window is 6 years at NSERC/tri-agency, distinct from the 5-year FRQ window and from UQAC's unrelated 7-year data-retention period.",
       "running_header": false,
       "citation_rules": {
         "bold_candidate_and_coresearchers": false,
@@ -99,6 +105,30 @@
     "role": {"fr": "Rôle", "en": "Role"},
     "period": {"fr": "Période", "en": "Period"},
     "clientele": {"fr": "Clientèle", "en": "Audience"}
+  },
+
+  "reference_year_bounds": {
+    "min": 2000,
+    "max": 2100,
+    "_provenance": "Operator, 2026-10-08: a sanity bound, not a measurement - blocks an absurd reference_year (e.g. 9999) from distorting the recent/archive split (N1). Moved out of code into data per R0, reviewer finding F4, 2026-10-08."
+  },
+
+  "hqp": {
+    "_provenance": "Labels chosen by the operator 2026-10-02. The CV window is per-funder (portal_variants.*.cv_window_years, operator 2026-10-08) rather than one fixed value here: NSERC/tri-agency uses 6 years, FRQ uses 5. Since 2026-10-08, consent_cv is mandatory for EVERY row regardless of the window (C6 revised): the window decides only whether a row is listed as recent or archive, never whether consent is required.",
+    "labels": {
+      "fr": {
+        "recent_heading": "PHQ formés au cours des {years} dernières années",
+        "archive_heading": "Archive",
+        "ongoing": "en cours",
+        "none": "s.o."
+      },
+      "en": {
+        "recent_heading": "HQP trained in the last {years} years",
+        "archive_heading": "Archive",
+        "ongoing": "ongoing",
+        "none": "n/a"
+      }
+    }
   },
 
   "categories": [

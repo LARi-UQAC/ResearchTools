@@ -46,6 +46,7 @@ There is no CORS middleware: a browser never calls this API.
 | `POST /pdf/sign` | raw PDF body; query `field`, `reason` (both optional) | `application/pdf`, header `X-Form-Signature-Field` |
 | `POST /pdf/validate` | raw PDF body | `{"signatures": [{field, intact, valid, trusted}]}` |
 | `GET /publications` | query `author`, `count` (max 25), `refresh` | `{"query", "author", "publications", "fetched_at", "cached"}` |
+| `POST /cv/build` | JSON body `model`, `hqp`, `reference_year`, `target` (optional) | `{"latex", "text", "hqp"}` |
 
 Status codes: `401` no or wrong key, `409` a signing refusal (nothing signable,
 already signed, or ambiguous which field), `413` body over the cap, `422` not a
@@ -66,6 +67,69 @@ person has never published". `count` is capped at 25, not a round 50: Scopus's
 STANDARD view refuses a page above 25 with HTTP 400. A cache hit costs no
 Scopus quota, so a cohort report over an already-seen roster makes no network
 call at all.
+
+## CV build
+
+`POST /cv/build` renders a researcher's narrative CV (CV-FRQ / tri-agency) plus
+the consenting students' rows, copying the `/pdf/fill` pattern: ThesisTracker
+calls, the service renders and returns, and keeps nothing (spec section 1).
+
+- **Nothing is compiled here.** The route returns the `.tex` source and the
+  plain text, never a PDF. Compiling LaTeX received over the network would let
+  it read server files, and TeX Live would add several hundred MB to this
+  `python:3.13-slim` image (C2). The PDF and the page-budget check stay local,
+  through `cv_build.py compile_latex` / `check-pages`.
+- **Nothing is stored.** No disk write, no body logged, no student name in any
+  error or log line - errors name a row by its index only (C3). A handful of
+  non-student values ARE echoed in a `422`, all of them caller-authored
+  structure rather than student data: an invalid `portal_variant` or
+  `target`, an unknown model/section/item key (fixed vocabulary, not free
+  text), and a malformed section-2 `references` value (the researcher's own
+  CV prose, same trust level as M4's raw-LaTeX acceptance below).
+- **Consent is mandatory for every row, whatever its date** (C6 revised,
+  operator 2026-10-08). A row with no `consent_cv` is refused with `422`
+  naming the row index; so are a future-dated `consent_cv`, an impossible
+  calendar date, `start` after `end`, or `end` after `reference_year`. The
+  window (`end` null, or `end` year inside it) only decides whether a row
+  prints under the recent or the archive heading - it was never a consent
+  exemption. The window itself is per-funder: 6 years for NSERC/tri-agency,
+  5 for FRQ (`portal_variants.*.cv_window_years`), distinct from UQAC's
+  unrelated 7-year data-retention period. `reference_year` is sane-ranged
+  per `contribution_types.json`'s `reference_year_bounds` key (owner,
+  2026-10-08: a sanity bound, not a measurement, moved into configuration
+  per R0 - not a value to copy here, since a second copy would drift).
+- **`consent_cv` is checked by full date, not by year alone** (owner
+  decision Q1, 2026-10-08). A consent dated after December 31 of
+  `reference_year`, or dated before the row's own `start`, is refused.
+- **A section value must be an object, or absent/`null`.** A non-dict
+  section (an int, a string, a list) is refused with `422`, the value
+  never echoed. An absent key or an explicit `null` means "no section";
+  any other falsy value (`0`, `false`, `""`, `[]`, `{}`) is refused too
+  (owner decision, Low-3, 2026-10-09), rather than silently dropping the
+  section from the rendered CV.
+- **Section 2 is capped at 10 items** (owner decision Q2, 2026-10-08),
+  read from `contribution_types.json`'s `sections.2.max_items` rather than
+  a literal; the 11th item is refused with `422` before anything renders.
+- **The row schema is closed.** `name`, `cycle`, `start`, `end`, `consent_cv`,
+  and the optional `current_position` / `current_employer`; an unknown key is
+  refused (C5). The model itself is closed the same way (owner decision Q3,
+  2026-10-08): an unknown top-level key, an unknown item key, or a
+  digit-shaped stray section key (such as `"4"` instead of `"1"`/`"2"`/`"3"`)
+  is refused with the key named in the response - a key is the model's own
+  fixed vocabulary, not student data. The one exception: a *non-digit*
+  section key is refused without being named, since it can itself be
+  caller-controlled free text.
+- **`prose_file` is refused.** A request whose model carries a `prose_file` key
+  is refused with `422` before any disk access, since a request body must
+  never pick a file on the server (C4, R24). Run
+  `cv_build.py inline --model <cv_model.json> --out <file.json>` locally first
+  to turn a model that uses `prose_file` into one with inline `prose`.
+- **Section prose is raw LaTeX, trusted by design - an accepted risk, not a
+  gap.** Student rows are escaped; a model's own section 1/3 prose is not,
+  so a `\input`/`\write18`-style command in it reaches the returned `.tex`
+  verbatim. Accepted because until TT-13 only the researcher can write that
+  prose. Never compile a model whose source is not trusted, and revisit a
+  control (strip or allowlist) once TT-13 widens who can supply the model.
 
 ## Personal information
 

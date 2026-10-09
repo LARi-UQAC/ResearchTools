@@ -69,9 +69,15 @@ def read_grid(path: Path) -> list[list[str]]:
     if path.suffix.lower() in (".xlsx", ".xlsm"):
         from openpyxl import load_workbook
 
-        ws = load_workbook(path, read_only=True, data_only=True).active
-        return [["" if c is None else str(c) for c in row]
-                for row in ws.iter_rows(values_only=True)]
+        # Closed explicitly: `read_only=True` still opens a file handle that
+        # Windows keeps locked until garbage collection runs, which is not
+        # deterministic (2026-10-09 review finding - open without close).
+        wb = load_workbook(path, read_only=True, data_only=True)
+        try:
+            return [["" if c is None else str(c) for c in row]
+                    for row in wb.active.iter_rows(values_only=True)]
+        finally:
+            wb.close()
     with path.open(newline="", encoding="utf-8-sig") as fh:
         return [list(r) for r in csv.reader(fh)]
 
@@ -93,13 +99,18 @@ def find_header(grid: list[list[str]]) -> int:
             header cell.
     --------------------------------------------------------------------------
     """
+    # A row must carry a name-like cell AND an expertise-like cell TOGETHER -
+    # a lone "external reviewer" prefix used to also accept a plain TITLE row
+    # ("External Reviewers 2026 list"), contradicting this function's own
+    # docstring (2026-10-09 review finding).
     for i, row in enumerate(grid):
         cells = [norm(c) for c in row]
-        if any(any(h in cell for h in NAME_HINTS) and "reviewer" in cell or
-               cell.startswith("external reviewer") for cell in cells):
-            return i
-        if any("areas of expertise" in cell or "domaines de competence" in cell
-               for cell in cells) and any("name" in cell or "nom" in cell for cell in cells):
+        has_name = any((any(h in cell for h in NAME_HINTS) and "reviewer" in cell)
+                       or cell.startswith("external reviewer")
+                       or "name" in cell or "nom" in cell for cell in cells)
+        has_expertise = any("areas of expertise" in cell or "domaines de competence" in cell
+                            for cell in cells)
+        if has_name and has_expertise:
             return i
     raise ValueError("header row not found (no name + expertise columns)")
 
@@ -270,7 +281,14 @@ def main(argv: list[str]) -> int:
             continue
         total += 1
         exp_norm = norm(expertise)
-        hit = [orig for orig, nt in norm_terms if nt and nt in exp_norm]
+        # Word-boundary match, not substring: "ai" must not match inside
+        # "maintenance", nor "ml" inside "html" (2026-10-09 review finding -
+        # a raw `in` check inflated match_count, the sort key, on any term
+        # that happens to be a substring of an unrelated word). norm()
+        # output is alnum-and-space only, so \b around the whole (possibly
+        # multi-word) term works for a phrase exactly as for a single word.
+        hit = [orig for orig, nt in norm_terms
+               if nt and re.search(rf"\b{re.escape(nt)}\b", exp_norm)]
         if len(hit) < args.min_matches:
             continue
         # Only the "not available" flag is normalized to a fixed label; any

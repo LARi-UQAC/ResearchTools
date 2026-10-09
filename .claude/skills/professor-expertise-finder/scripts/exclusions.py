@@ -35,7 +35,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from pef_common import load_column_hints, name_key, norm, write_json
+from pef_common import atomic_open, load_column_hints, name_key, norm, write_json
 
 _HINTS = load_column_hints("exclusions")
 NAME_COLS = _HINTS["name_cols"]
@@ -114,8 +114,13 @@ def read_rows(path: Path) -> list[dict]:
     if path.suffix.lower() in (".xlsx", ".xlsm"):
         from openpyxl import load_workbook
 
-        ws = load_workbook(path, read_only=True, data_only=True).active
-        rows = list(ws.iter_rows(values_only=True))
+        # Closed explicitly (2026-10-09 review finding): read_only still
+        # opens a file handle Windows keeps locked until garbage collection.
+        wb = load_workbook(path, read_only=True, data_only=True)
+        try:
+            rows = list(wb.active.iter_rows(values_only=True))
+        finally:
+            wb.close()
         if not rows:
             return []
         header = [str(c) if c is not None else "" for c in rows[0]]
@@ -314,7 +319,7 @@ def main(argv: list[str]) -> int:
     if args.dry_run:
         print(f"DRY RUN - KEPT: {len(kept)}  EXCLUDED: {len(excluded)}  (would write {out_path})")
     else:
-        with out_path.open("w", newline="", encoding="utf-8") as fh:
+        with atomic_open(out_path, newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(kept)

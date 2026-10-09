@@ -4,7 +4,7 @@
     "expertise_hints": ["areas of expertise", "domaines de competence", "expertise", "competence"],
     "institution_hints": ["institution", "etablissement", "university", "universite"],
     "department_hints": ["department", "departement"],
-    "availability_hints": ["availability", "disponibilite"],
+    "availability_hints": ["availability", "disponibilite", "not available", "non disponible"],
     "not_available_phrases": ["not available", "non disponible"]
   },
   "exclusions": {

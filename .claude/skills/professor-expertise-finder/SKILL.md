@@ -77,6 +77,20 @@ set, else `~/workspace/professor-expertise` (resolved by
 `scripts/pef_common.py`'s `data_root()` — R1, no hardcoded path: repoint the
 data by setting the environment variable, never by editing a script).
 
+**Personal data (2026-10-09 review finding).** These files hold professors'
+names, university affiliations, and professional emails. They live outside
+this repository by construction (`<data root>` defaults to the operator's
+own home directory, never a path inside ResearchTools) and must never be
+committed to this or any other repository. This skill sets no retention
+period and has no consent-collection step of its own: a professor's
+information is already public (an official university profile), and the
+batch registry (`selections.csv`, `applications.csv`) additionally names
+which evaluators were assigned to which funding application, which is
+sensitive to the application's own confidentiality rules — the operator
+is responsible for retention and access control under whatever policy
+governs that application (e.g. a funding agency's own confidentiality
+agreement), the same way they already are for the source spreadsheets.
+
 Table schema (one row per department; a university may have several rows):
 
 ```

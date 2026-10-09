@@ -60,7 +60,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from pef_common import data_root, load_config, name_key, norm, slugify, write_json
+from pef_common import (atomic_open, canonical_university, data_root, load_config,
+                         name_key, slugify, write_json)
 
 HEADER = ["batch", "application", "keywords", "professor", "university",
           "score", "status", "date"]
@@ -140,7 +141,7 @@ def write_origins(batch: str, origins: dict[str, str]) -> None:
     """
     path = apps_path(batch)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as fh:
+    with atomic_open(path, newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=APP_HEADER)
         writer.writeheader()
         for app, uni in sorted(origins.items()):
@@ -188,7 +189,7 @@ def write_rows(path: Path, rows: list[dict]) -> None:
     --------------------------------------------------------------------------
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as fh:
+    with atomic_open(path, newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=HEADER)
         writer.writeheader()
         writer.writerows(rows)
@@ -211,13 +212,16 @@ def _same_person(recorded_university: str, candidate_university: str) -> bool:
 
     Outputs:
         same (bool): False only when BOTH sides name a university and they
-            differ after normalization; True whenever either side is
-            unknown (errs toward treating a name match as the same person
-            when there is not enough information to tell them apart,
+            differ after CANONICALIZATION (2026-10-09 review finding:
+            exact-string equality let a spelling variant like "UQAC" vs
+            "Université du Québec à Chicoutimi" silently bypass this check -
+            see pef_common.canonical_university()); True whenever either
+            side is unknown (errs toward treating a name match as the same
+            person when there is not enough information to tell them apart,
             which keeps the no-reuse rule's existing protection intact).
     --------------------------------------------------------------------------
     """
-    a, b = norm(recorded_university), norm(candidate_university)
+    a, b = canonical_university(recorded_university), canonical_university(candidate_university)
     return not (a and b and a != b)
 
 
@@ -343,7 +347,7 @@ def main(argv: list[str]) -> int:
         print(f"ORIGIN SET: {args.application} -> {args.university}")
         bad = [r for r in rows
                if r["application"] == args.application and r["university"]
-               and norm(r["university"]) == norm(args.university)]
+               and canonical_university(r["university"]) == canonical_university(args.university)]
         for r in bad:
             print(f"CONFLICT: {r['professor']} ({r['status']}) is at the "
                   f"applicant university of {args.application}.")
@@ -377,7 +381,7 @@ def main(argv: list[str]) -> int:
         # Conflict of interest: an evaluator may not evaluate an
         # application originating from their own university.
         origin = read_origins(args.batch).get(args.application, "")
-        if origin and args.university and norm(origin) == norm(args.university):
+        if origin and args.university and canonical_university(origin) == canonical_university(args.university):
             print(f"REJECTED: conflict of interest - {args.professor} is at "
                   f"{args.university}, the applicant university of "
                   f"{args.application}.")
@@ -399,7 +403,7 @@ def main(argv: list[str]) -> int:
                         if r["status"] == "final"
                         and r["application"] == args.application
                         and name_key(r["professor"]) != key
-                        and norm(r["university"]) == norm(args.university)]
+                        and canonical_university(r["university"]) == canonical_university(args.university)]
             if len(same_uni) >= max_per_university:
                 names = ", ".join(r["professor"] for r in same_uni)
                 print(f"REJECTED: {args.application} already has {max_per_university} "
@@ -439,7 +443,8 @@ def main(argv: list[str]) -> int:
         # people sharing a name (the same homonym case _same_person()
         # disambiguates elsewhere in this file) must count as two, not
         # collapse into one distinct professor.
-        distinct = len({(name_key(r["professor"]), norm(r["university"])) for r in finals})
+        distinct = len({(name_key(r["professor"]), canonical_university(r["university"]))
+                        for r in finals})
         print(f"BATCH: {args.batch} - {len(finals)} final, {len(proposed)} proposed, "
               f"{distinct} distinct professors")
         origins = read_origins(args.batch)

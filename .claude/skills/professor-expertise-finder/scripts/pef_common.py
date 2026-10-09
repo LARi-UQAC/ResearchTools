@@ -9,6 +9,8 @@ four near-copies.
 """
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import os
 import re
@@ -19,6 +21,7 @@ DATA_ROOT_ENV = "PROFESSOR_EXPERTISE_DATA"
 
 CONFIG_PATH = Path(__file__).resolve().parent / "pef_config.json"
 COLUMN_HINTS_PATH = Path(__file__).resolve().parent / "pef_column_hints.json"
+UNIVERSITY_ALIASES_PATH = Path(__file__).resolve().parent / "pef_university_aliases.json"
 
 
 def data_root() -> Path:
@@ -147,6 +150,98 @@ def write_json(json_path: str | None, payload: dict) -> None:
                                     encoding="utf-8")
 
 
+@contextlib.contextmanager
+def atomic_open(path: Path, **open_kwargs):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Write a file atomically: everything goes to a sibling `.tmp` file,
+        which is renamed onto `path` only once the writer finishes without
+        raising. A crash or interruption mid-write therefore never leaves a
+        half-written table or registry in place of the last good one -
+        2026-10-09 review finding: `table.py`/`selections.py`/`exclusions.py`
+        previously wrote `open(path, "w")` directly, the same gap
+        `outbox_io.stage()` already closes for the Obsidian vault outbox.
+
+    Inputs:
+        path (Path): the final destination.
+        **open_kwargs: forwarded to `Path.open` (e.g. newline="", encoding=).
+
+    Outputs:
+        file handle (contextmanager): yields an open file handle for `path`'s
+            `.tmp` sibling; on a clean exit, `os.replace()`s it onto `path`.
+            On an exception, the `.tmp` file is left for inspection rather
+            than silently discarded or promoted.
+    --------------------------------------------------------------------------
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    fh = tmp.open("w", **open_kwargs)
+    try:
+        yield fh
+    finally:
+        fh.close()
+    os.replace(tmp, path)
+
+
+def load_university_aliases() -> dict[str, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the acronym -> canonical-full-name map used to recognize that
+        "UQAC" and "Université du Québec à Chicoutimi" are the same
+        institution for the no-reuse / university-cap / conflict-of-interest
+        checks (2026-10-09 review finding: exact normalized-string equality
+        let a spelling variant silently bypass every one of those rules).
+
+    Inputs:
+        None.
+
+    Outputs:
+        aliases (dict[str, str]): normalized acronym -> normalized canonical
+            name (both already run through `norm()`); {} when the file is
+            missing (R11 - a missing alias table degrades to exact matching
+            only, it does not block the skill).
+    --------------------------------------------------------------------------
+    """
+    if not UNIVERSITY_ALIASES_PATH.exists():
+        return {}
+    try:
+        data = json.loads(UNIVERSITY_ALIASES_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return {norm(k): norm(v) for k, v in data.items() if not k.startswith("_")}
+
+
+def canonical_university(text: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Resolve a university name to a canonical normalized form, so a
+        well-known acronym and its full name compare equal. Anything not in
+        the alias table is returned normalized but otherwise unchanged -
+        this is a known-aliases lookup, not a fuzzy matcher, and never
+        invents a match between two strings it does not recognize.
+
+    Inputs:
+        text (str): a free-text university name.
+
+    Outputs:
+        canonical (str): the normalized canonical name when `text`
+            normalizes to a known acronym OR to a known canonical name
+            itself; otherwise `norm(text)` unchanged.
+    --------------------------------------------------------------------------
+    """
+    folded = norm(text)
+    if not folded:
+        return folded
+    aliases = load_university_aliases()
+    if folded in aliases:
+        return aliases[folded]
+    if folded in aliases.values():
+        return folded
+    return folded
+
+
 def slugify(text: str) -> str:
     """
     --------------------------------------------------------------------------
@@ -159,14 +254,24 @@ def slugify(text: str) -> str:
             "Worldwide", "Concours 2027".
 
     Outputs:
-        slug (str): lowercase ASCII, words joined by single hyphens, never
-            empty (falls back to "unspecified").
+        slug (str): lowercase ASCII, words joined by single hyphens. A text
+            with no Latin alphanumeric character at all (not realistic for
+            a location or batch name, but possible) gets a short hash
+            suffix instead of the bare literal "unspecified", so two such
+            inputs do not collide into the SAME data instance - a 2026-10-09
+            review finding: two unrelated batches named only in a non-Latin
+            script, or left blank by mistake, would otherwise share one
+            selections.csv and cross-contaminate the no-reuse rule.
     --------------------------------------------------------------------------
     """
     folded = unicodedata.normalize("NFKD", text)
     folded = "".join(c for c in folded if not unicodedata.combining(c))
     folded = re.sub(r"[^a-zA-Z0-9]+", "-", folded.lower()).strip("-")
-    return re.sub(r"-+", "-", folded) or "unspecified"
+    folded = re.sub(r"-+", "-", folded)
+    if folded:
+        return folded
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    return f"unspecified-{digest}"
 
 
 def norm(text: str) -> str:

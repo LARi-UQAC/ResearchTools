@@ -29,7 +29,7 @@ import csv
 import sys
 from pathlib import Path
 
-from pef_common import data_root, slugify, write_json
+from pef_common import atomic_open, data_root, slugify, write_json
 
 HEADER = ["university", "department", "department_url", "faculty_list_url", "note"]
 
@@ -172,7 +172,7 @@ def main(argv: list[str]) -> int:
                                          "created": False, "dry_run": True})
             return 0
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", newline="", encoding="utf-8") as fh:
+        with atomic_open(path, newline="", encoding="utf-8") as fh:
             csv.writer(fh).writerow(HEADER)
         print(f"CREATED: {path}")
         write_json(args.json_path, {"command": "init", "path": str(path),

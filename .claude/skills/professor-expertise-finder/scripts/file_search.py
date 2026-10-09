@@ -99,18 +99,23 @@ def find_header(grid: list[list[str]]) -> int:
             header cell.
     --------------------------------------------------------------------------
     """
-    # A row must carry a name-like cell AND an expertise-like cell TOGETHER -
-    # a lone "external reviewer" prefix used to also accept a plain TITLE row
-    # ("External Reviewers 2026 list"), contradicting this function's own
-    # docstring (2026-10-09 review finding).
+    # A row must carry a name-like cell AND an expertise-like cell, AT
+    # DIFFERENT CELL INDICES - a lone "external reviewer" prefix used to
+    # also accept a plain TITLE row whose ONE cell carries both phrases
+    # ("External reviewers - areas of expertise 2026"), contradicting this
+    # function's own docstring (2026-10-09 review, round 6: has_name and
+    # has_expertise were both `any()` over the SAME cells, so one cell
+    # could satisfy both at once).
     for i, row in enumerate(grid):
         cells = [norm(c) for c in row]
-        has_name = any((any(h in cell for h in NAME_HINTS) and "reviewer" in cell)
-                       or cell.startswith("external reviewer")
-                       or "name" in cell or "nom" in cell for cell in cells)
-        has_expertise = any("areas of expertise" in cell or "domaines de competence" in cell
-                            for cell in cells)
-        if has_name and has_expertise:
+        name_idx = next((j for j, cell in enumerate(cells) if
+                         (any(h in cell for h in NAME_HINTS) and "reviewer" in cell)
+                         or cell.startswith("external reviewer")
+                         or "name" in cell or "nom" in cell), None)
+        expertise_idx = next((j for j, cell in enumerate(cells) if
+                              "areas of expertise" in cell
+                              or "domaines de competence" in cell), None)
+        if name_idx is not None and expertise_idx is not None and name_idx != expertise_idx:
             return i
     raise ValueError("header row not found (no name + expertise columns)")
 

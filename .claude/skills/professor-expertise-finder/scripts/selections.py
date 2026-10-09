@@ -282,6 +282,12 @@ def main(argv: list[str]) -> int:
                         help="add/check/list: also write a machine-readable report")
     args = parser.parse_args(argv)
 
+    if not args.batch.strip():
+        print("REFUSED: --batch must not be blank (2026-10-09 code-review "
+              "round 6: slugify() cannot tell two blank batches apart, so a "
+              "blank batch name is refused here instead)")
+        return 2
+
     path = registry_path(args.batch)
 
     if args.command == "path":

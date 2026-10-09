@@ -9,7 +9,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from file_search import main  # noqa: E402
+from file_search import find_header, main  # noqa: E402
 
 
 def write_reviewers(path: Path) -> None:
@@ -136,6 +136,20 @@ class FileSearchTest(unittest.TestCase):
             with out_path.open(newline="", encoding="utf-8") as fh:
                 rows = list(csv.DictReader(fh))
             self.assertEqual(rows[0]["name"], "Jane Doe")
+
+    def test_title_row_with_both_phrases_in_one_cell_is_not_a_header(self):
+        # 2026-10-09 review round 6: has_name and has_expertise were both
+        # `any()` over the SAME cells, so a single title cell carrying
+        # BOTH phrases ("External reviewers - areas of expertise 2026")
+        # satisfied both checks at once and was wrongly accepted as the
+        # header row.
+        grid = [
+            ["External reviewers - areas of expertise 2026"],
+            [],
+            ["Name", "Institution", "Areas of Expertise", "Availability"],
+            ["Jane Doe", "Example University", "computer vision", "Available"],
+        ]
+        self.assertEqual(find_header(grid), 2)
 
     def test_keyword_matching_is_word_boundary_not_substring(self):
         # 2026-10-09 review finding: a raw `in` substring check let "ai"

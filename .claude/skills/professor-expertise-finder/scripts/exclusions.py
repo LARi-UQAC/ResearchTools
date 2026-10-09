@@ -35,7 +35,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from pef_common import atomic_open, load_column_hints, name_key, norm, write_json
+from pef_common import (atomic_open, canonical_university, load_column_hints,
+                         name_key, norm, write_json)
 
 _HINTS = load_column_hints("exclusions")
 NAME_COLS = _HINTS["name_cols"]
@@ -175,7 +176,7 @@ def apply_exclusions(ranking: list[dict], exclusion_rows: list[dict]) -> tuple[l
     for row in ranking:
         key = name_key(row.get("professor", ""))
         candidates = by_key.get(key, [])
-        row_uni = norm(row.get("university", ""))
+        row_uni = canonical_university(row.get("university", ""))
         outcome, chosen, consistent = _resolve_exclusion_match(row_uni, exclusions, candidates)
         if outcome == "exclude":
             # Every candidate judged CONSISTENT with this match - not only
@@ -212,8 +213,8 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
         entry for the same normalized name (its own homonyms).
 
     Inputs:
-        row_uni (str): the ranking row's university, already norm()-ed (""
-            when unknown).
+        row_uni (str): the ranking row's university, already
+            canonical_university()-ed ("" when unknown).
         exclusions (list[dict]): every parsed exclusion entry.
         candidates (list[int]): indices into `exclusions` sharing the
             ranking row's name key; [] when the name matched nobody.
@@ -257,7 +258,11 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
     """
     if not candidates:
         return "no_match", None, []
-    known = [(i, norm(exclusions[i]["university"])) for i in candidates]
+    # canonical_university(), not norm(): a UQAC entry and a Universite du
+    # Quebec a Chicoutimi row must agree here, or this exact-matching gap
+    # reopens the one selections.py's canonicalization round already
+    # closed elsewhere (2026-10-09 review, round 6).
+    known = [(i, canonical_university(exclusions[i]["university"])) for i in candidates]
     if row_uni:
         # A candidate with no recorded university is still POSSIBLY this
         # row (missing data, not a mismatch); one with a DIFFERENT known
@@ -269,7 +274,7 @@ def _resolve_exclusion_match(row_uni: str, exclusions: list[dict],
         return "ambiguous", None, candidates
     distinct_unis = {u for i, u in known if i in plausible and u}
     if len(distinct_unis) <= 1:
-        chosen = next((i for i in plausible if norm(exclusions[i]["university"])),
+        chosen = next((i for i in plausible if canonical_university(exclusions[i]["university"])),
                        plausible[0])
         return "exclude", chosen, plausible
     return "ambiguous", None, candidates

@@ -198,17 +198,27 @@ def load_university_aliases() -> dict[str, str]:
 
     Outputs:
         aliases (dict[str, str]): normalized acronym -> normalized canonical
-            name (both already run through `norm()`); {} when the file is
-            missing (R11 - a missing alias table degrades to exact matching
-            only, it does not block the skill).
+            name (both already run through `norm()`).
+
+    Raises:
+        FileNotFoundError: pef_university_aliases.json is missing.
+        ValueError: the file exists but is not valid JSON.
+            (2026-10-09 code-review round 6: this used to return {} on
+            either condition, silently degrading every university-cap,
+            conflict-of-interest and no-reuse check to exact-string
+            matching with no message - the same silent weaker-resource
+            substitution R8 forbids. Its siblings load_config() and
+            load_column_hints() already raise on the identical shape of
+            failure; this now matches them (R2 - one owner, one rule).)
     --------------------------------------------------------------------------
     """
     if not UNIVERSITY_ALIASES_PATH.exists():
-        return {}
+        raise FileNotFoundError(f"missing university-aliases config: {UNIVERSITY_ALIASES_PATH}")
     try:
         data = json.loads(UNIVERSITY_ALIASES_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"malformed university-aliases config "
+                         f"{UNIVERSITY_ALIASES_PATH}: {exc}") from exc
     return {norm(k): norm(v) for k, v in data.items() if not k.startswith("_")}
 
 
@@ -255,13 +265,25 @@ def slugify(text: str) -> str:
 
     Outputs:
         slug (str): lowercase ASCII, words joined by single hyphens. A text
-            with no Latin alphanumeric character at all (not realistic for
-            a location or batch name, but possible) gets a short hash
-            suffix instead of the bare literal "unspecified", so two such
-            inputs do not collide into the SAME data instance - a 2026-10-09
-            review finding: two unrelated batches named only in a non-Latin
-            script, or left blank by mistake, would otherwise share one
-            selections.csv and cross-contaminate the no-reuse rule.
+            with no Latin alphanumeric character at all (e.g. a location or
+            batch name written only in a non-Latin script) gets a short
+            hash of its own exact text instead of the bare literal
+            "unspecified", so two DIFFERENT such names do not collide into
+            the SAME data instance - a 2026-10-09 review finding: two
+            unrelated batches named only in a non-Latin script would
+            otherwise share one selections.csv and cross-contaminate the
+            no-reuse rule.
+
+    Details:
+        This is a deterministic function: the SAME input text always
+        produces the SAME slug, by construction. It cannot and does not
+        separate two batches that are both, literally, named "" or " " -
+        no hash of identical text can distinguish identical text from
+        itself. That case is refused upstream, at the CLI
+        (table.py/selections.py's own `--location`/`--batch`), rather than
+        guessed at here (2026-10-09 code-review round 6, correcting an
+        earlier overclaim that this function alone handled "left blank by
+        mistake").
     --------------------------------------------------------------------------
     """
     folded = unicodedata.normalize("NFKD", text)

@@ -168,6 +168,15 @@ class SelectionsTest(unittest.TestCase):
         rc = main(["check", "--batch", batch, "--professor", "Test Person"])
         self.assertEqual(rc, 0)  # still AVAILABLE: the dry run above wrote nothing
 
+    def test_blank_batch_is_refused_not_slugified(self):
+        # 2026-10-09 review round 6: slugify() cannot tell two blank
+        # batches apart, so a blank --batch is refused at the CLI instead
+        # of being handed to slugify() at all.
+        rc, out = run_main(["path", "--batch", "   "])
+        self.assertEqual(rc, 2)
+        self.assertIn("REFUSED", out)
+        self.assertFalse(any(self.tmp.iterdir()))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

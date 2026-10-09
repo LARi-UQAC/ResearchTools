@@ -154,6 +154,12 @@ def main(argv: list[str]) -> int:
                         help="also write a machine-readable report to this path")
     args = parser.parse_args(argv)
 
+    if not args.location.strip():
+        print("REFUSED: --location must not be blank (2026-10-09 code-review "
+              "round 6: slugify() cannot tell two blank locations apart, so a "
+              "blank location is refused here instead)")
+        return 2
+
     path = csv_path(args.location)
 
     if args.command == "path":

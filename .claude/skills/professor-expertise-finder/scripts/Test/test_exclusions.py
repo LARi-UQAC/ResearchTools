@@ -56,6 +56,36 @@ class ExclusionsTest(unittest.TestCase):
         self.assertEqual(len(ambiguous), 1)
         self.assertEqual(ambiguous[0][1]["university"], "University X")
 
+    def test_spelling_variant_university_still_cleanly_excludes(self):
+        # 2026-10-09 review round 6: _resolve_exclusion_match() compared
+        # universities with norm() rather than canonical_university(), so
+        # an exclusion-file entry written as the acronym and a ranking row
+        # carrying the full name went from a clean exclude to "ambiguous"
+        # - exactly the spelling-variant bypass the selections.py fix
+        # already closed for the cap/COI/no-reuse checks.
+        ranking = [{"professor": "Jane Doe", "university": "Universite du Quebec a Chicoutimi"}]
+        exclusion_rows = [{"name": "Jane Doe", "university": "UQAC", "reason": "unavailable"}]
+        kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
+        self.assertEqual(kept, [])
+        self.assertEqual(len(excluded), 1)
+        self.assertEqual(ambiguous, [])
+
+    def test_duplicate_entry_as_acronym_and_full_name_still_confidently_excluded(self):
+        # Same bypass, the duplicate-entry shape: one exclusion-file row
+        # spells the university as the acronym and its duplicate sibling
+        # spells it in full. Without canonicalization these read as TWO
+        # distinct universities (distinct_unis size 2) and the row is
+        # wrongly reported "ambiguous" instead of excluded.
+        ranking = [{"professor": "Jane Doe", "university": ""}]
+        exclusion_rows = [{"name": "Jane Doe", "university": "UQAC", "reason": "unavailable"},
+                           {"name": "Jane Doe",
+                            "university": "Universite du Quebec a Chicoutimi",
+                            "reason": "unavailable"}]
+        kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
+        self.assertEqual(kept, [])
+        self.assertEqual(len(excluded), 1)
+        self.assertEqual(ambiguous, [])
+
     def test_unknown_ranking_university_with_two_conflicting_candidates_is_ambiguous(self):
         # Second 2026-10-08 code-review round: when the ranking row's own
         # university is unknown and the exclusion FILE ITSELF lists two

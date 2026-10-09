@@ -139,9 +139,34 @@ class PefCommonTest(unittest.TestCase):
         self.assertNotEqual(canonical_university("Random University A"),
                              canonical_university("Random University B"))
 
-    def test_canonical_university_missing_alias_file_degrades_to_norm(self):
+    def test_load_university_aliases_missing_file_raises(self):
+        # 2026-10-09 review round 6: this used to return {} on a missing
+        # file, silently degrading every university-cap/COI/no-reuse check
+        # to exact-string matching with no message (R8). Its siblings
+        # load_config()/load_column_hints() already raise on the same
+        # shape of failure; this now matches them.
         with mock.patch.object(pef_common, "UNIVERSITY_ALIASES_PATH", Path("/does/not/exist.json")):
-            self.assertEqual(canonical_university("UQAC"), norm("UQAC"))
+            with self.assertRaises(FileNotFoundError):
+                load_university_aliases()
+
+    def test_load_university_aliases_malformed_json_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "pef_university_aliases.json"
+            bad.write_text("{not json", encoding="utf-8")
+            with mock.patch.object(pef_common, "UNIVERSITY_ALIASES_PATH", bad):
+                with self.assertRaises(ValueError):
+                    load_university_aliases()
+
+    def test_canonical_university_missing_alias_file_raises(self):
+        # Inverted 2026-10-09 round 6: canonical_university() must propagate
+        # the raise rather than silently degrading to norm() matching, or
+        # a professor comparing "UQAC" against the full name would see a
+        # false "different university" the moment the shipped alias file
+        # goes missing or malformed - exactly the silent weaker fallback
+        # R8 forbids.
+        with mock.patch.object(pef_common, "UNIVERSITY_ALIASES_PATH", Path("/does/not/exist.json")):
+            with self.assertRaises(FileNotFoundError):
+                canonical_university("UQAC")
 
     def test_atomic_open_writes_the_final_file_and_leaves_no_tmp_behind(self):
         with tempfile.TemporaryDirectory() as tmp:

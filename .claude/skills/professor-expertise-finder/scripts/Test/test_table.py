@@ -75,6 +75,18 @@ class TableTest(unittest.TestCase):
                 self.assertEqual(data["status"], "ok")
                 self.assertEqual(data["row_count"], 0)
 
+    def test_blank_location_is_refused_not_slugified(self):
+        # 2026-10-09 review round 6: slugify() cannot tell two blank
+        # locations apart (a deterministic function must return the same
+        # slug for the same input), so a blank --location is refused at
+        # the CLI instead of being handed to slugify() at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"PROFESSOR_EXPERTISE_DATA": tmp}):
+                rc, out = run_main(["path", "--location", "   "])
+                self.assertEqual(rc, 2)
+                self.assertIn("REFUSED", out)
+                self.assertFalse(any(Path(tmp).iterdir()))
+
     def test_validate_flags_bad_url_and_duplicates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "departments.csv"

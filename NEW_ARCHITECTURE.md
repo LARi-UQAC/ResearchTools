@@ -6,12 +6,13 @@ The same file is meant to be committed to `main` in both, so either checkout tel
 story — except for a known divergence between the two checkouts' copies as of 2026-10-02;
 reconciling them is the operator's job.
 
-**Status: in progress. 12 of 22 units delivered.** Twenty-two branches carry one plan document
+**Status: in progress. 13 of 23 units delivered.** Twenty-three branches carry one plan document
 each, and issues track them. Written 2026-07-29.
 
 Delivered: TT-0, TT-1, TT-2, TT-8, TT-9 and TT-12 are merged to `main` in ThesisTracker, along
 with the ingest-contract fix that RT-1 and RT-2 found. RT-1 through RT-6 are all merged to
-`main` here (RT-5 merged 2026-09-25, PR #22; RT-6 merged 2026-09-25, PR #24). RT-5's `/pdf/fill`
+`main` here (RT-5 merged 2026-09-25, PR #22; RT-6 merged 2026-09-25, PR #24), and so is RT-8
+(`POST /cv/build`, merged 2026-10-09, PR #47). RT-5's `/pdf/fill`
 multipart-vs-raw-body request shape was checked against the ThesisTracker side 2026-09-25: TT-3
 is not built yet, so there is no existing client contract to conflict with, and no objection was
 raised to what shipped.
@@ -28,9 +29,30 @@ RT-5). The command is now `/fetchform`. This document's own project name ("the U
 is unchanged: the first deployment is UQAC-specific by design (Décanat, SRF, `uqac.ca`, Quebec
 Law 25), even though the underlying skill is not.
 
-This file is meant to be identical on `main` in both repositories.
+This file is meant to be identical on `main` in both repositories; section 14 tracks the
+re-sync of the divergence noted at the top.
 
-Outcome when all twenty units land: a professor admits a student and their whole timeline appears,
+**Revision note, 2026-10-01 to 2026-10-08.** Student data and their consent. Seven operator
+decisions, recorded in section 1 and detailed in sections 6, 6a, 11 and 13:
+
+1. **Student and HQP records live only in the ThesisTracker database.** No `hqp.yaml`, no vault
+   copy, no YAML override file on the ResearchTools side.
+2. **Consent is one question with two checkboxes**, in the student's personal-information page:
+   publication on the laboratory website, and naming in the supervisor's grant CVs (section 6a).
+3. **The CCV XML export is frozen.** It is read once, to migrate the researcher's own sections to
+   the laboratory website, which is the source of the researcher's data from then on.
+4. **A graduate's current position and employer live in ThesisTracker** and appear only in a CV,
+   never on the web.
+5. **The NAS and the date of birth are stored in ThesisTracker** (2026-10-07), the NAS encrypted
+   and masked (section 6). UQAC's PDF forms ask for the NAS every session; the alternative in
+   practice was a copy in OneDrive and one in every email carrying a filled form. Subject to the
+   privacy impact assessment of A-2.1 art. 63.5 and to the privacy officer (section 14).
+6. **CV consent is required for every student row, whatever its dates** (2026-10-08, replacing the
+   6-year exemption of 2026-10-02). The funder's window only splits recent from archive.
+7. **The laboratory website is operated by UQAC** (operator, 2026-10-08), so publishing on it is a
+   use by the same public body and the A-2.1 framing of section 6a applies to it.
+
+Outcome when all twenty-three units land: a professor admits a student and their whole timeline appears,
 from the first administrative form to the final thesis deposit; a superuser registers an official
 UQAC PDF and defines its rules; the student signs in with a one-time code sent to their
 institutional address and fills the form, pre-filled from what they entered last time; they sign it,
@@ -96,6 +118,10 @@ ThesisTracker. Investigation rejected that shape.
 | The Direction de programme | **A `direction`-typed service, not a fourth fixed role** | Signature only: the Direction never writes a field. They see a signing queue and the rules editor, never a student's tracker. |
 | Role/actor model (`users.role`, `form_step_defs.actor_role`) | **Replaced by a generic, hierarchical `services` model** (2026-09-25) | The real UQAC catalogue has offices beyond direction/dean (finance, the research décanat, HR), a professor supervises more than one student, and a self-requesting professor skips the supervisor tier entirely. A fixed enum cannot express any of that: it collapses every student's supervisor into one shared value with no email and no office of its own. See section 1a. |
 | Form submission mechanism | **`form_definitions.form_type`: `pdf \| web_form \| email_only`** | Checked directly against SRF, the Décanat, PSDRC and SRH before assuming otherwise: PSDRC alone uses all three inside one page (JotForm-hosted "volets", a pure email-routing volet with no form object, and static PDFs) plus two unavailable tracks. RT-1..5's PDF pipeline (`pdf`) stays the default and best-supported case; `web_form` is a validated link-out with no fill/sign; `email_only` is a routing address (or several, keyed by sub-category) with no form object at all. |
+| Where student and HQP records live (cycle, status, co-director, professional title, current position) | **The ThesisTracker database only** (2026-10-01) | One system of record. A second copy in a YAML file, the Obsidian vault or a ResearchTools folder drifts, and personal data in or beside a public repository is a Law 25 exposure. ResearchTools receives rows in a request and keeps nothing. |
+| Consent to reuse student data | **One question, two checkboxes, one per purpose: web publication and grant CV** (2026-10-01) | Quebec Act A-2.1 art. 53.1 requires consent asked for each purpose, and art. 63.7 requires the most private setting by default. One box for both purposes risks being void. Section 6a. |
+| The researcher's own CV data | **The CCV XML is frozen; the laboratory website is the source from then on** (2026-10-01) | The CCV is retired. `wp-portfolio-sync` reads the XML once and migrates the researcher's own sections. Its supervision section is never read. |
+| A graduate's current position | **Stored in ThesisTracker, shown only in a CV, never on the web** (2026-10-01) | The CV needs it; the public page does not. A graduate keeps access through the institutional address, which is suspended only after one year of inactivity and can be reactivated, plus the personal `recovery_email` (2026-10-02). |
 | Fields repeated on every form (name, address, program) | **Filled automatically from a profile store, written back on every edit** | A student types their address once. When a student or a professor corrects a value while filling, the correction is saved and becomes the default for the next form. |
 | A form that needs correcting after it was signed | **Sent back, and the engine forces it** | A `modify` after a `sign` leaves the earlier signature valid over its own revision but no longer covering the final content. So the professor's correction routes the form back to the student for approval automatically, and the Direction can return it to the professor. Forward-only would produce documents whose signatures no longer mean what they appear to mean. |
 | Getting the finished form to the office | **Emailed to a destination stored on the form definition** | Each official form belongs to a different office. The address is part of the definition, editable by an `owner` or the `direction`, and never supplied by the client at submission time. |
@@ -256,6 +282,12 @@ service RT-5 already added to `deploy/docker-compose.yml`, so no separate vector
 Postgres instance is introduced - but the form-service function itself stays exactly as stateless
 as the table states.
 
+**The CCV XML is read once, by `wp-portfolio-sync` (RT-9).** It migrates the researcher's own
+sections (funding, implications, services, distinctions) to the laboratory WordPress site, and from
+then on the website is the source of truth for the researcher's data. The parser drops the
+supervision section entirely: student data are never read from the XML, because they live in
+ThesisTracker and need the student's consent.
+
 ### 3.x CV build boundary
 
 `POST /cv/build` (RT-8) follows the same shape as `/pdf/fill`: ThesisTracker calls, ResearchTools
@@ -321,6 +353,28 @@ Deliberate properties:
 - Every hostname comes from the environment. No domain is hardcoded anywhere.
 - The `pgvector` extension is needed by RT-7 only. It rides whichever Postgres the deployment
   gives it; the compose files are written so a merged or a separate instance both work.
+- **Every student-data flow runs ThesisTracker to ResearchTools, never the reverse.** ThesisTracker
+  selects the consenting rows and sends them in the request; the service renders and keeps
+  nothing. Two flows use this shape: the grant CV (`POST /cv/build`, RT-8) and, once decided, the
+  public `/etudiants/` page (Phase 2 below).
+- **ThesisTracker's filter is the contract; the service's 422 is a backstop.** A student with no
+  CV consent in force is not sent, and so does not appear in the CV at all: no placeholder, no
+  "name withheld" line. `/cv/build` still refuses (422) a row that arrives without `consent_cv`,
+  which can only happen through a ThesisTracker defect. `consent_cv` is the `granted_at` date of
+  the student's in-force `grant_cv` row in `consents` (section 11).
+- **A withdrawal acts on the next output, never retroactively.** The service keeps nothing, so a
+  withdrawn student is absent from the next CV build; a CV already generated and submitted to a
+  funder is not recalled. On the web, the student is removed at the next `/etudiants/`
+  publication (Phase 2), which must run when a web consent is withdrawn rather than on a schedule.
+
+**Phase 2, the public student page (open).** ThesisTracker would update the laboratory's
+`/etudiants/` page with web-consenting students only, by calling a stateless ResearchTools
+endpoint the way it calls `form-service`. That endpoint would reuse `render_phq` from
+`wp-portfolio-sync`, whose record contract is fixed: required `etudiant`, `type_diplome`,
+`statut`, `debut`, `fin`, `role`, `titre_projet`; optional `titre_professionnel` (used only when
+the degree gives no title) and `codirecteur`. A graduate's current position is never in this
+payload. Still undecided: the request payload, who holds the WordPress credential, and the consent
+field names (section 14).
 
 Vercel served as a development/testing front door while the Docker stack was being built. It is
 never the production target and carries no real student data (confirmed 2026-09-25); production
@@ -515,6 +569,96 @@ Rules, each enforced server-side:
 - Every change is versioned, so "the address was wrong on the form I submitted in March" is an
   answerable question.
 - A field bound to a literal or marked as not filled is never written back.
+
+**Fields that only the student provides** (decision of 2026-10-07). The student enters and
+corrects them; the professor's write-back above never overwrites them.
+
+| Field | Where it lives | Note |
+|---|---|---|
+| UQAC email | `users.email` | The login, never typed again |
+| Personal email | `users.recovery_email` | Recovery sign-in |
+| Matricule, code permanent, last name, given names, address, phone number | `profile_values` | Pre-fill every form |
+| Date of birth | `profile_values` | Sensitive: never in a CV, a web page or an export |
+| Social insurance number (NAS) | `profile_values`, **encrypted** | See below |
+
+**The NAS is stored**, because UQAC's PDF forms ask for it every session, and the alternative in
+practice is a copy in the student's OneDrive folder plus one in every email that carries a filled
+form. One encrypted copy in ThesisTracker is the smaller exposure. It carries rules no other field
+has:
+
+- Encrypted at rest at column level, with the key held outside the database (environment, like
+  `SESSION_SECRET`).
+- Shown masked (last three digits) to everyone but the student. It is written into a PDF only for
+  a form whose field map binds it, and only at that form's own step.
+- Sent to the form service only as a fill value; the service already persists nothing and logs no
+  field value (section 13).
+- Never in a CV, a web page, an export, a log or an audit-trail value. The audit trail records
+  that it was read or changed, never what it is.
+- A signed PDF that carries it stays in `form_documents`, so the retention policy of those
+  documents covers it too (section 14).
+
+The profile store also holds the student's **career record**: cycle, period, status, project
+title, co-director, professional title (such as the OIQ "ing."), and after graduation the current
+position and employer. This is the only place these values live (decision of 2026-10-01).
+
+### 6a. The consent block
+
+**Consent is one question with two checkboxes, in the student's personal-information page**,
+beside the personal email and the phone number. It is not a form of the workflow engine and has no
+steps: the student ticks or unticks a box, and that is the whole act.
+
+```
+Consentement (facultatif)
+[ ] Publier mon nom et mon projet sur le site web du laboratoire
+[ ] Me nommer dans les CV de subvention de mon directeur
+Refuser n'a aucun effet sur votre encadrement. Retrait possible en tout temps.
+```
+
+The same block in English, shown when the interface is in English. Each language is its own
+`text_version`, and the `language` column of `consents` records which one the student saw.
+
+```
+Consent (optional)
+[ ] Publish my name and my project on the laboratory website
+[ ] Name me in my supervisor's grant CVs
+Refusing has no effect on your supervision. You may withdraw at any time.
+```
+
+**The web box covers more than a name and a project.** Phase 2's `render_phq` also prints the
+degree type, status, period, role, the co-director's name and a professional title. Before Phase 2
+is built, either the web box's wording lists those fields (a new `text_version`) or the Phase 2
+payload drops them (section 14).
+
+Each rule below comes from the Quebec Act respecting access to documents held by public bodies
+(chapter A-2.1, as amended by Law 25), read on LégisQuébec on 2026-10-01 and re-read on 2026-10-09,
+consolidation "À jour au 12 août 2026". UQAC is a public body under it: art. 6 covers the
+universities named in chapter E-14.1, art. 1, 9° of which names "l'Université du Québec et ses
+universités constituantes". Graduate students are adults, so the minors' rule of art. 53.1, second
+paragraph, does not arise.
+
+| Rule | Source | What ThesisTracker does |
+|---|---|---|
+| Consent is "demandé à chacune de ces fins" | art. 53.1 | Two boxes, one per purpose. Never one box for both. |
+| A written request is presented "distinctement de toute autre information" | art. 53.1 | Its own titled block on the page, not mixed with the email and phone fields, and never inside the sign-up terms |
+| Consent is valid only "pour la durée nécessaire" | art. 53.1 | Each consent states its duration. The CV consent is required for every student listed, whatever the dates (decision of 2026-10-08, replacing the 6-year exemption of 2026-10-02). The funder's window (6 years NSERC/tri-agency, 5 years FRQ) only decides whether a student is listed as recent or archive. |
+| A consent not given in conformity "est sans effet" | art. 53.1 | Each grant stores its date and the version of the text shown, so it can be proven |
+| Privacy settings give the highest confidentiality "par défaut" | art. 63.7 | Both boxes start unticked. The article targets a service offered "au public", which a student account may not be; the default is applied as a design choice either way |
+| A system project handling personal information gets a privacy impact assessment, with the access committee consulted "dès le début du projet" | art. 63.5 | Required for ThesisTracker, whose consent, profile and NAS storage are all in scope (section 14) |
+| At collection, say whether it is optional and what refusing or withdrawing does | art. 65 | The note under the boxes |
+| Reuse for another purpose needs consent, unless the purpose is compatible ("un lien pertinent et direct"), in which case it is logged in the art. 67.3 register | art. 65.1 | Consent is the route taken. Whether an exception applies is UQAC's privacy officer's call, not the system's. |
+| Information about "l'exercice par la personne concernée d'une fonction au sein d'une entreprise, tel que son nom, son titre et sa fonction" is outside the protection rules | art. 55 al. 2 (A-2.1 itself, text read 2026-10-09) | Noted for a graduate's job title and employer only, and still gated by the CV consent box. A student's status as a student stays protected. |
+
+Two rules that the law does not dictate but the design needs:
+
+- **Only the student changes their own consent.** The profile write-back of section 6 lets a
+  professor correct a student's address. It must never touch a consent box, or the consent would
+  not be the student's.
+- **Withdrawal survives graduation.** A graduate signs in with the institutional address, which is
+  suspended only after one year of inactivity and can be reactivated (stated by the operator on
+  2026-10-08 as documented by UQAC IT; the IT document is not yet cited here), or through the
+  personal `recovery_email` (decision of 2026-10-02).
+- **A graduate's position and employer are collected from the graduate**, through the same
+  personal-information page, and are used only under the CV box. Nothing else collects them.
 
 ---
 
@@ -739,6 +883,7 @@ erDiagram
   users ||--o{ profile_values : owns
   users ||--o{ timeline_items : owns
   users ||--o{ review_artifacts : owns
+  users ||--o{ consents : "grants (student only)"
   users ||--o{ services : "may hold (assigned_login)"
   services ||--o{ services : "reports to (parent_service_id)"
   form_definitions ||--o{ form_step_defs : "ordered steps"
@@ -754,7 +899,7 @@ erDiagram
   users {
     text login PK
     text email UK "the username"
-    text recovery_email
+    text recovery_email "personal address; recovery sign-in, also after graduation (2026-10-02)"
     text role "pending|owner - account-level only; student/professor/direction/dean are services, not roles, since 2026-09-25"
     text name
   }
@@ -891,10 +1036,20 @@ erDiagram
   profile_values {
     text id PK
     text owner_login FK
-    text key "student.adresse"
+    text key "student.adresse; also the career record: cycle, status, co-director, professional title, current position and employer"
     text value
     text updated_by
     timestamptz updated_at
+  }
+  consents {
+    text id PK
+    text owner_login FK "the student; only that login may write the row"
+    text purpose "web_publication|grant_cv - a data value"
+    text text_version "the wording shown when the box was ticked"
+    text language "fr|en - which text_version the student saw"
+    timestamptz granted_at "one row per grant; no row means not granted (A-2.1 art. 63.7)"
+    timestamptz expires_at "the duration A-2.1 art. 53.1 requires; null only if the stated duration is 'until withdrawn'"
+    timestamptz withdrawn_at "null while in force; a re-grant inserts a NEW row, so history is kept"
   }
 ```
 
@@ -908,7 +1063,7 @@ nothing else.
 
 ---
 
-## 12. The twenty units
+## 12. The twenty-three units
 
 One plan document, one branch, one issue each. Every branch is cut from its repository's `main` and
 its only commit is its own plan file.
@@ -983,6 +1138,7 @@ critical path and can land last.
 | RT-5 | `feat/form-service` (was `feat/uqac-forms-service`) | ResearchTools #8 | Stateless service: `/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`. Shared-secret gate, no CORS, nothing persisted, no map volume. `/pdf/fill` uses multipart/form-data, still unconfirmed with TT-3 - settle before TT-3 codes against it. **Delivered 2026-09-25** (PR #22, merged to `main`). |
 | RT-6 | `feat/publications-endpoint` | ResearchTools #9 | `scopus_api.author_documents`, cached and rate-limited `GET /publications`, approved-publisher flag. `count` capped at 25 (Scopus's own STANDARD-view ceiling). **Delivered 2026-09-25** (PR #24, merged to `main`). |
 | RT-7 | `feat/corpus-index` | ResearchTools #10 | Content-addressed parse cache, deterministic chunker, injected embedder, pgvector store, opt-in build. **Implemented 2026-09-25, PR open, not yet merged.** |
+| RT-9 | `feat/wp-portfolio-sync` | ResearchTools PR #50 | `wp-portfolio-sync`: one-shot migration of the frozen CCV XML into the laboratory WordPress site, for the researcher's own sections only; the supervision section is dropped. `render_phq` stays a pure function for Phase 2 (section 4). **PR open, not yet merged.** |
 | TT-0 | `feat/routes-portability` | ThesisTracker #1 | Named handlers, thin Vercel dispatchers, `pg` swap, Express front door, container |
 | TT-1 | `feat/forms-entity` | ThesisTracker #2 | `form_instances` entity and its additive migration; `crud.js`, `scope.js`, `auth.js` untouched |
 | TT-2 | `feat/forms-routes` | ThesisTracker #3 | Owner-scoped instance routes, signing queues, binary document routes |
@@ -996,7 +1152,7 @@ critical path and can land last.
 | TT-10 | `feat/workflow-engine` | ThesisTracker #12 | Step instances; actor and capability enforcement; **returns with a mandatory reason**; **forced re-approval when a modification breaks an earlier signature**; signature stacking; **submission by email to the definition's address**; reopen at a named step |
 | TT-11 | `feat/student-timeline` | ThesisTracker #13 | Timeline template and instantiation on admission; forms, reports, seminar, papers per contribution, thesis milestones; dates shifted from the subject-calendar form's stored values |
 | TT-12 | `feat/correction-plans` | ThesisTracker #14 | Intake of ResearchTools audit artifacts; `review_findings` as a student worklist; a rejected finding needs a reason; the score is stored as reported, never recomputed |
-| RT-8 | `feat/cv-build-endpoint` | ResearchTools #46 | Stateless `POST /cv/build`: narrative CV (CV-FRQ / tri-agency) with consenting HQP rows, no LaTeX compiled, nothing stored. **Implemented 2026-10-02, PR #47 open, not yet merged.** |
+| RT-8 | `feat/cv-build-endpoint` | ResearchTools #46 | Stateless `POST /cv/build`: narrative CV (CV-FRQ / tri-agency) with consenting HQP rows, no LaTeX compiled, nothing stored. **Delivered 2026-10-09** (PR #47, merged to `main`). |
 | TT-13 | (not yet branched) | (not yet opened) | `/cv/build` client and the two separate consents (web publication on /etudiants/ and CV inclusion, A-2.1 art. 53.1). **Planned.** |
 
 Plans live at `docs/superpowers/plans/2026-07-29-<unit>.md` on each unit's own branch. Every plan
@@ -1055,6 +1211,12 @@ Binding rules, each enforced by a test or a startup check:
 | Only `owner` or `direction` may add a form definition or change its rules; a professor gets 403 | TT-8 |
 | Only `owner` or `direction` may create a `services` row or change its `parent_service_id`, `service_type` or `hierarchy_level` (2026-09-25); a service's own `assigned_login` may edit only that row's `email`/`responsibility`, never its place in the hierarchy | TT-8 UI, asserted by test |
 | A profile write-back updates the **form owner's** profile, never the editor's, and records who did it | TT-9 |
+| A consent row is written only by the student it belongs to; a profile write-back never touches it | section 6a |
+| Student-provided identity fields (matricule, code permanent, names, date of birth, address, phone, NAS) are written only by the student | section 6 |
+| The NAS is encrypted at rest with a key outside the database, shown masked to everyone but the student, and never logged or exported | section 6 |
+| No consent, no publication: the `/etudiants/` page and any CV list only students whose consent for that purpose is in force | section 6a |
+| `POST /cv/build` refuses (422) any student row with no CV consent, whatever its dates, naming the row index, never the name. The funder's window (`cv_window_years` per portal variant: 6 NSERC/tri-agency, 5 FRQ) only splits recent from archive (decision of 2026-10-08) | RT-8 |
+| No student data are stored on the ResearchTools side: no YAML copy, no vault copy, no cache of a request's rows | RT-8, RT-9 |
 | A new signature preserves every previous one; the chain is verifiable in step order | RT-4, asserted by test |
 | A signature's intact, valid and trusted status are reported separately, never collapsed into one pass/fail | RT-5 `sign_form.validate_signatures`, asserted by test |
 | An instance whose definition went stale is frozen, not silently advanced | TT-8 drift check, TT-10 gate |
@@ -1124,6 +1286,11 @@ stopping a container; TT-7 removed it, so nothing outside the Docker host has to
 | Does either office accept a **three-signature chain** in one PDF, or do they expect a separate signature page? | **Unverified.** The engine produces a stacked PAdES chain in step order, which is the technically correct form; whether the office reads it that way is not confirmed. | The professor, same conversation |
 | A relay that can send automated mail as a `uqac.ca` address, for the TT-7 sign-in codes | **Blocking.** UQAC runs Microsoft 365 (the MX is `uqac-ca.mail.protection.outlook.com`), so the ask is SMTP AUTH enabled on a service mailbox, or an app registration with `Mail.Send`. Microsoft disables SMTP AUTH per-tenant by default, so an admin has to act either way. Until this exists TT-7 cannot ship, and TT-10 waits behind it for the `direction` role | The professor, with UQAC IT |
 | Which institutional Docker host, and who administers it? | **Undecided by choice.** The stack is host-agnostic | The professor, with UQAC IT |
+| Phase 2: the public `/etudiants/` page fed from ThesisTracker (section 4). Which request payload, who holds the WordPress credential, the field names of the two consents, and whether the web box's wording is widened to cover every field `render_phq` prints or the payload is cut to name and project (section 6a). `render_phq` exists only in unmerged PR #50, whose own review asks whether it should exist at all; if it is removed, sections 4 and 12 change with it. The two record contracts also differ: `/cv/build` rows use English keys and re-check consent in the service, `render_phq` rows use French keys and carry no consent field, so Phase 2 relies on ThesisTracker's filter alone | **Open.** Decide before Phase 2 is built | The professor |
+| The ThesisTracker copy of this file has diverged (1044 lines against 1111 on 2026-10-02) | **Open.** Copy this file to ThesisTracker `main` once the pending revisions land | The professor |
+| Privacy impact assessment of ThesisTracker, which A-2.1 art. 63.5 requires for any system project handling personal information, with UQAC's access-to-information committee consulted "dès le début du projet" | **Required, not started.** Covers the consents, the profile store and the NAS | The professor, with UQAC's access-to-information committee |
+| Retention of signed PDFs that carry a NAS or a date of birth, and whether UQAC's privacy officer accepts ThesisTracker as the NAS's single store | Open. The operator decided storage on 2026-10-07; it stands subject to the art. 63.5 assessment above and the officer's sign-off | The professor, with UQAC's privacy officer |
+| The UQAC IT source for "an institutional address is suspended only after one year of inactivity and can be reactivated" (section 6a) | Open. Stated by the operator on 2026-10-08; the document is to be cited | The professor |
 | Backup policy for the institutional Postgres | Open. A `pg_dump` cron container is the intended answer and needs no n8n | Whoever administers the host |
 | Who holds the `direction` account, and does one account serve the whole Direction de programme or one per person? | Open. One per person gives a real audit trail; a shared account does not | The professor, with the Direction |
 

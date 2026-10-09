@@ -724,6 +724,40 @@ class TestHqp(unittest.TestCase):
         self.assertNotIn("Jean", str(ctx.exception))
         self.assertNotIn("Tremblay", str(ctx.exception))
 
+    def test_section_as_falsy_int_refused_not_silently_dropped(self):
+        # Low-3 (reviewer, 2026-10-09, owner decision: refuse falsy non-dict
+        # too). `0`/`False`/""/[]/{} used to be read as "no section" by the
+        # old `if not section: continue` and silently dropped the section
+        # from the rendered CV with no error - only an absent key or an
+        # explicit null is "no section" now.
+        for falsy in (0, False, "", [], {}):
+            model = _model()
+            model["sections"]["1"] = falsy
+            with self.assertRaises(CvDataError):
+                cv_build.assert_inline_model(model)
+
+    def test_section_absent_or_null_still_skipped(self):
+        # The companion control: a section key that is entirely absent, or
+        # explicitly null, is still read as "no section" rather than
+        # refused - unchanged behaviour, not a new requirement.
+        model = _model()
+        del model["sections"]["3"]
+        cv_build.assert_inline_model(model)  # must not raise
+        model["sections"]["3"] = None
+        cv_build.assert_inline_model(model)  # must not raise
+
+    def test_mixed_digit_and_free_text_section_keys_names_only_the_digit(self):
+        # Low-1 (reviewer, 2026-10-09, mutation M8 survivor): `all(...)` at
+        # the digit-shaped check must stay `all`, not `any` - a request
+        # carrying BOTH a digit-shaped typo and a free-text key must not
+        # let the digit case license naming the free-text one too.
+        model = _model()
+        model["sections"]["4"] = model["sections"].pop("3")
+        model["sections"]["SECRET"] = {"title": "X"}
+        with self.assertRaises(CvDataError) as ctx:
+            cv_build.assert_inline_model(model)
+        self.assertNotIn("SECRET", str(ctx.exception))
+
     def test_unknown_numeric_section_key_two_digits_named(self):
         # L1 (reviewer, 2026-10-09): the digit-shaped exception is capped
         # at two ASCII digits, not any length `str.isdigit()` would accept.
@@ -843,11 +877,19 @@ class TestHqp(unittest.TestCase):
             cv_build.validate_hqp_rows(rows, reference_year=2026, window_years=6)
 
     def test_reference_year_bounds_come_from_config_not_hardcoded(self):
-        # C7 (reviewer, 2026-10-09): nothing proved the bound _hqp_block
-        # actually reads is the configured one rather than the module's
-        # own fallback literals - hardcoding 2000/2100 in _hqp_block, or
-        # changing contribution_types.json's max to some other value,
-        # would have passed every other test unnoticed.
+        # C7 (reviewer, 2026-10-09; Low-2, SAME finding re-raised 2026-10-09
+        # round 5, mutation N4 survived the first version of this test): a
+        # row whose OWN dates are far in the future (start="2049-09") is
+        # refused by the "start must not be after reference_year" check
+        # REGARDLESS of which reference_year bound is in effect, so the
+        # first version of this test passed under BOTH the real code and a
+        # mutant that hardcodes the module's fallback [2000, 2100] instead
+        # of reading `contribution_types.json` - proving nothing. The row
+        # below is valid for reference_year 2026 under EVERY other check
+        # (start/end ordering, consent), so the only thing that can make
+        # reference_year=2026 fail is the reference_year BOUND itself: the
+        # configured [2050, 2050] refuses it, the module's own [2000, 2100]
+        # fallback would not.
         import json
         import tempfile
 
@@ -858,9 +900,7 @@ class TestHqp(unittest.TestCase):
             path = Path(tmp) / "types.json"
             path.write_text(json.dumps(types), encoding="utf-8")
             model = _hqp_model()
-            rows = [_row(start="2049-09", end=None, consent_cv="2049-09-01")]
-            # The module default [2000, 2100] would accept 2026; the
-            # configured [2050, 2050] must be what actually decides.
+            rows = [_row(start="2020-09", end=None, consent_cv="2020-09-01")]
             with self.assertRaises(CvDataError):
                 cv_build.render_latex(model, types_path=path, hqp={"rows": rows, "reference_year": 2026})
             cv_build.render_latex(model, types_path=path, hqp={"rows": rows, "reference_year": 2050})

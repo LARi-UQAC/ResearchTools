@@ -184,7 +184,7 @@ name a file on the server.
 - `.claude/skills/narrative-cv/scripts/cv_select.py` — keyword-overlap ranking
 - `.claude/skills/narrative-cv/scripts/cv_build.py` — LaTeX/text rendering, filename, page-budget check
 - `.claude/skills/narrative-cv/scripts/contribution_types.json` — section titles, clientele/category vocabularies, page budget, portal/font variants (data, not code)
-- `.claude/skills/narrative-cv/scripts/Test/test_cv_common.py`, `test_cv_inventory.py`, `test_cv_select.py`, `test_cv_build.py` — offline unit tests (161 cases; no network, no LaTeX install, no machine-local profile dependency)
+- `.claude/skills/narrative-cv/scripts/Test/test_cv_common.py`, `test_cv_inventory.py`, `test_cv_select.py`, `test_cv_build.py` — offline unit tests (164 cases; no network, no LaTeX install, no machine-local profile dependency)
 
 ### `paper2talk` — accepted paper to conference talk
 

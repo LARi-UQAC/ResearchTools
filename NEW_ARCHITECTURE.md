@@ -274,7 +274,10 @@ decision Q1, 2026-10-08). Section 2 of the model is capped at 10 items (Q2), and
 anywhere in the model - top level, an item, or a digit-shaped stray section key - is refused with
 the key named, since a key is the model's own fixed vocabulary rather than student data; a
 non-digit section key is the one exception, refused without being named, since it can itself
-carry caller-controlled free text (Q3). A model's own section 1/3 prose is trusted, raw LaTeX by
+carry caller-controlled free text (Q3). A section value that is not an object is refused the
+same way, whether truthy (an int, a string) or falsy (`0`, `false`, `""`, `[]`, `{}`) - only an
+absent key or an explicit `null` reads as "no section" (owner decision, Low-3, 2026-10-09). A
+model's own section 1/3 prose is trusted, raw LaTeX by
 design (M4): until TT-13 only the researcher authoring the `cv_model.json` can write it, so no
 control strips or sandboxes it here - an accepted risk, reconsidered the day TT-13 lets someone
 else supply the model.

@@ -411,9 +411,14 @@ def assert_inline_model(model, types_path=None):
         raise CvDataError("model.language must be one of %s or absent" % (_VALID_LANGUAGES,))
     types = load_contribution_types(types_path)
     for key in ("1", "2", "3"):
-        section = sections.get(key)
-        if not section:
+        if key not in sections or sections[key] is None:
+            # Owner decision (Low-3, reviewer, 2026-10-09): an absent key or
+            # an explicit null means "no section" and is skipped; any other
+            # falsy value (0, False, "", [], {}) is NOT a null-equivalent -
+            # it is refused below, same as a truthy non-dict value already
+            # is, rather than silently dropping the section.
             continue
+        section = sections[key]
         if not isinstance(section, dict):
             # R1 (reviewer, 2026-10-09, regression from the Q3 fix): this
             # check MUST run before set(section) below, or a truthy

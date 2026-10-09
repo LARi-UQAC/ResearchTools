@@ -80,7 +80,12 @@ calls, the service renders and returns, and keeps nothing (spec section 1).
   `python:3.13-slim` image (C2). The PDF and the page-budget check stay local,
   through `cv_build.py compile_latex` / `check-pages`.
 - **Nothing is stored.** No disk write, no body logged, no student name in any
-  error or log line - errors name a row by its index only (C3).
+  error or log line - errors name a row by its index only (C3). A handful of
+  non-student values ARE echoed in a `422`, all of them caller-authored
+  structure rather than student data: an invalid `portal_variant` or
+  `target`, an unknown model/section/item key (fixed vocabulary, not free
+  text), and a malformed section-2 `references` value (the researcher's own
+  CV prose, same trust level as M4's raw-LaTeX acceptance below).
 - **Consent is mandatory for every row, whatever its date** (C6 revised,
   operator 2026-10-08). A row with no `consent_cv` is refused with `422`
   naming the row index; so are a future-dated `consent_cv`, an impossible
@@ -96,6 +101,12 @@ calls, the service renders and returns, and keeps nothing (spec section 1).
 - **`consent_cv` is checked by full date, not by year alone** (owner
   decision Q1, 2026-10-08). A consent dated after December 31 of
   `reference_year`, or dated before the row's own `start`, is refused.
+- **A section value must be an object, or absent/`null`.** A non-dict
+  section (an int, a string, a list) is refused with `422`, the value
+  never echoed. An absent key or an explicit `null` means "no section";
+  any other falsy value (`0`, `false`, `""`, `[]`, `{}`) is refused too
+  (owner decision, Low-3, 2026-10-09), rather than silently dropping the
+  section from the rendered CV.
 - **Section 2 is capped at 10 items** (owner decision Q2, 2026-10-08),
   read from `contribution_types.json`'s `sections.2.max_items` rather than
   a literal; the 11th item is refused with `422` before anything renders.

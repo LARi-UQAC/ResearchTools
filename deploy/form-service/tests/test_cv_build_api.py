@@ -296,6 +296,15 @@ class TestCvBuildApi(unittest.TestCase):
         self.assertNotIn("Jean", response.text)
         self.assertNotIn("Tremblay", response.text)
 
+    def test_falsy_section_422_not_silently_dropped(self) -> None:
+        # Low-3: 0/false/""/[]/{} used to be read as "no section" and
+        # silently dropped the section from the rendered CV with no error.
+        for falsy in (0, False, "", [], {}):
+            model = json.loads(json.dumps(MODEL))
+            model["sections"]["1"] = falsy
+            response = self._post({"model": model, "hqp": [], "reference_year": 2026})
+            self.assertEqual(response.status_code, 422, falsy)
+
     def test_invalid_target_422(self) -> None:
         # M-E: cv_bridge.build_cv's own _TARGETS whitelist, reached through
         # the route, not only as unit-tested code with no caller.

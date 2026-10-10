@@ -24,6 +24,14 @@ _HTTP_CLIENT_LINE = "get http-client predictor cost"
 _IN_PROCESS_ENGINE_LINE = "Using llama-cpp-engine as the inference engine for VLM"
 _WINDOW_RE = re.compile(r"Hybrid processing window (\d+)/(\d+)")
 _PARSED_RE = re.compile(r"Parsed (\d+) input")
+# mineru-kit's own generic terminal-failure template (confirmed verbatim in
+# mineru/utils/translations.py: "Failed to parse {path}: {error}", the exact
+# counterpart of the success template "Parsed {count} input(s)." _PARSED_RE
+# already matches). Without this, a crashed conversion (measured 2026-10-10:
+# a Vulkan driver crash, "vk::Queue::submit: ErrorDeviceLost", mid-run) was
+# reported as finished=false forever -- indistinguishable from "still
+# running" to a caller polling this status.
+_FAILED_RE = re.compile(r"Error:\s*Failed to parse.*", re.DOTALL)
 
 
 @dataclass
@@ -46,12 +54,19 @@ class ConvertProgress:
             being used instead.
         current_window (tuple[int, int] | None): (window, total_windows).
         finished (bool): a "Parsed N input(s)" success line was seen.
+        error (str | None): mineru-kit's own "Error: Failed to parse ..."
+            terminal-failure line, or None while the run is either still
+            going or has already finished successfully. A caller polling
+            this status must check error BEFORE treating finished=False
+            as "still running" -- a crashed process never becomes
+            finished=True on its own.
     --------------------------------------------------------------------------
     """
 
     routed_via_vlm_server: bool | None
     current_window: tuple[int, int] | None
     finished: bool
+    error: str | None
 
 
 def parse_convert_log(log_text: str) -> ConvertProgress:
@@ -76,7 +91,12 @@ def parse_convert_log(log_text: str) -> ConvertProgress:
     window_matches = _WINDOW_RE.findall(log_text)
     current_window = (int(window_matches[-1][0]), int(window_matches[-1][1])) if window_matches else None
 
-    return ConvertProgress(routed_via_vlm_server=routed, current_window=current_window, finished=bool(_PARSED_RE.search(log_text)))
+    failed_match = _FAILED_RE.search(log_text)
+    error = failed_match.group(0).strip() if failed_match else None
+
+    return ConvertProgress(
+        routed_via_vlm_server=routed, current_window=current_window, finished=bool(_PARSED_RE.search(log_text)), error=error
+    )
 
 
 def build_parse_args(
@@ -178,10 +198,11 @@ def _main(argv: list[str] | None = None) -> int:
     log_path = Path(args.log)
     progress = parse_convert_log(log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else "")
     report = {
-        "ok": True,
+        "ok": progress.error is None,
         "routed_via_vlm_server": progress.routed_via_vlm_server,
         "current_window": list(progress.current_window) if progress.current_window else None,
         "finished": progress.finished,
+        "error": progress.error,
     }
     print(json.dumps(report) if args.json else report)
     return 0

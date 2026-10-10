@@ -17,7 +17,7 @@ from pdf2md_version import (
     upgrade_packages,
 )
 
-# Verbatim shape of `pip show mineru-kit`'s relevant line, 2026-10-11.
+# Verbatim shape of `pip show mineru-kit`'s relevant line, 2026-10-10.
 REAL_PIP_SHOW_OUTPUT = """\
 Name: mineru-kit
 Version: 4.0.11

@@ -28,8 +28,10 @@ states its own known misses, rather than claimed away.
 from __future__ import annotations
 
 import difflib
+import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _CHAPTER_NUMBER_RE = re.compile(r"^chapitre\s+(\d+)\b", re.IGNORECASE)
@@ -37,18 +39,53 @@ _MATH_FENCE = "$$"
 _STRUCTURAL_PREFIXES = ("-", "*", "|", "```")
 _NUMBERED_REF_RE = re.compile(r"^\[(\d+)\]\s")
 _BIBLIOGRAPHY_HEADING_RE = re.compile(r"^(r[ée]f[ée]rences|bibliographie)\b", re.IGNORECASE)
-FUZZY_MATCH_RATIO = 0.85
-#: Heuristic threshold, not a measurement: how many MORE "[N] ..." lines must
-#: appear in the window following a candidate bibliography start before it is
-#: trusted. A real bibliography is dense with these lines; a single inline
-#: citation like "[40] presented a method..." sitting alone in ordinary prose
-#: is not. Measured 2026-10-11: a real 162-page thesis with no actual
-#: "RÉFÉRENCES" heading in its mineru output had its bibliography-start
-#: fallback fire on an in-text citation roughly 1/4 of the way through the
-#: document, swallowing the rest of the thesis (including a whole chapter)
-#: into a 1.5 MB "bibliography".
-_BIBLIOGRAPHY_DENSITY_WINDOW = 30
-_BIBLIOGRAPHY_DENSITY_MIN_MATCHES = 5
+
+_THRESHOLDS_PATH = Path(__file__).with_name("pdf2md-postprocess.json")
+_THRESHOLD_KEYS = ("fuzzy_match_ratio", "bibliography_density_window", "bibliography_density_min_matches")
+
+
+def _load_thresholds(path: Path = _THRESHOLDS_PATH) -> dict[str, float]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the heuristic thresholds this module tunes (R0: no hardcoded
+        numerical value) from a JSON file beside the module, each key
+        carrying a {"value", "provenance"} pair (R4).
+
+    Inputs:
+        path (Path): where the config lives; overridable for tests.
+
+    Outputs:
+        dict[str, float]: key -> value, for every key in _THRESHOLD_KEYS.
+
+    Raises:
+        FileNotFoundError: the config file is absent.
+        KeyError: a required key is missing from the file (R3: a missing
+            configuration value is an explicit error naming the key).
+    --------------------------------------------------------------------------
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"pdf2md postprocess thresholds not found at {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    missing = [key for key in _THRESHOLD_KEYS if key not in data]
+    if missing:
+        raise KeyError(f"{path} is missing required threshold key(s): {missing}")
+    return {key: data[key]["value"] for key in _THRESHOLD_KEYS}
+
+
+_THRESHOLDS = _load_thresholds()
+FUZZY_MATCH_RATIO = _THRESHOLDS["fuzzy_match_ratio"]
+#: How many MORE "[N] ..." lines must appear in the window following a
+#: candidate bibliography start before it is trusted. A real bibliography is
+#: dense with these lines; a single inline citation like "[40] presented a
+#: method..." sitting alone in ordinary prose is not. See
+#: pdf2md-postprocess.json for the measured provenance behind these two
+#: values (2026-10-10: a real 162-page thesis with no actual "RÉFÉRENCES"
+#: heading had its bibliography-start fallback fire on an in-text citation
+#: roughly 1/4 of the way through the document, swallowing the rest of the
+#: thesis, including a whole chapter, into a 1.5 MB "bibliography").
+_BIBLIOGRAPHY_DENSITY_WINDOW = _THRESHOLDS["bibliography_density_window"]
+_BIBLIOGRAPHY_DENSITY_MIN_MATCHES = _THRESHOLDS["bibliography_density_min_matches"]
 
 
 def _normalize_heading_text(text: str) -> str:
@@ -127,7 +164,7 @@ def find_spurious_headings(headings: list[Heading], *, ratio: float = FUZZY_MATC
         title words left -- and digit-stripping two of THOSE ("CHAPITRE 1",
         "CHAPITRE 2") collapses them to the identical string "chapitre",
         wrongly flagging every chapter after the first as a repeat of it.
-        Measured on a real 162-page thesis, 2026-10-11: chapters 2-5 were
+        Measured on a real 162-page thesis, 2026-10-10: chapters 2-5 were
         silently deleted this way, merging the whole rest of the document
         into chapitre1.md. Fix: two headings that both parsed a chapter
         number are NEVER a repeat of each other when those numbers differ,
@@ -164,8 +201,9 @@ def _is_dense_bibliography_start(lines: list[str], index: int) -> bool:
     Purpose:
         Decide whether a line matching the numbered-reference shape
         genuinely opens a bibliography block, versus being a one-off
-        in-text citation. See module docstring for the measured false
-        positive this guards against.
+        in-text citation. See the comment above _BIBLIOGRAPHY_DENSITY_WINDOW
+        and pdf2md-postprocess.json for the measured false positive this
+        guards against.
 
     Inputs:
         lines (list[str]): the document.
@@ -331,7 +369,7 @@ def chapter_filenames(chapter_numbers: list[int]) -> dict[int, str]:
         universal UQAC thesis convention: the first chapter is always the
         Introduction and the last is always the Conclusion -- true whether
         or not the literal word survives in the text (mineru's own
-        running-header cleanup can strip it, as measured 2026-10-11, where
+        running-header cleanup can strip it, as measured 2026-10-10, where
         chapter 1's own "### INTRODUCTION" subheading was removed as a
         false-positive repeat; the chapter's CONTENT -- context, problem
         statement, research questions -- still identifies it as the

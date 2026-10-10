@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pdf2md_postprocess import (
+    _load_thresholds,
     _main,
     chapter_filenames,
     find_headings,
@@ -97,7 +98,7 @@ class TestFindSpuriousHeadings(unittest.TestCase):
         self.assertEqual(find_spurious_headings(headings), [])
 
     def test_bare_chapter_headings_with_different_numbers_are_never_flagged(self):
-        # Regression, measured 2026-10-11 on a real 162-page thesis: once
+        # Regression, measured 2026-10-10 on a real 162-page thesis: once
         # title_leveling cleaned every running header down to a bare
         # "CHAPITRE N" (no title words left), digit-stripping made
         # "CHAPITRE 1".."CHAPITRE 5" all normalize to the identical string
@@ -192,7 +193,7 @@ class TestSplitFrontmatterAndChapters(unittest.TestCase):
         self.assertIn("Just a document", split.frontmatter)
 
     def test_lone_inline_citation_does_not_trigger_bibliography(self):
-        # Regression, measured 2026-10-11 on the real thesis: a document
+        # Regression, measured 2026-10-10 on the real thesis: a document
         # with NO actual "RÉFÉRENCES"/"BIBLIOGRAPHIE" heading in its mineru
         # output (common -- the heading can be lost/mangled) falls back to
         # the "[N] ..." line shape, which also matches an ordinary in-text
@@ -356,6 +357,43 @@ class TestMainWritesBibliography(unittest.TestCase):
             _main([str(source), "-o", str(out_dir)])
             self.assertFalse((out_dir / "src" / "bibliography.md").exists())
             self.assertFalse((out_dir / "bibliography.md").exists())
+
+
+class TestLoadThresholds(unittest.TestCase):
+    """R0/R3: the heuristic thresholds come from a config file beside the
+    module, not a code literal, and a broken config is an explicit error."""
+
+    def test_shipped_config_loads_all_three_keys(self):
+        values = _load_thresholds()
+        self.assertEqual(set(values), {
+            "fuzzy_match_ratio", "bibliography_density_window", "bibliography_density_min_matches",
+        })
+        self.assertAlmostEqual(values["fuzzy_match_ratio"], 0.85)
+        self.assertEqual(values["bibliography_density_window"], 30)
+        self.assertEqual(values["bibliography_density_min_matches"], 5)
+
+    def test_missing_file_is_refused_not_defaulted(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "does-not-exist.json"
+            with self.assertRaises(FileNotFoundError):
+                _load_thresholds(missing)
+
+    def test_missing_key_is_named_not_silently_defaulted(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            incomplete = Path(tmp) / "incomplete.json"
+            incomplete.write_text(
+                json.dumps({"fuzzy_match_ratio": {"value": 0.9, "provenance": "x"}}), encoding="utf-8"
+            )
+            with self.assertRaises(KeyError) as ctx:
+                _load_thresholds(incomplete)
+            self.assertIn("bibliography_density_window", str(ctx.exception))
 
 
 if __name__ == "__main__":

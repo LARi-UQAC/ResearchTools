@@ -1,0 +1,14 @@
+{
+  "fuzzy_match_ratio": {
+    "value": 0.85,
+    "provenance": "chosen by the operator, 2026-10-10, as the SequenceMatcher ratio above which two digit-stripped headings are treated as the same heading repeated by a running-header splice; not swept against a corpus"
+  },
+  "bibliography_density_window": {
+    "value": 30,
+    "provenance": "chosen by the operator, 2026-10-10, after a real 162-page UQAC thesis conversion's bibliography-start fallback fired on a single in-text citation and swallowed the rest of the document; how many lines ahead of a candidate start to look for further numbered references; not swept against a corpus"
+  },
+  "bibliography_density_min_matches": {
+    "value": 5,
+    "provenance": "chosen by the operator, 2026-10-10, same incident as bibliography_density_window; how many further numbered-reference lines must appear in that window before a candidate start is trusted as a real bibliography"
+  }
+}

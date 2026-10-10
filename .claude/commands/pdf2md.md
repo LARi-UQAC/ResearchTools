@@ -40,14 +40,19 @@ Procedure:
    means the config/server wiring regressed and the run is using the
    slow, warning-prone in-process engine instead of the fixed server.
 5. Once `finished` is true, run the two remaining stages. `postprocess` writes
-   `<output-dir>/bibliography.md` itself when a bibliography is found (its
-   own report says `bibliography_path`); feed THAT file to `refs`:
+   everything under `<output-dir>/src/` (mirroring thesis-auditor's own
+   `<project-dir>/src/main.tex` convention): `frontmatter.md`, one file per
+   chapter (first chapter -> `Introduction.md`, last -> `Conclusion.md`,
+   middle ones -> `chapitreN.md`), `bibliography.md` when a bibliography is
+   found, and `main.md` linking all of them. Feed `bibliography.md` to
+   `refs` (its own report says `bibliography_path`):
    ```bash
    python .claude/skills/pdf2md/scripts/pdf2md.py postprocess <mineru's markdown output> -o <output-dir> --json
-   python .claude/skills/pdf2md/scripts/pdf2md.py refs <output-dir>/bibliography.md -o <output-dir>/ref.md --json
+   python .claude/skills/pdf2md/scripts/pdf2md.py refs <output-dir>/src/bibliography.md -o <output-dir>/src/ref.md --json
    ```
-6. Report: splice headings removed, chapter files written, reference
-   count, and the known limits from SKILL.md (no real `.tex`, mixed
-   French/English inside a chapter is normal for a thèse-par-articles).
+6. Report: splice headings removed, chapter files written (and their
+   Introduction/Conclusion/chapitreN names), reference count, and the known
+   limits from SKILL.md (no real `.tex`, mixed French/English inside a
+   chapter is normal for a thèse-par-articles).
 
 $ARGUMENTS

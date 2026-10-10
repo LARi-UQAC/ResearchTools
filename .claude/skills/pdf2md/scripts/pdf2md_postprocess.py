@@ -38,6 +38,17 @@ _STRUCTURAL_PREFIXES = ("-", "*", "|", "```")
 _NUMBERED_REF_RE = re.compile(r"^\[(\d+)\]\s")
 _BIBLIOGRAPHY_HEADING_RE = re.compile(r"^(r[ée]f[ée]rences|bibliographie)\b", re.IGNORECASE)
 FUZZY_MATCH_RATIO = 0.85
+#: Heuristic threshold, not a measurement: how many MORE "[N] ..." lines must
+#: appear in the window following a candidate bibliography start before it is
+#: trusted. A real bibliography is dense with these lines; a single inline
+#: citation like "[40] presented a method..." sitting alone in ordinary prose
+#: is not. Measured 2026-10-11: a real 162-page thesis with no actual
+#: "RÉFÉRENCES" heading in its mineru output had its bibliography-start
+#: fallback fire on an in-text citation roughly 1/4 of the way through the
+#: document, swallowing the rest of the thesis (including a whole chapter)
+#: into a 1.5 MB "bibliography".
+_BIBLIOGRAPHY_DENSITY_WINDOW = 30
+_BIBLIOGRAPHY_DENSITY_MIN_MATCHES = 5
 
 
 def _normalize_heading_text(text: str) -> str:
@@ -110,6 +121,19 @@ def find_spurious_headings(headings: list[Heading], *, ratio: float = FUZZY_MATC
         occurrence of any heading text is always kept; only later repeats
         of the same text are spurious.
 
+        Digit-stripping is what lets "AVEC 54 PRIORITES" match "AVEC
+        PRIORITES" (a stray page number fused mid-title). But title_leveling
+        can ALSO clean a running header down to a bare "CHAPITRE N" with no
+        title words left -- and digit-stripping two of THOSE ("CHAPITRE 1",
+        "CHAPITRE 2") collapses them to the identical string "chapitre",
+        wrongly flagging every chapter after the first as a repeat of it.
+        Measured on a real 162-page thesis, 2026-10-11: chapters 2-5 were
+        silently deleted this way, merging the whole rest of the document
+        into chapitre1.md. Fix: two headings that both parsed a chapter
+        number are NEVER a repeat of each other when those numbers differ,
+        regardless of text similarity -- the chapter number is exactly the
+        content digit-stripping must not be allowed to erase.
+
     Inputs:
         headings (list[Heading]): as returned by find_headings, in order.
         ratio (float): difflib.SequenceMatcher threshold for "close enough".
@@ -118,18 +142,45 @@ def find_spurious_headings(headings: list[Heading], *, ratio: float = FUZZY_MATC
         list[Heading]: the subset judged spurious.
     --------------------------------------------------------------------------
     """
-    seen_normalized: list[str] = []
+    seen: list[tuple[str, int | None]] = []
     spurious: list[Heading] = []
     for heading in headings:
         normalized = _normalize_heading_text(heading.text)
         is_repeat = any(
-            difflib.SequenceMatcher(None, normalized, earlier).ratio() >= ratio for earlier in seen_normalized
+            earlier_chapter == heading.chapter_number
+            and difflib.SequenceMatcher(None, normalized, earlier_normalized).ratio() >= ratio
+            for earlier_normalized, earlier_chapter in seen
         )
         if is_repeat:
             spurious.append(heading)
         else:
-            seen_normalized.append(normalized)
+            seen.append((normalized, heading.chapter_number))
     return spurious
+
+
+def _is_dense_bibliography_start(lines: list[str], index: int) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide whether a line matching the numbered-reference shape
+        genuinely opens a bibliography block, versus being a one-off
+        in-text citation. See module docstring for the measured false
+        positive this guards against.
+
+    Inputs:
+        lines (list[str]): the document.
+        index (int): the candidate start line (already confirmed to match
+            _NUMBERED_REF_RE).
+
+    Outputs:
+        bool: True if at least _BIBLIOGRAPHY_DENSITY_MIN_MATCHES further
+            lines in the following _BIBLIOGRAPHY_DENSITY_WINDOW lines also
+            match the numbered-reference shape.
+    --------------------------------------------------------------------------
+    """
+    window = lines[index + 1 : index + 1 + _BIBLIOGRAPHY_DENSITY_WINDOW]
+    further_matches = sum(1 for line in window if _NUMBERED_REF_RE.match(line.strip()))
+    return further_matches >= _BIBLIOGRAPHY_DENSITY_MIN_MATCHES
 
 
 def _is_structural_line(line: str) -> bool:
@@ -252,9 +303,10 @@ def split_frontmatter_and_chapters(lines: list[str], headings: list[Heading]) ->
     bibliography_start: int | None = None
     for index, line in enumerate(lines):
         stripped = line.strip()
-        if _BIBLIOGRAPHY_HEADING_RE.match(stripped.lstrip("#").strip()) or (
-            _NUMBERED_REF_RE.match(stripped) and bibliography_start is None
-        ):
+        if _BIBLIOGRAPHY_HEADING_RE.match(stripped.lstrip("#").strip()):
+            bibliography_start = index
+            break
+        if _NUMBERED_REF_RE.match(stripped) and _is_dense_bibliography_start(lines, index):
             bibliography_start = index
             break
     if bibliography_start is not None:
@@ -269,6 +321,78 @@ def split_frontmatter_and_chapters(lines: list[str], headings: list[Heading]) ->
         chapters[heading.chapter_number] = (heading.text, "\n".join(lines[heading.line_index:body_end]).strip() + "\n")
 
     return SplitResult(frontmatter=frontmatter, chapters=chapters, bibliography=bibliography)
+
+
+def chapter_filenames(chapter_numbers: list[int]) -> dict[int, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Map each chapter number to its output filename, following the
+        universal UQAC thesis convention: the first chapter is always the
+        Introduction and the last is always the Conclusion -- true whether
+        or not the literal word survives in the text (mineru's own
+        running-header cleanup can strip it, as measured 2026-10-11, where
+        chapter 1's own "### INTRODUCTION" subheading was removed as a
+        false-positive repeat; the chapter's CONTENT -- context, problem
+        statement, research questions -- still identifies it as the
+        introduction regardless). With fewer than two chapters there is
+        nothing to distinguish, so every chapter keeps its plain
+        chapitreN.md name.
+
+    Inputs:
+        chapter_numbers (list[int]): the chapter numbers actually found.
+
+    Outputs:
+        dict[int, str]: chapter number -> filename (no directory).
+    --------------------------------------------------------------------------
+    """
+    if len(chapter_numbers) < 2:
+        return {number: f"chapitre{number}.md" for number in chapter_numbers}
+    first, last = min(chapter_numbers), max(chapter_numbers)
+    return {
+        number: "Introduction.md" if number == first else "Conclusion.md" if number == last else f"chapitre{number}.md"
+        for number in chapter_numbers
+    }
+
+
+def render_main_md(
+    *,
+    frontmatter_path: str,
+    chapter_paths: dict[int, tuple[str, str]],
+    bibliography_path: str | None,
+) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Render main.md, the markdown-link index tying every split file
+        together in reading order -- the markdown counterpart of a UQAC
+        main.tex's \\input list, so the output reads as one linked document
+        rather than a pile of loose files.
+
+    Inputs:
+        frontmatter_path (str): filename of the front-matter file.
+        chapter_paths (dict[int, tuple[str, str]]): chapter number ->
+            (filename, heading text), in any order -- sorted here by number.
+        bibliography_path (str | None): filename of the bibliography file,
+            or None if none was found.
+
+    Outputs:
+        str: the full main.md content.
+    --------------------------------------------------------------------------
+    """
+    lines = ["# Thesis", "", f"- [Front matter]({frontmatter_path})"]
+    for number, (filename, title) in sorted(chapter_paths.items()):
+        heading = title if title else f"Chapitre {number}"
+        if filename == "Introduction.md":
+            label = f"Introduction ({heading})"
+        elif filename == "Conclusion.md":
+            label = f"Conclusion ({heading})"
+        else:
+            label = heading
+        lines.append(f"- [{label}]({filename})")
+    if bibliography_path:
+        lines.append(f"- [Bibliography]({bibliography_path})")
+    return "\n".join(lines) + "\n"
 
 
 def process_document(markdown_text: str) -> tuple[SplitResult, int]:
@@ -308,26 +432,45 @@ def _main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     source = Path(args.markdown_file)
-    out_dir = Path(args.output_dir)
+    # Mirror thesis-auditor's own directory convention (thesis-auditor.md:98:
+    # "If $ARGUMENTS is a directory path: look for src/main.tex inside it")
+    # so a pdf2md output directory can be handed to thesis-auditor the same
+    # way a real UQAC thesis project directory is: the project root, with
+    # main.{tex,md} and every chapter file as siblings inside its own src/.
+    out_dir = Path(args.output_dir) / "src"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     split, removed_count = process_document(source.read_text(encoding="utf-8"))
     (out_dir / "frontmatter.md").write_text(split.frontmatter, encoding="utf-8")
-    for number, (title, body) in sorted(split.chapters.items()):
-        (out_dir / f"chapitre{number}.md").write_text(body, encoding="utf-8")
+
+    filenames = chapter_filenames(sorted(split.chapters.keys()))
+    chapter_paths: dict[int, tuple[str, str]] = {}
+    for number, (title, body) in split.chapters.items():
+        filename = filenames[number]
+        (out_dir / filename).write_text(body, encoding="utf-8")
+        chapter_paths[number] = (filename, title)
 
     bibliography_path = None
     if split.bibliography is not None:
         bibliography_path = out_dir / "bibliography.md"
         bibliography_path.write_text(split.bibliography, encoding="utf-8")
 
+    main_md = render_main_md(
+        frontmatter_path="frontmatter.md",
+        chapter_paths=chapter_paths,
+        bibliography_path="bibliography.md" if bibliography_path else None,
+    )
+    main_path = out_dir / "main.md"
+    main_path.write_text(main_md, encoding="utf-8")
+
     report = {
         "ok": True,
         "splice_headings_removed": removed_count,
-        "chapters_written": sorted(split.chapters.keys()),
+        "chapters_written": {number: filename for number, (filename, _title) in chapter_paths.items()},
         "bibliography_found": split.bibliography is not None,
         "bibliography_path": str(bibliography_path) if bibliography_path else None,
         "frontmatter_path": str(out_dir / "frontmatter.md"),
+        "main_path": str(main_path),
     }
     print(json.dumps(report) if args.json else report)
     return 0

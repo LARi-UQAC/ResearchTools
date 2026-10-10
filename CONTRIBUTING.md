@@ -36,10 +36,14 @@ and its exemption test.
 
 ## CI and the privacy guard
 
-The only automated check is the `privacy-scan` workflow: every push and pull request is
-scanned for secrets and personal data (account paths, student codes and emails). Install the
-same check locally, once per machine, so a commit is refused before it is published:
-`.\.claude\hooks\git\install-git-hooks.ps1` (needs `winget install Betterleaks.Betterleaks`).
-Test data uses fictitious identities only (rule R34). Run the other tests manually before
-pushing — see
+Two automated checks. `privacy-scan` scans every push and pull request for secrets and
+personal data (account paths, student codes and emails) — free, static, no model call.
+Install the same check locally, once per machine, so a commit is refused before it is
+published: `.\.claude\hooks\git\install-git-hooks.ps1` (needs
+`winget install Betterleaks.Betterleaks`). `review` (Issue #65) runs a billed, Claude-driven
+multi-dimension review (security-review, tech-debt, ai-firstify, code-review) on every
+same-repo pull request (not forks), once the operator has added the API secret, and
+posts a priority-ranked finding list; see `.claude/rules/testing.md`'s own "CI"
+section for both workflows' full behavior. Test data uses fictitious identities only (rule
+R34). Run the other tests manually before pushing — see
 [.claude/rules/testing.md](.claude/rules/testing.md) for the full offline-test inventory.

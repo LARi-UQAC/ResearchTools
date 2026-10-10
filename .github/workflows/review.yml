@@ -1,0 +1,191 @@
+# Automated multi-dimension review gate (Issue #65). Parallel to privacy-scan.yml, which
+# covers secrets/personal-data only and costs nothing (static betterleaks scan). This one
+# runs a real headless Claude Code session (anthropics/claude-code-action) and therefore
+# costs real Anthropic API tokens per run - decided deliberately with the operator, not a
+# default anyone should copy without re-deciding the same cost question.
+#
+# Requires a repo secret ANTHROPIC_API_KEY. None exists as of 2026-10-09 (confirmed via
+# `gh secret list`); this workflow does not and cannot create it - add it yourself
+# (Settings > Secrets and variables > Actions), never by pasting the key into a session.
+# Until it exists, the review step fails naming the missing secret rather than running with
+# no key.
+name: review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+# No workflow_dispatch: the diff step below reads github.event.pull_request.base.ref, which
+# is null outside a pull_request event, so a manual run would fail before Claude even starts.
+# A forced re-review is an empty push (or any commit) to the PR branch (synchronize).
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: review
+    # Same-repo branches only. A fork PR gets no secrets and a read-only token, so the
+    # review step would fail red; skipping it keeps external contributors' checks clean.
+    # Dependabot runs get no repository secrets either, so they are skipped the same way.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the PR branch and its merge base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Compute the diff under review
+        id: diff
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          # Cap on the diff handed to the billed review. Chosen by the author, not measured:
+          # revisit after the first real runs. A larger diff is cut and says so in the file.
+          MAX_DIFF_BYTES: "300000"
+        # BASE_REF is PR-controlled (whatever branch the PR targets) and still routed
+        # through env rather than inlined, for the same reason as the Mirror step below.
+        # Written to runner.temp, not the checked-out tree, so it never shows up as an
+        # uncommitted file a later git command could pick up.
+        run: |
+          # The checkout step above already ran with fetch-depth: 0, which per
+          # actions/checkout's own docs fetches all history for all branches and tags, so
+          # origin/$BASE_REF already exists as a remote-tracking ref - no extra fetch needed.
+          git diff "origin/$BASE_REF"...HEAD > "$RUNNER_TEMP/pr.full.diff"
+          if [ "$(wc -c < "$RUNNER_TEMP/pr.full.diff")" -gt "$MAX_DIFF_BYTES" ]; then
+            head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/pr.full.diff" > "$RUNNER_TEMP/pr.diff"
+            printf '\n[DIFF TRUNCATED at %s bytes: review the part above and say so]\n' "$MAX_DIFF_BYTES" >> "$RUNNER_TEMP/pr.diff"
+          else
+            mv "$RUNNER_TEMP/pr.full.diff" "$RUNNER_TEMP/pr.diff"
+          fi
+          echo "diff_path=$RUNNER_TEMP/pr.diff" >> "$GITHUB_OUTPUT"
+
+      - name: Run the four review skills and post the consolidated priority list
+        id: review
+        uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Explicit token: without it the action tries an OIDC exchange for a GitHub App
+          # token (needs id-token: write and the Claude App installed). With it, comments
+          # post as github-actions[bot], which the mirror step relies on.
+          github_token: ${{ github.token }}
+          # Headless plugin install reads ONLY these two inputs (base-action/src/install-plugins.ts),
+          # never the checked-out .claude/settings.json - verified 2026-10-09 against the
+          # action's own source. security-review and code-review are Claude Code's own
+          # built-in skills (bare names, no plugin, no marketplace entry - installing
+          # code-review@claude-plugins-official here would be dead weight: the prompt below
+          # calls the bare built-in "code-review", never the plugin's qualified
+          # "code-review:code-review"). ai-firstify and tech-debt are plugin-sourced and
+          # registered under their PLUGIN-QUALIFIED names, confirmed against this session's
+          # own skill listing on 2026-10-09: "ai-firstify:ai-firstify" and
+          # "engineering:tech-debt" (not the bare forms).
+          plugins: |
+            ai-firstify@techwolf-ai-first
+            engineering@knowledge-work-plugins
+          # NOT pinned to a commit, unlike the two `uses:` lines below - a known gap, not an
+          # oversight. The action's own install-plugins.ts validates this URL against
+          # `^https:\/\/...\.git$`, which requires the string to end in a bare `.git` and
+          # has no syntax for appending a ref or SHA, so there is no supported way to pin a
+          # plugin marketplace through this input today. A push to either marketplace's
+          # default branch silently changes what ai-firstify/tech-debt do on the next PR
+          # review here; re-check this if the action ever adds a pinning mechanism.
+          plugin_marketplaces: |
+            https://github.com/techwolf-ai/ai-first-toolkit.git
+            https://github.com/anthropics/knowledge-work-plugins.git
+          use_sticky_comment: "true"
+          track_progress: "true"
+          # Deliberately NO Bash and NO Agent/Task tool. ANTHROPIC_API_KEY lives in this
+          # step's process, and the diff it reads is untrusted PR content - a crafted line
+          # in the diff could otherwise instruct the model to run a shell command that
+          # echoes the key into a public PR/Issue comment (child processes inherit the
+          # parent env; an --allowedTools wildcard restricts the command prefix, not
+          # variable expansion inside it). The diff is pre-computed by the step above and
+          # handed to Claude as a file to Read, so it never needs Bash to call `git` itself;
+          # use_sticky_comment above posts the reply through the action's own internal
+          # token, not a model-invoked tool call. Agent/Task is withheld too: a sub-agent
+          # spawned by security-review's or code-review's own internal logic could carry
+          # tool access this workflow does not control or audit, so the prompt below tells
+          # Claude explicitly to run each skill's analysis inline rather than fan out -
+          # a stated thoroughness tradeoff, not an oversight. The Issue mirror runs as a
+          # separate step below with no Anthropic key in scope.
+          # Read/Grep/Glob can still open /proc/self/environ, where this process holds the
+          # key, so those paths are denied as well. UNVERIFIED: the deny-rule path syntax
+          # was not exercised against a real run; check the first run's log, and treat the
+          # key as exposed to a prompt-injected file read until that is confirmed.
+          claude_args: >-
+            --allowedTools "Skill,Read,Grep,Glob"
+            --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//run/**),Grep(//proc/**),Glob(//proc/**)"
+          prompt: |
+            You are running inside ResearchTools' automated PR review gate. The diff under
+            review is at ${{ steps.diff.outputs.diff_path }} - read it with the Read tool
+            before anything else. Do not fix anything - report only; you have no Edit,
+            Write, Bash, or Agent/Task tool in this run, so run every skill's analysis
+            yourself, inline, rather than spawning sub-tasks even if a skill's own
+            instructions suggest doing so.
+
+            1. Run these four Skills, in this order, scoped to that diff:
+               security-review, engineering:tech-debt, ai-firstify:ai-firstify, code-review
+               (pass effort: high to code-review).
+            2. Once all four have reported, deliberate across their combined findings
+               yourself: drop duplicates where two skills flagged the same underlying
+               defect, and rank what remains by real severity and actual exploitability or
+               maintenance cost, not by which skill found it.
+            3. Reply with ONE consolidated markdown list as your final message, and nothing
+               else. Its first line is exactly "## Automated multi-dimension review", and
+               its second line states which of the four skills you actually ran and which
+               you could not run, so a missing dimension is visible. If the diff file ends
+               with a DIFF TRUNCATED line, the third line must say the review is partial. Then group the items
+               Critical / High / Medium / Low. Each item one line, tagged with
+               its source skill in brackets, e.g.
+               "- [security-review] SSRF in form-service's PDF fetch: ..."
+               This reply becomes the PR's sticky comment automatically; you do not post it
+               yourself.
+
+      - name: Mirror the consolidated review onto the linked Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
+        # PR_BODY/PR_AUTHOR are untrusted PR content routed through env and read back as
+        # "$VAR" below, never inlined as ${{ }} directly into this script: a raw template
+        # interpolation of PR-controlled text into a run: block is literal text inserted
+        # into the script BEFORE bash parses it (classic Actions script-injection), whereas
+        # an env-var reference is one shell token with no re-parsing of its contents.
+        run: |
+          # Only a line that STARTS with Fixes/Closes counts, so "prefixes #1" or a quoted
+          # sentence cannot pick an issue number.
+          issue_num=$(printf '%s' "$PR_BODY" | grep -iE '^[[:space:]]*(fixes|closes) #[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
+          if [ -z "$issue_num" ]; then
+            echo "No Fixes/Closes #N line in the PR body; skipping the Issue mirror."
+            exit 0
+          fi
+          # The target must be an open Issue, not a pull request or a closed item.
+          target=$(gh api "repos/$REPO/issues/$issue_num" --jq 'if has("pull_request") then "pr" else .state end' || true)
+          if [ "$target" != "open" ]; then
+            echo "#$issue_num is not an open Issue (got '$target'); skipping the Issue mirror."
+            exit 0
+          fi
+          # gh refuses --slurp together with --jq, so the pages are slurped by gh and filtered
+          # by jq. Plain --paginate --jq would run the filter once per page, and "last" would
+          # then be wrong on a PR with more than 30 comments. The marker line the prompt
+          # requires keeps another workflow's bot comment from being mirrored. "|| true"
+          # sends a transient API error to the graceful skip instead of failing the job.
+          comment_body=$(gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments"             | jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | contains("Automated multi-dimension review")))] | last | .body // empty') || { echo "::warning::Comment lookup failed (API or jq error); Issue mirror skipped."; exit 0; }
+          if [ -z "$comment_body" ]; then
+            echo "No review comment found; skipping the Issue mirror."
+            exit 0
+          fi
+          # The text is model output steered by an untrusted diff, so every @mention in it is
+          # wrapped in backticks (no notification); only the deliberate author mention pings.
+          safe_body=$(printf '%s' "$comment_body" | sed -E 's/(^|[^A-Za-z0-9`])@([A-Za-z0-9_\/-]+)/\1`@\2`/g')
+          gh issue comment "$issue_num" --repo "$REPO" --body "@${PR_AUTHOR} ${safe_body}"
+          # An author who cannot be assigned is expected on a public repo; the comment landed.
+          gh issue edit "$issue_num" --repo "$REPO" --add-assignee "$PR_AUTHOR"             || echo "Could not assign $PR_AUTHOR on issue #$issue_num - comment was still posted."

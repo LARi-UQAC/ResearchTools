@@ -506,4 +506,6 @@ every other harness a user-invoked skill is discoverable only via the routing ta
 ## Environments
 
 Use the correct virtual environment for the layer you are working in, and run the relevant
-tests manually before pushing (see `testing.md`). The only CI is the privacy-scan workflow.
+tests manually before pushing (see `testing.md`). CI is `privacy-scan.yml` (free, static) plus
+`review.yml` (billed, Claude-driven multi-dimension review on every same-repo PR, needs the API secret) - see `testing.md`'s
+own `## CI` section for both.

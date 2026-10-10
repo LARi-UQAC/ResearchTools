@@ -68,11 +68,27 @@ class TestCheckPackagesInstalled(unittest.TestCase):
     def test_reports_installed_and_missing(self):
         def fake_runner(args, **kwargs):
             package = args[-1]
-            return _FakeResult(returncode=0 if package == "mineru-kit" else 1)
+            return _FakeResult(returncode=0 if package == "mineru" else 1)
 
-        result = check_packages_installed(("mineru-kit", "mineru-llama-cpp"), runner=fake_runner)
-        self.assertTrue(result["mineru-kit"])
+        result = check_packages_installed(("mineru", "mineru-llama-cpp"), runner=fake_runner)
+        self.assertTrue(result["mineru"])
         self.assertFalse(result["mineru-llama-cpp"])
+
+    def test_default_packages_use_the_real_pip_distribution_name(self):
+        # Regression: the default tuple named "mineru-kit" as a pip
+        # package, but `pip show mineru-kit` reports "Package(s) not
+        # found" on a real install -- the CLI entry point is named
+        # mineru-kit, the pip DISTRIBUTION installing it is "mineru"
+        # (confirmed via `pip show mineru`, 2026-10-10, version 4.0.11).
+        calls = []
+
+        def fake_runner(args, **kwargs):
+            calls.append(args[-1])
+            return _FakeResult(returncode=0)
+
+        check_packages_installed(runner=fake_runner)
+        self.assertIn("mineru", calls)
+        self.assertNotIn("mineru-kit", calls)
 
 
 class TestRunBootstrap(unittest.TestCase):
@@ -183,7 +199,7 @@ class TestRunBootstrap(unittest.TestCase):
             pip_runner=lambda args, **kw: _FakeResult(returncode=1),
             models_show_runner=lambda: REAL_MODELS_SHOW_READY,
         )
-        self.assertIn("mineru-kit", report["missing_packages"])
+        self.assertIn("mineru", report["missing_packages"])
 
     def test_models_show_failure_is_reported_not_raised(self):
         self.config_path.write_text("", encoding="utf-8")

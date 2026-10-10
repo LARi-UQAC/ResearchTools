@@ -51,7 +51,7 @@ def default_config_path() -> Path:
 
 
 def check_packages_installed(
-    packages: tuple[str, ...] = ("mineru-kit", "mineru-llama-cpp"),
+    packages: tuple[str, ...] = ("mineru", "mineru-llama-cpp"),
     *,
     runner: Callable[..., subprocess.CompletedProcess] | None = None,
 ) -> dict[str, bool]:
@@ -59,7 +59,11 @@ def check_packages_installed(
     --------------------------------------------------------------------------
     Purpose:
         Check whether each required package is importable/installed via
-        `pip show`, without installing anything.
+        `pip show`, without installing anything. "mineru" is the real pip
+        DISTRIBUTION name (confirmed via `pip show mineru`, 2026-10-10,
+        version 4.0.11); "mineru-kit" is only the CLI entry point it
+        installs, never a separate pip package -- `pip show mineru-kit`
+        reports "Package(s) not found" on this machine.
 
     Inputs:
         packages (tuple[str, ...]): package names to check.

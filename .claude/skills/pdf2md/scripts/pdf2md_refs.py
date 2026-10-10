@@ -21,7 +21,8 @@ from dataclasses import dataclass
 
 _ENTRY_START_RE = re.compile(r"^\[(\d+)\]\s+(.*)$")
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
-_FIRST_AUTHOR_SURNAME_RE = re.compile(r"^([A-Za-zÀ-ÿ\-]+)")
+_AUTHOR_SEPARATOR_RE = re.compile(r",\s+|\s+and\s+")
+_NAME_TOKEN_RE = re.compile(r"[A-Za-zÀ-ÿ\-']+")
 _KEYWORD_STOPWORDS = {
     "a", "an", "the", "of", "for", "on", "in", "with", "and", "to", "using",
     "based", "via", "under", "from", "between", "toward", "towards",
@@ -68,9 +69,32 @@ def _split_sentences(text: str) -> list[str]:
     return [part.strip().rstrip(".") for part in parts if part.strip()]
 
 
+def _first_author_surname(authors: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Isolate the first author's SURNAME (last whitespace-separated name
+        token), not their first name. Regression: a plain "first word of
+        the authors string" match returned the first author's given name
+        for every real entry ("Javier Alonso-Mora" -> "javier" instead of
+        "alonso-mora"), since mineru renders "Firstname Lastname" with no
+        comma between them.
+
+    Inputs:
+        authors (str): the full authors field, e.g.
+            "Javier Alonso-Mora, Eduardo Montijano, ..., and Daniela Rus".
+
+    Outputs:
+        str: lowercased surname, or "unknown" if no name token is found.
+    --------------------------------------------------------------------------
+    """
+    first_author = _AUTHOR_SEPARATOR_RE.split(authors.strip(), maxsplit=1)[0]
+    tokens = _NAME_TOKEN_RE.findall(first_author)
+    return tokens[-1].lower() if tokens else "unknown"
+
+
 def _build_key(authors: str, title: str, venue_year: str) -> str:
-    author_match = _FIRST_AUTHOR_SURNAME_RE.match(authors.strip())
-    surname = (author_match.group(1) if author_match else "unknown").lower()
+    surname = _first_author_surname(authors)
     year_match = _YEAR_RE.search(venue_year) or _YEAR_RE.search(title)
     year = year_match.group(0) if year_match else "0000"
     keyword = next(

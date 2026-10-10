@@ -398,6 +398,7 @@ def render_main_md(
     frontmatter_path: str,
     chapter_paths: dict[int, tuple[str, str]],
     bibliography_path: str | None,
+    content_dir: str = "",
 ) -> str:
     """
     --------------------------------------------------------------------------
@@ -408,17 +409,27 @@ def render_main_md(
         rather than a pile of loose files.
 
     Inputs:
-        frontmatter_path (str): filename of the front-matter file.
+        frontmatter_path (str): bare filename of the front-matter file.
         chapter_paths (dict[int, tuple[str, str]]): chapter number ->
-            (filename, heading text), in any order -- sorted here by number.
-        bibliography_path (str | None): filename of the bibliography file,
-            or None if none was found.
+            (bare filename, heading text), in any order -- sorted here by
+            number. Labeling (Introduction/Conclusion) matches on the BARE
+            filename, independent of content_dir.
+        bibliography_path (str | None): the bibliography's link target
+            RELATIVE TO main.md already (e.g. "assets/bibliography.md"),
+            not prefixed with content_dir -- it lives in assets/, not
+            content/, so it needs its own path rather than sharing the
+            chapter/frontmatter prefix.
+        content_dir (str): subfolder every chapter/frontmatter link target
+            is prefixed with (e.g. "content/"), since main.md itself lives
+            one level above the files it links to. Empty string reproduces
+            the old flat layout, which existing callers/tests still
+            exercise.
 
     Outputs:
         str: the full main.md content.
     --------------------------------------------------------------------------
     """
-    lines = ["# Thesis", "", f"- [Front matter]({frontmatter_path})"]
+    lines = ["# Thesis", "", f"- [Front matter]({content_dir}{frontmatter_path})"]
     for number, (filename, title) in sorted(chapter_paths.items()):
         heading = title if title else f"Chapitre {number}"
         if filename == "Introduction.md":
@@ -427,7 +438,7 @@ def render_main_md(
             label = f"Conclusion ({heading})"
         else:
             label = heading
-        lines.append(f"- [{label}]({filename})")
+        lines.append(f"- [{label}]({content_dir}{filename})")
     if bibliography_path:
         lines.append(f"- [Bibliography]({bibliography_path})")
     return "\n".join(lines) + "\n"
@@ -470,33 +481,46 @@ def _main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     source = Path(args.markdown_file)
-    # Mirror thesis-auditor's own directory convention (thesis-auditor.md:98:
-    # "If $ARGUMENTS is a directory path: look for src/main.tex inside it")
-    # so a pdf2md output directory can be handed to thesis-auditor the same
-    # way a real UQAC thesis project directory is: the project root, with
-    # main.{tex,md} and every chapter file as siblings inside its own src/.
-    out_dir = Path(args.output_dir) / "src"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # -o is the project's own src/ directory, not a parent of it: this
+    # script writes <output-dir>/main.md, <output-dir>/content/*.md (the
+    # chapter text, the same split a real UQAC thesis uses between its
+    # linking main.tex and its per-chapter .tex files), and
+    # <output-dir>/assets/*.md (bibliography.md; acronyms and, if ever
+    # extracted, figures under assets/figures/ -- this skill does not
+    # extract either today: mineru's include_images defaults False and
+    # this pipeline never turns it on, so there is nothing to copy there
+    # yet, and acronym extraction has no code path at all). thesis-auditor's
+    # own directory-resolution (thesis-auditor.md:98, "look for src/main.tex
+    # inside it") still will NOT auto-discover this output: it reads
+    # \input{}/\include{} LaTeX macros only and has no markdown-chapter-
+    # following behaviour at all. This layout is a human/manual-feed
+    # convenience, not a claim of interoperability with that step.
+    out_dir = Path(args.output_dir)
+    content_dir = out_dir / "content"
+    content_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = out_dir / "assets"
 
     split, removed_count = process_document(source.read_text(encoding="utf-8"))
-    (out_dir / "frontmatter.md").write_text(split.frontmatter, encoding="utf-8")
+    (content_dir / "frontmatter.md").write_text(split.frontmatter, encoding="utf-8")
 
     filenames = chapter_filenames(sorted(split.chapters.keys()))
     chapter_paths: dict[int, tuple[str, str]] = {}
     for number, (title, body) in split.chapters.items():
         filename = filenames[number]
-        (out_dir / filename).write_text(body, encoding="utf-8")
+        (content_dir / filename).write_text(body, encoding="utf-8")
         chapter_paths[number] = (filename, title)
 
     bibliography_path = None
     if split.bibliography is not None:
-        bibliography_path = out_dir / "bibliography.md"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        bibliography_path = assets_dir / "bibliography.md"
         bibliography_path.write_text(split.bibliography, encoding="utf-8")
 
     main_md = render_main_md(
         frontmatter_path="frontmatter.md",
         chapter_paths=chapter_paths,
-        bibliography_path="bibliography.md" if bibliography_path else None,
+        bibliography_path="assets/bibliography.md" if bibliography_path else None,
+        content_dir="content/",
     )
     main_path = out_dir / "main.md"
     main_path.write_text(main_md, encoding="utf-8")
@@ -507,7 +531,7 @@ def _main(argv: list[str] | None = None) -> int:
         "chapters_written": {number: filename for number, (filename, _title) in chapter_paths.items()},
         "bibliography_found": split.bibliography is not None,
         "bibliography_path": str(bibliography_path) if bibliography_path else None,
-        "frontmatter_path": str(out_dir / "frontmatter.md"),
+        "frontmatter_path": str(content_dir / "frontmatter.md"),
         "main_path": str(main_path),
     }
     print(json.dumps(report) if args.json else report)

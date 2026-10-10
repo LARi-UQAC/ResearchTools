@@ -304,13 +304,34 @@ class TestRenderMainMd(unittest.TestCase):
         self.assertIn("[Introduction (CHAPITRE 1)](Introduction.md)", rendered)
         self.assertIn("[Conclusion (CHAPITRE 5)](Conclusion.md)", rendered)
 
+    def test_content_dir_prefixes_every_link_but_not_the_label_matching(self):
+        # main.md lives one level above content/, so every href needs the
+        # prefix -- but Introduction/Conclusion labeling still matches on
+        # the BARE filename, independent of content_dir.
+        rendered = render_main_md(
+            frontmatter_path="frontmatter.md",
+            chapter_paths={1: ("Introduction.md", "CHAPITRE 1")},
+            bibliography_path="bibliography.md",
+            content_dir="content/",
+        )
+        self.assertIn("[Front matter](content/frontmatter.md)", rendered)
+        self.assertIn("[Introduction (CHAPITRE 1)](content/Introduction.md)", rendered)
+        # bibliography_path is used AS GIVEN, never prefixed by content_dir --
+        # it lives in assets/, not content/, so the caller passes its full
+        # relative path rather than relying on an auto-prefix.
+        self.assertIn("[Bibliography](bibliography.md)", rendered)
+
 
 class TestMainWritesBibliography(unittest.TestCase):
-    def test_output_files_land_under_a_src_subfolder(self):
-        # thesis-auditor.md:98 looks for "src/main.tex" when given a
-        # directory -- pdf2md's own output must nest the same way
-        # (main.md replacing main.tex) so an --output-dir handed to pdf2md
-        # can be handed to thesis-auditor unchanged.
+    def test_output_files_land_under_content_with_main_md_one_level_up(self):
+        # -o IS the project's own src/ directory (never nested under an
+        # extra "src" segment of its own): main.md sits directly in it,
+        # and everything it links to lives in content/ beside it. This is
+        # a human/manual-feed layout convenience, not a claim that
+        # thesis-auditor's own directory-resolution (thesis-auditor.md:98,
+        # which looks for src/main.tex and reads \input{}/\include{}
+        # macros only) will auto-discover it -- it has no markdown support
+        # at all, regardless of folder naming.
         import tempfile
         from pathlib import Path
 
@@ -320,10 +341,11 @@ class TestMainWritesBibliography(unittest.TestCase):
             source.write_text(document, encoding="utf-8")
             out_dir = Path(tmp) / "project"
             _main([str(source), "-o", str(out_dir)])
-            self.assertTrue((out_dir / "src" / "main.md").exists())
-            self.assertTrue((out_dir / "src" / "Introduction.md").exists())
-            self.assertTrue((out_dir / "src" / "Conclusion.md").exists())
-            self.assertFalse((out_dir / "main.md").exists())
+            self.assertTrue((out_dir / "main.md").exists())
+            self.assertTrue((out_dir / "content" / "Introduction.md").exists())
+            self.assertTrue((out_dir / "content" / "Conclusion.md").exists())
+            self.assertFalse((out_dir / "src").exists())
+            self.assertFalse((out_dir / "Introduction.md").exists())
 
     def test_bibliography_md_is_actually_written_when_found(self):
         # Regression: _main computed split.bibliography and reported
@@ -342,7 +364,7 @@ class TestMainWritesBibliography(unittest.TestCase):
             out_dir = Path(tmp) / "out"
             exit_code = _main([str(source), "-o", str(out_dir)])
             self.assertEqual(exit_code, 0)
-            bib_path = out_dir / "src" / "bibliography.md"
+            bib_path = out_dir / "assets" / "bibliography.md"
             self.assertTrue(bib_path.exists())
             self.assertIn("[1] Author", bib_path.read_text(encoding="utf-8"))
 
@@ -355,7 +377,9 @@ class TestMainWritesBibliography(unittest.TestCase):
             source.write_text("# CHAPITRE 1\n\nno bibliography here", encoding="utf-8")
             out_dir = Path(tmp) / "out"
             _main([str(source), "-o", str(out_dir)])
-            self.assertFalse((out_dir / "src" / "bibliography.md").exists())
+            self.assertFalse((out_dir / "assets" / "bibliography.md").exists())
+            self.assertFalse((out_dir / "content" / "bibliography.md").exists())
+            self.assertFalse((out_dir / "assets").exists())
             self.assertFalse((out_dir / "bibliography.md").exists())
 
 

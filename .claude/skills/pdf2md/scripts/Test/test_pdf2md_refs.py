@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pdf2md_refs import parse_numbered_references, render_ref_md
+from pdf2md_refs import _first_author_surname, parse_numbered_references, render_ref_md
 
 REAL_BIBLIOGRAPHY_BLOCK = """\
 [171] Lin Xiao and Stephen Boyd. Fast linear iterations for distributed averaging. Systems & Control Letters, 53(1) :65–78, 2004.
@@ -31,9 +31,12 @@ class TestParseNumberedReferences(unittest.TestCase):
         self.assertIn("2004", first.venue_year)
 
     def test_key_uses_first_author_surname_and_year(self):
+        # "Lin Xiao" is Firstname=Lin, Surname=Xiao (the researcher is
+        # conventionally cited as "Xiao, L."); the key must use the
+        # SURNAME, not whichever name token comes first in the rendering.
         entries = parse_numbered_references(REAL_BIBLIOGRAPHY_BLOCK)
         first = entries[0]
-        self.assertTrue(first.key.startswith("lin"))
+        self.assertTrue(first.key.startswith("xiao"))
         self.assertIn("2004", first.key)
 
     def test_order_is_preserved_not_resorted_by_number(self):
@@ -63,6 +66,39 @@ class TestParseNumberedReferences(unittest.TestCase):
         entries = parse_numbered_references("[1] Karl H Johansson. A survey. Venue, 2019.")
         self.assertEqual(entries[0].authors, "Karl H Johansson")
         self.assertEqual(entries[0].title, "A survey")
+
+
+class TestFirstAuthorSurname(unittest.TestCase):
+    """Regression: mineru renders "Firstname Lastname" with no comma, so a
+    naive first-token match returned the given name instead of the surname
+    for every real entry in the 162-page thesis bibliography."""
+
+    def test_two_word_first_author_uses_the_last_token_as_surname(self):
+        self.assertEqual(
+            _first_author_surname("Javier Alonso-Mora, Eduardo Montijano, and Daniela Rus"), "alonso-mora"
+        )
+
+    def test_three_word_first_author_with_middle_initial(self):
+        self.assertEqual(_first_author_surname("Necdet Serhat Aybat, Zi Wang"), "aybat")
+
+    def test_initials_concatenated_first_name(self):
+        self.assertEqual(_first_author_surname("PG Balaji and D Srinivasan"), "balaji")
+
+    def test_single_author_no_separator(self):
+        self.assertEqual(_first_author_surname("Dimitri P Bertsekas"), "bertsekas")
+
+    def test_two_authors_joined_only_by_and_no_comma(self):
+        self.assertEqual(_first_author_surname("Nicola Bastianello and Emiliano Dall'Anese"), "bastianello")
+
+    def test_accented_surname_preserved(self):
+        self.assertEqual(_first_author_surname("Hédy Attouch, Jérôme Bolte"), "attouch")
+
+    def test_empty_authors_is_unknown(self):
+        self.assertEqual(_first_author_surname(""), "unknown")
+
+    def test_key_uses_surname_not_given_name(self):
+        entries = parse_numbered_references("[1] Javier Alonso-Mora and Daniela Rus. A paper. Venue, 2020.")
+        self.assertTrue(entries[0].key.startswith("alonso-mora2020"))
 
 
 class TestRenderRefMd(unittest.TestCase):

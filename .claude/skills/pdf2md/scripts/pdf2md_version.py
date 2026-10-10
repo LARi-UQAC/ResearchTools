@@ -1,6 +1,12 @@
 """
-pdf2md_version - Stage 2 of the pdf2md pipeline: check mineru-kit's version
+pdf2md_version - Stage 2 of the pdf2md pipeline: check mineru's version
 against PyPI, report-only by default.
+
+The pip DISTRIBUTION name is "mineru" (confirmed via `pip show mineru`,
+2026-10-10: Version 4.0.11) -- "mineru-kit" is only the CLI entry point
+that package installs (confirmed via `where mineru-kit`), never a
+separate installable package. `pip show mineru-kit` / PyPI's
+pypi.org/pypi/mineru-kit/json both 404 on the real name.
 
 Never auto-upgrades silently (R16): the rest of this skill is grounded in
 version-4.0.11-specific behaviour (the os.execv quoting bug, the
@@ -18,7 +24,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Callable
 
-_PACKAGES = ("mineru-kit", "mineru-llama-cpp")
+_PACKAGES = ("mineru", "mineru-llama-cpp")
 _PIP_SHOW_VERSION_RE = re.compile(r"^Version:\s*(.+)$", re.MULTILINE)
 
 

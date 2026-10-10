@@ -17,11 +17,14 @@ from pdf2md_version import (
     upgrade_packages,
 )
 
-# Verbatim shape of `pip show mineru-kit`'s relevant line, 2026-10-10.
+# Verbatim shape of `pip show mineru`'s relevant line, 2026-10-10. The pip
+# DISTRIBUTION is "mineru"; "mineru" is only the CLI entry point it
+# installs -- `pip show mineru-kit` reports "Package(s) not found" on a
+# real install, which the earlier version of this fixture never checked.
 REAL_PIP_SHOW_OUTPUT = """\
-Name: mineru-kit
+Name: mineru
 Version: 4.0.11
-Summary: MinerU Kit
+Summary: A practical document parsing tool for converting PDF, OFD, EPUB, HTML, images, CSV, RTF, OOXML, and OpenDocument files into Markdown and JSON
 Location: c:\\users\\example\\appdata\\local\\programs\\python\\python313\\lib\\site-packages"""
 
 
@@ -38,7 +41,7 @@ class TestParsePipShowVersion(unittest.TestCase):
 
 class TestParsePypiLatestVersion(unittest.TestCase):
     def test_extracts_version_from_pypi_json_shape(self):
-        payload = {"info": {"version": "4.1.0", "name": "mineru-kit"}}
+        payload = {"info": {"version": "4.1.0", "name": "mineru"}}
         self.assertEqual(parse_pypi_latest_version(payload), "4.1.0")
 
     def test_missing_info_key_returns_none(self):
@@ -50,7 +53,7 @@ class TestCheckVersions(unittest.TestCase):
         checks = check_versions(
             pip_show_runner=lambda _pkg: "Version: 4.0.11",
             pypi_fetcher=lambda _pkg: {"info": {"version": "4.1.0"}},
-            packages=("mineru-kit",),
+            packages=("mineru",),
         )
         self.assertTrue(checks[0].upgrade_available)
 
@@ -58,7 +61,7 @@ class TestCheckVersions(unittest.TestCase):
         checks = check_versions(
             pip_show_runner=lambda _pkg: "Version: 4.0.11",
             pypi_fetcher=lambda _pkg: {"info": {"version": "4.0.11"}},
-            packages=("mineru-kit",),
+            packages=("mineru",),
         )
         self.assertFalse(checks[0].upgrade_available)
 
@@ -69,7 +72,7 @@ class TestCheckVersions(unittest.TestCase):
         checks = check_versions(
             pip_show_runner=lambda _pkg: "",
             pypi_fetcher=lambda _pkg: {"info": {"version": "4.1.0"}},
-            packages=("mineru-kit",),
+            packages=("mineru",),
         )
         self.assertIsNone(checks[0].installed)
         self.assertFalse(checks[0].upgrade_available)
@@ -84,9 +87,9 @@ class TestCheckVersions(unittest.TestCase):
         check_versions(
             pip_show_runner=fake_pip_show,
             pypi_fetcher=lambda _pkg: {"info": {"version": "1.0.0"}},
-            packages=("mineru-kit", "mineru-llama-cpp"),
+            packages=("mineru", "mineru-llama-cpp"),
         )
-        self.assertEqual(seen, ["mineru-kit", "mineru-llama-cpp"])
+        self.assertEqual(seen, ["mineru", "mineru-llama-cpp"])
 
 
 class TestUpgradeAndAudit(unittest.TestCase):
@@ -101,8 +104,8 @@ class TestUpgradeAndAudit(unittest.TestCase):
 
             return Result()
 
-        upgrade_packages(("mineru-kit",), runner=fake_runner)
-        self.assertEqual(captured["args"], ["pip", "install", "--upgrade", "mineru-kit"])
+        upgrade_packages(("mineru",), runner=fake_runner)
+        self.assertEqual(captured["args"], ["pip", "install", "--upgrade", "mineru"])
 
     def test_pip_audit_invoked_with_no_extra_args(self):
         captured = {}
@@ -133,19 +136,19 @@ class TestBuildVersionReport(unittest.TestCase):
         # healthy case (report["upgraded"] stays its initial False with
         # no upgrade ever attempted, and the old code read that False as
         # failure instead of "nothing needed").
-        checks = [VersionCheck("mineru-kit", "4.0.11", "4.0.11")]
+        checks = [VersionCheck("mineru", "4.0.11", "4.0.11")]
         report, exit_code = build_version_report(checks, yes=False)
         self.assertEqual(exit_code, 0)
         self.assertFalse(report["upgrade_available"])
 
     def test_upgrade_available_without_yes_refuses(self):
-        checks = [VersionCheck("mineru-kit", "4.0.11", "4.1.0")]
+        checks = [VersionCheck("mineru", "4.0.11", "4.1.0")]
         report, exit_code = build_version_report(checks, yes=False)
         self.assertEqual(exit_code, 2)
         self.assertIn("refused", report)
 
     def test_upgrade_available_with_yes_and_success_exits_zero(self):
-        checks = [VersionCheck("mineru-kit", "4.0.11", "4.1.0")]
+        checks = [VersionCheck("mineru", "4.0.11", "4.1.0")]
         report, exit_code = build_version_report(
             checks, yes=True,
             upgrade_fn=lambda: _FakeCompletedProcess(returncode=0),
@@ -155,7 +158,7 @@ class TestBuildVersionReport(unittest.TestCase):
         self.assertTrue(report["upgraded"])
 
     def test_upgrade_available_with_yes_and_failure_exits_one(self):
-        checks = [VersionCheck("mineru-kit", "4.0.11", "4.1.0")]
+        checks = [VersionCheck("mineru", "4.0.11", "4.1.0")]
         report, exit_code = build_version_report(
             checks, yes=True,
             upgrade_fn=lambda: _FakeCompletedProcess(returncode=1),
@@ -168,7 +171,7 @@ class TestBuildVersionReport(unittest.TestCase):
         # Negative control: must not run pip install/pip-audit when there
         # is nothing to upgrade.
         calls = []
-        checks = [VersionCheck("mineru-kit", "4.0.11", "4.0.11")]
+        checks = [VersionCheck("mineru", "4.0.11", "4.0.11")]
         build_version_report(
             checks, yes=True,
             upgrade_fn=lambda: calls.append("upgrade") or _FakeCompletedProcess(),

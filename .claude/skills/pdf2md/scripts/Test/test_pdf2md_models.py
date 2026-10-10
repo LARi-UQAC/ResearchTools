@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pdf2md_models import DOWNLOADABLE_TIERS, parse_models_show
+from pdf2md_models import DOWNLOADABLE_TIERS, bootstrap_tier_for, parse_models_show
 
 # Verbatim output of `mineru-kit models show`, captured 2026-10-10
 # (the Config: path line is replaced with a placeholder account to avoid
@@ -88,6 +88,37 @@ Model tiers:
         # Pinned to the real `mineru-kit models download --help` output:
         # --tier only accepts basic or standard, never advanced.
         self.assertEqual(DOWNLOADABLE_TIERS, ("basic", "standard"))
+
+
+class TestBootstrapTierFor(unittest.TestCase):
+    def test_standard_maps_to_itself(self):
+        self.assertEqual(bootstrap_tier_for("standard"), "standard")
+
+    def test_basic_maps_to_itself(self):
+        self.assertEqual(bootstrap_tier_for("basic"), "basic")
+
+    def test_advanced_maps_to_standard(self):
+        # Regression: pdf2md.py's "run" subcommand defaults --tier to
+        # "advanced" but never forwarded it to run_bootstrap at all,
+        # which silently defaulted to checking "standard" regardless of
+        # the actual parse tier -- here that happens to be the RIGHT
+        # answer for advanced specifically, but only by accident, and it
+        # would have raised ValueError outright for "flash".
+        self.assertEqual(bootstrap_tier_for("advanced"), "standard")
+
+    def test_flash_maps_to_basic(self):
+        # Negative control: naively forwarding "flash" straight into
+        # run_bootstrap's tier= would raise ValueError, since "flash" is
+        # not in DOWNLOADABLE_TIERS -- this mapping is what prevents that.
+        self.assertEqual(bootstrap_tier_for("flash"), "basic")
+
+    def test_unknown_tier_raises(self):
+        with self.assertRaises(ValueError):
+            bootstrap_tier_for("ultra")
+
+    def test_every_mapped_value_is_downloadable(self):
+        for parse_tier in ("flash", "basic", "standard", "advanced"):
+            self.assertIn(bootstrap_tier_for(parse_tier), DOWNLOADABLE_TIERS)
 
 
 if __name__ == "__main__":

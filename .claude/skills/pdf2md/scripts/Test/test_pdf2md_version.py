@@ -8,6 +8,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pdf2md_version import (
+    VersionCheck,
+    build_version_report,
     check_versions,
     parse_pip_show_version,
     parse_pypi_latest_version,
@@ -117,6 +119,62 @@ class TestUpgradeAndAudit(unittest.TestCase):
         result = run_pip_audit(runner=fake_runner)
         self.assertEqual(captured["args"], ["pip-audit"])
         self.assertEqual(result.returncode, 0)
+
+
+class _FakeCompletedProcess:
+    def __init__(self, returncode=0, stdout=""):
+        self.returncode = returncode
+        self.stdout = stdout
+
+
+class TestBuildVersionReport(unittest.TestCase):
+    def test_nothing_to_upgrade_exits_zero(self):
+        # Regression: _main used to return exit code 1 for this exact,
+        # healthy case (report["upgraded"] stays its initial False with
+        # no upgrade ever attempted, and the old code read that False as
+        # failure instead of "nothing needed").
+        checks = [VersionCheck("mineru-kit", "4.0.11", "4.0.11")]
+        report, exit_code = build_version_report(checks, yes=False)
+        self.assertEqual(exit_code, 0)
+        self.assertFalse(report["upgrade_available"])
+
+    def test_upgrade_available_without_yes_refuses(self):
+        checks = [VersionCheck("mineru-kit", "4.0.11", "4.1.0")]
+        report, exit_code = build_version_report(checks, yes=False)
+        self.assertEqual(exit_code, 2)
+        self.assertIn("refused", report)
+
+    def test_upgrade_available_with_yes_and_success_exits_zero(self):
+        checks = [VersionCheck("mineru-kit", "4.0.11", "4.1.0")]
+        report, exit_code = build_version_report(
+            checks, yes=True,
+            upgrade_fn=lambda: _FakeCompletedProcess(returncode=0),
+            audit_fn=lambda: _FakeCompletedProcess(returncode=0, stdout="No known vulnerabilities found"),
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(report["upgraded"])
+
+    def test_upgrade_available_with_yes_and_failure_exits_one(self):
+        checks = [VersionCheck("mineru-kit", "4.0.11", "4.1.0")]
+        report, exit_code = build_version_report(
+            checks, yes=True,
+            upgrade_fn=lambda: _FakeCompletedProcess(returncode=1),
+            audit_fn=lambda: _FakeCompletedProcess(returncode=0),
+        )
+        self.assertEqual(exit_code, 1)
+        self.assertFalse(report["upgraded"])
+
+    def test_upgrade_fn_and_audit_fn_not_called_when_no_upgrade(self):
+        # Negative control: must not run pip install/pip-audit when there
+        # is nothing to upgrade.
+        calls = []
+        checks = [VersionCheck("mineru-kit", "4.0.11", "4.0.11")]
+        build_version_report(
+            checks, yes=True,
+            upgrade_fn=lambda: calls.append("upgrade") or _FakeCompletedProcess(),
+            audit_fn=lambda: calls.append("audit") or _FakeCompletedProcess(),
+        )
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

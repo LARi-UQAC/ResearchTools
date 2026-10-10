@@ -136,6 +136,62 @@ def run_pip_audit(runner: Callable[..., subprocess.CompletedProcess] | None = No
     return runner(["pip-audit"], capture_output=True, text=True, timeout=300)
 
 
+def build_version_report(
+    checks: list[VersionCheck],
+    *,
+    yes: bool,
+    upgrade_fn: Callable[[], subprocess.CompletedProcess] | None = None,
+    audit_fn: Callable[[], subprocess.CompletedProcess] | None = None,
+) -> tuple[dict, int]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide the report and exit code for a version check, given already-
+        computed checks. Pulled out of _main as a pure-ish decision function
+        (upgrade_fn/audit_fn injected) so the three real outcomes -- nothing
+        to upgrade, upgrade refused without --yes, upgrade applied -- are
+        each independently testable without a real pip/network call
+        (R20/R21).
+
+    Inputs:
+        checks (list[VersionCheck]): as returned by check_versions.
+        yes (bool): whether to actually apply an available upgrade.
+        upgrade_fn, audit_fn (callable | None): injected for tests; default
+            to the real upgrade_packages()/run_pip_audit().
+
+    Outputs:
+        (dict, int): the JSON-serializable report, and the exit code
+            (R12: 0 done -- including "nothing needed, already current" --
+            2 refusal by design, 1 failure).
+    --------------------------------------------------------------------------
+    """
+    upgrade_fn = upgrade_fn or upgrade_packages
+    audit_fn = audit_fn or run_pip_audit
+
+    report: dict = {
+        "ok": True,
+        "checks": [
+            {"package": c.package, "installed": c.installed, "latest": c.latest, "upgrade_available": c.upgrade_available}
+            for c in checks
+        ],
+        "upgrade_available": any(c.upgrade_available for c in checks),
+        "upgraded": False,
+    }
+
+    if not report["upgrade_available"]:
+        return report, 0
+    if not yes:
+        report["refused"] = "upgrade(s) available but --yes not passed; dry-run only (R16)"
+        return report, 2
+
+    upgrade_result = upgrade_fn()
+    audit_result = audit_fn()
+    report["upgraded"] = upgrade_result.returncode == 0
+    report["pip_audit_returncode"] = audit_result.returncode
+    report["pip_audit_output"] = audit_result.stdout
+    return report, (0 if report["upgraded"] else 1)
+
+
 def _main(argv: list[str] | None = None) -> int:
     import argparse
 
@@ -145,29 +201,9 @@ def _main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     checks = check_versions(pip_show_runner=real_pip_show_runner, pypi_fetcher=real_pypi_fetcher)
-    report: dict = {
-        "ok": True,
-        "checks": [
-            {"package": c.package, "installed": c.installed, "latest": c.latest, "upgrade_available": c.upgrade_available}
-            for c in checks
-        ],
-        "upgraded": False,
-    }
-
-    any_upgrade = any(c.upgrade_available for c in checks)
-    if any_upgrade and not args.yes:
-        report["refused"] = "upgrade(s) available but --yes not passed; dry-run only (R16)"
-        print(json.dumps(report) if args.json else report)
-        return 2
-    if any_upgrade and args.yes:
-        upgrade_result = upgrade_packages()
-        audit_result = run_pip_audit()
-        report["upgraded"] = upgrade_result.returncode == 0
-        report["pip_audit_returncode"] = audit_result.returncode
-        report["pip_audit_output"] = audit_result.stdout
-
+    report, exit_code = build_version_report(checks, yes=args.yes)
     print(json.dumps(report) if args.json else report)
-    return 0 if report.get("upgraded", True) is not False else 1
+    return exit_code
 
 
 if __name__ == "__main__":

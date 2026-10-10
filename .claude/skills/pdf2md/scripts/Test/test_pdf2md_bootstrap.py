@@ -119,6 +119,25 @@ class TestRunBootstrap(unittest.TestCase):
         self.assertNotIn("vlm", fixed)
         self.assertEqual(fixed["model"]["vlm"]["server_url"], "http://127.0.0.1:30000/v1")
 
+    def test_config_header_uses_the_injected_date_not_a_hardcoded_one(self):
+        # Regression: the header comment's date was a literal "2026-10-10"
+        # regardless of when the fix actually ran (R13). Pinning an
+        # obviously-different injected date proves it is no longer
+        # hardcoded, rather than merely re-asserting the same value that
+        # happened to match the hardcoded one.
+        self.config_path.write_text(REAL_BROKEN_CONFIG_TEXT, encoding="utf-8")
+        run_bootstrap(
+            config_path=self.config_path,
+            expected_server_url="http://127.0.0.1:30000/v1",
+            yes=True,
+            pip_runner=lambda args, **kw: _FakeResult(returncode=0),
+            models_show_runner=lambda: REAL_MODELS_SHOW_READY,
+            date_provider=lambda: "2030-01-15",
+        )
+        written = self.config_path.read_text(encoding="utf-8")
+        self.assertIn("2030-01-15", written)
+        self.assertNotIn("2026-10-10", written)
+
     def test_missing_model_triggers_download_only_with_yes(self):
         self.config_path.write_text("", encoding="utf-8")
         download_calls = []

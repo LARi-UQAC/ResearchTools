@@ -316,11 +316,17 @@ def _main(argv: list[str] | None = None) -> int:
     for number, (title, body) in sorted(split.chapters.items()):
         (out_dir / f"chapitre{number}.md").write_text(body, encoding="utf-8")
 
+    bibliography_path = None
+    if split.bibliography is not None:
+        bibliography_path = out_dir / "bibliography.md"
+        bibliography_path.write_text(split.bibliography, encoding="utf-8")
+
     report = {
         "ok": True,
         "splice_headings_removed": removed_count,
         "chapters_written": sorted(split.chapters.keys()),
         "bibliography_found": split.bibliography is not None,
+        "bibliography_path": str(bibliography_path) if bibliography_path else None,
         "frontmatter_path": str(out_dir / "frontmatter.md"),
     }
     print(json.dumps(report) if args.json else report)

@@ -24,6 +24,41 @@ _TIER_LINE_RE = re.compile(r"^\s*(flash|basic|standard|advanced):\s*(.+)$", re.M
 #: flash/medium/high/xhigh "effort", no separate advanced model exists).
 DOWNLOADABLE_TIERS = ("basic", "standard")
 
+#: The parse tier the operator picks (flash/basic/standard/advanced, an
+#: effort level) is not the tier bootstrap should check model readiness
+#: for -- only basic/standard have their own distinct model repo set per
+#: `mineru-kit models show`'s "Model tiers" listing; flash and advanced
+#: are the SAME underlying model as basic/standard respectively, just run
+#: at a different effort. Passing a parse tier straight through to
+#: run_bootstrap would raise ValueError for flash/advanced (not in
+#: DOWNLOADABLE_TIERS) even though the model it actually needs IS ready.
+_BOOTSTRAP_TIER_FOR_PARSE_TIER = {"flash": "basic", "basic": "basic", "standard": "standard", "advanced": "standard"}
+
+
+def bootstrap_tier_for(parse_tier: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Map a parse-time tier (flash/basic/standard/advanced) to the tier
+        whose model readiness bootstrap should actually check/download.
+
+    Inputs:
+        parse_tier (str): the --tier value passed to `mineru-kit parse`.
+
+    Outputs:
+        str: one of DOWNLOADABLE_TIERS.
+
+    Raises:
+        ValueError: if parse_tier is not one of the four known tiers.
+    --------------------------------------------------------------------------
+    """
+    try:
+        return _BOOTSTRAP_TIER_FOR_PARSE_TIER[parse_tier]
+    except KeyError:
+        raise ValueError(
+            f"Unknown parse tier {parse_tier!r}; expected one of {sorted(_BOOTSTRAP_TIER_FOR_PARSE_TIER)}"
+        ) from None
+
 
 @dataclass
 class ModelReadiness:

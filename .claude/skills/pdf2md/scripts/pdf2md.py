@@ -84,6 +84,7 @@ def _run_full_pipeline(argv: list[str]) -> int:
 
     from pdf2md_bootstrap import default_config_path, run_bootstrap
     from pdf2md_convert import build_parse_args, launch_convert
+    from pdf2md_models import bootstrap_tier_for
     from pdf2md_server import build_llama_server_args, launch_server, wait_for_server
     from pathlib import Path
 
@@ -98,7 +99,12 @@ def _run_full_pipeline(argv: list[str]) -> int:
 
     server_url = f"http://127.0.0.1:{args.port}/v1"
 
-    bootstrap_report = run_bootstrap(config_path=default_config_path(), expected_server_url=server_url, yes=args.yes)
+    bootstrap_report = run_bootstrap(
+        config_path=default_config_path(),
+        expected_server_url=server_url,
+        tier=bootstrap_tier_for(args.tier),
+        yes=args.yes,
+    )
     if not bootstrap_report["ok"] and not args.yes:
         report = {"ok": False, "stage": "bootstrap", **bootstrap_report}
         print(json.dumps(report) if args.json else report)

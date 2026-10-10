@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pdf2md_postprocess import (
+    _main,
     find_headings,
     find_spurious_headings,
     process_document,
@@ -167,6 +168,40 @@ class TestProcessDocument(unittest.TestCase):
         split, removed = process_document("# CHAPITRE 1\n\n" + REAL_PROSE_SPLICE_EXAMPLE)
         self.assertEqual(removed, 1)
         self.assertIn(1, split.chapters)
+
+
+class TestMainWritesBibliography(unittest.TestCase):
+    def test_bibliography_md_is_actually_written_when_found(self):
+        # Regression: _main computed split.bibliography and reported
+        # bibliography_found=True but never wrote it to any file,
+        # silently discarding the references stage 6 depends on.
+        import tempfile
+        from pathlib import Path
+
+        document = (
+            "# CHAPITRE 1\n\nchapter body\n\n"
+            "## RÉFÉRENCES\n\n[1] Author. Title. Venue, 2020."
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "these.md"
+            source.write_text(document, encoding="utf-8")
+            out_dir = Path(tmp) / "out"
+            exit_code = _main([str(source), "-o", str(out_dir)])
+            self.assertEqual(exit_code, 0)
+            bib_path = out_dir / "bibliography.md"
+            self.assertTrue(bib_path.exists())
+            self.assertIn("[1] Author", bib_path.read_text(encoding="utf-8"))
+
+    def test_no_bibliography_path_in_report_when_none_found(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "these.md"
+            source.write_text("# CHAPITRE 1\n\nno bibliography here", encoding="utf-8")
+            out_dir = Path(tmp) / "out"
+            _main([str(source), "-o", str(out_dir)])
+            self.assertFalse((out_dir / "bibliography.md").exists())
 
 
 if __name__ == "__main__":

@@ -12,11 +12,16 @@ literal account path (R1).
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import subprocess
 from pathlib import Path
 from typing import Callable
+
+
+def _today_iso() -> str:
+    return datetime.date.today().isoformat()
 
 import yaml
 
@@ -81,6 +86,7 @@ def run_bootstrap(
     pip_runner: Callable[..., subprocess.CompletedProcess] | None = None,
     models_show_runner: Callable[..., str] | None = None,
     download_runner: Callable[..., subprocess.CompletedProcess] | None = None,
+    date_provider: Callable[[], str] | None = None,
 ) -> dict:
     """
     --------------------------------------------------------------------------
@@ -99,6 +105,11 @@ def run_bootstrap(
             DOWNLOADABLE_TIERS.
         yes (bool): apply fixes/downloads; False means report-only.
         pip_runner, models_show_runner, download_runner: injected IO seams.
+        date_provider (callable | None): returns the ISO date stamped into
+            the rewritten config's header comment (R13/R19 -- never read
+            the wall clock directly inside logic; defaults to
+            datetime.date.today().isoformat, injected here so a test can
+            pin it rather than asserting against "whenever this test runs").
 
     Outputs:
         dict: a JSON-serializable report (R17) with keys "ok", "issues",
@@ -158,7 +169,8 @@ def run_bootstrap(
     if not diagnosis.clean:
         fixed = apply_fixes(config_dict, server_url=expected_server_url)
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(render_config_yaml(fixed, date="2026-10-10"), encoding="utf-8")
+        stamp = (date_provider or _today_iso)()
+        config_path.write_text(render_config_yaml(fixed, date=stamp), encoding="utf-8")
         report["config_fixed"] = True
 
     report["applied"] = True

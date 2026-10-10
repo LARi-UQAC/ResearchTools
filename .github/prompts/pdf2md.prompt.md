@@ -41,10 +41,12 @@ Procedure:
    Report `routed_via_vlm_server` explicitly if it is `false` -- that
    means the config/server wiring regressed and the run is using the
    slow, warning-prone in-process engine instead of the fixed server.
-5. Once `finished` is true, run the two remaining stages:
+5. Once `finished` is true, run the two remaining stages. `postprocess` writes
+   `<output-dir>/bibliography.md` itself when a bibliography is found (its
+   own report says `bibliography_path`); feed THAT file to `refs`:
    ```bash
    python .claude/skills/pdf2md/scripts/pdf2md.py postprocess <mineru's markdown output> -o <output-dir> --json
-   python .claude/skills/pdf2md/scripts/pdf2md.py refs <extracted bibliography block> -o <output-dir>/ref.md --json
+   python .claude/skills/pdf2md/scripts/pdf2md.py refs <output-dir>/bibliography.md -o <output-dir>/ref.md --json
    ```
 6. Report: splice headings removed, chapter files written, reference
    count, and the known limits from SKILL.md (no real `.tex`, mixed

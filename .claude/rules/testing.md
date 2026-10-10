@@ -1,8 +1,9 @@
 # Testing
 
 General testing guidance for any project in this workspace. When a project ships its own
-test suite, run it from the correct environment before pushing. The only CI is the
-privacy-scan workflow (see "CI" at the end of this file), so tests are run manually.
+test suite, run it from the correct environment before pushing. CI is `privacy-scan.yml`
+(free, static) plus `review.yml` (billed, Claude-driven; see "CI" at the end of this file for
+both), so the test SUITES themselves are still run manually.
 
 ## Principle
 
@@ -849,8 +850,40 @@ When adding or modifying tests:
 
 ## CI
 
-One workflow only: `.github/workflows/privacy-scan.yml` scans the commits a push or a pull
+Two workflows. `.github/workflows/privacy-scan.yml` scans the commits a push or a pull
 request adds with betterleaks and `.claude/hooks/git/privacy-rules.toml` (secrets plus
 personal-data shapes). It is the authoritative gate behind the local pre-commit hook, which
-`--no-verify` can skip, and it is reusable by the lab's other public repositories. Everything
-else is run manually before pushing.
+`--no-verify` can skip, and it is reusable by the lab's other public repositories, free
+(static scan, no model call).
+
+`.github/workflows/review.yml` (Issue #65) runs on every same-repo `pull_request` (opened,
+synchronize, reopened; fork PRs are skipped because they get no secret; no
+`workflow_dispatch`, since the diff step needs the pull-request event, so a forced re-review
+is an empty commit). A headless `anthropics/claude-code-action` session reads a pre-computed
+diff (capped by `MAX_DIFF_BYTES`, an unmeasured author's choice) and drives `security-review`,
+`engineering:tech-debt`, `ai-firstify:ai-firstify` and `code-review` (effort high), then
+posts ONE Critical/High/Medium/Low list as a sticky PR comment. A later step mirrors that
+comment onto the open Issue named by a line starting `Fixes #N` or `Closes #N`, mentions and
+assigns the PR author (assignment is allowed to fail for a non-collaborator). Unlike
+privacy-scan it is billed, and it needs a repo secret `ANTHROPIC_API_KEY` that only the
+operator adds.
+
+Design choices, each from a review finding on this change: the Claude step gets
+`Skill,Read,Grep,Glob` only, with no `Bash`, `Edit`, `Write` or `Agent`, because the diff is
+untrusted and the key sits in that process; `Read`/`Grep`/`Glob` of `/proc`, `/sys` and `/run`
+are denied too, since `/proc/self/environ` would otherwise hold the key. Plugin install in
+headless mode comes only from the workflow's `plugins:` and `plugin_marketplaces:` inputs
+(read in the action's `base-action/src/install-plugins.ts`, 2026-10-09), never from
+`.claude/settings.json`. `ai-firstify` and `tech-debt` resolve only under their qualified
+names. The marketplaces cannot be pinned, because the action's URL check accepts only a
+bare `.git` suffix.
+
+UNVERIFIED (R15), no test exists and none can run offline: that the deny-rule path syntax
+blocks `/proc` reads; that `security-review` and `code-review` are invocable through the
+Skill tool in a headless run (the prompt makes Claude state which skills ran, so a gap is
+visible); that comments post as `github-actions[bot]` once `github_token` is passed; that
+the mirror step posts and assigns. Only a real run on a throwaway PR proves them. What is
+checked here: the YAML parses, and the mirror's issue-number regex was run on fixtures; its
+`jq` filter was NOT run (`jq` is absent on the authoring machine).
+
+Everything else is run manually before pushing.

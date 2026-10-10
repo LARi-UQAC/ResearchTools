@@ -310,7 +310,8 @@ folder is wasted effort.
    categories of warning as informational rather than bugs — see the gotchas below).
 
 5. **No CI/CD if the project has a "no automated pipeline" policy** (the privacy-scan workflow
-   of Phase 6b is the one exception, in every repo): publish with a manual
+   of Phase 6b is the one exception in every repo, and the billed review workflow of Phase 6c
+   is a second one only where the user opted in): publish with a manual
    `mkdocs gh-deploy` (pushes a `gh-pages` branch by hand) rather than a GitHub Actions
    workflow. Document the manual command in `docs/index.md`. Enabling the Pages *setting*
    itself (Settings → Pages → Deploy from branch → `gh-pages`) is a repo-settings change for
@@ -494,6 +495,103 @@ git push origin v0.1.0               # a push — confirm the project's own git-
 gh release create v0.1.0 --title "..." --notes "..."
 ```
 
+### 6c. Optional: automated multi-dimension PR review (billed)
+
+Adds a second workflow beside `privacy-scan`: on every pull request a headless Claude Code
+session runs four review skills (`security-review`, `engineering:tech-debt`,
+`ai-firstify:ai-firstify`, `code-review`), deliberates across their findings itself, and posts
+ONE Critical/High/Medium/Low list as a PR comment and as a comment on the linked Issue, with
+the PR author mentioned and assigned. Reference: `.github/workflows/review.yml` and the "CI"
+section of `.claude/rules/testing.md` in `LARi-UQAC/ResearchTools` (Issue #65). Read the real
+file and copy its structure; the decisions below are why it looks that way.
+
+**Ask first, because of cost and trust.** Unlike `privacy-scan` (static, free) this spends
+real Anthropic API tokens on every PR run and gives a model a secret. Get an explicit yes, and
+state both. Without the yes, stop here.
+
+**Prerequisites, each verified, none assumed:**
+
+- Repo secret `ANTHROPIC_API_KEY` (`gh secret list` is empty on a fresh repo). Only the human
+  adds it (Settings → Secrets and variables → Actions). Never ask for the key in the session
+  and never write it to a file. Until it exists the review step fails naming the missing
+  secret, which is the correct inert state.
+- The four skills must exist in the CI runner, not only on your machine. In headless mode the
+  action installs plugins ONLY from its own `plugins:` and `plugin_marketplaces:` inputs
+  (read `base-action/src/install-plugins.ts` in `anthropics/claude-code-action`); the checked-out
+  `.claude/settings.json` `enabledPlugins` is ignored. `security-review` and `code-review` are
+  Claude Code built-ins (bare names, no plugin). `ai-firstify` and `tech-debt` are plugin
+  skills and resolve only under their qualified names, `ai-firstify:ai-firstify` and
+  `engineering:tech-debt`: read the exact names off the session's skill listing.
+  Listing the `code-review` plugin as well installs something the prompt never calls.
+- The marketplace URLs must end in a bare `.git` (the action's regex rejects a ref suffix), so
+  a plugin marketplace cannot be pinned to a commit. State that gap in a workflow comment.
+
+**Workflow structure that survived four review rounds** (the order matters):
+
+1. Trigger: `pull_request` types `opened, synchronize, reopened`. Not `pull_request_target`
+   (it would hand the secret to fork PRs; plain `pull_request` withholds it from forks), and a
+   job-level `if: github.event.pull_request.head.repo.full_name == github.repository` skips fork
+   PRs and `github.actor != 'dependabot[bot]'` skips Dependabot (neither gets the secret), so
+   their checks do not go red. No
+   `workflow_dispatch`: the diff step needs the pull-request event context and a manual run
+   would fail before the review starts. `concurrency` per PR number with `cancel-in-progress`,
+   so a new push replaces a run you would otherwise pay for twice. `permissions`:
+   `contents: read`, `pull-requests: write`, `issues: write`.
+2. Checkout with `fetch-depth: 0`, then a plain step writes the diff to `$RUNNER_TEMP/pr.diff`
+   (`git diff "origin/$BASE_REF"...HEAD`, three dots = against the merge base, no extra fetch),
+   cut at a `MAX_DIFF_BYTES` env value so a regenerated mirror or lockfile cannot run up the
+   bill. Take that number from the user or mark it unmeasured. Claude reads that file.
+3. The Claude step, with `claude_args: --allowedTools "Skill,Read,Grep,Glob"`: **no Bash and
+   no Agent/Task**. The diff is untrusted content and the secret sits in this step's process:
+   a crafted comment in the diff could make the model run `gh ... --body "$ANTHROPIC_API_KEY"`
+   (child shells inherit the environment, and an allowed-tool wildcard limits the command
+   prefix, not variable expansion inside it). Withholding Agent/Task keeps a sub-agent spawned
+   by a skill from carrying tool access nobody audited, so the prompt tells Claude to run each
+   skill inline. State this thoroughness tradeoff in a comment. `use_sticky_comment: "true"`
+   posts the reply through the action's own token, so no shell tool is needed to comment. Pass
+   `github_token: ${{ github.token }}` explicitly: without it the action tries an OIDC exchange
+   for a GitHub App token, which needs `id-token: write`. Also deny `Read`/`Grep`/`Glob` of
+   `/proc`, `/sys` and `/run` (`--disallowedTools`), because `Read` of `/proc/self/environ`
+   would hand the key to a prompt-injected read; the path syntax of that deny rule is
+   unverified until a real run, so say so. Make the prompt require a fixed first line and a
+   second line naming which skills ran, so the mirror can find the comment and a skill that
+   silently did not run is visible.
+4. A separate mirror step, with no Anthropic key in its environment, reads the posted comment
+   back and runs `gh issue comment` and `gh issue edit --add-assignee` using only
+   `GH_TOKEN: ${{ github.token }}`. Route every PR-controlled value (`PR_BODY`, `PR_AUTHOR`,
+   `BASE_REF`) through `env:` and read it as `"$VAR"`; a `${{ }}` expression inside a `run:`
+   block is pasted into the script before bash parses it, which is script injection.
+5. Mirror-step details that each broke a review: pipe `gh api --paginate --slurp` into a
+   separate `jq` with a `.[][]` filter (gh refuses `--slurp` together with `--jq`, and plain
+   `--paginate --jq` filters once per page, so "last" is wrong past 30 comments); select the
+   comment by author `github-actions[bot]` AND the fixed first-line marker, so another
+   workflow's bot comment is never mirrored; take the Issue number only from a line that
+   STARTS with `Fixes #N` or `Closes #N`, and check it is an open Issue and not a pull request
+   (`gh api repos/<o>/<r>/issues/<N>` has a `pull_request` key for a PR); guard the API call
+   with `|| true` and the assignee call with `|| echo` (a non-collaborator author cannot be
+   assigned, and that must not turn the job red). Wrap every `@mention` in the mirrored text in backticks with
+   `sed`: it is model output steered by an untrusted diff, and only the deliberate author
+   mention should notify anyone. A diff cut at `MAX_DIFF_BYTES` must make the reply say the
+   review is partial.
+6. Pin every `uses:` to a **commit** SHA. For an annotated tag, `git/refs/tags/<tag>` returns the
+   tag object, which is not a commit and will not resolve in `uses:`. Check:
+   `gh api repos/<o>/<r>/commits/<tag> --jq .sha` (the commit) against
+   `gh api repos/<o>/<r>/git/refs/tags/<tag> --jq .object.type` (`commit` is safe, `tag` is not).
+
+**Do not make it a required check yet.** Its output is advisory, it costs money, and a missing
+secret makes it fail. Decide with the user after a few real runs.
+
+**Docs this change makes false, in the same PR** (a code review found each one): the "only CI
+is privacy-scan" sentences in `CONTRIBUTING.md`, `.claude/rules/testing.md` (top paragraph and
+its CI section) and `.claude/rules/workflows.md`, then regenerate the mirrors
+(`.\install.ps1 -Profile <active>`) so `.github/instructions/*.instructions.md` agree. Grep for
+`only CI`, `One workflow only` and `only automated check` to find them all.
+
+**Test it for real.** YAML that parses proves nothing about behavior. After the human adds the
+secret, open a throwaway PR and read: the sticky comment exists, the four skills actually ran
+(none silently missing), the Issue got the comment, the assignee call succeeded or degraded
+with its message, and the key appears nowhere in the run log.
+
 ---
 
 ## Phase 7 — Process rules: Issue/board/PR/docs discipline
@@ -583,6 +681,14 @@ concrete example separately, clearly marked as one instance rather than the univ
   - `security_and_analysis` shows secret scanning AND push protection `enabled`;
   - the `privacy-scan` check is green on a real pull request;
   - the branch ruleset lists that check under `required_status_checks`.
+- [ ] Review workflow (Phase 6c), only if the user opted in, each item READ BACK:
+  - `ANTHROPIC_API_KEY` exists (`gh secret list`), added by the human;
+  - every `uses:` is pinned to a commit SHA (annotated-tag check of 6c step 6);
+  - the Claude step's `--allowedTools` contains no `Bash` and no `Agent`;
+  - no `${{ }}` expression inside any `run:` block for PR-controlled fields;
+  - a throwaway PR produced the PR comment, the Issue comment and the assignment, and the log
+    shows no secret;
+  - no document still claims `privacy-scan` is the only CI (grep of 6c).
 - [ ] Respect the project's own git-ownership norm. Some projects want the session to commit
       and push freely; others want every commit/push left to the human. This is NOT
       universal and can change mid-session — if told "let me commit and push myself," that
@@ -613,3 +719,13 @@ repeat them:
   On 2026-10-01 ResearchTools was found publishing an account name, a machine path,
   code-permanent-shaped values, student emails and a real name in files and history - none of
   which push protection recognises. Phase 6b exists because of it.
+- First review workflow draft (2026-10-09) gave the model `Bash(gh ...)` to post its own
+  comments, which put the API key one prompt injection away from a public comment. It also
+  inlined `github.event.pull_request.body` into a `run:` block, pinned `claude-code-action` to
+  an annotated tag object instead of its commit, named the `ai-firstify` skill without its
+  plugin qualifier, relied on `.claude/settings.json` to install plugins in CI, and left a
+  `workflow_dispatch` that could not work. Each was caught by a local review before any PR,
+  which is why Phase 6c prescribes that review.
+- Updated `testing.md` for the new workflow and called it done; the same stale "only CI is
+  privacy-scan" claim sat in three other files and in the Copilot mirrors until a code review
+  found them. Grep for the old claim, then regenerate the mirrors.

@@ -10,6 +10,7 @@ Usage:
     python pdf2md.py postprocess <markdown_file> -o <dir>
     python pdf2md.py refs <bibliography_file> -o <ref.md>
     python pdf2md.py run <pdf> -o <dir> [--tier advanced] [--yes]
+    python pdf2md.py validate <pdf> -o <dir> [--vlm-check --vlm-check-model TAG]
 
 Every subcommand accepts --json for a machine-readable report (R17) and
 follows the exit-code convention (R12): 0 done, 2 refusal by design,
@@ -56,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
         return refs_main(rest)
     if command == "run":
         return _run_full_pipeline(rest)
+    if command == "validate":
+        from pdf2md_validate import _main as validate_main
+
+        return validate_main(rest)
 
     print(f"Unknown command: {command!r}\n\n{__doc__}")
     return 2

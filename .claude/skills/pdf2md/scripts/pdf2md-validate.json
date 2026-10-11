@@ -1,0 +1,26 @@
+{
+  "word_count_mismatch_threshold_pct": {
+    "value": 15.0,
+    "provenance": "chosen by the operator, 2026-10-10: a chapter whose output word count differs from the PDF-extracted word count by more than this percentage is flagged as a candidate for the --vlm-check second opinion; not measured against a corpus"
+  },
+  "math_density_min_symbols_per_line": {
+    "value": 4,
+    "provenance": "chosen by the operator, 2026-10-10: a non-delimited line is counted as a rough equation match when it contains at least this many math-symbol characters; not measured against a corpus -- the whole equations_rough metric is a rough heuristic by design (no formula-aware backend is installed), stated as such in every report this script produces"
+  },
+  "math_symbol_chars": {
+    "value": "=+*/^_<>≤≥≠≈∑∏∫√∂∇±×÷αβγδεζηθικλμνξοπρστυφχψω",
+    "provenance": "a fixed character set (ASCII operators + common Greek letters + math operator Unicode block), not a measurement -- data for the equations_rough heuristic, R6"
+  },
+  "vlm_check_timeout_s": {
+    "value": 180,
+    "provenance": "chosen by the operator, 2026-10-10: a vision-capable local model reading rendered page images is slower than a text-only call; R10 requires an explicit bound"
+  },
+  "vlm_check_dpi": {
+    "value": 150,
+    "provenance": "chosen by the operator, 2026-10-10: PyMuPDF page-render resolution for the --vlm-check second opinion, matching mineru's own typical rendering DPI for VLM input"
+  },
+  "vlm_check_base_url": {
+    "value": "http://localhost:11434",
+    "provenance": "Ollama's own documented default local API address; not machine-specific (R1 -- overridable per call, never required to be this value)"
+  }
+}

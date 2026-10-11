@@ -1,1 +1,8 @@
 PyYAML==6.0.3
+
+# pdf2md_validate.py (Stage 7) imports extract-statistic's extract_text.py
+# directly (R18, the same cross-skill-import pattern extract-contributions
+# and extract-paper-idea already use), so it inherits that skill's
+# pymupdf4llm/pymupdf dependency with no extra pin needed here -- see
+# .claude/skills/extract-statistic/scripts/requirements.txt for the pinned
+# versions and the licence note (AGPL-3.0, acceptable for local/private use).

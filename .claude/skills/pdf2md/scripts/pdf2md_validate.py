@@ -54,15 +54,31 @@ skill) to read the rendered page directly, which is not subject to the
 font-encoding or heading-level limits above since it reads glyph shapes,
 not font codepoints.
 
-UNVERIFIED LIVE as of this writing (R15): every HTTP/subprocess effect
-below is behind an injected seam for offline testing (R20/R21), but no
-real call against a running Ollama model has been made yet -- the
-operator's local model was in use by another process when this was built.
-Re-verify against a real page before trusting the second-opinion counts.
+LIVE-VERIFIED end to end (R15), 2026-10-10, against Qwen3.8-maxctx
+(262144-token context). Three real runs: the first rendered all 32
+pages of a flagged chapter (no cap, no bibliography-aware end) into one
+request, which timed out and crashed the whole process before the
+already-computed comparison report was ever printed -- fixed by adding
+vlm_check_max_pages and catching a per-chapter failure as {"error": ...}
+rather than propagating it. The second (after that fix, max_pages=8)
+completed cleanly but the model itself still timed out on every
+chapter -- MEASURING a single rendered page at 130.35s against the then-
+180s timeout showed why. vlm_check_max_pages and vlm_check_timeout_s
+were recalibrated to the MEASURED figure (1 page, 300s) rather than left
+as unmeasured guesses. The third run completed with real, successfully
+parsed answers for both flagged chapters, no errors. Both reported all
+zeros, which is PLAUSIBLE rather than wrong: at a 1-page cap, --vlm-
+check spot-checks a flagged chapter's OPENING page only, not its full
+span, and an opening/introduction page genuinely having no table,
+figure or equation on it is unsurprising given the chapter's own PDF-
+side totals (counted from the whole chapter) -- the second opinion is a
+single-page sanity spot-check on this hardware, not a full-chapter
+cross-validation, and should be read as such.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -90,6 +106,7 @@ _CONFIG_KEYS = (
     "vlm_check_timeout_s",
     "vlm_check_dpi",
     "vlm_check_base_url",
+    "vlm_check_max_pages",
 )
 
 _CHAPTER_NUMBER_RE = re.compile(r"chapitre\s+(\d+)\b", re.IGNORECASE)
@@ -249,9 +266,18 @@ def count_equations_rough(text: str, *, min_symbols_per_line: int, math_symbol_c
     """
     symbol_set = set(math_symbol_chars)
     count = len(_MATH_DELIM_RE.findall(text))
-    for line in text.splitlines():
+    # Remove every matched delimited span (which can spread across several
+    # lines, e.g. mineru's own "$$\nx = 1\n$$" display-equation form) BEFORE
+    # the per-line density scan. A code-review finding, confirmed live: the
+    # original per-LINE delimiter check never matched when "$$" sat on its
+    # own line, so the equation body's inner lines were left in place and,
+    # being math-symbol-dense, counted AGAIN by the density scan -- doubling
+    # mineru's own output count while the PDF side (which never produces
+    # "$$" at all) was unaffected, inflating every output-vs-PDF diff.
+    remaining_text = _MATH_DELIM_RE.sub("", text)
+    for line in remaining_text.splitlines():
         stripped = line.strip()
-        if not stripped or _MATH_DELIM_RE.search(stripped):
+        if not stripped:
             continue
         symbol_count = sum(1 for ch in stripped if ch in symbol_set)
         if symbol_count >= min_symbols_per_line:
@@ -317,12 +343,20 @@ def split_pdf_text_into_chapters(text: str) -> dict[int, str]:
         as false boundaries.
 
         The LAST chapter's end is truncated at the first bibliography
-        heading line found after it, if any (see _BIBLIOGRAPHY_LINE_RE),
+        heading line found AFTER ITS OWN START (see _BIBLIOGRAPHY_LINE_RE),
         rather than running to end of document -- measured live: without
         this, a 190-reference bibliography with no "CHAPITRE N+1" to end
         it was swallowed whole into the last chapter's body, inflating its
         word and citation-marker counts far past pdf2md's own output
-        (which correctly holds the bibliography out separately).
+        (which correctly holds the bibliography out separately). A
+        code-review finding caught a second-order version of the same
+        bug: searching the WHOLE document for the bibliography line (via
+        a single next(...) over every line) locks onto the FIRST match
+        anywhere, so a table-of-contents entry or an early running header
+        matching the same pattern, appearing BEFORE the last chapter even
+        starts, silently disables the cutoff for the real bibliography
+        further down -- the search is now scoped to lines AFTER the last
+        chapter's own start line only.
 
     Inputs:
         text (str): the PDF-extracted text (pymupdf4llm/PyMuPDF markdown
@@ -344,15 +378,17 @@ def split_pdf_text_into_chapters(text: str) -> dict[int, str]:
             if number not in first_occurrence:
                 first_occurrence[number] = index
 
-    bibliography_start = next((index for index, line in enumerate(lines) if _BIBLIOGRAPHY_LINE_RE.match(line.strip())), None)
-
     ordered = sorted(first_occurrence.items(), key=lambda item: item[1])
     chapters: dict[int, str] = {}
     for position, (number, start) in enumerate(ordered):
         is_last = position + 1 >= len(ordered)
         end = len(lines) if is_last else ordered[position + 1][1]
-        if is_last and bibliography_start is not None and start < bibliography_start < end:
-            end = bibliography_start
+        if is_last:
+            bibliography_offset = next(
+                (i for i, line in enumerate(lines[start:end]) if _BIBLIOGRAPHY_LINE_RE.match(line.strip())), None
+            )
+            if bibliography_offset is not None:
+                end = start + bibliography_offset
         chapters[number] = "\n".join(lines[start:end])
     return chapters
 
@@ -577,45 +613,83 @@ def render_report_md(rows: list[ChapterComparison]) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def find_chapter_page_range(pdf_path: str, chapter_number: int, *, page_texts: list[str] | None = None) -> tuple[int, int] | None:
+def find_chapter_page_range(
+    pdf_path: str, chapter_number: int, *, page_texts: list[str] | None = None, max_pages: int | None = None
+) -> tuple[int, int] | None:
     """
     --------------------------------------------------------------------------
     Purpose:
         Find the (start_page, end_page) 0-indexed page range a chapter
-        occupies, by searching each page's own text for "CHAPITRE N" and
-        "CHAPITRE N+1" (or end of document).
+        occupies, by scanning each page's own LINES for a genuine
+        "CHAPITRE N" start (the same _CHAPTER_START_RE rule
+        split_pdf_text_into_chapters uses, never the looser
+        case-insensitive-anywhere-in-line _CHAPTER_NUMBER_RE -- a code
+        review finding, confirmed live: that looser match turned a
+        cross-reference sentence or a table-of-contents page into a false
+        chapter boundary, and a bibliography heading with no later
+        "CHAPITRE N+1" to stop it let a flagged chapter's range run to the
+        bibliography and appendices, rendering 32 pages into one oversized
+        request that then timed out).
 
     Inputs:
         pdf_path (str): path to the PDF (opened only if page_texts is None).
         chapter_number (int): the chapter to locate.
         page_texts (list[str] | None): injected per-page text for tests
             (R20/R21 -- no real PDF open in the offline suite); when None,
-            read via PyMuPDF (fitz).
+            read via PyMuPDF (fitz), closed via `with` so no handle leaks.
+        max_pages (int | None): cap the range to at most this many pages
+            from its start (pdf2md-validate.json's vlm_check_max_pages);
+            None means uncapped, used by direct unit tests of this
+            function's boundary logic.
 
     Outputs:
         (int, int) | None: 0-indexed (start_page, end_page_inclusive), or
             None if the chapter's own heading was not found on any page.
+
+    Raises:
+        ValueError: max_pages is given and is less than 1 (a 0 or
+            negative cap silently produced an empty page range before
+            this check, a re-review finding).
     --------------------------------------------------------------------------
     """
     if page_texts is None:
         import fitz
 
-        doc = fitz.open(pdf_path)
-        page_texts = [page.get_text() for page in doc]
+        with fitz.open(pdf_path) as doc:
+            page_texts = [page.get_text() for page in doc]
 
-    start = None
-    end = len(page_texts) - 1
-    for index, text in enumerate(page_texts):
-        match = _CHAPTER_NUMBER_RE.search(text)
-        if not match:
-            continue
-        number = int(match.group(1))
-        if number == chapter_number and start is None:
-            start = index
-        elif start is not None and number > chapter_number:
-            end = index - 1
+    first_page_for_number: dict[int, int] = {}
+    for page_index, text in enumerate(page_texts):
+        for line in text.splitlines():
+            chapter_match = _CHAPTER_START_RE.match(line.strip())
+            if chapter_match:
+                number = int(chapter_match.group(1))
+                if number not in first_page_for_number:
+                    first_page_for_number[number] = page_index
+
+    if chapter_number not in first_page_for_number:
+        return None
+    start = first_page_for_number[chapter_number]
+    later_starts = [page for number, page in first_page_for_number.items() if number > chapter_number]
+    end = min(later_starts) - 1 if later_starts else len(page_texts) - 1
+
+    # Bibliography cutoff scoped to AFTER this chapter's own start -- a
+    # SECOND /code-review finding on a re-review: the first fix applied
+    # this scoping in split_pdf_text_into_chapters but left the original
+    # whole-document-first-match bug here, in the page-level function
+    # --vlm-check actually uses. A bare bibliography-heading-shaped line
+    # anywhere EARLIER in the document (a front-matter heading, in the
+    # general case) must never be allowed to block finding the real one
+    # inside this chapter's own candidate range.
+    if max_pages is not None:
+        if max_pages < 1:
+            raise ValueError(f"max_pages must be >= 1, got {max_pages}")
+        end = min(end, start + max_pages - 1)
+    for page_index in range(start, end + 1):
+        if any(_BIBLIOGRAPHY_LINE_RE.match(line.strip()) for line in page_texts[page_index].splitlines()):
+            end = page_index - 1
             break
-    return (start, end) if start is not None else None
+    return (start, end)
 
 
 def render_pdf_pages_to_images(
@@ -642,10 +716,10 @@ def render_pdf_pages_to_images(
     def default_renderer(path: str, page_index: int, render_dpi: int, directory: Path) -> Path:
         import fitz
 
-        doc = fitz.open(path)
-        pixmap = doc[page_index].get_pixmap(dpi=render_dpi)
-        image_path = directory / f"page_{page_index + 1}.png"
-        pixmap.save(str(image_path))
+        with fitz.open(path) as doc:
+            pixmap = doc[page_index].get_pixmap(dpi=render_dpi)
+            image_path = directory / f"page_{page_index + 1}.png"
+            pixmap.save(str(image_path))
         return image_path
 
     renderer = renderer or default_renderer
@@ -721,7 +795,8 @@ def ask_local_vlm_for_counts(
         envelope = json.loads(raw)
         return json.loads(envelope["response"])
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise ValueError(f"local VLM returned an unparsable response: {raw!r}") from exc
+        preview = raw[:500] if isinstance(raw, (bytes, str)) else raw
+        raise ValueError(f"local VLM returned an unparsable response (first 500 bytes): {preview!r}") from exc
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -755,13 +830,28 @@ def _main(argv: list[str] | None = None) -> int:
     if args.vlm_check:
         scratch_dir = Path(args.output_dir) / "validate-scratch"
         for chapter_number in flagged:
-            page_range = find_chapter_page_range(args.pdf_path, chapter_number)
+            page_range = find_chapter_page_range(args.pdf_path, chapter_number, max_pages=config["vlm_check_max_pages"])
             if page_range is None:
+                vlm_results[chapter_number] = {"error": "chapter heading not found on any PDF page"}
                 continue
-            images = render_pdf_pages_to_images(args.pdf_path, page_range, scratch_dir / f"chapter_{chapter_number}", dpi=config["vlm_check_dpi"])
-            vlm_results[chapter_number] = ask_local_vlm_for_counts(
-                images, model_tag=args.vlm_check_model, base_url=config["vlm_check_base_url"], timeout_s=config["vlm_check_timeout_s"]
-            )
+            try:
+                images = render_pdf_pages_to_images(
+                    args.pdf_path, page_range, scratch_dir / f"chapter_{chapter_number}", dpi=config["vlm_check_dpi"]
+                )
+                vlm_results[chapter_number] = ask_local_vlm_for_counts(
+                    images, model_tag=args.vlm_check_model, base_url=config["vlm_check_base_url"], timeout_s=config["vlm_check_timeout_s"]
+                )
+            except (ValueError, OSError, RuntimeError, http.client.HTTPException) as exc:
+                # One chapter's VLM call failing (a timeout, a connection
+                # error, an unparsable response, a PyMuPDF render fault, a
+                # truncated HTTP read) must not lose the whole report --
+                # measured live: an uncaught TimeoutError here killed the
+                # process before the already-computed comparison table was
+                # ever printed. RuntimeError covers a PyMuPDF rendering
+                # fault; http.client.HTTPException (e.g. IncompleteRead)
+                # is NOT an OSError subclass and needs naming separately
+                # (a re-review finding).
+                vlm_results[chapter_number] = {"error": str(exc)}
 
     result = {"ok": True, "flagged_chapters": flagged, "report_md": report, "vlm_check": vlm_results if args.vlm_check else None}
     if args.json:

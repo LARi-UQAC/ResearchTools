@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pdf2md_validate import (
     ChapterComparison,
+    _main,
     ask_local_vlm_for_counts,
     build_vlm_check_prompt,
     compare_chapters,
@@ -184,6 +185,23 @@ class TestCountEquationsRough(unittest.TestCase):
         count = count_equations_rough("$$a = b + c - d$$", min_symbols_per_line=1, math_symbol_chars=self.SYMBOLS)
         self.assertEqual(count, 1)
 
+    def test_multiline_display_equation_not_double_counted(self):
+        # Regression (/code-review finding): mineru writes display
+        # equations as "$$" on its OWN line, body on the lines between --
+        # the per-line delimiter check never matched on the isolated body
+        # line (no "$$" ON that line), so a math-symbol-dense body line
+        # was counted a SECOND time by the density scan. Measured live:
+        # this inflated the output side's equation count only, since the
+        # PDF side never produces "$$" at all.
+        text = "$$\na = b + c - d\n$$"
+        count = count_equations_rough(text, min_symbols_per_line=1, math_symbol_chars=self.SYMBOLS)
+        self.assertEqual(count, 1)
+
+    def test_two_separate_multiline_display_equations_count_two(self):
+        text = "$$\na = b\n$$\n\nprose\n\n$$\nc = d\n$$"
+        count = count_equations_rough(text, min_symbols_per_line=1, math_symbol_chars=self.SYMBOLS)
+        self.assertEqual(count, 2)
+
 
 class TestSplitPdfTextIntoChapters(unittest.TestCase):
     def test_finds_chapter_by_plain_prose_line_not_a_heading(self):
@@ -220,6 +238,35 @@ class TestSplitPdfTextIntoChapters(unittest.TestCase):
         text = "CHAPITRE 1\nbody one\nCHAPITRE 2\nbody two, no bibliography follows"
         chapters = split_pdf_text_into_chapters(text)
         self.assertIn("no bibliography follows", chapters[2])
+
+    def test_a_bibliography_like_line_before_the_last_chapter_does_not_block_the_real_one(self):
+        # Regression (/code-review finding): the original search found the
+        # FIRST bibliography-heading-shaped line in the WHOLE document via
+        # a single next(...) call. A table-of-contents entry or an early
+        # running header matching the pattern EXACTLY (the bibliography
+        # heading alone on its own line, the same shape pymupdf4llm's real
+        # running-header repeats take), appearing BEFORE the last chapter
+        # even starts, locked onto that early match and the function
+        # never looked any further -- so the REAL bibliography, later in
+        # the document, was never found and the last chapter ran to end
+        # of document, swallowing it whole. The search is now scoped to
+        # lines after the last chapter's own start only. (A true
+        # table-of-contents line carrying a page number, e.g. "Liste des
+        # references ... 150", does NOT match _BIBLIOGRAPHY_LINE_RE at
+        # all -- that regex requires nothing after the heading word -- so
+        # this fixture uses the shape that DOES match early: a bare
+        # repeated heading line, as a front-matter list-of-contents
+        # heading legitimately could be.)
+        text = (
+            "LISTE DES REFERENCES\n\n"
+            "CHAPITRE 1\nintro body\n\n"
+            "CHAPITRE 2\nreal chapter body\n\n"
+            "LISTE DES REFERENCES\n\n[1] Author. Title.\n"
+        )
+        chapters = split_pdf_text_into_chapters(text)
+        self.assertIn(2, chapters)
+        self.assertNotIn("Author. Title.", chapters[2])
+        self.assertIn("real chapter body", chapters[2])
 
 
 class TestExtractPdfChapters(unittest.TestCase):
@@ -397,6 +444,74 @@ class TestVlmCheckSeams(unittest.TestCase):
     def test_find_chapter_page_range_not_found_is_none(self):
         self.assertIsNone(find_chapter_page_range("fake.pdf", 99, page_texts=["CHAPITRE 1"]))
 
+    def test_cross_reference_sentence_is_not_mistaken_for_a_chapter_start(self):
+        # Regression (/code-review finding, confirmed live): the original
+        # implementation used _CHAPTER_NUMBER_RE (case-insensitive,
+        # matches anywhere in the line), so a page's own body sentence
+        # "Chapitre 2 a montre que..." (title case, mid-paragraph) was
+        # read as chapter 2's start -- cutting chapter 1's real page range
+        # short. The fix requires _CHAPTER_START_RE's literal uppercase
+        # match, checked per LINE.
+        page_texts = [
+            "CHAPITRE 1\nsome intro text",
+            "Chapitre 2 a montre que la methode fonctionne.\nmore chapter 1 body",
+            "CHAPITRE 2\nreal chapter 2 start",
+        ]
+        self.assertEqual(find_chapter_page_range("fake.pdf", 1, page_texts=page_texts), (0, 1))
+
+    def test_table_of_contents_entry_in_title_case_does_not_start_a_chapter_early(self):
+        # The same uppercase-only fix also closes the table-of-contents
+        # false-positive the review named separately: this real thesis's
+        # own front-matter symbol-list table refers to chapters in title
+        # case ("... Chapitre 2 ..."), never full caps, so it is correctly
+        # never read as a chapter start.
+        page_texts = ["Table des symboles: voir Chapitre 2 pour le detail.", "CHAPITRE 2\nreal start"]
+        self.assertEqual(find_chapter_page_range("fake.pdf", 2, page_texts=page_texts), (1, 1))
+
+    def test_bibliography_page_truncates_the_last_chapters_range(self):
+        # Regression (/code-review finding): without this, a flagged last
+        # chapter with no "CHAPITRE N+1" to stop it rendered the
+        # bibliography and appendix pages too -- measured live, chapter 3
+        # of the real thesis rendered 32 pages into one request (pages
+        # 69-100) and timed out.
+        page_texts = ["CHAPITRE 3\nbody page 1", "more body page 2", "LISTE DES REFERENCES\n[1] Author."]
+        self.assertEqual(find_chapter_page_range("fake.pdf", 3, page_texts=page_texts), (0, 1))
+
+    def test_max_pages_caps_the_range_from_its_start(self):
+        # Regression: the first live run had no cap at all. max_pages
+        # bounds the range to a request size the local model can answer
+        # within the configured timeout.
+        page_texts = ["CHAPITRE 5\nbody"] + [f"page {i}" for i in range(20)]
+        self.assertEqual(find_chapter_page_range("fake.pdf", 5, page_texts=page_texts, max_pages=3), (0, 2))
+
+    def test_max_pages_does_not_extend_a_range_that_is_already_shorter(self):
+        page_texts = ["CHAPITRE 1\nbody", "more body", "CHAPITRE 2\nnext"]
+        self.assertEqual(find_chapter_page_range("fake.pdf", 1, page_texts=page_texts, max_pages=50), (0, 1))
+
+    def test_an_earlier_bare_bibliography_heading_does_not_block_finding_the_real_one(self):
+        # Regression (second /code-review round): the first fix applied
+        # the after-start scoping to split_pdf_text_into_chapters but left
+        # the ORIGINAL whole-document-first-match bug here, in the
+        # page-level function --vlm-check actually calls. A bare
+        # bibliography-heading-shaped line on an EARLIER page (page 0, a
+        # front-matter heading in the general case) must not lock onto
+        # that match and silently disable the cutoff for the real
+        # bibliography inside this chapter's own range.
+        page_texts = [
+            "LISTE DES REFERENCES",
+            "CHAPITRE 3\nbody page 1",
+            "more body page 2",
+            "LISTE DES REFERENCES\n[1] Author.",
+        ]
+        self.assertEqual(find_chapter_page_range("fake.pdf", 3, page_texts=page_texts), (1, 2))
+
+    def test_max_pages_below_one_is_refused(self):
+        # Regression: a 0 or negative cap silently produced an empty
+        # page range (end < start) rather than a clear refusal.
+        page_texts = ["CHAPITRE 1\nbody"]
+        with self.assertRaises(ValueError):
+            find_chapter_page_range("fake.pdf", 1, page_texts=page_texts, max_pages=0)
+
     def test_render_pdf_pages_to_images_uses_the_injected_renderer(self):
         import tempfile
         from pathlib import Path
@@ -449,6 +564,130 @@ class TestVlmCheckSeams(unittest.TestCase):
             image_path.write_bytes(b"fake-png")
             with self.assertRaises(ValueError):
                 ask_local_vlm_for_counts([image_path], model_tag="tag", base_url="http://localhost:11434", timeout_s=30, caller=fake_caller)
+
+    def test_unparsable_response_error_message_is_truncated(self):
+        # Regression (/code-review finding): the original error embedded
+        # the FULL raw response with no length limit, which could be
+        # enormous (a model echoing malformed output at length).
+        import tempfile
+        from pathlib import Path
+
+        def fake_caller(url, data, timeout):
+            return b"x" * 10000
+
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = Path(tmp) / "page_1.png"
+            image_path.write_bytes(b"fake-png")
+            with self.assertRaises(ValueError) as ctx:
+                ask_local_vlm_for_counts([image_path], model_tag="tag", base_url="http://localhost:11434", timeout_s=30, caller=fake_caller)
+        self.assertLess(len(str(ctx.exception)), 1000)
+
+
+class TestMainVlmCheckResilience(unittest.TestCase):
+    """Proves _main's own per-chapter error handling, not just the pure
+    functions underneath it -- every real IO call is patched at module
+    level since _main's CLI has no injection seam of its own for them."""
+
+    def test_one_chapter_failing_does_not_lose_the_already_computed_report(self):
+        # Regression (/code-review finding), reproduced live: an uncaught
+        # TimeoutError from ask_local_vlm_for_counts propagated straight
+        # out of _main, killing the process before the comparison table
+        # (already fully computed by that point) was ever printed.
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+
+        call_count = {"n": 0}
+
+        def fake_extract_pdf_chapters(pdf_path, **kwargs):
+            return {1: ("", "one two three"), 2: ("", "four five six")}
+
+        def fake_load_output_chapters(output_dir):
+            return {
+                1: ("ch1", "one two three four five six seven eight nine ten"),
+                2: ("ch2", "four five six seven eight nine ten eleven twelve thirteen"),
+            }
+
+        def fake_find_chapter_page_range(pdf_path, chapter_number, **kwargs):
+            return (0, 0)
+
+        def fake_render_pdf_pages_to_images(pdf_path, page_range, out_dir, **kwargs):
+            return []
+
+        def fake_ask_local_vlm_for_counts(images, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise TimeoutError("simulated timeout")
+            return {"equations": 1, "tables": 0, "figures": 0, "sections": 1, "subsections": 0}
+
+        with patch("pdf2md_validate.extract_pdf_chapters", fake_extract_pdf_chapters), \
+                patch("pdf2md_validate.load_output_chapters", fake_load_output_chapters), \
+                patch("pdf2md_validate.find_chapter_page_range", fake_find_chapter_page_range), \
+                patch("pdf2md_validate.render_pdf_pages_to_images", fake_render_pdf_pages_to_images), \
+                patch("pdf2md_validate.ask_local_vlm_for_counts", fake_ask_local_vlm_for_counts):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = _main(["fake.pdf", "-o", "fake_out", "--vlm-check", "--vlm-check-model", "tag", "--json"])
+
+        result = json.loads(buf.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertIn("| words |", result["report_md"])
+        self.assertEqual(call_count["n"], 2)  # BOTH chapters were attempted, the failure did not stop the loop
+        vlm_check = result["vlm_check"]  # JSON round-trip turns the int chapter keys into strings
+        self.assertIn("error", vlm_check["1"])
+        self.assertEqual(vlm_check["2"]["equations"], 1)  # the second chapter's real result survived
+
+    def test_runtime_error_and_http_exception_are_also_caught(self):
+        # Regression (second /code-review round, lower-confidence finding
+        # made concrete): the original except clause was (ValueError,
+        # OSError), which does NOT cover a PyMuPDF rendering fault
+        # (RuntimeError) or a truncated HTTP read
+        # (http.client.HTTPException, e.g. IncompleteRead -- NOT an
+        # OSError subclass). Either would still have crashed _main.
+        import http.client
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+
+        def fake_extract_pdf_chapters(pdf_path, **kwargs):
+            return {1: ("", "one"), 2: ("", "two")}
+
+        def fake_load_output_chapters(output_dir):
+            return {
+                1: ("ch1", "one two three four five six seven eight nine ten"),
+                2: ("ch2", "two three four five six seven eight nine ten eleven"),
+            }
+
+        def fake_find_chapter_page_range(pdf_path, chapter_number, **kwargs):
+            return (0, 0)
+
+        def fake_render_pdf_pages_to_images(pdf_path, page_range, out_dir, **kwargs):
+            if chapter_number_from_dir(out_dir) == 1:
+                raise RuntimeError("simulated PyMuPDF render fault")
+            return []
+
+        def chapter_number_from_dir(out_dir):
+            return int(str(out_dir).rsplit("_", 1)[-1])
+
+        def fake_ask_local_vlm_for_counts(images, **kwargs):
+            raise http.client.IncompleteRead(b"")
+
+        with patch("pdf2md_validate.extract_pdf_chapters", fake_extract_pdf_chapters), \
+                patch("pdf2md_validate.load_output_chapters", fake_load_output_chapters), \
+                patch("pdf2md_validate.find_chapter_page_range", fake_find_chapter_page_range), \
+                patch("pdf2md_validate.render_pdf_pages_to_images", fake_render_pdf_pages_to_images), \
+                patch("pdf2md_validate.ask_local_vlm_for_counts", fake_ask_local_vlm_for_counts):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                exit_code = _main(["fake.pdf", "-o", "fake_out", "--vlm-check", "--vlm-check-model", "tag", "--json"])
+
+        result = json.loads(buf.getvalue())
+        self.assertEqual(exit_code, 0)
+        vlm_check = result["vlm_check"]
+        self.assertIn("error", vlm_check["1"])  # RuntimeError from the renderer
+        self.assertIn("error", vlm_check["2"])  # http.client.HTTPException from the VLM call
 
 
 if __name__ == "__main__":

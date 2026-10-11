@@ -125,7 +125,91 @@ class TestFindSpuriousHeadings(unittest.TestCase):
         self.assertEqual(spurious[0].chapter_number, 1)
 
 
+class TestRealHeadingsAreKept(unittest.TestCase):
+    """Regression, measured 2026-10-11 on the real thesis: find_spurious_headings
+    gave every heading that is not "CHAPITRE N" the chapter number None, and
+    None == None is true, so 28 REAL headings were deleted as "repeats" of an
+    earlier heading once digits were stripped: "3.2 Conclusion du chapitre"
+    after "2.2 Conclusion du chapitre", "4.1 Article soumis" after "3.1 Article
+    soumis", every "Avant-propos" and "Abstract", "Simulation scenario 2" and
+    the bibliography heading. The thesis had no splice defect left at all."""
+
+    def spurious_texts(self, lines):
+        return [h.text for h in find_spurious_headings(find_headings(lines))]
+
+    def test_the_same_section_title_in_a_later_chapter_is_kept(self):
+        lines = ["## CHAPITRE 2", "", "### 2.2 Conclusion du chapitre", "", "text", "",
+                 "## CHAPITRE 3", "", "### 3.2 Conclusion du chapitre", "", "text"]
+        self.assertEqual(self.spurious_texts(lines), [])
+
+    def test_unnumbered_headings_repeated_in_every_chapter_are_kept(self):
+        lines = ["## CHAPITRE 3", "", "## Avant-propos", "", "a", "", "### Abstract", "", "b", "",
+                 "## CHAPITRE 4", "", "## Avant-propos", "", "c", "", "#### Abstract", "", "d"]
+        self.assertEqual(self.spurious_texts(lines), [])
+
+    def test_numbered_siblings_that_differ_by_one_digit_are_kept(self):
+        lines = ["## CHAPITRE 3", "", "#### Simulation scenario 1", "", "a", "", "#### Simulation scenario 2", "", "b"]
+        self.assertEqual(self.spurious_texts(lines), [])
+
+    def test_a_running_header_repeat_in_the_same_chapter_is_still_flagged(self):
+        # Positive control: the measured 1.1 / 1.1. shape inside one chapter.
+        lines = ["## CHAPITRE 1", "", "### 1.1 Contexte et motivation", "", "text au", "",
+                 "### 1.1. CONTEXTE ET MOTIVATION", "", "suite."]
+        self.assertEqual(self.spurious_texts(lines), ["1.1. CONTEXTE ET MOTIVATION"])
+
+    def test_the_bibliography_heading_is_not_a_repeat_of_anything(self):
+        lines = ["## CHAPITRE 5", "", "## DISCUSSION GENERALE ET CONCLUSION", "", "x", "", "## LISTE DES REFERENCES", "", "[1] A."]
+        self.assertEqual(self.spurious_texts(lines), [])
+
+
 class TestStripSpliceHeadings(unittest.TestCase):
+    def test_a_second_removal_joins_the_right_lines_not_a_line_from_further_down(self):
+        # Regression, measured 2026-10-11: the previous line was read from the
+        # ORIGINAL list with an index taken from the OUTPUT list. After the
+        # first removal the two lists are one line apart, so the second merge
+        # overwrote the real previous line with a line further down the
+        # document: text lost in one place and duplicated in another.
+        lines = [
+            "## CHAPITRE 1", "",
+            "### 1.1 Alpha", "",
+            "Para a end of", "",
+            "### 1.1. ALPHA", "",
+            "continues here.", "",
+            "Unrelated para X.", "",
+            "Unrelated para Y.", "",
+            "### 1.2 Beta", "",
+            "Para b end of", "",
+            "### 1.2. BETA", "",
+            "continues too.", "",
+            "Tail paragraph.",
+        ]
+        spurious = find_spurious_headings(find_headings(lines))
+        self.assertEqual([h.text for h in spurious], ["1.1. ALPHA", "1.2. BETA"])
+        cleaned, removed = strip_splice_headings(lines, spurious)
+        self.assertEqual(removed, 2)
+        text = "\n".join(cleaned)
+        self.assertIn("Para a end of continues here.", text)
+        self.assertIn("Para b end of continues too.", text)
+        # nothing lost and nothing duplicated
+        for kept in ("Unrelated para X.", "Unrelated para Y.", "Tail paragraph.", "### 1.2 Beta"):
+            self.assertEqual(text.count(kept), 1, kept)
+        self.assertEqual(text.count("continues"), 2)
+
+    def test_removing_many_headings_only_ever_drops_the_headings(self):
+        # Property form of the regression: every non-heading, non-blank line
+        # survives exactly once, either alone or joined to its neighbour.
+        body = [f"Line number {n} of the body." for n in range(12)]
+        lines = ["## CHAPITRE 1", ""]
+        for n in range(6):
+            lines += [f"### 1.{n + 1} Sec", "", body[2 * n], "", f"### 1.{n + 1}. SEC", "", body[2 * n + 1], ""]
+        spurious = find_spurious_headings(find_headings(lines))
+        self.assertEqual(len(spurious), 6)
+        cleaned, _removed = strip_splice_headings(lines, spurious)
+        text = "\n".join(cleaned)
+        for n in range(6):
+            self.assertIn(f"{body[2 * n]} {body[2 * n + 1]}", text)
+        self.assertEqual(sum(text.count(sentence) for sentence in body), 12)
+
     def test_prose_splice_is_rejoined_into_one_sentence(self):
         lines = REAL_PROSE_SPLICE_EXAMPLE.splitlines()
         headings = find_headings(lines)
@@ -191,6 +275,34 @@ class TestSplitFrontmatterAndChapters(unittest.TestCase):
         split = split_frontmatter_and_chapters(lines, find_headings(lines))
         self.assertEqual(split.chapters, {})
         self.assertIn("Just a document", split.frontmatter)
+
+    def test_a_liste_des_references_heading_opens_the_bibliography(self):
+        # Measured 2026-10-11: the real heading is "LISTE DES RÉFÉRENCES", which
+        # the bare-word pattern never matched, so the bibliography was found
+        # only through the numbered-line fallback and its heading stayed in
+        # the last chapter.
+        document = "# CHAPITRE 1\n\nchapter one body\n\n## LISTE DES RÉFÉRENCES\n\n[1] Author. Title. Venue, 2020."
+        lines = document.splitlines()
+        split = split_frontmatter_and_chapters(lines, find_headings(lines))
+        self.assertIn("LISTE DES RÉFÉRENCES", split.bibliography)
+        self.assertNotIn("LISTE DES RÉFÉRENCES", split.chapters[1][1])
+
+    def test_a_table_of_contents_entry_before_the_chapters_is_not_the_bibliography(self):
+        # Regression, measured 2026-10-11 as the direct cost of matching "Liste
+        # des references": the table of contents names it too, the search ran
+        # from the top of the document, and the last chapter came out EMPTY.
+        document = (
+            "# Table des matieres\n\nLISTE DES REFERENCES ........ 150\n\n"
+            "# CHAPITRE 1\n\nchapter one body\n\n"
+            "# CHAPITRE 2\n\nchapter two body\n\n"
+            "## LISTE DES REFERENCES\n\n[1] Author. Title. Venue, 2020."
+        )
+        lines = document.splitlines()
+        split = split_frontmatter_and_chapters(lines, find_headings(lines))
+        self.assertIn("chapter two body", split.chapters[2][1])
+        self.assertIn("[1] Author", split.bibliography)
+        self.assertNotIn("........ 150", split.bibliography)
+        self.assertIn("........ 150", split.frontmatter)
 
     def test_lone_inline_citation_does_not_trigger_bibliography(self):
         # Regression, measured 2026-10-10 on the real thesis: a document

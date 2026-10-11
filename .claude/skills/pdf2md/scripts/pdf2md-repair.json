@@ -1,0 +1,48 @@
+{
+  "anchor_lookahead_paragraphs": {
+    "value": 5,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: when a PDF heading is lost, the repair looks at this many comparable paragraphs after it in the PDF to find one that can be located in the output, and puts the heading before that paragraph"
+  },
+  "heading_level_offset": {
+    "value": 1,
+    "provenance": "chosen 2026-10-11 from the real output: pdf2md writes the chapter heading at level 2 and a numbered heading at depth+1 (4.1.2 is four hashes), so a restored heading takes the level of an existing heading of the same depth, and depth + this offset when there is none"
+  },
+  "assets_dir_name": {
+    "value": "assets",
+    "provenance": "the layout pdf2md_postprocess already writes (SKILL.md): bibliography.md and ref.md live in <out>/assets/"
+  },
+  "figures_dir_name": {
+    "value": "figures",
+    "provenance": "the reserved slot named in SKILL.md: figures go under <out>/assets/figures/. A figure link from a chapter file in <out>/content/ is therefore ../assets/figures/<file>"
+  },
+  "image_extensions": {
+    "value": {
+      "jpeg": "jpg",
+      "jpg": "jpg",
+      "png": "png",
+      "gif": "gif",
+      "webp": "webp"
+    },
+    "provenance": "the image media types mineru is known to embed (jpeg measured 2026-10-11 on the real thesis, 22 images) plus the other common web formats; an embedded image of any other type is left in place and reported"
+  },
+  "footnote_pattern": {
+    "value": "<small><span[^>]*page-footnote[^>]*>(.*?)</span></small>",
+    "provenance": "measured 2026-10-11 on the real thesis: mineru wraps a page footnote as <small><span class=\"docvortex-page-footnote\" data-block-type=\"page_footnote\" ...>text</span></small>. The repair keeps the text and drops the tags"
+  },
+  "garbled_citation_span_max_chars": {
+    "value": 80,
+    "provenance": "measured 2026-10-11 on the real thesis: mineru read the citation \"[14]:\" as the math span ${ \\sqrt { I } } { \\sqrt { J } } .$ (35 characters). A math span is taken for a misread citation only when it is at most this long, so a real formula is never replaced"
+  },
+  "garbled_span_forbidden": {
+    "value": ["=", "<", ">", "\\leq", "\\geq", "\\in", "\\sum", "\\to", "\\frac", "\\int"],
+    "provenance": "chosen 2026-10-11: a math span containing any of these is a real formula (a relation, a sum, a fraction) and is never replaced by a citation, whatever precedes it"
+  },
+  "removed_blocks_file": {
+    "value": "image_analysis_removed.md",
+    "provenance": "chosen 2026-10-11: the file in <out>/assets/ that keeps every <details> block the repair removed from a chapter, with its chapter and line, so removing mineru's image analysis loses nothing"
+  },
+  "backup_dir_name": {
+    "value": "pdf2md-backup",
+    "provenance": "chosen 2026-10-11: the directory under the output directory that receives the original of every file the repair rewrites. A repair refuses to run over an existing one, so a second run can never overwrite the first run's originals"
+  }
+}

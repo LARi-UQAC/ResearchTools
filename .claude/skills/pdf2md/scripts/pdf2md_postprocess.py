@@ -38,7 +38,7 @@ _CHAPTER_NUMBER_RE = re.compile(r"^chapitre\s+(\d+)\b", re.IGNORECASE)
 _MATH_FENCE = "$$"
 _STRUCTURAL_PREFIXES = ("-", "*", "|", "```")
 _NUMBERED_REF_RE = re.compile(r"^\[(\d+)\]\s")
-_BIBLIOGRAPHY_HEADING_RE = re.compile(r"^(r[ée]f[ée]rences|bibliographie)\b", re.IGNORECASE)
+_BIBLIOGRAPHY_HEADING_RE = re.compile(r"^(liste\s+des\s+)?(r[ée]f[ée]rences|bibliographie)\b", re.IGNORECASE)
 
 _THRESHOLDS_PATH = Path(__file__).with_name("pdf2md-postprocess.json")
 _THRESHOLD_KEYS = ("fuzzy_match_ratio", "bibliography_density_window", "bibliography_density_min_matches")
@@ -92,6 +92,13 @@ def _normalize_heading_text(text: str) -> str:
     """Strip digits/punctuation and lowercase, for repeat detection tolerant of a spliced-in page number."""
     stripped_digits = re.sub(r"\d+", "", text)
     return re.sub(r"[^\w]+", " ", stripped_digits, flags=re.UNICODE).strip().lower()
+
+
+def _exact_heading_key(text: str) -> str:
+    """Lowercase heading text with punctuation collapsed and digits KEPT, so
+    "1.1 Contexte" and "1.1. CONTEXTE" are equal and "scenario 1" and
+    "scenario 2" are not."""
+    return re.sub(r"[^\w]+", " ", text, flags=re.UNICODE).strip().lower()
 
 
 @dataclass
@@ -180,8 +187,26 @@ def find_spurious_headings(headings: list[Heading], *, ratio: float = FUZZY_MATC
     --------------------------------------------------------------------------
     """
     seen: list[tuple[str, int | None]] = []
+    segment_keys: set[str] = set()
     spurious: list[Heading] = []
     for heading in headings:
+        if heading.chapter_number is None:
+            # Not a chapter-form heading. Before 2026-10-11 these all carried
+            # the chapter number None and None == None made every one of them
+            # a "repeat" of any earlier heading with the same digit-stripped
+            # text, which deleted 28 real headings of a real thesis. A
+            # section-level running header ("1.1. CONTEXTE ET MOTIVATION")
+            # is an exact copy of a heading of the SAME chapter, so a heading
+            # is a repeat only when its text, digits kept, equals one already
+            # seen since the last chapter heading. "3.2 Conclusion du
+            # chapitre" after "2.2 ..." and "Simulation scenario 2" after
+            # "... 1" are therefore different headings.
+            key = _exact_heading_key(heading.text)
+            if key in segment_keys:
+                spurious.append(heading)
+            else:
+                segment_keys.add(key)
+            continue
         normalized = _normalize_heading_text(heading.text)
         is_repeat = any(
             earlier_chapter == heading.chapter_number
@@ -192,6 +217,7 @@ def find_spurious_headings(headings: list[Heading], *, ratio: float = FUZZY_MATC
             spurious.append(heading)
         else:
             seen.append((normalized, heading.chapter_number))
+            segment_keys = set()
     return spurious
 
 
@@ -265,14 +291,18 @@ def strip_splice_headings(lines: list[str], spurious: list[Heading]) -> tuple[li
             continue
 
         removed += 1
+        # The previous line is read from `result`, the list being built.
+        # Reading it from `lines` with this index (the earlier code) was off by
+        # the number of headings already removed: the merge below then wrote a
+        # line from further down the document over the real previous line.
         prev_index = len(result) - 1
-        while prev_index >= 0 and not lines[prev_index].strip():
+        while prev_index >= 0 and not result[prev_index].strip():
             prev_index -= 1
         next_index = index + 1
         while next_index < len(lines) and not lines[next_index].strip():
             next_index += 1
 
-        prev_line = lines[prev_index] if prev_index >= 0 else ""
+        prev_line = result[prev_index] if prev_index >= 0 else ""
         next_line = lines[next_index] if next_index < len(lines) else ""
         can_merge = (
             prev_index >= 0
@@ -339,7 +369,13 @@ def split_frontmatter_and_chapters(lines: list[str], headings: list[Heading]) ->
 
     bibliography: str | None = None
     bibliography_start: int | None = None
+    # The bibliography follows the last chapter. Searching from the top of the
+    # document let a table-of-contents line ("Liste des references ... 150")
+    # open it, which left the last chapter empty.
+    search_from = chapter_headings[-1].line_index if chapter_headings else 0
     for index, line in enumerate(lines):
+        if index < search_from:
+            continue
         stripped = line.strip()
         if _BIBLIOGRAPHY_HEADING_RE.match(stripped.lstrip("#").strip()):
             bibliography_start = index

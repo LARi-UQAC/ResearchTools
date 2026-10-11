@@ -44,41 +44,25 @@ thesis this skill was built against (R14 -- checked, not guessed):
   text ("Figure N"/"Fig. N"), comparable on both sides precisely because
   neither side has a real image to count.
 
-Optional second opinion (--vlm-check): renders a mismatched chapter's PDF
-pages to images and asks a LOCAL, OPERATOR-NAMED vision-capable Ollama
-model (--vlm-check-model TAG; never a default or a hardcoded tag, R2 --
-this is a reader/verifier use with no adopted role in model_resolver's
-writer/coder taxonomy, so the operator names their own model explicitly,
-the same pattern --tier and --server-url already use elsewhere in this
-skill) to read the rendered page directly, which is not subject to the
-font-encoding or heading-level limits above since it reads glyph shapes,
-not font codepoints.
+Content checks beyond the counts, each its own module and flag:
 
-LIVE-VERIFIED end to end (R15), 2026-10-10, against Qwen3.8-maxctx
-(262144-token context). Three real runs: the first rendered all 32
-pages of a flagged chapter (no cap, no bibliography-aware end) into one
-request, which timed out and crashed the whole process before the
-already-computed comparison report was ever printed -- fixed by adding
-vlm_check_max_pages and catching a per-chapter failure as {"error": ...}
-rather than propagating it. The second (after that fix, max_pages=8)
-completed cleanly but the model itself still timed out on every
-chapter -- MEASURING a single rendered page at 130.35s against the then-
-180s timeout showed why. vlm_check_max_pages and vlm_check_timeout_s
-were recalibrated to the MEASURED figure (1 page, 300s) rather than left
-as unmeasured guesses. The third run completed with real, successfully
-parsed answers for both flagged chapters, no errors. Both reported all
-zeros, which is PLAUSIBLE rather than wrong: at a 1-page cap, --vlm-
-check spot-checks a flagged chapter's OPENING page only, not its full
-span, and an opening/introduction page genuinely having no table,
-figure or equation on it is unsurprising given the chapter's own PDF-
-side totals (counted from the whole chapter) -- the second opinion is a
-single-page sanity spot-check on this hardware, not a full-chapter
-cross-validation, and should be read as such.
+- --fidelity (pdf2md_fidelity): compares CONTENT chapter by chapter and
+  reports lost or misplaced headings, missing, extra, repeated or
+  reordered paragraphs, embedded base64 images and HTML residue. The counts
+  above are NOT conversion errors on a math-heavy chapter: measured
+  2026-10-11, the word and citation-marker gaps of two chapters were
+  produced by how each reader renders formulas (LaTeX code counted as
+  words, matrix indices such as [11] counted as citations), not by lost
+  content. This check is the one that finds real conversion errors.
+- --vlm-check (pdf2md_vlmcheck, needs --vlm-check-model TAG): a LOCAL,
+  OPERATOR-NAMED vision model reads the pages richest in math and checks
+  their formulas against the markdown, with its answer forced into a schema
+  and validated. It replaces an earlier --vlm-check that asked the model to
+  count items on one page and compared the answer to nothing.
 """
 
 from __future__ import annotations
 
-import http.client
 import json
 import os
 import re
@@ -97,16 +81,18 @@ except ImportError as exc:  # pragma: no cover - the sibling skill must be prese
     print(f"ERROR: cannot import extract_text from {_EXTRACT_TEXT_DIR} ({exc})", file=sys.stderr)
     sys.exit(1)
 
+# This module's own siblings: `python -I` does not put the script's directory
+# on sys.path, so it is added explicitly.
+sys.path.insert(0, _HERE)
+import pdf2md_fidelity  # noqa: E402  (after the sys.path edit above, by design)
+import pdf2md_vlmcheck  # noqa: E402
+
 
 _CONFIG_PATH = Path(__file__).with_name("pdf2md-validate.json")
 _CONFIG_KEYS = (
     "word_count_mismatch_threshold_pct",
-    "math_density_min_symbols_per_line",
     "math_symbol_chars",
-    "vlm_check_timeout_s",
-    "vlm_check_dpi",
-    "vlm_check_base_url",
-    "vlm_check_max_pages",
+    "word_min_letters",
 )
 
 _CHAPTER_NUMBER_RE = re.compile(r"chapitre\s+(\d+)\b", re.IGNORECASE)
@@ -128,16 +114,16 @@ _CHAPTER_START_RE = re.compile(r"^\**\s*#{0,6}\s*\**\s*CHAPITRE\s+(\d+)\b")
 # density fallback instead, which this simpler line-scan splitter does not
 # have, so the heading match is widened here to cover the real case directly.
 _BIBLIOGRAPHY_LINE_RE = re.compile(r"^\**\s*#{0,6}\s*\**\s*(liste des\s+)?(r[ée]f[ée]rences|bibliographie)\**\s*$", re.IGNORECASE)
-_WORD_RE = re.compile(r"\S+")
-_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
-_FIGURE_CAPTION_RE = re.compile(r"^\**\s*(figure|fig\.?)\s*\d+", re.IGNORECASE)
-_CITATION_MARKER_RE = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 _HEADING_PREFIX_RE = re.compile(r"^#{1,6}\s+")
 _LEADING_NUMBER_RE = re.compile(r"^\**\s*(\d+(?:\.\d+)+)\b")
-_MATH_DELIM_RE = re.compile(r"\$\$.+?\$\$|\$[^$\n]{1,200}\$", re.DOTALL)
 
-METRICS = ("words", "sections", "subsections", "tables", "figures", "citation_markers", "equations_rough")
-METRIC_LABELS = {"equations_rough": "equations (rough estimate)"}
+METRICS = ("words", "sections", "subsections", "tables", "figures", "citation_markers", "numbered_equations")
+METRIC_LABELS = {
+    "tables": "tables (captions)",
+    "figures": "figures (captions)",
+    "citation_markers": "citations in prose",
+    "numbered_equations": "numbered equations (expected from numbering)",
+}
 
 
 def load_config(path: Path = _CONFIG_PATH) -> dict:
@@ -175,39 +161,61 @@ def load_config(path: Path = _CONFIG_PATH) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def count_words(text: str) -> int:
-    """Whitespace-token count. Survives the PDF's own font-encoding garbling
-    of accented characters, since a replaced glyph does not introduce a
-    whitespace boundary where none existed."""
-    return len(_WORD_RE.findall(text))
+def count_words(text: str, *, min_letters: int) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Count the words of a chapter, with formulas excluded: a formula is
+        read, not counted, and the two readers render it very differently
+        (mineru as LaTeX source between dollar signs, the PDF reader as
+        italic fragments), so counting it made a math-heavy chapter look
+        thousands of words longer in the output than in the PDF (measured
+        2026-10-11: +6171 and +8449 words on two chapters).
+
+    Details:
+        The output's $...$ and $$...$$ spans and its base64 images are
+        removed first. A remaining whitespace token counts when it holds a
+        run of at least min_letters letters, which drops numbers, symbols
+        and one-letter variable names such as the PDF reader's italic
+        fragments. A token with a garbled accent still counts: the
+        replacement character does not break the letter run around it.
+
+    Inputs:
+        text (str): the chapter text, either side.
+        min_letters (int): the shortest letter run that makes a word, from
+            pdf2md-validate.json.
+
+    Outputs:
+        int: the number of words.
+    --------------------------------------------------------------------------
+    """
+    run = re.compile(r"[^\W\d_]{%d,}" % min_letters)
+    return sum(1 for token in pdf2md_fidelity.strip_math_and_images(text).split() if run.search(token))
 
 
-def count_tables(text: str) -> int:
-    """Counts markdown table SEPARATOR rows ("|---|---|"), one per table,
-    which both pymupdf4llm's and mineru's own markdown renderers emit
-    immediately under a table's header row regardless of heading-level
-    drift elsewhere in the document."""
-    return sum(1 for line in text.splitlines() if _TABLE_SEPARATOR_RE.match(line))
+def count_tables(text: str, fidelity_config: dict) -> int:
+    """Number of distinct tables, by caption label ("Table 3.2"), on either
+    side. Markdown separator rows were counted before 2026-10-11 and missed
+    mineru's HTML tables while counting the 8 chart-derived tables it adds
+    from plots, so two chapters read 4 against 10 with 4 real tables on each
+    side."""
+    return len(pdf2md_fidelity.caption_labels(text, fidelity_config)["table"])
 
 
-def count_figures(text: str) -> int:
-    """Counts figure-caption LINES ("Figure 3", "Fig. 3"), not embedded
-    images -- neither side currently extracts real image files (mineru's
-    include_images defaults False; extract-statistic's read_pdf extracts
-    no images at all), so caption text is the only comparable signal."""
-    return sum(1 for line in text.splitlines() if _FIGURE_CAPTION_RE.match(line.strip()))
+def count_figures(text: str, fidelity_config: dict) -> int:
+    """Number of distinct figures, by caption label ("Figure 3.8"). In-text
+    sentences about a figure are not captions (pdf2md_fidelity.caption_labels
+    explains the rule), which is what made the earlier line count read 11
+    against 10 on one chapter."""
+    return len(pdf2md_fidelity.caption_labels(text, fidelity_config)["figure"])
 
 
-def count_citation_markers(text: str) -> int:
-    """Counts individual citation-number OCCURRENCES in running text
-    ("[12, 13]" counts as 2), not unique keys -- uniqueness is already a
-    document-wide property reported by pdf2md_refs.py's reference_count;
-    this is a per-chapter signal that citations were not dropped or
-    duplicated during conversion."""
-    total = 0
-    for match in _CITATION_MARKER_RE.finditer(text):
-        total += len(re.findall(r"\d+", match.group(1)))
-    return total
+def count_citation_markers(text: str, fidelity_config: dict) -> int:
+    """Number of citations in the prose, one per reference number per
+    occurrence ("[12, 13]" counts 2). The matrix indices the PDF reader prints
+    as "[0]" and "[1]" are not citations and are not counted
+    (pdf2md_fidelity.citation_numbers)."""
+    return len(pdf2md_fidelity.citation_numbers(text, fidelity_config))
 
 
 def _heading_number_depth(line: str) -> int | None:
@@ -242,72 +250,39 @@ def count_subsections(text: str) -> int:
     return sum(1 for line in text.splitlines() if _heading_number_depth(line) == 3)
 
 
-def count_equations_rough(text: str, *, min_symbols_per_line: int, math_symbol_chars: str) -> int:
+def compute_metrics(text: str, *, side: str, word_min_letters: int, fidelity_config: dict) -> dict[str, int]:
     """
     --------------------------------------------------------------------------
     Purpose:
-        A ROUGH, explicitly labelled heuristic equation count: every
-        $$...$$ or $...$ delimited span counts as one, and every
-        remaining line (not already counted via a delimiter) whose
-        math-symbol-character density clears min_symbols_per_line counts
-        as one more. No formula-aware backend is installed (Docling is
-        absent), so this is a correlated signal, not a real detector --
-        state this in any report built from it, never present it as exact.
+        Measure one chapter on one side, on the same footing: the PDF side is
+        cleaned first of running headers, page numbers and figure text, which
+        the markdown rightly does not carry.
+
+    Details:
+        numbered_equations is not read from the text: the PDF reader cannot
+        read equation numbers. compare_chapters fills it from the output's
+        own numbering (expected = highest number, found = distinct numbers).
 
     Inputs:
-        text (str): the chapter's plain/markdown text.
-        min_symbols_per_line (int): threshold from pdf2md-validate.json.
-        math_symbol_chars (str): the character set counted as math-like,
-            from pdf2md-validate.json (R6: data, not a code literal).
-
-    Outputs:
-        int: the rough count.
-    --------------------------------------------------------------------------
-    """
-    symbol_set = set(math_symbol_chars)
-    count = len(_MATH_DELIM_RE.findall(text))
-    # Remove every matched delimited span (which can spread across several
-    # lines, e.g. mineru's own "$$\nx = 1\n$$" display-equation form) BEFORE
-    # the per-line density scan. A code-review finding, confirmed live: the
-    # original per-LINE delimiter check never matched when "$$" sat on its
-    # own line, so the equation body's inner lines were left in place and,
-    # being math-symbol-dense, counted AGAIN by the density scan -- doubling
-    # mineru's own output count while the PDF side (which never produces
-    # "$$" at all) was unaffected, inflating every output-vs-PDF diff.
-    remaining_text = _MATH_DELIM_RE.sub("", text)
-    for line in remaining_text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        symbol_count = sum(1 for ch in stripped if ch in symbol_set)
-        if symbol_count >= min_symbols_per_line:
-            count += 1
-    return count
-
-
-def compute_metrics(text: str, *, math_min_symbols: int, math_symbol_chars: str) -> dict[str, int]:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Run every counting function over one chapter's text.
-
-    Inputs:
-        text (str): the chapter's plain/markdown text.
-        math_min_symbols (int): see count_equations_rough.
-        math_symbol_chars (str): see count_equations_rough.
+        text (str): the chapter text.
+        side (str): "pdf" or "output".
+        word_min_letters (int): see count_words.
+        fidelity_config (dict): thresholds from pdf2md_fidelity.load_fidelity_config.
 
     Outputs:
         dict[str, int]: metric name -> count, keys matching METRICS.
     --------------------------------------------------------------------------
     """
+    if side == "pdf":
+        text = pdf2md_fidelity.clean_pdf_text(text, fidelity_config)
     return {
-        "words": count_words(text),
+        "words": count_words(text, min_letters=word_min_letters),
         "sections": count_sections(text),
         "subsections": count_subsections(text),
-        "tables": count_tables(text),
-        "figures": count_figures(text),
-        "citation_markers": count_citation_markers(text),
-        "equations_rough": count_equations_rough(text, min_symbols_per_line=math_min_symbols, math_symbol_chars=math_symbol_chars),
+        "tables": count_tables(text, fidelity_config),
+        "figures": count_figures(text, fidelity_config),
+        "citation_markers": count_citation_markers(text, fidelity_config),
+        "numbered_equations": 0,
     }
 
 
@@ -496,8 +471,8 @@ def compare_chapters(
     pdf_chapters: dict[int, tuple[str, str]],
     output_chapters: dict[int, tuple[str, str]],
     *,
-    math_min_symbols: int,
-    math_symbol_chars: str,
+    word_min_letters: int,
+    fidelity_config: dict,
 ) -> list[ChapterComparison]:
     """
     --------------------------------------------------------------------------
@@ -507,10 +482,19 @@ def compare_chapters(
         zeros on that side, with in_pdf/in_output stating the fact) rather
         than silently skipped.
 
+    Details:
+        numbered_equations is the one measure the PDF reader cannot give: its
+        PDF-side value is the number of equations the chapter should hold,
+        read from the output's own numbering (the highest equation number),
+        and its output-side value is how many distinct numbers are present.
+        A gap is therefore an equation lost, and a chapter with no numbered
+        equation reads 0 / 0.
+
     Inputs:
         pdf_chapters, output_chapters: as returned by extract_pdf_chapters
             / load_output_chapters.
-        math_min_symbols, math_symbol_chars: see count_equations_rough.
+        word_min_letters: see count_words.
+        fidelity_config (dict): thresholds from pdf2md_fidelity.load_fidelity_config.
 
     Outputs:
         list[ChapterComparison]: sorted by chapter number.
@@ -522,15 +506,20 @@ def compare_chapters(
         pdf_text = pdf_chapters[number][1] if number in pdf_chapters else ""
         out_text = output_chapters[number][1] if number in output_chapters else ""
         pdf_metrics = (
-            compute_metrics(pdf_text, math_min_symbols=math_min_symbols, math_symbol_chars=math_symbol_chars)
+            compute_metrics(pdf_text, side="pdf", word_min_letters=word_min_letters, fidelity_config=fidelity_config)
             if number in pdf_chapters
             else dict(zero_metrics)
         )
         out_metrics = (
-            compute_metrics(out_text, math_min_symbols=math_min_symbols, math_symbol_chars=math_symbol_chars)
+            compute_metrics(out_text, side="output", word_min_letters=word_min_letters, fidelity_config=fidelity_config)
             if number in output_chapters
             else dict(zero_metrics)
         )
+        if number in output_chapters:
+            expected, found = pdf2md_fidelity.numbered_equation_counts(out_text)
+            if number in pdf_chapters:
+                pdf_metrics["numbered_equations"] = expected
+            out_metrics["numbered_equations"] = found
         rows.append(
             ChapterComparison(
                 chapter=number,
@@ -547,7 +536,7 @@ def flag_mismatched_chapters(rows: list[ChapterComparison], *, word_tolerance_pc
     """
     --------------------------------------------------------------------------
     Purpose:
-        Identify chapters worth a closer (--vlm-check) look: present on
+        Identify chapters whose word count differs most between the two readers: present on
         only one side, or whose word counts differ by more than the
         configured tolerance.
 
@@ -573,43 +562,134 @@ def flag_mismatched_chapters(rows: list[ChapterComparison], *, word_tolerance_pc
     return flagged
 
 
-def render_report_md(rows: list[ChapterComparison]) -> str:
+def error_pct(pdf_value: int, output_value: int) -> float:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Render the comparison as a markdown table, one row per
-        (chapter, metric), with a diff column.
+        The relative error of one count against the PDF reading, in percent.
+
+    Details:
+        |output - pdf| / pdf * 100. When the PDF reading holds none of the
+        item, the error is 0 if the output holds none either and 100 if it
+        holds any, since a ratio to zero is undefined and an item the PDF
+        does not have is a full miss.
+
+    Inputs:
+        pdf_value (int): the count read from the PDF.
+        output_value (int): the count in pdf2md's output.
+
+    Outputs:
+        float: the error in percent, never negative.
+    --------------------------------------------------------------------------
+    """
+    if pdf_value == 0:
+        return 0.0 if output_value == 0 else 100.0
+    return abs(output_value - pdf_value) / pdf_value * 100
+
+
+def build_report_table(rows: list[ChapterComparison], file_names: dict[int, str]) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Arrange the comparison as measures x converted files, with the
+        errors in percent that the report's last row and last column carry.
+
+    Details:
+        - cell error: error_pct of that measure in that file.
+        - last row, per file: the mean of the file's cell errors over all
+          measures, each measure weighing the same.
+        - last column, per measure: the sum over files of |output - pdf|
+          divided by the sum over files of pdf (same zero rule as
+          error_pct), so an excess in one file never cancels a deficit in
+          another.
+        - corner: the mean of the per-measure global errors.
 
     Inputs:
         rows (list[ChapterComparison]): from compare_chapters.
+        file_names (dict[int, str]): chapter number -> converted file name,
+            the column headers.
 
     Outputs:
-        str: the full report, including a note on any chapter missing
-            from one side.
+        dict: {"files": [names], "measures": {metric: {"cells": {file:
+            {"pdf", "output", "error_pct"}}, "global_error_pct"}],
+            "file_error_pct": {file: pct}, "overall_error_pct": pct,
+            "notes": [str]}.
     --------------------------------------------------------------------------
     """
-    lines = ["| Chapter | Metric | PDF | Output | Diff |", "|---|---|---|---|---|"]
-    notes = []
+    names = [file_names.get(row.chapter, f"chapter {row.chapter}") for row in rows]
+    table: dict = {"files": names, "measures": {}, "file_error_pct": {}, "overall_error_pct": 0.0, "notes": []}
     for row in rows:
         if not row.in_pdf:
-            notes.append(f"- Chapter {row.chapter}: not found on the PDF side.")
+            table["notes"].append(f"Chapter {row.chapter}: not found on the PDF side.")
         if not row.in_output:
-            notes.append(f"- Chapter {row.chapter}: not found in pdf2md's output.")
-        for metric in METRICS:
-            pdf_v = row.pdf_metrics[metric]
-            out_v = row.output_metrics[metric]
-            label = METRIC_LABELS.get(metric, metric)
-            lines.append(f"| {row.chapter} | {label} | {pdf_v} | {out_v} | {out_v - pdf_v:+d} |")
+            table["notes"].append(f"Chapter {row.chapter}: not found in pdf2md's output.")
+    for metric in METRICS:
+        cells = {}
+        for name, row in zip(names, rows):
+            pdf_v, out_v = row.pdf_metrics[metric], row.output_metrics[metric]
+            cells[name] = {"pdf": pdf_v, "output": out_v, "error_pct": error_pct(pdf_v, out_v)}
+        total_pdf = sum(cell["pdf"] for cell in cells.values())
+        total_absolute_gap = sum(abs(cell["output"] - cell["pdf"]) for cell in cells.values())
+        if total_pdf == 0:
+            global_error = 0.0 if total_absolute_gap == 0 else 100.0
+        else:
+            global_error = total_absolute_gap / total_pdf * 100
+        table["measures"][metric] = {"cells": cells, "global_error_pct": global_error}
+    for name in names:
+        errors = [table["measures"][metric]["cells"][name]["error_pct"] for metric in METRICS]
+        table["file_error_pct"][name] = sum(errors) / len(errors) if errors else 0.0
+    globals_ = [table["measures"][metric]["global_error_pct"] for metric in METRICS]
+    table["overall_error_pct"] = sum(globals_) / len(globals_) if globals_ else 0.0
+    return table
+
+
+def render_report_md(rows: list[ChapterComparison], file_names: dict[int, str] | None = None) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Render the comparison as one markdown table: a row per measure, a
+        column per converted file, each cell "PDF / output", then a last
+        column with each measure's global error in percent and a last row
+        with each file's error in percent.
+
+    Inputs:
+        rows (list[ChapterComparison]): from compare_chapters.
+        file_names (dict[int, str] | None): chapter number -> file name for
+            the column headers; a chapter with no entry is headed "chapter N".
+
+    Outputs:
+        str: the table, the definitions of its percentages, and a note on
+            any chapter missing from one side.
+    --------------------------------------------------------------------------
+    """
+    table = build_report_table(rows, file_names or {})
+    files = table["files"]
+    lines = [
+        "| Measure | " + " | ".join(files) + " | Global error (%) |",
+        "|---|" + "---|" * (len(files) + 1),
+    ]
+    for metric in METRICS:
+        data = table["measures"][metric]
+        cells = " | ".join(f"{data['cells'][name]['pdf']} / {data['cells'][name]['output']}" for name in files)
+        lines.append(f"| {METRIC_LABELS.get(metric, metric)} | {cells} | {data['global_error_pct']:.1f} |")
+    per_file = " | ".join(f"{table['file_error_pct'][name]:.1f}" for name in files)
+    lines.append(f"| Error (%) | {per_file} | {table['overall_error_pct']:.1f} |")
     report = "\n".join(lines) + "\n"
-    if notes:
-        report += "\n" + "\n".join(notes) + "\n"
+    report += (
+        "\nEach cell reads PDF / output. Error of one cell = |output - PDF| / PDF x 100 "
+        "(0 when both are zero, 100 when only the PDF reading is zero). "
+        "Last row: mean of a file's errors over the measures. "
+        "Last column: sum of |output - PDF| over the files divided by the sum of PDF. "
+        "Bottom right: mean of the last column.\n"
+    )
+    if table["notes"]:
+        report += "\n" + "\n".join(f"- {note}" for note in table["notes"]) + "\n"
     return report
 
 
 # --------------------------------------------------------------------------- #
-# Optional second opinion: a local vision-capable Ollama model reads the
-# mismatched chapter's own rendered pages directly. UNVERIFIED LIVE (see
-# module docstring) -- every effect below is behind an injected seam.
+# Page ranges (used to hand pages to the formula check of pdf2md_vlmcheck) and
+# the command line.
 # --------------------------------------------------------------------------- #
 
 
@@ -638,7 +718,7 @@ def find_chapter_page_range(
             (R20/R21 -- no real PDF open in the offline suite); when None,
             read via PyMuPDF (fitz), closed via `with` so no handle leaks.
         max_pages (int | None): cap the range to at most this many pages
-            from its start (pdf2md-validate.json's vlm_check_max_pages);
+            from its start (None means uncapped);
             None means uncapped, used by direct unit tests of this
             function's boundary logic.
 
@@ -692,111 +772,34 @@ def find_chapter_page_range(
     return (start, end)
 
 
-def render_pdf_pages_to_images(
-    pdf_path: str, page_range: tuple[int, int], out_dir: Path, *, dpi: int, renderer: Callable[[str, int, int, Path], Path] | None = None
-) -> list[Path]:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Render each page in the given 0-indexed inclusive range to a PNG.
+def _read_page_texts(pdf_path: str) -> list[str]:
+    """Raw text of every PDF page, read with PyMuPDF (closed via `with`)."""
+    import fitz
 
-    Inputs:
-        pdf_path (str): path to the PDF.
-        page_range (tuple[int, int]): (start_page, end_page_inclusive).
-        out_dir (Path): where to write the PNGs.
-        dpi (int): render resolution, from pdf2md-validate.json.
-        renderer (callable | None): injected for tests -- (pdf_path,
-            page_index, dpi, out_dir) -> written Path; defaults to a real
-            PyMuPDF render (R20/R21).
-
-    Outputs:
-        list[Path]: one path per rendered page, in page order.
-    --------------------------------------------------------------------------
-    """
-    def default_renderer(path: str, page_index: int, render_dpi: int, directory: Path) -> Path:
-        import fitz
-
-        with fitz.open(path) as doc:
-            pixmap = doc[page_index].get_pixmap(dpi=render_dpi)
-            image_path = directory / f"page_{page_index + 1}.png"
-            pixmap.save(str(image_path))
-        return image_path
-
-    renderer = renderer or default_renderer
-    out_dir.mkdir(parents=True, exist_ok=True)
-    start, end = page_range
-    return [renderer(pdf_path, page_index, dpi, out_dir) for page_index in range(start, end + 1)]
+    with fitz.open(pdf_path) as document:
+        return [page.get_text() for page in document]
 
 
-def build_vlm_check_prompt() -> str:
-    """The fixed prompt sent with every --vlm-check call, asking for
-    STRUCTURED counts rather than free prose, so the response can be
-    parsed without a second model call to interpret it."""
-    return (
-        "Count, across the document pages shown, the number of: numbered "
-        "equations, tables, figures with a caption, numbered sections, and "
-        "numbered subsections. Answer ONLY as JSON with exactly these keys: "
-        '{"equations": N, "tables": N, "figures": N, "sections": N, "subsections": N}'
+def _run_vlm_check(args, output_chapters: dict, config: dict) -> dict:
+    """Run pdf2md_vlmcheck's formula check on every output chapter, locating
+    each chapter's pages in the PDF with find_chapter_page_range."""
+    page_texts = _read_page_texts(args.pdf_path)
+    ranges: dict[int, tuple[int, int]] = {}
+    for chapter in output_chapters:
+        page_range = find_chapter_page_range(args.pdf_path, chapter, page_texts=page_texts)
+        if page_range is not None:
+            ranges[chapter] = page_range
+    return pdf2md_vlmcheck.run_vlm_fidelity(
+        args.pdf_path,
+        output_chapters,
+        ranges,
+        page_texts,
+        model_tag=args.vlm_check_model,
+        config=pdf2md_vlmcheck.load_vlmcheck_config(),
+        math_symbol_chars=config["math_symbol_chars"],
+        fidelity_config=pdf2md_fidelity.load_fidelity_config(),
+        scratch_dir=Path(args.output_dir) / "validate-scratch",
     )
-
-
-def ask_local_vlm_for_counts(
-    image_paths: list[Path],
-    *,
-    model_tag: str,
-    base_url: str,
-    timeout_s: float,
-    caller: Callable[[str, bytes, float], bytes] | None = None,
-) -> dict:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Send the rendered page images to a local Ollama vision model via
-        its /api/generate endpoint and parse the structured JSON it
-        returns. UNVERIFIED LIVE (module docstring) -- caller is injected
-        for every offline test; no real HTTP call has yet succeeded
-        against a running model.
-
-    Inputs:
-        image_paths (list[Path]): PNG files to send, base64-encoded here.
-        model_tag (str): the OPERATOR-NAMED Ollama tag (--vlm-check-model;
-            never a default, R2 -- this script never names a model).
-        base_url (str): Ollama's API base, from pdf2md-validate.json.
-        timeout_s (float): bounded timeout, from pdf2md-validate.json (R10).
-        caller (callable | None): injected for tests -- (url, body_bytes,
-            timeout_s) -> raw response bytes; defaults to a real
-            urllib.request POST.
-
-    Outputs:
-        dict: the parsed {"equations", "tables", "figures", "sections",
-            "subsections"} counts.
-
-    Raises:
-        ValueError: the model's response is not the expected JSON shape.
-    --------------------------------------------------------------------------
-    """
-    import base64
-
-    images_b64 = [base64.b64encode(path.read_bytes()).decode("ascii") for path in image_paths]
-    body = json.dumps(
-        {"model": model_tag, "prompt": build_vlm_check_prompt(), "images": images_b64, "stream": False, "format": "json"}
-    ).encode("utf-8")
-
-    def default_caller(url: str, data: bytes, timeout: float) -> bytes:
-        import urllib.request
-
-        request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return response.read()
-
-    caller = caller or default_caller
-    raw = caller(f"{base_url}/api/generate", body, timeout_s)
-    try:
-        envelope = json.loads(raw)
-        return json.loads(envelope["response"])
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        preview = raw[:500] if isinstance(raw, (bytes, str)) else raw
-        raise ValueError(f"local VLM returned an unparsable response (first 500 bytes): {preview!r}") from exc
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -805,8 +808,10 @@ def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pdf_path")
     parser.add_argument("-o", "--output-dir", required=True)
-    parser.add_argument("--vlm-check", action="store_true", help="second-opinion pass on mismatched chapters via a local vision model")
+    parser.add_argument("--fidelity", action="store_true", help="content fidelity check (pdf2md_fidelity): lost or misplaced headings, missing, extra, repeated or reordered paragraphs, embedded images, HTML residue")
+    parser.add_argument("--vlm-check", action="store_true", help="formula check (pdf2md_vlmcheck): a local vision model reads the pages richest in math and verifies their formulas against the markdown")
     parser.add_argument("--vlm-check-model", default=None, help="REQUIRED with --vlm-check; the operator's own Ollama tag (R2 -- never a default)")
+    parser.add_argument("--strict", action="store_true", help="exit 1 when --fidelity finds an error-severity issue, or --vlm-check finds a formula issue or a page it could not check")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -815,53 +820,46 @@ def _main(argv: list[str] | None = None) -> int:
         return 2
 
     config = load_config()
+    fidelity_config = pdf2md_fidelity.load_fidelity_config()
     pdf_chapters = extract_pdf_chapters(args.pdf_path)
     output_chapters = load_output_chapters(Path(args.output_dir))
     rows = compare_chapters(
         pdf_chapters,
         output_chapters,
-        math_min_symbols=config["math_density_min_symbols_per_line"],
-        math_symbol_chars=config["math_symbol_chars"],
+        word_min_letters=config["word_min_letters"],
+        fidelity_config=fidelity_config,
     )
     flagged = flag_mismatched_chapters(rows, word_tolerance_pct=config["word_count_mismatch_threshold_pct"])
-    report = render_report_md(rows)
+    file_names = {number: f"{stem}.md" for number, (stem, _text) in output_chapters.items()}
+    report = render_report_md(rows, file_names)
+    table = build_report_table(rows, file_names)
 
-    vlm_results: dict[int, dict] = {}
+    fidelity = None
+    if args.fidelity:
+        fidelity = pdf2md_fidelity.check_chapters(pdf_chapters, output_chapters, fidelity_config)
+
+    # The formula check runs last: it is the slow part, and a failure there
+    # must not lose the report already computed above.
+    vlm = None
     if args.vlm_check:
-        scratch_dir = Path(args.output_dir) / "validate-scratch"
-        for chapter_number in flagged:
-            page_range = find_chapter_page_range(args.pdf_path, chapter_number, max_pages=config["vlm_check_max_pages"])
-            if page_range is None:
-                vlm_results[chapter_number] = {"error": "chapter heading not found on any PDF page"}
-                continue
-            try:
-                images = render_pdf_pages_to_images(
-                    args.pdf_path, page_range, scratch_dir / f"chapter_{chapter_number}", dpi=config["vlm_check_dpi"]
-                )
-                vlm_results[chapter_number] = ask_local_vlm_for_counts(
-                    images, model_tag=args.vlm_check_model, base_url=config["vlm_check_base_url"], timeout_s=config["vlm_check_timeout_s"]
-                )
-            except (ValueError, OSError, RuntimeError, http.client.HTTPException) as exc:
-                # One chapter's VLM call failing (a timeout, a connection
-                # error, an unparsable response, a PyMuPDF render fault, a
-                # truncated HTTP read) must not lose the whole report --
-                # measured live: an uncaught TimeoutError here killed the
-                # process before the already-computed comparison table was
-                # ever printed. RuntimeError covers a PyMuPDF rendering
-                # fault; http.client.HTTPException (e.g. IncompleteRead)
-                # is NOT an OSError subclass and needs naming separately
-                # (a re-review finding).
-                vlm_results[chapter_number] = {"error": str(exc)}
+        vlm = _run_vlm_check(args, output_chapters, config)
 
-    result = {"ok": True, "flagged_chapters": flagged, "report_md": report, "vlm_check": vlm_results if args.vlm_check else None}
+    result = {"ok": True, "flagged_chapters": flagged, "report_md": report, "table": table, "fidelity": fidelity, "vlm_check": vlm}
     if args.json:
         print(json.dumps(result))
     else:
         print(report)
         if flagged:
             print(f"Flagged for closer review: chapters {flagged}")
-        if vlm_results:
-            print(json.dumps(vlm_results, indent=2))
+        if fidelity is not None:
+            print(pdf2md_fidelity.render_fidelity_md(fidelity))
+        if vlm is not None:
+            print(pdf2md_vlmcheck.render_vlm_md(vlm))
+    if args.strict:
+        if fidelity is not None and fidelity["error_count"]:
+            return 1
+        if vlm is not None and (vlm["issue_count"] or vlm["error_count"]):
+            return 1
     return 0
 
 

@@ -10,7 +10,9 @@ Usage:
     python pdf2md.py postprocess <markdown_file> -o <dir>
     python pdf2md.py refs <bibliography_file> -o <ref.md>
     python pdf2md.py run <pdf> -o <dir> [--tier advanced] [--yes]
-    python pdf2md.py validate <pdf> -o <dir> [--vlm-check --vlm-check-model TAG]
+    python pdf2md.py validate <pdf> -o <dir> [--fidelity] [--vlm-check --vlm-check-model TAG] [--strict]
+    python pdf2md.py repair <pdf> -o <dir> [--yes]
+    python pdf2md.py fix <pdf> -o <dir> --model TAG [--pages all] [--yes] [--strict]
 
 Every subcommand accepts --json for a machine-readable report (R17) and
 follows the exit-code convention (R12): 0 done, 2 refusal by design,
@@ -61,6 +63,14 @@ def main(argv: list[str] | None = None) -> int:
         from pdf2md_validate import _main as validate_main
 
         return validate_main(rest)
+    if command == "repair":
+        from pdf2md_repair import _main as repair_main
+
+        return repair_main(rest)
+    if command == "fix":
+        from pdf2md_vlmfix import _main as fix_main
+
+        return fix_main(rest)
 
     print(f"Unknown command: {command!r}\n\n{__doc__}")
     return 2
@@ -139,7 +149,9 @@ def _run_full_pipeline(argv: list[str]) -> int:
         "convert_pid": process.pid,
         "convert_log": str(convert_log),
         "next_step": "poll `pdf2md.py convert status --log <convert_log>`; once finished is true, run "
-        "`pdf2md.py postprocess <markdown output> -o <dir>` then `pdf2md.py refs <bibliography block> -o ref.md`.",
+        "`pdf2md.py postprocess <markdown output> -o <dir>` then `pdf2md.py refs <bibliography block> -o ref.md`, "
+        "then `pdf2md.py validate <pdf> -o <dir> --fidelity` to list conversion errors and `pdf2md.py repair <pdf> -o <dir>` "
+        "(a dry run; add --yes to write) to fix what can be fixed mechanically.",
     }
     print(json.dumps(report) if args.json else report)
     return 0

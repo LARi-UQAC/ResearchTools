@@ -556,8 +556,13 @@ state both. Without the yes, stop here.
    unverified until a real run, so say so. Make the prompt require a fixed first line and a
    second line naming which skills ran, so the mirror can find the comment and a skill that
    silently did not run is visible.
-4. A separate mirror step, with no Anthropic key in its environment, reads the posted comment
-   back and runs `gh issue comment` and `gh issue edit --add-assignee` using only
+4. A separate mirror JOB (`needs: review`), not just a separate step: give the review job
+   `contents: read` + `pull-requests: write` and the mirror job `pull-requests: read` +
+   `issues: write`, with a workflow-level floor of `contents: read` only. A job-level
+   `permissions:` replaces the workflow's, so the agent's token cannot write Issues and the job
+   that can has no key. (An automated review flagged the single-job version, where one token
+   carried both write scopes next to the key.) It has no Anthropic key in its environment,
+   reads the posted comment back and runs `gh issue comment` and `gh issue edit --add-assignee` using only
    `GH_TOKEN: ${{ github.token }}`. Route every PR-controlled value (`PR_BODY`, `PR_AUTHOR`,
    `BASE_REF`) through `env:` and read it as `"$VAR"`; a `${{ }}` expression inside a `run:`
    block is pasted into the script before bash parses it, which is script injection.

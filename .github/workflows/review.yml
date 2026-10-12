@@ -22,10 +22,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Floor only. Each job below sets its own permissions, so no single job holds the API key,
+# the agent AND issues: write together.
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
 
 jobs:
   review:
@@ -36,6 +36,11 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The agent job: the API key and pull-requests: write (for the sticky comment), but NOT
+    # issues: write. Its token cannot touch Issues even if the action is subverted.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Check out the PR branch and its merge base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -147,6 +152,17 @@ jobs:
                This reply becomes the PR's sticky comment automatically; you do not post it
                yourself.
 
+  mirror:
+    name: mirror
+    needs: review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The Issue job: issues: write, and NO secret and no agent. It only reads the comment the
+    # review job posted. A skipped review (fork, Dependabot) skips this job too.
+    permissions:
+      pull-requests: read
+      issues: write
+    steps:
       - name: Mirror the consolidated review onto the linked Issue
         env:
           GH_TOKEN: ${{ github.token }}
@@ -178,7 +194,8 @@ jobs:
           # then be wrong on a PR with more than 30 comments. The marker line the prompt
           # requires keeps another workflow's bot comment from being mirrored. "|| true"
           # sends a transient API error to the graceful skip instead of failing the job.
-          comment_body=$(gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments"             | jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | contains("Automated multi-dimension review")))] | last | .body // empty') || { echo "::warning::Comment lookup failed (API or jq error); Issue mirror skipped."; exit 0; }
+          comment_body=$(gh api --paginate --slurp "repos/$REPO/issues/$PR_NUMBER/comments" \
+            | jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | contains("Automated multi-dimension review")))] | last | .body // empty') || { echo "::warning::Comment lookup failed (API or jq error); Issue mirror skipped."; exit 0; }
           if [ -z "$comment_body" ]; then
             echo "No review comment found; skipping the Issue mirror."
             exit 0
@@ -188,4 +205,5 @@ jobs:
           safe_body=$(printf '%s' "$comment_body" | sed -E 's/(^|[^A-Za-z0-9`])@([A-Za-z0-9_\/-]+)/\1`@\2`/g')
           gh issue comment "$issue_num" --repo "$REPO" --body "@${PR_AUTHOR} ${safe_body}"
           # An author who cannot be assigned is expected on a public repo; the comment landed.
-          gh issue edit "$issue_num" --repo "$REPO" --add-assignee "$PR_AUTHOR"             || echo "Could not assign $PR_AUTHOR on issue #$issue_num - comment was still posted."
+          gh issue edit "$issue_num" --repo "$REPO" --add-assignee "$PR_AUTHOR" \
+            || echo "Could not assign $PR_AUTHOR on issue #$issue_num - comment was still posted."

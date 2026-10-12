@@ -866,8 +866,10 @@ synchronize, reopened; fork PRs are skipped because they get no secret; no
 is an empty commit). A headless `anthropics/claude-code-action` session reads a pre-computed
 diff (capped by `MAX_DIFF_BYTES`, an unmeasured author's choice) and drives `security-review`,
 `engineering:tech-debt`, `ai-firstify:ai-firstify` and `code-review` (effort high), then
-posts ONE Critical/High/Medium/Low list as a sticky PR comment. A later step mirrors that
-comment onto the open Issue named by a line starting `Fixes #N` or `Closes #N`, mentions and
+posts ONE Critical/High/Medium/Low list as a sticky PR comment. The workflow has two jobs with
+separate permissions: `review` (the API key, `pull-requests: write`, no `issues: write`) and
+`mirror` (`issues: write`, no key, no agent), so no job holds the key, the agent and Issue
+write access together. `mirror` copies that comment onto the open Issue named by a line starting `Fixes #N` or `Closes #N`, mentions and
 assigns the PR author (assignment is allowed to fail for a non-collaborator). Unlike
 privacy-scan it is billed, and it needs a repo secret `ANTHROPIC_API_KEY` that only the
 operator adds.

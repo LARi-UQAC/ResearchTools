@@ -498,8 +498,8 @@ gh release create v0.1.0 --title "..." --notes "..."
 ### 6c. Optional: automated multi-dimension PR review (billed)
 
 Adds a second workflow beside `privacy-scan`: on every pull request a headless Claude Code
-session runs four review skills (`security-review`, `engineering:tech-debt`,
-`ai-firstify:ai-firstify`, `code-review`), deliberates across their findings itself, and posts
+session runs the two review skills built into Claude Code (`security-review`, `code-review`),
+deliberates across their findings itself, and posts
 ONE Critical/High/Medium/Low list as a PR comment and as a comment on the linked Issue, with
 the PR author mentioned and assigned. Reference: `.github/workflows/review.yml` and the "CI"
 section of `.claude/rules/testing.md` in `LARi-UQAC/ResearchTools` (Issue #65). Read the real
@@ -515,16 +515,17 @@ state both. Without the yes, stop here.
   adds it (Settings → Secrets and variables → Actions). Never ask for the key in the session
   and never write it to a file. Until it exists the review step fails naming the missing
   secret, which is the correct inert state.
-- The four skills must exist in the CI runner, not only on your machine. In headless mode the
-  action installs plugins ONLY from its own `plugins:` and `plugin_marketplaces:` inputs
-  (read `base-action/src/install-plugins.ts` in `anthropics/claude-code-action`); the checked-out
-  `.claude/settings.json` `enabledPlugins` is ignored. `security-review` and `code-review` are
-  Claude Code built-ins (bare names, no plugin). `ai-firstify` and `tech-debt` are plugin
-  skills and resolve only under their qualified names, `ai-firstify:ai-firstify` and
-  `engineering:tech-debt`: read the exact names off the session's skill listing.
-  Listing the `code-review` plugin as well installs something the prompt never calls.
-- The marketplace URLs must end in a bare `.git` (the action's regex rejects a ref suffix), so
-  a plugin marketplace cannot be pinned to a commit. State that gap in a workflow comment.
+- **Load NO plugin in the step that holds the key.** In headless mode the action installs
+  plugins ONLY from its own `plugins:` and `plugin_marketplaces:` inputs (read
+  `base-action/src/install-plugins.ts` in `anthropics/claude-code-action`), the checked-out
+  `.claude/settings.json` `enabledPlugins` is ignored, and the marketplace URL must end in a
+  bare `.git` (the regex rejects a ref or SHA), so a marketplace always loads from its moving
+  default branch and cannot be pinned. Third-party code that can change unreviewed must not run
+  beside the API key. So use only the skills built into Claude Code (`security-review`,
+  `code-review`, bare names). A plugin skill such as `ai-firstify:ai-firstify` or
+  `engineering:tech-debt` resolves only under its qualified name, so if you ever add one, read
+  the name off the skill listing, but first decide how to pin it: copying it into the repo is
+  barred in ResearchTools (R36 part 4), authoring your own reviewed skill is the allowed path.
 
 **Workflow structure that survived four review rounds** (the order matters):
 
@@ -593,7 +594,7 @@ its CI section) and `.claude/rules/workflows.md`, then regenerate the mirrors
 `only CI`, `One workflow only` and `only automated check` to find them all.
 
 **Test it for real.** YAML that parses proves nothing about behavior. After the human adds the
-secret, open a throwaway PR and read: the sticky comment exists, the four skills actually ran
+secret, open a throwaway PR and read: the sticky comment exists, both skills actually ran
 (none silently missing), the Issue got the comment, the assignee call succeeded or degraded
 with its message, and the key appears nowhere in the run log.
 
@@ -731,6 +732,11 @@ repeat them:
   plugin qualifier, relied on `.claude/settings.json` to install plugins in CI, and left a
   `workflow_dispatch` that could not work. Each was caught by a local review before any PR,
   which is why Phase 6c prescribes that review.
+- Shipped the review workflow loading two third-party plugins from their default branches in
+  the step that holds the API key, and documented the missing pin as a "known gap". An
+  automated review called it a supply-chain risk and it was one: the action cannot pin a
+  marketplace, so the fix was to remove the plugins from CI, not to describe the gap.
+  Copying them into the repo was not an option either (R36 part 4).
 - Updated `testing.md` for the new workflow and called it done; the same stale "only CI is
   privacy-scan" claim sat in three other files and in the Copilot mirrors until a code review
   found them. Grep for the old claim, then regenerate the mirrors.

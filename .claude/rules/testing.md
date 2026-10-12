@@ -860,9 +860,8 @@ personal-data shapes). It is the authoritative gate behind the local pre-commit 
 synchronize, reopened; fork PRs are skipped because they get no secret; no
 `workflow_dispatch`, since the diff step needs the pull-request event, so a forced re-review
 is an empty commit). A headless `anthropics/claude-code-action` session reads a pre-computed
-diff (capped by `MAX_DIFF_BYTES`, an unmeasured author's choice) and drives `security-review`,
-`engineering:tech-debt`, `ai-firstify:ai-firstify` and `code-review` (effort high), then
-posts ONE Critical/High/Medium/Low list as a sticky PR comment. The workflow has two jobs with
+diff (capped by `MAX_DIFF_BYTES`, an unmeasured author's choice) and drives `security-review`
+and `code-review` (effort high), the two skills built into Claude Code, then posts ONE Critical/High/Medium/Low list as a sticky PR comment. The workflow has two jobs with
 separate permissions: `review` (the API key, `pull-requests: write`, no `issues: write`) and
 `mirror` (`issues: write`, no key, no agent), so no job holds the key, the agent and Issue
 write access together. `mirror` copies that comment onto the open Issue named by a line starting `Fixes #N` or `Closes #N`, mentions and
@@ -873,12 +872,13 @@ operator adds.
 Design choices, each from a review finding on this change: the Claude step gets
 `Skill,Read,Grep,Glob` only, with no `Bash`, `Edit`, `Write` or `Agent`, because the diff is
 untrusted and the key sits in that process; `Read`/`Grep`/`Glob` of `/proc`, `/sys` and `/run`
-are denied too, since `/proc/self/environ` would otherwise hold the key. Plugin install in
-headless mode comes only from the workflow's `plugins:` and `plugin_marketplaces:` inputs
-(read in the action's `base-action/src/install-plugins.ts`, 2026-10-09), never from
-`.claude/settings.json`. `ai-firstify` and `tech-debt` resolve only under their qualified
-names. The marketplaces cannot be pinned, because the action's URL check accepts only a
-bare `.git` suffix.
+are denied too, since `/proc/self/environ` would otherwise hold the key. The workflow loads NO
+plugin: `ai-firstify` and `tech-debt` were removed from CI (2026-10-12) because the action
+installs a plugin only from a marketplace's moving default branch (its URL check, in
+`base-action/src/install-plugins.ts`, accepts a bare `.git` suffix and no ref or SHA), so
+third-party code that can change unreviewed would load in the step holding the key. They stay
+available in local sessions. Restoring them in CI needs ResearchTools' own reviewed skills
+(R36 part 3), not a vendored copy (R36 part 4).
 
 UNVERIFIED (R15), no test exists and none can run offline: that the deny-rule path syntax
 blocks `/proc` reads; that `security-review` and `code-review` are invocable through the

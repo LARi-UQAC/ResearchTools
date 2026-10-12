@@ -71,7 +71,7 @@ jobs:
           fi
           echo "diff_path=$RUNNER_TEMP/pr.diff" >> "$GITHUB_OUTPUT"
 
-      - name: Run the four review skills and post the consolidated priority list
+      - name: Run security-review and code-review, post the consolidated priority list
         id: review
         uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247
         with:
@@ -80,29 +80,14 @@ jobs:
           # token (needs id-token: write and the Claude App installed). With it, comments
           # post as github-actions[bot], which the mirror step relies on.
           github_token: ${{ github.token }}
-          # Headless plugin install reads ONLY these two inputs (base-action/src/install-plugins.ts),
-          # never the checked-out .claude/settings.json - verified 2026-10-09 against the
-          # action's own source. security-review and code-review are Claude Code's own
-          # built-in skills (bare names, no plugin, no marketplace entry - installing
-          # code-review@claude-plugins-official here would be dead weight: the prompt below
-          # calls the bare built-in "code-review", never the plugin's qualified
-          # "code-review:code-review"). ai-firstify and tech-debt are plugin-sourced and
-          # registered under their PLUGIN-QUALIFIED names, confirmed against this session's
-          # own skill listing on 2026-10-09: "ai-firstify:ai-firstify" and
-          # "engineering:tech-debt" (not the bare forms).
-          plugins: |
-            ai-firstify@techwolf-ai-first
-            engineering@knowledge-work-plugins
-          # NOT pinned to a commit, unlike the two `uses:` lines below - a known gap, not an
-          # oversight. The action's own install-plugins.ts validates this URL against
-          # `^https:\/\/...\.git$`, which requires the string to end in a bare `.git` and
-          # has no syntax for appending a ref or SHA, so there is no supported way to pin a
-          # plugin marketplace through this input today. A push to either marketplace's
-          # default branch silently changes what ai-firstify/tech-debt do on the next PR
-          # review here; re-check this if the action ever adds a pinning mechanism.
-          plugin_marketplaces: |
-            https://github.com/techwolf-ai/ai-first-toolkit.git
-            https://github.com/anthropics/knowledge-work-plugins.git
+          # NO `plugins:` and NO `plugin_marketplaces:`. This step holds ANTHROPIC_API_KEY, and
+          # the action can only install a plugin from a marketplace's moving default branch
+          # (its URL check, base-action/src/install-plugins.ts, accepts a bare `.git` suffix
+          # and no ref or SHA, so a marketplace cannot be pinned). Third-party code that can
+          # change without review must not load next to the key. Only the two skills built
+          # into Claude Code run here: security-review and code-review. ai-firstify and
+          # tech-debt stay available in local sessions (.claude/settings.json), and are
+          # absent from CI until ResearchTools authors its own reviewed versions (R36).
           use_sticky_comment: "true"
           track_progress: "true"
           # Deliberately NO Bash and NO Agent/Task tool. ANTHROPIC_API_KEY lives in this
@@ -134,16 +119,15 @@ jobs:
             yourself, inline, rather than spawning sub-tasks even if a skill's own
             instructions suggest doing so.
 
-            1. Run these four Skills, in this order, scoped to that diff:
-               security-review, engineering:tech-debt, ai-firstify:ai-firstify, code-review
-               (pass effort: high to code-review).
-            2. Once all four have reported, deliberate across their combined findings
+            1. Run these two Skills, in this order, scoped to that diff:
+               security-review, then code-review (pass effort: high to code-review).
+            2. Once both have reported, deliberate across their combined findings
                yourself: drop duplicates where two skills flagged the same underlying
                defect, and rank what remains by real severity and actual exploitability or
                maintenance cost, not by which skill found it.
             3. Reply with ONE consolidated markdown list as your final message, and nothing
                else. Its first line is exactly "## Automated multi-dimension review", and
-               its second line states which of the four skills you actually ran and which
+               its second line states which of the two skills you actually ran and which
                you could not run, so a missing dimension is visible. If the diff file ends
                with a DIFF TRUNCATED line, the third line must say the review is partial. Then group the items
                Critical / High / Medium / Low. Each item one line, tagged with

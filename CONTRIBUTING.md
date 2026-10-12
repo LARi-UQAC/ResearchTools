@@ -41,7 +41,7 @@ personal data (account paths, student codes and emails) — free, static, no mod
 Install the same check locally, once per machine, so a commit is refused before it is
 published: `.\.claude\hooks\git\install-git-hooks.ps1` (needs
 `winget install Betterleaks.Betterleaks`). `review` (Issue #65) runs a billed, Claude-driven
-multi-dimension review (security-review, tech-debt, ai-firstify, code-review) on every
+review (security-review and code-review; tech-debt and ai-firstify stay local) on every
 same-repo pull request (not forks), once the operator has added the API secret, and
 posts a priority-ranked finding list; see `.claude/rules/testing.md`'s own "CI"
 section for both workflows' full behavior. Test data uses fictitious identities only (rule

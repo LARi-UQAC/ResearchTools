@@ -106,7 +106,26 @@ A global `core.hooksPath` disables every repository's own `.git/hooks`, so the i
 `pre-commit` runs the repository's hook at its end and `_chain` stands in for every other
 hook name, except `reference-transaction` and `post-index-change`: they fire several times per command and chaining them made a commit cycle about six times slower (measured 2026-10-02), so a repository's own copy of either does not run. The privacy script is also installed as `pre-commit`'s sibling `pre-merge-commit`, since a clean merge runs only that one. A repo-LOCAL `core.hooksPath` (husky sets one on `npm install`) overrides the global one and switches the guard off for that repository with no message: check `git config --local core.hooksPath` is empty. The hook and CI feed the scanner the diff as text (`--text`, `-m` in CI), so a `.gitattributes` `-diff` or a merge commit cannot hide content, and CI removes ignore files from the checkout. The installer refuses a target already holding another manager's hooks. CI's verdict uses rules the change under review cannot write: ResearchTools `main`, or the commit before a push to `main`; a pull request's own rules run only in an informational step. A deliberate exception is a `betterleaks:allow` marker on the line; a private
 repository can opt out with `git config privacyguard.enabled false`. Real names are not
-detectable by pattern: rule R34 (fictitious identities in fixtures) is their only protection.
+detectable by pattern: rule R34 (fictitious identities in fixtures) is the first protection, and
+since 2026-10-12 a machine-local deny list is the second. Measured that day: a real student name
+inside a data-folder path pasted from a real run into a test fixture passed pre-commit, pre-push
+and CI on PR #69, and GitHub declined to purge the old commits afterwards.
+`install-git-hooks.ps1 -TermsFrom <folder of student projects>` writes `private-terms.txt` beside
+the installed hooks (person-folder names split at capitals; the list is machine-local, never
+committed, and only its count is printed), `private-terms.extra.txt` holds terms written by hand
+and is never touched by the installer. Both hooks refuse a term, case-insensitively and as a whole
+token, in an added line, a changed path or a commit message, naming the file and never the term.
+The CI cannot hold the list (the repository is public), so the CI backstop for names stays R34 and
+the review of added lines described in `docs/github-repo-setup-playbook.md` Phase 6c. A second check
+reports an absolute drive path added to a test or fixture file unless it matches
+`fixture-path-allow.txt`; `git config privacyguard.absolutePaths off|warn|refuse` sets it, default
+warn, because existing fixtures legitimately carry paths. A missing list or library is a silent
+pass (R11): the installer warns when no deny list exists yet. Stated limits: a term is matched
+byte for byte except for ASCII case, so an accent stripped or an upper-case accented letter is a
+different spelling and passes (list both spellings in `private-terms.extra.txt`); a name split
+across two lines or hidden in an encoded blob passes; the awk program was tested only under Git
+for Windows' awk, and an awk that fails to run it is a silent pass by R11, so run
+`python .claude/hooks/Test/test_git_privacy_guard.py` after installing on another platform.
 Only ADDED lines (and commit messages) are scanned, so a change that removes old data passes.
 
 Known limits, not covered by any layer: text stored as UTF-16, and the content or metadata of

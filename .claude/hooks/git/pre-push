@@ -24,29 +24,38 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
             [ -x "$c" ] && { bl=$c; break; }
         done
     fi
+    have_bl=0
     if [ -n "$bl" ] && [ -f "$rules" ]; then
-        printf '%s\n' "$updates" | while read -r lref lsha rref rsha; do
-            [ -z "$lsha" ] || [ "$lsha" = "$zero" ] && continue      # a branch deletion
-            if [ "$rsha" != "$zero" ] && git cat-file -e "$rsha^{commit}" 2>/dev/null; then
-                set -- "$rsha..$lsha"
-            else
-                set -- "$lsha" --not --remotes                       # new branch: what no remote has
-            fi
-            # Captured first: sh has no pipefail, and a failing git log would otherwise feed
-            # an empty stream that betterleaks passes. --pretty=medium overrides a user's
-            # format.pretty, which could move the message out of the indented lines.
-            patch=$(git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$@") || exit 1
-            printf '%s\n' "$patch" \
-                | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
-                | (cd "${TMPDIR:-/tmp}" && "$bl" stdin --redact --no-banner --config "$rules") || exit 1
-        done || {
-            echo "privacy guard: push refused - an outgoing commit carries a secret or personal data." >&2
-            echo "privacy guard: rewrite the commit (the value is not public yet), or mark a deliberate line 'betterleaks:allow'." >&2
-            exit 1
-        }
+        have_bl=1
     else
         echo "privacy guard: betterleaks or its rules not found, push scan skipped (CI still checks)" >&2
     fi
+    # The deny-list scan does not need betterleaks; a missing library is a silent pass (R11).
+    [ -f "$here/privacy-lib.sh" ] && . "$here/privacy-lib.sh"
+    printf '%s\n' "$updates" | while read -r lref lsha rref rsha; do
+        [ -z "$lsha" ] || [ "$lsha" = "$zero" ] && continue      # a branch deletion
+        if [ "$rsha" != "$zero" ] && git cat-file -e "$rsha^{commit}" 2>/dev/null; then
+            set -- "$rsha..$lsha"
+        else
+            set -- "$lsha" --not --remotes                       # new branch: what no remote has
+        fi
+        # Captured first: sh has no pipefail, and a failing git log would otherwise feed
+        # an empty stream that betterleaks passes. --pretty=medium overrides a user's
+        # format.pretty, which could move the message out of the indented lines.
+        patch=$(git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$@") || exit 1
+        if [ $have_bl -eq 1 ]; then
+            printf '%s\n' "$patch" \
+                | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
+                | (cd "${TMPDIR:-/tmp}" && "$bl" stdin --redact --no-banner --config "$rules") || exit 1
+        fi
+        if command -v privacy_extra_scan >/dev/null 2>&1; then
+            printf '%s\n' "$patch" | privacy_extra_scan || exit 1
+        fi
+    done || {
+        echo "privacy guard: push refused - an outgoing commit carries a secret or personal data." >&2
+        echo "privacy guard: rewrite the commit (the value is not public yet), or mark a deliberate line 'betterleaks:allow'." >&2
+        exit 1
+    }
 fi
 
 repo_hooks="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"

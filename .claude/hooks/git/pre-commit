@@ -76,6 +76,14 @@ if [ "$(git config --bool privacyguard.enabled)" != "false" ]; then
             status=1
         fi
     fi
+
+    # Machine-local deny list (real names, data folders) and absolute paths in fixtures:
+    # checks no betterleaks rule can make. A missing library is a silent pass (R11).
+    if [ -f "$here/privacy-lib.sh" ]; then
+        . "$here/privacy-lib.sh"
+        git diff --cached --text -U0 --no-color --no-ext-diff --no-textconv --diff-filter=ACMR \
+            | privacy_extra_scan || status=1
+    fi
 fi
 
 if [ $status -ne 0 ]; then

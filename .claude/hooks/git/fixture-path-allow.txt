@@ -1,0 +1,13 @@
+# Privacy guard - absolute drive paths that are known to be fictitious, installed by install-git-hooks.ps1.
+# One extended regex per line (POSIX ERE, so no \b), matched
+# against the path found in an added line of a test or fixture file. Data, not code (R6):
+# add a root here when a fixture legitimately needs one, instead of editing the hook.
+# These are roots no real student folder uses.
+^[A-Za-z]:[\\/]+Work([^A-Za-z0-9_]|$)
+^[A-Za-z]:[\\/]+Example([^A-Za-z0-9_]|$)
+^[A-Za-z]:[\\/]+Fixture([^A-Za-z0-9_]|$)
+^[A-Za-z]:[\\/]+(h|d|win|fake|repo|nope|other|resolved|full|on|path|data|work|existing|some|does|temp|tmp)([^A-Za-z0-9_]|$)
+^[A-Za-z]:[\\/]+Windows([^A-Za-z0-9_]|$)
+^[A-Za-z]:[\\/]+Program
+^[A-Za-z]:[\\/]+Users([^A-Za-z0-9_]|$)
+^Z:[\\/]

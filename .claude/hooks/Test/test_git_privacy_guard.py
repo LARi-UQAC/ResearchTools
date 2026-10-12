@@ -26,6 +26,8 @@ from pathlib import Path
 HOOKS = Path(__file__).resolve().parents[1] / "git"
 REPO = Path(__file__).resolve().parents[3]
 RULES = HOOKS / "privacy-rules.toml"
+# The extra scan (deny list and fixture paths) shipped beside the hooks, 2026-10-12.
+EXTRA_FILES = ("privacy-lib.sh", "privacy-extra.awk", "fixture-path-allow.txt")
 WORKFLOW = REPO / ".github" / "workflows" / "privacy-scan.yml"
 RULE_IDS = ("windows-home-account", "posix-home-account", "posix-users-account",
             "quebec-code-permanent", "uqac-student-email", "frq-identifier")
@@ -225,8 +227,19 @@ class StaticContract(unittest.TestCase):
 
     def test_shell_scripts_have_no_carriage_return(self):
         # Git's sh fails with '\r: command not found' on a CRLF hook.
-        for name in ("pre-commit", "pre-push", "_chain"):
+        for name in ("pre-commit", "pre-push", "_chain", "privacy-lib.sh", "privacy-extra.awk"):
             self.assertNotIn(b"\r", (HOOKS / name).read_bytes(), name)
+
+    def test_extra_scan_files_carry_the_installer_ownership_marker(self):
+        # The installer refuses a file in the target that does not carry one of its markers.
+        for name in EXTRA_FILES:
+            self.assertIn("installed by install-git-hooks.ps1",
+                          (HOOKS / name).read_text(encoding="utf-8"), name)
+
+    def test_the_deny_list_is_never_a_tracked_file(self):
+        # Publishing the list would be the leak it prevents.
+        for name in ("private-terms.txt", "private-terms.extra.txt"):
+            self.assertFalse((HOOKS / name).exists(), name)
 
 
 @unittest.skipUnless(BETTERLEAKS, "betterleaks not installed")
@@ -271,7 +284,7 @@ class HookEndToEnd(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.hooks = Path(self.tmp) / "hooks"
         self.hooks.mkdir()
-        for name in ("pre-commit", "privacy-rules.toml"):
+        for name in ("pre-commit", "privacy-rules.toml") + EXTRA_FILES:
             shutil.copy(HOOKS / name, self.hooks / name)
         shutil.copy(HOOKS / "pre-commit", self.hooks / "pre-merge-commit")
         shutil.copy(HOOKS / "_chain", self.hooks / "post-commit")
@@ -285,11 +298,18 @@ class HookEndToEnd(unittest.TestCase):
                     ["git", "config", "core.hooksPath", self.hooks.as_posix()]):
             run(cmd, self.repo, self.env)
 
-    def commit(self, content, name="f.txt", env=None):
+    def commit(self, content, name="f.txt", env=None, message="t"):
         env = env or self.env
-        (self.repo / name).write_text(content, encoding="utf-8")
+        target = self.repo / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
         run(["git", "add", name], self.repo, env)
-        return run(["git", "commit", "-qm", "t"], self.repo, env)
+        return run(["git", "commit", "-qm", message], self.repo, env)
+
+    def write_terms(self, *terms, extra=False):
+        """Write the machine-local deny list the way the installer does (fictitious names only, R34)."""
+        name = "private-terms.extra.txt" if extra else "private-terms.txt"
+        (self.hooks / name).write_text("# comment\n\n" + "\n".join(terms) + "\n", encoding="utf-8")
 
     def repo_hook(self, name, marker):
         hook = self.repo / ".git" / "hooks" / name
@@ -376,6 +396,92 @@ class HookEndToEnd(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, "a clean merge brought content in unchecked")
 
 
+    # 2026-10-12 (PR #69): a real student name inside a data-folder path passed every rule,
+    # because a name has no shape. The machine-local deny list is what can refuse it.
+
+    def test_a_deny_list_term_in_an_added_line_is_refused_without_echoing_it(self):
+        self.write_terms("Quenby")
+        result = self.commit("path C:\\Work\\Zorblat Quenby\\x\n", name="fixture.md")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture.md", result.stderr)
+        self.assertNotIn("Quenby", result.stderr)
+
+    def test_a_deny_list_term_is_matched_in_any_case_and_only_as_a_whole_token(self):
+        self.write_terms("Quenby")
+        self.assertNotEqual(self.commit("by QUENBY\n", name="a.md").returncode, 0)
+        run(["git", "reset", "-q"], self.repo, self.env)  # a refused commit leaves its file staged
+        self.assertEqual(self.commit("quenbyville and unquenbyed\n", name="b.md").returncode, 0)
+
+    def test_a_deny_list_term_in_a_staged_path_is_refused(self):
+        self.write_terms("Quenby")
+        result = self.commit("nothing personal\n", name="notes-quenby.md")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("notes-quenby.md", result.stderr)
+
+    def test_a_hand_written_extra_list_is_read_too(self):
+        self.write_terms("Quenby", extra=True)
+        self.assertNotEqual(self.commit("by Quenby\n").returncode, 0)
+
+    def test_a_multi_word_term_matches_the_whole_phrase(self):
+        self.write_terms("Zorblat Quenby")
+        self.assertNotEqual(self.commit("by Zorblat Quenby\n", name="a.md").returncode, 0)
+        run(["git", "reset", "-q"], self.repo, self.env)  # a refused commit leaves its file staged
+        self.assertEqual(self.commit("Zorblat alone\n", name="b.md").returncode, 0)
+
+    def test_the_allow_marker_and_the_opt_out_still_apply_to_a_deny_list_term(self):
+        self.write_terms("Quenby")
+        self.assertEqual(self.commit("Quenby betterleaks:allow\n", name="a.md").returncode, 0)
+        run(["git", "config", "privacyguard.enabled", "false"], self.repo, self.env)
+        self.assertEqual(self.commit("Quenby\n", name="b.md").returncode, 0)
+
+    def test_a_term_shorter_than_the_configured_floor_is_ignored(self):
+        self.write_terms("Ab")
+        self.assertEqual(self.commit("an Ab here\n").returncode, 0)
+        run(["git", "config", "privacyguard.minTermLength", "2"], self.repo, self.env)
+        self.assertNotEqual(self.commit("an Ab here\n", name="b.md").returncode, 0)
+
+    def test_removing_a_deny_list_term_is_not_refused(self):
+        self.write_terms("Quenby")
+        (self.repo / "old.md").write_text("by Quenby\nkeep\n", encoding="utf-8")
+        run(["git", "add", "old.md"], self.repo, self.env)
+        run(["git", "commit", "-qm", "old", "--no-verify"], self.repo, self.env)
+        self.assertEqual(self.commit("keep\n", name="old.md").returncode, 0)
+
+    def test_no_deny_list_at_all_is_a_silent_pass(self):
+        result = self.commit("by Quenby\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("deny", result.stderr)
+
+    def test_a_missing_extra_scan_library_is_a_silent_pass(self):
+        # R11: a hook whose own dependency is absent must not refuse the commit.
+        self.write_terms("Quenby")
+        (self.hooks / "privacy-lib.sh").unlink()
+        self.assertEqual(self.commit("by Quenby\n").returncode, 0)
+
+    def test_an_absolute_path_in_a_test_file_is_warned_by_default_and_not_blocked(self):
+        result = self.commit('p = "C:\\\\Kestrel\\\\data"\n', name="Test/test_x.py")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Test/test_x.py", result.stderr)
+        self.assertIn("absolute drive path", result.stderr)
+
+    def test_an_absolute_path_in_a_test_file_is_refused_when_configured(self):
+        run(["git", "config", "privacyguard.absolutePaths", "refuse"], self.repo, self.env)
+        result = self.commit('p = "C:\\\\Kestrel\\\\data"\n', name="Test/test_x.py")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("Kestrel", result.stderr)
+
+    def test_an_allowlisted_fictitious_root_and_a_non_test_file_are_not_reported(self):
+        run(["git", "config", "privacyguard.absolutePaths", "refuse"], self.repo, self.env)
+        self.assertEqual(self.commit('p = "C:\\\\Work\\\\Demo"\n', name="Test/test_x.py").returncode, 0)
+        self.assertEqual(self.commit('see C:\\Kestrel\\data\n', name="docs/note.md").returncode, 0)
+        self.assertEqual(self.commit('p = "C:\\\\Kestrel" betterleaks:allow\n', name="Test/test_y.py").returncode, 0)
+
+    def test_the_path_check_can_be_switched_off(self):
+        run(["git", "config", "privacyguard.absolutePaths", "off"], self.repo, self.env)
+        result = self.commit('p = "C:\\\\Kestrel\\\\data"\n', name="Test/test_x.py")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("absolute drive path", result.stderr)
+
     @unittest.skipUnless(BETTERLEAKS, "betterleaks not installed")
     def test_removing_a_leaking_line_is_not_refused(self):
         # Round 3: only ADDED lines are scanned, so cleaning up old data must pass.
@@ -395,8 +501,9 @@ class PrePushEndToEnd(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         hooks = Path(self.tmp) / "hooks"
         hooks.mkdir()
-        for name in ("pre-push", "privacy-rules.toml"):
+        for name in ("pre-push", "privacy-rules.toml") + EXTRA_FILES:
             shutil.copy(HOOKS / name, hooks / name)
+        self.hooks = hooks
         self.env = isolated_env(self.tmp, USERNAME="zqacct", USER="zqacct")
         remote = Path(self.tmp) / "remote.git"
         run(["git", "init", "-q", "--bare", str(remote)], self.tmp, self.env)
@@ -441,6 +548,35 @@ class PrePushEndToEnd(unittest.TestCase):
         # Round-3 review: format.pretty=oneline put the message on the commit line, unscanned.
         run(["git", "config", "format.pretty", "oneline"], self.repo, self.env)
         self.commit("nothing personal\n", message="from C:\\Users\\jdoe\\x")  # betterleaks:allow (deliberate sample)
+        self.assertNotEqual(self.push().returncode, 0)
+
+    # 2026-10-12: the deny list must also stop a --no-verify commit and a commit message.
+
+    def test_a_deny_list_term_in_a_no_verify_commit_is_refused_at_push(self):
+        (self.hooks / "private-terms.txt").write_text("Quenby\n", encoding="utf-8")
+        self.commit("by Quenby\n")
+        result = self.push()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("f.md", result.stderr)
+        self.assertNotIn("Quenby", result.stderr)
+
+    def test_a_deny_list_term_in_a_commit_message_is_refused_at_push(self):
+        (self.hooks / "private-terms.txt").write_text("Quenby\n", encoding="utf-8")
+        self.commit("nothing personal\n", message="notes for Quenby")
+        result = self.push()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("commit message", result.stderr)
+
+    def test_a_clean_push_passes_with_a_deny_list_present(self):
+        (self.hooks / "private-terms.txt").write_text("Quenby\n", encoding="utf-8")
+        self.commit("nothing personal\n")
+        self.assertEqual(self.push().returncode, 0)
+
+    def test_the_deny_list_still_works_when_betterleaks_is_not_found(self):
+        # The deny-list scan needs no betterleaks. Run with a PATH that cannot find it.
+        (self.hooks / "private-terms.txt").write_text("Quenby\n", encoding="utf-8")
+        (self.hooks / "privacy-rules.toml").unlink()
+        self.commit("by Quenby\n")
         self.assertNotEqual(self.push().returncode, 0)
 
     def test_only_new_commits_are_scanned_after_the_first_push(self):
@@ -515,6 +651,58 @@ class Installer(unittest.TestCase):
         result = self.install("-Uninstall", "-DryRun")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(Path(self.global_hooks_path()), self.target)
+
+    def test_install_copies_the_extra_scan_files(self):
+        self.assertEqual(self.install().returncode, 0)
+        for name in EXTRA_FILES:
+            self.assertEqual((self.target / name).read_bytes(), (HOOKS / name).read_bytes(), name)
+
+    def make_students(self, *names):
+        root = Path(self.tmp) / "students"
+        for n in names:
+            (root / "2026" / n).mkdir(parents=True)
+        return root
+
+    def test_terms_from_writes_the_split_names_and_prints_only_a_count(self):
+        root = self.make_students("ZorblatQuenby", "Ab")
+        result = self.install("-TermsFrom", str(root))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        terms = [l for l in (self.target / "private-terms.txt").read_text(encoding="utf-8").splitlines()
+                 if l and not l.startswith("#")]
+        self.assertEqual(sorted(t.lower() for t in terms), ["quenby", "zorblat", "zorblatquenby"])
+        self.assertNotIn("Quenby", result.stdout + result.stderr)
+        self.assertIn("3 deny-list terms", result.stdout)
+
+    def test_terms_from_skips_the_year_level_and_short_fragments(self):
+        root = self.make_students("Ab")
+        self.assertEqual(self.install("-TermsFrom", str(root)).returncode, 0)
+        text = (self.target / "private-terms.txt").read_text(encoding="utf-8")
+        self.assertNotIn("2026", text)
+        self.assertNotRegex(text, r"(?mi)^ab$")
+
+    def test_terms_from_leaves_the_hand_written_extra_list_alone(self):
+        self.target.mkdir()
+        extra = self.target / "private-terms.extra.txt"
+        extra.write_text("Handmade\n", encoding="utf-8")
+        root = self.make_students("ZorblatQuenby")
+        self.assertEqual(self.install("-TermsFrom", str(root)).returncode, 0)
+        self.assertEqual(extra.read_text(encoding="utf-8"), "Handmade\n")
+
+    def test_terms_from_dry_run_writes_nothing(self):
+        root = self.make_students("ZorblatQuenby")
+        result = self.install("-TermsFrom", str(root), "-DryRun")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.target.exists())
+
+    def test_terms_from_a_missing_directory_is_refused_and_writes_nothing(self):
+        result = self.install("-TermsFrom", str(Path(self.tmp) / "no-such-dir"))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertFalse(self.target.exists())
+
+    def test_install_without_a_deny_list_says_so(self):
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("no deny list yet", result.stdout)
 
     def test_another_hooks_path_is_refused_not_overwritten(self):
         run(["git", "config", "--global", "core.hooksPath", "C:/other/hooks"], self.tmp, self.env)

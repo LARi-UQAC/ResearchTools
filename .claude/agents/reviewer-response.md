@@ -228,16 +228,19 @@ is not acceptable.
 After drafting every author response (Step 3) and before applying any markup (Steps 4–7), run the
 multi-model deliberation panel to stress-test the rebuttals. **MANDATORY: run it every time. Do not
 skip on usefulness, length, or confidence grounds.** The only sanctioned skip is genuinely missing
-`GEMINI_API_KEY` AND `GITHUB_TOKEN` — and even then, gather Consensus evidence, run the script (it
+`GEMINI_API_KEY` AND a working second reviewer (no Copilot token and no local model: the script lists both under `reviewers_unavailable`) — and even then, gather Consensus evidence, run the script (it
 degrades gracefully), and record the `[REVIEWER UNAVAILABLE: ...]` markers in the Deliberation Log.
 The step is autonomous (no user pause) and runs here so accepted improvements flow into the markup and
 letters without rework. The full protocol (debate rounds, canonical arbitration table, provenance
 markers, Deliberation-Log format) lives in
 `.claude/skills/deliberation/references/deliberation-protocol.md`.
 
-1. Build the draft to critique: a digest with one block per comment containing the reviewer comment
-   verbatim, the drafted author response, the paper change type (Step 3 item 2), and the target
-   section. Use the reviewer comment IDs (R1-2, R2-3) as the `target_section`.
+1. Build the draft to critique: one block per comment containing the reviewer comment verbatim,
+   the drafted author response, the paper change type (Step 3 item 2), the target section AND the
+   verbatim passage of the manuscript the comment is about with the definitions, notation and numbers it
+   depends on (a rebuttal cannot be judged without the text it defends). Use the reviewer comment
+   IDs (R1-2, R2-3) as the `target_section`. If the whole exceeds the token budget, run the panel
+   once per reviewer and repeat the shared context; a digest is a last resort, declared in the Log.
 2. Gather Consensus counter-evidence focused on the contested scientific and methodological comments
    (codes SC, M, R, D, MAJ): up to 4 targeted `mcp__claude_ai_Consensus__search` queries on whether
    the literature supports or undermines each rebuttal (batches <= 3, one query per second). Write the
@@ -246,10 +249,15 @@ markers, Deliberation-Log format) lives in
 3. Run the two-round Gemini<->Copilot debate:
 
 ```
-echo "<responses digest>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<paper topic>" --rounds 2 --plan-schema reviewer-response --evidence-file "<evidence.txt>"
+echo "<responses digest>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<paper topic>" --rounds 2 --plan-schema reviewer-response --evidence-file "<evidence.txt>" --round2-include-draft
 ```
 
-4. Consume `merged[]` and arbitrate with the canonical table and markers (`consensus` ->
+   Read the envelope's `context` record first and put each `warnings[]` entry in the Log.
+
+4. Consume `merged[]`, judge each item's relevance to the comment it targets (off topic or contrary
+   to a premise the manuscript holds: reject with the reason), pair by meaning the items the script
+   left apart, account for EVERY `id` in the Log (its `Accounting` line must add up), and arbitrate
+   with the canonical table and markers (`consensus` ->
    `[✓ GEMINI + COPILOT]`, `gemini_only` -> `[✓ GEMINI]`, `copilot_only` -> `[✓ COPILOT]`, `conflict`
    -> `[✓ GEMINI — COPILOT DISAGREED]`, Claude resolving). Apply accepted improvements to the affected
    response paragraphs and, where the panel justifies a stronger paper change, to the Step 3 change

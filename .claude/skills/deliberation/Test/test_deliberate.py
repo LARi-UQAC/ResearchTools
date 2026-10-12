@@ -208,8 +208,11 @@ class TestDeliberateCLI(unittest.TestCase):
 
     def test_both_unavailable_cli_exits_0_with_skip(self):
         # No keys + google-genai/openai absent -> both unavailable -> no-op envelope, exit 0.
+        # The second reviewer is named explicitly: with the default "auto" a local model that
+        # this machine happens to have adopted would answer, and a test must give the same
+        # verdict on every clone (R21).
         proc = subprocess.run(
-            [sys.executable, str(_SCRIPT), "--stdin", "--topic", "x"],
+            [sys.executable, str(_SCRIPT), "--stdin", "--topic", "x", "--second-reviewer", "copilot"],
             input="a real draft", capture_output=True, text=True, env=self._env_no_keys())
         self.assertEqual(proc.returncode, 0)
         payload = json.loads(proc.stdout)

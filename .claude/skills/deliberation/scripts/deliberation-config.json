@@ -1,0 +1,6 @@
+{
+  "second_reviewer_order": {
+    "value": ["copilot", "ollama"],
+    "provenance": "chosen by the operator 2026-10-11: GitHub Copilot is the second reviewer and the local model is the fallback used only when Copilot does not answer. With --second-reviewer auto the first name is tried first and the second name is tried at the moment the first fails or is unavailable"
+  }
+}

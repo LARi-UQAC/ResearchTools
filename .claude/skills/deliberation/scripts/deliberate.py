@@ -1,9 +1,12 @@
 """
 deliberate.py — Deliberation panel (debate stage of the audit / research pipeline).
 
-Runs a two-round debate between Gemini and GitHub Copilot over a near-final draft, then
-merges their critiques into a single ranked, consensus-tagged suggestion list for Claude to
-arbitrate. The script performs ONLY the Gemini and Copilot API calls; Consensus (MCP) and
+Runs a two-round debate between Gemini and a second reviewer over a question or a short draft,
+then merges their critiques into a single ranked, consensus-tagged suggestion list for Claude to
+arbitrate. The second reviewer is GitHub Copilot, with a local Ollama model (named at run time by model_resolver.py)
+as the fallback when Copilot does not answer, chosen by --second-reviewer. The panel's answers are INPUTS to Claude's own
+judgement: Claude decides which are relevant, which are off topic, and says why for each.
+The script performs ONLY the model API calls; Consensus (MCP) and
 Scopus.AI evidence are gathered by the calling agent and passed in via --evidence-file. The
 script never calls Scopus, never scores, and never aborts the host pipeline.
 
@@ -55,6 +58,22 @@ except Exception:  # pragma: no cover
     def resolve_copilot_model(publisher: str = "openai") -> tuple:
         return ("gpt-4o", "")
 
+
+try:
+    from ollama_reviewer import run_ollama, ollama_available, resolve_ollama_model
+except Exception:  # pragma: no cover - the local leg is optional; absence only marks it unavailable
+    run_ollama = None
+
+    def ollama_available() -> bool:
+        return False
+
+    def resolve_ollama_model(role=None) -> str:
+        return ""
+
+
+# The panel always has Gemini as its first voice; the SECOND voice is one of these. Each name is
+# used verbatim as the envelope key, the merge source and the agreement prefix (R5: one table).
+SECOND_REVIEWERS = ("copilot", "ollama")
 
 _CONF_RANK = {"high": 3, "medium": 2, "low": 1}
 
@@ -258,7 +277,8 @@ def _collect(final_obj: dict) -> list:
     return [s for s in (final_obj or {}).get("suggestions", []) or [] if isinstance(s, dict)]
 
 
-def _mk_item(gs: dict, cs: dict, sources: list, agreement: str, confidence: str) -> dict:
+def _mk_item(gs: dict, cs: dict, sources: list, agreement: str, confidence: str,
+             second: str = "copilot") -> dict:
     primary = gs or cs or {}
     item = {
         "rank": 0,
@@ -276,7 +296,7 @@ def _mk_item(gs: dict, cs: dict, sources: list, agreement: str, confidence: str)
         if gs:
             notes.append("gemini: " + (gs.get("suggestion") or "").strip())
         if cs:
-            notes.append("copilot: " + (cs.get("suggestion") or "").strip())
+            notes.append(f"{second}: " + (cs.get("suggestion") or "").strip())
         item["conflict_notes"] = " | ".join(notes)
     return item
 
@@ -285,16 +305,17 @@ def _tier(item: dict) -> int:
     agreement, conf = item["agreement"], _norm(item["confidence"])
     if agreement == "consensus":
         return 0
-    if agreement in ("gemini_only", "copilot_only") and conf == "high":
+    single = agreement.endswith("_only")
+    if single and conf == "high":
         return 1
     if agreement == "conflict":
         return 2
-    if agreement in ("gemini_only", "copilot_only") and conf == "medium":
+    if single and conf == "medium":
         return 3
     return 4
 
 
-def _merge(gem_final: dict, cop_final: dict) -> list:
+def _merge(gem_final: dict, cop_final: dict, second: str = "copilot") -> list:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -330,17 +351,19 @@ def _merge(gem_final: dict, cop_final: dict) -> list:
             cs = cop_sugs[match_idx]
             agreement = "conflict" if key(gs)[0] in disagreed else "consensus"
             conf = _best_conf(gs.get("confidence"), cs.get("confidence"))
-            merged.append(_mk_item(gs, cs, ["gemini", "copilot"], agreement, conf))
+            merged.append(_mk_item(gs, cs, ["gemini", second], agreement, conf, second))
         else:
-            merged.append(_mk_item(gs, None, ["gemini"], "gemini_only", gs.get("confidence")))
+            merged.append(_mk_item(gs, None, ["gemini"], "gemini_only", gs.get("confidence"), second))
 
     for i, cs in enumerate(cop_sugs):
         if i not in used_cop:
-            merged.append(_mk_item(None, cs, ["copilot"], "copilot_only", cs.get("confidence")))
+            merged.append(_mk_item(None, cs, [second], f"{second}_only", cs.get("confidence"), second))
 
     merged.sort(key=_tier)  # stable sort preserves original order within a tier
     for idx, item in enumerate(merged):
         item["rank"] = idx + 1
+        # A stable id so the Deliberation Log can account for EVERY item (none silently dropped).
+        item["id"] = f"M{idx + 1}"
     return merged
 
 
@@ -375,14 +398,20 @@ def _synthesis(merged: list) -> str:
 
 def _fit_round1_prompt(draft: str, topic: str, evidence: str, schema_hint: str, model: str,
                        max_input_tokens: int, max_evidence_items: int, terse: bool, coded: bool,
-                       max_suggestions: int, report_tokens: bool) -> str:
+                       max_suggestions: int, report_tokens: bool, trace: dict | None = None) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
         Build the shared round-1 prompt and progressively trim it under a token
         budget: strip source noise, cap evidence, then (only if still over)
         squeeze evidence harder and digest the draft. The prompt is identical for
-        both models, so budgeting it once covers Gemini and Copilot.
+        every reviewer, so budgeting it once covers them all.
+
+    Details:
+        Every reduction that touches the CONTEXT the reviewers receive is
+        recorded in `trace` so the caller can say so: a reviewer given a
+        digested draft answers a different question from the one asked, and
+        that must never happen without a trace.
 
     Inputs:
         draft, topic, evidence, schema_hint (str): prompt parts.
@@ -391,6 +420,8 @@ def _fit_round1_prompt(draft: str, topic: str, evidence: str, schema_hint: str, 
         max_evidence_items (int): evidence cap.
         terse, coded (bool) / max_suggestions (int): compression knobs.
         report_tokens (bool): print a raw-vs-compressed reduction to stderr.
+        trace (dict | None): filled with draft_chars_in/out, evidence_chars_in/out,
+            evidence_squeezed, draft_digested, prompt_tokens, budget.
 
     Outputs:
         prompt (str): the trimmed round-1 prompt.
@@ -408,18 +439,61 @@ def _fit_round1_prompt(draft: str, topic: str, evidence: str, schema_hint: str, 
         return _round1_prompt(d, topic, e, schema_hint,
                               terse=terse, coded=coded, max_suggestions=max_suggestions)
 
+    squeezed = digested = False
     prompt = build(draft_eff, evidence_eff)
     if _token_count(prompt, model) > max_input_tokens:           # 1) squeeze evidence to top-3
         evidence_eff = _trim_evidence(evidence, min(3, max_evidence_items))
+        squeezed = True
         prompt = build(draft_eff, evidence_eff)
     if _token_count(prompt, model) > max_input_tokens:           # 2) digest the draft
-        prompt = build(_digest_draft(draft_eff), evidence_eff)
+        draft_eff = _digest_draft(draft_eff)
+        digested = True
+        prompt = build(draft_eff, evidence_eff)
 
+    if trace is not None:
+        trace.update({
+            "draft_chars_in": len(draft or ""), "draft_chars_out": len(draft_eff or ""),
+            "evidence_chars_in": len(evidence or ""), "evidence_chars_out": len(evidence_eff or ""),
+            "evidence_squeezed": squeezed, "draft_digested": digested,
+            "prompt_tokens": _token_count(prompt, model), "budget": max_input_tokens,
+        })
     if report_tokens:
         final_n = _token_count(prompt, model)
         pct = round(100 * (raw_n - final_n) / raw_n) if raw_n > 0 else 0
         print(f"TOKENS: raw~{raw_n} compressed~{final_n} (-{pct}%)", file=sys.stderr)
     return prompt
+
+
+def _context_warnings(topic: str, evidence: str, context: dict) -> list:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Say, in words, every way the context the reviewers receive is thinner
+        than what the caller supplied or than a valid answer needs. Nothing is
+        refused here: the arbitrating agent decides, but it is told.
+
+    Inputs:
+        topic (str): the --topic text.
+        evidence (str): the evidence blob.
+        context (dict): the trace filled by _fit_round1_prompt.
+
+    Outputs:
+        list[str]: one sentence per finding (empty when the context is intact).
+    --------------------------------------------------------------------------
+    """
+    findings = []
+    if context.get("draft_digested"):
+        findings.append(
+            f"the draft was DIGESTED to its signal lines ({context['draft_chars_in']} to {context['draft_chars_out']} characters) "
+            f"to fit {context['budget']} tokens: the reviewers did not see the full text. Submit a smaller object with its "
+            "full context, or raise --max-input-tokens.")
+    if context.get("evidence_squeezed"):
+        findings.append("the evidence was cut to its top 3 items to fit the budget.")
+    if not (topic or "").strip():
+        findings.append("no --topic was given: the reviewers know only the draft's own words.")
+    if not (evidence or "").strip():
+        findings.append("no evidence was given: the reviewers cannot ground their opinion in the literature.")
+    return findings
 
 
 def deliberate(draft: str, topic: str, evidence: str, rounds: int,
@@ -428,16 +502,28 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
                max_input_tokens: int = 12000, max_output_tokens: int = 4096,
                max_suggestions: int = 10, max_evidence_items: int = 6,
                round2_include_draft: bool = False, terse: bool = True,
-               coded_schema: bool = True, report_tokens: bool = False) -> dict:
+               coded_schema: bool = True, report_tokens: bool = False,
+               second: str = "copilot", fallback: str | None = None,
+               ollama_model: str = "auto") -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Run the two-round Gemini<->Copilot debate and merge the result. Degrades
+        Run the two-round debate between Gemini and a second reviewer (GitHub
+        Copilot, or a local Ollama model) and merge the result. Degrades
         gracefully: a missing key or failing model is marked unavailable and the
         survivor still deliberates; both missing yields an empty no-op envelope.
 
+    Details:
+        The second reviewer is tried first; when `fallback` is given and the
+        second reviewer is unavailable or fails its round-1 call, the fallback
+        is tried at that moment (Copilot refusing a personal token fails at the
+        call, not at the availability check). The reviewer that answered names
+        the envelope keys, the merge sources and the agreement values; the one
+        that did not is listed as unavailable and its failure is kept under
+        `fallback`.
+
     Inputs:
-        draft (str): the near-final draft to critique.
+        draft (str): the question or near-final draft to critique.
         topic (str): topic context for the reviewers.
         evidence (str): orchestrator-gathered evidence blob (may be "").
         rounds (int): 1 (independent only) or 2 (with rebuttal).
@@ -448,87 +534,145 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
         max_suggestions (int): cap on suggestions requested per model.
         max_evidence_items (int): cap on evidence items sent.
         round2_include_draft (bool): re-send draft+evidence in round 2 (default off
-            keeps round 2 slim — the rebuttal only needs the two critiques).
+            keeps round 2 slim - the rebuttal only needs the two critiques).
         terse (bool): inject the caveman terse directive into the prompts.
         coded_schema (bool): use short-key/coded-enum schema, expanded after parse.
         report_tokens (bool): print a raw-vs-compressed token reduction to stderr.
+        second (str): the first-choice second reviewer, one of SECOND_REVIEWERS.
+        fallback (str | None): the reviewer tried when `second` does not answer,
+            one of SECOND_REVIEWERS, or None for no fallback.
+        ollama_model (str): a tag, or "auto" to let model_resolver.py name the
+            local model at run time (never named in code).
 
     Outputs:
         envelope (dict): the deliberation result (see module docstring / protocol).
+
+    Raises:
+        ValueError: second or fallback is not one of SECOND_REVIEWERS.
     --------------------------------------------------------------------------
     """
+    if second not in SECOND_REVIEWERS or (fallback is not None and fallback not in SECOND_REVIEWERS):
+        raise ValueError(f"second and fallback must be one of {SECOND_REVIEWERS}, not {second!r} and {fallback!r}")
+    candidates = [second] + ([fallback] if fallback and fallback != second else [])
     schema_hint = _SCHEMA_HINTS.get(plan_schema, _SCHEMA_HINTS["generic"])
 
-    # Both legs resolve 'auto' at run time, from the provider's own live catalog: Gemini via
-    # ListModels, GitHub via the provider chain in copilot_providers.py. A hardcoded default is
-    # what retired the Gemini leg (gemini-2.0-flash, 404 NOT_FOUND) and what froze the GitHub
-    # leg on gpt-4o long after newer models shipped. Resolving here, not only inside the cores,
-    # keeps token counting and the envelope log on the same concrete ids.
+    # Every leg resolves 'auto' at run time, from its own source: Gemini via ListModels, GitHub
+    # via the provider chain in copilot_providers.py, the local model via model_resolver.py. A
+    # hardcoded default is what retired the Gemini leg (gemini-2.0-flash, 404 NOT_FOUND) and what
+    # froze the GitHub leg on gpt-4o long after newer models shipped. Resolving here, not only
+    # inside the cores, keeps token counting and the envelope log on the same concrete ids.
     if gemini_model in ("", "auto", None):
         gemini_model = resolve_gemini_model()
-    copilot_source = ""
-    if copilot_model in ("", "auto", None):
-        copilot_model, copilot_source = resolve_copilot_model()
 
-    available = {"gemini": gemini_available() and run_gemini is not None,
-                 "copilot": copilot_available() and run_copilot is not None}
-    unavailable_markers = []
-    if not available["gemini"]:
-        unavailable_markers.append("[REVIEWER UNAVAILABLE: Gemini]")
-    if not available["copilot"]:
-        unavailable_markers.append("[REVIEWER UNAVAILABLE: Copilot]")
+    setups: dict = {}
 
+    def get_setup(name: str) -> dict:
+        """Readiness and concrete model of one candidate, computed once and only when reached:
+        a fallback that is never needed is never probed (no `ollama list`, no resolver call)."""
+        if name in setups:
+            return setups[name]
+        if name == "copilot":
+            model, source = copilot_model, ""
+            if copilot_model in ("", "auto", None):
+                model, source = resolve_copilot_model()
+            setups[name] = {"ready": copilot_available() and run_copilot is not None, "model": model, "provider": source}
+        else:
+            ready = ollama_available() and run_ollama is not None
+            model = ollama_model
+            if ready and ollama_model in ("", "auto", None):
+                model = resolve_ollama_model()
+            setups[name] = {"ready": ready, "model": model, "provider": ""}
+        return setups[name]
+
+    gem_ready = gemini_available() and run_gemini is not None
     envelope = {
         "mode": "deliberation",
         "topic": topic,
         "rounds_executed": 0,
+        "second_reviewer": candidates[0],
         "reviewers_available": [],
         "reviewers_unavailable": [],
-        "unavailable_markers": unavailable_markers,
+        "unavailable_markers": [],
         # The concrete ids that ran, so a log shows which models produced the critique instead
         # of leaving 'auto' to be guessed at afterwards.
-        "models": {"gemini": gemini_model, "copilot": copilot_model,
-                   "copilot_provider": copilot_source},
+        "models": {},
         "overall_assessment": "",
-        "round1": {"gemini": None, "copilot": None},
-        "round2": {"gemini": None, "copilot": None},
+        "round1": {"gemini": None, candidates[0]: None},
+        "round2": {"gemini": None, candidates[0]: None},
         "merged": [],
     }
 
-    if not available["gemini"] and not available["copilot"]:
-        envelope["reviewers_unavailable"] = ["gemini", "copilot"]
-        envelope["overall_assessment"] = (
-            "Deliberation skipped - no reviewer credentials available.")
+    def fill_models(name: str) -> None:
+        envelope["models"] = {"gemini": gemini_model, name: get_setup(name)["model"]}
+        if name == "copilot":
+            envelope["models"]["copilot_provider"] = get_setup(name)["provider"]
+
+    fill_models(candidates[0])
+    if not gem_ready and not any(get_setup(n)["ready"] for n in candidates):
+        envelope["reviewers_unavailable"] = ["gemini", *candidates]
+        envelope["unavailable_markers"] = ["[REVIEWER UNAVAILABLE: Gemini]"] + [
+            f"[REVIEWER UNAVAILABLE: {name.capitalize()}]" for name in candidates]
+        envelope["overall_assessment"] = "Deliberation skipped - no reviewer credentials available."
         return envelope
 
-    r1_prompt = _fit_round1_prompt(
-        draft, topic, evidence, schema_hint, gemini_model, max_input_tokens,
-        max_evidence_items, terse, coded_schema, max_suggestions, report_tokens)
-    gem_r1 = cop_r1 = None
-    # Logged separately from the working values: a failed leg contributes nothing to the merge
-    # (so the variable stays None) but its error and raw text still belong in the envelope.
-    gem_r1_log = cop_r1_log = None
+    unavailable_markers = [] if gem_ready else ["[REVIEWER UNAVAILABLE: Gemini]"]
 
-    if available["gemini"]:
+    context = {}
+    r1_prompt = _fit_round1_prompt(draft, topic, evidence, schema_hint, gemini_model, max_input_tokens,
+                                   max_evidence_items, terse, coded_schema, max_suggestions, report_tokens, context)
+    context["warnings"] = _context_warnings(topic, evidence, context)
+    for warning in context["warnings"]:
+        print(f"WARN: {warning}", file=sys.stderr)
+    envelope["context"] = context
+    gem_r1 = gem_r1_log = None
+    if gem_ready:
         gem_r1, err = _safe_call(run_gemini, r1_prompt, gemini_model, temperature, max_output_tokens)
         if gem_r1 is None:
-            available["gemini"] = False
+            gem_ready = False
             unavailable_markers.append("[REVIEWER UNAVAILABLE: Gemini]")
             gem_r1_log = _failure_log(err)
             print(f"WARN: Gemini round 1 failed: {err}", file=sys.stderr)
         else:
             gem_r1 = gem_r1_log = _expand_schema(gem_r1)
-    if available["copilot"]:
-        cop_r1, err = _safe_call(run_copilot, r1_prompt, copilot_model, temperature, max_output_tokens)
-        if cop_r1 is None:
-            available["copilot"] = False
-            unavailable_markers.append("[REVIEWER UNAVAILABLE: Copilot]")
-            cop_r1_log = _failure_log(err)
-            print(f"WARN: Copilot round 1 failed: {err}", file=sys.stderr)
-        else:
-            cop_r1 = cop_r1_log = _expand_schema(cop_r1)
 
-    envelope["round1"] = {"gemini": gem_r1_log, "copilot": cop_r1_log}
+    # The second reviewer: first candidate that is ready AND answers. A candidate that fails keeps
+    # its log so a panel that lost a voice says so instead of looking like agreement.
+    cop_r1 = cop_r1_log = None
+    chosen = None
+    failures: dict = {}
+    for name in candidates:
+        label = name.capitalize()
+        if not get_setup(name)["ready"]:
+            failures[name] = {"overall_assessment": "", "suggestions": [], "_error": "unavailable"}
+            unavailable_markers.append(f"[REVIEWER UNAVAILABLE: {label}]")
+            continue
+        # Every reviewer gets the SAME prompt, context intact. The local fallback has a smaller
+        # window, and when the prompt does not fit it refuses with the numbers (run_ollama) instead
+        # of receiving a digest: a reviewer given less context answers a different question.
+        run_this = run_copilot if name == "copilot" else run_ollama
+        result, err = _safe_call(run_this, r1_prompt, get_setup(name)["model"], temperature, max_output_tokens)
+        if result is None:
+            failures[name] = _failure_log(err)
+            unavailable_markers.append(f"[REVIEWER UNAVAILABLE: {label}]")
+            print(f"WARN: {label} round 1 failed: {err}", file=sys.stderr)
+            continue
+        cop_r1 = cop_r1_log = _expand_schema(result)
+        chosen = name
+        break
+
+    second = chosen or candidates[0]
+    second_label = second.capitalize()
+    run_second = run_copilot if second == "copilot" else run_ollama
+    second_model = get_setup(second)["model"]
+    if chosen is None:
+        cop_r1_log = failures.get(second)
+    envelope["second_reviewer"] = second
+    fill_models(second)
+    envelope["round1"] = {"gemini": gem_r1_log, second: cop_r1_log}
+    envelope["round2"] = {"gemini": None, second: None}
+    if chosen is not None and chosen != candidates[0]:
+        envelope["fallback"] = {"from": candidates[0], "to": chosen, "reason": failures[candidates[0]].get("_error", ""),
+                                "log": failures[candidates[0]]}
 
     gem_r2 = cop_r2 = None
     gem_r2_log = cop_r2_log = None
@@ -538,7 +682,7 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
         r2_draft = _strip_source(draft) if round2_include_draft else ""
         r2_ev = _trim_evidence(evidence, max_evidence_items) if round2_include_draft else ""
         if gem_r1 is not None:
-            p = _round2_prompt(topic, schema_hint, gem_r1, cop_r1 or empty, "Copilot",
+            p = _round2_prompt(topic, schema_hint, gem_r1, cop_r1 or empty, second_label,
                                terse=terse, coded=coded_schema, max_suggestions=max_suggestions,
                                draft=r2_draft, evidence=r2_ev)
             gem_r2, err = _safe_call(run_gemini, p, gemini_model, temperature, max_output_tokens)
@@ -551,22 +695,22 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
             p = _round2_prompt(topic, schema_hint, cop_r1, gem_r1 or empty, "Gemini",
                                terse=terse, coded=coded_schema, max_suggestions=max_suggestions,
                                draft=r2_draft, evidence=r2_ev)
-            cop_r2, err = _safe_call(run_copilot, p, copilot_model, temperature, max_output_tokens)
+            cop_r2, err = _safe_call(run_second, p, second_model, temperature, max_output_tokens)
             if cop_r2 is None:
                 cop_r2_log = _failure_log(err)
-                print(f"WARN: Copilot round 2 failed, keeping round 1: {err}", file=sys.stderr)
+                print(f"WARN: {second_label} round 2 failed, keeping round 1: {err}", file=sys.stderr)
             else:
                 cop_r2 = cop_r2_log = _expand_schema(cop_r2)
 
-    envelope["round2"] = {"gemini": gem_r2_log, "copilot": cop_r2_log}
+    envelope["round2"] = {"gemini": gem_r2_log, second: cop_r2_log}
     envelope["rounds_executed"] = 2 if (rounds >= 2 and (gem_r2 or cop_r2)) else 1
 
     gem_final = gem_r2 or gem_r1
     cop_final = cop_r2 or cop_r1
-    envelope["merged"] = _merge(gem_final, cop_final)
+    envelope["merged"] = _merge(gem_final, cop_final, second)
 
-    envelope["reviewers_available"] = [m for m in ("gemini", "copilot") if available[m]]
-    envelope["reviewers_unavailable"] = [m for m in ("gemini", "copilot") if not available[m]]
+    envelope["reviewers_available"] = (["gemini"] if gem_ready else []) + ([chosen] if chosen else [])
+    envelope["reviewers_unavailable"] = (["gemini"] if not gem_ready else []) + [n for n in candidates if n != chosen]
     # Deduplicate markers while preserving order.
     envelope["unavailable_markers"] = list(dict.fromkeys(unavailable_markers))
     envelope["overall_assessment"] = _synthesis(envelope["merged"])
@@ -574,6 +718,63 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
 
 
 # --------------------------------------------------------------------------- CLI
+
+
+CONFIG_PATH = Path(__file__).resolve().parent / "deliberation-config.json"
+
+
+def load_second_reviewer_order(path: Path | None = None) -> list:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the preference order of the second reviewer from
+        deliberation-config.json (R0: not a literal in the code).
+
+    Inputs:
+        path (Path | None): the file, defaulting to the one beside this module.
+
+    Outputs:
+        list[str]: reviewer names from SECOND_REVIEWERS, in order of preference.
+
+    Raises:
+        ValueError: the file is missing or unreadable, lacks the key, or names
+            a reviewer outside SECOND_REVIEWERS (the message names the file and
+            the key, R3).
+    --------------------------------------------------------------------------
+    """
+    target = path or CONFIG_PATH
+    try:
+        order = json.loads(target.read_text(encoding="utf-8"))["second_reviewer_order"]["value"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"{target} must hold second_reviewer_order.value: {exc}") from exc
+    unknown = [name for name in order if name not in SECOND_REVIEWERS]
+    if not order or unknown:
+        raise ValueError(f"{target}: second_reviewer_order holds {unknown or 'nothing'}; allowed: {SECOND_REVIEWERS}")
+    return list(order)
+
+
+def pick_second_reviewer(requested: str, order: list) -> tuple:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Turn --second-reviewer into (second reviewer, fallback). An explicit
+        name is honoured as given with NO fallback (the panel then reports it
+        unavailable rather than silently using the other). "auto" takes the
+        first of `order` as the second reviewer and the next one as the
+        fallback: whether the first answers is only known when it is called,
+        so deliberate() decides at that moment, not here.
+
+    Inputs:
+        requested (str): "auto" or one of SECOND_REVIEWERS.
+        order (list[str]): preference order from load_second_reviewer_order.
+
+    Outputs:
+        tuple[str, str | None]: (second, fallback).
+    --------------------------------------------------------------------------
+    """
+    if requested != "auto":
+        return requested, None
+    return order[0], (order[1] if len(order) > 1 else None)
 
 
 def _read_evidence(args) -> str:
@@ -606,6 +807,13 @@ def main() -> None:
     parser.add_argument("--copilot-model", default="auto",
                         help="GitHub model id, or 'auto' (default) to resolve the newest entry "
                              "of the first answering provider catalog at run time")
+    parser.add_argument("--second-reviewer", default="auto", choices=["auto", *SECOND_REVIEWERS],
+                        help="Second voice beside Gemini: 'auto' (default) uses deliberation-config.json's "
+                             "order, GitHub Copilot first and the local model as the fallback when "
+                             "Copilot does not answer; 'copilot' or 'ollama' forces one, with no fallback")
+    parser.add_argument("--ollama-model", default="auto",
+                        help="Ollama tag, or 'auto' (default) to let model_resolver.py name the local "
+                             "model at run time, as for local-writer and local-coder")
     parser.add_argument("--temperature", type=float, default=0.3)
     parser.add_argument("--plan-schema", default="generic",
                         choices=["auditor", "researcher", "reviewer-response", "generic"])
@@ -648,6 +856,11 @@ def main() -> None:
         sys.exit(1)
 
     evidence = _read_evidence(args)
+    try:
+        second, fallback = pick_second_reviewer(args.second_reviewer, load_second_reviewer_order())
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     envelope = deliberate(
         draft=draft, topic=args.topic, evidence=evidence, rounds=args.rounds,
@@ -657,6 +870,7 @@ def main() -> None:
         max_suggestions=args.max_suggestions, max_evidence_items=args.max_evidence_items,
         round2_include_draft=args.round2_include_draft, terse=args.terse,
         coded_schema=args.coded_schema, report_tokens=args.report_tokens,
+        second=second, fallback=fallback, ollama_model=args.ollama_model,
     )
 
     out_text = json.dumps(envelope, ensure_ascii=False, indent=2)

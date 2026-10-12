@@ -41,6 +41,14 @@
     "value": "image_analysis_removed.md",
     "provenance": "chosen 2026-10-11: the file in <out>/assets/ that keeps every <details> block the repair removed from a chapter, with its chapter and line, so removing mineru's image analysis loses nothing"
   },
+  "glyph_image_max_bytes": {
+    "value": 4096,
+    "provenance": "measured 2026-10-11 on the real thesis: the four end-of-proof squares mineru extracted as images weigh 968 to 1164 bytes, while the smallest real figure of the same thesis weighs 29593 bytes. An embedded image up to this many decoded bytes is a symbol, not a figure"
+  },
+  "glyph_image_replacement": {
+    "value": "∎",
+    "provenance": "chosen 2026-10-12: the end-of-proof symbol (U+220E), which is what every glyph image measured on the real thesis was. The replacement is counted in the repair report as glyph_images_replaced so a reader can check"
+  },
   "backup_dir_name": {
     "value": "pdf2md-backup",
     "provenance": "chosen 2026-10-11: the directory under the output directory that receives the original of every file the repair rewrites. A repair refuses to run over an existing one, so a second run can never overwrite the first run's originals"

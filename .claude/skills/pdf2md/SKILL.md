@@ -120,8 +120,12 @@ passed), 1 failure.
   although an earlier version of this file said its image extraction stays
   off), so before `repair` runs the markdown carries them inline. A figure
   whose media type is not in `pdf2md-repair.json` or whose data does not
-  decode is left in place and keeps being reported. Acronym detection has no
-  code path at all.
+  decode is left in place and keeps being reported. A tiny image (at most
+  `glyph_image_max_bytes`, 4096, measured 2026-10-11: the four end-of-proof
+  squares of a thesis weigh 968 to 1164 bytes, the smallest real figure
+  29593) is a symbol, not a figure: `repair` writes the end-of-proof symbol
+  instead, counts it as `glyph_images_replaced` and gives it no figure number.
+  Acronym detection has no code path at all.
 - **Stage 7's equation measure is the numbering, not a detection.**
   The expected count is the highest equation number in the output and the
   found count the distinct numbers present, so a hole is a real lost

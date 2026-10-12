@@ -90,6 +90,16 @@ class TestConfig(unittest.TestCase):
         # so the deliberation reviewer must not ride the writer or coder role.
         self.assertNotIn(reviewer.load_config()["role"], ("writer", "coder"))
 
+    def test_the_window_is_the_native_one_the_operator_configured(self):
+        # Operator decision 2026-10-12: the session-role model runs at its native window, which
+        # `ollama show` reports as 262144 for both its context length and its num_ctx. The old
+        # provisional 16384 was written by the session and silently reloaded the model smaller.
+        config = reviewer.load_config()
+        self.assertEqual(config["num_ctx"], 262144)
+        provenance = json.loads(reviewer.CONFIG_PATH.read_text(encoding="utf-8"))["num_ctx"]["provenance"]
+        self.assertIn("2026-10-12", provenance)
+        self.assertNotIn("PROVISIONAL", provenance)
+
     def test_the_window_leaves_room_for_the_reply(self):
         config = reviewer.load_config()
         self.assertGreater(config["num_ctx"], config["reply_tokens"])

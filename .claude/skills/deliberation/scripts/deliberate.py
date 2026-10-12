@@ -137,9 +137,27 @@ _expand_schema = expand_schema
 # --- Input compression: format-aware strip, structural digest, evidence trim -----------------
 
 
+_TAG_ATTRIBUTES = r"""(?:\s+[A-Za-z_:][\w:.-]*=(?:"[^"<>]*"|'[^'<>]*'|[^\s"'<>=]+))*"""
+_strip_pattern_cache: dict = {}
+
+
+def _markup_pattern() -> "re.Pattern":
+    """Compiled pattern of the markup _strip_source removes: HTML comments and the tag names of
+    deliberation-config.json's strip_markup_tags, with no attribute or name=value attributes.
+    An inequality such as 'a<b and c>d' is never a tag."""
+    if "pattern" not in _strip_pattern_cache:
+        names, _ratio = load_strip_settings()
+        alternatives = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+        _strip_pattern_cache["pattern"] = re.compile(
+            r"<!--.*?-->|</?(?:" + alternatives + r")" + _TAG_ATTRIBUTES + r"\s*/?>",
+            re.IGNORECASE | re.DOTALL)
+    return _strip_pattern_cache["pattern"]
+
+
 def _strip_source(draft: str) -> str:
-    """RTK-analogue: drop format noise (LaTeX preamble/comments, markdown code fences, raw HTML)
-    while keeping prose and claim lines. Returns the original draft if stripping empties it."""
+    """RTK-analogue: drop format noise (LaTeX preamble/comments, markdown code fences, markup tags
+    and HTML comments) while keeping prose, claims and every inequality. Returns the original
+    draft if stripping empties it."""
     if not draft:
         return draft or ""
     text = draft
@@ -149,7 +167,7 @@ def _strip_source(draft: str) -> str:
         text = text.split("\\end{document}", 1)[0]
     text = "\n".join(re.sub(r"(?<!\\)%.*$", "", line) for line in text.splitlines())  # LaTeX comments
     text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)                            # md code fences
-    text = re.sub(r"<[^>]+>", "", text)                                               # raw HTML
+    text = _markup_pattern().sub("", text)                                            # markup tags only
     text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)                                     # collapse blanks
     return text.strip() or draft
 
@@ -439,6 +457,7 @@ def _fit_round1_prompt(draft: str, topic: str, evidence: str, schema_hint: str, 
         return _round1_prompt(d, topic, e, schema_hint,
                               terse=terse, coded=coded, max_suggestions=max_suggestions)
 
+    stripped_chars = len(draft_eff or "")   # size after format cleaning, before any digest
     squeezed = digested = False
     prompt = build(draft_eff, evidence_eff)
     if _token_count(prompt, model) > max_input_tokens:           # 1) squeeze evidence to top-3
@@ -453,6 +472,7 @@ def _fit_round1_prompt(draft: str, topic: str, evidence: str, schema_hint: str, 
     if trace is not None:
         trace.update({
             "draft_chars_in": len(draft or ""), "draft_chars_out": len(draft_eff or ""),
+            "draft_chars_stripped": stripped_chars,
             "evidence_chars_in": len(evidence or ""), "evidence_chars_out": len(evidence_eff or ""),
             "evidence_squeezed": squeezed, "draft_digested": digested,
             "prompt_tokens": _token_count(prompt, model), "budget": max_input_tokens,
@@ -482,6 +502,15 @@ def _context_warnings(topic: str, evidence: str, context: dict) -> list:
     --------------------------------------------------------------------------
     """
     findings = []
+    size_in = context.get("draft_chars_in") or 0
+    size_clean = context.get("draft_chars_stripped")
+    if size_in and size_clean is not None:
+        _tags, warn_ratio = load_strip_settings()
+        if (size_in - size_clean) / size_in > warn_ratio:
+            findings.append(
+                f"format cleaning removed {size_in - size_clean} of {size_in} draft characters "
+                f"({size_in} to {size_clean}; preamble, comments, code fences or markup tags): "
+                "check that nothing the reviewers need was dropped, or submit plain text.")
     if context.get("draft_digested"):
         findings.append(
             f"the draft was DIGESTED to its signal lines ({context['draft_chars_in']} to {context['draft_chars_out']} characters) "
@@ -751,6 +780,40 @@ def load_second_reviewer_order(path: Path | None = None) -> list:
     if not order or unknown:
         raise ValueError(f"{target}: second_reviewer_order holds {unknown or 'nothing'}; allowed: {SECOND_REVIEWERS}")
     return list(order)
+
+
+def load_strip_settings(path: Path | None = None) -> tuple:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the cleaning settings from deliberation-config.json (R0): the
+        markup tag names _strip_source may remove and the share of removed
+        characters above which the envelope warns.
+
+    Inputs:
+        path (Path | None): the file, defaulting to the one beside this module.
+
+    Outputs:
+        tuple[list[str], float]: (tag names, warning ratio in (0, 1)).
+
+    Raises:
+        ValueError: the file is missing or unreadable, lacks strip_markup_tags
+            or strip_loss_warn_ratio, or holds an empty list or a ratio outside
+            (0, 1) (the message names the file and the key, R3).
+    --------------------------------------------------------------------------
+    """
+    target = path or CONFIG_PATH
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        names = data["strip_markup_tags"]["value"]
+        ratio = float(data["strip_loss_warn_ratio"]["value"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"{target} must hold strip_markup_tags.value and strip_loss_warn_ratio.value: {exc}") from exc
+    if not names or not all(isinstance(n, str) and n.isalnum() for n in names):
+        raise ValueError(f"{target}: strip_markup_tags.value must be a non-empty list of tag names")
+    if not 0 < ratio < 1:
+        raise ValueError(f"{target}: strip_loss_warn_ratio.value must lie between 0 and 1, got {ratio}")
+    return list(names), ratio
 
 
 def pick_second_reviewer(requested: str, order: list) -> tuple:

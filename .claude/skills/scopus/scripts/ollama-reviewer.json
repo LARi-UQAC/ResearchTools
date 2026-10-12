@@ -4,8 +4,8 @@
     "provenance": "chosen by the operator 2026-10-11: the deliberation reviewer must be a reasoning model, not the writer-role model, which is tuned for vault and graph memory work. The resolver's manually declared 'session' role (adopted 2026-10-09 for /auditthesis-sized local sessions) names it. The tag itself is never written here: model_resolver.py names it at run time (R2)"
   },
   "num_ctx": {
-    "value": 16384,
-    "provenance": "chosen 2026-10-11, PROVISIONAL: the session-role tag has no entry in local-model-config.json (the sweep only measures writer and coder candidates), so the window cannot be read from a measurement. 16384 is the window the pdf2md vision checks already ran this tag at on this card; a deliberation question and its reply fit it, and a larger window only adds CPU latency (the operator's own sweep of 2026-10-09 measured 2.40 tok/s decode at 262144). Prompt plus reply over this window is refused, never truncated"
+    "value": 262144,
+    "provenance": "chosen by the operator 2026-10-12: the session-role model keeps its native window. `ollama show` on this machine reports both context length and the configured num_ctx as 262144, so the request carries the same value and the daemon no longer reloads the model smaller (it had been reloaded at 16384, a provisional value written by the session on 2026-10-11, unmeasured). The operator's own measurement of 2026-10-09 gave 2.40 tok/s decode at this window, mostly CPU resident. Prompt plus reply over this window is refused, never truncated"
   },
   "request_timeout_s": {
     "value": 3600,

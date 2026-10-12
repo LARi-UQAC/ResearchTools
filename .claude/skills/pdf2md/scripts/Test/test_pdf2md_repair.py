@@ -52,6 +52,8 @@ CONFIG = {
     "garbled_citation_span_max_chars": 80,
     "garbled_span_forbidden": ["=", "<", ">", "\\leq", "\\sum", "\\frac"],
     "removed_blocks_file": "image_analysis_removed.md",
+    "glyph_image_max_bytes": 100,
+    "glyph_image_replacement": "∎",
 }
 
 P1 = "The orchard keepers measured rainfall across every terrace during the long dry season and recorded each reading in a shared notebook."
@@ -63,8 +65,12 @@ P6 = "Teachers in the valley schools used the rainfall tables to explain seasona
 P7 = "Meanwhile the cooperative bought a small drying shed so that harvested fruit could be stored safely whenever the autumn storms arrived early."
 P8 = "The regional office eventually funded a second notebook for each village, asking volunteers to record spring flowering dates alongside the rainfall."
 
-JPEG = base64.b64encode(b"JPEGDATA-1").decode("ascii")
-PNG = base64.b64encode(b"PNGDATA-2").decode("ascii")
+JPEG_BYTES = b"JPEGDATA-1" * 30      # 300 bytes: larger than the glyph threshold of CONFIG (100)
+PNG_BYTES = b"PNGDATA-2" * 30
+GLYPH_BYTES = b"tiny-square"          # 11 bytes: a symbol, not a figure
+JPEG = base64.b64encode(JPEG_BYTES).decode("ascii")
+PNG = base64.b64encode(PNG_BYTES).decode("ascii")
+GLYPH = base64.b64encode(GLYPH_BYTES).decode("ascii")
 
 
 def join(*parts):
@@ -133,7 +139,7 @@ class TestEmbeddedImages(unittest.TestCase):
         text = f"before\n\n![fig a](data:image/jpeg;base64,{JPEG})\n\nmiddle\n\n![](data:image/png;base64,{PNG})\n"
         new, figures = repair.extract_embedded_images(text, 3, CONFIG)
         self.assertEqual([name for name, _data in figures], ["chapter3_figure1.jpg", "chapter3_figure2.png"])
-        self.assertEqual([data for _name, data in figures], [b"JPEGDATA-1", b"PNGDATA-2"])
+        self.assertEqual([data for _name, data in figures], [JPEG_BYTES, PNG_BYTES])
         self.assertIn("![fig a](../assets/figures/chapter3_figure1.jpg)", new)
         self.assertIn("![](../assets/figures/chapter3_figure2.png)", new)
         self.assertNotIn("base64", new)
@@ -141,7 +147,7 @@ class TestEmbeddedImages(unittest.TestCase):
     def test_whitespace_inside_the_data_is_tolerated(self):
         split = JPEG[:4] + "\n" + JPEG[4:]
         _new, figures = repair.extract_embedded_images(f"![](data:image/jpeg;base64,{split})", 1, CONFIG)
-        self.assertEqual(figures[0][1], b"JPEGDATA-1")
+        self.assertEqual(figures[0][1], JPEG_BYTES)
 
     def test_an_unknown_type_and_undecodable_data_are_left_in_place(self):
         for image in (f"![](data:image/tiff;base64,{JPEG})", "![](data:image/jpeg;base64,AAA)"):
@@ -151,6 +157,40 @@ class TestEmbeddedImages(unittest.TestCase):
     def test_an_ordinary_image_link_is_not_touched(self):
         text = "![fig](assets/figures/a.png)"
         self.assertEqual(repair.extract_embedded_images(text, 1, CONFIG), (text, []))
+
+
+class TestGlyphImages(unittest.TestCase):
+    # Measured 2026-10-11 on the real thesis: mineru extracted each end-of-proof square as a
+    # 1 KB image, which then looked like a figure and shifted the figure file numbering.
+    def test_a_tiny_image_becomes_the_symbol_and_is_counted(self):
+        text = f"Proof text.\n\n![](data:image/jpeg;base64,{GLYPH})\n\nNext paragraph.\n"
+        new, count = repair.replace_glyph_images(text, CONFIG)
+        self.assertEqual(count, 1)
+        self.assertIn("∎", new)
+        self.assertNotIn("base64", new)
+        self.assertIn("Proof text.", new)
+        self.assertIn("Next paragraph.", new)
+
+    def test_a_real_figure_is_left_for_the_extraction(self):
+        text = f"![fig](data:image/jpeg;base64,{JPEG})"
+        self.assertEqual(repair.replace_glyph_images(text, CONFIG), (text, 0))
+
+    def test_a_glyph_takes_no_figure_number(self):
+        text = (f"![](data:image/jpeg;base64,{GLYPH})\n\n![a](data:image/jpeg;base64,{JPEG})\n\n"
+                f"![](data:image/jpeg;base64,{GLYPH})\n\n![b](data:image/png;base64,{PNG})\n")
+        new, glyphs = repair.replace_glyph_images(text, CONFIG)
+        new, figures = repair.extract_embedded_images(new, 4, CONFIG)
+        self.assertEqual(glyphs, 2)
+        self.assertEqual([name for name, _d in figures], ["chapter4_figure1.jpg", "chapter4_figure2.png"])
+
+    def test_undecodable_or_unknown_data_is_left_alone(self):
+        for image in ("![](data:image/jpeg;base64,AAA)", f"![](data:image/tiff;base64,{GLYPH})"):
+            self.assertEqual(repair.replace_glyph_images(image, CONFIG), (image, 0))
+
+    def test_the_repair_report_carries_the_count(self):
+        text = f"Proof.\n\n![](data:image/jpeg;base64,{GLYPH})\n"
+        _t, _f, info = repair.repair_chapter(1, "unrelated pdf text", text, CONFIG, FIDELITY)
+        self.assertEqual(info["glyph_images_replaced"], 1)
 
 
 class TestImageAnalysisBlocks(unittest.TestCase):
@@ -347,7 +387,7 @@ class TestRepairOutput(unittest.TestCase):
         report = self.run_repair(True)
         repaired = (self.out / "content" / "chapitre4.md").read_text(encoding="utf-8")
         self.assertIn("### 4.1 Article soumis", repaired)
-        self.assertEqual((self.out / "assets" / "figures" / "chapter4_figure1.jpg").read_bytes(), b"JPEGDATA-1")
+        self.assertEqual((self.out / "assets" / "figures" / "chapter4_figure1.jpg").read_bytes(), JPEG_BYTES)
         self.assertIn("base64", (self.out / "pdf2md-backup" / "chapitre4.md").read_text(encoding="utf-8"))
         self.assertEqual(len(report["files_written"]), 2)
         self.assertEqual(self.run_repair(False)["errors_after"], 0)

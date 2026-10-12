@@ -2,5 +2,13 @@
   "second_reviewer_order": {
     "value": ["copilot", "ollama"],
     "provenance": "chosen by the operator 2026-10-11: GitHub Copilot is the second reviewer and the local model is the fallback used only when Copilot does not answer. With --second-reviewer auto the first name is tried first and the second name is tried at the moment the first fails or is unavailable"
+  },
+  "strip_markup_tags": {
+    "value": ["a", "b", "br", "blockquote", "caption", "center", "code", "details", "div", "em", "figcaption", "figure", "font", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "mark", "ol", "p", "pre", "section", "small", "span", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul"],
+    "provenance": "specified 2026-10-12 after a measured defect: the cleaning step used to delete everything between any '<' and the next '>', which erased the inequalities of a mathematical draft (6793 characters reduced to 2101 without a warning). Only these markup tag names, written as a tag with no attribute or with name=value attributes, and HTML comments are now removed. The list is the set of tags pdf2md and mineru emit in converted documents"
+  },
+  "strip_loss_warn_ratio": {
+    "value": 0.10,
+    "provenance": "chosen by the session 2026-10-12, to be confirmed by the operator: when the cleaning step removes more than this share of the draft characters, the envelope's context.warnings says so with both sizes, since a silent loss of context makes the reviewers answer a different question"
   }
 }

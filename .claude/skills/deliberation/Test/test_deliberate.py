@@ -244,6 +244,52 @@ class TestCompressionHelpers(unittest.TestCase):
         self.assertNotIn("documentclass", out)      # preamble dropped
         self.assertIn("Ordinary prose", out)        # prose kept (only digested when over budget)
 
+    def test_strip_source_keeps_inequalities_across_lines(self):
+        # Measured 2026-10-11: a pattern matching from any '<' to the next '>' deleted two thirds
+        # of a mathematical draft. An inequality is not markup.
+        draft = ("Claim: 0 < c < 1/d holds.\nA long line of reasoning that must survive intact.\n"
+                 "Later the bound is c > 0 and x <= y.\nEnd of draft.")
+        out = deliberate._strip_source(draft)
+        self.assertIn("0 < c < 1/d holds.", out)
+        self.assertIn("A long line of reasoning that must survive intact.", out)
+        self.assertIn("c > 0 and x <= y.", out)
+
+    def test_strip_source_keeps_a_comparison_that_looks_like_a_tag(self):
+        out = deliberate._strip_source("if a<b and c>d then stop")
+        self.assertIn("a<b and c>d", out)
+
+    def test_strip_source_still_removes_real_tags_and_comments(self):
+        out = deliberate._strip_source(
+            "Result<br>line <b>bold</b> <span class=\"x\">kept text</span> <!-- hidden\nnote --> end <img src='a.png'/>")
+        for gone in ("<br>", "<b>", "</b>", "<span", "</span>", "hidden", "<img"):
+            self.assertNotIn(gone, out)
+        self.assertIn("kept text", out)
+        self.assertIn("end", out)
+
+    def test_loss_warning_when_cleaning_removes_much_of_the_draft(self):
+        context = {"draft_chars_in": 1000, "draft_chars_stripped": 400, "draft_chars_out": 400,
+                   "draft_digested": False, "evidence_squeezed": False, "budget": 12000}
+        warnings = deliberate._context_warnings("topic", "evidence", context)
+        self.assertTrue(any("cleaning" in w and "1000" in w and "400" in w for w in warnings), warnings)
+
+    def test_no_loss_warning_for_a_small_cleaning(self):
+        context = {"draft_chars_in": 1000, "draft_chars_stripped": 980, "draft_chars_out": 980,
+                   "draft_digested": False, "evidence_squeezed": False, "budget": 12000}
+        self.assertEqual(deliberate._context_warnings("topic", "evidence", context), [])
+
+    def test_strip_settings_come_from_the_config_and_a_missing_key_is_named(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "deliberation-config.json"
+            bad.write_text('{"second_reviewer_order": {"value": ["copilot"]}}', encoding="utf-8")
+            with self.assertRaises(ValueError) as caught:
+                deliberate.load_strip_settings(bad)
+            self.assertIn("strip_markup_tags", str(caught.exception))
+        tags, ratio = deliberate.load_strip_settings()
+        self.assertIn("br", tags)
+        self.assertGreater(ratio, 0)
+        self.assertLess(ratio, 1)
+
     def test_digest_keeps_signal_lines_only(self):
         digest = deliberate._digest_draft(deliberate._strip_source(_LATEX_DRAFT))
         self.assertNotIn("Ordinary prose", digest)

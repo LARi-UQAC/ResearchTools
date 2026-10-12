@@ -69,8 +69,12 @@ return feed the `coverage_gap` arbitration (section 4) and the Scopus gate (sect
 - Context record. The envelope carries `context`: the characters of the draft and of the evidence
   sent against what was supplied, whether the draft was digested or the evidence squeezed to fit the
   token budget, the prompt tokens against the budget, and `warnings[]` in words (digested draft, no
-  `--topic`, no evidence). Claude reads it before arbitrating: a reviewer that did not see the full
-  text cannot be held to a full-text opinion, and any `warnings[]` entry goes into the Log.
+  `--topic`, no evidence, and a format cleaning that removed more than the configured share of the
+  draft). Claude reads it before arbitrating: a reviewer that did not see the full text cannot be
+  held to a full-text opinion, and any `warnings[]` entry goes into the Log. The cleaning removes
+  only LaTeX preambles and comments, code fences, markup tags and HTML comments, never an
+  inequality; measured 2026-10-11, a pattern that matched from any `<` to the next `>` had erased
+  two thirds of a mathematical draft with no warning.
 
 The script never accepts, validates, or scores anything. It emits evidence for Claude to judge.
 

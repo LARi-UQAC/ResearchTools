@@ -65,6 +65,8 @@ _CONFIG_KEYS = (
     "garbled_citation_span_max_chars",
     "garbled_span_forbidden",
     "removed_blocks_file",
+    "glyph_image_max_bytes",
+    "glyph_image_replacement",
 )
 
 _BASE64_IMAGE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\(data:image/(?P<kind>[A-Za-z0-9.+-]+);base64,(?P<data>[A-Za-z0-9+/=\s]+)\)")
@@ -108,6 +110,45 @@ def load_repair_config(path: Path = _CONFIG_PATH) -> dict:
 # --------------------------------------------------------------------------- #
 # Repairs 1 and 2: embedded images and HTML footnotes.
 # --------------------------------------------------------------------------- #
+
+
+def replace_glyph_images(text: str, config: dict) -> tuple[str, int]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Replace each tiny embedded image (a symbol mineru rasterised, such as
+        the end-of-proof square) by its text symbol, so it is neither written
+        as a figure file nor counted in the figure numbering.
+
+    Details:
+        An image is a glyph when its decoded size is at most
+        glyph_image_max_bytes. An image of an unknown type or with undecodable
+        data is left exactly as it is, as in extract_embedded_images.
+
+    Inputs:
+        text (str): the chapter markdown.
+        config (dict): from load_repair_config.
+
+    Outputs:
+        (str, int): the new text and the number of images replaced.
+    --------------------------------------------------------------------------
+    """
+    replaced = 0
+
+    def replace(match: re.Match) -> str:
+        nonlocal replaced
+        if match.group("kind").lower() not in config["image_extensions"]:
+            return match.group(0)
+        try:
+            data = base64.b64decode(re.sub(r"\s+", "", match.group("data")), validate=True)
+        except (binascii.Error, ValueError):
+            return match.group(0)
+        if len(data) > config["glyph_image_max_bytes"]:
+            return match.group(0)
+        replaced += 1
+        return config["glyph_image_replacement"]
+
+    return _BASE64_IMAGE_RE.sub(replace, text), replaced
 
 
 def extract_embedded_images(text: str, chapter: int, config: dict) -> tuple[str, list[tuple[str, bytes]]]:
@@ -531,6 +572,7 @@ def repair_chapter(chapter: int, pdf_text: str, output_text: str, config: dict, 
     --------------------------------------------------------------------------
     """
     text, removed_blocks = remove_image_analysis_blocks(output_text, chapter)
+    text, glyphs = replace_glyph_images(text, config)
     text, figures = extract_embedded_images(text, chapter, config)
     text, footnotes = unwrap_footnotes(text, config)
     text, equations = normalize_equation_numbers(text)
@@ -542,6 +584,7 @@ def repair_chapter(chapter: int, pdf_text: str, output_text: str, config: dict, 
         "citations_restored": citations,
         "citations_unplaced": citations_unplaced,
         "images": [name for name, _data in figures],
+        "glyph_images_replaced": glyphs,
         "footnotes": footnotes,
         "analysis_blocks_removed": removed_blocks,
         "equation_numbers_fixed": equations,

@@ -529,24 +529,21 @@ real output (a path, a log line, a file name) pasted into a test, a doc or a com
    shared folder** (OneDrive, Dropbox, Google Drive, iCloud, Nextcloud, a network share, a
    junction into one of them) and says which category it found, never the path. If your home
    folder is synchronized, run `-Uninstall` and install again with `-Target <local folder>`.
-   It also adds `private-terms.txt` and `private-terms.extra.txt` to the global git ignore, so a
-   copy dropped into a repository cannot be staged by accident.
+   It also adds `private-terms.txt`, `private-terms.extra.txt` and `private-terms.excluded.txt`
+   to the global git ignore, so a copy dropped into a repository cannot be staged by accident.
 3. **Check absolute paths in fixtures.** An absolute drive path added to a file under
    `Test/`, `tests/`, `fixtures/` or named `test_*` is reported unless it matches the
    fictitious roots of `fixture-path-allow.txt` (`C:\Work`, `C:\Example`, ...). Default is a
    warning on stderr, because existing fixtures legitimately carry paths; once the tree is
    clean, `git config --global privacyguard.absolutePaths refuse` makes it a refusal, and
    `off` disables it. A deliberate line carries `betterleaks:allow`.
-4. **Give CI the deny list as a repository secret.** The deny list cannot be a file in a public
-   repo. A GitHub Actions secret read by the privacy-scan workflow gives the server-side check
-   (the one `--no-verify` cannot skip) the same terms. Limits: a secret is not passed to a
-   workflow run from a fork's pull request, so that case stays unprotected; verify before
-   relying on it. NOT implemented by the privacy-denylist change, tracked as a follow-up. Two
-   further limits to weigh before building it. The same secret could scan GitHub comments,
-   pull-request bodies and issue text (the leak path of the PR #69 incident, which no hook
-   sees), but only AFTER publication: deleting the text removes it from view, while the edit
-   history and the notification e-mails already sent keep it. And the list then leaves this
-   machine for GitHub's servers, which is a decision for the owner, not a default.
+4. **No copy of the deny list in CI (rejected).** A repository secret read by the privacy-scan
+   workflow would give the server-side check the same terms, but the list holds real names and
+   a secret is still data leaving the machine. The owner ruled it out on 2026-10-15, so the CI
+   scan stays shape rules only (`privacy-rules.toml`), and names stay covered by the local
+   hooks (step 2), R34 and the human read of step 5. The consequence is stated, not hidden:
+   GitHub comments, pull-request bodies and issue text, the leak path of the PR #69 incident,
+   have no automatic control at all. Never paste a name or a real path there.
 5. **Make the last look human.** Before any push of a branch that touched fixtures, docs or
    commit messages, list the added lines that contain an absolute path or a capitalised
    two-word name and read them: `git diff origin/main...HEAD -U0 | grep -E '^\+' | grep -E

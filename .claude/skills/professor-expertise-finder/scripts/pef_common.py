@@ -298,17 +298,27 @@ def slugify(text: str) -> str:
     Outputs:
         slug (str): lowercase ASCII, words joined by single hyphens. Whenever
             the fold DROPS at least one letter or digit of the original text
-            - not only when it drops ALL of them - a short hash of the
-            EXACT original text is appended, so two names that are
-            different before the drop but look identical after it do not
-            collide into the SAME data instance (2026-10-15 review finding:
-            the 2026-10-09 fix only hashed when the WHOLE result was empty,
-            so "France, <a name written in a non-Latin script>" and plain
-            "France" both still slugified to "france", and "Łódź" - whose
-            leading "Ł" has no ASCII form - silently lost that letter and
-            became "odz" with no hash at all). A text with NO surviving
-            letter or digit still gets the "unspecified-<hash>" form it
-            always has.
+            - not only when it drops ALL of them - a short hash is appended,
+            so two names that are different before the drop but look
+            identical after it do not collide into the SAME data instance
+            (2026-10-15 review finding: the 2026-10-09 fix only hashed when
+            the WHOLE result was empty, so "France, <a name written in a
+            non-Latin script>" and plain "France" both still slugified to
+            "france", and "Łódź" - whose leading "Ł" has no ASCII form -
+            silently lost that letter and became "odz" with no hash at
+            all). A text with NO surviving letter or digit still gets the
+            "unspecified-<hash>" form it always has.
+
+            The hash is taken over a NORMALIZED key (NFKC + casefold +
+            collapsed whitespace), not the raw text - a same-round review
+            finding on the same fix: hashing the raw text made two spellings
+            of the SAME lossy name (a capitalization or trailing-space
+            difference - realistic typing variation, not a different name)
+            get DIFFERENT slugs, silently opening a second data instance for
+            the same batch or location and bypassing the no-reuse rule the
+            same way the bug being fixed did. A non-lossy name already
+            collapses case/whitespace through the ordinary fold below; this
+            keeps lossy names doing the same.
 
     Details:
         This is a deterministic function: the SAME input text always
@@ -334,7 +344,12 @@ def slugify(text: str) -> str:
     slug_body = re.sub(r"-+", "-", slug_body)
     if not lossy and slug_body:
         return slug_body
-    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    # Hash a NORMALIZED key (NFKC + casefold + collapsed whitespace), not
+    # the raw text: two spellings of the SAME name that only differ in
+    # case or trailing whitespace must still collide once a hash is in
+    # play, exactly as they already do on the non-lossy path above.
+    hash_key = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text).casefold()).strip()
+    digest = hashlib.sha1(hash_key.encode("utf-8")).hexdigest()[:8]
     if slug_body:
         return f"{slug_body}-{digest}"
     return f"unspecified-{digest}"

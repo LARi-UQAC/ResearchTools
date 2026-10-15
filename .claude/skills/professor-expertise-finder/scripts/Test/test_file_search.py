@@ -193,19 +193,36 @@ class FileSearchTest(unittest.TestCase):
                 rows = list(csv.DictReader(fh))
             self.assertEqual(int(rows[0]["match_count"]), 2)
 
-    def test_title_row_incidentally_naming_name_is_not_a_header(self):
-        # 2026-10-15 review finding, L1: find_header used to test the bare
-        # substrings "name"/"nom" directly, so a title cell merely
-        # mentioning a program name ("Program name: AI Symposium 2026"),
-        # paired with an unrelated expertise-looking cell in the same row,
-        # could be wrongly accepted. The fix reuses NAME_HINTS (exact match
-        # first, like col_index) instead of the bare substrings.
+    def test_find_header_accepts_real_world_name_header_variants(self):
+        # 2026-10-15 review round 5: an EXACT-match-only version of
+        # find_header (tried the same day to close L1 below) was confirmed,
+        # by calling find_header() directly, to REJECT every one of these
+        # real headers - a regression worse than the narrow risk it closed.
+        # Substring matching over NAME_HINTS (data, R6) is restored so all
+        # four are accepted again.
+        for name_header in ("Nom du réviseur", "Full Name", "Professor Name",
+                             "External Reviewer's Name"):
+            with self.subTest(name_header=name_header):
+                grid = [
+                    [name_header, "Institution", "Areas of Expertise", "Availability"],
+                    ["Jane Doe", "Example University", "computer vision", "Available"],
+                ]
+                self.assertEqual(find_header(grid), 0)
+
+    def test_title_row_incidentally_naming_name_is_accepted_only_with_the_full_expertise_phrase(self):
+        # L1's narrow, ACCEPTED residual risk: a title cell merely
+        # mentioning a name is only mistaken for a header when some OTHER
+        # cell in the same row also carries the exact phrase "areas of
+        # expertise"/"domaines de competence" - not a realistic coincidence
+        # for an actual title row, and the price of rejecting it would be
+        # breaking the real headers test_find_header_accepts_real_world_
+        # name_header_variants pins (see that test's own history).
         grid = [
             ["Program name: AI Symposium 2026", "Domaines de competence notes"],
             ["Name", "Institution", "Areas of Expertise", "Availability"],
             ["Jane Doe", "Example University", "computer vision", "Available"],
         ]
-        self.assertEqual(find_header(grid), 1)
+        self.assertEqual(find_header(grid), 0)
 
     def test_long_inline_terms_list_does_not_crash_on_a_coincidental_suffix(self):
         # 2026-10-15 review finding, H3: the old `terms_path.exists() and
@@ -230,6 +247,28 @@ class FileSearchTest(unittest.TestCase):
                                      "--out", str(out_path)])
             self.assertEqual(rc, 0)
             self.assertIn("MATCHES: 1", out)
+
+    def test_mistyped_terms_file_path_is_refused_not_searched_as_a_keyword(self):
+        # 2026-10-15 review round 5 (confirmed by running the script): a
+        # --terms path with a recognized suffix that simply does not exist
+        # (a typo, no OSError at all) fell through to the inline-list
+        # branch and silently searched the literal string "terms txt" as
+        # the only keyword - zero matches, exit 0, and an empty shortlist
+        # written over any previous one, with nothing printed to explain
+        # why (R8). The suffix check must distinguish "doesn't exist"
+        # (refuse) from "OSError, not really a path at all" (H3's case,
+        # fall through) - both land in the same file_exists variable, so
+        # this is the regression test that the distinction survives.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            write_reviewers(tmp_path / "reviewers.csv")
+            out_path = tmp_path / "matches.csv"
+            rc, out = run_main(["--file", str(tmp_path / "reviewers.csv"),
+                                 "--terms", str(tmp_path / "missing_terms.txt"),
+                                 "--out", str(out_path)])
+            self.assertEqual(rc, 2)
+            self.assertIn("INVALID", out)
+            self.assertFalse(out_path.exists())
 
     def test_output_directory_created_and_write_is_atomic(self):
         # 2026-10-15 review finding, M6: the output CSV was written with a

@@ -38,6 +38,19 @@ class ScoreTest(unittest.TestCase):
         self.assertEqual(band(2.0, retain_threshold=1.5), "Peripheral")
         self.assertEqual(band(2.0, retain_threshold=2.5), "Do not retain")
 
+    def test_bands_stay_sorted_when_the_threshold_exceeds_a_fixed_floor(self):
+        # 2026-10-15 review round 5: an UNSORTED table (the config-derived
+        # floor simply appended where the literal 1.5 used to sit) let a
+        # retain_threshold set above 2.5 be skipped over. With the old,
+        # unsorted list ([4.5, 3.5, 2.5, retain_threshold, 0.0]) and
+        # retain_threshold=3.0, a total of 3.2 would reach the FIXED 2.5
+        # floor before ever reaching the 3.0 one, printing "Adjacent"
+        # instead of "Peripheral" for a score that is actually AT the
+        # configured threshold - the band label no longer describing the
+        # range it should. Sorting puts the configured floor back ahead
+        # of the fixed ones it now exceeds.
+        self.assertEqual(band(3.2, retain_threshold=3.0), "Peripheral")
+
     def test_invalid_subscore_rejected(self):
         sub = {"a": 0.7, "b": 1.0, "c": 0.5, "d": 0.0, "e": 1.0}
         with self.assertRaisesRegex(ValueError, "subscore A"):

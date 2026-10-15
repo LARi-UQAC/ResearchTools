@@ -291,8 +291,12 @@ def main(argv: list[str]) -> int:
         argv (list[str]): command-line arguments, excluding the program name.
 
     Outputs:
-        exit_code (int): 0 on success, 1 if the ranking CSV has no
-            "professor" column.
+        exit_code (int): 0 on success, 2 if the ranking CSV has no
+            "professor" column - a refusal by design over a malformed
+            ranking file, not a crash (R12; 2026-10-15 review round 5: the
+            same reasoning file_search.py's L5 fix already applied to its
+            own header/column refusals, named here for consistency rather
+            than left at the old exit 1).
     --------------------------------------------------------------------------
     """
     parser = argparse.ArgumentParser(description=__doc__)
@@ -317,7 +321,7 @@ def main(argv: list[str]) -> int:
         ranking = list(reader)
     if "professor" not in fieldnames:
         print("INVALID: ranking CSV has no 'professor' column")
-        return 1
+        return 2
 
     kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, read_rows(excl_path))
 

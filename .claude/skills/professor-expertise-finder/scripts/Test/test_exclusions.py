@@ -163,7 +163,9 @@ class ExclusionsTest(unittest.TestCase):
             write_csv(excl, ["name"], [["Jane Doe"]])
             rc, _ = run_main(["--ranking", str(ranking), "--exclusions", str(excl),
                                "--out", str(tmp_path / "out.csv")])
-            self.assertEqual(rc, 1)
+            # 2026-10-15 review round 5: exit 2 (refusal by design, R12),
+            # not exit 1, for consistency with file_search.py's own L5 fix.
+            self.assertEqual(rc, 2)
 
     def test_cli_ambiguous_row_survives_into_the_written_output(self):
         with tempfile.TemporaryDirectory() as tmp:

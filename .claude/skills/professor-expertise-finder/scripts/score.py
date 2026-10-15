@@ -40,17 +40,24 @@ def bands(retain_threshold: float) -> list[tuple[float, str]]:
         retain_threshold (float): pef_config.json's `retain_threshold`.
 
     Outputs:
-        bands (list[tuple[float, str]]): (floor, label) pairs, highest
-            floor first.
+        bands (list[tuple[float, str]]): (floor, label) pairs, sorted by
+            floor, HIGHEST first - sorted rather than listed in this order
+            because `retain_threshold` is a config value that could be set
+            above 2.5: an unsorted list would then let `band()` reach the
+            fixed 2.5 floor FIRST for a total that is actually AT or above
+            the configured threshold, printing "Adjacent" where
+            "Peripheral" - the band the threshold itself defines - was the
+            correct one (2026-10-15 review round 5).
     --------------------------------------------------------------------------
     """
-    return [
+    table = [
         (4.5, "Direct expert in the niche"),
         (3.5, "Very close"),
         (2.5, "Adjacent - transferable expertise"),
         (retain_threshold, "Peripheral"),
         (0.0, "Do not retain"),
     ]
+    return sorted(table, key=lambda pair: pair[0], reverse=True)
 
 
 def fmt(value: float) -> str:

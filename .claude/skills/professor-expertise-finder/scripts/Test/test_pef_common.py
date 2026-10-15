@@ -45,6 +45,23 @@ class PefCommonTest(unittest.TestCase):
         # Determinism: the SAME lossy input still gets the SAME slug.
         self.assertEqual(slugify("Łódź"), lodz)
 
+    def test_slugify_lossy_names_still_collide_on_case_and_whitespace(self):
+        # 2026-10-15 review round 5, confirmed by measurement: hashing the
+        # RAW text (round 4's own fix) made "Concours Cœur 2027",
+        # "concours cœur 2027" and "Concours Cœur 2027 " (trailing space)
+        # - the same batch, typed three ways - get three DIFFERENT slugs,
+        # silently opening a second/third data instance and bypassing the
+        # no-reuse rule. A non-lossy name already collapses this
+        # (slugify("Canada, Ontario") == slugify("canada, ontario ")); a
+        # lossy one must too.
+        a = slugify("Concours Cœur 2027")
+        b = slugify("concours cœur 2027")
+        c = slugify("Concours Cœur 2027 ")
+        self.assertEqual(a, b)
+        self.assertEqual(a, c)
+        # Genuinely different lossy names must still differ.
+        self.assertNotEqual(a, slugify("Concours Cœur 2028"))
+
     def test_norm_folds_case_accent_and_punctuation(self):
         self.assertEqual(norm("É. Doe-Smith"), "e doe smith")
         self.assertEqual(norm(None), "")

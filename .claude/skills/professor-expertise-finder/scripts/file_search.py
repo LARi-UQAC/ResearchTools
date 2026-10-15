@@ -107,19 +107,24 @@ def find_header(grid: list[list[str]]) -> int:
     # has_expertise were both `any()` over the SAME cells, so one cell
     # could satisfy both at once).
     #
-    # The name-cell test requires an EXACT match against NAME_HINTS (data,
-    # R6) - every real header this skill has been given ("Name", "Nom",
-    # "External Reviewer Name", ...) matches a hint exactly once norm()-ed,
-    # so no substring fallback is needed here. A bare substring test (the
-    # previous shape) let a title cell merely mentioning a program name
-    # ("Program name: AI symposium") match on "name" and, paired with an
-    # unrelated expertise-looking cell elsewhere in the same row, be wrongly
-    # accepted as the header (2026-10-15 review finding, L1). col_index()
-    # keeps its own, separate substring fallback for resolving which column
-    # IS the name column once a header row has already been found here.
+    # The name-cell test matches NAME_HINTS (data, R6) as a SUBSTRING, like
+    # col_index()'s own fallback - an EXACT-only match was tried in an
+    # earlier round (2026-10-15 review, L1, to stop a title cell merely
+    # mentioning a program name from passing as a header) and reverted the
+    # same day: it was confirmed, by actually calling find_header(), to
+    # reject real headers this skill must accept - "Nom du réviseur"
+    # (contains "nom" but is not EXACTLY "nom"), "Full Name", "Professor
+    # Name", and "External Reviewer's Name" (its apostrophe breaks the
+    # exact phrase "external reviewer name" into "external reviewer s
+    # name", matched only by the bare "name" substring). The L1 risk this
+    # reopens is accepted as narrow, exactly as the finding that raised it
+    # judged: it needs a title cell to ALSO contain the exact phrase
+    # "areas of expertise" or "domaines de competence" at a DIFFERENT
+    # index, not merely a casual mention of a name.
     for i, row in enumerate(grid):
         cells = [norm(c) for c in row]
-        name_idx = next((j for j, cell in enumerate(cells) if cell in NAME_HINTS), None)
+        name_idx = next((j for j, cell in enumerate(cells)
+                         if any(h in cell for h in NAME_HINTS)), None)
         expertise_idx = next((j for j, cell in enumerate(cells) if
                               "areas of expertise" in cell
                               or "domaines de competence" in cell), None)
@@ -240,10 +245,14 @@ def main(argv: list[str]) -> int:
 
     Outputs:
         exit_code (int): 0 on success, 2 if the header row, or the name or
-            expertise column within it, could not be found - a refusal by
-            design over a malformed/unexpected reference file, not a crash
-            (R12; 2026-10-15 review finding, L5: this used to return 1 for
-            both, which R12 reserves for an unplanned failure).
+            expertise column within it, could not be found, OR if --terms
+            names a path that looks like a file reference (a recognized
+            suffix) but does not exist - every one a refusal by design
+            over a malformed/unexpected input, not a crash (R12; the
+            header/column case used to return 1, which R12 reserves for
+            an unplanned failure, until 2026-10-15 review finding L5; the
+            --terms case used to silently search the literal path string
+            as a keyword, a finding from the same round's re-review).
     --------------------------------------------------------------------------
     """
     parser = argparse.ArgumentParser(description=__doc__)
@@ -261,15 +270,30 @@ def main(argv: list[str]) -> int:
     # ~60 keywords) raises OSError ("file name too long") on Windows, and
     # the old `terms_path.exists() and terms_path.suffix in (...)` ordering
     # called .exists() unconditionally, crashing before the inline-list
-    # branch was ever reached (2026-10-15 review finding, H3).
+    # branch was ever reached (2026-10-15 review finding, H3). Suffix
+    # compared lowercased so a real "--terms list.TXT" is still read as a
+    # file.
+    #
+    # A suffix match with a CLEAN "does not exist" (no OSError) is a typo,
+    # not an inline list, and is refused rather than silently searched as
+    # the literal keyword "terms txt" - a mistyped --terms path used to
+    # produce zero matches and overwrite a previous shortlist with an
+    # empty one, with nothing printed to say why (2026-10-15 review
+    # finding, confirmed by running the script: R8, a silent fallback). An
+    # OSError (the pathological long-string case H3 guards) is NOT a
+    # typo - it means the string could never have been a real path at
+    # all - so it still falls through to the inline branch.
     terms_path = Path(args.terms)
-    is_file_ref = False
-    if terms_path.suffix in (".txt", ".md", ".csv"):
+    file_exists = None
+    if terms_path.suffix.lower() in (".txt", ".md", ".csv"):
         try:
-            is_file_ref = terms_path.exists()
+            file_exists = terms_path.exists()
         except OSError:
-            is_file_ref = False
-    if is_file_ref:
+            file_exists = None
+    if file_exists is False:
+        print(f"INVALID: --terms looks like a file reference ({terms_path}) but it does not exist")
+        return 2
+    if file_exists:
         raw_terms = [line.strip(" -\t") for line in
                      terms_path.read_text(encoding="utf-8").splitlines()]
         terms = [t for t in raw_terms if t and not t.startswith("#")]

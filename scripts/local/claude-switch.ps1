@@ -392,6 +392,14 @@ function claude-augure {
         return
     }
 
+    # Save BEFORE clearing anything (code review finding, 2026-10-15): if
+    # claude-augure is the FIRST switch in this shell, Save-OriginalEnvOnce
+    # must snapshot the user's real values - calling it after the Remove-Item
+    # below would snapshot vars this very function had already deleted,
+    # and claude-cloud would then "restore" that deletion as if it were
+    # original.
+    Save-OriginalEnvOnce
+
     # Clear any residual local redirection: if claude-ollama ran earlier in
     # this shell without an intervening claude-cloud, ANTHROPIC_AUTH_TOKEN/
     # MODEL/... would still point at Ollama and conflict with Augure's own
@@ -404,7 +412,6 @@ function claude-augure {
         Env:\CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC `
         -ErrorAction SilentlyContinue
 
-    Save-OriginalEnvOnce
     $env:ANTHROPIC_BASE_URL = $script:AugureBaseUrl
     $env:ANTHROPIC_API_KEY  = $env:AUGUREAI_API_KEY
 

@@ -251,6 +251,17 @@ try {
     claude-cloud
     Check "augure -> ollama -> cloud restores the ORIGINAL key" ($env:ANTHROPIC_API_KEY -eq "sk-original-cloud-key-2")
 
+    # --- 6d2. Code-review finding, 2026-10-15: claude-augure as the FIRST switch in a shell
+    # must snapshot a pre-existing routing var BEFORE clearing it, not after. The old order
+    # (clear stale Ollama vars, THEN Save-OriginalEnvOnce) destroyed the user's real value
+    # before it was ever saved, so claude-cloud "restored" the deletion instead of the
+    # original.
+    Clear-SwitchEnv
+    $env:ANTHROPIC_MODEL = "my-custom-model"
+    claude-augure
+    claude-cloud
+    Check "augure-first preserves a pre-existing ANTHROPIC_MODEL for claude-cloud to restore" ($env:ANTHROPIC_MODEL -eq "my-custom-model")
+
     # --- 6e. M1: claude-cloud restores a pre-existing custom ANTHROPIC_BASE_URL (e.g. a
     # corporate gateway), not just the API key. Earlier revisions restored ONLY the key and
     # left every other variable blind-deleted.

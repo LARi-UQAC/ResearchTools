@@ -21,6 +21,37 @@ Use these tools together to keep sessions fast and cheap.
 
 > `/compact` is destructive — conversation history is summarized and cannot be restored. Always run `/ctx` first to confirm it is needed.
 
+## Switching the whole session's identity (optional)
+
+The output modes above shrink what the cloud model reads and writes. Switching the session
+itself to a different identity goes further — a local model spends no cloud generation tokens
+at all (at a real speed tradeoff: a CPU/RAM-bound model can run at a few tokens per second), and
+Augure routes the same session through a different account/endpoint entirely.
+
+`scripts/local/claude-switch.ps1` dot-sources three functions. Load it once per shell:
+
+```powershell
+. .\scripts\local\claude-switch.ps1
+```
+
+| Command | Effect |
+| --- | --- |
+| `claude-local` (alias of `claude-ollama`, optional `-Model <tag>` and `-SessionName <name>`) | Points Claude Code straight at a local Ollama model — Ollama's own Anthropic-API compatibility since 2026-01-16, no proxy needed. With no `-Model`, resolves the default through `model_resolver.py` (the same resolver local-writer/local-coder use), never a hardcoded tag. Refuses to switch, and never launches Claude Code, if Ollama isn't reachable or the requested model isn't actually installed |
+| `claude-augure` (optional `-SessionName <name>`) | Points Claude Code at AugureAI's endpoint, with `ANTHROPIC_API_KEY` taken from `AUGUREAI_API_KEY`. Refuses with nothing touched if that variable isn't set |
+| `claude-cloud` (optional `-SessionName <name>`) | Clears any local/Augure redirection, restores whatever `ANTHROPIC_API_KEY` was set before the FIRST switch away from it in this shell (not an intermediate one, even after local then Augure or Augure then local), and returns to the default Anthropic cloud |
+
+`-SessionName` just labels the terminal window title (`[LOCAL]`/`[AUGURE]`/`[CLOUD] <name>`) so
+several parallel Claude Code sessions in different windows stay distinguishable — it has no
+effect on routing.
+
+Measure before switching to a local model — it is not plug-and-play. A tag that fits in VRAM is
+tuned by the `opt-local-vram-llm` skill (`/opt-local-vram-llm`); one too large for the GPU and
+running on CPU/RAM is measured instead with `aider-thread-probe.py --mode sweep`, which reads
+real decode speed, CPU load, and page-in rate off the machine rather than guessing. The measured
+tag is then registered as the script's default with `model_resolver.py --adopt-role session
+<tag> --reason "..."`. Full process and a worked example in `.claude/rules/workflows.md`,
+"Switching the Claude Code session itself between three identities".
+
 ## Quick reference
 
 | Command | When to use |

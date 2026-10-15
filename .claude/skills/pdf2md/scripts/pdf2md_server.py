@@ -286,6 +286,12 @@ def _main(argv: list[str] | None = None) -> int:
     log_path = Path(args.log) if args.log else Path.cwd() / f"pdf2md-vlm-{args.port}.log"
     process = launch_server(server_args, log_path)
     verification = wait_for_server(log_path, timeout_s=args.timeout)
+    if not verification.healthy:
+        # Same as `run`: do not leave a detached server holding the port and the VRAM.
+        try:
+            process.terminate()
+        except (OSError, AttributeError):
+            pass
 
     report = {
         "ok": verification.healthy,

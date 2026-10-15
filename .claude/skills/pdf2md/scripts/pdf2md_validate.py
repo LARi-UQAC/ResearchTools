@@ -459,9 +459,11 @@ def extract_pdf_single(pdf_path: str, *, reader: Callable[[str], tuple[str, list
     """
     reader = reader or extract_text.read_pdf
     text, _tables = reader(pdf_path)
+    # The same rule as the output side (pdf2md_postprocess.split_single_document), so both
+    # sides hold the bibliography out at the same place.
     lines = text.splitlines()
-    cuts = [index for index, line in enumerate(lines) if _BIBLIOGRAPHY_LINE_RE.match(line.strip())]
-    end = cuts[-1] if cuts else len(lines)
+    start = pdf2md_postprocess.single_bibliography_start(lines)
+    end = start if start is not None else len(lines)
     return {1: ("", "\n".join(lines[:end]))}
 
 
@@ -884,7 +886,11 @@ def _main(argv: list[str] | None = None) -> int:
     fidelity_config = pdf2md_fidelity.load_fidelity_config()
     if layout == "single":
         pdf_chapters = extract_pdf_single(args.pdf_path)
-        output_chapters = load_output_single(Path(args.output_dir))
+        try:
+            output_chapters = load_output_single(Path(args.output_dir))
+        except FileNotFoundError as exc:
+            print(f"[VALIDATE] refusing: {exc}", file=sys.stderr)
+            return 2
     else:
         pdf_chapters = extract_pdf_chapters(args.pdf_path)
         output_chapters = load_output_chapters(Path(args.output_dir))

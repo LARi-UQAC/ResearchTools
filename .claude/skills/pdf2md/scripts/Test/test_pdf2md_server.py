@@ -164,5 +164,24 @@ class TestLaunchServer(unittest.TestCase):
         self.assertEqual(process.pid, 4242)
 
 
+class TestServeTerminatesAnUnhealthyServer(unittest.TestCase):
+    def test_serve_terminates_the_process_when_the_server_is_unhealthy(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        import pdf2md_models
+        import pdf2md_server as server
+
+        proc = mock.Mock(pid=5)
+        paths = SimpleNamespace(binary="b", model_gguf="m", mmproj_gguf="p", alias="a", n_ctx_train=8)
+        unhealthy = server.ServerVerification(listening=False, image_min_tokens_warning_present=False)
+        with mock.patch.object(pdf2md_models, "resolve_vlm_paths", return_value=paths), \
+             mock.patch.object(server, "launch_server", return_value=proc), \
+             mock.patch.object(server, "wait_for_server", return_value=unhealthy):
+            code = server._main(["--json"])
+        self.assertEqual(code, 1)
+        proc.terminate.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

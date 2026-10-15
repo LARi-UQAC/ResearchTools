@@ -244,14 +244,15 @@ def run_bootstrap(
         config_path.parent.mkdir(parents=True, exist_ok=True)
         if config_path.exists():
             # The file is global to every mineru use on the machine and the rewrite drops comments.
+            # Never overwrite an earlier backup: the operator may have edited the file since.
+            # Each rewrite gets the next free name (.pdf2md-backup, .pdf2md-backup.1, ...).
             backup = config_path.with_name(config_path.name + ".pdf2md-backup")
-            if backup.exists():
-                # The first backup is the operator's true original; it is never overwritten, so say
-                # that THIS rewrite has no backup of its own rather than claiming one.
-                report["config_backup_from_earlier_run"] = str(backup)
-            else:
-                backup.write_bytes(config_path.read_bytes())
-                report["config_backup"] = str(backup)
+            counter = 0
+            while backup.exists():
+                counter += 1
+                backup = config_path.with_name(f"{config_path.name}.pdf2md-backup.{counter}")
+            backup.write_bytes(config_path.read_bytes())
+            report["config_backup"] = str(backup)
         stamp = (date_provider or _today_iso)()
         config_path.write_text(render_config_yaml(fixed, date=stamp), encoding="utf-8")
         report["config_fixed"] = True

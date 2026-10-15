@@ -697,6 +697,20 @@ class TestSingleLayout(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_layout(Path(tmp))
 
+    # Code review round 3 (2026-10-15)
+    def test_a_numbered_or_english_bibliography_title_is_found(self):
+        for title in ("## 6. References", "## Bibliography", "## Works cited"):
+            document = f"# Paper\n\nBody.\n\n{title}\n\n[1] A. Author. T. 2019.\n"
+            _code, out_dir = self._run(document, "--layout", "single")
+            self.assertIn("[1] A. Author", (out_dir / "assets" / "bibliography.md").read_text(encoding="utf-8"), title)
+
+    def test_a_repeated_chapter_number_keeps_both_bodies(self):
+        document = "# CHAPITRE 1. INTRODUCTION\n\nfirst body\n\n# CHAPITRE 1\n\nsecond part\n\n# CHAPITRE 2. METHODE\n\nthird\n"
+        _code, out_dir = self._run(document)
+        text = (out_dir / "content" / "Introduction.md").read_text(encoding="utf-8")
+        self.assertIn("first body", text)
+        self.assertIn("second part", text)
+
     def test_the_thesis_layout_keeps_its_own_rule_unchanged(self):
         # Same repeat, between complete paragraphs, inside one chapter: the thesis rule still removes it.
         headings = find_headings(["## CHAPITRE 1", "", "## 1.1 Contexte", "", "Texte complet.", "", "## 1.1 Contexte"])

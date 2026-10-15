@@ -38,7 +38,9 @@ _CHAPTER_NUMBER_RE = re.compile(r"^chapitre\s+(\d+)\b", re.IGNORECASE)
 _MATH_FENCE = "$$"
 _STRUCTURAL_PREFIXES = ("-", "*", "|", "```")
 # A heading that is ONLY the bibliography word, like the PDF side's cut: "Bibliographie annotee" is not one.
-_BARE_BIBLIOGRAPHY_RE = re.compile(r"^\**\s*(liste\s+des\s+)?(r[ée]f[ée]rences|bibliographie)\**\s*$", re.IGNORECASE)
+_BARE_BIBLIOGRAPHY_RE = re.compile(
+    r"^\**\s*(\d+\.?\s+)?(liste\s+des\s+)?(r[ée]f[ée]rences|bibliographie|bibliography|works\s+cited)\**\s*$", re.IGNORECASE
+)
 _NUMBERED_REF_RE = re.compile(r"^\[(\d+)\]\s")
 _BIBLIOGRAPHY_HEADING_RE = re.compile(r"^(liste\s+des\s+)?(r[ée]f[ée]rences|bibliographie)\b", re.IGNORECASE)
 
@@ -384,6 +386,19 @@ def _find_dense_reference_run(lines: list[str]) -> int | None:
     return None
 
 
+def single_bibliography_start(lines: list[str]) -> int | None:
+    """
+    Line index where the bibliography of a single document starts, or None: the last line that is
+    ONLY a bibliography title (with or without "#", bold markers or a section number), else the
+    first dense numbered-reference run. Shared by the output side and the PDF side of validate,
+    so both hold the bibliography out at the same place.
+    """
+    heading_starts = [
+        index for index, line in enumerate(lines) if _BARE_BIBLIOGRAPHY_RE.match(line.strip().lstrip("#").strip())
+    ]
+    return heading_starts[-1] if heading_starts else _find_dense_reference_run(lines)
+
+
 def split_single_document(lines: list[str]) -> tuple[str, str | None]:
     """
     --------------------------------------------------------------------------
@@ -409,10 +424,7 @@ def split_single_document(lines: list[str]) -> tuple[str, str | None]:
     # A line that is ONLY the bibliography word (with or without "#" or bold markers) opens it.
     # The fallback is the dense numbered run alone: the loose heading prefix match would let a
     # table-of-contents line such as "References 12" swallow the whole document.
-    heading_starts = [
-        index for index, line in enumerate(lines) if _BARE_BIBLIOGRAPHY_RE.match(line.strip().lstrip("#").strip())
-    ]
-    start = heading_starts[-1] if heading_starts else _find_dense_reference_run(lines)
+    start = single_bibliography_start(lines)
     text = "\n".join(lines).strip() + "\n"
     bibliography = "\n".join(lines[start:]).strip() + "\n" if start is not None else None
     return text, bibliography
@@ -517,7 +529,14 @@ def split_frontmatter_and_chapters(lines: list[str], headings: list[Heading]) ->
             bibliography_start if bibliography_start is not None else len(lines)
         )
         body_end = max(body_end, heading.line_index)
-        chapters[heading.chapter_number] = (heading.text, "\n".join(lines[heading.line_index:body_end]).strip() + "\n")
+        body = "\n".join(lines[heading.line_index:body_end]).strip() + "\n"
+        if heading.chapter_number in chapters:
+            # The same number twice (a bare running header after the full title): keep both
+            # bodies in reading order instead of letting the later one erase the first.
+            first_title, first_body = chapters[heading.chapter_number]
+            chapters[heading.chapter_number] = (first_title, first_body + "\n" + body)
+        else:
+            chapters[heading.chapter_number] = (heading.text, body)
 
     return SplitResult(frontmatter=frontmatter, chapters=chapters, bibliography=bibliography)
 

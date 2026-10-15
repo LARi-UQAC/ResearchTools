@@ -208,6 +208,19 @@ passed), 1 failure.
 5. `ollama-reviewer.json` carries the window of the model adopted on this machine. Ollama
    clamps `num_ctx` silently, so confirm it with `ollama show` when the adopted model changes.
 
+6. The correction loop (`fix --rewrite-formulas`, opt-in) rolls a rejected correction back with
+   a first-occurrence replace, and identifies a formula by the label the model gave it, so two
+   formulas sharing a label collapse in the resolved count and in `vlm_changes.json`. Every
+   rewrite needs a human read anyway (see the stage 7e row).
+7. `resolve_vlm_paths` prefers a `llama-server` found on PATH over the binary bundled with the
+   pinned `mineru-llama-cpp`; put nothing else named `llama-server` ahead of it on PATH.
+8. The reference splitter (stage 6) was built for a thesis bibliography. An article that lists
+   initials first (`J. Smith, K. Doe, Title, Journal`) is split wrongly, and keys can collide.
+9. `find_headings` tracks `$$` math fences only: a repeated `# comment` line inside a code fence
+   of a thesis is treated as a heading. `serve` and `run` wait the full `server_wait_s` for a
+   server whose process died at launch, and the equation-gap and page-selection steps re-index
+   a chapter once per page (slow on a 160-page thesis with `--pages all`).
+
 ## When something doesn't match this document
 
 Re-verify against the installed version rather than trusting this file

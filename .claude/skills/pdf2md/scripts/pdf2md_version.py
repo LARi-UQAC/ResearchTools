@@ -31,6 +31,12 @@ _PACKAGES = tuple(spec.split("==", 1)[0] for spec in load_pipeline_config()["pin
 _PIP_SHOW_VERSION_RE = re.compile(r"^Version:\s*(.+)$", re.MULTILINE)
 
 
+def _release_tuple(version: str) -> tuple[int, ...] | None:
+    """Leading numeric release segments of a version string ("4.0.11" -> (4, 0, 11)), or None."""
+    match = re.match(r"^(\d+(?:\.\d+)*)", version.strip())
+    return tuple(int(part) for part in match.group(1).split(".")) if match else None
+
+
 @dataclass
 class VersionCheck:
     """
@@ -53,7 +59,12 @@ class VersionCheck:
 
     @property
     def upgrade_available(self) -> bool:
-        return self.installed is not None and self.latest is not None and self.installed != self.latest
+        if self.installed is None or self.latest is None or self.installed == self.latest:
+            return False
+        installed, latest = _release_tuple(self.installed), _release_tuple(self.latest)
+        if installed is None or latest is None:
+            return True  # not comparable: report the difference rather than hide it
+        return latest > installed  # never "upgrade" to an OLDER release (a downgrade)
 
 
 def parse_pip_show_version(output: str) -> str | None:

@@ -730,6 +730,29 @@ class TestSingleLayout(unittest.TestCase):
         body = extract_pdf_single("x.pdf", reader=lambda _p: (text, []))[1][1]
         self.assertIn("We learn a heuristic", body)
 
+    def test_both_sides_cut_a_numbered_english_bibliography_at_the_same_place(self):
+        pdf = "Paper\n\n1 Introduction\n\nBody here.\n\n6. References\n\n[1] A. Author. T. 2019.\n"
+        pdf_body = extract_pdf_single("x.pdf", reader=lambda _p: (pdf, []))[1][1]
+        out_dir = self._out_dir("# Paper\n\n## 1 Introduction\n\nBody here.\n\n## 6. References\n\n[1] A. Author. T. 2019.\n")
+        out_body = load_output_single(out_dir)[1][1]
+        for body in (pdf_body, out_body):
+            self.assertIn("Body here.", body)
+            self.assertNotIn("A. Author", body)
+
+    def test_a_missing_main_md_is_a_named_refusal_not_a_traceback(self):
+        import io
+        from contextlib import redirect_stderr
+
+        out_dir = self._out_dir("x")
+        (out_dir / "main.md").unlink()
+        import pdf2md_validate
+        from unittest import mock
+
+        with mock.patch.object(pdf2md_validate, "extract_pdf_single", return_value={1: ("", "text")}),              redirect_stderr(io.StringIO()) as err:
+            code = _main(["x.pdf", "-o", str(out_dir)])
+        self.assertEqual(code, 2)
+        self.assertIn("main.md", err.getvalue())
+
     def test_the_output_side_reads_main_md_without_its_bibliography(self):
         out_dir = self._out_dir("# Fast Planning\n\n## 1 Introduction\n\nbody text here\n\n## References\n\n[1] A. Author. Title. 2019.\n")
         chapters = load_output_single(out_dir)

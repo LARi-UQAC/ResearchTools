@@ -171,9 +171,12 @@ def apply_fixes(
     fixed.pop("vlm", None)
 
     if server_url is not None:
-        model_block = fixed.setdefault("model", {})
-        vlm_block = model_block.setdefault("vlm", {})
-        vlm_block["server_url"] = server_url
+        # A key that is present but empty parses to None: replace it, do not crash on it.
+        if not isinstance(fixed.get("model"), dict):
+            fixed["model"] = {}
+        if not isinstance(fixed["model"].get("vlm"), dict):
+            fixed["model"]["vlm"] = {}
+        fixed["model"]["vlm"]["server_url"] = server_url
 
     llm_aided = fixed.get("llm_aided")
     if isinstance(llm_aided, dict):

@@ -152,6 +152,17 @@ class _FakeCompletedProcess:
         self.stdout = stdout
 
 
+class TestNoDowngrade(unittest.TestCase):
+    def test_an_older_latest_is_not_an_upgrade(self):
+        self.assertFalse(VersionCheck("mineru", "4.1.0", "4.0.10").upgrade_available)
+
+    def test_a_newer_latest_is_an_upgrade_and_numeric_not_lexical(self):
+        self.assertTrue(VersionCheck("mineru", "4.0.9", "4.0.11").upgrade_available)
+
+    def test_an_unparsable_version_is_still_reported_as_different(self):
+        self.assertTrue(VersionCheck("mineru", "weird", "4.0.11").upgrade_available)
+
+
 class TestBuildVersionReport(unittest.TestCase):
     def test_nothing_to_upgrade_exits_zero(self):
         # Regression: _main used to return exit code 1 for this exact,

@@ -359,8 +359,18 @@ class TestBackupIsNotClaimedTwice(unittest.TestCase):
                 pip_runner=_StatefulPip(installed={"mineru", "mineru-llama-cpp"}),
                 models_show_runner=lambda: REAL_MODELS_SHOW_READY,
             )
-        self.assertNotIn("config_backup", report)
-        self.assertIn("config_backup_from_earlier_run", report)
+        # Round 3: every rewrite gets its own backup, the older one is never touched.
+        self.assertTrue(report["config_backup"].endswith("pdf2md-backup.1"))
+        self.assertNotIn("config_backup_from_earlier_run", report)
+
+
+class TestNullConfigBlocks(unittest.TestCase):
+    def test_an_empty_model_or_vlm_key_is_replaced_not_a_crash(self):
+        from pdf2md_config import apply_fixes
+
+        for config in ({"model": None}, {"model": {"vlm": None}}, {"model": []}):
+            fixed = apply_fixes(config, server_url="http://127.0.0.1:30000/v1")
+            self.assertEqual(fixed["model"]["vlm"]["server_url"], "http://127.0.0.1:30000/v1")
 
 
 class TestExitCode(unittest.TestCase):

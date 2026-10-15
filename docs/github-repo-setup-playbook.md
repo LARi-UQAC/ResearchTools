@@ -485,13 +485,13 @@ on ResearchTools PR #39, replaced by #40.
 ### 6c. When personal data was published anyway (and how to stop the next one)
 
 Measured 2026-10-12 on ResearchTools PR #69: a real student's name was committed inside a
-Windows path (`C:\...\Recherche\TheseMaitrise\2026\<StudentName>\...`) copied verbatim from a
+Windows data-folder path (`<drive>:\...\<StudentName>\...`) copied verbatim from a
 real run into a test fixture. The pre-commit hook, the pre-push hook and the CI scan all
 answered "no leaks found". It had happened before with a code permanent (2026-10-01).
 
 **Why every layer passed.** The rules in `privacy-rules.toml` match SHAPES: a home path under
 `\Users\`, `/home/`, a permanent code, `@etu.uqac.ca`, an FRQ id. A name is not a shape, and a
-path on a data drive (`C:\Martin Otis\Recherche\...`) is not a home path. Nothing in the chain
+path on a data drive (`D:\<folder>\...`) is not a home path. Nothing in the chain
 holds the list of real names the operator works with, and that list cannot live in a public
 rules file, because publishing it is the leak. The cause upstream of the guard is the habit:
 real output (a path, a log line, a file name) pasted into a test, a doc or a commit message.
@@ -512,12 +512,25 @@ real output (a path, a log line, a file name) pasted into a test, a doc or a com
    ```
 
    The person-folder names found `-TermsDepth` levels down are split at capitals and written to
-   `~/.config/git/hooks/private-terms.txt` (rewritten at each run, only the count is printed).
-   Terms typed by hand (a data root such as `Recherche`, a co-author, a lab-internal project
+   `~/.config/git/hooks/private-terms.txt`. Run the command for every new student: the file is only
+   ever appended to, never rewritten, and only counts are printed.
+   Terms typed by hand (the name of a data root folder, a co-author, a lab-internal project
    name) go in `private-terms.extra.txt` beside it, which the installer never touches. Both
-   hooks refuse a term, case-insensitively and as a whole token, in an added line, a changed
-   path or a commit message, and name the file, not the line or the term. Rerun the installer
-   whenever a new student folder appears. The installer warns when no list exists yet.
+   hooks refuse a term, case-insensitively, in an added line, an added or modified path, a
+   commit message or a commit author line, and name the file, not the line or the term. A name
+   inside `data_name_run` or `DataName` is found, `nameville` is not. Deleting a leaked path
+   is never refused, it is the cleanup. Rerun the installer whenever a new student folder
+   appears: it appends the missing names to the file, so earlier names, a graduated student's
+   folder that left the disk and lines typed by hand all stay. It sets aside ordinary words
+   (`deny-term-stopwords.txt`) in `private-terms.excluded.txt`, where a real surname that equals
+   one is found and moved to the extra file, refuses a folder that yields nothing, and warns
+   when no list exists yet.
+   **The list holds real names, so the installer refuses to write it into a synchronized or
+   shared folder** (OneDrive, Dropbox, Google Drive, iCloud, Nextcloud, a network share, a
+   junction into one of them) and says which category it found, never the path. If your home
+   folder is synchronized, run `-Uninstall` and install again with `-Target <local folder>`.
+   It also adds `private-terms.txt` and `private-terms.extra.txt` to the global git ignore, so a
+   copy dropped into a repository cannot be staged by accident.
 3. **Check absolute paths in fixtures.** An absolute drive path added to a file under
    `Test/`, `tests/`, `fixtures/` or named `test_*` is reported unless it matches the
    fictitious roots of `fixture-path-allow.txt` (`C:\Work`, `C:\Example`, ...). Default is a
@@ -528,7 +541,12 @@ real output (a path, a log line, a file name) pasted into a test, a doc or a com
    repo. A GitHub Actions secret read by the privacy-scan workflow gives the server-side check
    (the one `--no-verify` cannot skip) the same terms. Limits: a secret is not passed to a
    workflow run from a fork's pull request, so that case stays unprotected; verify before
-   relying on it.
+   relying on it. NOT implemented by the privacy-denylist change, tracked as a follow-up. Two
+   further limits to weigh before building it. The same secret could scan GitHub comments,
+   pull-request bodies and issue text (the leak path of the PR #69 incident, which no hook
+   sees), but only AFTER publication: deleting the text removes it from view, while the edit
+   history and the notification e-mails already sent keep it. And the list then leaves this
+   machine for GitHub's servers, which is a decision for the owner, not a default.
 5. **Make the last look human.** Before any push of a branch that touched fixtures, docs or
    commit messages, list the added lines that contain an absolute path or a capitalised
    two-word name and read them: `git diff origin/main...HEAD -U0 | grep -E '^\+' | grep -E

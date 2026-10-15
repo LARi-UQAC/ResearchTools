@@ -1,0 +1,81 @@
+# Ordinary words that install-git-hooks.ps1 -TermsFrom never writes into the deny list.
+# A folder name split at capitals can yield a fragment that is also a common word (a student
+# folder "SmithGrant" gives "grant"); written as a term it would refuse ordinary prose in
+# every repository on the machine (Issue #70, M1). Data, not code (R6): one lowercase word
+# per line, ASCII, no accents (the installer compares the folded spelling too). A name that
+# really is one of these words goes in private-terms.extra.txt, which this list never filters.
+# Provenance: chosen by the session on 2026-10-15 from the vocabulary of research folders
+# (thesis, grant, review, data, results, drafts, seasons); extend it when a false positive
+# is met. Only words of four letters or more matter, shorter ones fall under the floor.
+grant
+grants
+review
+reviews
+thesis
+theses
+these
+memoire
+memoires
+master
+maitrise
+doctorat
+data
+code
+codes
+final
+draft
+drafts
+test
+tests
+project
+projet
+projets
+rapport
+report
+reports
+result
+results
+resultat
+resultats
+article
+articles
+paper
+papers
+notes
+note
+docs
+doc
+work
+travail
+version
+backup
+copie
+copy
+archive
+archives
+script
+scripts
+figure
+figures
+image
+images
+output
+input
+source
+sources
+simulation
+model
+models
+template
+annexe
+annex
+stage
+summer
+winter
+fall
+automne
+hiver
+cours
+course
+labo
+lab

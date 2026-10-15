@@ -250,6 +250,23 @@ with `git config privacyguard.enabled false`. If another tool already owns the g
 `core.hooksPath`, the installer refuses rather than overwrite it. The `privacy-scan` CI
 workflow applies the same rules to every push and pull request.
 
+**Real names have no shape, so no rule can recognise them.** Give the hooks a list of your own
+students' names that never leaves your machine:
+
+```powershell
+.\.claude\hooks\git\install-git-hooks.ps1 -TermsFrom "<folder of student projects>" -TermsDepth 2
+```
+
+The folder names found two levels down are split at capitals into `private-terms.txt` beside the
+installed hooks, and the hooks then refuse any of them in an added line, a path, a commit message
+or a commit author. Only counts are printed. **Run the same command for every new student:** it
+only appends the names the file lacks, so earlier names (even a student whose folder is gone) and
+lines you typed stay. Add names by hand in `private-terms.extra.txt`. The installer **refuses to write the list in a synchronized or shared
+folder** (OneDrive, Dropbox, Google Drive, a network share): the list holds real names and must not
+be copied off the machine. If it refuses, run `-Uninstall`, then install again with
+`-Target <a local folder>`. Never paste a name into an issue, a pull request or a commit message:
+no hook sees GitHub comments.
+
 ## Contributing improvements
 
 Fork the repository, improve an agent or skill on a feature branch, and open a

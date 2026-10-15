@@ -117,20 +117,49 @@ and CI on PR #69, and GitHub declined to purge the old commits afterwards.
 `install-git-hooks.ps1 -TermsFrom <folder of student projects>` writes `private-terms.txt` beside
 the installed hooks (person-folder names split at capitals; the list is machine-local, never
 committed, and only its count is printed), `private-terms.extra.txt` holds terms written by hand
-and is never touched by the installer. Both hooks refuse a term, case-insensitively and as a whole
-token, in an added line, a changed path or a commit message, naming the file and never the term.
+and is never touched by the installer. Both hooks refuse a term, case-insensitively, in an added
+line, an added or modified path, a commit message or a commit author line, naming the file and
+never the term. The boundary of a term is a LETTER, not a word character: `data_name_run`,
+`name2024` and `DataName` contain the name, `nameville` and `unnamed` do not. A deleted or
+renamed-away path is not checked (removing a leaked path is the remediation, Issue #70 H2), a path
+renamed onto a term is. The installer is run once per NEW student and only ever APPENDS to
+`private-terms.txt` (the terms the file lacks, case ignored): the existing bytes, a name whose
+folder left the disk and a line typed by hand all survive, and removing a name means editing the
+file. It sets aside ordinary words listed in `deny-term-stopwords.txt` in
+`private-terms.excluded.txt` (a folder `SmithGrant` must not turn `grant` into a refusal
+everywhere, and a real surname that equals a common word goes to `private-terms.extra.txt`), adds
+the ASCII-folded spelling of an accented name, refuses a folder that yields nothing, and takes
+the shortest term from `privacy-guard.conf` (the one owner, overridden by
+`git config privacyguard.minTermLength`). It REFUSES to write the list when the hooks folder, a
+parent or a junction target is synchronized or shared (a folder named after a sync client, an
+environment-variable OneDrive root, Dropbox's `info.json`, a UNC path, a Windows cloud-file
+attribute), naming the category and never the path, and it adds both file names to the global git
+ignore (`core.excludesFile`, else `<XDG_CONFIG_HOME or ~/.config>/git/ignore`) so a copy of any of
+the three list files dropped in a repository cannot be staged; a staged copy is also refused by the scan itself, every line being
+a term. The cloud-file attribute branch has no offline test (a test cannot create a placeholder).
 The CI cannot hold the list (the repository is public), so the CI backstop for names stays R34 and
 the review of added lines described in `docs/github-repo-setup-playbook.md` Phase 6c. A second check
 reports an absolute drive path added to a test or fixture file unless it matches
 `fixture-path-allow.txt`; `git config privacyguard.absolutePaths off|warn|refuse` sets it, default
-warn, because existing fixtures legitimately carry paths. A missing list or library is a silent
-pass (R11): the installer warns when no deny list exists yet. Stated limits: a term is matched
-byte for byte except for ASCII case, so an accent stripped or an upper-case accented letter is a
-different spelling and passes (list both spellings in `private-terms.extra.txt`); a name split
-across two lines or hidden in an encoded blob passes; the awk program was tested only under Git
-for Windows' awk, and an awk that fails to run it is a silent pass by R11, so run
-`python .claude/hooks/Test/test_git_privacy_guard.py` after installing on another platform.
-Only ADDED lines (and commit messages) are scanned, so a change that removes old data passes.
+warn, because existing fixtures legitimately carry paths. No list at all is a quiet pass (R11), and
+the installer warns when none exists yet. Two states look like protection and are therefore NOT
+quiet: a list file holding no usable term, and an awk run that fails (a bad regex typed into
+`fixture-path-allow.txt`); each prints one line on stderr and lets the change through. Stated
+limits: a term is matched byte for byte except for ASCII case, so an upper-case accented letter is
+a different spelling and passes (the installer adds the accent-stripped spelling, a hand-written
+term needs both); a handle written as lowercase letters glued together (`jtremblay`) passes, the
+boundary being a letter; a name split across two lines or hidden in an encoded blob passes;
+annotated-tag messages and tagger lines are not scanned; a path hit prints the path, which holds
+the name; a UTF-16 list file (PowerShell 5.1 `>>`, Notepad "Unicode") is reported on stderr and
+never read, and the installer refuses to append to one; fragments under the length floor are
+set aside in `private-terms.excluded.txt` and counted, a short surname such as `Kim` needs a hand
+entry that the floor still ignores, so it is not covered; `git commit --no-verify`, a repo-local `core.hooksPath` and
+`privacyguard.enabled=false` skip the commit-time check, and past pre-push no layer holds the list:
+the public CI cannot, and GitHub comments, pull-request bodies and issue text are covered by
+nothing (the cause of the PR #69 incident). The awk program was tested only under Git for
+Windows' awk, so run `python .claude/hooks/Test/test_git_privacy_guard.py` after installing on
+another platform. Only ADDED lines (and commit messages) are scanned, so a change that removes
+old data passes.
 
 Known limits, not covered by any layer: text stored as UTF-16, and the content or metadata of
 `.docx`, `.pdf` and other binary formats (author fields included), since the scanner reads the

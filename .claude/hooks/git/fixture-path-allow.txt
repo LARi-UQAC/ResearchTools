@@ -2,11 +2,15 @@
 # One extended regex per line (POSIX ERE, so no \b), matched
 # against the path found in an added line of a test or fixture file. Data, not code (R6):
 # add a root here when a fixture legitimately needs one, instead of editing the hook.
-# These are roots no real student folder uses.
+# These are roots no real student folder uses. Generic roots a real run's output often starts
+# with (D:\data, C:\temp) are deliberately NOT listed: such a path would hide the person folder
+# under it. `Users` and `Program` stay because fixtures spell fake accounts and installs that
+# way, and a real account name under C:\Users is refused by the betterleaks rules anyway. The
+# path check only warns by default, so a hit here never blocks unless absolutePaths is refuse.
 ^[A-Za-z]:[\\/]+Work([^A-Za-z0-9_]|$)
 ^[A-Za-z]:[\\/]+Example([^A-Za-z0-9_]|$)
 ^[A-Za-z]:[\\/]+Fixture([^A-Za-z0-9_]|$)
-^[A-Za-z]:[\\/]+(h|d|win|fake|repo|nope|other|resolved|full|on|path|data|work|existing|some|does|temp|tmp)([^A-Za-z0-9_]|$)
+^[A-Za-z]:[\\/]+(h|d|win|fake|repo|nope|other|resolved|full|on|path|work|existing|some|does)([^A-Za-z0-9_]|$)
 ^[A-Za-z]:[\\/]+Windows([^A-Za-z0-9_]|$)
 ^[A-Za-z]:[\\/]+Program
 ^[A-Za-z]:[\\/]+Users([^A-Za-z0-9_]|$)

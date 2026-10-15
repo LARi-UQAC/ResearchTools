@@ -1,0 +1,34 @@
+# Folder names that mark a synchronized or shared location. install-git-hooks.ps1 -TermsFrom
+# REFUSES to write the deny list when the hooks folder, one of its parents, or the real target
+# of a junction among them has a segment matching one of these names (case-insensitive).
+# A plain name matches a segment that STARTS with it and then ends or continues with a space,
+# a dash or an underscore, so "OneDrive - Contoso" matches. A name written "=name" matches a
+# segment that IS that name and nothing else, for a folder name too short or too common to
+# match by prefix ("=box" refuses a folder called Box and leaves "Box-office" alone).
+# Installer-only data, not copied. Data, not code (R6): one lowercase name per line, no stray
+# whitespace; extend it when another client is met.
+# Provenance: chosen by the session on 2026-10-15 from the default folder names of the common
+# cloud-sync clients, English and French, completed after the round-2 review found Box, Sync
+# and the French Google Drive folder missing. Detection beyond names (OneDrive environment
+# variables, Dropbox's own info.json, a UNC path, a mapped network drive, the cloud-file
+# attributes of Windows) is code in the installer.
+onedrive
+dropbox
+google drive
+googledrive
+my drive
+mon drive
+mon disque
+icloud
+iclouddrive
+nextcloud
+owncloud
+=mega
+megasync
+pcloud
+tresorit
+sync.com
+=sync
+box sync
+=box
+seafile

@@ -495,7 +495,7 @@ def _verify_installed(tag: str) -> None:
         )
 
 
-def resolve(role: str | None = None) -> str:
+def resolve(role: str | None = None, require_role: bool = False) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -520,10 +520,25 @@ def resolve(role: str | None = None) -> str:
         returned before this parameter existed: it returns the same one.
         That is why the fallback is not a D7 silent downgrade.
 
+        PR #61 review round 2 (finding H1): that silent fallback IS a D7
+        downgrade for a caller that specifically needs the ROLE's OWN tag -
+        scripts/local/claude-switch.ps1 asked for `role="session"` and read
+        exit 0 as proof a session-specific tag was adopted, when it could
+        just as easily be the global "current" (typically the small writer
+        model) falling through. `require_role` closes that: when set, a
+        role with no `current_by_role` entry of its own is an explicit
+        refusal instead of a silent fallback - for a caller that genuinely
+        wants "this role or nothing", not "this role or whatever 'current'
+        happens to be".
+
     Inputs:
-        role (str | None): task kind ("writer", "coder", ... - whatever
-            qualification/tasks.json declares as a `kind`). None asks for
+        role (str | None): task kind ("writer", "coder", "session", ... -
+            whatever has been qualified or manually adopted). None asks for
             the overall current tag, as before.
+        require_role (bool): when True and `role` is given, refuse rather
+            than fall back to "current" if no current_by_role[role] entry
+            exists. Ignored when `role` is None. Default False preserves
+            every existing caller's behaviour.
 
     Outputs:
         result (str): the resolved Ollama tag, guaranteed to be installed.
@@ -531,8 +546,9 @@ def resolve(role: str | None = None) -> str:
     Raises:
         ResolverError: no override is set AND the state file is missing,
         empty, invalid JSON, or has no 'current' tag; OR the resolved tag
-        (from either path) is not installed. Never returns a guessed,
-        default, or phantom tag.
+        (from either path) is not installed; OR `require_role` is set and
+        `role` has no entry of its own. Never returns a guessed, default, or
+        phantom tag.
     --------------------------------------------------------------------------
     """
     override = os.environ.get(ENV_OVERRIDE_VAR, "").strip()
@@ -545,6 +561,14 @@ def resolve(role: str | None = None) -> str:
         entry = (state.get("current_by_role") or {}).get(role)
         if isinstance(entry, dict) and entry.get("tag"):
             tag = entry["tag"]
+        elif require_role:
+            raise ResolverError(
+                f"[RESOLVER] no tag adopted for role {role!r} in {STATE_PATH} "
+                "(current_by_role has no entry for it); refusing to fall back to the "
+                "global 'current' tag because --require-role was set (PR #61 review "
+                "round 2, finding H1 - a caller asking for this role specifically must "
+                "not silently get a different one)."
+            )
     _verify_installed(tag)
     return tag
 
@@ -589,23 +613,27 @@ def cmd_list() -> int:
     return 0
 
 
-def cmd_resolve(role: str | None = None) -> int:
+def cmd_resolve(role: str | None = None, require_role: bool = False) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
         Implement --resolve: print exactly one tag on stdout, no decoration,
         so `$(model_resolver.py --resolve)` in a shell is the tag alone.
-        With --role, print the tag adopted for that role (P4).
+        With --role, print the tag adopted for that role (P4). With
+        --require-role, refuse instead of silently falling back to the
+        global tag when that role has no entry of its own (round 2,
+        finding H1).
 
     Inputs:
         role (str | None): task kind, or None for the overall current tag.
+        require_role (bool): see resolve()'s own docstring.
 
     Outputs:
         result (int): 0 on success, 1 on a ResolverError (message on
         stderr, nothing printed on stdout).
     --------------------------------------------------------------------------
     """
-    tag = resolve(role)
+    tag = resolve(role, require_role=require_role)
     print(tag)
     return 0
 
@@ -1894,13 +1922,22 @@ def cmd_qualify(tag: str, role: str | None = None) -> int:
     return 0
 
 
-def cmd_adopt_role(role: str, tag: str, reason: str) -> int:
+def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
         Manually adopt `tag` for `role` with no qualification run - see the
         module docstring's "Manual roles" section for why this path exists
         alongside cmd_qualify's --role path rather than folding into it.
+
+        PR #61 review round 2 (finding #6): `role` was unrestricted free
+        text with no protection against silently overwriting a QUALIFIED
+        role (e.g. "writer" or "coder", adopted by a real --qualify run)
+        with a score-less manual record - a typo in the role name (passing
+        "writer" when "session" was meant) would quietly destroy a
+        qualified role's entry. Refuses now unless the existing entry (if
+        any) is itself manual, or `--force` is passed explicitly (R16: a
+        destructive path needs an explicit confirm).
 
     Inputs:
         role (str): the role being adopted. Free text, not restricted to a
@@ -1909,10 +1946,14 @@ def cmd_adopt_role(role: str, tag: str, reason: str) -> int:
         tag (str): the Ollama tag to adopt. Must be installed.
         reason (str): required measurement/provenance note (R4), recorded
             verbatim in the history entry. Never blank.
+        force (bool): required to overwrite an existing QUALIFIED (non-
+            manual) entry for `role`. Not needed for a fresh role or one
+            that is already manual.
 
     Outputs:
-        result (int): 0 on adoption, 1 on refusal (no --reason, or no
-        incumbent state at all in STATE_PATH).
+        result (int): 0 on adoption, 1 on refusal (no --reason, no
+        incumbent state at all in STATE_PATH, or an unforced overwrite of a
+        qualified role).
 
     Raises:
         ResolverError: `tag` is not installed (from _verify_installed).
@@ -1943,6 +1984,18 @@ def cmd_adopt_role(role: str, tag: str, reason: str) -> int:
         if isinstance(entry, dict) and entry.get("tag"):
             by_role[existing_role] = dict(entry)
     previous_entry = by_role.get(role)
+
+    if isinstance(previous_entry, dict) and not previous_entry.get("manual") and not force:
+        print(
+            f"[RESOLVER] refusing to overwrite role {role!r}: it is currently "
+            f"{previous_entry.get('tag')!r}, adopted by QUALIFICATION (not manually), "
+            f"scoring {previous_entry.get('passed', '?')}/{previous_entry.get('total', '?')}. "
+            "A manual adoption would destroy that score with none. Pass --force if this is "
+            "genuinely intended (round 2, finding #6).",
+            file=sys.stderr,
+        )
+        return 1
+
     by_role[role] = {"tag": tag, "manual": True, "reason": reason, "adopted": today}
 
     history = list(previous.get("history", []))
@@ -2004,12 +2057,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="manually adopt TAG for ROLE with NO qualification run, for a role with no "
              "executable oracle in qualification/tasks.json (e.g. 'session', the model "
              "driving an interactive Claude Code session rather than one docstring or one "
-             "function). Requires --reason. Refuses if TAG is not installed or no incumbent "
-             "state exists yet (run a full --qualify first).")
+             "function). Requires --reason. Refuses if TAG is not installed, no incumbent "
+             "state exists yet (run a full --qualify first), or ROLE already holds a "
+             "QUALIFIED (non-manual) entry and --force was not also passed.")
     parser.add_argument(
         "--reason", type=str, default="", metavar="TEXT",
         help="with --adopt-role, the required measurement/provenance note (R4) recorded in "
-             "the history entry.")
+             "the history entry. Invalid without --adopt-role.")
+    parser.add_argument(
+        "--force", action="store_true",
+        help="with --adopt-role, confirms overwriting a role that currently holds a "
+             "QUALIFIED (non-manual) entry. Invalid without --adopt-role.")
+    parser.add_argument(
+        "--require-role", action="store_true",
+        help="with --resolve --role KIND, refuse instead of silently falling back to the "
+             "global 'current' tag when KIND has no current_by_role entry of its own (round "
+             "2, finding H1). Invalid without --role, and invalid without --resolve.")
     parser.add_argument(
         "--json", action="store_true",
         help="with --score, print the result as JSON on stdout instead of a per-task list, so "
@@ -2054,11 +2117,36 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
+    # Round 2, finding #7: --reason, --force and --require-role used to be silently
+    # ignored outside the one command each applies to, which reads as "the flag did
+    # nothing" rather than as a stated refusal.
+    if args.reason and not args.adopt_role:
+        print("[RESOLVER] --reason only applies to --adopt-role; it would otherwise be "
+              "silently ignored.", file=sys.stderr)
+        return 1
+    if args.force and not args.adopt_role:
+        print("[RESOLVER] --force only applies to --adopt-role; it would otherwise be "
+              "silently ignored.", file=sys.stderr)
+        return 1
+    if args.adopt_role and args.role:
+        print("[RESOLVER] --role does not apply to --adopt-role; the role is the first "
+              "value of --adopt-role itself, and a second --role would be silently ignored.",
+              file=sys.stderr)
+        return 1
+    if args.require_role and not args.resolve:
+        print("[RESOLVER] --require-role only applies to --resolve; it would otherwise be "
+              "silently ignored.", file=sys.stderr)
+        return 1
+    if args.require_role and not args.role:
+        print("[RESOLVER] --require-role needs --role; there is no role-specific fallback "
+              "to refuse without one.", file=sys.stderr)
+        return 1
+
     try:
         if args.list:
             return cmd_list()
         if args.resolve:
-            return cmd_resolve(args.role)
+            return cmd_resolve(args.role, require_role=args.require_role)
         if args.qualify:
             return cmd_qualify(args.qualify, args.role)
         if args.score:
@@ -2067,7 +2155,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_matrix(args.json)
         if args.adopt_role:
             role, tag = args.adopt_role
-            return cmd_adopt_role(role, tag, args.reason)
+            return cmd_adopt_role(role, tag, args.reason, force=args.force)
     except ResolverError as exc:
         print(str(exc), file=sys.stderr)
         return 1

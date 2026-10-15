@@ -77,16 +77,21 @@ were seen this way, and they produced a false throughput measurement before anyo
 the card was shared. The script kills both names, verifies against `nvidia-smi` that the
 memory actually came back, and prints the `OLLAMA_*` values the restarted daemon now has.
 
-### Switching the Claude Code session itself to a local model
+### Switching the Claude Code session itself between three identities
 
 Separate from the bridge above: this redirects the Claude Code SESSION itself, not an agent -
 there is no cloud orchestrator in this mode. `model_resolver.py` IS consulted, though, since
-the PR #61 review (R2): `scripts/local/claude-switch.ps1`'s default tag is never a hardcoded
-literal, it is resolved the same way local-writer/local-coder resolve theirs.
-`scripts/local/claude-switch.ps1`, dot-sourced, exposes `claude-ollama` (alias `claude-local`)
-and `claude-cloud`. Since Ollama's 2026-01-16 update exposes a native Anthropic-compatible
-`/v1/messages` endpoint, no LiteLLM proxy is needed: Claude Code points `ANTHROPIC_BASE_URL`
-straight at Ollama.
+the PR #61 review (R2): `scripts/local/claude-switch.ps1`'s default local tag is never a
+hardcoded literal, it is resolved the same way local-writer/local-coder resolve theirs.
+`scripts/local/claude-switch.ps1`, dot-sourced, exposes three functions: `claude-ollama` (alias
+`claude-local`), `claude-augure`, and `claude-cloud`. Since Ollama's 2026-01-16 update exposes a
+native Anthropic-compatible `/v1/messages` endpoint, no LiteLLM proxy is needed for the local
+path: Claude Code points `ANTHROPIC_BASE_URL` straight at Ollama. `claude-augure` (added
+2026-10-15) is a third identity on the SAME shape - a different endpoint
+(`https://api.augureai.ca/v1`) and a different key (`AUGUREAI_API_KEY`) - for when the operator
+wants Claude Code billed/routed through AugureAI instead of the default Anthropic account.
+Three identities sharing one save/restore mechanism (below) rather than two, so the per-shell
+bookkeeping could no longer assume only one "away" state existed at a time.
 
 Three-step process, always in this order:
 
@@ -118,9 +123,14 @@ Three-step process, always in this order:
      reachable, when the resolver has nothing to offer and no `-Model` was given either, or
      when the resolved/given tag is not actually in `ollama list` (a reachable port is not
      proof the MODEL is there).
-   - `claude-cloud -SessionName <name>` - clears every local-routing env var, restores the
-     `ANTHROPIC_API_KEY` `claude-ollama` had removed, and returns to Anthropic. `-SessionName`
-     on either function sets the terminal window title only (`[LOCAL]`/`[CLOUD] <name>`), for
+   - `claude-augure` - refuses with nothing touched if `AUGUREAI_API_KEY` is unset; otherwise
+     clears any Ollama-routing vars a prior `claude-ollama` call left behind, then points at
+     AugureAI's endpoint with that key.
+   - `claude-cloud -SessionName <name>` - clears every local/Augure-routing env var, restores
+     the caller's ORIGINAL `ANTHROPIC_API_KEY` (whatever was there before the first hop away
+     from it, via either `claude-ollama` or `claude-augure` - never an intermediate value from
+     whichever identity ran in between), and returns to Anthropic. `-SessionName` on any of the
+     three sets the terminal window title only (`[LOCAL]`/`[AUGURE]`/`[CLOUD] <name>`), for
      telling parallel terminal windows apart when several Claude Code sessions run at once -
      it has no functional effect, since each PowerShell process already has its own isolated
      environment.

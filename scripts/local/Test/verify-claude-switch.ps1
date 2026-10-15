@@ -1,10 +1,13 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Offline check of scripts\local\claude-switch.ps1's claude-ollama / claude-cloud
-    functions: resolver-based default (R2, no hardcoded tag), the Ollama-reachability
-    AND model-presence guards, and the ANTHROPIC_API_KEY save/restore (PR #61 review
-    finding #1 - claude-cloud used to never bring it back).
+    Offline check of scripts\local\claude-switch.ps1's claude-ollama / claude-augure /
+    claude-cloud functions: resolver-based default (R2, no hardcoded tag), the
+    Ollama-reachability AND model-presence guards, claude-augure's AugureAI redirection,
+    and the shared ANTHROPIC_API_KEY save/restore across all three (PR #61 review
+    finding #1 - claude-cloud used to never bring it back; extended 2026-10-15 to prove
+    the three-state chain restores the ORIGINAL key regardless of which two states run
+    in between).
 
 .DESCRIPTION
     Dot-sources the real script, then shadows Test-NetConnection, ollama, python and
@@ -42,14 +45,26 @@ function Check([string]$name, [bool]$ok) {
     else     { Write-Host "  FAIL  $name" -ForegroundColor Red; $script:failures++ }
 }
 
-$RoutingVars = @(
+# Vars the SCRIPT itself writes/clears between claude-ollama/claude-augure/claude-cloud
+# calls - reset between test cases via Clear-SwitchEnv.
+$ScriptManagedVars = @(
     "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
     "ANTHROPIC_SMALL_FAST_MODEL", "API_TIMEOUT_MS",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY"
 )
+# Superset for Save-RealEnv/Restore-RealEnv around the WHOLE run: also covers
+# AUGUREAI_API_KEY, a fixture INPUT the test sets per case, never cleared between cases
+# (Clear-SwitchEnv must not wipe a credential the test itself just configured).
+$RoutingVars = $ScriptManagedVars + @("AUGUREAI_API_KEY")
 
 function Clear-SwitchEnv {
-    Remove-Item ($RoutingVars | ForEach-Object { "Env:\$_" }) -ErrorAction SilentlyContinue
+    Remove-Item ($ScriptManagedVars | ForEach-Object { "Env:\$_" }) -ErrorAction SilentlyContinue
+    # $script:EnvSaved/$script:SavedEnv are PowerShell-scope bookkeeping, not env
+    # vars - clearing only Env:\* would leak one test case's save-state into the next
+    # (measured: it did, failing the "ollama -> augure -> cloud" chain test below until
+    # this reset was added). Each test case simulates a FRESH shell.
+    $script:EnvSaved = $false
+    $script:SavedEnv = $null
 }
 
 function Save-RealEnv {
@@ -97,7 +112,17 @@ try {
         return ($rows -join "`n")
     }
 
-    # Simulates 'python <resolver> --resolve --role session': controlled by
+    # Resolve-PythonInterpreter would otherwise return a REAL full path to this
+    # machine's own .venv-skills\python.exe when that venv exists on disk - and
+    # `& $fullPath ...` invokes that path directly, bypassing a shadowed BARE-name
+    # `python` function entirely (function/alias resolution only applies to bare
+    # command names). Without this override the test would silently call the REAL
+    # resolver against the REAL state file, exactly the machine-dependence R21
+    # exists to rule out. Returning the bare string "python" here routes the call
+    # through the shadow below instead.
+    function Resolve-PythonInterpreter { param($RepoRoot) return "python" }
+
+    # Simulates 'python <resolver> --resolve --role session --require-role': controlled by
     # $script:FakeResolverTag (empty/null => resolver failure, nonzero exit).
     function python {
         if ($script:FakeResolverTag) {
@@ -107,6 +132,15 @@ try {
         $global:LASTEXITCODE = 1
         return ""
     }
+
+    # --- 0. Regression: the FIRST call in a freshly dot-sourced shell must not crash
+    # reading $script:EnvSaved before it has ever been set (Set-StrictMode would turn
+    # that into a terminating error - this is the bug the explicit init line exists for).
+    Clear-SwitchEnv
+    $script:claudeCallCount = 0
+    $threw = $false
+    try { claude-cloud } catch { $threw = $true }
+    Check "claude-cloud as the very first call does not throw under StrictMode" (-not $threw)
 
     # --- 1. Default resolution: no -Model, resolver succeeds, model installed ---
     Clear-SwitchEnv
@@ -168,8 +202,79 @@ try {
     Check "cloud clears model"       (-not (Test-Path Env:\ANTHROPIC_MODEL))
     Check "claude still invoked by claude-cloud" ($script:claudeCallCount -eq 1)
 
-    # --- 7. ANTHROPIC_API_KEY restore (review finding #1, the real bug) ---
+    # --- 6b. claude-augure refuses without AUGUREAI_API_KEY, touches nothing ---
     Clear-SwitchEnv
+    Remove-Item Env:\AUGUREAI_API_KEY -ErrorAction SilentlyContinue
+    $script:claudeCallCount = 0
+    claude-augure
+    Check "missing AUGUREAI_API_KEY blocks claude-augure" ($script:claudeCallCount -eq 0)
+    Check "missing AUGUREAI_API_KEY sets no env vars"     (-not (Test-Path Env:\ANTHROPIC_BASE_URL))
+
+    # --- 6c. claude-augure: base url + key set, stale Ollama vars cleared, claude invoked ---
+    Clear-SwitchEnv
+    $env:AUGUREAI_API_KEY = "augure-secret-key"
+    $script:claudeCallCount = 0
+    claude-augure
+    Check "augure sets its own base url"      ($env:ANTHROPIC_BASE_URL -eq "https://api.augureai.ca/v1")
+    Check "augure sets ANTHROPIC_API_KEY from AUGUREAI_API_KEY" ($env:ANTHROPIC_API_KEY -eq "augure-secret-key")
+    Check "augure invoked claude once"        ($script:claudeCallCount -eq 1)
+
+    # Ollama's own vars must not survive a prior claude-ollama call once augure runs.
+    Clear-SwitchEnv
+    $script:FakeOllamaUp = $true
+    $script:FakeInstalled = @("resolved-tag:test")
+    claude-ollama -Model "resolved-tag:test"
+    $script:claudeCallCount = 0
+    claude-augure
+    Check "augure clears a stale Ollama auth token"   (-not (Test-Path Env:\ANTHROPIC_AUTH_TOKEN))
+    Check "augure clears a stale Ollama model"        (-not (Test-Path Env:\ANTHROPIC_MODEL))
+    Check "augure clears a stale Ollama timeout"      (-not (Test-Path Env:\API_TIMEOUT_MS))
+    Check "augure clears a stale offline-mode flag"   (-not (Test-Path Env:\CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC))
+
+    # --- 6d. Three-state chain: cloud(real key) -> ollama -> augure -> cloud restores the
+    # ORIGINAL key, not an intermediate one. This is the bug Save-OriginalApiKeyOnce exists
+    # to prevent: an unconditional per-function save would have the second hop (augure)
+    # overwrite the saved value with whatever was present at THAT point (nothing useful),
+    # and claude-cloud would restore the wrong thing.
+    Clear-SwitchEnv
+    $env:ANTHROPIC_API_KEY = "sk-original-cloud-key"
+    claude-ollama -Model "resolved-tag:test"
+    claude-augure
+    claude-cloud
+    Check "ollama -> augure -> cloud restores the ORIGINAL key" ($env:ANTHROPIC_API_KEY -eq "sk-original-cloud-key")
+
+    # Same chain, reversed order.
+    Clear-SwitchEnv
+    $env:ANTHROPIC_API_KEY = "sk-original-cloud-key-2"
+    claude-augure
+    claude-ollama -Model "resolved-tag:test"
+    claude-cloud
+    Check "augure -> ollama -> cloud restores the ORIGINAL key" ($env:ANTHROPIC_API_KEY -eq "sk-original-cloud-key-2")
+
+    # --- 6e. M1: claude-cloud restores a pre-existing custom ANTHROPIC_BASE_URL (e.g. a
+    # corporate gateway), not just the API key. Earlier revisions restored ONLY the key and
+    # left every other variable blind-deleted.
+    Clear-SwitchEnv
+    $env:ANTHROPIC_BASE_URL = "https://corporate-gateway.example.com"
+    claude-ollama -Model "resolved-tag:test"
+    claude-cloud
+    Check "cloud restores a pre-existing custom BASE_URL (M1)" ($env:ANTHROPIC_BASE_URL -eq "https://corporate-gateway.example.com")
+
+    # --- 6f. M2: a bare tag (no ":tag") is normalized before comparison ---
+    Clear-SwitchEnv
+    $script:claudeCallCount = 0
+    $script:FakeInstalled = @("qwen3.5:latest")
+    claude-ollama -Model "qwen3.5"
+    Check "bare tag matches an installed :latest entry (M2)" ($script:claudeCallCount -eq 1)
+    Check "bare tag reaches ANTHROPIC_MODEL unmodified"      ($env:ANTHROPIC_MODEL -eq "qwen3.5")
+
+    # --- 7. ANTHROPIC_API_KEY restore (review finding #1, the real bug) ---
+    # Explicit fixture reset: test 6f (M2) overwrote $script:FakeInstalled with a list that
+    # does not contain "resolved-tag:test", and relying on carryover from an earlier block
+    # is exactly the kind of cross-case leakage already fixed once in this file (EnvSaved).
+    Clear-SwitchEnv
+    $script:FakeResolverTag = "resolved-tag:test"
+    $script:FakeInstalled = @("resolved-tag:test")
     $env:ANTHROPIC_API_KEY = "sk-real-cloud-key"
     claude-ollama
     Check "claude-ollama removes the cloud key while local" (-not (Test-Path Env:\ANTHROPIC_API_KEY))
@@ -184,7 +289,7 @@ try {
 
     # --- 9. claude-cloud with NO prior claude-ollama this run: leaves an existing key alone ---
     Clear-SwitchEnv
-    $script:ApiKeySaved = $false   # simulate a fresh shell that never called claude-ollama
+    $script:EnvSaved = $false   # simulate a fresh shell that never called claude-ollama
     $env:ANTHROPIC_API_KEY = "sk-untouched"
     claude-cloud
     Check "claude-cloud never touches a key it didn't save" ($env:ANTHROPIC_API_KEY -eq "sk-untouched")

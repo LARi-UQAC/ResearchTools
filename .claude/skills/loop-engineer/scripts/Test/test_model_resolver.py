@@ -1173,6 +1173,173 @@ class TestAdoptRole(unittest.TestCase):
             self.assertIn("no incumbent at all", err.getvalue())
             self.assertFalse(state_path.exists(), "refusal must not create the state file")
 
+    def test_adopt_role_refuses_to_overwrite_a_qualified_role_without_force(self):
+        """PR #61 review round 2, finding #6: --adopt-role used to overwrite ANY role
+        unconditionally, so a typo'd role name (e.g. "writer" meant as "session") would
+        silently destroy a QUALIFIED role's real score with a score-less manual record."""
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._seeded_state(d)  # "writer" is QUALIFIED (passed/total, no "manual")
+            before = state_path.read_text(encoding="utf-8")
+
+            err = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stderr(err):
+                rc = mr.main(["--adopt-role", "writer", "vendor-a:9b", "--reason", "x"])
+
+            self.assertNotEqual(rc, 0)
+            self.assertIn("QUALIFICATION", err.getvalue())
+            self.assertIn("--force", err.getvalue())
+            self.assertEqual(state_path.read_text(encoding="utf-8"), before, "refusal must write nothing")
+
+    def test_adopt_role_overwrites_a_qualified_role_with_force(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._seeded_state(d)
+
+            out = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stdout(out):
+                rc = mr.main(["--adopt-role", "writer", "vendor-a:9b", "--reason", "x", "--force"])
+
+            self.assertEqual(rc, 0)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertTrue(state["current_by_role"]["writer"]["manual"])
+
+    def test_adopt_role_does_not_need_force_for_an_unqualified_fresh_role(self):
+        # "session" has no prior entry at all in the seeded fixture - no protection to bypass.
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._seeded_state(d)
+
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST):
+                rc = mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "x"])
+
+            self.assertEqual(rc, 0)
+
+    def test_adopt_role_does_not_need_force_to_re_adopt_an_already_manual_role(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._seeded_state(d)
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST):
+                mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "first"])
+                rc = mr.main(["--adopt-role", "session", "vendor:7b", "--reason", "second"])
+
+            self.assertEqual(rc, 0)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["current_by_role"]["session"]["tag"], "vendor:7b")
+
+
+class TestRequireRole(unittest.TestCase):
+    """--resolve --role KIND --require-role: refuse instead of silently falling back to the
+    global 'current' tag (PR #61 review round 2, finding H1)."""
+
+    def _state_with_writer_only(self, d: Path) -> Path:
+        state_path = d / "local-model-state.json"
+        _write_json(state_path, {
+            "current": "vendor-a:9b",
+            "current_by_role": {"writer": {"tag": "vendor-a:9b", "passed": 3, "total": 3, "adopted": "2026-08-14"}},
+            "score": {"passed": 6, "total": 6, "ratio": 1.0, "by_kind": _by_kind(3, 3, 3, 3)},
+            "qualified_at": "2026-08-14T00:00:00+00:00",
+            "history": [],
+        })
+        return state_path
+
+    def test_require_role_refuses_when_the_role_has_no_entry_of_its_own(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._state_with_writer_only(d)
+
+            err = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stderr(err):
+                rc = mr.main(["--resolve", "--role", "session", "--require-role"])
+
+            self.assertNotEqual(rc, 0)
+            self.assertIn("session", err.getvalue())
+
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST):
+                with self.assertRaises(mr.ResolverError):
+                    mr.resolve("session", require_role=True)
+
+    def test_without_require_role_the_same_call_falls_back_silently(self):
+        # Positive control: proves the refusal above is really require_role's doing, not
+        # some other change - the pre-existing fallback behaviour is untouched by default.
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = self._state_with_writer_only(d)
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST):
+                self.assertEqual(mr.resolve("session"), "vendor-a:9b")  # falls back to "current"
+
+    def test_require_role_succeeds_when_the_role_does_have_its_own_entry(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            d = Path(d)
+            state_path = d / "local-model-state.json"
+            _write_json(state_path, {
+                "current": "vendor-a:9b",
+                "current_by_role": {"session": {"tag": "vendor:7b", "manual": True, "reason": "x", "adopted": "2026-10-15"}},
+                "score": {"passed": 0, "total": 0, "ratio": 0.0, "by_kind": {}},
+                "qualified_at": "2026-08-14T00:00:00+00:00",
+                "history": [],
+            })
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST):
+                self.assertEqual(mr.resolve("session", require_role=True), "vendor:7b")
+
+
+class TestCliFlagRefusals(unittest.TestCase):
+    """PR #61 review round 2, finding #7: --reason/--force/--role/--require-role used to be
+    silently ignored outside the one command each applies to."""
+
+    def test_reason_without_adopt_role_is_refused(self):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = mr.main(["--list", "--reason", "x"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--reason", err.getvalue())
+
+    def test_force_without_adopt_role_is_refused(self):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = mr.main(["--list", "--force"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--force", err.getvalue())
+
+    def test_role_with_adopt_role_is_refused(self):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "x", "--role", "writer"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--adopt-role", err.getvalue())
+
+    def test_require_role_without_resolve_is_refused(self):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = mr.main(["--qualify", "vendor-a:9b", "--role", "writer", "--require-role"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--resolve", err.getvalue())
+
+    def test_require_role_without_role_is_refused(self):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = mr.main(["--resolve", "--require-role"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--role", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

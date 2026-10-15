@@ -1,0 +1,809 @@
+"""
+pdf2md_postprocess - Stage 5 of the pdf2md pipeline: clean mineru's raw
+markdown output and split it into UQAC-shaped files.
+
+The defect this cleans up is specific and measured, not a generic "markdown
+cleanup" pass: mineru's own title_leveling LLM step is meant to collapse a
+page's running header (chapter title repeated on every page, sometimes with
+the page number fused into it by the layout model, e.g.
+"CHAPITRE 3. OPTIMISATION ... AVEC 54 PRIORITÉS...") back into the body text.
+When that LLM step fails or is disabled (see pdf2md_config's
+max_concurrency fix), mineru degrades by leaving the running header as a
+spurious markdown heading sitting mid-paragraph. The sentence content is
+NOT lost -- just split across a heading that should not exist. Confirmed on
+a real 162-page UQAC thesis conversion, 2026-10-10: a sentence read
+"...L'etude de revue presentee au" / [spurious heading] / "Chapitre 2 a
+montre que..." -- deleting the heading and joining the two halves recovers
+the original, grammatically complete sentence ("...presentee au Chapitre 2
+a montre que...").
+
+Known limitation: the detector is a fuzzy text-repeat heuristic (a heading
+whose digit-stripped text closely matches an EARLIER heading's is treated as
+a repeat), so it can theoretically misfire on a thesis with two genuinely
+distinct sections that happen to share near-identical titles. This has not
+been observed in practice; it is stated here the same way extract-contributions
+states its own known misses, rather than claimed away.
+"""
+
+from __future__ import annotations
+
+import difflib
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
+_CHAPTER_NUMBER_RE = re.compile(r"^chapitre\s+(\d+)\b", re.IGNORECASE)
+_MATH_FENCE = "$$"
+_STRUCTURAL_PREFIXES = ("-", "*", "|", "```")
+# A heading that is ONLY the bibliography word, like the PDF side's cut: "Bibliographie annotee" is not one.
+_BARE_BIBLIOGRAPHY_RE = re.compile(
+    r"^\**\s*(\d+\.?\s+)?(liste\s+des\s+)?(r[ée]f[ée]rences|bibliographie|bibliography|works\s+cited)\**\s*$", re.IGNORECASE
+)
+_NUMBERED_REF_RE = re.compile(r"^\[(\d+)\]\s")
+_BIBLIOGRAPHY_HEADING_RE = re.compile(r"^(liste\s+des\s+)?(r[ée]f[ée]rences|bibliographie)\b", re.IGNORECASE)
+
+_THRESHOLDS_PATH = Path(__file__).with_name("pdf2md-postprocess.json")
+_THRESHOLD_KEYS = ("fuzzy_match_ratio", "bibliography_density_window", "bibliography_density_min_matches")
+
+
+def _load_thresholds(path: Path = _THRESHOLDS_PATH) -> dict[str, float]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the heuristic thresholds this module tunes (R0: no hardcoded
+        numerical value) from a JSON file beside the module, each key
+        carrying a {"value", "provenance"} pair (R4).
+
+    Inputs:
+        path (Path): where the config lives; overridable for tests.
+
+    Outputs:
+        dict[str, float]: key -> value, for every key in _THRESHOLD_KEYS.
+
+    Raises:
+        FileNotFoundError: the config file is absent.
+        KeyError: a required key is missing from the file (R3: a missing
+            configuration value is an explicit error naming the key).
+    --------------------------------------------------------------------------
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"pdf2md postprocess thresholds not found at {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    missing = [key for key in _THRESHOLD_KEYS if key not in data]
+    if missing:
+        raise KeyError(f"{path} is missing required threshold key(s): {missing}")
+    return {key: data[key]["value"] for key in _THRESHOLD_KEYS}
+
+
+_THRESHOLDS = _load_thresholds()
+FUZZY_MATCH_RATIO = _THRESHOLDS["fuzzy_match_ratio"]
+#: How many MORE "[N] ..." lines must appear in the window following a
+#: candidate bibliography start before it is trusted. A real bibliography is
+#: dense with these lines; a single inline citation like "[40] presented a
+#: method..." sitting alone in ordinary prose is not. See
+#: pdf2md-postprocess.json for the measured provenance behind these two
+#: values (2026-10-10: a real 162-page thesis with no actual "RÉFÉRENCES"
+#: heading had its bibliography-start fallback fire on an in-text citation
+#: roughly 1/4 of the way through the document, swallowing the rest of the
+#: thesis, including a whole chapter, into a 1.5 MB "bibliography").
+_BIBLIOGRAPHY_DENSITY_WINDOW = _THRESHOLDS["bibliography_density_window"]
+_BIBLIOGRAPHY_DENSITY_MIN_MATCHES = _THRESHOLDS["bibliography_density_min_matches"]
+
+
+def _normalize_heading_text(text: str) -> str:
+    """Strip digits/punctuation and lowercase, for repeat detection tolerant of a spliced-in page number."""
+    stripped_digits = re.sub(r"\d+", "", text)
+    return re.sub(r"[^\w]+", " ", stripped_digits, flags=re.UNICODE).strip().lower()
+
+
+def _exact_heading_key(text: str) -> str:
+    """Lowercase heading text with punctuation collapsed and digits KEPT, so
+    "1.1 Contexte" and "1.1. CONTEXTE" are equal and "scenario 1" and
+    "scenario 2" are not."""
+    return re.sub(r"[^\w]+", " ", text, flags=re.UNICODE).strip().lower()
+
+
+@dataclass
+class Heading:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One markdown heading line found in a document, with the line index
+        it occupies for later in-place editing.
+
+    Inputs:
+        None.
+
+    Outputs:
+        line_index (int), level (int), text (str), chapter_number (int|None)
+    --------------------------------------------------------------------------
+    """
+
+    line_index: int
+    level: int
+    text: str
+    chapter_number: int | None = None
+
+
+def find_headings(lines: list[str]) -> list[Heading]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Locate every markdown heading line, skipping any that sit inside a
+        $$ math fence (a line of exactly "$$" toggles fence state) -- a
+        line starting with "#" inside LaTeX math is not a heading.
+
+    Inputs:
+        lines (list[str]): the document, one entry per line (no trailing
+            newlines).
+
+    Outputs:
+        list[Heading]: in document order.
+    --------------------------------------------------------------------------
+    """
+    headings: list[Heading] = []
+    in_math = False
+    for index, line in enumerate(lines):
+        if line.strip() == _MATH_FENCE:
+            in_math = not in_math
+            continue
+        if in_math:
+            continue
+        match = _HEADING_RE.match(line)
+        if not match:
+            continue
+        level, text = len(match.group(1)), match.group(2)
+        chapter_match = _CHAPTER_NUMBER_RE.match(text)
+        headings.append(Heading(index, level, text, int(chapter_match.group(1)) if chapter_match else None))
+    return headings
+
+
+def find_spurious_headings(headings: list[Heading], *, ratio: float = FUZZY_MATCH_RATIO) -> list[Heading]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Flag headings that are a near-repeat of an EARLIER heading's text
+        (digit-stripped) -- the running-header splice signature. The first
+        occurrence of any heading text is always kept; only later repeats
+        of the same text are spurious.
+
+        Digit-stripping is what lets "AVEC 54 PRIORITES" match "AVEC
+        PRIORITES" (a stray page number fused mid-title). But title_leveling
+        can ALSO clean a running header down to a bare "CHAPITRE N" with no
+        title words left -- and digit-stripping two of THOSE ("CHAPITRE 1",
+        "CHAPITRE 2") collapses them to the identical string "chapitre",
+        wrongly flagging every chapter after the first as a repeat of it.
+        Measured on a real 162-page thesis, 2026-10-10: chapters 2-5 were
+        silently deleted this way, merging the whole rest of the document
+        into chapitre1.md. Fix: two headings that both parsed a chapter
+        number are NEVER a repeat of each other when those numbers differ,
+        regardless of text similarity -- the chapter number is exactly the
+        content digit-stripping must not be allowed to erase.
+
+    Inputs:
+        headings (list[Heading]): as returned by find_headings, in order.
+        ratio (float): difflib.SequenceMatcher threshold for "close enough".
+
+    Outputs:
+        list[Heading]: the subset judged spurious.
+    --------------------------------------------------------------------------
+    """
+    seen: list[tuple[str, int | None]] = []
+    segment_keys: set[str] = set()
+    spurious: list[Heading] = []
+    for heading in headings:
+        if heading.chapter_number is None:
+            # Not a chapter-form heading. Before 2026-10-11 these all carried
+            # the chapter number None and None == None made every one of them
+            # a "repeat" of any earlier heading with the same digit-stripped
+            # text, which deleted 28 real headings of a real thesis. A
+            # section-level running header ("1.1. CONTEXTE ET MOTIVATION")
+            # is an exact copy of a heading of the SAME chapter, so a heading
+            # is a repeat only when its text, digits kept, equals one already
+            # seen since the last chapter heading. "3.2 Conclusion du
+            # chapitre" after "2.2 ..." and "Simulation scenario 2" after
+            # "... 1" are therefore different headings.
+            key = _exact_heading_key(heading.text)
+            if key in segment_keys:
+                spurious.append(heading)
+            else:
+                segment_keys.add(key)
+            continue
+        normalized = _normalize_heading_text(heading.text)
+        is_repeat = any(
+            earlier_chapter == heading.chapter_number
+            and difflib.SequenceMatcher(None, normalized, earlier_normalized).ratio() >= ratio
+            for earlier_normalized, earlier_chapter in seen
+        )
+        if is_repeat:
+            spurious.append(heading)
+        else:
+            seen.append((normalized, heading.chapter_number))
+            segment_keys = set()
+    return spurious
+
+
+def _is_dense_bibliography_start(lines: list[str], index: int) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide whether a line matching the numbered-reference shape
+        genuinely opens a bibliography block, versus being a one-off
+        in-text citation. See the comment above _BIBLIOGRAPHY_DENSITY_WINDOW
+        and pdf2md-postprocess.json for the measured false positive this
+        guards against.
+
+    Inputs:
+        lines (list[str]): the document.
+        index (int): the candidate start line (already confirmed to match
+            _NUMBERED_REF_RE).
+
+    Outputs:
+        bool: True if at least _BIBLIOGRAPHY_DENSITY_MIN_MATCHES further
+            lines in the following _BIBLIOGRAPHY_DENSITY_WINDOW lines also
+            match the numbered-reference shape.
+    --------------------------------------------------------------------------
+    """
+    window = lines[index + 1 : index + 1 + _BIBLIOGRAPHY_DENSITY_WINDOW]
+    further_matches = sum(1 for line in window if _NUMBERED_REF_RE.match(line.strip()))
+    return further_matches >= _BIBLIOGRAPHY_DENSITY_MIN_MATCHES
+
+
+def _is_structural_line(line: str) -> bool:
+    stripped = line.strip()
+    return (
+        not stripped
+        or stripped == _MATH_FENCE
+        or bool(_HEADING_RE.match(line))
+        or stripped.startswith(_STRUCTURAL_PREFIXES)
+        or bool(re.match(r"^\d+\.\s", stripped))
+    )
+
+
+def strip_splice_headings(lines: list[str], spurious: list[Heading]) -> tuple[list[str], int]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Remove every spurious heading line. Where both the nearest preceding
+        and following non-blank lines are plain prose (not a math fence,
+        list, table, heading, or numbered item), join them into one flowing
+        paragraph -- recovering the sentence the splice broke. Otherwise
+        (e.g. a heading sitting right after an equation block) just delete
+        the heading, since forcing a join there would corrupt structure
+        rather than recover a sentence.
+
+    Inputs:
+        lines (list[str]): the document.
+        spurious (list[Heading]): headings to remove, as returned by
+            find_spurious_headings.
+
+    Outputs:
+        (list[str], int): the cleaned document, and how many headings were
+            removed.
+    --------------------------------------------------------------------------
+    """
+    remove_indices = {heading.line_index for heading in spurious}
+    result: list[str] = []
+    index = 0
+    removed = 0
+    while index < len(lines):
+        if index not in remove_indices:
+            result.append(lines[index])
+            index += 1
+            continue
+
+        removed += 1
+        # The previous line is read from `result`, the list being built.
+        # Reading it from `lines` with this index (the earlier code) was off by
+        # the number of headings already removed: the merge below then wrote a
+        # line from further down the document over the real previous line.
+        prev_index = len(result) - 1
+        while prev_index >= 0 and not result[prev_index].strip():
+            prev_index -= 1
+        next_index = index + 1
+        while next_index < len(lines) and not lines[next_index].strip():
+            next_index += 1
+
+        prev_line = result[prev_index] if prev_index >= 0 else ""
+        next_line = lines[next_index] if next_index < len(lines) else ""
+        can_merge = (
+            prev_index >= 0
+            and next_index < len(lines)
+            and not _is_structural_line(prev_line)
+            and not _is_structural_line(next_line)
+        )
+
+        if can_merge:
+            result[prev_index] = prev_line.rstrip() + " " + next_line.lstrip()
+            index = next_index + 1
+        else:
+            index += 1
+
+    return result, removed
+
+
+@dataclass
+class SplitResult:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The document split into the files pdf2md writes, mirroring the
+        front-matter/chapters/bibliography shape of a real UQAC thesis
+        export.
+
+    Inputs:
+        None.
+
+    Outputs:
+        frontmatter (str): everything before the first real CHAPITRE heading.
+        chapters (dict[int, tuple[str, str]]): chapter number -> (title,
+            body text), in encounter order.
+        bibliography (str | None): the bibliography block, held out of the
+            last chapter if one was detected; None if none was found.
+    --------------------------------------------------------------------------
+    """
+
+    frontmatter: str
+    chapters: dict[int, tuple[str, str]] = field(default_factory=dict)
+    bibliography: str | None = None
+
+
+def _find_bibliography_start(lines: list[str], search_from: int) -> int | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Index of the first line at or after search_from that opens the
+        bibliography: a bibliography heading, or a numbered reference opening
+        a DENSE run of further numbered references (a lone in-text citation
+        does not count, see pdf2md-postprocess.json).
+
+    Inputs:
+        lines (list[str]): the cleaned document.
+        search_from (int): first line index to consider.
+
+    Outputs:
+        int | None: the line index, or None when no bibliography is found.
+    --------------------------------------------------------------------------
+    """
+    for index, line in enumerate(lines):
+        if index < search_from:
+            continue
+        stripped = line.strip()
+        if _BIBLIOGRAPHY_HEADING_RE.match(stripped.lstrip("#").strip()):
+            return index
+        if _NUMBERED_REF_RE.match(stripped) and _is_dense_bibliography_start(lines, index):
+            return index
+    return None
+
+
+def _find_dense_reference_run(lines: list[str]) -> int | None:
+    """Index of the first numbered reference opening a dense run of them, or None."""
+    for index, line in enumerate(lines):
+        if _NUMBERED_REF_RE.match(line.strip()) and _is_dense_bibliography_start(lines, index):
+            return index
+    return None
+
+
+def single_bibliography_start(lines: list[str]) -> int | None:
+    """
+    Line index where the bibliography of a single document starts, or None: the last line that is
+    ONLY a bibliography title (with or without "#", bold markers or a section number), else the
+    first dense numbered-reference run. Shared by the output side and the PDF side of validate,
+    so both hold the bibliography out at the same place.
+    """
+    heading_starts = [
+        index for index, line in enumerate(lines) if _BARE_BIBLIOGRAPHY_RE.match(line.strip().lstrip("#").strip())
+    ]
+    return heading_starts[-1] if heading_starts else _find_dense_reference_run(lines)
+
+
+def split_single_document(lines: list[str]) -> tuple[str, str | None]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The single-document counterpart of split_frontmatter_and_chapters,
+        for an article or a talk source: no chapters, so the whole text is the
+        document, and only the bibliography is located.
+
+    Details:
+        A markdown heading that is itself a bibliography heading wins, the
+        last one when there are several (an earlier one is a table-of-contents
+        entry or a running header). Otherwise the first dense numbered
+        reference run opens it, as in the thesis layout.
+
+    Inputs:
+        lines (list[str]): the cleaned document.
+
+    Outputs:
+        (str, str | None): the full text (bibliography included, never cut)
+            and the bibliography block, or None when none was found.
+    --------------------------------------------------------------------------
+    """
+    # A line that is ONLY the bibliography word (with or without "#" or bold markers) opens it.
+    # The fallback is the dense numbered run alone: the loose heading prefix match would let a
+    # table-of-contents line such as "References 12" swallow the whole document.
+    start = single_bibliography_start(lines)
+    text = "\n".join(lines).strip() + "\n"
+    bibliography = "\n".join(lines[start:]).strip() + "\n" if start is not None else None
+    return text, bibliography
+
+
+_SENTENCE_END = (".", "!", "?", ":", ";")
+
+
+def _splits_a_sentence(lines: list[str], heading: Heading) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        True when a heading sits inside a sentence: the nearest non-blank line
+        before and after it are plain prose and the earlier one does not end a
+        sentence. That is the running-header splice signature (a page break
+        cut a sentence), and what separates it from a legitimately repeated
+        heading between two complete paragraphs.
+
+    Inputs:
+        lines (list[str]): the document.
+        heading (Heading): a heading already judged a repeat.
+
+    Outputs:
+        bool: True when removing it recovers a broken sentence.
+    --------------------------------------------------------------------------
+    """
+    before = next((line for line in reversed(lines[: heading.line_index]) if line.strip()), "")
+    after = next((line for line in lines[heading.line_index + 1 :] if line.strip()), "")
+    if not before or not after or _is_structural_line(before) or _is_structural_line(after):
+        return False
+    # An image, an HTML block or a one-line formula is not prose that a page break cut.
+    if before.lstrip().startswith(("!", "<", "$")):
+        return False
+    # A cut sentence resumes in lower case; a new block (Table 2, A caption, 91 ...) does not.
+    if not after.lstrip()[:1].islower():
+        return False
+    return not before.rstrip().endswith(_SENTENCE_END)
+
+
+def process_single_document(markdown_text: str) -> tuple[str, str | None, int]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Stage-5 pipeline for an article or a talk source: strip the
+        running-header splice headings, then keep the document whole.
+
+    Inputs:
+        markdown_text (str): the raw mineru output.
+
+    Outputs:
+        (str, str | None, int): the cleaned full text, the bibliography
+            block (or None), and the number of splice headings removed.
+    --------------------------------------------------------------------------
+    """
+    lines = markdown_text.splitlines()
+    # A single document has no chapter heading to reset the repeat memory, so the thesis rule
+    # would delete every repeated unnumbered heading (Results, Summary, a repeated slide title).
+    # Only a repeat sitting INSIDE a sentence is the running-header splice signature here.
+    spurious = [
+        heading
+        for heading in find_spurious_headings(find_headings(lines))
+        if _splits_a_sentence(lines, heading)
+    ]
+    cleaned_lines, removed_count = strip_splice_headings(lines, spurious)
+    text, bibliography = split_single_document(cleaned_lines)
+    return text, bibliography, removed_count
+
+
+def split_frontmatter_and_chapters(lines: list[str], headings: list[Heading]) -> SplitResult:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Split a (spurious-heading-free) document into front matter, one
+        block per real CHAPITRE N heading, and a trailing bibliography.
+
+    Inputs:
+        lines (list[str]): the cleaned document.
+        headings (list[Heading]): headings of the CLEANED document (call
+            find_headings again after strip_splice_headings, since removing
+            lines shifts every later line_index).
+
+    Outputs:
+        SplitResult
+    --------------------------------------------------------------------------
+    """
+    chapter_headings = [h for h in headings if h.chapter_number is not None]
+    frontmatter_end = chapter_headings[0].line_index if chapter_headings else len(lines)
+    frontmatter = "\n".join(lines[:frontmatter_end]).strip() + "\n"
+
+    bibliography: str | None = None
+    # The bibliography follows the last chapter. Searching from the top of the
+    # document let a table-of-contents line ("Liste des references ... 150")
+    # open it, which left the last chapter empty.
+    search_from = chapter_headings[-1].line_index if chapter_headings else 0
+    bibliography_start = _find_bibliography_start(lines, search_from)
+    if bibliography_start is not None:
+        bibliography = "\n".join(lines[bibliography_start:]).strip() + "\n"
+
+    chapters: dict[int, tuple[str, str]] = {}
+    for position, heading in enumerate(chapter_headings):
+        body_end = chapter_headings[position + 1].line_index if position + 1 < len(chapter_headings) else (
+            bibliography_start if bibliography_start is not None else len(lines)
+        )
+        body_end = max(body_end, heading.line_index)
+        body = "\n".join(lines[heading.line_index:body_end]).strip() + "\n"
+        if heading.chapter_number in chapters:
+            # The same number twice (a bare running header after the full title): keep both
+            # bodies in reading order instead of letting the later one erase the first.
+            first_title, first_body = chapters[heading.chapter_number]
+            chapters[heading.chapter_number] = (first_title, first_body + "\n" + body)
+        else:
+            chapters[heading.chapter_number] = (heading.text, body)
+
+    return SplitResult(frontmatter=frontmatter, chapters=chapters, bibliography=bibliography)
+
+
+def chapter_filenames(chapter_numbers: list[int]) -> dict[int, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Map each chapter number to its output filename, following the
+        universal UQAC thesis convention: the first chapter is always the
+        Introduction and the last is always the Conclusion -- true whether
+        or not the literal word survives in the text (mineru's own
+        running-header cleanup can strip it, as measured 2026-10-10, where
+        chapter 1's own "### INTRODUCTION" subheading was removed as a
+        false-positive repeat; the chapter's CONTENT -- context, problem
+        statement, research questions -- still identifies it as the
+        introduction regardless). With fewer than two chapters there is
+        nothing to distinguish, so every chapter keeps its plain
+        chapitreN.md name.
+
+    Inputs:
+        chapter_numbers (list[int]): the chapter numbers actually found.
+
+    Outputs:
+        dict[int, str]: chapter number -> filename (no directory).
+    --------------------------------------------------------------------------
+    """
+    if len(chapter_numbers) < 2:
+        return {number: f"chapitre{number}.md" for number in chapter_numbers}
+    first, last = min(chapter_numbers), max(chapter_numbers)
+    return {
+        number: "Introduction.md" if number == first else "Conclusion.md" if number == last else f"chapitre{number}.md"
+        for number in chapter_numbers
+    }
+
+
+def render_main_md(
+    *,
+    frontmatter_path: str,
+    chapter_paths: dict[int, tuple[str, str]],
+    bibliography_path: str | None,
+    content_dir: str = "",
+) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Render main.md, the markdown-link index tying every split file
+        together in reading order -- the markdown counterpart of a UQAC
+        main.tex's \\input list, so the output reads as one linked document
+        rather than a pile of loose files.
+
+    Inputs:
+        frontmatter_path (str): bare filename of the front-matter file.
+        chapter_paths (dict[int, tuple[str, str]]): chapter number ->
+            (bare filename, heading text), in any order -- sorted here by
+            number. Labeling (Introduction/Conclusion) matches on the BARE
+            filename, independent of content_dir.
+        bibliography_path (str | None): the bibliography's link target
+            RELATIVE TO main.md already (e.g. "assets/bibliography.md"),
+            not prefixed with content_dir -- it lives in assets/, not
+            content/, so it needs its own path rather than sharing the
+            chapter/frontmatter prefix.
+        content_dir (str): subfolder every chapter/frontmatter link target
+            is prefixed with (e.g. "content/"), since main.md itself lives
+            one level above the files it links to. Empty string reproduces
+            the old flat layout, which existing callers/tests still
+            exercise.
+
+    Outputs:
+        str: the full main.md content.
+    --------------------------------------------------------------------------
+    """
+    lines = ["# Thesis", "", f"- [Front matter]({content_dir}{frontmatter_path})"]
+    for number, (filename, title) in sorted(chapter_paths.items()):
+        heading = title if title else f"Chapitre {number}"
+        if filename == "Introduction.md":
+            label = f"Introduction ({heading})"
+        elif filename == "Conclusion.md":
+            label = f"Conclusion ({heading})"
+        else:
+            label = heading
+        lines.append(f"- [{label}]({content_dir}{filename})")
+    if bibliography_path:
+        lines.append(f"- [Bibliography]({bibliography_path})")
+    return "\n".join(lines) + "\n"
+
+
+def process_document(markdown_text: str) -> tuple[SplitResult, int]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Full stage-5 pipeline on one markdown string: find and strip
+        splice-defect headings, then split into front matter / chapters /
+        bibliography.
+
+    Inputs:
+        markdown_text (str): the raw mineru output.
+
+    Outputs:
+        (SplitResult, int): the split result, and the number of splice
+            headings removed.
+    --------------------------------------------------------------------------
+    """
+    lines = markdown_text.splitlines()
+    headings = find_headings(lines)
+    spurious = find_spurious_headings(headings)
+    cleaned_lines, removed_count = strip_splice_headings(lines, spurious)
+    cleaned_headings = find_headings(cleaned_lines)
+    split = split_frontmatter_and_chapters(cleaned_lines, cleaned_headings)
+    return split, removed_count
+
+
+LAYOUTS = ("thesis", "single")
+LAYOUT_MARKER = "pdf2md-layout.json"
+
+
+def write_layout_marker(out_dir: Path, layout: str) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Record which layout this output directory holds, so validate, repair
+        and fix read it back instead of guessing from the files present.
+
+    Inputs:
+        out_dir (Path): the output directory (the project's own src/).
+        layout (str): one of LAYOUTS.
+
+    Outputs:
+        None. Writes <out_dir>/pdf2md-layout.json.
+    --------------------------------------------------------------------------
+    """
+    (out_dir / LAYOUT_MARKER).write_text(json.dumps({"layout": layout}) + "\n", encoding="utf-8")
+
+
+def read_layout(out_dir: Path) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The layout a postprocess run recorded in out_dir. A directory with no
+        marker was written before layouts existed, which is the thesis one.
+
+    Inputs:
+        out_dir (Path): the output directory.
+
+    Outputs:
+        str: "thesis" or "single".
+
+    Raises:
+        ValueError: the marker names a layout outside LAYOUTS (R3).
+    --------------------------------------------------------------------------
+    """
+    marker = Path(out_dir) / LAYOUT_MARKER
+    if not marker.exists():
+        return "thesis"
+    try:
+        layout = json.loads(marker.read_text(encoding="utf-8")).get("layout")
+    except (json.JSONDecodeError, AttributeError, OSError) as exc:
+        raise ValueError(f"{marker} is not a readable layout marker: {exc}") from exc
+    if layout not in LAYOUTS:
+        raise ValueError(f"{marker} names layout {layout!r}, expected one of {LAYOUTS}")
+    return layout
+
+
+def _write_single(source_text: str, out_dir: Path) -> dict:
+    """Write the single-document layout (main.md, assets/bibliography.md, the layout marker) and return the JSON report."""
+    text, bibliography, removed_count = process_single_document(source_text)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    main_path = out_dir / "main.md"
+    main_path.write_text(text, encoding="utf-8")
+    bibliography_path = None
+    if bibliography is not None:
+        (out_dir / "assets").mkdir(parents=True, exist_ok=True)
+        bibliography_path = out_dir / "assets" / "bibliography.md"
+        bibliography_path.write_text(bibliography, encoding="utf-8")
+    write_layout_marker(out_dir, "single")
+    return {
+        "ok": True,
+        "layout": "single",
+        "splice_headings_removed": removed_count,
+        "bibliography_found": bibliography is not None,
+        "bibliography_path": str(bibliography_path) if bibliography_path else None,
+        "main_path": str(main_path),
+    }
+
+
+def _main(argv: list[str] | None = None) -> int:
+    import argparse
+    import json
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("markdown_file")
+    parser.add_argument("-o", "--output-dir", required=True)
+    parser.add_argument(
+        "--layout",
+        choices=LAYOUTS,
+        default="thesis",
+        help="thesis: split on 'CHAPITRE N' into content/ files (the UQAC thesis layout, default); "
+        "single: an article or a talk source kept as ONE main.md",
+    )
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    source = Path(args.markdown_file)
+    if args.layout == "single":
+        report = _write_single(source.read_text(encoding="utf-8"), Path(args.output_dir))
+        print(json.dumps(report) if args.json else report)
+        return 0
+
+    # -o is the project's own src/ directory, not a parent of it: this
+    # script writes <output-dir>/main.md, <output-dir>/content/*.md (the
+    # chapter text, the same split a real UQAC thesis uses between its
+    # linking main.tex and its per-chapter .tex files), and
+    # <output-dir>/assets/*.md (bibliography.md; acronyms and, if ever
+    # extracted, figures under assets/figures/ -- this skill does not
+    # extract either today: mineru's include_images defaults False and
+    # this pipeline never turns it on, so there is nothing to copy there
+    # yet, and acronym extraction has no code path at all). thesis-auditor's
+    # own directory-resolution (thesis-auditor.md:98, "look for src/main.tex
+    # inside it") still will NOT auto-discover this output: it reads
+    # \input{}/\include{} LaTeX macros only and has no markdown-chapter-
+    # following behaviour at all. This layout is a human/manual-feed
+    # convenience, not a claim of interoperability with that step.
+    out_dir = Path(args.output_dir)
+    content_dir = out_dir / "content"
+    content_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = out_dir / "assets"
+
+    split, removed_count = process_document(source.read_text(encoding="utf-8"))
+    (content_dir / "frontmatter.md").write_text(split.frontmatter, encoding="utf-8")
+
+    filenames = chapter_filenames(sorted(split.chapters.keys()))
+    chapter_paths: dict[int, tuple[str, str]] = {}
+    for number, (title, body) in split.chapters.items():
+        filename = filenames[number]
+        (content_dir / filename).write_text(body, encoding="utf-8")
+        chapter_paths[number] = (filename, title)
+
+    bibliography_path = None
+    if split.bibliography is not None:
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        bibliography_path = assets_dir / "bibliography.md"
+        bibliography_path.write_text(split.bibliography, encoding="utf-8")
+
+    main_md = render_main_md(
+        frontmatter_path="frontmatter.md",
+        chapter_paths=chapter_paths,
+        bibliography_path="assets/bibliography.md" if bibliography_path else None,
+        content_dir="content/",
+    )
+    main_path = out_dir / "main.md"
+    main_path.write_text(main_md, encoding="utf-8")
+    write_layout_marker(out_dir, "thesis")
+
+    report = {
+        "ok": True,
+        "layout": "thesis",
+        "splice_headings_removed": removed_count,
+        "chapters_written": {number: filename for number, (filename, _title) in chapter_paths.items()},
+        "bibliography_found": split.bibliography is not None,
+        "bibliography_path": str(bibliography_path) if bibliography_path else None,
+        "frontmatter_path": str(content_dir / "frontmatter.md"),
+        "main_path": str(main_path),
+    }
+    print(json.dumps(report) if args.json else report)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

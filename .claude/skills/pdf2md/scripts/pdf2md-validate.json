@@ -1,0 +1,14 @@
+{
+  "word_count_mismatch_threshold_pct": {
+    "value": 15.0,
+    "provenance": "chosen by the operator, 2026-10-10: a chapter whose output word count differs from the PDF-extracted word count by more than this percentage is flagged as a candidate for the --vlm-check second opinion; not measured against a corpus"
+  },
+  "word_min_letters": {
+    "value": 2,
+    "provenance": "chosen 2026-10-11: a whitespace token counts as a word when it holds a run of at least this many letters. Formulas are excluded from the word count on both sides (the output's $...$ spans are removed, and the PDF reader's italic variable fragments hold one letter), because counting them made a math-heavy chapter look thousands of words longer in the output than in the PDF"
+  },
+  "math_symbol_chars": {
+    "value": "=+*/^_<>≤≥≠≈∑∏∫√∂∇±×÷αβγδεζηθικλμνξοπρστυφχψω",
+    "provenance": "a fixed character set (ASCII operators + common Greek letters + math operator Unicode block), not a measurement -- data for the equations_rough heuristic, R6"
+  }
+}

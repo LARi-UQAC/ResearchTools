@@ -85,7 +85,7 @@ Scopus / corpus tooling:
 
 Deliberation and discovery services:
 
-- `deliberate.py` resolves the Gemini model automatically (`--gemini-model auto`: latest PRO via ListModels, NOT_FOUND retry, fence/truncation-tolerant JSON parsing). Keep the piped draft under ~8k tokens for the Copilot leg (gpt-4o cap) — pipe a digest (objectives + gaps + hypotheses) rather than the full document.
+- `deliberate.py` resolves the Gemini model automatically (`--gemini-model auto`: latest PRO via ListModels, NOT_FOUND retry, fence/truncation-tolerant JSON parsing). The piped draft must fit the token budget (`--max-input-tokens`, default 12000) with its context intact: pipe the objectives, the gaps and hypotheses with their full statements and definitions, and run the panel once per section when the whole is larger. A digest is a last resort and is declared in the Deliberation Log; the envelope's `context` record reports any digestion.
 - **Consensus MCP has a monthly quota** — check the "searches left" counter in each result and budget the audit-stage evidence gate before spending the discovery budget.
 - **Obsidian Desktop need not be running**: the note is deposited in `~/.claude/obsidian-outbox/` and the `obsidian-outbox-flush.py` hook writes it to disk, so a closed Obsidian only defers the write to the next session. If the deposit itself fails, record the exact pending line in PROGRESS.md so the next session can replay it.
 

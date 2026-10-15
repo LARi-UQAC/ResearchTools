@@ -86,6 +86,7 @@ designing complete systems, in which the engineer works in dialogue with coding 
 |---|---|
 | Catch a missing reference or a broken hypothesis flow after the reviewer does | An auditor scores the manuscript first, against the same ScholarEval rubric a committee uses |
 | Re-read a cited paper's abstract and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
+| Receive a thesis, an article or a talk as a PDF with no LaTeX source and re-type it before it can be audited | `pdf2md` converts it with mineru to markdown (the UQAC thesis layout, or one document for an article or a talk) and measures what the conversion lost against a second reader of the PDF |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
 | Guess which local model fits your GPU | `opt-local-vram-llm` and `opt-local-stt-vram` measure it on the card, beside what already runs there, and print one table to choose from |
 

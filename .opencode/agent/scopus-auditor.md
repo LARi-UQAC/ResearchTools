@@ -547,7 +547,7 @@ Record findings in Section E-ScholarEval of the plan.
 After the draft plan text is fully assembled (Step 5c) and before Step 6 writes the file, run the
 multi-model deliberation panel on it. **MANDATORY: run it every time. Do not skip on usefulness,
 length, or confidence grounds.** The only sanctioned skip is genuinely missing `GEMINI_API_KEY` AND
-`GITHUB_TOKEN` — and even then, gather Consensus evidence, run the script (it degrades gracefully),
+a working second reviewer (no Copilot token and no local model: the script lists both under `reviewers_unavailable`) — and even then, gather Consensus evidence, run the script (it degrades gracefully),
 and record the `[REVIEWER UNAVAILABLE: ...]` markers in the Deliberation Log. The step is autonomous
 (no user pause). The full protocol — debate rounds, the canonical arbitration table, provenance
 markers, the Scopus validation gate, and the Deliberation-Log format — lives in
@@ -563,10 +563,20 @@ short form.
 2. Run the two-round Gemini<->Copilot debate on the assembled plan text:
 
 ```
-Get-Content "<plan_draft>.md" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<detected topic>" --rounds 2 --plan-schema auditor --evidence-file "<evidence.txt>"
+Get-Content "<plan_draft>.md" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<detected topic>" --rounds 2 --plan-schema auditor --evidence-file "<evidence.txt>" --round2-include-draft
 ```
 
-3. Consume `merged[]` and arbitrate with the canonical table and markers. Map each item's `agreement`
+   The plan text refers to passages of the review under audit: include, for each plan item, the
+   verbatim passage it concerns and the definitions or figures it depends on (a plan item without
+   its text cannot be judged; the reviewers see only what is piped). If the whole exceeds the token
+   budget, run the panel once per section and repeat the shared context; a digest is a last resort
+   and is declared in the Log. Read the envelope's `context` record first and put each
+   `warnings[]` entry in the Log.
+
+3. Consume `merged[]`, judge each item's relevance to the review as it stands (off topic or contrary
+   to a premise the review holds: reject with the reason), pair by meaning the items the script left
+   apart, account for EVERY `id` in the Log (its `Accounting` line must add up), and arbitrate with
+   the canonical table and markers. Map each item's `agreement`
    field to its marker (`consensus` -> `[✓ GEMINI + COPILOT]`, `gemini_only` -> `[✓ GEMINI]`,
    `copilot_only` -> `[✓ COPILOT]`, `conflict` -> `[✓ GEMINI — COPILOT DISAGREED]`, Claude resolving).
    For any `reference_issue` / `coverage_gap` or `requires_scopus_validation: true` item, run the

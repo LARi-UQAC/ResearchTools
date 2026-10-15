@@ -1,0 +1,131 @@
+{
+  "min_prose_tokens": {
+    "value": 12,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: a paragraph with fewer prose tokens (alphabetic words of at least min_token_letters letters) is a caption, running header, equation fragment or list stub, and is too short to fingerprint reliably, so it is not checked"
+  },
+  "min_token_letters": {
+    "value": 3,
+    "provenance": "chosen 2026-10-11: a token must hold at least this many letters to count as a prose word, which excludes variable names and subscripts such as 'i', 'ij' that the PDF reader emits inside formulas"
+  },
+  "min_prose_ratio": {
+    "value": 0.6,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: a paragraph whose prose tokens are less than this share of all its tokens is mostly formula text and is excluded, since the PDF reader renders math as italic fragments that no text comparison can match"
+  },
+  "ngram_chars": {
+    "value": 12,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: length of the letters-only character n-gram used as a fingerprint. Letters-only and accent-folded because this PDF's font garbles accented characters in the reader, which a word-level comparison cannot survive"
+  },
+  "paragraph_missing_below": {
+    "value": 0.5,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: a PDF paragraph whose fingerprints are found in the output for less than this share is reported as missing from the output"
+  },
+  "locate_chunk_words": {
+    "value": 40,
+    "provenance": "chosen 2026-10-11: a raw PDF page text has no blank line between paragraphs, so locate_in_output cuts it into chunks of this many words and matches each chunk on its own; large enough to hold the 12 prose words a fingerprint needs, small enough that one chunk rarely straddles two output paragraphs"
+  },
+  "locate_secondary_vote_share": {
+    "value": 0.5,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: when a located chunk straddles two output paragraphs, every paragraph whose fingerprint votes reach this share of the best paragraph's votes is kept in the page's line range"
+  },
+  "locate_max_span_paragraphs": {
+    "value": 12,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: when a page is located in the output, only the densest group of matched paragraphs lying within this many paragraph positions of each other is kept. Measured 2026-10-11 on the real thesis: without a bound, a chunk that matched a repeated phrase far away stretched the range of one page from a few paragraphs to 100 and to 566 output lines"
+  },
+  "duplicate_vote_tolerance": {
+    "value": 0.9,
+    "provenance": "chosen 2026-10-11, to be calibrated: output paragraphs whose fingerprint votes reach this share of the best paragraph's votes are candidates for the same PDF paragraph, and the first that does not go backwards is taken. Measured 2026-10-11 on the real thesis: a theorem statement restated later in the chapter tied with its first occurrence and was matched to the wrong one, reporting a displacement that was not there"
+  },
+  "running_header_min_repeats": {
+    "value": 3,
+    "provenance": "chosen 2026-10-11: a paragraph that repeats at least this many times in one chapter once digits are removed is a running page header or footer and is dropped before comparison"
+  },
+  "title_match_ratio": {
+    "value": 0.8,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: minimum difflib similarity between the folded PDF heading title and the folded output heading title for the heading to count as the same title"
+  },
+  "pdf_noise_markers": {
+    "value": [
+      "<br>",
+      "----- Start of picture text -----"
+    ],
+    "provenance": "measured 2026-10-11 on the real thesis: pymupdf4llm renders a table cell or the text inside a figure with these markers, and that text is neither prose nor comparable to the output's own markdown table, so a PDF paragraph holding one is not compared. A PDF paragraph that starts with a pipe is a table row and is skipped for the same reason"
+  },
+  "html_residue_pattern": {
+    "value": "<(?:span|small|div)\\b",
+    "provenance": "measured 2026-10-11 on the real thesis: mineru left <small><span class=\"docvortex-page-footnote\" ...> page-footnote markup in the output markdown. <br> is deliberately not listed, since mineru uses it legitimately inside a table cell"
+  },
+  "running_header_min_letters": {
+    "value": 15,
+    "provenance": "chosen 2026-10-11 from the real thesis: a PDF line that repeats running_header_min_repeats times with at least this many letters is a running page header or footer (\"CHAPITRE 4. CONSENSUS DANS LES SYSTEMES ... 80 DELAIS ...\", \"4.1. ARTICLE SOUMIS\"). Shorter repeats such as \"Proof.\" are real text and stay. Counted on the PDF side so that these lines do not inflate its word count"
+  },
+  "caption_sentence_words": {
+    "value": [
+      "presents",
+      "present",
+      "illustrates",
+      "illustrate",
+      "shows",
+      "show",
+      "shown",
+      "depicts",
+      "displays",
+      "compares",
+      "reports",
+      "summarizes",
+      "summarises",
+      "provides",
+      "demonstrates",
+      "indicates",
+      "confirms",
+      "reveals",
+      "plots",
+      "gives",
+      "describes",
+      "contains",
+      "contain",
+      "lists",
+      "is",
+      "are",
+      "was",
+      "were",
+      "can",
+      "also",
+      "and",
+      "or",
+      "in",
+      "for",
+      "to",
+      "of",
+      "that",
+      "which",
+      "présente",
+      "illustre",
+      "montre",
+      "résume",
+      "décrit",
+      "contient",
+      "compare",
+      "donne",
+      "et",
+      "est",
+      "sont"
+    ],
+    "provenance": "measured 2026-10-11 on the real thesis: a line starting with \"Figure 3.8\" or \"Table 3.2\" is a caption when the word after the label is not one of these, and an in-text sentence (\"Figure 3.8 presents the desired positions\", \"Table 3.2 and Table 3.3 contain all the rules\") when it is. Lower-case words that open a sentence about a label; extend the list, never the code, when a thesis phrases it otherwise"
+  },
+  "figure_image_window_lines": {
+    "value": 80,
+    "provenance": "chosen 2026-10-11, to be calibrated on the real thesis: how many lines above a figure caption the output may carry its image. mineru writes the image(s), then panel labels such as (a) and (b), then the caption; the search stops at a heading or at the previous caption"
+  },
+  "citation_min_letters": {
+    "value": 2,
+    "provenance": "chosen 2026-10-11: a bracketed number counts as a citation only when the word just before it holds at least this many letters (\"methods [14]\"). The PDF reader renders matrix indices and subscripts as bracketed numbers after a symbol, an underscore or a closing bracket (\"[0]\", \"[1]\", \"[11]\" measured on the real thesis), and those must not count"
+  },
+  "unnumbered_heading_severity": {
+    "value": "warning",
+    "provenance": "chosen 2026-10-11: pymupdf4llm infers headings from font size, so an unnumbered heading line in the PDF reading can be a false heading; a numbered heading (N.M) is always an error when lost, an unnumbered one is only a warning"
+  },
+  "out_of_order_min_displacement": {
+    "value": 5,
+    "provenance": "chosen 2026-10-11, moved here from pdf2md-repair.json so the check that reports a misplaced paragraph and the repair that moves it cannot disagree: a paragraph is out of order when it sits at least this many output paragraphs from where its in-order neighbours put it. Measured 2026-10-11 on the real thesis: figure captions and floats are placed one or two paragraphs apart by the PDF reader and by mineru, which is not a defect, while a block copied into the wrong chapter section sat dozens away"
+  }
+}

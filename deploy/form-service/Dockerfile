@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     SKILL_SCRIPTS_DIR=/opt/form-service/scripts \
-    SCOPUS_SCRIPTS_DIR=/opt/scopus/scripts
+    SCOPUS_SCRIPTS_DIR=/opt/scopus/scripts \
+    NARRATIVE_CV_SCRIPTS_DIR=/opt/narrative-cv/scripts
 
 WORKDIR /srv
 
@@ -16,6 +17,8 @@ RUN pip install --no-cache-dir -r /srv/requirements.txt
 # GET /publications imports scopus_api.py from a second skill.
 COPY .claude/skills/form-service/scripts /opt/form-service/scripts
 COPY .claude/skills/scopus/scripts /opt/scopus/scripts
+# POST /cv/build imports cv_build.py/cv_common.py from the narrative-cv skill.
+COPY .claude/skills/narrative-cv/scripts /opt/narrative-cv/scripts
 COPY deploy/form-service/app /srv/app
 
 # Non-root. Two data directories: the signing certificate and the

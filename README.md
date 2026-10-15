@@ -61,6 +61,7 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 |---|---|
 | Catch a missing reference or a broken hypothesis flow after the reviewer does | An auditor scores the manuscript first, against the same ScholarEval rubric a committee uses |
 | Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
+| Receive a thesis, an article or a talk as a PDF with no LaTeX source and re-type it before it can be audited | `pdf2md` converts it with mineru to markdown (the UQAC thesis layout, or one document for an article or a talk) and measures what the conversion lost against a second reader of the PDF |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
 | Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
 
@@ -131,7 +132,7 @@ graph LR
 
 Relationship diagrams and the 7-layer execution architecture for **this** repository:
 [Architecture.md](Architecture.md). The architecture **shared with the sibling repository
-ThesisTracker** (form catalogue, twenty-unit delivery plan) is a separate file,
+ThesisTracker** (form catalogue, twenty-two-unit delivery plan) is a separate file,
 [NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 09 above; do not confuse the two.
 
 ## Supported harnesses

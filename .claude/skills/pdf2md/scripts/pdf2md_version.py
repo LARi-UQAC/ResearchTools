@@ -1,0 +1,249 @@
+"""
+pdf2md_version - Stage 2 of the pdf2md pipeline: check mineru's version
+against PyPI, report-only by default.
+
+The pip DISTRIBUTION name is "mineru" (confirmed via `pip show mineru`,
+2026-10-10: Version 4.0.11) -- "mineru-kit" is only the CLI entry point
+that package installs (confirmed via `where mineru-kit`), never a
+separate installable package. `pip show mineru-kit` / PyPI's
+pypi.org/pypi/mineru-kit/json both 404 on the real name.
+
+Never auto-upgrades silently (R16): the rest of this skill is grounded in
+version-4.0.11-specific behaviour (the os.execv quoting bug, the
+model.vlm.server_url nesting requirement, the hardcoded 3-retry llm_aided
+timeout) measured hands-on. An upgrade could change or fix any of that
+without warning, so --yes is required to actually apply one, and a
+pip-audit follows per security.md.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from typing import Callable
+
+from pdf2md_settings import load_pipeline_config, pip_command
+
+_PACKAGES = tuple(spec.split("==", 1)[0] for spec in load_pipeline_config()["pinned_packages"])
+_PIP_SHOW_VERSION_RE = re.compile(r"^Version:\s*(.+)$", re.MULTILINE)
+
+
+def _release_tuple(version: str) -> tuple[int, ...] | None:
+    """Leading numeric release segments of a version string ("4.0.11" -> (4, 0, 11)), or None."""
+    match = re.match(r"^(\d+(?:\.\d+)*)", version.strip())
+    return tuple(int(part) for part in match.group(1).split(".")) if match else None
+
+
+@dataclass
+class VersionCheck:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One package's installed-vs-latest comparison.
+
+    Inputs:
+        None.
+
+    Outputs:
+        package (str), installed (str | None), latest (str | None),
+        upgrade_available (bool)
+    --------------------------------------------------------------------------
+    """
+
+    package: str
+    installed: str | None
+    latest: str | None
+
+    @property
+    def upgrade_available(self) -> bool:
+        if self.installed is None or self.latest is None or self.installed == self.latest:
+            return False
+        installed, latest = _release_tuple(self.installed), _release_tuple(self.latest)
+        if installed is None or latest is None:
+            return True  # not comparable: report the difference rather than hide it
+        return latest > installed  # never "upgrade" to an OLDER release (a downgrade)
+
+
+def parse_pip_show_version(output: str) -> str | None:
+    """Pure parse of `pip show <pkg>`'s "Version: X.Y.Z" line; None if absent (package not installed)."""
+    match = _PIP_SHOW_VERSION_RE.search(output)
+    return match.group(1).strip() if match else None
+
+
+def parse_pypi_latest_version(payload: dict) -> str | None:
+    """Pure parse of PyPI's JSON API response (`https://pypi.org/pypi/<pkg>/json`)'s info.version field."""
+    return (payload.get("info") or {}).get("version")
+
+
+def check_versions(
+    *,
+    pip_show_runner: Callable[[str], str],
+    pypi_fetcher: Callable[[str], dict],
+    packages: tuple[str, ...] = _PACKAGES,
+) -> list[VersionCheck]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Compare installed vs latest PyPI version for each tracked package.
+        Every effect is injected (R20/R21) -- no real pip call or network
+        request happens inside this function.
+
+    Inputs:
+        pip_show_runner (callable): str (package name) -> str (pip show
+            stdout, or "" if not installed).
+        pypi_fetcher (callable): str (package name) -> dict (parsed PyPI
+            JSON response).
+        packages (tuple[str, ...]): which packages to check.
+
+    Outputs:
+        list[VersionCheck]
+    --------------------------------------------------------------------------
+    """
+    results = []
+    for package in packages:
+        installed = parse_pip_show_version(pip_show_runner(package))
+        latest = parse_pypi_latest_version(pypi_fetcher(package))
+        results.append(VersionCheck(package, installed, latest))
+    return results
+
+
+def real_pip_show_runner(package: str, runner: Callable[..., subprocess.CompletedProcess] | None = None) -> str:
+    """IO wrapper: `pip show <package>`, empty string (not an exception) if the package is not installed."""
+    runner = runner or subprocess.run
+    result = runner(
+        pip_command("show", package), capture_output=True, text=True, timeout=load_pipeline_config()["pip_show_timeout_s"]
+    )
+    return result.stdout if result.returncode == 0 else ""
+
+
+def real_pypi_fetcher(package: str, timeout_s: float | None = None) -> dict:
+    """IO wrapper: fetch https://pypi.org/pypi/<package>/json (R10: bounded timeout, pypi_timeout_s by default)."""
+    import urllib.request
+
+    bound = load_pipeline_config()["pypi_timeout_s"] if timeout_s is None else timeout_s
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{package}/json", timeout=bound) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def upgrade_packages(
+    specs: tuple[str, ...],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess] | None = None,
+) -> subprocess.CompletedProcess:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Run `<this interpreter> -m pip install <specs>`. Every spec is an
+        exact `name==version` pin (security.md: never a range, never an
+        unpinned name). Only called when the caller has explicit --yes
+        consent (R16); never invoked by the default dry-run path.
+
+    Inputs:
+        specs (tuple[str, ...]): pinned requirements to install, such as
+            "mineru==4.1.0".
+        runner (callable | None): injected for tests; defaults to
+            subprocess.run.
+
+    Outputs:
+        subprocess.CompletedProcess
+    --------------------------------------------------------------------------
+    """
+    runner = runner or subprocess.run
+    return runner(
+        pip_command("install", *specs),
+        capture_output=True,
+        text=True,
+        timeout=load_pipeline_config()["pip_install_timeout_s"],
+    )
+
+
+def run_pip_audit(runner: Callable[..., subprocess.CompletedProcess] | None = None) -> subprocess.CompletedProcess:
+    """IO wrapper: `<this interpreter> -m pip_audit`, run after an upgrade per security.md."""
+    runner = runner or subprocess.run
+    return runner(
+        [sys.executable, "-m", "pip_audit"],
+        capture_output=True,
+        text=True,
+        timeout=load_pipeline_config()["pip_audit_timeout_s"],
+    )
+
+
+def build_version_report(
+    checks: list[VersionCheck],
+    *,
+    yes: bool,
+    upgrade_fn: Callable[[], subprocess.CompletedProcess] | None = None,
+    audit_fn: Callable[[], subprocess.CompletedProcess] | None = None,
+) -> tuple[dict, int]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide the report and exit code for a version check, given already-
+        computed checks. Pulled out of _main as a pure-ish decision function
+        (upgrade_fn/audit_fn injected) so the three real outcomes -- nothing
+        to upgrade, upgrade refused without --yes, upgrade applied -- are
+        each independently testable without a real pip/network call
+        (R20/R21).
+
+    Inputs:
+        checks (list[VersionCheck]): as returned by check_versions.
+        yes (bool): whether to actually apply an available upgrade.
+        upgrade_fn, audit_fn (callable | None): injected for tests; default
+            to the real upgrade_packages()/run_pip_audit().
+
+    Outputs:
+        (dict, int): the JSON-serializable report, and the exit code
+            (R12: 0 done -- including "nothing needed, already current" --
+            2 refusal by design, 1 failure).
+    --------------------------------------------------------------------------
+    """
+    upgrade_fn = upgrade_fn or (
+        lambda: upgrade_packages(tuple(f"{c.package}=={c.latest}" for c in checks if c.upgrade_available))
+    )
+    audit_fn = audit_fn or run_pip_audit
+
+    report: dict = {
+        "ok": True,
+        "checks": [
+            {"package": c.package, "installed": c.installed, "latest": c.latest, "upgrade_available": c.upgrade_available}
+            for c in checks
+        ],
+        "upgrade_available": any(c.upgrade_available for c in checks),
+        "upgraded": False,
+    }
+
+    if not report["upgrade_available"]:
+        return report, 0
+    if not yes:
+        report["refused"] = "upgrade(s) available but --yes not passed; dry-run only (R16)"
+        return report, 2
+
+    upgrade_result = upgrade_fn()
+    audit_result = audit_fn()
+    report["upgraded"] = upgrade_result.returncode == 0
+    report["pip_audit_returncode"] = audit_result.returncode
+    report["pip_audit_ok"] = audit_result.returncode == 0  # reported, never a rollback: the operator decides
+    # stderr too: an environment with no pip_audit module says so there, and a bare False would hide why.
+    report["pip_audit_output"] = (audit_result.stdout or "") + (getattr(audit_result, "stderr", "") or "")
+    return report, (0 if report["upgraded"] else 1)
+
+
+def _main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--yes", action="store_true", help="actually upgrade, then run pip-audit (default: report only)")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    checks = check_versions(pip_show_runner=real_pip_show_runner, pypi_fetcher=real_pypi_fetcher)
+    report, exit_code = build_version_report(checks, yes=args.yes)
+    print(json.dumps(report) if args.json else report)
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

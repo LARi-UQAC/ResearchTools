@@ -40,11 +40,17 @@ gh api user --jq .login # confirms which account is actually authenticated
 - If the plan includes a themed documentation site: Python 3 for a **dedicated** virtualenv
   (never reuse a project's own test/runtime venv for doc tooling — see Phase 5).
 - The machine's privacy guard is active, so nothing personal is committed while the repo is
-  being built: `git config --global core.hooksPath` must print `~/.config/git/hooks`, and
+  being built: `git config --global core.hooksPath` must print the absolute path of
+  `~/.config/git/hooks` (the installer writes the full path, not a tilde), and
   `git config --local core.hooksPath` must print NOTHING inside the repo (a local value, such
   as the one husky sets, silently switches the guard off for that repo), and
-  `betterleaks version` must answer. If not, install it from a ResearchTools clone:
-  `winget install Betterleaks.Betterleaks`, then `.\.claude\hooks\git\install-git-hooks.ps1`.
+  `betterleaks version` must answer, and `~/.config/git/hooks` must hold both `pre-commit`
+  (checks each commit) and `pre-push` (checks every outgoing commit and its message, so a
+  `git commit --no-verify` is still stopped before it is published; `git push --no-verify`
+  skips `pre-push` as well, and then only CI catches it). If not, install it from a
+  ResearchTools clone: `winget install Betterleaks.Betterleaks`, then
+  `.\.claude\hooks\git\install-git-hooks.ps1`. The hooks use a COPY of the rules: re-run the
+  installer after pulling a ResearchTools change to `privacy-rules.toml`.
 - Ask the user, don't guess, before starting: does this repo already have a `CONTRIBUTING.md`,
   design assets, or a documented brand? Overwriting existing work without checking is worse
   than a slow start.
@@ -385,9 +391,34 @@ a GitHub Support request and fork owners deleting their forks. Do the four steps
    changes, since afterwards only a history rewrite removes it:
 
    ```bash
-   betterleaks git --redact --no-banner \
-     --config <path-to-ResearchTools>/.claude/hooks/git/privacy-rules.toml .
+   rules=$(realpath <path-to-ResearchTools>/.claude/hooks/git/privacy-rules.toml)
+   git log -p --all --text -m --pretty=medium --no-color --no-ext-diff --no-textconv \
+     | (cd "$(mktemp -d)" && betterleaks stdin --redact --no-banner --config "$rules")
    ```
+
+   betterleaks runs from an empty directory because an ignore file (`.gitleaksignore`,
+   `.betterleaksignore`) in its current directory hides findings; the repository's own
+   copy is left untouched. The rules path is absolute for the same reason.
+
+   Not `betterleaks git`: measured 2026-10-02 with betterleaks 1.4.1, it honours a
+   `.gitattributes` `-diff` (the file reads as "Binary files differ") and skips what a merge
+   commit adds. The text pipe above sees both. It also reads each commit's Author and Date
+   lines, so a commit authored with an `@etu.uqac.ca` address is reported; that is wanted
+   before publishing (CI scans content and messages only).
+
+   The pipe still cannot read UTF-16 text or the content and metadata of binary files
+   (author fields included). Check those separately, each through the same scanner
+   (`scan` below stands for `(cd "$(mktemp -d)" && betterleaks stdin --redact --no-banner
+   --config "$rules")`; the first three were verified 2026-10-09 on fixtures carrying a
+   code-permanent shape):
+
+   - UTF-16 text: list it with `git ls-files -z | xargs -0 file | grep -i utf-16`, then
+     `iconv -f UTF-16 -t UTF-8 <file> | scan`;
+   - `.docx` / `.xlsx` / `.pptx`: `unzip -p <file> 'docProps/*' 'word/*' 'xl/*' 'ppt/*' | scan`
+     (`docProps/core.xml` holds the author and last-modified-by fields);
+   - `.pdf`: `{ pdfinfo <file>; pdftotext <file> -; } | scan` (Poppler, shipped with MiKTeX);
+   - images: no scanner was available on the reference machine, so check the EXIF author
+     and GPS fields in the file's properties, or strip metadata before committing.
 
 2. **Add the CI check** as `.github/workflows/privacy-scan.yml`. It reuses the ResearchTools
    workflow and its rules, so every repo follows one rules file:
@@ -396,6 +427,8 @@ a GitHub Support request and fork owners deleting their forks. Do the four steps
    name: privacy-scan
    on:
      pull_request:
+       # edited: a PR retargeted to another base is scanned again against that base
+       types: [opened, synchronize, reopened, edited]
      push:            # every branch, not only main: a branch with no PR is public too
    permissions:
      contents: read
@@ -432,7 +465,10 @@ a GitHub Support request and fork owners deleting their forks. Do the four steps
 
    The push runs only DETECT: a pushed branch is already public, and `[skip ci]` or an edited
    workflow in that push suppresses the run. The merge into `main` is what the required
-   check protects; the machine hook (Phase 0) is what stops a value before it is published.
+   check protects; the machine hooks (Phase 0, `pre-commit` and `pre-push`) are what stop a
+   value before it is published. The triggers above live in the caller: a `workflow_call`
+   ignores the `on:` of the called workflow, so a caller without `edited` is not rescanned
+   after a retarget.
 
 4. **Test data uses fictitious identities only** (ResearchTools rule R34): `Wick, J.`,
    `student@example.org`, `XXXX000000`, `XXXYY1234`. No pattern can recognise a real name, so
@@ -537,7 +573,13 @@ concrete example separately, clearly marked as one instance rather than the univ
       again — this repo found one such file that had been sitting committed since an earlier,
       unrelated session.
 - [ ] Privacy guard (Phase 6b), each item READ BACK, not assumed:
-  - full-history `betterleaks git` scan with the lab rules: zero findings;
+  - full-history scan (the text pipe of Phase 6b step 1) with the lab rules: zero findings,
+    and every UTF-16, `.docx`, `.pdf` and image file checked with the per-type commands of
+    that same step;
+  - `git config --local core.hooksPath` prints nothing in the repo (Phase 0);
+  - the caller workflow lists `edited` under `pull_request: types`;
+  - `.github/CODEOWNERS` covers `.github/workflows/`, and the ruleset's `pull_request` rule
+    has `require_code_owner_review: true`;
   - `security_and_analysis` shows secret scanning AND push protection `enabled`;
   - the `privacy-scan` check is green on a real pull request;
   - the branch ruleset lists that check under `required_status_checks`.

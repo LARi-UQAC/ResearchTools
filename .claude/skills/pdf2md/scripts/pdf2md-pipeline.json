@@ -1,0 +1,58 @@
+{
+  "port": {
+    "value": 30000,
+    "provenance": "stated in the first commit (2026-10-10) as mineru's own vlm-server default; not re-read from mineru's source on 2026-10-15 (the install sits in an account this session cannot read); the TCP port the llama-server binds and the URL written into config.yaml"
+  },
+  "image_min_tokens": {
+    "value": 1024,
+    "provenance": "chosen by the operator, 2026-10-10; the --image-min-tokens value that removes llama-server's 'Qwen-VL models require at minimum' grounding warning, confirmed present in the bundled binary's own --help"
+  },
+  "n_parallel": {
+    "value": 4,
+    "provenance": "stated in the first commit (2026-10-10) as mineru's own hard-partitioned KV default, not re-read on 2026-10-15; slot count, and the factor that multiplies the trained context into --ctx-size"
+  },
+  "n_gpu_layers": {
+    "value": 99,
+    "provenance": "stated in the first commit (2026-10-10) as mineru's own default, not re-read on 2026-10-15; 99 means as many layers as fit on the GPU"
+  },
+  "server_wait_s": {
+    "value": 120,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; seconds `run` waits for llama-server's log to say it is listening before giving up; not swept"
+  },
+  "server_poll_interval_s": {
+    "value": 1,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; seconds between two reads of llama-server's log while waiting for it to listen"
+  },
+  "pip_show_timeout_s": {
+    "value": 30,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; bound on a `pip show` call (R10)"
+  },
+  "pip_install_timeout_s": {
+    "value": 600,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; bound on `pip install` of the pinned packages, upgrade included (R10); not measured on a cold cache"
+  },
+  "pip_audit_timeout_s": {
+    "value": 300,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; bound on the pip-audit run that follows an upgrade (R10)"
+  },
+  "models_show_timeout_s": {
+    "value": 30,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; bound on `mineru-kit models show` (R10)"
+  },
+  "models_download_timeout_s": {
+    "value": 1800,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; bound on `mineru-kit models download`, a multi-gigabyte transfer (R10); not measured"
+  },
+  "resolve_snippet_timeout_s": {
+    "value": 120,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; bound on the registry snippet that resolves the VLM model paths (R10)"
+  },
+  "pypi_timeout_s": {
+    "value": 10,
+    "provenance": "literal carried over from the first commit (2026-10-10), chosen by the author and not measured; bound on the PyPI JSON API request made by `version` (R10)"
+  },
+  "pinned_packages": {
+    "value": ["mineru==4.0.11", "mineru-llama-cpp==0.1.2"],
+    "provenance": "measured 2026-10-15 with `pip show mineru mineru-llama-cpp` in the Python 3.13 environment that ran the 2026-10-10 to 2026-10-11 conversions (4.0.11 and 0.1.2); security.md asks for a pinned version, never a range. pdf2md's behaviour is version-4.0.11-specific, so an upgrade is a deliberate edit of this list plus a re-run of `pdf2md version`"
+  }
+}

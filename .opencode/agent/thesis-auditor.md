@@ -850,14 +850,18 @@ Record in Section L of the plan.
 
 Run the multi-model deliberation panel on the assembled chapter-by-chapter audit summary before
 ScholarEval scoring. **MANDATORY: run it every time. Do not skip on usefulness, length, or confidence
-grounds.** The only sanctioned skip is genuinely missing `GEMINI_API_KEY` AND `GITHUB_TOKEN` — and
+grounds.** The only sanctioned skip is genuinely missing `GEMINI_API_KEY` AND a working second reviewer (no Copilot token and no local model: the script lists both under `reviewers_unavailable`) — and
 even then, gather Consensus evidence, run the script (it degrades gracefully), and record the
 `[REVIEWER UNAVAILABLE: ...]` markers in the Deliberation Log. The step is autonomous (no user pause).
 The full protocol (debate rounds, canonical arbitration table, provenance markers, Scopus validation
 gate, Deliberation-Log format) lives in
 `.claude/skills/deliberation/references/deliberation-protocol.md`; the steps below are the short form.
 
-1. Assemble the audit summary (hypothesis flow, key flags per chapter, max 2000 words) as the draft.
+1. Assemble the audit summary (hypothesis flow, key flags per chapter, max 2000 words) as the draft,
+   and attach for every flagged item the verbatim passage it concerns with the definitions,
+   notation and numbers it depends on: a flag without its text cannot be judged, and the reviewers
+   see only what is piped. If the whole exceeds the token budget, run the panel once per chapter
+   and repeat the shared context in each run; a digest is a last resort and is declared in the Log.
 2. Gather Consensus counter-evidence: up to 4 targeted `mcp__claude_ai_Consensus__search` queries on
    the thesis's central claims and weakest chapters (batches <= 3, one query per second). At least one
    query MUST be a gap probe — "what key recent papers on `<thesis topic / weakest claim>` are missing
@@ -867,10 +871,16 @@ gate, Deliberation-Log format) lives in
 3. Run the two-round Gemini<->Copilot debate:
 
 ```
-echo "<audit summary>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<thesis topic>" --rounds 2 --plan-schema auditor --evidence-file "<evidence.txt>"
+echo "<audit summary>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<thesis topic>" --rounds 2 --plan-schema auditor --evidence-file "<evidence.txt>" --round2-include-draft
 ```
 
-4. Consume `merged[]` and arbitrate with the canonical table and markers (`consensus` ->
+   Read the envelope's `context` record first (`warnings[]`, `draft_digested`) and put each
+   warning in the Log.
+
+4. Consume `merged[]`, judge each item's relevance to the thesis as it stands (off topic or contrary
+   to a premise the thesis holds: reject with the reason), pair by meaning the items the script left
+   apart, account for EVERY `id` in the Log (the `Accounting` line must add up), and arbitrate with
+   the canonical table and markers (`consensus` ->
    `[✓ GEMINI + COPILOT]`, `gemini_only` -> `[✓ GEMINI]`, `copilot_only` -> `[✓ COPILOT]`, `conflict`
    -> `[✓ GEMINI — COPILOT DISAGREED]`, Claude resolving). For any reference-bearing item, run the
    Scopus gate first (`scopus_api.py verify`, accept only on `valid: true`; or `scopus_api.py search`

@@ -12,9 +12,8 @@ Provide both the source file path and the target journal name, separated by a sp
 If no journal is specified, the agent will ask for it before proceeding.
 
 The agent executes its FULL contractual pipeline as defined in
-.claude/agents/submit-checker.md, including every mandatory skill invocation
-(deliberation, scholar-evaluation, extract-statistic, extract-futureworks, scopus where
-applicable). Do not restate or reduce that pipeline here. If the agent returns
+.claude/agents/submit-checker.md, including every mandatory skill invocation that
+agent defines (this agent does not run the deliberation panel). Do not restate or reduce that pipeline here. If the agent returns
 "PIPELINE-PAUSED @ ...", relay its request to the user verbatim, then resume the same
 agent via SendMessage with the user's answer. On completion, verify the agent's final
 checklist before presenting the result; if it is missing or contains an unsanctioned ✗,

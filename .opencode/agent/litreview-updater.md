@@ -14,7 +14,7 @@ and the output target. It NEVER defines the process. Absolute rules:
 2. The only sanctioned skips are the ones written into the steps: Step 1a (Scopus.AI) skipped
    by the end user or auto-skipped-with-log in unattended mode; Step 1d (Consensus) when the
    MCP is unavailable, logged; Step 6 (deliberation) degraded only when GEMINI_API_KEY AND
-   GITHUB_TOKEN are both absent, the script still executed. `extract-futureworks` (Step 5),
+   a working second reviewer (Copilot token or a local model) are both absent, the script still executed. `extract-futureworks` (Step 5),
    `extract-statistic` (Step 5), `extract-contributions` (Step 5), `deliberation` (Step 6), and
    `scholar-evaluation` (Step 7) are MANDATORY skill invocations on every run.
 3. Subagent context: if executed as a subagent with no channel to the user, do NOT skip the
@@ -171,10 +171,21 @@ This is the core judgment. For each new paper against each existing gap `G` and 
 classify: **closes the gap**, **preempts the hypothesis / planned contribution**, **strengthens
 it**, or **unrelated**. Gather the evidence (new-paper contributions + the review's `G*`/`H*`
 statements), write it to an evidence file, and run the `deliberation` skill (two-round
-Gemini↔Copilot) on the question *"Given these newly published papers, is the review's stated
-contribution still novel, or is any gap/hypothesis now preempted?"* Read
-`.claude/skills/deliberation/SKILL.md`; append a `## Deliberation Log`. Degrade only if both
-API keys are absent (log the unavailable reviewers; do not abort).
+Gemini↔Copilot, with the local model as the fallback) on the question *"Given these newly published
+papers, is the review's stated contribution still novel, or is any gap/hypothesis now preempted?"*
+Read `.claude/skills/deliberation/SKILL.md`; append a `## Deliberation Log`. Degrade only if no
+second reviewer works (log the unavailable reviewers; do not abort).
+
+The question travels WITH its context: the full statements of every `G*` and `H*`, the contribution
+sentences of each new paper (Step 5), and the review's own claims they are compared with. Pipe that
+as the draft on stdin, and write the question as the first line, phrased so that the answer can
+disagree (which gap or hypothesis could be preempted, and why):
+```
+Get-Content "<question_and_context>.md" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<review topic>" --rounds 2 --plan-schema researcher --evidence-file "<evidence.txt>" --round2-include-draft
+```
+Read the envelope's `context` record first (put each `warnings[]` entry in the Log), judge each
+`merged[]` item's relevance to the question, pair by meaning the items the script left apart, and
+account for EVERY `id` in the Log (its `Accounting` line must add up).
 
 ### Step 7 — Quantitative contribution score (MANDATORY)
 Read `.claude/skills/scholar-evaluation/SKILL.md`. Score the update on the ScholarEval
@@ -248,6 +259,6 @@ keys are absent — each must be logged.
 There is no scheduler in this repo. Weekly/monthly automation is a Claude Code `schedule`
 routine (or `/loop`) that runs `/litupdate <review.tex>` in **unattended** mode. Caveats to
 surface in the output when relevant: Scopus needs a campus network / VPN or `--insttoken`;
-`deliberation` needs GEMINI_API_KEY / GITHUB_TOKEN (degrades gracefully); the Scopus.AI pause is
+`deliberation` needs GEMINI_API_KEY and a second reviewer (a Copilot token, or the local model of the resolver's `session` role as the fallback) (degrades gracefully); the Scopus.AI pause is
 auto-skipped-with-log; non-approved publishers and possibly-preempted hypotheses are deferred to
 the human finalize pass, never auto-resolved.

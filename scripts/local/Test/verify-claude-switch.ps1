@@ -45,20 +45,27 @@ function Check([string]$name, [bool]$ok) {
     else     { Write-Host "  FAIL  $name" -ForegroundColor Red; $script:failures++ }
 }
 
-# Vars the SCRIPT itself writes/clears between claude-ollama/claude-augure/claude-cloud
-# calls - reset between test cases via Clear-SwitchEnv.
-$ScriptManagedVars = @(
+# Superset for Save-RealEnv/Restore-RealEnv around the WHOLE run, needed BEFORE the
+# production script is even dot-sourced (Save-RealEnv is called first, to protect the
+# real caller's environment from the moment this test starts). Also covers
+# AUGUREAI_API_KEY, a fixture INPUT the test sets per case, never cleared between cases
+# (Clear-SwitchEnv, defined below, must not wipe a credential the test itself just
+# configured).
+$RoutingVars = @(
     "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
     "ANTHROPIC_SMALL_FAST_MODEL", "API_TIMEOUT_MS",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY", "AUGUREAI_API_KEY"
 )
-# Superset for Save-RealEnv/Restore-RealEnv around the WHOLE run: also covers
-# AUGUREAI_API_KEY, a fixture INPUT the test sets per case, never cleared between cases
-# (Clear-SwitchEnv must not wipe a credential the test itself just configured).
-$RoutingVars = $ScriptManagedVars + @("AUGUREAI_API_KEY")
 
 function Clear-SwitchEnv {
-    Remove-Item ($ScriptManagedVars | ForEach-Object { "Env:\$_" }) -ErrorAction SilentlyContinue
+    # Reads $script:RoutingVarNames from the DOT-SOURCED production script itself
+    # (code-review finding, 2026-10-15) rather than a second, separately maintained
+    # list here: a literal copy would silently stop covering a variable the script
+    # starts managing later, reintroducing the exact cross-case leakage this
+    # function exists to prevent (see $script:EnvSaved below). Dot-sourcing has no
+    # scope boundary, so the production script's own $script:RoutingVarNames is
+    # already visible here by the time any test case calls this function.
+    Remove-Item ($script:RoutingVarNames | ForEach-Object { "Env:\$_" }) -ErrorAction SilentlyContinue
     # $script:EnvSaved/$script:SavedEnv are PowerShell-scope bookkeeping, not env
     # vars - clearing only Env:\* would leak one test case's save-state into the next
     # (measured: it did, failing the "ollama -> augure -> cloud" chain test below until

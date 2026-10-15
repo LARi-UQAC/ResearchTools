@@ -26,7 +26,17 @@ class ScoreTest(unittest.TestCase):
         sub = {"a": 1.0, "b": 1.0, "c": 0.5, "d": 0.0, "e": 1.0}
         t = total(sub, ALLOWED)
         self.assertEqual(t, 3.5)
-        self.assertEqual(band(t), "Very close")
+        self.assertEqual(band(t, retain_threshold=1.5), "Very close")
+
+    def test_peripheral_band_floor_tracks_the_configured_threshold(self):
+        # 2026-10-15 review finding: BANDS hardcoded the Peripheral floor as
+        # a literal 1.5, independently of pef_config.json's retain_threshold,
+        # so changing the config disagreed with the printed band (R0/R2). A
+        # total of 2.0 is Peripheral under the shipped threshold (1.5) but
+        # falls to "Do not retain" once the configured threshold moves above
+        # it - proving band() reads the floor from its argument.
+        self.assertEqual(band(2.0, retain_threshold=1.5), "Peripheral")
+        self.assertEqual(band(2.0, retain_threshold=2.5), "Do not retain")
 
     def test_invalid_subscore_rejected(self):
         sub = {"a": 0.7, "b": 1.0, "c": 0.5, "d": 0.0, "e": 1.0}

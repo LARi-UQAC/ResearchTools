@@ -221,6 +221,31 @@ class ExclusionsTest(unittest.TestCase):
                 self.assertEqual(list(csv.DictReader(fh)), [])
             excl_path.unlink()  # a lingering lock (the bug) raises PermissionError here
 
+    def test_ranking_row_with_extra_fields_does_not_crash_the_write(self):
+        # 2026-10-15 review finding, M5: a ranking row with MORE fields than
+        # the header gets the overflow grouped by csv.DictReader under the
+        # key None (its documented restkey default); DictWriter raised on
+        # that key by default, crashing the whole write and leaving a
+        # stray .tmp file behind for one ragged row in an otherwise normal
+        # export.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            ranking = tmp_path / "ranking.csv"
+            with ranking.open("w", newline="", encoding="utf-8") as fh:
+                fh.write("professor,university\n")
+                fh.write("Jane Doe,U1,stray,extra,fields\n")
+            excl = tmp_path / "excl.csv"
+            write_csv(excl, ["name", "reason"], [])
+            out_path = tmp_path / "filtered.csv"
+            rc, _ = run_main(["--ranking", str(ranking), "--exclusions", str(excl),
+                               "--out", str(out_path)])
+            self.assertEqual(rc, 0)
+            self.assertFalse(out_path.with_name(out_path.name + ".tmp").exists())
+            with out_path.open(newline="", encoding="utf-8") as fh:
+                rows = list(csv.DictReader(fh))
+            self.assertEqual(rows[0]["professor"], "Jane Doe")
+            self.assertNotIn(None, rows[0])
+
     def test_cli_json_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

@@ -33,7 +33,7 @@ import re
 import sys
 from pathlib import Path
 
-from pef_common import load_column_hints, norm
+from pef_common import atomic_open, load_column_hints, norm
 
 _HINTS = load_column_hints("file_search")
 NAME_HINTS = _HINTS["name_hints"]
@@ -106,12 +106,20 @@ def find_header(grid: list[list[str]]) -> int:
     # function's own docstring (2026-10-09 review, round 6: has_name and
     # has_expertise were both `any()` over the SAME cells, so one cell
     # could satisfy both at once).
+    #
+    # The name-cell test requires an EXACT match against NAME_HINTS (data,
+    # R6) - every real header this skill has been given ("Name", "Nom",
+    # "External Reviewer Name", ...) matches a hint exactly once norm()-ed,
+    # so no substring fallback is needed here. A bare substring test (the
+    # previous shape) let a title cell merely mentioning a program name
+    # ("Program name: AI symposium") match on "name" and, paired with an
+    # unrelated expertise-looking cell elsewhere in the same row, be wrongly
+    # accepted as the header (2026-10-15 review finding, L1). col_index()
+    # keeps its own, separate substring fallback for resolving which column
+    # IS the name column once a header row has already been found here.
     for i, row in enumerate(grid):
         cells = [norm(c) for c in row]
-        name_idx = next((j for j, cell in enumerate(cells) if
-                         (any(h in cell for h in NAME_HINTS) and "reviewer" in cell)
-                         or cell.startswith("external reviewer")
-                         or "name" in cell or "nom" in cell), None)
+        name_idx = next((j for j, cell in enumerate(cells) if cell in NAME_HINTS), None)
         expertise_idx = next((j for j, cell in enumerate(cells) if
                               "areas of expertise" in cell
                               or "domaines de competence" in cell), None)
@@ -231,8 +239,11 @@ def main(argv: list[str]) -> int:
         argv (list[str]): command-line arguments, excluding the program name.
 
     Outputs:
-        exit_code (int): 0 on success, 1 if the name or expertise column
-            could not be found in the header.
+        exit_code (int): 0 on success, 2 if the header row, or the name or
+            expertise column within it, could not be found - a refusal by
+            design over a malformed/unexpected reference file, not a crash
+            (R12; 2026-10-15 review finding, L5: this used to return 1 for
+            both, which R12 reserves for an unplanned failure).
     --------------------------------------------------------------------------
     """
     parser = argparse.ArgumentParser(description=__doc__)
@@ -245,8 +256,20 @@ def main(argv: list[str]) -> int:
                         help="report the match count, write nothing")
     args = parser.parse_args(argv)
 
+    # The suffix check runs BEFORE any filesystem call: `.exists()` on a long
+    # inline comma-separated term list (a real "--terms a, b, c, ..." with
+    # ~60 keywords) raises OSError ("file name too long") on Windows, and
+    # the old `terms_path.exists() and terms_path.suffix in (...)` ordering
+    # called .exists() unconditionally, crashing before the inline-list
+    # branch was ever reached (2026-10-15 review finding, H3).
     terms_path = Path(args.terms)
-    if terms_path.exists() and terms_path.suffix in (".txt", ".md", ".csv"):
+    is_file_ref = False
+    if terms_path.suffix in (".txt", ".md", ".csv"):
+        try:
+            is_file_ref = terms_path.exists()
+        except OSError:
+            is_file_ref = False
+    if is_file_ref:
         raw_terms = [line.strip(" -\t") for line in
                      terms_path.read_text(encoding="utf-8").splitlines()]
         terms = [t for t in raw_terms if t and not t.startswith("#")]
@@ -259,7 +282,7 @@ def main(argv: list[str]) -> int:
         h = find_header(grid)
     except ValueError as exc:
         print(f"INVALID: {exc}")
-        return 1
+        return 2
     header = grid[h]
     # Institution/department/availability first: their hints ("etablissement",
     # "departement", "disponibilite") are specific enough to resolve safely on
@@ -276,7 +299,19 @@ def main(argv: list[str]) -> int:
     lang_cols = language_columns(header)
     if ci_name is None or ci_exp is None:
         print("INVALID: name or expertise column not found in header:", header)
-        return 1
+        return 2
+
+    # When the availability COLUMN'S OWN HEADER already names the
+    # not-available flag ("Not available this year"), the column itself IS
+    # the flag - any non-empty cell under it means unavailable, whatever the
+    # cell's own text says ("X", "Yes", "1", ...). Checking the CELL text
+    # for a not_available_phrases match (as the generic "Availability"
+    # header does below) missed every such row, since a bare "X" contains
+    # none of those phrases (2026-10-15 review finding, H2 - confirmed by
+    # running the script on exactly this layout).
+    avail_header_is_flag = (ci_avail is not None
+                             and any(phrase in norm(header[ci_avail])
+                                     for phrase in NOT_AVAILABLE_PHRASES))
 
     matches, total, unavailable = [], 0, 0
     for row in grid[h + 1:]:
@@ -292,8 +327,16 @@ def main(argv: list[str]) -> int:
         # that happens to be a substring of an unrelated word). norm()
         # output is alnum-and-space only, so \b around the whole (possibly
         # multi-word) term works for a phrase exactly as for a single word.
+        # An optional trailing "s"/"es" lets "neural network" still match
+        # "neural networks" and "robot" match "robots" - the exact-boundary
+        # fix above also stopped simple plural recall, and the shortlist is
+        # meant to be recall-oriented (2026-10-15 review finding, M1).
+        # This is a plural suffix only, not general stemming: a spelling
+        # variant such as "optimisation"/"optimization" still needs its own
+        # term in --terms, the same declined scope as language_columns()'s
+        # English/French-only limitation above.
         hit = [orig for orig, nt in norm_terms
-               if nt and re.search(rf"\b{re.escape(nt)}\b", exp_norm)]
+               if nt and re.search(rf"\b{re.escape(nt)}(?:es|s)?\b", exp_norm)]
         if len(hit) < args.min_matches:
             continue
         # Only the "not available" flag is normalized to a fixed label; any
@@ -302,8 +345,12 @@ def main(argv: list[str]) -> int:
         # workflow (6c) and this script's own docstring promise the file's
         # declared data is surfaced, not summarized (2026-10-08 code review).
         availability = get(row, ci_avail)
-        avail_norm = norm(availability)
-        if any(phrase in avail_norm for phrase in NOT_AVAILABLE_PHRASES):
+        if avail_header_is_flag:
+            is_unavailable = bool(availability)
+        else:
+            is_unavailable = any(phrase in norm(availability)
+                                 for phrase in NOT_AVAILABLE_PHRASES)
+        if is_unavailable:
             availability = "Not available this year"
             unavailable += 1
         langs = sorted({label for idx, label in lang_cols
@@ -325,7 +372,14 @@ def main(argv: list[str]) -> int:
         print(f"DRY RUN - ROWS SCANNED: {total}  MATCHES: {len(matches)}  "
               f"(of which not-available: {unavailable})  (would write {out})")
     else:
-        with out.open("w", newline="", encoding="utf-8") as fh:
+        # atomic_open (tmp + os.replace) and mkdir(parents=True): the old
+        # plain open("w") left a crash mid-write able to truncate a
+        # previous shortlist, and never created a missing --out directory
+        # at all (2026-10-15 review finding, M6 - the same R9 gap
+        # table.py/selections.py/exclusions.py already closed, and this
+        # script's own output path was the one left behind).
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with atomic_open(out, newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=OUTPUT_FIELDS)
             writer.writeheader()
             writer.writerows(matches)

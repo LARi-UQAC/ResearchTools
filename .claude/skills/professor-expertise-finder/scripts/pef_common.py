@@ -10,6 +10,7 @@ four near-copies.
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import json
 import os
@@ -183,6 +184,44 @@ def atomic_open(path: Path, **open_kwargs):
     os.replace(tmp, path)
 
 
+@functools.lru_cache(maxsize=8)
+def _load_university_aliases_cached(path_str: str) -> dict[str, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read and parse one university-aliases file, cached by its own path
+        string (2026-10-15 review finding: `canonical_university()` re-read
+        and re-parsed this file on EVERY call - thousands of times over a
+        500-row ranking - for a file that never changes mid-run). Keying by
+        path rather than caching bare makes a test's `mock.patch.object`
+        onto a different path produce its own cache entry instead of
+        silently reusing another test's file (R21).
+
+    Inputs:
+        path_str (str): UNIVERSITY_ALIASES_PATH, as a string (lru_cache
+            needs a hashable argument).
+
+    Outputs:
+        aliases (dict[str, str]): normalized acronym -> normalized canonical
+            name (both already run through `norm()`).
+
+    Raises:
+        FileNotFoundError: the file is missing. Not cached - a failing call
+            re-raises on every invocation, since lru_cache never caches an
+            exception.
+        ValueError: the file exists but is not valid JSON. Also not cached.
+    --------------------------------------------------------------------------
+    """
+    path = Path(path_str)
+    if not path.exists():
+        raise FileNotFoundError(f"missing university-aliases config: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"malformed university-aliases config {path}: {exc}") from exc
+    return {norm(k): norm(v) for k, v in data.items() if not k.startswith("_")}
+
+
 def load_university_aliases() -> dict[str, str]:
     """
     --------------------------------------------------------------------------
@@ -198,7 +237,9 @@ def load_university_aliases() -> dict[str, str]:
 
     Outputs:
         aliases (dict[str, str]): normalized acronym -> normalized canonical
-            name (both already run through `norm()`).
+            name (both already run through `norm()`). Cached per path by
+            `_load_university_aliases_cached` - the production path never
+            changes mid-run, so this reads the file at most once.
 
     Raises:
         FileNotFoundError: pef_university_aliases.json is missing.
@@ -212,14 +253,7 @@ def load_university_aliases() -> dict[str, str]:
             failure; this now matches them (R2 - one owner, one rule).)
     --------------------------------------------------------------------------
     """
-    if not UNIVERSITY_ALIASES_PATH.exists():
-        raise FileNotFoundError(f"missing university-aliases config: {UNIVERSITY_ALIASES_PATH}")
-    try:
-        data = json.loads(UNIVERSITY_ALIASES_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"malformed university-aliases config "
-                         f"{UNIVERSITY_ALIASES_PATH}: {exc}") from exc
-    return {norm(k): norm(v) for k, v in data.items() if not k.startswith("_")}
+    return _load_university_aliases_cached(str(UNIVERSITY_ALIASES_PATH))
 
 
 def canonical_university(text: str) -> str:
@@ -237,19 +271,17 @@ def canonical_university(text: str) -> str:
 
     Outputs:
         canonical (str): the normalized canonical name when `text`
-            normalizes to a known acronym OR to a known canonical name
-            itself; otherwise `norm(text)` unchanged.
+            normalizes to a known acronym; otherwise `norm(text)` unchanged
+            (2026-10-15 review finding: the previous form carried a dead
+            `if folded in aliases.values(): return folded` branch - both
+            arms of that `if` returned the identical `folded` value, so it
+            decided nothing and is removed here).
     --------------------------------------------------------------------------
     """
     folded = norm(text)
     if not folded:
         return folded
-    aliases = load_university_aliases()
-    if folded in aliases:
-        return aliases[folded]
-    if folded in aliases.values():
-        return folded
-    return folded
+    return load_university_aliases().get(folded, folded)
 
 
 def slugify(text: str) -> str:
@@ -264,15 +296,19 @@ def slugify(text: str) -> str:
             "Worldwide", "Concours 2027".
 
     Outputs:
-        slug (str): lowercase ASCII, words joined by single hyphens. A text
-            with no Latin alphanumeric character at all (e.g. a location or
-            batch name written only in a non-Latin script) gets a short
-            hash of its own exact text instead of the bare literal
-            "unspecified", so two DIFFERENT such names do not collide into
-            the SAME data instance - a 2026-10-09 review finding: two
-            unrelated batches named only in a non-Latin script would
-            otherwise share one selections.csv and cross-contaminate the
-            no-reuse rule.
+        slug (str): lowercase ASCII, words joined by single hyphens. Whenever
+            the fold DROPS at least one letter or digit of the original text
+            - not only when it drops ALL of them - a short hash of the
+            EXACT original text is appended, so two names that are
+            different before the drop but look identical after it do not
+            collide into the SAME data instance (2026-10-15 review finding:
+            the 2026-10-09 fix only hashed when the WHOLE result was empty,
+            so "France, <a name written in a non-Latin script>" and plain
+            "France" both still slugified to "france", and "Łódź" - whose
+            leading "Ł" has no ASCII form - silently lost that letter and
+            became "odz" with no hash at all). A text with NO surviving
+            letter or digit still gets the "unspecified-<hash>" form it
+            always has.
 
     Details:
         This is a deterministic function: the SAME input text always
@@ -288,11 +324,19 @@ def slugify(text: str) -> str:
     """
     folded = unicodedata.normalize("NFKD", text)
     folded = "".join(c for c in folded if not unicodedata.combining(c))
-    folded = re.sub(r"[^a-zA-Z0-9]+", "-", folded.lower()).strip("-")
-    folded = re.sub(r"-+", "-", folded)
-    if folded:
-        return folded
+    # A letter or digit still present here, that is NOT plain ASCII, is one
+    # NFKD/combining-strip could not turn into an ASCII character (CJK and
+    # non-decomposable Latin-adjacent letters like "Ł" both land here) - it
+    # will be silently dropped by the next line's regex, which is exactly
+    # the loss this function must not hide.
+    lossy = any((not c.isascii()) and c.isalnum() for c in folded)
+    slug_body = re.sub(r"[^a-zA-Z0-9]+", "-", folded.lower()).strip("-")
+    slug_body = re.sub(r"-+", "-", slug_body)
+    if not lossy and slug_body:
+        return slug_body
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    if slug_body:
+        return f"{slug_body}-{digest}"
     return f"unspecified-{digest}"
 
 

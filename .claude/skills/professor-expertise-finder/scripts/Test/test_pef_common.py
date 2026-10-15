@@ -29,6 +29,22 @@ class PefCommonTest(unittest.TestCase):
         self.assertNotEqual(slug_a, slug_b)
         self.assertEqual(slugify("   "), slug_a)  # same input -> same slug
 
+    def test_slugify_partial_non_latin_loss_also_gets_a_hash_suffix(self):
+        # 2026-10-15 review finding: the 2026-10-09 fix only hashed when the
+        # WHOLE result was empty, so a name that keeps SOME ASCII survivors
+        # after the non-Latin part is dropped still collided silently.
+        # "France, <non-Latin>" must not equal plain "France" (it used to -
+        # both became "france").
+        self.assertNotEqual(slugify("France, 東京"), slugify("France"))
+        self.assertEqual(slugify("France"), "france")  # unaffected, no loss
+        # "L" with stroke has no ASCII form and NFKD does not decompose it,
+        # so the old code silently dropped it and produced "odz" with no
+        # hash at all - this must now carry one.
+        lodz = slugify("Łódź")
+        self.assertTrue(lodz.startswith("odz-"))
+        # Determinism: the SAME lossy input still gets the SAME slug.
+        self.assertEqual(slugify("Łódź"), lodz)
+
     def test_norm_folds_case_accent_and_punctuation(self):
         self.assertEqual(norm("É. Doe-Smith"), "e doe smith")
         self.assertEqual(norm(None), "")

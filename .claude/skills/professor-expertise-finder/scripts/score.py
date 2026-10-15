@@ -18,16 +18,39 @@ from pef_common import load_config, write_json
 
 NAMES = ["a", "b", "c", "d", "e"]
 
-# Interpretation bands, 1:1 with references/scoring.md's table (provenance:
-# the professor's own rubric; not moved into pef_config.json because they
-# are presentation labels over the total, not an enforced policy value).
-BANDS = [
-    (4.5, "Direct expert in the niche"),
-    (3.5, "Very close"),
-    (2.5, "Adjacent - transferable expertise"),
-    (1.5, "Peripheral"),
-    (0.0, "Do not retain"),
-]
+def bands(retain_threshold: float) -> list[tuple[float, str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the interpretation-band table, 1:1 with references/scoring.md's
+        table (provenance: the professor's own rubric; the three upper band
+        floors are presentation labels over the total, not an enforced
+        policy value, so they stay literal here).
+
+    Details:
+        The "Peripheral" floor is pef_config.json's own `retain_threshold`,
+        never a literal (R0/R2 - 2026-10-15 review finding: this used to be
+        the literal 1.5, independently of `retain_threshold`, so changing
+        the config's threshold left the printed band disagreeing with the
+        `retained` flag computed from it). `0.0` is the universal floor
+        every total already satisfies, a pure mathematical constant rather
+        than a policy value, and stays a literal under R0's own carve-out.
+
+    Inputs:
+        retain_threshold (float): pef_config.json's `retain_threshold`.
+
+    Outputs:
+        bands (list[tuple[float, str]]): (floor, label) pairs, highest
+            floor first.
+    --------------------------------------------------------------------------
+    """
+    return [
+        (4.5, "Direct expert in the niche"),
+        (3.5, "Very close"),
+        (2.5, "Adjacent - transferable expertise"),
+        (retain_threshold, "Peripheral"),
+        (0.0, "Do not retain"),
+    ]
 
 
 def fmt(value: float) -> str:
@@ -75,7 +98,7 @@ def total(sub: dict[str, float], allowed: set[float]) -> float:
     return sum(sub.values())
 
 
-def band(total_score: float) -> str:
+def band(total_score: float, retain_threshold: float) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -83,15 +106,19 @@ def band(total_score: float) -> str:
 
     Inputs:
         total_score (float): the computed total.
+        retain_threshold (float): pef_config.json's `retain_threshold`,
+            forwarded to bands() so the "Peripheral" floor always matches
+            the value the `retained` flag was computed from.
 
     Outputs:
-        label (str): the matching BANDS entry's label.
+        label (str): the matching band's label.
     --------------------------------------------------------------------------
     """
-    for floor, label in BANDS:
+    table = bands(retain_threshold)
+    for floor, label in table:
         if total_score >= floor:
             return label
-    return BANDS[-1][1]
+    return table[-1][1]
 
 
 def main(argv: list[str]) -> int:
@@ -131,7 +158,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     detail = ", ".join(f"{name.upper()} {fmt(sub[name])}" for name in NAMES)
-    label = band(t)
+    label = band(t, retain_threshold)
     retained = t >= retain_threshold
     print(f"{fmt(t)}/5 ({detail}) - {label}"
           + ("" if retained else f"  [below retain threshold {fmt(retain_threshold)}]"))

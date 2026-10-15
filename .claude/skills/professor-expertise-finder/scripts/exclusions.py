@@ -324,8 +324,14 @@ def main(argv: list[str]) -> int:
     if args.dry_run:
         print(f"DRY RUN - KEPT: {len(kept)}  EXCLUDED: {len(excluded)}  (would write {out_path})")
     else:
+        # extrasaction="ignore": a ranking row with MORE fields than the
+        # header has the overflow grouped by csv.DictReader under the key
+        # `None` (its documented `restkey` default) - DictWriter raises
+        # ValueError on that key by default, so a ranking export with one
+        # ragged row crashed the whole write and left a stray .tmp file
+        # behind (2026-10-15 review finding, M5).
         with atomic_open(out_path, newline="", encoding="utf-8") as fh:
-            writer = csv.DictWriter(fh, fieldnames=fieldnames)
+            writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(kept)
         print(f"KEPT: {len(kept)}  EXCLUDED: {len(excluded)}  -> {out_path}")

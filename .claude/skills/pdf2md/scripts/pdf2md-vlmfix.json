@@ -1,0 +1,42 @@
+{
+  "max_rounds": {
+    "value": 3,
+    "provenance": "chosen 2026-10-11 by the operator's request for a loop that stops when the error is low enough: at most this many check-and-correct rounds, because a correction the model keeps re-proposing without the page ever reading clean would otherwise loop for ever (R10)"
+  },
+  "target_remaining_issues": {
+    "value": 0,
+    "provenance": "chosen 2026-10-11: the loop stops as soon as the deterministic fidelity errors plus the formula issues the vision model still reports are at most this many. Zero is the aim for a thesis that is to be evaluated; raise it to accept a known residue"
+  },
+  "gap_pages_tried": {
+    "value": 2,
+    "provenance": "chosen 2026-10-11: how many candidate PDF pages are shown to the model when it looks for a numbered equation the conversion lost, the pages whose text lies nearest the gap in the output"
+  },
+  "gap_margin_lines": {
+    "value": 70,
+    "provenance": "measured 2026-10-11 on the real thesis: equation (4.5) sits in a footnote that mineru wrote 30 lines away from equations (4.4) and (4.6), so the paragraphs offered to the model as the place to insert it are those within this many lines of the gap, plus those of the located pages"
+  },
+  "candidate_paragraph_chars": {
+    "value": 70,
+    "provenance": "chosen 2026-10-11: how many characters of the start and of the end of each candidate paragraph are shown to the model when it chooses the paragraph an equation follows, which bounds the prompt"
+  },
+  "max_candidates": {
+    "value": 40,
+    "provenance": "chosen 2026-10-11: at most this many candidate paragraphs are listed for one lost equation, nearest to the gap first, so the prompt stays well inside num_ctx"
+  },
+  "max_length_ratio": {
+    "value": 2.0,
+    "provenance": "chosen 2026-10-11: a correction is applied only when the corrected formula is between 1/this and this times as long as the one it replaces. A model that rewrites a formula into something twice as long has not corrected a symbol, it has changed the formula, and a human decides"
+  },
+  "max_latex_chars": {
+    "value": 3000,
+    "provenance": "chosen 2026-10-11: a transcribed or corrected formula longer than this is refused as a probable runaway generation; the longest display equation of the real thesis is well under it"
+  },
+  "verify_corrections": {
+    "value": true,
+    "provenance": "chosen 2026-10-11: after a correction is applied the page is shown to the model again; a correction the model still reports as wrong is undone"
+  },
+  "changes_file": {
+    "value": "vlm_changes.json",
+    "provenance": "chosen 2026-10-11: the file in <out>/assets/ that records every change the vision model made (equation inserted, formula corrected) with its page, its before and after and the model that proposed it, so a person can check each against the PDF"
+  }
+}

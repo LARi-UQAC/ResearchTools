@@ -942,7 +942,7 @@ Do not mark the document complete if any IC, ON, TC, SA, CS, SL, EC, PR, QG, GM,
 
 Run the multi-model deliberation panel on the completed review as a final quality gate, before the
 final output. **MANDATORY: run it every time. Do not skip on usefulness, length, or confidence
-grounds.** The only sanctioned skip is genuinely missing `GEMINI_API_KEY` AND `GITHUB_TOKEN` — and
+grounds.** The only sanctioned skip is genuinely missing `GEMINI_API_KEY` AND a working second reviewer (no Copilot token and no local model: the script lists both under `reviewers_unavailable`) — and
 even then, gather Consensus evidence, run the script (it degrades gracefully), and record the
 `[REVIEWER UNAVAILABLE: ...]` markers in the Deliberation Log. The step is autonomous: no user pause
 (the only sanctioned pause remains the Scopus.AI checkpoint at Step 1a). The full protocol (debate
@@ -962,19 +962,26 @@ lives in `.claude/skills/deliberation/references/deliberation-protocol.md`.
 2. Run the two-round Gemini<->Copilot debate on the full review output:
 
 ```
-echo "<full review output>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<topic>" --rounds 2 --plan-schema researcher --evidence-file "<evidence.txt>"
+echo "<full review output>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<topic>" --rounds 2 --plan-schema researcher --evidence-file "<evidence.txt>" --round2-include-draft
 ```
 
 The script resolves the Gemini model automatically (`--gemini-model auto` default: most
 recent PRO via ListModels, NOT_FOUND retry, fence/truncation-tolerant JSON salvage), so a
-retired model id can no longer disable the Gemini leg. Keep the piped draft under ~8k
-tokens for the Copilot leg (gpt-4o hard cap); pipe a digest (objectives + gaps +
-hypotheses + theme gap sentences) rather than the full document when needed.
+retired model id can no longer disable the Gemini leg. The piped draft must fit the token
+budget (`--max-input-tokens`, default 12000) WITH its context intact: when the finished review
+is larger, run the panel once per theme or section and repeat the shared context (objectives,
+the gaps G[N] and hypotheses H[N] with their full statements, definitions) in each run. A
+digest is a last resort, declared in the Log; the script reports any digestion in the
+envelope's `context` record, and each `warnings[]` entry goes into the Log. Pass
+`--round2-include-draft` so the rebuttal sees the same context.
 
 ```
 ```
 
-3. Consume `merged[]` and arbitrate with the canonical table and markers (`consensus` ->
+3. Consume `merged[]`: judge each item's relevance to the review as it stands (off topic or contrary
+   to a premise the review holds: reject with the reason), pair by meaning the items the script
+   left apart, account for EVERY `id` in the Log (its `Accounting` line must add up), and arbitrate
+   with the canonical table and markers (`consensus` ->
    `[✓ GEMINI + COPILOT]`, `gemini_only` -> `[✓ GEMINI]`, `copilot_only` -> `[✓ COPILOT]`, `conflict`
    -> `[✓ GEMINI — COPILOT DISAGREED]`, Claude resolving). Any new paper a reviewer proposes is an
    unverified candidate: run it through Steps 2–3b (enrich, validate, topical-relevance check, grade)

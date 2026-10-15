@@ -33,7 +33,10 @@ from __future__ import annotations
 
 import base64
 import http.client
+import ipaddress
 import json
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -91,6 +94,9 @@ def load_vlmcheck_config(path: Path = _CONFIG_PATH) -> dict:
     Raises:
         FileNotFoundError: the config file is absent.
         KeyError: a required key is missing (R3: the key is named).
+        ValueError: base_url is not an http(s) URL on a loopback host: the
+            page images and the thesis text are sent to it, so it must be the
+            machine's own daemon.
     --------------------------------------------------------------------------
     """
     if not path.exists():
@@ -99,7 +105,24 @@ def load_vlmcheck_config(path: Path = _CONFIG_PATH) -> dict:
     missing = [key for key in _CONFIG_KEYS if key not in data]
     if missing:
         raise KeyError(f"{path} is missing required config key(s): {missing}")
-    return {key: data[key]["value"] for key in _CONFIG_KEYS}
+    config = {key: data[key]["value"] for key in _CONFIG_KEYS}
+    _require_loopback(config["base_url"], path)
+    return config
+
+
+def _require_loopback(url: str, source: Path) -> None:
+    """Refuse a base_url that is not http(s) on localhost, 127.0.0.0/8 or ::1 (L4, PR #69 review)."""
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname or ""
+    try:
+        is_loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = False
+    if parsed.scheme not in ("http", "https") or not is_loopback:
+        raise ValueError(
+            f"base_url {url!r} in {source} is not an http(s) URL on a loopback host; "
+            "page images and thesis text are sent to it, so it must be this machine's own daemon"
+        )
 
 
 def answer_schema() -> dict:
@@ -263,6 +286,16 @@ def build_request_body(image_path: Path, prompt: str, *, model_tag: str, config:
     return json.dumps(payload).encode("utf-8")
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow any redirect (see default_caller in post_to_model)."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_NoRedirect = _NoRedirectHandler()
+
+
 def post_to_model(body: bytes, config: dict, caller: Callable[[str, bytes, float], bytes] | None = None) -> object:
     """
     --------------------------------------------------------------------------
@@ -290,7 +323,11 @@ def post_to_model(body: bytes, config: dict, caller: Callable[[str, bytes, float
         import urllib.request
 
         request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        # No proxy and no redirect: the loopback check on base_url only means something if the
+        # request really goes to that host. HTTP(S)_PROXY or a 30x answer would carry the page
+        # images and thesis text elsewhere.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+        with opener.open(request, timeout=timeout) as response:
             return response.read()
 
     caller = caller or default_caller

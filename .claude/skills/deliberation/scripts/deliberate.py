@@ -60,12 +60,19 @@ except Exception:  # pragma: no cover
 
 
 try:
-    from ollama_reviewer import run_ollama, ollama_available, resolve_ollama_model
-except Exception:  # pragma: no cover - the local leg is optional; absence only marks it unavailable
+    from ollama_reviewer import run_ollama, ollama_available, ollama_unavailable_reason, resolve_ollama_model
+except ImportError as _ollama_import_error:
+    # Only a missing module or dependency means "no local leg". Any other error raised while
+    # importing is a defect and propagates, so a bug is not reported as an absent model (R8).
+    # The cause is kept and shown wherever the leg is reported unavailable.
     run_ollama = None
+    _OLLAMA_IMPORT_ERROR = str(_ollama_import_error)
 
     def ollama_available() -> bool:
         return False
+
+    def ollama_unavailable_reason() -> str:
+        return f"ollama_reviewer could not be imported: {_OLLAMA_IMPORT_ERROR}"
 
     def resolve_ollama_model(role=None) -> str:
         return ""
@@ -613,6 +620,16 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
             setups[name] = {"ready": ready, "model": model, "provider": ""}
         return setups[name]
 
+    reasons: dict = {}
+
+    def _unavailable_reason(name: str) -> str:
+        """Why a second-reviewer candidate is not ready, as a sentence."""
+        if name == "copilot":
+            return "no Copilot credentials or the Copilot core could not be imported"
+        if "ollama" not in reasons:  # asked once per panel and reused for every later mention
+            reasons["ollama"] = ollama_unavailable_reason() or "the local reviewer reported itself unavailable"
+        return reasons["ollama"]
+
     gem_ready = gemini_available() and run_gemini is not None
     envelope = {
         "mode": "deliberation",
@@ -672,8 +689,12 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
     for name in candidates:
         label = name.capitalize()
         if not get_setup(name)["ready"]:
-            failures[name] = {"overall_assessment": "", "suggestions": [], "_error": "unavailable"}
+            # The cause is kept, not just the fact: "unavailable" alone cannot tell an absent
+            # model from a refusing daemon or a broken import.
+            reason = _unavailable_reason(name)
+            failures[name] = {"overall_assessment": "", "suggestions": [], "_error": "unavailable", "_reason": reason}
             unavailable_markers.append(f"[REVIEWER UNAVAILABLE: {label}]")
+            print(f"WARN: {label} is unavailable: {reason}", file=sys.stderr)
             continue
         # Every reviewer gets the SAME prompt, context intact. The local fallback has a smaller
         # window, and when the prompt does not fit it refuses with the numbers (run_ollama) instead
@@ -701,6 +722,7 @@ def deliberate(draft: str, topic: str, evidence: str, rounds: int,
     envelope["round2"] = {"gemini": None, second: None}
     if chosen is not None and chosen != candidates[0]:
         envelope["fallback"] = {"from": candidates[0], "to": chosen, "reason": failures[candidates[0]].get("_error", ""),
+                                "detail": failures[candidates[0]].get("_reason", ""),
                                 "log": failures[candidates[0]]}
 
     gem_r2 = cop_r2 = None

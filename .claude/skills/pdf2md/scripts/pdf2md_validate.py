@@ -85,6 +85,7 @@ except ImportError as exc:  # pragma: no cover - the sibling skill must be prese
 # on sys.path, so it is added explicitly.
 sys.path.insert(0, _HERE)
 import pdf2md_fidelity  # noqa: E402  (after the sys.path edit above, by design)
+import pdf2md_postprocess  # noqa: E402
 import pdf2md_vlmcheck  # noqa: E402
 
 
@@ -437,6 +438,56 @@ def load_output_chapters(output_dir: Path) -> dict[int, tuple[str, str]]:
             number = int(filename_match.group(1))
         result[number] = (path.stem, text)
     return result
+
+
+def extract_pdf_single(pdf_path: str, *, reader: Callable[[str], tuple[str, list]] | None = None) -> dict[int, tuple[str, str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The single-document layout's PDF side: the whole PDF text as ONE unit,
+        numbered 1, cut before the LAST bibliography heading line (an earlier
+        match is a table-of-contents entry or a running header).
+
+    Inputs:
+        pdf_path (str): path to the PDF.
+        reader (callable | None): injected for tests; defaults to
+            extract_text.read_pdf (R20/R21).
+
+    Outputs:
+        dict[int, tuple[str, str]]: {1: ("", body text)}.
+    --------------------------------------------------------------------------
+    """
+    reader = reader or extract_text.read_pdf
+    text, _tables = reader(pdf_path)
+    lines = text.splitlines()
+    cuts = [index for index, line in enumerate(lines) if _BIBLIOGRAPHY_LINE_RE.match(line.strip())]
+    end = cuts[-1] if cuts else len(lines)
+    return {1: ("", "\n".join(lines[:end]))}
+
+
+def load_output_single(output_dir: Path) -> dict[int, tuple[str, str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The single-document layout's output side: main.md as ONE unit,
+        numbered 1, with its bibliography held out the way the PDF side does.
+
+    Inputs:
+        output_dir (Path): the pdf2md output directory holding main.md.
+
+    Outputs:
+        dict[int, tuple[str, str]]: {1: ("main", body text)}.
+
+    Raises:
+        FileNotFoundError: main.md is absent (R3: named, never an empty result).
+    --------------------------------------------------------------------------
+    """
+    main_path = Path(output_dir) / "main.md"
+    if not main_path.exists():
+        raise FileNotFoundError(f"single layout recorded but {main_path} is missing")
+    text, bibliography = pdf2md_postprocess.split_single_document(main_path.read_text(encoding="utf-8").splitlines())
+    body = text[: len(text) - len(bibliography)] if bibliography else text
+    return {1: ("main", body)}
 
 
 @dataclass
@@ -819,10 +870,24 @@ def _main(argv: list[str] | None = None) -> int:
         print("[VALIDATE] refusing: --vlm-check requires --vlm-check-model TAG (never a default, R2).", file=sys.stderr)
         return 2
 
+    try:
+        layout = pdf2md_postprocess.read_layout(Path(args.output_dir))
+    except ValueError as exc:
+        print(f"[VALIDATE] refusing: {exc}", file=sys.stderr)
+        return 2
+    if layout == "single" and args.vlm_check:
+        # The formula check locates pages by "CHAPITRE N", which a single document does not have.
+        print("[VALIDATE] refusing: --vlm-check needs the thesis layout (it finds pages by chapter heading).", file=sys.stderr)
+        return 2
+
     config = load_config()
     fidelity_config = pdf2md_fidelity.load_fidelity_config()
-    pdf_chapters = extract_pdf_chapters(args.pdf_path)
-    output_chapters = load_output_chapters(Path(args.output_dir))
+    if layout == "single":
+        pdf_chapters = extract_pdf_single(args.pdf_path)
+        output_chapters = load_output_single(Path(args.output_dir))
+    else:
+        pdf_chapters = extract_pdf_chapters(args.pdf_path)
+        output_chapters = load_output_chapters(Path(args.output_dir))
     rows = compare_chapters(
         pdf_chapters,
         output_chapters,

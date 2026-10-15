@@ -27,7 +27,9 @@ from pdf2md_validate import (
     count_words,
     error_pct,
     extract_pdf_chapters,
+    extract_pdf_single,
     find_chapter_page_range,
+    load_output_single,
     flag_mismatched_chapters,
     load_config,
     load_output_chapters,
@@ -692,6 +694,65 @@ class TestMainChecks(unittest.TestCase):
         ):
             code, _out, _err, _calls = self.run_main(["x.pdf", "-o", "out", "--vlm-check", "--vlm-check-model", "t", "--strict", "--json"], vlm_report=report)
             self.assertEqual(code, 1)
+
+
+class TestSingleLayout(unittest.TestCase):
+    """The single-document layout (an article or a talk source): the whole
+    document is compared as ONE unit, numbered 1, bibliography cut off on both
+    sides. Measured on no real article yet: these are structural tests."""
+
+    PDF_TEXT = (
+        "Fast Planning\n\n1 Introduction\n\nPlanning is hard and we study it here.\n\n"
+        "2 Method\n\nWe learn a heuristic.\n\nReferences\n\n[1] A. Author. Title. 2019.\n[2] B. Author. Title. 2020.\n"
+    )
+
+    def _out_dir(self, text, layout="single"):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        out_dir = Path(tmp.name)
+        (out_dir / "main.md").write_text(text, encoding="utf-8")
+        (out_dir / "pdf2md-layout.json").write_text(json.dumps({"layout": layout}), encoding="utf-8")
+        return out_dir
+
+    def test_the_pdf_side_is_one_document_cut_at_the_last_bibliography_heading(self):
+        chapters = extract_pdf_single("x.pdf", reader=lambda _p: (self.PDF_TEXT, []))
+        self.assertEqual(list(chapters), [1])
+        body = chapters[1][1]
+        self.assertIn("We learn a heuristic", body)
+        self.assertNotIn("A. Author", body)
+
+    def test_a_references_word_early_in_the_pdf_does_not_cut_the_document(self):
+        text = "References\n\nTable of contents line\n\n" + self.PDF_TEXT
+        body = extract_pdf_single("x.pdf", reader=lambda _p: (text, []))[1][1]
+        self.assertIn("We learn a heuristic", body)
+
+    def test_the_output_side_reads_main_md_without_its_bibliography(self):
+        out_dir = self._out_dir("# Fast Planning\n\n## 1 Introduction\n\nbody text here\n\n## References\n\n[1] A. Author. Title. 2019.\n")
+        chapters = load_output_single(out_dir)
+        self.assertEqual(list(chapters), [1])
+        self.assertIn("body text here", chapters[1][1])
+        self.assertNotIn("A. Author", chapters[1][1])
+
+    def test_a_single_output_with_no_main_md_is_an_explicit_error(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(FileNotFoundError):
+                load_output_single(Path(tmp))
+
+    def test_layout_dispatch_uses_the_single_loader_only_for_a_single_directory(self):
+        thesis_dir = self._out_dir("whatever", layout="thesis")
+        self.assertEqual(load_output_chapters(thesis_dir), {})  # no content/: the thesis loader finds nothing
+
+    def test_vlm_check_is_refused_for_a_single_layout_before_any_pdf_is_read(self):
+        out_dir = self._out_dir("# T\n\nbody\n")
+        code = _main(["does-not-exist.pdf", "-o", str(out_dir), "--vlm-check", "--vlm-check-model", "tag"])
+        self.assertEqual(code, 2)
 
 
 if __name__ == "__main__":

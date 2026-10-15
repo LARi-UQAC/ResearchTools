@@ -21,10 +21,13 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Callable
 
-_PACKAGES = ("mineru", "mineru-llama-cpp")
+from pdf2md_settings import load_pipeline_config, pip_command
+
+_PACKAGES = tuple(spec.split("==", 1)[0] for spec in load_pipeline_config()["pinned_packages"])
 _PIP_SHOW_VERSION_RE = re.compile(r"^Version:\s*(.+)$", re.MULTILINE)
 
 
@@ -99,32 +102,37 @@ def check_versions(
 def real_pip_show_runner(package: str, runner: Callable[..., subprocess.CompletedProcess] | None = None) -> str:
     """IO wrapper: `pip show <package>`, empty string (not an exception) if the package is not installed."""
     runner = runner or subprocess.run
-    result = runner(["pip", "show", package], capture_output=True, text=True, timeout=30)
+    result = runner(
+        pip_command("show", package), capture_output=True, text=True, timeout=load_pipeline_config()["pip_show_timeout_s"]
+    )
     return result.stdout if result.returncode == 0 else ""
 
 
-def real_pypi_fetcher(package: str, timeout_s: float = 10.0) -> dict:
-    """IO wrapper: fetch https://pypi.org/pypi/<package>/json (R10: bounded timeout)."""
+def real_pypi_fetcher(package: str, timeout_s: float | None = None) -> dict:
+    """IO wrapper: fetch https://pypi.org/pypi/<package>/json (R10: bounded timeout, pypi_timeout_s by default)."""
     import urllib.request
 
-    with urllib.request.urlopen(f"https://pypi.org/pypi/{package}/json", timeout=timeout_s) as response:
+    bound = load_pipeline_config()["pypi_timeout_s"] if timeout_s is None else timeout_s
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{package}/json", timeout=bound) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def upgrade_packages(
-    packages: tuple[str, ...] = _PACKAGES,
+    specs: tuple[str, ...],
     *,
     runner: Callable[..., subprocess.CompletedProcess] | None = None,
 ) -> subprocess.CompletedProcess:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Run `pip install --upgrade <packages>`. Only called when the
-        caller has explicit --yes consent (R16); never invoked by the
-        default dry-run path.
+        Run `<this interpreter> -m pip install <specs>`. Every spec is an
+        exact `name==version` pin (security.md: never a range, never an
+        unpinned name). Only called when the caller has explicit --yes
+        consent (R16); never invoked by the default dry-run path.
 
     Inputs:
-        packages (tuple[str, ...]): packages to upgrade.
+        specs (tuple[str, ...]): pinned requirements to install, such as
+            "mineru==4.1.0".
         runner (callable | None): injected for tests; defaults to
             subprocess.run.
 
@@ -133,13 +141,23 @@ def upgrade_packages(
     --------------------------------------------------------------------------
     """
     runner = runner or subprocess.run
-    return runner(["pip", "install", "--upgrade", *packages], capture_output=True, text=True, timeout=600)
+    return runner(
+        pip_command("install", *specs),
+        capture_output=True,
+        text=True,
+        timeout=load_pipeline_config()["pip_install_timeout_s"],
+    )
 
 
 def run_pip_audit(runner: Callable[..., subprocess.CompletedProcess] | None = None) -> subprocess.CompletedProcess:
-    """IO wrapper: `pip-audit`, run after an upgrade per security.md."""
+    """IO wrapper: `<this interpreter> -m pip_audit`, run after an upgrade per security.md."""
     runner = runner or subprocess.run
-    return runner(["pip-audit"], capture_output=True, text=True, timeout=300)
+    return runner(
+        [sys.executable, "-m", "pip_audit"],
+        capture_output=True,
+        text=True,
+        timeout=load_pipeline_config()["pip_audit_timeout_s"],
+    )
 
 
 def build_version_report(
@@ -171,7 +189,9 @@ def build_version_report(
             2 refusal by design, 1 failure).
     --------------------------------------------------------------------------
     """
-    upgrade_fn = upgrade_fn or upgrade_packages
+    upgrade_fn = upgrade_fn or (
+        lambda: upgrade_packages(tuple(f"{c.package}=={c.latest}" for c in checks if c.upgrade_available))
+    )
     audit_fn = audit_fn or run_pip_audit
 
     report: dict = {
@@ -194,7 +214,9 @@ def build_version_report(
     audit_result = audit_fn()
     report["upgraded"] = upgrade_result.returncode == 0
     report["pip_audit_returncode"] = audit_result.returncode
-    report["pip_audit_output"] = audit_result.stdout
+    report["pip_audit_ok"] = audit_result.returncode == 0  # reported, never a rollback: the operator decides
+    # stderr too: an environment with no pip_audit module says so there, and a bare False would hide why.
+    report["pip_audit_output"] = (audit_result.stdout or "") + (getattr(audit_result, "stderr", "") or "")
     return report, (0 if report["upgraded"] else 1)
 
 

@@ -325,7 +325,8 @@ def normalize_equation_numbers(text: str) -> tuple[str, int]:
         trailing = fidelity._TRAILING_NUMBER_RE.search(stripped)
         if not trailing:
             return match.group(0)
-        number = f"{trailing.group('chapter')}.{re.sub(r'\s+', '', trailing.group('index'))}"
+        index = re.sub(r"\s+", "", trailing.group("index"))  # no backslash inside an f-string: Python 3.11 refuses it
+        number = f"{trailing.group('chapter')}.{index}"
         count += 1
         comma = "," if trailing.group("lead").strip().startswith(",") else ""
         return "$$" + stripped[: trailing.start()].rstrip() + comma + " \\tag {" + number + "}\n$$"
@@ -729,6 +730,16 @@ def _main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
+    import pdf2md_postprocess
+
+    try:
+        layout = pdf2md_postprocess.read_layout(Path(args.output_dir))
+    except ValueError as exc:
+        print(f"[REPAIR] refused: {exc}", file=sys.stderr)
+        return 2
+    if layout == "single":
+        print("[REPAIR] refused: this output uses the single-document layout; the repair works chapter by chapter.", file=sys.stderr)
+        return 2
     try:
         report = repair_output(
             validate.extract_pdf_chapters(args.pdf_path), Path(args.output_dir), load_repair_config(), fidelity.load_fidelity_config(), apply=args.yes

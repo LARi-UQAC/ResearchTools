@@ -104,8 +104,30 @@ class TestUpgradeAndAudit(unittest.TestCase):
 
             return Result()
 
-        upgrade_packages(("mineru",), runner=fake_runner)
-        self.assertEqual(captured["args"], ["pip", "install", "--upgrade", "mineru"])
+        upgrade_packages(("mineru==4.1.0",), runner=fake_runner)
+        # H3 (2026-10-15 review): this interpreter's pip, an exact pin, no --upgrade of an unpinned name.
+        self.assertEqual(captured["args"], [sys.executable, "-m", "pip", "install", "mineru==4.1.0"])
+
+    def test_the_default_upgrade_installs_the_exact_latest_pin(self):
+        captured = {}
+
+        def fake_runner(args, **kwargs):
+            captured["args"] = args
+            return _FakeCompletedProcess(returncode=0)
+
+        import pdf2md_version
+
+        original = pdf2md_version.subprocess.run
+        pdf2md_version.subprocess.run = fake_runner
+        try:
+            build_version_report(
+                [VersionCheck("mineru", "4.0.11", "4.1.0")], yes=True,
+                audit_fn=lambda: _FakeCompletedProcess(returncode=0),
+            )
+        finally:
+            pdf2md_version.subprocess.run = original
+        self.assertEqual(captured["args"][-1], "mineru==4.1.0")
+        self.assertNotIn("--upgrade", captured["args"])
 
     def test_pip_audit_invoked_with_no_extra_args(self):
         captured = {}
@@ -120,7 +142,7 @@ class TestUpgradeAndAudit(unittest.TestCase):
             return Result()
 
         result = run_pip_audit(runner=fake_runner)
-        self.assertEqual(captured["args"], ["pip-audit"])
+        self.assertEqual(captured["args"], [sys.executable, "-m", "pip_audit"])
         self.assertEqual(result.returncode, 0)
 
 
@@ -155,6 +177,18 @@ class TestBuildVersionReport(unittest.TestCase):
             audit_fn=lambda: _FakeCompletedProcess(returncode=0, stdout="No known vulnerabilities found"),
         )
         self.assertEqual(exit_code, 0)
+        self.assertTrue(report["upgraded"])
+        self.assertTrue(report["pip_audit_ok"])
+
+    def test_a_failing_audit_is_reported_but_does_not_roll_back(self):
+        # Q9 of the review: pip-audit only reports. The flag is what a caller reads.
+        checks = [VersionCheck("mineru", "4.0.11", "4.1.0")]
+        report, exit_code = build_version_report(
+            checks, yes=True,
+            upgrade_fn=lambda: _FakeCompletedProcess(returncode=0),
+            audit_fn=lambda: _FakeCompletedProcess(returncode=1, stdout="PYSEC-0000"),
+        )
+        self.assertFalse(report["pip_audit_ok"])
         self.assertTrue(report["upgraded"])
 
     def test_upgrade_available_with_yes_and_failure_exits_one(self):

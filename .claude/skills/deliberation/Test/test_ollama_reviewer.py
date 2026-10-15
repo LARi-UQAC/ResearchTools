@@ -228,6 +228,51 @@ class TestAvailabilityAndBudget(unittest.TestCase):
         with mock.patch.object(reviewer, "_bridge", return_value=bridge):
             self.assertFalse(reviewer.ollama_available())
 
+    # M5 of the 2026-10-15 review (R8): "unavailable" must mean a refusal, never a bug.
+    def test_a_defect_in_the_resolver_path_is_not_reported_as_an_unavailable_model(self):
+        bridge = fake_bridge()
+        bridge.resolve_model = mock.Mock(side_effect=KeyError("role"))
+        with mock.patch.object(reviewer, "_bridge", return_value=bridge):
+            with self.assertRaises(KeyError):
+                reviewer.ollama_available()
+
+    def test_the_refusal_reason_names_the_cause(self):
+        bridge = fake_bridge()
+        bridge.resolve_model = mock.Mock(side_effect=BridgeError("ollama list exited 1: connection refused"))
+        with mock.patch.object(reviewer, "_bridge", return_value=bridge):
+            self.assertIn("connection refused", reviewer.ollama_unavailable_reason())
+
+    def test_no_reason_when_available(self):
+        with mock.patch.object(reviewer, "_bridge", return_value=fake_bridge()):
+            self.assertIsNone(reviewer.ollama_unavailable_reason())
+
+    def test_an_unreadable_configuration_is_a_reason_not_a_crash(self):
+        with mock.patch.object(reviewer, "load_config", side_effect=reviewer.ReviewerError("cannot read x")), \
+             mock.patch.object(reviewer, "_bridge", return_value=fake_bridge()):
+            self.assertIn("cannot read x", reviewer.ollama_unavailable_reason())
+
+    def test_deliberate_only_swallows_an_import_error_when_loading_the_local_core(self):
+        import ast
+
+        tree = ast.parse((SCRIPTS / "deliberate.py").read_text(encoding="utf-8"))
+        handlers = [
+            node.handlers
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Try)
+            and any(isinstance(item, ast.ImportFrom) and item.module == "ollama_reviewer" for item in node.body)
+        ]
+        self.assertEqual(len(handlers), 1)
+        self.assertEqual([ast.unparse(h.type) for h in handlers[0]], ["ImportError"])
+
+    def test_the_panel_keeps_the_reason_the_local_leg_was_unavailable(self):
+        env, _ = panel(available=False)
+        self.assertEqual(env["round1"]["ollama"]["_reason"], "test: resolver refused")
+
+    def test_input_budget_takes_no_model_argument_it_would_have_ignored(self):
+        import inspect
+
+        self.assertEqual(list(inspect.signature(reviewer.input_budget).parameters), [])
+
     def test_input_budget_is_the_configured_window_minus_the_reply_tokens(self):
         config = dict(reviewer.load_config(), num_ctx=20000)
         with mock.patch.object(reviewer, "load_config", return_value=config):
@@ -251,6 +296,7 @@ def panel(second="ollama", run_local=None, available=True, **extra):
          mock.patch.object(deliberate, "count_gemini_tokens", lambda *_a, **_k: -1), \
          mock.patch.object(deliberate, "run_gemini", mock.Mock(return_value=GEM)), \
          mock.patch.object(deliberate, "ollama_available", lambda: available), \
+         mock.patch.object(deliberate, "ollama_unavailable_reason", lambda: "test: resolver refused"), \
          mock.patch.object(deliberate, "resolve_ollama_model", lambda role=None: TAG), \
          mock.patch.object(deliberate, "run_ollama", run_local):
         envelope = deliberate.deliberate(draft=extra.pop("draft", "d"), topic=extra.pop("topic", "t"), evidence=extra.pop("evidence", ""),
@@ -406,6 +452,7 @@ def fallback_panel(copilot_ready=True, copilot=None, ollama_ready=True, local=No
          mock.patch.object(deliberate, "run_copilot", copilot), \
          mock.patch.object(deliberate, "resolve_copilot_model", lambda: ("copilot-model", "")), \
          mock.patch.object(deliberate, "ollama_available", probe), \
+         mock.patch.object(deliberate, "ollama_unavailable_reason", lambda: "test: resolver refused"), \
          mock.patch.object(deliberate, "resolve_ollama_model", resolve), \
          mock.patch.object(deliberate, "run_ollama", local):
         rounds = extra.pop("rounds", 1)

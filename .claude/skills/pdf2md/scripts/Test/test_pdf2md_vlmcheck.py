@@ -104,6 +104,62 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             load_vlmcheck_config(Path("absent.json"))
 
+    # L4 of the 2026-10-15 review: page images and thesis text go to base_url.
+    def _config_with_base_url(self, url):
+        import tempfile
+
+        data = {key: {"value": value, "provenance": "t"} for key, value in CONFIG.items()}
+        data["base_url"]["value"] = url
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "c.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def test_a_loopback_base_url_is_accepted(self):
+        for url in ("http://localhost:11434", "http://127.0.0.1:11434", "http://[::1]:11434"):
+            self.assertEqual(load_vlmcheck_config(self._config_with_base_url(url))["base_url"], url)
+
+    def test_a_remote_base_url_is_refused_by_name(self):
+        for url in ("http://192.0.2.10:11434", "https://ollama.example.org", "http://localhost.example.org:11434"):
+            with self.assertRaises(ValueError) as context:
+                load_vlmcheck_config(self._config_with_base_url(url))
+            self.assertIn("base_url", str(context.exception))
+            self.assertIn("loopback", str(context.exception))
+
+    def test_the_default_caller_uses_no_proxy_and_no_redirect(self):
+        import urllib.request
+        from unittest import mock
+
+        import pdf2md_vlmcheck as module
+
+        seen = {}
+
+        class FakeOpener:
+            def open(self, request, timeout=None):
+                class R:
+                    def __enter__(s): return s
+                    def __exit__(s, *a): return False
+                    def read(s): return json.dumps({"response": "{}"}).encode()
+                return R()
+
+        def fake_build_opener(*handlers):
+            seen["handlers"] = handlers
+            return FakeOpener()
+
+        with mock.patch.object(urllib.request, "build_opener", fake_build_opener):
+            module.post_to_model(b"{}", {"base_url": "http://localhost:11434", "timeout_s": 1})
+        kinds = [type(h).__name__ for h in seen["handlers"]]
+        self.assertIn("ProxyHandler", kinds)
+        proxy = next(h for h in seen["handlers"] if isinstance(h, urllib.request.ProxyHandler))
+        self.assertEqual(proxy.proxies, {})
+        redirect = next(h for h in seen["handlers"] if isinstance(h, urllib.request.HTTPRedirectHandler))
+        self.assertIsNone(redirect.redirect_request(None, None, 302, "", {}, "http://elsewhere.example.org"))
+
+    def test_a_non_http_scheme_is_refused(self):
+        with self.assertRaises(ValueError):
+            load_vlmcheck_config(self._config_with_base_url("file://localhost/etc/passwd"))
+
 
 class TestValidateAnswer(unittest.TestCase):
     def test_a_valid_answer_returns_its_formulas(self):

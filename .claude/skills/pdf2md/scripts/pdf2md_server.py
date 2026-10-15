@@ -33,10 +33,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-DEFAULT_PORT = 30000
-DEFAULT_IMAGE_MIN_TOKENS = 1024
-DEFAULT_N_PARALLEL = 4
-DEFAULT_N_GPU_LAYERS = 99
+from pdf2md_settings import load_pipeline_config
+
+_SETTINGS = load_pipeline_config()
+# R0: read from pdf2md-pipeline.json, where each carries its provenance.
+DEFAULT_PORT = _SETTINGS["port"]
+DEFAULT_IMAGE_MIN_TOKENS = _SETTINGS["image_min_tokens"]
+DEFAULT_N_PARALLEL = _SETTINGS["n_parallel"]
+DEFAULT_N_GPU_LAYERS = _SETTINGS["n_gpu_layers"]
 GRAMMAR_DEFAULT = "root ::= .*"
 _LISTENING_RE = re.compile(r"listening on http://[\w.:]+")
 _IMAGE_MIN_TOKENS_WARNING = "Qwen-VL models require at minimum"
@@ -174,8 +178,8 @@ def verify_server_log(log_text: str) -> ServerVerification:
 def wait_for_server(
     log_path: Path,
     *,
-    timeout_s: float = 60.0,
-    poll_interval_s: float = 1.0,
+    timeout_s: float = _SETTINGS["server_wait_s"],
+    poll_interval_s: float = _SETTINGS["server_poll_interval_s"],
     read_text: Callable[[Path], str] | None = None,
     sleep: Callable[[float], None] | None = None,
     clock: Callable[[], float] | None = None,
@@ -267,7 +271,7 @@ def _main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--image-min-tokens", type=int, default=DEFAULT_IMAGE_MIN_TOKENS)
     parser.add_argument("--log", default=None, help="log file path (default: <port>.llama-server.log beside the state dir)")
-    parser.add_argument("--timeout", type=float, default=60.0, help="seconds to wait for the server to report listening")
+    parser.add_argument("--timeout", type=float, default=_SETTINGS["server_wait_s"], help="seconds to wait for the server to report listening")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 

@@ -19,14 +19,20 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 
-
-def _today_iso() -> str:
-    return datetime.date.today().isoformat()
-
 import yaml
 
 from pdf2md_config import apply_fixes, diagnose, render_config_yaml
 from pdf2md_models import DOWNLOADABLE_TIERS, ModelReadiness, parse_models_show, run_models_show
+from pdf2md_settings import load_pipeline_config, pip_command
+
+
+def _today_iso() -> str:
+    return datetime.date.today().isoformat()
+
+
+def _package_name(spec: str) -> str:
+    """Distribution name of a pinned requirement such as "mineru==4.0.11"."""
+    return spec.split("==", 1)[0]
 
 
 def default_config_path() -> Path:
@@ -51,9 +57,10 @@ def default_config_path() -> Path:
 
 
 def check_packages_installed(
-    packages: tuple[str, ...] = ("mineru", "mineru-llama-cpp"),
+    packages: tuple[str, ...] | None = None,
     *,
     runner: Callable[..., subprocess.CompletedProcess] | None = None,
+    timeout_s: float | None = None,
 ) -> dict[str, bool]:
     """
     --------------------------------------------------------------------------
@@ -66,19 +73,72 @@ def check_packages_installed(
         reports "Package(s) not found" on this machine.
 
     Inputs:
-        packages (tuple[str, ...]): package names to check.
+        packages (tuple[str, ...] | None): package names to check; None
+            means the names of pdf2md-pipeline.json's pinned_packages.
         runner (callable | None): injected for tests; defaults to
             subprocess.run.
+        timeout_s (float | None): per-call bound (R10); None reads
+            pip_show_timeout_s from pdf2md-pipeline.json.
 
     Outputs:
         dict[str, bool]: package name -> installed.
     --------------------------------------------------------------------------
     """
+    settings = load_pipeline_config()
     runner = runner or subprocess.run
+    if packages is None:
+        packages = tuple(_package_name(spec) for spec in settings["pinned_packages"])
+    bound = settings["pip_show_timeout_s"] if timeout_s is None else timeout_s
     return {
-        package: runner(["pip", "show", package], capture_output=True, text=True, timeout=30).returncode == 0
+        package: runner(pip_command("show", package), capture_output=True, text=True, timeout=bound).returncode == 0
         for package in packages
     }
+
+
+def _pinned_specs(missing: list[str], pinned: list[str]) -> list[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Map each missing package name to its pinned requirement string so the
+        install never runs on an unpinned name (security.md).
+
+    Inputs:
+        missing (list[str]): package names to install.
+        pinned (list[str]): pdf2md-pipeline.json's pinned_packages.
+
+    Outputs:
+        list[str]: the pinned requirement for each missing package.
+
+    Raises:
+        RuntimeError: a missing package has no pinned version (R3).
+    --------------------------------------------------------------------------
+    """
+    by_name = {_package_name(spec): spec for spec in pinned}
+    unpinned = [name for name in missing if name not in by_name]
+    if unpinned:
+        raise RuntimeError(f"no pinned version for {unpinned} in pdf2md-pipeline.json (pinned_packages)")
+    return [by_name[name] for name in missing]
+
+
+def exit_code_for(report: dict, *, yes: bool) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The bootstrap exit code (R12): 0 when the post-apply state is ok, 2
+        when a dry run found something to do (a refusal by design), 1 when
+        --yes was given and the state is still not ok (a failed apply).
+
+    Inputs:
+        report (dict): a run_bootstrap report; only "ok" is read.
+        yes (bool): whether --yes was passed.
+
+    Outputs:
+        int: 0, 1 or 2.
+    --------------------------------------------------------------------------
+    """
+    if report["ok"]:
+        return 0
+    return 1 if yes else 2
 
 
 def run_bootstrap(
@@ -158,26 +218,62 @@ def run_bootstrap(
         report["ok"] = not missing_packages and model_ready and diagnosis.clean
         return report
 
+    settings = load_pipeline_config()
     if missing_packages:
         runner = pip_runner or subprocess.run
-        pip_result = runner(["pip", "install", *missing_packages], capture_output=True, text=True, timeout=600)
+        pip_result = runner(
+            pip_command("install", *_pinned_specs(missing_packages, settings["pinned_packages"])),
+            capture_output=True,
+            text=True,
+            timeout=settings["pip_install_timeout_s"],
+        )
         report["packages_installed"] = pip_result.returncode == 0
 
     if not model_ready and readiness is not None:
         runner = download_runner or subprocess.run
         download_result = runner(
-            ["mineru-kit", "models", "download", "--tier", tier], capture_output=True, text=True, timeout=1800
+            ["mineru-kit", "models", "download", "--tier", tier],
+            capture_output=True,
+            text=True,
+            timeout=settings["models_download_timeout_s"],
         )
         report["model_downloaded"] = download_result.returncode == 0
 
     if not diagnosis.clean:
         fixed = apply_fixes(config_dict, server_url=expected_server_url)
         config_path.parent.mkdir(parents=True, exist_ok=True)
+        if config_path.exists():
+            # The file is global to every mineru use on the machine and the rewrite drops comments.
+            backup = config_path.with_name(config_path.name + ".pdf2md-backup")
+            if backup.exists():
+                # The first backup is the operator's true original; it is never overwritten, so say
+                # that THIS rewrite has no backup of its own rather than claiming one.
+                report["config_backup_from_earlier_run"] = str(backup)
+            else:
+                backup.write_bytes(config_path.read_bytes())
+                report["config_backup"] = str(backup)
         stamp = (date_provider or _today_iso)()
         config_path.write_text(render_config_yaml(fixed, date=stamp), encoding="utf-8")
         report["config_fixed"] = True
 
     report["applied"] = True
+
+    # R9: `ok` is read back from the state after the apply, never from the
+    # exit codes of pip or the downloader, which say nothing about the effect.
+    packages_after = check_packages_installed(runner=pip_runner)
+    report["missing_packages_after"] = [name for name, installed in packages_after.items() if not installed]
+    try:
+        readiness_after = parse_models_show((models_show_runner or run_models_show)())
+        report["model_ready_after"] = readiness_after.tier_ready(tier)
+    except Exception as exc:  # noqa: BLE001 -- reported in the JSON, and ok stays False
+        report["model_ready_after"] = False
+        report["model_error_after"] = str(exc)
+    config_after = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {} if config_path.exists() else {}
+    report["config_issues_after"] = [
+        {"code": i.code, "message": i.message}
+        for i in diagnose(config_after, expected_server_url=expected_server_url).issues
+    ]
+    report["ok"] = not report["missing_packages_after"] and report["model_ready_after"] and not report["config_issues_after"]
     return report
 
 
@@ -195,7 +291,7 @@ def _main(argv: list[str] | None = None) -> int:
     config_path = Path(args.config) if args.config else default_config_path()
     report = run_bootstrap(config_path=config_path, expected_server_url=args.server_url, tier=args.tier, yes=args.yes)
     print(json.dumps(report) if args.json else report)
-    return 0 if report["ok"] else (0 if args.yes else 2)
+    return exit_code_for(report, yes=args.yes)
 
 
 if __name__ == "__main__":

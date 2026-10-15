@@ -442,5 +442,18 @@ class TestMain(unittest.TestCase):
             self.assertFalse(json.loads(stdout.getvalue())["applied"])
 
 
+class TestSingleLayoutIsRefused(unittest.TestCase):
+    def test_repair_refuses_a_single_document_directory_before_reading_the_pdf(self):
+        import io
+        from contextlib import redirect_stderr
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "pdf2md-layout.json").write_text('{"layout": "single"}', encoding="utf-8")
+            with redirect_stderr(io.StringIO()) as err:
+                code = repair._main(["does-not-exist.pdf", "-o", tmp])
+        self.assertEqual(code, 2)
+        self.assertIn("single", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

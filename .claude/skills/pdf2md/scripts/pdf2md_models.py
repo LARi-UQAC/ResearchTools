@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Callable
+
+from pdf2md_settings import load_pipeline_config
 
 _READY_LINE_RE = re.compile(r"^\s*([\w.\-]+):\s*(ready|missing)\s*$", re.MULTILINE)
 _TIER_LINE_RE = re.compile(r"^\s*(flash|basic|standard|advanced):\s*(.+)$", re.MULTILINE)
@@ -134,7 +137,13 @@ def run_models_show(runner: Callable[..., subprocess.CompletedProcess] | None = 
     --------------------------------------------------------------------------
     """
     runner = runner or subprocess.run
-    result = runner(["mineru-kit", "models", "show"], capture_output=True, text=True, timeout=30, check=True)
+    result = runner(
+        ["mineru-kit", "models", "show"],
+        capture_output=True,
+        text=True,
+        timeout=load_pipeline_config()["models_show_timeout_s"],
+        check=True,
+    )
     return result.stdout
 
 
@@ -182,7 +191,14 @@ def resolve_vlm_paths(runner: Callable[..., subprocess.CompletedProcess] | None 
     from pdf2md_server import VlmPaths
 
     runner = runner or subprocess.run
-    result = runner(["python", "-c", _RESOLVE_SNIPPET], capture_output=True, text=True, timeout=120)
+    # sys.executable, not a bare "python": the snippet imports mineru, so it must
+    # run in the environment that holds the pinned install (H3, 2026-10-15 review).
+    result = runner(
+        [sys.executable, "-c", _RESOLVE_SNIPPET],
+        capture_output=True,
+        text=True,
+        timeout=load_pipeline_config()["resolve_snippet_timeout_s"],
+    )
     if result.returncode != 0:
         raise RuntimeError(
             "Could not resolve the VLM model via mineru's own registry "

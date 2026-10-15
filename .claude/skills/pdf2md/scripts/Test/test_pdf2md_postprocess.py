@@ -532,5 +532,180 @@ class TestLoadThresholds(unittest.TestCase):
             self.assertIn("bibliography_density_window", str(ctx.exception))
 
 
+ARTICLE_TEXT = """\
+# Fast Planning With Learned Heuristics
+
+## 1 Introduction
+
+Planning is hard. Earlier work [40] presented a method that scales to large maps and
+we extend it to the case where the map changes online during execution.
+
+## 2 Method
+
+We learn a heuristic from demonstrations and use it inside a standard search.
+
+## References
+
+[1] A. Author. A first paper. Journal of Things, 2019.
+[2] B. Author. A second paper. Journal of Things, 2020.
+[3] C. Author. A third paper. Journal of Things, 2021.
+[4] D. Author. A fourth paper. Journal of Things, 2022.
+[5] E. Author. A fifth paper. Journal of Things, 2023.
+[6] F. Author. A sixth paper. Journal of Things, 2024.
+"""
+
+
+class TestSingleLayout(unittest.TestCase):
+    """Item 2 of the 2026-10-15 task: an article or a talk source is ONE document.
+    The thesis layout splits on 'CHAPITRE N' and has nothing to say about a
+    paper, so --layout single writes the whole cleaned text to main.md."""
+
+    def _run(self, text, *extra):
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        source = Path(tmp.name) / "paper.md"
+        source.write_text(text, encoding="utf-8")
+        out_dir = Path(tmp.name) / "out"
+        code = _main([str(source), "-o", str(out_dir), *extra])
+        return code, out_dir
+
+    def test_single_writes_one_main_md_with_the_whole_text_and_no_chapter_files(self):
+        code, out_dir = self._run(ARTICLE_TEXT, "--layout", "single")
+        self.assertEqual(code, 0)
+        main = (out_dir / "main.md").read_text(encoding="utf-8")
+        self.assertIn("## 2 Method", main)
+        self.assertIn("Planning is hard", main)
+        self.assertFalse((out_dir / "content").exists())
+
+    def test_single_keeps_the_references_in_main_and_copies_them_to_assets(self):
+        _code, out_dir = self._run(ARTICLE_TEXT, "--layout", "single")
+        self.assertIn("[6] F. Author", (out_dir / "main.md").read_text(encoding="utf-8"))
+        bibliography = (out_dir / "assets" / "bibliography.md").read_text(encoding="utf-8")
+        self.assertIn("[1] A. Author", bibliography)
+        self.assertNotIn("Planning is hard", bibliography)
+
+    def test_an_inline_citation_does_not_open_the_bibliography(self):
+        # The article's "[40] presented a method" sits in the introduction.
+        _code, out_dir = self._run(ARTICLE_TEXT, "--layout", "single")
+        bibliography = (out_dir / "assets" / "bibliography.md").read_text(encoding="utf-8")
+        self.assertNotIn("presented a method", bibliography)
+
+    def test_single_never_splits_on_the_word_chapitre(self):
+        # Negative control: the thesis layout would cut here.
+        document = "# CHAPITRE 1\n\nbody one\n\n# CHAPITRE 2\n\nbody two\n"
+        _code, out_dir = self._run(document, "--layout", "single")
+        self.assertFalse((out_dir / "content").exists())
+        self.assertIn("body two", (out_dir / "main.md").read_text(encoding="utf-8"))
+
+    def test_the_layout_is_recorded_for_the_later_stages(self):
+        import json
+
+        _code, single_dir = self._run(ARTICLE_TEXT, "--layout", "single")
+        self.assertEqual(json.loads((single_dir / "pdf2md-layout.json").read_text(encoding="utf-8"))["layout"], "single")
+
+    def test_the_default_layout_is_still_the_thesis_one_and_is_recorded_too(self):
+        import json
+
+        _code, out_dir = self._run("# CHAPITRE 1\n\nbody\n\n# CHAPITRE 2\n\nmore\n")
+        self.assertTrue((out_dir / "content" / "Introduction.md").exists())
+        self.assertEqual(json.loads((out_dir / "pdf2md-layout.json").read_text(encoding="utf-8"))["layout"], "thesis")
+
+    def test_an_unknown_layout_is_refused_by_argparse(self):
+        with self.assertRaises(SystemExit) as caught:
+            self._run(ARTICLE_TEXT, "--layout", "poster")
+        self.assertEqual(caught.exception.code, 2)
+
+    def test_the_splice_defect_is_still_removed_in_single_layout(self):
+        # A running header repeated mid-document must not survive just because
+        # the layout is single.
+        document = (
+            "# Title\n\n## RUNNING HEADER OF THE PAPER\n\nA sentence that stops at the\n\n"
+            "## RUNNING HEADER OF THE PAPER\n\nbottom of the page and goes on.\n"
+        )
+        _code, out_dir = self._run(document, "--layout", "single")
+        main = (out_dir / "main.md").read_text(encoding="utf-8")
+        self.assertEqual(main.count("RUNNING HEADER OF THE PAPER"), 1)
+
+    # Code review round 1 (2026-10-15): the thesis rule "a repeated heading is a splice" holds
+    # only inside one chapter. A single document has no chapter reset, so every repeated
+    # unnumbered heading (Results, Summary, a repeated slide title) was deleted.
+    def test_a_repeated_heading_between_complete_paragraphs_is_kept_in_single_layout(self):
+        document = (
+            "# Paper\n\n## Results\n\nThe first experiment succeeded.\n\n"
+            "## Discussion\n\nWe discuss it at length.\n\n"
+            "## Results\n\nThe second experiment also succeeded.\n"
+        )
+        _code, out_dir = self._run(document, "--layout", "single")
+        main = (out_dir / "main.md").read_text(encoding="utf-8")
+        self.assertEqual(main.count("## Results"), 2)
+        self.assertIn("The second experiment also succeeded.", main)
+
+    def test_a_repeated_heading_inside_a_sentence_is_still_removed_in_single_layout(self):
+        # Positive control: the cleanup is narrowed, not switched off.
+        document = (
+            "# Paper\n\n## Method\n\nWe learn a heuristic that is used inside the\n\n"
+            "## Method\n\nstandard search and nothing else.\n"
+        )
+        _code, out_dir = self._run(document, "--layout", "single")
+        main = (out_dir / "main.md").read_text(encoding="utf-8")
+        self.assertEqual(main.count("## Method"), 1)
+        self.assertIn("inside the standard search", main)
+
+    def test_only_a_bare_bibliography_heading_opens_the_bibliography(self):
+        document = (
+            "# Paper\n\n## 1 Intro\n\nbody.\n\n## Bibliographie annotee des outils\n\nmore body.\n\n"
+            "## References\n\n[1] A. Author. T. 2019.\n"
+        )
+        _code, out_dir = self._run(document, "--layout", "single")
+        bibliography = (out_dir / "assets" / "bibliography.md").read_text(encoding="utf-8")
+        self.assertTrue(bibliography.startswith("## References"))
+        self.assertIn("more body.", (out_dir / "main.md").read_text(encoding="utf-8"))
+
+    # Code review round 2 (2026-10-15)
+    def test_a_table_of_contents_line_does_not_open_the_bibliography(self):
+        document = "# Paper\n\nReferences 12\n\n## 1 Intro\n\nBody text stays in the body.\n"
+        _code, out_dir = self._run(document, "--layout", "single")
+        self.assertFalse((out_dir / "assets" / "bibliography.md").exists())
+        self.assertIn("Body text stays", (out_dir / "main.md").read_text(encoding="utf-8"))
+
+    def test_a_bold_or_unmarked_bibliography_title_opens_it_like_a_hash_heading(self):
+        for title in ("References", "**References**"):
+            document = f"# Paper\n\nBody.\n\n{title}\n\n[1] A. Author. T. 2019.\n"
+            _code, out_dir = self._run(document, "--layout", "single")
+            self.assertIn("[1] A. Author", (out_dir / "assets" / "bibliography.md").read_text(encoding="utf-8"))
+            self.assertNotIn("Body.", (out_dir / "assets" / "bibliography.md").read_text(encoding="utf-8"))
+
+    def test_a_repeated_heading_after_an_image_or_before_a_new_block_is_kept(self):
+        for before, after in (("![](images/a.jpg)", "More text continues here."),
+                              ("The model reached 91 (see Table 2)", "Table 3 lists the rest.")):
+            document = f"# Paper\n\n## Results\n\nFirst.\n\n{before}\n\n## Results\n\n{after}\n"
+            _code, out_dir = self._run(document, "--layout", "single")
+            main = (out_dir / "main.md").read_text(encoding="utf-8")
+            self.assertEqual(main.count("## Results"), 2, (before, after))
+            self.assertNotIn(before + " " + after, main)
+
+    def test_an_unreadable_layout_marker_is_a_named_refusal_not_a_traceback(self):
+        import tempfile
+        from pathlib import Path
+        from pdf2md_postprocess import read_layout
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "pdf2md-layout.json").write_text("{bad", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                read_layout(Path(tmp))
+
+    def test_the_thesis_layout_keeps_its_own_rule_unchanged(self):
+        # Same repeat, between complete paragraphs, inside one chapter: the thesis rule still removes it.
+        headings = find_headings(["## CHAPITRE 1", "", "## 1.1 Contexte", "", "Texte complet.", "", "## 1.1 Contexte"])
+        self.assertEqual(len(find_spurious_headings(headings)), 1)
+
+    def test_no_bibliography_in_a_single_document_is_reported_not_invented(self):
+        _code, out_dir = self._run("# Title\n\nA short note with no references.\n", "--layout", "single")
+        self.assertFalse((out_dir / "assets" / "bibliography.md").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

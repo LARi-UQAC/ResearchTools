@@ -452,6 +452,48 @@ class TestChangesFile(unittest.TestCase):
         self.assertEqual(data["needs_review"], [])
 
 
+class TestSafeDefault(unittest.TestCase):
+    """Q5 of the 2026-10-15 review. Measured 2026-10-11 on a real thesis: the
+    model rewrote a correct formula into a different one, so a rewrite must be
+    something the operator asks for, never what happens when a flag is forgotten."""
+
+    def parse(self, *extra):
+        return fix._build_parser().parse_args(["x.pdf", "-o", "out", "--model", "t", *extra])
+
+    def test_by_default_only_lost_equations_are_recovered(self):
+        self.assertTrue(fix.resolve_equations_only(self.parse()))
+
+    def test_rewriting_formulas_needs_its_own_flag(self):
+        self.assertFalse(fix.resolve_equations_only(self.parse("--rewrite-formulas")))
+
+    def test_the_old_flag_still_means_the_safe_mode(self):
+        self.assertTrue(fix.resolve_equations_only(self.parse("--equations-only")))
+
+    def test_the_two_flags_together_are_a_contradiction_not_a_guess(self):
+        with self.assertRaises(ValueError):
+            fix.resolve_equations_only(self.parse("--equations-only", "--rewrite-formulas"))
+
+    def test_main_refuses_the_contradiction_with_exit_2(self):
+        import io
+        from contextlib import redirect_stderr
+
+        with redirect_stderr(io.StringIO()) as err:
+            code = fix._main(["x.pdf", "-o", "nowhere", "--model", "t", "--equations-only", "--rewrite-formulas"])
+        self.assertEqual(code, 2)
+        self.assertIn("--rewrite-formulas", err.getvalue())
+
+    def test_a_single_layout_directory_is_refused(self):
+        import io
+        from contextlib import redirect_stderr
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "pdf2md-layout.json").write_text('{"layout": "single"}', encoding="utf-8")
+            with redirect_stderr(io.StringIO()) as err:
+                code = fix._main(["x.pdf", "-o", tmp, "--model", "t"])
+        self.assertEqual(code, 2)
+        self.assertIn("single", err.getvalue())
+
+
 class TestCommandLine(unittest.TestCase):
     def test_a_missing_model_tag_is_refused_with_exit_2_before_anything_is_read(self):
         import io

@@ -121,5 +121,31 @@ class TestBootstrapTierFor(unittest.TestCase):
             self.assertIn(bootstrap_tier_for(parse_tier), DOWNLOADABLE_TIERS)
 
 
+class TestResolveRunsUnderThisInterpreter(unittest.TestCase):
+    """H3 (2026-10-15 review): a bare `python` can be another environment than
+    the one holding the pinned mineru install."""
+
+    def test_the_registry_snippet_runs_under_sys_executable_with_the_configured_timeout(self):
+        from pdf2md_settings import load_pipeline_config
+        from pdf2md_models import resolve_vlm_paths
+
+        seen = {}
+
+        class Result:
+            returncode = 1
+            stdout = ""
+            stderr = "boom"
+
+        def fake_runner(args, **kwargs):
+            seen["args"], seen["kwargs"] = args, kwargs
+            return Result()
+
+        with self.assertRaises(RuntimeError):
+            resolve_vlm_paths(runner=fake_runner)
+        self.assertEqual(seen["args"][0], sys.executable)
+        self.assertNotEqual(seen["args"][0], "python")
+        self.assertEqual(seen["kwargs"]["timeout"], load_pipeline_config()["resolve_snippet_timeout_s"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 {
   "base_url": {
     "value": "http://localhost:11434",
-    "provenance": "Ollama's own documented default local API address; not machine-specific (R1), the operator can point the check elsewhere by editing this file"
+    "provenance": "Ollama's own documented default local API address; not machine-specific (R1), the operator can point the check at another loopback port by editing this file; since 2026-10-15 a host that is not loopback is refused at load (page images and thesis text are sent to it)"
   },
   "timeout_s": {
     "value": 300,

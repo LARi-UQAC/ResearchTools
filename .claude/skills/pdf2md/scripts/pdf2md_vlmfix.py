@@ -649,6 +649,45 @@ def _render(summary: dict) -> str:
     return "\n".join(lines)
 
 
+def _build_parser():
+    """The `pdf2md.py fix` command line. Rewriting formulas is opt-in (--rewrite-formulas), never the default."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pdf_path")
+    parser.add_argument("-o", "--output-dir", required=True)
+    parser.add_argument("--model", default=None, help="REQUIRED: the operator's own Ollama vision tag (R2 -- never a default)")
+    parser.add_argument("--pages", choices=("config", "all"), default="config", help="'all' checks every page that can be located (the overnight setting)")
+    parser.add_argument("--equations-only", action="store_true", help="the DEFAULT, kept so older command lines still run: recover lost numbered equations only, never check or rewrite a formula")
+    parser.add_argument("--rewrite-formulas", action="store_true", help="also check every formula against the page and rewrite the ones the model disputes (measured 2026-10-11: a model changed the meaning of a correct formula, so every rewrite needs a human read)")
+    parser.add_argument("--yes", action="store_true", help="write the corrections (default: a dry run that writes nothing)")
+    parser.add_argument("--strict", action="store_true", help="exit 1 when the loop stops with more than target_remaining_issues left")
+    parser.add_argument("--json", action="store_true")
+    return parser
+
+
+def resolve_equations_only(args) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Decide whether the loop may rewrite formulas. The safe setting is the
+        default: only --rewrite-formulas turns the rewrite on.
+
+    Inputs:
+        args (argparse.Namespace): the parsed `fix` command line.
+
+    Outputs:
+        bool: True when only lost equations are recovered.
+
+    Raises:
+        ValueError: both --equations-only and --rewrite-formulas were given.
+    --------------------------------------------------------------------------
+    """
+    if args.equations_only and args.rewrite_formulas:
+        raise ValueError("--equations-only and --rewrite-formulas contradict each other; pass at most one")
+    return not args.rewrite_formulas
+
+
 def _main(argv: list[str] | None = None) -> int:
     """
     --------------------------------------------------------------------------
@@ -668,29 +707,33 @@ def _main(argv: list[str] | None = None) -> int:
         int: the exit code.
     --------------------------------------------------------------------------
     """
-    import argparse
     import shutil
     import sys
 
+    import pdf2md_postprocess
     import pdf2md_repair as repair
     import pdf2md_validate as validate
 
     validate.extract_text.configure_streams()
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("pdf_path")
-    parser.add_argument("-o", "--output-dir", required=True)
-    parser.add_argument("--model", default=None, help="REQUIRED: the operator's own Ollama vision tag (R2 -- never a default)")
-    parser.add_argument("--pages", choices=("config", "all"), default="config", help="'all' checks every page that can be located (the overnight setting)")
-    parser.add_argument("--equations-only", action="store_true", help="recover lost numbered equations only; never check or rewrite a formula (the safe setting: a model cannot change a correct formula)")
-    parser.add_argument("--yes", action="store_true", help="write the corrections (default: a dry run that writes nothing)")
-    parser.add_argument("--strict", action="store_true", help="exit 1 when the loop stops with more than target_remaining_issues left")
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(argv)
+    args = _build_parser().parse_args(argv)
     if not args.model:
         print("[VLMFIX] refusing: --model TAG is required (never a default, R2).", file=sys.stderr)
         return 2
+    try:
+        equations_only = resolve_equations_only(args)
+    except ValueError as exc:
+        print(f"[VLMFIX] refusing: {exc}", file=sys.stderr)
+        return 2
 
     output_dir = Path(args.output_dir)
+    try:
+        layout = pdf2md_postprocess.read_layout(output_dir)
+    except ValueError as exc:
+        print(f"[VLMFIX] refusing: {exc}", file=sys.stderr)
+        return 2
+    if layout == "single":
+        print("[VLMFIX] refusing: this output uses the single-document layout; the correction loop works chapter by chapter.", file=sys.stderr)
+        return 2
     config, vlm_config, fidelity_config = load_vlmfix_config(), vlmcheck.load_vlmcheck_config(), fidelity.load_fidelity_config()
     backup_dir = output_dir / "pdf2md-backup-vlm"
     if args.yes and backup_dir.exists() and any(backup_dir.iterdir()):
@@ -722,7 +765,7 @@ def _main(argv: list[str] | None = None) -> int:
     result = run_correction_loop(
         pdf_path=args.pdf_path, chapters=chapters, pdf_chapters=validate.extract_pdf_chapters(args.pdf_path), chapter_ranges=ranges, page_texts=page_texts,
         model_tag=args.model, vlm_config=vlm_config, fidelity_config=fidelity_config, config=config,
-        math_symbol_chars=validate.load_config()["math_symbol_chars"], scratch_dir=output_dir / "validate-scratch", all_pages=args.pages == "all", equations_only=args.equations_only, on_round=persist,
+        math_symbol_chars=validate.load_config()["math_symbol_chars"], scratch_dir=output_dir / "validate-scratch", all_pages=args.pages == "all", equations_only=equations_only, on_round=persist,
     )
     if args.yes:
         _write_changes_file(changes_path, result["changes"], result["needs_review"])

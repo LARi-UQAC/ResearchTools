@@ -96,24 +96,59 @@ def resolve_ollama_model(role: str | None = None) -> str:
         raise ReviewerError(str(exc)) from exc
 
 
-def ollama_available() -> bool:
-    """True when the resolver names a tag for the reviewer role. Never raises."""
-    try:
-        return bool(resolve_ollama_model())
-    except Exception:
-        return False
-
-
-def input_budget(model: str = "auto") -> int:
+def ollama_unavailable_reason() -> str | None:
     """
     --------------------------------------------------------------------------
     Purpose:
-        How many prompt tokens the reviewer can take: the tag's measured
-        window minus the reply budget. deliberate.py caps its shared prompt
-        with this when the local model is a leg.
+        Why the local reviewer cannot be used right now, or None when the
+        resolver names a tag for the reviewer role.
+
+    Details:
+        Only a ReviewerError (the resolver, the daemon or the configuration
+        refusing, which this module raises for every expected failure) means
+        "unavailable". Any other exception is a defect in the code and
+        propagates, so a bug is never reported as an absent model (R8).
 
     Inputs:
-        model (str): a tag, or "auto" for the resolver's.
+        None.
+
+    Outputs:
+        str | None: the refusal's message, or None when available.
+    --------------------------------------------------------------------------
+    """
+    try:
+        if resolve_ollama_model():
+            return None
+        return "the resolver named no tag for the reviewer role"
+    except ReviewerError as exc:
+        return str(exc)
+
+
+def ollama_available() -> bool:
+    """True when the resolver names a tag for the reviewer role. Raises only on a defect, never on a refusal."""
+    return ollama_unavailable_reason() is None
+
+
+def input_budget() -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        How many prompt tokens the reviewer can take: the configured window
+        minus the reply budget.
+
+    Details:
+        The window is ollama-reviewer.json's num_ctx, deliberately and not the
+        machine-measured retained window of the resolved tag: every request
+        carries that same num_ctx (run_ollama), so it is the window the daemon
+        is asked to grant, and the measured file is machine-local and
+        gitignored (R21). Ollama clamps num_ctx silently to the model's native
+        maximum, so the operator confirms the value with `ollama show` when
+        the adopted model changes (see num_ctx's provenance). Has no caller in
+        deliberate.py today, which refuses an over-window prompt inside
+        run_ollama instead.
+
+    Inputs:
+        None.
 
     Outputs:
         int: tokens available to the prompt.
@@ -160,7 +195,7 @@ def run_ollama(prompt: str, model: str = "auto", temperature: float = 0.3,
     config = load_config()
     tag = resolve_ollama_model() if model in ("", "auto", None) else model
     num_ctx = int(config["num_ctx"])
-    reply =min(int(max_output_tokens), int(config["reply_tokens"]))
+    reply = min(int(max_output_tokens), int(config["reply_tokens"]))
     try:
         prompt_tokens = bridge.probe_prompt_tokens(prompt, tag, num_ctx)
     except bridge.BridgeError as exc:

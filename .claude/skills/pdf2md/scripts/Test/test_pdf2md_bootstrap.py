@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import yaml
 
-from pdf2md_bootstrap import check_packages_installed, default_config_path, run_bootstrap
+from pdf2md_bootstrap import check_packages_installed, default_config_path, exit_code_for, run_bootstrap
 
 REAL_MODELS_SHOW_READY = """\
 Repos:
@@ -227,6 +227,152 @@ class TestRunBootstrap(unittest.TestCase):
             models_show_runner=lambda: REAL_MODELS_SHOW_READY,
         )
         self.assertIn("server_url_unset", {i["code"] for i in report["config_issues"]})
+
+
+class _StatefulPip:
+    """A pip fake whose `show` answer changes after an `install`, like a real environment."""
+
+    def __init__(self, installed: set[str], install_succeeds: bool = True):
+        self.installed = set(installed)
+        self.install_succeeds = install_succeeds
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, **kwargs):
+        self.calls.append(list(args))
+        if "install" in args:
+            if self.install_succeeds:
+                self.installed |= {spec.split("==")[0] for spec in args if "==" in spec}
+            return _FakeResult(returncode=0 if self.install_succeeds else 1)
+        return _FakeResult(returncode=0 if args[-1] in self.installed else 1)
+
+
+class TestApplyIsVerified(unittest.TestCase):
+    """H4 of the 2026-10-15 review (R9, R12): `ok` must describe the state AFTER
+    the apply step, and a failed apply under --yes must not read as success."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.config_path = Path(self.tmp_dir.name) / "config.yaml"
+        self.config_path.write_text("", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def _run(self, pip, models_show=REAL_MODELS_SHOW_READY, download=None, yes=True):
+        return run_bootstrap(
+            config_path=self.config_path,
+            expected_server_url=None,
+            yes=yes,
+            pip_runner=pip,
+            models_show_runner=(lambda: models_show) if isinstance(models_show, str) else models_show,
+            download_runner=download or (lambda args, **kw: _FakeResult(returncode=0)),
+        )
+
+    def test_a_failed_pip_install_under_yes_is_not_ok(self):
+        report = self._run(_StatefulPip(installed=set(), install_succeeds=False))
+        self.assertFalse(report["packages_installed"])
+        self.assertFalse(report["ok"])
+        self.assertIn("mineru", report["missing_packages_after"])
+
+    def test_a_successful_install_makes_the_report_ok(self):
+        # Positive control: without it, "always not ok" would pass the test above.
+        report = self._run(_StatefulPip(installed=set(), install_succeeds=True))
+        self.assertTrue(report["packages_installed"])
+        self.assertEqual(report["missing_packages_after"], [])
+        self.assertTrue(report["ok"])
+
+    def test_a_failed_model_download_under_yes_is_not_ok(self):
+        report = self._run(
+            _StatefulPip(installed={"mineru", "mineru-llama-cpp"}),
+            models_show=REAL_MODELS_SHOW_MISSING,
+            download=lambda args, **kw: _FakeResult(returncode=1),
+        )
+        self.assertFalse(report["model_downloaded"])
+        self.assertFalse(report["ok"])
+
+    def test_a_download_that_exits_zero_but_leaves_the_model_missing_is_not_ok(self):
+        # R9: the exit code of the downloader is not the effect.
+        report = self._run(
+            _StatefulPip(installed={"mineru", "mineru-llama-cpp"}),
+            models_show=REAL_MODELS_SHOW_MISSING,
+            download=lambda args, **kw: _FakeResult(returncode=0),
+        )
+        self.assertTrue(report["model_downloaded"])
+        self.assertFalse(report["model_ready_after"])
+        self.assertFalse(report["ok"])
+
+    def test_pip_runs_under_the_interpreter_of_this_skill_with_pinned_versions(self):
+        pip = _StatefulPip(installed=set())
+        self._run(pip)
+        install_calls = [call for call in pip.calls if "install" in call]
+        self.assertEqual(len(install_calls), 1)
+        self.assertEqual(install_calls[0][:3], [sys.executable, "-m", "pip"])
+        specs = install_calls[0][4:]
+        self.assertTrue(all("==" in spec for spec in specs), specs)
+        self.assertIn("mineru==4.0.11", specs)
+        for call in pip.calls:
+            self.assertEqual(call[:3], [sys.executable, "-m", "pip"], "a bare `pip` was invoked")
+
+    def test_a_dry_run_installs_nothing(self):
+        pip = _StatefulPip(installed=set())
+        report = self._run(pip, yes=False)
+        self.assertFalse(report["ok"])
+        self.assertFalse(any("install" in call for call in pip.calls))
+
+
+class TestConfigBackup(unittest.TestCase):
+    def test_the_original_config_is_kept_before_it_is_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yaml"
+            path.write_text("# my notes\n" + REAL_BROKEN_CONFIG_TEXT, encoding="utf-8")
+            report = run_bootstrap(
+                config_path=path, expected_server_url="http://127.0.0.1:30000/v1", yes=True,
+                pip_runner=_StatefulPip(installed={"mineru", "mineru-llama-cpp"}),
+                models_show_runner=lambda: REAL_MODELS_SHOW_READY,
+            )
+            backup = Path(report["config_backup"])
+            self.assertEqual(backup.read_text(encoding="utf-8"), "# my notes\n" + REAL_BROKEN_CONFIG_TEXT)
+            self.assertNotIn("# my notes", path.read_text(encoding="utf-8"))
+
+    def test_a_second_run_does_not_overwrite_the_first_backup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yaml"
+            backup = Path(tmp) / "config.yaml.pdf2md-backup"
+            backup.write_text("first original", encoding="utf-8")
+            path.write_text(REAL_BROKEN_CONFIG_TEXT, encoding="utf-8")
+            run_bootstrap(
+                config_path=path, expected_server_url="http://127.0.0.1:30000/v1", yes=True,
+                pip_runner=_StatefulPip(installed={"mineru", "mineru-llama-cpp"}),
+                models_show_runner=lambda: REAL_MODELS_SHOW_READY,
+            )
+            self.assertEqual(backup.read_text(encoding="utf-8"), "first original")
+
+
+class TestBackupIsNotClaimedTwice(unittest.TestCase):
+    def test_a_rewrite_with_an_older_backup_says_it_has_no_backup_of_its_own(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yaml"
+            (Path(tmp) / "config.yaml.pdf2md-backup").write_text("older", encoding="utf-8")
+            path.write_text(REAL_BROKEN_CONFIG_TEXT, encoding="utf-8")
+            report = run_bootstrap(
+                config_path=path, expected_server_url="http://127.0.0.1:30000/v1", yes=True,
+                pip_runner=_StatefulPip(installed={"mineru", "mineru-llama-cpp"}),
+                models_show_runner=lambda: REAL_MODELS_SHOW_READY,
+            )
+        self.assertNotIn("config_backup", report)
+        self.assertIn("config_backup_from_earlier_run", report)
+
+
+class TestExitCode(unittest.TestCase):
+    def test_a_failed_apply_under_yes_exits_1_not_0(self):
+        self.assertEqual(exit_code_for({"ok": False}, yes=True), 1)
+
+    def test_a_refused_dry_run_exits_2(self):
+        self.assertEqual(exit_code_for({"ok": False}, yes=False), 2)
+
+    def test_an_ok_report_exits_0(self):
+        self.assertEqual(exit_code_for({"ok": True}, yes=True), 0)
+        self.assertEqual(exit_code_for({"ok": True}, yes=False), 0)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,14 @@
 PyYAML==6.0.3
 
+# The conversion engine itself, pinned to the versions this skill's behaviour was
+# measured against (mineru 4.0.11 and mineru-llama-cpp 0.1.2, `pip show`, 2026-10-15).
+# Heavy (onnxruntime, gradio, ...): installed into the Python that runs `pdf2md.py
+# bootstrap --yes`, never into the offline-test environment. The same pins live in
+# pdf2md-pipeline.json (pinned_packages), which is what the bootstrap installs from;
+# test_pdf2md_run.py fails when the two lists disagree.
+mineru==4.0.11
+mineru-llama-cpp==0.1.2
+
 # pdf2md_validate.py (Stage 7) imports extract-statistic's extract_text.py
 # directly (R18, the same cross-skill-import pattern extract-contributions
 # and extract-paper-idea already use), so it inherits that skill's

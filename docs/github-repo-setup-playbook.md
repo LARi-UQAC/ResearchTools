@@ -44,7 +44,9 @@ gh api user --jq .login # confirms which account is actually authenticated
   `~/.config/git/hooks` (the installer writes the full path, not a tilde), and
   `git config --local core.hooksPath` must print NOTHING inside the repo (a local value, such
   as the one husky sets, silently switches the guard off for that repo), and
-  `betterleaks version` must answer, and `~/.config/git/hooks` must hold both `pre-commit`
+  `betterleaks version` must answer, and `~/.config/git/hooks` must hold the machine-local deny list `private-terms.txt` (real
+  names; made by `install-git-hooks.ps1 -TermsFrom <folder of student projects>`, see Phase
+  6c) and both `pre-commit`
   (checks each commit) and `pre-push` (checks every outgoing commit and its message, so a
   `git commit --no-verify` is still stopped before it is published; `git push --no-verify`
   skips `pre-push` as well, and then only CI catches it). If not, install it from a
@@ -480,6 +482,97 @@ flagged even after a fix commit on top. Resubmit the change as one clean commit 
 branch (`git merge --squash` onto a fresh branch from `main`) and close the old PR - measured
 on ResearchTools PR #39, replaced by #40.
 
+### 6c. When personal data was published anyway (and how to stop the next one)
+
+Measured 2026-10-12 on ResearchTools PR #69: a real student's name was committed inside a
+Windows data-folder path (`<drive>:\...\<StudentName>\...`) copied verbatim from a
+real run into a test fixture. The pre-commit hook, the pre-push hook and the CI scan all
+answered "no leaks found". It had happened before with a code permanent (2026-10-01).
+
+**Why every layer passed.** The rules in `privacy-rules.toml` match SHAPES: a home path under
+`\Users\`, `/home/`, a permanent code, `@etu.uqac.ca`, an FRQ id. A name is not a shape, and a
+path on a data drive (`D:\<folder>\...`) is not a home path. Nothing in the chain
+holds the list of real names the operator works with, and that list cannot live in a public
+rules file, because publishing it is the leak. The cause upstream of the guard is the habit:
+real output (a path, a log line, a file name) pasted into a test, a doc or a commit message.
+
+**Improve the process, in this order of value:**
+
+1. **Never let real data reach the repository's inputs.** Run a tool under development
+   against a COPY of the real student file renamed to a fictitious identity, or against a
+   synthetic fixture. Output pasted into a test, a doc, an `IMPROVEMENTS.md` line or a commit
+   message is written from the fictitious run, never copied from the real one. R34 states
+   the rule, this step makes it a working procedure.
+2. **Use the machine-local deny list, read by the hooks, never committed.** Implemented
+   2026-10-12 in `.claude/hooks/git/` (`privacy-lib.sh`, `privacy-extra.awk`). Generate it from
+   the folders that name real people, then reinstall the hooks:
+
+   ```powershell
+   .\.claude\hooks\git\install-git-hooks.ps1 -TermsFrom "<folder of student projects>" -TermsDepth 2
+   ```
+
+   The person-folder names found `-TermsDepth` levels down are split at capitals and written to
+   `~/.config/git/hooks/private-terms.txt`. Run the command for every new student: the file is only
+   ever appended to, never rewritten, and only counts are printed.
+   Terms typed by hand (the name of a data root folder, a co-author, a lab-internal project
+   name) go in `private-terms.extra.txt` beside it, which the installer never touches. Both
+   hooks refuse a term, case-insensitively, in an added line, an added or modified path, a
+   commit message or a commit author line, and name the file, not the line or the term. A name
+   inside `data_name_run` or `DataName` is found, `nameville` is not. Deleting a leaked path
+   is never refused, it is the cleanup. Rerun the installer whenever a new student folder
+   appears: it appends the missing names to the file, so earlier names, a graduated student's
+   folder that left the disk and lines typed by hand all stay. It sets aside ordinary words
+   (`deny-term-stopwords.txt`) in `private-terms.excluded.txt`, where a real surname that equals
+   one is found and moved to the extra file, refuses a folder that yields nothing, and warns
+   when no list exists yet.
+   **The list holds real names, so the installer refuses to write it into a synchronized or
+   shared folder** (OneDrive, Dropbox, Google Drive, iCloud, Nextcloud, a network share, a
+   junction into one of them) and says which category it found, never the path. If your home
+   folder is synchronized, run `-Uninstall` and install again with `-Target <local folder>`.
+   It also adds `private-terms.txt`, `private-terms.extra.txt` and `private-terms.excluded.txt`
+   to the global git ignore, so a copy dropped into a repository cannot be staged by accident.
+3. **Check absolute paths in fixtures.** An absolute drive path added to a file under
+   `Test/`, `tests/`, `fixtures/` or named `test_*` is reported unless it matches the
+   fictitious roots of `fixture-path-allow.txt` (`C:\Work`, `C:\Example`, ...). Default is a
+   warning on stderr, because existing fixtures legitimately carry paths; once the tree is
+   clean, `git config --global privacyguard.absolutePaths refuse` makes it a refusal, and
+   `off` disables it. A deliberate line carries `betterleaks:allow`.
+4. **No copy of the deny list in CI (rejected).** A repository secret read by the privacy-scan
+   workflow would give the server-side check the same terms, but the list holds real names and
+   a secret is still data leaving the machine. The owner ruled it out on 2026-10-15, so the CI
+   scan stays shape rules only (`privacy-rules.toml`), and names stay covered by the local
+   hooks (step 2), R34 and the human read of step 5. The consequence is stated, not hidden:
+   GitHub comments, pull-request bodies and issue text, the leak path of the PR #69 incident,
+   have no automatic control at all. Never paste a name or a real path there.
+5. **Make the last look human.** Before any push of a branch that touched fixtures, docs or
+   commit messages, list the added lines that contain an absolute path or a capitalised
+   two-word name and read them: `git diff origin/main...HEAD -U0 | grep -E '^\+' | grep -E
+   '[A-Za-z]:\\|[A-Z][a-z]+ [A-Z][a-z]+'`. Noisy by design. It is the only layer that can see a name
+   nobody listed.
+6. **Do not push first and check later.** The scan runs on the local branch before the first
+   push of a new branch. A pushed branch is public the moment it lands, and the only
+   cleanup is a history rewrite plus a purge request.
+
+**Cleanup when it already happened.**
+
+- Rewrite the branch (`git filter-branch` or `git filter-repo`), verify with a full-history
+  scan, force-push with `--force-with-lease=<branch>:<old-sha>`. This removes the branch
+  content but NOT the old commits: GitHub keeps them reachable by SHA, through the pull
+  request's cached views, and in every fork.
+- Ask GitHub Support to remove the cached views and run garbage collection, with the exact
+  SHAs and the pull-request number. GitHub may refuse when the data is not a credential: a
+  code permanent or a name is personal data, not a secret, and the support policy centres on
+  secrets. Nothing in this playbook can force a purge.
+- If support refuses, the options that remain are: delete and recreate the repository (the
+  only certain removal, at the cost of issues, pull requests, stars, the Pages site and the
+  fork network, then re-import the clean history); or accept the exposure of the old SHAs
+  until GitHub garbage-collects the unreferenced objects, which has no guaranteed date.
+  Decide with the privacy officer, not alone.
+- Treat it as a confidentiality incident under Law 25: tell UQAC's privacy officer promptly,
+  record the incident, and let that office assess the risk of serious injury and any notice
+  to the person concerned. Confirm the exact obligations with UQAC; this playbook does not
+  replace that advice.
+
 **Social preview image and enabling the Pages setting itself are web-UI-only** — no API path
 for either as of this writing. Prepare the asset (Phase 4a's banner is a better fit than a
 bare logo for the image, given GitHub's ~1280×640 social-card aspect ratio), then hand the
@@ -582,7 +675,9 @@ concrete example separately, clearly marked as one instance rather than the univ
     has `require_code_owner_review: true`;
   - `security_and_analysis` shows secret scanning AND push protection `enabled`;
   - the `privacy-scan` check is green on a real pull request;
-  - the branch ruleset lists that check under `required_status_checks`.
+  - the branch ruleset lists that check under `required_status_checks`;
+  - the added lines of the branch were read by a human for absolute paths and names
+    (Phase 6c, step 5), because no rule recognises a name.
 - [ ] Respect the project's own git-ownership norm. Some projects want the session to commit
       and push freely; others want every commit/push left to the human. This is NOT
       universal and can change mid-session — if told "let me commit and push myself," that
@@ -613,3 +708,8 @@ repeat them:
   On 2026-10-01 ResearchTools was found publishing an account name, a machine path,
   code-permanent-shaped values, student emails and a real name in files and history - none of
   which push protection recognises. Phase 6b exists because of it.
+- Trusted a green privacy guard as proof that no personal data was published. On 2026-10-12 a
+  student's real name, inside an absolute data-folder path pasted from a real run into a test
+  fixture, passed pre-commit, pre-push and CI: the rules match shapes, and a name is not a
+  shape. GitHub then declined to purge the old commits. Phase 6c exists because of it. A
+  green scan means "no known shape", never "nothing personal".

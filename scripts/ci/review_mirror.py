@@ -284,7 +284,10 @@ def _neutralise(segment, secret_patterns=()):
     Outputs:
         text (str): the neutralised text.
     """
-    out = html.unescape(segment).replace("\x00", "").replace("\x01", "")
+    # Stripped again AFTER decoding: an entity such as &#8238; or &#xE0041; decodes to the very
+    # character the first strip removes, and would otherwise be posted (code review round 8).
+    out = re.sub(_ACTIVE["invisible_characters"], "", html.unescape(segment))
+    out = out.replace("\x00", "").replace("\x01", "")
     out = _redact(out, secret_patterns).replace("`", "\x00").replace("\\", "\x01")
     return _tokens(out).replace("\x00", "&#96;").replace("\x01", "&#92;")
 

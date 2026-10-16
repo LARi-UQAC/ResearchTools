@@ -54,9 +54,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Spend cap in US dollars for ONE billed agent session (claude --max-budget-usd). Chosen by the
-  # author, not measured: nothing but the 30-minute job timeout bounded the step before. Revisit
-  # after the first real runs, and let the operator set the number that fits the account.
+  # Spend cap in US dollars for ONE billed agent session (claude --max-budget-usd). PROPOSED by the
+  # session that wrote this, neither measured nor yet approved by the operator (R4): nothing but
+  # the 30-minute job timeout bounded the step before. The operator sets the number that fits the
+  # account, after reading the cost of the first real runs.
   MAX_BUDGET_USD: "5"
 
 # Floor only. Each job below sets its own permissions, so no single job holds the API key,
@@ -106,9 +107,9 @@ jobs:
         id: diff
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          # Cap on the diff handed to the billed review. Chosen by the author, not measured:
-          # revisit after the first real runs. A larger diff is cut on a line boundary and
-          # says so in the file.
+          # Cap on the diff handed to the billed review. PROPOSED by the session that wrote this,
+          # neither measured nor yet approved by the operator (R4): revisit after the first real
+          # runs. A larger diff is cut on a line boundary and says so in the file.
           MAX_DIFF_BYTES: "300000"
         # BASE_REF is PR-controlled (whatever branch the PR targets) and routed through env
         # rather than inlined. Written to runner.temp, not the checked-out tree. The checkout

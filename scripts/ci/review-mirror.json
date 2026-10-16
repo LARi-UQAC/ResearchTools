@@ -40,7 +40,7 @@
     "provenance": "chosen by the operator 2026-10-16, not measured: how much of a failed gh call's error text is kept in a failure message and in the CI log"
   },
   "invisible_characters": {
-    "value": "[\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff\\U000e0000-\\U000e007f]",
+    "value": "[\\u00ad\\u034f\\u061c\\u115f\\u1160\\u17b4\\u17b5\\u180b-\\u180f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufe00-\\ufe0f\\ufeff\\U000e0000-\\U000e007f\\U000e0100-\\U000e01ef]",
     "provenance": "specified: the invisible and bidirectional-control code points the repository's own style hygiene forbids in produced text (zero-width space and joiners, direction marks and overrides, word joiner and invisible operators, isolates, byte-order mark, Unicode tag block U+E0000 to U+E007F)"
   },
   "pr_pattern": {

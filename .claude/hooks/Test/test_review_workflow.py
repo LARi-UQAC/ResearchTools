@@ -439,6 +439,17 @@ class TestPureLogic(unittest.TestCase):
         live = GFM_SPAN.sub("·", self.mod.sanitize("@oct​ocat"))
         self.assertNotIn("@octocat", live)
 
+    def test_entity_encoded_invisible_characters_do_not_come_back(self):
+        # Code review round 8: the strip ran BEFORE character references were decoded, so
+        # `&#8238;` and `&#xE0041;` became the real characters afterwards and were posted.
+        for raw in ("x&#8238;y", "&#xE0041;&#xE0042; hidden", "a&#8203;b", "c&#x2066;d", "soft­hyphen",
+                    "joiner͏here", "variation️︁ selector", "tag\U000e0100x", "mark؜ALM"):
+            out = self.mod.sanitize(raw)
+            for ch in out:
+                self.assertFalse(0xE0000 <= ord(ch) <= 0xE01EF or ord(ch) in (0x202E, 0x2066, 0x200B, 0xAD, 0x34F, 0x61C)
+                                 or 0xFE00 <= ord(ch) <= 0xFE0F, "%r survives in %r from %r" % (ch, out, raw))
+            self.assertEqual(self.mod.sanitize(out), out, raw)
+
     def test_one_oversized_line_is_cut_at_a_safe_space_not_dropped(self):
         # Code review round 7: _fit cut on the last newline, so a review that is one very long line
         # after its heading was dropped entirely and only the notice was posted.

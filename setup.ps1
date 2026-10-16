@@ -26,10 +26,17 @@
                               vault event daemon is running at login and raw drops in
                               ~/.claude/obsidian-outbox/raw are consumed instead of
                               piling up)
-        -InstallPython     -> .venv-skills plus the packages the OFFLINE SUITE
-                              imports (paper2talk, recommendation-letter), then
-                              pip-audit on each file. The heavier optional skill
-                              dependencies stay manual, documented in README.md
+        -InstallPython     -> .venv-skills (always in the MAIN clone, even when run
+                              from a worktree) plus the packages the repository's
+                              skills import: paper2talk, recommendation-letter,
+                              scopus and extract-statistic minus docling (torch is
+                              too heavy), listed in scripts\lib\rt-python-requirements.json,
+                              then pip-audit on each file. The base interpreter is
+                              CHOSEN: -Python, or a PATH / py-launcher candidate that
+                              belongs to the current profile and can really create a
+                              virtual environment. Otherwise it refuses and names each
+                              candidate with the reason. docling and geolocalisation
+                              stay manual, documented in README.md
         -All               -> config generation + junctions + tools, plus the daemon
                               WHEN a vault is configured; with no vault it is skipped
                               with a stated reason, since a login daemon with no vault
@@ -42,8 +49,10 @@
     .\setup.ps1 -InstallTools -Personal      # multi-tool mirrors only (Copilot/OpenCode/...)
     .\setup.ps1 -InstallDaemon               # vault daemon at login only
     .\setup.ps1 -InstallDaemon -Preview      # say what it would install, install nothing
-    .\setup.ps1 -InstallPython               # .venv-skills for the offline test suite
-    .\setup.ps1 -All -NonInteractive         # scripted bootstrap; refuses rather than assuming
+    .\setup.ps1 -InstallPython               # .venv-skills for the offline test suite and the skills
+    .\setup.ps1 -InstallPython -Preview      # choose the interpreter, say what would install, write nothing
+    .\setup.ps1 -InstallPython -Python "C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
+    .\setup.ps1 -All -NonInteractive        # scripted bootstrap; refuses rather than assuming
     .\setup.ps1 -All -Personal               # config + junctions + tools + daemon in one pass
 #>
 param(
@@ -53,6 +62,7 @@ param(
     [switch]$InstallTools,
     [switch]$InstallDaemon,
     [switch]$InstallPython,
+    [string]$Python = "",
     [switch]$All,
     [switch]$Personal,
     [switch]$Preview,
@@ -92,7 +102,9 @@ if (-not $WorkspaceRoot) {
 # separate from install-junctions.ps1.
 . (Join-Path $WorkspaceRoot "scripts\lib\rt-daemon-install.ps1")
 
-# The Python-environment step, separate for the same reason.
+# The Python-environment step, separate for the same reason. It needs rt-venv.ps1's
+# main-clone lookup, so that file is loaded first.
+. (Join-Path $WorkspaceRoot "scripts\lib\rt-venv.ps1")
 . (Join-Path $WorkspaceRoot "scripts\lib\rt-python-env.ps1")
 
 # The two GLOBAL writers, separate for the same reason: verify-setup-writes.ps1
@@ -169,7 +181,7 @@ function Read-RtAnswer {
 }
 
 function Invoke-PythonEnvironment {
-    $code = Install-RtPythonEnv -RepoRoot $WorkspaceRoot -Preview:$Preview
+    $code = Install-RtPythonEnv -RepoRoot $WorkspaceRoot -Preview:$Preview -Python $Python
     Set-InstallerExit "python environment (.venv-skills)" $code
 }
 

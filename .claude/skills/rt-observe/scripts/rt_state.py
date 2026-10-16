@@ -159,7 +159,8 @@ def section_builders(repo_root=None, home=None, config=None):
             "the repository panel",
             lambda: collect_repo.collect(
                 repo_root, now,
-                config_value(config, "staleness_seconds", "green_stamp")))),
+                config_value(config, "staleness_seconds", "green_stamp"),
+                home=home))),
         ("progress", lambda now: _guarded(
             "the progression panel",
             lambda: collect_progress.collect(repo_root, now=now))),

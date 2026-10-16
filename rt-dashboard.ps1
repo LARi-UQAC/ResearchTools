@@ -21,6 +21,8 @@ param(
     [switch]$Open,
     [switch]$DryRun,
     [int]$Port = 0,
+    [string]$Python = '',
+    [switch]$AllowPathFallback,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Rest
 )

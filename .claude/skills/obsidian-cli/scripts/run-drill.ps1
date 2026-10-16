@@ -76,7 +76,9 @@ param(
     [switch]$SkipTests,
     [switch]$KeepVaultChanges,
     [switch]$Yes,
-    [double]$StepTimeout = 300
+    [double]$StepTimeout = 300,
+    [string]$Python = "",
+    [switch]$AllowPathFallback
 )
 
 Set-StrictMode -Version Latest
@@ -94,10 +96,15 @@ function Say([string]$text, [string]$colour = "Gray") { Write-Host $text -Foregr
 function Phase([string]$text) { Write-Host ""; Write-Host "=== $text ===" -ForegroundColor Cyan }
 function Die([string]$text) { Write-Host "  STOP  $text" -ForegroundColor Red; exit 1 }
 
-# The suite's interpreter when it exists, so the drill runs under the same
-# Python the tests passed on, not whatever `python` happens to mean today.
-$Python = Join-Path $RepoRoot ".venv-skills\Scripts\python.exe"
-if (-not (Test-Path $Python)) { $Python = "python" }
+# The suite's interpreter, so the drill runs under the same Python the tests passed
+# on, not whatever `python` happens to mean today. Resolved by the shared helper
+# (R18): a worktree reaches the main clone's environment with no link, and a missing
+# environment is a refusal unless -AllowPathFallback is given (R8).
+. (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1")
+$resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot -Python $Python -AllowPathFallback:$AllowPathFallback
+if ($null -eq $resolved.Python) { Die $resolved.Message }
+if ($resolved.Source -eq "path-fallback") { Say $resolved.Message "Yellow" }
+$Python = $resolved.Python
 
 # ---------------------------------------------------------------- phase 0 ---
 Phase "Phase 0 - preconditions"

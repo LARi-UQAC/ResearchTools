@@ -78,6 +78,17 @@
             "statusMessage": "Checking question clarity (R25)..."
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\worktree-link-guard.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking the worktree for links (R37)..."
+          }
+        ]
       }
     ],
     "SessionStart": [

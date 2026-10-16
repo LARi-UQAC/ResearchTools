@@ -159,29 +159,34 @@ function Restore-OriginalEnv {
 function Resolve-PythonInterpreter {
     <#
     .SYNOPSIS
-        Resolves the Python interpreter the same way run-offline-tests.ps1
-        does (R18: reuse, don't reinvent) - .venv-skills first, then .venv,
-        then PATH. Round 2, finding M3: a bare `python` from PATH is not
-        necessarily the project's own interpreter.
+        Resolves the Python interpreter through scripts\lib\rt-venv.ps1, the
+        single owner of that decision (R18: reuse, don't reinvent), the same
+        one run-offline-tests.ps1 uses. Round 2, finding M3: a bare `python`
+        from PATH is not necessarily the project's own interpreter, and since
+        2026-10-16 it is never taken silently (R8): with no .venv-skills here
+        or in the main clone the reason is printed as a warning and $null is
+        returned, which the caller reads as "no resolver available".
 
     Inputs:
         RepoRoot (string): the repository root to look for a venv under.
 
     Outputs:
         result (string | $null): the interpreter's full path, or $null if
-        none of the three candidates resolves.
+        no environment exists (the refusal text goes to the warning stream).
     #>
     param([Parameter(Mandatory)][string]$RepoRoot)
-    $candidates = @(
-        (Join-Path $RepoRoot ".venv-skills\Scripts\python.exe"),
-        (Join-Path $RepoRoot ".venv\Scripts\python.exe")
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c -PathType Leaf) { return $c }
+    $helper = Join-Path $RepoRoot "scripts\lib\rt-venv.ps1"
+    if (-not (Test-Path $helper)) {
+        Write-Warning "scripts/lib/rt-venv.ps1 is missing from $RepoRoot, so no interpreter can be resolved."
+        return $null
     }
-    $onPath = Get-Command python -ErrorAction SilentlyContinue
-    if ($null -ne $onPath) { return $onPath.Source }
-    return $null
+    . $helper
+    $resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot
+    if ($null -eq $resolved.Python) {
+        Write-Warning $resolved.Message
+        return $null
+    }
+    return $resolved.Python
 }
 
 function Resolve-SessionModelTag {

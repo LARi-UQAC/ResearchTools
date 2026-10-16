@@ -77,7 +77,11 @@ TTL, and starts nothing. With `--json` it skips the server entirely and dumps th
 which is the right form inside a script or when the only question is whether anything is `lost`.
 
 Its three refusals are read back to you rather than worked around: no interpreter found names
-every candidate tried and exits 2; a port held by something else names the holding PID and exits
+every path tried and the rebuild command and exits 2 (it looks in `.venv-skills` of the clone,
+then of the main clone from a worktree, and uses a `python` from `PATH` only with
+`-AllowPathFallback`, or `--allow-path-fallback` for the `.sh`
+launcher); the Repository panel shows the same interpreter, or the reason there is none;
+a port held by something else names the holding PID and exits
 1, because two dashboards showing two different snapshots is worse than none; and a dashboard
 already running is reported with its URL rather than started twice.
 

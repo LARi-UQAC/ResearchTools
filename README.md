@@ -123,7 +123,7 @@ graph LR
 | 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys |
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx` |
 | 04 | [Skills](docs/manual/04-skills.md) | All 25 skills, the two memories |
-| 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings, the global git privacy guard (deny list of real names + secret rules, every repo) |
+| 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings, the global git privacy guard (deny list of real names + secret rules, every repo), the optional billed pull-request review workflow |
 | 06 | [Aider nightly pipeline](docs/manual/06-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
 | 07 | [rt-observe & dashboard](docs/manual/07-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard` |
 | 08 | [Commands](docs/manual/08-commands.md) | All slash commands |

@@ -1,0 +1,249 @@
+# Automated multi-dimension review gate (Issue #65). Parallel to privacy-scan.yml, which
+# covers secrets/personal-data only and costs nothing (static betterleaks scan). This one
+# runs a real headless Claude Code session (anthropics/claude-code-action) and therefore
+# costs real Anthropic API tokens per run - decided deliberately with the operator, not a
+# default anyone should copy without re-deciding the same cost question.
+#
+# Requires a repo secret ANTHROPIC_API_KEY (check with `gh secret list`). This workflow does
+# not and cannot create it - add it yourself (Settings > Secrets and variables > Actions),
+# never by pasting the key into a session. Without it the first step says so and the rest of
+# the job is skipped: the check ends green-neutral instead of red (PR #67 review M2).
+#
+# Trust boundary (PR #67 review round 1). The key lives in ONE step, beside an LLM that reads
+# an untrusted diff, so that step is made as small as the action allows:
+#  - agent mode only. track_progress and use_sticky_comment are NOT set: measured from the
+#    action source at the pinned SHA, track_progress forces its tag mode (src/modes/detector.ts)
+#    which adds Bash git commands, edit rights and CI-log tools (src/modes/tag/index.ts).
+#  - `--tools` lists the only tools that exist in the session, `--allowedTools` and
+#    `--disallowedTools` repeat it. After the run, `review_mirror.py check-tools` reads the
+#    session's own init message from the execution file and fails the job when ANY tool outside
+#    that allowlist is there (an allowlist, so an unforeseen tool is refused too) or the list
+#    cannot be read. That is detection after the fact. Prevention is the
+#    flag plus .claude/hooks/Test/test_review_workflow.py.
+#  - no plugin and no marketplace is loaded (they cannot be pinned and would run beside the key):
+#    no `plugins:` input, and `--setting-sources user` keeps the checked-out .claude/settings.json
+#    (its enabledPlugins, marketplaces, hooks) out of the session, with `--strict-mcp-config`
+#    ignoring every MCP roster except the one the action passes itself. The checkout still holds
+#    project skills; `--tools` limits which built-in tools exist, and check-tools verifies it.
+#  - the checkout keeps no credential in git config (persist-credentials: false).
+#  - everything that writes model text to GitHub (the PR comment, the Issue copy) is done by
+#    scripts/ci/review_mirror.py in steps and jobs that hold no key and no agent, after the
+#    text is sanitised (no mention, no cross-reference, no link, no remote image, no raw HTML).
+#
+# UNVERIFIED until a real run with a throwaway low-limit key (read the log, then rotate it):
+#  - that `--tools` is honoured by the action's pinned Claude Code version and that the init
+#    message carries a `tools` list (the guard fails closed when it does not);
+#  - that the deny rules below use the path syntax Claude Code expects (treat the key as
+#    exposed to a prompt-injected file read until the first log shows them refusing);
+#  - that `security-review` and `code-review` run through the Skill tool in this headless mode;
+#  - that `pull-requests: write` alone lets the GITHUB_TOKEN create the PR comment.
+#
+# Not reviewed by design: files that `install.ps1` regenerates from canonical sources
+# (.github/agents, .github/instructions, .github/prompts, .github/copilot-instructions.md,
+# .continue, .opencode, .agents, CONVENTIONS.md, AGENTS.md) are left out of the diff, so the
+# billed input is the canonical change only. A forced re-review is an empty push (synchronize);
+# there is no workflow_dispatch because the diff step needs the pull_request event.
+name: review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Spend cap in US dollars for ONE billed agent session (claude --max-budget-usd). PROPOSED by the
+  # session that wrote this, neither measured nor yet approved by the operator (R4): nothing but
+  # the 30-minute job timeout bounded the step before. The operator sets the number that fits the
+  # account, after reading the cost of the first real runs.
+  MAX_BUDGET_USD: "5"
+
+# Floor only. Each job below sets its own permissions, so no single job holds the API key,
+# the agent AND issues: write together.
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: review
+    # Same-repo branches only. A fork PR gets no secrets and a read-only token, so the
+    # review step would fail red; skipping it keeps external contributors' checks clean.
+    # Dependabot runs get no repository secrets either, so they are skipped the same way.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The agent job: the API key and pull-requests: write (for the PR comment), but NOT
+    # issues: write. Its token cannot touch Issues even if the action is subverted.
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      reviewed: ${{ steps.post.outcome == 'success' && 'true' || 'false' }}
+      pr_comment_id: ${{ steps.post.outputs.comment_id }}
+    steps:
+      - name: Check the API key is configured
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=review skipped::The repository secret ANTHROPIC_API_KEY is not set. No review ran and nothing was billed."
+          fi
+
+      - name: Check out the PR branch and its merge base
+        if: steps.key.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute the diff under review
+        if: steps.key.outputs.present == 'true'
+        id: diff
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          # Cap on the diff handed to the billed review. PROPOSED by the session that wrote this,
+          # neither measured nor yet approved by the operator (R4): revisit after the first real
+          # runs. A larger diff is cut on a line boundary and says so in the file.
+          MAX_DIFF_BYTES: "300000"
+        # BASE_REF is PR-controlled (whatever branch the PR targets) and routed through env
+        # rather than inlined. Written to runner.temp, not the checked-out tree. The checkout
+        # above fetched all history, so origin/$BASE_REF exists and no network is needed (the
+        # credential was dropped on purpose).
+        run: |
+          git diff "origin/$BASE_REF"...HEAD -- . \
+            ':(exclude).github/agents' ':(exclude).github/instructions' ':(exclude).github/prompts' \
+            ':(exclude).github/copilot-instructions.md' ':(exclude).continue' ':(exclude).opencode' \
+            ':(exclude).agents' ':(exclude)CONVENTIONS.md' ':(exclude)AGENTS.md' > "$RUNNER_TEMP/pr.full.diff"
+          # Nothing to review (only regenerated files changed): `empty=true` skips the billed session
+          # and every step after it, so no money is spent to say "no change".
+          echo "empty=false" >> "$GITHUB_OUTPUT"
+          if [ ! -s "$RUNNER_TEMP/pr.full.diff" ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=review skipped::Only regenerated files changed, so there is nothing to review. No session ran and nothing was billed."
+            printf '[NO REVIEWABLE CHANGE: only regenerated files changed]\n' > "$RUNNER_TEMP/pr.diff"
+          elif [ "$(wc -c < "$RUNNER_TEMP/pr.full.diff")" -gt "$MAX_DIFF_BYTES" ]; then
+            # iconv -c drops a multibyte character cut in half. The last, partial line is dropped
+            # only when the cut holds a newline, so one oversized line is kept rather than erased.
+            # glibc iconv -c exits 1 when it drops a byte, so its status is ignored (|| true).
+            head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/pr.full.diff" | iconv -c -f UTF-8 -t UTF-8 > "$RUNNER_TEMP/pr.diff" || true
+            if [ "$(tail -c1 "$RUNNER_TEMP/pr.diff" | wc -l)" -eq 0 ] && [ "$(wc -l < "$RUNNER_TEMP/pr.diff")" -gt 0 ]; then
+              sed -i '$d' "$RUNNER_TEMP/pr.diff"
+            fi
+            printf '\n[DIFF TRUNCATED at %s bytes: review the part above and say so]\n' "$MAX_DIFF_BYTES" >> "$RUNNER_TEMP/pr.diff"
+          else
+            mv "$RUNNER_TEMP/pr.full.diff" "$RUNNER_TEMP/pr.diff"
+          fi
+          echo "diff_path=$RUNNER_TEMP/pr.diff" >> "$GITHUB_OUTPUT"
+
+      - name: Run security-review and code-review
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
+        id: review
+        uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Explicit token: without it the action tries an OIDC exchange for a GitHub App
+          # token. The agent never posts: the key-less step below does.
+          github_token: ${{ github.token }}
+          # Read, Grep and Glob can still open /proc/self/environ, where this process holds the
+          # key, so those paths are denied for all three tools. Syntax UNVERIFIED (see header).
+          claude_args: >-
+            --tools "Skill,Read,Grep,Glob"
+            --allowedTools "Skill,Read,Grep,Glob"
+            --max-budget-usd ${{ env.MAX_BUDGET_USD }}
+            --setting-sources user
+            --strict-mcp-config
+            --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//run/**),Grep(//proc/**),Grep(//sys/**),Grep(//run/**),Glob(//proc/**),Glob(//sys/**),Glob(//run/**)"
+          prompt: |
+            You are running inside ResearchTools' automated PR review gate. The diff under
+            review is at ${{ steps.diff.outputs.diff_path }} - read it with the Read tool
+            before anything else. Do not fix anything - report only; you have no Edit,
+            Write, Bash, or Agent/Task tool in this run, so run every skill's analysis
+            yourself, inline, rather than spawning sub-tasks even if a skill's own
+            instructions suggest doing so.
+
+            1. Run these two Skills, in this order, scoped to that diff:
+               security-review, then code-review (pass effort: high to code-review).
+            2. Once both have reported, deliberate across their combined findings
+               yourself: drop duplicates where two skills flagged the same underlying
+               defect, and rank what remains by real severity and actual exploitability or
+               maintenance cost, not by which skill found it.
+            3. Reply with ONE consolidated markdown list as your final message, and nothing
+               else. Its first line is exactly "## Automated multi-dimension review", and
+               its second line states which of the two skills you actually ran and which
+               you could not run, so a missing dimension is visible. If the diff file ends
+               with a DIFF TRUNCATED line, the third line must say the review is partial.
+               If the diff file holds only a NO REVIEWABLE CHANGE line, say so on the second
+               line and list no finding.
+               Then group the items Critical / High / Medium / Low. Each item one line,
+               tagged with its source skill in brackets, e.g.
+               "- [security-review] SSRF in form-service's PDF fetch: ..."
+               Write no @mention, no #number reference, no link and no image: they are
+               removed before posting. The reply is posted by a later step; you do not post
+               it yourself.
+
+      - name: Verify the session had no forbidden tool
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
+        env:
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          python3 scripts/ci/review_mirror.py check-tools --execution-file "$EXECUTION_FILE"
+
+      - name: Extract the reply
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
+        env:
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          python3 scripts/ci/review_mirror.py extract --execution-file "$EXECUTION_FILE" --out "$RUNNER_TEMP/review.md"
+
+      - name: Post or update the PR comment
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
+        id: post
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # No key and no agent in this step: the model text was already extracted to a file.
+        run: |
+          python3 scripts/ci/review_mirror.py post-pr --repo "$REPO" --pr "$PR_NUMBER" --sha "$HEAD_SHA" --body-file "$RUNNER_TEMP/review.md" --output-file "$GITHUB_OUTPUT"
+
+  mirror:
+    name: mirror
+    needs: review
+    # A skipped review (no key, fork, Dependabot) leaves reviewed false, so this job is skipped.
+    if: needs.review.outputs.reviewed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The Issue job: issues: write, and NO secret and no agent. It only reads the comment the
+    # review job posted and copies it.
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    steps:
+      - name: Fetch the mirror script only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci
+          persist-credentials: false
+
+      - name: Mirror the review onto the linked Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_COMMENT_ID: ${{ needs.review.outputs.pr_comment_id }}
+        # PR_BODY and PR_AUTHOR are untrusted PR content: routed through env and read by the
+        # script, never inlined as ${{ }} into a shell. The script updates ONE marked Issue
+        # comment in place, pings the author only when it creates it, and fails loudly when the
+        # PR comment it should copy is missing or not written by the bot.
+        run: |
+          python3 scripts/ci/review_mirror.py mirror-issue --repo "$REPO" --pr "$PR_NUMBER" --author "$PR_AUTHOR" --pr-comment-id "$PR_COMMENT_ID"

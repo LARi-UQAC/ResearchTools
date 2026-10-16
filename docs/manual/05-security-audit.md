@@ -127,6 +127,20 @@ What protects the key, since the session reads an untrusted diff:
 - `tech-debt` and `ai-firstify` are not run in CI: the action cannot pin a plugin source, so third
   party code could change unreviewed beside the key. They remain available in a local session.
 
+**Using AugureAI instead of Anthropic (planned rework, about one month out, not done yet).** The
+workflow is written for Anthropic only. Switching to AugureAI would need these changes, none made:
+
+- A repository secret `AUGUREAI_API_KEY`, read in the key check and in the action's key input
+  instead of `ANTHROPIC_API_KEY`.
+- The variable `ANTHROPIC_BASE_URL` set to `https://api.augureai.ca/v1` in the agent step. That is
+  the endpoint the local `claude-augure` function already uses for a Claude Code session.
+- The header comment, the CI section of `testing.md`, the playbook and `test_review_workflow.py`
+  updated to the new secret name, since the test pins where the secret may be named.
+
+Three points are unverified: whether the action passes `ANTHROPIC_BASE_URL` through to Claude
+Code, whether AugureAI honours the tool restriction and the spend cap, and whether the execution
+file keeps the same shape for the tool-list guard. The first throwaway-key run would answer them.
+
 Full detail, with every finding and decision of the review that shaped it:
 [`.claude/rules/testing.md`](../../.claude/rules/testing.md)'s "CI" section and
 [`docs/github-repo-setup-playbook.md`](../github-repo-setup-playbook.md) Phase 6d, which tells you

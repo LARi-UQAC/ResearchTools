@@ -31,6 +31,10 @@
     "value": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
     "provenance": "specified: GitHub owner/name characters"
   },
+  "secret_patterns": {
+    "value": ["sk-ant-[A-Za-z0-9_-]{10,}", "gh[pousr]_[A-Za-z0-9]{20,}", "github_pat_[A-Za-z0-9_]{20,}"],
+    "provenance": "specified: public token formats of the Anthropic API key and of GitHub tokens, the two secrets this workflow handles; chosen by the operator 2026-10-16 as defence in depth, since the reply is posted publicly"
+  },
   "gh_timeout_seconds": {
     "value": 60,
     "provenance": "chosen by the operator 2026-10-16, not measured: bound on one gh call (R10)"

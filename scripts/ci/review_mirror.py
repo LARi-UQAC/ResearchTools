@@ -28,6 +28,7 @@ CONFIG_PATH = Path(__file__).resolve().with_name("review-mirror.json")
 REQUIRED_KEYS = (
     "review_marker", "bot_login", "pr_marker_template", "issue_marker_template", "forbidden_tools",
     "forbidden_tool_prefixes", "author_pattern", "repo_pattern", "gh_timeout_seconds", "gh_retries",
+    "secret_patterns",
 )
 EXIT_OK, EXIT_FAIL, EXIT_REFUSED = 0, 1, 2
 
@@ -100,32 +101,55 @@ _ISSUE_REF = re.compile(r"(?<![`\w/&])#([0-9]+)\b")
 _MENTION = re.compile(r"(?<![`\w@/])@([A-Za-z0-9_][A-Za-z0-9_/-]*)")
 _URL = re.compile(r"(?<![`\w/(])(https?://[^\s)>\]`]+)")
 _HTML = re.compile(r"<(?=[!/A-Za-z?])")
+_BRACKET = re.compile(r"(?<!\\)([\[\]])")
+# A BALANCED code span (same run of backticks opens and closes it). Only these are inert in
+# GFM, so only these are left alone. A backtick that never closes is literal text.
+_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.S)
 
 
-def sanitize(text):
-    """
-    Purpose:
-        Make model-written markdown inert: no notification, no cross-reference, no remote
-        image, no raw HTML.
-
-    Details:
-        Mentions, #N and owner/repo#N references and bare URLs go into code spans, links and
-        images become their text plus the target in a code span, and a '<' that starts a tag or
-        a comment is escaped. Applying it twice changes nothing more.
-
-    Inputs:
-        text (str): the model's reply.
-
-    Outputs:
-        clean (str): the neutralised text.
-    """
-    out = _HTML.sub("&lt;", text)
+def _neutralise(segment):
+    """Purpose: make one stretch of text, outside any balanced code span, inert. Inputs:
+    segment (str). Outputs: str."""
+    out = segment.replace("`", "&#96;")
+    out = _HTML.sub("&lt;", out)
     out = _LINK.sub(lambda m: "%s (`%s`)" % (m.group(2) or "link", m.group(3)) if m.group(3) else m.group(2), out)
     out = _URL.sub(lambda m: "`%s`" % m.group(1), out)
     out = _REPO_REF.sub(lambda m: "`%s`" % m.group(1), out)
     out = _ISSUE_REF.sub(lambda m: "`#%s`" % m.group(1), out)
     out = _MENTION.sub(lambda m: "`@%s`" % m.group(1), out)
-    return out
+    return _BRACKET.sub(r"\\\1", out)
+
+
+def sanitize(text, secret_patterns=()):
+    """
+    Purpose:
+        Make model-written markdown inert: no notification, no cross-reference, no remote
+        image, no raw HTML, no secret-shaped token.
+
+    Details:
+        Balanced code spans are kept as written. In everything else a lone backtick becomes
+        &#96; (it would otherwise shield the text after it, which GFM still renders live),
+        mentions, #N and owner/repo#N references and bare URLs go into code spans, links and
+        images become their text plus the target in a code span, a '<' that starts a tag or a
+        comment is escaped, and every square bracket is escaped so a reference-style link or
+        image cannot form. Applying it twice changes nothing more.
+
+    Inputs:
+        text (str): the model's reply.
+        secret_patterns (iterable[str]): regexes whose matches are replaced by (redacted).
+
+    Outputs:
+        clean (str): the neutralised text.
+    """
+    for pattern in secret_patterns:
+        text = re.sub(pattern, "(redacted)", text)
+    pieces, last = [], 0
+    for span in _SPAN.finditer(text):
+        pieces.append(_neutralise(text[last:span.start()]))
+        pieces.append(span.group(0))
+        last = span.end()
+    pieces.append(_neutralise(text[last:]))
+    return "".join(pieces)
 
 
 def select_comment(comments, marker, login):
@@ -225,7 +249,7 @@ def build_pr_body(review, sha, pr, cfg):
         body (str): the comment text.
     """
     marker = val(cfg, "pr_marker_template").format(pr=pr)
-    return "%s\nReviewed commit: `%s`\n\n%s\n" % (marker, sha, _quote(sanitize(review)))
+    return "%s\nReviewed commit: `%s`\n\n%s\n" % (marker, sha, _quote(sanitize(review, val(cfg, "secret_patterns"))))
 
 
 def build_issue_body(quoted_review, author, pr, first, cfg=None):
@@ -415,7 +439,8 @@ def _cmd_mirror(args, cfg, runner, env):
             raise ReviewError("the review comment %s is missing or not written by %s" % (args.pr_comment_id, val(cfg, "bot_login")))
         # The PR body is already sanitised and quoted by build_pr_body; drop only its marker line
         # and run sanitize again, which is idempotent, in case the comment was edited by hand.
-        quoted = sanitize("\n".join(ln for ln in source["body"].splitlines() if pr_marker not in ln).strip())
+        quoted = sanitize("\n".join(ln for ln in source["body"].splitlines() if pr_marker not in ln).strip(),
+                          val(cfg, "secret_patterns"))
         issue_marker = val(cfg, "issue_marker_template").format(pr=pr)
         existing = select_comment(_list_comments(runner, args.repo, issue), issue_marker, val(cfg, "bot_login"))
         body = build_issue_body(quoted, args.author, pr, existing is None, cfg)

@@ -226,6 +226,45 @@ class TestPureLogic(unittest.TestCase):
         self.assertIn("click", out)
         self.assertIn("img", out)
 
+    def test_an_unmatched_backtick_does_not_shield_a_mention_or_reference(self):
+        # Security review round 1: an opening backtick that is never closed is literal text in
+        # GFM, so the old "previous character is a backtick" lookbehind left what followed live.
+        s = self.mod.sanitize
+        span = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.S)
+        for raw in ("`@victim look", "`#12 x", "`owner/repo#5 y", "a ` b @victim", "``@victim"):
+            out = s(raw)
+            live = span.sub("", out)  # what GitHub still renders as live text
+            self.assertNotIn("@victim", live, raw)
+            self.assertNotRegex(live, r"(?<![\w/])#12", raw)
+            self.assertNotIn("owner/repo#5", live, raw)
+            self.assertEqual(s(s(raw)), s(raw), "not idempotent: " + raw)
+
+    def test_balanced_code_spans_are_left_exactly_as_written(self):
+        s = self.mod.sanitize
+        text = "call `foo()` and `@name` and ``a ` b`` then #7"
+        out = s(text)
+        self.assertIn("`foo()`", out)
+        self.assertIn("`@name`", out)
+        self.assertIn("``a ` b``", out)
+        self.assertNotRegex(out, r"(?<![`\w/])#7")
+
+    def test_reference_style_links_and_images_are_neutralised(self):
+        s = self.mod.sanitize
+        out = s("![a][r] and [text][r]\n\n[r]: //evil.example/x.png\n[tag] kept")
+        self.assertNotRegex(out, r"(?<!\\)\[")
+        self.assertIn("tag", out)
+        self.assertEqual(s(out), out)
+
+    def test_secret_shaped_text_is_redacted_before_posting(self):
+        patterns = self.mod.val(self.cfg, "secret_patterns")
+        fake = "sk-ant-api03-" + "A1b2C3d4E5f6G7h8I9j0"
+        pr = self.mod.build_pr_body("## Automated multi-dimension review\nkey " + fake + " leaked", "a" * 40, 9, self.cfg)
+        self.assertNotIn(fake, pr)
+        self.assertIn("(redacted)", pr)
+        self.assertTrue(patterns)
+        clean = self.mod.build_pr_body("## Automated multi-dimension review\nplain text", "a" * 40, 9, self.cfg)
+        self.assertNotIn("(redacted)", clean)
+
     def test_sanitize_is_idempotent_and_keeps_plain_text(self):
         s = self.mod.sanitize
         text = "A plain sentence, 3 < 4, code `x` and a list.\n- item"

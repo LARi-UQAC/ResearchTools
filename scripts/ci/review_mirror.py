@@ -65,8 +65,8 @@ def load_config(path):
     except (OSError, ValueError) as exc:
         raise ConfigError("cannot read %s: %s" % (path, exc))
     for key in REQUIRED_KEYS:
-        if not isinstance(cfg, dict) or key not in cfg or "value" not in cfg[key]:
-            raise ConfigError("key '%s' missing from %s" % (key, path))
+        if not isinstance(cfg, dict) or not isinstance(cfg.get(key), dict) or "value" not in cfg[key]:
+            raise ConfigError("key '%s' missing from %s, or not a {value, provenance} object" % (key, path))
     return cfg
 
 
@@ -153,7 +153,6 @@ _TOKEN = re.compile("|".join((
     r"(?P<mention>@[A-Za-z0-9_][A-Za-z0-9_/-]*)",
     r"(?P<bracket>[\[\]])",
 )))
-_HTML = re.compile(r"<(?=[!/A-Za-z?])")
 # A BALANCED code span: the same run of backticks opens and closes it, the opener is neither
 # escaped nor the tail of a longer run, and it stays on ONE line. Only these are inert in GFM, so
 # only these are left alone. A span that would cross a line is treated as no span at all (stricter
@@ -410,7 +409,7 @@ def _fit(text, cap):
     """
     if len(text) <= cap:
         return text
-    notice = "\n\n> [review cut at %d characters to fit a GitHub comment]\n" % cap
+    notice = "\n\n> (review cut at %d characters to fit a GitHub comment)\n" % cap
     keep = text[:cap - len(notice)]
     return keep[:max(keep.rfind("\n"), 0)].rstrip() + notice
 
@@ -509,12 +508,31 @@ def _gh_json(runner, args, stdin=None):
         ReviewError: gh failed, or answered text that is not JSON.
     """
     rc, out = runner(args, stdin)
+    return _parse_gh(rc, out, " ".join(args[:3]))
+
+
+def _parse_gh(rc, out, what):
+    """
+    Purpose:
+        Turn one gh answer into data, or into a named failure.
+
+    Inputs:
+        rc (int): gh's return code.
+        out (str): its output (stdout on success, stderr on failure).
+        what (str): a short label for the error message.
+
+    Outputs:
+        data (any): the parsed JSON, {} for an empty answer.
+
+    Raises:
+        ReviewError: a non-zero return code, or an answer that is not JSON.
+    """
     if rc != 0:
-        raise ReviewError("gh %s failed: %s" % (" ".join(args[:3]), (out or "").strip()[:200]))
+        raise ReviewError("gh %s failed: %s" % (what, (out or "").strip()[:200]))
     try:
-        return json.loads(out) if out.strip() else {}
+        return json.loads(out) if (out or "").strip() else {}
     except ValueError:
-        raise ReviewError("gh returned text that is not JSON")
+        raise ReviewError("gh %s returned text that is not JSON" % what)
 
 
 def _list_comments(runner, repo, number):
@@ -727,11 +745,11 @@ def _cmd_mirror(args, cfg, runner, env):
     pr = int(args.pr)
     try:
         rc, out = runner(["api", "repos/%s/issues/%s" % (args.repo, issue)])
-        if rc != 0 and ("404" in (out or "") or "Not Found" in (out or "")):
+        if rc != 0 and re.search(r"HTTP 404|Not Found", out or ""):
             print("[CI] #%s does not exist; Issue mirror skipped." % issue)
             _report(ok=True, skipped="issue-not-found")
             return EXIT_OK
-        target = _gh_json(runner, ["api", "repos/%s/issues/%s" % (args.repo, issue)]) if rc != 0 else json.loads(out or "{}")
+        target = _parse_gh(rc, out, "repos/%s/issues/%s" % (args.repo, issue))
         if target.get("pull_request") is not None or target.get("state") != "open":
             print("[CI] #%s is not an open Issue; Issue mirror skipped." % issue)
             _report(ok=True, skipped="not-an-open-issue")

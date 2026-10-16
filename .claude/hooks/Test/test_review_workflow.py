@@ -165,6 +165,12 @@ class TestWorkflowStatic(unittest.TestCase):
         for rel in called:
             self.assertTrue((REPO / rel).is_file(), rel)
 
+    def test_the_agent_step_has_a_spend_cap_read_from_one_env_value(self):
+        # Code review round 4: only the 30-minute job timeout bounded the billed step.
+        args = claude_args(self.text)
+        self.assertIn("--max-budget-usd ${{ env.MAX_BUDGET_USD }}", args)
+        self.assertRegex(strip_comments(self.text), r'(?m)^env:\n  MAX_BUDGET_USD: "[0-9.]+"')
+
     def test_truncation_keeps_a_single_oversized_line_and_drops_partial_utf8(self):
         # Code review round 1: `head -c N | sed '$d'` deleted the only line of a one-line diff and
         # could hand the model half a multibyte character. Static check of the guard, since a shell
@@ -210,6 +216,24 @@ class TestConfig(unittest.TestCase):
         mod = load_module()
         with self.assertRaises(mod.ConfigError):
             mod.load_config(Path("no-such-config.json"))
+
+    def test_an_entry_without_the_value_wrapper_is_a_named_error(self):
+        # Code review round 4: `"gh_retries": 2` raised TypeError (and a string entry passed the
+        # `in` test by accident) instead of the named ConfigError R3 asks for.
+        mod = load_module()
+        good = json.loads(CONFIG.read_text(encoding="utf-8"))
+        for bad in (2, "valued", None, ["value"], {"provenance": "x"}):
+            cfg = dict(good, gh_retries=bad)
+            with tempfile.TemporaryDirectory() as d:
+                p = Path(d) / "c.json"
+                p.write_text(json.dumps(cfg), encoding="utf-8")
+                with self.assertRaises(mod.ConfigError) as ctx:
+                    mod.load_config(p)
+                self.assertIn("gh_retries", str(ctx.exception))
+
+    def test_no_unused_pattern_is_left_in_the_sanitiser(self):
+        # Code review round 4: a dead lookahead regex invites a "fix" that brings the bypass back.
+        self.assertNotIn("_HTML", SCRIPT.read_text(encoding="utf-8"))
 
 
 class TestPureLogic(unittest.TestCase):
@@ -643,6 +667,33 @@ class TestCommands(unittest.TestCase):
             listings = [c for c in gh.calls if "--paginate" in c[0] and "issues/12/comments" in " ".join(c[0])]
             self.assertEqual(len(listings), 1)
         self.assertFalse(any("@octo" in (c[1] or "") for c in second.writes()))
+
+    def test_the_target_issue_is_fetched_once_and_a_bad_answer_is_a_named_failure(self):
+        # Code review round 4: the lookup was issued twice on failure, and a 200 with a body that
+        # is not JSON raised an uncaught ValueError. A rate-limit message holding "404" is not a 404.
+        ok = FakeGh([("api repos/o/r/issues/12", '{"state": "closed"}')])
+        self.assertEqual(self.mod.main(["mirror-issue", "--repo", "o/r", "--pr", "9", "--author", "octo",
+                                        "--pr-comment-id", "77"], runner=ok, env={"PR_BODY": "Fixes #12"}), 0)
+        self.assertEqual(len([c for c in ok.calls if c[0][1:2] == ["repos/o/r/issues/12"]]), 1)
+        html_body = FakeGh([("api repos/o/r/issues/12", "<html>bad gateway</html>")])
+        self.assertEqual(self.mod.main(["mirror-issue", "--repo", "o/r", "--pr", "9", "--author", "octo",
+                                        "--pr-comment-id", "77"], runner=html_body, env={"PR_BODY": "Fixes #12"}), 1)
+        limited = FakeGh([("api repos/o/r/issues/12", (1, "API rate limit exceeded for user 4040404"))])
+        self.assertEqual(self.mod.main(["mirror-issue", "--repo", "o/r", "--pr", "9", "--author", "octo",
+                                        "--pr-comment-id", "77"], runner=limited, env={"PR_BODY": "Fixes #12"}), 1)
+
+    def test_the_cut_notice_holds_no_square_bracket(self):
+        # Code review round 4: the mirror's second pass turned the notice's brackets into entities,
+        # so the Issue copy differed from the PR comment.
+        import copy
+        small = copy.deepcopy(self.cfg)
+        small["comment_max_chars"]["value"] = 300
+        body = self.mod.build_pr_body("## Automated multi-dimension review\n" + "\n".join("- item %d" % i for i in range(80)),
+                                      "a" * 40, 9, small)
+        self.assertIn("cut at", body)
+        self.assertNotIn("[", body.split("cut at")[0].splitlines()[-1] if "[" in body.split("cut at")[0].splitlines()[-1] else "")
+        notice = [ln for ln in body.splitlines() if "cut at" in ln][0]
+        self.assertNotRegex(notice, r"[\[\]]")
 
     def test_a_missing_target_issue_is_a_clean_skip_but_other_errors_fail(self):
         # Code review round 3: a mistyped `Fixes #999` must not turn the check red after the paid

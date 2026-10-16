@@ -49,6 +49,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  # Spend cap in US dollars for ONE billed agent session (claude --max-budget-usd). Chosen by the
+  # author, not measured: nothing but the 30-minute job timeout bounded the step before. Revisit
+  # after the first real runs, and let the operator set the number that fits the account.
+  MAX_BUDGET_USD: "5"
+
 # Floor only. Each job below sets its own permissions, so no single job holds the API key,
 # the agent AND issues: write together.
 permissions:
@@ -139,6 +145,7 @@ jobs:
           claude_args: >-
             --tools "Skill,Read,Grep,Glob"
             --allowedTools "Skill,Read,Grep,Glob"
+            --max-budget-usd ${{ env.MAX_BUDGET_USD }}
             --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//run/**),Grep(//proc/**),Grep(//sys/**),Grep(//run/**),Glob(//proc/**),Glob(//sys/**),Glob(//run/**)"
           prompt: |
             You are running inside ResearchTools' automated PR review gate. The diff under

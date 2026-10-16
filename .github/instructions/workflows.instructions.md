@@ -500,7 +500,9 @@ the whole repo owns rather than one skill has its own established homes - `.clau
 for hooks, `profiles/` for domain profiles, `install.ps1` and `setup.ps1` at the root, and the
 repo-root `scripts/` tree's own named subfolders (`scripts/audit/`, `scripts/test/`,
 `scripts/lib/`, `scripts/local/` for personal Claude-Code routing utilities such as
-`claude-switch.ps1`) - and belongs there instead; what `scripts/` is not a home for is code
+`claude-switch.ps1`, and `scripts/ci/` for helpers a GitHub Actions workflow calls, today
+`review_mirror.py` and its `review-mirror.json`, owned by `review.yml`, with its offline test in
+`.claude/hooks/Test/test_review_workflow.py`) - and belongs there instead; what `scripts/` is not a home for is code
 that exactly one SKILL drives, which belongs beside that skill instead.
 
 The test of ownership is who calls it. Measured 2026-08-28: a PowerShell script restarting a

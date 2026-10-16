@@ -9,6 +9,45 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-16
+
+### Added
+- `.github/workflows/review.yml`: on every same-repository pull request, a headless
+  `claude-code-action` runs `security-review` and `code-review` at high effort and posts one
+  Critical/High/Medium/Low list as a PR comment. A second job copies it to the linked Issue
+  with no Anthropic key. It needs a repository secret `ANTHROPIC_API_KEY`, is billed per run,
+  and is not a required check (#67).
+- `worktree-link-guard.py`: a PreToolUse hook that refuses `git worktree remove` on a worktree
+  holding a junction or symbolic link, because the removal follows the link and empties its
+  target. It follows `cd`, `pushd`, subshells and `~`, and fails silent when its config is
+  missing. It only protects a machine whose `settings.json` declares it (#77).
+- Rule R37: never link a dependency folder (`.venv-skills`, `node_modules`) into a worktree.
+  Reproduced: a plain `git worktree remove`, with no `--force`, empties the target of a
+  junction that git ignores (#77).
+- `setup.ps1 -InstallPython -Python <path>`, and `scripts/lib/rt-venv.ps1` as the single
+  interpreter resolver (#77).
+
+### Changed
+- Every launcher (`run-offline-tests`, `rt-dashboard` `.ps1`/`.sh`, `run-drill`,
+  `vault-daemon-autostart`, `tune-new-model`, `claude-switch`, `check-deployment`) finds the
+  main clone's `.venv-skills` from a worktree through git, so a worktree needs no link (#77).
+- A missing, empty or broken `.venv-skills` is now a refusal that names every path looked at
+  and the rebuild command, instead of a silent fall back to the first `python` on `PATH`.
+  `-AllowPathFallback` (`--allow-path-fallback` for the shell launcher) accepts `PATH`
+  knowingly. A root `.venv` is no longer used. The green stamp records which interpreter
+  produced it and is withheld when an interpreter outside the repository's own environment
+  left suites NOT RUN (#77).
+- `setup.ps1 -InstallPython` chooses its base interpreter instead of taking the first on
+  `PATH`: it refuses another account's Python or one whose `python -m venv` fails, builds in
+  the main clone, reuses an existing environment, and installs the `scopus` and
+  `extract-statistic` dependencies (without `docling`) from a data list, then runs
+  `pip-audit` (#77).
+- The `rt-dashboard` Repository panel shows the suite interpreter, or why there is none (#77).
+
+### Fixed
+- `.venv-skills` of the main clone was emptied on 2026-10-06 and the loss stayed unnoticed
+  for a week. The cause is reproduced and closed by the changes above (#76, #77).
+
 ## [0.2.0] - 2026-10-16
 
 ### Added

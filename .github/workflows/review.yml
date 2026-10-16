@@ -119,7 +119,12 @@ jobs:
             ':(exclude).github/agents' ':(exclude).github/instructions' ':(exclude).github/prompts' \
             ':(exclude).github/copilot-instructions.md' ':(exclude).continue' ':(exclude).opencode' \
             ':(exclude).agents' ':(exclude)CONVENTIONS.md' ':(exclude)AGENTS.md' > "$RUNNER_TEMP/pr.full.diff"
+          # Nothing to review (only regenerated files changed): `empty=true` skips the billed session
+          # and every step after it, so no money is spent to say "no change".
+          echo "empty=false" >> "$GITHUB_OUTPUT"
           if [ ! -s "$RUNNER_TEMP/pr.full.diff" ]; then
+            echo "empty=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=review skipped::Only regenerated files changed, so there is nothing to review. No session ran and nothing was billed."
             printf '[NO REVIEWABLE CHANGE: only regenerated files changed]\n' > "$RUNNER_TEMP/pr.diff"
           elif [ "$(wc -c < "$RUNNER_TEMP/pr.full.diff")" -gt "$MAX_DIFF_BYTES" ]; then
             # iconv -c drops a multibyte character cut in half. The last, partial line is dropped
@@ -136,7 +141,7 @@ jobs:
           echo "diff_path=$RUNNER_TEMP/pr.diff" >> "$GITHUB_OUTPUT"
 
       - name: Run security-review and code-review
-        if: steps.key.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
         id: review
         uses: anthropics/claude-code-action@2dca132ff0e0c4094ce6048b422c6915a071210b # v1.0.247
         with:
@@ -182,21 +187,21 @@ jobs:
                it yourself.
 
       - name: Verify the session had no forbidden tool
-        if: steps.key.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
         env:
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
           python3 scripts/ci/review_mirror.py check-tools --execution-file "$EXECUTION_FILE"
 
       - name: Extract the reply
-        if: steps.key.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
         env:
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
           python3 scripts/ci/review_mirror.py extract --execution-file "$EXECUTION_FILE" --out "$RUNNER_TEMP/review.md"
 
       - name: Post or update the PR comment
-        if: steps.key.outputs.present == 'true'
+        if: steps.key.outputs.present == 'true' && steps.diff.outputs.empty != 'true'
         id: post
         env:
           GH_TOKEN: ${{ github.token }}

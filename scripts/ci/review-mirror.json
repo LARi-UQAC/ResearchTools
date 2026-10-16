@@ -35,6 +35,22 @@
     "value": 60000,
     "provenance": "specified: GitHub rejects an issue or pull request comment above 65536 characters; 60000 is a margin chosen by the operator 2026-10-16, not measured, so the sanitiser's expansion and the header cannot tip a long review over the limit"
   },
+  "pr_pattern": {
+    "value": "[0-9]{1,9}",
+    "provenance": "specified: a pull request number is a positive integer; nine digits is a margin chosen by the operator 2026-10-16, far above any real repository, applied with a full match"
+  },
+  "comment_id_pattern": {
+    "value": "[0-9]{1,15}",
+    "provenance": "specified: GitHub comment ids are positive integers that keep growing (ten digits in 2026); fifteen is a margin chosen by the operator 2026-10-16, applied with a full match"
+  },
+  "sha_pattern": {
+    "value": "[0-9a-f]{40}",
+    "provenance": "specified: a full git commit SHA-1 is forty lowercase hexadecimal characters, applied with a full match"
+  },
+  "gh_retry_delay_seconds": {
+    "value": 2,
+    "provenance": "chosen by the operator 2026-10-16, not measured: pause between two attempts of a read that failed with a transient error (R10)"
+  },
   "gh_timeout_seconds": {
     "value": 60,
     "provenance": "chosen by the operator 2026-10-16, not measured: bound on one gh call (R10)"

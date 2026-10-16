@@ -23,14 +23,19 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).resolve().with_name("review-mirror.json")
 REQUIRED_KEYS = (
     "review_marker", "bot_login", "pr_marker_template", "issue_marker_template", "allowed_tools",
     "author_pattern", "repo_pattern", "gh_timeout_seconds", "gh_retries", "secret_patterns",
-    "comment_max_chars",
+    "comment_max_chars", "pr_pattern", "comment_id_pattern", "sha_pattern", "gh_retry_delay_seconds",
 )
+# A gh failure worth another attempt: a server error, a timeout, or a dropped connection. A 404, 403
+# or 422 is permanent and is never retried (code review round 6).
+_TRANSIENT = re.compile(r"HTTP 5[0-9]{2}|timed? ?out|connection (?:reset|refused|aborted)|dial tcp|"
+                        r"temporary failure|unexpected EOF|TLS handshake", re.I)
 EXIT_OK, EXIT_FAIL, EXIT_REFUSED = 0, 1, 2
 
 
@@ -121,21 +126,22 @@ def find_issue_number(pr_body):
     """
     fenced = commented = False
     for line in (pr_body or "").splitlines():
+        if commented:
+            if "-->" not in line:
+                continue
+            line, commented = line.split("-->", 1)[1], False
+        line = re.sub(r"<!--.*?-->", "", line)
+        if "<!--" in line:
+            line, commented = line.split("<!--", 1)[0], True
         stripped = line.strip()
         if line.startswith(("    ", "\t")):      # an indented code block is an example, not a link
-            continue
-        if commented:
-            commented = "-->" not in line
             continue
         if stripped.startswith(("```", "~~~")):
             fenced = not fenced
             continue
         if fenced:
             continue
-        if stripped.startswith("<!--"):
-            commented = "-->" not in line
-            continue
-        m = re.match(r"^\s*(?:fixes|closes)\s+#([0-9]+)\b", line, flags=re.I)
+        m = re.match(r"^\s{0,3}(?:[-*+]\s+)?(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+#([0-9]+)\b", line, flags=re.I)
         if m:
             return int(m.group(1))
     return None
@@ -147,7 +153,7 @@ def find_issue_number(pr_body):
 _TOKEN = re.compile("|".join((
     r"(?P<link>(?P<bang>!?)\[(?P<ltext>[^\]\n]*)\]\((?P<ltarget>[^)\s]*)[^)\n]*\))",
     r"(?P<url>(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.|mailto:|xmpp:)[^\s)>\]\x00\x01]+)",
-    r"(?P<gh>GH-[0-9]+)",
+    r"(?P<gh>(?i:GH)-[0-9]+)",
     r"(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)",
     r"(?P<issue>#[0-9]+)",
     r"(?P<mention>@[A-Za-z0-9_][A-Za-z0-9_/-]*)",
@@ -169,6 +175,12 @@ def _replace_token(match):
     Inputs:
         match (re.Match): a match of _TOKEN.
 
+    Details:
+        Inside a span a '|' becomes a broken bar and a '$' a fullwidth dollar sign, because table
+        parsing and math extraction both run BEFORE code spans and would otherwise reach through
+        the span. A link is emitted with a leading space so that an '@', '#' or 'GH-' just before
+        it can never be glued to the link text, which was a live mention (security round 6).
+
     Outputs:
         text (str): a code span around the token, the link text plus its target in a code span,
         or an entity for a square bracket.
@@ -178,9 +190,15 @@ def _replace_token(match):
         return "&#91;" if match.group(0) == "[" else "&#93;"
     if kind == "link":
         text = _tokens(match.group("ltext")) or "link"
-        target = match.group("ltarget").replace("\x00", "'").replace("\x01", "").replace("|", "¦")
-        return "%s (`%s`)" % (text, target) if target else text
-    return "`%s`" % match.group(0).replace("|", "¦")
+        target = _span_safe(match.group("ltarget").replace("\x00", "'").replace("\x01", ""))
+        return " %s (`%s`)" % (text, target) if target else " " + text
+    return "`%s`" % _span_safe(match.group(0))
+
+
+def _span_safe(text):
+    """Purpose: remove from text the two characters that reach through a code span. Inputs:
+    text (str). Outputs: str with '|' as a broken bar and '$' as a fullwidth dollar sign."""
+    return text.replace("|", "¦").replace("$", "＄")
 
 
 def _plain(text):
@@ -195,9 +213,11 @@ def _plain(text):
         text (str): '&' as &amp; (an entity the model wrote in escaped form stays text) and EVERY
         '<' as &lt;. Unconditional on purpose: a lookahead for a following letter sees only this
         slice, and a '<' ending the slice before a link token took its letter from the link text
-        (security review round 4), so a tag could be assembled around a token.
+        (security review round 4), so a tag could be assembled around a token. Every '$' becomes
+        &#36;, since GitHub extracts $...$ math before code spans and a span between two dollar
+        signs is then read as math whose text the mention filter scans (security round 6).
     """
-    return text.replace("&", "&amp;").replace("<", "&lt;")
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace("$", "&#36;")
 
 
 def _tokens(segment):
@@ -289,7 +309,7 @@ def sanitize(text, secret_patterns=()):
         pieces.append(_neutralise(text[last:span.start()], secret_patterns))
         # '|' becomes a broken bar: table parsing runs BEFORE inline parsing, so a pipe inside a
         # span ends the table cell and leaves the span's two backticks in different cells.
-        inner = _redact(span.group(2).replace("`", "'"), secret_patterns).replace("|", "¦")
+        inner = _span_safe(_redact(span.group(2).replace("`", "'"), secret_patterns))
         pieces.append("`%s`" % inner)
         last = span.end()
     pieces.append(_neutralise(text[last:], secret_patterns))
@@ -473,6 +493,11 @@ def make_runner(cfg):
     Purpose:
         Build the real `gh` runner with a timeout and a bounded retry count (R10).
 
+    Details:
+        Only a transient failure (a timeout, a dropped connection, an HTTP 5xx) is retried, after
+        a configured pause. A 404, 403 or 422 is permanent and ends the call at once, and a POST
+        is never retried, since one that timed out may already have created its comment.
+
     Inputs:
         cfg (dict): the loaded configuration.
 
@@ -480,20 +505,23 @@ def make_runner(cfg):
         runner (callable): runner(args, stdin=None) -> (returncode, stdout or stderr).
     """
     timeout, retries = val(cfg, "gh_timeout_seconds"), val(cfg, "gh_retries")
+    delay = val(cfg, "gh_retry_delay_seconds")
 
     def run(args, stdin=None):
-        # A POST that timed out may already have created its comment, so it is never retried.
         attempts = 1 if "POST" in args else retries + 1
         last = (1, "gh did not run")
-        for _ in range(attempts):
+        for attempt in range(attempts):
             try:
                 done = subprocess.run(["gh", *args], input=stdin, capture_output=True, text=True,
                                       encoding="utf-8", timeout=timeout)
                 last = (done.returncode, done.stdout if done.returncode == 0 else done.stderr or done.stdout)
+                transient = last[0] != 0 and bool(_TRANSIENT.search(last[1] or ""))
             except (OSError, subprocess.TimeoutExpired) as exc:
-                last = (1, str(exc))
-            if last[0] == 0:
+                last, transient = (1, str(exc)), True
+            if last[0] == 0 or not transient:
                 break
+            if attempt < attempts - 1:
+                time.sleep(delay)
         return last
 
     return run
@@ -680,7 +708,7 @@ def _validate_target(args, cfg):
     Outputs:
         ok (bool): true when both match their pattern in full.
     """
-    if not re.fullmatch(r"[0-9]{1,9}", args.pr) or not re.fullmatch(val(cfg, "repo_pattern"), args.repo):
+    if not re.fullmatch(val(cfg, "pr_pattern"), args.pr) or not re.fullmatch(val(cfg, "repo_pattern"), args.repo):
         print("[CI] refused: malformed --pr or --repo", file=sys.stderr)
         return False
     return True
@@ -702,7 +730,7 @@ def _cmd_post_pr(args, cfg, runner):
     """
     if not _validate_target(args, cfg):
         return EXIT_REFUSED
-    if not re.fullmatch(r"[0-9a-f]{40}", args.sha):
+    if not re.fullmatch(val(cfg, "sha_pattern"), args.sha):
         print("[CI] refused: malformed --sha", file=sys.stderr)
         return EXIT_REFUSED
     pr = int(args.pr)
@@ -745,7 +773,7 @@ def _cmd_mirror(args, cfg, runner, env):
     Outputs:
         code (int): 0 mirrored or cleanly skipped, 1 failure, 2 malformed argument.
     """
-    if not _validate_target(args, cfg) or not re.fullmatch(r"[0-9]{1,15}", args.pr_comment_id):
+    if not _validate_target(args, cfg) or not re.fullmatch(val(cfg, "comment_id_pattern"), args.pr_comment_id):
         return EXIT_REFUSED
     issue = find_issue_number(env.get("PR_BODY", ""))
     if issue is None:

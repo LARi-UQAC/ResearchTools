@@ -194,6 +194,26 @@ class TestConfig(unittest.TestCase):
             self.assertIn("provenance", entry, key)
             self.assertIn("value", entry, key)
 
+    def test_argument_patterns_and_retry_delay_come_from_the_config(self):
+        # Code review round 6, R0: the digit caps and the sha length were literals in the code.
+        cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+        for key in ("pr_pattern", "comment_id_pattern", "sha_pattern", "gh_retry_delay_seconds"):
+            self.assertIn(key, cfg)
+            self.assertIn("provenance", cfg[key])
+        code = SCRIPT.read_text(encoding="utf-8")
+        for literal in ("{1,9}", "{1,15}", "{40}"):
+            self.assertNotIn(literal, code)
+
+    def test_a_diff_with_nothing_to_review_does_not_start_the_billed_step(self):
+        # Code review round 6: the NO REVIEWABLE CHANGE placeholder still paid for a session.
+        body = strip_comments(WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn("empty=true", body)
+        for name in ("Run security-review and code-review", "Verify the session had no forbidden tool",
+                     "Extract the reply", "Post or update the PR comment"):
+            step = re.search(r"- name: %s\n(.*?)(?=\n      - name:|\n  mirror:|\Z)" % re.escape(name), body, re.S)
+            self.assertIsNotNone(step, name)
+            self.assertIn("steps.diff.outputs.empty != 'true'", step.group(1), name)
+
     def test_allowed_tool_list_is_exactly_the_four_and_matches_the_workflow(self):
         cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
         allowed = cfg["allowed_tools"]["value"]
@@ -255,6 +275,17 @@ class TestPureLogic(unittest.TestCase):
         self.assertIsNone(f("<!--\nFixes #1\n-->\n"))
         self.assertIsNone(f("    Fixes #5\n"))      # code review round 3: an indented code block
         self.assertIsNone(f("\tFixes #5\n"))
+        # Code review round 6: an HTML comment closed by an indented line must end the comment,
+        # and a link on the same line as a closed comment still counts.
+        self.assertEqual(f("<!--\n  Describe\n    -->\nFixes #65"), 65)
+        self.assertEqual(f("<!-- x --> Fixes #65"), 65)
+        self.assertEqual(f("<!-- a -->\n<!-- b\n-->\nCloses #8"), 8)
+        # GitHub's own closing keywords and a list marker, but never a quote or a mid-line mention.
+        for body, number in (("- Fixes #65", 65), ("* closes #3", 3), ("Resolves #7", 7), ("fixed #4", 4),
+                             ("Closed #6", 6), ("resolve #2", 2), ("fix #9", 9)):
+            self.assertEqual(f(body), number, body)
+        for body in ("> Fixes #65", "see Fixes #65 here", "refixes #5", "Fixes: #5 maybe", "Fixes #5x"):
+            self.assertIsNone(f(body), body)
         self.assertEqual(f("```\nFixes #1\n```\nFixes #9\n"), 9)
         self.assertEqual(f("<!-- Fixes #1 -->\nCloses #4"), 4)
 
@@ -391,6 +422,34 @@ class TestPureLogic(unittest.TestCase):
                 self.assertNotIn("\n", span.group(2), raw)
             self.assertNotRegex(out, r"``", raw)
 
+    def test_math_delimiters_cannot_turn_a_code_span_live(self):
+        # Security round 6 (7686 strings rendered through GitHub): GitHub extracts $...$ math BEFORE
+        # it parses code spans, so a span between two dollar signs became a <math-renderer> whose
+        # text the mention and issue filters then read. No raw '$' may remain next to or between spans.
+        for raw in ("$@octocat$", "$#1$", "$GH-1$", "Cost is $@octocat$ total", "$$@octocat$$", "$`@octocat`$",
+                    "`x$` `@octocat` `$y`", "$ @octocat $", "a$b $@octocat$"):
+            out = self.mod.sanitize(raw)
+            self.assertNotIn("$", GFM_SPAN.sub("·", out), raw)        # outside spans: an entity
+            for span in GFM_SPAN.finditer(out):
+                self.assertNotIn("$", span.group(2), raw)                  # inside spans: no delimiter either
+            self.assertEqual(self.mod.sanitize(out), out, raw)
+
+    def test_gh_references_are_case_insensitive(self):
+        # Security round 6: GitHub links gh-2 and Gh-1 as well as GH-1.
+        for raw in ("see gh-2 here", "Gh-1", "gH-9"):
+            live = GFM_SPAN.sub("·", self.mod.sanitize(raw))
+            self.assertNotRegex(live, r"(?i)gh-[0-9]", raw)
+
+    def test_a_link_replacement_cannot_glue_text_to_a_preceding_token_start(self):
+        # Security round 6: `[text](url)` became bare `text`, so an `@`, `#` or `GH-` just before
+        # it was joined to the text AFTER the token pass had looked, giving a live mention or reference.
+        for raw in ("@[octocat](http://x)", "#[1](x)", "GH-[1](x)", "@[](x)", "@![name](x)", "@@[a](b)",
+                    "@&#91;name](x)", "gh-[2](x)"):
+            live = GFM_SPAN.sub("·", self.mod.sanitize(raw))
+            self.assertNotRegex(live, r"@[A-Za-z_]", raw)
+            self.assertNotRegex(live, r"(?<![\w/&])#[0-9]", raw)
+            self.assertNotRegex(live, r"(?i)gh-[0-9]", raw)
+
     def test_a_pipe_inside_a_span_cannot_split_it_across_table_cells(self):
         # Security round 5 (rendered through GitHub's own API): table parsing runs before inline
         # parsing, so an unescaped `|` inside a code span ended the cell, left the opening backtick
@@ -453,7 +512,7 @@ class TestPureLogic(unittest.TestCase):
         # and sanitising the output again changes nothing.
         import random
         rng = random.Random(20261016)
-        frags = ["|", "|---|", "| ", "---", "===", ":+1:", "~~", "~~~", "$$", "$", "\t", "\x0c", "​", "‮",
+        frags = ["$", "$$", "gh-1", "Gh-2", "@[a](b)", "#[1](x)", "![n](u)", "|", "|---|", "| ", "---", "===", ":+1:", "~~", "~~~", "$$", "$", "\t", "\x0c", "​", "‮",
                  "`", "``", "```", "@a", "@org/team", "#1", "GH-1", "o/r#2", "[", "]", "](", "![", "http://x.example/p",
                  "www.x.example", "ftp://x.example", "\\", "&#96;", "&#64;", "&amp;", "&lt;", "&", "\n", "\n\n", "\r",
                  "\x0b", "\x85", " ", "<", "<!--", "-->", "<b>", "_", "*", "- ", "# ", "> ", "1. ", " ", "x", "sk-ant-abcdefghij"]
@@ -467,7 +526,7 @@ class TestPureLogic(unittest.TestCase):
                 # An entity is one inert character (never deleted: that would glue its neighbours);
                 # &lt; stays as it is, since an escaped tag must not read as a tag.
                 text = re.sub(r"&(?:#[0-9]+|amp);", "·", live)
-                for bad in ("@a", "@org", "#1", "#2", "GH-1", "www.", "sk-ant-"):
+                for bad in ("@a", "@org", "#1", "#2", "GH-1", "gh-1", "Gh-2", "$", "www.", "sk-ant-"):
                     self.assertNotIn(bad, text, "%s live in %r from %r" % (bad, text, raw))
                 self.assertNotRegex(text, r"[A-Za-z][A-Za-z0-9+.-]*://", "scheme link live from %r" % raw)
                 self.assertNotRegex(text, r"<[!/A-Za-z?]", "tag live from %r" % raw)
@@ -748,6 +807,25 @@ class TestCommands(unittest.TestCase):
                             "--pr-comment-id", "77"], runner=broken, env={"PR_BODY": "Fixes #999"})
         self.assertEqual(rc, 1)
 
+    def test_the_real_runner_retries_only_transient_failures(self):
+        # Code review round 6: a permanent 404, 403 or 422 was retried like a timeout.
+        import subprocess as sp
+        from unittest import mock
+        runner = self.mod.make_runner(self.cfg)
+        retries = self.mod.val(self.cfg, "gh_retries")
+
+        def answer(code, err):
+            return sp.CompletedProcess(["gh"], code, stdout="", stderr=err)
+
+        for err, expected in (("gh: Not Found (HTTP 404)", 1), ("gh: Validation Failed (HTTP 422)", 1),
+                              ("gh: Forbidden (HTTP 403)", 1), ("gh: Bad Gateway (HTTP 502)", retries + 1),
+                              ("gh: Service Unavailable (HTTP 503)", retries + 1),
+                              ("dial tcp: connection reset by peer", retries + 1)):
+            with mock.patch.object(self.mod.subprocess, "run", return_value=answer(1, err)) as run, \
+                    mock.patch.object(self.mod.time, "sleep"):
+                runner(["api", "repos/o/r/issues/9"])
+                self.assertEqual(run.call_count, expected, err)
+
     def test_the_real_runner_never_retries_a_post(self):
         # Code review round 3: a POST that timed out may already have created the comment, so a
         # retry posts a duplicate. A read is retried up to the configured count.
@@ -760,7 +838,8 @@ class TestCommands(unittest.TestCase):
             rc, _ = runner(["api", "-X", "POST", "repos/o/r/issues/9/comments", "--input", "-"], "{}")
             self.assertEqual(rc, 1)
             self.assertEqual(run.call_count, 1)
-        with mock.patch.object(self.mod.subprocess, "run", side_effect=sp.TimeoutExpired("gh", 1)) as run:
+        with mock.patch.object(self.mod.subprocess, "run", side_effect=sp.TimeoutExpired("gh", 1)) as run, \
+                mock.patch.object(self.mod.time, "sleep"):
             runner(["api", "repos/o/r/issues/9"])
             self.assertEqual(run.call_count, retries + 1)
 

@@ -178,9 +178,9 @@ def _replace_token(match):
         return "&#91;" if match.group(0) == "[" else "&#93;"
     if kind == "link":
         text = _tokens(match.group("ltext")) or "link"
-        target = match.group("ltarget").replace("\x00", "'").replace("\x01", "")
+        target = match.group("ltarget").replace("\x00", "'").replace("\x01", "").replace("|", "¦")
         return "%s (`%s`)" % (text, target) if target else text
-    return "`%s`" % match.group(0)
+    return "`%s`" % match.group(0).replace("|", "¦")
 
 
 def _plain(text):
@@ -287,7 +287,10 @@ def sanitize(text, secret_patterns=()):
     pieces, last = [], 0
     for span in _SPAN.finditer(text):
         pieces.append(_neutralise(text[last:span.start()], secret_patterns))
-        pieces.append("`%s`" % _redact(span.group(2).replace("`", "'"), secret_patterns))
+        # '|' becomes a broken bar: table parsing runs BEFORE inline parsing, so a pipe inside a
+        # span ends the table cell and leaves the span's two backticks in different cells.
+        inner = _redact(span.group(2).replace("`", "'"), secret_patterns).replace("|", "¦")
+        pieces.append("`%s`" % inner)
         last = span.end()
     pieces.append(_neutralise(text[last:], secret_patterns))
     # Two code spans that touch would read as one run of backticks, so a space keeps them apart.
@@ -314,23 +317,28 @@ def select_comment(comments, marker, login):
 def _init_tools(messages):
     """
     Purpose:
-        Read the tool list from the session's `init` message.
+        Read the tool lists of EVERY `init` message of the session (a resumed or compacted
+        session writes more than one, and a later one must not escape the check).
 
     Inputs:
         messages (list): the parsed execution file.
 
     Outputs:
-        tools (list[str]): the tool names.
+        tools (list[str]): the tool names of all init messages.
 
     Raises:
         ToolListError: no system/init message carries a tools list.
     """
+    found, tools = False, []
     for msg in messages:
         if isinstance(msg, dict) and msg.get("type") == "system" and msg.get("subtype") == "init":
-            tools = msg.get("tools")
-            if isinstance(tools, list):
-                return [str(t) for t in tools]
-    raise ToolListError("no system/init message with a tools list in the execution file")
+            listed = msg.get("tools")
+            if isinstance(listed, list):
+                found = True
+                tools.extend(str(t) for t in listed)
+    if not found:
+        raise ToolListError("no system/init message with a tools list in the execution file")
+    return tools
 
 
 def check_tools(messages, cfg):
@@ -706,6 +714,8 @@ def _cmd_post_pr(args, cfg, runner):
         marker = val(cfg, "pr_marker_template").format(pr=pr)
         existing = select_comment(_list_comments(runner, args.repo, pr), marker, val(cfg, "bot_login"))
         action, cid, _ = _upsert(runner, args.repo, pr, body, existing, False)
+        if cid is None:
+            raise ReviewError("GitHub answered without a comment id, so the mirror job could not find the comment")
     except (OSError, ReviewError) as exc:
         print("[CI] post-pr failed: %s" % exc, file=sys.stderr)
         _report(ok=False, reason=str(exc))

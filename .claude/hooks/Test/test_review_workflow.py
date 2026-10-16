@@ -391,6 +391,45 @@ class TestPureLogic(unittest.TestCase):
                 self.assertNotIn("\n", span.group(2), raw)
             self.assertNotRegex(out, r"``", raw)
 
+    def test_a_pipe_inside_a_span_cannot_split_it_across_table_cells(self):
+        # Security round 5 (rendered through GitHub's own API): table parsing runs before inline
+        # parsing, so an unescaped `|` inside a code span ended the cell, left the opening backtick
+        # in one cell and put the rest, a live mention, reference and link, in the next.
+        review = ("## Automated multi-dimension review\n\n| a | b |\n|---|---|\n"
+                  "| `x | @octocat #1 http://evil.example/p` | y |")
+        body = self.mod.build_pr_body(review, "a" * 40, 9, self.cfg)
+        for line in body.split("\n")[1:]:
+            cells = line.split("|")
+            for cell in cells:                       # every cell must hold balanced spans on its own
+                self.assertEqual(cell.count("`") % 2, 0, repr(cell))
+        for live in self.live_lines(body)[1:]:
+            for bad in ("@octocat", "#1", "http://evil.example"):
+                self.assertNotIn(bad, live)
+        self.assertNotIn("|", GFM_SPAN.search(self.mod.sanitize("`a|b`")).group(2))
+
+    def test_a_missing_comment_id_fails_the_post_step(self):
+        # Code review round 5: no id in the answer meant no output, and the mirror then exited 2.
+        with tempfile.TemporaryDirectory() as d:
+            body = Path(d) / "r.md"
+            body.write_text(MARK, encoding="utf-8")
+            gh = FakeGh([("-X POST repos/o/r/issues/9/comments", "{}"), ("issues/9/comments", "[[]]")])
+            rc = self.mod.main(["post-pr", "--repo", "o/r", "--pr", "9", "--sha", "a" * 40,
+                                "--body-file", str(body), "--output-file", str(Path(d) / "out")], runner=gh)
+            self.assertEqual(rc, 1)
+
+    def test_every_init_message_is_checked_not_only_the_first(self):
+        # Code review round 5: a later init (a resumed or compacted session) was never inspected.
+        msgs = [{"type": "system", "subtype": "init", "tools": ["Skill"]},
+                {"type": "system", "subtype": "init", "tools": ["Skill", "Bash"]}]
+        self.assertEqual(self.mod.check_tools(msgs, self.cfg), ["Bash"])
+
+    def test_the_session_ignores_project_settings_and_foreign_mcp_servers(self):
+        # Code review round 5: the checkout holds .claude/settings.json with plugins, marketplaces
+        # and an MCP roster, and the CLI reads project settings unless told not to.
+        args = claude_args(WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn("--setting-sources user", args)
+        self.assertIn("--strict-mcp-config", args)
+
     def test_a_tag_assembled_around_a_token_cannot_become_html(self):
         # Security round 4: `<` was escaped only when a letter followed it IN THE SAME slice of
         # text. A `<` ending the slice before a link token got its letter from the link text, and
@@ -414,7 +453,8 @@ class TestPureLogic(unittest.TestCase):
         # and sanitising the output again changes nothing.
         import random
         rng = random.Random(20261016)
-        frags = ["`", "``", "```", "@a", "@org/team", "#1", "GH-1", "o/r#2", "[", "]", "](", "![", "http://x.example/p",
+        frags = ["|", "|---|", "| ", "---", "===", ":+1:", "~~", "~~~", "$$", "$", "\t", "\x0c", "​", "‮",
+                 "`", "``", "```", "@a", "@org/team", "#1", "GH-1", "o/r#2", "[", "]", "](", "![", "http://x.example/p",
                  "www.x.example", "ftp://x.example", "\\", "&#96;", "&#64;", "&amp;", "&lt;", "&", "\n", "\n\n", "\r",
                  "\x0b", "\x85", " ", "<", "<!--", "-->", "<b>", "_", "*", "- ", "# ", "> ", "1. ", " ", "x", "sk-ant-abcdefghij"]
         patterns = self.mod.val(self.cfg, "secret_patterns")

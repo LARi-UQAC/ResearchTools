@@ -20,7 +20,11 @@
 #    that allowlist is there (an allowlist, so an unforeseen tool is refused too) or the list
 #    cannot be read. That is detection after the fact. Prevention is the
 #    flag plus .claude/hooks/Test/test_review_workflow.py.
-#  - no plugin and no marketplace is loaded (they cannot be pinned and would run beside the key).
+#  - no plugin and no marketplace is loaded (they cannot be pinned and would run beside the key):
+#    no `plugins:` input, and `--setting-sources user` keeps the checked-out .claude/settings.json
+#    (its enabledPlugins, marketplaces, hooks) out of the session, with `--strict-mcp-config`
+#    ignoring every MCP roster except the one the action passes itself. The checkout still holds
+#    project skills; `--tools` limits which built-in tools exist, and check-tools verifies it.
 #  - the checkout keeps no credential in git config (persist-credentials: false).
 #  - everything that writes model text to GitHub (the PR comment, the Issue copy) is done by
 #    scripts/ci/review_mirror.py in steps and jobs that hold no key and no agent, after the
@@ -146,6 +150,8 @@ jobs:
             --tools "Skill,Read,Grep,Glob"
             --allowedTools "Skill,Read,Grep,Glob"
             --max-budget-usd ${{ env.MAX_BUDGET_USD }}
+            --setting-sources user
+            --strict-mcp-config
             --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//run/**),Grep(//proc/**),Grep(//sys/**),Grep(//run/**),Glob(//proc/**),Glob(//sys/**),Glob(//run/**)"
           prompt: |
             You are running inside ResearchTools' automated PR review gate. The diff under

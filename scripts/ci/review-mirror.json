@@ -1,0 +1,42 @@
+{
+  "review_marker": {
+    "value": "## Automated multi-dimension review",
+    "provenance": "specified: first line the review.yml prompt requires of the model; the extractor refuses a reply that does not start with it (PR #67)"
+  },
+  "bot_login": {
+    "value": "github-actions[bot]",
+    "provenance": "specified: the login GitHub gives a comment posted with the workflow GITHUB_TOKEN; chosen by the operator as the only author the mirror trusts, 2026-10-16"
+  },
+  "pr_marker_template": {
+    "value": "<!-- rt-review:pr-{pr} -->",
+    "provenance": "chosen by the operator 2026-10-16: hidden first line that lets a re-run find and update its own PR comment instead of posting another"
+  },
+  "issue_marker_template": {
+    "value": "<!-- rt-review-mirror:pr-{pr} -->",
+    "provenance": "chosen by the operator 2026-10-16: hidden first line of the Issue copy, same purpose as pr_marker_template"
+  },
+  "forbidden_tools": {
+    "value": ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Agent", "Task"],
+    "provenance": "specified: PR #67 review round 1 H1 - tools whose presence in the model session next to ANTHROPIC_API_KEY voids the no-shell guarantee"
+  },
+  "forbidden_tool_prefixes": {
+    "value": ["mcp__"],
+    "provenance": "specified: PR #67 review round 1 H1 - the action's tag mode adds mcp__github_* tools; none is allowed in this session"
+  },
+  "author_pattern": {
+    "value": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+    "provenance": "specified: GitHub username rule (alphanumeric and single hyphens, at most 39 characters); anything else is refused before it can carry a mention or a newline"
+  },
+  "repo_pattern": {
+    "value": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+    "provenance": "specified: GitHub owner/name characters"
+  },
+  "gh_timeout_seconds": {
+    "value": 60,
+    "provenance": "chosen by the operator 2026-10-16, not measured: bound on one gh call (R10)"
+  },
+  "gh_retries": {
+    "value": 2,
+    "provenance": "chosen by the operator 2026-10-16, not measured: extra attempts after a failed gh call (R10)"
+  }
+}

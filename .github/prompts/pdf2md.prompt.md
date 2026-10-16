@@ -9,8 +9,16 @@ Option contract:
 
 ```
 /pdf2md <pdf-path> -o <output-dir> [--tier flash|basic|standard|advanced]
-                   [--port 30000] [--yes]
+                   [--port 30000] [--yes] [--layout thesis|single]
 ```
+
+`run` is a DRY RUN without `--yes` (reports the bootstrap plan, launches
+nothing; a failed bootstrap stops it, never launching the server or the
+conversion). `--layout` (default `thesis`) decides what `postprocess`
+writes: `thesis` is the UQAC multi-chapter layout below; `single` keeps
+an article or a talk source as ONE `main.md` plus `assets/bibliography.md`
+-- `repair`, `fix`, and `validate --vlm-check` all refuse a single layout
+(exit 2), while `validate` and `--fidelity` accept it.
 
 Procedure:
 
@@ -61,6 +69,15 @@ Procedure:
    Introduction/Conclusion/chapitreN names), reference count, and the known
    limits from SKILL.md (no real `.tex`, mixed French/English inside a
    chapter is normal for a thèse-par-articles).
+7. On request, run `validate [--fidelity] [--vlm-check --vlm-check-model TAG]`
+   to measure accuracy, `repair --yes` for mechanical fixes (images, lost
+   headings, displaced paragraphs), and `fix --model TAG --yes` for a
+   bounded local-vision correction loop over lost numbered equations. `fix`
+   recovers ONLY lost equations by default; pass `--rewrite-formulas` to
+   also let it rewrite a formula whose meaning may be wrong -- a measured
+   run once changed the meaning of an already-correct formula, so this
+   stays opt-in. All three refuse a `single` layout except `validate`
+   without `--vlm-check`.
 
 the file(s) or topic given after the command in the chat message (if none was given, use the file currently open in the editor)
 

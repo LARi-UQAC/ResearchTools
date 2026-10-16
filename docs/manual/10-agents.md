@@ -3,7 +3,7 @@
 Chapter 10 of the ResearchTools manual. Back to [table of contents](../../README.md).
 
 Agents are specialists Claude delegates to automatically based on context, or explicitly on
-request ("use the `scopus-auditor` agent to…"). Fifteen ship in this repo; most back a slash
+request ("use the `scopus-auditor` agent to…"). Twenty ship in this repo; most back a slash
 command. Two of them (`local-writer`, `local-coder`) are local-delegation agents: a cheap
 cloud wrapper that drives a local Ollama model over a Bash bridge (see "Local delegation").
 Two are loop orchestrators: `authoring-loop` (ScholarEval-gated writing loop) and the
@@ -37,6 +37,7 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
 | `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via the resolver's writer-role model over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
 | `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via the resolver's coder-role model over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
+| `professor-expertise-finder` | Find university professors closest to a set of expertise keywords in a user-supplied location (never hardcoded): reuse or build a verified department/faculty-list table, rank with a /5 rubric grounded in Scopus-verified recent approved-publisher articles (`scopus` AU-ID + `publications` mode) and each article's own stated contribution (`extract-contributions`), never a guessed title match. Test mode, exclusion lists, an optional reviewers reference file, and a batch allocation mode (no-reuse, one-university-per-evaluator, conflict-of-interest, all enforced by script) | `/expertfinder` | `.claude/agents/professor-expertise-finder.md` |
 
 The four ScholarEval auditors (`scopus-auditor`, `paper-auditor`, `thesis-auditor`,
 `thesis-proposal-auditor`) score the document before writing the plan; after the plan is

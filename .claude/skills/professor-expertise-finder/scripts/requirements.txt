@@ -1,0 +1,16 @@
+# professor-expertise-finder skill.
+#
+# openpyxl: lazy-imported inside file_search.py's and exclusions.py's
+# read_grid()/read_rows() ONLY when the supplied reference/exclusion file
+# is .xlsx/.xlsm - a .csv reference or exclusion file needs no third-party
+# package at all. The offline test suite exercises both branches
+# (test_file_search.py, test_exclusions.py), skipping the .xlsx cases
+# rather than failing the suite when the package is absent (2026-10-09:
+# not registered in scripts/lib/rt-python-env.ps1's
+# Get-RtSuiteRequirements, matching the scopus and form-service skills'
+# own requirements.txt, whose offline suites exercise only the CSV/text
+# code paths too).
+#
+# Version checked here with `pip-audit` on 2026-10-09: openpyxl 3.1.5, no
+# known CVE.
+openpyxl==3.1.5

@@ -18,6 +18,7 @@ CLI, or `copilot --agent <name>`):
 - `local-writer`: see `.github/agents/local-writer.agent.md` (full definition in `.claude/agents/local-writer.md`)
 - `narrative-cv-writer`: see `.github/agents/narrative-cv-writer.agent.md` (full definition in `.claude/agents/narrative-cv-writer.md`)
 - `paper-auditor`: see `.github/agents/paper-auditor.agent.md` (full definition in `.claude/agents/paper-auditor.md`)
+- `professor-expertise-finder`: see `.github/agents/professor-expertise-finder.agent.md` (full definition in `.claude/agents/professor-expertise-finder.md`)
 - `reviewer-response`: see `.github/agents/reviewer-response.agent.md` (full definition in `.claude/agents/reviewer-response.md`)
 - `scopus-auditor`: see `.github/agents/scopus-auditor.agent.md` (full definition in `.claude/agents/scopus-auditor.md`)
 - `scopus-researcher`: see `.github/agents/scopus-researcher.agent.md` (full definition in `.claude/agents/scopus-researcher.md`)

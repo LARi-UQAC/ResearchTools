@@ -90,5 +90,61 @@ Full detail, including the three settings (`privacyguard.enabled`,
 [`.claude/rules/security.md`](../../.claude/rules/security.md)'s "Personal-data guard" section.
 File locations: [11-file-locations.md](11-file-locations.md).
 
+## Automated pull-request review (billed, optional)
+
+A second workflow, `.github/workflows/review.yml` (Issue #65, PR #67), asks a headless Claude Code
+session to run two built-in review skills, `security-review` and `code-review`, on every pull
+request opened from a branch of this repository. It posts ONE consolidated list, Critical to Low,
+as a single pull-request comment that is updated on each push, and copies it onto the Issue named
+by a `Fixes #N` line in the PR description. Unlike `privacy-scan` it is **not free**: each run
+spends Anthropic API tokens, capped per run by `MAX_BUDGET_USD` in the workflow (a number the
+operator chose, not measured, to be set to fit the account). It needs the repository secret
+`ANTHROPIC_API_KEY`, which only the repository owner adds. Without it the check ends neutral and
+nothing is billed. A fork or a Dependabot pull request is skipped, and so is a pull request that
+changes only regenerated files.
+
+What protects the key, since the session reads an untrusted diff:
+
+- The session has four tools only (`Skill`, `Read`, `Grep`, `Glob`): no shell, no file writes, no
+  sub-agent, no plugin, no project settings. After the run, a guard reads the session's own tool
+  list and fails the job if anything else is there or the list cannot be read.
+- The session posts nothing. A later step with no key sanitises its reply (no mention, no issue
+  or pull-request reference, no link, no image, no raw HTML, no math, no invisible character) and
+  writes the comment, so a crafted line in a diff cannot ping anyone or leak a secret.
+- The job that writes to Issues holds no key, and the job that holds the key cannot write to
+  Issues.
+
+**What this does not cover, stated plainly:**
+
+- **A collaborator with write access can run a modified copy of the workflow with the secret.**
+  The `Main protection` ruleset requires a code-owner review for a merge into `main`, not for the
+  run. The first run therefore uses a throwaway key with a low spend limit, which is rotated
+  afterwards.
+- **Three behaviours are unverified until that first run:** that the pinned Claude Code honours
+  the tool restriction, that the two skills run in a headless session, and that the `/proc` read
+  denial is accepted. The workflow header lists them, and the guard fails closed on the first.
+- **It is advisory.** It does not replace a human review, and it is not a required check.
+- `tech-debt` and `ai-firstify` are not run in CI: the action cannot pin a plugin source, so third
+  party code could change unreviewed beside the key. They remain available in a local session.
+
+**Using AugureAI instead of Anthropic (planned rework, about one month out, not done yet).** The
+workflow is written for Anthropic only. Switching to AugureAI would need these changes, none made:
+
+- A repository secret `AUGUREAI_API_KEY`, read in the key check and in the action's key input
+  instead of `ANTHROPIC_API_KEY`.
+- The variable `ANTHROPIC_BASE_URL` set to `https://api.augureai.ca/v1` in the agent step. That is
+  the endpoint the local `claude-augure` function already uses for a Claude Code session.
+- The header comment, the CI section of `testing.md`, the playbook and `test_review_workflow.py`
+  updated to the new secret name, since the test pins where the secret may be named.
+
+Three points are unverified: whether the action passes `ANTHROPIC_BASE_URL` through to Claude
+Code, whether AugureAI honours the tool restriction and the spend cap, and whether the execution
+file keeps the same shape for the tool-list guard. The first throwaway-key run would answer them.
+
+Full detail, with every finding and decision of the review that shaped it:
+[`.claude/rules/testing.md`](../../.claude/rules/testing.md)'s "CI" section and
+[`docs/github-repo-setup-playbook.md`](../github-repo-setup-playbook.md) Phase 6d, which tells you
+how to set the same workflow up in another repository.
+
 ---
 [← 04 Skills](04-skills.md) | [Table of contents](../../README.md) | [06 Aider nightly pipeline →](06-aider-pipeline.md)

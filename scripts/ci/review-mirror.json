@@ -1,0 +1,70 @@
+{
+  "review_marker": {
+    "value": "## Automated multi-dimension review",
+    "provenance": "specified: first line the review.yml prompt requires of the model; the extractor refuses a reply that does not start with it (PR #67)"
+  },
+  "bot_login": {
+    "value": "github-actions[bot]",
+    "provenance": "specified: the login GitHub gives a comment posted with the workflow GITHUB_TOKEN; chosen by the operator as the only author the mirror trusts, 2026-10-16"
+  },
+  "pr_marker_template": {
+    "value": "<!-- rt-review:pr-{pr} -->",
+    "provenance": "chosen by the operator 2026-10-16: hidden first line that lets a re-run find and update its own PR comment instead of posting another"
+  },
+  "issue_marker_template": {
+    "value": "<!-- rt-review-mirror:pr-{pr} -->",
+    "provenance": "chosen by the operator 2026-10-16: hidden first line of the Issue copy, same purpose as pr_marker_template"
+  },
+  "allowed_tools": {
+    "value": ["Skill", "Read", "Grep", "Glob"],
+    "provenance": "specified: PR #67 review round 1 H1 and code review round 1 - the only tools the model session may have next to ANTHROPIC_API_KEY. An ALLOWLIST, so a tool nobody thought to forbid (WebFetch, Monitor, PowerShell, an MCP tool) is refused. Must equal the --tools list of review.yml, which a test asserts"
+  },
+  "author_pattern": {
+    "value": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",
+    "provenance": "specified: GitHub username rule (alphanumeric and single hyphens, at most 39 characters); anything else is refused before it can carry a mention or a newline"
+  },
+  "repo_pattern": {
+    "value": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+    "provenance": "specified: GitHub owner/name characters"
+  },
+  "secret_patterns": {
+    "value": ["sk-ant-[A-Za-z0-9_-]{10,}", "gh[pousr]_[A-Za-z0-9]{20,}", "github_pat_[A-Za-z0-9_]{20,}"],
+    "provenance": "specified: public token formats of the Anthropic API key and of GitHub tokens, the two secrets this workflow handles; chosen by the operator 2026-10-16 as defence in depth, since the reply is posted publicly"
+  },
+  "comment_max_chars": {
+    "value": 60000,
+    "provenance": "specified: GitHub rejects an issue or pull request comment above 65536 characters; 60000 is a margin chosen by the operator 2026-10-16, not measured, so the sanitiser's expansion and the header cannot tip a long review over the limit"
+  },
+  "error_text_chars": {
+    "value": 200,
+    "provenance": "chosen by the operator 2026-10-16, not measured: how much of a failed gh call's error text is kept in a failure message and in the CI log"
+  },
+  "invisible_characters": {
+    "value": "[\\u00ad\\u034f\\u061c\\u115f\\u1160\\u17b4\\u17b5\\u180b-\\u180f\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufe00-\\ufe0f\\ufeff\\U000e0000-\\U000e007f\\U000e0100-\\U000e01ef]",
+    "provenance": "specified: the invisible and bidirectional-control code points the repository's own style hygiene forbids in produced text (zero-width space and joiners, direction marks and overrides, word joiner and invisible operators, isolates, byte-order mark, Unicode tag block U+E0000 to U+E007F)"
+  },
+  "pr_pattern": {
+    "value": "[0-9]{1,9}",
+    "provenance": "specified: a pull request number is a positive integer; nine digits is a margin chosen by the operator 2026-10-16, far above any real repository, applied with a full match"
+  },
+  "comment_id_pattern": {
+    "value": "[0-9]{1,15}",
+    "provenance": "specified: GitHub comment ids are positive integers that keep growing (ten digits in 2026); fifteen is a margin chosen by the operator 2026-10-16, applied with a full match"
+  },
+  "sha_pattern": {
+    "value": "[0-9a-f]{40}",
+    "provenance": "specified: a full git commit SHA-1 is forty lowercase hexadecimal characters, applied with a full match"
+  },
+  "gh_retry_delay_seconds": {
+    "value": 2,
+    "provenance": "chosen by the operator 2026-10-16, not measured: pause between two attempts of a read that failed with a transient error (R10)"
+  },
+  "gh_timeout_seconds": {
+    "value": 60,
+    "provenance": "chosen by the operator 2026-10-16, not measured: bound on one gh call (R10)"
+  },
+  "gh_retries": {
+    "value": 2,
+    "provenance": "chosen by the operator 2026-10-16, not measured: extra attempts after a failed gh call (R10)"
+  }
+}

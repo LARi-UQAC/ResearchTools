@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from render import item_title, load_render_settings, render_entry
+from render import extra_file_for, item_title, load_render_settings, render_entry, validate_mapping
 from wp_common import configure_streams, error_report, norm_ws, get_path
 from wp_errors import WpRefusal, WpSyncError, exit_code_for
 from wp_paths import contained_path, resolve_data_dir
@@ -23,11 +23,6 @@ from wp_paths import contained_path, resolve_data_dir
 _STRONG_RE = re.compile(r"<strong>(.*?)</strong>", re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
 _BOLD_MD_RE = re.compile(r"\*\*(.+?)\*\*")
-
-_EXTRA_FILE_FOR_RENDERER = {
-    "implications": "config/implications_extra.yaml",
-    "services": "config/services_extra.yaml",
-}
 
 _SENSITIVE_KEYS_FILE = Path(__file__).resolve().parent / "sensitive_keys.json"
 
@@ -168,9 +163,7 @@ def approved_titles(data, entry, data_dir):
             approved.add(norm_ws(item.get("organisation", "")))
 
     renderer = entry.get("renderer")
-    extra_file = _EXTRA_FILE_FOR_RENDERER.get(renderer)
-    if renderer == "distinctions" and subkey == "prix":
-        extra_file = "config/distinctions_extra.yaml"
+    extra_file = extra_file_for(renderer, subkey)
     if extra_file:
         resolved = contained_path(data_dir, extra_file)
         if resolved.is_file():
@@ -321,6 +314,7 @@ def main(argv=None):
         if not isinstance(mapping, dict):
             raise WpRefusal("mapping.yaml does not parse to a mapping: %s" % mapping_file)
         settings = load_render_settings(mapping, str(mapping_file))
+        validate_mapping(mapping)
         with open(cv_file, "r", encoding="utf-8") as handle:
             data = json.load(handle)
         report = verify_mapping(data, mapping, data_dir, settings)

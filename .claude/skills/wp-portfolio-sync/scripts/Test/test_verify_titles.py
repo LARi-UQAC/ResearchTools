@@ -20,7 +20,15 @@ import _fixtures  # noqa: F401
 from _fixtures import make_data_dir, settings as _settings, grant, media, implication
 
 import wp_errors
+import render
 import verify_titles
+
+
+class TestExtraFileSingleSource(unittest.TestCase):
+    def test_verify_titles_uses_renders_own_map(self):
+        # L2 (PR #50 review): verify_titles.py must not keep its own copy
+        # of the extras-file map - it imports render.extra_file_for.
+        self.assertIs(verify_titles.extra_file_for, render.extra_file_for)
 
 
 class TestSeedTitles(unittest.TestCase):
@@ -57,6 +65,23 @@ class TestFindSensitiveKeys(unittest.TestCase):
 
     def test_none_node_no_hits(self):
         self.assertEqual(verify_titles.find_sensitive_keys(None, ["supervis"]), [])
+
+    def test_shipped_denylist_covers_hqp_terms(self):
+        # Q2 (PR #50 review, owner decision 2026-10-16): ALL HQP are
+        # sensitive - students, postdocs, mentorship, interns - not only
+        # the CIHR-specific "etudiant"/"doctorant" shapes.
+        denylist = verify_titles._load_denylist()
+        for term in ("hqp", "postdoc", "mentorat", "mentorship", "mentee", "internship", "stagiaires"):
+            hits = verify_titles.find_sensitive_keys({term: ["x"]}, denylist)
+            self.assertTrue(hits, "%r not caught by the shipped denylist" % term)
+
+    def test_shipped_denylist_does_not_flag_international(self):
+        # A false-positive guard: "international" is a common, non-sensitive
+        # CV key (e.g. international_collaborations) and must not collide
+        # with the "internship" entry added for Q2.
+        denylist = verify_titles._load_denylist()
+        hits = verify_titles.find_sensitive_keys({"international_collaborations": ["x"]}, denylist)
+        self.assertEqual(hits, [])
 
 
 class TestApprovedTitlesScoping(unittest.TestCase):
@@ -203,6 +228,34 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 2)
         report = json.loads(buf.getvalue())
         self.assertEqual(report["exit_code"], 2)
+
+    def test_malformed_mapping_refused_not_raised(self):
+        # code-review finding (PR #50 round 3, re-review): push_wp.main()
+        # and preview.main() both call validate_mapping() before touching
+        # entries; verify_titles.py's own standalone CLI called
+        # verify_mapping() directly with no such guard, so the same
+        # missing-cv_path input that is refused cleanly elsewhere crashed
+        # here with an uncaught KeyError.
+        (self.data_dir / "config" / "mapping.yaml").write_text(
+            "site: https://portfolio.example.org/researcher\n"
+            "ref_year: 2026\n"
+            "recent_window: 6\n"
+            "recent_label: Six dernières années\n"
+            "excluded_funding_statuses: []\n"
+            "entries:\n"
+            "  - page_id: 101\n"
+            "    mode: split\n"
+            "    renderer: financement\n"
+            "    recent_marker: fin-r\n"
+            "    history_marker: fin-h\n",
+            encoding="utf-8",
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = verify_titles.main(["--data-dir", str(self.data_dir), "--json"])
+        self.assertEqual(code, 2)
+        report = json.loads(buf.getvalue())
+        self.assertIn("cv_path", report["error"])
 
 
 if __name__ == "__main__":

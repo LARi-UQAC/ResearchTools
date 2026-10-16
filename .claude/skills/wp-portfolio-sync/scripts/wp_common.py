@@ -340,6 +340,14 @@ def md_to_html(md):
                 out.append("</tbody></table>")
                 in_table = False
             continue
+        is_list_item = stripped.startswith("- ")
+        if in_list and not is_list_item:
+            # L1 (PR #50 review): close <ul> before ANY non-list-item line -
+            # a heading or a table row directly following a list item (no
+            # blank line between) used to leave it open; read-back still
+            # compared equal, so the defect verified as correct.
+            out.append("</ul>")
+            in_list = False
         if stripped.startswith("|"):
             cells = [c.strip() for c in stripped.strip("|").split("|")]
             if not in_table:
@@ -358,15 +366,12 @@ def md_to_html(md):
             out.append("<h3>%s</h3>" % _inline(stripped[3:]))
         elif stripped.startswith("# "):
             out.append("<h2>%s</h2>" % _inline(stripped[2:]))
-        elif stripped.startswith("- "):
+        elif is_list_item:
             if not in_list:
                 out.append("<ul>")
                 in_list = True
             out.append("<li>%s</li>" % _inline(stripped[2:]))
         else:
-            if in_list:
-                out.append("</ul>")
-                in_list = False
             out.append("<p>%s</p>" % _inline(stripped))
     if in_list:
         out.append("</ul>")
@@ -434,19 +439,28 @@ class WpClient:
         before the first attempt); 0 sleeps nothing (R0, from config).
         retryable (tuple[type, ...] or None): exception types to retry on;
         None resolves lazily to requests' ConnectionError/Timeout.
+        request_error (type or None): the broader exception class caught
+        (but never retried) for a request that fails for a reason other
+        than `retryable` - an SSLError, ChunkedEncodingError,
+        TooManyRedirects, etc. (M2, PR #50 review). None resolves lazily
+        to requests.exceptions.RequestException, which `retryable` is
+        already a subset of.
 
     Outputs:
         none (state object).
     --------------------------------------------------------------------------
     """
 
-    def __init__(self, session, base_url, timeout_s, get_retries, retry_backoff_s=0, retryable=None):
+    def __init__(
+        self, session, base_url, timeout_s, get_retries, retry_backoff_s=0, retryable=None, request_error=None
+    ):
         self.session = session
         self.base_url = base_url
         self.timeout_s = timeout_s
         self.get_retries = get_retries
         self.retry_backoff_s = retry_backoff_s
         self._retryable = retryable
+        self._request_error = request_error
 
     @property
     def retryable(self):
@@ -470,6 +484,28 @@ class WpClient:
             self._retryable = (requests.exceptions.ConnectionError, requests.exceptions.Timeout)
         return self._retryable
 
+    @property
+    def request_error(self):
+        """
+        --------------------------------------------------------------------------
+        Purpose:
+            Resolve and cache the broader, non-retryable request-error
+            class, importing requests only the first time this is needed.
+
+        Inputs:
+            none
+
+        Outputs:
+            request_error (type): the given class, or
+            requests.exceptions.RequestException.
+        --------------------------------------------------------------------------
+        """
+        if self._request_error is None:
+            import requests
+
+            self._request_error = requests.exceptions.RequestException
+        return self._request_error
+
     def get_json(self, route, params):
         """
         --------------------------------------------------------------------------
@@ -486,7 +522,9 @@ class WpClient:
 
         Raises:
             WpSyncError: a 401 (naming WP_APP_USER/WP_APP_PASSWORD), any
-            other 4xx but 429 (naming the status), a non-JSON body, or
+            other 4xx but 429 (naming the status), a non-JSON body, a
+            request failure that is not retryable (an SSLError,
+            ChunkedEncodingError, TooManyRedirects, etc. - M2), or
             attempts exhausted (naming the route and the last cause). A 429
             (rate limited) is retried like a 5xx rather than raised.
         --------------------------------------------------------------------------
@@ -501,6 +539,8 @@ class WpClient:
             except self.retryable as exc:
                 last_exc = exc
                 continue
+            except self.request_error as exc:
+                raise WpSyncError("request failed for %s: %s" % (route, exc)) from exc
             if response.status_code == 401:
                 raise WpSyncError(
                     "401 Unauthorized for %s - check WP_APP_USER/WP_APP_PASSWORD" % route,
@@ -531,13 +571,16 @@ class WpClient:
             (status_code, text) (tuple[int, str]): the raw response.
 
         Raises:
-            WpWriteUnconfirmed: a retryable exception occurred - the write's
-            outcome is unknown, not necessarily a failure.
+            WpWriteUnconfirmed: a retryable exception, or any other request
+            failure (M2: an SSLError, ChunkedEncodingError, etc.) occurred -
+            the write's outcome is unknown, not necessarily a failure.
         --------------------------------------------------------------------------
         """
         try:
             response = self.session.put(self.base_url + route, json=payload, timeout=self.timeout_s)
         except self.retryable as exc:
+            raise WpWriteUnconfirmed(str(exc)) from exc
+        except self.request_error as exc:
             raise WpWriteUnconfirmed(str(exc)) from exc
         return response.status_code, response.text
 

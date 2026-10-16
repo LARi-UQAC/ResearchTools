@@ -14,7 +14,8 @@ import sys
 
 import yaml
 
-from render import load_render_settings, render_entry
+from push_wp import section_size
+from render import load_render_settings, render_entry, validate_mapping
 from verify_titles import verify_mapping
 from wp_common import configure_streams, error_report, site_base
 from wp_config import CONFIG_NAME, config_value, load_config
@@ -93,6 +94,7 @@ def main(argv=None, today_year=None, environ=None):
         if not isinstance(mapping, dict):
             raise WpRefusal("mapping.yaml does not parse to a mapping: %s" % mapping_file)
         settings = load_render_settings(mapping, str(mapping_file))
+        validate_mapping(mapping)
         with open(cv_file, "r", encoding="utf-8") as handle:
             data = json.load(handle)
         site = site_base(mapping, environ)
@@ -116,18 +118,38 @@ def main(argv=None, today_year=None, environ=None):
             file=sys.stderr,
         )
         if mode == "split":
+            section_failed = False
             try:
-                recent, history, notes = render_entry(entry, data, data_dir, settings)
-                recent_chars, history_chars = len(recent), len(history)
-                for label, block in (("RECENT", recent), ("HISTORIQUE", history)):
-                    snippet = block[:snippet_chars].replace("\n", " ")
-                    print(
-                        "    %s (%d car.) : %s%s" % (label, len(block), snippet, "…" if len(block) > snippet_chars else ""),
-                        file=sys.stderr,
+                if section_size(data, entry, data_dir, settings) == 0:
+                    notes.append(
+                        "entry %r (page %s) has an empty section after exclusions/status "
+                        "filtering; push_wp.py would refuse unless --allow-empty-section"
+                        % (entry.get("cv_path"), entry.get("page_id"))
                     )
-            except (WpSyncError, WpRefusal) as exc:
-                notes = ["render failed: %s" % exc]
+            except (WpRefusal, yaml.YAMLError, OSError) as exc:
+                notes.append("render failed: %s" % exc)
                 print("    ERREUR : %s" % exc, file=sys.stderr)
+                section_failed = True
+            # section_size() and render_entry() both read the same
+            # *_extra.yaml through split_entry_items, so a WpRefusal/
+            # yaml.YAMLError from the first would raise the identical one
+            # again here - skip the second attempt rather than duplicate
+            # the diagnostic (/code-review re-review finding, PR #50 round 3).
+            if not section_failed:
+                try:
+                    recent, history, notes_rendered = render_entry(entry, data, data_dir, settings)
+                    notes = notes + notes_rendered
+                    recent_chars, history_chars = len(recent), len(history)
+                    for label, block in (("RECENT", recent), ("HISTORIQUE", history)):
+                        snippet = block[:snippet_chars].replace("\n", " ")
+                        print(
+                            "    %s (%d car.) : %s%s"
+                            % (label, len(block), snippet, "…" if len(block) > snippet_chars else ""),
+                            file=sys.stderr,
+                        )
+                except (WpSyncError, WpRefusal, yaml.YAMLError, OSError) as exc:
+                    notes = notes + ["render failed: %s" % exc]
+                    print("    ERREUR : %s" % exc, file=sys.stderr)
         for note in notes:
             print("    note : %s" % note, file=sys.stderr)
         entries_report.append(
@@ -152,6 +174,8 @@ def main(argv=None, today_year=None, environ=None):
         gate_report = verify_mapping(data, mapping, data_dir, settings)
     except WpRefusal as exc:
         return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
+    except (yaml.YAMLError, OSError) as exc:
+        return _fail("ERREUR: %s" % exc, str(exc), 1)
     for cv_path, title in gate_report["unapproved"]:
         print("TITRE NON APPROUVE [%s] %s" % (cv_path, title), file=sys.stderr)
 

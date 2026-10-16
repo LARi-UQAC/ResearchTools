@@ -232,12 +232,20 @@ class FakeClient:
     --------------------------------------------------------------------------
     """
 
-    def __init__(self, pages, drop_writes=False, put_raises=None, put_status=200, raw_missing=False):
+    def __init__(
+        self, pages, drop_writes=False, put_raises=None, put_status=200, raw_missing=False, modified_gmt_values=None
+    ):
         self.pages = dict(pages)
         self.drop_writes = drop_writes
         self.put_raises = put_raises
         self.put_status = put_status
         self.raw_missing = raw_missing
+        # Q6 (PR #50 review): a list of modified_gmt values consumed in
+        # call order, one per get_json call whose _fields asked for it.
+        # None (the default) means no caller asked for it: the
+        # concurrent-edit check then degrades to "unavailable, skipped",
+        # matching every pre-Q6 test unchanged.
+        self._modified_gmt_values = list(modified_gmt_values) if modified_gmt_values is not None else None
         self.gets = []
         self.puts = []
 
@@ -249,8 +257,13 @@ class FakeClient:
         page_id = self._page_id(route)
         content = self.pages.get(page_id, "")
         if self.raw_missing:
-            return {"content": {"rendered": content}}
-        return {"content": {"raw": content}}
+            result = {"content": {"rendered": content}}
+        else:
+            result = {"content": {"raw": content}}
+        fields = params.get("_fields", "")
+        if "modified_gmt" in fields and self._modified_gmt_values is not None:
+            result["modified_gmt"] = self._modified_gmt_values.pop(0)
+        return result
 
     def put_json(self, route, payload):
         self.puts.append((route, payload))

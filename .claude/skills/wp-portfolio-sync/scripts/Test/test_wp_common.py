@@ -26,6 +26,11 @@ class ConnectionError_(Exception):
     """Stand-in exception used as the injected retryable type in these tests."""
 
 
+class OtherRequestError_(Exception):
+    """Stand-in for a non-retryable requests.exceptions.RequestException
+    subtype (SSLError, ChunkedEncodingError, TooManyRedirects, ...)."""
+
+
 class TestAtomicWriteText(unittest.TestCase):
     def test_writes_full_content(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,6 +81,22 @@ class TestFormatters(unittest.TestCase):
         self.assertIn("<tr><td>", html_out)
         self.assertIn("<li>", html_out)
         self.assertIn("<strong>gras</strong>", html_out)
+
+    def test_md_to_html_closes_ul_before_heading(self):
+        # L1 (PR #50 review): a heading directly after a list item (no
+        # blank line) must still close <ul> first.
+        html_out = wp_common.md_to_html("- item un\n## Titre")
+        self.assertIn("</ul>", html_out)
+        ul_close = html_out.index("</ul>")
+        h3 = html_out.index("<h3>")
+        self.assertLess(ul_close, h3)
+
+    def test_md_to_html_closes_ul_before_table(self):
+        html_out = wp_common.md_to_html("- item un\n| **Projet** | 2020 |")
+        self.assertIn("</ul>", html_out)
+        ul_close = html_out.index("</ul>")
+        table_open = html_out.index("<table>")
+        self.assertLess(ul_close, table_open)
 
 
 class TestSiteBase(unittest.TestCase):
@@ -179,6 +200,34 @@ class TestWpClient(unittest.TestCase):
         with self.assertRaises(wp_errors.WpWriteUnconfirmed):
             client.put_json("/route", {"content": "x"})
         self.assertEqual(len(session.calls), 1)
+
+    def test_get_other_request_error_wrapped_not_retried(self):
+        # M2 (PR #50 review): an SSLError/ChunkedEncodingError/TooManyRedirects
+        # is not in `retryable` - it must still be caught (never escape as a
+        # bare traceback) and must NOT be retried.
+        session = FakeSession([OtherRequestError_("bad cert")])
+        client = wp_common.WpClient(
+            session, "https://site", 5, 2, retryable=(ConnectionError_,), request_error=OtherRequestError_
+        )
+        with self.assertRaises(wp_errors.WpSyncError) as ctx:
+            client.get_json("/route", {})
+        self.assertIn("bad cert", str(ctx.exception))
+        self.assertEqual(len(session.calls), 1)
+
+    def test_put_other_request_error_wrapped(self):
+        session = FakeSession([OtherRequestError_("too many redirects")])
+        client = wp_common.WpClient(
+            session, "https://site", 5, 2, retryable=(ConnectionError_,), request_error=OtherRequestError_
+        )
+        with self.assertRaises(wp_errors.WpWriteUnconfirmed):
+            client.put_json("/route", {"content": "x"})
+        self.assertEqual(len(session.calls), 1)
+
+    def test_request_error_defaults_to_requests_exception(self):
+        import requests
+
+        client = wp_common.WpClient(object(), "https://site", 5, 0)
+        self.assertIs(client.request_error, requests.exceptions.RequestException)
 
     def test_get_bad_json_body_raises(self):
         session = FakeSession([FakeResponse(200, json_data=None)])

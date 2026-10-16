@@ -2,10 +2,12 @@
 test_push_wp.py - offline tests for push_wp.py.
 
 Proves: raw-content-only reads (D8), the gate and both pre-flight refusals
-run before any network call (D6), one GET+PUT+GET per page regardless of
-how many entries target it, every write outcome run_push must distinguish
-(dropped write, timeout-after-write, HTTP error), validate_mapping's
-refusals, and that no secret ever reaches stdout/stderr.
+run before any network call (D6), one GET+PUT+GET per page in a dry run
+(an extra GET re-checks modified_gmt right before a real --apply write,
+Q6), every write outcome run_push must distinguish (dropped write,
+timeout-after-write, HTTP error), validate_mapping's refusals (now owned
+by render.py and re-exported here, R2), and that no secret ever reaches
+stdout/stderr.
 """
 import contextlib
 import io
@@ -20,6 +22,7 @@ from pathlib import Path
 import _fixtures  # noqa: F401
 from _fixtures import SCRIPTS, make_data_dir, grant
 
+import wp_config
 import wp_errors
 import push_wp
 
@@ -77,6 +80,21 @@ class TestReplaceBetweenMarkers(unittest.TestCase):
         result = push_wp.replace_between_markers(content, "fin-r", "new")
         self.assertIn("new", result)
         self.assertNotIn("old", result)
+
+    def test_backslash_in_block_not_read_as_regex_template(self):
+        # PR #50 review, H1 (2026-10-15): a backslash in rendered CV data must
+        # never be read as a re.sub replacement escape (\n, \1, ...) or raise
+        # re.error - the block is literal text, not a regex template.
+        content = "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r -->"
+        block = r"C:\new\path and \1 and \g<0>"
+        result = push_wp.replace_between_markers(content, "fin-r", block)
+        self.assertIn(block, result)
+
+    def test_backreference_group_in_block_left_literal(self):
+        content = "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r -->"
+        block = "<p>\\g<1> Montant : 100 000 $</p>"
+        result = push_wp.replace_between_markers(content, "fin-r", block)
+        self.assertIn(block, result)
 
 
 class TestValidateMapping(unittest.TestCase):
@@ -137,12 +155,57 @@ class TestValidateMapping(unittest.TestCase):
         push_wp.validate_mapping({"entries": [_one_financement_entry()]})
 
 
+def _settings(**overrides):
+    import render
+
+    kwargs = dict(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+    kwargs.update(overrides)
+    return render.RenderSettings(**kwargs)
+
+
 class TestSectionSize(unittest.TestCase):
     def test_list_section(self):
-        self.assertEqual(push_wp.section_size({"financement": [grant(), grant()]}, _one_financement_entry()), 2)
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            size = push_wp.section_size({"financement": [grant(), grant()]}, _one_financement_entry(), data_dir, _settings())
+        self.assertEqual(size, 2)
 
     def test_empty_list_section(self):
-        self.assertEqual(push_wp.section_size({"financement": []}, _one_financement_entry()), 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            size = push_wp.section_size({"financement": []}, _one_financement_entry(), data_dir, _settings())
+        self.assertEqual(size, 0)
+
+    def test_split_entry_emptied_by_status_filter_counts_as_empty(self):
+        # M1 (PR #50 review): a raw, non-empty section that the
+        # excluded_funding_statuses filter reduces to nothing must count
+        # as empty, or the guard never catches it and the live page is
+        # overwritten with a "Cumul : 0 subventions" block.
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            data = {"financement": [grant(statut="Refuse")]}
+            size = push_wp.section_size(
+                data, _one_financement_entry(), data_dir, _settings(excluded_funding_statuses=("Refuse",))
+            )
+        self.assertEqual(size, 0)
+
+    def test_split_entry_emptied_by_exclusions_yaml_counts_as_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp, {"config/exclusions.yaml": "financement:\n  - Projet fictif A\n"}
+            )
+            data = {"financement": [grant()]}
+            size = push_wp.section_size(data, _one_financement_entry(), data_dir, _settings())
+        self.assertEqual(size, 0)
+
+    def test_split_entry_filter_does_not_affect_markers_mode(self):
+        # The exclusion/status pipeline is split-only; a markers entry's
+        # raw record count is unaffected by it.
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            entry = {"cv_path": "cv.notes", "page_id": 1, "mode": "markers", "marker": "m"}
+            size = push_wp.section_size({"cv": {"notes": "x"}}, entry, data_dir, _settings())
+        self.assertEqual(size, 1)
 
 
 class TestPlanPagesMissingPath(unittest.TestCase):
@@ -344,6 +407,62 @@ class TestRunPush(unittest.TestCase):
             self.assertEqual(results[0]["status"], "would-change")
             self.assertFalse((data_dir / "backups").exists())
 
+    def test_concurrent_edit_detected_refuses_without_writing(self):
+        # Q6 (PR #50 review, owner decision 2026-10-16): the page's
+        # modified_gmt changed between the initial GET and the pre-PUT
+        # re-check - someone edited it while this push ran. Must refuse
+        # rather than overwrite, and no PUT may be sent.
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            import render
+
+            settings = render.RenderSettings(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+            pages = push_wp.plan_pages(
+                {"entries": [_one_financement_entry(201)]}, {"financement": [grant()]}, data_dir, settings
+            )
+            client = _fixtures.FakeClient(
+                pages={201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"},
+                modified_gmt_values=["2026-01-01T00:00:00", "2026-01-02T00:00:00"],
+            )
+            results = push_wp.run_push(client, pages, apply=True, data_dir=data_dir)
+        self.assertEqual(results[0]["status"], "failed")
+        self.assertIn("changed since it was read", results[0]["error"])
+        self.assertEqual(client.puts, [])
+        self.assertFalse((data_dir / "backups").exists())
+
+    def test_unchanged_modified_gmt_still_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            import render
+
+            settings = render.RenderSettings(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+            pages = push_wp.plan_pages(
+                {"entries": [_one_financement_entry(201)]}, {"financement": [grant()]}, data_dir, settings
+            )
+            client = _fixtures.FakeClient(
+                pages={201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"},
+                modified_gmt_values=["2026-01-01T00:00:00", "2026-01-01T00:00:00"],
+            )
+            results = push_wp.run_push(client, pages, apply=True, data_dir=data_dir)
+        self.assertEqual(results[0]["status"], "updated")
+        self.assertEqual(len(client.puts), 1)
+
+    def test_missing_modified_gmt_skips_check_with_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(tmp, {})
+            import render
+
+            settings = render.RenderSettings(ref_year=2026, window=6, recent_label="x", excluded_funding_statuses=())
+            pages = push_wp.plan_pages(
+                {"entries": [_one_financement_entry(201)]}, {"financement": [grant()]}, data_dir, settings
+            )
+            client = _fixtures.FakeClient(
+                pages={201: "<!-- cvsync:fin-r -->old<!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"}
+            )
+            results = push_wp.run_push(client, pages, apply=True, data_dir=data_dir)
+        self.assertEqual(results[0]["status"], "updated")
+        self.assertTrue(any("concurrent-edit check skipped" in n for n in results[0]["notes"]))
+
 
 class TestMainCli(unittest.TestCase):
     def setUp(self):
@@ -443,6 +562,27 @@ class TestMainCli(unittest.TestCase):
             )
         self.assertNotIn("S3CRET-PW", out.getvalue())
         self.assertNotIn("S3CRET-PW", err.getvalue())
+
+    def test_missing_snippet_chars_key_refused_not_raised(self):
+        # code-review finding #2 (PR #50 round 3): http.error_body_snippet_chars
+        # is read deep inside _process_page, which run_push() calls OUTSIDE
+        # main()'s own try/except WpRefusal block (that block already closed).
+        # A stale operator config missing the key used to escape uncaught
+        # instead of being refused cleanly like every other missing key.
+        self._mapping_and_cv()
+        client = _fixtures.FakeClient(
+            pages={201: "<!-- cvsync:fin-r --><!-- /cvsync:fin-r --><!-- cvsync:fin-h --><!-- /cvsync:fin-h -->"},
+            put_status=500,
+        )
+        stripped = wp_config.load_config()
+        del stripped["http"]["error_body_snippet_chars"]
+        with unittest.mock.patch("push_wp.load_config", return_value=stripped):
+            code = push_wp.main(
+                ["--data-dir", str(self.data_dir), "--apply", "--yes"],
+                environ={},
+                client_factory=lambda *a: client,
+            )
+        self.assertEqual(code, 2)
 
     def test_requests_not_imported(self):
         code = (

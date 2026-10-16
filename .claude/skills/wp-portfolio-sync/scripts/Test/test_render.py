@@ -88,6 +88,51 @@ class TestFinancementCumul(unittest.TestCase):
         self.assertNotIn("2021–2026", source)
         self.assertNotIn("2026 - 6", source)
 
+    def test_multi_funder_grant_sums_amounts_and_names_both(self):
+        # M5/Q3 (PR #50 review, owner decision 2026-10-16): reading only
+        # sources[0] understated a multi-funder grant and dropped the
+        # second funder entirely.
+        grant_two_sources = _grant("Projet Fictif Multi", "2024/1", "2026/1", "Obtenu", "60000")
+        grant_two_sources["sources"].append(
+            {
+                "organisme": "Second Organisme Fictif",
+                "programme": "Second Programme Fictif",
+                "montant_total": "40000",
+                "portion_recue": "",
+                "competitif": "Oui",
+            }
+        )
+        recent_html, _ = render.render_financement([grant_two_sources], _settings())
+        self.assertIn("Organisme Fictif", recent_html)
+        self.assertIn("Second Organisme Fictif", recent_html)
+        self.assertIn("100 000", recent_html)  # cumul and per-grant total both sum
+
+    def test_multi_funder_partial_portion_shown_per_source(self):
+        # code-review finding (PR #50 round 3, re-review): the multi-source
+        # breakdown built its per-source amount with fmt_amount() directly
+        # instead of _source_amount(), silently dropping the "(portion :
+        # X)" caveat that a single-source grant already shows when only
+        # part of a committed amount has actually been received.
+        grant_two_sources = _grant("Projet Fictif Portion", "2024/1", "2026/1", "Obtenu", "60000")
+        grant_two_sources["sources"][0]["portion_recue"] = "30000"
+        grant_two_sources["sources"].append(
+            {
+                "organisme": "Second Organisme Fictif",
+                "programme": "Second Programme Fictif",
+                "montant_total": "40000",
+                "portion_recue": "",
+                "competitif": "Oui",
+            }
+        )
+        recent_html, _ = render.render_financement([grant_two_sources], _settings())
+        self.assertIn("portion : 30 000", recent_html)
+
+    def test_single_source_grant_rendering_unchanged(self):
+        items = [_grant(montant="100000")]
+        recent_html, _ = render.render_financement(items, _settings())
+        self.assertIn("100 000", recent_html)
+        self.assertNotIn(" : 100 000 $ (", recent_html)  # no per-source breakdown for one source
+
 
 class TestEditorialOptIn(unittest.TestCase):
     def test_editorial_texts_applied_when_opted_in(self):
@@ -156,6 +201,94 @@ class TestExtrasAndMutation(unittest.TestCase):
         snapshot = copy.deepcopy(students)
         render.render_phq(students, settings, "Professeure Exemple")
         self.assertEqual(students, snapshot)
+
+
+class TestExtraValidation(unittest.TestCase):
+    """M3 (PR #50 review): a malformed *_extra.yaml must be refused by
+    name, not raise a bare KeyError/AttributeError deep inside a renderer."""
+
+    def test_implications_extra_missing_key_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp, {"config/implications_extra.yaml": "- categorie: comite\n  nom: X\n"}
+            )
+            data = {"implications": [_implication()]}
+            entry = {"cv_path": "implications", "renderer": "implications"}
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                render.render_entry(entry, data, data_dir, _settings())
+            self.assertIn("implications_extra.yaml", str(ctx.exception))
+            self.assertIn("role", str(ctx.exception))
+
+    def test_services_extra_missing_key_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp, {"config/services_extra.yaml": "- type: entreprise\n  organisation: X\n"}
+            )
+            data = {"services_communaute": [_media()]}
+            entry = {"cv_path": "services_communaute", "renderer": "services"}
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                render.render_entry(entry, data, data_dir, _settings())
+            self.assertIn("services_extra.yaml", str(ctx.exception))
+
+    def test_services_extra_unknown_type_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp, {"config/services_extra.yaml": "- type: bogus\n"}
+            )
+            data = {"services_communaute": [_media()]}
+            entry = {"cv_path": "services_communaute", "renderer": "services"}
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                render.render_entry(entry, data, data_dir, _settings())
+            self.assertIn("bogus", str(ctx.exception))
+
+    def test_distinctions_extra_missing_key_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp, {"config/distinctions_extra.yaml": "- nom: Prix X\n  organisation: Y\n"}
+            )
+            data = {"distinctions": {"prix": [_prix()], "contributions_cles": []}}
+            entry = {"cv_path": "distinctions", "renderer": "distinctions", "subkey": "prix"}
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                render.render_entry(entry, data, data_dir, _settings())
+            self.assertIn("distinctions_extra.yaml", str(ctx.exception))
+
+    def test_extra_file_as_mapping_instead_of_list_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp, {"config/implications_extra.yaml": "categorie: comite\nnom: X\n"}
+            )
+            data = {"implications": [_implication()]}
+            entry = {"cv_path": "implications", "renderer": "implications"}
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                render.render_entry(entry, data, data_dir, _settings())
+            self.assertIn("implications_extra.yaml", str(ctx.exception))
+
+    def test_extra_record_not_a_mapping_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp, {"config/implications_extra.yaml": "- just a string\n"}
+            )
+            data = {"implications": [_implication()]}
+            entry = {"cv_path": "implications", "renderer": "implications"}
+            with self.assertRaises(wp_errors.WpRefusal) as ctx:
+                render.render_entry(entry, data, data_dir, _settings())
+            self.assertIn("record 0", str(ctx.exception))
+
+    def test_well_formed_extra_still_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = make_data_dir(
+                tmp,
+                {
+                    "config/implications_extra.yaml": (
+                        "- categorie: comite\n  nom: Comité Extra\n  role: Membre\n"
+                        "  organisation: ''\n  debut: '2020/1'\n  fin: ''\n  description: ''\n"
+                    )
+                },
+            )
+            data = {"implications": [_implication()]}
+            entry = {"cv_path": "implications", "renderer": "implications"}
+            recent, history, notes = render.render_entry(entry, data, data_dir, _settings())
+            self.assertIn("Comité Extra", recent + history)
 
 
 class TestExclusions(unittest.TestCase):

@@ -17,7 +17,7 @@ import sys
 
 import yaml
 
-from render import PHASE1_RENDERERS, load_render_settings, render_entry
+from render import load_render_settings, render_entry, split_entry_items, validate_mapping
 from verify_titles import verify_mapping
 from wp_common import (
     atomic_write_text,
@@ -29,90 +29,9 @@ from wp_common import (
     render_block,
     site_base,
 )
-from wp_config import load_config
+from wp_config import CONFIG_NAME, config_value, load_config
 from wp_errors import WpRefusal, WpSyncError, WpWriteUnconfirmed, exit_code_for
 from wp_paths import contained_path, resolve_data_dir
-
-
-def validate_mapping(mapping):
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Validate a parsed mapping.yaml document before it drives any push.
-
-    Inputs:
-        mapping (dict): the parsed mapping.yaml document.
-
-    Outputs:
-        none.
-
-    Raises:
-        WpRefusal: naming the entry index, for an empty entries list; a
-        missing key required by the entry's mode; a non-int page_id; an
-        unknown mode; renderer "phq" (D2); a renderer outside
-        PHASE1_RENDERERS; a distinctions entry with no valid subkey; a
-        duplicate (page_id, marker) pair across the whole mapping; a
-        'replace' page shared with another entry; or a public_path not
-        starting with "/".
-    --------------------------------------------------------------------------
-    """
-    entries = mapping.get("entries")
-    if not entries or not isinstance(entries, list):
-        raise WpRefusal("mapping.yaml: 'entries' must be a non-empty list")
-    for index, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            raise WpRefusal("entry %d: must be a mapping, got %s" % (index, type(entry).__name__))
-
-    page_id_counts = {}
-    for entry in entries:
-        page_id_counts[entry.get("page_id")] = page_id_counts.get(entry.get("page_id"), 0) + 1
-
-    seen_pairs = set()
-    for index, entry in enumerate(entries):
-        prefix = "entry %d" % index
-        if not isinstance(entry.get("cv_path"), str) or not entry["cv_path"]:
-            raise WpRefusal("%s: missing or invalid 'cv_path'" % prefix)
-        page_id = entry.get("page_id")
-        if not isinstance(page_id, int) or isinstance(page_id, bool):
-            raise WpRefusal("%s: 'page_id' must be an int" % prefix)
-        mode = entry.get("mode")
-        if mode not in ("markers", "replace", "split"):
-            raise WpRefusal("%s: unknown mode %r" % (prefix, mode))
-
-        if mode == "markers":
-            marker = entry.get("marker")
-            if not isinstance(marker, str) or not marker:
-                raise WpRefusal("%s: mode 'markers' requires 'marker'" % prefix)
-            pair = (page_id, marker)
-            if pair in seen_pairs:
-                raise WpRefusal("%s: duplicate (page_id, marker) pair %r" % (prefix, pair))
-            seen_pairs.add(pair)
-        elif mode == "split":
-            renderer = entry.get("renderer")
-            if renderer == "phq":
-                raise WpRefusal(
-                    "%s: renderer 'phq' is refused: supervision is published from ThesisTracker, "
-                    "never from the CV XML (D2)" % prefix
-                )
-            if renderer not in PHASE1_RENDERERS:
-                raise WpRefusal("%s: unknown renderer %r (expected one of %s)" % (prefix, renderer, PHASE1_RENDERERS))
-            if renderer == "distinctions" and entry.get("subkey") not in ("prix", "contributions_cles"):
-                raise WpRefusal("%s: distinctions entry requires subkey 'prix' or 'contributions_cles'" % prefix)
-            for key in ("recent_marker", "history_marker"):
-                value = entry.get(key)
-                if not isinstance(value, str) or not value:
-                    raise WpRefusal("%s: mode 'split' requires %r" % (prefix, key))
-                pair = (page_id, value)
-                if pair in seen_pairs:
-                    raise WpRefusal("%s: duplicate (page_id, marker) pair %r" % (prefix, pair))
-                seen_pairs.add(pair)
-        else:  # replace
-            if page_id_counts.get(page_id, 0) > 1:
-                raise WpRefusal("%s: page %s is used by a 'replace' entry and by another entry" % (prefix, page_id))
-
-        public_path = entry.get("public_path")
-        if public_path is not None and not str(public_path).startswith("/"):
-            raise WpRefusal("%s: public_path must start with '/'" % prefix)
 
 
 def block_inner(content, marker):
@@ -167,7 +86,8 @@ def replace_between_markers(content, marker, block):
             "markers %r occur %d time(s) in the page (expected exactly 1). Add\n  %s\n  ...\n  %s\n"
             "at the intended spot, then retry." % (marker, count, start, end)
         )
-    return pattern.sub(start + "\n" + block + "\n" + end, content)
+    replacement = start + "\n" + block + "\n" + end
+    return pattern.sub(lambda _match: replacement, content)
 
 
 def normalize_block(text):
@@ -187,29 +107,48 @@ def normalize_block(text):
     return (text or "").replace("\r\n", "\n").strip()
 
 
-def section_size(data, entry):
+def section_size(data, entry, data_dir, settings):
     """
     --------------------------------------------------------------------------
     Purpose:
         Count the records of a mapping entry's section, so an empty one can
-        be refused before it is pushed over real content.
+        be refused before it is pushed over real content. For a split-mode
+        entry this counts records AFTER extras/exclusions/status filtering
+        (M1, PR #50 review): a raw, non-empty section that filtering empties
+        must read as empty, or the guard never catches it and the live page
+        is overwritten with a boilerplate "Cumul : 0 subventions" block.
+        markers/replace entries have no such pipeline, so they still count
+        the raw node.
 
     Inputs:
         data (dict): the parsed cihr.json document.
         entry (dict): one mapping.yaml entry.
+        data_dir (Path): the resolved researcher data folder (read by the
+        split-mode filter for config/exclusions.yaml and *_extra.yaml).
+        settings (render.RenderSettings): carries excluded_funding_statuses.
 
     Outputs:
         size (int): the record count, including a distinctions entry's own
         subkey; 1 for a non-empty, non-list node (e.g. a generic dotted
         path from parse_cv.py), 0 for an absent or empty one.
+
+    Raises:
+        WpRefusal: for a split-mode entry, transitively from
+        split_entry_items -> _validate_extra_items (M3) when the entry's
+        *_extra.yaml is malformed. Every caller of this function must
+        catch WpRefusal (code-review finding, PR #50 round 3: an
+        unguarded call site is exactly how this was missed once already).
     --------------------------------------------------------------------------
     """
+    if entry.get("mode") == "split":
+        if entry["cv_path"] not in data:
+            return 0
+        items, _notes = split_entry_items(entry, data, data_dir, settings)
+        return len(items)
     try:
         node = get_path(data, entry["cv_path"])
     except KeyError:
         return 0
-    if entry.get("mode") == "split" and entry["cv_path"] == "distinctions":
-        node = (node or {}).get(entry.get("subkey"), [])
     if isinstance(node, list):
         return len(node)
     return 1 if node else 0
@@ -279,6 +218,24 @@ def plan_pages(mapping, data, data_dir, settings):
     return [pages_by_id[page_id] for page_id in order]
 
 
+def _utc_now():
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The current time in UTC, as an aware datetime (L4, PR #50 review):
+        datetime.datetime.utcnow() is deprecated since 3.12 and returns a
+        naive datetime that is easy to mix up with local time by accident.
+
+    Inputs:
+        none
+
+    Outputs:
+        now (datetime.datetime): timezone-aware, UTC.
+    --------------------------------------------------------------------------
+    """
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def _write_backup(data_dir, page_id, raw_content, now):
     """
     --------------------------------------------------------------------------
@@ -292,8 +249,8 @@ def _write_backup(data_dir, page_id, raw_content, now):
         page_id (int): the WordPress page id.
         raw_content (str): the page's content.raw before this push's edits.
         now (callable): takes no arguments, returns an object with
-        strftime (tests inject a fixed one; datetime.datetime.utcnow by
-        default - R19: never read directly inside the logic under test).
+        strftime (tests inject a fixed one; _utc_now by default - R19:
+        never read directly inside the logic under test).
 
     Outputs:
         path (Path): the backup file written, under
@@ -308,16 +265,52 @@ def _write_backup(data_dir, page_id, raw_content, now):
     return path
 
 
-def _process_page(client, page, apply, data_dir=None, now=None):
+def _process_page(client, page, apply, data_dir=None, now=None, snippet_chars=None):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Push one planned page: GET its current content, apply every block,
+        and (in --apply) PUT the result and verify it with a read-back GET.
+        Before writing, re-checks the page's modified_gmt against the value
+        from the initial GET and refuses rather than overwriting if it
+        changed - someone edited the page while this push was running (Q6,
+        PR #50 review, owner decision 2026-10-16). A pre-image backup is
+        taken right before the PUT regardless (M5).
+
+    Inputs:
+        client: a WpClient (or a fake with the same get_json/put_json contract).
+        page (dict): one plan_pages() entry ("page_id", "labels", "blocks", "notes").
+        apply (bool): False means dry run - no PUT, no concurrent-edit
+        re-check, no backup; the function stops at "would-change".
+        data_dir (Path or None): when given, enables the pre-image backup
+        (M5); None skips it (no researcher data folder at hand, e.g. a test).
+        now (callable or None): see _write_backup; None uses the real clock.
+        snippet_chars (int or None): how much of a failed PUT's response
+        body to keep in the error message (config key
+        http.error_body_snippet_chars). None loads it here directly, for a
+        caller with no config already in hand (e.g. a test); main() always
+        passes the value it already loaded in its own try/except WpRefusal
+        block, so a missing key is refused before any page is processed
+        rather than raised uncaught here (code-review finding, PR #50
+        round 3).
+
+    Outputs:
+        result (dict): {"page_id", "labels", "status", "blocks", "error",
+        "notes"}. status is one of "unchanged", "would-change", "updated"
+        or "failed" - including a page changed concurrently, a replace
+        error, a dropped read, or a write that failed its read-back.
+    --------------------------------------------------------------------------
+    """
     page_id = page["page_id"]
     route = "/wp-json/wp/v2/pages/%d" % page_id
     notes = list(page.get("notes", []))
 
     try:
-        body = client.get_json(route, {"context": "edit", "_fields": "content"})
+        body = client.get_json(route, {"context": "edit", "_fields": "content,modified_gmt"})
     except WpSyncError as exc:
         return {"page_id": page_id, "labels": page["labels"], "status": "failed", "blocks": [], "error": str(exc), "notes": notes}
 
+    initial_modified_gmt = (body or {}).get("modified_gmt")
     raw = ((body or {}).get("content") or {}).get("raw")
     if raw is None:
         return {
@@ -358,8 +351,30 @@ def _process_page(client, page, apply, data_dir=None, now=None):
     if not apply:
         return {"page_id": page_id, "labels": page["labels"], "status": "would-change", "blocks": block_reports, "error": None, "notes": notes}
 
+    if initial_modified_gmt is None:
+        notes = notes + ["modified_gmt unavailable - concurrent-edit check skipped"]
+    else:
+        try:
+            recheck_body = client.get_json(route, {"_fields": "modified_gmt"})
+        except WpSyncError as exc:
+            return {"page_id": page_id, "labels": page["labels"], "status": "failed", "blocks": block_reports, "error": "concurrent-edit re-check failed: %s" % exc, "notes": notes}
+        current_modified_gmt = (recheck_body or {}).get("modified_gmt")
+        if current_modified_gmt != initial_modified_gmt:
+            return {
+                "page_id": page_id,
+                "labels": page["labels"],
+                "status": "failed",
+                "blocks": block_reports,
+                "error": (
+                    "page changed since it was read (modified_gmt %r -> %r); someone edited it "
+                    "while this push ran - refusing to overwrite, retry the push"
+                    % (initial_modified_gmt, current_modified_gmt)
+                ),
+                "notes": notes,
+            }
+
     if data_dir is not None:
-        backup_path = _write_backup(data_dir, page_id, raw, now or datetime.datetime.utcnow)
+        backup_path = _write_backup(data_dir, page_id, raw, now or _utc_now)
         notes = notes + ["pre-image backed up to %s" % backup_path]
 
     status_code = None
@@ -370,12 +385,14 @@ def _process_page(client, page, apply, data_dir=None, now=None):
         notes = notes + ["write unconfirmed: %s" % exc]
 
     if status_code is not None and status_code not in (200, 201):
+        if snippet_chars is None:
+            snippet_chars = config_value(load_config(), "http.error_body_snippet_chars", CONFIG_NAME)
         return {
             "page_id": page_id,
             "labels": page["labels"],
             "status": "failed",
             "blocks": block_reports,
-            "error": "HTTP %s: %s" % (status_code, (body_text or "")[:200]),
+            "error": "HTTP %s: %s" % (status_code, (body_text or "")[:snippet_chars]),
             "notes": notes,
         }
 
@@ -401,7 +418,7 @@ def _process_page(client, page, apply, data_dir=None, now=None):
     return {"page_id": page_id, "labels": page["labels"], "status": "updated", "blocks": block_reports, "error": None, "notes": notes}
 
 
-def run_push(client, pages, apply, data_dir=None, now=None):
+def run_push(client, pages, apply, data_dir=None, now=None, snippet_chars=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -416,6 +433,8 @@ def run_push(client, pages, apply, data_dir=None, now=None):
         <data_dir>/backups/ before each PUT (M5); None skips the backup
         (a caller with no researcher data folder at hand, e.g. a test).
         now (callable or None): see _write_backup; None uses the real clock.
+        snippet_chars (int or None): forwarded to _process_page; see its
+        own docstring. main() always supplies it.
 
     Outputs:
         results (list[dict]): one {"page_id", "labels", "status", "blocks",
@@ -423,7 +442,10 @@ def run_push(client, pages, apply, data_dir=None, now=None):
         "would-change", "updated" or "failed".
     --------------------------------------------------------------------------
     """
-    return [_process_page(client, page, apply, data_dir=data_dir, now=now) for page in pages]
+    return [
+        _process_page(client, page, apply, data_dir=data_dir, now=now, snippet_chars=snippet_chars)
+        for page in pages
+    ]
 
 
 def main(argv=None, environ=None, client_factory=None):
@@ -488,7 +510,7 @@ def main(argv=None, environ=None, client_factory=None):
 
         if not args.allow_empty_section:
             for entry in mapping["entries"]:
-                if section_size(data, entry) == 0:
+                if section_size(data, entry, data_dir, settings) == 0:
                     raise WpRefusal(
                         "entry %r (page %s) has an empty section; pass --allow-empty-section to override"
                         % (entry["cv_path"], entry["page_id"])
@@ -500,18 +522,21 @@ def main(argv=None, environ=None, client_factory=None):
                 print("TITRE NON APPROUVE [%s] %s" % (cv_path, title), file=sys.stderr)
             raise WpRefusal("%d unapproved title(s); push refused" % len(gate_report["unapproved"]))
 
+        config = load_config()
+        snippet_chars = config_value(config, "http.error_body_snippet_chars", CONFIG_NAME)
+
         site = site_base(mapping, environ)
         if client_factory is not None:
             client = client_factory(data_dir, environ, site)
         else:
-            client = client_from_config(make_session(data_dir, environ, require_nonce=True), site, load_config())
+            client = client_from_config(make_session(data_dir, environ, require_nonce=True), site, config)
         pages = plan_pages(mapping, data, data_dir, settings)
     except WpRefusal as exc:
         return _fail("REFUS: %s" % exc, str(exc), exit_code_for(exc))
     except (OSError, ValueError, yaml.YAMLError) as exc:
         return _fail("ERREUR: %s" % exc, str(exc), 1)
 
-    results = run_push(client, pages, args.apply, data_dir=data_dir)
+    results = run_push(client, pages, args.apply, data_dir=data_dir, snippet_chars=snippet_chars)
 
     print("Site : %s  (--apply=%s)" % (site, "OUI" if args.apply else "non, simulation"), file=sys.stderr)
     for result in results:

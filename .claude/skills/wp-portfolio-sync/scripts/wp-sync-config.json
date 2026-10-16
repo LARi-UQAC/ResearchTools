@@ -12,6 +12,10 @@
     "retry_backoff_s": {
       "value": 2,
       "provenance": "chosen by the operator on 2026-10-06 (PR #50 review, L2): a pause between GET retries so a 429 (rate limited) or a 5xx is not hammered immediately"
+    },
+    "error_body_snippet_chars": {
+      "value": 200,
+      "provenance": "chosen by the operator on 2026-10-16 (PR #50 review, L5): how much of a failed PUT's response body is kept in the per-page error message"
     }
   },
   "rest": {
@@ -24,6 +28,12 @@
     "snippet_chars": {
       "value": 400,
       "provenance": "inherited from the drafted preview.py, 2026-09-30"
+    }
+  },
+  "render": {
+    "missing_contribution_title_chars": {
+      "value": 60,
+      "provenance": "chosen by the operator on 2026-10-16 (PR #50 review, L5): how much of a grant's title is kept in the 'projects missing a contribution text' note"
     }
   }
 }

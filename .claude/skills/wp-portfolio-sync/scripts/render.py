@@ -17,10 +17,132 @@ from pathlib import Path
 import yaml
 
 from wp_common import fmt_amount, fmt_ym, norm_ws, parse_year, split_recent_history, md_to_html
+from wp_config import CONFIG_NAME, config_value, load_config
 from wp_errors import WpRefusal, WpSyncError
 from wp_paths import contained_path
 
 PHASE1_RENDERERS = ("financement", "implications", "services", "distinctions")
+
+# L2 (PR #50 review, R2): the single source of truth for which *_extra.yaml
+# backs a renderer - verify_titles.py's approved_titles imports
+# extra_file_for() rather than keeping its own copy of this map, so the
+# gate cannot drift from what split_entry_items/render_entry actually load.
+EXTRA_FILE_FOR_RENDERER = {
+    "implications": "config/implications_extra.yaml",
+    "services": "config/services_extra.yaml",
+}
+
+
+def validate_mapping(mapping):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Validate a parsed mapping.yaml document before it drives any push,
+        preview or gate check. Lives here (R2) rather than in push_wp.py so
+        verify_titles.py can call it too without a push_wp<->verify_titles
+        circular import (push_wp.py imports verify_mapping from
+        verify_titles.py); push_wp.py imports and re-exports this name
+        unchanged, so push_wp.validate_mapping keeps working everywhere it
+        already did (code-review finding, PR #50 round 3: verify_titles.py's
+        own standalone CLI called verify_mapping() with no such guard and
+        crashed uncaught on the exact missing-cv_path input push_wp.py and
+        preview.py already refuse cleanly).
+
+    Inputs:
+        mapping (dict): the parsed mapping.yaml document.
+
+    Outputs:
+        none.
+
+    Raises:
+        WpRefusal: naming the entry index, for an empty entries list; a
+        missing key required by the entry's mode; a non-int page_id; an
+        unknown mode; renderer "phq" (D2); a renderer outside
+        PHASE1_RENDERERS; a distinctions entry with no valid subkey; a
+        duplicate (page_id, marker) pair across the whole mapping; a
+        'replace' page shared with another entry; or a public_path not
+        starting with "/".
+    --------------------------------------------------------------------------
+    """
+    entries = mapping.get("entries")
+    if not entries or not isinstance(entries, list):
+        raise WpRefusal("mapping.yaml: 'entries' must be a non-empty list")
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise WpRefusal("entry %d: must be a mapping, got %s" % (index, type(entry).__name__))
+
+    page_id_counts = {}
+    for entry in entries:
+        page_id_counts[entry.get("page_id")] = page_id_counts.get(entry.get("page_id"), 0) + 1
+
+    seen_pairs = set()
+    for index, entry in enumerate(entries):
+        prefix = "entry %d" % index
+        if not isinstance(entry.get("cv_path"), str) or not entry["cv_path"]:
+            raise WpRefusal("%s: missing or invalid 'cv_path'" % prefix)
+        page_id = entry.get("page_id")
+        if not isinstance(page_id, int) or isinstance(page_id, bool):
+            raise WpRefusal("%s: 'page_id' must be an int" % prefix)
+        mode = entry.get("mode")
+        if mode not in ("markers", "replace", "split"):
+            raise WpRefusal("%s: unknown mode %r" % (prefix, mode))
+
+        if mode == "markers":
+            marker = entry.get("marker")
+            if not isinstance(marker, str) or not marker:
+                raise WpRefusal("%s: mode 'markers' requires 'marker'" % prefix)
+            pair = (page_id, marker)
+            if pair in seen_pairs:
+                raise WpRefusal("%s: duplicate (page_id, marker) pair %r" % (prefix, pair))
+            seen_pairs.add(pair)
+        elif mode == "split":
+            renderer = entry.get("renderer")
+            if renderer == "phq":
+                raise WpRefusal(
+                    "%s: renderer 'phq' is refused: supervision is published from ThesisTracker, "
+                    "never from the CV XML (D2)" % prefix
+                )
+            if renderer not in PHASE1_RENDERERS:
+                raise WpRefusal("%s: unknown renderer %r (expected one of %s)" % (prefix, renderer, PHASE1_RENDERERS))
+            if renderer == "distinctions" and entry.get("subkey") not in ("prix", "contributions_cles"):
+                raise WpRefusal("%s: distinctions entry requires subkey 'prix' or 'contributions_cles'" % prefix)
+            for key in ("recent_marker", "history_marker"):
+                value = entry.get(key)
+                if not isinstance(value, str) or not value:
+                    raise WpRefusal("%s: mode 'split' requires %r" % (prefix, key))
+                pair = (page_id, value)
+                if pair in seen_pairs:
+                    raise WpRefusal("%s: duplicate (page_id, marker) pair %r" % (prefix, pair))
+                seen_pairs.add(pair)
+        else:  # replace
+            if page_id_counts.get(page_id, 0) > 1:
+                raise WpRefusal("%s: page %s is used by a 'replace' entry and by another entry" % (prefix, page_id))
+
+        public_path = entry.get("public_path")
+        if public_path is not None and not str(public_path).startswith("/"):
+            raise WpRefusal("%s: public_path must start with '/'" % prefix)
+
+
+def extra_file_for(renderer, subkey):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Name the *_extra.yaml path a renderer reads, including the
+        distinctions/prix special case (L2, PR #50 review).
+
+    Inputs:
+        renderer (str or None): one mapping.yaml entry's renderer.
+        subkey (str or None): the entry's subkey ("prix" for distinctions).
+
+    Outputs:
+        path (str or None): the config-relative extras path, or None when
+        this renderer has no extras file (financement, or distinctions
+        with subkey "contributions_cles").
+    --------------------------------------------------------------------------
+    """
+    if renderer == "distinctions" and subkey == "prix":
+        return "config/distinctions_extra.yaml"
+    return EXTRA_FILE_FOR_RENDERER.get(renderer)
 
 _URL_RE = re.compile(r"https?://\S+")
 
@@ -190,19 +312,24 @@ def _norm_title(t):
 
 
 def _montant_total(g):
-    if not g.get("sources"):
-        return 0.0
-    try:
-        return float(str(g["sources"][0].get("montant_total", "") or "0").replace(" ", "").replace(",", "."))
-    except (ValueError, TypeError):
-        return 0.0
+    # M5 (PR #50 review): sum EVERY source's montant_total, not just the
+    # first one - a multi-funder grant's cumul must not understate it.
+    total = 0.0
+    for src in g.get("sources") or []:
+        try:
+            total += float(str(src.get("montant_total", "") or "0").replace(" ", "").replace(",", "."))
+        except (ValueError, TypeError):
+            pass
+    return total
 
 
-def _fmt_grant(g, contributions):
-    src = g["sources"][0] if g["sources"] else {}
-    titre = _clean(g["titre"])
-    debut = fmt_ym(g["debut"])
-    fin = fmt_ym(g["fin"]) if g["fin"] else "en cours"
+def _source_text(src):
+    org = html.escape(_clean(src.get("organisme", "")))
+    prog = html.escape(_clean(src.get("programme", "")))
+    return " — ".join(p for p in (org, prog) if p)
+
+
+def _source_amount(src):
     montant = fmt_amount(src.get("montant_total", ""))
     portion = src.get("portion_recue", "")
     try:
@@ -211,12 +338,30 @@ def _fmt_grant(g, contributions):
         show_portion = False
     if show_portion and portion != src.get("montant_total"):
         montant += " (portion : %s)" % fmt_amount(portion)
-    competitif = "Compétitif" if src.get("competitif") == "Oui" else "Non compétitif"
+    return montant
+
+
+def _fmt_grant(g, contributions):
+    # M5/Q3 (PR #50 review, owner decision 2026-10-16): a multi-funder
+    # grant sums every source's amount and names every organisme, instead
+    # of reading only sources[0] - the single-source case renders exactly
+    # as before.
+    sources = g.get("sources") or [{}]
+    primary = sources[0]
+    titre = _clean(g["titre"])
+    debut = fmt_ym(g["debut"])
+    fin = fmt_ym(g["fin"]) if g["fin"] else "en cours"
+    if len(sources) > 1:
+        per_source = ", ".join(
+            "%s : %s" % ((_source_text(s) or "?"), _source_amount(s)) for s in sources
+        )
+        montant = "%s (%s)" % (fmt_amount(_montant_total(g)), per_source)
+    else:
+        montant = _source_amount(primary)
+    competitif = "Compétitif" if primary.get("competitif") == "Oui" else "Non compétitif"
     statut = g["statut"]
     statut_txt = " · Statut : %s" % html.escape(statut) if statut else ""
-    org = html.escape(_clean(src.get("organisme", "")))
-    prog = html.escape(_clean(src.get("programme", "")))
-    qui = " — ".join(p for p in (org, prog) if p)
+    qui = "; ".join(t for t in (_source_text(s) for s in sources) if t)
     lignes = [
         "<strong>%s</strong>" % html.escape(titre),
         "%s(%s – %s, %s)" % ((qui + " ") if qui else "", debut, fin, montant),
@@ -657,6 +802,128 @@ def _load_yaml_list_or_dict(data_dir, relative):
         return yaml.safe_load(handle)
 
 
+_IMPLICATIONS_REQUIRED_KEYS = ("categorie", "nom", "role", "organisation", "debut", "fin")
+_DISTINCTIONS_PRIX_REQUIRED_KEYS = ("nom", "organisation", "debut", "fin", "montant", "description")
+_SERVICES_REQUIRED_KEYS_BY_TYPE = {
+    "media": ("sujet", "diffuseur", "chaine", "date"),
+    "entreprise": ("role", "organisation", "resultat", "retombees", "debut", "fin"),
+    "evenement": ("role", "nom", "debut", "fin"),
+}
+
+
+def _validate_extra_items(items, extra_file, renderer, subkey):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Refuse a malformed *_extra.yaml before it is merged into a
+        renderer's items, naming the file, the record and the missing or
+        wrong-typed key (M3, PR #50 review): without this, a missing
+        "description"/"role"/"resultat" key, or a mapping given where a
+        list was expected, raised a bare KeyError/AttributeError deep
+        inside the renderer, in the gate, preview and push alike.
+
+    Inputs:
+        items: the value _load_yaml_list_or_dict returned for extra_file.
+        extra_file (str): the config-relative path, for the message.
+        renderer (str): "implications", "services", or "distinctions".
+        subkey (str or None): "prix" for a distinctions extras file.
+
+    Outputs:
+        none.
+
+    Raises:
+        WpRefusal: items is not a list; a record is not a mapping; a
+        services record's "type" is absent or not one of media/entreprise/
+        evenement; or a record is missing one of its renderer's required
+        keys.
+    --------------------------------------------------------------------------
+    """
+    if not isinstance(items, list):
+        raise WpRefusal("%s must be a list of records, got %s" % (extra_file, type(items).__name__))
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise WpRefusal("%s: record %d must be a mapping, got %s" % (extra_file, index, type(item).__name__))
+        if renderer == "services":
+            kind = item.get("type")
+            required = _SERVICES_REQUIRED_KEYS_BY_TYPE.get(kind)
+            if required is None:
+                raise WpRefusal(
+                    "%s: record %d has unknown or missing 'type' %r (expected one of %s)"
+                    % (extra_file, index, kind, sorted(_SERVICES_REQUIRED_KEYS_BY_TYPE))
+                )
+        elif renderer == "distinctions" and subkey == "prix":
+            required = _DISTINCTIONS_PRIX_REQUIRED_KEYS
+        elif renderer == "implications":
+            required = _IMPLICATIONS_REQUIRED_KEYS
+        else:
+            required = ()
+        missing = [key for key in required if key not in item]
+        if missing:
+            raise WpRefusal("%s: record %d missing required key(s) %s" % (extra_file, index, missing))
+
+
+def split_entry_items(entry, data, data_dir, settings):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the exact record list a split-mode entry will render: its
+        cv_path's own records plus any *_extra.yaml additions, minus
+        config/exclusions.yaml and (financement only) excluded_funding_statuses.
+        Shared by render_entry and push_wp.section_size (M1, PR #50 review)
+        so "is this section empty" is judged on the SAME filtered list that
+        gets rendered, rather than on raw, unfiltered cihr.json records.
+
+    Inputs:
+        entry (dict): one mapping.yaml entry (cv_path, renderer, subkey).
+        data (dict): the parsed cihr.json document; entry["cv_path"] must
+        already be a known key (callers check this first).
+        data_dir (Path): the resolved researcher data folder.
+        settings (RenderSettings): carries excluded_funding_statuses.
+
+    Outputs:
+        (items, notes) (tuple[list, list[str]]): the filtered records and
+        the human-readable notes describing what was added or removed.
+
+    Raises:
+        WpRefusal: the entry's *_extra.yaml fails `_validate_extra_items`
+        (M3: not a list, a non-mapping record, or a record missing a key
+        its renderer needs).
+    --------------------------------------------------------------------------
+    """
+    cv_path = entry["cv_path"]
+    renderer = entry.get("renderer")
+    subkey = entry.get("subkey")
+    notes = []
+    if cv_path == "distinctions":
+        items = copy.deepcopy(data[cv_path].get(subkey, []))
+    else:
+        items = copy.deepcopy(data[cv_path])
+
+    extra_file = extra_file_for(renderer, subkey)
+    if extra_file:
+        extra_items = _load_yaml_list_or_dict(data_dir, extra_file) or []
+        if extra_items:
+            _validate_extra_items(extra_items, extra_file, renderer, subkey)
+            items = list(items) + list(extra_items)
+            notes.append("%d dossier(s) ajouté(s) (%s)" % (len(extra_items), extra_file))
+
+    exclusions_doc = _load_yaml_list_or_dict(data_dir, "config/exclusions.yaml") or {}
+    excluded_titles = {norm_ws(t) for t in (exclusions_doc.get(cv_path) or [])}
+    if excluded_titles:
+        before = len(items)
+        items = [i for i in items if item_title(cv_path, i, subkey) not in excluded_titles]
+        if len(items) < before:
+            notes.append("%d dossier(s) exclu(s) (config/exclusions.yaml)" % (before - len(items)))
+
+    if renderer == "financement":
+        before = len(items)
+        items = [i for i in items if norm_ws(i.get("statut")) not in settings.excluded_funding_statuses]
+        if len(items) < before:
+            notes.append("%d dossier(s) exclu(s) par statut (excluded_funding_statuses)" % (before - len(items)))
+
+    return items, notes
+
+
 def render_entry(entry, data, data_dir, settings):
     """
     --------------------------------------------------------------------------
@@ -678,8 +945,9 @@ def render_entry(entry, data, data_dir, settings):
 
     Raises:
         WpSyncError: entry["cv_path"] is absent from data.
-        WpRefusal: renderer is "phq" (D2) or outside PHASE1_RENDERERS; or
-        history_static escapes the data folder.
+        WpRefusal: renderer is "phq" (D2) or outside PHASE1_RENDERERS;
+        history_static escapes the data folder; or a *_extra.yaml record
+        is malformed (M3, see split_entry_items/_validate_extra_items).
     --------------------------------------------------------------------------
     """
     cv_path = entry["cv_path"]
@@ -694,39 +962,10 @@ def render_entry(entry, data, data_dir, settings):
     if renderer not in PHASE1_RENDERERS:
         raise WpRefusal("unknown renderer %r (expected one of %s)" % (renderer, PHASE1_RENDERERS))
 
-    notes = []
     subkey = entry.get("subkey")
-    if cv_path == "distinctions":
-        items = copy.deepcopy(data[cv_path].get(subkey, []))
-    else:
-        items = copy.deepcopy(data[cv_path])
-
-    extra_file = {
-        "implications": "config/implications_extra.yaml",
-        "services": "config/services_extra.yaml",
-    }.get(renderer)
-    if renderer == "distinctions" and subkey == "prix":
-        extra_file = "config/distinctions_extra.yaml"
-    if extra_file:
-        extra_items = _load_yaml_list_or_dict(data_dir, extra_file) or []
-        if extra_items:
-            items = list(items) + list(extra_items)
-            notes.append("%d dossier(s) ajouté(s) (%s)" % (len(extra_items), extra_file))
-
-    exclusions_doc = _load_yaml_list_or_dict(data_dir, "config/exclusions.yaml") or {}
-    excluded_titles = {norm_ws(t) for t in (exclusions_doc.get(cv_path) or [])}
-    if excluded_titles:
-        before = len(items)
-        items = [i for i in items if item_title(cv_path, i, subkey) not in excluded_titles]
-        if len(items) < before:
-            notes.append("%d dossier(s) exclu(s) (config/exclusions.yaml)" % (before - len(items)))
+    items, notes = split_entry_items(entry, data, data_dir, settings)
 
     if renderer == "financement":
-        before = len(items)
-        items = [i for i in items if norm_ws(i.get("statut")) not in settings.excluded_funding_statuses]
-        if len(items) < before:
-            notes.append("%d dossier(s) exclu(s) par statut (excluded_funding_statuses)" % (before - len(items)))
-
         contributions = {}
         if entry.get("editorial_texts") is True:
             raw = _load_yaml_list_or_dict(data_dir, "config/contributions.yaml")
@@ -736,8 +975,9 @@ def render_entry(entry, data, data_dir, settings):
                 notes.append("editorial_texts: true mais config/contributions.yaml absent")
         recent, history = render_financement(items, settings, contributions)
         if entry.get("editorial_texts") is True:
+            title_chars = config_value(load_config(), "render.missing_contribution_title_chars", CONFIG_NAME)
             missing = [
-                _norm_title(g["titre"])[:60]
+                _norm_title(g["titre"])[:title_chars]
                 for g in items
                 if not (contributions.get(_norm_title(g["titre"])) or "").strip()
             ]

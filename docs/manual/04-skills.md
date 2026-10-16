@@ -264,6 +264,46 @@ code. The skill reuses two sibling skills rather than reimplementing them: `scop
 - `.claude/skills/professor-expertise-finder/scripts/selections.py` — the batch no-reuse / one-university / conflict-of-interest registry
 - `.claude/skills/professor-expertise-finder/scripts/Test/` — offline unit tests (no network, no API key)
 
+### `wp-portfolio-sync` — one-shot CIHR XML to WordPress migration
+
+Migrates a researcher's final CIHR / Canadian Common CV XML export into their WordPress
+portfolio exactly once, through the WordPress REST API, between `<!-- cvsync:MARKER -->`
+comments. After the push, the website is the source of truth for that content; the XML is
+never read again. No student data is parsed from the XML at all (no supervision parser
+exists in `cihr_cv.py`): student data is published from ThesisTracker once its own consent
+flow ships (Phase 2), and a mapping entry naming `renderer: phq` is refused everywhere a
+mapping is validated.
+
+| Stage | Script | Job |
+|---|---|---|
+| 1 — parse | `cihr_cv.py` / `parse_cv.py` | CIHR generic-cv XML (or a generic XML export) into a clean JSON document, refusing an XML with zero recognised sections rather than publishing "0 subventions"; recognises both French and English CCV labels (`cihr_labels.json`), and degrades to stdlib `xml.etree.ElementTree` with a stated warning when `defusedxml` is absent, rather than silently |
+| 2 — discover | `discover.py` | Lists WordPress pages (id, slug, title, link), first run only, to fill `mapping.yaml`'s `page_id` values |
+| 3 — render | `render.py` | Pure HTML renderers for financement/implications/services/distinctions, driven entirely by `mapping.yaml`'s `ref_year`/`recent_window`/`recent_label` (no hardcoded year); a multi-funder grant sums every source's amount and names every organisme rather than reading only its first source, with a partially-received source's amount still caveated; every `*_extra.yaml` record is validated against its renderer's required keys before being merged in, refusing by name rather than raising a bare `KeyError` deep inside a renderer; owns `validate_mapping` (mapping.yaml structural validation, shared with push_wp.py/preview.py/verify_titles.py so none of them can touch an unvalidated mapping); `render_phq` is a tested, unwired pure function reserved for Phase 2 |
+| 4 — gate | `verify_titles.py` | The anti-fabrication gate: every `<strong>` title a `split`-mode renderer produced must exist in the parsed CV, the entry's own extras file, or an approved static seed; a `markers`/`replace` entry (which has no per-title check) is instead scanned for a denylisted sensitive key anywhere in its `cv_path` subtree (`sensitive_keys.json`, covering every HQP category — students, postdocs, mentorat, interns) and refused on a hit |
+| 5 — push | `push_wp.py` | Validates the mapping, runs the gate before any network call (in dry run and `--apply`), reads and writes `content.raw` only (never `content.rendered`), re-checks the page's `modified_gmt` right before a real write and refuses rather than overwriting a page someone edited by hand while the push was running, verifies every write with a read-back GET, and snapshots the page's prior `content.raw` to `<data-dir>/backups/` immediately before every PUT so a hand-edit it overwrites can still be restored by hand |
+| — preview | `preview.py` | Offline report of what the push would change; makes no network call at all |
+
+All researcher data (the XML, `cihr.json`, `config/`) lives under an explicit `--data-dir`
+given on every command, which must resolve outside this repository (the repository is
+public) — the skill ships only fictitious templates and tests. Drives the
+`wp-portfolio-agent` agent, reached via `/portfolio`. Every CLI script's `--json` flag now
+prints a `{"error": ..., "exit_code": ...}` report on a refusal or failure too, not only on
+success. Cookie authentication (`WP_COOKIES`, same containment as every other
+researcher-supplied path) can now write as well as read: set `WP_NONCE` to the nonce a
+logged-in WordPress session returns, or `push_wp.py` refuses up front rather than failing on
+every PUT.
+
+**Files:**
+- `.claude/skills/wp-portfolio-sync/SKILL.md`
+- `.claude/skills/wp-portfolio-sync/scripts/wp_errors.py`, `wp_config.py`, `wp_paths.py`, `wp_common.py` — exceptions, the `{value, provenance}` config reader, data-folder containment, shared helpers and the bounded HTTP client (GET retries on a retryable exception, a 429, or a 5xx, with a configurable backoff; PUT never retried); `make_session` sets `X-WP-Nonce` from `WP_NONCE` for cookie authentication
+- `.claude/skills/wp-portfolio-sync/scripts/cihr_cv.py`, `parse_cv.py` — the two XML parsers; `cihr_labels.json` holds their French/English label synonym table
+- `.claude/skills/wp-portfolio-sync/scripts/render.py` — the HTML renderers, `render_entry`, `split_entry_items`/`_validate_extra_items` (extras-file merge and validation, shared with `push_wp.section_size`), and `validate_mapping` (mapping.yaml structural validation, re-exported unchanged as `push_wp.validate_mapping`); the only module reading `config/`
+- `.claude/skills/wp-portfolio-sync/scripts/verify_titles.py` — the anti-fabrication gate; `sensitive_keys.json` holds the denylist its `markers`/`replace` scan reads
+- `.claude/skills/wp-portfolio-sync/scripts/push_wp.py` — page planning, the push (with a pre-write concurrent-edit check), and the pre-PUT backup under `<data-dir>/backups/`
+- `.claude/skills/wp-portfolio-sync/scripts/discover.py`, `preview.py` — page discovery and the offline preview
+- `.claude/skills/wp-portfolio-sync/templates/mapping.example.yaml`, `cookies.json.example` — fictitious starting points
+- `.claude/skills/wp-portfolio-sync/scripts/Test/` — offline unit tests (10 suites; no network, no real data folder, fictitious fixtures only)
+
 ### `paper2talk` — accepted paper to conference talk
 
 Starts where `submit-checker` and `cover-paper` stop: the paper is accepted, the talk is the

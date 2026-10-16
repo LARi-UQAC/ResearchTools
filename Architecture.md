@@ -24,7 +24,14 @@ venue" bar rather than inventing a separate threshold) and
 contribution, checked against the keyword clusters, rather than guessed from its title) -
 2026-10-08, closing a gap where the draft's article search used ad hoc web search instead of the
 skill the repo's own working norm already mandates for verifying information. Faculty/department
-directory pages stay WebFetch/WebSearch, since Scopus does not index a university's own site.
+directory pages stay WebFetch/WebSearch, since Scopus does not index a university's own site. The
+[wp-portfolio-agent](agents/wp-portfolio-agent.md) agent, reached via `/portfolio`, runs a
+one-shot migration of a researcher's final CIHR / Canadian Common CV XML export into their
+WordPress portfolio: it consumes only its own [wp-portfolio-sync](skills/wp-portfolio-sync)
+skill (XML parsing, rendering, the anti-fabrication gate, and the push itself) and none of the
+shared academic skills above, since nothing here touches Scopus, deliberation, or
+ScholarEval. The agent has no `Write` or `Edit` tool (`Read, Bash` only): `push_wp.py` is the
+sole writer, and every write is verified by a read-back after the PUT.
 
 ```mermaid
 graph TD
@@ -42,6 +49,7 @@ graph TD
     c11["/talk"]
     c12["/cv"]
     c13["/expertfinder"]
+    c14["/portfolio"]
   end
 
   subgraph AG["Agents — agents/"]
@@ -59,6 +67,7 @@ graph TD
     a12["talk-builder<br/>accepted paper -> conference talk"]
     a13["narrative-cv-writer<br/>FRQ / tri-agency narrative CV"]
     a14["professor-expertise-finder<br/>faculty expertise matching"]
+    a15["wp-portfolio-agent<br/>one-shot CIHR XML -> WordPress"]
   end
 
   subgraph SK["Skills — skills/"]
@@ -76,6 +85,7 @@ graph TD
     s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
     s12["narrative-cv<br/>cv_inventory.py · cv_select.py · cv_build.py"]
     s13["professor-expertise-finder<br/>table.py · score.py · selections.py"]
+    s14["wp-portfolio-sync<br/>cihr_cv.py · render.py · push_wp.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -98,10 +108,12 @@ graph TD
   c11 --> a12
   c12 --> a13
   c13 --> a14
+  c14 --> a15
   a12 --> s10
   a12 --> s1
   a13 --> s12 & s1
   a14 --> s13 & s1
+  a15 --> s14
   a4 -.->|"invoked by name<br/>(no command)"| a4
   a9 -.->|"invoked by name<br/>(no command)"| a9
   a10 -.->|"invoked by context<br/>(no command)"| a10
@@ -150,6 +162,8 @@ graph TD
 `/cv` drives the [narrative-cv-writer](agents/narrative-cv-writer.md) agent, which is also omitted from this matrix: it consumes [scopus](skills/scopus) and [scientific-writing](skills/scientific-writing) like the matrix's other rows, plus [extract-contributions](skills/extract-contributions) (not one of this matrix's columns) and its own [narrative-cv](skills/narrative-cv) skill, but none of `deliberation`, `scholar-evaluation`, `extract-statistic`, or `extract-futureworks` - a CV has no reference list to deliberate over or ScholarEval score.
 
 `/expertfinder` drives the [professor-expertise-finder](agents/professor-expertise-finder.md) agent, omitted from this matrix because it consumes none of its columns: it verifies faculty/department directory pages directly (`WebFetch`/`WebSearch` - Scopus does not index a university's own site), but ARTICLE discovery and validation go through [scopus](skills/scopus) (`author` mode to resolve the AU-ID, `publications` mode for the recent document list, `approved_publisher` as the quality bar) and [extract-contributions](skills/extract-contributions) (each candidate article's own stated contribution, checked against the keyword clusters) - 2026-10-08, matching the repo's own working norm that every piece of information is verified through the `scopus` skill. It consumes its own [professor-expertise-finder](skills/professor-expertise-finder) skill (`table.py`, `score.py`, `exclusions.py`, `file_search.py`, `selections.py`) plus those two, and nothing from `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks`.
+
+`/portfolio` drives the [wp-portfolio-agent](agents/wp-portfolio-agent.md) agent, likewise omitted from this matrix: it consumes only its own [wp-portfolio-sync](skills/wp-portfolio-sync) skill, none of `scopus`, `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks` - the push is a deterministic migration, not an authoring or audit pipeline.
 
 ### Domain profiles
 

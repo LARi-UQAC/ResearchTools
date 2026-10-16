@@ -1,0 +1,15 @@
+# wp-portfolio-sync dependencies.
+# PyYAML: parses the researcher's mapping.yaml, always with yaml.safe_load
+#   (never yaml.load), since mapping.yaml is researcher-supplied input.
+# requests: the WordPress REST API client. Imported lazily, only inside
+#   make_session(), so the offline test suite never needs it installed and
+#   never touches the network.
+# defusedxml: cihr_cv.py and parse_cv.py try this first and fall back to the
+#   stdlib xml.etree.ElementTree only if it is absent, refusing entity
+#   expansion on the researcher-supplied XML (same precedent and version as
+#   paper2talk/scripts/requirements.txt). Pinned here so a plain
+#   `pip install -r requirements.txt` actually installs the hardened parser
+#   instead of silently degrading to the fallback.
+PyYAML==6.0.3
+requests==2.34.2
+defusedxml==0.7.1

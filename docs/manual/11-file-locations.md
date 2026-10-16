@@ -7,7 +7,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (20 agents; not all listed below -- see the
+    ├── agents\                              (21 agents; not all listed below -- see the
     │                                          Agents chapter for the current, complete list)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── litreview-updater.md       ← /litupdate
@@ -27,8 +27,9 @@ ResearchTools\
     │   ├── local-writer.md            ← local docs/comments (bridge)
     │   ├── local-coder.md             ← local code gen (bridge)
     │   ├── narrative-cv-writer.md     ← /cv
-    │   └── professor-expertise-finder.md ← /expertfinder
-    ├── commands\                            (31 commands; not all listed below -- see the
+    │   ├── professor-expertise-finder.md ← /expertfinder
+    │   └── wp-portfolio-agent.md      ← /portfolio
+    ├── commands\                            (32 commands; not all listed below -- see the
     │                                          Commands chapter for the current, complete list)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
@@ -40,9 +41,10 @@ ResearchTools\
     │   ├── loopdev.md                  ├── talk.md
     │   ├── recommendation-letter.md
     │   ├── cv.md
-    │   └── expertfinder.md
+    │   ├── expertfinder.md
+    │   └── portfolio.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (24 skills; not all listed below -- see the
+    └── skills\                              (25 skills; not all listed below -- see the
                                                Skills chapter for the current, complete list)
         ├── scopus\
         │   ├── SKILL.md
@@ -89,10 +91,16 @@ ResearchTools\
         │                  engines\faster_whisper_engine.py, engines\nemo_engine.py,
         │                  Test\test_stt_bench.py, Test\test_stt_score.py,
         │                  Test\test_gpu_memory.py, Test\test_engines_config.py)
-        └── professor-expertise-finder\SKILL.md  (+ scripts\pef_common.py, pef_config.json,
+        ├── professor-expertise-finder\SKILL.md  (+ scripts\pef_common.py, pef_config.json,
                            pef_column_hints.json, pef_university_aliases.json, table.py,
                            score.py, exclusions.py, file_search.py, selections.py,
                            requirements.txt, Test\ [7 offline suites])
+        └── wp-portfolio-sync\SKILL.md       (+ scripts\wp_errors.py, wp_config.py, wp_paths.py,
+                           wp_common.py, cihr_cv.py, parse_cv.py, cihr_labels.json,
+                           sensitive_keys.json, render.py, verify_titles.py,
+                           push_wp.py, discover.py, preview.py,
+                           templates\mapping.example.yaml, cookies.json.example,
+                           Test\ [10 offline suites])
 ```
 
 This tree predates several skills/agents merged since it was last updated in full (e.g.

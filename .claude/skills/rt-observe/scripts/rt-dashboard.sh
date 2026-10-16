@@ -33,13 +33,22 @@ fi
 # The paths come from this script's own location, so they are not configuration
 # (R1). The Scripts/ spelling is the Windows venv layout, reached from Git Bash.
 #
-# PATH is NOT searched unless the FIRST argument is --allow-path-fallback (R8): an
-# emptied environment must be a stated refusal and not a quiet move to some other
-# python. The flag is consumed here and never reaches rt_state.py.
+# PATH is NOT searched unless --allow-path-fallback is given, in ANY position like the
+# PowerShell launcher's -AllowPathFallback (R8): an emptied environment must be a stated
+# refusal and not a quiet move to some other python. The flag is consumed here and never
+# reaches rt_state.py; every other argument is passed on in its original order.
 ALLOW_PATH_FALLBACK=0
-if [ "${1:-}" = "--allow-path-fallback" ]; then
-    ALLOW_PATH_FALLBACK=1
-    shift
+for arg in "$@"; do
+    if [ "$arg" = "--allow-path-fallback" ]; then ALLOW_PATH_FALLBACK=1; fi
+done
+if [ "$ALLOW_PATH_FALLBACK" = "1" ]; then
+    count=$#
+    while [ "$count" -gt 0 ]; do
+        arg=$1
+        shift
+        if [ "$arg" != "--allow-path-fallback" ]; then set -- "$@" "$arg"; fi
+        count=$((count - 1))
+    done
 fi
 
 MAIN_ROOT="$REPO_ROOT"
@@ -97,7 +106,7 @@ if [ -z "$PYTHON" ]; then
     fi
     printf 'Rebuild the environment with: setup.ps1 -InstallPython (run from %s)\n' \
         "$MAIN_ROOT" >&2
-    printf 'Or pass --allow-path-fallback as the FIRST argument to accept PATH knowingly.\n' >&2
+    printf 'Or pass --allow-path-fallback to accept PATH knowingly.\n' >&2
     exit 2
 fi
 

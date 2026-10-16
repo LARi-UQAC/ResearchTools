@@ -176,7 +176,10 @@ function Resolve-PythonInterpreter {
     #>
     param([Parameter(Mandatory)][string]$RepoRoot)
     $helper = Join-Path $RepoRoot "scripts\lib\rt-venv.ps1"
-    if (-not (Test-Path $helper)) { return $null }
+    if (-not (Test-Path $helper)) {
+        Write-Warning "scripts/lib/rt-venv.ps1 is missing from $RepoRoot, so no interpreter can be resolved."
+        return $null
+    }
     . $helper
     $resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot
     if ($null -eq $resolved.Python) {

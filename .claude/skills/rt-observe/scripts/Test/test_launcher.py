@@ -108,6 +108,14 @@ class RootWrappersHoldNoLogic(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertNotIn("rt_state.py", read(path))
 
+    def test_the_root_powershell_wrapper_forwards_the_interpreter_switches(self):
+        """Code-review finding: the refusal tells the user to pass -AllowPathFallback or
+        -Python, so the root wrapper has to declare them, or they land in -Rest and the
+        documented remedy never works from the repository root."""
+        text = read(ROOT_PS1)
+        self.assertRegex(text, r"\[switch\]\$AllowPathFallback")
+        self.assertRegex(text, r"\[string\]\$Python")
+
     def test_no_root_wrapper_searches_for_an_interpreter(self):
         for path in (ROOT_PS1, ROOT_SH, ROOT_BAT):
             with self.subTest(path=path.name):
@@ -241,6 +249,16 @@ class PosixLauncherRefusal(unittest.TestCase):
         self.assertIn("MODULE --serve --dry-run --port 9", done.stdout)
         self.assertNotIn("--allow-path-fallback", done.stdout)
         self.assertIn("from PATH", done.stderr)
+
+    def test_the_flag_is_honoured_in_any_position_and_order_is_kept(self):
+        """Code-review finding: it used to work only as the first argument, unlike the
+        PowerShell launcher, and otherwise leaked to rt_state.py."""
+        self._stub(self.empty_bin / "python3")
+        done = self._run(str(self.empty_bin),
+                         args=["--open", "--allow-path-fallback", "--port", "9"])
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        self.assertIn("MODULE --serve --open --port 9", done.stdout)
+        self.assertNotIn("allow-path-fallback", done.stdout)
 
     def test_the_flag_with_no_python_anywhere_still_refuses(self):
         done = self._run(str(self.empty_bin), args=["--allow-path-fallback"])

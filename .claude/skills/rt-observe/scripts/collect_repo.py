@@ -23,7 +23,12 @@ for exactly that reason.
 import io
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from rt_redact import home_tilde  # noqa: E402
 
 ACTIVE_PROFILE = re.compile(r"(?m)^active_profile:\s*(\S+)\s*$")
 HEAD_REF = re.compile(r"^ref:\s*refs/heads/(.+?)\s*$")
@@ -155,13 +160,17 @@ def main_clone_root(repo_root):
     if not dot_git.is_file():
         return repo_root
     try:
-        found = GITDIR_LINE.match(io.open(dot_git, encoding="utf-8").readline())
+        # `with` so no handle outlives the call: this runs on every snapshot refresh,
+        # and an open handle on a worktree's gitdir files can block its removal.
+        with io.open(dot_git, encoding="utf-8") as handle:
+            found = GITDIR_LINE.match(handle.readline())
         if not found:
             return repo_root
         gitdir = Path(found.group(1))
         if not gitdir.is_absolute():
             gitdir = repo_root / gitdir
-        commondir = io.open(gitdir / "commondir", encoding="utf-8").readline().strip()
+        with io.open(gitdir / "commondir", encoding="utf-8") as handle:
+            commondir = handle.readline().strip()
         common = (gitdir / commondir).resolve()
     except (OSError, ValueError):
         return repo_root
@@ -178,11 +187,22 @@ def _venv_probe(root):
     return {"state": "absent", "python": str(base / VENV_INTERPRETERS[0])}
 
 
-def _interpreter(repo_root):
+def _interpreter(repo_root, home=None):
     """The suite interpreter, or the reason there is none. Never PATH: since
     2026-10-16 the launchers refuse instead of falling back, and this section
     must say the same thing the launchers say (R8). The 2026-10-06 loss stayed
-    invisible for a week because nothing reported it."""
+    invisible for a week because nothing reported it. Every path in the result
+    is rewritten under `~` (rt_redact), because the snapshot is rendered in a
+    browser and the account name must not travel with it."""
+    result = _interpreter_raw(repo_root)
+    home = Path.home() if home is None else home
+    for key in ("value", "reason"):
+        if key in result:
+            result[key] = home_tilde(result[key], home)
+    return result
+
+
+def _interpreter_raw(repo_root):
     repo_root = Path(repo_root)
     main = main_clone_root(repo_root)
     roots = [("venv", repo_root)]
@@ -207,7 +227,7 @@ def _interpreter(repo_root):
     }
 
 
-def collect(repo_root, now, stale_after_s):
+def collect(repo_root, now, stale_after_s, home=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -218,6 +238,8 @@ def collect(repo_root, now, stale_after_s):
         repo_root (Path): repository root
         now (datetime): injected clock (R19)
         stale_after_s (int): configured ceiling past which a green stamp is aged
+        home (Path): home directory hidden as `~` in the interpreter paths;
+                     defaults to the current user's
 
     Outputs:
         state (dict): {"status", "green", "profile", "branch", "interpreter"}
@@ -230,5 +252,5 @@ def collect(repo_root, now, stale_after_s):
         "green": _green_stamp(repo_root, now, stale_after_s),
         "profile": _active_profile(repo_root),
         "branch": _branch(repo_root),
-        "interpreter": _interpreter(repo_root),
+        "interpreter": _interpreter(repo_root, home),
     }

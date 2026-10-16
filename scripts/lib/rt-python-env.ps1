@@ -156,7 +156,12 @@ function Test-RtInterpreterOwner {
 
     $full    = [System.IO.Path]::GetFullPath($Path)
     $ownProfile = [System.IO.Path]::GetFullPath($UserProfile).TrimEnd('\', '/')
-    $roots   = [System.IO.Path]::GetFullPath((Split-Path $ownProfile -Parent)).TrimEnd('\', '/')
+    $parent  = Split-Path $ownProfile -Parent
+    # A profile directly under a drive root (D:\alice) has no "profiles folder" above it:
+    # its parent is the whole drive, and every machine-wide install on that drive would
+    # read as another account's. Nothing can be said about ownership there, so accept.
+    if ([string]::IsNullOrEmpty($parent) -or $parent.TrimEnd('\', '/').Length -le 2) { return "" }
+    $roots   = [System.IO.Path]::GetFullPath($parent).TrimEnd('\', '/')
 
     $inProfile = $full.StartsWith($ownProfile + '\', [System.StringComparison]::OrdinalIgnoreCase)
     $inRoots   = $full.StartsWith($roots + '\',   [System.StringComparison]::OrdinalIgnoreCase)
@@ -417,12 +422,21 @@ function Install-RtPythonEnv {
     # through the call stack, which a closure's private module scope would not see.
     $probe    = { param($p) Test-RtVenvCreates -Python $p -TimeoutSeconds $timeout }
 
-    $pick = Select-RtBasePython -Candidates $candidates -Explicit $Python `
-                                -UserProfile $UserProfile -Probe $probe -SkipProbe:$Preview
+    # An environment that already exists is reused: pip runs from ITS interpreter, so no
+    # base interpreter is chosen and no scratch venv is built to prove one (code-review
+    # finding: a healthy .venv-skills used to be refused, or delayed by a probe of up to
+    # the configured timeout per candidate, just because PATH held no usable python).
+    $venvExists = Test-Path -LiteralPath $venvPython -PathType Leaf
+    if ($venvExists) {
+        $pick = [pscustomobject]@{ Python = $venvPython; Rejected = @(); Message = "" }
+    } else {
+        $pick = Select-RtBasePython -Candidates $candidates -Explicit $Python `
+                                    -UserProfile $UserProfile -Probe $probe -SkipProbe:$Preview
+    }
 
     $decision = Resolve-RtPythonEnvAction `
         -VenvPath $venv `
-        -VenvExists (Test-Path -LiteralPath $venvPython -PathType Leaf) `
+        -VenvExists $venvExists `
         -BasePython $pick.Python
 
     if ($decision.Action -eq "no-python") {
@@ -440,7 +454,11 @@ function Install-RtPythonEnv {
 
     if ($Preview) {
         Write-Host "  [--]  $($decision.Message)"
-        Write-Host "  [--]  base interpreter: $base (exists, current profile; the venv probe is NOT run in a preview)"
+        if ($venvExists) {
+            Write-Host "  [--]  no base interpreter needed: pip runs from the existing environment ($base)"
+        } else {
+            Write-Host "  [--]  base interpreter: $base (exists, current profile; the venv probe is NOT run in a preview)"
+        }
         foreach ($t in (Get-RtToolRequirements)) {
             Write-Host "  [--]  Would install $($t.Spec)"
         }

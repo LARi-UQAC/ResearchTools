@@ -203,12 +203,23 @@ if ($null -ne $ownVenv.Python) {
 }
 Check "the probe left no scratch folder behind"  (@(Get-ChildItem $env:TEMP -Filter "rt-venv-probe-*" -ErrorAction SilentlyContinue).Count -eq 0)
 
+# A throwaway root holding copies of the requirements files and NO environment, so the
+# preview exercises the interpreter-selection path whatever this machine's own
+# .venv-skills looks like (R21). Pointed at the real repository, the preview would find
+# the existing environment and take the reuse branch instead.
+$FreshRoot = Join-Path $Fake "fresh-root"
+foreach ($r in $reqs) {
+    $dest = Join-Path $FreshRoot ($r.Path -replace '/', '\')
+    New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
+    Copy-Item $r.Full $dest
+}
+
 # ----------------------------------------------------------------- the dry run ---
-# R16: a dry run touches nothing. Pointed at the REAL repository root, because that
-# is where a slip would create the directory this file exists to protect. The
+# R16: a dry run touches nothing. Pointed at a fresh fake root with no environment, so that
+# a slip would show as a created directory there, and the real environment is stamped. The
 # candidates are injected so the result does not depend on this machine's PATH (R21).
-$previewOut  = Install-RtPythonEnv -RepoRoot $RepoRoot -Preview -CandidatePaths @($Foreign, $Py311) -UserProfile $Mine 6>&1 | Out-String
-$previewCode = Install-RtPythonEnv -RepoRoot $RepoRoot -Preview -CandidatePaths @($Foreign, $Py311) -UserProfile $Mine 6>$null
+$previewOut  = Install-RtPythonEnv -RepoRoot $FreshRoot -Preview -CandidatePaths @($Foreign, $Py311) -UserProfile $Mine 6>&1 | Out-String
+$previewCode = Install-RtPythonEnv -RepoRoot $FreshRoot -Preview -CandidatePaths @($Foreign, $Py311) -UserProfile $Mine 6>$null
 Check "-Preview returns 0"                       ($previewCode -eq 0)
 Check "-Preview says what it would install"      ($previewOut -match "Would install")
 Check "-Preview names pip-audit"                 ($previewOut -match "pip-audit")
@@ -216,16 +227,43 @@ Check "-Preview names a requirements file"       ($previewOut -match ([regex]::E
 Check "-Preview names the docling exclusion"     ($previewOut -match "without: docling")
 Check "-Preview names the interpreter it chose"  ($previewOut -match [regex]::Escape($Py311))
 Check "-Preview says the probe is not run"       ($previewOut -match "NOT run")
-Check "-Preview created no environment"          ((Test-Path $RealVenv) -eq $venvBefore)
+Check "-Preview created no environment"          ((Test-Path $RealVenv) -eq $venvBefore -and -not (Test-Path (Join-Path $FreshRoot ".venv-skills")))
 
 # Only a foreign interpreter on offer: skipped with the reason, exit 0 (setup carries on).
-$refusedOut  = Install-RtPythonEnv -RepoRoot $RepoRoot -Preview -CandidatePaths @($Foreign) -UserProfile $Mine 6>&1 | Out-String
-$refusedCode = Install-RtPythonEnv -RepoRoot $RepoRoot -Preview -CandidatePaths @($Foreign) -UserProfile $Mine 6>$null
+$refusedOut  = Install-RtPythonEnv -RepoRoot $FreshRoot -Preview -CandidatePaths @($Foreign) -UserProfile $Mine 6>&1 | Out-String
+$refusedCode = Install-RtPythonEnv -RepoRoot $FreshRoot -Preview -CandidatePaths @($Foreign) -UserProfile $Mine 6>$null
 Check "a foreign-only machine is skipped, exit 0" ($refusedCode -eq 0 -and $refusedOut -match "skipped")
 Check "the skip names the foreign interpreter"   ($refusedOut -match [regex]::Escape($Foreign))
 Check "the skip does not say it would install"   ($refusedOut -notmatch "Would install")
-$noneOut = Install-RtPythonEnv -RepoRoot $RepoRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
+$noneOut = Install-RtPythonEnv -RepoRoot $FreshRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "no candidate at all is stated"            ($noneOut -match "none was found")
+
+# ------------------------------------------- an existing environment is reused ---
+# Code-review finding: a healthy .venv-skills used to be refused, or delayed by a scratch
+# venv probe per candidate, because no usable BASE python was on PATH - although pip runs
+# from the environment's own interpreter. A fake root with the requirements files and a
+# stub venv interpreter, and NO candidate at all, must still preview as a reuse.
+$ReuseRoot = Join-Path $Fake "reuse-root"
+foreach ($r in $reqs) {
+    $dest = Join-Path $ReuseRoot ($r.Path -replace '/', '\')
+    New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
+    Copy-Item $r.Full $dest
+}
+$withVenv = Join-Path $ReuseRoot ".venv-skills\Scripts"
+New-Item -ItemType Directory -Path $withVenv -Force | Out-Null
+Set-Content -Path (Join-Path $withVenv "python.exe") -Value "stub" -Encoding ASCII
+$reuseOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
+Check "an existing venv is reused with no base python at all" ($reuseOut -match "no base interpreter needed" -and $reuseOut -match "Would install")
+Check "the reuse preview does not say it was skipped"        ($reuseOut -notmatch "skipped")
+$tripwire2 = { param($p) throw "the probe must not run when the environment exists" }
+$pickReuse = Select-RtBasePython -Candidates @($Py312) -UserProfile $Mine -Probe $tripwire2 -SkipProbe
+Check "(control) selection without an environment still works" ($pickReuse.Python -eq $Py312)
+Remove-Item (Join-Path $ReuseRoot ".venv-skills") -Recurse -Force
+$noVenvOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
+Check "(control) the same root WITHOUT the venv is skipped, naming why" ($noVenvOut -match "skipped" -and $noVenvOut -match "none was found")
+
+# A profile directly under a drive root has no profiles folder above it.
+Check "a drive-root profile does not make a machine-wide install foreign" ((Test-RtInterpreterOwner -Path "D:\Program Files\Python311\python.exe" -UserProfile "D:\alice") -eq "")
 
 # --------------------------------------------------------- the missing-file path ---
 # A repository root with no requirements files at all: the step must fail by name

@@ -181,6 +181,12 @@ class InterpreterStateTest(TempTree):
     """The suite interpreter, reported with its reason. Added 2026-10-16 after
     .venv-skills was emptied on 2026-10-06 and nothing said so for a week."""
 
+    @property
+    def alien_home(self):
+        """A home that is none of the fixture's paths, so the redaction (tested on its
+        own below) does not rewrite the full paths the older cases compare against."""
+        return Path(self._tmp.name) / "unrelated-home"
+
     def _venv(self, root, layout="Scripts/python.exe"):
         write(root / ".venv-skills" / layout, "stub")
 
@@ -198,21 +204,21 @@ class InterpreterStateTest(TempTree):
 
     def test_an_own_environment_is_reported_with_its_path(self):
         self._venv(self.repo)
-        state = collect_repo.collect(self.repo, NOW, 604800)["interpreter"]
+        state = collect_repo.collect(self.repo, NOW, 604800, home=self.alien_home)["interpreter"]
         self.assertEqual(state["status"], "ok")
         self.assertTrue(state["value"].endswith("python.exe"))
         self.assertEqual(state["source"], "venv")
 
     def test_the_posix_layout_counts_too(self):
         self._venv(self.repo, "bin/python")
-        state = collect_repo.collect(self.repo, NOW, 604800)["interpreter"]
+        state = collect_repo.collect(self.repo, NOW, 604800, home=self.alien_home)["interpreter"]
         self.assertEqual(state["status"], "ok")
 
     def test_no_environment_is_unavailable_with_the_rebuild_command(self):
         """The failure path (R20): absence must be said, never read as fine and
         never replaced by whatever python happens to be on PATH."""
         self.repo.mkdir(parents=True, exist_ok=True)
-        state = collect_repo.collect(self.repo, NOW, 604800)["interpreter"]
+        state = collect_repo.collect(self.repo, NOW, 604800, home=self.alien_home)["interpreter"]
         self.assertEqual(state["status"], "unavailable")
         self.assertEqual(state["value"], "no interpreter")
         self.assertIn("setup.ps1 -InstallPython", state["reason"])
@@ -222,25 +228,48 @@ class InterpreterStateTest(TempTree):
     def test_an_emptied_environment_is_named_as_empty(self):
         """The exact 2026-10-06 state: the folder exists, the interpreter is gone."""
         (self.repo / ".venv-skills").mkdir(parents=True)
-        state = collect_repo.collect(self.repo, NOW, 604800)["interpreter"]
+        state = collect_repo.collect(self.repo, NOW, 604800, home=self.alien_home)["interpreter"]
         self.assertEqual(state["status"], "unavailable")
         self.assertIn("EMPTY", state["reason"])
 
     def test_a_worktree_finds_the_main_clone_environment_without_a_link(self):
         main, worktree = self._worktree()
         self._venv(main)
-        state = collect_repo.collect(worktree, NOW, 604800)["interpreter"]
+        state = collect_repo.collect(worktree, NOW, 604800, home=self.alien_home)["interpreter"]
         self.assertEqual(state["status"], "ok")
         self.assertEqual(state["source"], "main-repo-venv")
         self.assertFalse((worktree / ".venv-skills").exists())
 
     def test_a_worktree_with_no_environment_anywhere_names_both_paths(self):
         main, worktree = self._worktree()
-        state = collect_repo.collect(worktree, NOW, 604800)["interpreter"]
+        state = collect_repo.collect(worktree, NOW, 604800, home=self.alien_home)["interpreter"]
         self.assertEqual(state["status"], "unavailable")
         self.assertIn(str(worktree / ".venv-skills"), state["reason"])
         self.assertIn(str(main / ".venv-skills"), state["reason"])
         self.assertIn("run from %s" % main, state["reason"])
+
+    def test_no_account_path_reaches_the_snapshot(self):
+        """The snapshot is rendered in a browser and screenshotted (rt_redact, measured
+        2026-08-31), so the interpreter paths and the refusal reason must show `~`."""
+        home = Path(self._tmp.name) / "fictitious-home"
+        self.repo = home / "work" / "clone"
+        self.repo.mkdir(parents=True)
+        absent = collect_repo.collect(self.repo, NOW, 604800, home=home)["interpreter"]
+        self.assertNotIn(str(home), absent["reason"])
+        self.assertNotIn(str(home).replace("\\", "/"), absent["reason"])
+        self.assertIn("~", absent["reason"])
+        self._venv(self.repo)
+        present = collect_repo.collect(self.repo, NOW, 604800, home=home)["interpreter"]
+        self.assertNotIn(str(home), present["value"])
+        self.assertTrue(present["value"].startswith("~"))
+
+    def test_the_redaction_has_a_failure_path_a_foreign_home_changes_nothing(self):
+        """Control: with a different home the paths stay as they are, so the test above
+        is proving the rewrite and not an accident of the temp layout."""
+        self.repo.mkdir(parents=True, exist_ok=True)
+        elsewhere = Path(self._tmp.name) / "someone-else"
+        state = collect_repo.collect(self.repo, NOW, 604800, home=elsewhere)["interpreter"]
+        self.assertIn(str(self.repo / ".venv-skills"), state["reason"])
 
     def test_an_unreadable_git_pointer_degrades_to_the_clone_itself(self):
         write(self.repo / ".git", "this is not a gitdir line\n")

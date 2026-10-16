@@ -17,7 +17,9 @@ remove`, reached through the Bash or PowerShell tool. It does not judge `rm -rf`
 `Remove-Item -Recurse` or `rmdir /s`, which were left out because a refusal there would fire
 on ordinary cleanups and no damage through them has been demonstrated. It cannot judge a path
 it cannot resolve: a variable, a command substitution or a `%VAR%` in the path passes, and so
-does a command assembled in a script file the tool call merely runs.
+does a command assembled in a script file the tool call merely runs. A `cd`, `pushd` or
+`Set-Location` earlier in the same line is followed. One whose target cannot be resolved makes
+every later RELATIVE path unknowable (it passes), while an absolute path is still judged.
 
 EXIT CODES (R12):
     0  the call is clean, OR the gate is disabled, OR the call is not ours to judge.
@@ -40,7 +42,8 @@ TOOL_NAMES = ("Bash", "PowerShell")
 # Win32 FILE_ATTRIBUTE_REPARSE_POINT: set on junctions and on every kind of symbolic link.
 # It is an operating-system constant, not configuration (R0 exempts domain constants).
 REPARSE_POINT = 0x400
-SEPARATORS = ";|&\n\r"
+# Parentheses too, so a subshell `(cd x; git worktree remove y)` is read as its commands.
+SEPARATORS = ";|&\n\r()"
 # git options that take their value as the NEXT token.
 VALUE_OPTIONS = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path")
 UNRESOLVABLE = re.compile(r"[$%`]")
@@ -160,6 +163,38 @@ def _clean(path):
     return path
 
 
+CD_COMMANDS = ("cd", "chdir", "set-location", "sl", "pushd", "push-location")
+
+
+def _changes_directory(tokens, current):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Recognise a directory change (cd, pushd, Set-Location and their
+        aliases) and return the directory it leads to.
+
+    Inputs:
+        tokens (list[str]): one command's tokens
+        current (str | None): the directory the command starts in
+
+    Outputs:
+        result (str | None | bool): False when the command is not a directory
+        change; the new directory when it is; None when the target cannot be
+        resolved (a variable or substitution), so later relative paths cannot
+        be judged and are skipped rather than guessed
+    --------------------------------------------------------------------------
+    """
+    if not tokens or tokens[0].lower() not in CD_COMMANDS:
+        return False
+    targets = [item for item in tokens[1:] if not item.startswith("-")]
+    if not targets:
+        return current
+    target = _clean(targets[-1])
+    if UNRESOLVABLE.search(target):
+        return None
+    return _join(current, target)
+
+
 def find_removals(command, base_dir):
     """
     --------------------------------------------------------------------------
@@ -181,7 +216,16 @@ def find_removals(command, base_dir):
     --------------------------------------------------------------------------
     """
     found = []
+    current = base_dir
     for tokens in tokenize(command):
+        # A `cd` earlier in the line moves every later relative path. Without this,
+        # `cd .worktrees && git worktree remove x` resolved `x` against the wrong folder,
+        # found nothing there and let the removal through.
+        moved = _changes_directory(tokens, current)
+        if moved is not False:
+            current = moved
+            continue
+        base_dir = current
         for index, token in enumerate(tokens):
             name = os.path.basename(_clean(token).replace("\\", "/")).lower()
             if name not in ("git", "git.exe"):
@@ -191,7 +235,7 @@ def find_removals(command, base_dir):
                 option = tokens[cursor]
                 takes_value = option in VALUE_OPTIONS
                 if option == "-C" and cursor + 1 < len(tokens):
-                    workdir = os.path.join(workdir, _clean(tokens[cursor + 1]))
+                    workdir = _join(workdir, _clean(tokens[cursor + 1]))
                 cursor += 2 if takes_value else 1
             if tokens[cursor:cursor + 2] != ["worktree", "remove"]:
                 continue
@@ -205,8 +249,22 @@ def find_removals(command, base_dir):
                     positional.append(item)
             if not positional or UNRESOLVABLE.search(positional[-1]):
                 continue
-            found.append(os.path.normpath(os.path.join(workdir, _clean(positional[-1]))))
+            resolved = _join(workdir, _clean(positional[-1]))
+            if resolved is not None:
+                found.append(resolved)
     return found
+
+
+def _join(directory, path):
+    """
+    Join a path onto a directory. A directory of None means an earlier `cd` could not
+    be resolved: an absolute path still stands, a relative one is unknowable (None).
+    """
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    if directory is None:
+        return None
+    return os.path.normpath(os.path.join(directory, path))
 
 
 def _is_link(entry):

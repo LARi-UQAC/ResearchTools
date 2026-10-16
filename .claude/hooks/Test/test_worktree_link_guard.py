@@ -181,6 +181,44 @@ class RefusesAWorktreeHoldingALink(Tree):
         code, err = run_hook(bash(command))
         self.assertEqual(2, code, err)
 
+    def test_a_cd_earlier_in_the_line_moves_the_relative_path(self):
+        """Code-review finding: `cd X && git worktree remove rel` used to resolve `rel`
+        against the payload cwd, find nothing, and let the removal through."""
+        self.linked()
+        elsewhere = self.root.parent
+        for command in ('cd "%s" && git worktree remove "my worktree"' % self.root,
+                        'Set-Location "%s"; git worktree remove "my worktree"' % self.root,
+                        'pushd "%s"; git worktree remove "my worktree"' % self.root,
+                        'cd "%s"; cd "my worktree/.."; git worktree remove "my worktree"'
+                        % self.root):
+            with self.subTest(command=command):
+                code, err = run_hook(bash(command, cwd=elsewhere))
+                self.assertEqual(2, code, err)
+
+    def test_a_subshell_cd_is_followed(self):
+        """Security-review note: `(cd X; git worktree remove rel)` was not followed."""
+        self.linked()
+        code, err = run_hook(bash('(cd "%s"; git worktree remove "my worktree")' % self.root,
+                                  cwd=self.root.parent))
+        self.assertEqual(2, code, err)
+
+    def test_a_cd_into_the_worktree_itself_then_a_dot_path(self):
+        self.linked()
+        code, err = run_hook(bash('cd "%s" && git worktree remove .' % self.worktree,
+                                  cwd=self.root.parent))
+        self.assertEqual(2, code, err)
+
+    def test_an_unresolvable_cd_hides_relative_paths_but_not_absolute_ones(self):
+        """The stated limit: after `cd $dir` a relative path cannot be judged (passes),
+        while an absolute path still is."""
+        self.linked()
+        relative = run_hook(bash('cd $dir && git worktree remove "my worktree"',
+                                 cwd=self.root))
+        self.assertEqual(0, relative[0], relative[1])
+        absolute = run_hook(bash('cd $dir && git worktree remove "%s"' % self.worktree,
+                                 cwd=self.root.parent))
+        self.assertEqual(2, absolute[0], absolute[1])
+
     def test_a_relative_path_resolves_against_the_payload_cwd(self):
         self.linked()
         code, err = run_hook(bash('git worktree remove "my worktree"', cwd=self.root))
@@ -326,6 +364,16 @@ class Parsing(unittest.TestCase):
 
     def test_a_variable_path_yields_nothing(self):
         self.assertEqual([], self.paths("git worktree remove $wt"))
+
+    def test_cd_moves_the_base_and_a_later_cd_is_relative_to_the_earlier_one(self):
+        base = "C:\\base" if WINDOWS else "/base"
+        out = self.paths("cd one && cd two && git worktree remove wt", base)
+        self.assertEqual([os.path.normpath(os.path.join(base, "one", "two", "wt"))], out)
+
+    def test_a_cd_after_the_removal_does_not_move_it(self):
+        base = "C:\\base" if WINDOWS else "/base"
+        out = self.paths("git worktree remove wt && cd elsewhere", base)
+        self.assertEqual([os.path.normpath(os.path.join(base, "wt"))], out)
 
 
 class ShippedFiles(unittest.TestCase):

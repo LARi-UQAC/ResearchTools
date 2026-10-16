@@ -213,7 +213,7 @@ needed). If that environment is absent or empty they **refuse** and print every 
 looked at together with the rebuild command. They no longer fall back to the first `python`
 on `PATH`: on one machine that was another account's Python, and a lost environment went
 unnoticed for a week. To accept `PATH` knowingly, pass `-AllowPathFallback` (or
-`--allow-path-fallback` as the first argument of `rt-dashboard.sh`); to name an interpreter,
+`--allow-path-fallback` for `rt-dashboard.sh`, in any position); to name an interpreter,
 pass `-Python <path>`. The interpreter in use is always printed.
 
 Without the environment several suites cannot import what they need and are reported

@@ -46,6 +46,7 @@ Write-Host "=== rt-venv.ps1: interpreter resolution ===" -ForegroundColor Cyan
 
 # --- scratch repositories ------------------------------------------------------
 New-Item -ItemType Directory -Path $Scratch -Force | Out-Null
+try {
 $Main = Join-Path $Scratch "alpha-clone"
 $Wt   = Join-Path $Scratch "alpha-worktree"
 New-Item -ItemType Directory -Path $Main -Force | Out-Null
@@ -153,7 +154,9 @@ foreach ($rel in $ps1Callers) {
 $sh = Get-Content (Join-Path $RepoRoot ".claude\skills\rt-observe\scripts\rt-dashboard.sh") -Raw -Encoding UTF8
 Check "rt-dashboard.sh asks git for the common dir"  ($sh -match "git-common-dir")
 
-Remove-Item $Scratch -Recurse -Force -ErrorAction SilentlyContinue
+} finally {
+    Remove-Item $Scratch -Recurse -Force -ErrorAction SilentlyContinue
+}
 $realAfter = if (Test-Path $RealVenv) { (Get-Item $RealVenv).LastWriteTimeUtc.Ticks } else { 0 }
 Check "the real .venv-skills is unchanged"           ($realAfter -eq $realBefore)
 

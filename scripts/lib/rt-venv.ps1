@@ -70,7 +70,10 @@ function Get-RtMainRepoRoot {
 
     $saved = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $global:LASTEXITCODE = 0
+    # claude-switch.ps1 is dot-sourced into the operator's interactive shell and calls this
+    # on every use, so the caller's $LASTEXITCODE is put back afterwards rather than left
+    # holding git's (code-review finding).
+    $callerExit = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
     try {
         # No stderr merge: Windows PowerShell 5.1 wraps merged native stderr in
         # ErrorRecords and flips $? even on exit 0.
@@ -80,6 +83,7 @@ function Get-RtMainRepoRoot {
         return $RepoRoot
     } finally {
         $ErrorActionPreference = $saved
+        if ($null -ne $callerExit) { $global:LASTEXITCODE = $callerExit.Value }
     }
     if ($code -ne 0 -or [string]::IsNullOrWhiteSpace(($common | Out-String))) { return $RepoRoot }
 

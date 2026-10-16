@@ -9,6 +9,8 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-16
+
 ### Added
 - `wp-portfolio-sync` skill: migrates a researcher's final CIHR / Canadian Common CV XML
   export into their WordPress portfolio once, through the REST API, gated by an
@@ -18,6 +20,30 @@ This file is for someone following releases. For the dated, engineering-level de
   as well as read when `WP_NONCE` is set. `wp-portfolio-agent` (`/portfolio`) drives the
   pipeline with two separate approval pauses, one before the dry run and one before the
   live push.
+- `pdf2md` skill (thesis, article, talk) and a local-model fallback reviewer for the
+  `deliberation` skill (#69).
+- `professor-expertise-finder` skill, agent and `/expertfinder` command (#63).
+- `rt-dashboard` voice panel: memory query, then answers in parts, vault first and then the
+  project's own code graph (#34, #49).
+- `form-service`: stateless `POST /cv/build` endpoint (#47).
+- `scripts/local/claude-switch.ps1`: switch a Claude Code session between cloud, Ollama and
+  AugureAI, without the LiteLLM proxy (#61).
+- Rule R36: skill-first execution, a missing skill is authored here and never installed (#44).
+
+### Changed
+- License switched from MIT to PolyForm Noncommercial 1.0.0 (#52).
+- Privacy guard: global pre-commit and pre-push hooks, a CI scan, rule R34 and a
+  machine-local deny list of real names with a fixture-path check (#40, #71).
+- Personal data removed from tracked files: `{{HOME}}` profile path, fictitious fixtures (#37).
+- Stale mirrors removed and harness mirrors regenerated, including the Copilot CLI agent
+  and VS Code user prompt for the new agent and command (#28, this release).
+
+### Fixed
+- Vault daemon survives reboots and a slow Ollama start (#42).
+
+### Documentation
+- Student consent form and student-data flows in `NEW_ARCHITECTURE.md` (#55), privacy-guard
+  playbook (#57).
 
 ## [0.1.0] - 2026-09-26
 

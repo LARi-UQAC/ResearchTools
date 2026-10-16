@@ -122,6 +122,8 @@ def find_issue_number(pr_body):
     fenced = commented = False
     for line in (pr_body or "").splitlines():
         stripped = line.strip()
+        if line.startswith(("    ", "\t")):      # an indented code block is an example, not a link
+            continue
         if commented:
             commented = "-->" not in line
             continue
@@ -144,10 +146,10 @@ def find_issue_number(pr_body):
 # is no lookbehind to fool (an underscore, a backslash or an entity in front of a token).
 _TOKEN = re.compile("|".join((
     r"(?P<link>(?P<bang>!?)\[(?P<ltext>[^\]\n]*)\]\((?P<ltarget>[^)\s]*)[^)\n]*\))",
-    r"(?P<url>(?:https?://|www\.)[^\s)>\]\x00]+)",
-    r"(?P<gh>GH-[0-9]+\b)",
+    r"(?P<url>(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.|mailto:|xmpp:)[^\s)>\]\x00\x01]+)",
+    r"(?P<gh>GH-[0-9]+)",
     r"(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)",
-    r"(?P<issue>#[0-9]+\b)",
+    r"(?P<issue>#[0-9]+)",
     r"(?P<mention>@[A-Za-z0-9_][A-Za-z0-9_/-]*)",
     r"(?P<bracket>[\[\]])",
 )))
@@ -182,35 +184,78 @@ def _replace_token(match):
     return "`%s`" % match.group(0)
 
 
+def _plain(text):
+    """
+    Purpose:
+        Escape a stretch of text that sits BETWEEN tokens.
+
+    Inputs:
+        text (str): decoded text holding no token.
+
+    Outputs:
+        text (str): '&' as &amp; (an entity the model wrote in escaped form stays text) and a '<'
+        that starts a tag or a comment as &lt;.
+    """
+    return _HTML.sub("&lt;", text.replace("&", "&amp;"))
+
+
 def _tokens(segment):
-    """Purpose: run the single token pass over text that holds no balanced code span. Inputs:
-    segment (str). Outputs: str."""
-    return _TOKEN.sub(_replace_token, segment)
+    """
+    Purpose:
+        Run the single token pass over text that holds no balanced code span.
+
+    Details:
+        Tokens are found in the RAW text and wrapped as they are, so a URL keeps its '&' and '<'
+        inside its code span (where they are literal). Only the text between tokens is escaped.
+
+    Inputs:
+        segment (str): decoded text, backticks and backslashes already held as placeholders.
+
+    Outputs:
+        text (str): the neutralised text.
+    """
+    out, last = [], 0
+    for match in _TOKEN.finditer(segment):
+        out.append(_plain(segment[last:match.start()]))
+        out.append(_replace_token(match))
+        last = match.end()
+    out.append(_plain(segment[last:]))
+    return "".join(out)
 
 
-def _neutralise(segment):
+def _redact(text, secret_patterns):
+    """Purpose: replace secret-shaped text. Inputs: text (str), secret_patterns (iterable[str]).
+    Outputs: str, each match replaced by (redacted)."""
+    for pattern in secret_patterns:
+        text = re.sub(pattern, "(redacted)", text)
+    return text
+
+
+def _neutralise(segment, secret_patterns=()):
     """
     Purpose:
         Make one stretch of text, outside any balanced code span, inert.
 
     Details:
-        Character references are decoded first (so &#64; is seen as @). Every backtick and
-        backslash of the text is held as a control placeholder while the token pass runs, so the
-        pass can neither read them nor be fooled by them, and becomes an entity afterwards (so
-        nothing can escape or open a span, and the '#96' of an entity is never read as a
-        reference). A '<' that starts a tag or a comment is escaped. Each output decodes back to
-        what this function produced it from, so a second pass changes nothing.
+        Character references are decoded here, and only here: GitHub does not decode them inside
+        a code span, so neither does this code, which also keeps a second pass stable. Secrets are
+        redacted on the decoded text. Every backtick and backslash is held as a control
+        placeholder while the token pass runs, so the pass can neither read them nor be fooled by
+        them, and becomes an entity afterwards (so nothing can escape or open a span, and the
+        '#96' of an entity is never read as a reference). Text between tokens has '&' and a
+        tag-starting '<' escaped (see _tokens). Every backtick in a segment is a lone one,
+        because the balanced spans were taken out by the caller.
 
     Inputs:
-        segment (str): text outside balanced code spans.
+        segment (str): raw text outside balanced code spans.
+        secret_patterns (iterable[str]): regexes redacted from the decoded text.
 
     Outputs:
         text (str): the neutralised text.
     """
     out = html.unescape(segment).replace("\x00", "").replace("\x01", "")
-    out = out.replace("`", "\x00").replace("\\", "\x01")
-    out = _tokens(_HTML.sub("&lt;", out))
-    return out.replace("\x00", "&#96;").replace("\x01", "&#92;")
+    out = _redact(out, secret_patterns).replace("`", "\x00").replace("\\", "\x01")
+    return _tokens(out).replace("\x00", "&#96;").replace("\x01", "&#92;")
 
 
 def sanitize(text, secret_patterns=()):
@@ -220,10 +265,13 @@ def sanitize(text, secret_patterns=()):
         image, no raw HTML, no secret-shaped token.
 
     Details:
-        Balanced code spans are kept as written. In everything else mentions, #N, GH-N and
-        owner/repo#N references and bare URLs go into code spans, links and images become their
-        text plus the target in a code span, and every square bracket is an entity so no
-        reference-style link or image can form. Applying it twice changes nothing more.
+        In order: every line separator becomes '\\n' (str.splitlines, which _quote also uses, so
+        no later step can cut a span the sanitiser kept whole); character references are decoded
+        and control placeholders stripped; secret-shaped text is redacted on the DECODED text;
+        each balanced one-line code span is REBUILT as a single span with no backtick inside, so
+        every span in the output is one this function wrote; everything else goes through the
+        token pass (mentions, #N, GH-N, owner/repo#N, URLs of any scheme, links, images, square
+        brackets, raw HTML). Applying it twice changes nothing more.
 
     Inputs:
         text (str): the model's reply.
@@ -232,20 +280,17 @@ def sanitize(text, secret_patterns=()):
     Outputs:
         clean (str): the neutralised text.
     """
-    for pattern in secret_patterns:
-        text = re.sub(pattern, "(redacted)", text)
+    text = "\n".join(text.splitlines()).rstrip("\n").replace("\x00", "").replace("\x01", "")
+    # Spans are found on the RAW text, before any character reference is decoded, exactly as
+    # GitHub reads it: an entity is never a span delimiter and is not decoded inside a span.
     pieces, last = [], 0
     for span in _SPAN.finditer(text):
-        pieces.append(_neutralise(text[last:span.start()]))
-        pieces.append(span.group(0))
+        pieces.append(_neutralise(text[last:span.start()], secret_patterns))
+        pieces.append("`%s`" % _redact(span.group(2).replace("`", "'"), secret_patterns))
         last = span.end()
-    pieces.append(_neutralise(text[last:]))
-    out = ""
-    for piece in pieces:
-        # Two code spans that touch would merge into one run of backticks and change which text
-        # is inside a span, so a space keeps them apart.
-        out += (" " if out.endswith("`") and piece.startswith("`") else "") + piece
-    return out
+    pieces.append(_neutralise(text[last:], secret_patterns))
+    # Two code spans that touch would read as one run of backticks, so a space keeps them apart.
+    return "".join(pieces).replace("``", "` `")
 
 
 def select_comment(comments, marker, login):
@@ -353,13 +398,19 @@ def _fit(text, cap):
         text (str): the comment body.
         cap (int): the configured maximum number of characters.
 
+    Details:
+        The cut is made on a line boundary, never inside a line. Every code span the sanitiser
+        writes sits on one line, so a cut can neither split a span (its closing backtick lost,
+        the text inside live) nor an entity.
+
     Outputs:
         body (str): the text unchanged, or cut with a visible quoted notice, never longer than cap.
     """
     if len(text) <= cap:
         return text
     notice = "\n\n> [review cut at %d characters to fit a GitHub comment]\n" % cap
-    return text[:cap - len(notice)].rstrip() + notice
+    keep = text[:cap - len(notice)]
+    return keep[:max(keep.rfind("\n"), 0)].rstrip() + notice
 
 
 def build_pr_body(review, sha, pr, cfg):
@@ -422,8 +473,10 @@ def make_runner(cfg):
     timeout, retries = val(cfg, "gh_timeout_seconds"), val(cfg, "gh_retries")
 
     def run(args, stdin=None):
+        # A POST that timed out may already have created its comment, so it is never retried.
+        attempts = 1 if "POST" in args else retries + 1
         last = (1, "gh did not run")
-        for _ in range(retries + 1):
+        for _ in range(attempts):
             try:
                 done = subprocess.run(["gh", *args], input=stdin, capture_output=True, text=True,
                                       encoding="utf-8", timeout=timeout)
@@ -671,7 +724,12 @@ def _cmd_mirror(args, cfg, runner, env):
         return EXIT_OK
     pr = int(args.pr)
     try:
-        target = _gh_json(runner, ["api", "repos/%s/issues/%s" % (args.repo, issue)])
+        rc, out = runner(["api", "repos/%s/issues/%s" % (args.repo, issue)])
+        if rc != 0 and ("404" in (out or "") or "Not Found" in (out or "")):
+            print("[CI] #%s does not exist; Issue mirror skipped." % issue)
+            _report(ok=True, skipped="issue-not-found")
+            return EXIT_OK
+        target = _gh_json(runner, ["api", "repos/%s/issues/%s" % (args.repo, issue)]) if rc != 0 else json.loads(out or "{}")
         if target.get("pull_request") is not None or target.get("state") != "open":
             print("[CI] #%s is not an open Issue; Issue mirror skipped." % issue)
             _report(ok=True, skipped="not-an-open-issue")

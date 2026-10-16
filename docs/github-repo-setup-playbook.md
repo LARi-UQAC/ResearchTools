@@ -609,8 +609,9 @@ state both. Without the yes, stop here.
    `gh api repos/<o>/<r>/commits/<tag> --jq .sha` (the commit) against
    `gh api repos/<o>/<r>/git/refs/tags/<tag> --jq .object.type` (`commit` is safe, `tag` is not).
 
-**Do not make it a required check yet.** Its output is advisory, it costs money, and a missing
-secret makes it fail. Decide with the user after a few real runs.
+**Do not make it a required check yet.** Its output is advisory, it costs money on every run,
+and a required check that ends neutral without the secret would let a merge pass unreviewed
+without anyone noticing. Decide with the user after a few real runs.
 
 **Docs this change makes false, in the same PR** (a code review found each one): the "only CI
 is privacy-scan" sentences in `CONTRIBUTING.md`, `.claude/rules/testing.md` (top paragraph and

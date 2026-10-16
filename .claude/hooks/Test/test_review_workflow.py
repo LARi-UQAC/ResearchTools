@@ -23,8 +23,8 @@ WORKFLOW = REPO / ".github" / "workflows" / "review.yml"
 SCRIPT = REPO / "scripts" / "ci" / "review_mirror.py"
 CONFIG = REPO / "scripts" / "ci" / "review-mirror.json"
 
-# Tools the model session must never have. Mirrors review-mirror.json forbidden_* by design:
-# the test restates them so a config edit that empties the list is caught here.
+# Tools the model session must never have. The config holds an ALLOWLIST (allowed_tools), so this
+# deny list is restated here on purpose: a config edit that lets one of these in is caught here.
 FORBIDDEN_TOOLS = ("Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Agent", "Task")
 AGENT_ACTION_INPUTS_BANNED = ("plugins:", "plugin_marketplaces:", "track_progress:", "use_sticky_comment:")
 READ_TOOLS = ("Read", "Grep", "Glob")
@@ -229,6 +229,8 @@ class TestPureLogic(unittest.TestCase):
         # Code review round 1: a template example in a fence or an HTML comment selects nothing.
         self.assertIsNone(f("```\nFixes #1\n```\nno real link"))
         self.assertIsNone(f("<!--\nFixes #1\n-->\n"))
+        self.assertIsNone(f("    Fixes #5\n"))      # code review round 3: an indented code block
+        self.assertIsNone(f("\tFixes #5\n"))
         self.assertEqual(f("```\nFixes #1\n```\nFixes #9\n"), 9)
         self.assertEqual(f("<!-- Fixes #1 -->\nCloses #4"), 4)
 
@@ -265,13 +267,15 @@ class TestPureLogic(unittest.TestCase):
             self.assertNotIn("owner/repo#5", live, raw)
             self.assertEqual(s(s(raw)), s(raw), "not idempotent: " + raw)
 
-    def test_balanced_code_spans_are_left_exactly_as_written(self):
+    def test_balanced_code_spans_are_kept_as_one_clean_span(self):
+        # Security round 3: every span in the output is rebuilt by the sanitiser, so a run of
+        # backticks inside one becomes an apostrophe and the span is always a single backtick pair.
         s = self.mod.sanitize
         text = "call `foo()` and `@name` and ``a ` b`` then #7"
         out = s(text)
         self.assertIn("`foo()`", out)
         self.assertIn("`@name`", out)
-        self.assertIn("``a ` b``", out)
+        self.assertIn("`a ' b`", out)
         self.assertNotRegex(out, r"(?<![`\w/])#7")
 
     def test_autolinks_in_prose_are_wrapped_in_every_form(self):
@@ -303,6 +307,93 @@ class TestPureLogic(unittest.TestCase):
             self.assertNotRegex(live, r"(?<![\w/])#123", raw)
         text = "AT&T and 3 < 4 and a ` b"
         self.assertEqual(self.mod.sanitize(self.mod.sanitize(text)), self.mod.sanitize(text))
+
+    def live_lines(self, body):
+        """Text GitHub still renders as live, line by line, with the quote prefix and spans removed."""
+        lines = [ln[2:] if ln.startswith("> ") else ln.lstrip(">") for ln in body.split("\n")]
+        return [GFM_SPAN.sub("·", ln) for ln in lines]   # a span is one inert character, never deleted
+
+    def test_line_separators_inside_a_span_cannot_split_it_in_the_quote(self):
+        # Security round 3: str.splitlines() breaks on \r, \x0b, \x0c, \x1c-\x1e, \x85 and  ,
+        # which the old one-line span pattern allowed, so _quote cut a preserved span in two and a
+        # block starter on the next line made the first backtick literal.
+        for sep in ("\r", "\x0b", "\x0c", "\x1c", "\x85", " ", " "):
+            for starter in ("- x", "# x", "> x", "1. x"):
+                review = "## Automated multi-dimension review\n`@octocat [pwn](http://evil.example)" + sep + starter + "`"
+                body = self.mod.build_pr_body(review, "a" * 40, 9, self.cfg)
+                for live in self.live_lines(body):
+                    self.assertNotIn("@octocat", live, repr(sep + starter))
+                    self.assertNotIn("http://evil.example", live, repr(sep + starter))
+
+    def test_the_length_cut_never_leaves_a_live_token(self):
+        # Security round 3: _fit cut at a fixed index, inside a preserved span, so its closing
+        # backtick was lost and the text inside went live.
+        import copy
+        small = copy.deepcopy(self.cfg)
+        small["comment_max_chars"]["value"] = 400
+        for pad in range(150, 215):
+            review = ("## Automated multi-dimension review\n" + "a" * pad
+                      + " `@octocat see [x](http://evil.example)` tail " + "b" * 600)
+            body = self.mod.build_pr_body(review, "a" * 40, 9, small)
+            self.assertLessEqual(len(body), 400)
+            for live in self.live_lines(body):
+                self.assertNotIn("@octocat", live, pad)
+                self.assertNotIn("http://evil.example", live, pad)
+                self.assertNotIn("`", live, pad)
+
+    def test_an_entity_encoded_secret_is_redacted_after_decoding(self):
+        # Code review round 3: redaction ran before character references were decoded.
+        patterns = self.mod.val(self.cfg, "secret_patterns")
+        out = self.mod.sanitize("key sk&#45;ant-abcdefghijklmnop12 end", patterns)
+        self.assertNotIn("sk-ant-abcdefghijklmnop12", out)
+        self.assertIn("(redacted)", out)
+        self.assertNotIn("sk&#45;ant", out)
+
+    def test_other_autolink_schemes_are_wrapped(self):
+        # Code review round 3: cmark-gfm autolinks ftp:// and mailto: as well as http(s).
+        out = self.mod.sanitize("see ftp://evil.example/x and mailto:a@b.example and xmpp:a@b.example")
+        live = GFM_SPAN.sub("", out)
+        self.assertNotIn("ftp://", live)
+        self.assertNotIn("mailto:", live)
+        self.assertNotIn("xmpp:", live)
+
+    def test_every_code_span_in_the_output_is_one_clean_span(self):
+        # The invariant that closes the class: no backtick survives outside a rebuilt span, and a
+        # span never holds a backtick or a line break of its own.
+        for raw in ("`` a ` b `` and `x\ty`", "```fence```", "`a\rb`", "a ` b ``` c", "``unclosed", "`@x` `@y`"):
+            out = self.mod.sanitize(raw)
+            self.assertNotIn("`", GFM_SPAN.sub("", out), raw)
+            for span in GFM_SPAN.finditer(out):
+                self.assertNotIn("\n", span.group(2), raw)
+            self.assertNotRegex(out, r"``", raw)
+
+    def test_seeded_fuzz_no_live_token_and_stable_after_a_second_pass(self):
+        # Four review rounds each found a new bypass in a hand-picked input. This walks 600 strings
+        # built from the fragments that produced them, with a FIXED seed (R19), through the whole
+        # posted body (sanitise, quote), and asserts the two properties that matter: nothing GitHub
+        # would turn into a mention, reference, link, image or tag survives outside a code span,
+        # and sanitising the output again changes nothing.
+        import random
+        rng = random.Random(20261016)
+        frags = ["`", "``", "```", "@a", "@org/team", "#1", "GH-1", "o/r#2", "[", "]", "](", "![", "http://x.example/p",
+                 "www.x.example", "ftp://x.example", "\\", "&#96;", "&#64;", "&amp;", "&lt;", "&", "\n", "\n\n", "\r",
+                 "\x0b", "\x85", " ", "<", "<!--", "-->", "<b>", "_", "*", "- ", "# ", "> ", "1. ", " ", "x", "sk-ant-abcdefghij"]
+        patterns = self.mod.val(self.cfg, "secret_patterns")
+        for n in range(600):
+            raw = "".join(rng.choice(frags) for _ in range(rng.randint(1, 14)))
+            once = self.mod.sanitize(raw, patterns)
+            self.assertEqual(self.mod.sanitize(once, patterns), once, "not stable: %r" % raw)
+            body = self.mod.build_pr_body("## Automated multi-dimension review\n" + raw, "a" * 40, 9, self.cfg)
+            for live in self.live_lines(body)[1:]:       # line 0 is our own hidden marker
+                # An entity is one inert character (never deleted: that would glue its neighbours);
+                # &lt; stays as it is, since an escaped tag must not read as a tag.
+                text = re.sub(r"&(?:#[0-9]+|amp);", "·", live)
+                for bad in ("@a", "@org", "#1", "#2", "GH-1", "www.", "sk-ant-"):
+                    self.assertNotIn(bad, text, "%s live in %r from %r" % (bad, text, raw))
+                self.assertNotRegex(text, r"[A-Za-z][A-Za-z0-9+.-]*://", "scheme link live from %r" % raw)
+                self.assertNotRegex(text, r"<[!/A-Za-z?]", "tag live from %r" % raw)
+                self.assertNotIn("`", text, "stray backtick from %r" % raw)
+                self.assertNotRegex(text, r"(?<!\\)!?\[[^\]]*\]\(", "link live from %r" % raw)
 
     def test_underscore_and_backslash_do_not_shield_a_token_and_sanitising_is_stable(self):
         # Security round 2, inputs observed live through GitHub's own markdown renderer: GitHub
@@ -536,6 +627,35 @@ class TestCommands(unittest.TestCase):
             listings = [c for c in gh.calls if "--paginate" in c[0] and "issues/12/comments" in " ".join(c[0])]
             self.assertEqual(len(listings), 1)
         self.assertFalse(any("@octo" in (c[1] or "") for c in second.writes()))
+
+    def test_a_missing_target_issue_is_a_clean_skip_but_other_errors_fail(self):
+        # Code review round 3: a mistyped `Fixes #999` must not turn the check red after the paid
+        # review was posted. Any other gh error is still a failure.
+        absent = FakeGh([("api repos/o/r/issues/999", (1, "gh: Not Found (HTTP 404)"))])
+        rc = self.mod.main(["mirror-issue", "--repo", "o/r", "--pr", "9", "--author", "octo",
+                            "--pr-comment-id", "77"], runner=absent, env={"PR_BODY": "Fixes #999"})
+        self.assertEqual(rc, 0)
+        self.assertEqual(absent.writes(), [])
+        broken = FakeGh([("api repos/o/r/issues/999", (1, "gh: Server Error (HTTP 500)"))])
+        rc = self.mod.main(["mirror-issue", "--repo", "o/r", "--pr", "9", "--author", "octo",
+                            "--pr-comment-id", "77"], runner=broken, env={"PR_BODY": "Fixes #999"})
+        self.assertEqual(rc, 1)
+
+    def test_the_real_runner_never_retries_a_post(self):
+        # Code review round 3: a POST that timed out may already have created the comment, so a
+        # retry posts a duplicate. A read is retried up to the configured count.
+        import subprocess as sp
+        from unittest import mock
+        cfg = self.cfg
+        retries = self.mod.val(cfg, "gh_retries")
+        runner = self.mod.make_runner(cfg)
+        with mock.patch.object(self.mod.subprocess, "run", side_effect=sp.TimeoutExpired("gh", 1)) as run:
+            rc, _ = runner(["api", "-X", "POST", "repos/o/r/issues/9/comments", "--input", "-"], "{}")
+            self.assertEqual(rc, 1)
+            self.assertEqual(run.call_count, 1)
+        with mock.patch.object(self.mod.subprocess, "run", side_effect=sp.TimeoutExpired("gh", 1)) as run:
+            runner(["api", "repos/o/r/issues/9"])
+            self.assertEqual(run.call_count, retries + 1)
 
     def test_mirror_with_a_bot_author_posts_without_mention_or_assignment(self):
         review = "<!-- rt-review:pr-9 -->\n> " + MARK

@@ -44,16 +44,17 @@ basemaps (TLS-verified, cached).
 
 A second, separate layer from the SkillSpector scan above: a global git hook, installed once
 for every repository on this machine (`core.hooksPath`, via
-`.claude/hooks/git/install-git-hooks.ps1`), that blocks two different things in the staged or
-pushed diff before they reach a remote:
+`.claude/hooks/git/install-git-hooks.ps1`), that blocks three different things in the staged
+or pushed diff before they reach a remote:
 
 - **Secrets**, via betterleaks' own rule shapes (keys, tokens, credentials).
 - **Personal-data shapes**, via `privacy-rules.toml` (account paths, Quebec code permanent,
   `@etu.uqac.ca` addresses, FRQ ids). This machine's own account name is NOT a `toml` rule: it
   is a separate dynamic check in pre-commit (reads `USERNAME`/`USER`, whole-token match in
   added lines and staged paths), since a static rules file cannot know the account name of
-  whoever runs it. AND a machine-local **deny list of real names** - students, co-authors -
-  extended for each new student with
+  whoever runs it.
+- **Real names**, via a machine-local **deny list** - students, co-authors - extended for
+  each new student with
   `install-git-hooks.ps1 -TermsFrom <student folders> [-TermsDepth N]`: the installer only
   appends names it does not already have, never rewrites the list, into `private-terms.txt`
   (generated), alongside `private-terms.extra.txt` (hand-added terms) and
@@ -72,8 +73,9 @@ that list is deliberately never committed - see below.
 **What this does not cover, stated plainly:**
 
 - **The deny list never leaves this machine**, by design (an operator ruling, 2026-10-15): it
-  is machine-local and gitignored, so CI's own `privacy-scan` workflow enforces secret/shape
-  rules only, never the real-name list. A name caught locally is NOT re-checked in CI.
+  is machine-local, outside every repository, so CI's own `privacy-scan` workflow enforces
+  secret/shape rules only, never the real-name list. A name caught locally is NOT re-checked
+  in CI.
 - **GitHub comments, PR bodies, and issues have no automatic control at all.** A real name
   typed into a PR description or a review comment is not scanned by anything in this guard.
 - **A determined bypass still exists.** `--no-verify` at commit skips only pre-commit;

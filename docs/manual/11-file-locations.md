@@ -105,24 +105,22 @@ Commands, and Skills chapters for those.
 
 The git privacy guard (`.claude/hooks/git/`, see [05-security-audit.md](05-security-audit.md)
 and [`security.md`](../../.claude/rules/security.md)) is installed from repo-tracked source
-into two places, neither of which is part of the repository tree above:
+into three places, neither of the latter two part of the repository tree above:
 
 - **Repo-side source**, tracked: `.claude/hooks/git/` — `pre-commit`, `pre-push`,
-  `privacy-lib.sh`, `privacy-extra.awk`, `privacy-guard.conf`, `deny-term-stopwords.txt`,
-  `sync-folder-markers.txt`, `fixture-path-allow.txt`, `privacy-rules.toml`,
-  `install-git-hooks.ps1`.
+  `privacy-lib.sh`, `privacy-extra.awk`, `privacy-guard.conf`, `fixture-path-allow.txt`,
+  `privacy-rules.toml`, `install-git-hooks.ps1` (plus two files the installer reads here but
+  never copies anywhere: `deny-term-stopwords.txt`, `sync-folder-markers.txt`).
 - **Copied by the installer** to `~/.config/git/hooks/` (`core.hooksPath`): `pre-commit`,
   `pre-merge-commit` (a copy of `pre-commit`, since a clean merge runs only that one),
   `pre-push`, `_chain` (plus one copy per other chained hook name), `privacy-rules.toml`,
   `privacy-lib.sh`, `privacy-extra.awk`, `fixture-path-allow.txt`, `privacy-guard.conf`.
-- **Source-only**, read by the installer but never copied: `deny-term-stopwords.txt`,
-  `sync-folder-markers.txt`, `install-git-hooks.ps1` itself.
 - **Machine-local, never committed, and not inside any repository at all**: live in the
   install folder, outside the tracked tree entirely, so they are not "gitignored files" so
   much as files no repository holds in the first place. What protects a stray copy pasted
   into a repository is the global git ignore the installer writes
   (`core.excludesFile`, else `<XDG_CONFIG_HOME or ~/.config>/git/ignore`), which also lists
-  these two file names.
+  all three file names.
   - `private-terms.txt` — the generated deny list, extended for each new student
     (`-TermsFrom <folder>`): the installer only appends names it does not already have,
     never rewrites the list.

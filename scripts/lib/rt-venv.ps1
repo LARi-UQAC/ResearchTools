@@ -28,8 +28,13 @@
 .NOTES
     Same shape as rt-sync.ps1 and rt-python-env.ps1: logic in scripts\lib\ so a
     verify script can load it without running a launcher. R18: this is the single
-    owner of interpreter resolution, and scripts\test\verify-venv-resolution.ps1
-    fails if a launcher grows its own copy again.
+    owner of interpreter resolution FOR POWERSHELL, and scripts\test\verify-venv-resolution.ps1
+    fails if a launcher grows its own copy again. Two ports exist because they cannot
+    dot-source it: rt-dashboard.sh (POSIX, asks git the same question) and collect_repo.py
+    (the dashboard's Repository panel, which reads the same .git and commondir files
+    without running git). They agree on the layout and on the broken-environment rule, and
+    test_launcher.py and test_rt_collectors.py pin them; a change to the layout is made in
+    all three.
 #>
 
 Set-StrictMode -Version Latest
@@ -42,11 +47,12 @@ function Test-RtStampAllowed {
         Whether a test run may write the green stamp, given where its interpreter came from.
 
     .DESCRIPTION
-        A python taken from PATH (-AllowPathFallback) may lack the repository's packages, and a
-        suite that cannot import one is graded NOT RUN, which does not fail the run. Such a
-        run proves less than it looks like it proves, and the stamp gates what
-        install-junctions.ps1 -Sync copies into ~/.claude. So under a PATH python the stamp
-        is written only when nothing was NOT RUN.
+        A python taken from PATH (-AllowPathFallback) or named by hand (-Python) may lack the
+        repository's packages, and a suite that cannot import one is graded NOT RUN, which
+        does not fail the run. Such a run proves less than it looks like it proves, and the
+        stamp gates what install-junctions.ps1 -Sync copies into ~/.claude. So the stamp is
+        written under an interpreter that is not the repository's own environment only when
+        nothing was NOT RUN.
 
     .OUTPUTS
         bool
@@ -55,7 +61,8 @@ function Test-RtStampAllowed {
         [Parameter(Mandatory = $true)][string]$InterpreterSource,
         [Parameter(Mandatory = $true)][int]$NotRunCount
     )
-    return -not ($InterpreterSource -eq "path-fallback" -and $NotRunCount -gt 0)
+    $inRepository = $InterpreterSource -in @("venv", "main-repo-venv")
+    return $inRepository -or ($NotRunCount -eq 0)
 }
 
 function Find-RtPathPython {
@@ -106,6 +113,7 @@ function Get-RtMainRepoRoot {
     } finally {
         $ErrorActionPreference = $saved
         if ($null -ne $callerExit) { $global:LASTEXITCODE = $callerExit.Value }
+        else { Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue }
     }
     if ($code -ne 0 -or [string]::IsNullOrWhiteSpace(($common | Out-String))) { return $RepoRoot }
 
@@ -116,6 +124,28 @@ function Get-RtMainRepoRoot {
     # A bare repository has no working tree to hold an environment.
     if ((Split-Path $common -Leaf) -ne ".git") { return $RepoRoot }
     return (Split-Path $common -Parent)
+}
+
+function Get-RtVenvMissingBase {
+    <#
+    .SYNOPSIS
+        The base interpreter folder a virtual environment points at when that folder is
+        gone, or an empty string when it exists or cannot be read.
+
+    .DESCRIPTION
+        pyvenv.cfg holds a `home = <folder>` line. A missing or unreadable file proves
+        nothing, so it is NOT reported as broken (the caller still gets the interpreter).
+    #>
+    param([Parameter(Mandatory = $true)][string]$Venv)
+
+    $cfg = Join-Path $Venv "pyvenv.cfg"
+    if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { return "" }
+    try { $text = Get-Content -LiteralPath $cfg -Raw -Encoding UTF8 } catch { return "" }
+    $m = [regex]::Match($text, '(?m)^\s*home\s*=\s*(.+?)\s*$')
+    if (-not $m.Success) { return "" }
+    $home_ = $m.Groups[1].Value
+    if (Test-Path -LiteralPath $home_ -PathType Container) { return "" }
+    return $home_
 }
 
 function Get-RtVenvCandidates {
@@ -147,7 +177,15 @@ function Get-RtVenvCandidates {
         if (Test-Path -LiteralPath $python -PathType Leaf) { $state = "present" }
         elseif (Test-Path -LiteralPath $posix -PathType Leaf) { $state = "present"; $python = $posix }
         elseif (Test-Path -LiteralPath $venv -PathType Container) { $state = "empty" }
-        [pscustomobject]@{ Source = $r.Source; Venv = $venv; Python = $python; State = $state }
+        # A launcher stub that outlived its base interpreter still passes Test-Path and then
+        # dies with "No Python at ..." in every caller (code-review finding). pyvenv.cfg names
+        # the base folder, and reading it needs no process.
+        $missingBase = ""
+        if ($state -eq "present") {
+            $missingBase = Get-RtVenvMissingBase -Venv $venv
+            if ($missingBase) { $state = "broken" }
+        }
+        [pscustomobject]@{ Source = $r.Source; Venv = $venv; Python = $python; State = $state; MissingBase = $missingBase }
     }
 }
 
@@ -208,6 +246,7 @@ function Resolve-RtVenvPython {
     $lines = @("no suite interpreter: .venv-skills holds no Scripts\python.exe. Looked at:")
     foreach ($c in $cands) {
         $why = if ($c.State -eq "empty") { "folder exists but is EMPTY or damaged (a recursive delete leaves exactly this)" }
+               elseif ($c.State -eq "broken") { "BROKEN: its base interpreter folder is gone ($($c.MissingBase))" }
                else { "absent" }
         $lines += "  $($c.Python)  [$why]"
     }

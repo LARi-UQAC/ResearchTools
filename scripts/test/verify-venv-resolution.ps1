@@ -107,6 +107,23 @@ Check "a found interpreter carries no refusal text"  ([string]::IsNullOrEmpty($v
 $viaMain = Resolve-RtVenvPython -RepoRoot $Main
 Check "the main clone resolves its own environment"  ($viaMain.Source -eq "venv")
 
+# --- a launcher stub whose base interpreter is gone is BROKEN, not present ---------------
+# Code-review finding: python.exe survives the removal of the interpreter it launches, so
+# Test-Path said yes and every caller then died with "No Python at ...".
+$brokenRoot = Join-Path $Scratch "broken-clone"
+New-FakeVenv $brokenRoot
+$goneBase = Join-Path $Scratch "removed-python-home"
+Set-Content -Path (Join-Path $brokenRoot ".venv-skills\pyvenv.cfg") -Value "home = $goneBase`nversion = 3.11.0" -Encoding ASCII
+$broken = Resolve-RtVenvPython -RepoRoot $brokenRoot
+Check "a venv whose base interpreter is gone is refused"      ($null -eq $broken.Python)
+Check "the refusal says BROKEN and names the missing base"    ($broken.Message -match "BROKEN" -and $broken.Message -match [regex]::Escape($goneBase))
+New-Item -ItemType Directory -Path $goneBase -Force | Out-Null
+$healed = Resolve-RtVenvPython -RepoRoot $brokenRoot
+Check "(control) the same venv resolves once its base exists" ($healed.Source -eq "venv")
+Remove-Item (Join-Path $brokenRoot ".venv-skills\pyvenv.cfg") -Force
+$noCfg = Resolve-RtVenvPython -RepoRoot $brokenRoot
+Check "(control) a venv with no pyvenv.cfg is not called broken" ($noCfg.Source -eq "venv")
+
 # --- an own environment in the worktree wins -----------------------------------------
 New-FakeVenv $Wt
 $own = Resolve-RtVenvPython -RepoRoot $Wt
@@ -117,7 +134,8 @@ Remove-Item (Join-Path $Wt ".venv-skills") -Recurse -Force
 Check "path-fallback with suites NOT RUN: no stamp"           (-not (Test-RtStampAllowed -InterpreterSource "path-fallback" -NotRunCount 3))
 Check "path-fallback with nothing NOT RUN: stamp allowed"     (Test-RtStampAllowed -InterpreterSource "path-fallback" -NotRunCount 0)
 Check "an environment with suites NOT RUN keeps today's rule" (Test-RtStampAllowed -InterpreterSource "main-repo-venv" -NotRunCount 3)
-Check "an explicit -Python with suites NOT RUN keeps it too"  (Test-RtStampAllowed -InterpreterSource "explicit" -NotRunCount 3)
+Check "an explicit -Python with suites NOT RUN gets no stamp either" (-not (Test-RtStampAllowed -InterpreterSource "explicit" -NotRunCount 3))
+Check "an explicit -Python with nothing NOT RUN gets a stamp"        (Test-RtStampAllowed -InterpreterSource "explicit" -NotRunCount 0)
 
 # --- only .venv-skills is looked for, and the refusal says a root .venv is not used -------
 Check "the refusal says a root .venv is not used"             ($none.Message -match "root \.venv is not used")

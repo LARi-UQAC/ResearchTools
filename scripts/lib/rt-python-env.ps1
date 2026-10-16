@@ -259,7 +259,10 @@ function Test-RtVenvCreates {
 
     $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-venv-probe-" + [guid]::NewGuid().ToString("N"))
     try {
-        $proc = Start-Process -FilePath $Python -ArgumentList @("-m", "venv", "`"$scratch`"") `
+        # --without-pip: only the CREATION of a venv is being proven here (pip is installed
+        # later, into the real environment), and skipping the ensurepip bootstrap turns a
+        # probe of tens of seconds per candidate into about a second.
+        $proc = Start-Process -FilePath $Python -ArgumentList @("-m", "venv", "--without-pip", "`"$scratch`"") `
                               -NoNewWindow -PassThru -RedirectStandardError ($scratch + ".err") `
                               -RedirectStandardOutput ($scratch + ".out")
         # Touching Handle keeps the process object's handle open, which is what lets
@@ -565,8 +568,15 @@ function Install-RtPythonEnv {
         # security.md: pip-audit runs on any requirements file this repository installs.
         # Reported, never fatal - see the header.
         foreach ($a in $applied) {
+            # Continue, not Stop: under setup.ps1's Stop preference, Windows PowerShell 5.1
+            # turns the first merged stderr line of a native command into a terminating
+            # error, and an audit finding would abort the install instead of being reported.
+            $savedPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
             & $venvPython -m pip_audit --strict -r $a.File 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
+            $auditExit = $LASTEXITCODE
+            $ErrorActionPreference = $savedPreference
+            if ($auditExit -eq 0) {
                 Write-Host "  [OK]  pip-audit clean: $($a.Label)" -ForegroundColor Green
             } else {
                 Write-Host "  [!!]  pip-audit reported findings for $($a.Label) - run it yourself on that file" -ForegroundColor Yellow

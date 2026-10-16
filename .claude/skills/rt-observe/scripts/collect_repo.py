@@ -181,6 +181,35 @@ def main_clone_root(repo_root):
     return common.parent if common.name == ".git" else repo_root
 
 
+HOME_LINE = re.compile(r"(?m)^\s*home\s*=\s*(.+?)\s*$")
+
+
+def _missing_base(venv):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The base interpreter folder pyvenv.cfg points at when that folder is
+        gone. A launcher stub that outlived its base still has a python.exe, and
+        every caller then dies with "No Python at ...".
+
+    Inputs:
+        venv (Path): the .venv-skills folder
+
+    Outputs:
+        folder (str): the missing base folder, or "" when it exists or the file
+        cannot be read (an unreadable cfg proves nothing, so it is not "broken")
+    --------------------------------------------------------------------------
+    """
+    try:
+        with io.open(Path(venv) / "pyvenv.cfg", encoding="utf-8") as handle:
+            found = HOME_LINE.search(handle.read())
+    except OSError:
+        return ""
+    if not found or Path(found.group(1)).is_dir():
+        return ""
+    return found.group(1)
+
+
 def _venv_probe(root):
     """
     --------------------------------------------------------------------------
@@ -198,6 +227,9 @@ def _venv_probe(root):
     base = Path(root) / VENV_DIR
     for rel in VENV_INTERPRETERS:
         if (base / rel).is_file():
+            missing = _missing_base(base)
+            if missing:
+                return {"state": "broken", "python": str(base / rel), "missing_base": missing}
             return {"state": "present", "python": str(base / rel)}
     if base.is_dir():
         return {"state": "empty", "python": str(base / VENV_INTERPRETERS[0])}
@@ -258,8 +290,11 @@ def _interpreter_raw(repo_root):
         if probe["state"] == "present":
             return {"status": "ok", "value": probe["python"], "source": source,
                     "proven_by": VENV_DIR + " (filesystem)"}
-    notes = ["%s [%s]" % (p["python"], "folder EMPTY or damaged"
-                          if p["state"] == "empty" else "absent") for p in probes]
+    wording = {"empty": "folder EMPTY or damaged", "absent": "absent"}
+    notes = ["%s [%s]" % (p["python"],
+                          "BROKEN: its base interpreter folder is gone (%s)" % p["missing_base"]
+                          if p["state"] == "broken" else wording[p["state"]])
+             for p in probes]
     return {
         "status": "unavailable",
         "value": "no interpreter",

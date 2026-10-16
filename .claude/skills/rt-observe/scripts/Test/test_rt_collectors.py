@@ -265,6 +265,23 @@ class InterpreterStateTest(TempTree):
         self.assertIn(str(main / ".venv-skills"), state["reason"])
         self.assertIn("run from %s" % main, state["reason"])
 
+    def test_a_stub_whose_base_interpreter_is_gone_is_broken_not_ok(self):
+        """Code-review finding: python.exe outlives the interpreter it launches, so a
+        file-exists check called a dead environment healthy."""
+        self._venv(self.repo)
+        gone = Path(self._tmp.name) / "removed-python-home"
+        write(self.repo / ".venv-skills" / "pyvenv.cfg", "home = %s\nversion = 3.11.0\n" % gone)
+        state = collect_repo.collect(self.repo, NOW, 604800, home=self.alien_home)["interpreter"]
+        self.assertEqual("unavailable", state["status"])
+        self.assertIn("BROKEN", state["reason"])
+        self.assertIn(str(gone), state["reason"])
+        gone.mkdir()
+        healed = collect_repo.collect(self.repo, NOW, 604800, home=self.alien_home)["interpreter"]
+        self.assertEqual("ok", healed["status"])
+        (self.repo / ".venv-skills" / "pyvenv.cfg").unlink()
+        nocfg = collect_repo.collect(self.repo, NOW, 604800, home=self.alien_home)["interpreter"]
+        self.assertEqual("ok", nocfg["status"], "no pyvenv.cfg proves nothing")
+
     def test_no_account_path_reaches_the_snapshot(self):
         """The snapshot is rendered in a browser and screenshotted (rt_redact, measured
         2026-08-31), so the interpreter paths and the refusal reason must show `~`."""

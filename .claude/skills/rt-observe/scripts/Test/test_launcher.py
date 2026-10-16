@@ -250,6 +250,21 @@ class PosixLauncherRefusal(unittest.TestCase):
         self.assertNotIn("--allow-path-fallback", done.stdout)
         self.assertIn("from PATH", done.stderr)
 
+    def test_a_stub_whose_base_interpreter_is_gone_is_skipped(self):
+        """Code-review finding: the launcher stub outlives the interpreter it launches."""
+        clone = self.scripts.parents[3]
+        self._stub(clone / ".venv-skills" / "bin" / "python")
+        (clone / ".venv-skills" / "pyvenv.cfg").write_text(
+            "home = %s\n" % (self.tree / "removed-home"), encoding="utf-8")
+        done = self._run(str(self.empty_bin), args=["--dry-run"])
+        self.assertEqual(2, done.returncode, done.stdout + done.stderr)
+        self.assertNotIn("MODULE", done.stdout)
+        # Control: the same environment is used once its base folder exists.
+        (self.tree / "removed-home").mkdir()
+        done = self._run(str(self.empty_bin), args=["--dry-run"])
+        self.assertEqual(0, done.returncode, done.stdout + done.stderr)
+        self.assertIn("MODULE --serve --dry-run", done.stdout)
+
     def test_the_flag_is_honoured_in_any_position_and_order_is_kept(self):
         """Code-review finding: it used to work only as the first argument, unlike the
         PowerShell launcher, and otherwise leaked to rt_state.py."""

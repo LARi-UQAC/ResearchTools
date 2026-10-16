@@ -80,7 +80,17 @@ IFS="$NL"
 
 PYTHON=""
 for candidate in $CANDIDATES; do
-    if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
+    if [ -x "$candidate" ]; then
+        # A launcher stub that outlived its base interpreter is executable but dead.
+        # pyvenv.cfg names the base folder; a missing one makes the candidate unusable.
+        cfg="$(dirname "$(dirname "$candidate")")/pyvenv.cfg"
+        if [ -f "$cfg" ]; then
+            base=$(sed -n 's/^[[:space:]]*home[[:space:]]*=[[:space:]]*//p' "$cfg" | head -n 1 | tr -d '\r')
+            if [ -n "$base" ] && [ ! -d "$base" ]; then continue; fi
+        fi
+        PYTHON="$candidate"
+        break
+    fi
 done
 
 if [ -z "$PYTHON" ] && [ "$ALLOW_PATH_FALLBACK" = "1" ]; then

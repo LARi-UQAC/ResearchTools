@@ -10,7 +10,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import rt_server  # noqa: E402
-from test_rt_state import TOKEN, _FakeSocket, _Keep, Response  # noqa: E402
+from test_rt_state import TOKEN, _FakeSocket, _Keep, Response, call  # noqa: E402
 
 
 def call_raw(handler_cls, method, path, raw_body=b"", content_type="application/octet-stream",
@@ -32,11 +32,12 @@ class _FakeServerStub:
     server_address = ("127.0.0.1", 8787)
 
 
-def handler_for(voice_transcribe=None, voice_ask=None, caps=None):
+def handler_for(voice_transcribe=None, voice_ask=None, voice_answer=None,
+                caps=None):
     return rt_server.make_handler(
         lambda max_age=None: {"generated": "2026-09-26T12:00:00+00:00"},
         TOKEN, None, [], voice_transcribe=voice_transcribe,
-        voice_ask=voice_ask, caps=caps,
+        voice_ask=voice_ask, voice_answer=voice_answer, caps=caps,
         started="2026-09-26T12:00:00+00:00", port=8787)
 
 
@@ -167,7 +168,7 @@ class AskRouteCase(unittest.TestCase):
         handler = handler_for(voice_ask=ask)
         response = self._post_json(handler, "/api/voice/ask",
                                    {"token": TOKEN, "question": "is this stale"})
-        self.assertEqual(response.status, 200)
+        self.assertEqual(response.status, 202)
         self.assertEqual(response.json()["answer_text"], "no, all green")
         self.assertEqual(captured["question"], "is this stale")
 
@@ -201,6 +202,62 @@ class AskRouteCase(unittest.TestCase):
             handler, "/api/voice/ask",
             {"token": TOKEN, "question": "x", "language": "de"})
         self.assertEqual(response.status, 400)
+
+
+class AnswerRouteCase(unittest.TestCase):
+    """GET /api/voice/answer?id=<id>: the non-blocking read the panel polls
+    repeatedly (2026-10-02, plan2)."""
+
+    def test_returns_the_fakes_result_with_a_valid_token(self):
+        handler = handler_for(
+            voice_answer=lambda rid: {"status": "partial", "parts": []})
+        response = call(handler, "GET", "/api/voice/answer?id=abc123",
+                        headers={"X-RT-Session-Token": TOKEN})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.json()["status"], "partial")
+
+    def test_missing_token_header_is_refused(self):
+        called = []
+        handler = handler_for(
+            voice_answer=lambda rid: called.append(rid) or {"status": "ok"})
+        response = call(handler, "GET", "/api/voice/answer?id=abc123")
+        self.assertEqual(response.status, 403)
+        self.assertEqual(called, [])
+
+    def test_wrong_token_is_refused(self):
+        called = []
+        handler = handler_for(
+            voice_answer=lambda rid: called.append(rid) or {"status": "ok"})
+        response = call(handler, "GET", "/api/voice/answer?id=abc123",
+                        headers={"X-RT-Session-Token": "wrong"})
+        self.assertEqual(response.status, 403)
+        self.assertEqual(called, [])
+
+    def test_cross_origin_is_refused_before_the_token(self):
+        called = []
+        handler = handler_for(
+            voice_answer=lambda rid: called.append(rid) or {"status": "ok"})
+        response = call(handler, "GET", "/api/voice/answer?id=abc123",
+                        headers={"X-RT-Session-Token": "wrong",
+                                "Origin": "https://evil.example"})
+        self.assertEqual(response.status, 403)
+        self.assertIn("cross-origin", response.json()["reason"])
+        self.assertEqual(called, [])
+
+    def test_not_installed_is_501(self):
+        response = call(handler_for(), "GET", "/api/voice/answer?id=abc123",
+                        headers={"X-RT-Session-Token": TOKEN})
+        self.assertEqual(response.status, 501)
+
+    def test_missing_id_is_400_and_never_calls_the_fake(self):
+        called = []
+        handler = handler_for(
+            voice_answer=lambda rid: called.append(rid) or {"status": "ok"})
+        response = call(handler, "GET", "/api/voice/answer",
+                        headers={"X-RT-Session-Token": TOKEN})
+        self.assertEqual(response.status, 400)
+        self.assertIn("id", response.json()["reason"])
+        self.assertEqual(called, [])
 
 
 if __name__ == "__main__":

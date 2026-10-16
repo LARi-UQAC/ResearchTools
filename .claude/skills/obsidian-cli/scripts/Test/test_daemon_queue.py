@@ -35,12 +35,14 @@ WINDOW = 16384          # injected fixture, never read from the machine (R21)
 TAG = "a-tag-from-the-resolver"
 TODAY = "2026-08-28"
 CONFIG = {
-    "lock": {"acquire_timeout_s": 1, "stale_after_s": 300, "poll_interval_s": 0.01},
+    "lock": {"acquire_timeout_s": 1, "stale_after_s": 300, "poll_interval_s": 0.01,
+             "boot_skew_tolerance_s": 0},
     "probe": {"request_timeout_s": 5},
     "daemon": {"poll_interval_s": 0.01, "classify_confidence_min": 0.7,
                "draft_max_attempts": 2, "drain_idle_s": 900,
                "consolidate_top_n": 15, "judge_edge_max_pairs": 15,
-               "queue_max_entries": 500, "phantom_max_per_drain": 10},
+               "queue_max_entries": 500, "phantom_max_per_drain": 10,
+               "ask_poll_interval_s": 1, "bridge_error_log_interval_s": 0},
 }
 GOOD_NOTE = "---\ntype: apprentissage\ndate: 2026-08-28\n---\n\n## Contexte\nUn cas.\n"
 
@@ -257,6 +259,35 @@ class DaemonQueueTest(unittest.TestCase):
         self.assertEqual(self.daemon.recover_working(), [])
         self.assertFalse(claimed.exists())
         self.assertTrue(drop.exists())
+
+    # ---------- PR #42 round-2 review (M-B): pin the margin's wiring -------
+
+    def test_the_write_lock_carries_the_configured_boot_skew_margin(self):
+        """Mutation-testing gap S1: removing boot_skew_tolerance_s from
+        _lock()'s construction survived every existing test, since none of
+        them read the value back off the real lock object daemon_outbox.py
+        builds - only the tests that construct a VaultLock directly did."""
+        config = {**CONFIG, "lock": {**CONFIG["lock"],
+                                     "boot_skew_tolerance_s": 123}}
+        daemon = vd.VaultDaemon(self.vault, self.outbox, config, today=TODAY)
+        self.assertEqual(daemon._lock().boot_skew_tolerance_s, 123)
+
+    def test_the_singleton_lock_carries_the_configured_boot_skew_margin(self):
+        """Same gap, the other real lock: the daemon's own singleton."""
+        config = {**CONFIG, "lock": {**CONFIG["lock"],
+                                     "boot_skew_tolerance_s": 123}}
+        daemon = vd.VaultDaemon(self.vault, self.outbox, config, today=TODAY)
+        self.assertEqual(daemon.singleton_lock().boot_skew_tolerance_s, 123)
+
+    def test_a_missing_boot_skew_margin_is_a_named_config_error(self):
+        """R3: a stale config beside the new code names the missing key and
+        the file, rather than a bare KeyError or a silent 0."""
+        config = {**CONFIG, "lock": {k: v for k, v in CONFIG["lock"].items()
+                                     if k != "boot_skew_tolerance_s"}}
+        daemon = vd.VaultDaemon(self.vault, self.outbox, config, today=TODAY)
+        with self.assertRaises(vd.outbox_io.ConfigError) as caught:
+            daemon._lock()
+        self.assertIn("boot_skew_tolerance_s", str(caught.exception))
 
 
 if __name__ == "__main__":

@@ -77,7 +77,9 @@ class OutboxLayout:
             self.outbox.parent / "obsidian-outbox.lock",
             acquire_timeout_s=outbox_io.require(self.config, "lock", "acquire_timeout_s"),
             stale_after_s=outbox_io.require(self.config, "lock", "stale_after_s"),
-            poll_interval_s=outbox_io.require(self.config, "lock", "poll_interval_s"))
+            poll_interval_s=outbox_io.require(self.config, "lock", "poll_interval_s"),
+            boot_skew_tolerance_s=outbox_io.require(
+                self.config, "lock", "boot_skew_tolerance_s"))
 
     def pending(self) -> list:
         """Only *.md, so a note still being staged as .tmp is invisible."""
@@ -94,7 +96,9 @@ class OutboxLayout:
             self.outbox.parent / "vault-daemon.lock",
             acquire_timeout_s=0,
             stale_after_s=outbox_io.require(self.config, "lock", "stale_after_s"),
-            poll_interval_s=outbox_io.require(self.config, "lock", "poll_interval_s"))
+            poll_interval_s=outbox_io.require(self.config, "lock", "poll_interval_s"),
+            boot_skew_tolerance_s=outbox_io.require(
+                self.config, "lock", "boot_skew_tolerance_s"))
 
     def recover_working(self) -> list:
         """

@@ -1,6 +1,6 @@
 # ResearchTools — Manual
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-10243E.svg)](LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-10243E.svg)](LICENSE)
 [![Python 3.x](https://img.shields.io/badge/python-3.x-1F9E8F.svg)](docs/manual/01-installation.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-1F9E8F.svg)](docs/manual/01-installation.md)
 [![Docs](https://img.shields.io/badge/docs-12%20chapters-10243E.svg)](docs/manual/00-purpose.md)
@@ -32,6 +32,7 @@
   - [The two memories](#the-two-memories)
   - [Manual chapters](#manual-chapters)
   - [Supported harnesses](#supported-harnesses)
+  - [License](#license)
   - [Support this project](#support-this-project)
 
 </details>
@@ -60,8 +61,10 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 |---|---|
 | Catch a missing reference or a broken hypothesis flow after the reviewer does | An auditor scores the manuscript first, against the same ScholarEval rubric a committee uses |
 | Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
+| Receive a thesis, an article or a talk as a PDF with no LaTeX source and re-type it before it can be audited | `pdf2md` converts it with mineru to markdown (the UQAC thesis layout, or one document for an article or a talk) and measures what the conversion lost against a second reader of the PDF |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
 | Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
+| Catch a committed secret but not a committed real name (a student, a co-author, an account path) | A global git privacy guard (pre-commit/pre-push, every repository) scans the diff against both betterleaks' secret rules and a machine-local deny list of real names, extended for each new student and never leaving the machine |
 
 Not a replacement for judgment — a second pair of eyes that never gets tired of checking.
 
@@ -73,7 +76,9 @@ The `rt-observe` dashboard watching a live session: hook flow, fan-out to the tw
 (Obsidian vault, `graphify` graph), and a spawned subagent, all on loopback with no external
 service. A push-to-talk voice panel (hold P) lets you ask it a question about this toolkit's
 own memory out loud, answered by the local LLM through the vault daemon's ask queue and spoken
-back. Full walkthrough: [docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
+back in two parts: the vault answer first, then a code-structure note from the matched
+project's own `graphify` graph when its vault folder names a `repo:`. Full walkthrough:
+[docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
 
 ## Quickstart
 
@@ -117,8 +122,8 @@ graph LR
 | 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the 5 install steps |
 | 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys |
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx` |
-| 04 | [Skills](docs/manual/04-skills.md) | All 23 skills, the two memories |
-| 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings |
+| 04 | [Skills](docs/manual/04-skills.md) | All 25 skills, the two memories |
+| 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings, the global git privacy guard (deny list of real names + secret rules, every repo) |
 | 06 | [Aider nightly pipeline](docs/manual/06-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
 | 07 | [rt-observe & dashboard](docs/manual/07-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard` |
 | 08 | [Commands](docs/manual/08-commands.md) | All slash commands |
@@ -128,7 +133,7 @@ graph LR
 
 Relationship diagrams and the 7-layer execution architecture for **this** repository:
 [Architecture.md](Architecture.md). The architecture **shared with the sibling repository
-ThesisTracker** (form catalogue, twenty-unit delivery plan) is a separate file,
+ThesisTracker** (form catalogue, twenty-two-unit delivery plan) is a separate file,
 [NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 09 above; do not confuse the two.
 
 ## Supported harnesses
@@ -143,6 +148,21 @@ One canonical `.claude/` source, mirrored everywhere below (detail:
 [![Aider](https://img.shields.io/badge/Aider-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
 [![Codex](https://img.shields.io/badge/Codex-mirrored-1F9E8F.svg?logo=openai&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
 [![AGENTS.md readers](https://img.shields.io/badge/AGENTS.md-generic%20readers-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+
+## License
+
+ResearchTools is source-available under [PolyForm Noncommercial 1.0.0](LICENSE): free to
+use, copy, and modify for any noncommercial purpose, including academic and research use.
+It is not an OSI-approved "open source" licence (OSI requires permitting commercial use),
+so it is described here as source-available rather than open source.
+
+Commercial use — any use intended for or directed toward commercial advantage or monetary
+compensation — needs a separate written licensing agreement with the copyright holder
+before use begins. Contact martin_otis@uqac.ca to discuss terms.
+
+v0.1.0 and earlier were released under the MIT License; that release is unaffected and
+keeps its original terms. The cut-over to PolyForm Noncommercial took effect in the commit
+that introduced this LICENSE file.
 
 ## Support this project
 

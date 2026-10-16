@@ -1,0 +1,22 @@
+{
+  "role": {
+    "value": "session",
+    "provenance": "chosen by the operator 2026-10-11: the deliberation reviewer must be a reasoning model, not the writer-role model, which is tuned for vault and graph memory work. The resolver's manually declared 'session' role (adopted 2026-10-09 for /auditthesis-sized local sessions) names it. The tag itself is never written here: model_resolver.py names it at run time (R2)"
+  },
+  "num_ctx": {
+    "value": 262144,
+    "provenance": "chosen by the operator 2026-10-12: the session-role model keeps its native window. `ollama show` on this machine reports both context length and the configured num_ctx as 262144, so the request carries the same value and the daemon no longer reloads the model smaller (it had been reloaded at 16384, a provisional value written by the session on 2026-10-11, unmeasured). The operator's own measurement of 2026-10-09 gave 2.40 tok/s decode at this window, mostly CPU resident. Prompt plus reply over this window is refused, never truncated"
+  },
+  "request_timeout_s": {
+    "value": 3600,
+    "provenance": "chosen by the operator 2026-10-11 (\"Qwen est lent, c'est pas grave, c'est fait la nuit\"). The same tag was measured at 2.40 tok/s decode on 2026-10-09, so a full reply budget takes about fifteen minutes"
+  },
+  "reply_tokens": {
+    "value": 2048,
+    "provenance": "chosen 2026-10-11, PROVISIONAL: twice the bridge's own 1024-token reply reserve, so a review of max_suggestions terse suggestions is not cut off. To be revised after the first measured run on the real model"
+  },
+  "seed": {
+    "value": 0,
+    "provenance": "chosen 2026-10-11 (R19): a fixed sampling seed so the same prompt gives the same request"
+  }
+}

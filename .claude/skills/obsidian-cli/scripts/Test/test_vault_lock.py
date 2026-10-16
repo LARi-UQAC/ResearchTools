@@ -27,6 +27,9 @@ spec.loader.exec_module(vl)
 ACQUIRE_TIMEOUT_S = 0.3
 STALE_AFTER_S = 60.0
 POLL_INTERVAL_S = 0.01
+_LEGACY = object()  # sentinel: write a lock payload with no "started" key
+# A marker no real process incarnation of this test run can have (R0: fixture).
+FOREIGN_MARKER = 1
 
 
 class VaultLockTest(unittest.TestCase):
@@ -39,13 +42,16 @@ class VaultLockTest(unittest.TestCase):
                             stale_after_s=stale_after_s,
                             poll_interval_s=POLL_INTERVAL_S)
 
-    def _write_holder(self, pid, age_s=0.0, host=None):
+    def _write_holder(self, pid, age_s=0.0, host=None, started=_LEGACY):
         stamp = datetime.now(timezone.utc) - timedelta(seconds=age_s)
-        self.lock_path.write_text(json.dumps({
+        payload = {
             "pid": pid, "host": host or socket.gethostname(),
             "token": "someone-elses-token",
             "at": stamp.replace(microsecond=0).isoformat(),
-        }), encoding="utf-8")
+        }
+        if started is not _LEGACY:  # omitted = a lock written before "started"
+            payload["started"] = started
+        self.lock_path.write_text(json.dumps(payload), encoding="utf-8")
 
     def test_acquire_creates_the_lock_and_release_removes_it(self):
         with self._lock():
@@ -83,16 +89,24 @@ class VaultLockTest(unittest.TestCase):
         "not running", and acquire() would have deleted it and started a second
         daemon on the same outbox. On this host the pid decides."""
         self._write_holder(os.getpid(), age_s=STALE_AFTER_S + 30)
-        with self.assertRaises(vl.LockError):
-            self._lock().acquire()
+        long_ago = datetime.now(timezone.utc) - timedelta(days=365)
+        with patch.object(vl, "_boot_time_utc", return_value=long_ago):
+            with self.assertRaises(vl.LockError):
+                self._lock().acquire()
         self.assertTrue(self.lock_path.exists(), "a live holder's lock must survive")
 
     def test_a_very_old_lock_with_a_live_holder_still_survives(self):
         """The real scale of the case, not just one tick over the ceiling: the
-        measured lock was 6h36m old against a 300s ceiling."""
+        measured lock was 6h36m old against a 300s ceiling. Boot time is
+        pinned far in the past so this does not depend on the TEST machine's
+        own real uptime (R19/R21) - without that pin, a test host rebooted
+        less than 6h36m before the suite runs would make the new boot-reuse
+        check below misfire on this very test."""
         self._write_holder(os.getpid(), age_s=6 * 3600 + 36 * 60)
-        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S),
-                        "a running daemon must not be reported dead by age alone")
+        long_ago = datetime.now(timezone.utc) - timedelta(days=365)
+        with patch.object(vl, "_boot_time_utc", return_value=long_ago):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S),
+                            "a running daemon must not be reported dead by age alone")
 
     def test_an_old_lock_whose_holder_is_DEAD_is_still_reclaimed(self):
         """The reorder must not cost the reclamation that matters: a crashed
@@ -197,6 +211,310 @@ class VaultLockTest(unittest.TestCase):
         self._write_holder(424242, age_s=0)
         with patch.object(vl, "pid_alive", return_value=False):
             self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    # --- pid reuse after a reboot (diagnosed 2026-10-01) -------------------
+
+    def test_a_reused_pid_with_a_different_start_marker_is_reclaimed(self):
+        """Regression, the 2026-09-29 mechanism: the daemon was killed at
+        shutdown with its lock in place, and after the reboot an unrelated
+        process (most likely the daemon's own launch chain) had its pid. The pid
+        is alive, but it is a different incarnation, so the lock is stale."""
+        real = vl.process_start_marker(os.getpid())
+        if real is None:
+            self.skipTest("start marker unsupported on this platform")
+        self._write_holder(os.getpid(), started=real + 12345)
+        self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+        before = self.lock_path.read_text(encoding="utf-8")
+        vl.held_by_live_holder(self.lock_path, STALE_AFTER_S)
+        self.assertEqual(self.lock_path.read_text(encoding="utf-8"), before,
+                         "the read-only probe must not touch the file")
+        lock = self._lock()
+        with lock:
+            pass
+        self.assertEqual(len(lock.reclaimed), 1)
+        self.assertIn(str(os.getpid()), lock.reclaimed[0])
+        self.assertIn("reused", lock.reclaimed[0])
+
+    def test_a_live_holder_with_its_real_start_marker_is_still_held(self):
+        """Negative control for the case above: without it, an implementation
+        reclaiming every live holder would pass the regression."""
+        real = vl.process_start_marker(os.getpid())
+        if real is None:
+            self.skipTest("start marker unsupported on this platform")
+        self._write_holder(os.getpid(), started=real)
+        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+        with self.assertRaises(vl.LockError):
+            vl.VaultLock(self.lock_path, acquire_timeout_s=0,
+                         stale_after_s=STALE_AFTER_S,
+                         poll_interval_s=POLL_INTERVAL_S).acquire()
+
+    def test_a_legacy_lock_without_started_keeps_a_live_pid_as_holder(self):
+        self._write_holder(os.getpid())  # no "started" key
+        self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    # --- the PR #42 review's High finding: a lock with no "started" field,
+    # on the FIRST reboot after this fix lands, must still be reboot-safe ---
+
+    def test_a_legacy_lock_from_before_this_boot_is_reclaimed_even_with_a_live_pid(self):
+        """The gap the review named: vault_lock.py's old pid-decides rule for
+        a holder with no "started" key meant the first reboot after this fix
+        ships still reproduced #41, since nothing told a legacy lock apart
+        from a genuine live holder. A lock recorded before the CURRENT boot
+        cannot belong to a process still running now - whatever owns `pid`
+        today necessarily started after the lock was written - so this is
+        checked independently of whether "started" was ever recorded."""
+        self._write_holder(os.getpid(), age_s=3600)  # written 1h ago, no "started"
+        booted_recently = datetime.now(timezone.utc) - timedelta(seconds=10)
+        with patch.object(vl, "_boot_time_utc", return_value=booted_recently):
+            self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+            lock = self._lock()
+            with lock:
+                pass
+        self.assertEqual(len(lock.reclaimed), 1)
+        self.assertIn(str(os.getpid()), lock.reclaimed[0])
+        self.assertIn("boot", lock.reclaimed[0])
+
+    def test_a_lock_written_after_boot_is_not_reclaimed_by_the_boot_check(self):
+        """Negative control: an ordinary lock, written well after the machine
+        booted, by a genuinely live holder, must survive the new check -
+        without this, an implementation reclaiming every lock older than
+        boot time would pass the regression above for the wrong reason."""
+        self._write_holder(os.getpid(), age_s=3600)
+        booted_long_ago = datetime.now(timezone.utc) - timedelta(days=1)
+        with patch.object(vl, "_boot_time_utc", return_value=booted_long_ago):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_boot_check_degrades_when_boot_time_is_unreadable(self):
+        """R11: a platform or permission failure that cannot report boot time
+        falls back to the existing started-marker/pid rule rather than
+        refusing to judge the lock at all."""
+        self._write_holder(os.getpid(), age_s=3600)  # legacy, no "started"
+        with patch.object(vl, "_boot_time_utc", return_value=None):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_boot_time_utc_reads_a_plausible_value_or_degrades_to_none(self):
+        boot = vl._boot_time_utc()
+        if boot is not None:
+            self.assertLess(boot, datetime.now(timezone.utc))
+
+    # --- round-2 review (2026-10-07): M1/M2/L1 and the mutation-testing gaps
+
+    def test_a_naive_timestamp_degrades_instead_of_raising_typeerror(self):
+        """L1: a hand-edited or foreign-shaped "at" with no UTC offset used
+        to raise TypeError out of the comparison itself (naive vs aware),
+        reproduced live by the reviewer and escaping acquire() and
+        held_by_live_holder, which the flush hook calls (R11)."""
+        self._write_holder(os.getpid(), age_s=3600)
+        note = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        note["at"] = "2020-01-01T00:00:00"  # no offset - naive
+        self.lock_path.write_text(json.dumps(note), encoding="utf-8")
+        booted_recently = datetime.now(timezone.utc) - timedelta(seconds=10)
+        with patch.object(vl, "_boot_time_utc", return_value=booted_recently):
+            # Must not raise, and a naive stamp this far in the past is
+            # correctly treated as UTC and therefore before boot.
+            self.assertFalse(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_a_lock_within_the_skew_margin_of_boot_is_not_reclaimed(self):
+        """M2 (owner-decided): the clock-step edge case. A lock written a
+        few seconds before the computed boot (an NTP correction right after
+        startup moved the clock forward) must NOT be read as reused - that
+        would reclaim a genuinely live daemon's lock, letting a second one
+        start on the same outbox, the exact collision the singleton
+        prevents."""
+        self._write_holder(os.getpid(), age_s=30)  # "at" 30s before boot below
+        boot = datetime.now(timezone.utc) - timedelta(seconds=20)
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            self.assertIsNone(lock._stale_reason(lock._read_holder()))
+
+    def test_a_lock_exactly_at_the_margin_boundary_survives(self):
+        """L-C from the round-2 review: no test pinned the exact boundary.
+        The comparison is strict ("<"), so an "at" exactly `margin` seconds
+        before boot is NOT reclaimed - only a lock strictly older than the
+        margin is. Built from a fixed boot time rather than age_s, since
+        age_s and "now" are both live clock reads and would make "exactly
+        the margin" only approximately true."""
+        boot = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        at_boundary = boot - timedelta(seconds=300)
+        self._write_holder(os.getpid(), age_s=0)
+        note = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        note["at"] = at_boundary.isoformat()
+        self.lock_path.write_text(json.dumps(note), encoding="utf-8")
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            self.assertIsNone(lock._stale_reason(lock._read_holder()))
+
+    def test_a_lock_one_second_past_the_margin_boundary_is_reclaimed(self):
+        """The other side of the same boundary: one second older than the
+        margin is reused."""
+        boot = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        past_boundary = boot - timedelta(seconds=301)
+        self._write_holder(os.getpid(), age_s=0)
+        note = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        note["at"] = past_boundary.isoformat()
+        self.lock_path.write_text(json.dumps(note), encoding="utf-8")
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            reason = lock._stale_reason(lock._read_holder())
+        self.assertIsNotNone(reason)
+        self.assertIn("reused", reason)
+
+    def test_a_lock_well_before_boot_is_still_reclaimed_despite_the_margin(self):
+        """Negative control: the margin must not swallow the real scenario
+        (a lock from hours or days before a genuine reboot), or M2's fix
+        would quietly undo the High finding's own fix."""
+        self._write_holder(os.getpid(), age_s=3600)
+        boot = datetime.now(timezone.utc) - timedelta(seconds=10)
+        lock = vl.VaultLock(self.lock_path, acquire_timeout_s=ACQUIRE_TIMEOUT_S,
+                            stale_after_s=STALE_AFTER_S,
+                            poll_interval_s=POLL_INTERVAL_S,
+                            boot_skew_tolerance_s=300)
+        with patch.object(vl, "_boot_time_utc", return_value=boot):
+            reason = lock._stale_reason(lock._read_holder())
+        self.assertIsNotNone(reason)
+        self.assertIn("reused", reason)
+
+    def test_the_skew_margin_defaults_to_zero_for_an_unupdated_caller(self):
+        """A caller that does not pass boot_skew_tolerance_s (an external
+        drill script, say) keeps the pre-M2 exact-boundary behaviour rather
+        than raising, so this is a default and not a required parameter."""
+        self.assertEqual(
+            vl.VaultLock(self.lock_path, acquire_timeout_s=0,
+                        stale_after_s=STALE_AFTER_S,
+                        poll_interval_s=0).boot_skew_tolerance_s, 0.0)
+
+    @unittest.skipIf(os.name != "nt", "exercises the Windows ctypes path")
+    def test_boot_time_utc_degrades_on_a_windows_api_failure(self):
+        """Mutation-testing gap #2 from the round-2 review: nothing forced
+        a failure inside the try block, so narrowing its except clause
+        incorrectly would go unnoticed. ctypes.windll.kernel32 raising
+        is the realistic Windows failure shape."""
+        with patch.object(vl.ctypes.windll.kernel32, "GetTickCount64",
+                          side_effect=OSError("boom")):
+            self.assertIsNone(vl._boot_time_utc())
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc/uptime path")
+    def test_boot_time_utc_degrades_on_a_malformed_proc_uptime(self):
+        """Mutation-testing gap #2, the Linux path: a garbage /proc/uptime
+        must not raise ValueError out of float()."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value="not a number"):
+            self.assertIsNone(vl._boot_time_utc())
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc/uptime path")
+    def test_boot_time_utc_degrades_on_an_empty_proc_uptime(self):
+        """Round-4 review survivor: dropping IndexError from this except
+        clause went untested - an EMPTY /proc/uptime makes split()[0] raise
+        IndexError rather than ValueError, a different exception type the
+        malformed-content case above never exercises."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value=""):
+            self.assertIsNone(vl._boot_time_utc())
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc/uptime path")
+    def test_boot_time_utc_degrades_on_an_unreadable_proc_uptime(self):
+        """Round-4 review survivor: dropping OSError from this except
+        clause was only proven on the WINDOWS ctypes path above; this is
+        the same failure type on the Linux file-read path."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", side_effect=OSError("boom")):
+            self.assertIsNone(vl._boot_time_utc())
+
+    @unittest.skipIf(os.name != "nt", "exercises the Windows pid-reuse path")
+    def test_process_start_marker_degrades_on_a_windows_api_failure(self):
+        """Mutation-testing gap #3: dropping OSError from this function's
+        except clause is a Windows/race-only gap, untested because every
+        existing case here exercises the real, working ctypes calls on
+        this machine rather than a forced failure."""
+        with patch.object(vl.ctypes, "WinDLL", side_effect=OSError("boom")):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name != "nt", "exercises the Windows pid-reuse path")
+    def test_process_start_marker_degrades_on_a_missing_ctypes_attribute(self):
+        """Round-4 review survivor: dropping AttributeError from this
+        except clause went untested - the shape it guards is a ctypes
+        binding gap (an exotic Windows build missing a kernel32 export),
+        reproduced here by making the attribute assignment itself fail."""
+        with patch.object(vl.ctypes, "WinDLL",
+                          side_effect=AttributeError("boom")):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
+    def test_an_unreadable_current_marker_keeps_a_live_pid_as_holder(self):
+        """Conservative on purpose: when the live process cannot be queried the
+        pid decides, as before, rather than evicting a possibly real daemon."""
+        self._write_holder(os.getpid(), started=FOREIGN_MARKER)
+        with patch.object(vl, "process_start_marker", return_value=None):
+            self.assertTrue(vl.held_by_live_holder(self.lock_path, STALE_AFTER_S))
+
+    def test_a_dead_pid_is_reclaimed_whatever_the_marker_says(self):
+        self._write_holder(424242, started=FOREIGN_MARKER)
+        with patch.object(vl, "pid_alive", return_value=False):
+            lock = self._lock()
+            with lock:
+                pass
+        self.assertIn("424242", lock.reclaimed[0])
+        self.assertIn("gone", lock.reclaimed[0])
+
+    def test_try_create_records_this_process_start_marker(self):
+        lock = self._lock()
+        with lock:
+            holder = json.loads(self.lock_path.read_text(encoding="utf-8"))
+        self.assertIn("started", holder)
+        self.assertEqual(holder["started"], vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc parse path")
+    def test_process_start_marker_degrades_on_a_malformed_proc_stat(self):
+        """PR #42 review (Low): the bare `except Exception` around this
+        function's body used to swallow everything, including a real bug.
+        Narrowed to the failure shapes this parse can actually produce -
+        proven here with a malformed /proc/<pid>/stat (IndexError from the
+        rsplit) and with an unrelated exception type, which must still
+        propagate rather than silently returning None."""
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value="not a stat line"):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc parse path")
+    def test_process_start_marker_degrades_on_a_non_numeric_stat_field(self):
+        """Round-4 review survivor: the malformed-stat test above exercises
+        IndexError (no ")" at all); this is the OTHER shape the narrowed
+        except names - a well-formed stat line whose field 22 is not a
+        number, raising ValueError out of int() instead."""
+        fields = ["0"] * 25
+        # tail = "R <fields...>".split(), so tail[19] (field 22) is
+        # fields[18] here, one position back for the state field "R".
+        fields[18] = "not-a-number"
+        line = "1 (comm) R " + " ".join(fields)
+        with patch.object(vl.Path, "exists", return_value=True), \
+             patch.object(vl.Path, "read_text", return_value=line):
+            self.assertIsNone(vl.process_start_marker(os.getpid()))
+
+    @unittest.skipIf(os.name == "nt", "exercises the Linux /proc parse path")
+    def test_process_start_marker_does_not_swallow_an_unrelated_bug(self):
+        """Negative control for the narrowing above: a bare `except
+        Exception` would also pass this, which is exactly what made it the
+        wrong width."""
+        with patch.object(vl.Path, "exists", side_effect=KeyError("boom")):
+            with self.assertRaises(KeyError):
+                vl.process_start_marker(os.getpid())
+
+    @unittest.skipUnless(os.name == "nt" or Path("/proc/self/stat").exists(),
+                         "start marker is implemented for Windows and Linux")
+    def test_process_start_marker_is_stable_and_none_for_a_missing_pid(self):
+        first = vl.process_start_marker(os.getpid())
+        self.assertIsInstance(first, int)
+        self.assertEqual(first, vl.process_start_marker(os.getpid()))
+        self.assertIsNone(vl.process_start_marker(2 ** 31 - 2))
+        self.assertIsNone(vl.process_start_marker(0))
 
 
 if __name__ == "__main__":

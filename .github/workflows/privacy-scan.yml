@@ -1,0 +1,152 @@
+# Privacy scan - the authoritative gate behind the local privacy-guard pre-commit hook
+# (.claude/hooks/git/). Scans the commits a push or a pull request adds with betterleaks
+# and .claude/hooks/git/privacy-rules.toml: secrets plus personal-data shapes (Quebec
+# Law 25). A local hook can be skipped with --no-verify; this check cannot.
+#
+# Reusable: another repository calls it with
+#   jobs:
+#     privacy-scan:
+#       uses: LARi-UQAC/ResearchTools/.github/workflows/privacy-scan.yml@main
+# and the rules are then fetched from this repository, so one file governs every repo.
+name: privacy-scan
+
+on:
+  pull_request:
+    # edited: a retarget to another base changes what the PR would merge.
+    types: [opened, synchronize, reopened, edited]
+  push:           # every branch: a branch with no PR is published too
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: privacy-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the commits to scan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Pick the trusted rules revision
+        env:
+          PUSH_TO_RT_MAIN: ${{ github.repository == 'LARi-UQAC/ResearchTools' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # The rules that judge a change must come from a revision the change cannot
+          # write. That is ResearchTools main in every case but one: a push TO
+          # ResearchTools main, where "main" is the commit under scan, so the commit before
+          # the push is used. Never a branch's own previous commit: a first push could
+          # weaken the rules and a second push would then be judged by them.
+          ref=main
+          if [ "$PUSH_TO_RT_MAIN" = "true" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            ref=$BEFORE
+          fi
+          echo "TRUSTED_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Fetch the shared rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: LARi-UQAC/ResearchTools
+          ref: ${{ env.TRUSTED_REF }}
+          path: .privacy-guard
+          sparse-checkout: .claude/hooks/git/privacy-rules.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Install betterleaks 1.4.1 (checksum verified)
+        run: |
+          curl -sSfL --max-time 60 -o bl.tgz \
+            https://github.com/betterleaks/betterleaks/releases/download/v1.4.1/betterleaks_1.4.1_linux_x64.tar.gz
+          echo "2635ff988d9194cd3070155138589081a54a3438d79ca9b83268addd2fd844cc  bl.tgz" | sha256sum -c -
+          tar -xzf bl.tgz betterleaks
+          rm bl.tgz
+
+      - name: Compute the commit range
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          REF: ${{ github.ref }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: |
+          # A pull request: what it would add to its CURRENT base (base.sha goes stale when
+          # the base moves or the PR is retargeted). A push to the default branch: what the
+          # push added. Any other push: everything the branch adds to the default branch,
+          # so a commit pushed earlier is judged again on every run. The full history is
+          # covered once by the playbook's Phase 6b scan, before a repository goes public.
+          zero=0000000000000000000000000000000000000000
+          if [ "$EVENT" = "pull_request" ] && [ -n "$BASE_REF" ]; then
+            range="origin/$BASE_REF..$HEAD"
+          elif [ "$REF" = "refs/heads/$DEFAULT" ] && [ -n "$BEFORE" ] && [ "$BEFORE" != "$zero" ]; then
+            range="$BEFORE..$HEAD"
+          elif git rev-parse -q --verify "origin/$DEFAULT" >/dev/null; then
+            range="origin/$DEFAULT..$HEAD"
+          else
+            range="$HEAD"     # no default branch yet: the whole history
+          fi
+          echo "RANGE=$range" >> "$GITHUB_ENV"
+
+      - name: Scan the added commits (authoritative, trusted rules)
+        env:
+          IS_RT: ${{ github.repository == 'LARi-UQAC/ResearchTools' }}
+        run: |
+          # The verdict always uses the trusted revision picked above, never a rules file
+          # from the checkout under review, which a pull request, a push or a caller controls.
+          rules=.privacy-guard/.claude/hooks/git/privacy-rules.toml
+          if [ ! -f "$rules" ]; then
+            # Bootstrap only: ResearchTools main has NEVER had the rules file (the PR that
+            # introduces it). Once it has existed, a missing file fails closed, so a later
+            # move or deletion cannot hand every PR its own rules.
+            # Asked of the trusted revision itself, not of origin/main: on the push that
+            # merges this guard, TRUSTED_REF is the commit before it, which never had the
+            # file, while origin/main already does.
+            logref=$TRUSTED_REF
+            [ "$logref" = "main" ] && logref=origin/main
+            if [ "$IS_RT" = "true" ] \
+               && [ -z "$(git log --oneline -1 "$logref" -- .claude/hooks/git/privacy-rules.toml)" ]; then
+              echo "::warning::no rules on ResearchTools main yet (bootstrap); using the checked-out rules"
+              rules=.claude/hooks/git/privacy-rules.toml
+            else
+              echo "::error::trusted rules missing at ResearchTools $TRUSTED_REF; refusing to judge with untrusted rules"
+              exit 1
+            fi
+          fi
+          # Measured with betterleaks 1.4.1: an ignore file in the scanned checkout
+          # suppresses findings by fingerprint, and -i does not override it. The checkout
+          # is controlled by the change under review, so its ignore files are removed.
+          rm -f .gitleaksignore .betterleaksignore
+          # The patch is produced here and fed as text (not by the git subcommand): --text
+          # stops a .gitattributes "-diff" or "binary" hiding content as "Binary files
+          # differ", -m shows what a merge commit itself adds (an evil merge), and
+          # --no-ext-diff/--no-textconv keep repository filters from rewriting it.
+          # Both measured with betterleaks 1.4.1 on 2026-10-02.
+          # Only ADDED lines and commit messages are fed (-U0 + awk), as in the local hooks:
+          # a change that removes old personal data is not refused for it, and the
+          # Author/Date headers are not content. betterleaks runs from an empty directory.
+          set -o pipefail
+          bl=$PWD/betterleaks; rules=$(realpath "$rules")
+          git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$RANGE" \
+            | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
+            | (cd "$RUNNER_TEMP" && "$bl" stdin --redact --no-banner --config "$rules")
+
+      - name: Scan with the candidate rules of this change (informational)
+        if: ${{ hashFiles('.claude/hooks/git/privacy-rules.toml') != '' }}
+        continue-on-error: true
+        run: |
+          # A pull request that edits the rules is exercised here, without being allowed
+          # to decide the verdict above.
+          trusted=.privacy-guard/.claude/hooks/git/privacy-rules.toml
+          candidate=.claude/hooks/git/privacy-rules.toml
+          if [ -f "$trusted" ] && cmp -s "$trusted" "$candidate"; then
+            echo "candidate rules identical to main; nothing extra to check"
+            exit 0
+          fi
+          set -o pipefail
+          bl=$PWD/betterleaks; candidate=$(realpath "$candidate")
+          git log -p --text -m -U0 --pretty=medium --no-color --no-ext-diff --no-textconv "$RANGE" \
+            | awk '/^commit [0-9a-f]+/{m=1;h=0;next} /^diff --git /{m=0;h=1;next} h&&/^@@/{h=0;next} h{next} m&&/^    /{print;next} !m&&/^\+/{print}' \
+            | (cd "$RUNNER_TEMP" && "$bl" stdin --redact --no-banner --config "$candidate")

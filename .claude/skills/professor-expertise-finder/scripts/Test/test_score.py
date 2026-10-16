@@ -1,0 +1,96 @@
+import contextlib
+import io
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from score import band, fmt, main, total  # noqa: E402
+
+ALLOWED = {0.0, 0.5, 1.0}
+
+
+def run_main(argv):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = main(argv)
+    return rc, buf.getvalue()
+
+
+class ScoreTest(unittest.TestCase):
+    def test_happy_path_total_and_band(self):
+        sub = {"a": 1.0, "b": 1.0, "c": 0.5, "d": 0.0, "e": 1.0}
+        t = total(sub, ALLOWED)
+        self.assertEqual(t, 3.5)
+        self.assertEqual(band(t, retain_threshold=1.5), "Very close")
+
+    def test_peripheral_band_floor_tracks_the_configured_threshold(self):
+        # 2026-10-15 review finding: BANDS hardcoded the Peripheral floor as
+        # a literal 1.5, independently of pef_config.json's retain_threshold,
+        # so changing the config disagreed with the printed band (R0/R2). A
+        # total of 2.0 is Peripheral under the shipped threshold (1.5) but
+        # falls to "Do not retain" once the configured threshold moves above
+        # it - proving band() reads the floor from its argument.
+        self.assertEqual(band(2.0, retain_threshold=1.5), "Peripheral")
+        self.assertEqual(band(2.0, retain_threshold=2.5), "Do not retain")
+
+    def test_bands_stay_sorted_when_the_threshold_exceeds_a_fixed_floor(self):
+        # 2026-10-15 review round 5: an UNSORTED table (the config-derived
+        # floor simply appended where the literal 1.5 used to sit) let a
+        # retain_threshold set above 2.5 be skipped over. With the old,
+        # unsorted list ([4.5, 3.5, 2.5, retain_threshold, 0.0]) and
+        # retain_threshold=3.0, a total of 3.2 would reach the FIXED 2.5
+        # floor before ever reaching the 3.0 one, printing "Adjacent"
+        # instead of "Peripheral" for a score that is actually AT the
+        # configured threshold - the band label no longer describing the
+        # range it should. Sorting puts the configured floor back ahead
+        # of the fixed ones it now exceeds.
+        self.assertEqual(band(3.2, retain_threshold=3.0), "Peripheral")
+
+    def test_invalid_subscore_rejected(self):
+        sub = {"a": 0.7, "b": 1.0, "c": 0.5, "d": 0.0, "e": 1.0}
+        with self.assertRaisesRegex(ValueError, "subscore A"):
+            total(sub, ALLOWED)
+
+    def test_e_zero_is_a_hard_exclusion(self):
+        sub = {"a": 1.0, "b": 1.0, "c": 1.0, "d": 1.0, "e": 0.0}
+        with self.assertRaisesRegex(ValueError, "E = 0"):
+            total(sub, ALLOWED)
+
+    def test_fmt_drops_trailing_zero(self):
+        self.assertEqual(fmt(1.0), "1")
+        self.assertEqual(fmt(0.5), "0.5")
+
+    def test_cli_happy_path(self):
+        rc, out = run_main(["--a", "1", "--b", "1", "--c", "0.5", "--d", "0", "--e", "1"])
+        self.assertEqual(rc, 0)
+        self.assertIn("3.5/5 (A 1, B 1, C 0.5, D 0, E 1)", out)
+
+    def test_cli_invalid_subscore_exits_2(self):
+        # R12: a refusal by design, consistent with file_search.py/exclusions.py's L5 fix.
+        rc, out = run_main(["--a", "0.7", "--b", "1", "--c", "0.5", "--d", "0", "--e", "1"])
+        self.assertEqual(rc, 2)
+        self.assertIn("INVALID", out)
+
+    def test_cli_below_threshold_is_flagged(self):
+        rc, out = run_main(["--a", "0", "--b", "0", "--c", "0", "--d", "0", "--e", "1"])
+        self.assertEqual(rc, 0)
+        self.assertIn("below retain threshold", out)
+
+    def test_cli_json_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "score.json"
+            rc, _ = run_main(["--a", "1", "--b", "1", "--c", "0.5", "--d", "0", "--e", "1",
+                               "--json", str(report)])
+            self.assertEqual(rc, 0)
+            data = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(data["total"], 3.5)
+            self.assertIs(data["retained"], True)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

@@ -430,7 +430,7 @@ def start_decision(host, port, timeout_s, subprocess_timeout_s,
 def make_handler(snapshot_fn, token, page_path, asset_roots,
                  action_runner=None, catalogue=None, log=None, started=None,
                  port=None, page_vars=None, voice_transcribe=None,
-                 voice_ask=None, caps=None):
+                 voice_ask=None, voice_answer=None, caps=None):
     """Build the request handler. Everything it needs is closed over, so the
     handler class holds no module-level state and two servers in one process
     could not share a token by accident."""
@@ -486,6 +486,8 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
                 return self._state()
             if path == "/api/actions":
                 return self._catalogue()
+            if path == "/api/voice/answer":
+                return self._voice_answer()
             if path.startswith("/assets/"):
                 return self._asset(path[len("/assets/"):])
             return self._json(404, {"status": "unavailable",
@@ -647,7 +649,29 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
             except Exception as exc:                        # noqa: BLE001
                 return self._json(500, {"status": "unavailable",
                                         "reason": str(exc)})
-            return self._json(200, result)
+            # 202, not 200: the daemon has only ACCEPTED the question, it
+            # has not answered it yet (2026-10-02, plan2) - the browser
+            # polls GET /api/voice/answer for the progressive result.
+            return self._json(202, result)
+
+        def _voice_answer(self):
+            if not self._origin_ok():
+                return self._json(403, {"status": "refused",
+                                        "reason": "cross-origin request refused"})
+            if self.headers.get("X-RT-Session-Token") != token:
+                return self._json(403, {"status": "refused",
+                                        "reason": "no or invalid session token "
+                                                  "(X-RT-Session-Token header)"})
+            query = parse_qs(urlsplit(self.path).query)
+            request_id = (query.get("id") or [""])[0]
+            if not request_id:
+                return self._json(400, {"status": "refused",
+                                        "reason": "no id given"})
+            if voice_answer is None:
+                return self._json(501, {
+                    "status": "unavailable",
+                    "reason": "the ask relay is not installed on this server"})
+            return self._json(200, voice_answer(request_id))
 
         # -- POST -------------------------------------------------------
         def do_POST(self):                              # noqa: N802
@@ -709,7 +733,7 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
 def build_server(host, port, cache, token, page_path, asset_roots,
                  action_runner=None, catalogue=None, log=None, clock=None,
                  page_vars=None, voice_transcribe=None, voice_ask=None,
-                 caps=None):
+                 voice_answer=None, caps=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -741,7 +765,8 @@ def build_server(host, port, cache, token, page_path, asset_roots,
         token, page_path, asset_roots,
         action_runner=action_runner, catalogue=catalogue, log=log,
         started=started, port=port, page_vars=page_vars,
-        voice_transcribe=voice_transcribe, voice_ask=voice_ask, caps=caps)
+        voice_transcribe=voice_transcribe, voice_ask=voice_ask,
+        voice_answer=voice_answer, caps=caps)
     httpd = ThreadingHTTPServer((host, port), handler)
     httpd.daemon_threads = True
     httpd.rt_cache = cache

@@ -43,6 +43,30 @@ Write sequence:
 
 This is the write path, not a fallback.
 
+### Editing one frontmatter property in place
+
+`create`/`append` can only ADD a block after whatever is already in the file,
+so both degrade to a second, dead `---` block on a note that already has
+frontmatter - never the first block Obsidian and `daemon_graph.read_repo_property`
+actually read. Setting or replacing a single existing key (for example `repo:`
+on a project note) uses a third directive instead, added 2026-10-02 after a
+staged `repo:` addition went out as `append` and would have landed in that
+unread second block:
+
+```
+<!-- obsidian: set-property path="..." key="repo" -->
+the-single-line-value
+```
+
+- `path=` is the same vault-relative rule as above, and the target note MUST
+  already exist - this directive never creates a file.
+- `key=` is the frontmatter key to set or replace; every other key, the body,
+  and the line order are left untouched.
+- The value is everything after the directive line, and it MUST be one line:
+  a value containing a CR or LF is refused before the file is touched, since
+  embedding it verbatim would insert extra frontmatter lines that a later
+  parse would misread as separate keys.
+
 ## Forbidden commands
 
 `create`, `append`, `prepend` - including `daily:*` writes (`daily:append`,
@@ -114,13 +138,13 @@ written to `ask/answers/<id>.json`.
 
 This queue is gated to requests declaring `"from": "rt-dashboard"` -
 anything else is answered `status: "refused"` rather than processed. It
-never calls `graphify query` and never reads `graphify-out/`: the vault is
-cross-project and a graph is per-project, so the daemon has no fixed notion
-of "the repository" to query (see `daemon-config.json`'s own
-`graphify_repo_root` provenance for the same reasoning). A graph-shaped
-question is answered from the `context_snapshot` the caller supplies, which
-already carries a `local-writer`-produced graph snapshot summary when one
-was collected.
+calls `graphify query` (read-only, never `update` or `save-result`) to
+answer graph-shaped questions: the vault is cross-project and a graph is
+per-project, so the daemon resolves "the repository" from the vault hit's
+own `index.md` property rather than assuming a fixed one (see the
+`daemon-config.json` `ask_search_roots` and `ask_graph_*` keys). Vault
+results and graph results are answered in two parts: vault published first
+via an injected callback, then the graph portion.
 
 This is the mechanism behind rt-dashboard's voice panel - see the
 `rt-observe` skill's own SKILL.md for the other half of the exchange.

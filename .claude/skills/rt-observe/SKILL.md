@@ -96,5 +96,14 @@ growing recording, like Devoir2). Every question is relayed to the vault daemon'
 own ask queue (`.claude/skills/obsidian-cli`'s `daemon_ask.py`) and answered there - this
 process never opens `OBSIDIAN_VAULT` or `graphify-out/` itself. TTS in this phase is the
 browser's own `speechSynthesis`, not a new server-side engine. Language is a dropdown
-(auto/en/fr) next to the panel, not auto-detected alone. Full design:
+(auto/en/fr) next to the panel, not auto-detected alone.
+
+Since 2026-10-02 the answer arrives in up to two parts, vault first, then the project's own
+code graph: `POST /api/voice/ask` returns `202 accepted` with an id at once rather than
+blocking, and the panel polls `GET /api/voice/answer?id=` (`CFG.voice.answer_poll_ms`) until a
+terminal status, speaking each part as it arrives. The graph part is read-only `graphify
+query` against the repository a vault project's own `repo:` property names - gated by a
+machine-local, gitignored allowlist (`.claude/local-ask-graph-roots.json`) the daemon refuses
+every claim against until the operator configures it, never by the vault note alone (R24;
+`.claude/rules/security.md` "A second reader"). Full design:
 [docs/rt-observe.md](../../../docs/rt-observe.md#the-voice-panel-2026-09-26).

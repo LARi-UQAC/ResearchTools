@@ -700,7 +700,7 @@ Record in Section O of the plan.
 Identical to `thesis-auditor` Step 14, applied to the proposal. Run the multi-model deliberation
 panel on the assembled chapter-by-chapter audit summary (max 2000 words) before ScholarEval scoring.
 **MANDATORY: run it every time. Do not skip on usefulness, length, or confidence grounds.** The only
-sanctioned skip is genuinely missing `GEMINI_API_KEY` AND `GITHUB_TOKEN` — and even then, gather
+sanctioned skip is genuinely missing `GEMINI_API_KEY` AND a working second reviewer (no Copilot token and no local model: the script lists both under `reviewers_unavailable`) — and even then, gather
 Consensus evidence, run the script (it degrades gracefully), and record the
 `[REVIEWER UNAVAILABLE: ...]` markers in the Deliberation Log. The step is autonomous (no user pause).
 Follow the full protocol in `.claude/skills/deliberation/references/deliberation-protocol.md`.
@@ -714,8 +714,17 @@ Follow the full protocol in `.claude/skills/deliberation/references/deliberation
 2. Run the debate, then arbitrate per the canonical table and markers:
 
 ```
-echo "<audit summary>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<thesis proposal topic>" --rounds 2 --plan-schema auditor --evidence-file "<evidence.txt>"
+echo "<audit summary>" | python ".claude/skills/deliberation/scripts/deliberate.py" --stdin --topic "<thesis proposal topic>" --rounds 2 --plan-schema auditor --evidence-file "<evidence.txt>" --round2-include-draft
 ```
+
+Pipe the audit summary WITH, for every flagged item, the verbatim passage it concerns and the
+definitions, notation and numbers it depends on (a flag without its text cannot be judged; the
+reviewers see only what is piped). If the whole exceeds the token budget, run the panel once per
+chapter and repeat the shared context in each run; a digest is a last resort and is declared in the
+Log. Read the envelope's `context` record first and put each `warnings[]` entry in the Log. Judge
+each item's relevance to the proposal as it stands (off topic or contrary to a premise the proposal
+holds: reject with the reason), pair by meaning the items the script left apart, and account for
+EVERY `merged[].id` in the Log (its `Accounting` line must add up).
 
 Map `agreement` to markers (`consensus` -> `[✓ GEMINI + COPILOT]`, `gemini_only` -> `[✓ GEMINI]`,
 `copilot_only` -> `[✓ COPILOT]`, `conflict` -> `[✓ GEMINI — COPILOT DISAGREED]`), run the Scopus gate

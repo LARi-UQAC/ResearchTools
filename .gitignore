@@ -73,6 +73,12 @@ loop-bridge-log.jsonl
 .rt-mirrors.json
 .claude/local-capability-probe.json
 
+# daemon_graph.py's allowlist of repository roots the vault daemon's ask queue may run
+# `graphify query` against (R24). Machine-local by design: the mapped repos sit under
+# this operator's own account directory, and committing their absolute paths would leak
+# the account path (R34/verify-no-personal-data). Absent file means nothing is allowed.
+.claude/local-ask-graph-roots.json
+
 
 # Machine-local configuration generated from a versioned template. A file a script generates
 # is never a tracked file: this one carries THIS machine's vault path and Obsidian executable,

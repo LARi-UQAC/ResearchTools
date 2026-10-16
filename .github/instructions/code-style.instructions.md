@@ -10,11 +10,11 @@ sections apply to all academic work.
 
 ## Rule identifiers
 
-The numbered rules `R0` to `R32` are workspace-wide and stable; cite them by number in a
+The numbered rules `R0` to `R36` are workspace-wide and stable; cite them by number in a
 review, a commit message, or an audit plan. Each lives in the file that enforces it: `R0`
 to `R13`, `R16`, `R17`, `R19` and `R27` in this file, `R14`, `R15`, `R22`, `R23`, `R25` and
-`R28` in `preferences.md`, `R18`, `R26`, `R29`, `R30`, `R31` and `R32` in `workflows.md`, `R20` and
-`R21` in `testing.md`, `R24` in `security.md`. They are unrelated to the `R1.x` sentence rules of
+`R28` in `preferences.md`, `R18`, `R26`, `R29`, `R30`, `R31`, `R32`, `R33`, `R35` and `R36` in `workflows.md`, `R20`,
+`R21` and `R34` in `testing.md`, `R24` in `security.md`. They are unrelated to the `R1.x` sentence rules of
 the `scientific-writing` skill's `composition_rules.md`, which govern prose rather than code.
 This index itself drifted once already (it stopped naming R28/R29 the moment they were added
 elsewhere) — when adding a rule, update this line in the same edit, not as an afterthought.
@@ -121,10 +121,12 @@ machine. Provenance is one of three: measured (name the script and the date), sp
 (name the standard, journal or publisher rule), or chosen by the user (name them). A number
 with no provenance cannot be revised by anyone later.
 
-**R5 - an enum-like literal comes from one table.** Roles (`writer`, `coder`), modes
-(`audit`, `mine`), statuses (`submitted`, `deposed`), KV cache types, note types: define
-them once as a constant or a small module and import them. A repeated string literal is a
-typo waiting to become a silent no-op.
+**R5 - an enum-like literal comes from one table.** Roles (`writer`, `coder`, and since
+2026-10-09 `session` - manually adopted via `model_resolver.py --adopt-role`, for a use
+`qualification/tasks.json` has no executable oracle for), modes (`audit`, `mine`), statuses
+(`submitted`, `deposed`), KV cache types, note types: define them once as a constant or a
+small module and import them. A repeated string literal is a typo waiting to become a
+silent no-op.
 
 **R13 - a measured number written into a rule, a document or a comment carries its date and
 what measured it.** This is the counterpart of R0 and resolves its apparent tension: a

@@ -59,6 +59,18 @@ class VoiceConfigCase(unittest.TestCase):
                               "voice_ask_wait")
         rt_state.config_value(self.config, "caps", "voice_question_chars")
 
+    def test_answer_poll_ms_is_declared_and_faster_than_the_wait(self):
+        """The poll cadence must be strictly faster than the per-part wait
+        it operates inside, or the panel could give up before a single
+        poll ever ran."""
+        import rt_state
+        poll_ms = rt_state.config_value(self.config, "voice",
+                                        "answer_poll_ms")
+        wait_s = rt_state.config_value(self.config, "timeouts_seconds",
+                                       "voice_ask_wait")
+        self.assertGreater(poll_ms, 0)
+        self.assertLess(poll_ms, wait_s * 1000)
+
 
 if __name__ == "__main__":
     unittest.main()

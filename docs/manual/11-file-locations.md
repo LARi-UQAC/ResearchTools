@@ -7,7 +7,7 @@ All agents, commands, and skills live under this repository's `.claude/` directo
 ```
 ResearchTools\
 └── .claude\
-    ├── agents\                              (19 agents; not all listed below -- see the
+    ├── agents\                              (21 agents; not all listed below -- see the
     │                                          Agents chapter for the current, complete list)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── litreview-updater.md       ← /litupdate
@@ -27,8 +27,9 @@ ResearchTools\
     │   ├── local-writer.md            ← local docs/comments (bridge)
     │   ├── local-coder.md             ← local code gen (bridge)
     │   ├── narrative-cv-writer.md     ← /cv
+    │   ├── professor-expertise-finder.md ← /expertfinder
     │   └── wp-portfolio-agent.md      ← /portfolio
-    ├── commands\                            (26 commands; not all listed below -- see the
+    ├── commands\                            (32 commands; not all listed below -- see the
     │                                          Commands chapter for the current, complete list)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
@@ -40,9 +41,10 @@ ResearchTools\
     │   ├── loopdev.md                  ├── talk.md
     │   ├── recommendation-letter.md
     │   ├── cv.md
+    │   ├── expertfinder.md
     │   └── portfolio.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (19 skills; not all listed below -- see the
+    └── skills\                              (25 skills; not all listed below -- see the
                                                Skills chapter for the current, complete list)
         ├── scopus\
         │   ├── SKILL.md
@@ -89,6 +91,10 @@ ResearchTools\
         │                  engines\faster_whisper_engine.py, engines\nemo_engine.py,
         │                  Test\test_stt_bench.py, Test\test_stt_score.py,
         │                  Test\test_gpu_memory.py, Test\test_engines_config.py)
+        ├── professor-expertise-finder\SKILL.md  (+ scripts\pef_common.py, pef_config.json,
+                           pef_column_hints.json, pef_university_aliases.json, table.py,
+                           score.py, exclusions.py, file_search.py, selections.py,
+                           requirements.txt, Test\ [7 offline suites])
         └── wp-portfolio-sync\SKILL.md       (+ scripts\wp_errors.py, wp_config.py, wp_paths.py,
                            wp_common.py, cihr_cv.py, parse_cv.py, cihr_labels.json,
                            sensitive_keys.json, render.py, verify_titles.py,
@@ -96,6 +102,39 @@ ResearchTools\
                            templates\mapping.example.yaml, cookies.json.example,
                            Test\ [10 offline suites])
 ```
+
+This tree predates several skills/agents merged since it was last updated in full (e.g.
+`wp-portfolio-sync`, `extract-contributions`, `obsidian-cli`, `rt-observe`, `pdf2md`); the
+headline counts above are kept current (checked 2026-10-15), but the tree's own per-skill
+listing is not reconciled against the repo's true current contents — see the Agents,
+Commands, and Skills chapters for those.
+
+## Machine-local files (never committed)
+
+The git privacy guard (`.claude/hooks/git/`, see [05-security-audit.md](05-security-audit.md)
+and [`security.md`](../../.claude/rules/security.md)) is installed from repo-tracked source
+into three places, neither of the latter two part of the repository tree above:
+
+- **Repo-side source**, tracked: `.claude/hooks/git/` — `pre-commit`, `pre-push`,
+  `privacy-lib.sh`, `privacy-extra.awk`, `privacy-guard.conf`, `fixture-path-allow.txt`,
+  `privacy-rules.toml`, `install-git-hooks.ps1` (plus two files the installer reads here but
+  never copies anywhere: `deny-term-stopwords.txt`, `sync-folder-markers.txt`).
+- **Copied by the installer** to `~/.config/git/hooks/` (`core.hooksPath`): `pre-commit`,
+  `pre-merge-commit` (a copy of `pre-commit`, since a clean merge runs only that one),
+  `pre-push`, `_chain` (plus one copy per other chained hook name), `privacy-rules.toml`,
+  `privacy-lib.sh`, `privacy-extra.awk`, `fixture-path-allow.txt`, `privacy-guard.conf`.
+- **Machine-local, never committed, and not inside any repository at all**: live in the
+  install folder, outside the tracked tree entirely, so they are not "gitignored files" so
+  much as files no repository holds in the first place. What protects a stray copy pasted
+  into a repository is the global git ignore the installer writes
+  (`core.excludesFile`, else `<XDG_CONFIG_HOME or ~/.config>/git/ignore`), which also lists
+  all three file names.
+  - `private-terms.txt` — the generated deny list, extended for each new student
+    (`-TermsFrom <folder>`): the installer only appends names it does not already have,
+    never rewrites the list.
+  - `private-terms.extra.txt` — hand-added terms.
+  - `private-terms.excluded.txt` — fragments the extractor set aside (common words, or
+    shorter than the configured length floor).
 
 ---
 [← 10 Agents](10-agents.md) | [Table of contents](../../README.md)

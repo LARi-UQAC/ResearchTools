@@ -15,6 +15,16 @@ sentence, never a paraphrase of its abstract), [scientific-writing](skills/scien
 overlap ranking against one competition's own objectives, and the LaTeX/plain-text rendering. It
 runs none of the deliberation/scholar-evaluation pipeline the four auditors and the researcher
 share, since a CV carries no reference list to cross-review or score. The
+[professor-expertise-finder](agents/professor-expertise-finder.md) agent, reached via
+`/expertfinder`, now also consumes [scopus](skills/scopus) (`scopus_api.py`'s `author` mode to
+resolve a professor's AU-ID, then its `publications` mode for their recent document list -
+already sorted most-recent-first, each carrying `approved_publisher` as the "good-quality
+venue" bar rather than inventing a separate threshold) and
+[extract-contributions](skills/extract-contributions) (each candidate article's own stated
+contribution, checked against the keyword clusters, rather than guessed from its title) -
+2026-10-08, closing a gap where the draft's article search used ad hoc web search instead of the
+skill the repo's own working norm already mandates for verifying information. Faculty/department
+directory pages stay WebFetch/WebSearch, since Scopus does not index a university's own site. The
 [wp-portfolio-agent](agents/wp-portfolio-agent.md) agent, reached via `/portfolio`, runs a
 one-shot migration of a researcher's final CIHR / Canadian Common CV XML export into their
 WordPress portfolio: it consumes only its own [wp-portfolio-sync](skills/wp-portfolio-sync)
@@ -38,7 +48,8 @@ graph TD
     c10["/litupdate"]
     c11["/talk"]
     c12["/cv"]
-    c13["/portfolio"]
+    c13["/expertfinder"]
+    c14["/portfolio"]
   end
 
   subgraph AG["Agents — agents/"]
@@ -55,7 +66,8 @@ graph TD
     a11["litreview-updater<br/>incremental review refresh"]
     a12["talk-builder<br/>accepted paper -> conference talk"]
     a13["narrative-cv-writer<br/>FRQ / tri-agency narrative CV"]
-    a14["wp-portfolio-agent<br/>one-shot CIHR XML -> WordPress"]
+    a14["professor-expertise-finder<br/>faculty expertise matching"]
+    a15["wp-portfolio-agent<br/>one-shot CIHR XML -> WordPress"]
   end
 
   subgraph SK["Skills — skills/"]
@@ -72,7 +84,8 @@ graph TD
     s10["paper2talk<br/>talk_model.py · talk_render.py · talk_notes.py"]
     s11["latex-hygiene<br/>tex_check.py (read + patch/scan/accept/build)"]
     s12["narrative-cv<br/>cv_inventory.py · cv_select.py · cv_build.py"]
-    s13["wp-portfolio-sync<br/>cihr_cv.py · render.py · push_wp.py"]
+    s13["professor-expertise-finder<br/>table.py · score.py · selections.py"]
+    s14["wp-portfolio-sync<br/>cihr_cv.py · render.py · push_wp.py"]
   end
 
   subgraph EXT["External APIs / models"]
@@ -95,10 +108,12 @@ graph TD
   c11 --> a12
   c12 --> a13
   c13 --> a14
-  a14 --> s13
+  c14 --> a15
   a12 --> s10
   a12 --> s1
   a13 --> s12 & s1
+  a14 --> s13 & s1
+  a15 --> s14
   a4 -.->|"invoked by name<br/>(no command)"| a4
   a9 -.->|"invoked by name<br/>(no command)"| a9
   a10 -.->|"invoked by context<br/>(no command)"| a10
@@ -145,6 +160,8 @@ graph TD
 `/recommendation-letter` likewise invokes the [recommendation-letter](skills/recommendation-letter) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix; its `generate_letter.py` is standard-library only and compiles the letter with `pdflatex`.
 
 `/cv` drives the [narrative-cv-writer](agents/narrative-cv-writer.md) agent, which is also omitted from this matrix: it consumes [scopus](skills/scopus) and [scientific-writing](skills/scientific-writing) like the matrix's other rows, plus [extract-contributions](skills/extract-contributions) (not one of this matrix's columns) and its own [narrative-cv](skills/narrative-cv) skill, but none of `deliberation`, `scholar-evaluation`, `extract-statistic`, or `extract-futureworks` - a CV has no reference list to deliberate over or ScholarEval score.
+
+`/expertfinder` drives the [professor-expertise-finder](agents/professor-expertise-finder.md) agent, omitted from this matrix because it consumes none of its columns: it verifies faculty/department directory pages directly (`WebFetch`/`WebSearch` - Scopus does not index a university's own site), but ARTICLE discovery and validation go through [scopus](skills/scopus) (`author` mode to resolve the AU-ID, `publications` mode for the recent document list, `approved_publisher` as the quality bar) and [extract-contributions](skills/extract-contributions) (each candidate article's own stated contribution, checked against the keyword clusters) - 2026-10-08, matching the repo's own working norm that every piece of information is verified through the `scopus` skill. It consumes its own [professor-expertise-finder](skills/professor-expertise-finder) skill (`table.py`, `score.py`, `exclusions.py`, `file_search.py`, `selections.py`) plus those two, and nothing from `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks`.
 
 `/portfolio` drives the [wp-portfolio-agent](agents/wp-portfolio-agent.md) agent, likewise omitted from this matrix: it consumes only its own [wp-portfolio-sync](skills/wp-portfolio-sync) skill, none of `scopus`, `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks` - the push is a deterministic migration, not an authoring or audit pipeline.
 
@@ -645,7 +662,10 @@ a cohort report over an already-seen roster costs no Scopus call at all, and the
 property of the key rather than of the caller, so the bucket is shared per process rather than
 per request. `deploy/docker-compose.yml` runs it alongside a `pgvector/pgvector` Postgres
 (needed by RT-7's corpus index, unrelated to the form path) and a Caddy front door whose
-hostname is read from the environment.
+hostname is read from the environment. RT-8 adds `POST /cv/build`, importing `cv_build.py` /
+`cv_common.py` from the *narrative-cv* skill (a third COPY into the image,
+`NARRATIVE_CV_SCRIPTS_DIR`): a stateless narrative-CV render with consenting HQP rows, no LaTeX
+compiled on the service (C2) and nothing stored (C3).
 
 ```mermaid
 flowchart LR
@@ -654,11 +674,12 @@ flowchart LR
   FS --> CERT[("certs volume<br/>signing material only")]
   FS -->|"GET /publications<br/>cached, rate limited"| SCOPUS[("Elsevier Scopus API<br/>key never leaves here")]
   FS --> PUBCACHE[("publications cache volume<br/>TTL, hashed key")]
+  FS -->|"/cv/build -> narrative-cv cv_build.py"| CVBUILD["narrative-cv skill<br/>cv_build.py (pure render)"]
   RT7["RT-7 corpus index<br/>(unrelated to the form path)"] --> DB[("db<br/>Postgres 17 + pgvector")]
 
   classDef svc fill:#D6F0ED,stroke:#1F9E8F,color:#10243E
   classDef store fill:#FBE9D9,stroke:#C9762F,color:#10243E
-  class TT,CADDY,FS,RT7 svc
+  class TT,CADDY,FS,RT7,CVBUILD svc
   class CERT,DB,SCOPUS,PUBCACHE store
 ```
 
@@ -712,4 +733,5 @@ ThesisTracker itself is a separate system and does not belong in the Layer 1 gra
   implemented). It prints the two `observe-config.json` keys to change and never changes them.
 - **obsidian-cli.** The skill behind every vault touch in Layer 5's knowledge-capture loop: it names the allowed read command surface (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`) and the outbox as the single write path, and forbids `create`/`append`/`prepend` (with `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*` except read-only `sync:history`) for a measured reason: the write fails on the whole JSON header size, not the content, between a 3850-byte header that passes and a 4343-byte one that does not (4096, a Windows named-pipe buffer, falls between the two), the CLI exits 0 on that failure too, and `create` on an existing file writes a numbered duplicate instead of failing. `scripts/vault_consolidate.py` is the deterministic half of note consolidation (shared tags/`domaine`/term overlap, proposed links, no decisions); `--mode links` reports dead wiki-links read-only, and `--apply <map.json> --yes` is the one guarded exception to the outbox-only write rule, a dry-run-by-default, map-validated, single-pass rewrite of existing links that refuses any entry not shaped `[[...]]` and any path outside the vault, run only by `local-writer`. No dedicated agent or command; consumed by [local-writer](agents/local-writer.md) and [local-coder](agents/local-coder.md) wherever they touch the vault. Since 2026-08-28 the skill also carries the UNATTENDED path, `scripts/vault_daemon.py`: a raw, unrouted drop in `~/.claude/obsidian-outbox/raw/` is classified and drafted by the LOCAL model and filed by Python, so the cloud wrapper pushes knowledge rather than deciding where it goes, and what the model is not confident about is parked in `needs-review/` for the wrapper's full judgment. The filesystem is the queue, which keeps the skill free of any pip dependency; three separate mechanisms hold it together and are not interchangeable - a write lock so a file is never corrupted, a singleton lock admitting one daemon per machine (without it two daemons classify and draft every drop twice, which serializing the writes does not prevent), and an atomic claim by rename. Producers are unlimited, the consumer is one, because the card holds one resident model. Consolidation and graphify are drained in batch off the event path, since judging fifteen pairs inline would pin the GPU for about ten minutes per drop.
 - **authoring-loop orchestrator.** [authoring-loop](agents/authoring-loop.md) is the ScholarEval-gated writing counterpart of the code loop (Layer 5, "Authoring loop"): it runs author (Fable 5) -> `scholar-evaluation` audit (Sonnet/Haiku) -> loop to `min_score`/`max_budget` -> memory via `local-writer`. Like [thesis-to-paper](agents/thesis-to-paper.md) it runs at the top level (inline execution of the authoring/audit pipelines) and keeps a `PROGRESS.md` + ledger; its budget is advisory unless wrapped in the loop-engineer SDK driver. Invoked by name.
+- **pdf2md.** The [pdf2md](skills/pdf2md) skill is the input side of the auditors for a work that exists only as a PDF: no agent drives it, the operator runs `pdf2md.py` by stage. It drives mineru through its installed `mineru-kit` CLI (pinned versions, `pdf2md-pipeline.json`), cleans the running-header defect mineru leaves behind, and writes either the UQAC thesis layout (`--layout thesis`, the default: `main.md`, `content/` chapters, `assets/`) or one document for an article or a talk source (`--layout single`: `main.md`, `assets/bibliography.md`). Validation compares the output with an independent reader of the PDF (stages 7 and 7b). Repair (7d) and the local-vision correction loop (7e) work chapter by chapter and refuse a single layout. No auditor discovers the output on its own: [thesis-auditor](agents/thesis-auditor.md) resolves `src/main.tex` only, so the markdown is fed by hand.
 - The non-academic agents in [agents/](agents) (analysis-engine, blazor-dev, cost-tester, flask-api, react-dev, security-auditor, word-to-latex) serve the CostEstimator software project and are out of scope for this diagram.

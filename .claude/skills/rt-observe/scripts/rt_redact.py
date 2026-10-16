@@ -36,3 +36,30 @@ def home_tilde(text, home):
     home_text = str(Path(home))
     out = str(text).replace(home_text, "~")
     return out.replace(home_text.replace("\\", "/"), "~")
+
+
+def redact_json(value, home):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Apply `home_tilde` to every string inside a JSON-shaped value (a
+        dict/list/str/other mix), recursively, so a whole response body can be
+        redacted in one call rather than per field. Promoted here from
+        `rt_openobserve.py`'s own private copy once a second caller
+        (`rt_state.py`'s voice-answer route) needed the same walk (R18).
+
+    Inputs:
+        value: any JSON-decodable value - dict, list, str, or a JSON scalar
+        home (Path or str): the home directory to hide
+
+    Outputs:
+        value: the same shape, with every string passed through `home_tilde`
+    --------------------------------------------------------------------------
+    """
+    if isinstance(value, str):
+        return home_tilde(value, home)
+    if isinstance(value, dict):
+        return {k: redact_json(v, home) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact_json(v, home) for v in value]
+    return value

@@ -995,5 +995,49 @@ class TestSoleCodeFenceIsUnwrapped(unittest.TestCase):
         self.assertEqual(ob.unwrap_sole_code_fence(body), body)
 
 
+class TestResolverFailureIsABridgeError(unittest.TestCase):
+    """Diagnosed 2026-10-01: model_resolver.resolve() raises ResolverError
+    (a RuntimeError) when Ollama is unreachable, and resolve_model did not
+    wrap it, although BridgeError is documented as the resolver-failure type.
+    A caller catching BridgeError (the vault daemon's loop) died instead."""
+
+    class FakeResolverError(RuntimeError):
+        pass
+
+    def _fake_module(self, resolve):
+        class FakeResolver:
+            ResolverError = TestResolverFailureIsABridgeError.FakeResolverError
+        FakeResolver.resolve = staticmethod(resolve)
+        return FakeResolver
+
+    def test_a_resolver_error_becomes_a_bridge_error_keeping_its_text(self):
+        original = self.FakeResolverError(
+            "[RESOLVER] 'ollama list' exited 1: connection refused")
+
+        def resolve(role=None):
+            raise original
+
+        with mock.patch.dict(sys.modules,
+                             {"model_resolver": self._fake_module(resolve)}):
+            with self.assertRaises(ob.BridgeError) as caught:
+                ob.resolve_model("writer")
+        self.assertIn("connection refused", str(caught.exception))
+        self.assertIs(caught.exception.__cause__, original)
+
+    def test_a_resolved_tag_is_still_returned(self):
+        with mock.patch.dict(sys.modules, {"model_resolver": self._fake_module(
+                lambda role=None: "vendor-a:9b")}):
+            self.assertEqual(ob.resolve_model("writer"), "vendor-a:9b")
+
+    def test_an_unrelated_exception_is_not_wrapped(self):
+        def resolve(role=None):
+            raise KeyError("bug")
+
+        with mock.patch.dict(sys.modules,
+                             {"model_resolver": self._fake_module(resolve)}):
+            with self.assertRaises(KeyError):
+                ob.resolve_model("writer")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

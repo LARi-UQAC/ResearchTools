@@ -34,7 +34,12 @@ level of the skill, agent, or command that owns it — never as a one-off script
 project directory. See `.claude/rules/workflows.md`, "Where code belongs", for the full rule
 and its exemption test.
 
-## No CI/CD
+## CI and the privacy guard
 
-There is no automated pipeline. Run the relevant tests manually before pushing — see
+The only automated check is the `privacy-scan` workflow: every push and pull request is
+scanned for secrets and personal data (account paths, student codes and emails). Install the
+same check locally, once per machine, so a commit is refused before it is published:
+`.\.claude\hooks\git\install-git-hooks.ps1` (needs `winget install Betterleaks.Betterleaks`).
+Test data uses fictitious identities only (rule R34). Run the other tests manually before
+pushing — see
 [.claude/rules/testing.md](.claude/rules/testing.md) for the full offline-test inventory.

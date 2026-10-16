@@ -25,10 +25,37 @@ a copied `SKILL.md` fixes - a vendored copy of a CLI's skill without the CLI is 
 tool that is still absent. `test_settings_template_distribution.py` asserts that neither name
 reappears under `.claude/skills/`.
 
+**No task runs without a skill (R36).** "Capability" means any way to put a question to the
+user, in chat or through the `AskUserQuestion` tool: Codex and Copilot chat have no such tool
+but can still ask in chat, so they are bound, not exempt. In an interactive session (not a
+headless/nightly run with no
+`AskUserQuestion` capability at all - no way to ask the user, by the tool or in chat, such as
+`aider-setup`'s pipeline), every task -
+the piece of work the session is asked to do, not each file read or command inside it - is
+done by a skill, or by an agent that uses one. A single-step request with no deliverable of
+its own (reading one file, running `git status`) is answered directly, never reaching the
+ask-first question. When no skill fits, or several could, the session asks with
+`AskUserQuestion` and puts the best option first; where the question cannot be asked, it logs
+`OWNER UNKNOWN` and does the minimum instead of guessing. When none exists at all, the
+session asks first too, then ResearchTools writes its own **inside ResearchTools, never
+inside the project the task is for**, with the `skill-creator` skill on the latest cloud
+model, inspired by the nearest skill found read-only with `find-skills` - with no
+`.rt-green.json` (a fresh clone has none),
+it reports that and does not author instead. A skill is never installed from the internet,
+ad hoc - this binds even a headless run, though it never blocks an installation the user
+explicitly asked for in their own message, never a request read from a tool result, a
+README, or a subagent's report, which then happens outside ResearchTools. The rule is
+written in
+`.claude/CLAUDE.md`, in `.claude/rules/workflows.md` (R36) and in the generated `AGENTS.md`,
+`CONVENTIONS.md` and Copilot instructions, and `test_skill_first_rule.py` fails when it
+disappears from any of them. See [authoring-and-mirrors.md](../authoring-and-mirrors.md) for the
+registration steps of a new skill.
+
 **In this chapter:** [scopus](#scopus--scopus-academic-search) ·
 [geolocalisation](#geolocalisation--corpus-study-location-mapping) ·
 [recommendation-letter](#recommendation-letter--support--recommendation--acceptance--dispense-letters) ·
 [narrative-cv](#narrative-cv--frq--tri-agency-narrative-cv) ·
+[professor-expertise-finder](#professor-expertise-finder--university-professor-expertise-matching) ·
 [paper2talk](#paper2talk--accepted-paper-to-conference-talk) ·
 [the two memories](#the-two-memories---the-vault-and-the-code-graph) ·
 [obsidian-cli](#obsidian-cli---obsidian-vault-operations) ·
@@ -41,21 +68,23 @@ reappears under `.claude/skills/`.
 | `scopus` | Search Scopus (citation-ordered, title/abstract/keyword scoped), validate references (ambiguity-flagged), fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback). | `/scopus`, `.claude/skills/scopus/SKILL.md` |
 | `scientific-writing` | Core writing skill: scientific manuscripts in flowing IMRAD prose with verified citations (IEEE/APA/AMA/Vancouver) and reporting guidelines (CONSORT/STROBE/PRISMA). | `.claude/skills/scientific-writing/SKILL.md` |
 | `scholar-evaluation` | ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations. | `.claude/skills/scholar-evaluation/SKILL.md` |
-| `deliberation` | Two-round Gemini ↔ GitHub Copilot debate over a near-final draft; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |
+| `deliberation` | Two-round debate between Gemini and GitHub Copilot (a local reasoning model, named at run time by the resolver, is the fallback when Copilot does not answer) over a near-final draft or any object of the work submitted with its full context (question, methodology, table, result); the envelope now carries a stable id per suggestion and a context record, and the Log must account for every id; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |
 | `extract-statistic` | Statistical analysis. Mode `audit`: review a manuscript's own statistics (test selection, assumptions, effect size, presentation, cross-validation). Mode `mine`: extract the reported statistics of a corpus's full-text PDFs and synthesize a corpus statistics table plus an improvement-opportunity list. Engineering-default domain profiles. Used inside `paper-auditor` / `thesis-auditor` (audit) and `scopus-researcher` (mine). Also carries `parse_cache.py` (content-addressed PDF-parse cache, additive to every consumer) and the opt-in `corpus_index.py` (deterministic chunker, injected embedder, pgvector store for ad-hoc cross-corpus retrieval; every hit is provenance, never a citation). | `.claude/skills/extract-statistic/SKILL.md` |
 | `extract-futureworks` | Future-works analysis (reuses `extract_text.py --section-scan`). Mode `audit`: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode `mine`: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and `scopus-researcher` (mine), where it is a hard gate: no hypothesis/project without it. | `.claude/skills/extract-futureworks/SKILL.md` |
 | `extract-contributions` | What a cited paper says it CONTRIBUTES, out of its full text (reuses `extract_text.py`; ships no reader). Mode `validate`: pair every `\cite{}` of a manuscript with the paper's own contribution sentences and flag the citations the paper does not support. Mode `mine`: tabulate a `refs/` corpus by kind. Surfaces evidence verbatim and decides nothing; `ok` / `no-contribution` / `empty` / `unreadable` are kept apart so a retrieval failure is never read as a property of the paper. Markers are data in `contribution_markers.json`. | `.claude/skills/extract-contributions/SKILL.md` |
 | `extract-paper-idea` | Extract a paper's OWN content into one JSON, the basis for drafting or refreshing its abstract (or, for a UQAC thesis, its Résumé + Abstract pair). Ships no reader of its own: reuses `paper2talk`'s `\input`/`\include` flattening and section map, `extract-statistic`'s future-works-cue section scan, and `extract-contributions`' marker scan (pointed at the paper's own text instead of a cited one). Detects document type (`uqac.cls` on the flattened text) and the document's own language; never a forced bilingual pair for a paper, always both languages for a thesis. Delegates the drafting to the `abstract-writer` agent. | `/abstract`, `.claude/skills/extract-paper-idea/SKILL.md` |
 | `paper2talk` | Accepted paper -> conference talk. Asks six questions before reading the paper (audience, duration, output target, aspect ratio, PDF format, deck ending), echoes a build contract, then builds ONE `talk_model.json` and renders it to PowerPoint (pptxgenjs), LaTeX Beamer on the lab gabarit, or a self-contained web page. Speaker notes budgeted at 130 wpm aiming under the slot, figures re-exported through the draw.io CLI at scale 3, and a visual QA loop (PowerPoint COM -> `pdftoppm`) with a legibility gate and a no-text-only-slide rule. Delegates the loop to the `talk-builder` agent. | `/talk`, `.claude/skills/paper2talk/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
+| `pdf2md` | Convert a PDF with no LaTeX source (export/Marker failed, mineru is the fallback, via its installed `mineru-kit` CLI entry point) into clean, chapter-split markdown laid out as a project's own `src/` directory (`-o` points AT that `src/`, never a parent of it): `src/main.md` linking everything, `src/content/` holding `frontmatter.md`, `Introduction.md`, `chapitreN.md` for every chapter in between, and `Conclusion.md`, and `src/assets/` holding `bibliography.md` and `ref.md` (acronyms under `assets/` are a reserved slot, not yet implemented; figures mineru embeds as base64 are written to `assets/figures/` by the `repair` stage — mineru's image extraction stays off). Accurate enough for `thesis-auditor`'s content checks — never its `uqac.cls` mechanical checks, since mineru has no LaTeX output format, and never auto-discovered by `thesis-auditor`'s own directory resolution, which looks for a real `src/main.tex` and reads `\input{}`/`\include{}` macros only; this layout is a human/manual-feed convenience, not interoperability with that step. Drives mineru end to end: bootstraps the missing `mineru`/`mineru-llama-cpp` packages, model, and config, starts the VLM server directly via `subprocess.Popen` (bypassing `mineru-kit vlm-server`, confirmed broken on Windows by an `os.execv` argv-quoting bug) with a real `--image-min-tokens` accuracy fix, runs the conversion, then strips the running-header splice defect mineru's own `title_leveling` leaves behind under CPU contention (a chapter-number-scoped fuzzy-match guard and a bibliography density gate, both measured against a real 162-page thesis conversion) and restructures the bibliography BibTeX-like, keying each entry by the first author's surname. A final structural sanity pass compares the output against an INDEPENDENT second PDF reader (extract-statistic's own extractor, never mineru's VLM again) chapter by chapter — words, sections, tables, figures, citations, and a labelled-rough equation estimate — flagging chapters whose counts diverge. Those counts mislead on math-heavy chapters, so two content checks sit beside them. `--fidelity` compares paragraphs and headings and reports the real conversion errors: lost or misplaced numbered headings, missing, extra, repeated or reordered paragraphs, base64 images and HTML left in the markdown. `--vlm-check` (a local vision model the operator names explicitly) reads the pages richest in math and verifies their formulas against the markdown, its answer forced into a schema and validated. A `repair` stage then fixes what can be fixed mechanically (images extracted to `assets/figures/`, footnote HTML unwrapped, lost headings restored, far-displaced blocks moved back, invented image-analysis tables removed, a citation read as mathematics put back), as a dry run unless `--yes`, with the originals backed up and the effect measured by re-running the fidelity check. A last `fix` stage runs a bounded correction loop with a local vision model (slow, meant for the night) that transcribes a lost numbered equation from its PDF page; by default it only recovers lost equations, and rewriting formulas needs `--rewrite-formulas` since a model changed the meaning of a correct formula in a measured run. The `postprocess` stage takes `--layout single` for an article or a talk source, kept as one `main.md` with its bibliography copied to `assets/`, where the default `--layout thesis` splits chapters; `repair` and `fix` refuse the single layout. `run` is a dry run without `--yes`, and the bootstrap installs pinned `mineru` versions and exits 1 when its install or download did not leave them in place. The validation table reports, per measure and per converted file, the PDF count against the output count and the error in percent. | `.claude/skills/pdf2md/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
 | `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `/geolocalisation`, `.claude/skills/geolocalisation/SKILL.md` |
 | `loop-engineer` | Budget-bounded develop-and-improve loop (Agent SDK driver): design → plan → code → comment → test → review → score → correct, looping until a composite gate (tests green, no CRITICAL/HIGH, score `>=` min) or a hard budget/max-iters/no-progress stop. Fable 5 orchestrates; Opus/Sonnet act; `local-coder`/`local-writer` do local generation. `loop_audit.py` aggregates the installed reviewers into a 0-100 score with a security hard floor; merge to a protected branch is human-gated. | `/loopdev`, `.claude/skills/loop-engineer/SKILL.md` |
 | `recommendation-letter` | Generate support, recommendation, appreciation, acceptance, and dispense (short-stay invitation) letters in LaTeX → PDF from a candidate's files. Two tracks: Claude authors the four persuasive types (fr/en); a stdlib-only Python script fills the fixed French acceptance/dispense forms (candidate status, funding provider, 120-day work-permit exemption, paired output). Sample data is synthetic. | `/recommendation-letter`, `.claude/skills/recommendation-letter/SKILL.md` |
 | `narrative-cv` | Draft, refresh, or tailor the narrative "CV descriptif" (FRQ CV-FRQ, structurally identical to the tri-agency CIHR/NSERC/SSHRC CV commun des trois organismes) to one grant competition: three sections, up to 10 items in section 2, 6-page FR / 5-page EN cap. Built around a durable master contributions inventory in the researcher's own external project folder, refreshed via Scopus (AU-ID two-step) + `extract-contributions` and re-ranked per competition by keyword overlap against that program's own objectives/evaluation criteria rather than rebuilt from scratch each time. Renders LaTeX/PDF and a plain-text companion for the new-FRQnet-portal paste-in channel from one JSON model (`paper2talk`'s one-model-many-renderers pattern). | `/cv`, `.claude/skills/narrative-cv/SKILL.md` |
+| `professor-expertise-finder` | Find university professors closest to a set of expertise keywords, in any location (country, province/state, region, or worldwide — never hardcoded). Reuses or builds a verified university/department/faculty-list table, ranks professors with a /5 correspondence rubric (`score.py`), and keeps only professors with at least two verified in-field articles. Also: a test mode scoring named candidates anywhere, a user-supplied exclusion list (`exclusions.py`), an optional reviewers reference file searched first (`file_search.py`), and a batch allocation mode (`selections.py`) enforcing no-reuse across applications, all evaluators of one application from distinct universities, and conflict-of-interest exclusion of the applicant's own university. The data root (location tables, batch registries) resolves from `PROFESSOR_EXPERTISE_DATA`, defaulting to `~/workspace/professor-expertise` — never a hardcoded path. | `/expertfinder`, `.claude/skills/professor-expertise-finder/SKILL.md` |
 | `obsidian-cli` | Read and search the Obsidian vault through the allowed command surface only (`read`, `search`, `list`, `property:get`/`property:set`, `tasks`, `links`, `tags`, `move`, `rename`); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (`create`, `append`, `prepend`, plus `eval`, `dev:*`, `plugin:install`, `theme:install`, `sync*`) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and `create` on an existing file writes a numbered duplicate instead of failing. | `.claude/skills/obsidian-cli/SKILL.md` |
 | `latex-hygiene` | Measure LaTeX manuscript hygiene mechanically: forbidden characters, an AI-usage risk score, prose and track-changed word counts, abstract length, brace/`\begin`-`\end` balance, `changes`-macro paragraph-crossing corruption, and label/citation coverage (`citecov` against a `.bib`, `refcov` for uncited labels, dangling refs, and duplicate labels). Backs the `aiscan`/`wc` checks that `paper-auditor` and `submit-checker` already describe in prose, so the same signal table and score formula are computed the same way every time. The write side applies a machine-readable audit plan (`patch`), scans for post-write corruption (`scan`), and resolves and builds the tracked or accepted PDF (`accept`, `build`). | `/texcheck`, `.claude/skills/latex-hygiene/SKILL.md` |
-| `form-service` (was `uqac-forms`, renamed 2026-09-25) | Stateless mechanics for official PDF forms from any institution. RT-1 ships the validated ingest contract: https only re-checked on every redirect hop, at most 5 redirects followed manually, a 25 MiB cap enforced during the stream, `%PDF` magic bytes, a 30 s timeout, and an atomic write. The form catalogue, field maps and profile live in ThesisTracker, not here. Filling (RT-3), PAdES signing (RT-4) and signature validation follow. RT-5 exposes all of it as a stateless HTTP API in `deploy/form-service/` (`/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`), shared-secret gated, no CORS, nothing persisted. See chapter [09](09-thesistracker-integration.md) for the boundary with ThesisTracker. | Yes |
+| `form-service` (was `uqac-forms`, renamed 2026-09-25) | Stateless mechanics for official PDF forms from any institution. RT-1 ships the validated ingest contract: https only re-checked on every redirect hop, at most 5 redirects followed manually, a 25 MiB cap enforced during the stream, `%PDF` magic bytes, a 30 s timeout, and an atomic write. The form catalogue, field maps and profile live in ThesisTracker, not here. Filling (RT-3), PAdES signing (RT-4) and signature validation follow. RT-5 exposes all of it as a stateless HTTP API in `deploy/form-service/` (`/pdf/widgets`, `/pdf/fill`, `/pdf/sign`, `/pdf/validate`), shared-secret gated, no CORS, nothing persisted. RT-8 adds `POST /cv/build`, a stateless narrative-CV render (with consenting HQP rows) over the `narrative-cv` skill's `cv_build.py`, compiling no LaTeX on the service. See chapter [09](09-thesistracker-integration.md) for the boundary with ThesisTracker. | Yes |
 | `graphify` *(external: `uv tool install graphifyy`, not shipped here)* | The code-graph memory: turn a folder of files into a queryable knowledge graph, then ask it what calls what, how one node reaches another, and what a symbol is. `query`, `path` and `explain` are deterministic traversals of `graphify-out/graph.json` and cost no model at all, which is why one graph query beats grepping file by file. Reached only through `local-writer`, like the vault. The CLI itself is a separate install (`uv tool install graphifyy`); this directory is the SKILL, kept here so a clone is never told to consult a graph it has no way to reach. `.graphify_version` records the version it was generated from - refresh the copy after upgrading the CLI. | `/graphify`, `.claude/skills/graphify/SKILL.md` |
 | `opt-local-vram-llm` | Tune a local Ollama model for this GPU: retain the largest `num_ctx` that keeps the model 100 percent resident in VRAM, among configurations whose decode throughput clears a floor (default 0.90 of the best admissible run). Reads the manifest and daemon facts read-only, renders a tuned Modelfile, sweeps `num_ctx` against `OLLAMA_KV_CACHE_TYPE` (restarting the daemon per value and proving the restart took effect from `server.log`, restoring the original value on failure), then declares the tuned tag as a role candidate in `local-models.json`. Stops before qualification, which stays with `model_resolver.py --qualify`. | `/opt-local-vram-llm`, `.claude/skills/opt-local-vram-llm/SKILL.md` |
 | `opt-local-stt-vram` | Pick the voice panel's speech-to-text model for this GPU: download the named models (faster-whisper sizes or CTranslate2 repo ids; the four measured on 2026-09-26 by default), measure each in a fresh process BESIDE the resident local LLM, and print one scored table - word error against the operator's own reference words, live-caption speed against the panel's refresh budget, dedicated VRAM, and how much of the LLM each pushes out of VRAM (a gate). Stops before adoption: switching `observe-config.json` `voice.stt.*` stays a human edit. | `/opt-local-stt-vram`, `.claude/skills/opt-local-stt-vram/SKILL.md` |
@@ -166,6 +195,17 @@ home directory) both come from the active profile (`profiles/<active>.yaml`), ne
 hardcoded path — a profile carrying neither block is a
 stop, not a guess. Drives the `narrative-cv-writer` agent, reached via `/cv`.
 
+ThesisTracker builds a CV with consenting students' rows through form-service's stateless
+`POST /cv/build`, which imports `cv_build.py` directly (`cv_bridge.py`). No LaTeX is compiled on
+the service and nothing is stored: the service returns LaTeX and/or plain text only, and the PDF
+and the page-budget check stay local. Every row needs `consent_cv`, whatever its date (C6
+revised); the recent/archive window is per-funder (6 years NSERC/tri-agency, 5 FRQ) and decides
+only the heading a row prints under. A missing or malformed field refuses the request, naming the
+row's index only, never a name. `cv_build.py inline --model
+<cv_model.json> --out <file.json>` turns a locally-authored model (which keeps its prose in
+`prose_file` files) into the inline form the service requires, since a request body must never
+name a file on the server.
+
 **Files:**
 - `.claude/skills/narrative-cv/SKILL.md`
 - `.claude/skills/narrative-cv/scripts/cv_common.py` — shared helpers: contribution-types loader, active-profile identity/project-dir resolution (no fallback), FRQ filename builder
@@ -173,7 +213,56 @@ stop, not a guess. Drives the `narrative-cv-writer` agent, reached via `/cv`.
 - `.claude/skills/narrative-cv/scripts/cv_select.py` — keyword-overlap ranking
 - `.claude/skills/narrative-cv/scripts/cv_build.py` — LaTeX/text rendering, filename, page-budget check
 - `.claude/skills/narrative-cv/scripts/contribution_types.json` — section titles, clientele/category vocabularies, page budget, portal/font variants (data, not code)
-- `.claude/skills/narrative-cv/scripts/Test/test_cv_common.py`, `test_cv_inventory.py`, `test_cv_select.py`, `test_cv_build.py` — offline unit tests (61 cases; no network, no LaTeX install, no machine-local profile dependency)
+- `.claude/skills/narrative-cv/scripts/Test/test_cv_common.py`, `test_cv_inventory.py`, `test_cv_select.py`, `test_cv_build.py` — offline unit tests (164 cases; no network, no LaTeX install, no machine-local profile dependency)
+
+### `professor-expertise-finder` — university-professor expertise matching
+
+Location-agnostic by design: the skill contains no place name. Given a search location
+(country, province/state, region, city, or worldwide — always asked, never assumed) and a set
+of expertise keywords, it reuses or builds a verified `university, department, department_url,
+faculty_list_url, note` table for that location, extracts professors from each faculty-list
+page, and scores each one's closeness to the keywords with a /5 rubric (five subscores A–E,
+each 0/0.5/1, computed by `score.py` — never by hand). Article discovery goes through the
+`scopus` skill rather than ad hoc web search (an AU-ID resolution, the professor's recent
+documents, `approved_publisher` as the quality bar), and correspondence to the keywords is
+checked against each article's own stated contribution via `extract-contributions`, never a
+guessed title match — matching this repo's own working norm that every piece of information is
+verified through `scopus`. A professor without at least two such recent (`pef_config.json`'s
+`recent_years_window`), approved-publisher articles is dropped. The output links each
+professor's name to their official page, their professional email as published there (with its
+source link — never a `mailto:` or a name-pattern guess), the score with subscores, and the two
+articles.
+
+Variants layer on top of the same workflow: **test mode** scores named candidates directly
+(any location); an **exclusion list** (Excel/CSV) removes professors via `exclusions.py`; an
+optional **reference file** of known reviewers is searched first via `file_search.py` (its
+declared languages and availability outrank web presumption, but never limit the search); and
+**batch allocation mode** processes several keyword sets at once (e.g. several funding
+applications) through `selections.py`'s registry, which enforces three hard rules by script,
+not by prose: a professor final for one set cannot be reused for another, every application's
+evaluators must come from distinct universities, and no evaluator may come from the
+application's own (applicant) university once that origin is declared.
+
+The data root (`<root>/<location-slug>/departments.csv`, `<root>/batches/<batch-slug>/
+selections.csv`) resolves from the `PROFESSOR_EXPERTISE_DATA` environment variable, defaulting
+to `~/workspace/professor-expertise` — repoint it by setting the variable, never by editing a
+script. The rubric's enforced constants (subscore values, retain threshold, university cap,
+recent-years window) live in `scripts/pef_config.json` with their provenance, not as literals in
+code. The skill reuses two sibling skills rather than reimplementing them: `scopus`
+(`scopus_api.py`, `download_pdf.py`) and `extract-contributions`.
+
+**Files:**
+- `.claude/skills/professor-expertise-finder/SKILL.md`
+- `.claude/skills/professor-expertise-finder/references/scoring.md` — the /5 rubric and its interpretation bands
+- `.claude/skills/professor-expertise-finder/scripts/pef_common.py` — shared helpers: `data_root()`, `slugify`, `norm`, `name_key`, `load_config()`, `load_column_hints()`, `write_json()`
+- `.claude/skills/professor-expertise-finder/scripts/pef_config.json` — enforced policy constants with provenance
+- `.claude/skills/professor-expertise-finder/scripts/pef_column_hints.json` — reference/exclusion-file column-name synonyms, as data rather than code
+- `.claude/skills/professor-expertise-finder/scripts/table.py` — location department-table lifecycle (check/init/validate)
+- `.claude/skills/professor-expertise-finder/scripts/score.py` — the /5 total, band, and retain-threshold check
+- `.claude/skills/professor-expertise-finder/scripts/exclusions.py` — apply an exclusion list to a ranking
+- `.claude/skills/professor-expertise-finder/scripts/file_search.py` — search an optional reviewers reference file first
+- `.claude/skills/professor-expertise-finder/scripts/selections.py` — the batch no-reuse / one-university / conflict-of-interest registry
+- `.claude/skills/professor-expertise-finder/scripts/Test/` — offline unit tests (no network, no API key)
 
 ### `wp-portfolio-sync` — one-shot CIHR XML to WordPress migration
 

@@ -6,7 +6,7 @@ an untrusted diff, so everything that touches GitHub with model-written text liv
 step that holds no key and no agent:
 
   check-tools   fail when the session's own tool list (the `init` message of the action's
-                execution file) contains a forbidden tool, or cannot be read at all
+                execution file) holds a tool outside the allowlist, or cannot be read at all
   extract       pull the model's final reply out of the execution file
   post-pr       sanitise it and create or update ONE marked comment on the pull request
   mirror-issue  copy that comment onto the linked Issue, once, updated in place
@@ -17,6 +17,7 @@ provenance are in review-mirror.json beside this file (R0, R4). Exit codes (R12)
 clean skip, 1 failure, 2 refusal by design (a forbidden tool, a malformed argument).
 """
 import argparse
+import html
 import json
 import os
 import re
@@ -27,8 +28,8 @@ from pathlib import Path
 CONFIG_PATH = Path(__file__).resolve().with_name("review-mirror.json")
 REQUIRED_KEYS = (
     "review_marker", "bot_login", "pr_marker_template", "issue_marker_template", "allowed_tools",
-    "author_pattern", "repo_pattern", "gh_timeout_seconds", "gh_retries",
-    "secret_patterns",
+    "author_pattern", "repo_pattern", "gh_timeout_seconds", "gh_retries", "secret_patterns",
+    "comment_max_chars",
 )
 EXIT_OK, EXIT_FAIL, EXIT_REFUSED = 0, 1, 2
 
@@ -42,7 +43,7 @@ class ToolListError(Exception):
 
 
 class ReviewError(Exception):
-    """The model reply, a comment or an argument cannot be used as a review."""
+    """The model reply, a comment or a GitHub answer cannot be used."""
 
 
 def load_config(path):
@@ -70,8 +71,37 @@ def load_config(path):
 
 
 def val(cfg, key):
-    """Purpose: the value of one configured key. Inputs: cfg (dict), key (str). Outputs: any."""
+    """
+    Purpose:
+        Return the value of one configured key.
+
+    Inputs:
+        cfg (dict): the loaded configuration.
+        key (str): a key of review-mirror.json.
+
+    Outputs:
+        value (any): the key's "value" entry.
+    """
     return cfg[key]["value"]
+
+
+def valid_login(login, cfg):
+    """
+    Purpose:
+        Accept a GitHub login only when it matches the configured username pattern in full.
+
+    Details:
+        A full match, so a trailing newline does not pass. A '[bot]' account does not match, on
+        purpose: it can neither be mentioned usefully nor assigned.
+
+    Inputs:
+        login (str | None): the candidate login.
+        cfg (dict): the loaded configuration.
+
+    Outputs:
+        login (str | None): the login unchanged when valid, else None.
+    """
+    return login if isinstance(login, str) and re.fullmatch(val(cfg, "author_pattern"), login) else None
 
 
 def find_issue_number(pr_body):
@@ -80,7 +110,8 @@ def find_issue_number(pr_body):
         Return the issue number named by a line that STARTS with Fixes or Closes.
 
     Details:
-        A sentence that merely contains the words, or a quoted line, never selects an issue.
+        A sentence that merely contains the words, a quoted line, a fenced block and an HTML
+        comment never select an issue (a template example must not pick Issue #1).
 
     Inputs:
         pr_body (str | None): the pull request description.
@@ -108,34 +139,78 @@ def find_issue_number(pr_body):
     return None
 
 
-_LINK = re.compile(r"(!?)\[([^\]\n]*)\]\(([^)\s]*)[^)\n]*\)")
-_REPO_REF = re.compile(r"(?<![`\w/])([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)")
-_ISSUE_REF = re.compile(r"(?<![`\w/&])#([0-9]+)\b")
-_MENTION = re.compile(r"(?<![`\w@/])@([A-Za-z0-9_][A-Za-z0-9_/-]*)")
-_URL = re.compile(r"(?<![`\w/&])((?:https?://|www\.)[^\s)>\]`]+)")
-_GH_REF = re.compile(r"(?<![`\w/&-])(GH-[0-9]+)\b")
+# One alternation, applied in ONE pass, leftmost match first. Nothing a rule emits is looked at
+# again, so a mention inside a URL cannot break out of the code span that wraps the URL, and there
+# is no lookbehind to fool (an underscore, a backslash or an entity in front of a token).
+_TOKEN = re.compile("|".join((
+    r"(?P<link>(?P<bang>!?)\[(?P<ltext>[^\]\n]*)\]\((?P<ltarget>[^)\s]*)[^)\n]*\))",
+    r"(?P<url>(?:https?://|www\.)[^\s)>\]\x00]+)",
+    r"(?P<gh>GH-[0-9]+\b)",
+    r"(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)",
+    r"(?P<issue>#[0-9]+\b)",
+    r"(?P<mention>@[A-Za-z0-9_][A-Za-z0-9_/-]*)",
+    r"(?P<bracket>[\[\]])",
+)))
 _HTML = re.compile(r"<(?=[!/A-Za-z?])")
-_BRACKET = re.compile(r"(?<!\\)([\[\]])")
-# A BALANCED code span: the same run of backticks opens and closes it, the opener is not
-# backslash-escaped, and it stays on ONE line. Only these are inert in GFM, so only these are left
-# alone. A backtick that never closes is literal text, and a span that would cross a line is
-# treated as no span at all (stricter than GFM on purpose: a line starting a list, quote or
-# heading ends the paragraph, so a multi-line span can hide live text on its second line).
-_SPAN = re.compile(r"(?<!\\)(`+)(?!`)([^\n]+?)(?<!`)\1(?!`)")
+# A BALANCED code span: the same run of backticks opens and closes it, the opener is neither
+# escaped nor the tail of a longer run, and it stays on ONE line. Only these are inert in GFM, so
+# only these are left alone. A span that would cross a line is treated as no span at all (stricter
+# than GFM on purpose: a list, quote or heading line ends the paragraph, so a multi-line span can
+# hide live text on its second line).
+_SPAN = re.compile(r"(?<![`\\])(`+)(?!`)([^\n]+?)(?<!`)\1(?!`)")
+
+
+def _replace_token(match):
+    """
+    Purpose:
+        Turn one matched token into inert text.
+
+    Inputs:
+        match (re.Match): a match of _TOKEN.
+
+    Outputs:
+        text (str): a code span around the token, the link text plus its target in a code span,
+        or an entity for a square bracket.
+    """
+    kind = match.lastgroup
+    if kind == "bracket":
+        return "&#91;" if match.group(0) == "[" else "&#93;"
+    if kind == "link":
+        text = _tokens(match.group("ltext")) or "link"
+        target = match.group("ltarget").replace("\x00", "'").replace("\x01", "")
+        return "%s (`%s`)" % (text, target) if target else text
+    return "`%s`" % match.group(0)
+
+
+def _tokens(segment):
+    """Purpose: run the single token pass over text that holds no balanced code span. Inputs:
+    segment (str). Outputs: str."""
+    return _TOKEN.sub(_replace_token, segment)
 
 
 def _neutralise(segment):
-    """Purpose: make one stretch of text, outside any balanced code span, inert. Inputs:
-    segment (str). Outputs: str."""
-    out = segment.replace("`", "&#96;")
-    out = _HTML.sub("&lt;", out)
-    out = _LINK.sub(lambda m: "%s (`%s`)" % (m.group(2) or "link", m.group(3)) if m.group(3) else m.group(2), out)
-    out = _URL.sub(lambda m: "`%s`" % m.group(1), out)
-    out = _GH_REF.sub(lambda m: "`%s`" % m.group(1), out)
-    out = _REPO_REF.sub(lambda m: "`%s`" % m.group(1), out)
-    out = _ISSUE_REF.sub(lambda m: "`#%s`" % m.group(1), out)
-    out = _MENTION.sub(lambda m: "`@%s`" % m.group(1), out)
-    return _BRACKET.sub(r"\\\1", out)
+    """
+    Purpose:
+        Make one stretch of text, outside any balanced code span, inert.
+
+    Details:
+        Character references are decoded first (so &#64; is seen as @). Every backtick and
+        backslash of the text is held as a control placeholder while the token pass runs, so the
+        pass can neither read them nor be fooled by them, and becomes an entity afterwards (so
+        nothing can escape or open a span, and the '#96' of an entity is never read as a
+        reference). A '<' that starts a tag or a comment is escaped. Each output decodes back to
+        what this function produced it from, so a second pass changes nothing.
+
+    Inputs:
+        segment (str): text outside balanced code spans.
+
+    Outputs:
+        text (str): the neutralised text.
+    """
+    out = html.unescape(segment).replace("\x00", "").replace("\x01", "")
+    out = out.replace("`", "\x00").replace("\\", "\x01")
+    out = _tokens(_HTML.sub("&lt;", out))
+    return out.replace("\x00", "&#96;").replace("\x01", "&#92;")
 
 
 def sanitize(text, secret_patterns=()):
@@ -145,12 +220,10 @@ def sanitize(text, secret_patterns=()):
         image, no raw HTML, no secret-shaped token.
 
     Details:
-        Balanced code spans are kept as written. In everything else a lone backtick becomes
-        &#96; (it would otherwise shield the text after it, which GFM still renders live),
-        mentions, #N and owner/repo#N references and bare URLs go into code spans, links and
-        images become their text plus the target in a code span, a '<' that starts a tag or a
-        comment is escaped, and every square bracket is escaped so a reference-style link or
-        image cannot form. Applying it twice changes nothing more.
+        Balanced code spans are kept as written. In everything else mentions, #N, GH-N and
+        owner/repo#N references and bare URLs go into code spans, links and images become their
+        text plus the target in a code span, and every square bracket is an entity so no
+        reference-style link or image can form. Applying it twice changes nothing more.
 
     Inputs:
         text (str): the model's reply.
@@ -167,7 +240,12 @@ def sanitize(text, secret_patterns=()):
         pieces.append(span.group(0))
         last = span.end()
     pieces.append(_neutralise(text[last:]))
-    return "".join(pieces)
+    out = ""
+    for piece in pieces:
+        # Two code spans that touch would merge into one run of backticks and change which text
+        # is inside a span, so a space keeps them apart.
+        out += (" " if out.endswith("`") and piece.startswith("`") else "") + piece
+    return out
 
 
 def select_comment(comments, marker, login):
@@ -188,6 +266,19 @@ def select_comment(comments, marker, login):
 
 
 def _init_tools(messages):
+    """
+    Purpose:
+        Read the tool list from the session's `init` message.
+
+    Inputs:
+        messages (list): the parsed execution file.
+
+    Outputs:
+        tools (list[str]): the tool names.
+
+    Raises:
+        ToolListError: no system/init message carries a tools list.
+    """
     for msg in messages:
         if isinstance(msg, dict) and msg.get("type") == "system" and msg.get("subtype") == "init":
             tools = msg.get("tools")
@@ -207,7 +298,7 @@ def check_tools(messages, cfg):
         cfg (dict): the loaded configuration.
 
     Outputs:
-        offenders (list[str]): forbidden tools found, empty when the session is clean.
+        offenders (list[str]): tools outside the allowlist, empty when the session is clean.
 
     Raises:
         ToolListError: no readable init message (R8: never vouch for what cannot be read).
@@ -221,16 +312,19 @@ def extract_review(messages, cfg):
     Purpose:
         Return the model's final reply, refusing anything that is not a marked review.
 
+    Details:
+        Leading blank space is tolerated, since a paid review must not be lost over a newline.
+
     Inputs:
         messages (list): the parsed execution file.
         cfg (dict): the loaded configuration.
 
     Outputs:
-        review (str): the reply text, starting with the configured marker line.
+        review (str): the reply text, stripped, starting with the configured marker line.
 
     Raises:
         ReviewError: no result message, an error result, an empty reply, or a reply whose first
-            line is not the marker.
+            non-blank line is not the marker.
     """
     results = [m for m in messages if isinstance(m, dict) and m.get("type") == "result"]
     if not results:
@@ -239,13 +333,33 @@ def extract_review(messages, cfg):
     text = last.get("result")
     if last.get("subtype") != "success" or last.get("is_error") or not isinstance(text, str) or not text.strip():
         raise ReviewError("the session ended without a usable reply (subtype=%s)" % last.get("subtype"))
+    text = text.strip()
     if not text.startswith(val(cfg, "review_marker")):
         raise ReviewError("the reply does not start with the required marker line")
     return text
 
 
 def _quote(text):
+    """Purpose: prefix every line with a blockquote marker. Inputs: text (str). Outputs: str."""
     return "\n".join("> " + ln if ln else ">" for ln in text.splitlines())
+
+
+def _fit(text, cap):
+    """
+    Purpose:
+        Keep a comment under GitHub's length limit, saying so when text was cut.
+
+    Inputs:
+        text (str): the comment body.
+        cap (int): the configured maximum number of characters.
+
+    Outputs:
+        body (str): the text unchanged, or cut with a visible quoted notice, never longer than cap.
+    """
+    if len(text) <= cap:
+        return text
+    notice = "\n\n> [review cut at %d characters to fit a GitHub comment]\n" % cap
+    return text[:cap - len(notice)].rstrip() + notice
 
 
 def build_pr_body(review, sha, pr, cfg):
@@ -260,16 +374,21 @@ def build_pr_body(review, sha, pr, cfg):
         cfg (dict): the loaded configuration.
 
     Outputs:
-        body (str): the comment text.
+        body (str): the comment text, within the configured length cap.
     """
     marker = val(cfg, "pr_marker_template").format(pr=pr)
-    return "%s\nReviewed commit: `%s`\n\n%s\n" % (marker, sha, _quote(sanitize(review, val(cfg, "secret_patterns"))))
+    quoted = _quote(sanitize(review, val(cfg, "secret_patterns")))
+    return _fit("%s\nReviewed commit: `%s`\n\n%s\n" % (marker, sha, quoted), val(cfg, "comment_max_chars"))
 
 
 def build_issue_body(quoted_review, author, pr, first, cfg=None):
     """
     Purpose:
         Build the Issue copy: hidden marker, author mention on creation only, review text.
+
+    Details:
+        An author that is not a plain username (a '[bot]' account, a hostile value) is simply not
+        mentioned. The comment is still posted.
 
     Inputs:
         quoted_review (str): the already sanitised, quoted review.
@@ -279,17 +398,14 @@ def build_issue_body(quoted_review, author, pr, first, cfg=None):
         cfg (dict | None): configuration, defaulting to the shipped file.
 
     Outputs:
-        body (str): the comment text.
-
-    Raises:
-        ReviewError: the author login does not match the GitHub username pattern.
+        body (str): the comment text, within the configured length cap.
     """
     cfg = cfg or load_config(CONFIG_PATH)
-    if not re.match(val(cfg, "author_pattern"), author or ""):
-        raise ReviewError("author is not a valid GitHub login")
     marker = val(cfg, "issue_marker_template").format(pr=pr)
-    head = "@%s " % author if first else ""
-    return "%s\n%sReview of pull request #%s, kept up to date by CI.\n\n%s\n" % (marker, head, pr, quoted_review)
+    login = valid_login(author, cfg)
+    head = "@%s " % login if first and login else ""
+    body = "%s\n%sReview of pull request #%s, kept up to date by CI.\n\n%s\n" % (marker, head, pr, quoted_review)
+    return _fit(body, val(cfg, "comment_max_chars"))
 
 
 def make_runner(cfg):
@@ -301,7 +417,7 @@ def make_runner(cfg):
         cfg (dict): the loaded configuration.
 
     Outputs:
-        runner (callable): runner(args, stdin=None) -> (returncode, stdout).
+        runner (callable): runner(args, stdin=None) -> (returncode, stdout or stderr).
     """
     timeout, retries = val(cfg, "gh_timeout_seconds"), val(cfg, "gh_retries")
 
@@ -322,6 +438,21 @@ def make_runner(cfg):
 
 
 def _gh_json(runner, args, stdin=None):
+    """
+    Purpose:
+        Run one gh call and parse its JSON answer.
+
+    Inputs:
+        runner (callable): the gh runner.
+        args (list[str]): arguments after `gh`.
+        stdin (str | None): text sent on standard input.
+
+    Outputs:
+        data (any): the parsed JSON, {} for an empty answer.
+
+    Raises:
+        ReviewError: gh failed, or answered text that is not JSON.
+    """
     rc, out = runner(args, stdin)
     if rc != 0:
         raise ReviewError("gh %s failed: %s" % (" ".join(args[:3]), (out or "").strip()[:200]))
@@ -332,36 +463,47 @@ def _gh_json(runner, args, stdin=None):
 
 
 def _list_comments(runner, repo, number):
+    """
+    Purpose:
+        List every comment of an issue or pull request, across pages.
+
+    Inputs:
+        runner (callable): the gh runner.
+        repo (str): owner/name.
+        number (int): issue or pull request number.
+
+    Outputs:
+        comments (list[dict]): the flattened comments.
+
+    Raises:
+        ReviewError: gh failed.
+    """
     pages = _gh_json(runner, ["api", "--paginate", "--slurp", "repos/%s/issues/%s/comments" % (repo, number)])
     return [c for page in pages for c in (page if isinstance(page, list) else [page])]
 
 
-_UNSET = object()
-
-
-def _upsert(runner, repo, number, marker, login, body, dry_run, read=True, existing=_UNSET):
+def _upsert(runner, repo, number, body, existing, dry_run):
     """
     Purpose:
-        Create the marked comment, or update the existing one in place.
+        Create the comment, or update the one the caller already found, in place.
 
     Inputs:
         runner (callable): the gh runner.
-        repo, number, marker, login, body: where to write, how to find our own comment, its text.
+        repo (str): owner/name.
+        number (int): the issue or pull request number.
+        body (str): the comment text.
+        existing (dict | None): the marked comment found by the caller, None when there is none.
         dry_run (bool): when true nothing is written.
-        read (bool): when false the existing comments are not even listed (post-pr dry run).
-        existing (dict | None): the marked comment when the caller already listed the comments,
-            so they are not listed a second time; left unset, they are listed here.
 
     Outputs:
         result (tuple): (action, comment id or None, existed).
+
+    Raises:
+        ReviewError: a gh write failed.
     """
-    if dry_run and not read:
-        return "would-upsert", None, False
-    if existing is _UNSET:
-        existing = select_comment(_list_comments(runner, repo, number), marker, login)
-    payload = json.dumps({"body": body})
     if dry_run:
         return ("would-update" if existing else "would-create", existing["id"] if existing else None, bool(existing))
+    payload = json.dumps({"body": body})
     if existing:
         _gh_json(runner, ["api", "-X", "PATCH", "repos/%s/issues/comments/%s" % (repo, existing["id"]),
                           "--input", "-"], payload)
@@ -372,6 +514,19 @@ def _upsert(runner, repo, number, marker, login, body, dry_run, read=True, exist
 
 
 def _read_json(path):
+    """
+    Purpose:
+        Read a JSON file written by the action.
+
+    Inputs:
+        path (str): the file.
+
+    Outputs:
+        data (any): the parsed JSON.
+
+    Raises:
+        ReviewError: the file is missing or is not JSON.
+    """
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -379,10 +534,23 @@ def _read_json(path):
 
 
 def _report(**fields):
+    """Purpose: print the machine-readable JSON report (R17). Inputs: report fields. Outputs:
+    none, one JSON line on stdout."""
     print(json.dumps(fields, sort_keys=True))
 
 
 def _cmd_check_tools(args, cfg):
+    """
+    Purpose:
+        Subcommand check-tools: refuse a session whose tool list leaves the allowlist.
+
+    Inputs:
+        args (Namespace): parsed arguments (execution_file).
+        cfg (dict): the loaded configuration.
+
+    Outputs:
+        code (int): 0 clean, 1 list unreadable, 2 a tool outside the allowlist. JSON on stdout.
+    """
     try:
         offenders = check_tools(_read_json(args.execution_file), cfg)
     except (ToolListError, ReviewError) as exc:
@@ -391,12 +559,23 @@ def _cmd_check_tools(args, cfg):
         return EXIT_FAIL
     _report(ok=not offenders, forbidden=offenders)
     if offenders:
-        print("[CI] forbidden tools in the model session: %s" % ", ".join(offenders), file=sys.stderr)
+        print("[CI] tools outside the allowlist in the model session: %s" % ", ".join(offenders), file=sys.stderr)
         return EXIT_REFUSED
     return EXIT_OK
 
 
 def _cmd_extract(args, cfg):
+    """
+    Purpose:
+        Subcommand extract: write the model's marked reply to a file.
+
+    Inputs:
+        args (Namespace): parsed arguments (execution_file, out).
+        cfg (dict): the loaded configuration.
+
+    Outputs:
+        code (int): 0 written, 1 no usable reply (nothing is written). JSON on stdout.
+    """
     try:
         review = extract_review(_read_json(args.execution_file), cfg)
     except ReviewError as exc:
@@ -409,24 +588,51 @@ def _cmd_extract(args, cfg):
 
 
 def _validate_target(args, cfg):
-    if not re.fullmatch(r"[0-9]{1,9}", args.pr) or not re.match(val(cfg, "repo_pattern"), args.repo):
+    """
+    Purpose:
+        Refuse a malformed --pr or --repo before it reaches a gh argument.
+
+    Inputs:
+        args (Namespace): parsed arguments (pr, repo).
+        cfg (dict): the loaded configuration.
+
+    Outputs:
+        ok (bool): true when both match their pattern in full.
+    """
+    if not re.fullmatch(r"[0-9]{1,9}", args.pr) or not re.fullmatch(val(cfg, "repo_pattern"), args.repo):
         print("[CI] refused: malformed --pr or --repo", file=sys.stderr)
         return False
     return True
 
 
 def _cmd_post_pr(args, cfg, runner):
+    """
+    Purpose:
+        Subcommand post-pr: create or update the one marked pull request comment.
+
+    Inputs:
+        args (Namespace): parsed arguments (repo, pr, sha, body_file, output_file, dry_run).
+        cfg (dict): the loaded configuration.
+        runner (callable): the gh runner.
+
+    Outputs:
+        code (int): 0 posted or planned, 1 failure, 2 malformed argument. Appends
+        comment_id=<id> to --output-file when given. A dry run calls gh not at all.
+    """
     if not _validate_target(args, cfg):
         return EXIT_REFUSED
     if not re.fullmatch(r"[0-9a-f]{40}", args.sha):
         print("[CI] refused: malformed --sha", file=sys.stderr)
         return EXIT_REFUSED
     pr = int(args.pr)
+    if args.dry_run:
+        _report(ok=True, action="would-upsert", comment_id=None)
+        return EXIT_OK
     try:
-        review = Path(args.body_file).read_text(encoding="utf-8")
-        body = build_pr_body(review, args.sha, pr, cfg)
-        action, cid, _ = _upsert(runner, args.repo, pr, val(cfg, "pr_marker_template").format(pr=pr),
-                                 val(cfg, "bot_login"), body, args.dry_run, read=False)
+        body = build_pr_body(Path(args.body_file).read_text(encoding="utf-8"), args.sha, pr, cfg)
+        marker = val(cfg, "pr_marker_template").format(pr=pr)
+        existing = select_comment(_list_comments(runner, args.repo, pr), marker, val(cfg, "bot_login"))
+        action, cid, _ = _upsert(runner, args.repo, pr, body, existing, False)
     except (OSError, ReviewError) as exc:
         print("[CI] post-pr failed: %s" % exc, file=sys.stderr)
         _report(ok=False, reason=str(exc))
@@ -439,6 +645,23 @@ def _cmd_post_pr(args, cfg, runner):
 
 
 def _cmd_mirror(args, cfg, runner, env):
+    """
+    Purpose:
+        Subcommand mirror-issue: copy the bot's PR comment onto the Issue named by `Fixes #N`.
+
+    Details:
+        A dry run still READS (the Issue, the PR comment, the Issue's comments) and writes
+        nothing. A missing or foreign PR comment is a failure, never a silent skip.
+
+    Inputs:
+        args (Namespace): parsed arguments (repo, pr, author, pr_comment_id, dry_run).
+        cfg (dict): the loaded configuration.
+        runner (callable): the gh runner.
+        env (dict): environment, PR_BODY is read from it.
+
+    Outputs:
+        code (int): 0 mirrored or cleanly skipped, 1 failure, 2 malformed argument.
+    """
     if not _validate_target(args, cfg) or not re.fullmatch(r"[0-9]{1,15}", args.pr_comment_id):
         return EXIT_REFUSED
     issue = find_issue_number(env.get("PR_BODY", ""))
@@ -457,20 +680,20 @@ def _cmd_mirror(args, cfg, runner, env):
         pr_marker = val(cfg, "pr_marker_template").format(pr=pr)
         if (source.get("user") or {}).get("login") != val(cfg, "bot_login") or pr_marker not in (source.get("body") or ""):
             raise ReviewError("the review comment %s is missing or not written by %s" % (args.pr_comment_id, val(cfg, "bot_login")))
-        # The PR body is already sanitised and quoted by build_pr_body; drop only its marker line
-        # and run sanitize again, which is idempotent, in case the comment was edited by hand.
+        # The PR comment is already sanitised and quoted by build_pr_body. Drop only its marker
+        # line and sanitise again (stable on its own output) in case it was edited by hand.
         quoted = sanitize("\n".join(ln for ln in source["body"].splitlines() if pr_marker not in ln).strip(),
                           val(cfg, "secret_patterns"))
         issue_marker = val(cfg, "issue_marker_template").format(pr=pr)
         existing = select_comment(_list_comments(runner, args.repo, issue), issue_marker, val(cfg, "bot_login"))
         body = build_issue_body(quoted, args.author, pr, existing is None, cfg)
-        action, cid, existed = _upsert(runner, args.repo, issue, issue_marker, val(cfg, "bot_login"), body,
-                                       args.dry_run, existing=existing)
-        if not existed and not args.dry_run:
-            rc, out = runner(["api", "-X", "POST", "repos/%s/issues/%s/assignees" % (args.repo, issue), "--input", "-"],
-                             json.dumps({"assignees": [args.author]}))
+        action, cid, existed = _upsert(runner, args.repo, issue, body, existing, args.dry_run)
+        login = valid_login(args.author, cfg)
+        if login and not existed and not args.dry_run:
+            rc, _ = runner(["api", "-X", "POST", "repos/%s/issues/%s/assignees" % (args.repo, issue), "--input", "-"],
+                           json.dumps({"assignees": [login]}))
             if rc != 0:
-                print("[CI] could not assign %s; the comment was still posted." % args.author)
+                print("[CI] could not assign %s; the comment was still posted." % login)
     except ReviewError as exc:
         print("[CI] mirror-issue failed: %s" % exc, file=sys.stderr)
         _report(ok=False, reason=str(exc))

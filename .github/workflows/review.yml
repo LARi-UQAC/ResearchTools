@@ -114,8 +114,11 @@ jobs:
           elif [ "$(wc -c < "$RUNNER_TEMP/pr.full.diff")" -gt "$MAX_DIFF_BYTES" ]; then
             # iconv -c drops a multibyte character cut in half. The last, partial line is dropped
             # only when the cut holds a newline, so one oversized line is kept rather than erased.
-            head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/pr.full.diff" | iconv -c -f UTF-8 -t UTF-8 > "$RUNNER_TEMP/pr.diff"
-            if [ "$(wc -l < "$RUNNER_TEMP/pr.diff")" -gt 0 ]; then sed -i '$d' "$RUNNER_TEMP/pr.diff"; fi
+            # glibc iconv -c exits 1 when it drops a byte, so its status is ignored (|| true).
+            head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/pr.full.diff" | iconv -c -f UTF-8 -t UTF-8 > "$RUNNER_TEMP/pr.diff" || true
+            if [ "$(tail -c1 "$RUNNER_TEMP/pr.diff" | wc -l)" -eq 0 ] && [ "$(wc -l < "$RUNNER_TEMP/pr.diff")" -gt 0 ]; then
+              sed -i '$d' "$RUNNER_TEMP/pr.diff"
+            fi
             printf '\n[DIFF TRUNCATED at %s bytes: review the part above and say so]\n' "$MAX_DIFF_BYTES" >> "$RUNNER_TEMP/pr.diff"
           else
             mv "$RUNNER_TEMP/pr.full.diff" "$RUNNER_TEMP/pr.diff"

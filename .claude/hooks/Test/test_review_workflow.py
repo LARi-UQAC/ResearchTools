@@ -32,7 +32,7 @@ DENIED_ROOTS = ("/proc", "/sys", "/run")
 # What GitHub still renders as a code span: the same run of backticks opens and closes it, the
 # opener is not backslash-escaped, and it never crosses a blank line. Kept independent of the
 # script's own pattern, so the test can disagree with the code it checks.
-GFM_SPAN = re.compile(r"(?<!\\)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.S)
+GFM_SPAN = re.compile(r"(?<![`\\])(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.S)
 
 
 def load_module():
@@ -170,8 +170,9 @@ class TestWorkflowStatic(unittest.TestCase):
         # could hand the model half a multibyte character. Static check of the guard, since a shell
         # snippet is not run here.
         step = " ".join(b for b in run_blocks(self.text) if "pr.full.diff" in b)
-        self.assertIn("iconv -c -f UTF-8 -t UTF-8", step)
-        self.assertRegex(step, r'wc -l < "\$RUNNER_TEMP/pr\.diff"\)" -gt 0 \]; then sed -i')
+        self.assertRegex(step, r"iconv -c -f UTF-8 -t UTF-8 > \S+ \|\| true")   # glibc iconv -c exits 1 when it drops bytes
+        self.assertIn('tail -c1 "$RUNNER_TEMP/pr.diff"', step)                   # drop the last line only if it is partial
+        self.assertRegex(step, r'wc -l < "\$RUNNER_TEMP/pr\.diff"\)" -gt 0 \]')
         self.assertIn("NO REVIEWABLE CHANGE", step)
 
     def test_diff_excludes_generated_mirrors_and_names_them(self):
@@ -254,7 +255,9 @@ class TestPureLogic(unittest.TestCase):
         span = GFM_SPAN
         for raw in ("`@victim look", "`#12 x", "`owner/repo#5 y", "a ` b @victim", "``@victim",
                     "`a\n\n@victim ping`",          # code review round 1: a span never crosses a blank line
-                    "\\`@victim` tail"):            # code review round 1: a backslash-escaped backtick opens nothing
+                    "\\`@victim` tail",             # code review round 1: a backslash-escaped backtick opens nothing
+                    "``@victim`",                   # security round 2: a longer opening run needs an equal closer
+                    "`a\n- @victim`"):              # a list line ends the paragraph, so no span crosses it
             out = s(raw)
             live = span.sub("", out)  # what GitHub still renders as live text
             self.assertNotIn("@victim", live, raw)
@@ -280,6 +283,44 @@ class TestPureLogic(unittest.TestCase):
         self.assertNotIn("www.", live)
         self.assertNotIn("GH-123", live)
         self.assertIn("done", live)
+
+    def test_a_mention_inside_a_url_or_link_cannot_break_out_of_its_code_span(self):
+        # Code review round 2: chained substitutions wrapped the URL, then matched @foo INSIDE the
+        # wrapper, and the nested backticks closed the span early.
+        for raw in ("see https://a.b/c?x=@foo now", "https://a.b/?q=#12", "[l](https://a.b/?q=@bob)",
+                    "[@bob](http://x.example)", "[a](http://x`@bob`)", "www.a.b/@foo"):
+            live = GFM_SPAN.sub("", self.mod.sanitize(raw))
+            self.assertNotIn("@foo", live, raw)
+            self.assertNotIn("@bob", live, raw)
+            self.assertNotRegex(live, r"(?<![\w/])#12", raw)
+
+    def test_html_character_references_cannot_smuggle_a_mention_or_reference(self):
+        # Code review round 2: &#64; and &#35; decode to @ and # after the sanitiser has looked.
+        for raw in ("&#64;victim", "&#x40;victim", "&#35;123 done", "&commat;victim"):
+            live = GFM_SPAN.sub("", self.mod.sanitize(raw))
+            self.assertNotIn("@victim", live, raw)
+            self.assertNotIn("&#64;", live, raw)
+            self.assertNotRegex(live, r"(?<![\w/])#123", raw)
+        text = "AT&T and 3 < 4 and a ` b"
+        self.assertEqual(self.mod.sanitize(self.mod.sanitize(text)), self.mod.sanitize(text))
+
+    def test_underscore_and_backslash_do_not_shield_a_token_and_sanitising_is_stable(self):
+        # Security round 2, inputs observed live through GitHub's own markdown renderer: GitHub
+        # links a mention after `_` or `*`, and a backslash before a token used to escape the
+        # backtick that was meant to wrap it, leaving a live link or reference beside it.
+        raws = ["_@octocat_", "**@octocat**", "\\#1", "\\GH-1", "\\octocat/hello-world#1", "\\@user",
+                "\\http://evil.example/x", "http://x.example/a;@octocat,", "https://x.example/a?q=#1",
+                "http://x.example/?u=GH-1", "http://x.example/?r=octocat/hello-world#1", "`` ` ``@user",
+                "&lt;!-- rt-review:pr-5 --&gt;", "a&#96;@b", "x [a][r]\n[r]: //e.example/i.png"]
+        for raw in raws:
+            once = self.mod.sanitize(raw)
+            live = re.sub(r"&#[0-9]+;", "", GFM_SPAN.sub("", once))  # an entity is text, not a reference
+            self.assertNotRegex(live, r"@[A-Za-z]", raw)
+            self.assertNotRegex(live, r"#[0-9]", raw)
+            self.assertNotIn("GH-1", live, raw)
+            self.assertNotIn("http://", live, raw)
+            self.assertNotIn("<!--", once, raw)
+            self.assertEqual(self.mod.sanitize(once), once, "not stable: " + raw)
 
     def test_reference_style_links_and_images_are_neutralised(self):
         s = self.mod.sanitize
@@ -341,10 +382,37 @@ class TestPureLogic(unittest.TestCase):
             [{"type": "result", "subtype": "success", "is_error": True, "result": marker}],
             [{"type": "result", "subtype": "error_max_turns", "is_error": True}],
             [{"type": "result", "subtype": "success", "is_error": False, "result": "no marker here"}],
-            [{"type": "result", "subtype": "success", "is_error": False, "result": "  \n" + marker}],
+            [{"type": "result", "subtype": "success", "is_error": False, "result": "intro\n" + marker}],
         ):
             with self.assertRaises(self.mod.ReviewError):
                 self.mod.extract_review(msgs, self.cfg)
+
+    def test_extract_review_tolerates_leading_blank_space_from_the_model(self):
+        # Code review round 2: a paid review must not be thrown away over a leading newline.
+        marker = self.cfg["review_marker"]["value"]
+        msgs = [{"type": "result", "subtype": "success", "is_error": False, "result": "\n  " + marker + "\nbody\n"}]
+        self.assertEqual(self.mod.extract_review(msgs, self.cfg), marker + "\nbody")
+
+    def test_validation_uses_a_full_match_and_a_bot_author_only_loses_the_mention(self):
+        mod = self.mod
+        self.assertIsNone(mod.valid_login("abc\n", self.cfg))
+        self.assertIsNone(mod.valid_login("some-app[bot]", self.cfg))
+        self.assertEqual(mod.valid_login("octo-cat", self.cfg), "octo-cat")
+        body = mod.build_issue_body("> text", "some-app[bot]", 9, True, self.cfg)
+        self.assertNotIn("@some-app", body)
+        self.assertTrue(body.startswith("<!-- rt-review-mirror:pr-9 -->"))
+
+    def test_comment_bodies_are_cut_to_the_configured_cap_with_a_notice(self):
+        cap = self.mod.val(self.cfg, "comment_max_chars")
+        self.assertLess(cap, 65536)
+        long_review = "## Automated multi-dimension review\n" + "\n".join("- item %d" % i for i in range(cap))
+        pr = self.mod.build_pr_body(long_review, "a" * 40, 9, self.cfg)
+        self.assertLessEqual(len(pr), cap)
+        self.assertIn("cut at", pr)
+        issue = self.mod.build_issue_body("> " + "x" * (cap + 500), "octo", 9, True, self.cfg)
+        self.assertLessEqual(len(issue), cap)
+        short = self.mod.build_pr_body("## Automated multi-dimension review\nok", "a" * 40, 9, self.cfg)
+        self.assertNotIn("cut at", short)
 
     def test_bodies_carry_marker_sha_and_blockquote_and_ping_only_on_create(self):
         pr = self.mod.build_pr_body("## Automated multi-dimension review\n@x said #4", "a" * 40, 9, self.cfg)
@@ -357,8 +425,8 @@ class TestPureLogic(unittest.TestCase):
         self.assertIn("@octo-cat", created)
         self.assertNotIn("@octo-cat", updated)
         self.assertTrue(updated.startswith("<!-- rt-review-mirror:pr-9 -->"))
-        with self.assertRaises(self.mod.ReviewError):
-            self.mod.build_issue_body("> text", "bad login\n@evil", 9, True)
+        hostile = self.mod.build_issue_body("> text", "bad login\n@evil", 9, True)
+        self.assertNotIn("evil", hostile)
 
 
 class FakeGh:
@@ -468,6 +536,16 @@ class TestCommands(unittest.TestCase):
             listings = [c for c in gh.calls if "--paginate" in c[0] and "issues/12/comments" in " ".join(c[0])]
             self.assertEqual(len(listings), 1)
         self.assertFalse(any("@octo" in (c[1] or "") for c in second.writes()))
+
+    def test_mirror_with_a_bot_author_posts_without_mention_or_assignment(self):
+        review = "<!-- rt-review:pr-9 -->\n> " + MARK
+        gh = FakeGh([("api repos/o/r/issues/12", '{"state": "open"}'), ("issues/comments/77", self.pr_comment(review)),
+                     ("-X POST repos/o/r/issues/12/comments", '{"id": 5}'), ("issues/12/comments", "[[]]")])
+        rc = self.mod.main(["mirror-issue", "--repo", "o/r", "--pr", "9", "--author", "some-app[bot]",
+                            "--pr-comment-id", "77"], runner=gh, env={"PR_BODY": "Fixes #12"})
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(gh.writes()), 1)
+        self.assertNotIn("@some-app", gh.writes()[0][1])
 
     def test_mirror_survives_an_assignee_failure(self):
         review = "<!-- rt-review:pr-9 -->\n> " + MARK

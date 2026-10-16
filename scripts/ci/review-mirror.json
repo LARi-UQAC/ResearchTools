@@ -31,6 +31,10 @@
     "value": ["sk-ant-[A-Za-z0-9_-]{10,}", "gh[pousr]_[A-Za-z0-9]{20,}", "github_pat_[A-Za-z0-9_]{20,}"],
     "provenance": "specified: public token formats of the Anthropic API key and of GitHub tokens, the two secrets this workflow handles; chosen by the operator 2026-10-16 as defence in depth, since the reply is posted publicly"
   },
+  "comment_max_chars": {
+    "value": 60000,
+    "provenance": "specified: GitHub rejects an issue or pull request comment above 65536 characters; 60000 is a margin chosen by the operator 2026-10-16, not measured, so the sanitiser's expansion and the header cannot tip a long review over the limit"
+  },
   "gh_timeout_seconds": {
     "value": 60,
     "provenance": "chosen by the operator 2026-10-16, not measured: bound on one gh call (R10)"

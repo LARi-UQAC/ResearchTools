@@ -155,9 +155,17 @@ _TOKEN = re.compile("|".join((
     r"(?P<link>(?P<bang>!?)\[(?P<ltext>[^\]\n]*)\]\((?P<ltarget>[^)\s]*)[^)\n]*\))",
     r"(?P<url>(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.|mailto:|xmpp:)[^\s)>\]\x00\x01]+)",
     r"(?P<gh>(?i:GH)-[0-9]+)",
+    # owner/repo/pull/N, github.com/owner/repo/issues/N and a bare /discussions/N all render as a
+    # live cross-reference although none holds a '#' or a scheme (security round 7).
+    r"(?P<path>(?:github\.com)?/?(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?/(?:pull|issues|discussions)/[0-9]+)",
     r"(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)",
     r"(?P<issue>#[0-9]+)",
     r"(?P<mention>@[A-Za-z0-9_][A-Za-z0-9_/-]*)",
+    # A bare commit hash becomes a live commit link once the commit exists. A hash always holds a
+    # digit, which keeps hex-only words (facade, decade, effaced) out of the net.
+    # No word boundary on purpose: one glued to a preceding token has none on the first pass and
+    # gains one once that token is wrapped, which would make a second pass change the output.
+    r"(?P<sha>(?=[0-9a-f]{7})(?=[0-9a-f]*[0-9])[0-9a-f]{7,40})",
     r"(?P<bracket>[\[\]])",
 )))
 # A BALANCED code span: the same run of backticks opens and closes it, the opener is neither
@@ -215,10 +223,11 @@ def _plain(text):
         '<' as &lt;. Unconditional on purpose: a lookahead for a following letter sees only this
         slice, and a '<' ending the slice before a link token took its letter from the link text
         (security review round 4), so a tag could be assembled around a token. Every '$' becomes
-        &#36;, since GitHub extracts $...$ math before code spans and a span between two dollar
-        signs is then read as math whose text the mention filter scans (security round 6).
+        a FULLWIDTH dollar sign, never the entity &#36;: GitHub decodes an entity before it
+        extracts $...$ math, so the entity left the span between two of them read as math whose
+        text the mention filter scans (security rounds 6 and 7).
     """
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace("$", "&#36;")
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace("$", "＄")
 
 
 def _tokens(segment):

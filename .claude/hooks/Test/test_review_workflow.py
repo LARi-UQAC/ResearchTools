@@ -473,6 +473,31 @@ class TestPureLogic(unittest.TestCase):
                 self.assertNotIn("$", span.group(2), raw)                  # inside spans: no delimiter either
             self.assertEqual(self.mod.sanitize(out), out, raw)
 
+    def test_no_dollar_sign_reaches_the_output_in_any_form(self):
+        # Security round 7 (rendered through GitHub): `&#36;` is decoded BEFORE math extraction, so
+        # `&#36;`@octocat`&#36;` was still a math block whose text the mention filter read. Only a
+        # character that is not a dollar sign at all is safe, outside spans and inside them.
+        for raw in ("$@octocat$", "$octocat/hello-world#1$", "&dollar;@octocat&dollar;", "&#x24;@octocat&#x24;",
+                    "&#36;@octocat&#36;", "a $b$ c", "`$x$`", "$$@octocat$$", "cost $5 and $6"):
+            out = self.mod.sanitize(raw)
+            self.assertNotIn("$", out, raw)
+            self.assertNotIn("&#36;", out, raw)
+            self.assertNotIn("&#x24;", out, raw)
+            self.assertNotIn("&dollar;", out, raw)
+            self.assertEqual(self.mod.sanitize(out), out, raw)
+
+    def test_bare_repository_paths_and_commit_hashes_are_wrapped(self):
+        # Security round 7: octocat/hello-world/pull/1, github.com/o/r/issues/2, /discussions/3 and a
+        # bare 7-40 character hash all render as a live cross-reference or commit link.
+        for raw in ("octocat/hello-world/pull/1", "github.com/octocat/hello-world/issues/2",
+                    "octocat/hello-world/discussions/3", "see /pull/4 now", "commit 7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
+                    "short 7fd1a60 here"):
+            live = GFM_SPAN.sub("·", self.mod.sanitize(raw))
+            self.assertNotRegex(live, r"(?i)(?:pull|issues|discussions)/[0-9]", raw)
+            self.assertNotRegex(live, r"\b(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}\b", raw)
+        plain = self.mod.sanitize("a facade and a decade of effaced work")     # hex-only WORDS carry no digit
+        self.assertEqual(plain, "a facade and a decade of effaced work")
+
     def test_gh_references_are_case_insensitive(self):
         # Security round 6: GitHub links gh-2 and Gh-1 as well as GH-1.
         for raw in ("see gh-2 here", "Gh-1", "gH-9"):
@@ -551,7 +576,8 @@ class TestPureLogic(unittest.TestCase):
         # and sanitising the output again changes nothing.
         import random
         rng = random.Random(20261016)
-        frags = ["$", "$$", "gh-1", "Gh-2", "@[a](b)", "#[1](x)", "![n](u)", "|", "|---|", "| ", "---", "===", ":+1:", "~~", "~~~", "$$", "$", "\t", "\x0c", "​", "‮",
+        frags = ["octocat/hello-world/pull/1", "github.com/o/r/issues/2", "/pull/3", "7fd1a60b", "&dollar;", "&#36;",
+                 "$", "$$", "gh-1", "Gh-2", "@[a](b)", "#[1](x)", "![n](u)", "|", "|---|", "| ", "---", "===", ":+1:", "~~", "~~~", "$$", "$", "\t", "\x0c", "​", "‮",
                  "`", "``", "```", "@a", "@org/team", "#1", "GH-1", "o/r#2", "[", "]", "](", "![", "http://x.example/p",
                  "www.x.example", "ftp://x.example", "\\", "&#96;", "&#64;", "&amp;", "&lt;", "&", "\n", "\n\n", "\r",
                  "\x0b", "\x85", " ", "<", "<!--", "-->", "<b>", "_", "*", "- ", "# ", "> ", "1. ", " ", "x", "sk-ant-abcdefghij"]
@@ -568,6 +594,8 @@ class TestPureLogic(unittest.TestCase):
                 for bad in ("@a", "@org", "#1", "#2", "GH-1", "gh-1", "Gh-2", "$", "www.", "sk-ant-"):
                     self.assertNotIn(bad, text, "%s live in %r from %r" % (bad, text, raw))
                 self.assertNotRegex(text, r"[A-Za-z][A-Za-z0-9+.-]*://", "scheme link live from %r" % raw)
+                self.assertNotRegex(text, r"(?i)(?:pull|issues|discussions)/[0-9]", "path ref live from %r" % raw)
+                self.assertNotRegex(text, r"\b(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}\b", "hash live from %r" % raw)
                 self.assertNotRegex(text, r"<[!/A-Za-z?]", "tag live from %r" % raw)
                 self.assertNotIn("`", text, "stray backtick from %r" % raw)
                 self.assertNotRegex(text, r"(?<!\\)!?\[[^\]]*\]\(", "link live from %r" % raw)

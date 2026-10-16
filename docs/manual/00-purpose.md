@@ -50,7 +50,7 @@ documented here lives under `.claude/` in **this** repo (academic research tooli
 LaTeX writing, Scopus reference validation, paper/thesis auditing, and grant-template
 conversion). For a map of how the pieces relate, see [Architecture.md](../../Architecture.md).
 
-The repo ships **22 skills**, **19 agents**, and **29 commands** (counted 2026-09-26 from
+The repo ships **24 skills**, **20 agents**, and **31 commands** (counted 2026-10-15 from
 `.claude/skills/`, `.claude/agents/` and `.claude/commands/`).
 
 This manual is split into chapters under `docs/manual/`, the same way

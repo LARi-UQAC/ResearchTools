@@ -36,6 +36,28 @@ Set-StrictMode -Version Latest
 
 $script:RtVenvDirName = ".venv-skills"
 
+function Test-RtStampAllowed {
+    <#
+    .SYNOPSIS
+        Whether a test run may write the green stamp, given where its interpreter came from.
+
+    .DESCRIPTION
+        A python taken from PATH (-AllowPathFallback) may lack the repository's packages, and a
+        suite that cannot import one is graded NOT RUN, which does not fail the run. Such a
+        run proves less than it looks like it proves, and the stamp gates what
+        install-junctions.ps1 -Sync copies into ~/.claude. So under a PATH python the stamp
+        is written only when nothing was NOT RUN.
+
+    .OUTPUTS
+        bool
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$InterpreterSource,
+        [Parameter(Mandatory = $true)][int]$NotRunCount
+    )
+    return -not ($InterpreterSource -eq "path-fallback" -and $NotRunCount -gt 0)
+}
+
 function Find-RtPathPython {
     <#
     .SYNOPSIS
@@ -201,6 +223,7 @@ function Resolve-RtVenvPython {
         $lines += "  -AllowPathFallback was given but there is no python on PATH either."
     }
 
+    $lines += "Only .venv-skills is looked for. A root .venv is not used (dropped on purpose 2026-10-16: a missing environment must be said, not replaced)."
     $lines += "Rebuild the environment with:"
     $lines += "  $rebuild"
     $lines += "Or pass -Python <path to an interpreter>, or -AllowPathFallback to accept PATH knowingly."

@@ -113,6 +113,15 @@ $own = Resolve-RtVenvPython -RepoRoot $Wt
 Check "a worktree's own environment is preferred"    ($own.Source -eq "venv" -and $own.Python -ieq (Join-Path $Wt ".venv-skills\Scripts\python.exe"))
 Remove-Item (Join-Path $Wt ".venv-skills") -Recurse -Force
 
+# --- a PATH python cannot write a green stamp from a partial run ------------------------
+Check "path-fallback with suites NOT RUN: no stamp"           (-not (Test-RtStampAllowed -InterpreterSource "path-fallback" -NotRunCount 3))
+Check "path-fallback with nothing NOT RUN: stamp allowed"     (Test-RtStampAllowed -InterpreterSource "path-fallback" -NotRunCount 0)
+Check "an environment with suites NOT RUN keeps today's rule" (Test-RtStampAllowed -InterpreterSource "main-repo-venv" -NotRunCount 3)
+Check "an explicit -Python with suites NOT RUN keeps it too"  (Test-RtStampAllowed -InterpreterSource "explicit" -NotRunCount 3)
+
+# --- only .venv-skills is looked for, and the refusal says a root .venv is not used -------
+Check "the refusal says a root .venv is not used"             ($none.Message -match "root \.venv is not used")
+
 # --- PATH only on request, and said ---------------------------------------------------
 Remove-Item (Join-Path $Main ".venv-skills") -Recurse -Force
 $fb = Resolve-RtVenvPython -RepoRoot $Wt -AllowPathFallback

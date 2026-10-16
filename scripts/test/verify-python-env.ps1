@@ -102,6 +102,9 @@ $sample = @("docling==2.1", "docling-core==1.0", "Docling[x]>=3", "# docling is 
 $out = @(Get-RtFilteredRequirementLines -Lines $sample -Exclude @("docling"))
 Check "exact name dropped, extras and case included" (-not ($out -contains "docling==2.1") -and -not ($out -contains "Docling[x]>=3"))
 Check "a longer name sharing the prefix stays"   ($out -contains "docling-core==1.0")
+$spell = @("Docling_Core==1.0", "docling.core==1.0", "DOCLING-CORE>=1", "docling-coreutils==1", "requests==2")
+$spelled = @(Get-RtFilteredRequirementLines -Lines $spell -Exclude @("docling-core"))
+Check "PEP 503: _ . and case spell the same package"     ($spelled.Count -eq 2 -and ($spelled -contains "requests==2") -and ($spelled -contains "docling-coreutils==1"))
 Check "an include line is detected (-r, -c, long forms)" ((Test-RtRequirementHasInclude -Lines @("requests==2.0", "-r base.txt")) -and (Test-RtRequirementHasInclude -Lines @("-c c.txt")) -and (Test-RtRequirementHasInclude -Lines @("--requirement=base.txt")))
 Check "a plain file has no include (control)"      (-not (Test-RtRequirementHasInclude -Lines $real))
 Check "a comment mentioning -r is not an include"  (-not (Test-RtRequirementHasInclude -Lines @("# pip install -r x", "requests==2.0", "")))
@@ -264,6 +267,21 @@ Check "(control) selection without an environment still works" ($pickReuse.Pytho
 Remove-Item (Join-Path $ReuseRoot ".venv-skills") -Recurse -Force
 $noVenvOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "(control) the same root WITHOUT the venv is skipped, naming why" ($noVenvOut -match "skipped" -and $noVenvOut -match "none was found")
+
+# No profile known: ownership cannot be judged, and nothing throws.
+$noProfile = $null
+try { $noProfile = Test-RtInterpreterOwner -Path $Py311 -UserProfile "" } catch { $noProfile = "THREW: $($_.Exception.Message)" }
+Check "an empty profile does not throw and does not refuse" ($noProfile -eq "")
+
+# -Python while an environment exists is SAID to be ignored, never swallowed.
+$ignoredOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
+$stubScripts = Join-Path $ReuseRoot ".venv-skills\Scripts"
+New-Item -ItemType Directory -Path $stubScripts -Force | Out-Null
+Set-Content -Path (Join-Path $stubScripts "python.exe") -Value "stub" -Encoding ASCII
+$ignoredOut2 = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
+Check "-Python is reported ignored when the environment exists" ($ignoredOut2 -match "-Python was ignored")
+Check "(control) with no environment -Python is not reported ignored" ($ignoredOut -notmatch "was ignored")
+Remove-Item (Join-Path $ReuseRoot ".venv-skills") -Recurse -Force
 
 # A profile directly under a drive root has no profiles folder above it.
 Check "a drive-root profile does not make a machine-wide install foreign" ((Test-RtInterpreterOwner -Path "D:\Program Files\Python311\python.exe" -UserProfile "D:\alice") -eq "")

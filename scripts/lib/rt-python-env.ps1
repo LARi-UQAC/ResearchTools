@@ -125,8 +125,12 @@ function Get-RtFilteredRequirementLines {
         if ($line -notmatch '^\s*(#|$)') {
             $m = [regex]::Match($line, '^\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
             if ($m.Success) {
+                # PEP 503: case and every run of - _ . name the same distribution, so
+                # docling_core and docling-core are one package (a spelling difference must not
+                # let an excluded, torch-sized dependency through).
+                $name = ($m.Groups[1].Value.ToLowerInvariant() -replace '[-_.]+', '-')
                 foreach ($x in $Exclude) {
-                    if ($m.Groups[1].Value -ieq $x) { $drop = $true }
+                    if ($name -eq ($x.ToLowerInvariant() -replace '[-_.]+', '-')) { $drop = $true }
                 }
             }
         }
@@ -165,9 +169,13 @@ function Test-RtInterpreterOwner {
     #>
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$UserProfile
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$UserProfile
     )
 
+    # No profile known (a service account, a stripped scheduled-task environment): ownership
+    # cannot be judged, and a thrown "path not of a legal form" would hide that. The venv
+    # probe that follows still decides whether the interpreter is usable.
+    if ([string]::IsNullOrWhiteSpace($UserProfile)) { return "" }
     $full    = [System.IO.Path]::GetFullPath($Path)
     $ownProfile = [System.IO.Path]::GetFullPath($UserProfile).TrimEnd('\', '/')
     $parent  = Split-Path $ownProfile -Parent
@@ -308,7 +316,7 @@ function Select-RtBasePython {
     param(
         [AllowEmptyCollection()][string[]]$Candidates = @(),
         [AllowEmptyString()][string]$Explicit = "",
-        [Parameter(Mandatory = $true)][string]$UserProfile,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$UserProfile,
         [scriptblock]$Probe = $null,
         [switch]$SkipProbe
     )
@@ -445,6 +453,13 @@ function Install-RtPythonEnv {
     $venvExists = Test-Path -LiteralPath $venvPython -PathType Leaf
     if ($venvExists) {
         $pick = [pscustomobject]@{ Python = $venvPython; Rejected = @(); Message = "" }
+        if (-not [string]::IsNullOrWhiteSpace($Python)) {
+            # Said, not swallowed: -Python names the interpreter an environment is BUILT from,
+            # and there is nothing to build here. Repairing a broken base means deleting the
+            # environment first, which this installer never does on its own.
+            Write-Host "  [!!]  -Python was ignored: $venv already exists and is reused as it is." -ForegroundColor Yellow
+            Write-Host "        To rebuild it from $Python, remove that folder yourself first." -ForegroundColor Yellow
+        }
     } else {
         $pick = Select-RtBasePython -Candidates $candidates -Explicit $Python `
                                     -UserProfile $UserProfile -Probe $probe -SkipProbe:$Preview

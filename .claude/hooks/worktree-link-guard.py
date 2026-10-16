@@ -23,7 +23,7 @@ every later RELATIVE path unknowable (it passes), while an absolute path is stil
 Known gaps of the same kind, left open because this is an accident-prevention rail and not a
 security boundary (defeating it takes the user's own command): `popd` and the scope of a
 subshell are not undone, so `pushd x; popd; git worktree remove a` resolves `a` against `x`;
-a bash backslash-escaped space (`My\ Tools/wt`) splits the path in two; and any token named
+a bash path whose spaces are escaped with a backslash splits in two; and any token named
 `git` starts the parse, so `echo git worktree remove x` can be refused when `x` holds a link.
 
 EXIT CODES (R12):
@@ -160,7 +160,14 @@ def tokenize(command):
 
 
 def _clean(path):
-    """Normalise a Git Bash drive spelling (/c/x) to a Windows one on Windows."""
+    """
+    Normalise a path as typed: a leading ~ is expanded the way the shell would have (the
+    hook sees the command before the shell does, and ~/x resolved against the cwd is a
+    folder that does not exist, so the guard let the removal through), and a Git Bash drive
+    spelling (/c/x) becomes a Windows one on Windows.
+    """
+    if path == "~" or path.startswith(("~/", "~\\")):
+        path = os.path.expanduser(path)
     if os.name == "nt":
         found = GIT_BASH_DRIVE.match(path)
         if found:
@@ -283,6 +290,17 @@ def _is_link(entry):
     return bool(attributes & REPARSE_POINT)
 
 
+def _path_is_link(path):
+    """True when the path itself is a symbolic link or a Windows junction."""
+    if os.path.islink(path):
+        return True
+    try:
+        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & REPARSE_POINT)
+
+
 def scan_for_links(root, max_entries):
     """
     --------------------------------------------------------------------------
@@ -361,6 +379,17 @@ def main():
     for path in find_removals(command, base_dir):
         if not os.path.isdir(path):
             continue
+        # The folder named may itself be a junction or link: scandir would follow it and
+        # report only the target's contents, so the root is judged before the scan.
+        if _path_is_link(path):
+            try:
+                target = os.readlink(path)
+            except OSError:
+                target = ""
+            sys.stderr.write(HEADER + "\nworktree: %s\n  link: %s -> %s\n"
+                             % (path, path, target or "(target unreadable)")
+                             + FOOTER.format(commands=_remedy(path)))
+            return 2
         links, complete = scan_for_links(path, config["max_entries"])
         if links:
             lines = ["", "worktree: " + path]

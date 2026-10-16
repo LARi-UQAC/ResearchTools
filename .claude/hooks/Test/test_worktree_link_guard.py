@@ -58,7 +58,8 @@ def make_junction(link, target):
         raise unittest.SkipTest("mklink /J unavailable: " + done.stdout + done.stderr)
 
 
-def run_hook(payload, config=FIXTURE_CONFIG, write_config=True, raw_config=None, stdin=None):
+def run_hook(payload, config=FIXTURE_CONFIG, write_config=True, raw_config=None, stdin=None,
+             env=None):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -85,7 +86,8 @@ def run_hook(payload, config=FIXTURE_CONFIG, write_config=True, raw_config=None,
         done = subprocess.run(
             [sys.executable, str(copied)],
             input=stdin if stdin is not None else json.dumps(payload),
-            capture_output=True, text=True, timeout=60)
+            capture_output=True, text=True, timeout=60,
+            env=None if env is None else dict(os.environ, **env))
     return done.returncode, done.stderr
 
 
@@ -194,6 +196,35 @@ class RefusesAWorktreeHoldingALink(Tree):
             with self.subTest(command=command):
                 code, err = run_hook(bash(command, cwd=elsewhere))
                 self.assertEqual(2, code, err)
+
+    def test_a_tilde_path_is_expanded_like_the_shell_would(self):
+        """Code-review finding: `git worktree remove ~/x` resolved to <cwd>/~/x, which does
+        not exist, so the guard passed the removal of a worktree holding a link."""
+        self.linked()
+        home = {"USERPROFILE": str(self.root), "HOME": str(self.root)}
+        for command in ('git worktree remove ~/"my worktree"',
+                        'git worktree remove "~/my worktree"'):
+            with self.subTest(command=command):
+                code, err = run_hook(bash(command, cwd=self.root.parent), env=home)
+                self.assertEqual(2, code, err)
+        # Control: without the expansion the same path is not found and passes, so the
+        # refusal above is the tilde handling and not the fixture.
+        code, _ = run_hook(bash('git worktree remove "~/my worktree"', cwd=self.root.parent),
+                           env={"USERPROFILE": str(self.root.parent / "nowhere"),
+                                "HOME": str(self.root.parent / "nowhere")})
+        self.assertEqual(0, code)
+
+    def test_a_worktree_path_that_is_itself_a_link_is_refused(self):
+        """The scan would follow the junction and see only its target's contents."""
+        self.linked()
+        alias = self.root / "alias-to-worktree"
+        make_junction(alias, self.worktree)
+        # a clean target: remove the inner link so only the ROOT is a link
+        subprocess.run(["cmd", "/c", "rmdir", str(self.link)], capture_output=True, timeout=30)
+        code, err = run_hook(bash('git worktree remove "%s"' % alias))
+        self.assertEqual(2, code, err)
+        self.assertIn("alias-to-worktree", err)
+        self.assertTrue(self.worktree.exists(), "the hook must only read")
 
     def test_a_subshell_cd_is_followed(self):
         """Security-review note: `(cd X; git worktree remove rel)` was not followed."""
@@ -377,6 +408,31 @@ class Parsing(unittest.TestCase):
 
 
 class ShippedFiles(unittest.TestCase):
+
+    def test_the_hook_compiles_with_every_warning_as_an_error(self):
+        """Code-review finding: an invalid escape such as backslash-space in the docstring
+        raises a SyntaxWarning on Python 3.12+, written to stderr on EVERY call, which breaks
+        the silence R11 requires and becomes a SyntaxError in a later release. Python 3.11
+        only warns under -W, so the check forces it."""
+        for path in (HOOK, Path(__file__)):
+            with self.subTest(path=path.name):
+                done = subprocess.run(
+                    [sys.executable, "-W", "error", "-c",
+                     "import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'), sys.argv[1], 'exec')",
+                     str(path)],
+                    capture_output=True, text=True, timeout=60)
+                self.assertEqual(0, done.returncode, done.stderr)
+
+    def test_the_warning_check_can_fail(self):
+        """Control: the same check rejects a file with an invalid escape."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "bad.py"
+            bad.write_text('"""a\\ b"""\n', encoding="utf-8")
+            done = subprocess.run(
+                [sys.executable, "-W", "error", "-c",
+                 "import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'), sys.argv[1], 'exec')",
+                 str(bad)], capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(0, done.returncode)
 
     def test_the_shipped_config_parses_and_carries_the_keys_the_hook_reads(self):
         config = json.loads(SHIPPED_CONFIG.read_text(encoding="utf-8"))

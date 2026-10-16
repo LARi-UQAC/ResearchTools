@@ -216,6 +216,19 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 
+# ── A PATH python cannot vouch for suites it could not run ───────────────────
+# -AllowPathFallback is an informed choice, but the stamp gates what install-junctions.ps1
+# -Sync copies into ~/.claude. NOT RUN does not fail a run, so a PATH python missing the
+# repository's packages would otherwise write a green stamp from a partial run.
+if (-not (Test-RtStampAllowed -InterpreterSource $resolved.Source -NotRunCount $notRun.Count)) {
+    if (Test-Path $StampPath) { Remove-Item $StampPath -Force }
+    Write-Host ""
+    Write-Host "  No green stamp: $($notRun.Count) suite(s) were NOT RUN under a python taken from PATH." -ForegroundColor Yellow
+    Write-Host "  Rebuild the environment (setup.ps1 -InstallPython) and run again for a stamp." -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+
 # ── Green: write the stamp ────────────────────────────────────────────────────
 
 $hashes = @{}

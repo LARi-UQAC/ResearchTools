@@ -42,8 +42,9 @@ Install the same check locally, once per machine, so a commit is refused before 
 published: `.\.claude\hooks\git\install-git-hooks.ps1` (needs
 `winget install Betterleaks.Betterleaks`). `review` (Issue #65) runs a billed, Claude-driven
 review (security-review and code-review; tech-debt and ai-firstify stay local) on every
-same-repo pull request (not forks), once the operator has added the API secret, and
-posts a priority-ranked finding list; see `.claude/rules/testing.md`'s own "CI"
+same-repo pull request (not forks), once the operator has added the API secret (without it
+the check ends neutral), and posts one priority-ranked finding list, updated in place on
+each push; see `.claude/rules/testing.md`'s own "CI"
 section for both workflows' full behavior. Test data uses fictitious identities only (rule
 R34). Run the other tests manually before pushing — see
 [.claude/rules/testing.md](.claude/rules/testing.md) for the full offline-test inventory.

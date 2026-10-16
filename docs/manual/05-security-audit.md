@@ -40,6 +40,24 @@ next pass. Its declared dependencies pin exact/floor versions verified with `pip
 `download_pdf.py` rather than opening its own, and fetches only public-domain Natural Earth
 basemaps (TLS-verified, cached).
 
+## Worktree link guard (`git worktree remove`)
+
+A third, narrow layer: the `worktree-link-guard.py` hook refuses `git worktree remove` when the
+worktree holds a junction or a symbolic link. Measured 2026-10-16 on a throwaway copy: with a
+link that git ignores, which is the real case since `.gitignore` carries `.venv*/`, even a plain
+`git worktree remove` with no `--force` follows the link and empties the folder it points at.
+That is how the main clone's `.venv-skills` was lost on 2026-10-06 (rule R37).
+
+The refusal lists each link and gives the command that deletes the link and never its target
+(`cmd /c rmdir "<link>"`). Its limits are stated rather than hidden: it judges that one command
+through the Bash and PowerShell tools only, so it does not see `rm -rf` or `Remove-Item
+-Recurse`, and it cannot resolve a path held in a variable or a command substitution. A scan
+that reaches `max_entries` (`.claude/hooks/worktree-link-guard.json`) before finishing is
+refused too, since a link could hide in the part not reached. A missing or broken config
+disables the gate in silence and never blocks a tool (R11). The hook is declared in
+`.claude/settings.template.json`; `install-junctions.ps1 -Sync` copies the script and its
+config, and `setup.ps1` adds the entry to a live `settings.json` that lacks it.
+
 ## Personal-data guard (every git repository, this machine)
 
 A second, separate layer from the SkillSpector scan above: a global git hook, installed once

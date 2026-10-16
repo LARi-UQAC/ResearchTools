@@ -40,9 +40,23 @@
 .EXAMPLE
     .\scripts\test\run-offline-tests.ps1
     .\scripts\test\run-offline-tests.ps1 -Quiet
+    .\scripts\test\run-offline-tests.ps1 -Python "D:\tools\py311\python.exe"
+    .\scripts\test\run-offline-tests.ps1 -AllowPathFallback
+
+.PARAMETER Python
+    An explicit interpreter. It must exist; a path that does not is a refusal.
+
+.PARAMETER AllowPathFallback
+    Accept the first python on PATH when .venv-skills is absent or empty. Without it
+    the run REFUSES (R8) and names the rebuild command: measured 2026-10-16, a week
+    passed unnoticed after .venv-skills was emptied because this runner used to fall
+    through to PATH, which on that machine was another account's Python. The
+    interpreter in use is always printed.
 #>
 param(
-    [switch]$Quiet
+    [switch]$Quiet,
+    [string]$Python = "",
+    [switch]$AllowPathFallback
 )
 
 Set-StrictMode -Version Latest
@@ -58,19 +72,10 @@ function Write-Line([string]$text, [string]$colour = "Gray") {
 # ── Interpreter ───────────────────────────────────────────────────────────────
 # "The project Python" is ambiguous on a machine carrying several virtual
 # environments, and a suite silently run under the wrong interpreter is worse than one
-# not run at all. Resolve once, report the full path, use it for every suite.
-function Resolve-Python {
-    $candidates = @(
-        (Join-Path $RepoRoot ".venv-skills\Scripts\python.exe"),
-        (Join-Path $RepoRoot ".venv\Scripts\python.exe")
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c -PathType Leaf) { return $c }
-    }
-    $onPath = Get-Command python -ErrorAction SilentlyContinue
-    if ($null -ne $onPath) { return $onPath.Source }
-    return $null
-}
+# not run at all. The decision lives in scripts\lib\rt-venv.ps1, shared with every
+# other launcher (R18): it finds the MAIN clone's .venv-skills from a worktree with no
+# link, and refuses instead of reaching for PATH unless -AllowPathFallback is given.
+. (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1")
 
 # ── Missing-module classification ─────────────────────────────────────────────
 # Returns "third-party" (-> NOT RUN) or "first-party" (-> FAILED), or $null when the
@@ -104,14 +109,19 @@ function Get-CodeFiles {
 Write-Line ""
 Write-Line "=== ResearchTools - offline test suite ===" "Cyan"
 
-$python = Resolve-Python
+$resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot -Python $Python -AllowPathFallback:$AllowPathFallback
+$python = $resolved.Python
 if ($null -eq $python) {
-    Write-Host "  No Python interpreter found (.venv-skills, .venv, or PATH)." -ForegroundColor Red
+    Write-Host ""
+    foreach ($line in ($resolved.Message -split "`n")) { Write-Host "  $line" -ForegroundColor Red }
     Write-Host "  Cannot establish a green stamp; removing any stale one." -ForegroundColor Red
     if (Test-Path $StampPath) { Remove-Item $StampPath -Force }
     exit 1
 }
-Write-Line "  Interpreter : $python"
+if ($resolved.Source -eq "path-fallback") {
+    foreach ($line in ($resolved.Message -split "`n")) { Write-Host "  $line" -ForegroundColor Yellow }
+}
+Write-Line "  Interpreter : $python  ($($resolved.Source))"
 
 $suites = Get-ChildItem -Path (Join-Path $RepoRoot ".claude") -Recurse -File -Filter "test_*.py" -ErrorAction SilentlyContinue |
           Where-Object { $_.DirectoryName -match '\\Test$' } |

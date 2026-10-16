@@ -334,6 +334,54 @@ itself. `rt-observe` already reads the branch from `.git/HEAD`, so the first rul
 observable today; the other two, and the hook fingerprint's per-session scoping, are conventions
 and code only this file and its owning hook can carry.
 
+**R37 - never link a dependency folder into a worktree: no junction and no symbolic link to
+`.venv-skills`, `node_modules` or any other environment. Call the main clone's interpreter by its
+absolute path instead.** Effective 2026-10-16. `git worktree remove` and recursive deletions
+(`Remove-Item -Recurse`, `rm -rf`) can follow a junction and delete what it points at, so a link
+turns the disposal of a scratch worktree into the deletion of the real environment.
+
+Measured 2026-10-16 from the session transcripts. On 2026-10-01 a session ran `New-Item
+-ItemType Junction` from `.worktrees\privacy-guard\.venv-skills` to the main clone's
+`.venv-skills`, only to run the offline suite from that worktree. On 2026-10-07 at 00:50:34 UTC
+another session ran `git worktree remove .worktrees/privacy-guard`. That is the same minute as
+the modification time of the main `.venv-skills` directory, which was found without
+`pyvenv.cfg` or `Scripts\`. Reproduced the same day on a throwaway copy under `TEMP` (git 2.53.0,
+Windows, a fictitious clone, worktree and target folder), in two variants. The junction NOT
+ignored by git: the plain `git worktree remove` refused ("contains modified or untracked files,
+use --force") and `--force` deleted the target's contents. The junction IGNORED by git, which is
+the real case since `.gitignore` carries `.venv*/`: the plain `git worktree remove`, with no
+`--force`, succeeded and left the target folder empty, which is exactly the state found and
+matches the command recorded in the transcript. So `--force` is not needed: an ordinary removal
+is enough. It was invisible for a week because every launcher then fell back to the first
+`python` on `PATH`, which here belonged to another account.
+
+The two ways out, both in the repository:
+
+- `scripts/lib/rt-venv.ps1` (PowerShell) and `rt-dashboard.sh` (POSIX) find the main clone through
+  `git rev-parse --git-common-dir` and use its `.venv-skills` by absolute path from a worktree.
+  `run-offline-tests.ps1`, `rt-dashboard`, `run-drill.ps1`, `vault-daemon-autostart.ps1`,
+  `tune-new-model.ps1`, `claude-switch.ps1` and `check-deployment.ps1` all go through it, so no
+  link is ever needed. When nothing is found they refuse, name every path they looked at and the
+  rebuild command, and use `PATH` only with an explicit `-AllowPathFallback` (R8).
+- `setup.ps1 -InstallPython` always builds or extends the environment in the main clone, even
+  when run from a worktree, so a worktree never needs one of its own.
+
+Never run `git worktree remove`, with or without `--force`, on a worktree before listing what it
+holds that could be a link: `Get-ChildItem <worktree> -Force -Recurse -Attributes ReparsePoint`.
+A non-empty answer is removed with `cmd /c rmdir <link>`, which deletes the link and never the
+target, and only then is the worktree removed.
+
+The hook `.claude/hooks/worktree-link-guard.py` (PreToolUse on Bash and PowerShell) enforces
+exactly that check for `git worktree remove`: it refuses when the worktree holds a link and prints
+the `rmdir` command. It is deliberately narrow (R11): it does not judge `rm -rf` or
+`Remove-Item -Recurse`, it cannot resolve a path held in a variable, and a missing config
+disables it in silence. It only protects a machine whose live `settings.json` declares it.
+
+Proven by `scripts/test/verify-venv-resolution.ps1` (R15), which also fails when a launcher grows
+its own interpreter search again (R18). It proves the resolution, not the cause. The cause was
+reproduced by hand on a throwaway copy, in both variants above, and no test automates it, since
+the experiment deletes a folder by design.
+
 ## Issue and Project tracking
 
 **R30 - a change that opens a pull request carries a linked GitHub Issue, and that Issue has

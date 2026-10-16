@@ -19,6 +19,9 @@
       CLAUDE.md the RT-CONTRACT block is present exactly once and well-formed
       settings  the SessionStart sync entry is present, and the file still parses
       stamp     .rt-green.json exists and its per-file hashes still describe the code
+      interpreter  .venv-skills holds a python (this clone's, or the main clone's from
+                a worktree); an absent or EMPTY folder is reported with the rebuild
+                command, never replaced by a python found on PATH
 
     WRITES NOTHING. Run it after a -Sync, after a git pull, or whenever an agent behaves
     like an older version of itself.
@@ -180,6 +183,21 @@ if (-not (Test-Path $stampPath)) {
     if ($drift -gt 0) {
         Problem "STALE    .rt-green.json  ($drift code file(s) changed since the last green run)"
     }
+}
+
+# --- The suite interpreter ---------------------------------------------------
+# Measured 2026-10-16: .venv-skills was emptied on 2026-10-06 and every launcher
+# fell through to the first python on PATH in silence, so the loss stayed invisible
+# for a week. This check never falls back: it says so, with the rebuild command.
+Say "  suite interpreter"
+. (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1")
+$checked++
+$venv = Resolve-RtVenvPython -RepoRoot $RepoRoot
+if ($null -eq $venv.Python) {
+    Problem "ABSENT   .venv-skills interpreter  (launchers now refuse instead of using PATH)"
+    foreach ($line in ($venv.Message -split "`n")) { Say "           $line" "Yellow" }
+} else {
+    Say "           $($venv.Python)  ($($venv.Source))" "DarkGray"
 }
 
 # --- Verdict -----------------------------------------------------------------

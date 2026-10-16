@@ -17,6 +17,7 @@ Scope, stated rather than hidden: it proves the rule is WRITTEN in each place. I
 cannot prove that a model obeyed it. Each check has its negative control on a
 fixture, since a finder that cannot fail proves nothing (R20).
 """
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -247,8 +248,19 @@ class TestRuleIsWritten(unittest.TestCase):
 
     def test_rule_index_names_r36(self):
         text = read(".claude/rules/code-style.md")
-        self.assertIn("`R0` to `R36`", text)
-        self.assertIn("`R36` in `workflows.md`", text)
+        # The index grows with every new rule (R37 on 2026-10-16), so the range's
+        # upper end is matched as a number >= 36 rather than pinned to R36, and R36
+        # must still be listed among the rules owned by workflows.md. Both must
+        # still FAIL when R36 drops out of the index (negative control below).
+        match = re.search(r"`R0` to `R(\d+)`", text)
+        self.assertIsNotNone(match, "the rule index range is missing")
+        self.assertGreaterEqual(int(match.group(1)), 36)
+        self.assertRegex(text, r"(?s)`R36`.{0,40}`workflows\.md`")
+
+    def test_rule_index_check_can_fail(self):
+        stale = "The numbered rules `R0` to `R35` are workspace-wide"
+        match = re.search(r"`R0` to `R(\d+)`", stale)
+        self.assertLess(int(match.group(1)), 36)
 
     def test_every_generated_mirror_states_it(self):
         for rel in MIRRORS:

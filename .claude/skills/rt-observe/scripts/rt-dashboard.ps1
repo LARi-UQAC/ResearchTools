@@ -31,6 +31,15 @@
 .PARAMETER Port
     Override the port declared in observe-config.json for this run.
 
+.PARAMETER Python
+    An explicit interpreter. It must exist; a path that does not is a refusal.
+
+.PARAMETER AllowPathFallback
+    Accept the first python on PATH when .venv-skills is absent or empty. Without
+    it the launcher refuses (exit 2) and names the rebuild command, because a silent
+    PATH fallback is how an emptied environment went unnoticed for a week
+    (measured 2026-10-16).
+
 .EXAMPLE
     .\rt-dashboard.ps1 -DryRun
 
@@ -42,6 +51,8 @@ param(
     [switch]$Open,
     [switch]$DryRun,
     [int]$Port = 0,
+    [string]$Python = '',
+    [switch]$AllowPathFallback,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Rest
 )
@@ -55,38 +66,23 @@ if (-not (Test-Path $module)) {
     exit 2
 }
 
-# The venv paths are resolved from THIS script's own location, so they are not
-# configuration (R1). The names are looked up on PATH.
-$venvWindows = Join-Path $repoRoot '.venv-skills\Scripts\python.exe'
-$venvPosix = Join-Path $repoRoot '.venv-skills/bin/python'
-$candidates = @($venvWindows, $venvPosix, 'python', 'python3', 'py')
-
-$exe = $null
-$preArgs = @()
-foreach ($candidate in $candidates) {
-    if ($candidate -like '*[\/]*') {
-        if (Test-Path $candidate) { $exe = $candidate; break }
-        continue
-    }
-    $found = Get-Command $candidate -ErrorAction SilentlyContinue
-    if ($found) {
-        $exe = $found.Source
-        if ($candidate -eq 'py') { $preArgs = @('-3') }
-        break
-    }
-}
+# The interpreter decision is scripts\lib\rt-venv.ps1's, shared by every launcher
+# (R18): .venv-skills of this clone, then of the MAIN clone when this is a linked
+# worktree (no link needed), and PATH only when -AllowPathFallback is given.
+. (Join-Path $repoRoot 'scripts\lib\rt-venv.ps1')
+$resolved = Resolve-RtVenvPython -RepoRoot $repoRoot -Python $Python -AllowPathFallback:$AllowPathFallback
+$exe = $resolved.Python
 
 if (-not $exe) {
-    [Console]::Error.WriteLine("rt-dashboard: no Python interpreter found. Tried, in order:")
-    foreach ($candidate in $candidates) {
-        [Console]::Error.WriteLine("  $candidate")
-    }
-    [Console]::Error.WriteLine("Install Python 3, or create the suite environment with .\setup.ps1 -InstallPython.")
+    [Console]::Error.WriteLine("rt-dashboard: no Python interpreter found.")
+    [Console]::Error.WriteLine($resolved.Message)
     exit 2
+}
+if ($resolved.Source -eq 'path-fallback') {
+    [Console]::Error.WriteLine($resolved.Message)
 }
 
 $argv = @()
-$argv += $preArgs
 $argv += $module
 $argv += '--serve'
 if ($DryRun) { $argv += '--dry-run' }

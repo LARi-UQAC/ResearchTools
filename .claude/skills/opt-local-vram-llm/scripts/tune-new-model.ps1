@@ -58,7 +58,9 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet("writer", "coder")][string]$Role,
     [switch]$DryRun,
     [switch]$Yes,
-    [string]$OutDir
+    [string]$OutDir,
+    [string]$Python = "",
+    [switch]$AllowPathFallback
 )
 
 Set-StrictMode -Version Latest
@@ -74,10 +76,15 @@ function Say([string]$text, [string]$colour = "Gray") { Write-Host $text -Foregr
 function Phase([string]$text) { Write-Host ""; Write-Host "=== $text ===" -ForegroundColor Cyan }
 function Die([string]$text) { Write-Host "  STOP  $text" -ForegroundColor Red; exit 1 }
 
-# The suite's interpreter when it exists, so this runs under the same Python the
-# tests passed on rather than whatever `python` means in this shell today.
-$Python = Join-Path $RepoRoot ".venv-skills\Scripts\python.exe"
-if (-not (Test-Path $Python)) { $Python = "python" }
+# The suite's interpreter, so this runs under the same Python the tests passed on
+# rather than whatever `python` means in this shell today. Resolved by the shared
+# helper (R18): a worktree reaches the main clone's environment with no link, and a
+# missing environment is a refusal unless -AllowPathFallback is given (R8).
+. (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1")
+$resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot -Python $Python -AllowPathFallback:$AllowPathFallback
+if ($null -eq $resolved.Python) { Die $resolved.Message }
+if ($resolved.Source -eq "path-fallback") { Say $resolved.Message "Yellow" }
+$Python = $resolved.Python
 
 foreach ($required in @($Optimizer, $Preflight, $Resolver)) {
     if (-not (Test-Path $required)) { Die "missing script: $required" }

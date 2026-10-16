@@ -206,21 +206,40 @@ Details in [Using the agents outside Claude Code](10-agents.md#using-the-agents-
 
 ## Step 5 — Python environment for the offline test suite (optional)
 
-`scripts/test/run-offline-tests.ps1` resolves `.venv-skills\Scripts\python.exe` first, then
-`.venv`, then whatever `python` is on `PATH`. Without that environment several suites cannot
-import what they need and are reported **NOT RUN** — which is honest, and means the suite is
-not actually proving what it looks like it is proving.
+`scripts/test/run-offline-tests.ps1`, the dashboard launchers, the vault drill and the other
+launchers all take their Python from `.venv-skills` of the clone, then of the **main clone**
+when you work in a linked worktree (they ask git for its common directory, so no link is
+needed). If that environment is absent or empty they **refuse** and print every path they
+looked at together with the rebuild command. They no longer fall back to the first `python`
+on `PATH`: on one machine that was another account's Python, and a lost environment went
+unnoticed for a week. To accept `PATH` knowingly, pass `-AllowPathFallback` (or
+`--allow-path-fallback` as the first argument of `rt-dashboard.sh`); to name an interpreter,
+pass `-Python <path>`. The interpreter in use is always printed.
+
+Without the environment several suites cannot import what they need and are reported
+**NOT RUN** — which is honest, and means the suite is not actually proving what it looks like
+it is proving.
 
 ```powershell
 .\setup.ps1 -InstallPython            # creates .venv-skills, installs, then pip-audits
-.\setup.ps1 -InstallPython -Preview   # say what it would install, install nothing
+.\setup.ps1 -InstallPython -Preview   # choose the interpreter, say what it would install, write nothing
+.\setup.ps1 -InstallPython -Python "C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
 ```
 
-It installs only what the offline suite imports: `pypdf`, `python-pptx`, `jinja2` and
-`defusedxml` for the thirteen `paper2talk` suites, and `PyYAML` for
-`test_letter_identity.py`. Everything else in the Prerequisites table above stays a manual
-step on purpose — `docling` alone pulls `torch`, and a CVE in a skill you never run should
-not block the environment your tests need.
+The environment is always built in the main clone, even when you run the command from a
+worktree. The base interpreter is chosen, not assumed: the switch tries `-Python`, then the
+`python` entries on `PATH` and the py launcher, and keeps the first one that belongs to your
+own profile and can really create a virtual environment (it builds a scratch one to check).
+If none qualifies it stops and names each candidate with the reason, for example "belongs to
+another account" or "python -m venv failed".
+
+It installs what the repository's skills import, listed in
+`scripts/lib/rt-python-requirements.json`: the offline-suite packages (`paper2talk`,
+`recommendation-letter`), the `scopus` skill (`requests`, `playwright`, the reviewers' clients)
+and the `extract-statistic` skill without `docling`, plus `pip-audit`. The Chromium binary for
+Playwright stays a separate `playwright install chromium`, and `docling` and the
+`geolocalisation` dependencies stay manual on purpose: `docling` alone pulls `torch`, and a CVE
+in a skill you never run should not block the environment your tests need.
 
 By hand, if you would rather not use the switch:
 
@@ -231,7 +250,11 @@ python -m venv .venv-skills
 .\.venv-skills\Scripts\python.exe -m pip_audit --strict -r .claude\skills\paper2talk\scripts\requirements.txt
 ```
 
-The directory name matters: name it anything else and the runner will not look there.
+The directory name matters: name it anything else and the launchers will not look there.
+
+**Never link `.venv-skills` into a worktree** (junction or symbolic link). Removing the worktree
+with `git worktree remove` (no `--force` needed when git ignores the link, as it does `.venv*/`) follows the link and deletes the real environment
+([R37](../../.claude/rules/workflows.md)). A worktree needs no link.
 
 ## Step 6 — Privacy guard for every git repository (recommended)
 

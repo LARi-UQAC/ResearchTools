@@ -57,7 +57,9 @@ param(
     [switch]$Install,
     [switch]$Uninstall,
     [switch]$Status,
-    [string]$Vault = $env:OBSIDIAN_VAULT
+    [string]$Vault = $env:OBSIDIAN_VAULT,
+    [string]$Python = "",
+    [switch]$AllowPathFallback
 )
 
 Set-StrictMode -Version Latest
@@ -74,8 +76,25 @@ $Launcher  = Join-Path $Scripts "vault-daemon-autostart.bat"
 function Say([string]$t, [string]$c = "Gray") { Write-Host $t -ForegroundColor $c }
 function Die([string]$t) { Write-Host "  STOP  $t" -ForegroundColor Red; exit 1 }
 
-$Python = Join-Path $RepoRoot ".venv-skills\Scripts\python.exe"
-if (-not (Test-Path $Python)) { $Python = "python" }
+. (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1")
+
+# The interpreter is resolved only by the modes that run Python (-Status and the
+# plain start), so -Install and -Uninstall keep working on a machine whose
+# environment is gone. No silent PATH fallback (R8): a login-time start with no
+# environment must say so in the log, because nobody is watching that window.
+function Initialize-PythonExe {
+    $resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot -Python $Python -AllowPathFallback:$AllowPathFallback
+    if ($null -eq $resolved.Python) {
+        if (-not (Test-Path (Split-Path $Log -Parent))) {
+            New-Item -ItemType Directory -Path (Split-Path $Log -Parent) -Force | Out-Null
+        }
+        Add-Content -Path $Log -Value ("[AUTOSTART] " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") +
+            " refused to start: " + ($resolved.Message -replace "`r?`n", " | "))
+        Die $resolved.Message
+    }
+    if ($resolved.Source -eq "path-fallback") { Say $resolved.Message "Yellow" }
+    $script:PythonExe = $resolved.Python
+}
 
 # Asked of vault_lock, never inferred from the file existing.
 $LiveCheck = @"
@@ -90,10 +109,11 @@ print('LIVE' if vault_lock.held_by_live_holder(
     outbox_io.require(cfg, 'lock', 'boot_skew_tolerance_s')) else 'FREE')
 "@
 
-function Get-DaemonState { (& $Python -c $LiveCheck).Trim() }
+function Get-DaemonState { (& $script:PythonExe -c $LiveCheck).Trim() }
 
 # ------------------------------------------------------------------ status ---
 if ($Status) {
+    Initialize-PythonExe
     Write-Host ""
     Write-Host "=== vault daemon ===" -ForegroundColor Cyan
     $state = Get-DaemonState
@@ -154,6 +174,7 @@ if ([string]::IsNullOrWhiteSpace($Vault)) {
 }
 if (-not (Test-Path $Vault -PathType Container)) { Die "vault does not exist: $Vault" }
 
+Initialize-PythonExe
 if ((Get-DaemonState) -eq "LIVE") {
     Say "  a daemon is already running; one per machine is the rule. Nothing to do." "Yellow"
     exit 0
@@ -161,7 +182,7 @@ if ((Get-DaemonState) -eq "LIVE") {
 
 # Rotate once, at the configured size. Keeping .1 rather than deleting, because
 # the run worth reading is usually the one that just ended.
-$cap = [int](& $Python -c @"
+$cap = [int](& $script:PythonExe -c @"
 import sys
 sys.path.insert(0, r'$Scripts')
 import outbox_io
@@ -173,7 +194,7 @@ if ((Test-Path $Log) -and (Get-Item $Log).Length -gt $cap) {
 }
 
 $command = "`$env:OBSIDIAN_VAULT = '$Vault'; " +
-           "& '$Python' '$Daemon' *>> '$Log'"
+           "& '$($script:PythonExe)' '$Daemon' *>> '$Log'"
 $proc = Start-Process powershell -PassThru -WindowStyle Hidden -ArgumentList @(
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $command)
 

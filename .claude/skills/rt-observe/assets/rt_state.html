@@ -2484,10 +2484,15 @@ function renderRepoPanel(state) {
     ["suite", suiteText, green.value !== "green"],
     ["stamp age", green.age_seconds !== undefined
       ? duration(green.age_seconds) + (green.aged ? " . aged" : "") : null,
-     !!green.aged]
+     !!green.aged],
+    ["interpreter", (repo.interpreter || {}).status === "ok"
+      ? (repo.interpreter || {}).source : "none", (repo.interpreter || {}).status !== "ok"]
   ]);
   if (green.status !== "ok" && green.reason) {
     panel.appendChild(el("div", "unavail", green.reason));
+  }
+  if ((repo.interpreter || {}).status === "unavailable") {
+    panel.appendChild(el("div", "unavail", repo.interpreter.reason));
   }
   var registry = state.registry || {};
   if (registry.status === "ok") {

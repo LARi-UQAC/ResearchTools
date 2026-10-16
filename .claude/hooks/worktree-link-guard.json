@@ -1,0 +1,16 @@
+{
+  "_comment": [
+    "Settings for worktree-link-guard.py, the PreToolUse gate on `git worktree remove` (R37).",
+    "R0: the number lives here rather than in the hook. R4 provenance: CHOSEN on 2026-10-16,",
+    "not measured. A ResearchTools worktree holds about 800 tracked files; 500000 entries is far",
+    "above any worktree of this repository and still finishes in a few seconds when every",
+    "entry is a cheap directory listing. If a scan reaches it the call is refused, because a link",
+    "could be hiding in the part not reached (see the hook header). Raise it for a worktree that",
+    "carries a large dependency folder.",
+    "Deleting or breaking this file disables the gate in silence (R11); it never blocks."
+  ],
+
+  "enabled": true,
+
+  "max_entries": 500000
+}

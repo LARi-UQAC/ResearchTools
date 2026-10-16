@@ -26,8 +26,8 @@ from pathlib import Path
 
 CONFIG_PATH = Path(__file__).resolve().with_name("review-mirror.json")
 REQUIRED_KEYS = (
-    "review_marker", "bot_login", "pr_marker_template", "issue_marker_template", "forbidden_tools",
-    "forbidden_tool_prefixes", "author_pattern", "repo_pattern", "gh_timeout_seconds", "gh_retries",
+    "review_marker", "bot_login", "pr_marker_template", "issue_marker_template", "allowed_tools",
+    "author_pattern", "repo_pattern", "gh_timeout_seconds", "gh_retries",
     "secret_patterns",
 )
 EXIT_OK, EXIT_FAIL, EXIT_REFUSED = 0, 1, 2
@@ -88,7 +88,20 @@ def find_issue_number(pr_body):
     Outputs:
         number (int | None): the first matching issue number, else None.
     """
+    fenced = commented = False
     for line in (pr_body or "").splitlines():
+        stripped = line.strip()
+        if commented:
+            commented = "-->" not in line
+            continue
+        if stripped.startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        if stripped.startswith("<!--"):
+            commented = "-->" not in line
+            continue
         m = re.match(r"^\s*(?:fixes|closes)\s+#([0-9]+)\b", line, flags=re.I)
         if m:
             return int(m.group(1))
@@ -99,12 +112,16 @@ _LINK = re.compile(r"(!?)\[([^\]\n]*)\]\(([^)\s]*)[^)\n]*\)")
 _REPO_REF = re.compile(r"(?<![`\w/])([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)")
 _ISSUE_REF = re.compile(r"(?<![`\w/&])#([0-9]+)\b")
 _MENTION = re.compile(r"(?<![`\w@/])@([A-Za-z0-9_][A-Za-z0-9_/-]*)")
-_URL = re.compile(r"(?<![`\w/(])(https?://[^\s)>\]`]+)")
+_URL = re.compile(r"(?<![`\w/&])((?:https?://|www\.)[^\s)>\]`]+)")
+_GH_REF = re.compile(r"(?<![`\w/&-])(GH-[0-9]+)\b")
 _HTML = re.compile(r"<(?=[!/A-Za-z?])")
 _BRACKET = re.compile(r"(?<!\\)([\[\]])")
-# A BALANCED code span (same run of backticks opens and closes it). Only these are inert in
-# GFM, so only these are left alone. A backtick that never closes is literal text.
-_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.S)
+# A BALANCED code span: the same run of backticks opens and closes it, the opener is not
+# backslash-escaped, and it stays on ONE line. Only these are inert in GFM, so only these are left
+# alone. A backtick that never closes is literal text, and a span that would cross a line is
+# treated as no span at all (stricter than GFM on purpose: a line starting a list, quote or
+# heading ends the paragraph, so a multi-line span can hide live text on its second line).
+_SPAN = re.compile(r"(?<!\\)(`+)(?!`)([^\n]+?)(?<!`)\1(?!`)")
 
 
 def _neutralise(segment):
@@ -114,6 +131,7 @@ def _neutralise(segment):
     out = _HTML.sub("&lt;", out)
     out = _LINK.sub(lambda m: "%s (`%s`)" % (m.group(2) or "link", m.group(3)) if m.group(3) else m.group(2), out)
     out = _URL.sub(lambda m: "`%s`" % m.group(1), out)
+    out = _GH_REF.sub(lambda m: "`%s`" % m.group(1), out)
     out = _REPO_REF.sub(lambda m: "`%s`" % m.group(1), out)
     out = _ISSUE_REF.sub(lambda m: "`#%s`" % m.group(1), out)
     out = _MENTION.sub(lambda m: "`@%s`" % m.group(1), out)
@@ -181,7 +199,8 @@ def _init_tools(messages):
 def check_tools(messages, cfg):
     """
     Purpose:
-        List the tools of the model session that are forbidden next to the API key.
+        List the tools of the model session that are NOT on the allowlist (an allowlist, so a
+        tool nobody thought to forbid is still refused).
 
     Inputs:
         messages (list): the parsed execution file (SDK messages).
@@ -193,13 +212,8 @@ def check_tools(messages, cfg):
     Raises:
         ToolListError: no readable init message (R8: never vouch for what cannot be read).
     """
-    exact, prefixes = val(cfg, "forbidden_tools"), val(cfg, "forbidden_tool_prefixes")
-    bad = []
-    for tool in _init_tools(messages):
-        name = tool.split("(", 1)[0]
-        if name in exact or any(tool.startswith(p) for p in prefixes):
-            bad.append(tool)
-    return bad
+    allowed = set(val(cfg, "allowed_tools"))
+    return [tool for tool in _init_tools(messages) if tool.split("(", 1)[0] not in allowed]
 
 
 def extract_review(messages, cfg):
@@ -322,7 +336,10 @@ def _list_comments(runner, repo, number):
     return [c for page in pages for c in (page if isinstance(page, list) else [page])]
 
 
-def _upsert(runner, repo, number, marker, login, body, dry_run, read=True):
+_UNSET = object()
+
+
+def _upsert(runner, repo, number, marker, login, body, dry_run, read=True, existing=_UNSET):
     """
     Purpose:
         Create the marked comment, or update the existing one in place.
@@ -332,13 +349,16 @@ def _upsert(runner, repo, number, marker, login, body, dry_run, read=True):
         repo, number, marker, login, body: where to write, how to find our own comment, its text.
         dry_run (bool): when true nothing is written.
         read (bool): when false the existing comments are not even listed (post-pr dry run).
+        existing (dict | None): the marked comment when the caller already listed the comments,
+            so they are not listed a second time; left unset, they are listed here.
 
     Outputs:
         result (tuple): (action, comment id or None, existed).
     """
     if dry_run and not read:
         return "would-upsert", None, False
-    existing = select_comment(_list_comments(runner, repo, number), marker, login)
+    if existing is _UNSET:
+        existing = select_comment(_list_comments(runner, repo, number), marker, login)
     payload = json.dumps({"body": body})
     if dry_run:
         return ("would-update" if existing else "would-create", existing["id"] if existing else None, bool(existing))
@@ -444,7 +464,8 @@ def _cmd_mirror(args, cfg, runner, env):
         issue_marker = val(cfg, "issue_marker_template").format(pr=pr)
         existing = select_comment(_list_comments(runner, args.repo, issue), issue_marker, val(cfg, "bot_login"))
         body = build_issue_body(quoted, args.author, pr, existing is None, cfg)
-        action, cid, existed = _upsert(runner, args.repo, issue, issue_marker, val(cfg, "bot_login"), body, args.dry_run)
+        action, cid, existed = _upsert(runner, args.repo, issue, issue_marker, val(cfg, "bot_login"), body,
+                                       args.dry_run, existing=existing)
         if not existed and not args.dry_run:
             rc, out = runner(["api", "-X", "POST", "repos/%s/issues/%s/assignees" % (args.repo, issue), "--input", "-"],
                              json.dumps({"assignees": [args.author]}))

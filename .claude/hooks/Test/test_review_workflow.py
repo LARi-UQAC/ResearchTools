@@ -29,6 +29,10 @@ FORBIDDEN_TOOLS = ("Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Agent"
 AGENT_ACTION_INPUTS_BANNED = ("plugins:", "plugin_marketplaces:", "track_progress:", "use_sticky_comment:")
 READ_TOOLS = ("Read", "Grep", "Glob")
 DENIED_ROOTS = ("/proc", "/sys", "/run")
+# What GitHub still renders as a code span: the same run of backticks opens and closes it, the
+# opener is not backslash-escaped, and it never crosses a blank line. Kept independent of the
+# script's own pattern, so the test can disagree with the code it checks.
+GFM_SPAN = re.compile(r"(?<!\\)(`+)(?!`)((?:(?!\n[ \t]*\n).)+?)(?<!`)\1(?!`)", re.S)
 
 
 def load_module():
@@ -161,6 +165,15 @@ class TestWorkflowStatic(unittest.TestCase):
         for rel in called:
             self.assertTrue((REPO / rel).is_file(), rel)
 
+    def test_truncation_keeps_a_single_oversized_line_and_drops_partial_utf8(self):
+        # Code review round 1: `head -c N | sed '$d'` deleted the only line of a one-line diff and
+        # could hand the model half a multibyte character. Static check of the guard, since a shell
+        # snippet is not run here.
+        step = " ".join(b for b in run_blocks(self.text) if "pr.full.diff" in b)
+        self.assertIn("iconv -c -f UTF-8 -t UTF-8", step)
+        self.assertRegex(step, r'wc -l < "\$RUNNER_TEMP/pr\.diff"\)" -gt 0 \]; then sed -i')
+        self.assertIn("NO REVIEWABLE CHANGE", step)
+
     def test_diff_excludes_generated_mirrors_and_names_them(self):
         body = strip_comments(self.text)
         for pathspec in (":(exclude).continue", ":(exclude)CONVENTIONS.md", ":(exclude)AGENTS.md"):
@@ -174,11 +187,14 @@ class TestConfig(unittest.TestCase):
             self.assertIn("provenance", entry, key)
             self.assertIn("value", entry, key)
 
-    def test_forbidden_tool_list_is_not_emptied(self):
+    def test_allowed_tool_list_is_exactly_the_four_and_matches_the_workflow(self):
         cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
-        listed = set(cfg["forbidden_tools"]["value"])
+        allowed = cfg["allowed_tools"]["value"]
+        self.assertEqual(sorted(allowed), sorted(["Skill", "Read", "Grep", "Glob"]))
         for tool in FORBIDDEN_TOOLS:
-            self.assertIn(tool, listed)
+            self.assertNotIn(tool, allowed)
+        args = claude_args(WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn('--tools "%s"' % ",".join(allowed), args)
 
     def test_missing_key_is_a_named_error(self):
         mod = load_module()
@@ -209,6 +225,11 @@ class TestPureLogic(unittest.TestCase):
         self.assertIsNone(f('He said "Fixes #12" in passing'))
         self.assertIsNone(f(""))
         self.assertIsNone(f(None))
+        # Code review round 1: a template example in a fence or an HTML comment selects nothing.
+        self.assertIsNone(f("```\nFixes #1\n```\nno real link"))
+        self.assertIsNone(f("<!--\nFixes #1\n-->\n"))
+        self.assertEqual(f("```\nFixes #1\n```\nFixes #9\n"), 9)
+        self.assertEqual(f("<!-- Fixes #1 -->\nCloses #4"), 4)
 
     def test_sanitize_neutralises_mentions_refs_links_images_and_html(self):
         s = self.mod.sanitize
@@ -230,8 +251,10 @@ class TestPureLogic(unittest.TestCase):
         # Security review round 1: an opening backtick that is never closed is literal text in
         # GFM, so the old "previous character is a backtick" lookbehind left what followed live.
         s = self.mod.sanitize
-        span = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.S)
-        for raw in ("`@victim look", "`#12 x", "`owner/repo#5 y", "a ` b @victim", "``@victim"):
+        span = GFM_SPAN
+        for raw in ("`@victim look", "`#12 x", "`owner/repo#5 y", "a ` b @victim", "``@victim",
+                    "`a\n\n@victim ping`",          # code review round 1: a span never crosses a blank line
+                    "\\`@victim` tail"):            # code review round 1: a backslash-escaped backtick opens nothing
             out = s(raw)
             live = span.sub("", out)  # what GitHub still renders as live text
             self.assertNotIn("@victim", live, raw)
@@ -247,6 +270,16 @@ class TestPureLogic(unittest.TestCase):
         self.assertIn("`@name`", out)
         self.assertIn("``a ` b``", out)
         self.assertNotRegex(out, r"(?<![`\w/])#7")
+
+    def test_autolinks_in_prose_are_wrapped_in_every_form(self):
+        # Code review round 1: a URL in parentheses, www. and GH-123 autolink in plain prose.
+        span = GFM_SPAN
+        out = self.mod.sanitize("see (https://evil.example/x) and www.evil.example/y and GH-123 done")
+        live = span.sub("", out)
+        self.assertNotIn("https://", live)
+        self.assertNotIn("www.", live)
+        self.assertNotIn("GH-123", live)
+        self.assertIn("done", live)
 
     def test_reference_style_links_and_images_are_neutralised(self):
         s = self.mod.sanitize
@@ -288,6 +321,9 @@ class TestPureLogic(unittest.TestCase):
         bad = [{"type": "system", "subtype": "init", "tools": ["Skill", "Read", "Bash", "mcp__github_x__y"]}]
         self.assertEqual(self.mod.check_tools(good, self.cfg), [])
         self.assertEqual(sorted(self.mod.check_tools(bad, self.cfg)), ["Bash", "mcp__github_x__y"])
+        # Code review round 1: an ALLOWLIST. A tool nobody thought to forbid is still refused.
+        odd = [{"type": "system", "subtype": "init", "tools": ["Skill", "WebFetch", "Monitor", "PowerShell(x)"]}]
+        self.assertEqual(sorted(self.mod.check_tools(odd, self.cfg)), ["Monitor", "PowerShell(x)", "WebFetch"])
         with self.assertRaises(self.mod.ToolListError):
             self.mod.check_tools([{"type": "result"}], self.cfg)
         with self.assertRaises(self.mod.ToolListError):
@@ -426,6 +462,11 @@ class TestCommands(unittest.TestCase):
         self.assertEqual(self.mod.main(["mirror-issue", "--repo", "o/r", "--pr", "9", "--author", "octo",
                                         "--pr-comment-id", "77"], runner=second, env={"PR_BODY": "Fixes #12"}), 0)
         self.assertEqual([c[0][2] for c in second.writes()], ["PATCH"])
+        # Code review round 1: the Issue's comments are listed ONCE per run, not once to decide the
+        # ping and again to find the comment to update.
+        for gh in (first, second):
+            listings = [c for c in gh.calls if "--paginate" in c[0] and "issues/12/comments" in " ".join(c[0])]
+            self.assertEqual(len(listings), 1)
         self.assertFalse(any("@octo" in (c[1] or "") for c in second.writes()))
 
     def test_mirror_survives_an_assignee_failure(self):

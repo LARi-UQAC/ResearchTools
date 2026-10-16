@@ -15,13 +15,9 @@
     "value": "<!-- rt-review-mirror:pr-{pr} -->",
     "provenance": "chosen by the operator 2026-10-16: hidden first line of the Issue copy, same purpose as pr_marker_template"
   },
-  "forbidden_tools": {
-    "value": ["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "Agent", "Task"],
-    "provenance": "specified: PR #67 review round 1 H1 - tools whose presence in the model session next to ANTHROPIC_API_KEY voids the no-shell guarantee"
-  },
-  "forbidden_tool_prefixes": {
-    "value": ["mcp__"],
-    "provenance": "specified: PR #67 review round 1 H1 - the action's tag mode adds mcp__github_* tools; none is allowed in this session"
+  "allowed_tools": {
+    "value": ["Skill", "Read", "Grep", "Glob"],
+    "provenance": "specified: PR #67 review round 1 H1 and code review round 1 - the only tools the model session may have next to ANTHROPIC_API_KEY. An ALLOWLIST, so a tool nobody thought to forbid (WebFetch, Monitor, PowerShell, an MCP tool) is refused. Must equal the --tools list of review.yml, which a test asserts"
   },
   "author_pattern": {
     "value": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",

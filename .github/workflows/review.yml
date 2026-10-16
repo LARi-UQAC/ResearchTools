@@ -16,8 +16,9 @@
 #    which adds Bash git commands, edit rights and CI-log tools (src/modes/tag/index.ts).
 #  - `--tools` lists the only tools that exist in the session, `--allowedTools` and
 #    `--disallowedTools` repeat it. After the run, `review_mirror.py check-tools` reads the
-#    session's own init message from the execution file and fails the job when a forbidden tool
-#    is there or the list cannot be read. That is detection after the fact. Prevention is the
+#    session's own init message from the execution file and fails the job when ANY tool outside
+#    that allowlist is there (an allowlist, so an unforeseen tool is refused too) or the list
+#    cannot be read. That is detection after the fact. Prevention is the
 #    flag plus .claude/hooks/Test/test_review_workflow.py.
 #  - no plugin and no marketplace is loaded (they cannot be pinned and would run beside the key).
 #  - the checkout keeps no credential in git config (persist-credentials: false).
@@ -108,8 +109,13 @@ jobs:
             ':(exclude).github/agents' ':(exclude).github/instructions' ':(exclude).github/prompts' \
             ':(exclude).github/copilot-instructions.md' ':(exclude).continue' ':(exclude).opencode' \
             ':(exclude).agents' ':(exclude)CONVENTIONS.md' ':(exclude)AGENTS.md' > "$RUNNER_TEMP/pr.full.diff"
-          if [ "$(wc -c < "$RUNNER_TEMP/pr.full.diff")" -gt "$MAX_DIFF_BYTES" ]; then
-            head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/pr.full.diff" | sed '$d' > "$RUNNER_TEMP/pr.diff"
+          if [ ! -s "$RUNNER_TEMP/pr.full.diff" ]; then
+            printf '[NO REVIEWABLE CHANGE: only regenerated files changed]\n' > "$RUNNER_TEMP/pr.diff"
+          elif [ "$(wc -c < "$RUNNER_TEMP/pr.full.diff")" -gt "$MAX_DIFF_BYTES" ]; then
+            # iconv -c drops a multibyte character cut in half. The last, partial line is dropped
+            # only when the cut holds a newline, so one oversized line is kept rather than erased.
+            head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/pr.full.diff" | iconv -c -f UTF-8 -t UTF-8 > "$RUNNER_TEMP/pr.diff"
+            if [ "$(wc -l < "$RUNNER_TEMP/pr.diff")" -gt 0 ]; then sed -i '$d' "$RUNNER_TEMP/pr.diff"; fi
             printf '\n[DIFF TRUNCATED at %s bytes: review the part above and say so]\n' "$MAX_DIFF_BYTES" >> "$RUNNER_TEMP/pr.diff"
           else
             mv "$RUNNER_TEMP/pr.full.diff" "$RUNNER_TEMP/pr.diff"
@@ -150,6 +156,8 @@ jobs:
                its second line states which of the two skills you actually ran and which
                you could not run, so a missing dimension is visible. If the diff file ends
                with a DIFF TRUNCATED line, the third line must say the review is partial.
+               If the diff file holds only a NO REVIEWABLE CHANGE line, say so on the second
+               line and list no finding.
                Then group the items Critical / High / Medium / Low. Each item one line,
                tagged with its source skill in brackets, e.g.
                "- [security-review] SSRF in form-service's PDF fetch: ..."

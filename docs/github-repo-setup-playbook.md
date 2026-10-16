@@ -578,8 +578,9 @@ state both. Without the yes, stop here.
    silently did not run is visible.
 4. Key-less steps after the agent, in the same job (it has `pull-requests: write` and no
    `issues: write`): a guard reads the tool list of the session's own `init` message from the
-   action's `execution_file` output and FAILS the job when a forbidden tool is present or the
-   list cannot be read (detection after the fact, prevention being step 3), then an extract
+   action's `execution_file` output and FAILS the job when ANY tool outside the four allowed ones
+   is present or the list cannot be read (an allowlist, so a tool nobody thought to forbid is
+   refused too; detection after the fact, prevention being step 3), then an extract
    step pulls the model's final reply out of the same file and refuses an error result or a
    reply that does not start with the fixed marker line, then a post step sanitises the reply
    (no mention, no `#N` or `owner/repo#N` reference, no link, no remote image, no raw HTML, no

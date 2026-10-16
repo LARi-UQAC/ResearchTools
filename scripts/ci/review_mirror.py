@@ -193,10 +193,12 @@ def _plain(text):
         text (str): decoded text holding no token.
 
     Outputs:
-        text (str): '&' as &amp; (an entity the model wrote in escaped form stays text) and a '<'
-        that starts a tag or a comment as &lt;.
+        text (str): '&' as &amp; (an entity the model wrote in escaped form stays text) and EVERY
+        '<' as &lt;. Unconditional on purpose: a lookahead for a following letter sees only this
+        slice, and a '<' ending the slice before a link token took its letter from the link text
+        (security review round 4), so a tag could be assembled around a token.
     """
-    return _HTML.sub("&lt;", text.replace("&", "&amp;"))
+    return text.replace("&", "&amp;").replace("<", "&lt;")
 
 
 def _tokens(segment):

@@ -367,6 +367,21 @@ class TestPureLogic(unittest.TestCase):
                 self.assertNotIn("\n", span.group(2), raw)
             self.assertNotRegex(out, r"``", raw)
 
+    def test_a_tag_assembled_around_a_token_cannot_become_html(self):
+        # Security round 4: `<` was escaped only when a letter followed it IN THE SAME slice of
+        # text. A `<` ending the slice before a link token got its letter from the link text, and
+        # the `>` after the token was never escaped, so `<[a href="//e.example"]()>x<[/a]()>`
+        # came out as a live, clickable <a> in the PR comment.
+        for raw in ('- <[a href="//evil.example/login"]()>Sign in<[/a]()>',
+                    '<[img src="//e.example/x.png"]()>', 'x <[img src="a](t) b">', "<@a>", "<#1>", "<GH-1>",
+                    "<https://e.example/x>", "< a>", "<&#97; href=x>"):
+            body = self.mod.build_pr_body("## Automated multi-dimension review\n" + raw, "a" * 40, 9, self.cfg)
+            for live in self.live_lines(body)[1:]:
+                self.assertNotRegex(live, r"<[!/A-Za-z?]", raw)
+        out = self.mod.sanitize('<[a href="//e.example"]()>x')
+        self.assertNotIn("<", out)
+        self.assertEqual(self.mod.sanitize(out), out)
+
     def test_seeded_fuzz_no_live_token_and_stable_after_a_second_pass(self):
         # Four review rounds each found a new bypass in a hand-picked input. This walks 600 strings
         # built from the fragments that produced them, with a FIXED seed (R19), through the whole
@@ -433,7 +448,8 @@ class TestPureLogic(unittest.TestCase):
     def test_sanitize_is_idempotent_and_keeps_plain_text(self):
         s = self.mod.sanitize
         text = "A plain sentence, 3 < 4, code `x` and a list.\n- item"
-        self.assertEqual(s(text), text)
+        # Every '<' outside a code span is an entity since security round 4 (it renders as '<').
+        self.assertEqual(s(text), text.replace("<", "&lt;"))
         raw = "@alice #5 [a](http://x.example) <b>"
         self.assertEqual(s(s(raw)), s(raw))
 

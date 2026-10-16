@@ -15,6 +15,7 @@ one of them, read the matching `.claude/agents/<name>.md` in full and follow it:
 - `local-writer` - see `.claude/agents/local-writer.md`
 - `narrative-cv-writer` - see `.claude/agents/narrative-cv-writer.md`
 - `paper-auditor` - see `.claude/agents/paper-auditor.md`
+- `professor-expertise-finder` - see `.claude/agents/professor-expertise-finder.md`
 - `reviewer-response` - see `.claude/agents/reviewer-response.md`
 - `scopus-auditor` - see `.claude/agents/scopus-auditor.md`
 - `scopus-researcher` - see `.claude/agents/scopus-researcher.md`
@@ -24,6 +25,7 @@ one of them, read the matching `.claude/agents/<name>.md` in full and follow it:
 - `thesis-proposal-auditor` - see `.claude/agents/thesis-proposal-auditor.md`
 - `thesis-to-paper` - see `.claude/agents/thesis-to-paper.md`
 - `word-to-latex` - see `.claude/agents/word-to-latex.md`
+- `wp-portfolio-agent` - see `.claude/agents/wp-portfolio-agent.md`
 
 The task-to-agent routing table lives in `.claude/CLAUDE.md` (section "Tooling").
 Skills are repository folders the agents read directly

@@ -1,0 +1,46 @@
+{
+  "base_url": {
+    "value": "http://localhost:11434",
+    "provenance": "Ollama's own documented default local API address; not machine-specific (R1), the operator can point the check at another loopback port by editing this file; since 2026-10-15 a host that is not loopback is refused at load (page images and thesis text are sent to it)"
+  },
+  "timeout_s": {
+    "value": 300,
+    "provenance": "carried over 2026-10-11 from the earlier --vlm-check, measured 2026-10-10: one page took 130.35 s with the model's default reasoning on and its 262144-token context. To be re-measured now that reasoning is off and the context is reduced"
+  },
+  "dpi": {
+    "value": 150,
+    "provenance": "chosen by the operator, 2026-10-10: page render resolution, matching mineru's typical rendering DPI for VLM input"
+  },
+  "num_ctx": {
+    "value": 16384,
+    "provenance": "chosen 2026-10-11, to be measured: the model's own default is 262144 tokens, a KV cache far larger than one page image plus a few thousand characters of markdown needs, and a likely cause of CPU offload. This value must hold the image tokens, the prompt, the markdown excerpt and the answer"
+  },
+  "think": {
+    "value": false,
+    "provenance": "measured 2026-10-11 with 'ollama show': the model has thinking enabled by default at level medium and accepts level false. The earlier check left it on, which cost latency and, with a forced JSON format, produced an empty answer for one chapter"
+  },
+  "temperature": {
+    "value": 0,
+    "provenance": "chosen 2026-10-11: a verification answer should not vary between runs on the same page, so sampling is switched off"
+  },
+  "seed": {
+    "value": 0,
+    "provenance": "chosen 2026-10-11 (R19): fixed so the same page and markdown give the same answer on a re-run"
+  },
+  "pages_per_chapter": {
+    "value": 2,
+    "provenance": "chosen 2026-10-11, to be adjusted from the latency measured once reasoning is off: how many of a chapter's pages are sent to the model. The pages are the ones richest in math symbols among those whose prose can be located in the output"
+  },
+  "excerpt_margin_lines": {
+    "value": 10,
+    "provenance": "chosen 2026-10-11 after the first live run: the markdown shown with a page covers the lines of its located prose, and an equation printed just before or after the first or last located paragraph fell outside it, so the model reported formulas 'not present in the markdown' that were only outside the excerpt. This many lines are added on each side"
+  },
+  "max_markdown_chars": {
+    "value": 6000,
+    "provenance": "chosen 2026-10-11: the markdown excerpt shown with the page is cut at this length (and the report says when it was cut), so the prompt stays well inside num_ctx"
+  },
+  "max_formulas": {
+    "value": 12,
+    "provenance": "chosen 2026-10-11: the model is asked to list at most this many of the page's formulas, which bounds the answer length"
+  }
+}

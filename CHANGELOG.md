@@ -9,6 +9,16 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+### Added
+- `wp-portfolio-sync` skill: migrates a researcher's final CIHR / Canadian Common CV XML
+  export into their WordPress portfolio once, through the REST API, gated by an
+  anti-fabrication check before any write. `cihr_cv.py` now recognises both French and
+  English CCV export labels. `push_wp.py` snapshots a page's prior content to
+  `<data-dir>/backups/` immediately before every write, and cookie authentication can write
+  as well as read when `WP_NONCE` is set. `wp-portfolio-agent` (`/portfolio`) drives the
+  pipeline with two separate approval pauses, one before the dry run and one before the
+  live push.
+
 ## [0.1.0] - 2026-09-26
 
 First tagged version.

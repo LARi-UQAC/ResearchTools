@@ -10,9 +10,9 @@ $ARGUMENTS
 If no argument is provided, use the `.bib` file currently open in the IDE.
 
 The agent executes its FULL contractual pipeline as defined in
-.claude/agents/bib-cleaner.md, including every mandatory skill invocation
-(deliberation, scholar-evaluation, extract-statistic, extract-futureworks, scopus where
-applicable). Do not restate or reduce that pipeline here. If the agent returns
+.claude/agents/bib-cleaner.md, including every mandatory skill invocation that
+agent defines (`scopus` and the scripted `bib_audit.py`; this agent does not run the
+deliberation panel). Do not restate or reduce that pipeline here. If the agent returns
 "PIPELINE-PAUSED @ ...", relay its request to the user verbatim, then resume the same
 agent via SendMessage with the user's answer. On completion, verify the agent's final
 checklist before presenting the result; if it is missing or contains an unsanctioned ✗,

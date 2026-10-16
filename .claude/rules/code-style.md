@@ -117,10 +117,12 @@ machine. Provenance is one of three: measured (name the script and the date), sp
 (name the standard, journal or publisher rule), or chosen by the user (name them). A number
 with no provenance cannot be revised by anyone later.
 
-**R5 - an enum-like literal comes from one table.** Roles (`writer`, `coder`), modes
-(`audit`, `mine`), statuses (`submitted`, `deposed`), KV cache types, note types: define
-them once as a constant or a small module and import them. A repeated string literal is a
-typo waiting to become a silent no-op.
+**R5 - an enum-like literal comes from one table.** Roles (`writer`, `coder`, and since
+2026-10-09 `session` - manually adopted via `model_resolver.py --adopt-role`, for a use
+`qualification/tasks.json` has no executable oracle for), modes (`audit`, `mine`), statuses
+(`submitted`, `deposed`), KV cache types, note types: define them once as a constant or a
+small module and import them. A repeated string literal is a typo waiting to become a
+silent no-op.
 
 **R13 - a measured number written into a rule, a document or a comment carries its date and
 what measured it.** This is the counterpart of R0 and resolves its apparent tension: a

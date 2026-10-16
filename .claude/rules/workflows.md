@@ -25,6 +25,7 @@ and the output produced. Full arguments are in `README.md`.
 | Convert Word to LaTeX | `/word2latex <docx>` | `word2latex` skill / `word-to-latex` | Faithful `.tex` matching the `.docx` |
 | Draft a recommendation / support / appreciation / acceptance / dispense letter | `/recommendation-letter` | `recommendation-letter` skill | LaTeX letter(s) compiled to PDF in `out/` |
 | Draft, refresh, or tailor the narrative CV-FRQ / tri-agency CV to one grant competition | `/cv` | `narrative-cv-writer` agent (+ `narrative-cv`, `scopus`, `extract-contributions`, `scientific-writing` skills) | LaTeX/PDF + plain-text CV in the profile's `cv.project_dir`, durable inventory refreshed |
+| Migrate a researcher's final CIHR / Canadian Common CV XML export into their WordPress portfolio, once (the web is the source afterwards, no student data) | `/portfolio` | `wp-portfolio-agent` agent (+ `wp-portfolio-sync` skill) | Pushed portfolio sections between `cvsync` markers, a per-page report, a public-page check |
 | Measure LaTeX manuscript hygiene (forbidden characters, AI-usage score, word count, brace balance, citation coverage) | `/texcheck` | `latex-hygiene` skill | Hygiene report / AI-usage score / word count |
 | Ask whether the toolkit is correctly deployed to every harness, and which empty mirror cells are deliberate | `python .claude/skills/rt-observe/scripts/rt_state.py` | `rt-observe` skill | Mirror matrix (canonical definitions x harness dialects, eight states), registry integrity, repo green stamp and profile, plan progression, MCP roster, local models, vault daemon, sessions |
 | Watch that state on a page instead of reading a dump | `/rt-dashboard`, `.\rt-dashboard.ps1 -Open`, `sh ./rt-dashboard.sh --open`, `rt-dashboard.bat`, or the VS Code task | `rt-observe` skill | A loopback dashboard: the matrix as one grid per definition kind, the fan-out diagram, the plan timeline, the receipt rail and the session strip. `-DryRun` names the interpreter, the bind address and every TTL and starts nothing |
@@ -72,6 +73,71 @@ match, so the child survives and keeps its slice of VRAM. Up to three orphaned i
 were seen this way, and they produced a false throughput measurement before anyone noticed
 the card was shared. The script kills both names, verifies against `nvidia-smi` that the
 memory actually came back, and prints the `OLLAMA_*` values the restarted daemon now has.
+
+### Switching the Claude Code session itself between three identities
+
+Separate from the bridge above: this redirects the Claude Code SESSION itself, not an agent -
+there is no cloud orchestrator in this mode. `model_resolver.py` IS consulted, though, since
+the PR #61 review (R2): `scripts/local/claude-switch.ps1`'s default local tag is never a
+hardcoded literal, it is resolved the same way local-writer/local-coder resolve theirs.
+`scripts/local/claude-switch.ps1`, dot-sourced, exposes three functions: `claude-ollama` (alias
+`claude-local`), `claude-augure`, and `claude-cloud`. Since Ollama's 2026-01-16 update exposes a
+native Anthropic-compatible `/v1/messages` endpoint, no LiteLLM proxy is needed for the local
+path: Claude Code points `ANTHROPIC_BASE_URL` straight at Ollama. `claude-augure` (added
+2026-10-15) is a third identity on the SAME shape - a different endpoint
+(`https://api.augureai.ca/v1`) and a different key (`AUGUREAI_API_KEY`) - for when the operator
+wants Claude Code billed/routed through AugureAI instead of the default Anthropic account.
+Three identities sharing one save/restore mechanism (below) rather than two, so the per-shell
+bookkeeping could no longer assume only one "away" state existed at a time.
+
+Three-step process, always in this order:
+
+1. **Measure the candidate tag for this GPU before switching to it.** Which tool depends on
+   whether the model is GPU-resident:
+   - Fits in VRAM: `opt-local-vram-llm` skill (`/opt-local-vram-llm` or `tune-new-model.ps1`),
+     sweeps `num_ctx` against the KV cache type via `vram_optimizer.py`, writes the result to
+     `.claude/local-model-config.json`.
+   - Too large for VRAM, runs on CPU/RAM (e.g. a 27B model on a 6GB card):
+     `aider-thread-probe.py --mode sweep --model <tag> --num-ctx <n> --threads <rungs>
+     --repeats 3 --json <out>` (in `.claude/skills/aider-setup/scripts/`), which sweeps thread
+     counts and reads back decode tok/s, CPU percent, and page-in rate from the real
+     daemon/OS counters rather than guessing. Bake the chosen values into a Modelfile
+     (`FROM <base-tag>`, `PARAMETER num_ctx ...`, `PARAMETER num_thread ...`, the measurement
+     and its date in a comment) and `ollama create <new-tag> -f <Modelfile>`.
+2. **Register the measured tag with the resolver.**
+   `model_resolver.py --adopt-role session <tag> --reason "<measurement, verbatim>"` writes
+   `current_by_role.session` in the gitignored, machine-local `local-model-state.json` - no
+   qualification run, since there is no `session`-kind task in `qualification/tasks.json` to
+   grade it against (unlike `writer`/`coder`, this role has no executable oracle: "is this a
+   good interactive chat session" is not a thing a frozen task set can check). Refuses without
+   `--reason` (R4) and refuses a tag that is not installed. Deliberately NOT declared in
+   `local-models.json`: that file's candidates feed `--matrix`, which checks every entry
+   against `local-model-config.json`'s GPU-residency sweep, and a thread-sweep-measured tag has
+   no entry there - declaring it would print a false "NOT RUNNABLE".
+3. **Switch.** `. .\scripts\local\claude-switch.ps1` once per shell, then:
+   - `claude-local` (or `claude-ollama -Model <tag>`) - with no `-Model`, resolves the
+     adopted `session` tag; refuses to switch, and never launches `claude`, when Ollama is not
+     reachable, when the resolver has nothing to offer and no `-Model` was given either, or
+     when the resolved/given tag is not actually in `ollama list` (a reachable port is not
+     proof the MODEL is there).
+   - `claude-augure` - refuses with nothing touched if `AUGUREAI_API_KEY` is unset; otherwise
+     clears any Ollama-routing vars a prior `claude-ollama` call left behind, then points at
+     AugureAI's endpoint with that key.
+   - `claude-cloud -SessionName <name>` - clears every local/Augure-routing env var, restores
+     the caller's ORIGINAL `ANTHROPIC_API_KEY` (whatever was there before the first hop away
+     from it, via either `claude-ollama` or `claude-augure` - never an intermediate value from
+     whichever identity ran in between), and returns to Anthropic. `-SessionName` on any of the
+     three sets the terminal window title only (`[LOCAL]`/`[AUGURE]`/`[CLOUD] <name>`), for
+     telling parallel terminal windows apart when several Claude Code sessions run at once -
+     it has no functional effect, since each PowerShell process already has its own isolated
+     environment.
+
+Measured and baked 2026-10-08, adopted for the `session` role 2026-10-09: `qwen3.8-maxctx:latest`
+(`num_ctx=262144`, `num_thread=14`), chosen for maximum context window (a 170-page thesis for
+`/auditthesis`) over speed - 0 of 66 layers fit on a 6GB card at that window, about 2.4 tok/s
+decode, heavy pagefile thrashing. The full measurement is the `--reason` string recorded in
+`local-model-state.json`'s `current_by_role.session`, not a comment in the script - the script
+no longer names a tag at all.
 
 LaTeX boundary: `local-writer` may add `%` comments in a `.tex` file but never authors
 LaTeX or scientific prose - that stays with `latex-writer` + `scientific-writing` on the
@@ -427,9 +493,11 @@ Language is not a criterion, and neither is size. Python, PowerShell, shell, and
 else follow the same rule. The default home is the owning skill's
 `.claude/skills/<skill>/scripts/` directory, with an offline test beside it in `Test/`. Code
 the whole repo owns rather than one skill has its own established homes - `.claude/hooks/`
-for hooks, `profiles/` for domain profiles, `install.ps1` and `setup.ps1` at the root - and
-belongs there instead; a repository-wide `scripts/` directory is not a home for code that
-exactly one skill drives.
+for hooks, `profiles/` for domain profiles, `install.ps1` and `setup.ps1` at the root, and the
+repo-root `scripts/` tree's own named subfolders (`scripts/audit/`, `scripts/test/`,
+`scripts/lib/`, `scripts/local/` for personal Claude-Code routing utilities such as
+`claude-switch.ps1`) - and belongs there instead; what `scripts/` is not a home for is code
+that exactly one SKILL drives, which belongs beside that skill instead.
 
 The test of ownership is who calls it. Measured 2026-08-28: a PowerShell script restarting a
 local daemon sat in `scripts/dev/` although exactly one module called it, and the earlier

@@ -61,8 +61,10 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 |---|---|
 | Catch a missing reference or a broken hypothesis flow after the reviewer does | An auditor scores the manuscript first, against the same ScholarEval rubric a committee uses |
 | Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
+| Receive a thesis, an article or a talk as a PDF with no LaTeX source and re-type it before it can be audited | `pdf2md` converts it with mineru to markdown (the UQAC thesis layout, or one document for an article or a talk) and measures what the conversion lost against a second reader of the PDF |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
 | Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
+| Catch a committed secret but not a committed real name (a student, a co-author, an account path) | A global git privacy guard (pre-commit/pre-push, every repository) scans the diff against both betterleaks' secret rules and a machine-local deny list of real names, extended for each new student and never leaving the machine |
 
 Not a replacement for judgment — a second pair of eyes that never gets tired of checking.
 
@@ -120,8 +122,8 @@ graph LR
 | 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the 5 install steps |
 | 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys |
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx` |
-| 04 | [Skills](docs/manual/04-skills.md) | All 22 skills, the two memories |
-| 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings |
+| 04 | [Skills](docs/manual/04-skills.md) | All 25 skills, the two memories |
+| 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings, the global git privacy guard (deny list of real names + secret rules, every repo) |
 | 06 | [Aider nightly pipeline](docs/manual/06-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
 | 07 | [rt-observe & dashboard](docs/manual/07-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard` |
 | 08 | [Commands](docs/manual/08-commands.md) | All slash commands |

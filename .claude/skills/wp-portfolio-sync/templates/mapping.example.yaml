@@ -1,0 +1,72 @@
+# Fictitious example mapping.yaml for wp-portfolio-sync. Copy into
+# <data-dir>/config/mapping.yaml and adapt the site URL, page ids and
+# marker names to the researcher's own WordPress site (see discover.py).
+
+# The one source of the site URL (D9). A WP_BASE environment value that
+# disagrees with this is a refusal, not a silent override.
+site: https://portfolio.example.org/researcher
+
+# The reference year the recent/history split is counted back from.
+# preview.py warns when this has fallen behind the current year.
+ref_year: 2026
+
+# How many years (counting back from ref_year) count as "recent"; older
+# items go to the history block. An item with no end date is recent.
+recent_window: 6
+
+# The caption shown above each section's recent-window cumul paragraph.
+recent_label: "Six dernières années"
+
+# Funding records whose status matches one of these are dropped entirely
+# before rendering, e.g. an application still under review.
+excluded_funding_statuses:
+  - "En cours d'évaluation"
+
+entries:
+  # One entry per Phase 1 renderer. There is no "phq" entry: supervision
+  # data is never read from the CV XML (D2) - it is published from
+  # ThesisTracker once its own consent flow ships (Phase 2).
+
+  - cv_path: financement
+    page_id: 101
+    mode: split
+    renderer: financement
+    recent_marker: financement-recent
+    history_marker: financement-historique
+    history_heading: Historique
+    public_path: /recherche/
+    # editorial_texts: true   # opt-in only; needs config/contributions.yaml too (SKILL.md)
+
+  - cv_path: implications
+    page_id: 102
+    mode: split
+    renderer: implications
+    recent_marker: implications-recent
+    history_marker: implications-historique
+    public_path: /curriculum-vitae/
+
+  - cv_path: services_communaute
+    page_id: 103
+    mode: split
+    renderer: services
+    recent_marker: services-recent
+    history_marker: services-historique
+    public_path: /services/
+
+  - cv_path: distinctions
+    page_id: 104
+    mode: split
+    renderer: distinctions
+    subkey: prix
+    recent_marker: distinctions-prix-recent
+    history_marker: distinctions-prix-historique
+    public_path: /curriculum-vitae/
+
+  - cv_path: distinctions
+    page_id: 104
+    mode: split
+    renderer: distinctions
+    subkey: contributions_cles
+    recent_marker: distinctions-contributions-recent
+    history_marker: distinctions-contributions-historique
+    public_path: /curriculum-vitae/

@@ -10,7 +10,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from exclusions import apply_exclusions, main  # noqa: E402
+from exclusions import apply_exclusions, main, row_name  # noqa: E402
 
 RANKING_FIELDS = ["professor", "university"]
 
@@ -139,6 +139,44 @@ class ExclusionsTest(unittest.TestCase):
         kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
         self.assertEqual(kept, [])
         self.assertEqual(len(excluded), 1)
+
+    def test_french_prenom_nom_columns_are_combined_not_truncated_to_surname(self):
+        # 2026-10-15 code review: "Nom" matches NAME_COLS's bare "nom" exactly,
+        # so a French file with separate "Prenom"/"Nom" columns used to return
+        # the surname ALONE via the direct NAME_COLS branch, which never
+        # matched the ranking row's full-name key - the professor was never
+        # excluded and "Tremblay" alone was reported UNMATCHED.
+        self.assertEqual(row_name({"Prenom": "Jean", "Nom": "Tremblay"}), "Jean Tremblay")
+        ranking = [{"professor": "Jean Tremblay", "university": "U1"}]
+        exclusion_rows = [{"Prenom": "Jean", "Nom": "Tremblay", "reason": "unavailable"}]
+        kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, exclusion_rows)
+        self.assertEqual(kept, [])
+        self.assertEqual(len(excluded), 1)
+        self.assertEqual(unmatched, [])
+
+    def test_single_nom_column_alone_still_reads_as_the_full_name(self):
+        # Negative control for the fix above: "nom" is now ALSO a LAST_COLS
+        # synonym, so a file with only "Nom" (no "Prenom") - the full name
+        # in one cell, the ordinary case - must not be mistaken for a
+        # surname-only column and left half-resolved.
+        self.assertEqual(row_name({"Nom": "Jean Tremblay"}), "Jean Tremblay")
+
+    def test_cli_exclusion_file_with_unrecognized_name_column_is_refused(self):
+        # 2026-10-15 code review: a header the hints do not recognize (e.g.
+        # "Evaluateur") used to be silently dropped - 0 excluded, 0
+        # unmatched, exit 0 - reading exactly like a clean run against a
+        # list that genuinely matched nobody.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            ranking = tmp_path / "ranking.csv"
+            write_csv(ranking, RANKING_FIELDS, [["Jane Doe", "U1"]])
+            excl = tmp_path / "excl.csv"
+            write_csv(excl, ["Evaluateur"], [["Jane Doe"]])
+            rc, out = run_main(["--ranking", str(ranking), "--exclusions", str(excl),
+                                 "--out", str(tmp_path / "out.csv")])
+            self.assertEqual(rc, 2)
+            self.assertIn("INVALID", out)
+            self.assertFalse((tmp_path / "out.csv").exists())
 
     def test_cli_dry_run_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:

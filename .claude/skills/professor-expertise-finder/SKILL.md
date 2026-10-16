@@ -408,3 +408,18 @@ recent document list, `approved_publisher`) and
 own stated contribution, checked against the keyword clusters). Neither
 is vendored here; both are called by path, same as any other agent in
 this repo reaching a sibling skill's script.
+
+## Known limitations
+
+- **`selections.py`'s registry has no lock on its read-modify-write**
+  (2026-10-15 code review, declined as low-risk rather than fixed): the
+  no-reuse/COI/cap checks and the write that follows are not atomic, so
+  two `add` calls for different applications running CONCURRENTLY against
+  the SAME batch could both pass their check before either writes, and
+  register the same professor as final twice, or have the second write
+  silently overwrite the first's row. Workflow 6's only mention of
+  parallelism is the department-list crawl, never `selections.py add`
+  itself, so this is accepted as a real but currently unreached gap
+  rather than fixed now. If a future workflow does run `add` concurrently
+  against one batch, close it with a lock file beside the registry before
+  relying on it.

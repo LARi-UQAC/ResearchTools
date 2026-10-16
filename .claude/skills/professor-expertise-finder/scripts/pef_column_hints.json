@@ -10,7 +10,7 @@
   "exclusions": {
     "name_cols": ["name", "professor", "nom", "full_name", "professeur"],
     "first_cols": ["first_name", "prenom", "given_name", "first"],
-    "last_cols": ["last_name", "family_name", "last", "surname"],
+    "last_cols": ["last_name", "family_name", "last", "surname", "nom"],
     "uni_cols": ["university", "universite", "institution", "etablissement"],
     "reason_cols": ["reason", "raison", "motif", "note"]
   },

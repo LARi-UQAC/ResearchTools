@@ -305,10 +305,17 @@ def main(argv: list[str]) -> int:
         print(f"CREATED: {path}")
         return 0
 
-    rows = read_rows(path)
     if not path.exists():
         print(f"MISSING registry: {path} (run init first)")
         return 1
+    try:
+        rows = read_rows(path)
+    except ValueError as exc:
+        # 2026-10-15 code review (minor): a malformed header used to raise
+        # an uncaught ValueError traceback here instead of the refusal
+        # message every other bad-input path in this skill prints (R12).
+        print(f"INVALID registry: {path} - {exc}")
+        return 2
 
     if args.command == "check":
         if not args.professor:

@@ -139,7 +139,10 @@ def main(argv: list[str]) -> int:
         argv (list[str]): command-line arguments, excluding the program name.
 
     Outputs:
-        exit_code (int): 0 on success, 1 on invalid input or policy config.
+        exit_code (int): 0 on success, 2 on invalid input or policy config -
+            a refusal by design (R12; 2026-10-15 review round 5: consistent
+            with file_search.py's and exclusions.py's own L5 fix, named
+            here rather than left at the old exit 1).
     --------------------------------------------------------------------------
     """
     parser = argparse.ArgumentParser(description=__doc__)
@@ -154,7 +157,7 @@ def main(argv: list[str]) -> int:
         config = load_config()
     except (FileNotFoundError, ValueError) as exc:
         print(f"INVALID: {exc}")
-        return 1
+        return 2
     allowed = set(config["subscore_values"])
     retain_threshold = config["retain_threshold"]
 
@@ -162,7 +165,7 @@ def main(argv: list[str]) -> int:
         t = total(sub, allowed)
     except ValueError as exc:
         print(f"INVALID: {exc}")
-        return 1
+        return 2
 
     detail = ", ".join(f"{name.upper()} {fmt(sub[name])}" for name in NAMES)
     label = band(t, retain_threshold)

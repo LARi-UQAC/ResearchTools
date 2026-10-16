@@ -70,9 +70,10 @@ class ScoreTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("3.5/5 (A 1, B 1, C 0.5, D 0, E 1)", out)
 
-    def test_cli_invalid_subscore_exits_1(self):
+    def test_cli_invalid_subscore_exits_2(self):
+        # R12: a refusal by design, consistent with file_search.py/exclusions.py's L5 fix.
         rc, out = run_main(["--a", "0.7", "--b", "1", "--c", "0.5", "--d", "0", "--e", "1"])
-        self.assertEqual(rc, 1)
+        self.assertEqual(rc, 2)
         self.assertIn("INVALID", out)
 
     def test_cli_below_threshold_is_flagged(self):

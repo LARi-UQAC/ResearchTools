@@ -9,7 +9,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from selections import main  # noqa: E402
+from selections import main, registry_path  # noqa: E402
 
 
 def run_main(argv):
@@ -37,6 +37,17 @@ class SelectionsTest(unittest.TestCase):
     def _init_batch(self, batch="test-batch"):
         main(["init", "--batch", batch])
         return batch
+
+    def test_malformed_registry_header_is_refused_not_an_uncaught_traceback(self):
+        # 2026-10-15 code review (minor): read_rows() raises ValueError on a
+        # header mismatch, and that used to propagate as an uncaught
+        # traceback out of main() instead of the INVALID-style refusal
+        # every other bad-input path here prints (R12).
+        batch = self._init_batch()
+        registry_path(batch).write_text("wrong,header\na,b\n", encoding="utf-8")
+        rc, out = run_main(["check", "--batch", batch, "--professor", "Test Person"])
+        self.assertEqual(rc, 2)
+        self.assertIn("INVALID", out)
 
     def test_no_reuse_across_applications_is_rejected(self):
         batch = self._init_batch()

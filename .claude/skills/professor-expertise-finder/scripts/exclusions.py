@@ -89,12 +89,27 @@ def row_name(row: dict) -> str:
     Outputs:
         name (str): the resolved full name, or "" if none of the expected
             columns carried a value.
+
+    Details:
+        first/last columns are tried FIRST when BOTH resolve, ahead of a
+        single name column. "nom" is a synonym in BOTH LAST_COLS (a French
+        file's surname-only "Nom" column) and NAME_COLS (a French file
+        whose ONLY name column, "Nom", carries the full name) - the two
+        readings are told apart by whether a first-name column resolved
+        alongside it, not by which list is checked first. Checking
+        NAME_COLS first used to return the surname alone and silently drop
+        the first name whenever a file carried separate "Prenom"/"Nom"
+        columns, matching no ranking row under its full-name key
+        (2026-10-15 code review). A single combined name column (no
+        separate first/last) still falls through to NAME_COLS below.
     --------------------------------------------------------------------------
     """
+    first, last = pick(row, FIRST_COLS), pick(row, LAST_COLS)
+    if first and last:
+        return f"{first} {last}".strip()
     direct = pick(row, NAME_COLS)
     if direct:
         return direct
-    first, last = pick(row, FIRST_COLS), pick(row, LAST_COLS)
     return f"{first} {last}".strip()
 
 
@@ -292,11 +307,14 @@ def main(argv: list[str]) -> int:
 
     Outputs:
         exit_code (int): 0 on success, 2 if the ranking CSV has no
-            "professor" column - a refusal by design over a malformed
-            ranking file, not a crash (R12; 2026-10-15 review round 5: the
-            same reasoning file_search.py's L5 fix already applied to its
-            own header/column refusals, named here for consistency rather
-            than left at the old exit 1).
+            "professor" column, or if the exclusion file has rows but NONE
+            of them resolve a name under row_name() - a refusal by design
+            over a malformed ranking or exclusion file, not a silent no-op
+            (R8/R12; the second case is the 2026-10-15 code-review finding:
+            an exclusion file whose header used an unrecognized column,
+            e.g. "Evaluateur", used to be dropped with no warning at all -
+            0 excluded, 0 unmatched, exit 0 - reading exactly like a clean
+            run against a list that matched nobody).
     --------------------------------------------------------------------------
     """
     parser = argparse.ArgumentParser(description=__doc__)
@@ -323,7 +341,13 @@ def main(argv: list[str]) -> int:
         print("INVALID: ranking CSV has no 'professor' column")
         return 2
 
-    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, read_rows(excl_path))
+    excl_rows = read_rows(excl_path)
+    if excl_rows and not any(row_name(r) for r in excl_rows):
+        print("INVALID: exclusion file's name column was not recognized "
+              f"(expected one of {NAME_COLS} or {FIRST_COLS}+{LAST_COLS})")
+        return 2
+
+    kept, excluded, unmatched, ambiguous = apply_exclusions(ranking, excl_rows)
 
     if args.dry_run:
         print(f"DRY RUN - KEPT: {len(kept)}  EXCLUDED: {len(excluded)}  (would write {out_path})")

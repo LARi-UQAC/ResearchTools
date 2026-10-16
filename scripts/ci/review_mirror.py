@@ -31,6 +31,7 @@ REQUIRED_KEYS = (
     "review_marker", "bot_login", "pr_marker_template", "issue_marker_template", "allowed_tools",
     "author_pattern", "repo_pattern", "gh_timeout_seconds", "gh_retries", "secret_patterns",
     "comment_max_chars", "pr_pattern", "comment_id_pattern", "sha_pattern", "gh_retry_delay_seconds",
+    "error_text_chars", "invisible_characters",
 )
 # A gh failure worth another attempt: a server error, a timeout, or a dropped connection. A 404, 403
 # or 422 is permanent and is never retried (code review round 6).
@@ -301,6 +302,11 @@ def sanitize(text, secret_patterns=()):
     Outputs:
         clean (str): the neutralised text.
     """
+    # Invisible and bidirectional characters can carry text a human reviewer cannot see but another
+    # agent reads, or reverse what a finding displays. They go FIRST, before the line and trailing
+    # newline handling (one removed last would leave a new trailing newline and break stability),
+    # and so that one cannot split a token (a zero-width character between @ and a name).
+    text = re.sub(_ACTIVE["invisible_characters"], "", text)
     text = "\n".join(text.splitlines()).rstrip("\n").replace("\x00", "").replace("\x01", "")
     # Spans are found on the RAW text, before any character reference is decoded, exactly as
     # GitHub reads it: an entity is never a span delimiter and is not decoded inside a span.
@@ -439,7 +445,18 @@ def _fit(text, cap):
         return text
     notice = "\n\n> (review cut at %d characters to fit a GitHub comment)\n" % cap
     keep = text[:cap - len(notice)]
-    return keep[:max(keep.rfind("\n"), 0)].rstrip() + notice
+    cut = keep.rfind("\n")
+    if cut < len(keep) // 2:
+        # No usable line break in the second half (one very long line after the heading): cut at
+        # the last space instead, so the findings survive rather than only the heading.
+        cut = keep.rfind(" ")
+    keep = keep[:max(cut, 0)].rstrip()
+    # A cut inside a code span would leave its opening backtick unclosed and the text after it
+    # live, so drop back to before the last opener when the count is odd. A cut mid-entity goes too.
+    while keep.count("`") % 2:
+        keep = keep[:keep.rfind("`")].rstrip()
+    keep = re.sub(r"&#?[A-Za-z0-9]*$", "", keep).rstrip()
+    return keep + notice
 
 
 def build_pr_body(review, sha, pr, cfg):
@@ -547,6 +564,20 @@ def _gh_json(runner, args, stdin=None):
     return _parse_gh(rc, out, " ".join(args[:3]))
 
 
+# Settings read by helpers that have no cfg argument. main() fills it from the configuration it
+# loaded, so there is no second copy of any number here. A helper called before main() ran reads
+# the shipped file once (R3: a missing key is still a named ConfigError, never a silent default).
+class _Active(dict):
+    """The configured values helpers need without a cfg argument, loaded on first use."""
+
+    def __missing__(self, key):
+        self.update({k: val(load_config(CONFIG_PATH), k) for k in ("error_text_chars", "invisible_characters")})
+        return self[key]
+
+
+_ACTIVE = _Active()
+
+
 def _parse_gh(rc, out, what):
     """
     Purpose:
@@ -564,7 +595,7 @@ def _parse_gh(rc, out, what):
         ReviewError: a non-zero return code, or an answer that is not JSON.
     """
     if rc != 0:
-        raise ReviewError("gh %s failed: %s" % (what, (out or "").strip()[:200]))
+        raise ReviewError("gh %s failed: %s" % (what, (out or "").strip()[:_ACTIVE["error_text_chars"]]))
     try:
         return json.loads(out) if (out or "").strip() else {}
     except ValueError:
@@ -858,6 +889,7 @@ def main(argv=None, runner=None, env=None):
     except ConfigError as exc:
         print("[CI] %s" % exc, file=sys.stderr)
         return EXIT_FAIL
+    _ACTIVE.update({k: val(cfg, k) for k in ("error_text_chars", "invisible_characters")})
     runner = runner or make_runner(cfg)
     env = os.environ if env is None else env
     if args.command == "check-tools":

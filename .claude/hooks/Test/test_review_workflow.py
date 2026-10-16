@@ -422,6 +422,45 @@ class TestPureLogic(unittest.TestCase):
                 self.assertNotIn("\n", span.group(2), raw)
             self.assertNotRegex(out, r"``", raw)
 
+    def test_invisible_and_bidi_characters_are_removed(self):
+        # Code review round 7: tag characters (U+E0000-E007F), zero-width characters and bidi
+        # overrides can carry text a human reviewer cannot see but another agent reads, or reverse
+        # what a finding displays. The repository's own style hygiene forbids them.
+        raw = ("clean \U000e0041\U000e0042 hidden ​‌‍⁠﻿ zero ‮ reversed "
+               "⁦ isolate ⁩ end")
+        out = self.mod.sanitize(raw)
+        for ch in ("\U000e0041", "​", "‌", "‍", "⁠", "﻿", "‮", "⁦", "⁩"):
+            self.assertNotIn(ch, out)
+        self.assertIn("clean", out)
+        self.assertIn("reversed", out)
+        self.assertEqual(self.mod.sanitize(out), out)
+        # also inside a code span, and a mention split by a zero-width character is still a mention
+        self.assertNotIn("​", self.mod.sanitize("`a​b`"))
+        live = GFM_SPAN.sub("·", self.mod.sanitize("@oct​ocat"))
+        self.assertNotIn("@octocat", live)
+
+    def test_one_oversized_line_is_cut_at_a_safe_space_not_dropped(self):
+        # Code review round 7: _fit cut on the last newline, so a review that is one very long line
+        # after its heading was dropped entirely and only the notice was posted.
+        import copy
+        small = copy.deepcopy(self.cfg)
+        small["comment_max_chars"]["value"] = 600
+        words = " ".join("word%d `code%d`" % (i, i) for i in range(400))
+        body = self.mod.build_pr_body("## Automated multi-dimension review\n" + words, "a" * 40, 9, small)
+        self.assertLessEqual(len(body), 600)
+        self.assertIn("cut at", body)
+        kept = body.split("(review cut at")[0]
+        self.assertIn("word0", kept)
+        self.assertGreater(len(kept), 300)                       # findings survive, not just the heading
+        self.assertEqual(kept.count("`") % 2, 0)                 # the cut never leaves a span open
+        self.assertNotRegex(kept.rstrip()[-8:], r"&#?\w*$")      # nor a half entity
+
+    def test_the_error_text_cap_is_configuration(self):
+        cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+        self.assertIn("error_text_chars", cfg)
+        self.assertIn("provenance", cfg["error_text_chars"])
+        self.assertNotIn("[:200]", SCRIPT.read_text(encoding="utf-8"))
+
     def test_math_delimiters_cannot_turn_a_code_span_live(self):
         # Security round 6 (7686 strings rendered through GitHub): GitHub extracts $...$ math BEFORE
         # it parses code spans, so a span between two dollar signs became a <math-renderer> whose

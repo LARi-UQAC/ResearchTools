@@ -20,6 +20,11 @@ it cannot resolve: a variable, a command substitution or a `%VAR%` in the path p
 does a command assembled in a script file the tool call merely runs. A `cd`, `pushd` or
 `Set-Location` earlier in the same line is followed. One whose target cannot be resolved makes
 every later RELATIVE path unknowable (it passes), while an absolute path is still judged.
+Known gaps of the same kind, left open because this is an accident-prevention rail and not a
+security boundary (defeating it takes the user's own command): `popd` and the scope of a
+subshell are not undone, so `pushd x; popd; git worktree remove a` resolves `a` against `x`;
+a bash backslash-escaped space (`My\ Tools/wt`) splits the path in two; and any token named
+`git` starts the parse, so `echo git worktree remove x` can be refused when `x` holds a link.
 
 EXIT CODES (R12):
     0  the call is clean, OR the gate is disabled, OR the call is not ours to judge.

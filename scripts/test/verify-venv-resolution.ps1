@@ -131,6 +131,65 @@ Check "an explicit existing -Python is used"         ($ex.Python -eq $fake -and 
 $exBad = Resolve-RtVenvPython -RepoRoot $Wt -Python (Join-Path $Scratch "absent-python.exe")
 Check "an explicit -Python that does not exist is refused, not skipped" ($null -eq $exBad.Python -and $exBad.Message -match "absent-python")
 
+# --- the REAL runner, executed: a refusal must stop it and clear the stale stamp -------
+# Code-review finding: in run-offline-tests.ps1 the local `$python` was the SAME variable as
+# the `[string]$Python` parameter (PowerShell is case-insensitive), which turned a $null
+# result into "" and made the refusal dead code - the stamp stayed and the runner failed
+# later with an unrelated error. Reading the text could not have caught that; running it does.
+# A copy of the runner and the helper sits in a scratch tree with no environment anywhere.
+$Runner = Join-Path $Scratch "runner-tree"
+New-Item -ItemType Directory -Path (Join-Path $Runner "scripts\test"), (Join-Path $Runner "scripts\lib") -Force | Out-Null
+Copy-Item (Join-Path $RepoRoot "scripts\test\run-offline-tests.ps1") (Join-Path $Runner "scripts\test\")
+Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1") (Join-Path $Runner "scripts\lib\")
+$stamp = Join-Path $Runner ".rt-green.json"
+
+function Invoke-Runner([string[]]$RunnerArgs) {
+    Set-Content -Path $stamp -Value '{"stale": true}' -Encoding ASCII
+    # Child stderr arrives as ErrorRecords under 2>&1; with the script's Stop preference
+    # the first one would end THIS script. It is the child's output that is judged.
+    $ErrorActionPreference = "Continue"
+    $text =& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Runner "scripts\test\run-offline-tests.ps1") @RunnerArgs 2>&1 | Out-String
+    [pscustomobject]@{ Exit = $LASTEXITCODE; Text = $text; StampKept = (Test-Path $stamp) }
+}
+
+$refused = Invoke-Runner @()
+Check "the runner refuses with no environment: exit 1"          ($refused.Exit -eq 1)
+Check "the runner prints the refusal naming the path"           ($refused.Text -match "no suite interpreter" -and $refused.Text -match [regex]::Escape(".venv-skills"))
+Check "the runner prints the rebuild command"                   ($refused.Text -match "-InstallPython")
+Check "the refusal clears the stale green stamp"                (-not $refused.StampKept)
+Check "the refusal never reaches a suite"                       ($refused.Text -notmatch "Suites\s+:")
+
+$refusedBad = Invoke-Runner @("-Python", (Join-Path $Scratch "absent-python.exe"))
+Check "a nonexistent -Python is refused too and clears the stamp" ($refusedBad.Exit -eq 1 -and $refusedBad.Text -match "does not exist" -and -not $refusedBad.StampKept)
+
+# Positive control, without which every check above passes on a runner that refuses always:
+# an existing interpreter is accepted and reported with its source.
+$accepted = Invoke-Runner @("-Python", $fake)
+Check "(control) an existing -Python gets past the refusal"     ($accepted.Text -match "Interpreter :" -and $accepted.Text -match "\(explicit\)" -and $accepted.Text -notmatch "no suite interpreter")
+
+# --- vault-daemon-autostart -Status is a report: with no environment it must say so and
+# write NOTHING to the daemon log (code-review finding: it used to append a "refused to
+# start" line there, which reads as a failed login-time start). Run for real in a scratch
+# tree at the script's own depth.
+$AutoRoot = Join-Path $Scratch "autostart-tree"
+$AutoDir  = Join-Path $AutoRoot ".claude\skills\obsidian-cli\scripts"
+New-Item -ItemType Directory -Path $AutoDir, (Join-Path $AutoRoot "scripts\lib") -Force | Out-Null
+Copy-Item (Join-Path $RepoRoot ".claude\skills\obsidian-cli\scripts\vault-daemon-autostart.ps1") $AutoDir
+Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1") (Join-Path $AutoRoot "scripts\lib\")
+# USERPROFILE is NOT redirected: that breaks [Environment]::GetFolderPath("Startup") and the
+# script dies before reaching the check. The real log is compared before and after instead.
+$RealLog = Join-Path $env:USERPROFILE ".claude\vault-daemon.log"
+$logBefore = if (Test-Path $RealLog) { (Get-Item $RealLog).Length } else { -1 }
+$ErrorActionPreference = "Continue"
+$statusText = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $AutoDir "vault-daemon-autostart.ps1") -Status 2>&1 | Out-String
+$statusExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+$logAfter = if (Test-Path $RealLog) { (Get-Item $RealLog).Length } else { -1 }
+Check "-Status with no environment says it cannot determine"  ($statusText -match "cannot determine")
+Check "-Status with no environment exits 1"                    ($statusExit -eq 1)
+Check "-Status names the rebuild command"                      ($statusText -match "-InstallPython")
+Check "-Status wrote nothing to the daemon log"                ($logAfter -eq $logBefore)
+
 # --- wiring: every launcher uses the helper and none keeps its own copy (R18) ---------
 Write-Host ""
 Write-Host "=== launchers use the shared helper ===" -ForegroundColor Cyan

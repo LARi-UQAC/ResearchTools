@@ -75,6 +75,10 @@ def _green_stamp(repo_root, now, stale_after_s):
         "outcome_count": len(outcomes),
         "code_files_hashed": len(stamp.get("code_hashes", {})),
         "elapsed_s": stamp.get("elapsed_s"),
+        # Which kind of interpreter produced the stamp (explicit, venv, main-repo-venv,
+        # path-fallback). A stamp from a PATH python did not exercise the suites whose
+        # packages that python lacks, so the reader needs to be able to tell.
+        "interpreter_source": stamp.get("interpreter_source"),
     }
 
 
@@ -178,6 +182,19 @@ def main_clone_root(repo_root):
 
 
 def _venv_probe(root):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Say what a clone's .venv-skills holds, on either layout.
+
+    Inputs:
+        root (Path or str): the clone whose environment is probed
+
+    Outputs:
+        probe (dict): {"state": "present" | "empty" | "absent", "python": path}.
+        "empty" is a folder with no interpreter, the 2026-10-06 state.
+    --------------------------------------------------------------------------
+    """
     base = Path(root) / VENV_DIR
     for rel in VENV_INTERPRETERS:
         if (base / rel).is_file():
@@ -188,12 +205,24 @@ def _venv_probe(root):
 
 
 def _interpreter(repo_root, home=None):
-    """The suite interpreter, or the reason there is none. Never PATH: since
-    2026-10-16 the launchers refuse instead of falling back, and this section
-    must say the same thing the launchers say (R8). The 2026-10-06 loss stayed
-    invisible for a week because nothing reported it. Every path in the result
-    is rewritten under `~` (rt_redact), because the snapshot is rendered in a
-    browser and the account name must not travel with it."""
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The suite interpreter, or the reason there is none. Never PATH: since
+        2026-10-16 the launchers refuse instead of falling back, and this
+        section says the same thing they say (R8). Every path in the result is
+        rewritten under `~` (rt_redact), because the snapshot is rendered in a
+        browser and the account name must not travel with it.
+
+    Inputs:
+        repo_root (Path or str): the clone or worktree
+        home (Path): home directory to hide; defaults to the current user's
+
+    Outputs:
+        state (dict): {"status": "ok", "value", "source", "proven_by"} or
+        {"status": "unavailable", "value": "no interpreter", "reason"}
+    --------------------------------------------------------------------------
+    """
     result = _interpreter_raw(repo_root)
     home = Path.home() if home is None else home
     for key in ("value", "reason"):
@@ -203,6 +232,19 @@ def _interpreter(repo_root, home=None):
 
 
 def _interpreter_raw(repo_root):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Resolve the interpreter without redaction: this clone's .venv-skills,
+        then the main clone's when repo_root is a linked worktree.
+
+    Inputs:
+        repo_root (Path or str): the clone or worktree
+
+    Outputs:
+        state (dict): same shape as _interpreter, paths in full
+    --------------------------------------------------------------------------
+    """
     repo_root = Path(repo_root)
     main = main_clone_root(repo_root)
     roots = [("venv", repo_root)]

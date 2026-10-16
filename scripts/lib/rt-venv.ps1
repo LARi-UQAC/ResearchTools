@@ -105,9 +105,13 @@ function Get-RtVenvCandidates {
         PSCustomObject[] with Source, Venv, Python, State. State is one of
         present, empty (the folder exists but holds no interpreter), absent.
     #>
-    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        # Already known by the caller, so git is asked once per resolution, not twice.
+        [AllowEmptyString()][string]$MainRoot = ""
+    )
 
-    $main  = Get-RtMainRepoRoot -RepoRoot $RepoRoot
+    $main  = if ([string]::IsNullOrWhiteSpace($MainRoot)) { Get-RtMainRepoRoot -RepoRoot $RepoRoot } else { $MainRoot }
     $roots = @(@{ Source = "venv"; Root = $RepoRoot })
     $same  = ([System.IO.Path]::GetFullPath($main).TrimEnd('\', '/') -ieq
               [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\', '/'))
@@ -159,7 +163,7 @@ function Resolve-RtVenvPython {
 
     $main    = Get-RtMainRepoRoot -RepoRoot $RepoRoot
     $rebuild = "& '" + (Join-Path $main "setup.ps1") + "' -InstallPython"
-    $cands   = @(Get-RtVenvCandidates -RepoRoot $RepoRoot)
+    $cands   = @(Get-RtVenvCandidates -RepoRoot $RepoRoot -MainRoot $main)
 
     function New-Result($path, $source, $message) {
         [pscustomobject]@{

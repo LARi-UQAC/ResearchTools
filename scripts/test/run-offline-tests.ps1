@@ -110,8 +110,11 @@ Write-Line ""
 Write-Line "=== ResearchTools - offline test suite ===" "Cyan"
 
 $resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot -Python $Python -AllowPathFallback:$AllowPathFallback
-$python = $resolved.Python
-if ($null -eq $python) {
+# $suitePython, not $python: PowerShell variables are case-insensitive, so $python IS the
+# [string]$Python parameter, which coerces a null result to "" and turns the refusal below
+# into dead code (code-review finding, reproduced in PowerShell 5.1).
+$suitePython = $resolved.Python
+if ($null -eq $suitePython) {
     Write-Host ""
     foreach ($line in ($resolved.Message -split "`n")) { Write-Host "  $line" -ForegroundColor Red }
     Write-Host "  Cannot establish a green stamp; removing any stale one." -ForegroundColor Red
@@ -121,11 +124,11 @@ if ($null -eq $python) {
 if ($resolved.Source -eq "path-fallback") {
     foreach ($line in ($resolved.Message -split "`n")) { Write-Host "  $line" -ForegroundColor Yellow }
 }
-Write-Line "  Interpreter : $python  ($($resolved.Source))"
+Write-Line "  Interpreter : $suitePython  ($($resolved.Source))"
 
-$suites = Get-ChildItem -Path (Join-Path $RepoRoot ".claude") -Recurse -File -Filter "test_*.py" -ErrorAction SilentlyContinue |
+$suites = @(Get-ChildItem -Path (Join-Path $RepoRoot ".claude") -Recurse -File -Filter "test_*.py" -ErrorAction SilentlyContinue |
           Where-Object { $_.DirectoryName -match '\\Test$' } |
-          Sort-Object FullName
+          Sort-Object FullName)
 
 Write-Line "  Suites      : $($suites.Count) discovered"
 Write-Line ""
@@ -145,7 +148,7 @@ foreach ($suite in $suites) {
     # Start-Process with file redirection rather than `2>&1`: in PowerShell 5.1,
     # redirecting a native executable's stderr inline wraps each line in an ErrorRecord
     # and sets $? to false even on a clean exit, which would misreport every suite.
-    $proc = Start-Process -FilePath $python -ArgumentList @("`"$($suite.FullName)`"") `
+    $proc = Start-Process -FilePath $suitePython -ArgumentList @("`"$($suite.FullName)`"") `
                           -WorkingDirectory $RepoRoot -NoNewWindow -Wait -PassThru `
                           -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 
@@ -223,7 +226,8 @@ foreach ($f in Get-CodeFiles) {
 
 $stamp = [ordered]@{
     generated   = (Get-Date).ToString("s")
-    interpreter = $python
+    interpreter = $suitePython
+    interpreter_source = $resolved.Source
     elapsed_s   = $elapsed
     suites      = @{ passed = $passed; failed = 0; not_run = $notRun.Count; discovered = $suites.Count }
     outcomes    = $results

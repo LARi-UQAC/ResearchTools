@@ -83,7 +83,15 @@ function Die([string]$t) { Write-Host "  STOP  $t" -ForegroundColor Red; exit 1 
 # environment is gone. No silent PATH fallback (R8): a login-time start with no
 # environment must say so in the log, because nobody is watching that window.
 function Initialize-PythonExe {
+    # -ReadOnly is for -Status: a report must not write a "refused to start" line into the
+    # daemon log, where it would read as a failed login-time start (code-review finding).
+    param([switch]$ReadOnly)
     $resolved = Resolve-RtVenvPython -RepoRoot $RepoRoot -Python $Python -AllowPathFallback:$AllowPathFallback
+    if ($null -eq $resolved.Python -and $ReadOnly) {
+        Say "  daemon    : cannot determine, there is no suite interpreter to ask the lock with" "Yellow"
+        foreach ($line in ($resolved.Message -split "`n")) { Say "    $line" "Yellow" }
+        exit 1
+    }
     if ($null -eq $resolved.Python) {
         if (-not (Test-Path (Split-Path $Log -Parent))) {
             New-Item -ItemType Directory -Path (Split-Path $Log -Parent) -Force | Out-Null
@@ -113,7 +121,7 @@ function Get-DaemonState { (& $script:PythonExe -c $LiveCheck).Trim() }
 
 # ------------------------------------------------------------------ status ---
 if ($Status) {
-    Initialize-PythonExe
+    Initialize-PythonExe -ReadOnly
     Write-Host ""
     Write-Host "=== vault daemon ===" -ForegroundColor Cyan
     $state = Get-DaemonState

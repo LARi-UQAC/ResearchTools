@@ -102,6 +102,9 @@ $sample = @("docling==2.1", "docling-core==1.0", "Docling[x]>=3", "# docling is 
 $out = @(Get-RtFilteredRequirementLines -Lines $sample -Exclude @("docling"))
 Check "exact name dropped, extras and case included" (-not ($out -contains "docling==2.1") -and -not ($out -contains "Docling[x]>=3"))
 Check "a longer name sharing the prefix stays"   ($out -contains "docling-core==1.0")
+Check "an include line is detected (-r, -c, long forms)" ((Test-RtRequirementHasInclude -Lines @("requests==2.0", "-r base.txt")) -and (Test-RtRequirementHasInclude -Lines @("-c c.txt")) -and (Test-RtRequirementHasInclude -Lines @("--requirement=base.txt")))
+Check "a plain file has no include (control)"      (-not (Test-RtRequirementHasInclude -Lines $real))
+Check "a comment mentioning -r is not an include"  (-not (Test-RtRequirementHasInclude -Lines @("# pip install -r x", "requests==2.0", "")))
 Check "an empty exclusion list changes nothing"  (@(Get-RtFilteredRequirementLines -Lines $sample -Exclude @()).Count -eq $sample.Count)
 
 # ------------------------------------------------------------------ decisions ---

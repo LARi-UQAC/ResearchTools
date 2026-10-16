@@ -136,6 +136,23 @@ class RepoStateTest(TempTree):
         self.assertEqual(state["green"]["value"], "green")
         self.assertEqual(state["green"]["code_files_hashed"], 1)
 
+    def test_the_stamp_reports_which_interpreter_produced_it(self):
+        """Code-review finding: a stamp written under a PATH python did not exercise the
+        suites whose packages that python lacks, and nothing said so."""
+        for source in ("path-fallback", "main-repo-venv"):
+            write(self.repo / ".rt-green.json", json.dumps(
+                {"generated": "2026-10-16T12:00:00", "suites": {}, "outcomes": [],
+                 "code_hashes": {}, "interpreter_source": source}))
+            with self.subTest(source=source):
+                state = collect_repo.collect(self.repo, NOW, 604800)
+                self.assertEqual(source, state["green"]["interpreter_source"])
+
+    def test_an_old_stamp_without_a_source_reports_none_not_a_guess(self):
+        write(self.repo / ".rt-green.json", json.dumps(
+            {"generated": "2026-10-16T12:00:00", "suites": {}, "outcomes": [], "code_hashes": {}}))
+        state = collect_repo.collect(self.repo, NOW, 604800)
+        self.assertIsNone(state["green"]["interpreter_source"])
+
     def test_an_absent_stamp_is_not_proven_never_green(self):
         """The runner DELETES the stamp on any failure, so absence is the failure
         signal. Reading it as 'nothing to report' inverts the meaning exactly."""

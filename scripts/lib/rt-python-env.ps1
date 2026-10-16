@@ -135,6 +135,20 @@ function Get-RtFilteredRequirementLines {
     return $out
 }
 
+function Test-RtRequirementHasInclude {
+    <#
+    .SYNOPSIS
+        True when a requirements file pulls in another file (-r / -c and their long
+        forms), which a filtered copy written elsewhere could not resolve.
+    #>
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines)
+
+    foreach ($line in $Lines) {
+        if ($line -match '^\s*-[rc]\b' -or $line -match '^\s*--(requirement|constraint)\b') { return $true }
+    }
+    return $false
+}
+
 function Test-RtInterpreterOwner {
     <#
     .SYNOPSIS
@@ -245,7 +259,9 @@ function Test-RtVenvCreates {
         # defect on Windows PowerShell 5.1: without it ExitCode comes back empty).
         $null = $proc.Handle
         if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {
-            try { $proc.Kill() } catch { }
+            # taskkill /T ends the whole process tree: Kill() alone leaves children (a venv
+            # launcher's pip bootstrap) holding files in the scratch folder.
+            try { & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null } catch { }
             return "python -m venv did not finish within $TimeoutSeconds s"
         }
         # The timed WaitForExit(ms) overload leaves ExitCode unpopulated on Windows
@@ -509,7 +525,15 @@ function Install-RtPythonEnv {
         foreach ($r in $reqs) {
             $file = $r.Full
             if ($r.Exclude.Count -gt 0) {
-                $lines = @(Get-RtFilteredRequirementLines -Lines (Get-Content -LiteralPath $r.Full -Encoding UTF8) -Exclude $r.Exclude)
+                $source = @(Get-Content -LiteralPath $r.Full -Encoding UTF8)
+                # The filtered copy lives in TEMP, where pip would resolve a relative `-r` or
+                # `-c` include against the wrong folder. No file does that today; if one ever
+                # does, say so rather than let pip fail with "No such file" (R8).
+                if (Test-RtRequirementHasInclude -Lines $source) {
+                    Write-Host "  [ERR] $($r.Path) uses an include (-r/-c) and also has packages to exclude; the filtered copy cannot resolve it" -ForegroundColor Red
+                    return 1
+                }
+                $lines = @(Get-RtFilteredRequirementLines -Lines $source -Exclude $r.Exclude)
                 $file = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-req-" + [guid]::NewGuid().ToString("N") + ".txt")
                 [System.IO.File]::WriteAllLines($file, [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))
                 $temps += $file

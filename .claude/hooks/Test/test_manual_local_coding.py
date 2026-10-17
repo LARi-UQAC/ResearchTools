@@ -200,6 +200,41 @@ class TestNeighbouringChapters(unittest.TestCase):
         self.assertNotIn("`--budget` required", text)
 
 
+class TestSkillForEveryStep(unittest.TestCase):
+    """Owner decision D13 (2026-10-17): the process names a skill at each step."""
+
+    STEPS = ("request", "plan files", "execution", "review", "pull request")
+
+    def setUp(self):
+        self.text = CHAPTER.read_text(encoding="utf-8")
+        self.diagram = DIAGRAM.read_text(encoding="utf-8")
+
+    def test_the_chapter_has_a_table_with_a_skill_for_every_step(self):
+        body = section(self.text, "A skill for every step")
+        rows = [line for line in body.splitlines() if line.startswith("| ")
+                and not line.startswith("| Step") and not line.startswith("|---")]
+        self.assertGreaterEqual(len(rows), len(self.STEPS))
+        for step in self.STEPS:
+            with self.subTest(step=step):
+                found = [r for r in rows if r.lower().startswith("| " + step)]
+                self.assertEqual(len(found), 1)
+                cells = [c.strip() for c in found[0].strip("|").split("|")]
+                self.assertTrue(cells[1], "no skill for the step " + step)
+        for phrase in ("R36", "superpowers:brainstorming", "superpowers:writing-plans",
+                       "superpowers:executing-plans", "speckit", "not installed or verified"):
+            self.assertIn(phrase, flat(body))
+
+    def test_the_flowchart_names_the_three_skills_on_their_nodes(self):
+        for node, skill in (("A", "superpowers:brainstorming"),
+                            ("D", "superpowers:writing-plans"),
+                            ("H", "superpowers:executing-plans")):
+            with self.subTest(node=node):
+                self.assertRegex(self.diagram, r"\b%s\[[^\]]*%s" % (node, re.escape(skill)))
+
+    def test_the_inline_block_still_equals_the_source(self):
+        self.assertEqual(mermaid_block(self.text), self.diagram.rstrip("\n"))
+
+
 class TestNegativeControls(unittest.TestCase):
     def test_the_region_checker_fails_without_a_link_a_name_or_a_region(self):
         names = {"loop_bounds.py": "file"}

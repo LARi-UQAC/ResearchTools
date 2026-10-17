@@ -1,11 +1,11 @@
 flowchart TD
-    A[Coding request] --> B{Single step, no deliverable?}
+    A["Coding request<br/>superpowers:brainstorming"] --> B{Single step, no deliverable?}
     B -- yes --> C[Answer directly]
-    B -- no --> D[Write spec, plans and progress]
+    B -- no --> D["Write spec, plans and progress<br/>superpowers:writing-plans"]
     D --> E[Ask the owner the bounds]
     E --> F[Write the header: executor, tier, bounds]
     F --> G{Which executor?}
-    G -- judgment or no local role --> H[cloud: executing-plans]
+    G -- judgment or no local role --> H["cloud: superpowers:executing-plans"]
     G -- one plan --> J[local-coder, Haiku wrapper and bridge]
     J --> K{Step output fits the coder window?}
     K -- yes --> L[tier simple or standard]

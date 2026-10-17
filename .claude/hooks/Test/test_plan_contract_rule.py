@@ -22,6 +22,9 @@ WORKFLOWS = REPO / ".claude" / "rules" / "workflows.md"
 CODE_STYLE = REPO / ".claude" / "rules" / "code-style.md"
 CLAUDE_MD = REPO / ".claude" / "CLAUDE.md"
 AGENT = REPO / ".claude" / "agents" / "local-coder.md"
+LOOPDEV = REPO / ".claude" / "commands" / "loopdev.md"
+SKILLS = ("superpowers:brainstorming", "superpowers:writing-plans",
+          "superpowers:executing-plans")
 
 MODEL_TAG = re.compile(r"\b[a-z][a-z0-9._-]*:[0-9]+(?:\.[0-9]+)?b\b")
 
@@ -111,6 +114,41 @@ class TestRuleIsWritten(unittest.TestCase):
                             ("export", export_region(self.claude))):
             with self.subTest(where=label):
                 self.assertIsNone(MODEL_TAG.search(text), label)
+
+
+def missing_skill_note(text: str) -> list:
+    """What a process description lacks of the skill-per-step note: the three skills named, R36
+    cited as the basis, a skill for each step and any task, and a similar toolset allowed."""
+    body = flat(text)
+    wanted = list(SKILLS) + ["R36", "each step", "speckit"]
+    return [phrase for phrase in wanted if phrase not in body]
+
+
+class TestSkillForEveryStep(unittest.TestCase):
+    """Owner decision D13, 2026-10-17: every step of the process uses a skill (R36 says all
+    tasks, any task, need one): brainstorming for the request, writing-plans for the plan
+    files, executing-plans for the execution. A similar toolset such as speckit may replace
+    them, and the skill is still named."""
+
+    def test_r38_the_export_region_and_loopdev_carry_the_note(self):
+        workflows = WORKFLOWS.read_text(encoding="utf-8")
+        claude = CLAUDE_MD.read_text(encoding="utf-8")
+        for label, text in (("R38", r38(workflows)), ("export", export_region(claude)),
+                            ("loopdev", LOOPDEV.read_text(encoding="utf-8"))):
+            with self.subTest(where=label):
+                self.assertEqual(missing_skill_note(text), [])
+
+    def test_the_note_says_ruflow_is_not_verified_rather_than_naming_it_as_a_tool(self):
+        body = flat(r38(WORKFLOWS.read_text(encoding="utf-8")))
+        self.assertIn("ruflow", body)
+        self.assertIn("not installed or verified", body)
+
+    def test_the_finder_can_fail(self):
+        full = " ".join(SKILLS) + " R36 each step speckit"
+        self.assertEqual(missing_skill_note(full), [])
+        for name in SKILLS:
+            self.assertEqual(missing_skill_note(full.replace(name, "x")), [name])
+        self.assertEqual(missing_skill_note(full.replace("R36", "x")), ["R36"])
 
 
 class TestNegativeControls(unittest.TestCase):

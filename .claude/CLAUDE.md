@@ -185,7 +185,11 @@ the bounds, and checks it with `python .claude/skills/loop-engineer/scripts/plan
 validate <plan>`. One plan is one `local-coder` dispatch, named by a `PLAN: <path>` line in the
 prompt, and local-coder audits nothing: R35 runs in the calling harness. Several plans or an
 unattended night go to aider. Judgment, security work and any plan with no qualified local role
-run in the session with `executing-plans`. The hooks `review-loop-guard.py` and
+run in the session with `executing-plans`. Every step uses a skill (R36 applies to any task):
+`superpowers:brainstorming` for the request, `superpowers:writing-plans` for the plan files,
+`superpowers:executing-plans` for the execution, `code-review` and `security-review` for the
+review. A similar toolset such as speckit may replace them, and each step still names its skill;
+ruflow is not installed or verified here. The hooks `review-loop-guard.py` and
 `local-coder-dispatch-guard.py` enforce this and stay silent when their dependency is absent.
 Full rule: R38 in `.claude/rules/workflows.md`.
 

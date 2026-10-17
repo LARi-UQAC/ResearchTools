@@ -24,13 +24,13 @@ was barely visible in the dashboard.
 
 ```mermaid
 flowchart TD
-    A[Coding request] --> B{Single step, no deliverable?}
+    A["Coding request<br/>superpowers:brainstorming"] --> B{Single step, no deliverable?}
     B -- yes --> C[Answer directly]
-    B -- no --> D[Write spec, plans and progress]
+    B -- no --> D["Write spec, plans and progress<br/>superpowers:writing-plans"]
     D --> E[Ask the owner the bounds]
     E --> F[Write the header: executor, tier, bounds]
     F --> G{Which executor?}
-    G -- judgment or no local role --> H[cloud: executing-plans]
+    G -- judgment or no local role --> H["cloud: superpowers:executing-plans"]
     G -- one plan --> J[local-coder, Haiku wrapper and bridge]
     J --> K{Step output fits the coder window?}
     K -- yes --> L[tier simple or standard]
@@ -92,6 +92,25 @@ cache reads excluded, because money is not readable from this machine. `plan_con
 validate <plan>` checks the header, the file limit of the tier and the size ceilings, and
 `plan_contract.py resolve <plan>` maps the tier to a resolver role. No plan names a model: the
 resolver names the tag at run time.
+
+## A skill for every step
+
+Rule R36 says that all tasks, any task, need a skill, or an agent that itself uses one. The
+process of this chapter obeys it at each step, so no step is run from memory. A step with no
+skill is a gap to report, never a step run without one.
+
+| Step | Skill | Notes |
+|---|---|---|
+| Request | `superpowers:brainstorming` | Explores what is wanted before any plan exists |
+| Plan files | `superpowers:writing-plans` | Writes the spec, the plans and the progress ledger, with the header |
+| Execution | `superpowers:executing-plans` | Also loads test-driven development. A `local-coder` dispatch is made by a session that follows it |
+| Review | `code-review` and `security-review` | Under the bounds of R35 |
+| Pull request | `superpowers:finishing-a-development-branch` | You merge, never the session |
+
+A similar toolset may replace the three process skills, for example the `speckit-*` skills
+(`speckit-specify`, `speckit-plan`, `speckit-tasks`, `speckit-implement`), and the plan still
+names the skill used at each step. ruflow was named by the owner and is not installed or
+verified here, so no step relies on it. Aider is its own harness and sits outside this rule.
 
 ## Size ceilings
 

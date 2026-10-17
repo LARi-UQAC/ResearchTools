@@ -22,6 +22,8 @@ Procedure:
 2. Confirm the environment: Ollama running with the local models (`ollama list`, and
    `model_resolver.py --resolve --role <writer|coder>` naming a qualified tag for each role -
    there is no fallback tag, an unqualified role is a stop), and the review plugins installed.
+   Claude Code has one API endpoint per process and no per-subagent endpoint, so the local
+   models are reached only through the bridge, never as a subagent model.
 3. Ask the owner the three review bounds with `AskUserQuestion` (max rounds, max tokens, plateau),
    unless the plan header already carries them. Then declare them:
    ```

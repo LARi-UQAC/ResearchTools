@@ -151,7 +151,9 @@ skill's SDK driver, which is the way to get a hard `max_budget_usd` cap. See
 
 ## Environment and safety
 
-- Standalone Agent SDK program; runs on the user's subscription auth (no gateway, no API key).
+- Standalone Agent SDK program. Claude Code has one API endpoint per process and no
+  per-subagent endpoint (documentation read 2026-10-17), so local models are reached through
+  the bridge below and never through a subagent model name.
 - The local models are reached through `ollama_bridge.py` (the Ollama HTTP API, not
   `ollama run`) inside the local-coder / local-writer agents. There is NO fallback tag: the
   bridge asks `model_resolver.py`, and a resolver that names no qualified model is an

@@ -36,7 +36,11 @@ and the output produced. Full arguments are in `README.md`.
 Keep the top cloud model as orchestrator and push token-heavy generation to local models on
 the GPU. Each local agent runs on a cheap cloud model (Haiku) that frames the task and drives
 a local model over `ollama_bridge.py` (Ollama's HTTP API); the bulk output is generated
-locally and free. No gateway; cloud stays on the normal subscription auth.
+locally and free. Claude Code has one API endpoint per process and no per-subagent endpoint,
+environment or provider (Claude Code documentation, sub-agents and LLM gateway pages, read
+2026-10-17), so a subagent cannot be pointed at Ollama while the main session stays on
+Anthropic. That, and not the subscription, is why local models are reached through this bridge
+from a Haiku wrapper.
 
 | Goal | Agent | Model | Output |
 |---|---|---|---|
@@ -89,6 +93,16 @@ path: Claude Code points `ANTHROPIC_BASE_URL` straight at Ollama. `claude-augure
 wants Claude Code billed/routed through AugureAI instead of the default Anthropic account.
 Three identities sharing one save/restore mechanism (below) rather than two, so the per-shell
 bookkeeping could no longer assume only one "away" state existed at a time.
+
+What is verified, what is unsupported and what is untried (Claude Code documentation, read
+2026-10-17). `claude-switch.ps1` sets `ANTHROPIC_AUTH_TOKEN`, which takes precedence over the
+subscription login, whereas `ANTHROPIC_BASE_URL` alone would keep the subscription. The switch
+works and was measured on this machine, but Anthropic documents that it does not support
+routing Claude Code to non-Claude models through a gateway, and Remote Control is unavailable
+while the base URL is not api.anthropic.com. A model ID Claude Code does not recognise is
+assumed to have a 200K window unless `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is set (`claude-ollama`
+sets it from the `session` role window); whether that variable is capped at the model's own
+window is not documented and is untried here.
 
 Three-step process, always in this order:
 

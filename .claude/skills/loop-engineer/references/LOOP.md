@@ -16,13 +16,20 @@ down, and generate locally.
 | Execute, TDD, review panel, correct | Sonnet | high | routine agentic work |
 | Local agents' cloud wrapper | Haiku | medium | frames the task, drives the bridge |
 | Code / comments / scoring arithmetic | local (the resolver's coder and writer models) | - | free, on the GPU |
+| Plan with `tier: large` (R38) | local, the manually adopted `session` role, window 262144 | - | a plan whose step output cannot fit the coder window and cannot be split, reached through the same bridge |
 
-Routing: cloud runs on the user's subscription auth (no gateway, no API key). Local models are
-reached only through `ollama_bridge.py` inside the `local-coder` / `local-writer` agents,
-because subscription auth cannot resolve a local model name as an `AgentDefinition` model.
+Routing: Claude Code has one API endpoint per process and no per-subagent endpoint,
+environment or provider (Claude Code documentation, sub-agents and LLM gateway pages, read
+2026-10-17), so a subagent cannot be pointed at Ollama while the main session stays on
+Anthropic. That, and not the subscription, is why local models are reached only through
+`ollama_bridge.py` inside the `local-coder` / `local-writer` agents, driven by a Haiku wrapper.
 The bridge speaks Ollama's HTTP API, never `ollama run`, and has no fallback tag: it asks
 `model_resolver.py` with the caller's `--role`, and no qualified model is a stop, not a
 substitution.
+
+The driver flag `loop_engineer.py --loop` is not wired (it exits at once), and `--dry-run`
+exercises the control logic offline. The real review bounds are `loop_bounds.py` (R35 as
+amended), asked of the owner before the first round.
 
 ## Pipeline
 

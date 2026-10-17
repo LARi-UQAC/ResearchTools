@@ -169,6 +169,11 @@
       "value": 10,
       "unit": "seconds",
       "provenance": "chosen 2026-10-17 - collect_local.py reads a bounded tail of one small log file, as cheap as the mirror walk, and a local call is worth seeing within a few seconds"
+    },
+    "rounds": {
+      "value": 15,
+      "unit": "seconds",
+      "provenance": "chosen 2026-10-17 - collect_rounds.py lists a few folders and parses a handful of small ledgers, about the cost of the mirror walk, and a plan task ticking over is worth seeing within seconds"
     }
   },
   "timeouts_seconds": {
@@ -209,6 +214,11 @@
     }
   },
   "caps": {
+    "rounds_max": {
+      "value": 10,
+      "unit": "round folders listed",
+      "provenance": "chosen 2026-10-17 - an effort is one folder and a few may be open at once; the cap bounds a root that accumulated many finished ones"
+    },
     "local_calls_tail_bytes": {
       "value": 262144,
       "unit": "bytes read from the end of the bridge log",
@@ -390,6 +400,10 @@
     }
   },
   "paths": {
+    "round_roots": {
+      "value": ["docs/superpowers/todo", "docs/superpowers/plans"],
+      "provenance": "specified: rule R38 and R26, where an effort's plan files wait (todo) or are being executed (plans), relative to the repository root"
+    },
     "bridge_log": {
       "value": "~/.claude/loop-bridge-log.jsonl",
       "provenance": "specified: ollama_bridge.DEFAULT_LOG_PATH, the attempt log the bridge appends to; outside the repository and the vault, so reading it is not guarded"

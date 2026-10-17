@@ -447,6 +447,19 @@ table. Aider keeps its internal writer and reviewer loop. On a machine with no q
 for the tier, `plan_contract.py resolve` returns the `cloud` executor with the stated reason and
 never a weaker model (R8).
 
+Every step of this process uses a skill. That is R36 applied to R38: any task needs one, and a
+step with no skill is a gap to report, never a step run without one. The coding request is
+explored with `superpowers:brainstorming`. The spec, plans and progress are written with
+`superpowers:writing-plans`. The plans are executed in a session with
+`superpowers:executing-plans`, which loads `superpowers:test-driven-development`, and a
+`local-coder` dispatch is made by a session that follows it. The review uses `code-review` and
+`security-review` (R35), and the pull request is prepared with
+`superpowers:finishing-a-development-branch`, which the no-merge rule overrides. A similar
+toolset may replace the three process skills, for example the speckit skills (`speckit-specify`,
+`speckit-plan`, `speckit-tasks`, `speckit-implement`), and the plan still names the skill used at
+each step. ruflow was named by the owner and is not installed or verified here, so no step relies
+on it. Aider is its own harness and sits outside this rule, as R36 states.
+
 The contract is enforced, not merely stated: `review-loop-guard.py` (PreToolUse on the Skill
 tool) refuses a review skill with no declared bounds or past one, and
 `local-coder-dispatch-guard.py` (PreToolUse on the Agent tool) refuses a `local-coder` dispatch

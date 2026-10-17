@@ -18,6 +18,10 @@ Option contract:
 This is a procedure the session follows. The driver flag `loop_engineer.py --loop` is not wired
 (it exits at once), so nothing here calls it. The bounds come from `loop_bounds.py`.
 
+Skills (R36: any task needs one): design with `superpowers:brainstorming`, plan files with
+`superpowers:writing-plans`, execution with `superpowers:executing-plans`. A similar toolset such
+as speckit may replace them, and each step still names its skill.
+
 Procedure:
 
 1. Parse `the file(s) or topic given after the command in the chat message (if none was given, use the file currently open in the editor)` for the flags and the feature request. The default for `--score` is 90.

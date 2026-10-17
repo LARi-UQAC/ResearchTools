@@ -222,6 +222,53 @@ class ClaudeCodeAdapterTest(AdapterHarness):
         self.assertEqual(card["prompt"], "do the thing")
         self.assertEqual(card["subagents"], 1)
 
+    def test_the_session_title_is_the_name_the_transcript_gives_it(self):
+        """Measured 2026-10-17: the dashboard named a session after the TAIL of
+        its working directory, so a session that ran `cd` into a subfolder was
+        renamed on screen. The transcript carries the real name: `ai-title` is
+        generated, `custom-title` is the one the user gave it and outranks it."""
+        cwd = str(self.home / "work" / "proj-a")
+        self._transcript("proj-a", "sess-1", [
+            {"sessionId": "sess-1", "cwd": cwd},
+            {"type": "ai-title", "aiTitle": "Generated name", "sessionId": "sess-1"},
+            {"sessionId": "sess-1", "cwd": cwd + "/deeper"},
+        ])
+        self._transcript("proj-b", "sess-2", [
+            {"type": "ai-title", "aiTitle": "Generated name", "sessionId": "sess-2"},
+            {"type": "custom-title", "customTitle": "Given by the user",
+             "sessionId": "sess-2"},
+            {"type": "ai-title", "aiTitle": "Regenerated later", "sessionId": "sess-2"},
+        ])
+        self._transcript("proj-c", "sess-3", [{"sessionId": "sess-3", "cwd": cwd}])
+        titles = {s["session_id"]: s["title"] for s in self._collect()["sessions"]}
+        self.assertEqual("Generated name", titles["sess-1"])
+        self.assertEqual("Given by the user", titles["sess-2"],
+                         "a name the user chose must outrank a generated one")
+        self.assertIsNone(titles["sess-3"], "no title is None, never a guess")
+
+    def test_a_title_is_redacted_and_capped_like_a_prompt(self):
+        self._transcript("proj-a", "sess-1", [
+            {"type": "ai-title", "aiTitle": "fix %s " % (self.home / "x") + "y" * 5000,
+             "sessionId": "sess-1"}])
+        title = self._collect()["sessions"][0]["title"]
+        self.assertNotIn(str(self.home), title)
+        self.assertLess(len(title), 1000)
+
+    def test_a_title_that_is_not_text_is_ignored_not_fatal(self):
+        """Code review 2026-10-17: the transcript is untrusted input, and a
+        title record holding an object or a number must not raise inside the
+        redaction and cost the whole session its card. A later usable title in
+        the same tail still wins, since only text is kept."""
+        self._transcript("proj-a", "sess-1", [
+            {"type": "ai-title", "aiTitle": {"nested": "x"}, "sessionId": "sess-1"},
+            {"type": "custom-title", "customTitle": 12345, "sessionId": "sess-1"}])
+        self._transcript("proj-b", "sess-2", [
+            {"type": "ai-title", "aiTitle": ["a"], "sessionId": "sess-2"},
+            {"type": "ai-title", "aiTitle": "Usable name", "sessionId": "sess-2"}])
+        titles = {s["session_id"]: s["title"] for s in self._collect()["sessions"]}
+        self.assertIsNone(titles["sess-1"])
+        self.assertEqual("Usable name", titles["sess-2"])
+
     def test_no_account_name_reaches_the_snapshot(self):
         """Paths under the home are rewritten to ~, so a screenshot of the page
         and the JSON dump both stay free of the operator's account name."""

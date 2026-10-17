@@ -63,6 +63,27 @@ def _truncate(text, limit):
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
+def _title_of(card, home, cap):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The name the dashboard shows for a session: the one the user gave it
+        outranks the generated one, redacted and capped like a prompt.
+
+    Inputs:
+        card (dict): the folded session card, `custom_title` and `ai_title`
+            holding text only (`_session_from` keeps nothing else)
+        home (Path): the home directory to hide
+        cap (int): the character cap of a prompt
+
+    Outputs:
+        title (str or None): None when the tail holds neither, never a guess
+    --------------------------------------------------------------------------
+    """
+    raw = card.get("custom_title") or card.get("ai_title")
+    return _truncate(_redact(raw, home), cap) if raw else None
+
+
 def _tail_records(path, tail_bytes):
     """The last decodable JSON records of a transcript, newest last.
 
@@ -447,6 +468,20 @@ def _session_from(records):
                     "entrypoint", "effort", "version"):
             if record.get(key) not in (None, ""):
                 card[key] = record[key]
+        # The session's own name. Both record types are written by Claude Code
+        # itself (counted across this machine's transcripts 2026-10-17):
+        # `ai-title` is generated, `custom-title` is the one the user gave it.
+        # The LAST of each wins, since a title is rewritten as the work moves.
+        # Only text is kept: the transcript is untrusted input, and an object or
+        # a number here would otherwise reach the redaction and cost the whole
+        # session its card.
+        if (record.get("type") == "ai-title"
+                and isinstance(record.get("aiTitle"), str) and record["aiTitle"]):
+            card["ai_title"] = record["aiTitle"]
+        elif (record.get("type") == "custom-title"
+                and isinstance(record.get("customTitle"), str)
+                and record["customTitle"]):
+            card["custom_title"] = record["customTitle"]
         if record.get("isSidechain"):
             sidechains += 1
         system = record.get("system")
@@ -678,6 +713,11 @@ def collect(context):
             "session_id": session_id,
             "project": project,
             "cwd": _redact(card.get("cwd"), context.home),
+            # What the dashboard CALLS the session. The cwd is not a name: it
+            # moves whenever the session runs `cd`, and the card was renamed on
+            # screen each time. A name the user gave outranks a generated one;
+            # None when the tail holds neither, and the page then falls back.
+            "title": _title_of(card, context.home, prompt_cap),
             "branch": card.get("gitBranch"),
             "mode": card.get("mode"),
             "effort": card.get("effort"),

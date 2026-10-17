@@ -1210,5 +1210,298 @@ class VoiceAnswerPollCase(unittest.TestCase):
         self.assertIn("speechSynthesis.cancel()", poll_fn)
 
 
+class MixedHarnessLive(unittest.TestCase):
+    """The Real-Time Process tab with SEVERAL harnesses installed (R15, R20).
+
+    Measured 2026-10-17 on the live dashboard, after the aider adapter landed:
+    `installed` is sorted alphabetically, so aider came before claude_code; the
+    tab took the FIRST installed harness as the machine to draw, ranked thirteen
+    dead aider runs ahead of the current session, and read the missing
+    `hook_loops` of a harness that has no hooks as "the server is older than the
+    page". Nine `undefined` appeared because the box code table knew the Claude
+    Code roles and none of aider's five. The page script is run under node, the
+    functions cut out of the real page, so the assertions are about behaviour and
+    not about the text of the source. Skipped where node is absent (R11).
+    """
+
+    FUNCTIONS = ("sessionClass", "sessionShown", "sessionName", "laneModel",
+                 "liveMachine", "staleServer", "roleCode", "edgeLabel",
+                 "escapeText", "staleFleet")
+
+    def setUp(self):
+        self.node = shutil.which("node")
+        if not self.node:
+            self.skipTest("node is not on PATH; the page functions cannot run")
+        script = re.search(r"<script>\n(.*?)</script>", read(PAGE), re.S).group(1)
+        table = re.search(r"var ROLE_CODE = \{.*?\};", script, re.S)
+        self.assertIsNotNone(table, "ROLE_CODE is not declared")
+        parts = ["var sessionFilter = {active: true, idle: true, noflow: true};",
+                 table.group(0)]
+        for name in self.FUNCTIONS:
+            body = re.search(r"function %s\(.*?\n\}" % name, script, re.S)
+            self.assertIsNotNone(body, "%s is not declared" % name)
+            parts.append(body.group(0))
+        self.prelude = "\n".join(parts)
+
+    def run_js(self, expression):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "case.js"
+            path.write_text(self.prelude + "\nconsole.log(JSON.stringify("
+                            + expression + "));\n", encoding="utf-8")
+            done = subprocess.run([self.node, str(path)], capture_output=True,
+                                  text=True, errors="replace", timeout=60)
+        self.assertEqual(0, done.returncode, done.stderr)
+        return json.loads(done.stdout)
+
+    @staticmethod
+    def state(aider_live=False, aider_age=3000000):
+        """Two harnesses, installed in the order the registry sorts them."""
+        def session(sid, cwd, flow_state, age, **extra):
+            row = {"session_id": sid, "cwd": cwd, "age_seconds": age,
+                   "flow": {"status": "ok", "state": flow_state, "steps": [],
+                            "hooks": [], "subagents": [], "tokens": {}}}
+            row.update(extra)
+            return row
+        return {"fleet": {
+            "installed": ["aider", "claude_code"],
+            "harnesses": {
+                "aider": {"status": "ok", "label": "Aider nightly pipeline",
+                          "flow_states": [{"id": "done", "label": "done",
+                                           "role": "terminal"}],
+                          "hook_loops": [],
+                          "sessions": [session("a1", "C:\\tmp\\project", "done",
+                                               aider_age, live=aider_live)]},
+                "claude_code": {"status": "ok", "label": "Claude Code",
+                                "flow_states": [{"id": "idle", "label": "waiting",
+                                                 "role": "idle"}],
+                                "hook_loops": [{"event": "SessionStart",
+                                                "names": ["Caveman"]}],
+                                "sessions": [session("c1", "C:\\work\\Tools",
+                                                     "reasoning", 0)]}}}}
+
+    def test_the_current_session_leads_whatever_the_install_order(self):
+        lanes = self.run_js("laneModel(%s)" % json.dumps(self.state()))
+        sessions = [lane["id"] for lane in lanes if lane["kind"] == "session"]
+        self.assertEqual(["s:c1", "s:a1"], sessions,
+                         "the most recent session must come first")
+
+    def test_a_live_session_leads_an_ended_one_that_finished_more_recently(self):
+        """Code review 2026-10-17: ranking by age alone put an aider run that
+        ended a minute ago ahead of a Claude Code session whose transcript tail
+        is two minutes old, and the strip then drew the ended run's machine over
+        the session being watched. Live comes first, then recency."""
+        state = self.state(aider_live=False, aider_age=60)
+        state["fleet"]["harnesses"]["claude_code"]["sessions"][0]["age_seconds"] = 120
+        lanes = self.run_js("laneModel(%s)" % json.dumps(state))
+        sessions = [lane["id"] for lane in lanes if lane["kind"] == "session"]
+        self.assertEqual(["s:c1", "s:a1"], sessions)
+        # The control: two live sessions still rank by recency alone.
+        state["fleet"]["harnesses"]["aider"]["sessions"][0]["live"] = True
+        lanes = self.run_js("laneModel(%s)" % json.dumps(state))
+        sessions = [lane["id"] for lane in lanes if lane["kind"] == "session"]
+        self.assertEqual(["s:a1", "s:c1"], sessions)
+
+    def test_a_stale_server_is_flagged_even_when_no_lane_is_shown(self):
+        """Code review 2026-10-17: the notice hung on the machine of the first
+        VISIBLE lane, so with every session filtered out an old server read as
+        'every session here is hidden' and nothing else. The shape of what was
+        served is a fact about the fleet, not about what is on screen."""
+        state = self.state()
+        del state["fleet"]["harnesses"]["claude_code"]["hook_loops"]
+        self.assertTrue(self.run_js("staleFleet(%s)" % json.dumps(state)))
+        # Negative control: aider's EMPTY roster is an answer, not staleness.
+        self.assertFalse(self.run_js("staleFleet(%s)" % json.dumps(self.state())))
+        self.assertFalse(self.run_js('staleFleet({"fleet": {"installed": []}})'))
+
+    def test_an_ended_lane_is_not_pinged_and_draws_no_meter(self):
+        """Code review 2026-10-17: a finished run (its process gone) took the
+        `live` ping animation because only the state name was tested, and got a
+        meter row, which could raise `sessionFull` for a process that holds no
+        context at all. Structural, like the other drawing checks: no browser."""
+        script = re.search(r"<script>\n(.*?)</script>", read(PAGE), re.S).group(1)
+        graph = re.search(r"function agentGraph\(.*?\n\}", script, re.S).group(0)
+        self.assertRegex(graph, r"var awake = [^;]*!lane\.ended")
+        self.assertRegex(graph, r'lane\.state === "idle" \|\| lane\.ended\s*\?\s*" fx-agent--idle"')
+        meters = re.search(r"function sessionMeters\(.*?\n\}", script, re.S).group(0)
+        self.assertRegex(meters, r"session\.live === false")
+
+    def test_the_machine_drawn_is_the_one_of_the_lane_shown(self):
+        machine = self.run_js(
+            "(function(){var s=%s; return liveMachine(s, laneModel(s));})()"
+            % json.dumps(self.state()))
+        self.assertIsNotNone(machine)
+        self.assertTrue(machine["hook_loops"], "drew a machine with no hooks")
+        self.assertEqual("Claude Code", machine["label"])
+
+    def test_with_only_aider_the_machine_is_aider(self):
+        """The negative control: the fix must choose by lane and not by name."""
+        state = self.state()
+        state["fleet"]["installed"] = ["aider"]
+        machine = self.run_js(
+            "(function(){var s=%s; return liveMachine(s, laneModel(s));})()"
+            % json.dumps(state))
+        self.assertEqual("Aider nightly pipeline", machine["label"])
+
+    def test_no_lanes_means_no_machine(self):
+        state = self.state()
+        state["fleet"]["installed"] = []
+        self.assertIsNone(self.run_js("liveMachine(%s, [])" % json.dumps(state)))
+
+    def test_a_session_is_named_by_its_title_not_by_where_it_has_wandered(self):
+        """Measured 2026-10-17: a session was renamed on screen the moment it
+        ran `cd` into a subfolder, because the name was the tail of its cwd."""
+        cases = [
+            ({"title": "Lost in TAB", "cwd": "C:\\a\\Tools\\rt-observe"}, "Lost in TAB"),
+            ({"title": None, "cwd": "C:\\a\\Tools\\rt-observe"}, "rt-observe"),
+            ({"cwd": "", "project": "c--proj"}, "c--proj"),
+            ({}, "session"),
+        ]
+        for session, expected in cases:
+            with self.subTest(session=session):
+                self.assertEqual(
+                    expected, self.run_js("sessionName(%s)" % json.dumps(session)))
+
+    def test_the_lane_carries_the_title(self):
+        state = self.state()
+        state["fleet"]["harnesses"]["claude_code"]["sessions"][0]["title"] = "My name"
+        lanes = self.run_js("laneModel(%s)" % json.dumps(state))
+        self.assertEqual("My name", lanes[0]["label"])
+        self.assertEqual("project", lanes[1]["label"])
+
+    def test_escaped_text_cannot_break_out_of_a_quoted_attribute(self):
+        """Security review 2026-10-17 (HIGH): the lane label is now a session
+        title read from a transcript record, which a prompt injection can steer,
+        and `agentGraph` writes it inside `data-detail-title="..."` before
+        `svg.innerHTML`. `escapeText` encoded `&`, `<` and `>` only, so a title
+        holding a double quote closed the attribute and added an event handler
+        in the dashboard origin, which holds the session token. Same gap on the
+        node, state and event names. Both quote characters are encoded."""
+        hostile = ['x" onmouseover="y', "x' onmouseover='y", 'a"b\'c<d>&e']
+        for text in hostile:
+            with self.subTest(text=text):
+                out = self.run_js("escapeText(%s)" % json.dumps(text))
+                for raw in ('"', "'", "<", ">"):
+                    self.assertNotIn(raw, out, "a raw %r survived" % raw)
+        # The negative control: an ordinary label is unchanged in meaning, and
+        # the ampersand is encoded first so an entity is not double-decoded.
+        self.assertEqual("Fan-out &amp;amp; lanes",
+                         self.run_js('escapeText("Fan-out &amp; lanes")'))
+        self.assertEqual("plain title", self.run_js('escapeText("plain title")'))
+
+    def test_every_data_attribute_value_goes_through_escapeText(self):
+        """The attribute sinks are listed, so a new one added without escaping
+        fails here instead of in production. A bare `+ x.label +` between two
+        quotes of a `data-detail-*` attribute is the pattern refused."""
+        script = re.search(r"<script>\n(.*?)</script>", read(PAGE), re.S).group(1)
+        finder = re.compile(
+            r"""data-detail-(?:name|title|note|key|role)="'\s*\+\s*"""
+            r"""([A-Za-z_][\w.]*\(?)""")
+        sinks = finder.findall(script)
+        self.assertTrue(sinks, "no data-detail-* sink found: pattern stale")
+        for head in sinks:
+            with self.subTest(head=head):
+                self.assertEqual("escapeText(", head,
+                                 "attribute value not escaped: %s" % head)
+        # Negative control: the finder reports a planted unescaped sink.
+        planted = """x = '<g data-detail-title="' + node.label + '">'"""
+        self.assertEqual(["node.label"], finder.findall(planted))
+
+    def test_the_two_memories_are_always_drawn_and_the_rest_only_when_used(self):
+        """Measured 2026-10-17: the vault and the graph boxes vanished from the
+        flow graph because they were filtered out unless a visible lane had
+        touched them, so a session with no memory call showed no memories at
+        all. They are the standing resources every line can reach; an MCP server
+        or the network is drawn only when something used it."""
+        script = re.search(r"<script>\n(.*?)</script>", read(PAGE), re.S).group(1)
+        table = re.search(r"var SHARED_NODES = \[(.*?)\];", script, re.S).group(1)
+        flagged = re.findall(r'\{ id: "([a-z]+)",[^}]*?always: true', table, re.S)
+        self.assertEqual(["obsidian", "graphify"], flagged)
+        graph = re.search(r"function agentGraph\(.*?\n\}", script, re.S).group(0)
+        self.assertRegex(graph, r"used\[node\.id\]\s*\|\|\s*node\.always")
+
+    def test_the_token_meters_sit_above_the_figure_not_below_it(self):
+        """Measured 2026-10-17: the `sessions` and `spend` blocks, where the
+        context-window maximum is typed and the week total is read, were drawn
+        AFTER the figure, so with one lane per session (25 on this machine) they
+        were far below the fold and the operator concluded the tokens were gone."""
+        script = re.search(r"<script>\n(.*?)</script>", read(PAGE), re.S).group(1)
+        body = re.search(r"function renderLive\(.*?\n\}", script, re.S).group(0)
+        for meter in ("sessionMeters(next, state)", "renderSpend(next, state)"):
+            with self.subTest(meter=meter):
+                self.assertIn(meter, body)
+                self.assertLess(body.index(meter), body.index("agentGraph("))
+        self.assertLess(body.index("sessionFull = false"),
+                        body.index("sessionMeters(next, state)"),
+                        "sessionFull must be reset before the meters read it")
+
+    def test_a_lane_that_reports_its_own_window_is_ringed_by_it(self):
+        """aider measures its window; Claude Code does not and needs the
+        operator's. Both the ring and the meter prefer the measured one."""
+        script = re.search(r"<script>\n(.*?)</script>", read(PAGE), re.S).group(1)
+        for name in ("agentGraph", "sessionMeters"):
+            body = re.search(r"function %s\(.*?\n\}" % name, script, re.S).group(0)
+            with self.subTest(function=name):
+                self.assertRegex(body, r"tokens\.window\s*\|\|")
+
+    def test_an_ended_run_is_idle_and_a_running_one_is_not(self):
+        ended = self.state()["fleet"]["harnesses"]["aider"]["sessions"][0]
+        self.assertEqual("idle",
+                         self.run_js("sessionClass(%s)" % json.dumps(ended)))
+        running = self.state(aider_live=True)
+        running = running["fleet"]["harnesses"]["aider"]["sessions"][0]
+        self.assertEqual("active",
+                         self.run_js("sessionClass(%s)" % json.dumps(running)))
+
+    def test_a_harness_without_hooks_is_not_called_a_stale_server(self):
+        aider_machine = self.state()["fleet"]["harnesses"]["aider"]
+        self.assertFalse(self.run_js("staleServer(%s)" % json.dumps(aider_machine)))
+
+    def test_a_server_that_really_is_stale_is_still_reported(self):
+        """R20: the warning must still fire for the case it was written for, a
+        snapshot from Python older than the page, which carries no key at all."""
+        old = dict(self.state()["fleet"]["harnesses"]["claude_code"])
+        del old["hook_loops"]
+        self.assertTrue(self.run_js("staleServer(%s)" % json.dumps(old)))
+        self.assertFalse(self.run_js("staleServer(null)"))
+
+    def test_every_role_an_adapter_can_emit_has_a_box_code(self):
+        """The cannot-disagree check: a state machine whose role the page does
+        not know prints the word undefined on the box."""
+        sys.path.insert(0, str(SCRIPTS / "adapters"))
+        try:
+            import aider
+            import claude_code
+        finally:
+            sys.path.pop(0)
+        roles = sorted({s[2] for s in aider.FLOW_STATES}
+                       | {s[2] for s in claude_code.FLOW_STATES})
+        codes = self.run_js("%s.map(function(r){return roleCode(r);})"
+                            % json.dumps(roles))
+        for role, code in zip(roles, codes):
+            with self.subTest(role=role):
+                self.assertRegex(code or "", r"^[A-Z]{2}$")
+        self.assertEqual(len(roles), len(set(codes)),
+                         "two roles share one code, so the box cannot tell them apart")
+
+    def test_an_unknown_role_never_prints_undefined(self):
+        code = self.run_js('roleCode("brand-new-role")')
+        self.assertRegex(code, r"^[A-Z]{2}$")
+        self.assertEqual("--", self.run_js("roleCode(undefined)"))
+
+    def test_the_edge_label_names_the_state_it_counts(self):
+        """Measured 2026-10-17: four STALE mirrors were drawn as `4 lost`."""
+        def edge(*states):
+            return {"broken": len(states),
+                    "problems": [{"state": s} for s in states]}
+        cases = [(("stale",) * 4, "4 stale"), (("lost",), "1 lost"),
+                 (("lost", "lost", "stale"), "2 lost, 1 stale"),
+                 (("orphan",), "1 orphan")]
+        for states, expected in cases:
+            with self.subTest(states=states):
+                self.assertEqual(
+                    expected,
+                    self.run_js("edgeLabel(%s)" % json.dumps(edge(*states))))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

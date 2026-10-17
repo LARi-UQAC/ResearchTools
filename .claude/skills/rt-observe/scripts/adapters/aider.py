@@ -172,11 +172,23 @@ def _flow(record, age_seconds, idle_after):
 
     window = record.get("window") or 0
     working = record.get("working_set") or 0
-    tokens = {"window": window, "working_set": working}
+    # `status` and `held` are the keys the page reads from every harness.
+    # `working_set` is the budget the driver LEAVES for the task (aider-plan.ps1
+    # writes window minus always-on files, repo map, reply and harness reserves),
+    # so what is already committed - the number a ring shows as held - is the
+    # rest of the window. Reading `working_set` as held drew the ring backwards
+    # (60 percent where 39.9 was committed). A record with no window reports
+    # nothing held rather than a guess.
+    held = max(0, window - working) if window else 0
+    # `ok` means measured. A record with no window measured nothing, so it is
+    # unavailable with its reason (R8) rather than a zero the page would draw.
+    tokens = {"status": "ok" if window else "unavailable", "held": held,
+              "task_budget": working, "window": window, "working_set": working}
     if window:
         tokens["percent"] = round(100.0 * (window - working) / window, 1)
         tokens["percent_of"] = "the fixed cost against the window the driver measured"
     else:
+        tokens["reason"] = "the record carries no window"
         tokens["percent"] = None
         tokens["percent_reason"] = "the record carries no window"
 
@@ -288,4 +300,8 @@ def collect(context):
         "unreadable": unreadable,
         "flow_states": [{"id": s[0], "label": s[1], "role": s[2]}
                         for s in FLOW_STATES],
+        # aider has no hooks, and says so with an empty roster. The page reads a
+        # MISSING `hook_loops` as "the server is older than the page", so
+        # omitting the key made that warning fire on every machine with aider.
+        "hook_loops": [],
     }

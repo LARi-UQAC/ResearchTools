@@ -246,12 +246,57 @@ class FlowTests(unittest.TestCase):
             self.assertIsNotNone(tokens["percent"])
             self.assertEqual(tokens["window"], 262144)
 
+    def test_tokens_use_the_shape_the_page_reads_for_every_harness(self):
+        """The page draws a token ring from `status`, `held` and (here) `window`.
+        aider reported `working_set` only, so its sessions read 'tokens not
+        reported' while the driver HAD measured both numbers (2026-10-17). The
+        original keys stay, so nothing that read them breaks."""
+        with tempfile.TemporaryDirectory() as home:
+            write_record(home, "aaaaaaaa")
+            tokens = aider.collect(Context(home, NOW))["sessions"][0]["flow"]["tokens"]
+            self.assertEqual("ok", tokens["status"])
+            self.assertEqual(262144, tokens["window"])
+            # `working_set` is what the driver LEAVES for the task: aider-plan.ps1
+            # writes window minus the always-on files, the repo map, the reply
+            # reserve and the harness reserve. What is already committed, and so
+            # what a ring should show as held, is the rest of the window.
+            self.assertEqual(tokens["window"] - tokens["working_set"],
+                             tokens["held"])
+            self.assertEqual(tokens["working_set"], tokens["task_budget"])
+
     def test_no_window_means_no_percentage_and_a_reason(self):
         with tempfile.TemporaryDirectory() as home:
             write_record(home, "aaaaaaaa", window=0)
             tokens = aider.collect(Context(home, NOW))["sessions"][0]["flow"]["tokens"]
             self.assertIsNone(tokens["percent"])
             self.assertIn("no window", tokens["percent_reason"])
+
+    def test_no_window_is_not_reported_as_a_measured_zero(self):
+        """Code review 2026-10-17: `status` was `ok` with `held` 0 whatever the
+        record said, so the page drew a meter at 0 used and a ring labelled
+        '0K held' for a run that measured nothing. A page reads `ok` as
+        'measured'; with no window the honest status is unavailable, and the
+        reason travels with it (R8)."""
+        with tempfile.TemporaryDirectory() as home:
+            write_record(home, "aaaaaaaa", window=0)
+            tokens = aider.collect(Context(home, NOW))["sessions"][0]["flow"]["tokens"]
+            self.assertEqual("unavailable", tokens["status"])
+            self.assertIn("no window", tokens["reason"])
+        with tempfile.TemporaryDirectory() as home:
+            write_record(home, "bbbbbbbb")
+            tokens = aider.collect(Context(home, NOW))["sessions"][0]["flow"]["tokens"]
+            self.assertEqual("ok", tokens["status"], "a measured window stays ok")
+
+    def test_a_harness_without_hooks_declares_an_empty_roster(self):
+        """The page reads a MISSING `hook_loops` as 'the server is older than the
+        page', so a harness that has no hooks must say so with an empty list and
+        not by omitting the key (measured 2026-10-17: the warning fired on every
+        machine with aider installed, and hid the current Claude Code session)."""
+        with tempfile.TemporaryDirectory() as home:
+            write_record(home, "aaaaaaaa")
+            state = aider.collect(Context(home, NOW))
+            self.assertIn("hook_loops", state)
+            self.assertEqual([], state["hook_loops"])
 
     def test_the_inbox_is_unreachable_and_says_so(self):
         with tempfile.TemporaryDirectory() as home:

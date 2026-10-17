@@ -54,7 +54,8 @@ function Check([string]$name, [bool]$ok) {
 $RoutingVars = @(
     "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
     "ANTHROPIC_SMALL_FAST_MODEL", "API_TIMEOUT_MS",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY", "AUGUREAI_API_KEY"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY", "AUGUREAI_API_KEY",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
 )
 
 function Clear-SwitchEnv {
@@ -131,7 +132,15 @@ try {
 
     # Simulates 'python <resolver> --resolve --role session --require-role': controlled by
     # $script:FakeResolverTag (empty/null => resolver failure, nonzero exit).
+    # The window question (`--window --role session`) is answered from $script:FakeWindow
+    # (null => the resolver refuses, exit 2), so no real state file is ever read (R21).
+    $script:FakeWindow = $null
     function python {
+        if ($args -contains "--window") {
+            if ($script:FakeWindow) { $global:LASTEXITCODE = 0; return "$($script:FakeWindow)" }
+            $global:LASTEXITCODE = 2
+            return ""
+        }
         if ($script:FakeResolverTag) {
             $global:LASTEXITCODE = 0
             return $script:FakeResolverTag
@@ -285,6 +294,53 @@ try {
     claude-ollama -Model "qwen3.5"
     Check "bare tag matches an installed :latest entry (M2)" ($script:claudeCallCount -eq 1)
     Check "bare tag reaches ANTHROPIC_MODEL unmodified"      ($env:ANTHROPIC_MODEL -eq "qwen3.5")
+
+    # --- 6g. The context window (local coding contract plan 4). Claude Code assumes 200K
+    # for a model ID it does not recognise, so claude-ollama tells it the window of the
+    # session role when, and only when, that window is known for the tag being routed to.
+    $script:FakeOllamaUp = $true
+    $script:FakeResolverTag = "resolved-tag:test"
+    $script:FakeInstalled = @("resolved-tag:test", "qwen3.5:9b-gpu")
+    $script:FakeWindow = 262144
+    Clear-SwitchEnv
+    claude-ollama
+    Check "window of the session role reaches CLAUDE_CODE_MAX_CONTEXT_TOKENS" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "262144")
+
+    Clear-SwitchEnv
+    claude-ollama -Model "resolved-tag:test"
+    Check "explicit -Model equal to the session tag still gets the window" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "262144")
+
+    Clear-SwitchEnv
+    $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = "999"
+    $said = & { claude-ollama -Model "qwen3.5:9b-gpu" } *>&1 | Out-String
+    Check "a tag that is not the session tag leaves the variable unset" (-not (Test-Path Env:\CLAUDE_CODE_MAX_CONTEXT_TOKENS))
+    Check "and says Claude Code will assume 200K" ($said -match "200K")
+
+    Clear-SwitchEnv
+    $script:FakeWindow = $null
+    $said = & { claude-ollama } *>&1 | Out-String
+    Check "an unknown window leaves the variable unset" (-not (Test-Path Env:\CLAUDE_CODE_MAX_CONTEXT_TOKENS))
+    Check "an unknown window is stated, not silent" ($said -match "200K")
+    $script:FakeWindow = 262144
+
+    Clear-SwitchEnv
+    $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = "111"
+    claude-ollama
+    claude-cloud
+    Check "claude-cloud restores a pre-existing window variable" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "111")
+
+    Clear-SwitchEnv
+    claude-ollama
+    $env:AUGUREAI_API_KEY = "augure-secret-key"
+    claude-augure
+    Check "claude-augure clears the window variable" (-not (Test-Path Env:\CLAUDE_CODE_MAX_CONTEXT_TOKENS))
+
+    Clear-SwitchEnv
+    $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = "222"
+    claude-ollama
+    claude-augure
+    claude-cloud
+    Check "ollama -> augure -> cloud restores the ORIGINAL window variable" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "222")
 
     # --- 7. ANTHROPIC_API_KEY restore (review finding #1, the real bug) ---
     # Explicit fixture reset: test 6f (M2) overwrote $script:FakeInstalled with a list that

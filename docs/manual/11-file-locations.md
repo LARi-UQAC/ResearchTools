@@ -109,6 +109,16 @@ headline counts above are kept current (checked 2026-10-15), but the tree's own 
 listing is not reconciled against the repo's true current contents — see the Agents,
 Commands, and Skills chapters for those.
 
+<!-- local-coding:begin -->
+**Local coding contract files.** In the `loop-engineer` skill: `scripts/plan_contract.py`,
+`scripts/loop_bounds.py`, `scripts/token_count.py` and the data file `plan-tiers.json`. In
+`.claude/hooks/`: `review-loop-guard.py` and `local-coder-dispatch-guard.py`, each with a JSON
+config beside it. The review-loop bounds of a worktree live in `rt-review-loop.json` inside that
+worktree's git directory, so they are never committed and two worktrees never share them. The
+chapter is `docs/manual/12-local-coding.md`, with its flowchart source under
+`docs/manual/diagrams/`. See [chapter 12](12-local-coding.md).
+<!-- local-coding:end -->
+
 ## Machine-local files (never committed)
 
 The git privacy guard (`.claude/hooks/git/`, see [05-security-audit.md](05-security-audit.md)

@@ -28,6 +28,24 @@ driver has no synchronous entry point a mid-session orchestrator could call. The
 integration deliberately left `local-coder`'s definition, model resolution, and prompt untouched
 for this reason.
 
+<!-- local-coding:begin -->
+**Plans and the local coding contract.** Since 2026-10-17 every plan, for aider or for
+`local-coder`, opens with a header naming `executor`, `tier` and the review bounds, and aider's
+driver skips that header when it lists the files a plan names. The size limits it enforces come
+from `context-budget.json`, which is also the single source for every project:
+
+| File | Ceiling in tokens |
+|---|---:|
+| `spec.md` | 4000 |
+| `plan.md` | 4000 |
+| `progress.md` | 2048 |
+| `audit.md` | 4096 |
+
+The tier-to-role table lives in `plan-tiers.json` and applies to `local-coder`, not to aider,
+whose writer and reviewer models are chosen in its own configuration. The choice between the
+two is described in [chapter 12](12-local-coding.md).
+<!-- local-coding:end -->
+
 ## The nightly run
 
 `aider-setup` is not a wrapper around `local-coder`, and does not go through Claude Code at

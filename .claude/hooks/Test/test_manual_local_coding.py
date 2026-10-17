@@ -133,7 +133,89 @@ class TestChapter(unittest.TestCase):
                 self.assertRegex(row, DATE)
 
 
+MANUAL = REPO / "docs" / "manual"
+BEGIN, END = "<!-- local-coding:begin -->", "<!-- local-coding:end -->"
+# Each neighbouring chapter: the names its added text must carry. "file" names must also exist
+# in the repository (R14), "text" names are not files (a state file kept in a git directory,
+# a snapshot section).
+NEIGHBOURS = {
+    "04-skills.md": {"plan_contract.py": "file", "token_count.py": "file",
+                     "loop_bounds.py": "file"},
+    "06-aider-pipeline.md": {"context-budget.json": "file", "plan-tiers.json": "file"},
+    "07-rt-observe-dashboard.md": {"collect_local.py": "file", "collect_rounds.py": "file",
+                                   "local_calls": "text", "rounds": "text"},
+    "08-commands.md": {"loop_bounds.py": "file", "review-loop-guard.py": "file"},
+    "11-file-locations.md": {"plan_contract.py": "file", "review-loop-guard.py": "file",
+                             "local-coder-dispatch-guard.py": "file",
+                             "plan-tiers.json": "file", "rt-review-loop.json": "text",
+                             "12-local-coding.md": "file"},
+}
+
+
+def region(text: str) -> str:
+    """The text a chapter carries between the local-coding markers, or an empty string."""
+    if text.count(BEGIN) != 1 or text.count(END) != 1:
+        return ""
+    return text[text.index(BEGIN) + len(BEGIN):text.index(END)]
+
+
+def region_problems(text: str, names: dict, base: Path) -> list:
+    """What is wrong with the added text of a neighbouring chapter, as a list of reasons."""
+    added = region(text)
+    if not added:
+        return ["no local-coding region"]
+    problems = []
+    if "12-local-coding.md" not in LINK.findall(added) and not any(
+            t.startswith("12-local-coding.md") for t in LINK.findall(added)):
+        problems.append("no link to chapter 12")
+    for name, kind in names.items():
+        if name not in added:
+            problems.append("does not name " + name)
+        elif kind == "file" and not any(REPO.rglob(name)):
+            problems.append(name + " does not exist in the repository")
+    if MODEL_TAG.search(added):
+        problems.append("names a model tag")
+    problems += ["broken link " + b for b in broken_links(added, base)]
+    return problems
+
+
+class TestNeighbouringChapters(unittest.TestCase):
+    def test_each_neighbour_links_to_chapter_12_and_names_what_exists(self):
+        for name, names in NEIGHBOURS.items():
+            with self.subTest(file=name):
+                text = (MANUAL / name).read_text(encoding="utf-8")
+                self.assertEqual(region_problems(text, names, MANUAL), [])
+
+    def test_the_aider_chapter_quotes_the_ceilings_the_budget_file_holds(self):
+        ceilings = json.loads(BUDGET.read_text(encoding="utf-8"))["ceilings"]
+        added = region((MANUAL / "06-aider-pipeline.md").read_text(encoding="utf-8"))
+        quoted = table_values(added, ("plan.md", "progress.md", "spec.md", "audit.md"))
+        for key, value in quoted.items():
+            with self.subTest(key=key):
+                self.assertEqual(value, ceilings[key])
+
+    def test_the_commands_chapter_no_longer_documents_the_unwired_budget_flag(self):
+        text = (MANUAL / "08-commands.md").read_text(encoding="utf-8")
+        self.assertNotIn("`/loopdev --budget <max_usd>", text)
+        self.assertNotIn("`--budget` required", text)
+
+
 class TestNegativeControls(unittest.TestCase):
+    def test_the_region_checker_fails_without_a_link_a_name_or_a_region(self):
+        names = {"loop_bounds.py": "file"}
+        good = BEGIN + "See [chapter 12](12-local-coding.md): `loop_bounds.py`." + END
+        self.assertEqual(region_problems(good, names, MANUAL), [])
+        self.assertIn("no link to chapter 12",
+                      region_problems(good.replace("](12-local-coding.md)", "]()"), names, MANUAL))
+        self.assertIn("does not name loop_bounds.py",
+                      region_problems(BEGIN + "[x](12-local-coding.md)" + END, names, MANUAL))
+        self.assertEqual(region_problems("nothing", names, MANUAL), ["no local-coding region"])
+        self.assertIn("no_such_script.py does not exist in the repository",
+                      region_problems(BEGIN + "[x](12-local-coding.md) no_such_script.py" + END,
+                                      {"no_such_script.py": "file"}, MANUAL))
+        self.assertIn("names a model tag", region_problems(
+            BEGIN + "[x](12-local-coding.md) loop_bounds.py vendor-a:9b" + END, names, MANUAL))
+
     def test_the_link_finder_can_fail(self):
         base = CHAPTER.parent
         self.assertEqual(broken_links("[x](00-purpose.md) [y](https://a.b) [z](#top)", base), [])

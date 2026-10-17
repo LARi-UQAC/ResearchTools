@@ -35,6 +35,7 @@ Procedure:
    ```
    python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N
    ```
+   In any project other than ResearchTools the script is under `~/.claude/skills/loop-engineer/scripts/`.
 4. Run the pipeline steps of the skill. At each review round invoke the review skills, fix the
    findings with a failing test first, then record the round:
    ```

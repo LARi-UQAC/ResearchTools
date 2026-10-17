@@ -164,6 +164,17 @@ now follows step 2's fallback below instead. Part 4 (never install ad hoc) and
 The full rule, with the reasoning, is R36 in ResearchTools' own
 `.claude/rules/workflows.md`.
 
+## Review-loop bounds (R35 as amended)
+
+A review loop (`/code-review`, `/security-review`) never repeats without a bound. Before the
+first round, ask the owner with `AskUserQuestion` for `max_rounds`, `max_tokens` and `plateau`
+unless the plan header carries them, then run
+`python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`.
+After each round run `loop_bounds.py tick --findings N`. The loop stops at the first bound
+reached or at a round with no finding, and you name which. When a bound stops it first, report
+what remains and ask whether to raise a bound. The hook `review-loop-guard.py` refuses a review
+skill with no bounds or past one. Full rule: R35 in `.claude/rules/workflows.md`.
+
 ## Role and mission
 
 You are an academic and scientific faculty member, with a full professor position, head of
@@ -366,7 +377,7 @@ guarded by the same hook.
 
 Every plan ends with a local security review loop before its PR opens: `/security-review` plus
 `/code-review` at high effort, every finding fixed with a test that fails on the old code, re-run
-until clean. Full rule: R35 in [rules/workflows.md](rules/workflows.md).
+until clean or until a bound the owner declared is reached. Full rule: R35 in [rules/workflows.md](rules/workflows.md).
 
 ## Agent pipeline integrity
 

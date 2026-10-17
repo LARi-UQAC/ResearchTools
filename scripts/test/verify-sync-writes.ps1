@@ -163,17 +163,59 @@ Check "unparseable settings.json refused, untouched" ((Get-FileHash (Join-Path $
 # arrived without its .json finds no config and, per R11, disables itself IN SILENCE -
 # a gate that looks installed and never fires, which is worse than one that is absent.
 $syncText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\lib\rt-sync.ps1"))
-$hookLine = ($syncText -split "`n" | Where-Object { $_ -match 'Get-ChildItem \$hooksSrc' })
-Check "the hook copy loop was found in rt-sync.ps1" (@($hookLine).Count -eq 1)
-Check "-Sync still carries .py hooks"   ($hookLine -match '\.py')
-Check "-Sync now carries .json configs" ($hookLine -match '\.json')
-Check "the old .py-only filter is gone" (-not ($hookLine -match '-Filter\s+\*\.py'))
+Check "rt-sync.ps1 selects hook files through Get-RtHookFiles" ($syncText -match 'Get-RtHookFiles\s+-HooksDir\s+\$hooksSrc')
+Check "rt-sync.ps1 keeps no inline .py/.json filter of its own"  (-not ($syncText -match "Get-ChildItem \`$hooksSrc"))
 
-# Negative control: the same two tests applied to the line as it read BEFORE the change
-# must fail, or these checks pass on any text at all and prove nothing.
-$oldLine = 'Get-ChildItem $hooksSrc -File -Filter *.py | ForEach-Object {'
-Check "the control line is correctly judged .py-only" `
-    (($oldLine -match '\.py') -and (-not ($oldLine -match '\.json')))
+# --- the selection itself, DRIVEN (2026-10-16) ----------------------------------------
+# Measured: -Sync copied a hook's .json but the stamp hashed only *.py, so every hook
+# config read "changed since the last green run" and was HELD forever, whatever the suite
+# said. The two selections now share rt-stamp.ps1. Driven against a fictitious tree.
+. (Join-Path $RepoRoot "scripts\lib\rt-stamp.ps1")
+$Tree = Join-Path $Fake "stamp-tree"
+foreach ($d in @(".claude\hooks", ".claude\hooks\Test", ".claude\hooks\git", ".claude\skills\alpha\scripts", ".claude\skills\alpha\scripts\__pycache__")) {
+    New-Item -ItemType Directory -Path (Join-Path $Tree $d) -Force | Out-Null
+}
+foreach ($f in @(".claude\hooks\guard.py", ".claude\hooks\guard.json", ".claude\hooks\notes.txt",
+                 ".claude\hooks\Test\fixture.json", ".claude\hooks\git\rules.json",
+                 ".claude\skills\alpha\scripts\tool.py", ".claude\skills\alpha\scripts\settings.json",
+                 ".claude\skills\alpha\scripts\__pycache__\tool.cpython-311.py")) {
+    Set-Content -Path (Join-Path $Tree $f) -Value "x" -Encoding ASCII
+}
+$names = { param($files) @($files | ForEach-Object { $_.FullName.Substring($Tree.Length + 1) } | Sort-Object) }
+$hooks = & $names (Get-RtHookFiles -HooksDir (Join-Path $Tree ".claude\hooks"))
+Check "Get-RtHookFiles returns the hook .py and .json, nothing else" (($hooks -join "|") -eq ".claude\hooks\guard.json|.claude\hooks\guard.py")
+$code = & $names (Get-RtCodeFiles -RepoRoot $Tree)
+Check "the stamp selection includes the hook .json"             ($code -contains ".claude\hooks\guard.json")
+Check "the stamp selection includes the hook .py"               ($code -contains ".claude\hooks\guard.py")
+Check "the stamp selection includes a skill .py"                ($code -contains ".claude\skills\alpha\scripts\tool.py")
+Check "a skill .json is not hashed (nothing copies it)"          (-not ($code -contains ".claude\skills\alpha\scripts\settings.json"))
+Check "a .json under hooks\Test or hooks\git is not hashed"       (-not ($code -match "Test\\fixture|git\\rules"))
+Check "__pycache__ is excluded"                                  (-not ($code -match "__pycache__"))
+
+# The whole point, end to end: a stamp built from the selection PROVES the .json, and the
+# proof dies with the first edit. The old selection (py only) is the negative control.
+$entries = [ordered]@{}
+foreach ($f in (Get-RtCodeFiles -RepoRoot $Tree)) { $entries[$f.FullName.Substring($Tree.Length + 1)] = (Get-FileHash $f.FullName -Algorithm SHA256).Hash }
+$stampNew = [pscustomobject]@{ code_hashes = [pscustomobject]$entries }
+$jsonPath = Join-Path $Tree ".claude\hooks\guard.json"
+Check "Test-RtProven: an unchanged hook .json is proven"          (Test-RtProven $stampNew $Tree $jsonPath)
+Set-Content -Path $jsonPath -Value "changed" -Encoding ASCII
+Check "Test-RtProven: an edited hook .json is no longer proven"   (-not (Test-RtProven $stampNew $Tree $jsonPath))
+$oldEntries = [ordered]@{}
+foreach ($f in (Get-ChildItem (Join-Path $Tree ".claude") -Recurse -File -Include *.py | Where-Object { $_.FullName -notmatch '\\__pycache__\\' })) {
+    $oldEntries[$f.FullName.Substring($Tree.Length + 1)] = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+}
+$stampOld = [pscustomobject]@{ code_hashes = [pscustomobject]$oldEntries }
+Set-Content -Path $jsonPath -Value "x" -Encoding ASCII
+Check "(control) the old .py-only stamp could never prove a .json" (-not (Test-RtProven $stampOld $Tree $jsonPath))
+
+# Cannot-disagree check on the REAL repository: everything -Sync would copy from the real
+# hooks folder is something the stamp hashes.
+$realHooks = @(Get-RtHookFiles -HooksDir (Join-Path $RepoRoot ".claude\hooks") | ForEach-Object { $_.FullName })
+$realCode  = @(Get-RtCodeFiles -RepoRoot $RepoRoot | ForEach-Object { $_.FullName })
+$missing   = @($realHooks | Where-Object { $realCode -notcontains $_ })
+Check "every real hook file -Sync copies is hashed by the stamp"  ($realHooks.Count -gt 0 -and $missing.Count -eq 0)
+Check "the runner takes its file list from Get-RtCodeFiles"       ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\test\run-offline-tests.ps1")) -match 'Get-RtCodeFiles\s+-RepoRoot')
 
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)
 Check "live ~/.claude/CLAUDE.md never written"      ((Get-FileHash $liveClaude   -Algorithm SHA256).Hash -eq $liveClaudeHash)

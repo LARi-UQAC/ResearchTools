@@ -9,7 +9,7 @@
 #   PowerPoint or LibreOffice   the PDF conversion backend (talk_render.py)
 #   draw.io Desktop   fig_export.py, for the scale-3 figure re-export
 #   a LaTeX toolchain the Beamer target
-pypdf==6.15.0
+pypdf==6.19.0  # pip-audit clean 2026-10-16; 6.15.0 had 11 and 6.16.1 had 8 known CVEs (PYSEC-2026-3910 to 4160)
 python-pptx==1.0.2
 defusedxml==0.7.1
 jinja2==3.1.6

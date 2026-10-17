@@ -12,4 +12,4 @@
 # PYSEC-2026-3910, PYSEC-2026-3911 and PYSEC-2026-3913 against it, fixed in
 # 6.16.0/6.16.1, so this skill pins 6.16.1 instead.
 PyYAML==6.0.3
-pypdf==6.16.1
+pypdf==6.19.0  # pip-audit clean 2026-10-16; 6.15.0 had 11 and 6.16.1 had 8 known CVEs (PYSEC-2026-3910 to 4160)

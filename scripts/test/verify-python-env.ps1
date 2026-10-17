@@ -81,6 +81,20 @@ Check "scopus excludes nothing"                  ($scopus.Exclude.Count -eq 0)
 # Still deliberately out of scope.
 Check "geolocalisation is not installed"         (@($reqs | Where-Object { $_.Path -match 'geolocalisation' }).Count -eq 0)
 
+# pypdf is pinned in four requirements files. Measured 2026-10-16 by a pip --dry-run: running
+# -InstallPython would have DOWNGRADED the installed pypdf 6.19.0 to the paper2talk pin
+# 6.15.0 (11 known CVEs; 6.16.1 elsewhere had 8). Offline, what can be asserted is that the
+# pins agree, since a file left behind is exactly how that happened.
+$pypdfPins = @()
+foreach ($rel in @(".claude\skills\paper2talk\scripts\requirements.txt", ".claude\skills\narrative-cv\scripts\requirements.txt",
+                   ".claude\skills\form-service\scripts\requirements.txt", "deploy\form-service\requirements.txt")) {
+    $m = [regex]::Match((Get-Content (Join-Path $RepoRoot $rel) -Raw -Encoding UTF8), '(?m)^pypdf==(\S+)')
+    $pypdfPins += [pscustomobject]@{ File = $rel; Version = $(if ($m.Success) { $m.Groups[1].Value } else { "" }) }
+}
+Check "every file that pins pypdf pins it exactly"            (@($pypdfPins | Where-Object { -not $_.Version }).Count -eq 0)
+Check "the four pypdf pins agree on one version"              (@($pypdfPins | Select-Object -ExpandProperty Version -Unique).Count -eq 1)
+Check "(control) the agreement check can see a stale pin"     (@(@("6.19.0", "6.15.0") | Select-Object -Unique).Count -eq 2)
+
 # Negative control: the Exists flag has to be able to say no, or the check above
 # passes on a list of files that were never looked for.
 $ghost = @(Get-RtSuiteRequirements -RepoRoot (Join-Path $Fake "no-such-repo"))

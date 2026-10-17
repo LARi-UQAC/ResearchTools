@@ -456,6 +456,67 @@ Check "the dry run names --message-file and never a bare --message" {
     ($r.text -match "--message-file") -and ($r.text -notmatch '--message\s')
 }
 
+# --- A plan header must not change the files a plan names (local coding contract) -------
+# Every plan now opens with front matter (executor, tier, bounds, R38). Get-PlanTargets
+# splits the WHOLE text on separators, so a path-like value inside the header would be added
+# to the chat as an editable file. Fictitious names only (R34).
+$headerProj = Join-Path $scratch "headerproj"
+New-Item -ItemType Directory -Force -Path $headerProj | Out-Null
+$proj = (Resolve-Path -LiteralPath $headerProj).Path
+$CodeExtensions = @(".py", ".ps1")
+$DataExtensions = @(".json")
+$planBody = @'
+# Plan 1 - fictitious
+
+### Task 1
+
+**Files:**
+- Create: `src/world.py`
+- Test: `tests/test_world.py`
+'@
+$planHeader = @'
+---
+executor: aider
+tier: simple
+note: hidden/leak.py
+bounds:
+  max_rounds: 3
+  max_tokens: 1500000
+  plateau: 2
+---
+
+'@
+# Get-PlanTargets returns its array wrapped (a leading comma, so one file survives as an array),
+# which `@(Get-PlanTargets ...)` would NOT flatten: Count would read 1. The driver assigns it
+# directly, so this helper does the same and hands the checks a flat array.
+function Get-Targets([string]$plan) { $t = Get-PlanTargets $plan; return $t }
+$plainPlan = Join-Path $headerProj "plain.md"
+$headedPlan = Join-Path $headerProj "headed.md"
+Set-Content -LiteralPath $plainPlan -Value $planBody -Encoding UTF8
+Set-Content -LiteralPath $headedPlan -Value ($planHeader + $planBody) -Encoding UTF8
+
+Check "a plan header does not add a file the body does not name" {
+    $withHeader = @(Get-Targets $headedPlan)
+    ($withHeader | Where-Object { $_ -like "*leak.py" }).Count -eq 0
+}
+
+Check "the count of targets is the same with or without the header" {
+    @(Get-Targets $headedPlan).Count -eq @(Get-Targets $plainPlan).Count -and
+    @(Get-Targets $plainPlan).Count -eq 2
+}
+
+Check "NEGATIVE CONTROL: a path-like value in the BODY is still a target" {
+    $bodyHit = Join-Path $headerProj "bodyhit.md"
+    Set-Content -LiteralPath $bodyHit -Value ($planHeader + $planBody + "`n- Create: ``extra/found.py```n") -Encoding UTF8
+    (@(Get-Targets $bodyHit) | Where-Object { $_ -like "*found.py" }).Count -eq 1
+}
+
+Check "a header never closed is not read as swallowing the whole plan" {
+    $open = Join-Path $headerProj "open.md"
+    Set-Content -LiteralPath $open -Value ("---`nexecutor: aider`n" + $planBody) -Encoding UTF8
+    @(Get-Targets $open).Count -eq 2
+}
+
 Write-Host ""
 Check "no record from this test reached the real ~/.aider-plan" {
     $leaked = Leaked-Records

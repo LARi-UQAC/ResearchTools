@@ -227,6 +227,20 @@ function Get-PlanTargets([string]$planPath) {
     # invisible character difference nobody can see in a diff. Splitting on
     # separators and asking Path for the extension cannot fail that way.
     $text = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8
+
+    # A leading front matter block (executor, tier, bounds: the plan header of rule R38)
+    # describes the plan, it does not name files, so it is skipped. A block that is never
+    # closed is NOT treated as swallowing the plan: only a closed block is dropped.
+    $lines = $text -split "`n"
+    if ($lines.Count -gt 1 -and $lines[0].Trim([char]0xFEFF, ' ', "`r") -eq '---') {
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].Trim(' ', "`r") -eq '---') {
+                $text = if ($i + 1 -lt $lines.Count) { $lines[($i + 1)..($lines.Count - 1)] -join "`n" } else { "" }
+                break
+            }
+        }
+    }
+
     $separators = @(' ', "`t", "`r", "`n", ',', ';', ':', '(', ')', '[', ']',
                     '{', '}', '"', "'", '`', '<', '>', '|', '!', '?')
     $found = New-Object System.Collections.Generic.List[string]

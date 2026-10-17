@@ -47,6 +47,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot   = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+. (Join-Path $RepoRoot "scripts\lib\rt-stamp.ps1")
 $HomeClaude = Join-Path $env:USERPROFILE ".claude"
 $problems   = 0
 $checked    = 0
@@ -120,7 +121,9 @@ if (Test-Path $skillsRepo) {
 Say "  hooks"
 $hooksRepo = Join-Path $RepoRoot ".claude\hooks"
 if (Test-Path $hooksRepo) {
-    foreach ($hook in (Get-ChildItem $hooksRepo -File -Filter *.py)) {
+    # .py AND .json, through the same selection -Sync copies (rt-stamp.ps1). This loop looked
+    # at *.py only, so three held hook configs read "all in step" for weeks (2026-10-16).
+    foreach ($hook in (Get-RtHookFiles -HooksDir $hooksRepo)) {
         $checked++
         $live = Join-Path (Join-Path $HomeClaude "hooks") $hook.Name
         if (-not (Test-Path $live)) {

@@ -31,6 +31,10 @@
     throws on a leading U+FEFF. Both writers go through UTF8Encoding($false).
 #>
 
+# Which hook files are copied is rt-stamp.ps1's single definition, shared with -Sync and the
+# green stamp, so the first-install path cannot drift from the update path (2026-10-16).
+. (Join-Path $PSScriptRoot "rt-stamp.ps1")
+
 Set-StrictMode -Version Latest
 
 # --- primitives -------------------------------------------------------------
@@ -429,8 +433,7 @@ function Install-RtGlobalHooks {
 
     # .json travels with .py: a hook whose configuration file did not arrive disables
     # itself in silence (R11), which looks exactly like a hook that is working.
-    $files = @(Get-ChildItem $SourceDir -File |
-               Where-Object { $_.Extension -eq ".py" -or $_.Extension -eq ".json" })
+    $files = @(Get-RtHookFiles -HooksDir $SourceDir)
     if ($files.Count -eq 0) {
         return [PSCustomObject]@{
             Action = "noop"; Path = $TargetDir

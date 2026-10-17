@@ -1,5 +1,7 @@
 # paper2talk - Python dependencies.
-# Pinned, audited with pip-audit on 2026-08-12 (no known CVE for these versions).
+# Pinned, audited with pip-audit on 2026-08-12 (no known CVE for these versions), except
+# pypdf: re-audited and moved to 6.19.0 on 2026-10-16 (6.15.0 carries 11 known CVEs). The
+# other three pins keep the 2026-08-12 audit date.
 #
 # The renderers also need, outside pip:
 #   pptxgenjs (npm)   the no-gabarit PowerPoint fallback (assets/deck_skeleton.js);

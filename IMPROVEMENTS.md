@@ -635,4 +635,4 @@ Two defects found while deploying v0.2.1, both fixed in this change.
 
 **The real run (first one), from this worktree against the main clone's environment.** 67 to 108 packages, no package removed, `pypdf` stays 6.19.0, `pip check` clean, `pip-audit` clean on the tool list and on all four requirements files, `docling` correctly absent. `playwright install chromium` was not run (separate step, documented).
 
-**Not proven.** The `deploy/form-service` tests (FastAPI, not in the suite environment) were not run against `pypdf` 6.19.0; the other three pins are covered by the 142 suites that already ran on 6.19.0.
+**Proven after the code review.** The `deploy/form-service` tests (FastAPI, outside the suite environment) were run in a throwaway environment built from `deploy/form-service/requirements.txt` with `pypdf` 6.19.0: `test_api.py` 28, `test_cv_build_api.py` 33, `test_publications.py` 23, all OK. The other three pins are covered by the 142 suites that already ran on 6.19.0.

@@ -7,9 +7,10 @@
 # (cv_build.py check_page_budget).
 #
 # Versions checked here with `pip-audit -r requirements.txt --strict` on
-# 2026-09-25. pypdf 6.15.0, pinned elsewhere in this repo (paper2talk) as of
-# its own last audit, is NOT reused here: this run's audit found
-# PYSEC-2026-3910, PYSEC-2026-3911 and PYSEC-2026-3913 against it, fixed in
-# 6.16.0/6.16.1, so this skill pins 6.16.1 instead.
+# 2026-09-25. On that date pypdf 6.15.0, then pinned in paper2talk, carried
+# PYSEC-2026-3910, PYSEC-2026-3911 and PYSEC-2026-3913, so this skill pinned 6.16.1.
+# On 2026-10-16 pip-audit found 8 more CVEs against 6.16.1 (fixed by 6.19.0), and every
+# pypdf pin in the repository (paper2talk, form-service, deploy/form-service) was moved to
+# 6.19.0. The pins are meant to be IDENTICAL: verify-python-env.ps1 fails when they differ.
 PyYAML==6.0.3
 pypdf==6.19.0  # pip-audit clean 2026-10-16; 6.15.0 had 11 and 6.16.1 had 8 known CVEs (PYSEC-2026-3910 to 4160)

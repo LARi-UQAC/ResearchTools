@@ -211,10 +211,28 @@ Check "(control) the old .py-only stamp could never prove a .json" (-not (Test-R
 
 # Cannot-disagree check on the REAL repository: everything -Sync would copy from the real
 # hooks folder is something the stamp hashes.
-$realHooks = @(Get-RtHookFiles -HooksDir (Join-Path $RepoRoot ".claude\hooks") | ForEach-Object { $_.FullName })
-$realCode  = @(Get-RtCodeFiles -RepoRoot $RepoRoot | ForEach-Object { $_.FullName })
-$missing   = @($realHooks | Where-Object { $realCode -notcontains $_ })
-Check "every real hook file -Sync copies is hashed by the stamp"  ($realHooks.Count -gt 0 -and $missing.Count -eq 0)
+# The reference list is enumerated HERE, independently of the shared helper (a direct listing
+# of the top-level hook files), so the check cannot pass by construction when the helper's
+# filter and the stamp's merge move together (code-review finding).
+$independent = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot ".claude\hooks") -File |
+                 Where-Object { $_.Name -like "*.py" -or $_.Name -like "*.json" } | ForEach-Object { $_.FullName })
+$realCode    = @(Get-RtCodeFiles -RepoRoot $RepoRoot | ForEach-Object { $_.FullName })
+$missing     = @($independent | Where-Object { $realCode -notcontains $_ })
+Check "every real hook .py and .json is hashed by the stamp"       ($independent.Count -gt 0 -and $missing.Count -eq 0)
+$copied = @(Get-RtHookFiles -HooksDir (Join-Path $RepoRoot ".claude\hooks") | ForEach-Object { $_.FullName })
+Check "-Sync's selection equals the independent listing"          (($copied | Sort-Object) -join "|" -eq (($independent | Sort-Object) -join "|"))
+
+# The three places that decide which hook files travel: update path, first-install path and
+# the deployment audit. None may keep a filter of its own (the audit's was *.py, which is why
+# three held configs read "all in step").
+foreach ($site in @(@("scripts\lib\rt-sync.ps1", "the -Sync engine"),
+                    @("scripts\lib\rt-global-config.ps1", "the first-install path"),
+                    @("scripts\audit\check-deployment.ps1", "the deployment audit"))) {
+    $text = [System.IO.File]::ReadAllText((Join-Path $RepoRoot $site[0]))
+    Check ("{0} selects hook files through Get-RtHookFiles" -f $site[1]) ($text -match 'Get-RtHookFiles')
+}
+$auditText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\audit\check-deployment.ps1"))
+Check "the deployment audit no longer lists hooks with -Filter *.py" (-not ($auditText -match 'hooksRepo\s+-File\s+-Filter\s+\*\.py'))
 Check "the runner takes its file list from Get-RtCodeFiles"       ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\test\run-offline-tests.ps1")) -match 'Get-RtCodeFiles\s+-RepoRoot')
 
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)

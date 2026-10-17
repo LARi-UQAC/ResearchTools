@@ -316,6 +316,11 @@
     }
   },
   "staleness_seconds": {
+    "local_generating_max": {
+      "value": 1800,
+      "unit": "seconds a start record with no later end still counts as a generation in progress",
+      "provenance": "chosen 2026-10-17 - a 4000 token file takes about 17 minutes at the 3.87 tokens per second measured 2026-09-05 (context-budget.json), so thirty minutes covers it, and an older unfinished start is a run that died"
+    },
     "local_active": {
       "value": 300,
       "unit": "seconds since a role's last call before it stops being drawn as active",

@@ -142,6 +142,15 @@ class TestFileLines(PlanCase):
         self.assertEqual(self.check(ok)["files"], 2)
 
 
+class TestProseIsNotAFile(PlanCase):
+    """R35 round 2: unquoted prose after `- Test:` must not be counted as a file."""
+
+    def test_prose_and_trailing_punctuation_are_not_files(self):
+        text = plan_text(tier="simple", files=1) + (
+            "- Test: run the suite\n- Test: see below\n- Modify: src/mod0.py,\n")
+        self.assertEqual(self.check(text)["files"], 1)
+
+
 class TestCeilings(PlanCase):
     def counter(self, tokens, exact=True, method="tiktoken"):
         return lambda text: TokenCount(tokens, method, exact, None if exact else "estimate")

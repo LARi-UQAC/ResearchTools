@@ -1638,6 +1638,13 @@ class LocalLanesAndRounds(unittest.TestCase):
         self.assertEqual(ids[0], "s:s1")
         self.assertEqual(ids[1:], ["l:coder", "l:session"])
 
+    def test_a_local_meter_has_no_editable_limit_input(self):
+        # R35 round 2: the box wrote localStorage["undefined"] and silently reverted.
+        meter = re.search(r"function meterRow\(.*?\n\}", self.script, re.S).group(0)
+        self.assertIn("spec.fixed", meter)
+        meters = re.search(r"function sessionMeters\(.*?\n\}", self.script, re.S).group(0)
+        self.assertIn("fixed: true", meters)
+
     def test_the_meters_and_the_rail_use_the_new_helpers(self):
         meters = re.search(r"function sessionMeters\(.*?\n\}", self.script, re.S).group(0)
         self.assertIn("localLanes(state)", meters)

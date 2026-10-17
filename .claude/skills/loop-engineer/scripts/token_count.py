@@ -33,6 +33,7 @@ import fnmatch
 import json
 import math
 import sys
+import threading
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Iterator, NamedTuple
 
@@ -100,28 +101,47 @@ def config_value(config: dict, key: str) -> Any:
     return item["value"]
 
 
-def _load_encoder(name: str) -> tuple[Any | None, str | None]:
+def _load_encoder(name: str, timeout_s: float | None = None) -> tuple[Any | None, str | None]:
     """
     --------------------------------------------------------------------------
     Purpose:
         Load a tiktoken encoder lazily, turning every failure into a stated reason.
 
+    Details:
+        The load runs in a daemon thread and is abandoned after `timeout_s`, because an
+        encoding file that is not cached is downloaded and this runs inside a hook (R10).
+
     Inputs:
         name (str): the encoding name, for example cl100k_base.
+        timeout_s (float | None): seconds to wait, `encoder_load_timeout_s` when omitted.
 
     Outputs:
-        result (tuple): (encoder, None) or (None, reason). A missing package and an encoding
-        file that needs the network are both reasons, never exceptions.
+        result (tuple): (encoder, None) or (None, reason). A missing package, a timeout and an
+        encoding file that needs the network are all reasons, never exceptions.
     --------------------------------------------------------------------------
     """
     try:
         import tiktoken  # noqa: PLC0415 - lazy by design, absent on many machines
     except ImportError:
         return None, "tiktoken is not installed"
-    try:
-        return tiktoken.get_encoding(name), None
-    except Exception as exc:  # noqa: BLE001 - network or cache failures vary by version
-        return None, f"tiktoken could not load {name}: {exc}"
+    if timeout_s is None:
+        timeout_s = config_value(load_config(), "encoder_load_timeout_s")
+    box: dict[str, Any] = {}
+
+    def load() -> None:
+        try:
+            box["encoder"] = tiktoken.get_encoding(name)
+        except Exception as exc:  # noqa: BLE001 - network or cache failures vary by version
+            box["error"] = exc
+
+    worker = threading.Thread(target=load, daemon=True)
+    worker.start()
+    worker.join(timeout_s)
+    if worker.is_alive():
+        return None, f"tiktoken timed out loading {name} after {timeout_s} s"
+    if "error" in box:
+        return None, f"tiktoken could not load {name}: {box['error']}"
+    return box["encoder"], None
 
 
 def _ollama_probe(text: str, model_tag: str) -> int:

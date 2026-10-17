@@ -3563,6 +3563,13 @@ function meterRow(host, spec) {
     row.appendChild(el("b", "live-spend--none",
       thousands(spec.used) + "K used. Type a maximum for a bar."));
   }
+  if (spec.fixed) {
+    /* A window the harness or the resolver MEASURED is not the operator's to edit: the box
+       would write a key that has no entry in LIMIT_KEYS and silently revert. */
+    row.appendChild(el("b", null, spec.max ? Math.round(spec.max / 1000) + "K" : ""));
+    host.appendChild(row);
+    return ratio;
+  }
   var input = document.createElement("input");
   input.type = "number";
   input.min = "0";
@@ -4412,6 +4419,7 @@ function sessionMeters(host, state) {
     meterRow(block, {
       label: lane.label.slice(0, 12),
       key: "local",
+      fixed: true,
       used: lane.tokens.held,
       max: lane.tokens.window
     });

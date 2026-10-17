@@ -197,9 +197,11 @@ def _round_folders(repo_root, roots, cap):
         if (base / "progress.md").is_file():
             found.append(base)
         if base.is_dir():
-            found += sorted(c for c in base.iterdir()
-                            if c.is_dir() and (c / "progress.md").is_file())
-    return found[:cap]
+            # Newest first: round folders are dated, and the active effort is the one the
+            # cap must never drop (R35 round 2).
+            found += sorted((c for c in base.iterdir()
+                             if c.is_dir() and (c / "progress.md").is_file()), reverse=True)
+    return found
 
 
 def _git_dirs(repo_root):
@@ -316,7 +318,8 @@ def collect(repo_root, home, now, config):
             tiers = contract.load_tiers()
         except (OSError, ValueError):
             tiers = None
-    folders = _round_folders(repo_root, roots, cap)
+    every_folder = _round_folders(repo_root, roots, cap)
+    folders = every_folder[:cap]
     rounds = [_round(folder, Path(repo_root), contract, tiers) for folder in folders]
     loops = _review_loops(repo_root, state_file) if state_file else []
     if not rounds and not loops:
@@ -329,6 +332,8 @@ def collect(repo_root, home, now, config):
                            if newest is not None else None),
              "rounds": rounds, "review_loops": loops,
              "collected_at": now.isoformat(timespec="seconds")}
+    if len(every_folder) > cap:
+        state["rounds_dropped"] = len(every_folder) - cap
     if not state_file:
         state["review_loops_note"] = ("review loops not read: plan_contract could not be "
                                       "loaded or its loop-bounds.json could not be read, so "

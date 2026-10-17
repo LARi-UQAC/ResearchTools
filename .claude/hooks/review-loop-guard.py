@@ -67,7 +67,27 @@ def read_config(hook_dir):
         return None
     if not isinstance(guarded, list) or not isinstance(candidates, list):
         return None
-    return {"guarded": {str(s).lstrip("/") for s in guarded}, "candidates": candidates}
+    return {"guarded": {canonical(s) for s in guarded}, "candidates": candidates}
+
+
+def canonical(name):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One name per skill whatever its spelling: `code-review`, `/code-review`,
+        `code-review:code-review` and `engineering:code-review` are all the review skill, so a
+        namespaced spelling cannot skip the guard (R35 round 2). Same rule as
+        loop_bounds.canonical_skill, kept here because the hook decides before it loads that
+        module.
+
+    Inputs:
+        name (object): the skill name as written.
+
+    Outputs:
+        name (str): the part after the last colon, without a leading slash.
+    --------------------------------------------------------------------------
+    """
+    return str(name).strip().lstrip("/").split(":")[-1]
 
 
 def load_engine(candidates, hook_dir):
@@ -123,7 +143,7 @@ def skill_name(payload):
     for key in NAME_KEYS:
         value = tool_input.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip().lstrip("/")
+            return canonical(value)
     return None
 
 

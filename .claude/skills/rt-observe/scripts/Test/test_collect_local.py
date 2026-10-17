@@ -38,7 +38,8 @@ def make_config(tail_bytes=100000, recent=3, active=60):
     return {"paths": {"bridge_log": entry("~/.claude/loop-bridge-log.jsonl")},
             "caps": {"local_calls_tail_bytes": entry(tail_bytes),
                      "local_calls_recent": entry(recent)},
-            "staleness_seconds": {"local_active": entry(active)}}
+            "staleness_seconds": {"local_active": entry(active),
+                                  "local_generating_max": entry(1800)}}
 
 
 def record(role="coder", at="2026-10-17T11:59:30+00:00", tag="vendor-a:9b", num_ctx=16384,
@@ -135,6 +136,42 @@ class TestRoles(LogCase):
         self.assertNotIn(str(self.home).replace("\\", "/"), text)
         self.assertTrue(state["roles"]["coder"]["plan"].startswith("~"))
         self.assertTrue(state["recent"][0]["plan"].startswith("~"))
+
+
+class TestGeneratingNow(LogCase):
+    """R35 round 2: the bridge logs a generation only when it ENDS, so a role mid-generation
+    read as idle. The bridge now logs a start record, and a role with a start newer than its
+    last end is generating for up to the configured generation limit."""
+
+    def start(self, at, role="coder"):
+        return {"event": "start", "at": at, "role": role, "tag": "vendor-a:9b",
+                "num_ctx": 16384, "plan": None}
+
+    def test_a_start_newer_than_the_last_end_keeps_the_role_active_past_the_idle_window(self):
+        self.write([record(at="2026-10-17T11:00:00+00:00"),
+                    self.start("2026-10-17T11:50:00+00:00")])
+        role = self.collect()["roles"]["coder"]
+        self.assertTrue(role["active"])
+        self.assertTrue(role["generating"])
+        self.assertEqual(role["calls"], 1)  # a start record is not a call
+
+    def test_a_start_older_than_the_generation_limit_is_a_dead_run_not_activity(self):
+        self.write([record(at="2026-10-17T09:00:00+00:00"),
+                    self.start("2026-10-17T10:00:00+00:00")])
+        role = self.collect()["roles"]["coder"]
+        self.assertFalse(role["active"])
+        self.assertFalse(role["generating"])
+
+    def test_an_end_after_the_start_clears_generating(self):
+        self.write([self.start("2026-10-17T11:58:00+00:00"),
+                    record(at="2026-10-17T11:59:30+00:00")])
+        role = self.collect()["roles"]["coder"]
+        self.assertFalse(role["generating"])
+        self.assertTrue(role["active"])
+
+    def test_a_role_with_only_a_start_record_still_appears(self):
+        self.write([self.start("2026-10-17T11:59:00+00:00", role="session")])
+        self.assertIn("session", self.collect()["roles"])
 
 
 class TestUnavailable(LogCase):

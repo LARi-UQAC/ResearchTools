@@ -453,7 +453,8 @@ class TestLogFileFormat(unittest.TestCase):
                 rc = ob.run_bridge(prompt_path, None, None, seed=11, log_path=log_path, max_retries=3)
 
             self.assertEqual(rc, 0)
-            lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+            lines = [ln for ln in log_path.read_text(encoding="utf-8").strip().splitlines()
+                     if '"event": "start"' not in ln]  # start records are plan 6 / R35 round 2
             self.assertEqual(len(lines), 2)  # one line per GENERATION attempt (probe not logged)
             for i, line in enumerate(lines, start=1):
                 record = json.loads(line)
@@ -1050,7 +1051,8 @@ class TestLogRecordFields(unittest.TestCase):
 
         _, records = self._run(clock=clock)
         self.assertEqual(records[-1]["at"], "2026-10-17T12:00:00+00:00")
-        self.assertEqual(seen, [True])
+        # first call: the start record, BEFORE the generation; second: the end, AFTER it
+        self.assertEqual(seen, [False, True])
         _, records = self._run()
         self.assertIsNone(records[-1]["at"])
 
@@ -1066,6 +1068,27 @@ class TestLogRecordFields(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(run.call_args.kwargs["plan"], "plans/plan1.md")
         self.assertTrue(callable(run.call_args.kwargs["clock"]))
+
+
+class TestStartRecord(unittest.TestCase):
+    """R35 round 2: a start record is logged BEFORE the generation so a dashboard can tell a
+    role that is generating from one that is idle."""
+
+    _run = TestLogRecordFields._run
+
+    def test_a_start_record_precedes_the_attempt_record(self):
+        _, records = self._run(role="session", plan="plans/plan1.md",
+                               clock=lambda posted: "2026-10-17T12:00:00+00:00")
+        self.assertEqual(records[0]["event"], "start")
+        self.assertEqual((records[0]["role"], records[0]["tag"], records[0]["plan"]),
+                         ("session", "vendor-a:9b", "plans/plan1.md"))
+        self.assertEqual(records[0]["at"], "2026-10-17T12:00:00+00:00")
+        self.assertNotIn("event", records[-1])
+        self.assertEqual(len(records), 2)
+
+    def test_no_clock_gives_a_null_start_time(self):
+        _, records = self._run()
+        self.assertIsNone(records[0]["at"])
 
 
 class TestMissingMeasuredWindowIsRefusedNotDefaulted(unittest.TestCase):

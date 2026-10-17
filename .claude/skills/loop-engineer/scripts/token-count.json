@@ -19,6 +19,10 @@
     "value": 5000000,
     "provenance": "chosen 2026-10-17 by the session: above 5 MB a source is named and skipped rather than read, far above any plan, spec or code file this repository holds"
   },
+  "encoder_load_timeout_s": {
+    "value": 10,
+    "provenance": "chosen 2026-10-17 by the session (R10): loading an encoder may download its file, and this runs inside a PreToolUse hook with a 30 second deadline, so a stalled download degrades to the estimate after ten seconds"
+  },
   "skip_dir_names": {
     "value": [".git", "__pycache__", "node_modules"],
     "provenance": "chosen 2026-10-17 by the session: directories never holding a counted source when a folder is walked"

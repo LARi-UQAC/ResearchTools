@@ -375,20 +375,29 @@ def tokens_since(transcript: Path, offset: int, max_bytes: int) -> int | None:
     try:
         with open(transcript, "rb") as handle:
             size = os.fstat(handle.fileno()).st_size
-            if size - offset > max_bytes:
+            # An offset past the end means the transcript was rewritten smaller (compaction,
+            # rotation): the baseline is gone, so the answer is unknown, never zero.
+            if offset > size or size - offset > max_bytes:
                 return None
-            handle.seek(min(offset, size))
+            handle.seek(offset)
             data = handle.read()
     except OSError:
         return None
-    total = 0
+    by_message: dict[str, int] = {}
+    anonymous = 0
     for raw in data.decode("utf-8", errors="replace").splitlines():
         try:
-            usage = json.loads(raw)["message"]["usage"]
-            total += sum(int(usage.get(key) or 0) for key in USAGE_KEYS)
+            message = json.loads(raw)["message"]
+            spent = sum(int(message["usage"].get(key) or 0) for key in USAGE_KEYS)
         except (ValueError, KeyError, TypeError, AttributeError):
             continue
-    return total
+        mid = message.get("id")
+        if isinstance(mid, str) and mid:
+            # A message written as several records repeats one usage block: the last wins.
+            by_message[mid] = spent
+        else:
+            anonymous += spent
+    return anonymous + sum(by_message.values())
 
 
 def _plateaued(state: dict) -> bool:
@@ -641,6 +650,9 @@ def _bounds_from_plan(plan: Path, cwd: Path) -> dict:
 
     tiers = plan_contract.load_tiers()
     roots = plan_contract.repository_roots(cwd) or [cwd]
+    # A relative plan path is relative to --cwd (the repository being worked on), not to
+    # wherever the process happens to run.
+    plan = plan if plan.is_absolute() else Path(cwd) / plan
     return plan_contract.validate(plan, roots, tiers)["bounds"]
 
 

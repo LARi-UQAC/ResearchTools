@@ -1243,6 +1243,15 @@ def run_bridge(
         attempt_seed = seed + (attempt - 1)
         payload = build_payload(prompt, model, attempt_seed, num_ctx)
 
+        # The attempt record below is written only when a generation ENDS, and one can take
+        # many minutes on a small card. This start record lets a dashboard tell a role that is
+        # generating from one that is idle (R35 round 2).
+        append_log(resolved_log_path, {
+            "event": "start", "at": clock() if clock is not None else None,
+            "role": role, "tag": model, "num_ctx": num_ctx,
+            "plan": str(plan) if plan is not None else None, "attempt": attempt,
+        })
+
         t0 = time.monotonic()
         try:
             response = _post_generate(payload, REQUEST_TIMEOUT_S)

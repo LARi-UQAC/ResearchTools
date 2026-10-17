@@ -49,9 +49,6 @@ BOUND_KEYS = loop_bounds.BOUND_KEYS
 CEILING_KEYS = ("spec.md", "plan.md", "progress.md", "audit.md", "code_file")
 FILE_LINE = re.compile(
     r"^\s*-\s*(?:\*\*)?(?:Create|Modify|Test):(?:\*\*)?\s*(?:`([^`]+)`|(\S+))")
-PLAN_NAME = re.compile(r"^plan\d*\.md$")
-
-
 class PlanError(ValueError):
     """A plan or a contract file that breaks the contract, with the key or file named."""
 
@@ -407,8 +404,17 @@ def validate(plan: Path, repo_root: Path | list[Path], tiers: dict, *,
         raise PlanError(f"plan not found: {plan}")
     text = path.read_text(encoding="utf-8", errors="replace")
     header = _check_header(parse_header(text), tiers)
-    files = {m.group(1) or m.group(2) for line in text.split("\n")
-             if (m := FILE_LINE.match(line))}
+    files = set()
+    for line in text.split("\n"):
+        found = FILE_LINE.match(line)
+        if not found:
+            continue
+        # An unquoted token is a file only when it looks like a path (has an extension);
+        # prose such as `- Test: run the suite` is not, and trailing punctuation is not part
+        # of a path.
+        name = found.group(1) or found.group(2).rstrip(",;:.")
+        if found.group(1) or re.fullmatch(r"[\w./\\-]*\w\.\w+", name):
+            files.add(name)
     if not files:
         raise PlanError("the plan names no file: list each as `- Create: path`, `- Modify: path` "
                         "or `- Test: path`, otherwise the file limit of its tier cannot be checked")

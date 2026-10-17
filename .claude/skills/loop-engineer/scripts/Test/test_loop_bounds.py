@@ -204,11 +204,44 @@ class TestTokensSince(unittest.TestCase):
             big.write_text(usage_line(1, 1, 1, 1) + "\n", encoding="utf-8")
             self.assertIsNone(lb.tokens_since(big, 0, 5))
 
-    def test_an_offset_past_the_end_counts_zero(self):
+    def test_an_offset_past_the_end_is_unknown(self):
+        # R35 round 2: a transcript rewritten smaller than the saved offset counted 0 and the
+        # budget silently stopped binding.
         with tempfile.TemporaryDirectory() as tmp:
             transcript = Path(tmp) / "t.jsonl"
             transcript.write_text(usage_line(1, 1, 1, 1) + "\n", encoding="utf-8")
-            self.assertEqual(lb.tokens_since(transcript, 10 ** 6, 1000000), 0)
+            self.assertIsNone(lb.tokens_since(transcript, 10 ** 6, 1000000))
+
+    def test_a_message_written_as_several_records_is_counted_once(self):
+        def rec(mid, inp, out):
+            return json.dumps({"message": {"id": mid, "usage": {
+                "input_tokens": inp, "output_tokens": out}}})
+        with tempfile.TemporaryDirectory() as tmp:
+            t = Path(tmp) / "t.jsonl"
+            t.write_text("\n".join([rec("m1", 10, 5), rec("m1", 10, 5), rec("m1", 10, 7),
+                                    rec("m2", 1, 1)]) + "\n", encoding="utf-8")
+            self.assertEqual(lb.tokens_since(t, 0, 10 ** 6), 17 + 2)
+
+    def test_from_plan_resolves_a_relative_path_against_cwd(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = make_repo(Path(tmp))
+            (repo / "plans").mkdir()
+            (repo / "plans" / "plan1.md").write_text(
+                "---\nexecutor: cloud\ntier: simple\nbounds:\n  max_rounds: 2\n"
+                "  max_tokens: 9\n  plateau: 1\n---\n- Create: `a.py`\n", encoding="utf-8")
+            elsewhere = Path(tmp) / "elsewhere"
+            elsewhere.mkdir()
+            buf = io.StringIO()
+            old = Path.cwd()
+            os.chdir(elsewhere)
+            try:
+                with redirect_stdout(buf):
+                    code = lb.main(["--cwd", str(repo), "--json", "init", "--from-plan",
+                                    "plans/plan1.md"])
+            finally:
+                os.chdir(old)
+            self.assertEqual(code, 0, buf.getvalue())
 
 
 class TestCli(unittest.TestCase):

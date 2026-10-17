@@ -139,7 +139,7 @@ def _read_tail(path, tail_bytes):
     return records, start > 0, size
 
 
-def _group(records, now, active_seconds):
+def _group(records, now, active_seconds, generating_seconds):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -149,6 +149,8 @@ def _group(records, now, active_seconds):
         records (list[dict]): parsed log records, oldest first
         now (datetime): the injected clock (R19)
         active_seconds (int): a role is active when its last call is younger than this
+        generating_seconds (int): a start record younger than this, and newer than the last
+            end, means the role is generating now
 
     Outputs:
         result (tuple): (roles, kept, skipped) with roles a mapping role -> summary, kept the
@@ -162,7 +164,13 @@ def _group(records, now, active_seconds):
             skipped += 1
             continue
         kept.append(item)
-        row = roles.setdefault(role, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0})
+        row = roles.setdefault(role, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0,
+                                      "last_at": None, "start_at": None})
+        if item.get("event") == "start":
+            # Written BEFORE a generation (R35 round 2): not a call, not tokens.
+            row.update(tag=item.get("tag"), num_ctx=item.get("num_ctx"),
+                       plan=item.get("plan"), start_at=item.get("at"))
+            continue
         row["calls"] += 1
         for key in ("prompt_tokens", "completion_tokens"):
             if isinstance(item.get(key), int) and not isinstance(item.get(key), bool):
@@ -172,7 +180,14 @@ def _group(records, now, active_seconds):
     for row in roles.values():
         moment = _stamp(row["last_at"])
         row["age_seconds"] = max(0, int((now - moment).total_seconds())) if moment else None
-        row["active"] = row["age_seconds"] is not None and row["age_seconds"] < active_seconds
+        began = _stamp(row.pop("start_at"))
+        # Generating: a start newer than the last end, not older than the generation limit
+        # (an older one is a run that died, not activity).
+        row["generating"] = bool(
+            began and (moment is None or began > moment)
+            and (now - began).total_seconds() < generating_seconds)
+        row["active"] = row["generating"] or (
+            row["age_seconds"] is not None and row["age_seconds"] < active_seconds)
     return roles, kept, skipped
 
 
@@ -199,6 +214,7 @@ def collect(config, home, now):
         tail_bytes = _cfg(config, "caps", "local_calls_tail_bytes")
         recent_cap = _cfg(config, "caps", "local_calls_recent")
         active_seconds = _cfg(config, "staleness_seconds", "local_active")
+        generating_seconds = _cfg(config, "staleness_seconds", "local_generating_max")
     except ConfigKeyError as exc:
         return {"status": "unavailable", "reason": str(exc)}
     path = _log_path(path_text, home)
@@ -212,14 +228,15 @@ def collect(config, home, now):
                 "reason": "bridge log unreadable: %s (%s)" % (shown, exc.__class__.__name__)}
     if size == 0:
         return {"status": "unavailable", "reason": "bridge log is empty: %s" % shown}
-    roles, kept, skipped = _group(records, now, active_seconds)
+    roles, kept, skipped = _group(records, now, active_seconds, generating_seconds)
     if not kept:
         return {"status": "unavailable",
                 "reason": "no record carries a role yet in %s (%d older line(s) skipped)"
                           % (shown, skipped)}
+    ended = [item for item in kept if item.get("event") != "start"]
     recent = [{key: item.get(key) for key in
                ("at", "role", "tag", "plan", "prompt_tokens", "completion_tokens", "accepted")}
-              for item in reversed(kept[-recent_cap:])]
+              for item in reversed(ended[-recent_cap:])]
     state = {"status": "ok", "proven_by": shown,
              "proven_at": max((i.get("at") for i in kept if isinstance(i.get("at"), str)),
                               default=None),

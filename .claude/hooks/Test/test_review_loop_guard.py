@@ -142,6 +142,12 @@ class TestRefusals(HookCase):
         self.assertIn("max_rounds", err)
         self.assertEqual(self.stored()["invocations"], {"code-review": 2})
 
+    def test_a_namespaced_spelling_of_a_guarded_skill_is_guarded_too(self):
+        # R35 round 2: `engineering:code-review` was not in guarded_skills and skipped the check.
+        self.assertEqual(self.run_hook(skill="engineering:code-review")[0], 2)
+        self.assertEqual(self.run_hook(skill="some-plugin:security-review")[0], 2)
+        self.assertEqual(self.run_hook(skill="engineering:debug")[0], 0)
+
     def test_refused_on_plateau(self):
         state = self.declare(plateau=2)
         for count in (4, 4, 4):

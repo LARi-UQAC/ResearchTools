@@ -222,6 +222,20 @@ class TestRound1Findings(RepoCase):
         self.assertEqual(len(state["rounds"]), 1)
 
 
+class TestNewestFirst(RepoCase):
+    def test_the_cap_drops_the_oldest_folders_and_says_so(self):
+        base = self.repo / "docs" / "superpowers" / "todo"
+        for n in range(1, 13):
+            d = base / ("2026-10-%02d-x" % n)
+            d.mkdir(exist_ok=True)
+            (d / "progress.md").write_text("## plan1.md\n- [ ] T1\n", encoding="utf-8")
+            (d / "plan1.md").write_text(header(), encoding="utf-8")
+        state = self.collect(dict(CONFIG, caps={"rounds_max": entry(3)}))
+        names = [r["folder"].split("/")[-1] for r in state["rounds"]]
+        self.assertEqual(names, ["2026-10-12-x", "2026-10-11-x", "2026-10-10-x"])
+        self.assertGreater(state["rounds_dropped"], 0)
+
+
 class TestRegistration(unittest.TestCase):
     def test_the_section_is_registered_with_its_ttl(self):
         shipped = json.loads(SHIPPED_CONFIG.read_text(encoding="utf-8"))

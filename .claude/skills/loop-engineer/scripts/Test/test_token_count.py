@@ -230,6 +230,37 @@ class TestCeilingGaps(unittest.TestCase):
         self.assertEqual(report["over"], ["<text 1>"])
 
 
+class TestEncoderTimeout(unittest.TestCase):
+    """R35 round 2 (R10): loading an encoder may download a file, so it is bounded."""
+
+    def test_a_slow_encoder_load_is_a_stated_degradation_not_a_hang(self):
+        import threading
+        import types
+        gate = threading.Event()
+
+        def slow(name):
+            gate.wait(5)
+            return WordEncoder()
+
+        fake = types.SimpleNamespace(get_encoding=slow)
+        with mock.patch.dict(sys.modules, {"tiktoken": fake}):
+            enc, reason = tc._load_encoder("cl100k_base", timeout_s=0.2)
+        gate.set()
+        self.assertIsNone(enc)
+        self.assertIn("timed out", reason)
+
+    def test_a_quick_load_still_returns_the_encoder(self):
+        import types
+        fake = types.SimpleNamespace(get_encoding=lambda name: WordEncoder())
+        with mock.patch.dict(sys.modules, {"tiktoken": fake}):
+            enc, reason = tc._load_encoder("cl100k_base", timeout_s=2)
+        self.assertIsNotNone(enc)
+        self.assertIsNone(reason)
+
+    def test_the_timeout_comes_from_the_config(self):
+        self.assertTrue(tc.load_config()["encoder_load_timeout_s"]["provenance"])
+
+
 class TestConfig(unittest.TestCase):
     def test_a_missing_key_is_a_named_error_and_the_shipped_file_has_provenance(self):
         with self.assertRaises(KeyError) as ctx:

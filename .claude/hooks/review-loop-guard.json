@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Settings for review-loop-guard.py, the PreToolUse gate on the Skill tool (R35 as amended by",
+    "the local coding contract). R0: every value lives here, not in the hook. R4 provenance on",
+    "every entry. Deleting or breaking this file disables the gate in silence (R11): a hook whose",
+    "own dependency is absent never refuses a tool (the 2026-08-27 incident)."
+  ],
+  "enabled": {
+    "value": true,
+    "provenance": "chosen 2026-10-17 by the operator through the local coding contract spec, decision D4 and D6"
+  },
+  "guarded_skills": {
+    "value": ["code-review", "security-review", "code-review:code-review"],
+    "provenance": "chosen 2026-10-17: the review skills R35 repeats. The plugin spelling is listed because the skill list of this machine shows both code-review and code-review:code-review"
+  },
+  "loop_bounds_candidates": {
+    "value": [
+      "~/.claude/skills/loop-engineer/scripts/loop_bounds.py",
+      "../skills/loop-engineer/scripts/loop_bounds.py"
+    ],
+    "provenance": "chosen 2026-10-17: tried in order, a leading ~ is the home directory (the installed junction of this machine) and a relative path is resolved from the folder holding this hook (a clone of the repository)"
+  }
+}

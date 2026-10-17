@@ -89,6 +89,17 @@
             "statusMessage": "Checking the worktree for links (R37)..."
           }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\review-loop-guard.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking the review-loop bounds (R35)..."
+          }
+        ]
       }
     ],
     "SessionStart": [

@@ -440,7 +440,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _tokens_used(state: dict, config: dict) -> int | None:
+def tokens_used(state: dict, config: dict) -> int | None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -550,7 +550,7 @@ def _run(args: argparse.Namespace, report: dict) -> int:
         report["initialised"] = state is not None
         if state is not None:
             report.update({k: state[k] for k in (*BOUND_KEYS, "invocations", "ticks")})
-            report["tokens_used"] = _tokens_used(state, config)
+            report["tokens_used"] = tokens_used(state, config)
         return 0
     if state is None:
         report.update(error=None, allowed=False, reason=decide(None, "", None)[1])
@@ -566,9 +566,9 @@ def _run(args: argparse.Namespace, report: dict) -> int:
         if not args.dry_run:
             save_state(path, branch, state)
         return 0
-    allowed, reason = decide(state, args.skill, _tokens_used(state, config))
+    allowed, reason = decide(state, args.skill, tokens_used(state, config))
     report.update(skill=args.skill, allowed=allowed, reason=reason,
-                  tokens_used=_tokens_used(state, config))
+                  tokens_used=tokens_used(state, config))
     if allowed and args.record:
         record_invocation(state, args.skill)
         save_state(path, branch, state)

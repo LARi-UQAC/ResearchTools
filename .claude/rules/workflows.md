@@ -284,7 +284,7 @@ session, not left to the reviewer on GitHub:
    round the session asks the owner with `AskUserQuestion` for three bounds, `max_rounds`,
    `max_tokens` (input + cache_creation + output, cache reads excluded) and `plateau`, unless
    the plan header already carries them, then runs
-   `python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`.
+   `python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`. In any project other than ResearchTools the script is under `~/.claude/skills/loop-engineer/scripts/`.
    After each round it runs `loop_bounds.py tick --findings N`. The hook `review-loop-guard.py`
    refuses a review skill with no bounds or past one. The loop stops at the first of `max_rounds`,
    `max_tokens`, `plateau` or a round with no finding, and the session names which. Only after a
@@ -292,8 +292,9 @@ session, not left to the reviewer on GitHub:
    what each fixed. When a bound stops the loop first, the session reports what remains and asks
    whether to raise a bound; it never opens the PR on its own. Measured 2026-10-17: seven
    unbounded iterations and no question put to the owner, which is why "until no finding" alone
-   is no longer the rule. A review typed by hand as a slash command is guarded the same way, and
-   `init --max-rounds 1` is the one-shot.
+   is no longer the rule. Whether a review typed by hand as a slash command reaches the hook is
+   unverified (R15): the hook sees a Skill tool call only, so a typed command may run
+   unbounded, and `init --max-rounds 1` before typing it is the one-shot.
 
 GitHub Copilot's review stays, as a confirmation rather than the first reader. Measured
 2026-10-01/02 on PR #40, the privacy guard: Copilot found 6 issues, then 1, then 1 more, one

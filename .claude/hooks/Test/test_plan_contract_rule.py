@@ -87,6 +87,14 @@ class TestRuleIsWritten(unittest.TestCase):
                        "- [!]", "no audit"):
             self.assertIn(phrase, body)
 
+    def test_the_agent_passes_the_plan_to_the_bridge_so_the_log_names_it(self):
+        # Code review 2026-10-17: the bridge gained --plan for the dashboard, but the
+        # agent's own bridge command never passed it, so every record said plan null.
+        command = [line for line in self.agent.splitlines() if "ollama_bridge.py" in line
+                   and "--prompt-file" in line]
+        self.assertEqual(len(command), 1)
+        self.assertIn("--plan", command[0])
+
     def test_the_code_style_index_lists_r38(self):
         index = flat(CODE_STYLE.read_text(encoding="utf-8"))
         self.assertRegex(index, r"R36 and R37 and R38|R37 and R38|R38")

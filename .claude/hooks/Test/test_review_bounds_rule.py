@@ -65,6 +65,15 @@ class TestAmendedRule(unittest.TestCase):
         region = export_region(CLAUDE_MD.read_text(encoding="utf-8"))
         self.assertEqual(missing(region), [])
 
+    def test_the_commands_say_where_the_script_lives_outside_researchtools(self):
+        # Code review 2026-10-17: the rule is exported to every project, where the
+        # repo-relative path of loop_bounds.py does not exist.
+        for label, text in (("R35", r35_block(WORKFLOWS.read_text(encoding="utf-8"))),
+                            ("export", export_region(CLAUDE_MD.read_text(encoding="utf-8"))),
+                            ("loopdev", LOOPDEV.read_text(encoding="utf-8"))):
+            with self.subTest(where=label):
+                self.assertIn("~/.claude/skills/loop-engineer", flat(text))
+
     def test_loopdev_and_the_skill_follow_the_procedure(self):
         for path in (LOOPDEV, SKILL):
             with self.subTest(path=path.name):
@@ -84,6 +93,29 @@ class TestAmendedRule(unittest.TestCase):
     def test_loopdev_no_longer_runs_the_unwired_loop_flag(self):
         self.assertIsNone(STUB_CALL.search(LOOPDEV.read_text(encoding="utf-8")))
         self.assertIn("not wired", flat(SKILL.read_text(encoding="utf-8")))
+
+
+class TestHandTypedReviewIsNotOverClaimed(unittest.TestCase):
+    """Code review 2026-10-17: R35 said a review typed by hand is guarded the same way, while the
+    hook's own header says it cannot guard that case and the skill-name key is unverified (R15).
+    A bound the text promises and the hook does not keep is the seven-iteration case again."""
+
+    def test_no_document_says_a_hand_typed_review_is_guarded(self):
+        manual = REPO / "docs" / "manual"
+        texts = {"R35": r35_block(WORKFLOWS.read_text(encoding="utf-8")),
+                 "08-commands": (manual / "08-commands.md").read_text(encoding="utf-8"),
+                 "12-local-coding": (manual / "12-local-coding.md").read_text(encoding="utf-8")}
+        for label, text in texts.items():
+            with self.subTest(where=label):
+                body = flat(text)
+                self.assertNotRegex(body, r"(?i)typed (by hand )?as a slash command is guarded")
+                self.assertNotIn("is guarded too", body)
+                self.assertNotIn("is guarded the same way", body)
+
+    def test_r35_says_the_hand_typed_case_is_unverified(self):
+        body = flat(r35_block(WORKFLOWS.read_text(encoding="utf-8")))
+        self.assertIn("unverified", body)
+        self.assertIn("--max-rounds 1", body)
 
 
 class TestNegativeControls(unittest.TestCase):

@@ -132,7 +132,7 @@ class TestDecide(unittest.TestCase):
     def test_no_bounds_declared_is_refused_and_names_the_init_command(self):
         allowed, reason = lb.decide(None, "code-review", None)
         self.assertFalse(allowed)
-        self.assertIn("loop_bounds.py init", reason)
+        self.assertIn('loop_bounds.py" init', reason)
 
     def test_decide_refuses_at_max_rounds_and_allows_one_before(self):
         state = fresh_state(max_rounds=3)
@@ -304,6 +304,29 @@ class TestFromPlan(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("--from-plan", report["error"])
             self.assertFalse(lb.state_path(repo).exists())
+
+
+class TestRound1Findings(unittest.TestCase):
+    """Fixes for the code review of 2026-10-17 (R35 round 1), each watched failing first."""
+
+    def test_the_remedy_command_names_the_script_by_absolute_path(self):
+        # The hook is installed globally, so a repo-relative remedy fails in every other
+        # project: the command must point at the script that issued it.
+        script = str(Path(lb.__file__).resolve())
+        self.assertIn(script, lb.INIT_COMMAND)
+        self.assertNotIn(" .claude/skills/", lb.INIT_COMMAND)
+        allowed, reason = lb.decide(None, "code-review", None)
+        self.assertIn(script, reason)
+
+    def test_two_spellings_of_one_review_skill_share_one_counter(self):
+        state = fresh_state(max_rounds=3)
+        for name in ("code-review", "code-review:code-review", "/code-review"):
+            lb.record_invocation(state, name)
+        self.assertEqual(state["invocations"], {"code-review": 3})
+        allowed, reason = lb.decide(state, "code-review:code-review", 0)
+        self.assertFalse(allowed)
+        self.assertIn("max_rounds", reason)
+        self.assertTrue(lb.decide(state, "security-review", 0)[0])
 
 
 class TestConfig(unittest.TestCase):

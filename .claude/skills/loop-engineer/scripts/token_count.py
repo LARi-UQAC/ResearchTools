@@ -359,6 +359,7 @@ def main(argv: list[str] | None = None, *, config: dict | None = None,
     margin = config_value(config, "estimate_margin")
     named = [(f"<text {i}>", text, None) for i, text in enumerate(args.text, 1)]
     rows: list[dict] = []
+    unchecked: list[str] = []
     code = 0
     try:
         for name, text, why in [*named, *iter_sources(args.sources, args.glob, config=config,
@@ -372,9 +373,14 @@ def main(argv: list[str] | None = None, *, config: dict | None = None,
                            note=count.note)
                 if args.max is not None and not within_ceiling(count, args.max, margin):
                     row["over"] = True
-                    code = code or 2
+                    code = max(code, 2)
             elif why == "not found":
-                code = 1
+                code = max(code, 1)
+            elif args.max is not None:
+                # A source too large, binary or unreadable to count cannot be shown to be
+                # under the ceiling, so the check refuses instead of passing it.
+                unchecked.append(name)
+                code = max(code, 2)
             rows.append(row)
     except TokenCountError as exc:
         print(json.dumps({"error": str(exc)}) if args.json else f"refused: {exc}")
@@ -382,7 +388,7 @@ def main(argv: list[str] | None = None, *, config: dict | None = None,
     counted = [r for r in rows if r["tokens"] is not None]
     report = {"sources": rows, "total_tokens": sum(r["tokens"] for r in counted),
               "all_exact": all(r["exact"] for r in counted), "ceiling": args.max,
-              "over": [r["name"] for r in rows if r["over"]]}
+              "over": [r["name"] for r in rows if r["over"]], "unchecked": unchecked}
     if args.json:
         print(json.dumps(report, sort_keys=True))
     else:
@@ -391,6 +397,8 @@ def main(argv: list[str] | None = None, *, config: dict | None = None,
             label += "" if r["skipped"] else (", exact)" if r["exact"] else ", estimate)")
             print(f"{r['name']}: {label}{' OVER' if r['over'] else ''}")
         print(f"total: {report['total_tokens']} tokens")
+        if unchecked:
+            print("unchecked against the ceiling: " + ", ".join(unchecked))
     return code
 
 

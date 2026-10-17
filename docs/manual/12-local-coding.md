@@ -238,8 +238,7 @@ Also untried until one live firing on this machine: that both hooks fire on thei
 ## Troubleshooting
 
 - A review is refused with no bounds: ask for the three bounds, then run the init command the
-  message names. A review typed by hand is guarded the same way, and `--max-rounds 1` is the
-  one-shot.
+  message names. Whether a review typed by hand reaches the hook is unverified, so declare `--max-rounds 1` first as the one-shot.
 - A dispatch is refused: add the `PLAN:` line, or fix the header key the message names.
 - The plan resolves to the cloud: no model is qualified for the tier's role. Qualify one with
   the resolver, or run the plan in the session.

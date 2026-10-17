@@ -199,6 +199,37 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+class TestCeilingGaps(unittest.TestCase):
+    """Fixes for the code review of 2026-10-17 (R35 round 1)."""
+
+    def run_cli(self, *argv):
+        buf = io.StringIO()
+        with mock.patch.object(tc, "_load_encoder", return_value=(WordEncoder(), None)):
+            with redirect_stdout(buf):
+                code = tc.main(list(argv), config=CONFIG)
+        return code, json.loads(buf.getvalue())
+
+    def test_a_source_that_could_not_be_counted_cannot_pass_a_ceiling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            big = Path(tmp) / "big.txt"
+            big.write_text("x" * 1001, encoding="utf-8")
+            code, report = self.run_cli(str(big), "--max", "4000", "--json")
+        self.assertEqual(code, 2)
+        self.assertEqual(report["unchecked"], [str(big)])
+        # without --max the skipped file stays informational
+        with tempfile.TemporaryDirectory() as tmp:
+            big = Path(tmp) / "big.txt"
+            big.write_text("x" * 1001, encoding="utf-8")
+            code, report = self.run_cli(str(big), "--json")
+        self.assertEqual(code, 0)
+
+    def test_a_missing_path_never_hides_an_over_ceiling_source(self):
+        code, report = self.run_cli("--text", "a b c d", "Z:/no/such/file.txt", "--max", "3",
+                                    "--json")
+        self.assertEqual(code, 2)
+        self.assertEqual(report["over"], ["<text 1>"])
+
+
 class TestConfig(unittest.TestCase):
     def test_a_missing_key_is_a_named_error_and_the_shipped_file_has_provenance(self):
         with self.assertRaises(KeyError) as ctx:

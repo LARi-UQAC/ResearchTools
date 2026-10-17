@@ -29,6 +29,7 @@ PLAN_NAME = re.compile(r"^plan(\d*)\.md$")
 SECTION = re.compile(r"^##\s+(plan\d*\.md)\b")
 MARK = re.compile(r"^\s*-\s*\[(.)\]")
 MARKS = {" ": "open", "x": "done", "!": "blocked"}
+_CONTRACTS = {}  # plan_contract modules already loaded, by path
 
 
 def _load_contract(home):
@@ -51,13 +52,18 @@ def _load_contract(home):
     for path in candidates:
         if not path.is_file():
             continue
+        if str(path) in _CONTRACTS:
+            return _CONTRACTS[str(path)]
         try:
             spec = importlib.util.spec_from_file_location("plan_contract_for_rounds", path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            return module
         except Exception:  # noqa: BLE001 - an unloadable contract only costs the headers
-            return None
+            module = None
+        # Cached, success or failure: this runs on a 15 s timer in a long-lived server, and
+        # executing the module again each time re-ran its import-time side effects.
+        _CONTRACTS[str(path)] = module
+        return module
     return None
 
 
@@ -295,13 +301,15 @@ def collect(repo_root, home, now, config):
     except ConfigKeyError as exc:
         return {"status": "unavailable", "reason": str(exc)}
     contract = _load_contract(home)
-    state_file = "rt-review-loop.json"
+    # The state file name has ONE owner, loop-bounds.json (R0, R2). When it cannot be read the
+    # review loops are reported absent WITH the reason, never read under a guessed name (R8).
+    state_file = None
     if contract is not None:
         try:
             state_file = contract.loop_bounds.config_value(
                 contract.loop_bounds.load_config(), "state_file_name")
         except (OSError, ValueError, KeyError):
-            pass
+            state_file = None
     tiers = None
     if contract is not None:
         try:
@@ -310,7 +318,7 @@ def collect(repo_root, home, now, config):
             tiers = None
     folders = _round_folders(repo_root, roots, cap)
     rounds = [_round(folder, Path(repo_root), contract, tiers) for folder in folders]
-    loops = _review_loops(repo_root, state_file)
+    loops = _review_loops(repo_root, state_file) if state_file else []
     if not rounds and not loops:
         return {"status": "unavailable",
                 "reason": "no round folder with a progress.md under: %s" % ", ".join(roots)}
@@ -321,4 +329,8 @@ def collect(repo_root, home, now, config):
                            if newest is not None else None),
              "rounds": rounds, "review_loops": loops,
              "collected_at": now.isoformat(timespec="seconds")}
+    if not state_file:
+        state["review_loops_note"] = ("review loops not read: plan_contract could not be "
+                                      "loaded or its loop-bounds.json could not be read, so "
+                                      "the state file name is unknown")
     return rt_redact.redact_json(state, home)

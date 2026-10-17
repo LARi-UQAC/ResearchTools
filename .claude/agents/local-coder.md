@@ -81,7 +81,7 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    bridge with the failing test as its executable oracle:
 
    ```bash
-   python "$SK"/loop-engineer/scripts/ollama_bridge.py --prompt-file '<scratchpad>/local_coder_prompt.txt' --target <file> --verify '<the failing test command>' --vault-context '<subject terms>' --role <role>
+   python "$SK"/loop-engineer/scripts/ollama_bridge.py --prompt-file '<scratchpad>/local_coder_prompt.txt' --target <file> --verify '<the failing test command>' --vault-context '<subject terms>' --role <role> --plan '<plan path>'
    ```
 
    `--vault-context` is MANDATORY: the bridge does the vault lookup itself and REFUSES (exit 2)

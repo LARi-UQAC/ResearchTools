@@ -36,7 +36,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPTS_DIR))
+if str(SCRIPTS_DIR) not in sys.path:  # a long-lived importer must not grow sys.path
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 import loop_bounds  # noqa: E402
 import token_count  # noqa: E402
@@ -46,7 +47,8 @@ EXECUTORS = ("local-coder", "aider", "cloud")
 HEADER_KEYS = ("executor", "tier", "bounds")
 BOUND_KEYS = loop_bounds.BOUND_KEYS
 CEILING_KEYS = ("spec.md", "plan.md", "progress.md", "audit.md", "code_file")
-FILE_LINE = re.compile(r"^\s*-\s*(?:\*\*)?(?:Create|Modify|Test):(?:\*\*)?\s*`([^`]+)`")
+FILE_LINE = re.compile(
+    r"^\s*-\s*(?:\*\*)?(?:Create|Modify|Test):(?:\*\*)?\s*(?:`([^`]+)`|(\S+))")
 PLAN_NAME = re.compile(r"^plan\d*\.md$")
 
 
@@ -405,7 +407,11 @@ def validate(plan: Path, repo_root: Path | list[Path], tiers: dict, *,
         raise PlanError(f"plan not found: {plan}")
     text = path.read_text(encoding="utf-8", errors="replace")
     header = _check_header(parse_header(text), tiers)
-    files = {m.group(1) for line in text.split("\n") if (m := FILE_LINE.match(line))}
+    files = {m.group(1) or m.group(2) for line in text.split("\n")
+             if (m := FILE_LINE.match(line))}
+    if not files:
+        raise PlanError("the plan names no file: list each as `- Create: path`, `- Modify: path` "
+                        "or `- Test: path`, otherwise the file limit of its tier cannot be checked")
     limit = tiers[header["tier"]]["max_files"]
     if len(files) > limit:
         raise PlanError(f"the plan names {len(files)} files, over the {limit} allowed for tier "

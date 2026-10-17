@@ -48,8 +48,28 @@ CONFIG_PATH = SCRIPTS_DIR / "loop-bounds.json"
 USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "output_tokens")
 BOUND_KEYS = ("max_rounds", "max_tokens", "plateau")
 DETACHED_KEY = "(detached HEAD)"
-INIT_COMMAND = ("python .claude/skills/loop-engineer/scripts/loop_bounds.py init "
+# The remedy names THIS script by absolute path: the review-loop hook is installed globally and
+# refuses in every project, where a repo-relative path would not exist.
+INIT_COMMAND = (f'python "{Path(__file__).resolve()}" init '
                 "--max-rounds N --max-tokens N --plateau N --yes")
+
+
+def canonical_skill(name: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One counter per review skill, whatever the spelling it was invoked under:
+        `code-review`, `/code-review` and the plugin form `code-review:code-review` are the
+        same skill, and counting them apart would allow max_rounds times the spellings.
+
+    Inputs:
+        name (str): the skill name as invoked.
+
+    Outputs:
+        name (str): the part after the last colon, without a leading slash.
+    --------------------------------------------------------------------------
+    """
+    return str(name).strip().lstrip("/").split(":")[-1]
 
 
 class BoundsError(ValueError):
@@ -306,7 +326,8 @@ def record_invocation(state: dict, skill: str) -> None:
     --------------------------------------------------------------------------
     """
     counts = state.setdefault("invocations", {})
-    counts[skill] = int(counts.get(skill, 0)) + 1
+    key = canonical_skill(skill)
+    counts[key] = int(counts.get(key, 0)) + 1
 
 
 def tick(state: dict, findings: int, now_iso: str) -> None:
@@ -411,6 +432,7 @@ def decide(state: dict | None, skill: str, tokens_used: int | None) -> tuple[boo
     if state is None:
         return False, (f"no review-loop bounds are declared for this branch. Ask the owner for "
                        f"max rounds, max tokens and plateau, then run: {INIT_COMMAND}")
+    skill = canonical_skill(skill)
     used = int(state.get("invocations", {}).get(skill, 0))
     if used >= state["max_rounds"]:
         return False, (f"max_rounds reached for {skill}: {used} of {state['max_rounds']}. "

@@ -1275,6 +1275,25 @@ class TestRoleWindow(unittest.TestCase):
             entry = json.loads(state_path.read_text(encoding="utf-8"))["current_by_role"]["session"]
             self.assertEqual(entry["num_ctx"], 262144)
 
+    def test_re_adopting_the_same_tag_without_num_ctx_keeps_the_recorded_window(self):
+        # Code review 2026-10-17: updating only the reason erased the window silently.
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            state_path = self._seeded(Path(d))
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "first",
+                         "--num-ctx", "262144"])
+                mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "new reason"])
+                same = json.loads(state_path.read_text(encoding="utf-8"))
+                mr.main(["--adopt-role", "session", "vendor:7b", "--reason", "other tag"])
+                other = json.loads(state_path.read_text(encoding="utf-8"))
+        entry = same["current_by_role"]["session"]
+        self.assertEqual((entry["num_ctx"], entry["reason"]), (262144, "new reason"))
+        # A different tag has a different window: it is never carried over.
+        self.assertNotIn("num_ctx", other["current_by_role"]["session"])
+
     def test_window_for_a_manual_role_is_its_num_ctx(self):
         self.assertEqual(mr.window_for_role("session", self.STATE, {}), 262144)
 

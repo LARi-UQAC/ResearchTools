@@ -195,6 +195,33 @@ class TestUnavailableAndRedaction(RepoCase):
         self.assertIn("round_roots", state["reason"])
 
 
+class TestRound1Findings(RepoCase):
+    """Fixes for the code review of 2026-10-17 (R35 round 1)."""
+
+    def test_the_contract_is_loaded_once_and_sys_path_does_not_grow(self):
+        self.plan("plan1.md", header())
+        self.ledger("## plan1.md\n- [ ] T1 a\n")
+        self.collect()
+        before = list(sys.path)
+        for _ in range(3):
+            self.collect()
+        self.assertEqual(sys.path, before)
+
+    def test_review_loops_say_why_when_the_state_name_cannot_be_read(self):
+        from unittest import mock
+        self.plan("plan1.md", header())
+        self.ledger("## plan1.md\n- [ ] T1 a\n")
+        (self.repo / ".git" / STATE_FILE).write_text(
+            json.dumps({"branches": {"b": {"max_rounds": 3, "invocations": {}}}}),
+            encoding="utf-8")
+        with mock.patch.object(collect_rounds, "_load_contract", return_value=None):
+            state = self.collect()
+        self.assertEqual(state["status"], "ok")
+        self.assertEqual(state["review_loops"], [])
+        self.assertIn("plan_contract", state["review_loops_note"])
+        self.assertEqual(len(state["rounds"]), 1)
+
+
 class TestRegistration(unittest.TestCase):
     def test_the_section_is_registered_with_its_ttl(self):
         shipped = json.loads(SHIPPED_CONFIG.read_text(encoding="utf-8"))

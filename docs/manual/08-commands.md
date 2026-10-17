@@ -41,7 +41,7 @@ Invoked with `/command-name [arguments]` in any Claude Code session. All files l
 | `/portfolio` | One-shot migration of a researcher's final CIHR / Canadian Common CV XML export into their WordPress portfolio via the `wp-portfolio-agent` agent: parse, discover WP pages (first run only), preview and pause for approval, dry-run the push, push for real only after explicit approval, verify the public pages. No student data is ever read from the XML | Yes — CV XML path + `--data-dir` (outside the repository) |
 
 <!-- local-coding:begin -->
-A review started by hand is guarded too: `review-loop-guard.py` refuses a review skill until `loop_bounds.py init` has declared the bounds (`--max-rounds 1` is the one-shot). The full process, the plan header and the choice of executor are in [chapter 12](12-local-coding.md).
+The hook `review-loop-guard.py` refuses a review skill until `loop_bounds.py init` has declared the bounds. Whether a review typed by hand reaches the hook is unverified, so run `init --max-rounds 1` first as the one-shot. The full process, the plan header and the choice of executor are in [chapter 12](12-local-coding.md).
 <!-- local-coding:end -->
 
 Full detail for `/rt-dashboard`: see [07-rt-observe-dashboard.md](07-rt-observe-dashboard.md).

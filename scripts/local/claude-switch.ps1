@@ -238,7 +238,7 @@ function Resolve-SessionWindow {
     #>
     param([Parameter(Mandatory)][string]$ForTag)
     $sessionTag = Resolve-SessionModelTag
-    if (-not $sessionTag -or $sessionTag -ne $ForTag) { return $null }
+    if (-not $sessionTag -or (Format-OllamaTag $sessionTag) -ne (Format-OllamaTag $ForTag)) { return $null }
     $context = Get-ResolverInvocation
     if (-not $context) { return $null }
     $output = & $context.Python $context.Resolver --window --role session 2>$null

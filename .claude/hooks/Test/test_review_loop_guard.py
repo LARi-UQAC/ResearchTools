@@ -109,7 +109,7 @@ class TestRefusals(HookCase):
     def test_no_bounds_declared_is_refused_and_names_the_init_command(self):
         code, _, err = self.run_hook()
         self.assertEqual(code, 2)
-        self.assertIn("loop_bounds.py init", err)
+        self.assertIn('loop_bounds.py" init', err)
 
     def test_refused_when_invocations_reach_max_rounds(self):
         state = self.declare(max_rounds=2)
@@ -129,6 +129,19 @@ class TestRefusals(HookCase):
         self.assertEqual(code, 2)
         self.assertIn("max_tokens", err)
 
+    def test_the_plugin_spelling_of_a_skill_shares_the_round_counter(self):
+        # Code review 2026-10-17: each spelling had its own counter, so alternating them
+        # allowed max_rounds times the number of spellings.
+        self.write_config(fixture_config(
+            guarded_skills=entry(["code-review", "code-review:code-review"])))
+        self.declare(max_rounds=2)
+        self.assertEqual(self.run_hook(skill="code-review")[0], 0)
+        self.assertEqual(self.run_hook(skill="code-review:code-review")[0], 0)
+        code, _, err = self.run_hook(skill="code-review")
+        self.assertEqual(code, 2)
+        self.assertIn("max_rounds", err)
+        self.assertEqual(self.stored()["invocations"], {"code-review": 2})
+
     def test_refused_on_plateau(self):
         state = self.declare(plateau=2)
         for count in (4, 4, 4):
@@ -143,7 +156,7 @@ class TestRefusals(HookCase):
         git(self.repo, "checkout", "-b", "other")
         code, _, err = self.run_hook()
         self.assertEqual(code, 2)
-        self.assertIn("loop_bounds.py init", err)
+        self.assertIn('loop_bounds.py" init', err)
 
 
 class TestPasses(HookCase):

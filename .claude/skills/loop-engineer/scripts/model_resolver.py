@@ -2010,6 +2010,11 @@ def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False,
     by_role[role] = {"tag": tag, "manual": True, "reason": reason, "adopted": today}
     if num_ctx is not None:
         by_role[role]["num_ctx"] = num_ctx
+    elif (isinstance(previous_entry, dict) and previous_entry.get("manual")
+          and previous_entry.get("tag") == tag and previous_entry.get("num_ctx")):
+        # Re-adopting the SAME tag (to update the reason, say) must not erase its recorded
+        # window. A different tag has a different window and never inherits this one.
+        by_role[role]["num_ctx"] = previous_entry["num_ctx"]
 
     history = list(previous.get("history", []))
     history.append({

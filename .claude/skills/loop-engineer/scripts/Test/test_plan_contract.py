@@ -122,6 +122,26 @@ class TestHeader(PlanCase):
         self.assertIn("not found", str(ctx.exception))
 
 
+class TestFileLines(PlanCase):
+    """Fixes for the code review of 2026-10-17 (R35 round 1): the file limit must not be
+    skipped by a plan written in another notation."""
+
+    def test_a_plan_that_names_no_file_in_the_known_form_is_refused(self):
+        body = plan_text(files=0) + "- File: src/mod.py\n"
+        with self.assertRaises(pc.PlanError) as ctx:
+            self.check(body)
+        self.assertIn("no file", str(ctx.exception))
+
+    def test_a_path_without_backticks_is_counted(self):
+        text = plan_text(tier="simple", files=0) + "".join(
+            "- Create: src/mod%d.py\n" % i for i in range(4))
+        with self.assertRaises(pc.PlanError) as ctx:
+            self.check(text)
+        self.assertIn("4", str(ctx.exception))
+        ok = plan_text(tier="simple", files=0) + "- Create: src/mod.py\n- Modify: src/other.py\n"
+        self.assertEqual(self.check(ok)["files"], 2)
+
+
 class TestCeilings(PlanCase):
     def counter(self, tokens, exact=True, method="tiktoken"):
         return lambda text: TokenCount(tokens, method, exact, None if exact else "estimate")

@@ -329,6 +329,17 @@ try {
     claude-cloud
     Check "claude-cloud restores a pre-existing window variable" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "111")
 
+    # Code review 2026-10-17: a bare tag that Test-OllamaHasModel accepted (normalised to
+    # :latest) was compared raw with the session tag, so the window was left unset and the
+    # advice printed was wrong.
+    Clear-SwitchEnv
+    $script:FakeResolverTag = "resolved-tag:latest"
+    $script:FakeInstalled = @("resolved-tag:latest")
+    claude-ollama -Model "resolved-tag"
+    Check "a bare tag equal to the session tag after normalising still gets the window" ($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -eq "262144")
+    $script:FakeResolverTag = "resolved-tag:test"
+    $script:FakeInstalled = @("resolved-tag:test", "qwen3.5:9b-gpu")
+
     Clear-SwitchEnv
     claude-ollama
     $env:AUGUREAI_API_KEY = "augure-secret-key"

@@ -398,7 +398,39 @@ def format_task_report(result: BudgetResult, spec_label: str) -> str:
     )
 
 
-def cmd_task(spec_path: Path, config_path: Path, model_tag: str | None) -> int:
+def resolve_window(config_path: Path, model_tag: str | None, role: str | None) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The window the gates measure against: the tag's retained window as before, or, when a
+        role is given, the window of the model that role resolves to (a manually adopted role
+        carries its own, a qualified role reads its tag's).
+
+    Inputs:
+        config_path (Path): local-model-config.json (or an override).
+        model_tag (str | None): explicit tag, used only when role is None.
+        role (str | None): the resolver role, or None for the unchanged behaviour.
+
+    Outputs:
+        window (int): the window in tokens.
+
+    Raises:
+        ConfigError: the window cannot be read, with the reason (a resolver refusal is
+        carried as is, so it names the command that fixes it).
+    --------------------------------------------------------------------------
+    """
+    if role is None:
+        return read_retained_num_ctx(config_path, model_tag)
+    import model_resolver  # noqa: PLC0415 - lazy: the resolver imports the bridge, which imports this module
+
+    try:
+        return model_resolver.window_of_role(role, config_path)
+    except model_resolver.ResolverError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def cmd_task(spec_path: Path, config_path: Path, model_tag: str | None,
+             role: str | None = None) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -410,6 +442,7 @@ def cmd_task(spec_path: Path, config_path: Path, model_tag: str | None) -> int:
         config_path (Path): local-model-config.json (or an override).
         model_tag (str | None): explicit model tag, or None to use the
             config's sole declared model.
+        role (str | None): resolver role whose window to use instead of a tag's.
 
     Outputs:
         result (int): 0 when the bundle is compliant, 1 when it is oversized
@@ -418,7 +451,7 @@ def cmd_task(spec_path: Path, config_path: Path, model_tag: str | None) -> int:
     --------------------------------------------------------------------------
     """
     try:
-        window = read_retained_num_ctx(config_path, model_tag)
+        window = resolve_window(config_path, model_tag, role)
         items = load_task_items(spec_path)
     except ContextBudgetError as exc:
         print(str(exc), file=sys.stderr)
@@ -561,7 +594,8 @@ def scan_oversized_files(root: Path, window: int) -> list[ScanEntry]:
     return entries
 
 
-def cmd_scan(path: Path, config_path: Path, model_tag: str | None) -> int:
+def cmd_scan(path: Path, config_path: Path, model_tag: str | None,
+             role: str | None = None) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -583,7 +617,7 @@ def cmd_scan(path: Path, config_path: Path, model_tag: str | None) -> int:
     --------------------------------------------------------------------------
     """
     try:
-        window = read_retained_num_ctx(config_path, model_tag)
+        window = resolve_window(config_path, model_tag, role)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -635,6 +669,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="override local-model-config.json (default: %(default)s)",
     )
     parser.add_argument("--model-tag", type=str, default=None, dest="model_tag")
+    parser.add_argument(
+        "--role", type=str, default=None, dest="role",
+        help="measure against the window of the model this resolver role resolves to "
+             "(model_resolver.window_for_role) instead of a tag's retained window. Excludes "
+             "--model-tag.")
     return parser
 
 
@@ -654,9 +693,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
+    if args.role and args.model_tag:
+        print("--role and --model-tag are alternatives: the role already names the model, so "
+              "a tag would be silently ignored.", file=sys.stderr)
+        return 1
     if args.task_spec is not None:
-        return cmd_task(args.task_spec, args.config_path, args.model_tag)
-    return cmd_scan(args.scan_path, args.config_path, args.model_tag)
+        return cmd_task(args.task_spec, args.config_path, args.model_tag, args.role)
+    return cmd_scan(args.scan_path, args.config_path, args.model_tag, args.role)
 
 
 if __name__ == "__main__":

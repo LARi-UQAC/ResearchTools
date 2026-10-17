@@ -71,6 +71,8 @@ import ollama_bridge as ob  # noqa: E402
 # locally. Tests that care about a specific window still pass num_ctx explicitly, and that
 # explicit value always wins over this patch.
 _TEST_NUM_CTX = 16384
+# The real seam, kept before setUpModule patches it, for the tests that exercise it.
+_REAL_RESOLVE_NUM_CTX = ob._resolve_num_ctx
 
 
 def setUpModule():
@@ -910,6 +912,77 @@ class TestNumCtxIsResolvedPerResolvedTag(unittest.TestCase):
         self.assertTrue(captured)
         for payload in captured:
             self.assertEqual(payload["options"]["num_ctx"], 32768)
+
+
+class TestRoleWindowInTheBridge(unittest.TestCase):
+    """Local coding contract plan 4: with --role the num_ctx the bridge sends, and the budget
+    it checks, are the window of the model that ROLE resolves to (a manually adopted role has
+    no sweep entry). Without a role nothing changes. R21: the lookups are mocked, no state or
+    measurement file of this machine is read."""
+
+    def _run(self, role, resolve_window, read_retained, env=None):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            prompt_path = d / "prompt.txt"
+            prompt_path.write_text("Petit prompt.", encoding="utf-8")
+            captured = []
+
+            def transport(payload, timeout):
+                captured.append(payload)
+                if _is_probe(payload):
+                    return {"prompt_eval_count": 12}
+                return {"response": "Reponse propre."}
+
+            environ = {k: v for k, v in os.environ.items() if k != "LARI_LOCAL_MODEL"}
+            environ.update(env or {})
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
+                 mock.patch.object(ob, "_resolve_num_ctx", _REAL_RESOLVE_NUM_CTX), \
+                 mock.patch.object(ob.context_budget, "resolve_window", resolve_window), \
+                 mock.patch.object(ob.context_budget, "read_retained_num_ctx", read_retained), \
+                 mock.patch.dict(os.environ, environ, clear=True), \
+                 mock.patch.object(ob, "_post_generate", side_effect=transport):
+                rc = ob.run_bridge(prompt_path=prompt_path, verify_command=None,
+                                   target_path=None, seed=ob.DEFAULT_SEED,
+                                   log_path=d / "log.jsonl", role=role)
+        return rc, captured
+
+    def test_role_session_sends_the_roles_num_ctx_and_checks_the_budget_against_it(self):
+        window = mock.Mock(return_value=262144)
+        by_tag = mock.Mock(return_value=8192)
+        rc, captured = self._run("session", window, by_tag)
+        self.assertEqual(rc, 0)
+        window.assert_called_once_with(ob.context_budget.DEFAULT_CONFIG_PATH, None, "session")
+        by_tag.assert_not_called()
+        self.assertTrue(captured)
+        for payload in captured:
+            self.assertEqual(payload["options"]["num_ctx"], 262144)
+
+    def test_no_role_is_unchanged(self):
+        window = mock.Mock(return_value=262144)
+        by_tag = mock.Mock(return_value=8192)
+        rc, captured = self._run(None, window, by_tag)
+        self.assertEqual(rc, 0)
+        window.assert_not_called()
+        by_tag.assert_called_once_with(ob.context_budget.DEFAULT_CONFIG_PATH, "vendor-a:9b")
+        for payload in captured:
+            self.assertEqual(payload["options"]["num_ctx"], 8192)
+
+    def test_a_forced_tag_keeps_the_lookup_by_tag_even_with_a_role(self):
+        window = mock.Mock(return_value=262144)
+        by_tag = mock.Mock(return_value=8192)
+        rc, _ = self._run("session", window, by_tag, env={"LARI_LOCAL_MODEL": "vendor-a:9b"})
+        self.assertEqual(rc, 0)
+        window.assert_not_called()
+        by_tag.assert_called_once()
+
+    def test_an_unknown_role_window_is_a_refusal_not_a_default(self):
+        def refuse(config_path, tag, role):
+            raise ob.context_budget.ConfigError("role window unknown")
+
+        rc, captured = self._run("session", refuse, mock.Mock(return_value=8192))
+        self.assertEqual(rc, 1)
+        self.assertEqual(captured, [])
 
 
 class TestMissingMeasuredWindowIsRefusedNotDefaulted(unittest.TestCase):

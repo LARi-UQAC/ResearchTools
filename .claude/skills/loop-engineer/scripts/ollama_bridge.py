@@ -1105,7 +1105,7 @@ def restore_target(path: Path, previous: bytes | None) -> None:
         path.write_bytes(previous)
 
 
-def _resolve_num_ctx(model: str) -> int:
+def _resolve_num_ctx(model: str, role: str | None = None) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -1117,17 +1117,28 @@ def _resolve_num_ctx(model: str) -> int:
 
     Inputs:
         model (str): the tag resolve_model returned for this run.
+        role (str | None): the resolver role of this run. When given, the window is
+            model_resolver.window_for_role(role), so a manually adopted role (such as
+            `session`, which has no sweep entry) is read from its own adoption record.
+            None keeps the lookup by tag.
 
     Outputs:
-        result (int): models[<model>].retained_num_ctx from
-        local-model-config.json.
+        result (int): the role's window, or models[<model>].retained_num_ctx from
+        local-model-config.json when no role is given.
 
     Raises:
         context_budget.ConfigError: the config, the entry, or the field is
-        missing. Never substitutes a default - the same refusal the
-        planning-time gate makes.
+        missing, or the role's window is unknown. Never substitutes a default
+        - the same refusal the planning-time gate makes.
     --------------------------------------------------------------------------
     """
+    if role is not None:
+        import model_resolver  # noqa: PLC0415 - the resolver imports this module
+
+        # A forced tag (the LARI_LOCAL_MODEL override) is not the role's adopted tag, so the
+        # role's window would describe another model: that run keeps the lookup by tag.
+        if not os.environ.get(model_resolver.ENV_OVERRIDE_VAR):
+            return context_budget.resolve_window(context_budget.DEFAULT_CONFIG_PATH, None, role)
     return context_budget.read_retained_num_ctx(context_budget.DEFAULT_CONFIG_PATH, model)
 
 
@@ -1205,7 +1216,8 @@ def run_bridge(
 
     if num_ctx is None:
         try:
-            num_ctx = _resolve_num_ctx(model)
+            num_ctx = (_resolve_num_ctx(model) if role is None
+                       else _resolve_num_ctx(model, role))
         except context_budget.ConfigError as exc:
             logger.error("%s", exc)
             return 1

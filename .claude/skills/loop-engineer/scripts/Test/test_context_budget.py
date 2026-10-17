@@ -300,5 +300,71 @@ class TestCheckTaskBudgetMarginAndHeaviest(unittest.TestCase):
         self.assertEqual(result.heaviest.name, "b")
 
 
+class TestRoleWindow(unittest.TestCase):
+    """--role ROLE measures against the window of the model the role resolves to (local coding
+    contract plan 4). The resolver's state is patched, none of this machine's is read (R21)."""
+
+    def _state(self, d: Path, entry: dict) -> Path:
+        path = d / "state.json"
+        path.write_text(json.dumps({"current": "vendor-a:9b",
+                                    "current_by_role": {"session": entry}}), encoding="utf-8")
+        return path
+
+    def _run(self, argv, state_path):
+        import model_resolver
+        from unittest import mock
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(model_resolver, "STATE_PATH", state_path), \
+             redirect_stdout(out), redirect_stderr(err):
+            rc = cb.main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_role_window_replaces_the_tag_lookup_for_a_manual_role(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            empty = d / "local-model-config.json"
+            empty.write_text(json.dumps({"models": {}}), encoding="utf-8")
+            spec = _write_spec(d, [{"name": "item", "text": "a" * 400}])
+            state = self._state(d, {"tag": "vendor-a:9b", "manual": True, "num_ctx": 262144})
+            rc, out, _ = self._run(["--task", str(spec), "--config", str(empty),
+                                    "--role", "session"], state)
+        self.assertEqual(rc, 0)
+        self.assertIn("window 262144", out)
+
+    def test_no_role_keeps_the_old_behaviour_including_its_refusal(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            empty = d / "local-model-config.json"
+            empty.write_text(json.dumps({"models": {}}), encoding="utf-8")
+            spec = _write_spec(d, [{"name": "item", "text": "a" * 400}])
+            err = io.StringIO()
+            with redirect_stderr(err):
+                rc = cb.main(["--task", str(spec), "--config", str(empty)])
+        self.assertEqual(rc, 1)
+
+    def test_a_role_with_an_unknown_window_is_refused_with_the_fixing_command(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            config = _write_config(d, 16384)
+            spec = _write_spec(d, [{"name": "item", "text": "a"}])
+            state = self._state(d, {"tag": "vendor-a:9b", "manual": True})
+            rc, _, err = self._run(["--task", str(spec), "--config", str(config),
+                                    "--role", "session"], state)
+        self.assertEqual(rc, 1)
+        self.assertIn("--num-ctx", err)
+
+    def test_role_and_model_tag_together_are_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            config = _write_config(d, 16384)
+            spec = _write_spec(d, [{"name": "item", "text": "a"}])
+            err = io.StringIO()
+            with redirect_stderr(err):
+                rc = cb.main(["--task", str(spec), "--config", str(config), "--role", "x",
+                              "--model-tag", "vendor-a:9b"])
+        self.assertEqual(rc, 1)
+        self.assertIn("alternatives", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

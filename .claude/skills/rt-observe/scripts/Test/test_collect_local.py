@@ -169,6 +169,17 @@ class TestGeneratingNow(LogCase):
         self.assertFalse(role["generating"])
         self.assertTrue(role["active"])
 
+    def test_a_failed_record_clears_generating_and_is_not_a_call(self):
+        failed = {"event": "failed", "at": "2026-10-17T11:55:00+00:00", "role": "coder",
+                  "tag": "vendor-a:9b", "error": "daemon is down"}
+        self.write([record(at="2026-10-17T10:00:00+00:00"),
+                    self.start("2026-10-17T11:50:00+00:00"), failed])
+        role = self.collect()["roles"]["coder"]
+        self.assertFalse(role["generating"])
+        self.assertEqual(role["calls"], 1)
+        self.assertEqual(role["last_at"], "2026-10-17T11:55:00+00:00")
+        self.assertNotIn("failed", [r.get("event") for r in self.collect()["recent"]])
+
     def test_a_role_with_only_a_start_record_still_appears(self):
         self.write([self.start("2026-10-17T11:59:00+00:00", role="session")])
         self.assertIn("session", self.collect()["roles"])

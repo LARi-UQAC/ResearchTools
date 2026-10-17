@@ -424,7 +424,17 @@ def validate(plan: Path, repo_root: Path | list[Path], tiers: dict, *,
                         f"{header['tier']}")
     if ceilings is not None:
         config = token_count.load_config()
-        _check_ceilings(path, ceilings, counter or (lambda t: token_count.count_text(t, config=config)),
+        if counter is None:
+            # ONE encoder load for every file counted: a stalled download then costs a single
+            # timeout, not one per file (R35 round 4).
+            encoder, reason = token_count._load_encoder(token_count.config_value(config, "encoding"))
+            if encoder is not None:
+                counter = lambda t: token_count.count_text(t, encoder=encoder, config=config)  # noqa: E731
+            else:
+                def counter(t):
+                    found = token_count.count_text(t, "chars", config=config)
+                    return found._replace(note=f"estimate, not exact ({reason})")
+        _check_ceilings(path, ceilings, counter,
                         margin if margin is not None
                         else token_count.config_value(config, "estimate_margin"))
     return {"plan": str(path), **header, "files": len(files)}

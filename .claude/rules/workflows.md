@@ -201,7 +201,7 @@ The size ceilings are NOT written in this rule. They are the `ceilings` of
 (`aider-plan.ps1` enforces the same file), counted with `loop-engineer/scripts/token_count.py`
 and checked by `plan_contract.py`. The operator cut them on 2026-09-05 (spec 4000, each plan
 4000, progress 2048, audit 4096 tokens), so the larger figures this table used to carry were
-stale from that day. `todo/` is the archive subdirectory of `plans/`. A source file
+stale from that day. `plans/todo/` is the archive subdirectory of a project's `plans/` (aider's driver moves a finished plan there). It is not the `docs/superpowers/todo/` of R38, where an effort's plans wait before they run. A source file
 read into a prompt carries the `code_file` ceiling; past it, split along a seam the code
 already has, never at an arbitrary line count.
 

@@ -222,6 +222,20 @@ class TestTokensSince(unittest.TestCase):
                                     rec("m2", 1, 1)]) + "\n", encoding="utf-8")
             self.assertEqual(lb.tokens_since(t, 0, 10 ** 6), 17 + 2)
 
+    def test_status_survives_a_state_missing_keys(self):
+        # R35 round 4: a hand-edited or older state raised KeyError instead of a report.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = make_repo(Path(tmp))
+            path = lb.state_path(repo)
+            lb.save_state(path, "main", {"max_rounds": 3})
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                code = lb.main(["--cwd", str(repo), "--json", "status"])
+            report = json.loads(buf.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(report["max_rounds"], 3)
+        self.assertIsNone(report["plateau"])
+
     def test_from_plan_resolves_a_relative_path_against_cwd(self):
         import os
         with tempfile.TemporaryDirectory() as tmp:

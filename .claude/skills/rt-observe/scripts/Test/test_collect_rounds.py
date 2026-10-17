@@ -222,6 +222,16 @@ class TestRound1Findings(RepoCase):
         self.assertEqual(len(state["rounds"]), 1)
 
 
+class TestLedgerBullets(RepoCase):
+    def test_a_markdown_link_bullet_is_not_a_ledger_mark(self):
+        # R35 round 4: `- [plan1](plan1.md)` matched with mark `p` and raised a false error.
+        self.plan("plan1.md", header())
+        self.ledger("## plan1.md\n- [x] T1 a\n- [plan1](plan1.md) notes\n- [X] T2\n- [?] T3\n")
+        errors = self.collect()["rounds"][0]["ledger_errors"]
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(all("[p]" not in e for e in errors))
+
+
 class TestNewestFirst(RepoCase):
     def test_the_cap_drops_the_oldest_folders_and_says_so(self):
         base = self.repo / "docs" / "superpowers" / "todo"

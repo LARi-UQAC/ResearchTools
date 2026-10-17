@@ -171,6 +171,10 @@ def _group(records, now, active_seconds, generating_seconds):
             row.update(tag=item.get("tag"), num_ctx=item.get("num_ctx"),
                        plan=item.get("plan"), start_at=item.get("at"))
             continue
+        if item.get("event") == "failed":
+            # A generation that ended in an error: it closes a start, it is not a call.
+            row["last_at"] = item.get("at")
+            continue
         row["calls"] += 1
         for key in ("prompt_tokens", "completion_tokens"):
             if isinstance(item.get(key), int) and not isinstance(item.get(key), bool):
@@ -233,7 +237,7 @@ def collect(config, home, now):
         return {"status": "unavailable",
                 "reason": "no record carries a role yet in %s (%d older line(s) skipped)"
                           % (shown, skipped)}
-    ended = [item for item in kept if item.get("event") != "start"]
+    ended = [item for item in kept if item.get("event") not in ("start", "failed")]
     recent = [{key: item.get(key) for key in
                ("at", "role", "tag", "plan", "prompt_tokens", "completion_tokens", "accepted")}
               for item in reversed(ended[-recent_cap:])]

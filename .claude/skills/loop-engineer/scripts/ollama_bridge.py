@@ -1258,6 +1258,12 @@ def run_bridge(
         except BridgeError as exc:
             # A daemon/model-level refusal never gets a fallback tag (D7).
             logger.error("%s", exc)
+            # Close the start record: without it a failed call reads as a generation in
+            # progress for the whole generation limit (R35 round 4).
+            append_log(resolved_log_path, {
+                "event": "failed", "at": clock() if clock is not None else None,
+                "role": role, "tag": model, "attempt": attempt, "error": str(exc)[:300],
+            })
             return 1
         generation_s = time.monotonic() - t0
 

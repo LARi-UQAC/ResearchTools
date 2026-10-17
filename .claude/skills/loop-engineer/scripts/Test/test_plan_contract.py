@@ -142,6 +142,28 @@ class TestFileLines(PlanCase):
         self.assertEqual(self.check(ok)["files"], 2)
 
 
+class TestEncoderLoadedOnce(PlanCase):
+    """R35 round 4: one encoder load per validate(), so a stalled download costs one timeout
+    and not one per file counted."""
+
+    def test_the_encoder_is_loaded_once_for_plan_spec_progress_and_audit(self):
+        from unittest import mock
+        (self.folder / "spec.md").write_text("s", encoding="utf-8")
+        (self.folder / "progress.md").write_text("p", encoding="utf-8")
+        (self.folder / "audit.md").write_text("a", encoding="utf-8")
+        calls = []
+
+        def load(name, timeout_s=None):
+            calls.append(name)
+            return None, "tiktoken timed out loading x"
+
+        ceilings = {"spec.md": 10 ** 6, "plan.md": 10 ** 6, "progress.md": 10 ** 6,
+                    "audit.md": 10 ** 6, "code_file": 10 ** 6}
+        with mock.patch.object(pc.token_count, "_load_encoder", side_effect=load):
+            self.check(plan_text(), ceilings=ceilings)
+        self.assertEqual(len(calls), 1)
+
+
 class TestProseIsNotAFile(PlanCase):
     """R35 round 2: unquoted prose after `- Test:` must not be counted as a file."""
 

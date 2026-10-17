@@ -1570,10 +1570,21 @@ class LocalLanesAndRounds(unittest.TestCase):
     def lanes(self, state, prefix=""):
         return self.run_js("%slocalLanes(%s)" % (prefix, json.dumps(state)))
 
-    def test_an_active_role_is_a_generating_lane_with_a_ring_against_its_window(self):
+    def test_a_recently_finished_role_is_active_but_not_described_as_generating(self):
+        # R35 round 4: `active` (a recent call) was drawn and described as "generating now".
         lane = {l["id"]: l for l in self.lanes(self.calls())}["l:coder"]
+        self.assertEqual((lane["state"], lane["ended"]), ("recent", False))
+        note = self.run_js("laneNote(%s)" % json.dumps(lane))
+        self.assertNotIn("generating now", note)
+        self.assertIn("recently", note)
+
+    def test_an_active_role_is_a_generating_lane_with_a_ring_against_its_window(self):
+        state = self.calls()
+        state["local_calls"]["roles"]["coder"]["generating"] = True
+        lane = {l["id"]: l for l in self.lanes(state)}["l:coder"]
         self.assertEqual((lane["kind"], lane["state"], lane["ended"]),
                          ("local", "generating", False))
+        self.assertIn("generating now", self.run_js("laneNote(%s)" % json.dumps(lane)))
         self.assertEqual(lane["tokens"], {"status": "ok", "held": 1500, "window": 16384})
         self.assertEqual((lane["steps"], lane["hooks"], lane["declared"]), ([], [], []))
 

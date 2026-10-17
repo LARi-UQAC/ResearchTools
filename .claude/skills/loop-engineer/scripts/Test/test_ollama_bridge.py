@@ -1086,6 +1086,32 @@ class TestStartRecord(unittest.TestCase):
         self.assertNotIn("event", records[-1])
         self.assertEqual(len(records), 2)
 
+    def test_a_failed_generation_closes_the_start_record(self):
+        # R35 round 4: a daemon error left a start with no end, so the role read as
+        # generating for half an hour.
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            prompt = d / "p.txt"
+            prompt.write_text("Petit prompt.", encoding="utf-8")
+
+            def transport(payload, timeout):
+                if _is_probe(payload):
+                    return {"prompt_eval_count": 12}
+                raise ob.BridgeError("daemon is down")
+
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
+                 mock.patch.object(ob, "_post_generate", side_effect=transport):
+                rc = ob.run_bridge(prompt_path=prompt, verify_command=None, target_path=None,
+                                   seed=ob.DEFAULT_SEED, log_path=d / "log.jsonl",
+                                   role="coder", clock=lambda: "2026-10-17T12:00:00+00:00")
+            records = [json.loads(x) for x in
+                       (d / "log.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(rc, 1)
+        self.assertEqual([r.get("event") for r in records], ["start", "failed"])
+        self.assertEqual(records[-1]["role"], "coder")
+        self.assertIn("daemon is down", records[-1]["error"])
+
     def test_no_clock_gives_a_null_start_time(self):
         _, records = self._run()
         self.assertIsNone(records[0]["at"])

@@ -581,7 +581,8 @@ def _run(args: argparse.Namespace, report: dict) -> int:
     if args.verb == "status":
         report["initialised"] = state is not None
         if state is not None:
-            report.update({k: state[k] for k in (*BOUND_KEYS, "invocations", "ticks")})
+            # .get, never [ ]: a state saved by another version or edited by hand may lack a key.
+            report.update({k: state.get(k) for k in (*BOUND_KEYS, "invocations", "ticks")})
             report["tokens_used"] = tokens_used(state, config)
         return 0
     if state is None:

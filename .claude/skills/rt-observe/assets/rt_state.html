@@ -3678,7 +3678,9 @@ function laneNote(lane) {
   } else if (lane.kind === "local") {
     note = "a bridge role (a call to a local model through ollama_bridge.py, not a "
       + "Claude Code session), model " + (lane.model || "not reported") + ", "
-      + (lane.ended ? "idle, its last call is not recent" : "generating now")
+      + (lane.ended ? "idle, its last call is not recent"
+          : lane.state === "generating" ? "generating now"
+          : "idle, its last call finished recently")
       + ". The ring counts the last call's prompt plus completion tokens "
       + "against the model's window";
   } else {
@@ -3717,7 +3719,9 @@ function localLanes(state) {
       model: row.tag || null,
       ended: !row.active,
       declared: [],
-      state: row.active ? "generating" : "idle",
+      /* `generating` is a start record with no end yet; `active` also covers a call that
+         finished a moment ago, which is drawn live but is not described as generating. */
+      state: row.generating ? "generating" : (row.active ? "recent" : "idle"),
       tokens: { status: "ok",
                 held: (last.prompt_tokens || 0) + (last.completion_tokens || 0),
                 window: row.num_ctx || null },

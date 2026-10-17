@@ -55,8 +55,12 @@ through the Bash and PowerShell tools only, so it does not see `rm -rf` or `Remo
 that reaches `max_entries` (`.claude/hooks/worktree-link-guard.json`) before finishing is
 refused too, since a link could hide in the part not reached. A missing or broken config
 disables the gate in silence and never blocks a tool (R11). The hook is declared in
-`.claude/settings.template.json`; `install-junctions.ps1 -Sync` copies the script and its
-config, and `setup.ps1` adds the entry to a live `settings.json` that lacks it.
+`.claude/settings.template.json`. `install-junctions.ps1 -Sync` copies the script and its
+config once the offline suite is green: the green stamp hashes the hook `.json` files as
+well as the `.py` ones (before 2026-10-16 it hashed `.py` only, so every hook config was
+held forever and had to be copied by hand). The entry reaches a live `settings.json` through
+the default flow of `setup.ps1`, which adds the entries that are missing and touches nothing
+else. `setup.ps1 -InstallJunctions` alone does not edit `settings.json`.
 
 ## Personal-data guard (every git repository, this machine)
 

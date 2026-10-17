@@ -30,6 +30,10 @@
 #   take a lock         - two projects opening at once would both write settings.json,
 #                         and a torn JSON write breaks every session on the machine
 
+# What is copied and what the stamp proves are ONE selection (rt-stamp.ps1): they drifted
+# apart once and left every hook .json held forever (2026-10-16).
+. (Join-Path $PSScriptRoot "rt-stamp.ps1")
+
 $script:RtQuiet   = $false
 $script:RtChanged = @()
 $script:RtHeld    = @()
@@ -289,7 +293,7 @@ function Invoke-RtSync([string]$repoRoot, [string]$homeClaude) {
         # disable itself in silence - a gate that looks installed and never fires.
         $hooksSrc = Join-Path $repoClaude "hooks"
         if (Test-Path $hooksSrc) {
-            Get-ChildItem $hooksSrc -File | Where-Object { $_.Extension -eq ".py" -or $_.Extension -eq ".json" } | ForEach-Object {
+            Get-RtHookFiles -HooksDir $hooksSrc | ForEach-Object {
                 if (Test-RtProven $stamp $repoRoot $_.FullName) {
                     Sync-RtFile $_.FullName (Join-Path $homeClaude "hooks\$($_.Name)") "hooks\$($_.Name)"
                 } else {

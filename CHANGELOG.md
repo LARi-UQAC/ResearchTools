@@ -9,6 +9,21 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-17
+
+### Fixed
+- `install-junctions.ps1 -Sync` no longer holds hook `.json` configuration files forever: the
+  green stamp now hashes them (one shared selection, `scripts/lib/rt-stamp.ps1`), so a hook
+  and its settings travel together once the suite is green. A stamp written before this change
+  has no `.json` entries, so run `scripts/test/run-offline-tests.ps1` once after pulling.
+- `setup.ps1 -InstallPython` would have downgraded the installed `pypdf` to 6.15.0 (11 known
+  CVEs). Every `pypdf` pin in the repository (`paper2talk`, `narrative-cv`, `form-service`,
+  `deploy/form-service`) is now 6.19.0, which `pip-audit` reports clean, and
+  `verify-python-env.ps1` fails when those pins disagree. The `deploy/form-service` tests
+  (84) pass under 6.19.0.
+- `check-deployment.ps1` compared hook `.py` files only, so held hook configs read "all in
+  step". It now compares the `.json` files too, through the same selection as `-Sync`.
+
 ## [0.2.1] - 2026-10-16
 
 ### Added

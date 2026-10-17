@@ -1,5 +1,7 @@
 # paper2talk - Python dependencies.
-# Pinned, audited with pip-audit on 2026-08-12 (no known CVE for these versions).
+# Pinned, audited with pip-audit on 2026-08-12 (no known CVE for these versions), except
+# pypdf: re-audited and moved to 6.19.0 on 2026-10-16 (6.15.0 carries 11 known CVEs). The
+# other three pins keep the 2026-08-12 audit date.
 #
 # The renderers also need, outside pip:
 #   pptxgenjs (npm)   the no-gabarit PowerPoint fallback (assets/deck_skeleton.js);
@@ -9,7 +11,7 @@
 #   PowerPoint or LibreOffice   the PDF conversion backend (talk_render.py)
 #   draw.io Desktop   fig_export.py, for the scale-3 figure re-export
 #   a LaTeX toolchain the Beamer target
-pypdf==6.15.0
+pypdf==6.19.0  # pip-audit clean 2026-10-16; 6.15.0 had 11 and 6.16.1 had 8 known CVEs (PYSEC-2026-3910 to 4160)
 python-pptx==1.0.2
 defusedxml==0.7.1
 jinja2==3.1.6

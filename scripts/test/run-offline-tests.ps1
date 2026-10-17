@@ -99,9 +99,12 @@ function Get-MissingModuleKind([string]$output) {
 }
 
 # ── Code files whose content the stamp vouches for ────────────────────────────
+# The selection lives in scripts\lib\rt-stamp.ps1, shared with the -Sync engine: it hashes
+# the .py files AND the hook .json configurations that -Sync copies. It used to hash .py
+# only, so every hook config read "changed since the last green run" and was held forever.
+. (Join-Path $RepoRoot "scripts\lib\rt-stamp.ps1")
 function Get-CodeFiles {
-    Get-ChildItem -Path (Join-Path $RepoRoot ".claude") -Recurse -File -Include *.py -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -notmatch '\\__pycache__\\' }
+    Get-RtCodeFiles -RepoRoot $RepoRoot
 }
 
 # ── Run ───────────────────────────────────────────────────────────────────────

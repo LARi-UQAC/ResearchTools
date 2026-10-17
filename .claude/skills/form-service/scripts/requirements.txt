@@ -14,5 +14,5 @@
 # Pinned exactly, then audited before use:
 #   pip-audit -r .claude/skills/form-service/requirements.txt --strict
 requests==2.34.2
-pypdf==6.16.1
+pypdf==6.19.0  # pip-audit clean 2026-10-16; 6.15.0 had 11 and 6.16.1 had 8 known CVEs (PYSEC-2026-3910 to 4160)
 pyHanko==0.37.0

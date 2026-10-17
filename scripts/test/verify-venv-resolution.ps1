@@ -168,6 +168,8 @@ $Runner = Join-Path $Scratch "runner-tree"
 New-Item -ItemType Directory -Path (Join-Path $Runner "scripts\test"), (Join-Path $Runner "scripts\lib") -Force | Out-Null
 Copy-Item (Join-Path $RepoRoot "scripts\test\run-offline-tests.ps1") (Join-Path $Runner "scripts\test\")
 Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1") (Join-Path $Runner "scripts\lib\")
+# The runner also loads the shared stamp selection (rt-stamp.ps1), so the scratch tree needs it.
+Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-stamp.ps1") (Join-Path $Runner "scripts\lib\")
 $stamp = Join-Path $Runner ".rt-green.json"
 
 function Invoke-Runner([string[]]$RunnerArgs) {

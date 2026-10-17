@@ -175,15 +175,21 @@ for another.
 
 Every planned task lives in `docs/superpowers/plans/` of its own project:
 
-| File | Max tokens | Who writes it |
-|---|---:|---|
-| `spec.md` | 8 000 | the human, or a cloud model with the human |
-| `plan1.md`, `plan2.md`, ... | 8 000 each | the plan author |
-| `progress.md` | 12 000 | the executing model, one `## <filename>` section per file |
-| `audit.md` | 12 000 | the auditing model only, never the executor |
+| File | Who writes it |
+|---|---|
+| `spec.md` | the human, or a cloud model with the human |
+| `plan1.md`, `plan2.md`, ... | the plan author |
+| `progress.md` | the executing model, one `## <filename>` section per file |
+| `audit.md` | the auditing model only, never the executor |
 
-`todo/` is the archive subdirectory. A source file carries its own ceiling of **16 000
-tokens**; past it, split along a seam the code already has, never at an arbitrary line count.
+The size ceilings are NOT written in this rule. They are the `ceilings` of
+`.claude/skills/aider-setup/config/context-budget.json`, the single source for every project
+(`aider-plan.ps1` enforces the same file), counted with `loop-engineer/scripts/token_count.py`
+and checked by `plan_contract.py`. The operator cut them on 2026-09-05 (spec 4000, each plan
+4000, progress 2048, audit 4096 tokens), so the larger figures this table used to carry were
+stale from that day. `todo/` is the archive subdirectory of `plans/`. A source file
+read into a prompt carries the `code_file` ceiling; past it, split along a seam the code
+already has, never at an arbitrary line count.
 
 Three marks in `progress.md`, and only three: `- [ ]` not done, `- [x]` done with a short
 result, `- [!]` blocked with one line of reason.
@@ -388,6 +394,50 @@ Proven by `scripts/test/verify-venv-resolution.ps1` (R15), which also fails when
 its own interpreter search again (R18). It proves the resolution, not the cause. The cause was
 reproduced by hand on a throwaway copy, in both variants above, and no test automates it, since
 the experiment deletes a folder by design.
+
+**R38 - any coding request beyond a single step gets plan files with a header before any code.**
+Effective 2026-10-17. It binds every project once ResearchTools is installed, every harness and
+every executor, cloud or local, because local coding exists to save cloud tokens and four things
+defeated it: `local-coder` was never dispatched, the review loop of R35 had no bound, the docs
+named a wrong reason for the bridge, and local work was barely visible. R36's floor still holds:
+a request that is a single step with no deliverable is answered directly. Anything larger gets
+`spec.md`, `plan<N>.md` and `progress.md` (R26 layout, ceilings from `context-budget.json`)
+before the first line of code.
+
+The header is the front matter of each plan: `executor` (`local-coder`, `aider`, `cloud`),
+`tier` (`simple`, `standard`, `large`) and `bounds` (`max_rounds`, `max_tokens`, `plateau`,
+positive integers). The cloud model writes `executor` and `tier` from the table below. The
+owner chooses the bounds, asked with `AskUserQuestion` with no default (R0), and they count
+tokens (input + cache_creation + output, cache reads excluded) because money is not readable
+from this machine. `plan_contract.py` validates the header, the file limit of the tier and the
+size ceilings, and resolves the tier to a resolver ROLE through `plan-tiers.json`: `model_resolver.py`
+names the tag at run time and no plan names a tag (R2).
+
+| Situation | Executor | Why it saves cloud tokens |
+|---|---|---|
+| Judgment, security, design, a repository-wide change, or no qualified local role | `cloud`, `executing-plans` in the session | none to save: the work needs the best model |
+| One plan, a test as oracle per step, each step's prompt plus output fits the coder window | `local-coder`, tier simple or standard | the cloud pays for the plan, the Haiku wrapper and the review, the code is generated locally |
+| One plan whose step output cannot fit the coder window and cannot be split | `local-coder`, tier `large` (the `session` role, 262K) | same, with a window large enough for long output |
+| Two or more plans, or an unattended night | `aider` (spec, `plan[N]`, `progress`, a writer model and a different reviewer model) | no Claude Code involved once started |
+| A whole session on Ollama or Augure | the owner's manual choice (`claude-switch.ps1`), never written in a plan | the session itself is local |
+
+Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. One plan is
+one `local-coder` dispatch, and the dispatch prompt names it with a `PLAN: <path>` line. There is
+no audit inside the wrapper: R35 as amended runs in the harness that called it, inside the
+declared bounds. A fix found by a review round is a small plan of its own and follows the same
+table. Aider keeps its internal writer and reviewer loop. On a machine with no qualified role
+for the tier, `plan_contract.py resolve` returns the `cloud` executor with the stated reason and
+never a weaker model (R8).
+
+The contract is enforced, not merely stated: `review-loop-guard.py` (PreToolUse on the Skill
+tool) refuses a review skill with no declared bounds or past one, and
+`local-coder-dispatch-guard.py` (PreToolUse on the Agent tool) refuses a `local-coder` dispatch
+with no valid plan. Both are declared in `.claude/settings.template.json` and each exits 0 in
+silence when its dependency is absent (R11). An effort's plans wait in `docs/superpowers/todo/`
+and move to `docs/superpowers/done/` when executed. UNVERIFIED until a live firing (R15): that
+both matchers fire on this machine and that the Skill tool names the skill under
+`tool_input.skill`. Proven offline by `test_plan_contract.py`,
+`test_local_coder_dispatch_guard.py`, `test_review_loop_guard.py` and `test_plan_contract_rule.py`.
 
 ## Issue and Project tracking
 

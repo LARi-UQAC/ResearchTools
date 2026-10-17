@@ -63,6 +63,7 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 | Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
 | Receive a thesis, an article or a talk as a PDF with no LaTeX source and re-type it before it can be audited | `pdf2md` converts it with mineru to markdown (the UQAC thesis layout, or one document for an article or a talk) and measures what the conversion lost against a second reader of the PDF |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
+| Know whether a coding task should run on the cloud, through `local-coder`, through aider, or on a switched session | A plan header names `executor`, `tier` and the review bounds, `plan_contract.py` checks it, two hooks enforce it, and the process has a flowchart ([chapter 12](docs/manual/12-local-coding.md)) |
 | Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
 | Catch a committed secret but not a committed real name (a student, a co-author, an account path) | A global git privacy guard (pre-commit/pre-push, every repository) scans the diff against both betterleaks' secret rules and a machine-local deny list of real names, extended for each new student and never leaving the machine |
 
@@ -130,6 +131,7 @@ graph LR
 | 09 | [ThesisTracker integration](docs/manual/09-thesistracker-integration.md) | The sibling repository, `NEW_ARCHITECTURE.md`, the `form-service` boundary |
 | 10 | [Agents](docs/manual/10-agents.md) | All agents, local delegation, loop engineering |
 | 11 | [File locations](docs/manual/11-file-locations.md) | Directory tree summary |
+| 12 | [Local coding and the cloud](docs/manual/12-local-coding.md) | Which executor runs a coding task (cloud, `local-coder`, aider, a switched session), the plan header, review bounds, size ceilings, the flowchart |
 
 Relationship diagrams and the 7-layer execution architecture for **this** repository:
 [Architecture.md](Architecture.md). The architecture **shared with the sibling repository

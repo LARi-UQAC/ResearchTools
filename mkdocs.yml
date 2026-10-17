@@ -69,6 +69,7 @@ nav:
       - 09 ThesisTracker integration: manual/09-thesistracker-integration.md
       - 10 Agents: manual/10-agents.md
       - 11 File locations: manual/11-file-locations.md
+      - 12 Local coding and the cloud: manual/12-local-coding.md
   - Deep-dive references:
       - aider-setup: aider-setup.md
       - rt-observe: rt-observe.md

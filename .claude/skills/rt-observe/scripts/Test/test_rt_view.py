@@ -1226,7 +1226,7 @@ class MixedHarnessLive(unittest.TestCase):
 
     FUNCTIONS = ("sessionClass", "sessionShown", "sessionName", "laneModel",
                  "liveMachine", "staleServer", "roleCode", "edgeLabel",
-                 "escapeText", "staleFleet")
+                 "escapeText", "staleFleet", "localLanes")
 
     def setUp(self):
         self.node = shutil.which("node")
@@ -1501,6 +1501,191 @@ class MixedHarnessLive(unittest.TestCase):
                 self.assertEqual(
                     expected,
                     self.run_js("edgeLabel(%s)" % json.dumps(edge(*states))))
+
+
+class LocalLanesAndRounds(unittest.TestCase):
+    """Bridge roles, aider's task budget and the plan stages in the page (local coding
+    contract, plan 7, R15, R20). The functions are cut out of the REAL page and run under
+    node, so the assertions are about behaviour and not about the text of the source (a copy
+    kept here would drift). Skipped where node is absent (R11). Fictitious paths (R34)."""
+
+    FUNCTIONS = ("thousands", "tokenNote", "laneNote", "sessionClass", "sessionShown",
+                 "sessionName", "localLanes", "laneModel", "roundRows", "staleFleet",
+                 "staleServer")
+
+    def setUp(self):
+        self.node = shutil.which("node")
+        if not self.node:
+            self.skipTest("node is not on PATH; the page functions cannot run")
+        script = re.search(r"<script>\n(.*?)</script>", read(PAGE), re.S).group(1)
+        parts = ["var sessionFilter = {active: true, idle: true, noflow: true};"]
+        for name in self.FUNCTIONS:
+            body = re.search(r"function %s\(.*?\n\}" % name, script, re.S)
+            self.assertIsNotNone(body, "%s is not declared" % name)
+            parts.append(body.group(0))
+        self.prelude = "\n".join(parts)
+        self.script = script
+
+    def run_js(self, expression):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "case.js"
+            path.write_text(self.prelude + "\nconsole.log(JSON.stringify("
+                            + expression + "));\n", encoding="utf-8")
+            done = subprocess.run([self.node, str(path)], capture_output=True,
+                                  text=True, errors="replace", timeout=60)
+        self.assertEqual(0, done.returncode, done.stderr)
+        return json.loads(done.stdout)
+
+    @staticmethod
+    def calls(**over):
+        """A healthy local_calls section: a live coder role and an old session role."""
+        section = {
+            "status": "ok",
+            "roles": {
+                "coder": {"tag": "vendor-a:9b", "num_ctx": 16384, "calls": 3,
+                          "prompt_tokens": 9000, "completion_tokens": 900,
+                          "last_at": "2026-10-17T11:59:30+00:00", "age_seconds": 30,
+                          "active": True, "plan": "C:\\tmp\\proj\\plans\\plan1.md"},
+                "session": {"tag": "vendor-b:7b", "num_ctx": 262144, "calls": 1,
+                            "prompt_tokens": 100, "completion_tokens": 50,
+                            "last_at": "2026-10-17T10:00:00+00:00", "age_seconds": 7200,
+                            "active": False, "plan": None}},
+            "recent": [
+                {"role": "coder", "prompt_tokens": 1200, "completion_tokens": 300},
+                {"role": "session", "prompt_tokens": None, "completion_tokens": None}]}
+        section.update(over)
+        return {"local_calls": section}
+
+    @staticmethod
+    def with_session(state):
+        state = dict(state)
+        state["fleet"] = {"installed": ["claude_code"], "harnesses": {"claude_code": {
+            "status": "ok", "label": "Claude Code", "flow_states": [], "hook_loops": [],
+            "sessions": [{"session_id": "s1", "cwd": "C:\\x\\proj", "age_seconds": 5,
+                          "live": True,
+                          "flow": {"status": "ok", "state": "thinking", "steps": [],
+                                   "hooks": [], "subagents": [], "tokens": {}}}]}}}
+        return state
+
+    def lanes(self, state, prefix=""):
+        return self.run_js("%slocalLanes(%s)" % (prefix, json.dumps(state)))
+
+    def test_an_active_role_is_a_generating_lane_with_a_ring_against_its_window(self):
+        lane = {l["id"]: l for l in self.lanes(self.calls())}["l:coder"]
+        self.assertEqual((lane["kind"], lane["state"], lane["ended"]),
+                         ("local", "generating", False))
+        self.assertEqual(lane["tokens"], {"status": "ok", "held": 1500, "window": 16384})
+        self.assertEqual((lane["steps"], lane["hooks"], lane["declared"]), ([], [], []))
+
+    def test_the_label_is_the_role_and_the_plan_base_name(self):
+        by_id = {l["id"]: l for l in self.lanes(self.calls())}
+        self.assertEqual(by_id["l:coder"]["label"], "coder plan1.md")
+        self.assertEqual(by_id["l:session"]["label"], "session")
+
+    def test_an_old_role_is_idle_and_obeys_the_filter(self):
+        by_id = {l["id"]: l for l in self.lanes(self.calls())}
+        self.assertEqual((by_id["l:session"]["state"], by_id["l:session"]["ended"]),
+                         ("idle", True))
+        hidden = {l["id"] for l in self.lanes(self.calls(), "(sessionFilter.idle = false, 0) || ")}
+        self.assertEqual(hidden, {"l:coder"})
+        shown = {l["id"] for l in self.lanes(self.calls(), "(sessionFilter.active = false, 0) || ")}
+        self.assertEqual(shown, {"l:session"})
+
+    def test_null_token_counts_never_print_undefined_or_nan(self):
+        lanes = {l["id"]: l for l in self.lanes(self.calls())}
+        self.assertEqual(lanes["l:session"]["tokens"]["held"], 0)
+        text = json.dumps(lanes)
+        for bad in ("undefined", "NaN", "null"):
+            self.assertNotIn('"held": %s' % bad, text)
+        note = self.run_js("laneNote(%s)" % json.dumps(lanes["l:session"]))
+        for bad in ("undefined", "NaN"):
+            self.assertNotIn(bad, note)
+        self.assertEqual(self.run_js("tokenNote(null)"), "")
+        self.assertEqual(self.run_js("tokenNote({})"), "")
+
+    def test_an_absent_or_unavailable_section_gives_no_lane_and_no_warning(self):
+        for state in ({}, {"local_calls": {"status": "unavailable", "reason": "no log"}},
+                      {"local_calls": None}):
+            with self.subTest(state=state):
+                self.assertEqual(self.lanes(state), [])
+                self.assertEqual(self.run_js("laneModel(%s)" % json.dumps(state)), [])
+
+    def test_a_server_without_local_calls_does_not_trigger_the_stale_server_notice(self):
+        state = self.with_session({})
+        self.assertFalse(self.run_js("staleFleet(%s)" % json.dumps(state)))
+        self.assertFalse(self.run_js("staleFleet(%s)" % json.dumps(
+            self.with_session(self.calls()))))
+
+    def test_an_aider_lane_hover_names_fixed_cost_and_task_budget(self):
+        tokens = {"status": "ok", "held": 12288, "task_budget": 52000, "window": 64000}
+        note = self.run_js("tokenNote(%s)" % json.dumps(tokens))
+        self.assertEqual(note, "fixed cost 12K, task budget 52K of the 64K window")
+        lane = {"kind": "session", "harnessLabel": "Aider nightly pipeline",
+                "state": "coding", "ended": False, "tokens": tokens}
+        self.assertIn("task budget 52K", self.run_js("laneNote(%s)" % json.dumps(lane)))
+        plain = dict(lane, tokens={"status": "ok", "held": 5000, "window": 64000})
+        self.assertNotIn("task budget", self.run_js("laneNote(%s)" % json.dumps(plain)))
+
+    def test_a_local_lane_hover_says_it_is_a_bridge_role_and_names_the_model(self):
+        lane = {l["id"]: l for l in self.lanes(self.calls())}["l:coder"]
+        note = self.run_js("laneNote(%s)" % json.dumps(lane))
+        for fragment in ("bridge role", "vendor-a:9b", "ring counts"):
+            self.assertIn(fragment, note)
+
+    def test_local_lanes_come_after_session_lanes(self):
+        state = self.with_session(self.calls())
+        ids = [l["id"] for l in self.run_js("laneModel(%s)" % json.dumps(state))]
+        self.assertEqual(ids[0], "s:s1")
+        self.assertEqual(ids[1:], ["l:coder", "l:session"])
+
+    def test_the_meters_and_the_rail_use_the_new_helpers(self):
+        meters = re.search(r"function sessionMeters\(.*?\n\}", self.script, re.S).group(0)
+        self.assertIn("localLanes(state)", meters)
+        self.assertIn("tokens.window", meters)
+        panel = re.search(r"function renderPlanPanel\(.*?\n\}", self.script, re.S).group(0)
+        self.assertIn("roundRows", self.script)
+        self.assertIn("appendRounds", panel)
+
+    @staticmethod
+    def rounds(**over):
+        section = {"status": "ok", "rounds": [{"folder": "docs/superpowers/todo/x", "plans": [
+            {"name": "plan1.md", "executor": "local-coder", "tier": "standard",
+             "tasks_total": 3, "tasks_done": 2, "tasks_blocked": 0, "state": "open"},
+            {"name": "plan2.md", "executor": None, "tier": None, "tasks_total": 2,
+             "tasks_done": 1, "tasks_blocked": 1, "state": "blocked"}]}],
+            "review_loops": [{"worktree": "wt", "branch": "feat/x", "rounds_used": 2,
+                              "max_rounds": 3, "plateau": 2, "ticks": [5, 3]}]}
+        section.update(over)
+        return {"rounds": section}
+
+    def test_a_round_lists_each_plan_with_executor_tier_and_task_counts(self):
+        rows = self.run_js("roundRows(%s)" % json.dumps(self.rounds()))
+        plans = [r for r in rows if r["kind"] == "plan"]
+        self.assertEqual([p["name"] for p in plans], ["plan1.md", "plan2.md"])
+        self.assertEqual((plans[0]["executor"], plans[0]["tier"], plans[0]["done"],
+                          plans[0]["total"]), ("local-coder", "standard", 2, 3))
+        self.assertIsNone(plans[1]["executor"])
+
+    def test_a_blocked_plan_is_marked_blocked_and_not_done(self):
+        rows = self.run_js("roundRows(%s)" % json.dumps(self.rounds()))
+        blocked = [r for r in rows if r["name"] == "plan2.md"][0]
+        self.assertEqual((blocked["state"], blocked["blocked"]), ("blocked", 1))
+
+    def test_the_review_loop_gauge_reads_rounds_used_of_max(self):
+        rows = self.run_js("roundRows(%s)" % json.dumps(self.rounds()))
+        gauge = [r for r in rows if r["kind"] == "loop"][0]
+        self.assertEqual((gauge["used"], gauge["max"]), (2, 3))
+        self.assertEqual(gauge["text"], "2 of 3 rounds")
+        full = self.run_js("roundRows(%s)" % json.dumps(self.rounds(review_loops=[
+            {"worktree": "wt", "branch": "b", "rounds_used": 3, "max_rounds": 3,
+             "plateau": 2, "ticks": []}])))
+        self.assertEqual([r for r in full if r["kind"] == "loop"][0]["state"], "blocked")
+
+    def test_an_absent_rounds_section_draws_nothing(self):
+        for state in ({}, {"rounds": {"status": "unavailable", "reason": "none"}},
+                      {"rounds": None}):
+            with self.subTest(state=state):
+                self.assertEqual(self.run_js("roundRows(%s)" % json.dumps(state)), [])
 
 
 if __name__ == "__main__":

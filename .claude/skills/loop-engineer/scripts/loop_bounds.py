@@ -102,7 +102,7 @@ def config_value(config: dict, key: str) -> Any:
     return entry["value"]
 
 
-def _git(cwd: Path, args: list[str], config: dict) -> str | None:
+def git_output(cwd: Path, args: list[str], config: dict) -> str | None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -142,7 +142,7 @@ def state_path(cwd: Path, *, config: dict | None = None) -> Path | None:
     --------------------------------------------------------------------------
     """
     config = config if config is not None else load_config()
-    git_dir = _git(Path(cwd), ["rev-parse", "--absolute-git-dir"], config)
+    git_dir = git_output(Path(cwd), ["rev-parse", "--absolute-git-dir"], config)
     if not git_dir:
         return None
     return Path(git_dir) / config_value(config, "state_file_name")
@@ -164,7 +164,7 @@ def current_branch(cwd: Path, *, config: dict | None = None) -> str | None:
     --------------------------------------------------------------------------
     """
     config = config if config is not None else load_config()
-    name = _git(Path(cwd), ["branch", "--show-current"], config)
+    name = git_output(Path(cwd), ["branch", "--show-current"], config)
     if name is None:
         return None
     return name or DETACHED_KEY
@@ -479,7 +479,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="verb", required=True)
     init = sub.add_parser("init", help="declare the three bounds for this branch")
     for key in BOUND_KEYS:
-        init.add_argument("--" + key.replace("_", "-"), dest=key, type=int, required=True)
+        init.add_argument("--" + key.replace("_", "-"), dest=key, type=int)
+    init.add_argument("--from-plan", help="take the three bounds from this plan's header")
     init.add_argument("--transcript", help="session transcript whose growth is measured")
     init.add_argument("--dry-run", action="store_true", help="write nothing")
     init.add_argument("--yes", action="store_true", help="overwrite existing state")
@@ -592,6 +593,35 @@ def _refuse_no_state(report: dict) -> int:
     return 2
 
 
+def _bounds_from_plan(plan: Path, cwd: Path) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the three bounds from a plan's header, through the plan contract.
+
+    Details:
+        Validates the header, the tier's file limit and the plan's location, not the size
+        ceilings (the dispatch guard checks those).
+
+    Inputs:
+        plan (Path): the plan file.
+        cwd (Path): a directory inside the repository, to find the allowed roots.
+
+    Outputs:
+        bounds (dict): {max_rounds, max_tokens, plateau}.
+
+    Raises:
+        ValueError: the plan breaks the contract (plan_contract.PlanError), naming the key.
+        OSError: the tier file cannot be read.
+    --------------------------------------------------------------------------
+    """
+    import plan_contract  # noqa: PLC0415 - imports this module, so only loaded when asked
+
+    tiers = plan_contract.load_tiers()
+    roots = plan_contract.repository_roots(cwd) or [cwd]
+    return plan_contract.validate(plan, roots, tiers)["bounds"]
+
+
 def _init(args: argparse.Namespace, report: dict, config: dict, path: Path, branch: str,
           existing: dict | None) -> int:
     """
@@ -612,9 +642,26 @@ def _init(args: argparse.Namespace, report: dict, config: dict, path: Path, bran
     --------------------------------------------------------------------------
     """
     transcript = Path(args.transcript) if args.transcript else None
+    given = {key: getattr(args, key) for key in BOUND_KEYS if getattr(args, key) is not None}
+    if args.from_plan and given:
+        report["error"] = "--from-plan replaces --max-rounds, --max-tokens and --plateau: give one or the other"
+        return 2
+    if args.from_plan:
+        try:
+            given = _bounds_from_plan(Path(args.from_plan), Path(args.cwd))
+        except OSError as exc:
+            report["error"] = f"plan contract configuration problem: {exc}"
+            return 1
+        except ValueError as exc:  # PlanError is a ValueError
+            report["error"] = str(exc)
+            return 2
+    elif len(given) < len(BOUND_KEYS):
+        report["error"] = ("give --max-rounds, --max-tokens and --plateau, or --from-plan "
+                           "<plan file>")
+        return 2
     try:
-        state = init_state(branch, args.max_rounds, args.max_tokens, args.plateau, transcript,
-                           _now())
+        state = init_state(branch, given["max_rounds"], given["max_tokens"], given["plateau"],
+                           transcript, _now())
     except BoundsError as exc:
         report["error"] = str(exc)
         return 2

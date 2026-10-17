@@ -270,6 +270,42 @@ class TestCli(unittest.TestCase):
             self.assertEqual(code, 1)
 
 
+class TestFromPlan(unittest.TestCase):
+    run_cli = TestCli.run_cli
+
+    HEADER = ("---\nexecutor: cloud\ntier: simple\nbounds:\n  max_rounds: {r}\n"
+              "  max_tokens: 900000\n  plateau: 1\n---\n# Plan\n- Create: `a.py`\n")
+
+    def test_init_from_plan_stores_the_plans_bounds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = make_repo(Path(tmp))
+            plan = repo / "plan1.md"
+            plan.write_text(self.HEADER.format(r=4), encoding="utf-8")
+            base = ["--cwd", str(repo), "--json"]
+            code, report = self.run_cli(*base, "init", "--from-plan", str(plan))
+            self.assertEqual(code, 0, report)
+            state = lb.load_state(lb.state_path(repo), "main")
+            self.assertEqual((state["max_rounds"], state["max_tokens"], state["plateau"]),
+                             (4, 900000, 1))
+
+    def test_init_from_plan_refuses_a_wrong_header_flags_with_it_and_nothing_at_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = make_repo(Path(tmp))
+            plan = repo / "plan1.md"
+            plan.write_text(self.HEADER.format(r='"4"'), encoding="utf-8")
+            base = ["--cwd", str(repo), "--json"]
+            code, report = self.run_cli(*base, "init", "--from-plan", str(plan))
+            self.assertEqual(code, 2)
+            self.assertIn("max_rounds", report["error"])
+            plan.write_text(self.HEADER.format(r=4), encoding="utf-8")
+            code, _ = self.run_cli(*base, "init", "--from-plan", str(plan), "--max-rounds", "2")
+            self.assertEqual(code, 2)
+            code, report = self.run_cli(*base, "init")
+            self.assertEqual(code, 2)
+            self.assertIn("--from-plan", report["error"])
+            self.assertFalse(lb.state_path(repo).exists())
+
+
 class TestConfig(unittest.TestCase):
     def test_a_missing_key_is_a_named_error(self):
         with self.assertRaises(KeyError) as ctx:

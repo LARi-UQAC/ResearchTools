@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Tier table of the plan contract (local coding contract, spec section 5). A plan header names",
+    "a TIER, this file maps it to a resolver ROLE and a file limit, and model_resolver.py names the",
+    "tag at run time. No model tag is written here, ever (R2); a test asserts it. Every value is",
+    "{value, provenance} (R4). The numbers are proposals of 2026-10-17, tuned at the owner's review."
+  ],
+  "tiers": {
+    "simple": {
+      "role": {"value": "coder", "provenance": "proposal 2026-10-17, tuned at the owner's review: a short plan whose step output fits the coder window"},
+      "max_files": {"value": 3, "provenance": "proposal 2026-10-17, tuned at the owner's review"}
+    },
+    "standard": {
+      "role": {"value": "coder", "provenance": "proposal 2026-10-17, tuned at the owner's review: the ten-file plan limit of R26"},
+      "max_files": {"value": 10, "provenance": "specified: R26 caps a plan at ten files"}
+    },
+    "large": {
+      "role": {"value": "session", "provenance": "proposal 2026-10-17, tuned at the owner's review: the 262K path, a plan whose step output cannot fit the coder window and cannot be split"},
+      "max_files": {"value": 10, "provenance": "specified: R26 caps a plan at ten files"}
+    }
+  },
+  "budget_candidates": {
+    "value": [
+      "~/.config/aider/context-budget.json",
+      "~/.claude/skills/aider-setup/config/context-budget.json",
+      "../aider-setup/config/context-budget.json"
+    ],
+    "provenance": "chosen 2026-10-17, tried in order, identical on that date: the copy setup.ps1 installs and aider-plan.ps1 enforces, then the junctioned skill copy, then this repository's own copy (a relative path is resolved from the folder holding this file). Single source of the size ceilings, spec decision D9"
+  }
+}

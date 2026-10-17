@@ -1,0 +1,39 @@
+{
+  "_comment": [
+    "Settings for local-coder-dispatch-guard.py, the PreToolUse gate on the Agent tool (local",
+    "coding contract, decision D1). R0: every value lives here. R4 provenance on every entry.",
+    "Deleting or breaking this file disables the gate in silence (R11), as does a missing",
+    "plan_contract module or tier file: a hook whose own dependency is absent never refuses a",
+    "tool (the 2026-08-27 incident)."
+  ],
+  "enabled": {
+    "value": true,
+    "provenance": "chosen 2026-10-17 by the operator through the local coding contract spec, decisions D1 and D6"
+  },
+  "guarded_agents": {
+    "value": ["local-coder"],
+    "provenance": "chosen 2026-10-17: the agent whose dispatch must name a valid plan. local-writer is out of scope (spec D8)"
+  },
+  "plan_line_prefix": {
+    "value": "PLAN:",
+    "provenance": "chosen 2026-10-17: the line of the dispatch prompt that names the plan file, for example 'PLAN: docs/superpowers/plans/plan1.md'"
+  },
+  "plan_contract_candidates": {
+    "value": [
+      "~/.claude/skills/loop-engineer/scripts/plan_contract.py",
+      "../skills/loop-engineer/scripts/plan_contract.py"
+    ],
+    "provenance": "chosen 2026-10-17: tried in order, a leading ~ is the home directory (the installed junction) and a relative path is resolved from the folder holding this hook (a clone of the repository)"
+  },
+  "tiers_candidates": {
+    "value": [
+      "~/.claude/skills/loop-engineer/plan-tiers.json",
+      "../skills/loop-engineer/plan-tiers.json"
+    ],
+    "provenance": "chosen 2026-10-17: the tier table, tried in order like plan_contract_candidates"
+  },
+  "resolver_module": {
+    "value": null,
+    "provenance": "chosen 2026-10-17: null in production, so plan_contract asks model_resolver. A path to a python file exposing resolve(role, require_role) replaces it, which is how the offline test stays independent of the machine's local models (R21)"
+  }
+}

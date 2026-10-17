@@ -100,6 +100,17 @@
             "statusMessage": "Checking the review-loop bounds (R35)..."
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"{{USERPROFILE}}\\.claude\\hooks\\local-coder-dispatch-guard.py\"",
+            "timeout": 30,
+            "statusMessage": "Checking the local-coder plan contract..."
+          }
+        ]
       }
     ],
     "SessionStart": [

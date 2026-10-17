@@ -985,6 +985,89 @@ class TestRoleWindowInTheBridge(unittest.TestCase):
         self.assertEqual(captured, [])
 
 
+class TestLogRecordFields(unittest.TestCase):
+    """Local coding contract plan 6: every attempt record also says which role ran, on which
+    model, at what window, with how many tokens and for which plan, so rt-observe can read it.
+    The old keys are untouched (additive). R19: the time is injected and stamped AFTER the
+    call. R21: nothing machine-local is read."""
+
+    OLD_KEYS = {"attempt", "seed", "prompt_hash", "response_hash", "empty_body",
+                "reasoning_anomaly", "hygiene_violations", "verify_ok", "verify_output",
+                "accepted", "generation_s", "verify_s"}
+
+    def _run(self, role="coder", plan=None, extra=None, clock=None):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            prompt_path = d / "prompt.txt"
+            prompt_path.write_text("Petit prompt.", encoding="utf-8")
+            posted = []
+
+            def transport(payload, timeout):
+                if _is_probe(payload):
+                    return {"prompt_eval_count": 12}
+                posted.append(True)
+                return {"response": "Reponse propre.", **(extra or {})}
+
+            kwargs = {} if plan is None else {"plan": plan}
+            if clock is not None:
+                kwargs["clock"] = lambda: clock(bool(posted))
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
+                 mock.patch.object(ob, "_post_generate", side_effect=transport):
+                rc = ob.run_bridge(prompt_path=prompt_path, verify_command=None,
+                                   target_path=None, seed=ob.DEFAULT_SEED,
+                                   log_path=d / "log.jsonl", role=role, **kwargs)
+            lines = (d / "log.jsonl").read_text(encoding="utf-8").splitlines()
+        return rc, [json.loads(line) for line in lines]
+
+    def test_a_record_carries_role_tag_window_tokens_and_plan(self):
+        rc, records = self._run(plan="plans/plan1.md",
+                                extra={"prompt_eval_count": 120, "eval_count": 45},
+                                clock=lambda posted: "2026-10-17T12:00:00+00:00")
+        self.assertEqual(rc, 0)
+        record = records[-1]
+        self.assertEqual(record["role"], "coder")
+        self.assertEqual(record["tag"], "vendor-a:9b")
+        self.assertEqual(record["num_ctx"], _TEST_NUM_CTX)
+        self.assertEqual((record["prompt_tokens"], record["completion_tokens"]), (120, 45))
+        self.assertEqual(record["plan"], "plans/plan1.md")
+
+    def test_missing_daemon_counts_are_null_not_zero(self):
+        _, records = self._run(extra={})
+        self.assertIsNone(records[-1]["prompt_tokens"])
+        self.assertIsNone(records[-1]["completion_tokens"])
+
+    def test_old_keys_are_unchanged(self):
+        _, records = self._run()
+        self.assertTrue(self.OLD_KEYS <= set(records[-1]))
+
+    def test_at_is_stamped_from_the_injected_clock_after_the_call(self):
+        seen = []
+
+        def clock(posted):
+            seen.append(posted)
+            return "2026-10-17T12:00:00+00:00"
+
+        _, records = self._run(clock=clock)
+        self.assertEqual(records[-1]["at"], "2026-10-17T12:00:00+00:00")
+        self.assertEqual(seen, [True])
+        _, records = self._run()
+        self.assertIsNone(records[-1]["at"])
+
+    def test_plan_is_optional_and_the_cli_accepts_it(self):
+        _, records = self._run()
+        self.assertIsNone(records[-1]["plan"])
+        with tempfile.TemporaryDirectory() as d:
+            prompt = Path(d) / "p.txt"
+            prompt.write_text("x", encoding="utf-8")
+            with mock.patch.object(ob, "run_bridge", return_value=0) as run:
+                rc = ob.main(["--prompt-file", str(prompt), "--no-vault-context",
+                              "--role", "coder", "--plan", "plans/plan1.md"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(run.call_args.kwargs["plan"], "plans/plan1.md")
+        self.assertTrue(callable(run.call_args.kwargs["clock"]))
+
+
 class TestMissingMeasuredWindowIsRefusedNotDefaulted(unittest.TestCase):
     def test_no_config_entry_for_the_resolved_tag_fails_the_run(self):
         # The no-silent-fallback rule (D7's lesson applied to the window): a tag with

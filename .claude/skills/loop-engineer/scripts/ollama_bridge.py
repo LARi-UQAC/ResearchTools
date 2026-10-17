@@ -177,7 +177,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1151,6 +1152,8 @@ def run_bridge(
     max_retries: int = MAX_GENERATION_RETRIES,
     num_ctx: int | None = None,
     role: str | None = None,
+    plan: str | Path | None = None,
+    clock: Callable[[], str] | None = None,
 ) -> int:
     """
     --------------------------------------------------------------------------
@@ -1194,6 +1197,11 @@ def run_bridge(
         role (str | None): task kind forwarded to resolve_model, so the
             coder role can be served by a different tag than the writer role
             (P4). None keeps the pre-P4 single-tag behaviour.
+        plan (str | Path | None): the plan this call serves, recorded in the log
+            so rt-observe can follow a plan across calls. None when unknown.
+        clock (Callable | None): returns the UTC time as an ISO string, called
+            AFTER each generation (R19: the bridge never reads the wall clock
+            itself). main supplies the real one; None logs "at" as null.
 
     Outputs:
         result (int): 0 on an accepted attempt, 1 on any refusal or on
@@ -1278,6 +1286,13 @@ def run_bridge(
         )
 
         append_log(resolved_log_path, {
+            "at": clock() if clock is not None else None,
+            "role": role,
+            "tag": model,
+            "num_ctx": num_ctx,
+            "prompt_tokens": response.get("prompt_eval_count"),
+            "completion_tokens": response.get("eval_count"),
+            "plan": str(plan) if plan is not None else None,
             "attempt": attempt,
             "seed": attempt_seed,
             "prompt_hash": prompt_hash,
@@ -1436,6 +1451,22 @@ def write_prompt_with_vault_context(
     return combined
 
 
+def _utc_now_iso() -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The real clock, supplied to run_bridge by main only (R19).
+
+    Inputs:
+        None.
+
+    Outputs:
+        now_iso (str): the current UTC time, ISO 8601, to the second.
+    --------------------------------------------------------------------------
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def main(argv: list[str] | None = None) -> int:
     """
     --------------------------------------------------------------------------
@@ -1460,6 +1491,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verify", type=str, default=None, dest="verify_command")
     parser.add_argument("--target", type=Path, default=None, dest="target_path")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument(
+        "--plan", type=str, default=None, dest="plan",
+        help="the plan file this call serves (recorded in the attempt log for rt-observe, "
+             "never read by the bridge).",
+    )
     parser.add_argument(
         "--role", type=str, default=None, dest="role",
         help="task kind this call is doing (writer, coder, ... as declared in "
@@ -1523,6 +1559,8 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         log_path=args.log_path,
         role=args.role,
+        plan=args.plan,
+        clock=_utc_now_iso,
     )
 
 

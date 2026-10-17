@@ -969,6 +969,8 @@ svg.machine .m-box {
 }
 svg.machine .m-box--idle { stroke-dasharray: 3 2; stroke: var(--rt-line); }
 svg.machine .m-box--core { stroke: var(--rt-blueprint); stroke-width: 1.6; }
+svg.machine .m-box--model { stroke: var(--rt-blueprint); stroke-width: 1.6; }
+svg.machine .m-box--terminal { stroke-dasharray: 3 2; stroke: var(--rt-line); }
 svg.machine .m-box--live { fill: var(--rt-ink); }
 svg.machine .m-live-text { fill: var(--rt-ground); }
 svg.machine .m-edge { fill: none; stroke: var(--rt-line); stroke-width: 1; }
@@ -3048,7 +3050,13 @@ function renderRail(state) {
    A session is `noflow` when its harness cannot report a step timeline at all,
    which is a statement about the HARNESS; `idle` when it can and reports
    waiting; `active` otherwise. Those are different facts and the filter keeps
-   them apart rather than merging them into "nothing happening". */
+   them apart rather than merging them into "nothing happening".
+
+   A run its harness reports as no longer live (`live === false`, which only the
+   aider adapter sets: its process wrote the record and is gone) is `idle`
+   whatever state it stopped in. Measured 2026-10-17: thirteen finished aider
+   runs, each stopped in `done` or `done_with_blocked`, were classed `active` and
+   ranked ahead of the session actually running. */
 var SESSION_CLASSES = [
   { id: "active", label: "active" },
   { id: "idle", label: "idle" },
@@ -3079,11 +3087,22 @@ var sessionFilter = storedFilter();
 function sessionClass(session) {
   var flow = session.flow || {};
   if (flow.status !== "ok") { return "noflow"; }
+  if (session.live === false) { return "idle"; }
   return flow.state === "idle" ? "idle" : "active";
 }
 
 function sessionShown(session) {
   return sessionFilter[sessionClass(session)] !== false;
+}
+
+function sessionName(session) {
+  /* What a session is CALLED on screen: the name its transcript gives it, then
+     the last folder of its working directory, then its project. The folder is
+     only a fallback because it is not a name: it moves whenever the session
+     runs `cd`, and measured 2026-10-17 a card was renamed on screen each time. */
+  return session.title
+    || (session.cwd || "").split(/[\\/]/).filter(Boolean).pop()
+    || session.project || "session";
 }
 
 function renderFilter(hostId) {
@@ -3127,9 +3146,7 @@ document.addEventListener("change", function (event) {
 /* ---- fleet --------------------------------------------------------------- */
 function claudeCard(session, label) {
   var card = el("div", "fleet-card");
-  card.appendChild(el("h4", null,
-    (session.cwd || "").split(/[\\/]/).filter(Boolean).pop()
-    || session.project || "session"));
+  card.appendChild(el("h4", null, sessionName(session)));
   var meta = [label];
   if (session.branch) { meta.push(session.branch); }
   if (session.mode) { meta.push(session.mode); }
@@ -3166,8 +3183,7 @@ function claudeCard(session, label) {
     send.type = "button";
     send.setAttribute("data-send-to", session.session_id);
     send.setAttribute("data-send-label",
-      (session.cwd || session.project || "session") + " . "
-      + session.session_id);
+      sessionName(session) + " . " + session.session_id);
     card.appendChild(send);
   }
   return card;
@@ -3282,7 +3298,21 @@ function renderFleet(state) {
    subagent on its own line with its own tools and skills, the two memories as
    boxes every line reaches because every subagent shares them, and skills as
    boxes rather than as one more step in a row. */
-var ROLE_CODE = { hook: "HK", core: "CO", security: "SE", idle: "ID" };
+var ROLE_CODE = {
+  hook: "HK", core: "CO", security: "SE", idle: "ID",
+  /* aider's roles (adapters/aider.py FLOW_STATES). Missing from this table the
+     box printed the word undefined, nine times on one tab. */
+  setup: "SU", model: "MD", gate: "GT", machine: "MC", terminal: "TM"
+};
+
+function roleCode(role) {
+  /* Two letters for a box. A role this table does not know yet - a harness
+     added with no core edit is the whole contract - falls back to its own first
+     two letters rather than to the word undefined. */
+  if (ROLE_CODE[role]) { return ROLE_CODE[role]; }
+  var letters = String(role || "").replace(/[^a-z]/gi, "").slice(0, 2);
+  return letters ? letters.toUpperCase() : "--";
+}
 /* Which box a hook loops on. The harness names the EVENT, and the event decides
    where the loop hangs - the figure draws caveman looping on UserPromptSubmit
    and RTK on the reasoning box for exactly this reason. An event this table does
@@ -3371,14 +3401,16 @@ function machineSvg(states, live, travelled, hooks, declared) {
     var mid = x + boxW / 2;
     centres.push(mid);
     var on = state.id === live;
-    var cls = "m-box m-box--" + state.role + (on ? " m-box--live" : "");
-    parts.push('<g data-detail="mstate" data-detail-key="' + state.id
+    var cls = "m-box m-box--" + escapeText(state.role)
+      + (on ? " m-box--live" : "");
+    parts.push('<g data-detail="mstate" data-detail-key="'
+      + escapeText(state.id)
       + '" data-detail-name="' + escapeText(state.label)
-      + '" data-detail-role="' + state.role + '" tabindex="0">'
+      + '" data-detail-role="' + escapeText(state.role) + '" tabindex="0">'
       + '<rect class="' + cls + '" x="' + x.toFixed(1) + '" y="' + boxTop
       + '" width="' + boxW + '" height="' + boxH + '"/>'
       + '<text class="m-role" x="' + mid.toFixed(1) + '" y="' + (boxTop + 13)
-      + '" text-anchor="middle">' + ROLE_CODE[state.role] + "</text>"
+      + '" text-anchor="middle">' + roleCode(state.role) + "</text>"
       + '<text class="m-label' + (on ? " m-live-text" : "") + '" x="'
       + mid.toFixed(1) + '" y="' + (boxTop + 26) + '" text-anchor="middle">'
       + escapeText(clip(state.label, 17))
@@ -3517,10 +3549,15 @@ document.addEventListener("change", function (event) {
    because that is what it is: a separate process with its own tools, its own
    skills and its own hooks, reaching the SAME vault and the same graph. */
 var SHARED_NODES = [
-  { id: "obsidian", label: "Obsidian vault",
+  /* `always`: the two memories are standing resources every line can reach, so
+     they are drawn whether or not a visible line has touched them. They were
+     filtered out unless used, and a session that had made no memory call in its
+     tail showed neither (measured 2026-10-17). The network and an MCP server
+     are drawn only when a call actually reached them. */
+  { id: "obsidian", label: "Obsidian vault", always: true,
     note: "the cross-project memory. Every line reaches the same one, and only "
         + "local-writer may write it" },
-  { id: "graphify", label: "Graphify graph",
+  { id: "graphify", label: "Graphify graph", always: true,
     note: "this repository's structure memory, reached through the same single "
         + "writer" },
   { id: "internet", label: "Internet",
@@ -3579,44 +3616,115 @@ function laneModel(state) {
      said rather than drawn as an empty flow. */
   var lanes = [];
   var fleet = state.fleet || {};
+  /* Most recent first, ACROSS harnesses. `installed` is sorted by name, which
+     is no ranking at all: once aider existed it came before claude_code, and
+     thirteen finished runs led the session actually running. A session that
+     reports no age sorts last, and the sort is stable so equal ages keep the
+     harness order. */
+  var entries = [];
   (fleet.installed || []).forEach(function (id) {
     var harness = (fleet.harnesses || {})[id] || {};
     if (harness.status !== "ok") { return; }
     (harness.sessions || []).forEach(function (session) {
-      if (!sessionShown(session)) { return; }
-      var flow = session.flow || {};
-      if (flow.status !== "ok") { return; }
-      var name = (session.cwd || "").split(/[\\/]/).filter(Boolean).pop()
-        || session.project || "session";
+      entries.push({ id: id, harness: harness, session: session });
+    });
+  });
+  entries.sort(function (a, b) {
+    /* A run whose process is gone ranks after every live session, whatever its
+       age: one that ended a minute ago must not lead a session being watched. */
+    var endedA = a.session.live === false ? 1 : 0;
+    var endedB = b.session.live === false ? 1 : 0;
+    if (endedA !== endedB) { return endedA - endedB; }
+    var ageA = typeof a.session.age_seconds === "number"
+      ? a.session.age_seconds : Infinity;
+    var ageB = typeof b.session.age_seconds === "number"
+      ? b.session.age_seconds : Infinity;
+    return ageA === ageB ? 0 : (ageA < ageB ? -1 : 1);
+  });
+  entries.forEach(function (entry) {
+    var session = entry.session;
+    if (!sessionShown(session)) { return; }
+    var flow = session.flow || {};
+    if (flow.status !== "ok") { return; }
+    var name = sessionName(session);
+    lanes.push({
+      id: "s:" + session.session_id,
+      label: name,
+      kind: "session",
+      harness: entry.id,
+      harnessLabel: entry.harness.label || entry.id,
+      ended: session.live === false,
+      declared: entry.harness.hook_loops || [],
+      state: flow.state,
+      tokens: flow.tokens || {},
+      steps: (flow.steps || []).filter(function (step) {
+        return !step.sidechain;
+      }),
+      hooks: flow.hooks || []
+    });
+    (flow.subagents || []).forEach(function (agent, index) {
       lanes.push({
-        id: "s:" + session.session_id,
-        label: name,
-        kind: "session",
-        state: flow.state,
-        tokens: flow.tokens || {},
+        id: "a:" + session.session_id + ":" + index,
+        label: agent.name,
+        kind: "subagent",
+        parent: "s:" + session.session_id,
+        state: "spawned",
+        tokens: {},
+        at: agent.at,
         steps: (flow.steps || []).filter(function (step) {
-          return !step.sidechain;
+          return step.sidechain;
         }),
-        hooks: flow.hooks || []
-      });
-      (flow.subagents || []).forEach(function (agent, index) {
-        lanes.push({
-          id: "a:" + session.session_id + ":" + index,
-          label: agent.name,
-          kind: "subagent",
-          parent: "s:" + session.session_id,
-          state: "spawned",
-          tokens: {},
-          at: agent.at,
-          steps: (flow.steps || []).filter(function (step) {
-            return step.sidechain;
-          }),
-          hooks: []
-        });
+        hooks: []
       });
     });
   });
   return lanes;
+}
+
+function edgeLabel(edge) {
+  /* What the red number on a fan-out edge counts, by name. It read `N lost` for
+     every problem state, so four STALE mirrors (present, only older than their
+     source) were drawn as four lost ones, which sent the operator looking for
+     files that existed. States keep the order of PROBLEM_STATES. */
+  var counts = {};
+  (edge.problems || []).forEach(function (problem) {
+    counts[problem.state] = (counts[problem.state] || 0) + 1;
+  });
+  var parts = [];
+  ["lost", "stale", "orphan"].forEach(function (name) {
+    if (counts[name]) { parts.push(counts[name] + " " + name); }
+  });
+  return parts.length ? parts.join(", ") : edge.broken + " need work";
+}
+
+function liveMachine(state, lanes) {
+  /* The state machine to draw is the one of the harness that owns the FIRST lane
+     shown, because the strip and the lane below it must describe the same
+     session. It used to be the first installed harness that had a machine at
+     all, which is alphabetical order and not a choice: with aider installed the
+     strip drew aider's machine over a Claude Code session. */
+  if (!lanes || !lanes.length) { return null; }
+  var harness = ((state.fleet || {}).harnesses || {})[lanes[0].harness];
+  return harness && harness.flow_states ? harness : null;
+}
+
+function staleServer(machine) {
+  /* True when the snapshot lacks the roster key a current adapter always sends.
+     An EMPTY roster is an answer (the harness has no hooks); an absent key is a
+     server running older Python than this page. */
+  return !!machine && !Array.isArray(machine.hook_loops);
+}
+
+function staleFleet(state) {
+  /* The same test over every installed harness, not over the one drawn: the
+     shape of what the server sent is a fact about the fleet, so the notice must
+     not vanish when every session is filtered out and no machine is drawn. */
+  var fleet = state.fleet || {};
+  return (fleet.installed || []).some(function (id) {
+    var harness = (fleet.harnesses || {})[id] || {};
+    return harness.status === "ok" && !!harness.flow_states
+      && staleServer(harness);
+  });
 }
 
 function sharedLinks(lane) {
@@ -3845,7 +3953,9 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
   });
   var used = {};
   links.forEach(function (link) { used[link.to] = true; });
-  shared = shared.filter(function (node) { return used[node.id]; });
+  shared = shared.filter(function (node) {
+    return used[node.id] || node.always;
+  });
 
   var sharedY = {};
   shared.forEach(function (node, index) { sharedY[node.id] = 70 + index * 52; });
@@ -3968,7 +4078,11 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
     /* Hooks, named, in a column to the LEFT of the agent. Bold when they FIRED,
        quiet when merely declared - the operator could not tell the two apart,
        and that difference is the whole point of the column. */
-    var rows = hookRows(lane, lane.kind === "subagent" ? [] : declared);
+    /* The roster a lane shows is its OWN harness's: lanes of several harnesses
+       share one graph, and the first lane's declared hooks must not be hung on
+       a session of a harness that has none. */
+    var rows = hookRows(lane, lane.kind === "subagent"
+      ? [] : (lane.declared || declared));
     var visible = rows.slice(0, 6);
     visible.forEach(function (hook, index) {
       var hy = at.y - 58 + index * 22;
@@ -3991,14 +4105,23 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
     }
 
     var tokens = lane.tokens || {};
-    var ratio = (sessionMax && tokens.held) ? tokens.held / sessionMax : 0;
-    var awake = lane.state !== "idle" && lane.kind !== "subagent";
+    /* A window the harness MEASURED (aider's driver records its own) outranks
+       the one the operator typed, which exists only because Claude Code's
+       transcript never says what window its tokens sit in. */
+    var ringMax = tokens.window || sessionMax;
+    var ratio = (ringMax && tokens.held) ? tokens.held / ringMax : 0;
+    var awake = lane.state !== "idle" && lane.kind !== "subagent"
+      && !lane.ended;
     parts.push('<g class="fx-agent fx-agent--' + lane.kind
-      + (lane.state === "idle" ? " fx-agent--idle" : " fx-agent--live")
+      + (lane.state === "idle" || lane.ended
+          ? " fx-agent--idle" : " fx-agent--live")
       + '" data-detail="note" data-detail-title="' + escapeText(lane.label)
       + '" data-detail-note="' + escapeText(lane.kind === "subagent"
           ? "a subagent: its own tools, its own skills, the same memories"
-          : "a session of this harness, currently " + (lane.state || "idle"))
+          : "a session of " + (lane.harnessLabel || "this harness")
+            + (lane.ended ? ", ended (its process is gone), stopped at "
+                          : ", currently ")
+            + (lane.state || "idle"))
       + '" tabindex="0">'
       /* A ping leaving the node, repeating while the session works. The
          operator's test of the panel is whether it looks ALIVE when something
@@ -4031,7 +4154,7 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
       + (at.y + ringR + 34) + '" text-anchor="middle">'
       + escapeText(tokens.status === "ok"
           ? thousands(tokens.held) + "K held"
-            + (sessionMax ? " of " + thousands(sessionMax) + "K" : "")
+            + (ringMax ? " of " + thousands(ringMax) + "K" : "")
           : "tokens not reported") + "</text></g>");
 
     links.filter(function (link) { return link.row === row; })
@@ -4125,15 +4248,18 @@ function sessionMeters(host, state) {
     if (harness.status !== "ok") { return; }
     (harness.sessions || []).forEach(function (session) {
       if (!sessionShown(session)) { return; }
+      /* A run whose process is gone holds no context: a meter for it would be
+         a number about nothing, and could raise `sessionFull` for a dead run. */
+      if (session.live === false) { return; }
       var tokens = (session.flow || {}).tokens || {};
       if (tokens.status !== "ok") { return; }
-      var name = (session.cwd || "").split(/[\\/]/).filter(Boolean).pop()
-        || session.project || "session";
+      var name = sessionName(session);
       var full = meterRow(block, {
         label: name.slice(0, 12),
         key: "session",
         used: tokens.held,
-        max: storedLimit("session") || CFG.context_window_tokens || 0
+        max: tokens.window || storedLimit("session")
+          || CFG.context_window_tokens || 0
       }) >= 1;
       sessionFull = sessionFull || full;
       drawn += 1;
@@ -4152,7 +4278,6 @@ function renderLive(state) {
     return;
   }
 
-  var machine = null;
   var hidden = 0;
   (fleet.installed || []).forEach(function (id) {
     var harness = (fleet.harnesses || {})[id] || {};
@@ -4162,13 +4287,13 @@ function renderLive(state) {
       next.appendChild(box);
       return;
     }
-    if (!machine && harness.flow_states) { machine = harness; }
     (harness.sessions || []).forEach(function (session) {
       if (!sessionShown(session)) { hidden += 1; }
     });
   });
 
   var lanes = laneModel(state);
+  var machine = liveMachine(state, lanes);
 
   /* A running dashboard re-reads its MARKUP from disk on every request but not
      its Python, so a page can be new while the snapshot behind it is old. That
@@ -4176,7 +4301,7 @@ function renderLive(state) {
      declared hooks, no subagents - all of them reported as defects in the view
      when the view was fine. So the page checks the SHAPE of what it was served
      and says which half is stale. */
-  if (machine && !machine.hook_loops) {
+  if (staleFleet(state)) {
     var stale = el("div", "unavail");
     stale.appendChild(el("b", null, "the server behind this page is older than "
                                     + "the page"));
@@ -4206,6 +4331,14 @@ function renderLive(state) {
     next.appendChild(strip);
   }
 
+  /* The token meters come BEFORE the figure. They were drawn after it, and with
+     one lane per session (25 on this machine) they sat far below the fold: the
+     context-window maximum could not be typed and the week total could not be
+     read, so the operator concluded the tokens had gone (2026-10-17). */
+  sessionFull = false;
+  sessionMeters(next, state);
+  renderSpend(next, state);
+
   if (lanes.length) {
     var graph = el("div", "live-graph");
     /* Four marks, four meanings, said once rather than left to be inferred:
@@ -4230,9 +4363,6 @@ function renderLive(state) {
         + "here, not about whether anything is running."));
   }
 
-  sessionFull = false;
-  sessionMeters(next, state);
-  renderSpend(next, state);
   morph(host, next);
   var note = document.getElementById("live-note");
   if (note) {
@@ -4348,7 +4478,7 @@ function buildGraph(state) {
       edge.count += 1;
       if (PROBLEM_STATES[row.state.value]) {
         edge.broken += 1;
-        /* WHICH mirror, kept on the edge itself. The label reads `1 lost` and
+        /* WHICH mirror, kept on the edge itself. The label reads like `1 lost` and
            the plan's worked example is exactly this: the number was reachable
            and the name behind it was not. */
         edge.problems.push({ name: row.name, state: row.state.value,
@@ -4631,7 +4761,7 @@ function drawGraph(graph, svg, width, height, vertical) {
     if (edge.broken) {
       parts.push('<text class="edge-label" x="' + ((a.x + b.x) / 2).toFixed(1)
         + '" y="' + ((a.y + b.y) / 2 - 4).toFixed(1)
-        + '" text-anchor="middle">' + edge.broken + " lost</text>");
+        + '" text-anchor="middle">' + escapeText(edgeLabel(edge)) + "</text>");
     }
   });
 
@@ -4656,8 +4786,11 @@ function drawGraph(graph, svg, width, height, vertical) {
 }
 
 function escapeText(text) {
+  /* Quotes are encoded too: the result is written inside double-quoted
+     data-detail-* attributes before svg.innerHTML, and a session title comes
+     from a transcript a prompt can steer. The ampersand goes first. */
   return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function canvasHeight(graph, vertical, measured, width) {

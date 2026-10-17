@@ -164,6 +164,11 @@
       "value": 30,
       "unit": "seconds",
       "provenance": "chosen 2026-09-24 - collect_traces.py (Phase 3) reads OpenObserve over HTTP; kept short like identity rather than long like mcp_live, since a single-node OpenObserve answering `_search` on its own disk is cheap, unlike `claude mcp list` reaching 28 remote servers"
+    },
+    "local_calls": {
+      "value": 10,
+      "unit": "seconds",
+      "provenance": "chosen 2026-10-17 - collect_local.py reads a bounded tail of one small log file, as cheap as the mirror walk, and a local call is worth seeing within a few seconds"
     }
   },
   "timeouts_seconds": {
@@ -204,6 +209,16 @@
     }
   },
   "caps": {
+    "local_calls_tail_bytes": {
+      "value": 262144,
+      "unit": "bytes read from the end of the bridge log",
+      "provenance": "chosen 2026-10-17 - an attempt record is a few hundred bytes, so 256 KiB covers several hundred recent attempts while a log that grew for months costs a bounded read"
+    },
+    "local_calls_recent": {
+      "value": 8,
+      "unit": "calls listed, newest first",
+      "provenance": "chosen 2026-10-17 - the dashboard shows what just happened, not the whole history; the totals per role carry the rest"
+    },
     "usage_window_days": {
       "value": 7,
       "unit": "days of transcript history summed for the week bar",
@@ -291,6 +306,11 @@
     }
   },
   "staleness_seconds": {
+    "local_active": {
+      "value": 300,
+      "unit": "seconds since a role's last call before it stops being drawn as active",
+      "provenance": "chosen 2026-10-17 - a local model decodes at a few tokens per second on this machine (3.87 tok/s measured 2026-09-05 in context-budget.json), so one generation takes minutes and a shorter threshold would report a working role as idle"
+    },
     "session_idle": {
       "value": 90,
       "unit": "seconds without a new transcript record before a session is drawn as waiting",
@@ -370,6 +390,10 @@
     }
   },
   "paths": {
+    "bridge_log": {
+      "value": "~/.claude/loop-bridge-log.jsonl",
+      "provenance": "specified: ollama_bridge.DEFAULT_LOG_PATH, the attempt log the bridge appends to; outside the repository and the vault, so reading it is not guarded"
+    },
     "action_log": {
       "value": "~/.claude/rt-state-actions.jsonl",
       "provenance": "chosen - append-only, the same shape as vault_journal.py, outside the repository so it is never committed"

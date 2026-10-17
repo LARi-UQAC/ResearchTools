@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import adapters  # noqa: E402
 import collect_graph  # noqa: E402
 import collect_identity  # noqa: E402
+import collect_local  # noqa: E402
 import collect_mirrors  # noqa: E402
 import collect_progress  # noqa: E402
 import collect_registry  # noqa: E402
@@ -186,6 +187,11 @@ def section_builders(repo_root=None, home=None, config=None):
             "the usage scan",
             lambda: collect_usage.collect(
                 adapters.AdapterContext(repo_root, home, config, now)))),
+        # Local coding contract plan 6 (2026-10-17): what the local models have been doing,
+        # read from the bridge log. Read-only and additive.
+        ("local_calls", lambda now: _guarded(
+            "the local calls panel",
+            lambda: collect_local.collect(config, home, now))),
         # Phase 2/3 of the journal-durable plan (2026-09-24). Both are
         # additive, optional-by-default sections: with no 'postgres' or
         # 'openobserve' block in observe-config.json they report unavailable

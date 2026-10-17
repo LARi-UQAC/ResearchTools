@@ -40,7 +40,11 @@ and the output produced. Full arguments are in `README.md`.
 Keep the top cloud model as orchestrator and push token-heavy generation to local models on
 the GPU. Each local agent runs on a cheap cloud model (Haiku) that frames the task and drives
 a local model over `ollama_bridge.py` (Ollama's HTTP API); the bulk output is generated
-locally and free. No gateway; cloud stays on the normal subscription auth.
+locally and free. Claude Code has one API endpoint per process and no per-subagent endpoint,
+environment or provider (Claude Code documentation, sub-agents and LLM gateway pages, read
+2026-10-17), so a subagent cannot be pointed at Ollama while the main session stays on
+Anthropic. That, and not the subscription, is why local models are reached through this bridge
+from a Haiku wrapper.
 
 | Goal | Agent | Model | Output |
 |---|---|---|---|
@@ -93,6 +97,16 @@ path: Claude Code points `ANTHROPIC_BASE_URL` straight at Ollama. `claude-augure
 wants Claude Code billed/routed through AugureAI instead of the default Anthropic account.
 Three identities sharing one save/restore mechanism (below) rather than two, so the per-shell
 bookkeeping could no longer assume only one "away" state existed at a time.
+
+What is verified, what is unsupported and what is untried (Claude Code documentation, read
+2026-10-17). `claude-switch.ps1` sets `ANTHROPIC_AUTH_TOKEN`, which takes precedence over the
+subscription login, whereas `ANTHROPIC_BASE_URL` alone would keep the subscription. The switch
+works and was measured on this machine, but Anthropic documents that it does not support
+routing Claude Code to non-Claude models through a gateway, and Remote Control is unavailable
+while the base URL is not api.anthropic.com. A model ID Claude Code does not recognise is
+assumed to have a 200K window unless `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is set (`claude-ollama`
+sets it from the `session` role window); whether that variable is capped at the model's own
+window is not documented and is untried here.
 
 Three-step process, always in this order:
 
@@ -179,15 +193,21 @@ for another.
 
 Every planned task lives in `docs/superpowers/plans/` of its own project:
 
-| File | Max tokens | Who writes it |
-|---|---:|---|
-| `spec.md` | 8 000 | the human, or a cloud model with the human |
-| `plan1.md`, `plan2.md`, ... | 8 000 each | the plan author |
-| `progress.md` | 12 000 | the executing model, one `## <filename>` section per file |
-| `audit.md` | 12 000 | the auditing model only, never the executor |
+| File | Who writes it |
+|---|---|
+| `spec.md` | the human, or a cloud model with the human |
+| `plan1.md`, `plan2.md`, ... | the plan author |
+| `progress.md` | the executing model, one `## <filename>` section per file |
+| `audit.md` | the auditing model only, never the executor |
 
-`todo/` is the archive subdirectory. A source file carries its own ceiling of **16 000
-tokens**; past it, split along a seam the code already has, never at an arbitrary line count.
+The size ceilings are NOT written in this rule. They are the `ceilings` of
+`.claude/skills/aider-setup/config/context-budget.json`, the single source for every project
+(`aider-plan.ps1` enforces the same file), counted with `loop-engineer/scripts/token_count.py`
+and checked by `plan_contract.py`. The operator cut them on 2026-09-05 (spec 4000, each plan
+4000, progress 2048, audit 4096 tokens), so the larger figures this table used to carry were
+stale from that day. `todo/` is the archive subdirectory of `plans/`. A source file
+read into a prompt carries the `code_file` ceiling; past it, split along a seam the code
+already has, never at an arbitrary line count.
 
 Three marks in `progress.md`, and only three: `- [ ]` not done, `- [x]` done with a short
 result, `- [!]` blocked with one line of reason.
@@ -264,9 +284,20 @@ session, not left to the reviewer on GitHub:
    `main`, a caller repository, a missing dependency, a second run.
 2. Every finding is fixed with a test that FAILS on the code before the fix (R20), or declined
    with a measurement recorded in the plan's `audit.md`.
-3. The review is re-run on the fixed branch, and the loop repeats until it returns no finding.
-   Only then is the PR opened (R30), and the PR body names the review rounds and what each
-   fixed.
+3. The review is re-run on the fixed branch, inside bounds the owner declared. Before the first
+   round the session asks the owner with `AskUserQuestion` for three bounds, `max_rounds`,
+   `max_tokens` (input + cache_creation + output, cache reads excluded) and `plateau`, unless
+   the plan header already carries them, then runs
+   `python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`.
+   After each round it runs `loop_bounds.py tick --findings N`. The hook `review-loop-guard.py`
+   refuses a review skill with no bounds or past one. The loop stops at the first of `max_rounds`,
+   `max_tokens`, `plateau` or a round with no finding, and the session names which. Only after a
+   round with no finding is the PR opened (R30), and the PR body names the review rounds and
+   what each fixed. When a bound stops the loop first, the session reports what remains and asks
+   whether to raise a bound; it never opens the PR on its own. Measured 2026-10-17: seven
+   unbounded iterations and no question put to the owner, which is why "until no finding" alone
+   is no longer the rule. A review typed by hand as a slash command is guarded the same way, and
+   `init --max-rounds 1` is the one-shot.
 
 GitHub Copilot's review stays, as a confirmation rather than the first reader. Measured
 2026-10-01/02 on PR #40, the privacy guard: Copilot found 6 issues, then 1, then 1 more, one
@@ -381,6 +412,50 @@ Proven by `scripts/test/verify-venv-resolution.ps1` (R15), which also fails when
 its own interpreter search again (R18). It proves the resolution, not the cause. The cause was
 reproduced by hand on a throwaway copy, in both variants above, and no test automates it, since
 the experiment deletes a folder by design.
+
+**R38 - any coding request beyond a single step gets plan files with a header before any code.**
+Effective 2026-10-17. It binds every project once ResearchTools is installed, every harness and
+every executor, cloud or local, because local coding exists to save cloud tokens and four things
+defeated it: `local-coder` was never dispatched, the review loop of R35 had no bound, the docs
+named a wrong reason for the bridge, and local work was barely visible. R36's floor still holds:
+a request that is a single step with no deliverable is answered directly. Anything larger gets
+`spec.md`, `plan<N>.md` and `progress.md` (R26 layout, ceilings from `context-budget.json`)
+before the first line of code.
+
+The header is the front matter of each plan: `executor` (`local-coder`, `aider`, `cloud`),
+`tier` (`simple`, `standard`, `large`) and `bounds` (`max_rounds`, `max_tokens`, `plateau`,
+positive integers). The cloud model writes `executor` and `tier` from the table below. The
+owner chooses the bounds, asked with `AskUserQuestion` with no default (R0), and they count
+tokens (input + cache_creation + output, cache reads excluded) because money is not readable
+from this machine. `plan_contract.py` validates the header, the file limit of the tier and the
+size ceilings, and resolves the tier to a resolver ROLE through `plan-tiers.json`: `model_resolver.py`
+names the tag at run time and no plan names a tag (R2).
+
+| Situation | Executor | Why it saves cloud tokens |
+|---|---|---|
+| Judgment, security, design, a repository-wide change, or no qualified local role | `cloud`, `executing-plans` in the session | none to save: the work needs the best model |
+| One plan, a test as oracle per step, each step's prompt plus output fits the coder window | `local-coder`, tier simple or standard | the cloud pays for the plan, the Haiku wrapper and the review, the code is generated locally |
+| One plan whose step output cannot fit the coder window and cannot be split | `local-coder`, tier `large` (the `session` role, 262K) | same, with a window large enough for long output |
+| Two or more plans, or an unattended night | `aider` (spec, `plan[N]`, `progress`, a writer model and a different reviewer model) | no Claude Code involved once started |
+| A whole session on Ollama or Augure | the owner's manual choice (`claude-switch.ps1`), never written in a plan | the session itself is local |
+
+Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. One plan is
+one `local-coder` dispatch, and the dispatch prompt names it with a `PLAN: <path>` line. There is
+no audit inside the wrapper: R35 as amended runs in the harness that called it, inside the
+declared bounds. A fix found by a review round is a small plan of its own and follows the same
+table. Aider keeps its internal writer and reviewer loop. On a machine with no qualified role
+for the tier, `plan_contract.py resolve` returns the `cloud` executor with the stated reason and
+never a weaker model (R8).
+
+The contract is enforced, not merely stated: `review-loop-guard.py` (PreToolUse on the Skill
+tool) refuses a review skill with no declared bounds or past one, and
+`local-coder-dispatch-guard.py` (PreToolUse on the Agent tool) refuses a `local-coder` dispatch
+with no valid plan. Both are declared in `.claude/settings.template.json` and each exits 0 in
+silence when its dependency is absent (R11). An effort's plans wait in `docs/superpowers/todo/`
+and move to `docs/superpowers/done/` when executed. UNVERIFIED until a live firing (R15): that
+both matchers fire on this machine and that the Skill tool names the skill under
+`tool_input.skill`. Proven offline by `test_plan_contract.py`,
+`test_local_coder_dispatch_guard.py`, `test_review_loop_guard.py` and `test_plan_contract_rule.py`.
 
 ## Issue and Project tracking
 

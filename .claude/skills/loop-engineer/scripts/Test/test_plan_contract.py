@@ -139,6 +139,29 @@ class TestRound5UnhashableHeader(PlanCase):
                 self.assertIn(key, str(ctx.exception))
 
 
+    def test_no_header_value_raises_anything_but_a_plan_error(self):
+        # R35 round 6 claimed other keys could still raise TypeError; this fuzz found none and
+        # keeps it that way (a non-PlanError makes the dispatch guard fail open).
+        shapes = ["[a]", "{a: b}", "", "null", "~", "1", "true", '"x"', "[1, 2]", "- a"]
+        for key in ("executor", "tier", "bounds"):
+            for shape in shapes:
+                with self.subTest(key=key, shape=shape):
+                    text = plan_text().replace(
+                        {"executor": "executor: local-coder", "tier": "tier: simple",
+                         "bounds": "bounds:"}[key], f"{key}: {shape}", 1)
+                    try:
+                        self.check(text)
+                    except pc.PlanError:
+                        pass
+        for bound in ("max_rounds", "max_tokens", "plateau"):
+            for shape in shapes:
+                with self.subTest(bound=bound, shape=shape):
+                    try:
+                        self.check(plan_text(bounds={bound: shape}))
+                    except pc.PlanError:
+                        pass
+
+
 class TestFileLines(PlanCase):
     """Fixes for the code review of 2026-10-17 (R35 round 1): the file limit must not be
     skipped by a plan written in another notation."""

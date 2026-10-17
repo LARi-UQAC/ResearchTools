@@ -438,6 +438,75 @@ class TestRound5Lock(unittest.TestCase):
         self.assertEqual(len(seen), 1)
         self.assertIn(str(os.getpid()), seen[0])
 
+    def test_a_lock_that_cannot_be_removed_gives_up_instead_of_spinning(self):
+        # R35 round 6: the stale branch looped back with `continue` before the deadline test,
+        # so an old lock that unlink refused (here a directory) spun forever.
+        import os
+        import threading
+        import time
+        config = dict(self.LOCK_CONFIG,
+                      lock_timeout_s={"value": 0.2, "provenance": "test fixture"},
+                      lock_stale_s={"value": 1, "provenance": "test fixture"})
+        outcome = []
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            lock = path.with_name(path.name + ".lock")
+            lock.mkdir()
+            old = time.time() - 60
+            os.utime(lock, (old, old))
+
+            def attempt():
+                with lb.state_lock(path, config) as held:
+                    outcome.append(held)
+
+            thread = threading.Thread(target=attempt, daemon=True)
+            thread.start()
+            thread.join(5)
+            self.assertFalse(thread.is_alive(), "state_lock spun past its timeout")
+            self.assertEqual(outcome, [False])
+
+    def test_save_retries_a_replace_blocked_by_a_reader_and_leaves_no_temp_file(self):
+        # R35 round 6: on Windows os.replace fails with PermissionError while a reader (the
+        # dashboard poll) holds the file open; the hook swallowed it and the round was lost.
+        import os
+        real, calls = os.replace, []
+
+        def flaky(src, dst):
+            calls.append(src)
+            if len(calls) < 3:
+                raise PermissionError("held open by a reader")
+            return real(src, dst)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            lb.os.replace = flaky
+            try:
+                lb.save_state(path, "main", fresh_state(), self.LOCK_CONFIG)
+            finally:
+                lb.os.replace = real
+            self.assertEqual(len(calls), 3)
+            self.assertIsNotNone(lb.load_state(path, "main"))
+            self.assertEqual([p.name for p in Path(tmp).glob("*.tmp")], [])
+
+    def test_a_replace_that_never_succeeds_raises_and_removes_its_temp_file(self):
+        import os
+        real = os.replace
+        config = dict(self.LOCK_CONFIG,
+                      lock_timeout_s={"value": 0.05, "provenance": "test fixture"})
+
+        def blocked(src, dst):
+            raise PermissionError("held open by a reader")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            lb.os.replace = blocked
+            try:
+                with self.assertRaises(PermissionError):
+                    lb.save_state(path, "main", fresh_state(), config)
+            finally:
+                lb.os.replace = real
+            self.assertEqual([p.name for p in Path(tmp).glob("*.tmp")], [])
+
     def test_the_shipped_config_declares_the_lock_keys(self):
         config = lb.load_config()
         for key in ("lock_timeout_s", "lock_stale_s", "lock_poll_s"):

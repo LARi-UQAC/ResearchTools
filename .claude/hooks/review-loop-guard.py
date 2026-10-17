@@ -31,6 +31,7 @@ NOT VERIFIED (R15): the key holding the skill name inside tool_input is not docu
 hook reads `skill` and falls back to `name`. A live firing on this machine is plan 11's job.
 """
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -199,7 +200,11 @@ def judge(payload, config, engine):
         return None
     # Two review hooks can fire within one turn: the count is read, raised and saved under
     # the engine's lock so neither loses the other's round.
-    with engine.state_lock(path, bounds_config):
+    # An installed loop-bounds.json older than the lock keys must degrade to unlocked, never
+    # raise: this hook's catch-all would turn the whole gate off in silence (R11, round 6).
+    locking = engine.has_lock_config(bounds_config)
+    lock = engine.state_lock(path, bounds_config) if locking else contextlib.nullcontext()
+    with lock:
         state = engine.load_state(path, branch)
         tokens = engine.tokens_used(state, bounds_config) if state else None
         allowed, reason = engine.decide(state, skill, tokens)
@@ -207,7 +212,7 @@ def judge(payload, config, engine):
             return "[REVIEW LOOP GUARD] " + reason
         adopt_transcript(engine, state, payload.get("transcript_path"))
         engine.record_invocation(state, skill)
-        engine.save_state(path, branch, state)
+        engine.save_state(path, branch, state, bounds_config if locking else None)
     return None
 
 

@@ -234,20 +234,49 @@ def load_state(path: Path, branch: str) -> dict | None:
     return state if isinstance(state, dict) else None
 
 
-def save_state(path: Path, branch: str, state: dict) -> None:
+def has_lock_config(config: dict) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Say whether a parsed loop-bounds.json carries the three lock keys, so a caller running
+        on behalf of someone else (a hook) can degrade to unlocked instead of failing.
+
+    Inputs:
+        config (dict): the parsed loop-bounds.json.
+
+    Outputs:
+        present (bool): True when lock_timeout_s, lock_stale_s and lock_poll_s are all there.
+    --------------------------------------------------------------------------
+    """
+    return all(isinstance(config.get(key), dict) and "value" in config[key]
+               for key in ("lock_timeout_s", "lock_stale_s", "lock_poll_s"))
+
+
+def save_state(path: Path, branch: str, state: dict, config: dict | None = None) -> None:
     """
     --------------------------------------------------------------------------
     Purpose:
         Store one branch's state, keeping the other branches, through a temporary file and
         os.replace so a reader never sees a half-written file.
 
+    Details:
+        On Windows os.replace raises PermissionError while a reader (the dashboard poll) holds
+        the file open. With a config the replace is retried for lock_timeout_s, every
+        lock_poll_s, then the error is raised; without one it is tried once. The temporary
+        file never outlives the call.
+
     Inputs:
         path (Path): the state file.
         branch (str): the branch key.
         state (dict): the state to store.
+        config (dict | None): parsed loop-bounds.json, for the retry timing.
 
     Outputs:
         None. Side effect: the file at path now holds the state under the branch key.
+
+    Raises:
+        PermissionError: the replace stayed blocked past lock_timeout_s.
+        KeyError: a config was given and lacks a lock key, naming it.
     --------------------------------------------------------------------------
     """
     path = Path(path)
@@ -255,8 +284,24 @@ def save_state(path: Path, branch: str, state: dict) -> None:
     doc["branches"][branch] = state
     # The process and thread ids keep two writers from sharing one temporary file.
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    tmp.write_text(json.dumps(doc, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    wait = config_value(config, "lock_timeout_s") if config else 0
+    poll = config_value(config, "lock_poll_s") if config else 0
+    deadline = time.monotonic() + wait
+    try:
+        tmp.write_text(json.dumps(doc, indent=2, sort_keys=True), encoding="utf-8")
+        while True:
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(poll)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
 
 
 @contextlib.contextmanager
@@ -302,9 +347,9 @@ def state_lock(path: Path, config: dict):
             try:
                 if time.time() - lock.stat().st_mtime > stale:
                     lock.unlink()
-                    continue
+                    continue  # reclaimed: try to take it at once
             except OSError:
-                continue
+                pass  # vanished, or cannot be removed: fall through to the deadline test
         except OSError:
             break  # an unwritable folder: proceed unlocked, the save will report it
         if time.monotonic() >= deadline:
@@ -690,14 +735,14 @@ def _dispatch(args: argparse.Namespace, report: dict, config: dict, path: Path,
         report["findings"] = args.findings
         report["dry_run"] = args.dry_run
         if not args.dry_run:
-            save_state(path, branch, state)
+            save_state(path, branch, state, config)
         return 0
     allowed, reason = decide(state, args.skill, tokens_used(state, config))
     report.update(skill=args.skill, allowed=allowed, reason=reason,
                   tokens_used=tokens_used(state, config))
     if allowed and args.record:
         record_invocation(state, args.skill)
-        save_state(path, branch, state)
+        save_state(path, branch, state, config)
     return 0 if allowed else 2
 
 
@@ -799,7 +844,7 @@ def _init(args: argparse.Namespace, report: dict, config: dict, path: Path, bran
                            "overwrite them (a re-init resets the round counters)")
         return 2
     if not args.dry_run:
-        save_state(path, branch, state)
+        save_state(path, branch, state, config)
     return 0
 
 

@@ -148,6 +148,24 @@ class TestRefusals(HookCase):
         self.assertEqual(self.run_hook(skill="some-plugin:security-review")[0], 2)
         self.assertEqual(self.run_hook(skill="engineering:debug")[0], 0)
 
+    def test_an_installed_config_without_the_lock_keys_still_enforces_the_bound(self):
+        # R35 round 6: a stale loop-bounds.json lacking the lock keys raised KeyError inside
+        # the hook, whose catch-all then exited 0 and turned the whole gate off in silence.
+        engine_dir = self.tmp / "engine"
+        engine_dir.mkdir()
+        shutil.copy(LOOP_BOUNDS, engine_dir / LOOP_BOUNDS.name)
+        old = {k: v for k, v in lb.load_config().items() if not k.startswith("lock_")}
+        (engine_dir / "loop-bounds.json").write_text(json.dumps(old), encoding="utf-8")
+        self.write_config(fixture_config(
+            loop_bounds_candidates=entry([str(engine_dir / LOOP_BOUNDS.name)])))
+        state = self.declare(max_rounds=2)
+        lb.record_invocation(state, "code-review")
+        lb.record_invocation(state, "code-review")
+        lb.save_state(self.path, "main", state)
+        code, _, err = self.run_hook()
+        self.assertEqual(code, 2)
+        self.assertIn("max_rounds", err)
+
     def test_refused_on_plateau(self):
         state = self.declare(plateau=2)
         for count in (4, 4, 4):

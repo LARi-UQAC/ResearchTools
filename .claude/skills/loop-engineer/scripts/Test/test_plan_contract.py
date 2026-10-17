@@ -122,6 +122,23 @@ class TestHeader(PlanCase):
         self.assertIn("not found", str(ctx.exception))
 
 
+class TestRound5UnhashableHeader(PlanCase):
+    """R35 round 5: a list or empty tier or executor raised TypeError, so the dispatch guard
+    failed open on a malformed plan. Each is now a PlanError naming the key."""
+
+    def test_a_list_or_empty_tier_or_executor_is_a_plan_error(self):
+        for label, text, key in [
+                ("list tier", plan_text(tier="[simple, standard]"), "tier"),
+                ("empty tier", plan_text(tier=""), "tier"),
+                ("mapping tier", plan_text(tier="{a: b}"), "tier"),
+                ("list executor", plan_text(executor="[aider]"), "executor"),
+                ("empty executor", plan_text(executor=""), "executor")]:
+            with self.subTest(label):
+                with self.assertRaises(pc.PlanError) as ctx:
+                    self.check(text)
+                self.assertIn(key, str(ctx.exception))
+
+
 class TestFileLines(PlanCase):
     """Fixes for the code review of 2026-10-17 (R35 round 1): the file limit must not be
     skipped by a plan written in another notation."""

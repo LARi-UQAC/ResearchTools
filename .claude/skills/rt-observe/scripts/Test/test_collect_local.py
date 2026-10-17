@@ -180,6 +180,15 @@ class TestGeneratingNow(LogCase):
         self.assertEqual(role["last_at"], "2026-10-17T11:55:00+00:00")
         self.assertNotIn("failed", [r.get("event") for r in self.collect()["recent"]])
 
+    def test_a_record_with_no_timestamp_keeps_the_last_valid_one(self):
+        # R35 round 5: a null `at` overwrote a valid last_at, so the role read as never seen.
+        nameless = record(at=None)
+        failed = {"event": "failed", "role": "coder", "tag": "vendor-a:9b", "error": "down"}
+        self.write([record(at="2026-10-17T11:59:00+00:00"), nameless, failed])
+        role = self.collect()["roles"]["coder"]
+        self.assertEqual(role["last_at"], "2026-10-17T11:59:00+00:00")
+        self.assertEqual(role["age_seconds"], 60)
+
     def test_a_role_with_only_a_start_record_still_appears(self):
         self.write([self.start("2026-10-17T11:59:00+00:00", role="session")])
         self.assertIn("session", self.collect()["roles"])

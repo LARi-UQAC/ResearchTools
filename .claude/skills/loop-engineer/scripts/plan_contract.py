@@ -315,9 +315,11 @@ def _check_header(header: dict, tiers: dict) -> dict:
     for key in HEADER_KEYS:
         if key not in header:
             raise PlanError(f"front matter is missing the key '{key}'")
-    if header["executor"] not in EXECUTORS:
+    # A list or mapping is unhashable: it must be a refusal here, not a TypeError the dispatch
+    # guard would read as "not my business" (fail open).
+    if not isinstance(header["executor"], str) or header["executor"] not in EXECUTORS:
         raise PlanError(f"executor must be one of {', '.join(EXECUTORS)}, got {header['executor']!r}")
-    if header["tier"] not in tiers:
+    if not isinstance(header["tier"], str) or header["tier"] not in tiers:
         raise PlanError(f"tier must be one of {', '.join(tiers)}, got {header['tier']!r}")
     bounds = header["bounds"]
     if not isinstance(bounds, dict):

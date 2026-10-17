@@ -197,14 +197,17 @@ def judge(payload, config, engine):
     branch = engine.current_branch(cwd, config=bounds_config)
     if path is None or branch is None:
         return None
-    state = engine.load_state(path, branch)
-    tokens = engine.tokens_used(state, bounds_config) if state else None
-    allowed, reason = engine.decide(state, skill, tokens)
-    if not allowed:
-        return "[REVIEW LOOP GUARD] " + reason
-    adopt_transcript(engine, state, payload.get("transcript_path"))
-    engine.record_invocation(state, skill)
-    engine.save_state(path, branch, state)
+    # Two review hooks can fire within one turn: the count is read, raised and saved under
+    # the engine's lock so neither loses the other's round.
+    with engine.state_lock(path, bounds_config):
+        state = engine.load_state(path, branch)
+        tokens = engine.tokens_used(state, bounds_config) if state else None
+        allowed, reason = engine.decide(state, skill, tokens)
+        if not allowed:
+            return "[REVIEW LOOP GUARD] " + reason
+        adopt_transcript(engine, state, payload.get("transcript_path"))
+        engine.record_invocation(state, skill)
+        engine.save_state(path, branch, state)
     return None
 
 

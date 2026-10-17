@@ -173,14 +173,14 @@ def _group(records, now, active_seconds, generating_seconds):
             continue
         if item.get("event") == "failed":
             # A generation that ended in an error: it closes a start, it is not a call.
-            row["last_at"] = item.get("at")
+            row["last_at"] = item.get("at") or row["last_at"]
             continue
         row["calls"] += 1
         for key in ("prompt_tokens", "completion_tokens"):
             if isinstance(item.get(key), int) and not isinstance(item.get(key), bool):
                 row[key] += item[key]
         row.update(tag=item.get("tag"), num_ctx=item.get("num_ctx"),
-                   last_at=item.get("at"), plan=item.get("plan"))
+                   last_at=item.get("at") or row["last_at"], plan=item.get("plan"))
     for row in roles.values():
         moment = _stamp(row["last_at"])
         row["age_seconds"] = max(0, int((now - moment).total_seconds())) if moment else None

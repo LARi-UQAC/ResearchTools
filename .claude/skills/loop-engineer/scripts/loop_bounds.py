@@ -33,10 +33,13 @@ Standard library only.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -250,9 +253,71 @@ def save_state(path: Path, branch: str, state: dict) -> None:
     path = Path(path)
     doc = _read_document(path)
     doc["branches"][branch] = state
-    tmp = path.with_name(path.name + ".tmp")
+    # The process and thread ids keep two writers from sharing one temporary file.
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(doc, indent=2, sort_keys=True), encoding="utf-8")
     os.replace(tmp, path)
+
+
+@contextlib.contextmanager
+def state_lock(path: Path, config: dict):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Serialise a load-modify-save of the state file between processes, so the review
+        hooks running in parallel cannot lose a count.
+
+    Details:
+        The lock is a file created exclusively beside the state file. A lock older than
+        lock_stale_s is a dead holder's and is reclaimed. After lock_timeout_s the context
+        gives up and yields False: the caller proceeds unlocked, because refusing every
+        review over a stuck lock would be worse than the rare lost count (R11).
+
+    Inputs:
+        path (Path): the state file; the lock is path + ".lock".
+        config (dict): parsed loop-bounds.json (lock_timeout_s, lock_stale_s, lock_poll_s).
+
+    Outputs:
+        held (bool): True when this process holds the lock inside the block. Side effect:
+        the lock file exists during the block and is removed after it when held.
+
+    Raises:
+        KeyError: a lock key is missing from the configuration, naming it.
+    --------------------------------------------------------------------------
+    """
+    timeout = config_value(config, "lock_timeout_s")
+    stale = config_value(config, "lock_stale_s")
+    poll = config_value(config, "lock_poll_s")
+    lock = Path(path).with_name(Path(path).name + ".lock")
+    deadline = time.monotonic() + timeout
+    held = False
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            held = True
+            break
+        except (FileExistsError, PermissionError):
+            # Windows answers PermissionError, not FileExistsError, while the previous
+            # holder's unlink is still pending: that is contention, so wait and retry.
+            try:
+                if time.time() - lock.stat().st_mtime > stale:
+                    lock.unlink()
+                    continue
+            except OSError:
+                continue
+        except OSError:
+            break  # an unwritable folder: proceed unlocked, the save will report it
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(poll)
+    try:
+        yield held
+    finally:
+        if held:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
 
 
 def _positive_int(key: str, value: Any) -> int:
@@ -575,6 +640,34 @@ def _run(args: argparse.Namespace, report: dict) -> int:
         report["error"] = f"{cwd} is not inside a git repository (or git did not answer)"
         return 1
     report.update(branch=branch, state_file=str(path))
+    if args.verb == "status":
+        return _dispatch(args, report, config, path, branch)
+    try:
+        with state_lock(path, config):
+            return _dispatch(args, report, config, path, branch)
+    except KeyError as exc:
+        report["error"] = f"loop_bounds configuration problem: {exc}"
+        return 1
+
+
+def _dispatch(args: argparse.Namespace, report: dict, config: dict, path: Path,
+              branch: str) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Run one verb against the branch's state; mutating verbs run under state_lock.
+
+    Inputs:
+        args (argparse.Namespace): parsed arguments.
+        report (dict): filled in place.
+        config (dict): parsed loop-bounds.json.
+        path (Path): the state file.
+        branch (str): the branch key.
+
+    Outputs:
+        exit_code (int): 0, 1 or 2 as described in main.
+    --------------------------------------------------------------------------
+    """
     state = load_state(path, branch)
     if args.verb == "init":
         return _init(args, report, config, path, branch, state)

@@ -376,6 +376,75 @@ class TestRound1Findings(unittest.TestCase):
         self.assertTrue(lb.decide(state, "security-review", 0)[0])
 
 
+class TestRound5Lock(unittest.TestCase):
+    """R35 round 5: /code-review and /security-review hooks run in parallel, and an unlocked
+    load-modify-save lost a count. The read-modify-write now runs under a lock file."""
+
+    LOCK_CONFIG = dict(CONFIG,
+                       lock_timeout_s={"value": 5, "provenance": "test fixture"},
+                       lock_stale_s={"value": 30, "provenance": "test fixture"},
+                       lock_poll_s={"value": 0.005, "provenance": "test fixture"})
+
+    def test_parallel_read_modify_write_loses_no_count(self):
+        import threading
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            lb.save_state(path, "main", fresh_state(max_rounds=999))
+
+            def work():
+                for _ in range(5):
+                    with lb.state_lock(path, self.LOCK_CONFIG):
+                        state = lb.load_state(path, "main")
+                        lb.record_invocation(state, "code-review")
+                        lb.save_state(path, "main", state)
+
+            threads = [threading.Thread(target=work) for _ in range(8)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            self.assertEqual(lb.load_state(path, "main")["invocations"]["code-review"], 40)
+
+    def test_a_stale_lock_is_reclaimed_and_a_live_one_times_out_unheld(self):
+        import os
+        import time
+        config = dict(self.LOCK_CONFIG,
+                      lock_timeout_s={"value": 0.05, "provenance": "test fixture"},
+                      lock_stale_s={"value": 1, "provenance": "test fixture"})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            lock = path.with_name(path.name + ".lock")
+            lock.write_text("x", encoding="utf-8")
+            with lb.state_lock(path, config) as held:  # fresh lock: not ours, gives up
+                self.assertFalse(held)
+            self.assertTrue(lock.exists())
+            old = time.time() - 60
+            os.utime(lock, (old, old))
+            with lb.state_lock(path, config) as held:  # stale lock: reclaimed
+                self.assertTrue(held)
+            self.assertFalse(lock.exists())
+
+    def test_the_temporary_file_name_is_unique_per_process(self):
+        import os
+        seen = []
+        real = os.replace
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            lb.os.replace = lambda src, dst: (seen.append(Path(src).name), real(src, dst))[1]
+            try:
+                lb.save_state(path, "main", fresh_state())
+            finally:
+                lb.os.replace = real
+        self.assertEqual(len(seen), 1)
+        self.assertIn(str(os.getpid()), seen[0])
+
+    def test_the_shipped_config_declares_the_lock_keys(self):
+        config = lb.load_config()
+        for key in ("lock_timeout_s", "lock_stale_s", "lock_poll_s"):
+            self.assertTrue(config[key]["provenance"], key)
+            lb.config_value(config, key)
+
+
 class TestConfig(unittest.TestCase):
     def test_a_missing_key_is_a_named_error(self):
         with self.assertRaises(KeyError) as ctx:

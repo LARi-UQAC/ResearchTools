@@ -309,6 +309,55 @@ $auditText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\audit\c
 Check "the deployment audit no longer lists hooks with -Filter *.py" (-not ($auditText -match 'hooksRepo\s+-File\s+-Filter\s+\*\.py'))
 Check "the runner takes its file list from Get-RtCodeFiles"       ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\test\run-offline-tests.ps1")) -match 'Get-RtCodeFiles\s+-RepoRoot')
 
+# The links step (install-junctions.ps1 without -Sync) and a copy that -Sync made when Windows
+# refused a link. Measured 2026-10-17 on the owner's machine: 16 of 21 agents were plain copies,
+# byte-identical to the repository, and the links step called each one a CONFLICT and exited 1,
+# so `setup.ps1 -Update` concluded "failed". A copy identical to the repository masks nothing.
+# A copy that differs does, and stays a conflict. The script is run for real in a child process
+# against a throwaway repository and a throwaway home (USERPROFILE), never the live ~/.claude.
+$LinkRepo = Join-Path $Fake "linkrepo"
+$LinkHome = Join-Path $Fake "linkhome"
+New-Item -ItemType Directory -Path (Join-Path $LinkRepo ".claude\agents") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $LinkHome ".claude\agents") -Force | Out-Null
+Copy-Item (Join-Path $RepoRoot "install-junctions.ps1") $LinkRepo
+[System.IO.File]::WriteAllText((Join-Path $LinkRepo ".claude\agents\alpha.md"), "alpha body`r`n")
+[System.IO.File]::WriteAllText((Join-Path $LinkRepo ".claude\agents\beta.md"),  "beta body`r`n")
+
+function Invoke-LinksScript([string]$extra) {
+    $saved = $env:USERPROFILE
+    $env:USERPROFILE = $LinkHome
+    try {
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $LinkRepo "install-junctions.ps1") $extra *>&1 | Out-String
+        return [PSCustomObject]@{ Code = $LASTEXITCODE; Text = $out }
+    } finally { $env:USERPROFILE = $saved }
+}
+
+# 1. both live agents are plain copies, identical to the repository
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\alpha.md"), "alpha body`r`n")
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"),  "beta body`r`n")
+$r = Invoke-LinksScript ""
+Check "links: an identical real copy is not a conflict (exit 0)"      ($r.Code -eq 0)
+Check "links: an identical real copy is reported as already there"    ($r.Text -match 'EXISTS.*alpha\.md' -and $r.Text -cnotmatch 'CONFLICT')
+Check "links: the identical copies are left byte-for-byte alone"      ([System.IO.File]::ReadAllText((Join-Path $LinkHome ".claude\agents\alpha.md")) -ceq "alpha body`r`n")
+
+# 2. one copy differs: it shadows the repository, so it stays a conflict (control)
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"), "beta OLD body`r`n")
+$r = Invoke-LinksScript ""
+Check "links: (control) a differing real copy is still a conflict, exit 1"   ($r.Code -eq 1 -and $r.Text -cmatch 'CONFLICT.*beta\.md')
+Check "links: (control) the identical one beside it is still not reported"   ($r.Text -cnotmatch 'CONFLICT.*alpha\.md')
+Check "links: (control) the differing copy is not overwritten"               ([System.IO.File]::ReadAllText((Join-Path $LinkHome ".claude\agents\beta.md")) -ceq "beta OLD body`r`n")
+
+# 3. only a line-ending difference: still the same file for a reader of the agent
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"), "beta body`n")
+$r = Invoke-LinksScript ""
+Check "links: a copy that differs only by line endings is a conflict (bytes decide, as -Sync does)" ($r.Code -eq 1)
+
+# 4. -WhatIf behaves the same way
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"), "beta body`r`n")
+$r = Invoke-LinksScript "-WhatIf"
+Check "links: -WhatIf with identical copies exits 0"                  ($r.Code -eq 0 -and $r.Text -cnotmatch 'CONFLICT')
+Remove-Item $LinkRepo, $LinkHome -Recurse -Force -ErrorAction SilentlyContinue
+
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)
 Check "live ~/.claude/CLAUDE.md never written"      ((Get-FileHash $liveClaude   -Algorithm SHA256).Hash -eq $liveClaudeHash)
 

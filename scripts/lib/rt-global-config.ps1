@@ -305,6 +305,32 @@ function Get-RtLiteralLocation {
     return [PSCustomObject]@{ Count = $total; Literal = $(if ($total -eq 1) { $found } else { $null }) }
 }
 
+function Test-RtHookKept {
+    <#
+        --------------------------------------------------------------------------
+        Purpose:
+            Tell whether a hook entry's token is named in the keep list. Case is
+            ignored and the brackets of an inline tag are optional, so the list
+            can be typed as the setup output prints it or without the brackets.
+
+        Inputs:
+            Token (string): from Get-RtHookToken
+            Keep (string[]): names given to -KeepHooks, may be $null or empty
+
+        Outputs:
+            kept (bool): $true when the entry must be left as it is
+        --------------------------------------------------------------------------
+    #>
+    param([string]$Token, [string[]]$Keep)
+    if (-not $Keep) { return $false }
+    $bare = $Token.Trim('[', ']')
+    foreach ($name in $Keep) {
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        if ([string]::Equals($name.Trim().Trim('[', ']'), $bare, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
 function Merge-RtGlobalSettings {
     <#
         --------------------------------------------------------------------------
@@ -319,12 +345,14 @@ function Merge-RtGlobalSettings {
         Inputs:
             TemplatePath, TargetPath, Vars, Preview: as Invoke-RtSettingsMerge
             UpdateChanged (switch): also update changed entries (a text edit)
+            KeepHooks (string[]): tokens of entries to leave as they are (a deliberate
+            local variant), matched without case and with or without brackets
             BackupStamp (string): suffix of the backup made before an update
             ReadBack (scriptblock): reads the file after the write, a test seam
 
         Outputs:
             result (PSCustomObject): Action, Path, Added, Skipped, Message, and
-            always Updated and Differs (lists of records with Event and Token)
+            always Updated, Differs and Kept (lists of records with Event and Token)
         --------------------------------------------------------------------------
     #>
     param(
@@ -334,10 +362,11 @@ function Merge-RtGlobalSettings {
         [switch]$Preview,
         [switch]$UpdateChanged,
         [string]$BackupStamp = "update",
-        [scriptblock]$ReadBack
+        [scriptblock]$ReadBack,
+        [string[]]$KeepHooks
     )
     $result = Invoke-RtSettingsMerge @PSBoundParameters
-    foreach ($name in @("Updated", "Differs")) {
+    foreach ($name in @("Updated", "Differs", "Kept")) {
         if (-not $result.PSObject.Properties.Name.Contains($name)) {
             $result | Add-Member -NotePropertyName $name -NotePropertyValue @()
         }
@@ -371,7 +400,8 @@ function Invoke-RtSettingsMerge {
         [switch]$Preview,
         [switch]$UpdateChanged,
         [string]$BackupStamp = "update",
-        [scriptblock]$ReadBack = { param($Path) [System.IO.File]::ReadAllText($Path) }
+        [scriptblock]$ReadBack = { param($Path) [System.IO.File]::ReadAllText($Path) },
+        [string[]]$KeepHooks
     )
 
     $empty = @()
@@ -459,6 +489,7 @@ function Invoke-RtSettingsMerge {
     # replaced as text. Anything uncertain is reported and left alone.
     $updated = @()
     $differs = @()
+    $kept = @()
     $newLiterals = @()
     $liveObject = $liveText | ConvertFrom-Json
     foreach ($record in (Get-RtTemplateHookEntries -Settings $template)) {
@@ -491,6 +522,10 @@ function Invoke-RtSettingsMerge {
         })
         if ($current.Count -gt 0) { continue }
 
+        if (Test-RtHookKept -Token $record.Token -Keep $KeepHooks) {
+            $kept += [PSCustomObject]@{ Event = $record.Event; Token = $record.Token }
+            continue
+        }
         $differs += [PSCustomObject]@{ Event = $record.Event; Token = $record.Token }
         if ($liveHooks.Count -gt 1) {
             $skipped += [PSCustomObject]@{
@@ -537,14 +572,14 @@ function Invoke-RtSettingsMerge {
         } else { "every hook entry the template declares is already present" }
         return [PSCustomObject]@{
             Action = "unchanged"; Path = $TargetPath; Added = $empty; Skipped = $skipped
-            Updated = $empty; Differs = $differs; Message = $note
+            Updated = $empty; Differs = $differs; Kept = $kept; Message = $note
         }
     }
 
     if ($Preview) {
         return [PSCustomObject]@{
             Action = "preview-merge"; Path = $TargetPath; Added = $added; Skipped = $skipped
-            Updated = $updated; Differs = $differs
+            Updated = $updated; Differs = $differs; Kept = $kept
             Message = "would add $($added.Count) and update $($updated.Count) hook entr(y/ies)"
         }
     }
@@ -591,7 +626,7 @@ function Invoke-RtSettingsMerge {
 
     return [PSCustomObject]@{
         Action = $(if ($updated.Count -gt 0) { "updated" } else { "merged" }); Path = $TargetPath
-        Added = $added; Skipped = $skipped; Updated = $updated; Differs = $differs
+        Added = $added; Skipped = $skipped; Updated = $updated; Differs = $differs; Kept = $kept
         Message = "added $($added.Count) and updated $($updated.Count) hook entr(y/ies); every other entry and the env block untouched"
     }
 }

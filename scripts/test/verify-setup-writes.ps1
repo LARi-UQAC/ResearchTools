@@ -245,9 +245,10 @@ try {
         return $null
     }
     function Invoke-Update([string]$Template, [string]$Live, [switch]$Switch, [switch]$Preview,
-                           [string]$Stamp = "t1", [scriptblock]$ReadBack) {
+                           [string]$Stamp = "t1", [scriptblock]$ReadBack, [string[]]$Keep) {
         try {
             $splat = @{ TemplatePath = $Template; TargetPath = $Live; Vars = $settingsVars }
+            if ($Keep)     { $splat.KeepHooks = $Keep }
             if ($Switch)   { $splat.UpdateChanged = $true; $splat.BackupStamp = $Stamp }
             if ($Preview)  { $splat.Preview = $true }
             if ($ReadBack) { $splat.ReadBack = $ReadBack }
@@ -368,6 +369,38 @@ try {
         ($null -ne $r -and (Get-Hash $liveE) -eq $hashE -and
          @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*more than one*" }).Count -ge 1)
 
+    # A deliberate local variant is kept on request (-KeepHooks). Measured 2026-10-17: the owner's
+    # [AUTO-SYNC CHECK] entry differs from the template only by the folder-name guard, on purpose,
+    # and the update would have replaced it and silently stopped it running on that machine.
+    $liveK = Join-Path $updDir "k.json"
+    Write-HookFile $liveK (New-LiveText $oldCmdLit $oldStatLit)
+    $hashK = Get-Hash $liveK
+    $r = Invoke-Update $updTemplate $liveK -Switch -Keep @("my-hook.py")
+    Check "a kept entry is not replaced and the file stays byte-identical" `
+        ($null -ne $r -and (Get-Hash $liveK) -eq $hashK -and (Get-Prop $r "Action") -eq "unchanged")
+    Check "a kept entry is listed in Kept, not in Updated or Differs" `
+        ($null -ne $r -and @((Get-Prop $r "Kept")).Count -eq 1 -and @((Get-Prop $r "Updated")).Count -eq 0 -and @((Get-Prop $r "Differs")).Count -eq 0)
+    Check "a kept entry makes no backup" (@(Get-ChildItem "$liveK.bak-*" -ErrorAction SilentlyContinue).Count -eq 0)
+    $r = Invoke-Update $updTemplate $liveK -Switch -Keep @("MY-HOOK.PY")
+    Check "the kept name is matched without regard to case" `
+        ($null -ne $r -and (Get-Hash $liveK) -eq $hashK -and @((Get-Prop $r "Kept")).Count -eq 1)
+    $r = Invoke-Update $updTemplate $liveK -Switch -Keep @("some-other-hook.py")
+    Check "(control) an entry not named in -KeepHooks is still updated" `
+        ($null -ne $r -and (Get-Prop $r "Action") -eq "updated" -and @((Get-Prop $r "Kept")).Count -eq 0)
+
+    # The bracket tag of an inline hook is accepted with or without its brackets.
+    $tagTemplate = Join-Path $updDir "template-tag.json"
+    Write-HookFile $tagTemplate '{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "echo \"[TAG ONE] new\"" } ] } ] } }'
+    $liveT = Join-Path $updDir "t.json"
+    Write-HookFile $liveT '{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "echo \"[TAG ONE] mine\"" } ] } ] } }'
+    $hashT = Get-Hash $liveT
+    $r = Invoke-Update $tagTemplate $liveT -Switch -Keep @("TAG ONE")
+    Check "an inline hook is kept by its tag without brackets" ($null -ne $r -and (Get-Hash $liveT) -eq $hashT -and @((Get-Prop $r "Kept")).Count -eq 1)
+    $r = Invoke-Update $tagTemplate $liveT -Switch -Keep @("[TAG ONE]")
+    Check "an inline hook is kept by its tag with brackets" ($null -ne $r -and (Get-Hash $liveT) -eq $hashT -and @((Get-Prop $r "Kept")).Count -eq 1)
+    $r = Invoke-Update $tagTemplate $liveT -Switch
+    Check "(control) the same inline hook is updated when not kept" ($null -ne $r -and (Get-Prop $r "Action") -eq "updated")
+
     # A template entry with no statusMessage leaves the live one alone.
     $templateNoStat = Join-Path $updDir "template-nostat.json"
     Write-HookFile $templateNoStat @"
@@ -482,6 +515,21 @@ try {
         ($setupText -match '-UpdateChanged:\$UpdateHooks' -and $setupText -match '-BackupStamp')
     Check "setup.ps1 names the switch in its help and tells how to use -Preview with it" `
         ($setupText -match '-UpdateHooks -Preview')
+    # The verdict of -Update. Measured 2026-10-17: the links step exited 1 on stale agent copies that
+    # the sync, two steps later, replaces, and -Update concluded "failed" on a state it then fixed.
+    # The final deployment check reads the end state, so in -Update it is the judge. In preview
+    # nothing is fixed, so the check lists what the real run would do and does not fail the preview.
+    Check "-Update runs the links step as advisory, to be judged by the final check" `
+        ($setupText -match 'Invoke-JunctionsScript\s+-Advisory')
+    Check "the links function can report a conflict without failing the run" `
+        ($setupText -match '(?s)function Invoke-JunctionsScript\s*\{\s*param\(\[switch\]\$Advisory\)' -and $setupText -match 'judged by the final')
+    Check "a failing deployment check does not fail a preview" `
+        ($setupText -match '(?s)function Invoke-CheckScript.*?\$Preview.*?Set-InstallerExit "check-deployment')
+    Check "setup.ps1 declares -KeepHooks as a list of names" ($setupText -match '\[string\[\]\]\$KeepHooks')
+    Check "setup.ps1 passes -KeepHooks to the merge and reports what was kept" `
+        ($setupText -match '-KeepHooks\s+\$KeepHooks' -and $setupText -match '\$settingsResult\.Kept')
+    Check "setup.ps1 names -KeepHooks in its help and in the differ warning" `
+        (([regex]::Matches($setupText, '-KeepHooks')).Count -ge 4)
 
     # --- Install-RtGlobalHooks ----------------------------------------------
     # Measured 2026-08-30: setup.ps1 -All declared hooks in ~/.claude/settings.json and

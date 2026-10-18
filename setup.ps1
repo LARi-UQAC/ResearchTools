@@ -44,6 +44,10 @@
                               restored if the read-back fails. An entry it cannot match
                               with certainty is reported and left alone. Without the
                               switch such entries are only reported. Use -Preview first.
+        -KeepHooks <names> -> with -UpdateHooks or -Update: leave these hook entries exactly as
+                              they are on this machine (a deliberate local variant, for
+                              example a changed folder-name guard). Names are the ones the
+                              output prints, for example 'AUTO-SYNC CHECK', case ignored.
         -Update            -> the whole update of an existing installation in one command.
                               Asks first (domain profile, GitHub Copilot at user level,
                               and whether to run the offline suite first), then runs, in
@@ -76,6 +80,7 @@
     .\setup.ps1 -Update -Profile engineering -Personal -RunSuite -NonInteractive -Force
     .\setup.ps1 -UpdateHooks -Preview        # list the hook entries it would update, write nothing
     .\setup.ps1 -UpdateHooks                 # update them (backup settings.json.bak-<date-time>)
+    .\setup.ps1 -Update -KeepHooks 'AUTO-SYNC CHECK'   # update everything, keep that local hook as it is
     .\setup.ps1 -All -NonInteractive        # scripted bootstrap; refuses rather than assuming
     .\setup.ps1 -All -Personal               # config + junctions + tools + daemon in one pass
 #>
@@ -88,6 +93,7 @@ param(
     [switch]$InstallPython,
     [string]$Python = "",
     [switch]$UpdateHooks,
+    [string[]]$KeepHooks = @(),
     [switch]$Update,
     # -Profile also works ($PROFILE is a PowerShell automatic variable, hence the alias),
     # the same spelling as install.ps1.
@@ -169,6 +175,10 @@ function Set-InstallerExit([string]$label, [int]$code) {
 }
 
 function Invoke-JunctionsScript {
+    # Advisory: -Update runs this step BEFORE the sync, and the sync replaces a stale plain copy of an
+    # agent that this step reports as a conflict. A conflict is then only a warning here, judged by the final
+    # deployment check, which reads the state the update leaves. Without the switch, as before, it fails the run.
+    param([switch]$Advisory)
     $junctionsScript = Join-Path $WorkspaceRoot "install-junctions.ps1"
     if (-not (Test-Path $junctionsScript)) {
         Write-Err "install-junctions.ps1 not found at: $junctionsScript"
@@ -182,6 +192,10 @@ function Invoke-JunctionsScript {
     # forwarded flag would be silently dropped.
     $global:LASTEXITCODE = 0
     if ($Preview) { & $junctionsScript -WhatIf } else { & $junctionsScript }
+    if ($Advisory -and $LASTEXITCODE -ne 0) {
+        Write-Warn "install-junctions.ps1 reported conflicts (exit $LASTEXITCODE): the sync below refreshes stale copies, and the check at the end judges the result"
+        return
+    }
     Set-InstallerExit "install-junctions.ps1" $LASTEXITCODE
 }
 
@@ -239,6 +253,11 @@ function Invoke-CheckScript {
     }
     $global:LASTEXITCODE = 0
     & $checkScript
+    if ($Preview) {
+        # Nothing was fixed in a preview, so what the check lists is what the real update would do.
+        Write-Host "  [--]  preview: the problems above are what the real update would fix" -ForegroundColor DarkGray
+        return
+    }
     Set-InstallerExit "check-deployment.ps1" $LASTEXITCODE
 }
 
@@ -544,6 +563,7 @@ $settingsResult = Merge-RtGlobalSettings `
     -TargetPath (Join-Path $homeClaude "settings.json") `
     -Vars $settingsVars `
     -UpdateChanged:$UpdateHooks `
+    -KeepHooks $KeepHooks `
     -BackupStamp (Get-Date -Format "yyyy-MM-dd-HHmm") `
     -Preview:$Preview
 
@@ -562,9 +582,15 @@ foreach ($entry in $settingsResult.Added) {
 foreach ($entry in $settingsResult.Updated) {
     Write-Host "        ~ $($entry.Event): $($entry.Token) (command and statusMessage replaced)"
 }
+foreach ($entry in $settingsResult.Kept) {
+    Write-Host "        = $($entry.Event): $($entry.Token) (kept as it is, as asked with -KeepHooks)"
+}
+if (@($settingsResult.Updated).Count -gt 0 -and $Preview) {
+    Write-Warn "an entry above that is a deliberate local variant of yours is replaced too: add -KeepHooks '<name>' to leave it as it is"
+}
 if (-not $UpdateHooks -and @($settingsResult.Differs).Count -gt 0) {
     Write-Warn "$(@($settingsResult.Differs).Count) hook entr(y/ies) of settings.json differ from the template: $((@($settingsResult.Differs) | ForEach-Object { $_.Token }) -join ', ')"
-    Write-Warn "  run .\setup.ps1 -UpdateHooks -Preview to see them, then .\setup.ps1 -UpdateHooks"
+    Write-Warn "  run .\setup.ps1 -UpdateHooks -Preview to see them, then .\setup.ps1 -UpdateHooks (add -KeepHooks '<name>' to leave one as it is)"
 }
 foreach ($entry in $settingsResult.Skipped) {
     Write-Warn "not added ($($entry.Event): $($entry.Token)) - $($entry.Reason)"
@@ -583,7 +609,7 @@ if ($Update) {
         Write-Header "Update $stepNumber of $(@($script:UpdatePlan).Count): $($step.Label)"
         if ($step.Skipped) { Write-Host "  [--]  skipped: $($step.Reason)" -ForegroundColor DarkGray; continue }
         switch ($step.Id) {
-            "junctions" { Invoke-JunctionsScript }
+            "junctions" { Invoke-JunctionsScript -Advisory }
             "tools"     { Invoke-ToolsScript -ProfileName $step.Profile }
             "suite"     { Invoke-SuiteScript }
             "sync"      { Invoke-SyncScript }

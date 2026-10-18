@@ -114,14 +114,27 @@ function New-JunctionSafe([string]$linkPath, [string]$target) {
     $stats.Created++
 }
 
+function Test-SameFileBytes([string]$a, [string]$b) {
+    # Purpose: tell whether two files hold the same bytes. Any read error answers $false, so
+    # an unreadable file stays a reported conflict and is never taken for an up-to-date one.
+    try {
+        return ((Get-FileHash -LiteralPath $a -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $b -Algorithm SHA256).Hash)
+    } catch { return $false }
+}
+
 function New-SymlinkSafe([string]$linkPath, [string]$target) {
     if (Test-Path $linkPath -PathType Leaf) {
         $item = Get-Item $linkPath -Force
         if ($item.LinkType -eq "SymbolicLink" -or $item.LinkType -eq "HardLink") {
             Write-Exists "$linkPath  ->  $target"
             $stats.AlreadyExists++
+        } elseif (Test-SameFileBytes $linkPath $target) {
+            # A plain copy made by -Sync when Windows refused a link. It masks nothing: it is the
+            # repository's file, byte for byte, so the repository version IS the one loaded.
+            Write-Exists "$linkPath  (identical copy of $target)"
+            $stats.AlreadyExists++
         } else {
-            Write-Conflict "$linkPath exists as a real file — skipping (remove manually to replace)"
+            Write-Conflict "$linkPath exists as a real file that differs from the repository — skipping (run -Sync to refresh it, or remove it manually)"
             $stats.Conflicts++
             $script:conflictPaths += $linkPath
         }

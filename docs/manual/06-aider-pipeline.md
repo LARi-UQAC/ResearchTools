@@ -5,7 +5,7 @@ Skill row: [04-skills.md](04-skills.md). Local-delegation counterpart: [10-agent
 
 ## Overview
 
-A second, independent local-coding harness that needs no interactive harness: two local Ollama models
+A second, independent local-coding pipeline that needs no interactive harness: two local Ollama models
 (a writer that codes and tests, a reviewer that never edits, gated by measured token budgets)
 run one aider process per plan overnight, driven by `aider-plan.ps1` / `aider-night.ps1`. Owns
 the packaging pipeline that assembles the student-facing `aider-kit.zip` from this skill's own
@@ -70,10 +70,11 @@ A plain `cmd` entry point (`aider-night.ps1`/`.bat`) starts a night, holding a w
 Windows' Modern Standby does not throttle an unattended run, and pushes a branch at the end -
 merging to a protected branch stays a human decision, made the next morning after reading
 `audit.md`. The rules every model follows (`config/rules.md`) are generated at build time from
-this repository's own `.claude/rules/*.md`, one abridged entry per rule. The file currently covers
-R0 to R27 only (its header reads "Rules: 28 (R0-R27)"), so the night's models do not see the newer
-rules: R35 (review bounds), R36 (a skill for every step) and R38 (the plan header). It was not
-regenerated with the local coding contract. A dry run of the generator on 2026-10-17, which
+this repository's own `.claude/rules/*.md`, with the longest ones abridged. The file currently
+covers R0 to R27 only (its header reads "Rules: 28 (R0-R27)"), so the night's models do not see
+the rules after R27, among them R35 (review bounds), R36 (a skill for every step) and R38 (the
+plan header). R28 to R38 were never synced into it, so it was not regenerated with the local
+coding contract. A dry run of the generator on 2026-10-17, which
 writes nothing, reports 39 rules, R0 to R38, but with no tokenizer in that interpreter no cap was
 applied. The capped regeneration measured about 5153 tokens against the 3500 ceiling of the
 file on 2026-10-17 (recorded in `IMPROVEMENTS.md`, not re-measured here), which is why it is a

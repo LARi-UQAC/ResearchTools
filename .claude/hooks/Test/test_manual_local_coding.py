@@ -327,6 +327,17 @@ class TestAiderChapter(unittest.TestCase):
         self.assertIn(f"R0 to R{header.group(1)}", self.body)
         self.assertNotIn("cannot drift", self.body)
 
+    def test_the_overview_does_not_say_harness_twice(self):
+        self.assertIn("independent local-coding pipeline that needs no interactive harness", self.body)
+
+    def test_the_rules_paragraph_is_exact_about_abridging_and_the_missing_rules(self):
+        # The generated file abridges only its longest rules, and R28 to R38 were never synced.
+        header = (AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8")
+        self.assertIn("Some rules are abridged", header)
+        self.assertNotIn("one abridged entry per rule", self.body)
+        self.assertIn("with the longest ones abridged", self.body)
+        self.assertIn("the rules after R27, among them R35", self.body)
+
     def test_the_ceiling_table_equals_the_budget_file(self):
         ceilings = json.loads(BUDGET.read_text(encoding="utf-8"))["ceilings"]
         quoted = table_values(self.text, ("spec.md", "plan.md", "progress.md", "audit.md"))

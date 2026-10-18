@@ -37,7 +37,7 @@ and whether the login shortcut exists at all.
 | Privilege | none | symlinks want Developer Mode (automatic hardlink fallback) | none |
 | Interactive | yes (asks vault path, confirms) - `-NonInteractive` refuses with exit 2 instead of assuming a default, and `-Preview` writes nothing at all | no | no |
 | Via `setup.ps1` | - | `-InstallJunctions` | `-InstallTools` |
-| Other switches | `-InstallDaemon` (vault daemon at login), `-InstallPython` (`.venv-skills` for the offline suite) | - | - |
+| Other switches | `-InstallDaemon` (vault daemon at login), `-InstallPython` (`.venv-skills` for the offline suite), `-UpdateHooks` (replace a changed hook entry of `~/.claude/settings.json`), `-Update` (the whole update in one command, see [Update an existing installation](#update-an-existing-installation)) | `-Sync` (copy the files a green offline-suite run has proven into `~/.claude`), `-WhatIf` | - |
 
 ```powershell
 .\setup.ps1 -All -Personal   # new machine: config + Claude links + all tool mirrors
@@ -289,6 +289,71 @@ folder** (OneDrive, Dropbox, Google Drive, a network share): the list holds real
 be copied off the machine. If it refuses, run `-Uninstall`, then install again with
 `-Target <a local folder>`. Never paste a name into an issue, a pull request or a commit message:
 no hook sees GitHub comments.
+
+## Update an existing installation
+
+Run these from the root of your clone, the folder that holds `setup.ps1` (the `ResearchTools`
+folder `git clone` created), in PowerShell. The first two lines are yours to run. The last two are
+the update itself:
+
+```powershell
+git pull --ff-only origin main        # get the new version
+.\setup.ps1 -InstallPython            # only if .venv-skills is missing, or you want to run the offline suite
+.\setup.ps1 -Update -Preview          # shows every step and writes nothing to ~/.claude
+.\setup.ps1 -Update                   # does the update, and asks the three questions below first
+```
+
+**What `-Update` asks, once, before it changes anything.** The domain profile (the names found in
+`profiles/`, and Enter keeps the profile recorded today; an unknown name is refused). Whether to
+also install GitHub Copilot at user level (default no). Whether to run the offline test suite first
+(about 15 minutes, default no), which is what lets the sync copy changed hooks, see below. The
+vault stored in the `OBSIDIAN_VAULT` user variable is reused without a question, and there is no
+second "Proceed?".
+
+**What it then runs, in this order:**
+
+| # | Step | Command it stands for |
+|---|---|---|
+| 1 | Global configuration, with the hook update | `.\setup.ps1 -UpdateHooks` |
+| 2 | Claude Code links | `.\setup.ps1 -InstallJunctions` |
+| 3 | Mirrors for the other tools | `.\install.ps1 -Profile <profile>` and `-Personal` when you said yes to Copilot |
+| 4 | Offline test suite, only when you asked | `.\scripts\test\run-offline-tests.ps1` |
+| 5 | Copy the proven files into `~/.claude` | `.\install-junctions.ps1 -Sync` |
+| 6 | Deployment check, read-only | `.\scripts\audit\check-deployment.ps1` |
+
+In `-Preview` the links and the sync run as `-WhatIf`, step 3 is skipped (`install.ps1` has no
+preview mode) and step 4 is left out, while the read-only check still runs. A step that fails does
+not stop the later ones, and the exit code is the worst one. Scripted runs need
+`-NonInteractive -Profile <name>`, and add `-Personal` and `-RunSuite` for the two yes answers.
+
+**Changed hook entries (`-UpdateHooks`).** `setup.ps1` used to add a hook entry only when it was
+absent from `~/.claude/settings.json`, so a changed command never arrived (the memory reminder was
+the first case). With `-UpdateHooks`, an entry the template declares and the live file already has
+is recognised by its own script name or bracket tag, and its `command` and `statusMessage` are
+replaced when they differ. The file is edited as text, so nothing else in it moves. A backup
+`settings.json.bak-<date>-<time>` is made first, the result is parsed before it is written and read
+back after, and the backup is restored when the read-back fails. An entry it cannot match with
+certainty (the same tag twice in one event, or an old value that does not occur exactly once) is
+reported and left alone. **A hand edit of a recognised entry is overwritten**, and the backup keeps
+it. Without the switch, `setup.ps1` only reports how many entries differ. Preview it first with
+`.\setup.ps1 -UpdateHooks -Preview`.
+
+**Why the sync may hold files.** `install-junctions.ps1 -Sync` copies a hook or an agent into
+`~/.claude` only when a green offline-suite run has proven that exact file. With no green stamp it
+copies prose such as agents and holds the code, and says which. If it held files, run
+`.\setup.ps1 -Update -RunSuite` (or the suite and then `.\install-junctions.ps1 -Sync`), or fix the
+failing suite first.
+
+**What is still yours:**
+
+- Close and reopen VS Code and Claude Code. Hooks and rules are read when a session starts, and
+  the `[HOOKS ACTIVE]` line at the start of the session must say `0 missing`.
+- `install.ps1 -Profile` records the profile in `.claude\CLAUDE.md`, a tracked file, so `git status`
+  will show it. Keep the change or restore the file with git.
+- A `[CONFLICT]` line from the links step means a real file in `~/.claude\agents` shadows the
+  repository version, so that step exits with code 1 and the update ends with a failure verdict.
+  The script says "remove manually to replace". It does not remove it for you.
+- `git pull` and the Python environment are not part of `-Update`. Run them first, as above.
 
 ## Contributing improvements
 

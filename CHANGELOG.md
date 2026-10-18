@@ -9,6 +9,22 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+### Added
+- `.\setup.ps1 -Update` updates an existing installation in one command. It asks the domain
+  profile, whether to install GitHub Copilot at user level and whether to run the offline suite
+  first, then runs the global configuration with the hook update, the Claude Code links,
+  `install.ps1 -Profile`, the suite when asked, `install-junctions.ps1 -Sync` and the read-only
+  deployment check, and ends with what is still to do by hand. `-Update -Preview` shows every
+  step and writes nothing. Chapter 01 of the manual describes it.
+- `.\setup.ps1 -UpdateHooks` replaces the `command` and `statusMessage` of a hook entry of
+  `~/.claude/settings.json` that the template declares and whose text changed, which `setup.ps1`
+  could not do before. A text edit with a timestamped backup, checked before and after writing.
+  Without the switch, `setup.ps1` reports how many entries differ.
+
+### Fixed
+- `install-junctions.ps1 -Sync -WhatIf` no longer writes. It ignored `-WhatIf` and copied agents
+  into `~/.claude` while claiming to preview.
+
 ### Changed
 - Chapter 06 of the manual (the aider pipeline) is brought in line with the local coding
   contract. It names no orchestrating product, so "Claude Code" becomes "interactive harness"

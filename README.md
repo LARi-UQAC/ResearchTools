@@ -88,6 +88,7 @@ git clone https://github.com/LARi-UQAC/ResearchTools.git
 cd ResearchTools
 .\setup.ps1 -All -Personal   # config + Claude links + all tool mirrors
 .\setup.ps1 -InstallPython   # optional: .venv-skills (in the main clone) for the test suite and the skills
+.\setup.ps1 -Update          # update an existing installation in one command (try -Update -Preview first); see manual chapter 01
 ```
 
 Full install steps (junctions, other-tool mirrors, prerequisites table):

@@ -89,32 +89,41 @@ def _rewrite_target(
     return url + suffix
 
 
-def _rewrite_segment(text: str, found: list[str], **context) -> str:
+def _rewrite_line(line: str, found: list[str], **context) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Rewrite the links of one stretch of non-code text.
+        Rewrite the link targets of one line outside fenced code.
+
+    Details:
+        Inline code spans are masked with NUL characters of the same length before the links are
+        searched, so a link inside a span is never found while a link whose text holds code, such
+        as [`SKILL.md`](../x.md), still is. Only the target is replaced, in the original line.
 
     Inputs:
-        text (str): a stretch of a line outside inline code.
+        line (str): one line of the page, line ending included.
         found (list[str]): collects each rewritten raw target (side effect).
         **context: the keyword arguments of _rewrite_target.
 
     Outputs:
-        text (str): the stretch with its eligible links rewritten.
+        line (str): the line with its eligible link targets rewritten.
     --------------------------------------------------------------------------
     """
-
-    def replace(match: re.Match) -> str:
-        target = match.group("target")
+    masked = _CODE_SPAN.sub(lambda span: "\x00" * len(span.group(0)), line)
+    pieces, cursor = [], 0
+    for match in _LINK.finditer(masked):
+        start, end = match.span("target")
+        target = line[start:end]
         raw = target[1:-1] if target.startswith("<") else target
         url = _rewrite_target(raw, **context)
         if url is None:
-            return match.group(0)
+            continue
         found.append(raw)
-        return f"[{match.group('text')}]({url}{match.group('title') or ''})"
-
-    return _LINK.sub(replace, text)
+        pieces.append(line[cursor:start])
+        pieces.append(url)
+        cursor = end
+    pieces.append(line[cursor:])
+    return "".join(pieces)
 
 
 def rewrite_links(
@@ -174,13 +183,7 @@ def rewrite_links(
             fence = opening.group(1)
             out.append(line)
             continue
-        pieces, cursor = [], 0
-        for span in _CODE_SPAN.finditer(line):
-            pieces.append(_rewrite_segment(line[cursor:span.start()], found, **context))
-            pieces.append(span.group(0))
-            cursor = span.end()
-        pieces.append(_rewrite_segment(line[cursor:], found, **context))
-        out.append("".join(pieces))
+        out.append(_rewrite_line(line, found, **context))
     return "".join(out), found
 
 

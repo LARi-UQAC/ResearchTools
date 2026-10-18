@@ -11,12 +11,15 @@ regions, images), idempotence, the named configuration errors, and the hook's wi
 MkDocs event signature. Does not prove: the live site, which only `mkdocs gh-deploy` publishes.
 """
 
+import fnmatch
 import importlib.util
 import os
+import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 
 REPO = Path(__file__).resolve().parents[3]
 HOOK_PATH = REPO / "scripts" / "docs" / "mkdocs_hooks.py"
@@ -196,6 +199,20 @@ class RewriteRules(Fixture):
         self.assertIn("```md\n[R](../README.md)\n```", out)
         self.assertIn("`[R](../README.md)` inline", out)
 
+    def test_link_text_holding_inline_code_is_rewritten(self):
+        out, done = self.run_rewrite("See [`README.md`](../README.md) and [a `b` c](hidden/x.md).")
+        self.assertEqual(
+            out,
+            f"See [`README.md`]({BASE}/blob/{REF}/README.md) and "
+            f"[a `b` c]({BASE}/blob/{REF}/docs/hidden/x.md).",
+        )
+        self.assertEqual(done, ["../README.md", "hidden/x.md"])
+
+    def test_link_inside_a_code_span_next_to_a_real_link(self):
+        out, done = self.run_rewrite("`[R](../README.md)` then [R](../README.md)")
+        self.assertEqual(out, f"`[R](../README.md)` then [R]({BASE}/blob/{REF}/README.md)")
+        self.assertEqual(done, ["../README.md"])
+
     def test_second_pass_changes_nothing(self):
         once, _ = self.run_rewrite("[R](../README.md) [x](hidden/x.md)")
         twice, done = self.run_rewrite(once)
@@ -242,6 +259,80 @@ class ConfigAndWiring(Fixture):
             f"[R]({BASE}/blob/{REF}/README.md) [b](sub/b.md) "
             f"[x]({BASE}/blob/{REF}/docs/hidden/x.md)",
         )
+
+
+def read_yml() -> str:
+    """The text of the repository's mkdocs.yml (it carries !!python tags, so no safe_load)."""
+    return (REPO / "mkdocs.yml").read_text(encoding="utf-8")
+
+
+def nav_pages(text: str) -> list:
+    """The .md files named in the nav block of mkdocs.yml."""
+    block = text.split("\nnav:\n", 1)[1].split("\nexclude_docs:", 1)[0]
+    return re.findall(r":\s+(\S+\.md)\s*$", block, re.M)
+
+
+def exclude_patterns(text: str) -> list:
+    """The exclude_docs patterns of mkdocs.yml, one per indented line."""
+    block = text.split("exclude_docs: |\n", 1)[1]
+    return [ln.strip() for ln in block.splitlines() if ln[:1] in (" ", "\t") and ln.strip()]
+
+
+def strip_code(text: str) -> str:
+    """Remove fenced blocks and inline code spans, for an independent link scan."""
+    text = re.sub(r"^(```|~~~).*?^\1[^\n]*$", "", text, flags=re.S | re.M)
+    return re.sub(r"`[^`\n]*`", "", text)
+
+
+class MkdocsWiring(unittest.TestCase):
+    def test_mkdocs_yml_declares_hook_ref_and_validation(self):
+        text = read_yml()
+        self.assertRegex(text, r"(?m)^hooks:\s*\n\s+-\s+scripts/docs/mkdocs_hooks\.py\s*$")
+        self.assertRegex(text, r"(?m)^\s+docs_source_ref:\s*main\b")
+        self.assertRegex(text, r"(?ms)^validation:.*?^\s+not_found:\s*warn\b")
+        self.assertRegex(text, r"(?ms)^validation:.*?^\s+anchors:\s*warn\b")
+        self.assertIn("pymdownx.slugs.slugify", text)
+
+    def test_no_nav_page_keeps_a_relative_link_leaving_docs(self):
+        hooks = load_hooks()
+        text = read_yml()
+        docs = REPO / "docs"
+        patterns = exclude_patterns(text)
+        served = {
+            p.relative_to(docs).as_posix()
+            for p in docs.rglob("*")
+            if p.is_file() and not any(
+                fnmatch.fnmatch(p.relative_to(docs).as_posix(), pat) for pat in patterns
+            )
+        }
+
+        def is_served(path: Path) -> bool:
+            return path.is_file() and path.relative_to(docs.resolve()).as_posix() in served
+
+        repo_url = re.search(r"(?m)^repo_url:\s*(\S+)", text).group(1)
+        ref = re.search(r"(?m)^\s+docs_source_ref:\s*(\S+)", text)
+        self.assertIsNotNone(ref, "extra.docs_source_ref is missing from mkdocs.yml")
+        offenders = []
+        for page in nav_pages(text):
+            source = docs / page
+            out, _ = hooks.rewrite_links(
+                source.read_text(encoding="utf-8"),
+                page_dir=source.parent,
+                docs_dir=docs,
+                repo_root=REPO,
+                base_url=repo_url,
+                ref=ref.group(1),
+                is_served=is_served,
+            )
+            for target in re.findall(
+                r"!?\[[^\]\n]*\]\(([^)\s<>]+)(?:\s+\"[^\"\n]*\")?\)", strip_code(out)
+            ):
+                if target.startswith(("#", "/")) or re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target):
+                    continue
+                path = (source.parent / unquote(re.split(r"[?#]", target)[0])).resolve()
+                if not is_served(path):
+                    offenders.append(f"{page} -> {target}")
+        self.assertEqual(offenders, [], "links that would stay dead on the built site")
 
 
 if __name__ == "__main__":

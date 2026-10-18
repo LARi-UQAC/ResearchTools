@@ -170,6 +170,33 @@ flush via the outbox hook. Full design in [../../docs/contributor-notes.md](../.
 section 5 for the vault and section 6 for the code graph, which is governed identically and by the
 same guard.
 
+### When memory is read and written
+
+One table, so nobody guesses. Every row goes through `local-writer` and nothing else touches the
+vault or the graph. The session never reads either itself.
+
+| Event | Action | Target | Verified by |
+|---|---|---|---|
+| Before brainstorming or planning a non-trivial task | Read | Vault: past decisions and failures on the subject. Graph: only for a question about this code | The distilled hits are folded into the brainstorm |
+| Loop start | Read | Vault, same scope as above | The hits are given to the first plan or prompt |
+| Checkpoint in a loop | Read | Vault, the project `Decisions.md` | Hits that change the next step are noted in `progress.md` |
+| Error recovery | Read | Vault lessons on the error signature | The lesson is quoted in the fix, or its absence is stated |
+| A failure with a root cause | Write | Atomic lesson note under the technology folder of the vault | The note appears in the outbox `sent` folder and its path is in the one-line result |
+| Loop checkpoint | Write | Project `Decisions.md`, and `CodeReview.md` with the score | The appended entry is named in the one-line result |
+| Significant review finding | Write | Project `CodeReview.md`, plus an atomic note when the pattern is reusable | Same as above |
+| Gate reached or loop finished | Write | Project `index.md` properties (score, release) | The property read back in the one-line result |
+| Correction or new method | Write | Atomic method note, and the project `Revisions.md` | The note path is in the one-line result |
+| Code added or changed | Write | Graph refresh with `graphify update` on the repository root, AST only unless a document changed | The one-line result says the graph was updated |
+| End of the task, before the pull request | Write | A last upkeep pass: the lessons, the project log, the graph | The one-line result lists what was written |
+| Execution wrapper (`executing-plans`) and cloud review | Never read | Nothing: the plan already carries the knowledge | Not applicable |
+| `local-coder` | Never reads or writes | It reports a learning to the session, which hands it to `local-writer` | Not applicable |
+
+Dispatch is in the background and the agent is one agent, sequential, never a fan-out. On success it
+prints one line (counts and paths) and the session says nothing about it. The result reaches the
+session later. A failure result is shown in full, and the session then adapts: a missing note is a
+write to redo, and a lesson that changes the approach changes the plan or the spec. A write that is
+never reported back is treated as not done.
+
 Loop-engineering stop gate (default, composite): tests green AND no CRITICAL/HIGH review
 finding AND aggregate score `>=` min_score (default 90). Hard stops: budget cap
 (`--budget`), max iterations, or a no-progress plateau. Security is a hard floor (any
@@ -291,8 +318,10 @@ session, not left to the reviewer on GitHub:
    `python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`. In any project other than ResearchTools the script is under `~/.claude/skills/loop-engineer/scripts/`.
    After each round it runs `loop_bounds.py tick --findings N`. The hook `review-loop-guard.py`
    refuses a review skill with no bounds or past one. The loop stops at the first of `max_rounds`,
-   `max_tokens`, `plateau` or a round with no finding, and the session names which. Only after a
-   round with no finding is the PR opened (R30), and the PR body names the review rounds and
+   `max_tokens`, `plateau`, a round with no finding or a branch that is safe to merge, and the
+   session names which. A branch is safe to merge when the full suite is green and a re-graded
+   round leaves no Critical or Important finding, the minors being deferred and listed. The PR
+   is opened (R30) only for a safe branch, and the PR body names the review rounds and
    what each fixed. When a bound stops the loop first, the session reports what remains and asks
    whether to raise a bound; it never opens the PR on its own. Measured 2026-10-17: seven
    unbounded iterations and no question put to the owner, which is why "until no finding" alone

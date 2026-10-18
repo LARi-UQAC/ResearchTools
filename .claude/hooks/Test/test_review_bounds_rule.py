@@ -95,6 +95,51 @@ class TestAmendedRule(unittest.TestCase):
         self.assertIn("not wired", flat(SKILL.read_text(encoding="utf-8")))
 
 
+SAFE = "safe to merge"
+SAFE_DEFINITION = "no Critical or Important finding"
+
+
+def safe_copies() -> dict:
+    """Every copy of the R35 stop wording, by name."""
+    return {
+        "workflows.md R35": r35_block(WORKFLOWS.read_text(encoding="utf-8")),
+        "CLAUDE.md export region": export_region(CLAUDE_MD.read_text(encoding="utf-8")),
+        "loop-engineer SKILL.md": SKILL.read_text(encoding="utf-8"),
+    }
+
+
+def lacks_safe_stop(text: str) -> bool:
+    """True when a copy does not carry the safe-to-merge stop and its definition."""
+    body = flat(text)
+    return SAFE not in body or SAFE_DEFINITION not in body
+
+
+class TestSafeToMergeIsAStop(unittest.TestCase):
+    """Owner decision 2026-10-17: the review loop also stops when the branch is safe to merge.
+
+    A bound alone is not enough: a branch can be safe with findings left, all minor, and a loop
+    that only stops at a bound or a clean round would keep reviewing it.
+    """
+
+    def test_every_copy_carries_the_stop_and_its_definition(self):
+        for name, text in safe_copies().items():
+            self.assertFalse(lacks_safe_stop(text), name)
+
+    def test_the_definition_names_the_suite_and_deferred_minors(self):
+        body = flat(r35_block(WORKFLOWS.read_text(encoding="utf-8")))
+        self.assertIn("suite is green", body)
+        self.assertIn("minors", body)
+
+    def test_a_bound_that_stops_an_unsafe_branch_still_asks_the_owner(self):
+        body = flat(r35_block(WORKFLOWS.read_text(encoding="utf-8")))
+        self.assertIn("asks whether to raise a bound", body)
+
+    def test_the_finder_can_fail_and_pass(self):
+        self.assertTrue(lacks_safe_stop("stops at a bound or a round with no finding"))
+        self.assertFalse(lacks_safe_stop(
+            "or a branch that is safe to merge (suite green, no Critical or Important finding)"))
+
+
 class TestHandTypedReviewIsNotOverClaimed(unittest.TestCase):
     """Code review 2026-10-17: R35 said a review typed by hand is guarded the same way, while the
     hook's own header says it cannot guard that case and the skill-name key is unverified (R15).

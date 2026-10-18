@@ -23,8 +23,9 @@ with `AskUserQuestion` for `max_rounds`, `max_tokens` (input + cache_creation + 
 reads excluded) and `plateau`, unless the plan header carries them, then runs
 `python scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N` and, after each
 round, `loop_bounds.py tick --findings N`. The hook `.claude/hooks/review-loop-guard.py` refuses a
-review skill with no bounds or past one. The loop stops at the first bound reached or at a round
-with no finding, and the session names which. The driver flag `--loop` of `loop_engineer.py` is
+review skill with no bounds or past one. The loop stops at the first bound reached, at a round
+with no finding, or when the branch is safe to merge (suite green and no Critical or Important
+finding after re-grading), and the session names which. The driver flag `--loop` of `loop_engineer.py` is
 not wired (it exits at once), so `/loopdev` is a procedure the session follows and `--dry-run`
 still exercises the guard logic offline.
 

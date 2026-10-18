@@ -63,6 +63,10 @@ function Test-HasBom([string]$path) {
 }
 
 . (Join-Path $RepoRoot "scripts\lib\rt-global-config.ps1")
+# The update-plan library is loaded when present, so that a missing library fails its own
+# checks one by one instead of aborting the whole verifier.
+$updateLibrary = Join-Path $RepoRoot "scripts\lib\rt-update.ps1"
+if (Test-Path $updateLibrary) { . $updateLibrary }
 
 Write-Host ""
 Write-Host "=== setup.ps1 global writes ===" -ForegroundColor Cyan
@@ -392,6 +396,84 @@ try {
     $r = Invoke-Update $updTemplate $liveH -Switch -ReadBack { param($p) "{ broken" }
     Check "a read-back that does not parse restores the file and says so" `
         ($null -ne $r -and (Get-Prop $r "Action") -eq "restored" -and (Get-Hash $liveH) -eq $hashH)
+
+    # --- the whole update in one command (-Update): the plan and its questions ---
+    # Requested by the owner 2026-10-17: ask the profile, ask about Copilot, then run setup,
+    # the links, the mirrors, the sync and the check, in that order. The order and flags are
+    # data produced by pure functions, so they are proven here without running an installer.
+    Write-Host ""
+    Write-Host "  -- update plan --" -ForegroundColor DarkCyan
+
+    function Invoke-Safe([scriptblock]$Block) { try { return (& $Block) } catch { return $null } }
+    function Invoke-SafeList([scriptblock]$Block) { try { $r = & $Block; return ,@($r) } catch { return ,@() } }
+
+    $profilesDir = Join-Path $Scratch "profiles"
+    New-Item -ItemType Directory -Path $profilesDir -Force | Out-Null
+    foreach ($n in "engineering", "cosmetic", "alpha") { Write-HookFile (Join-Path $profilesDir "$n.yaml") "name: $n" }
+    Write-HookFile (Join-Path $profilesDir "README.md") "not a profile"
+    $names = (Invoke-SafeList { Get-RtProfileNames -ProfilesDir $profilesDir })
+    Check "the profile names are the .yaml files of the folder, sorted, and nothing else" `
+        (($names -join ",") -eq "alpha,cosmetic,engineering")
+    $claudeFixture = Join-Path $Scratch "claude-fixture.md"
+    Write-HookFile $claudeFixture "intro`r`n`r`nactive_profile: cosmetic`r`n`r`nProfil actif : cosmetic`r`n"
+    Check "the current profile is read from the active_profile line" `
+        ((Invoke-Safe { Get-RtActiveProfile -ClaudeMdPath $claudeFixture }) -eq "cosmetic")
+    Check "a missing file gives an empty current profile, not an error" `
+        ($null -ne (Get-Command Get-RtActiveProfile -ErrorAction SilentlyContinue) -and
+         [string](Invoke-Safe { Get-RtActiveProfile -ClaudeMdPath (Join-Path $Scratch "none.md") }) -eq "")
+
+    $avail = @("alpha", "cosmetic", "engineering")
+    Check "an empty answer chooses the current profile" `
+        ((Invoke-Safe { Resolve-RtUpdateProfile -Answer "" -Available $avail -Current "cosmetic" }) -eq "cosmetic")
+    Check "a known name is accepted, whatever its case" `
+        ((Invoke-Safe { Resolve-RtUpdateProfile -Answer " ENGINEERING " -Available $avail -Current "cosmetic" }) -eq "engineering")
+    Check "an unknown name is refused (null), never guessed" `
+        ($null -eq (Invoke-Safe { Resolve-RtUpdateProfile -Answer "nope" -Available $avail -Current "cosmetic" }))
+    Check "a name that is a path is refused" `
+        ($null -eq (Invoke-Safe { Resolve-RtUpdateProfile -Answer "..\engineering" -Available $avail -Current "cosmetic" }))
+    Check "an empty answer with no usable current profile is refused" `
+        ($null -eq (Invoke-Safe { Resolve-RtUpdateProfile -Answer "" -Available $avail -Current "" }))
+
+    $plan = (Invoke-SafeList { Resolve-RtUpdatePlan -Profile "engineering" -Personal $false -RunSuite $false -Preview $false })
+    Check "the plan runs config, links, mirrors, sync and the check, in that order" `
+        (($plan | ForEach-Object { $_.Id }) -join "," -eq "config,junctions,tools,sync,check")
+    $planSuite = (Invoke-SafeList { Resolve-RtUpdatePlan -Profile "engineering" -Personal $false -RunSuite $true -Preview $false })
+    Check "with the suite, it runs just before the sync" `
+        (($planSuite | ForEach-Object { $_.Id }) -join "," -eq "config,junctions,tools,suite,sync,check")
+    Check "the config step carries the hook update" `
+        ($plan.Count -gt 0 -and (Get-Prop $plan[0] "UpdateHooks") -eq $true)
+    $tools = $plan | Where-Object { $_.Id -eq "tools" }
+    Check "the mirrors step carries the chosen profile and no Copilot by default" `
+        ($null -ne $tools -and $tools.Profile -eq "engineering" -and $tools.Personal -eq $false)
+    $planCopilot = (Invoke-SafeList { Resolve-RtUpdatePlan -Profile "cosmetic" -Personal $true -RunSuite $false -Preview $false })
+    $toolsCopilot = $planCopilot | Where-Object { $_.Id -eq "tools" }
+    Check "choosing Copilot reaches the mirrors step" `
+        ($null -ne $toolsCopilot -and $toolsCopilot.Personal -eq $true -and $toolsCopilot.Profile -eq "cosmetic")
+    Check "every step has a label" `
+        ($plan.Count -gt 0 -and @($plan | Where-Object { [string]::IsNullOrWhiteSpace($_.Label) }).Count -eq 0)
+
+    $planPreview = (Invoke-SafeList { Resolve-RtUpdatePlan -Profile "engineering" -Personal $true -RunSuite $true -Preview $true })
+    Check "in preview the suite is not in the plan" `
+        (@($planPreview | Where-Object { $_.Id -eq "suite" }).Count -eq 0 -and $planPreview.Count -gt 0)
+    Check "in preview the links and the sync run as WhatIf" `
+        (@($planPreview | Where-Object { $_.Id -in "junctions", "sync" -and $_.WhatIf -eq $true }).Count -eq 2)
+    $toolsPreview = $planPreview | Where-Object { $_.Id -eq "tools" }
+    Check "in preview the mirrors step is skipped with a stated reason" `
+        ($null -ne $toolsPreview -and $toolsPreview.Skipped -eq $true -and $toolsPreview.Reason -like "*preview*")
+    $checkPreview = $planPreview | Where-Object { $_.Id -eq "check" }
+    Check "the read-only deployment check stays in the plan in preview" `
+        ($null -ne $checkPreview -and $checkPreview.Skipped -eq $false)
+
+    # --- the -Update switch in setup.ps1 (wiring, read as text) ---
+    $setupUpdate = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "setup.ps1"))
+    Check "setup.ps1 declares -Update, -Profile and -RunSuite" `
+        ($setupUpdate -match '\[switch\]\$Update' -and $setupUpdate -match '\[string\]\$Profile' -and $setupUpdate -match '\[switch\]\$RunSuite')
+    Check "setup.ps1 loads the update-plan library" ($setupUpdate -match 'rt-update\.ps1')
+    Check "setup.ps1 passes the profile to install.ps1" ($setupUpdate -match '-Profile\s+\$')
+    Check "setup.ps1 runs the sync and the deployment check" `
+        ($setupUpdate -match 'install-junctions\.ps1' -and $setupUpdate -match '-Sync' -and $setupUpdate -match 'check-deployment\.ps1')
+    Check "-Update forces the hook update" ($setupUpdate -match '\$Update[^\r\n]*\$UpdateHooks|\$UpdateHooks[^\r\n]*\$Update')
+    Check "setup.ps1 names -Update in its help" ($setupUpdate -match '\.\\setup\.ps1 -Update(?!Hooks)')
 
     # --- the switch in setup.ps1 (wiring, read as text: setup.ps1 is never executed here) ---
     $setupText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "setup.ps1"))

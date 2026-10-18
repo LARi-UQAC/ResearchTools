@@ -21,9 +21,20 @@ This file is for someone following releases. For the dated, engineering-level de
   could not do before. A text edit with a timestamped backup, checked before and after writing.
   Without the switch, `setup.ps1` reports how many entries differ.
 
+- `.\setup.ps1 -Update -KeepHooks 'AUTO-SYNC CHECK'` (also with `-UpdateHooks`) leaves a hook entry
+  you changed on purpose on this machine exactly as it is: no edit, no backup. The names are the ones
+  the output prints, case ignored, brackets optional.
+
 ### Fixed
 - `install-junctions.ps1 -Sync -WhatIf` no longer writes. It ignored `-WhatIf` and copied agents
   into `~/.claude` while claiming to preview.
+- `install-junctions.ps1` (the links step) no longer calls a plain copy of an agent a `[CONFLICT]`
+  when it is byte-for-byte the repository file. `-Sync` makes such copies when Windows refuses a
+  link, and the links step then exited 1 on them, so `setup.ps1 -Update` ended in failure on a state
+  the sync fixes. A differing copy is still a conflict.
+- In `setup.ps1 -Update` the links step is advisory and the final deployment check judges the
+  result. In `-Update -Preview` the check lists what the real run would fix and does not fail the
+  preview.
 
 ### Changed
 - Chapter 06 of the manual (the aider pipeline) is brought in line with the local coding

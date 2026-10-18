@@ -152,6 +152,80 @@ $jHash = (Get-FileHash (Join-Path $Fake "settings.json") -Algorithm SHA256).Hash
 Update-RtSettings $RepoRoot $Fake
 Check "unparseable settings.json refused, untouched" ((Get-FileHash (Join-Path $Fake "settings.json") -Algorithm SHA256).Hash -eq $jHash)
 
+# --- -WhatIf must write nothing (R16) ----------------------------------------
+# Measured 2026-10-17: `install-junctions.ps1 -Sync -WhatIf` ignored -WhatIf and copied three
+# agents into the real ~/.claude\agents, found while previewing `setup.ps1 -Update`. A preview
+# that writes is worse than none, since it is run precisely to see what would happen first.
+# Driven here against temp folders only, each refusal paired with a control that proves the
+# same call DOES write when the flag is off.
+$WhatIfDir = "$Fake-whatif"
+if (Test-Path $WhatIfDir) { Remove-Item $WhatIfDir -Recurse -Force }
+New-Item -ItemType Directory -Path $WhatIfDir | Out-Null
+$srcAgent = Join-Path $RepoRoot ".claude\agents\local-writer.md"
+
+$script:RtChanged = @()
+$script:RtWhatIf = $true
+$dstWhatIf = Join-Path $WhatIfDir "agents\local-writer.md"
+Sync-RtFile $srcAgent $dstWhatIf "agents\local-writer.md"
+Check "-WhatIf: an agent file is not created" (-not (Test-Path $dstWhatIf) -and -not (Test-Path (Split-Path $dstWhatIf -Parent)))
+Check "-WhatIf: the file is still reported as one that would change" ($script:RtChanged -contains "agents\local-writer.md")
+$script:RtWhatIf = $false
+$script:RtChanged = @()
+Sync-RtFile $srcAgent $dstWhatIf "agents\local-writer.md"
+Check "(control) without -WhatIf the same call creates the file" (Test-Path $dstWhatIf)
+
+$script:RtWhatIf = $true
+$skillSrc = Get-ChildItem (Join-Path $RepoRoot ".claude\skills") -Directory | Select-Object -First 1
+$skillDst = Join-Path $WhatIfDir "skills\$($skillSrc.Name)"
+Sync-RtSkill $skillSrc.FullName $skillDst $skillSrc.Name
+Check "-WhatIf: a new skill junction is not created" (-not (Test-Path $skillDst))
+
+$whatIfClaude = Join-Path $WhatIfDir "CLAUDE.md"
+[System.IO.File]::WriteAllText($whatIfClaude, "# my own file`r`n", $utf8NoBom)
+$wcHash = (Get-FileHash $whatIfClaude -Algorithm SHA256).Hash
+Update-RtClaudeMd $RepoRoot $WhatIfDir
+Check "-WhatIf: CLAUDE.md is untouched and no backup is made" `
+    ((Get-FileHash $whatIfClaude -Algorithm SHA256).Hash -eq $wcHash -and -not (Test-Path "$whatIfClaude.bak"))
+
+$whatIfSettings = Join-Path $WhatIfDir "settings.json"
+[System.IO.File]::WriteAllText($whatIfSettings, "{`r`n  `"hooks`": {`r`n    `"SessionStart`": [`r`n      { `"hooks`": [ { `"type`": `"command`", `"command`": `"echo kept`" } ] }`r`n    ]`r`n  }`r`n}`r`n", $utf8NoBom)
+$wsHash = (Get-FileHash $whatIfSettings -Algorithm SHA256).Hash
+Update-RtSettings $RepoRoot $WhatIfDir
+Check "-WhatIf: settings.json is untouched and no backup is made" `
+    ((Get-FileHash $whatIfSettings -Algorithm SHA256).Hash -eq $wsHash -and -not (Test-Path "$whatIfSettings.bak"))
+
+# Controls: with the flag off, the very same two calls on the very same files DO write.
+# Without them the two checks above would also pass on a function that never writes.
+$script:RtWhatIf = $false
+Update-RtClaudeMd $RepoRoot $WhatIfDir
+Check "(control) without -WhatIf the same call changes CLAUDE.md" ((Get-FileHash $whatIfClaude -Algorithm SHA256).Hash -ne $wcHash)
+Update-RtSettings $RepoRoot $WhatIfDir
+Check "(control) without -WhatIf the same call changes settings.json" ((Get-FileHash $whatIfSettings -Algorithm SHA256).Hash -ne $wsHash)
+$script:RtWhatIf = $true
+
+$undoRepo = Join-Path $WhatIfDir "undo-repo"
+New-Item -ItemType Directory -Path (Join-Path $undoRepo ".rt-undo") -Force | Out-Null
+1..25 | ForEach-Object { [System.IO.File]::WriteAllText((Join-Path $undoRepo ".rt-undo\f$_.txt"), "x", $utf8NoBom) }
+Remove-RtUndoExcess $undoRepo
+Check "-WhatIf: the .rt-undo pruning deletes nothing" (@(Get-ChildItem (Join-Path $undoRepo ".rt-undo")).Count -eq 25)
+$script:RtWhatIf = $false
+Remove-RtUndoExcess $undoRepo
+Check "(control) without -WhatIf the pruning keeps only 20" (@(Get-ChildItem (Join-Path $undoRepo ".rt-undo")).Count -eq 20)
+
+# The whole engine, against an empty home: nothing may appear in it, not even the lock file.
+$emptyHome = Join-Path $WhatIfDir "empty-home"
+New-Item -ItemType Directory -Path $emptyHome | Out-Null
+$script:RtWhatIf = $true
+$script:RtChanged = @(); $script:RtHeld = @()
+Invoke-RtSync $RepoRoot $emptyHome
+Check "-WhatIf: the whole sync leaves an empty home empty, lock file included" `
+    (@(Get-ChildItem $emptyHome -Force -Recurse).Count -eq 0)
+Check "-WhatIf: the whole sync still reports what it would do" ($script:RtChanged.Count -gt 0)
+$script:RtWhatIf = $false
+Check "install-junctions.ps1 passes -WhatIf to the sync engine" `
+    ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "install-junctions.ps1")) -match 'RtWhatIf\s*=\s*\$WhatIf')
+Remove-Item $WhatIfDir -Recurse -Force
+
 # --- what -Sync SELECTS out of .claude\hooks ---------------------------------
 # Read off rt-sync.ps1 itself rather than driven, because the copy loop walks the real
 # repository and writes into ~/.claude\hooks; the two writes this script drives are the

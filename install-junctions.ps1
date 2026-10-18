@@ -61,6 +61,7 @@ $ErrorActionPreference = "Stop"
 if ($Sync) {
     . (Join-Path $PSScriptRoot "scripts\lib\rt-sync.ps1")
     $script:RtQuiet = $Quiet.IsPresent
+    $script:RtWhatIf = $WhatIf.IsPresent   # -Sync -WhatIf used to write anyway (measured 2026-10-17)
     $rtHomeClaude = Join-Path $env:USERPROFILE ".claude"
     if (-not (Test-Path $rtHomeClaude)) { exit 0 }
     try { Invoke-RtSync $PSScriptRoot $rtHomeClaude } catch {

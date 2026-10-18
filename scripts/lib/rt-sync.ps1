@@ -37,6 +37,14 @@
 $script:RtQuiet   = $false
 $script:RtChanged = @()
 $script:RtHeld    = @()
+# Set by install-junctions.ps1 for -Sync -WhatIf. While true nothing is written: every writer
+# below records what it WOULD change and says so, and the lock and the pruning are skipped.
+$script:RtWhatIf  = $false
+
+function Write-RtWhatIf([string]$label) {
+    $script:RtChanged += $label
+    Write-Rt "  [WHATIF]   would sync $label" "Magenta"
+}
 
 function Write-Rt([string]$text, [string]$colour = "Gray") {
     if (-not $script:RtQuiet) { Write-Host $text -ForegroundColor $colour }
@@ -95,8 +103,10 @@ function Sync-RtFile([string]$src, [string]$dst, [string]$label) {
             $same = ((Get-FileHash $dst -Algorithm SHA256).Hash -eq (Get-FileHash $src -Algorithm SHA256).Hash)
         } catch { $same = $false }
         if ($same) { return }
+        if ($script:RtWhatIf) { Write-RtWhatIf $label; return }
         Remove-Item $dst -Force -ErrorAction SilentlyContinue
     }
+    if ($script:RtWhatIf) { Write-RtWhatIf $label; return }
     $parent = Split-Path $dst -Parent
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
     try {
@@ -123,6 +133,7 @@ function Sync-RtSkill([string]$srcDir, [string]$dstDir, [string]$name) {
         Write-Rt "  [HELD]     skills\$name (no usable SKILL.md)" "Yellow"
         return
     }
+    if ($script:RtWhatIf) { Write-RtWhatIf "skills\$name (new junction)"; return }
     New-Item -ItemType Junction -Path $dstDir -Target $srcDir | Out-Null
     $script:RtChanged += "skills\$name"
     Write-Rt "  [SYNCED]   skills\$name (new junction)" "Green"
@@ -168,6 +179,7 @@ function Update-RtClaudeMd([string]$repoRoot, [string]$homeClaude) {
         $updated = $live.TrimEnd() + "`r`n`r`n" + $block + "`r`n"
     }
 
+    if ($script:RtWhatIf) { Write-RtWhatIf "CLAUDE.md contract block"; return }
     $bak = "$livePath.bak"
     if (-not (Test-Path $bak)) { Copy-Item $livePath $bak -Force }
     Set-Content -Path $livePath -Value $updated -Encoding utf8 -NoNewline
@@ -225,6 +237,7 @@ function Update-RtSettings([string]$repoRoot, [string]$homeClaude) {
         return
     }
 
+    if ($script:RtWhatIf) { Write-RtWhatIf "settings.json SessionStart entry"; return }
     $bak = "$path.bak"
     if (-not (Test-Path $bak)) { Copy-Item $path $bak -Force }
     Set-Content -Path $path -Value $updated -Encoding utf8 -NoNewline
@@ -236,6 +249,7 @@ function Update-RtSettings([string]$repoRoot, [string]$homeClaude) {
 # Runs on every sync regardless of what was held, so pruning is never skipped as a
 # side effect of code being unproven.
 function Remove-RtUndoExcess([string]$repoRoot, [int]$keep = 20) {
+    if ($script:RtWhatIf) { return }   # pruning deletes files, so a preview leaves them
     $undo = Join-Path $repoRoot ".rt-undo"
     if (-not (Test-Path $undo)) { return }
     Get-ChildItem $undo -File -ErrorAction SilentlyContinue |
@@ -250,7 +264,7 @@ function Invoke-RtSync([string]$repoRoot, [string]$homeClaude) {
         $age = (Get-Date) - (Get-Item $lock).LastWriteTime
         if ($age.TotalSeconds -lt 60) { return }   # another session is syncing
     }
-    New-Item -ItemType File -Path $lock -Force | Out-Null
+    if (-not $script:RtWhatIf) { New-Item -ItemType File -Path $lock -Force | Out-Null }
 
     try {
         $repoClaude = Join-Path $repoRoot ".claude"
@@ -318,12 +332,13 @@ function Invoke-RtSync([string]$repoRoot, [string]$homeClaude) {
             }
         } else {
             Write-Rt ""
-            Write-Rt "  synced $($script:RtChanged.Count)   held $($script:RtHeld.Count)" "Cyan"
+            $verb = if ($script:RtWhatIf) { "would sync" } else { "synced" }
+            Write-Rt "  $verb $($script:RtChanged.Count)   held $($script:RtHeld.Count)" "Cyan"
             Write-Rt ""
         }
     }
     finally {
-        Remove-Item $lock -Force -ErrorAction SilentlyContinue
+        if (-not $script:RtWhatIf) { Remove-Item $lock -Force -ErrorAction SilentlyContinue }
     }
 }
 

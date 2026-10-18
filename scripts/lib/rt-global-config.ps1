@@ -226,7 +226,126 @@ function Get-RtTemplateHookEntries {
     return ,$entries
 }
 
+function Get-RtJsonStringLiteral {
+    <#
+        --------------------------------------------------------------------------
+        Purpose:
+            Spell a string as a quoted JSON literal, in one of the two ways a
+            settings.json is found in the wild, so an old value can be located in
+            the raw text and a new one written without reserialising the file.
+
+        Inputs:
+            Value (string): the decoded text
+            Style (string): "minimal" escapes only the backslash, the double quote
+                and control characters (what Claude Code and JSON.stringify write);
+                "powershell" is ConvertTo-Json's own spelling, which also escapes
+                < > & and the apostrophe as \uXXXX
+
+        Outputs:
+            literal (string): the value between double quotes, escaped
+        --------------------------------------------------------------------------
+    #>
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value,
+        [ValidateSet("minimal", "powershell")][string]$Style = "minimal"
+    )
+    if ($Style -eq "powershell") { return ($Value | ConvertTo-Json -Compress) }
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    foreach ($ch in $Value.ToCharArray()) {
+        $code = [int]$ch
+        if     ($ch -ceq [char]34) { [void]$builder.Append('\"') }
+        elseif ($ch -ceq [char]92) { [void]$builder.Append('\\') }
+        elseif ($code -eq 8)       { [void]$builder.Append('\b') }
+        elseif ($code -eq 9)       { [void]$builder.Append('\t') }
+        elseif ($code -eq 10)      { [void]$builder.Append('\n') }
+        elseif ($code -eq 12)      { [void]$builder.Append('\f') }
+        elseif ($code -eq 13)      { [void]$builder.Append('\r') }
+        elseif ($code -lt 32)      { [void]$builder.Append(('\u{0:x4}' -f $code)) }
+        else                       { [void]$builder.Append($ch) }
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Get-RtLiteralLocation {
+    <#
+        --------------------------------------------------------------------------
+        Purpose:
+            Find where a decoded value sits in the raw text of a JSON file, in
+            either spelling of Get-RtJsonStringLiteral, and say whether it can be
+            replaced with certainty.
+
+        Inputs:
+            Text (string): the raw JSON text
+            Value (string): the decoded value to find
+
+        Outputs:
+            location (PSCustomObject): Count (total occurrences over both
+            spellings) and Literal (the spelling found, only when Count is 1)
+        --------------------------------------------------------------------------
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Value
+    )
+    $candidates = @(Get-RtJsonStringLiteral -Value $Value -Style minimal)
+    $powershellSpelling = Get-RtJsonStringLiteral -Value $Value -Style powershell
+    if ($powershellSpelling -ne $candidates[0]) { $candidates += $powershellSpelling }
+    $total = 0
+    $found = $null
+    foreach ($candidate in $candidates) {
+        $at = 0
+        while (($at = $Text.IndexOf($candidate, $at, [System.StringComparison]::Ordinal)) -ge 0) {
+            $total++
+            $found = $candidate
+            $at += $candidate.Length
+        }
+    }
+    return [PSCustomObject]@{ Count = $total; Literal = $(if ($total -eq 1) { $found } else { $null }) }
+}
+
 function Merge-RtGlobalSettings {
+    <#
+        --------------------------------------------------------------------------
+        Purpose:
+            Add the hook entries the template declares and the live global
+            settings lack, and, only when UpdateChanged is given, replace the
+            command and statusMessage of a recognised live entry whose text
+            differs from the template. Nothing else: no entry is removed, the env
+            block and the permissions block are never rewritten, and the document
+            is never reserialised.
+
+        Inputs:
+            TemplatePath, TargetPath, Vars, Preview: as Invoke-RtSettingsMerge
+            UpdateChanged (switch): also update changed entries (a text edit)
+            BackupStamp (string): suffix of the backup made before an update
+            ReadBack (scriptblock): reads the file after the write, a test seam
+
+        Outputs:
+            result (PSCustomObject): Action, Path, Added, Skipped, Message, and
+            always Updated and Differs (lists of records with Event and Token)
+        --------------------------------------------------------------------------
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$TemplatePath,
+        [Parameter(Mandatory = $true)][string]$TargetPath,
+        [Parameter(Mandatory = $true)][hashtable]$Vars,
+        [switch]$Preview,
+        [switch]$UpdateChanged,
+        [string]$BackupStamp = "update",
+        [scriptblock]$ReadBack
+    )
+    $result = Invoke-RtSettingsMerge @PSBoundParameters
+    foreach ($name in @("Updated", "Differs")) {
+        if (-not $result.PSObject.Properties.Name.Contains($name)) {
+            $result | Add-Member -NotePropertyName $name -NotePropertyValue @()
+        }
+    }
+    return $result
+}
+
+function Invoke-RtSettingsMerge {
     <#
         --------------------------------------------------------------------------
         Purpose:
@@ -249,7 +368,10 @@ function Merge-RtGlobalSettings {
         [Parameter(Mandatory = $true)][string]$TemplatePath,
         [Parameter(Mandatory = $true)][string]$TargetPath,
         [Parameter(Mandatory = $true)][hashtable]$Vars,
-        [switch]$Preview
+        [switch]$Preview,
+        [switch]$UpdateChanged,
+        [string]$BackupStamp = "update",
+        [scriptblock]$ReadBack = { param($Path) [System.IO.File]::ReadAllText($Path) }
     )
 
     $empty = @()
@@ -330,17 +452,100 @@ function Merge-RtGlobalSettings {
         $added += [PSCustomObject]@{ Event = $record.Event; Token = $record.Token }
     }
 
-    if ($added.Count -eq 0) {
+    # --- entries already present whose text differs from the template ---------
+    # The add loop above skips an entry as soon as its token is anywhere in the file, so
+    # a changed command was never delivered (measured 2026-10-17). Here the live entry is
+    # found by its OWN token inside the same event, compared, and, only on request,
+    # replaced as text. Anything uncertain is reported and left alone.
+    $updated = @()
+    $differs = @()
+    $newLiterals = @()
+    $liveObject = $liveText | ConvertFrom-Json
+    foreach ($record in (Get-RtTemplateHookEntries -Settings $template)) {
+        $templateHook = $null
+        foreach ($candidateHook in @($record.Entry.hooks)) {
+            if (($null -ne $candidateHook.PSObject.Properties["command"])) { $templateHook = $candidateHook; break }
+        }
+        if ($null -eq $templateHook) { continue }
+        $wantStatus = ($null -ne $templateHook.PSObject.Properties["statusMessage"])
+
+        $liveHooks = @()
+        if (($null -ne $liveObject.PSObject.Properties["hooks"]) -and
+            ($null -ne $liveObject.hooks.PSObject.Properties[$record.Event])) {
+            foreach ($liveEntry in @($liveObject.hooks.($record.Event))) {
+                foreach ($liveHookCandidate in @($liveEntry.hooks)) {
+                    if (($null -ne $liveHookCandidate.PSObject.Properties["command"]) -and
+                        (Get-RtHookToken -Command ([string]$liveHookCandidate.command)) -eq $record.Token) {
+                        $liveHooks += $liveHookCandidate
+                    }
+                }
+            }
+        }
+        if ($liveHooks.Count -eq 0) { continue }
+
+        $current = @($liveHooks | Where-Object {
+            [string]$_.command -ceq [string]$templateHook.command -and
+            (-not $wantStatus -or
+             (($null -ne $_.PSObject.Properties["statusMessage"]) -and
+              [string]$_.statusMessage -ceq [string]$templateHook.statusMessage))
+        })
+        if ($current.Count -gt 0) { continue }
+
+        $differs += [PSCustomObject]@{ Event = $record.Event; Token = $record.Token }
+        if ($liveHooks.Count -gt 1) {
+            $skipped += [PSCustomObject]@{
+                Event = $record.Event; Token = $record.Token
+                Reason = "more than one live hook in $($record.Event) carries $($record.Token); not guessing which to update"
+            }
+            continue
+        }
+        if (-not $UpdateChanged) { continue }
+
+        $liveHook = $liveHooks[0]
+        $replacements = @()
+        $unlocated = $null
+        if ([string]$liveHook.command -cne [string]$templateHook.command) {
+            $where = Get-RtLiteralLocation -Text $merged -Value ([string]$liveHook.command)
+            if ($where.Count -ne 1) { $unlocated = "command (found $($where.Count) times)" }
+            else { $replacements += [PSCustomObject]@{ Old = $where.Literal; New = (Get-RtJsonStringLiteral -Value ([string]$templateHook.command)) } }
+        }
+        if ($wantStatus -and ($null -ne $liveHook.PSObject.Properties["statusMessage"]) -and
+            [string]$liveHook.statusMessage -cne [string]$templateHook.statusMessage) {
+            $where = Get-RtLiteralLocation -Text $merged -Value ([string]$liveHook.statusMessage)
+            if ($where.Count -ne 1) { $unlocated = "statusMessage (found $($where.Count) times)" }
+            else { $replacements += [PSCustomObject]@{ Old = $where.Literal; New = (Get-RtJsonStringLiteral -Value ([string]$templateHook.statusMessage)) } }
+        }
+        if ($null -ne $unlocated) {
+            $skipped += [PSCustomObject]@{
+                Event = $record.Event; Token = $record.Token
+                Reason = "cannot locate the old $unlocated exactly once in the live file; edit this entry by hand"
+            }
+            continue
+        }
+        if ($replacements.Count -eq 0) { continue }
+        foreach ($replacement in $replacements) {
+            $at = $merged.IndexOf($replacement.Old, [System.StringComparison]::Ordinal)
+            $merged = $merged.Substring(0, $at) + $replacement.New + $merged.Substring($at + $replacement.Old.Length)
+            $newLiterals += $replacement.New
+        }
+        $updated += [PSCustomObject]@{ Event = $record.Event; Token = $record.Token }
+    }
+
+    if ($added.Count -eq 0 -and $updated.Count -eq 0) {
+        $note = if ($differs.Count -gt 0 -and -not $UpdateChanged) {
+            "$($differs.Count) hook entr(y/ies) differ from the template; run setup.ps1 -UpdateHooks to update them"
+        } else { "every hook entry the template declares is already present" }
         return [PSCustomObject]@{
             Action = "unchanged"; Path = $TargetPath; Added = $empty; Skipped = $skipped
-            Message = "every hook entry the template declares is already present"
+            Updated = $empty; Differs = $differs; Message = $note
         }
     }
 
     if ($Preview) {
         return [PSCustomObject]@{
             Action = "preview-merge"; Path = $TargetPath; Added = $added; Skipped = $skipped
-            Message = "would add $($added.Count) hook entr(y/ies)"
+            Updated = $updated; Differs = $differs
+            Message = "would add $($added.Count) and update $($updated.Count) hook entr(y/ies)"
         }
     }
 
@@ -350,29 +555,44 @@ function Merge-RtGlobalSettings {
     } catch {
         return [PSCustomObject]@{
             Action = "refused"; Path = $TargetPath; Added = $empty; Skipped = $skipped
+            Updated = $empty; Differs = $differs
             Message = "the merged result does not parse - abandoned, the live file is untouched"
         }
     }
 
+    # The legacy backup (made once) is kept for the add path. An update always makes its
+    # own stamped backup, and a name that exists is never reused.
     $backup = "$TargetPath.bak"
-    if (-not (Test-Path $backup)) { Copy-Item $TargetPath $backup -Force }
+    if ($updated.Count -gt 0) {
+        $backup = "$TargetPath.bak-$BackupStamp"
+        $counter = 2
+        while (Test-Path $backup) { $backup = "$TargetPath.bak-$BackupStamp-$counter"; $counter++ }
+        Copy-Item $TargetPath $backup -Force
+    } elseif (-not (Test-Path $backup)) {
+        Copy-Item $TargetPath $backup -Force
+    }
     Write-RtTextNoBom -Path $TargetPath -Text $merged
 
-    # R9 again, and this time it can undo: re-read what is actually on disk.
-    $readBack = [System.IO.File]::ReadAllText($TargetPath)
+    # R9 again, and this time it can undo: re-read what is actually on disk, and for an
+    # update check that every new value really is there.
+    $readBackText = [string](& $ReadBack $TargetPath)
     $parsedBack = $null
-    try { $parsedBack = $readBack | ConvertFrom-Json } catch { $parsedBack = $null }
-    if ($null -eq $parsedBack) {
+    try { $parsedBack = $readBackText | ConvertFrom-Json } catch { $parsedBack = $null }
+    $holdsNewValues = $true
+    foreach ($literal in $newLiterals) { if (-not $readBackText.Contains($literal)) { $holdsNewValues = $false } }
+    if ($null -eq $parsedBack -or -not $holdsNewValues) {
         Copy-Item $backup $TargetPath -Force
         return [PSCustomObject]@{
             Action = "restored"; Path = $TargetPath; Added = $empty; Skipped = $skipped
-            Message = "what landed on disk did not parse - restored from $backup"
+            Updated = $empty; Differs = $differs
+            Message = "what landed on disk did not parse or lacks the new value - restored from $backup"
         }
     }
 
     return [PSCustomObject]@{
-        Action = "merged"; Path = $TargetPath; Added = $added; Skipped = $skipped
-        Message = "added $($added.Count) hook entr(y/ies); every other entry and the env block untouched"
+        Action = $(if ($updated.Count -gt 0) { "updated" } else { "merged" }); Path = $TargetPath
+        Added = $added; Skipped = $skipped; Updated = $updated; Differs = $differs
+        Message = "added $($added.Count) and updated $($updated.Count) hook entr(y/ies); every other entry and the env block untouched"
     }
 }
 

@@ -37,6 +37,13 @@
                               virtual environment. Otherwise it refuses and names each
                               candidate with the reason. docling and geolocalisation
                               stay manual, documented in README.md
+        -UpdateHooks       -> with the config generation: also REPLACE the command and
+                              statusMessage of a hook entry of ~/.claude/settings.json
+                              that the template declares and whose text changed. A text
+                              edit, one backup per run, parsed before and after writing,
+                              restored if the read-back fails. An entry it cannot match
+                              with certainty is reported and left alone. Without the
+                              switch such entries are only reported. Use -Preview first.
         -All               -> config generation + junctions + tools, plus the daemon
                               WHEN a vault is configured; with no vault it is skipped
                               with a stated reason, since a login daemon with no vault
@@ -52,6 +59,8 @@
     .\setup.ps1 -InstallPython               # .venv-skills for the offline test suite and the skills
     .\setup.ps1 -InstallPython -Preview      # choose the interpreter, say what would install, write nothing
     .\setup.ps1 -InstallPython -Python "C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
+    .\setup.ps1 -UpdateHooks -Preview        # list the hook entries it would update, write nothing
+    .\setup.ps1 -UpdateHooks                 # update them (backup settings.json.bak-<date-time>)
     .\setup.ps1 -All -NonInteractive        # scripted bootstrap; refuses rather than assuming
     .\setup.ps1 -All -Personal               # config + junctions + tools + daemon in one pass
 #>
@@ -63,6 +72,7 @@ param(
     [switch]$InstallDaemon,
     [switch]$InstallPython,
     [string]$Python = "",
+    [switch]$UpdateHooks,
     [switch]$All,
     [switch]$Personal,
     [switch]$Preview,
@@ -407,11 +417,14 @@ $settingsResult = Merge-RtGlobalSettings `
     -TemplatePath (Join-Path $WorkspaceRoot ".claude\settings.template.json") `
     -TargetPath (Join-Path $homeClaude "settings.json") `
     -Vars $settingsVars `
+    -UpdateChanged:$UpdateHooks `
+    -BackupStamp (Get-Date -Format "yyyy-MM-dd-HHmm") `
     -Preview:$Preview
 
 switch ($settingsResult.Action) {
     "created"        { Write-Ok   "settings.json: $($settingsResult.Message)" }
     "merged"         { Write-Ok   "settings.json: $($settingsResult.Message)" }
+    "updated"        { Write-Ok   "settings.json: $($settingsResult.Message)" }
     "unchanged"      { Write-Ok   "settings.json: $($settingsResult.Message)" }
     "preview-create" { Write-Host "  [--]  settings.json: $($settingsResult.Message)" -ForegroundColor DarkGray }
     "preview-merge"  { Write-Host "  [--]  settings.json: $($settingsResult.Message)" -ForegroundColor DarkGray }
@@ -419,6 +432,13 @@ switch ($settingsResult.Action) {
 }
 foreach ($entry in $settingsResult.Added) {
     Write-Host "        + $($entry.Event): $($entry.Token)"
+}
+foreach ($entry in $settingsResult.Updated) {
+    Write-Host "        ~ $($entry.Event): $($entry.Token) (command and statusMessage replaced)"
+}
+if (-not $UpdateHooks -and @($settingsResult.Differs).Count -gt 0) {
+    Write-Warn "$(@($settingsResult.Differs).Count) hook entr(y/ies) of settings.json differ from the template: $((@($settingsResult.Differs) | ForEach-Object { $_.Token }) -join ', ')"
+    Write-Warn "  run .\setup.ps1 -UpdateHooks -Preview to see them, then .\setup.ps1 -UpdateHooks"
 }
 foreach ($entry in $settingsResult.Skipped) {
     Write-Warn "not added ($($entry.Event): $($entry.Token)) - $($entry.Reason)"

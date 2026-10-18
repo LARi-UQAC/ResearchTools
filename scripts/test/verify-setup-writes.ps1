@@ -224,6 +224,183 @@ try {
     Check "a missing event array is reported rather than invented" `
         (@($reported.Skipped).Count -gt 0 -and $reported.Action -eq "unchanged")
 
+    # --- update of a changed hook entry (-UpdateChanged) ---------------------
+    # Measured 2026-10-17: the Stop reminder was rewritten in settings.template.json and
+    # Merge-RtGlobalSettings could not deliver it, because it skips an entry as soon as its
+    # token is found anywhere in the live file and never compares the command, so every
+    # student had to edit settings.json by hand. The update is explicit (a switch), edits the
+    # file as TEXT, keeps a backup, and refuses when it cannot be sure which entry is meant.
+    Write-Host ""
+    Write-Host "  -- update changed hook entries --" -ForegroundColor DarkCyan
+
+    $updDir = Join-Path $Scratch "update"
+    New-Item -ItemType Directory -Path $updDir -Force | Out-Null
+
+    function Get-Prop($Object, [string]$Name) {
+        if ($null -ne $Object -and $Object.PSObject.Properties.Name.Contains($Name)) { return $Object.$Name }
+        return $null
+    }
+    function Invoke-Update([string]$Template, [string]$Live, [switch]$Switch, [switch]$Preview,
+                           [string]$Stamp = "t1", [scriptblock]$ReadBack) {
+        try {
+            $splat = @{ TemplatePath = $Template; TargetPath = $Live; Vars = $settingsVars }
+            if ($Switch)   { $splat.UpdateChanged = $true; $splat.BackupStamp = $Stamp }
+            if ($Preview)  { $splat.Preview = $true }
+            if ($ReadBack) { $splat.ReadBack = $ReadBack }
+            return (Merge-RtGlobalSettings @splat)
+        } catch { return $null }
+    }
+    function Write-HookFile([string]$Path, [string]$Text) { Write-RtTextNoBom -Path $Path -Text $Text }
+    function Get-Hash([string]$Path) { (Get-FileHash $Path -Algorithm SHA256).Hash }
+
+    # JSON literals written by hand, so the fixtures do not depend on the code under test.
+    $newCmdLit  = '"new <y> my-hook.py \"r\""'
+    $oldCmdLit  = '"old <x> my-hook.py \"q\""'
+    $oldCmdPs   = '"old <x> my-hook.py \"q\""'
+    $oldCmdOdd  = '"old <x> my-hook.py \"q\" a\/b"'
+    $newStatLit = '"new status"'
+    $oldStatLit = '"old status"'
+
+    function New-LiveText([string]$CmdLit, [string]$StatLit, [string]$Extra = "", [string]$AfterStop = "") {
+        return @"
+{
+  "env": { "KEEP": "me" },
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": $CmdLit, "timeout": 99, "shell": "bash", "statusMessage": $StatLit } ] },
+      { "hooks": [ { "type": "command", "command": "python other-tool.py" } ] }$Extra
+    ]$AfterStop
+  }
+}
+"@
+    }
+    $updTemplate = Join-Path $updDir "template.json"
+    Write-HookFile $updTemplate @"
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": $newCmdLit, "timeout": 15, "shell": "bash", "statusMessage": $newStatLit } ] }
+    ]
+  }
+}
+"@
+
+    # Without the switch: reported, never written.
+    $liveA = Join-Path $updDir "a.json"
+    $textA = New-LiveText $oldCmdLit $oldStatLit
+    Write-HookFile $liveA $textA
+    $hashA = Get-Hash $liveA
+    $r = Invoke-Update $updTemplate $liveA
+    Check "without the switch a changed entry is REPORTED in Differs" `
+        ($null -ne $r -and @((Get-Prop $r "Differs")).Count -eq 1)
+    Check "without the switch the file is byte-identical" ((Get-Hash $liveA) -eq $hashA)
+
+    # -Preview with the switch: listed, not written, no backup.
+    $r = Invoke-Update $updTemplate $liveA -Switch -Preview
+    Check "-Preview with the switch lists the entry it would update" `
+        ($null -ne $r -and @((Get-Prop $r "Updated")).Count -eq 1)
+    Check "-Preview with the switch writes nothing and makes no backup (R16)" `
+        ((Get-Hash $liveA) -eq $hashA -and @(Get-ChildItem "$liveA.bak-*" -ErrorAction SilentlyContinue).Count -eq 0)
+
+    # The update itself.
+    $r = Invoke-Update $updTemplate $liveA -Switch
+    $after = [System.IO.File]::ReadAllText($liveA)
+    $parsedAfter = $null
+    try { $parsedAfter = $after | ConvertFrom-Json } catch { $parsedAfter = $null }
+    Check "the update reports Updated" ($null -ne $r -and (Get-Prop $r "Action") -eq "updated")
+    Check "the updated file parses" ($null -ne $parsedAfter)
+    $hookAfter = if ($parsedAfter) { $parsedAfter.hooks.Stop[0].hooks[0] } else { $null }
+    Check "the command now equals the template's" `
+        ($null -ne $hookAfter -and $hookAfter.command -eq 'new <y> my-hook.py "r"')
+    Check "the statusMessage now equals the template's" `
+        ($null -ne $hookAfter -and $hookAfter.statusMessage -eq "new status")
+    Check "the keys the update does not own (timeout, shell) are unchanged" `
+        ($null -ne $hookAfter -and $hookAfter.timeout -eq 99 -and $hookAfter.shell -eq "bash")
+    Check "reversing the two replaced literals restores the original text byte for byte" `
+        ($after.Replace($newCmdLit, $oldCmdLit).Replace($newStatLit, $oldStatLit) -eq $textA)
+    Check "an entry added by hand under another token is untouched" `
+        ($after.Contains('"command": "python other-tool.py"') -and $after.Contains('"KEEP": "me"'))
+    $backupsA = @(Get-ChildItem "$liveA.bak-*" -ErrorAction SilentlyContinue)
+    Check "a timestamped backup holds the old text" `
+        ($backupsA.Count -eq 1 -and [System.IO.File]::ReadAllText($backupsA[0].FullName) -eq $textA)
+    Check "no BOM after the update" (-not (Test-HasBom $liveA))
+
+    $r = Invoke-Update $updTemplate $liveA -Switch
+    Check "a second update is a no-op" `
+        ($null -ne $r -and (Get-Prop $r "Action") -eq "unchanged" -and @((Get-Prop $r "Differs")).Count -eq 0)
+
+    # The old value written with PowerShell's own escaping is still located.
+    $liveB = Join-Path $updDir "b.json"
+    Write-HookFile $liveB (New-LiveText $oldCmdPs $oldStatLit)
+    $r = Invoke-Update $updTemplate $liveB -Switch
+    $afterB = [System.IO.File]::ReadAllText($liveB)
+    Check "a command written with PowerShell escapes is located and updated" `
+        ($null -ne $r -and (Get-Prop $r "Action") -eq "updated" -and -not $afterB.Contains("u003c") -and $afterB.Contains($newCmdLit))
+
+    # Refusals: the file must stay byte-identical.
+    $liveC = Join-Path $updDir "c.json"      # the old literal occurs twice, in two events
+    $afterStopC = ",`r`n    `"Notification`": [ { `"hooks`": [ { `"type`": `"command`", `"command`": $oldCmdLit } ] } ]"
+    Write-HookFile $liveC (New-LiveText $oldCmdLit $oldStatLit "" $afterStopC)
+    $hashC = Get-Hash $liveC
+    $r = Invoke-Update $updTemplate $liveC -Switch
+    Check "an old literal that occurs twice is reported 'cannot locate' and the file is untouched" `
+        ($null -ne $r -and (Get-Hash $liveC) -eq $hashC -and
+         @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*cannot locate*" }).Count -ge 1)
+
+    $liveD = Join-Path $updDir "d.json"      # a spelling neither form produces
+    Write-HookFile $liveD (New-LiveText $oldCmdOdd $oldStatLit)
+    $hashD = Get-Hash $liveD
+    $r = Invoke-Update $updTemplate $liveD -Switch
+    Check "an unknown escape spelling is reported 'cannot locate' and the file is untouched" `
+        ($null -ne $r -and (Get-Hash $liveD) -eq $hashD -and
+         @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*cannot locate*" }).Count -ge 1)
+
+    $liveE = Join-Path $updDir "e.json"      # two live entries share the template's token
+    $extraE = ",`r`n      { `"hooks`": [ { `"type`": `"command`", `"command`": `"run my-hook.py again`" } ] }"
+    Write-HookFile $liveE (New-LiveText $oldCmdLit $oldStatLit $extraE)
+    $hashE = Get-Hash $liveE
+    $r = Invoke-Update $updTemplate $liveE -Switch
+    Check "two live entries with the template's token are refused, naming the ambiguity" `
+        ($null -ne $r -and (Get-Hash $liveE) -eq $hashE -and
+         @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*more than one*" }).Count -ge 1)
+
+    # A template entry with no statusMessage leaves the live one alone.
+    $templateNoStat = Join-Path $updDir "template-nostat.json"
+    Write-HookFile $templateNoStat @"
+{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": $newCmdLit } ] } ] } }
+"@
+    $liveF = Join-Path $updDir "f.json"
+    Write-HookFile $liveF (New-LiveText $oldCmdLit '"keep me"')
+    $r = Invoke-Update $templateNoStat $liveF -Switch
+    $afterF = [System.IO.File]::ReadAllText($liveF)
+    Check "a template entry without statusMessage leaves the live statusMessage alone" `
+        ($null -ne $r -and $afterF.Contains('"keep me"') -and $afterF.Contains($newCmdLit))
+
+    # Two backups with the same stamp never collide.
+    $liveG = Join-Path $updDir "g.json"
+    Write-HookFile $liveG $textA
+    Invoke-Update $updTemplate $liveG -Switch -Stamp "same" | Out-Null
+    Write-HookFile $liveG $textA
+    Invoke-Update $updTemplate $liveG -Switch -Stamp "same" | Out-Null
+    Check "two updates with the same stamp make two distinct backups" `
+        (@(Get-ChildItem "$liveG.bak-same*" -ErrorAction SilentlyContinue).Count -eq 2)
+
+    # A read-back that does not parse restores the file (R9).
+    $liveH = Join-Path $updDir "h.json"
+    Write-HookFile $liveH $textA
+    $hashH = Get-Hash $liveH
+    $r = Invoke-Update $updTemplate $liveH -Switch -ReadBack { param($p) "{ broken" }
+    Check "a read-back that does not parse restores the file and says so" `
+        ($null -ne $r -and (Get-Prop $r "Action") -eq "restored" -and (Get-Hash $liveH) -eq $hashH)
+
+    # --- the switch in setup.ps1 (wiring, read as text: setup.ps1 is never executed here) ---
+    $setupText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "setup.ps1"))
+    Check "setup.ps1 declares the -UpdateHooks switch" ($setupText -match '\[switch\]\$UpdateHooks')
+    Check "setup.ps1 passes the switch and a backup stamp to the merge" `
+        ($setupText -match '-UpdateChanged:\$UpdateHooks' -and $setupText -match '-BackupStamp')
+    Check "setup.ps1 names the switch in its help and tells how to use -Preview with it" `
+        ($setupText -match '-UpdateHooks -Preview')
+
     # --- Install-RtGlobalHooks ----------------------------------------------
     # Measured 2026-08-30: setup.ps1 -All declared hooks in ~/.claude/settings.json and
     # deployed no scripts, because install-junctions.ps1 has no hook handling and only

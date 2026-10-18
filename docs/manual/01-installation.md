@@ -301,6 +301,7 @@ git pull --ff-only origin main        # get the new version
 .\setup.ps1 -InstallPython            # only if .venv-skills is missing, or you want to run the offline suite
 .\setup.ps1 -Update -Preview          # shows every step and writes nothing to ~/.claude
 .\setup.ps1 -Update                   # does the update, and asks the three questions below first
+.\scripts\test\run-all-checks.ps1     # optional proof: the offline suite and every verify-*.ps1 (about 15 minutes)
 ```
 
 **What `-Update` asks, once, before it changes anything.** The domain profile (the names found in
@@ -354,6 +355,18 @@ from the template on purpose.
 copies prose such as agents and holds the code, and says which. If it held files, run
 `.\setup.ps1 -Update -RunSuite` (or the suite and then `.\install-junctions.ps1 -Sync`), or fix the
 failing suite first.
+
+**Checking the result (`run-all-checks.ps1`).** `run-offline-tests.ps1` runs only the Python suites,
+so a green suite does not cover the PowerShell verifiers (`verify-setup-writes.ps1`,
+`verify-sync-writes.ps1` and the others). `.\scripts\test\run-all-checks.ps1` runs the suite and then
+every `verify-*.ps1`, each in its own process, runs all of them even when one fails, prints which
+failed and exits 1 if any did. It leaves out `verify-graph-health.ps1`, which only the
+`local-writer` agent may run. `-DryRun` lists the checks and runs none, `-SkipSuite` skips the
+15-minute suite, `-Only verify-setup-writes,verify-sync-writes` runs just those, and
+`-ReportPath result.json` also writes a JSON report. If `.venv-skills` is missing the suite stops
+and names the command that rebuilds it: `.\setup.ps1 -InstallPython`. A green run also writes
+`.rt-green.json`, which is what lets the sync copy changed hooks (run `.\install-junctions.ps1 -Sync`
+afterwards, or `.\setup.ps1 -Update` again).
 
 **What is still yours:**
 

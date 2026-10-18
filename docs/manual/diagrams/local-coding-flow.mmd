@@ -21,6 +21,7 @@ flowchart TD
     P --> Q{"Safe to merge?<br/>suite green, no Critical or High finding"}
     Q -- yes --> Y["Memory upkeep<br/>local-writer writes lessons to the vault<br/>and updates the graph, silent"]
     Y --> R[Pull request, owner merges]
+    R --> Z["After the merge: finish-branch.ps1<br/>removes the worktree and the branches,<br/>moves the plans to done"]
     Q -- no --> S{Bound reached?}
     S -- no --> T[Fix, failing test first] --> P
     S -- yes --> U[Stop, report what remains, ask the owner]

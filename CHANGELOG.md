@@ -25,6 +25,14 @@ This file is for someone following releases. For the dated, engineering-level de
   you changed on purpose on this machine exactly as it is: no edit, no backup. The names are the ones
   the output prints, case ignored, brackets optional.
 
+- `scripts/test/run-all-checks.ps1` runs the offline suite and every `verify-*.ps1` in one go, runs
+  them all even when one fails, and says which failed. `run-offline-tests.ps1` alone never covered
+  the PowerShell verifiers. It is part of the update procedure in manual chapter 01.
+- `scripts/test/finish-branch.ps1` cleans up after a merged pull request: worktree, local and
+  remote branch, plans folder. Dry run until `-Yes`, never `--force`, and it refuses an unmerged
+  branch, unpushed commits, a dirty worktree and a worktree holding a link. It is the last step in
+  the figure of manual chapter 12.
+
 ### Fixed
 - `install-junctions.ps1 -Sync -WhatIf` no longer writes. It ignored `-WhatIf` and copied agents
   into `~/.claude` while claiming to preview.

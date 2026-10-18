@@ -82,7 +82,7 @@ test fails when the two differ. Reading it from the top:
 | Judgment, security, design, a repository-wide change, or no qualified local role | The session itself, with `executing-plans` | Nothing to save: the work needs the best model |
 | One plan, a test as oracle per step, each step's prompt plus output fits the coder window | `local-coder`, tier simple or standard | The cloud pays for the plan, the wrapper and the review; the code is generated locally |
 | One plan whose step output cannot fit the coder window and cannot be split | `local-coder`, tier large | Same, with a window large enough for long output |
-| Two or more plans, or an unattended night | aider (spec, plan files, progress, a writer model and a reviewer model) | No Claude Code is involved once the run starts |
+| Two or more plans, or an unattended night | aider (spec, plan files, progress, a writer model and a reviewer model) | No interactive harness is involved once the run starts |
 | A whole session on Ollama or Augure | Your manual choice with `claude-switch.ps1`, never written in a plan | The session itself is local |
 
 Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. A fix found

@@ -1,7 +1,7 @@
 # aider-setup — the aider nightly local-coding pipeline
 
 Index page. The `aider-setup` skill is a second, independent local-coding harness that needs
-no Claude Code: two local Ollama models (a writer that codes and tests, a reviewer that never
+no interactive harness: two local Ollama models (a writer that codes and tests, a reviewer that never
 edits, gated by measured token budgets) run one aider process per plan overnight, driven by
 `aider-plan.ps1` / `aider-night.ps1`. See the root [README.md](../README.md) Skills table for
 the one-line summary and [Architecture.md](../Architecture.md) for how it fits the rest of the
@@ -18,7 +18,7 @@ commit apart (R18):
 | [`.claude/skills/aider-setup/EXAMPLE-PROMPT-robot.md`](../.claude/skills/aider-setup/EXAMPLE-PROMPT-robot.md) | A worked planning-prompt example (mobile robot path planner) for a first run |
 | [`.claude/skills/aider-setup/MEMORY.md`](../.claude/skills/aider-setup/MEMORY.md) | Continuity notes for the next session working on this skill: where things live, traps, what is left undone |
 
-Nightly entry point, once the machine is set up (no Claude Code involved):
+Nightly entry point, once the machine is set up (no interactive harness involved):
 
 ```powershell
 .claude\skills\aider-setup\scripts\aider-night.ps1

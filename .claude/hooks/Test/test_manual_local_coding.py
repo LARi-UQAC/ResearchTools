@@ -278,6 +278,67 @@ class TestProcessFigure(unittest.TestCase):
         self.assertIsNone(node_id(graph, "absent"))
 
 
+AIDER_CHAPTER = REPO / "docs" / "manual" / "06-aider-pipeline.md"
+AIDER_DEEP_DIVE = REPO / "docs" / "aider-setup.md"
+AIDER_DIR = REPO / ".claude" / "skills" / "aider-setup"
+RULES_HEADER = re.compile(r"^Rules: \d+ \(R0-R(\d+)\)", re.MULTILINE)
+
+
+def says_orchestrator_product(text: str) -> bool:
+    """True when a text names Claude Code, which a harness-neutral chapter must not."""
+    return "Claude Code" in text
+
+
+class TestAiderChapter(unittest.TestCase):
+    """Chapter 06 after the local coding contract (request of the PR #84 session, 2026-10-17)."""
+
+    def setUp(self):
+        self.text = AIDER_CHAPTER.read_text(encoding="utf-8")
+        self.body = flat(self.text)
+
+    def test_the_chapter_and_the_deep_dive_name_no_orchestrating_product(self):
+        self.assertFalse(says_orchestrator_product(self.text))
+        self.assertFalse(says_orchestrator_product(AIDER_DEEP_DIVE.read_text(encoding="utf-8")))
+        row = next(line for line in CHAPTER.read_text(encoding="utf-8").splitlines()
+                   if line.startswith("| Two or more plans"))
+        self.assertFalse(says_orchestrator_product(row))
+
+    def test_local_coder_is_described_as_one_whole_plan(self):
+        for phrase in ("one whole plan", "PLAN: <path>", "local-coder-dispatch-guard.py",
+                       "audits nothing", "several plans"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.body)
+        self.assertNotIn("single-step", self.body)
+
+    def test_the_driver_ignores_the_header_and_the_named_things_exist(self):
+        self.assertIn("neither validates nor uses", self.body)
+        self.assertIn("Get-PlanTargets", self.body)
+        core = AIDER_DIR / "scripts" / "aider-plan-core.ps1"
+        self.assertTrue((AIDER_DIR / "scripts" / "Test" / "verify-aider-plan.ps1").exists())
+        self.assertIn("function Get-PlanTargets", core.read_text(encoding="utf-8"))
+
+    def test_the_review_bounds_do_not_govern_the_aider_loop(self):
+        self.assertIn("do not govern", self.body)
+        self.assertIn("never merges", self.body)
+
+    def test_the_rules_coverage_is_the_one_the_generated_file_declares(self):
+        header = RULES_HEADER.search((AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8"))
+        self.assertIsNotNone(header)
+        self.assertIn(f"R0 to R{header.group(1)}", self.body)
+        self.assertNotIn("cannot drift", self.body)
+
+    def test_the_ceiling_table_equals_the_budget_file(self):
+        ceilings = json.loads(BUDGET.read_text(encoding="utf-8"))["ceilings"]
+        quoted = table_values(self.text, ("spec.md", "plan.md", "progress.md", "audit.md"))
+        for key, value in quoted.items():
+            with self.subTest(key=key):
+                self.assertEqual(value, ceilings[key])
+
+    def test_the_finder_can_fail(self):
+        self.assertTrue(says_orchestrator_product("needs no Claude Code"))
+        self.assertFalse(says_orchestrator_product("needs no interactive harness"))
+
+
 class TestNeighbouringChapters(unittest.TestCase):
     def test_each_neighbour_links_to_chapter_12_and_names_what_exists(self):
         for name, names in NEIGHBOURS.items():

@@ -10,6 +10,12 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Changed
+- Chapter 06 of the manual (the aider pipeline) is brought in line with the local coding
+  contract. It names no orchestrating product, so "Claude Code" becomes "interactive harness"
+  there, in `docs/aider-setup.md` and in one cell of chapter 12. It says a `local-coder` dispatch
+  executes one whole plan, that the aider driver neither validates nor uses the plan header, that
+  the R35 bounds govern the review of the pushed branch and not aider's internal loop, and that the
+  generated `rules.md` covers R0 to R27 only, so the night's models do not see R35, R36 or R38.
 - Chapter 12 of the manual and its process figure are corrected. Memory is consulted through
   `local-writer` before the brainstorm, the review loop ends when the branch is safe to merge (or
   a bound is reached and you are asked), a last memory upkeep writes the lessons to the vault and

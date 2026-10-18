@@ -44,6 +44,18 @@
                               restored if the read-back fails. An entry it cannot match
                               with certainty is reported and left alone. Without the
                               switch such entries are only reported. Use -Preview first.
+        -Update            -> the whole update of an existing installation in one command.
+                              Asks first (domain profile, GitHub Copilot at user level,
+                              and whether to run the offline suite first), then runs, in
+                              order: the global configuration with -UpdateHooks, the
+                              Claude Code links, install.ps1 -Profile <name> [-Personal],
+                              the offline suite when asked, install-junctions.ps1 -Sync
+                              and scripts\audit\check-deployment.ps1 (read-only). The
+                              user-scope OBSIDIAN_VAULT is reused with no prompt. With
+                              -NonInteractive the profile must come from -Profile.
+                              -RunSuite answers the suite question. Use -Preview first:
+                              links and sync run as WhatIf, install.ps1 and the suite
+                              are skipped, nothing is written.
         -All               -> config generation + junctions + tools, plus the daemon
                               WHEN a vault is configured; with no vault it is skipped
                               with a stated reason, since a login daemon with no vault
@@ -59,6 +71,9 @@
     .\setup.ps1 -InstallPython               # .venv-skills for the offline test suite and the skills
     .\setup.ps1 -InstallPython -Preview      # choose the interpreter, say what would install, write nothing
     .\setup.ps1 -InstallPython -Python "C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
+    .\setup.ps1 -Update -Preview             # the whole update, written nowhere: shows every step
+    .\setup.ps1 -Update                      # asks the profile and Copilot, then updates everything
+    .\setup.ps1 -Update -Profile engineering -Personal -RunSuite -NonInteractive -Force
     .\setup.ps1 -UpdateHooks -Preview        # list the hook entries it would update, write nothing
     .\setup.ps1 -UpdateHooks                 # update them (backup settings.json.bak-<date-time>)
     .\setup.ps1 -All -NonInteractive        # scripted bootstrap; refuses rather than assuming
@@ -73,6 +88,11 @@ param(
     [switch]$InstallPython,
     [string]$Python = "",
     [switch]$UpdateHooks,
+    [switch]$Update,
+    # -Profile also works ($PROFILE is a PowerShell automatic variable, hence the alias),
+    # the same spelling as install.ps1.
+    [Alias('Profile')][string]$DomainProfile = "",
+    [switch]$RunSuite,
     [switch]$All,
     [switch]$Personal,
     [switch]$Preview,
@@ -121,6 +141,9 @@ if (-not $WorkspaceRoot) {
 # drives them against temp copies without running this script's prompts.
 . (Join-Path $WorkspaceRoot "scripts\lib\rt-global-config.ps1")
 
+# The pure half of -Update (profiles, answers, the ordered plan), for the same reason.
+. (Join-Path $WorkspaceRoot "scripts\lib\rt-update.ps1")
+
 Write-Header "ResearchTools — Setup"
 Write-Host "  Workspace : $WorkspaceRoot"
 Write-Host "  User      : $env:USERNAME"
@@ -163,14 +186,60 @@ function Invoke-JunctionsScript {
 }
 
 function Invoke-ToolsScript {
+    # ProfileName: given by -Update, which has already asked and validated it. Empty keeps
+    # the old behaviour, where install.ps1 asks for the profile itself.
+    param([string]$ProfileName = "")
     $toolsScript = Join-Path $WorkspaceRoot "install.ps1"
     if (-not (Test-Path $toolsScript)) {
         Write-Err "install.ps1 not found at: $toolsScript"
         exit 1
     }
     $global:LASTEXITCODE = 0
-    if ($Personal) { & $toolsScript -Personal } else { & $toolsScript }
+    if ($ProfileName) {
+        if ($Personal) { & $toolsScript -Profile $ProfileName -Personal } else { & $toolsScript -Profile $ProfileName }
+    } else {
+        if ($Personal) { & $toolsScript -Personal } else { & $toolsScript }
+    }
     Set-InstallerExit "install.ps1" $LASTEXITCODE
+}
+
+function Invoke-SyncScript {
+    # install-junctions.ps1 -Sync copies into ~/.claude the files a green offline-suite run
+    # has proven, and HOLDS the rest. It says which; this wrapper only records the exit code.
+    $junctionsScript = Join-Path $WorkspaceRoot "install-junctions.ps1"
+    if (-not (Test-Path $junctionsScript)) {
+        Write-Err "install-junctions.ps1 not found at: $junctionsScript"
+        exit 1
+    }
+    $global:LASTEXITCODE = 0
+    if ($Preview) { & $junctionsScript -Sync -WhatIf } else { & $junctionsScript -Sync }
+    Set-InstallerExit "install-junctions.ps1 -Sync" $LASTEXITCODE
+}
+
+function Invoke-SuiteScript {
+    # run-offline-tests.ps1 refuses, naming every path it looked at, when .venv-skills is
+    # absent. Its failure is recorded and the update goes on, since the sync that follows
+    # then reports the files it holds.
+    $suiteScript = Join-Path $WorkspaceRoot "scripts\test\run-offline-tests.ps1"
+    if (-not (Test-Path $suiteScript)) {
+        Write-Err "run-offline-tests.ps1 not found at: $suiteScript"
+        exit 1
+    }
+    $global:LASTEXITCODE = 0
+    & $suiteScript
+    Set-InstallerExit "run-offline-tests.ps1" $LASTEXITCODE
+}
+
+function Invoke-CheckScript {
+    # Read-only: it only reports whether ~/.claude matches the repository.
+    $checkScript = Join-Path $WorkspaceRoot "scripts\audit\check-deployment.ps1"
+    if (-not (Test-Path $checkScript)) {
+        Write-Err "check-deployment.ps1 not found at: $checkScript"
+        exit 1
+    }
+    $global:LASTEXITCODE = 0
+    & $checkScript
+    Set-InstallerExit "check-deployment.ps1" $LASTEXITCODE
 }
 
 function Read-RtAnswer {
@@ -234,6 +303,57 @@ function Invoke-DaemonScript {
         -UserScopeSet:(-not [string]::IsNullOrWhiteSpace($userScope)) `
         -Preview:$Preview
     Set-InstallerExit "vault-daemon-autostart.ps1 -Install" $code
+}
+
+# --- -Update: every question first, then the steps run without another prompt -----------
+
+$script:UpdatePlan = @()
+if ($Update) { $UpdateHooks = $true }   # -Update implies the hook update
+if ($Update) {
+    if ($InstallJunctions -or $InstallTools -or $InstallDaemon -or $InstallPython -or $All) {
+        Write-Warn "-Update runs its own steps; the -Install* and -All switches are ignored."
+        $InstallJunctions = $false; $InstallTools = $false; $InstallDaemon = $false
+        $InstallPython = $false; $All = $false
+    }
+
+    Write-Header "Update: questions"
+    $availableProfiles = Get-RtProfileNames -ProfilesDir (Join-Path $WorkspaceRoot "profiles")
+    $currentProfile = Get-RtActiveProfile -ClaudeMdPath (Join-Path $WorkspaceRoot ".claude\CLAUDE.md")
+    $profileAnswer = $DomainProfile
+    if (-not $profileAnswer) {
+        $profileAnswer = Read-RtAnswer `
+            "  Domain profile ($($availableProfiles -join ', '); Enter keeps '$currentProfile')" "-Profile <name>"
+    }
+    $chosenProfile = Resolve-RtUpdateProfile -Answer $profileAnswer -Available $availableProfiles -Current $currentProfile
+    if ($null -eq $chosenProfile) {
+        Write-Err "Unknown domain profile '$profileAnswer'. Valid profiles: $($availableProfiles -join ', ')"
+        exit 2
+    }
+    Write-Ok "Profile: $chosenProfile"
+
+    if (-not $Personal -and -not $NonInteractive) {
+        $copilotAnswer = Read-RtAnswer "  Also install GitHub Copilot at user level? [y/N]" "-Personal"
+        if ($copilotAnswer -match '^[YyOo]') { $Personal = $true }
+    }
+    Write-Ok "GitHub Copilot at user level: $(if ($Personal) { 'yes' } else { 'no' })"
+
+    if (-not $RunSuite -and -not $NonInteractive -and -not $Preview) {
+        $suiteAnswer = Read-RtAnswer `
+            "  Run the offline test suite first (about 15 minutes), so the sync can copy changed hooks and agents? [y/N]" "-RunSuite"
+        if ($suiteAnswer -match '^[YyOo]') { $RunSuite = $true }
+    }
+    Write-Ok "Offline suite before the sync: $(if ($RunSuite -and -not $Preview) { 'yes' } elseif ($Preview) { 'not in preview' } else { 'no' })"
+
+    $script:UpdatePlan = Resolve-RtUpdatePlan -Profile $chosenProfile -Personal ([bool]$Personal) `
+        -RunSuite ([bool]$RunSuite) -Preview ([bool]$Preview)
+    Write-Header "Update: the steps"
+    $stepNumber = 0
+    foreach ($step in $script:UpdatePlan) {
+        $stepNumber++
+        $note = if ($step.Skipped) { "  (skipped: $($step.Reason))" } elseif ($step.WhatIf) { "  (WhatIf)" } else { "" }
+        Write-Host "  $stepNumber. $($step.Label)$note"
+    }
+    $script:UpdateProfile = $chosenProfile
 }
 
 if ($InstallPython -and -not $All) {
@@ -310,7 +430,12 @@ if ($nodePath) {
 # ─── Detect Obsidian vault ────────────────────────────────────────────────────
 
 Write-Header "Obsidian vault (optional)"
-if (-not $ObsidianVault) {
+if (-not $ObsidianVault -and $Update) {
+    # An update asks nothing it can read: the vault already stored at user scope is reused.
+    $storedVault = [Environment]::GetEnvironmentVariable("OBSIDIAN_VAULT", "User")
+    if ($storedVault) { $ObsidianVault = $storedVault }
+}
+if (-not $ObsidianVault -and -not $Update) {
     $ObsidianVault = Read-RtAnswer "  Vault path (press Enter to skip Obsidian integration)" "-ObsidianVault <path>"
 }
 if ($ObsidianVault) {
@@ -338,7 +463,8 @@ Write-Host "  OBSIDIAN_VAULT  = $ObsidianVault"
 Write-Host "  OBSIDIAN_EXE    = $obsidianExe"
 Write-Host ""
 
-if (-not $Force) {
+if (-not $Force -and -not $Update) {
+    # -Update already asked everything it needs, and showed its steps, so it does not ask again.
     $confirm = Read-RtAnswer "Proceed? [Y/n]" "-Force"
     if ($confirm -match '^[Nn]') {
         Write-Host "Aborted." -ForegroundColor Yellow
@@ -446,6 +572,41 @@ foreach ($entry in $settingsResult.Skipped) {
 
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
+
+if ($Update) {
+    # The first step (the configuration above) is done. The others run in the plan's order,
+    # a failure is recorded and does not stop the later, read-only steps.
+    $stepNumber = 1
+    foreach ($step in $script:UpdatePlan) {
+        if ($step.Id -eq "config") { continue }
+        $stepNumber++
+        Write-Header "Update $stepNumber of $(@($script:UpdatePlan).Count): $($step.Label)"
+        if ($step.Skipped) { Write-Host "  [--]  skipped: $($step.Reason)" -ForegroundColor DarkGray; continue }
+        switch ($step.Id) {
+            "junctions" { Invoke-JunctionsScript }
+            "tools"     { Invoke-ToolsScript -ProfileName $step.Profile }
+            "suite"     { Invoke-SuiteScript }
+            "sync"      { Invoke-SyncScript }
+            "check"     { Invoke-CheckScript }
+        }
+    }
+    Write-Host ""
+    if ($script:InstallerExit -ne 0) {
+        Write-Err "The update finished with a failure (worst exit code $script:InstallerExit): read the lines above."
+    } else {
+        Write-Host "Update steps done." -ForegroundColor Green
+    }
+    Write-Host ""
+    Write-Host "Still to do by hand:"
+    Write-Host "  - Close and reopen VS Code and Claude Code: hooks and rules are read at session start."
+    Write-Host "    The [HOOKS ACTIVE] line at the start of the session must say 0 missing."
+    Write-Host "  - If the sync said some files were held, the offline suite was not green for them:"
+    Write-Host "    run  .\setup.ps1 -Update -RunSuite  (about 15 minutes), or fix the failing suite first."
+    Write-Host "  - install.ps1 -Profile records the profile in .claude\CLAUDE.md, a tracked file:"
+    Write-Host "    git status will show it. Keep it or restore it with git, as you prefer."
+    Write-Host ""
+    exit $script:InstallerExit
+}
 
 if ($All) {
     Write-Header "Claude Code global links (install-junctions.ps1)"

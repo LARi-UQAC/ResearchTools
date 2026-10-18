@@ -467,7 +467,7 @@ try {
     # --- the -Update switch in setup.ps1 (wiring, read as text) ---
     $setupUpdate = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "setup.ps1"))
     Check "setup.ps1 declares -Update, -Profile and -RunSuite" `
-        ($setupUpdate -match '\[switch\]\$Update' -and $setupUpdate -match '\[string\]\$Profile' -and $setupUpdate -match '\[switch\]\$RunSuite')
+        ($setupUpdate -match '\[switch\]\$Update' -and $setupUpdate -match '\[string\]\$DomainProfile' -and $setupUpdate -match '\[switch\]\$RunSuite')
     Check "setup.ps1 loads the update-plan library" ($setupUpdate -match 'rt-update\.ps1')
     Check "setup.ps1 passes the profile to install.ps1" ($setupUpdate -match '-Profile\s+\$')
     Check "setup.ps1 runs the sync and the deployment check" `

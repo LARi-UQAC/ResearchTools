@@ -102,12 +102,14 @@ or a plain GitHub browse would read.
 requirements-docs.txt` into `.venv-docs`), then open the printed `http://127.0.0.1:8000`.
 **Publish:** `mkdocs gh-deploy`, run by hand whenever the docs change — no GitHub Actions
 workflow, matching this repo's no-CI/CD policy — then enable Settings → Pages → Deploy from
-a branch → `gh-pages`. Two known gaps in the built site (not on the raw GitHub browse): links
-that reach outside `docs/` (to `README.md`, `Architecture.md`, `.claude/CLAUDE.md`) resolve
-on GitHub but not inside the MkDocs build, since its `docs_dir` is `docs/` only; and
-`04-skills.md`'s internal table of contents uses GitHub's heading-slug algorithm, which
-differs slightly from MkDocs' own slugifier, so those specific in-page anchors don't jump
-correctly inside the built site.
+a branch → `gh-pages`. Links that reach outside `docs/` (to `README.md`, `Architecture.md`,
+`.claude/CLAUDE.md`) stay relative in the Markdown, so they work on GitHub and in the editor.
+MkDocs only serves `docs/`, so the build hook `scripts/docs/mkdocs_hooks.py` sends each such
+link to its page on GitHub (`blob` or `tree` on the branch named by `extra.docs_source_ref` in
+`mkdocs.yml`, currently `main`), which means those links only resolve once the change is on
+that branch. Heading ids use GitHub's slug algorithm (`toc.slugify` in `mkdocs.yml`), so the
+double-dash anchors of `04-skills.md` jump correctly. `mkdocs build --strict` is clean, and
+fails on a dead link or a dead anchor.
 
 ## Start here
 

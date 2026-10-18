@@ -9,6 +9,15 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+### Fixed
+- The published documentation site no longer has dead cross-links. About 75 links from pages
+  under `docs/` to files outside it (`README.md`, `Architecture.md`, `.claude/...` rules and
+  skills) returned 404 on the site because MkDocs only serves `docs/`. A build hook,
+  `scripts/docs/mkdocs_hooks.py`, now sends those links to their GitHub page at build time,
+  and the Markdown keeps its relative links. Heading anchors written for GitHub, such as
+  `#scopus--scopus-academic-search`, now resolve too. `mkdocs build --strict` goes from 73
+  warnings to none. The site updates when the owner next runs `mkdocs gh-deploy` from `main`.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

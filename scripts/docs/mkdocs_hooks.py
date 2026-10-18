@@ -86,8 +86,8 @@ def _rewrite_target(
         return None
     path_part, suffix = _PATH_AND_SUFFIX.match(raw).groups()
     rel = unquote(path_part)
-    if not rel:
-        return None
+    if not rel or "\\" in rel or "\x00" in rel:
+        return None  # a separator or NUL that only some operating systems honour
     resolved = (page_dir / rel).resolve()
     if not resolved.exists() or not resolved.is_relative_to(root):
         return None

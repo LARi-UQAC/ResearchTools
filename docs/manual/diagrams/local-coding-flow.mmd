@@ -18,7 +18,7 @@ flowchart TD
     M --> O
     N --> O
     O --> P[Review round on the diff]
-    P --> Q{"Safe to merge?<br/>suite green, no Critical or Important finding"}
+    P --> Q{"Safe to merge?<br/>suite green, no Critical or High finding"}
     Q -- yes --> Y["Memory upkeep<br/>local-writer writes lessons to the vault<br/>and updates the graph, silent"]
     Y --> R[Pull request, owner merges]
     Q -- no --> S{Bound reached?}

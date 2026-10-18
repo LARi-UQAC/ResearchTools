@@ -19,10 +19,11 @@ This file is for someone following releases. For the dated, engineering-level de
   graph are read and written through `local-writer`, who must not read them, and how a write is
   verified. The dispatch stays in the background and the session adapts when the one-line result
   arrives. The review loop of R35 also stops when the branch is safe to merge (suite green, no
-  Critical or Important finding after re-grading, minors deferred), in every copy of the rule.
+  Critical or High finding after re-grading, minors deferred), in every copy of the rule. The hook
+  enforces the bounds only, so the findings re-graded as minor are listed in the PR body.
 
 ### Fixed
-- Memory work through `local-writer` is quiet. The Stop hook reminder shrinks from about 1900 to about 500 characters, tells the session not to narrate the dispatch or repeat the agent's answer unless it reports a failure, and its status message no longer carries detail. `local-writer` returns one line on success and the full account only on failure. Sync the template into the live `settings.json` for it to take effect.
+- Memory work through `local-writer` is quiet. The Stop hook reminder shrinks from about 1900 to about 500 characters, tells the session not to narrate the dispatch or repeat the agent's answer unless it reports a failure, and its status message no longer carries detail. `local-writer` returns one line on success and the full account only on failure. The live `settings.json` is not changed by this: replace its Stop entry with the template's by hand, since setup recognises the entry by its first script name and treats the old one as already present.
 - The published documentation site no longer has dead cross-links. 73 links from pages
   under `docs/` to files outside it (`README.md`, `Architecture.md`, `.claude/...` rules and
   skills) returned 404 on the site because MkDocs only serves `docs/`. A build hook,

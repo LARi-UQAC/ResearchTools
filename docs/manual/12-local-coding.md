@@ -43,7 +43,7 @@ flowchart TD
     M --> O
     N --> O
     O --> P[Review round on the diff]
-    P --> Q{"Safe to merge?<br/>suite green, no Critical or Important finding"}
+    P --> Q{"Safe to merge?<br/>suite green, no Critical or High finding"}
     Q -- yes --> Y["Memory upkeep<br/>local-writer writes lessons to the vault<br/>and updates the graph, silent"]
     Y --> R[Pull request, owner merges]
     Q -- no --> S{Bound reached?}
@@ -69,7 +69,7 @@ test fails when the two differ. Reading it from the top:
   window. If it does not and the step cannot be split, the plan takes the large tier.
 - Every path ends in the same place: a worktree branch and a review round on its diff. The loop
   stops when the branch is safe to merge, meaning the full suite is green and a re-graded round
-  leaves no Critical or Important finding, minors being deferred and listed. Otherwise a round
+  leaves no Critical or High finding, minors being deferred and listed. Otherwise a round
   that still finds something is fixed with a failing test first, until a bound stops the loop
   and the session reports what remains and asks you.
 - A safe branch gets a last memory upkeep: `local-writer` writes the lessons to the vault and

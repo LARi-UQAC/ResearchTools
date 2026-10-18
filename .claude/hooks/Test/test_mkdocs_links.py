@@ -245,6 +245,14 @@ class RewriteRules(Fixture):
         self.assertEqual(done, ["../README.md", "../README.md"])
         self.assertEqual(out.count(f"{BASE}/blob/{REF}/README.md"), 2)
 
+    def test_backslash_and_nul_targets_are_left_alone_on_every_os(self):
+        # Windows reads a backslash as a separator and ignores a NUL, Linux does neither, so the
+        # same page would build differently. Both are refused, and MkDocs reports them.
+        for text in ("[a](..\\README.md)", "[a](../README.md%00)"):
+            out, done = self.run_rewrite(text)
+            self.assertEqual(out, text)
+            self.assertEqual(done, [])
+
     def test_second_pass_changes_nothing(self):
         once, _ = self.run_rewrite("[R](../README.md) [x](hidden/x.md)")
         twice, done = self.run_rewrite(once)

@@ -15,6 +15,7 @@ the owner's synced settings and a real session (R15).
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -113,6 +114,23 @@ class StopReminder(unittest.TestCase):
     def test_graph_clause_only_when_a_graph_exists(self):
         self.assertIn("graphify update", fire(self.bash, True)["reason"])
         self.assertNotIn("graphify", fire(self.bash, False)["reason"])
+
+    def test_graph_variant_refreshes_from_the_repository_root_even_with_no_lesson(self):
+        reason = fire(self.bash, True)["reason"]
+        self.assertIn("repository root", reason)
+        self.assertIn("still refresh the graph", reason)
+        self.assertNotIn("graphify update on the changed paths", reason)
+
+    def test_the_plain_variant_names_no_note_to_skip_the_graph(self):
+        self.assertIn("write no note", fire(self.bash, False)["reason"])
+
+    def test_the_entry_keeps_the_identity_the_settings_merge_uses(self):
+        # Merge-RtGlobalSettings recognises a hook by the first script name in its command
+        # (rt-global-config.ps1, Get-RtHookToken). The live entry carries model_resolver.py, so a
+        # command without it would be added as a SECOND Stop entry beside the old one.
+        first = re.search(r"[\w.\-]+\.(py|ps1|js|mjs|cjs)", stop_command())
+        self.assertIsNotNone(first)
+        self.assertEqual("model_resolver.py", first.group(0))
 
     def test_old_wording_is_gone(self):
         self.assertNotIn(OLD_SENTENCE, stop_command())

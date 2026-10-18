@@ -96,7 +96,7 @@ class TestAmendedRule(unittest.TestCase):
 
 
 SAFE = "safe to merge"
-SAFE_DEFINITION = "no Critical or Important finding"
+SAFE_DEFINITION = "no Critical or High finding"
 
 
 def safe_copies() -> dict:
@@ -130,6 +130,17 @@ class TestSafeToMergeIsAStop(unittest.TestCase):
         self.assertIn("suite is green", body)
         self.assertIn("minors", body)
 
+    def test_the_rule_says_the_hook_enforces_the_bounds_only(self):
+        # The safe-to-merge stop is the session's own re-grading, so the rule says so and asks for
+        # the findings re-graded as minor to be listed in the PR body.
+        body = flat(r35_block(WORKFLOWS.read_text(encoding="utf-8")))
+        self.assertIn("The hook enforces the bounds only", body)
+        self.assertIn("listed in the PR body", body)
+
+    def test_the_old_severity_word_is_gone_from_every_copy(self):
+        for name, text in safe_copies().items():
+            self.assertNotIn("Critical or Important", flat(text), name)
+
     def test_a_bound_that_stops_an_unsafe_branch_still_asks_the_owner(self):
         body = flat(r35_block(WORKFLOWS.read_text(encoding="utf-8")))
         self.assertIn("asks whether to raise a bound", body)
@@ -137,7 +148,7 @@ class TestSafeToMergeIsAStop(unittest.TestCase):
     def test_the_finder_can_fail_and_pass(self):
         self.assertTrue(lacks_safe_stop("stops at a bound or a round with no finding"))
         self.assertFalse(lacks_safe_stop(
-            "or a branch that is safe to merge (suite green, no Critical or Important finding)"))
+            "or a branch that is safe to merge (suite green, no Critical or High finding)"))
 
 
 class TestHandTypedReviewIsNotOverClaimed(unittest.TestCase):

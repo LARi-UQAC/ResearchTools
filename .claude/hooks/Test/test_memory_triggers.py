@@ -105,6 +105,17 @@ class TriggerTable(unittest.TestCase):
         for phrase in ("background", "one line", "one agent, sequential"):
             self.assertIn(phrase, after)
 
+    def test_no_row_says_a_note_is_in_the_sent_folder_before_the_flush(self):
+        # The flush hook moves a staged note to sent/ only at SessionStart and SessionEnd, so a
+        # mid-session check of sent/ would read a good write as missing and redo it.
+        for row in read_table(self.text):
+            self.assertNotIn("sent", row[3].lower(), row)
+        after = self.text.split(HEADING, 1)[1]
+        self.assertIn("next flush", after)
+
+    def test_the_section_does_not_swallow_the_stop_gate_paragraph(self):
+        self.assertLess(self.text.index("Loop-engineering stop gate"), self.text.index(HEADING))
+
     def test_finder_negative_controls(self):
         bad = f"{HEADING}\n\n| Event | Action | Target | Verified by |\n|---|---|---|---|\n| x | Read | | y |\n"
         self.assertEqual([(1, "Target")], empty_cells(read_table(bad)))

@@ -284,11 +284,9 @@ ls -l ~/.claude/obsidian-outbox/*.md ~/.claude/obsidian-outbox/raw/*.md
 A write you cannot see is a failure to report, not a note to mention. If a command is
 refused before it runs, name the refused command and stop; never report that step as done.
 
-Measured 2026-08-28: a memory-upkeep dispatch reported staging two notes after one tool
-call, and neither file existed. A second dispatch, asked to verify, produced both (1606 and
-1090 bytes). The report was the only evidence, and it was wrong. This is the rule the flush
-hook already applies one layer down, where it distrusts the CLI's return code and compares
-`st_size` before and after; you had no equivalent until now.
+Measured 2026-08-28: a dispatch reported staging two notes after one tool call, and neither
+file existed. The report was the only evidence, and it was wrong. The flush hook applies the
+same rule one layer down, comparing `st_size` before and after.
 
 ### Handing a drop to the daemon instead of filing it yourself
 
@@ -363,8 +361,9 @@ notes as consolidated. Say which command was refused and ask for either the daem
 started, or an explicit allow rule for `vault_consolidate.py`. Measured 2026-08-28: this
 refusal happened silently and the pass was skipped, so notes were written and never linked.
 
-Report at the end of every run: what you wrote, what the drain will pick up, and anything
-you left for a human with the reason.
+Report on success in one line, counts and paths only, for example
+`memory ok: 2 notes <paths>, graph updated`. Report a failure in full: a refused command,
+a parked drop, a held lock or a note not seen on disk, each with its reason.
 
 ## The bridge protocol (how you generate)
 

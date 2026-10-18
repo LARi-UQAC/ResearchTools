@@ -10,6 +10,7 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Fixed
+- Memory work through `local-writer` is quiet. The Stop hook reminder shrinks from about 1900 to about 500 characters, tells the session not to narrate the dispatch or repeat the agent's answer unless it reports a failure, and its status message no longer carries detail. `local-writer` returns one line on success and the full account only on failure. Sync the template into the live `settings.json` for it to take effect.
 - The published documentation site no longer has dead cross-links. 73 links from pages
   under `docs/` to files outside it (`README.md`, `Architecture.md`, `.claude/...` rules and
   skills) returned 404 on the site because MkDocs only serves `docs/`. A build hook,

@@ -891,6 +891,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1296,6 +1324,11 @@
 <td>Optional — specific error</td>
 </tr>
 <tr>
+<td><code>/texcheck [subcommand] [files]</code></td>
+<td>Measures LaTeX manuscript hygiene via <code>latex-hygiene</code>: forbidden characters, AI-usage risk score, prose/accepted word counts, abstract length, brace balance, <code>changes</code>-argument corruption, cite-key coverage. Also applies a machine-readable audit plan (<code>patch</code>), scans for post-write corruption (<code>scan</code>), and resolves/builds the tracked or accepted PDF (<code>accept</code>, <code>build</code>). Measures only — a found defect goes to <code>latex-writer</code>/<code>/auditpaper</code> to fix</td>
+<td>Optional — one subcommand (<code>chars</code>/<code>aiscan</code>/<code>wc</code>/<code>abstract</code>/<code>braces</code>/<code>par</code>/<code>citecov</code>/<code>patch</code>/<code>scan</code>/<code>accept</code>/<code>build</code>) + files, or none for <code>all</code></td>
+</tr>
+<tr>
 <td><code>/ref &lt;citation&gt;</code></td>
 <td>Formats and validates an academic reference (UQAC/LAR.i style)</td>
 <td>Yes — reference</td>
@@ -1341,6 +1374,16 @@
 <td>Yes — see below</td>
 </tr>
 <tr>
+<td><code>/loopdev [--score N] [--no-merge-pr] "&lt;feature request&gt;"</code></td>
+<td>A procedure the session follows through the <code>loop-engineer</code> skill: ask the owner the review bounds, declare them with <code>loop_bounds.py init</code>, run design → plan → code → comment → test → review → score → correct, record each round with <code>tick</code>, and stop at the composite gate (tests green, no CRITICAL/HIGH, aggregate ≥ <code>--score</code>, default 90) or at the first bound reached. The driver flag <code>--loop</code> is not wired. On a gate pass, pushes the branch and opens a PR (unless <code>--no-merge-pr</code>) — the merge to a protected branch stays human-gated</td>
+<td>Optional <code>--score</code>, <code>--no-merge-pr</code>; the bounds are asked, not passed</td>
+</tr>
+<tr>
+<td><code>/opt-local-vram-llm &lt;base-tag&gt; --role &lt;writer\|coder&gt;</code></td>
+<td>Tunes a local Ollama model for this GPU: sweeps <code>num_ctx</code> against the KV cache type, applies the admissible/fast-enough/largest-window objective, declares the tuned tag as a role candidate. Restarts the Ollama daemon once per KV cache type during the sweep. Stops before adoption — prints the <code>model_resolver.py --qualify</code> command and never runs it, since adopting changes what every local agent executes</td>
+<td>Yes — base tag + <code>--role</code>; optional <code>--throughput-floor</code>, <code>--kv</code>, <code>--keep-vision</code>, <code>--dry-run</code></td>
+</tr>
+<tr>
 <td><code>/talk &lt;paper&gt;</code></td>
 <td>Accepted paper → conference talk: six opening questions (audience, duration, target, aspect, PDF format, ending), build contract, one deck model rendered to PowerPoint / Beamer / self-contained web, timed speaker notes at 130 wpm, visual QA loop</td>
 <td>Yes — paper path + optional flags</td>
@@ -1349,6 +1392,11 @@
 <td><code>/word2latex</code></td>
 <td>Convert a Word <code>.docx</code> template to a faithful LaTeX source (pandoc + standard patch sequence)</td>
 <td>Yes — <code>.docx</code> path</td>
+</tr>
+<tr>
+<td><code>/pdf2md run &lt;pdf&gt; -o &lt;dir&gt;</code></td>
+<td>Convert a PDF with no LaTeX source into markdown for <code>thesis-auditor</code>'s content checks. <code>run</code> is a DRY RUN without <code>--yes</code> (reports the bootstrap plan, launches nothing; a failed bootstrap stops it). Two output layouts via <code>postprocess --layout thesis\|single</code>: <code>thesis</code> (default) makes <code>&lt;dir&gt;</code> play the role of a project's <code>src/</code> — <code>&lt;dir&gt;/main.md</code> linking everything, <code>&lt;dir&gt;/content/*.md</code> (<code>Introduction.md</code>/<code>chapitreN.md</code>/<code>Conclusion.md</code>), <code>&lt;dir&gt;/assets/*.md</code> (<code>bibliography.md</code>, <code>ref.md</code>) and <code>&lt;dir&gt;/assets/figures/</code>; <code>single</code> keeps an article or a talk source as ONE <code>main.md</code> plus <code>assets/bibliography.md</code> — <code>repair</code>, <code>fix</code>, and <code>validate --vlm-check</code> refuse a single layout (exit 2), <code>validate</code> and <code>--fidelity</code> accept it. Not auto-discovered by <code>thesis-auditor</code>'s own directory resolution, which needs a real <code>main.tex</code> and <code>\input{}</code>/<code>\include{}</code> macros. Bootstraps <code>mineru</code>/<code>mineru-llama-cpp</code> (pinned versions, settings in <code>pdf2md-pipeline.json</code>)/model/config, starts the VLM server directly (bypassing a Windows-broken <code>mineru-kit vlm-server</code>) with a real <code>--image-min-tokens</code> accuracy fix, runs the conversion, strips the running-header splice defect, restructures the bibliography BibTeX-like, then validates against an independent second PDF reader chapter by chapter (words/sections/tables/figures/citations/rough-equation-estimate), with <code>--fidelity</code> (content check: lost headings, missing or reordered paragraphs, embedded images) and <code>--vlm-check</code> (a local vision model, loopback-only <code>base_url</code>, verifies the formulas of math-heavy pages), then a <code>repair</code> stage (dry run unless <code>--yes</code>, originals backed up) for what can be fixed mechanically, and a <code>fix --model TAG</code> stage (bounded loop with a local vision model, <code>--yes</code> to write) that recovers only LOST numbered equations by default — <code>--rewrite-formulas</code> opts in to also rewrite a formula whose meaning may be wrong, since a measured run once changed the meaning of an already-correct one</td>
+<td>Yes — PDF path + <code>-o &lt;dir&gt;</code>; optional <code>--tier</code>, <code>--port</code>, <code>--yes</code>, <code>--layout thesis\|single</code></td>
 </tr>
 <tr>
 <td><code>/fetchform &lt;https-url&gt; [dest]</code></td>
@@ -1385,8 +1433,22 @@
 <td>Extract a paper's own content and draft (or refresh) its abstract, grounded in its own contribution/method/results/limitations rather than a paraphrase; for a UQAC thesis, drafts the Résumé (French) + Abstract (English) pair from the same extraction. Confirms before overwriting existing content</td>
 <td>Optional — <code>.tex</code> path/IDE file</td>
 </tr>
+<tr>
+<td><code>/expertfinder</code></td>
+<td>Find university professors closest to a set of expertise keywords in a user-supplied location via the <code>professor-expertise-finder</code> agent: reuses or builds a verified department/faculty-list table, ranks professors with a /5 rubric grounded in Scopus-verified recent articles (<code>scopus</code> + <code>extract-contributions</code>), and supports test mode, an exclusion list, an optional reviewers reference file, and a batch allocation mode (no-reuse, one-university-per-evaluator, conflict-of-interest)</td>
+<td>Optional — location + keywords, or <code>--test</code>/<code>--exclude</code>/<code>--reference</code>/<code>--batch</code> flags</td>
+</tr>
+<tr>
+<td><code>/portfolio</code></td>
+<td>One-shot migration of a researcher's final CIHR / Canadian Common CV XML export into their WordPress portfolio via the <code>wp-portfolio-agent</code> agent: parse, discover WP pages (first run only), preview and pause for approval, dry-run the push, push for real only after explicit approval, verify the public pages. No student data is ever read from the XML</td>
+<td>Yes — CV XML path + <code>--data-dir</code> (outside the repository)</td>
+</tr>
 </tbody>
 </table>
+<!-- local-coding:begin -->
+<p>The hook <code>review-loop-guard.py</code> refuses a review skill until <code>loop_bounds.py init</code> has declared the bounds. Whether a review typed by hand reaches the hook is unverified, so run <code>init --max-rounds 1</code> first as the one-shot. The full process, the plan header and the choice of executor are in <a href="../12-local-coding/">chapter 12</a>.</p>
+<!-- local-coding:end -->
+
 <p>Full detail for <code>/rt-dashboard</code>: see <a href="../07-rt-observe-dashboard/">07-rt-observe-dashboard.md</a>.</p>
 <h2 id="concis-concise-mode"><code>/concis</code> — Concise mode<a class="headerlink" href="#concis-concise-mode" title="Permanent link">&para;</a></h2>
 <p>Activates for the rest of the session: max 5 sentences for short answers, structured

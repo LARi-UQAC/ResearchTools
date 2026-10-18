@@ -582,6 +582,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#switching-the-whole-sessions-identity-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switching the whole session's identity (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#quick-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -812,6 +823,34 @@
     
   
     11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
   
 
     
@@ -1080,6 +1119,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#switching-the-whole-sessions-identity-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switching the whole session's identity (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#quick-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1154,6 +1204,46 @@
 <blockquote>
 <p><code>/compact</code> is destructive — conversation history is summarized and cannot be restored. Always run <code>/ctx</code> first to confirm it is needed.</p>
 </blockquote>
+<h2 id="switching-the-whole-sessions-identity-optional">Switching the whole session's identity (optional)<a class="headerlink" href="#switching-the-whole-sessions-identity-optional" title="Permanent link">&para;</a></h2>
+<p>The output modes above shrink what the cloud model reads and writes. Switching the session
+itself to a different identity goes further — a local model spends no cloud generation tokens
+at all (at a real speed tradeoff: a CPU/RAM-bound model can run at a few tokens per second), and
+Augure routes the same session through a different account/endpoint entirely.</p>
+<p><code>scripts/local/claude-switch.ps1</code> dot-sources three functions. Load it once per shell:</p>
+<div class="highlight"><pre><span></span><code><span class="p">.</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">local</span><span class="p">\</span><span class="n">claude-switch</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>claude-local</code> (alias of <code>claude-ollama</code>, optional <code>-Model &lt;tag&gt;</code> and <code>-SessionName &lt;name&gt;</code>)</td>
+<td>Points Claude Code straight at a local Ollama model — Ollama's own Anthropic-API compatibility since 2026-01-16, no proxy needed. With no <code>-Model</code>, resolves the default through <code>model_resolver.py</code> (the same resolver local-writer/local-coder use), never a hardcoded tag. Refuses to switch, and never launches Claude Code, if Ollama isn't reachable or the requested model isn't actually installed</td>
+</tr>
+<tr>
+<td><code>claude-augure</code> (optional <code>-SessionName &lt;name&gt;</code>)</td>
+<td>Points Claude Code at AugureAI's endpoint, with <code>ANTHROPIC_API_KEY</code> taken from <code>AUGUREAI_API_KEY</code>. Refuses with nothing touched if that variable isn't set</td>
+</tr>
+<tr>
+<td><code>claude-cloud</code> (optional <code>-SessionName &lt;name&gt;</code>)</td>
+<td>Clears any local/Augure redirection, restores whatever <code>ANTHROPIC_API_KEY</code> was set before the FIRST switch away from it in this shell (not an intermediate one, even after local then Augure or Augure then local), and returns to the default Anthropic cloud</td>
+</tr>
+</tbody>
+</table>
+<p><code>-SessionName</code> just labels the terminal window title (<code>[LOCAL]</code>/<code>[AUGURE]</code>/<code>[CLOUD] &lt;name&gt;</code>) so
+several parallel Claude Code sessions in different windows stay distinguishable — it has no
+effect on routing.</p>
+<p>Measure before switching to a local model — it is not plug-and-play. A tag that fits in VRAM is
+tuned by the <code>opt-local-vram-llm</code> skill (<code>/opt-local-vram-llm</code>); one too large for the GPU and
+running on CPU/RAM is measured instead with <code>aider-thread-probe.py --mode sweep</code>, which reads
+real decode speed, CPU load, and page-in rate off the machine rather than guessing. The measured
+tag is then registered as the script's default with <code>model_resolver.py --adopt-role session
+&lt;tag&gt; --reason "..."</code>. Full process and a worked example in <code>.claude/rules/workflows.md</code>,
+"Switching the Claude Code session itself between three identities".</p>
 <h2 id="quick-reference">Quick reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

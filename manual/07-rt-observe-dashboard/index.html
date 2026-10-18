@@ -836,6 +836,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1179,18 +1207,39 @@ model: 2.5% word error on the operator's own recordings, a 19.5 s recording tran
 Toolkit. A machine without them sees the panel name the missing install command, never a
 broken dashboard. The model is loaded and warmed when the dashboard starts, so the first press
 already has a live transcript.</p>
-<p>The panel never opens the Obsidian vault or the <code>graphify</code> graph itself. Every question is
+<p>The panel never opens the Obsidian vault or the <code>graphify</code> graph itself: every question is
 relayed to the vault daemon's own read-only ask queue (<code>.claude/skills/obsidian-cli</code>'s
-<code>daemon_ask.py</code>), which searches the vault, calls the local LLM, and answers back — the same
-boundary the rest of this page already holds itself to for the vault/graph panels above. The
-answer is spoken back through the browser's own <code>speechSynthesis</code>, not a new server-side voice.</p>
+<code>daemon_ask.py</code>), the same boundary this page's vault/graph panels already hold themselves to.
+Since 2026-10-02 that queue answers in two spoken parts. It searches the vault first and speaks
+that answer right away; then, if the matched vault note's project folder names a <code>repo:</code>
+property, it asks a short English-keyword question and queries that project's own <code>graphify</code>
+graph (<code>daemon_graph.py</code>), read-only, and speaks a short code-structure note on top - labelled
+as code structure, not progress, since the graph is AST-only and holds no decision log. No
+<code>repo:</code>, or no graph for that repository, says so plainly instead of guessing. <code>POST
+/api/voice/ask</code> returns at once; the panel polls <code>GET /api/voice/answer</code> until a part arrives
+or the per-part wait (<code>timeouts_seconds.voice_ask_wait</code>) runs out. Every spoken part is read
+back through the browser's own <code>speechSynthesis</code>, not a new server-side voice.</p>
+<!-- local-coding:begin -->
+<p><strong>Local calls and plan stages.</strong> Two snapshot sections follow local coding. <code>local_calls</code>,
+read by <code>collect_local.py</code>, reads a bounded tail of the bridge log and shows each role with its
+model, window, call and token totals and whether it is active. <code>rounds</code>, read by
+<code>collect_rounds.py</code>, lists each plan of a round folder with its executor, tier and task counts,
+and the review loop of every worktree as rounds used of the maximum. The Real-Time tab draws a
+lane and a token ring for each active bridge role, and shows an aider run's fixed cost and task
+budget in the hover. See <a href="../12-local-coding/">chapter 12</a>.</p>
+<!-- local-coding:end -->
+
 <h2 id="the-rt-dashboard-command">The <code>/rt-dashboard</code> command<a class="headerlink" href="#the-rt-dashboard-command" title="Permanent link">&para;</a></h2>
 <p>Starts the <code>rt-observe</code> dashboard on loopback and reports the URL. With no argument it dry-runs
 first, which names the interpreter it resolved, the bind address, the page and every per-section
 TTL, and starts nothing. With <code>--json</code> it skips the server entirely and dumps the snapshot,
 which is the right form inside a script or when the only question is whether anything is <code>lost</code>.</p>
 <p>Its three refusals are read back to you rather than worked around: no interpreter found names
-every candidate tried and exits 2; a port held by something else names the holding PID and exits
+every path tried and the rebuild command and exits 2 (it looks in <code>.venv-skills</code> of the clone,
+then of the main clone from a worktree, and uses a <code>python</code> from <code>PATH</code> only with
+<code>-AllowPathFallback</code>, or <code>--allow-path-fallback</code> for the <code>.sh</code>
+launcher); the Repository panel shows the same interpreter, or the reason there is none;
+a port held by something else names the holding PID and exits
 1, because two dashboards showing two different snapshots is worse than none; and a dashboard
 already running is reported with its URL rather than started twice.</p>
 <p>The command is a convenience, never the only way in. <code>rt-dashboard.ps1</code>, <code>rt-dashboard.sh</code>,

@@ -869,6 +869,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1201,7 +1229,7 @@
 <h1 id="agents">Agents<a class="headerlink" href="#agents" title="Permanent link">&para;</a></h1>
 <p>Chapter 10 of the ResearchTools manual. Back to <a href="../../README.md">table of contents</a>.</p>
 <p>Agents are specialists Claude delegates to automatically based on context, or explicitly on
-request ("use the <code>scopus-auditor</code> agent to…"). Fifteen ship in this repo; most back a slash
+request ("use the <code>scopus-auditor</code> agent to…"). Twenty ship in this repo; most back a slash
 command. Two of them (<code>local-writer</code>, <code>local-coder</code>) are local-delegation agents: a cheap
 cloud wrapper that drives a local Ollama model over a Bash bridge (see "Local delegation").
 Two are loop orchestrators: <code>authoring-loop</code> (ScholarEval-gated writing loop) and the
@@ -1301,6 +1329,12 @@ the single source of truth; per-tool mirrors are generated from them (see
 <td><code>.claude/agents/narrative-cv-writer.md</code></td>
 </tr>
 <tr>
+<td><code>wp-portfolio-agent</code></td>
+<td>One-shot migration of a researcher's final CIHR / Canadian Common CV XML export into their WordPress portfolio: parse, discover WP pages (first run only), preview and pause for approval, dry-run the push, push for real only after explicit approval, then verify the public pages. No <code>Write</code>/<code>Edit</code> tool: <code>push_wp.py</code> is the sole writer, gated by the anti-fabrication check and verified by a read-back after every PUT. Never publishes student data from the XML (D2)</td>
+<td><code>/portfolio</code></td>
+<td><code>.claude/agents/wp-portfolio-agent.md</code></td>
+</tr>
+<tr>
 <td><code>thesis-to-paper</code></td>
 <td>Integrate a thesis + its conference papers into one submission-ready journal manuscript (invited extension); pandoc reference conversion, figure pipeline, content-delta matrix, then <code>/litreview</code> + <code>scientific-writing</code> + <code>/bibclean</code> + <code>/submitcheck</code> + <code>/auditpaper</code> inline, with a multi-session checkpoint protocol</td>
 <td>by name / "extend this paper to a journal version"</td>
@@ -1336,6 +1370,12 @@ the single source of truth; per-tool mirrors are generated from them (see
 <td>by context / by name</td>
 <td><code>.claude/agents/local-coder.md</code></td>
 </tr>
+<tr>
+<td><code>professor-expertise-finder</code></td>
+<td>Find university professors closest to a set of expertise keywords in a user-supplied location (never hardcoded): reuse or build a verified department/faculty-list table, rank with a /5 rubric grounded in Scopus-verified recent approved-publisher articles (<code>scopus</code> AU-ID + <code>publications</code> mode) and each article's own stated contribution (<code>extract-contributions</code>), never a guessed title match. Test mode, exclusion lists, an optional reviewers reference file, and a batch allocation mode (no-reuse, one-university-per-evaluator, conflict-of-interest, all enforced by script)</td>
+<td><code>/expertfinder</code></td>
+<td><code>.claude/agents/professor-expertise-finder.md</code></td>
+</tr>
 </tbody>
 </table>
 <p>The four ScholarEval auditors (<code>scopus-auditor</code>, <code>paper-auditor</code>, <code>thesis-auditor</code>,
@@ -1363,8 +1403,10 @@ comparison (baseline vs post), hard-gated so execution only completes when the s
 pushing token-heavy generation to local models on the GPU. Each agent runs on a cheap cloud
 model (Haiku) that only frames the task and drives a local model over <code>ollama_bridge.py</code>,
 which speaks Ollama's HTTP API and takes <code>--role writer</code> or <code>--role coder</code> instead of a model
-name; the bulk text or code is generated locally and free. No gateway is used and cloud stays
-on your normal subscription auth, so only the small Haiku wrapper spends cloud tokens.</p>
+name; the bulk text or code is generated locally and free. Claude Code has one API endpoint per
+process and no per-subagent endpoint, so a subagent cannot be pointed at Ollama while the main
+session stays on Anthropic. That, and not the subscription, is why the Haiku wrapper drives
+the bridge, and only that small wrapper spends cloud tokens.</p>
 <p>Requirements: Ollama running, and a qualified tag for the role you are about to use
 (<code>model_resolver.py --resolve --role coder</code>). There is no fallback tag: an unqualified role
 is an explicit stop, never a silent substitution of a weaker model. LiteLLM

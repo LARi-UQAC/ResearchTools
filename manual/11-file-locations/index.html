@@ -16,7 +16,7 @@
         <link rel="prev" href="../10-agents/">
       
       
-        <link rel="next" href="../../aider-setup/">
+        <link rel="next" href="../12-local-coding/">
       
       
         
@@ -733,6 +733,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 File locations
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -750,6 +768,64 @@
 
       </a>
       
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#machine-local-files-never-committed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Machine-local files (never committed)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -981,6 +1057,25 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#machine-local-files-never-committed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Machine-local files (never committed)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -1004,7 +1099,7 @@
 <p>All agents, commands, and skills live under this repository's <code>.claude/</code> directory.</p>
 <div class="highlight"><pre><span></span><code>ResearchTools\
 └── .claude\
-    ├── agents\                              (18 agents; not all listed below -- see the
+    ├── agents\                              (21 agents; not all listed below -- see the
     │                                          Agents chapter for the current, complete list)
     │   ├── scopus-researcher.md       ← /litreview
     │   ├── litreview-updater.md       ← /litupdate
@@ -1023,8 +1118,10 @@
     │   ├── latex-writer.md            ← LaTeX authoring
     │   ├── local-writer.md            ← local docs/comments (bridge)
     │   ├── local-coder.md             ← local code gen (bridge)
-    │   └── narrative-cv-writer.md     ← /cv
-    ├── commands\                            (25 commands; not all listed below -- see the
+    │   ├── narrative-cv-writer.md     ← /cv
+    │   ├── professor-expertise-finder.md ← /expertfinder
+    │   └── wp-portfolio-agent.md      ← /portfolio
+    ├── commands\                            (32 commands; not all listed below -- see the
     │                                          Commands chapter for the current, complete list)
     │   ├── concis.md   ├── slim.md    ├── focus.md   ├── ctx.md
     │   ├── tikz.md     ├── test.md    ├── doc.md     ├── latex.md
@@ -1035,9 +1132,11 @@
     │   ├── word2latex.md               ├── geolocalisation.md
     │   ├── loopdev.md                  ├── talk.md
     │   ├── recommendation-letter.md
-    │   └── cv.md
+    │   ├── cv.md
+    │   ├── expertfinder.md
+    │   └── portfolio.md
     ├── rules\                               (code-style, preferences, security, testing, workflows)
-    └── skills\                              (18 skills; not all listed below -- see the
+    └── skills\                              (25 skills; not all listed below -- see the
                                                Skills chapter for the current, complete list)
         ├── scopus\
         │   ├── SKILL.md
@@ -1079,12 +1178,63 @@
                            vram_daemon.py, vram_optimizer.py, Test\test_vram_probe.py,
                            Test\test_vram_modelfile.py, Test\test_vram_daemon.py,
                            Test\test_vram_optimizer.py)
-        └── opt-local-stt-vram\SKILL.md      (+ stt-bench-config.json, scripts\stt_bench.py,
-                           stt_score.py, gpu_memory.py, bench_config.py,
-                           engines\faster_whisper_engine.py, engines\nemo_engine.py,
-                           Test\test_stt_bench.py, Test\test_stt_score.py,
-                           Test\test_gpu_memory.py, Test\test_engines_config.py)
+        ├── opt-local-stt-vram\SKILL.md      (+ stt-bench-config.json, scripts\stt_bench.py,
+        │                  stt_score.py, gpu_memory.py, bench_config.py,
+        │                  engines\faster_whisper_engine.py, engines\nemo_engine.py,
+        │                  Test\test_stt_bench.py, Test\test_stt_score.py,
+        │                  Test\test_gpu_memory.py, Test\test_engines_config.py)
+        ├── professor-expertise-finder\SKILL.md  (+ scripts\pef_common.py, pef_config.json,
+                           pef_column_hints.json, pef_university_aliases.json, table.py,
+                           score.py, exclusions.py, file_search.py, selections.py,
+                           requirements.txt, Test\ [7 offline suites])
+        └── wp-portfolio-sync\SKILL.md       (+ scripts\wp_errors.py, wp_config.py, wp_paths.py,
+                           wp_common.py, cihr_cv.py, parse_cv.py, cihr_labels.json,
+                           sensitive_keys.json, render.py, verify_titles.py,
+                           push_wp.py, discover.py, preview.py,
+                           templates\mapping.example.yaml, cookies.json.example,
+                           Test\ [10 offline suites])
 </code></pre></div>
+<p>This tree predates several skills/agents merged since it was last updated in full (e.g.
+<code>wp-portfolio-sync</code>, <code>extract-contributions</code>, <code>obsidian-cli</code>, <code>rt-observe</code>, <code>pdf2md</code>); the
+headline counts above are kept current (checked 2026-10-15), but the tree's own per-skill
+listing is not reconciled against the repo's true current contents — see the Agents,
+Commands, and Skills chapters for those.</p>
+<!-- local-coding:begin -->
+<p><strong>Local coding contract files.</strong> In the <code>loop-engineer</code> skill: <code>scripts/plan_contract.py</code>,
+<code>scripts/loop_bounds.py</code>, <code>scripts/token_count.py</code> and the data file <code>plan-tiers.json</code>. In
+<code>.claude/hooks/</code>: <code>review-loop-guard.py</code> and <code>local-coder-dispatch-guard.py</code>, each with a JSON
+config beside it. The review-loop bounds of a worktree live in <code>rt-review-loop.json</code> inside that
+worktree's git directory, so they are never committed and two worktrees never share them. The
+chapter is <code>docs/manual/12-local-coding.md</code>, with its flowchart source under
+<code>docs/manual/diagrams/</code>. See <a href="../12-local-coding/">chapter 12</a>.</p>
+<!-- local-coding:end -->
+
+<h2 id="machine-local-files-never-committed">Machine-local files (never committed)<a class="headerlink" href="#machine-local-files-never-committed" title="Permanent link">&para;</a></h2>
+<p>The git privacy guard (<code>.claude/hooks/git/</code>, see <a href="../05-security-audit/">05-security-audit.md</a>
+and <a href="../../.claude/rules/security.md"><code>security.md</code></a>) is installed from repo-tracked source
+into three places, neither of the latter two part of the repository tree above:</p>
+<ul>
+<li><strong>Repo-side source</strong>, tracked: <code>.claude/hooks/git/</code> — <code>pre-commit</code>, <code>pre-push</code>,
+  <code>privacy-lib.sh</code>, <code>privacy-extra.awk</code>, <code>privacy-guard.conf</code>, <code>fixture-path-allow.txt</code>,
+  <code>privacy-rules.toml</code>, <code>install-git-hooks.ps1</code> (plus two files the installer reads here but
+  never copies anywhere: <code>deny-term-stopwords.txt</code>, <code>sync-folder-markers.txt</code>).</li>
+<li><strong>Copied by the installer</strong> to <code>~/.config/git/hooks/</code> (<code>core.hooksPath</code>): <code>pre-commit</code>,
+  <code>pre-merge-commit</code> (a copy of <code>pre-commit</code>, since a clean merge runs only that one),
+  <code>pre-push</code>, <code>_chain</code> (plus one copy per other chained hook name), <code>privacy-rules.toml</code>,
+  <code>privacy-lib.sh</code>, <code>privacy-extra.awk</code>, <code>fixture-path-allow.txt</code>, <code>privacy-guard.conf</code>.</li>
+<li><strong>Machine-local, never committed, and not inside any repository at all</strong>: live in the
+  install folder, outside the tracked tree entirely, so they are not "gitignored files" so
+  much as files no repository holds in the first place. What protects a stray copy pasted
+  into a repository is the global git ignore the installer writes
+  (<code>core.excludesFile</code>, else <code>&lt;XDG_CONFIG_HOME or ~/.config&gt;/git/ignore</code>), which also lists
+  all three file names.</li>
+<li><code>private-terms.txt</code> — the generated deny list, extended for each new student
+    (<code>-TermsFrom &lt;folder&gt;</code>): the installer only appends names it does not already have,
+    never rewrites the list.</li>
+<li><code>private-terms.extra.txt</code> — hand-added terms.</li>
+<li><code>private-terms.excluded.txt</code> — fragments the extractor set aside (common words, or
+    shorter than the configured length floor).</li>
+</ul>
 <hr />
 <p><a href="../10-agents/">← 10 Agents</a> | <a href="../../README.md">Table of contents</a></p>
 

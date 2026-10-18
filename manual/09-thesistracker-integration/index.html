@@ -825,6 +825,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1123,9 +1151,11 @@ being findable only by reading <code>Architecture.md</code> prose.</p>
 <li><strong><a href="../../Architecture.md">Architecture.md</a></strong> — this repository's own agent/skill/command
   architecture, seven layers, entirely internal to ResearchTools.</li>
 <li><strong><a href="../../NEW_ARCHITECTURE.md">NEW_ARCHITECTURE.md</a></strong> — the shared architecture document for
-  the UQAC form engine, the system the two repositories make up together. It is committed
-  identically to <code>main</code> in both repositories (byte-for-byte, checked by <code>sha256sum</code>), so either
-  checkout tells the whole story. It carries the twenty planned units (<code>RT-*</code> on this side,
+  the UQAC form engine, the system the two repositories make up together. It is MEANT to be
+  committed identically to <code>main</code> in both repositories (byte-for-byte, checked by <code>sha256sum</code>),
+  so either checkout tells the whole story — except for a known divergence between the two
+  checkouts' copies as of 2026-10-02, which this file's own opening paragraph names; reconciling
+  them is the operator's job. It carries the twenty-two planned units (<code>RT-*</code> on this side,
   <code>TT-*</code> on ThesisTracker's), their delivery status, and the data model and lifecycle both
   sides agree on. That content is deliberately not repeated here: a second copy is exactly the
   kind of drift this manual split exists to avoid (see <a href="../00-purpose/">00-purpose.md</a>).</li>
@@ -1137,7 +1167,8 @@ component graph and is a separate system.</p>
 <p><code>deploy/form-service/</code> (the <code>form-service</code> skill, chapter <a href="../04-skills/">04</a>) wraps the PDF
 ingest, widget-dump, filling, and PAdES-signing scripts in a stateless FastAPI application, so
 ThesisTracker calls one HTTP service (<code>/pdf/widgets</code>, <code>/pdf/fill</code>, <code>/pdf/sign</code>, <code>/pdf/validate</code>,
-plus <code>GET /publications</code>) instead of shelling out to Python itself. The service is reached only
+<code>GET /publications</code>, plus <code>POST /cv/build</code> for the narrative CV) instead of shelling out to
+Python itself. The service is reached only
 over a private network behind a shared secret compared in constant time, and refuses to start
 when that secret is unset or too short; nothing is persisted beyond a certificates volume and a
 disk-cached, rate-limited publications cache. Full diagram and detail: <code>Architecture.md</code>,
@@ -1160,7 +1191,15 @@ disk-cached, rate-limited publications cache. Full diagram and detail: <code>Arc
 <td>ThesisTracker</td>
 </tr>
 <tr>
-<td>Twenty-unit delivery plan, shared data model, cross-repo decisions</td>
+<td>CV rendering (<code>POST /cv/build</code>, stateless, no LaTeX compiled, nothing stored)</td>
+<td>ResearchTools (<code>narrative-cv</code> skill)</td>
+</tr>
+<tr>
+<td>Student HQP rows, both consents (web publication and CV inclusion)</td>
+<td>ThesisTracker</td>
+</tr>
+<tr>
+<td>Twenty-two-unit delivery plan, shared data model, cross-repo decisions</td>
 <td><code>NEW_ARCHITECTURE.md</code> (both repos)</td>
 </tr>
 </tbody>

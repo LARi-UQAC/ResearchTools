@@ -592,6 +592,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#step-6-privacy-guard-for-every-git-repository-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Privacy guard for every git repository (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#contributing-improvements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -878,6 +889,34 @@
     
   
     11 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
   
 
     
@@ -1205,6 +1244,17 @@
     <span class="md-ellipsis">
       
         Step 5 — Python environment for the offline test suite (optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-privacy-guard-for-every-git-repository-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Privacy guard for every git repository (recommended)
       
     </span>
   </a>
@@ -1564,25 +1614,70 @@ the VS Code user profile, making them available in every workspace:</p>
 current default (<code>engineering</code>).</p>
 <p>Details in <a href="../10-agents/#using-the-agents-outside-claude-code">Using the agents outside Claude Code</a>.</p>
 <h2 id="step-5-python-environment-for-the-offline-test-suite-optional">Step 5 — Python environment for the offline test suite (optional)<a class="headerlink" href="#step-5-python-environment-for-the-offline-test-suite-optional" title="Permanent link">&para;</a></h2>
-<p><code>scripts/test/run-offline-tests.ps1</code> resolves <code>.venv-skills\Scripts\python.exe</code> first, then
-<code>.venv</code>, then whatever <code>python</code> is on <code>PATH</code>. Without that environment several suites cannot
-import what they need and are reported <strong>NOT RUN</strong> — which is honest, and means the suite is
-not actually proving what it looks like it is proving.</p>
+<p><code>scripts/test/run-offline-tests.ps1</code>, the dashboard launchers, the vault drill and the other
+launchers all take their Python from <code>.venv-skills</code> of the clone, then of the <strong>main clone</strong>
+when you work in a linked worktree (they ask git for its common directory, so no link is
+needed). If that environment is absent or empty they <strong>refuse</strong> and print every path they
+looked at together with the rebuild command. They no longer fall back to the first <code>python</code>
+on <code>PATH</code>: on one machine that was another account's Python, and a lost environment went
+unnoticed for a week. To accept <code>PATH</code> knowingly, pass <code>-AllowPathFallback</code> (or
+<code>--allow-path-fallback</code> for <code>rt-dashboard.sh</code>, in any position); to name an interpreter,
+pass <code>-Python &lt;path&gt;</code>. The interpreter in use is always printed.</p>
+<p>Without the environment several suites cannot import what they need and are reported
+<strong>NOT RUN</strong> — which is honest, and means the suite is not actually proving what it looks like
+it is proving.</p>
 <div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span>            <span class="c"># creates .venv-skills, installs, then pip-audits</span>
-<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span> <span class="n">-Preview</span>   <span class="c"># say what it would install, install nothing</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span> <span class="n">-Preview</span>   <span class="c"># choose the interpreter, say what it would install, write nothing</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span> <span class="n">-Python</span> <span class="s2">"C:\Users\&lt;you&gt;\AppData\Local\Programs\Python\Python311\python.exe"</span>
 </code></pre></div>
-<p>It installs only what the offline suite imports: <code>pypdf</code>, <code>python-pptx</code>, <code>jinja2</code> and
-<code>defusedxml</code> for the thirteen <code>paper2talk</code> suites, and <code>PyYAML</code> for
-<code>test_letter_identity.py</code>. Everything else in the Prerequisites table above stays a manual
-step on purpose — <code>docling</code> alone pulls <code>torch</code>, and a CVE in a skill you never run should
-not block the environment your tests need.</p>
+<p>The environment is always built in the main clone, even when you run the command from a
+worktree. The base interpreter is chosen, not assumed: the switch tries <code>-Python</code>, then the
+<code>python</code> entries on <code>PATH</code> and the py launcher, and keeps the first one that belongs to your
+own profile and can really create a virtual environment (it builds a scratch one to check).
+If none qualifies it stops and names each candidate with the reason, for example "belongs to
+another account" or "python -m venv failed".</p>
+<p>It installs what the repository's skills import, listed in
+<code>scripts/lib/rt-python-requirements.json</code>: the offline-suite packages (<code>paper2talk</code>,
+<code>recommendation-letter</code>), the <code>scopus</code> skill (<code>requests</code>, <code>playwright</code>, the reviewers' clients)
+and the <code>extract-statistic</code> skill without <code>docling</code>, plus <code>pip-audit</code>. The Chromium binary for
+Playwright stays a separate <code>playwright install chromium</code>, and <code>docling</code> and the
+<code>geolocalisation</code> dependencies stay manual on purpose: <code>docling</code> alone pulls <code>torch</code>, and a CVE
+in a skill you never run should not block the environment your tests need.</p>
 <p>By hand, if you would rather not use the switch:</p>
 <div class="highlight"><pre><span></span><code><span class="n">python</span> <span class="n">-m</span> <span class="n">venv</span> <span class="p">.</span><span class="n">venv-skills</span>
 <span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">paper2talk</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
 <span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">recommendation-letter</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
 <span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip_audit</span> <span class="p">-</span><span class="n">-strict</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">paper2talk</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
 </code></pre></div>
-<p>The directory name matters: name it anything else and the runner will not look there.</p>
+<p>The directory name matters: name it anything else and the launchers will not look there.</p>
+<p><strong>Never link <code>.venv-skills</code> into a worktree</strong> (junction or symbolic link). Removing the worktree
+with <code>git worktree remove</code> (no <code>--force</code> needed when git ignores the link, as it does <code>.venv*/</code>) follows the link and deletes the real environment
+(<a href="../../.claude/rules/workflows.md">R37</a>). A worktree needs no link.</p>
+<h2 id="step-6-privacy-guard-for-every-git-repository-recommended">Step 6 — Privacy guard for every git repository (recommended)<a class="headerlink" href="#step-6-privacy-guard-for-every-git-repository-recommended" title="Permanent link">&para;</a></h2>
+<p>A global pre-commit hook refuses a commit that adds a secret or personal data (account paths,
+Quebec student codes, <code>@etu.uqac.ca</code> addresses, FRQ identifiers, your own account name), in
+every repository on the machine. The repository's own hooks keep running.</p>
+<div class="highlight"><pre><span></span><code><span class="n">winget</span> <span class="n">install</span> <span class="n">Betterleaks</span><span class="p">.</span><span class="n">Betterleaks</span>                  <span class="c"># the scanner the hook calls</span>
+<span class="p">.\.</span><span class="n">claude</span><span class="p">\</span><span class="n">hooks</span><span class="p">\</span><span class="n">git</span><span class="p">\</span><span class="nb">install-git</span><span class="n">-hooks</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-DryRun</span>       <span class="c"># say what it would do</span>
+<span class="p">.\.</span><span class="n">claude</span><span class="p">\</span><span class="n">hooks</span><span class="p">\</span><span class="n">git</span><span class="p">\</span><span class="nb">install-git</span><span class="n">-hooks</span><span class="p">.</span><span class="n">ps1</span>               <span class="c"># copy to ~/.config/git/hooks, set core.hooksPath</span>
+</code></pre></div>
+<p>A deliberate exception: <code>betterleaks:allow</code> on the line. A private repository can opt out
+with <code>git config privacyguard.enabled false</code>. If another tool already owns the global
+<code>core.hooksPath</code>, the installer refuses rather than overwrite it. The <code>privacy-scan</code> CI
+workflow applies the same rules to every push and pull request.</p>
+<p><strong>Real names have no shape, so no rule can recognise them.</strong> Give the hooks a list of your own
+students' names that never leaves your machine:</p>
+<div class="highlight"><pre><span></span><code><span class="p">.\.</span><span class="n">claude</span><span class="p">\</span><span class="n">hooks</span><span class="p">\</span><span class="n">git</span><span class="p">\</span><span class="nb">install-git</span><span class="n">-hooks</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-TermsFrom</span> <span class="s2">"&lt;folder of student projects&gt;"</span> <span class="n">-TermsDepth</span> <span class="n">2</span>
+</code></pre></div>
+<p>The folder names found two levels down are split at capitals into <code>private-terms.txt</code> beside the
+installed hooks, and the hooks then refuse any of them in an added line, a path, a commit message
+or a commit author. Only counts are printed. <strong>Run the same command for every new student:</strong> it
+only appends the names the file lacks, so earlier names (even a student whose folder is gone) and
+lines you typed stay. Add names by hand in <code>private-terms.extra.txt</code>. The installer <strong>refuses to write the list in a synchronized or shared
+folder</strong> (OneDrive, Dropbox, Google Drive, a network share): the list holds real names and must not
+be copied off the machine. If it refuses, run <code>-Uninstall</code>, then install again with
+<code>-Target &lt;a local folder&gt;</code>. Never paste a name into an issue, a pull request or a commit message:
+no hook sees GitHub comments.</p>
 <h2 id="contributing-improvements">Contributing improvements<a class="headerlink" href="#contributing-improvements" title="Permanent link">&para;</a></h2>
 <p>Fork the repository, improve an agent or skill on a feature branch, and open a
 pull request against <code>main</code>. The repository owner reviews and merges; a <code>git pull</code>

@@ -740,6 +740,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1273,12 +1301,24 @@ mixes languages.</p>
 <p>These agents push token-heavy generation to a local Ollama model to save cloud tokens.</p>
 <ul>
 <li>The intended auth is <strong>claude.ai subscription</strong> (no pay-as-you-go <code>ANTHROPIC_API_KEY</code>).
-  Do <strong>not</strong> set a whole-session <code>ANTHROPIC_BASE_URL</code> pointing at a local gateway - it
-  disables the cloud models (a gateway without an Anthropic key cannot serve them).</li>
+  Do <strong>not</strong> leave a whole-session <code>ANTHROPIC_BASE_URL</code> pointing at a local gateway set
+  permanently - it disables the cloud models (a gateway without an Anthropic key cannot serve
+  them). <code>scripts/local/claude-switch.ps1</code> sets it per shell on purpose and restores it.</li>
 <li>Per-subagent <code>model: ollama/...</code> frontmatter is not natively supported by Claude Code.
-  The working pattern: a <code>model: haiku</code> cloud <strong>wrapper</strong> that drives a local model through
-  <code>.claude/skills/loop-engineer/scripts/ollama_bridge.py</code>. Cloud stays on subscription auth;
-  only the small wrapper spends cloud tokens; the bulk generation is local and free.</li>
+  Claude Code has one API endpoint per process and no per-subagent endpoint, environment or
+  provider (Claude Code documentation, sub-agents and LLM gateway pages, read 2026-10-17), so
+  a subagent cannot be pointed at Ollama while the main session stays on Anthropic. That, and
+  not the subscription, is the reason for the working pattern: a <code>model: haiku</code> cloud
+  <strong>wrapper</strong> that drives a local model through
+  <code>.claude/skills/loop-engineer/scripts/ollama_bridge.py</code>. Only the small wrapper spends cloud
+  tokens; the bulk generation is local and free.</li>
+<li>Switching the WHOLE session to Ollama or Augure with <code>claude-switch.ps1</code> works and was
+  measured on this machine, but Anthropic documents that it does not support routing Claude
+  Code to non-Claude models through a gateway, and Remote Control is unavailable while the
+  base URL is not api.anthropic.com. A model ID Claude Code does not recognise is assumed to
+  have a 200K window unless <code>CLAUDE_CODE_MAX_CONTEXT_TOKENS</code> is set (<code>claude-ollama</code> sets it
+  from the <code>session</code> role window); whether that variable is capped at the model's own window
+  is not documented and is untried here.</li>
 <li>The bridge speaks Ollama's HTTP API (<code>POST /api/generate</code>), NOT <code>ollama run</code>. Measured
   2026-08-14 on Ollama 0.32.9: the CLI cannot fix a seed (the same requested seed gave
   different text), and it writes 68 to 71 ANSI cursor-control sequences into stdout, which a
@@ -1302,8 +1342,8 @@ mixes languages.</p>
   exists at all.</li>
 <li>An optional LiteLLM config (<code>~/.litellm/ollama.yaml</code>) proxies only Ollama (keep-alive /
   context tuning); it is not required, and the bridge inherits NOTHING from it.</li>
-<li>The <code>loop-engineer</code> skill (<code>/loopdev</code>) builds on these agents; its Agent SDK loop also
-  runs on subscription auth, with local steps through the same bridge.</li>
+<li>The <code>loop-engineer</code> skill (<code>/loopdev</code>) builds on these agents, with local steps through the
+  same bridge. Its driver flag <code>--loop</code> is not wired; the real bounds are <code>loop_bounds.py</code>.</li>
 </ul>
 <h2 id="4-git-and-github-workflow">4. Git and GitHub workflow<a class="headerlink" href="#4-git-and-github-workflow" title="Permanent link">&para;</a></h2>
 <ul>

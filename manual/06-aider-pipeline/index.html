@@ -825,6 +825,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1133,6 +1161,42 @@ watching, then leaves an audit report for the morning. Neither can stand in for 
 driver has no synchronous entry point a mid-session orchestrator could call. The aider-kit
 integration deliberately left <code>local-coder</code>'s definition, model resolution, and prompt untouched
 for this reason.</p>
+<!-- local-coding:begin -->
+<p><strong>Plans and the local coding contract.</strong> Since 2026-10-17 every plan, for aider or for
+<code>local-coder</code>, opens with a header naming <code>executor</code>, <code>tier</code> and the review bounds, and aider's
+driver skips that header when it lists the files a plan names. The size limits it enforces come
+from <code>context-budget.json</code>, which is also the single source for every project:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th style="text-align: right;">Ceiling in tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spec.md</code></td>
+<td style="text-align: right;">4000</td>
+</tr>
+<tr>
+<td><code>plan.md</code></td>
+<td style="text-align: right;">4000</td>
+</tr>
+<tr>
+<td><code>progress.md</code></td>
+<td style="text-align: right;">2048</td>
+</tr>
+<tr>
+<td><code>audit.md</code></td>
+<td style="text-align: right;">4096</td>
+</tr>
+</tbody>
+</table>
+<p>The tier-to-role table lives in <code>plan-tiers.json</code> and applies to <code>local-coder</code>, not to aider,
+whose writer and reviewer models are chosen in its own configuration. The choice between the
+two is described in <a href="../12-local-coding/">chapter 12</a>.</p>
+<!-- local-coding:end -->
+
 <h2 id="the-nightly-run">The nightly run<a class="headerlink" href="#the-nightly-run" title="Permanent link">&para;</a></h2>
 <p><code>aider-setup</code> is not a wrapper around <code>local-coder</code>, and does not go through Claude Code at
 all once installed - the point, since it is built to run when Claude Code and every model it

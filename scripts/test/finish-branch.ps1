@@ -1,0 +1,217 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Clean up after a pull request is merged: remove its worktree, delete its branch locally
+    and on origin, and move its plans from todo to done.
+
+.DESCRIPTION
+    The last step after "pull request, owner merges". It does nothing until -Yes is given: a
+    plain run only prints the steps it would take (R16).
+
+    It refuses, and names every reason at once, when:
+      - no merged pull request has the branch as its head (asked of gh),
+      - the local branch is on a different commit than the one the pull request ended on, which
+        means it holds commits that were never pushed,
+      - the main clone does not have the main branch checked out (it never switches the
+        checked-out branch: R32),
+      - the worktree has uncommitted or untracked files,
+      - the worktree holds a junction or a symbolic link, because removing the worktree would
+        follow it and delete its target (R37),
+      - it was started from inside the worktree it would remove.
+
+    It never uses --force. It deletes the local branch with -D, which is safe here only because
+    the check above proved the branch ends on the merged pull request's last commit (after a
+    squash merge the branch is never an ancestor of main, so -d would always refuse).
+
+    Run the copy that sits in the MAIN clone (after the merge it is there):
+        cd <main clone>
+        .\scripts\test\finish-branch.ps1 -Branch feat/my-branch          # dry run
+        .\scripts\test\finish-branch.ps1 -Branch feat/my-branch -Yes
+
+.PARAMETER Branch
+    The branch of the merged pull request, for example feat/setup-update-hooks.
+
+.PARAMETER MainBranch
+    The branch that must be checked out in the main clone and brought up to date. Default: main.
+
+.PARAMETER PlansFolder
+    Optional. A folder NAME under docs/superpowers/todo to move to docs/superpowers/done. These
+    folders are ignored by git, so a missing one is skipped, not an error.
+
+.PARAMETER ReportPath
+    Optional. Write a JSON report: the branch, ok, and each step with its outcome.
+
+.PARAMETER Yes
+    Actually do it. Without it, nothing is changed.
+
+.NOTES
+    Exit codes: 0 done, dry run, or nothing to clean; 1 a step failed (the later ones are not
+    run); 2 refused, nothing was changed. Needs git and gh on PATH.
+#>
+param(
+    [Parameter(Mandatory = $true)][string]$Branch,
+    [string]$MainBranch = "main",
+    [string]$PlansFolder = "",
+    [string]$ReportPath = "",
+    [switch]$Yes
+)
+
+Set-StrictMode -Version Latest
+# Native commands write progress to stderr; that is not an error here, the exit code is checked.
+$ErrorActionPreference = "Continue"
+
+. (Join-Path $PSScriptRoot "..\lib\rt-finish.ps1")
+
+function Write-Refused([string[]]$Reasons) {
+    Write-Host ""
+    foreach ($r in $Reasons) { Write-Host "[REFUSED] $r" -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "Nothing was changed." -ForegroundColor Red
+}
+
+function Get-Git([string]$Dir, [string[]]$GitArgs) {
+    <# Purpose: run git in a folder and return its trimmed stdout, or "" on failure. #>
+    $out = & git -C $Dir @GitArgs 2>$null
+    if ($LASTEXITCODE -ne 0) { return "" }
+    return (($out | Out-String).Trim())
+}
+
+# --- facts -------------------------------------------------------------------------------
+if ($Branch -notmatch '^[A-Za-z0-9._/-]+$' -or $Branch.Contains('..') -or $Branch -eq $MainBranch) {
+    Write-Refused @("'$Branch' is not a branch this script will clean (letters, digits, . _ / - only, and not $MainBranch).")
+    exit 2
+}
+if ($PlansFolder -and -not (Test-RtPlansFolderName $PlansFolder)) {
+    Write-Refused @("-PlansFolder must be a bare folder name under docs/superpowers/todo, got '$PlansFolder'.")
+    exit 2
+}
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Refused @("git was not found on PATH.")
+    exit 2
+}
+
+$scriptRepo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
+$common = Get-Git $scriptRepo @("rev-parse", "--path-format=absolute", "--git-common-dir")
+if (-not $common) {
+    Write-Refused @("$scriptRepo is not inside a git repository.")
+    exit 2
+}
+$mainRoot = [System.IO.Path]::GetFullPath((Split-Path ($common -replace '/', '\') -Parent))
+Set-Location -LiteralPath $mainRoot
+
+# gh: is there a merged pull request with this branch as its head, and where did it end?
+$prMerged = $false; $prReason = ""; $prHead = ""
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+    $prReason = "gh was not found on PATH, so the pull request cannot be checked"
+} else {
+    $raw = & gh pr list --head $Branch --state merged --json "number,headRefOid" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $prReason = "gh failed: $((($raw | Out-String).Trim()))"
+    } else {
+        $prs = @()
+        # Windows PowerShell 5.1 hands a JSON array through the pipeline as ONE object, so "[]"
+        # becomes a single empty array and "no merged pull request" would read as "one merged".
+        # Iterating with foreach flattens it; only entries that carry a head commit count.
+        try {
+            $parsed = ConvertFrom-Json -InputObject ($raw | Out-String)
+            foreach ($p in $parsed) {
+                if ($null -ne $p -and $null -ne $p.PSObject.Properties["headRefOid"]) { $prs += $p }
+            }
+        } catch { $prReason = "gh answered something that is not JSON" }
+        if ($prs.Count -gt 0) { $prMerged = $true; $prHead = [string]$prs[0].headRefOid }
+    }
+}
+
+# worktree holding the branch
+$worktree = ""
+$current = ""
+foreach ($line in ((& git -C $mainRoot worktree list --porcelain 2>$null) -split "`r?`n")) {
+    if ($line -like "worktree *") { $current = $line.Substring(9) }
+    elseif ($line -eq "branch refs/heads/$Branch") { $worktree = [System.IO.Path]::GetFullPath(($current -replace '/', '\')); break }
+}
+
+$localOid = Get-Git $mainRoot @("rev-parse", "--verify", "--quiet", "refs/heads/$Branch")
+$remoteExists = [bool](Get-Git $mainRoot @("ls-remote", "--heads", "origin", $Branch))
+$plansPresent = $false
+if ($PlansFolder) { $plansPresent = Test-Path -LiteralPath (Join-Path $mainRoot "docs\superpowers\todo\$PlansFolder") }
+
+if (-not $worktree -and -not $localOid -and -not $remoteExists -and -not $plansPresent) {
+    Write-Host "Nothing to clean: no worktree, no local branch and no branch on origin for $Branch." -ForegroundColor Green
+    exit 0
+}
+
+$dirty = @(); $links = @()
+if ($worktree -and (Test-Path -LiteralPath $worktree)) {
+    $dirty = @((& git -C $worktree status --porcelain 2>$null) | Where-Object { $_ })
+    $links = @(Get-ChildItem -LiteralPath $worktree -Force -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+}
+$runFromWorktree = [bool]($worktree -and ($scriptRepo.TrimEnd('\') -ieq $worktree.TrimEnd('\')))
+$mainHead = Get-Git $mainRoot @("symbolic-ref", "--short", "HEAD")
+
+$reasons = @(Get-RtFinishRefusals -Branch $Branch -PrMerged $prMerged -PrReason $prReason -PrHeadOid $prHead `
+    -LocalOid $localOid -WorktreePath $worktree -DirtyFiles $dirty -Links $links `
+    -MainHead $mainHead -MainBranch $MainBranch -RunFromWorktree $runFromWorktree)
+if (@($reasons).Count -gt 0) {
+    Write-Refused $reasons
+    exit 2
+}
+
+$steps = @(Resolve-RtFinishSteps -Branch $Branch -MainBranch $MainBranch -WorktreePath $(if ($worktree -and (Test-Path -LiteralPath $worktree)) { $worktree } else { "" }) `
+    -LocalExists ([bool]$localOid) -RemoteExists $remoteExists -PlansFolder $PlansFolder -PlansPresent $plansPresent)
+
+Write-Host ""
+Write-Host "=== finish-branch: $Branch (merged on GitHub) ===" -ForegroundColor Cyan
+Write-Host "  main clone : $mainRoot"
+if ($worktree) { Write-Host "  worktree   : $worktree" }
+$n = 0
+foreach ($s in $steps) {
+    $n++
+    $what = if ($s.Kind -eq "git") { "git " + ($s.Argv -join " ") } else { "move $($s.From) -> $($s.To)" }
+    Write-Host ("  {0}. {1}   [{2}]" -f $n, $s.Label, $what)
+}
+
+if (-not $Yes) {
+    Write-Host ""
+    Write-Host "Dry run: nothing was changed. Run again with -Yes to do it." -ForegroundColor DarkGray
+    exit 0
+}
+
+# --- do it -------------------------------------------------------------------------------
+$done = @(); $ok = $true
+foreach ($s in $steps) {
+    $detail = ""
+    if ($s.Kind -eq "git") {
+        $out = & git -C $mainRoot @($s.Argv) 2>&1
+        $good = ($LASTEXITCODE -eq 0)
+        $detail = (($out | Out-String).Trim() -split "`r?`n" | Select-Object -Last 1)
+    } else {
+        $from = Join-Path $mainRoot ($s.From -replace '/', '\')
+        $to = Join-Path $mainRoot ($s.To -replace '/', '\')
+        $good = $false
+        if (Test-Path -LiteralPath $to) { $detail = "destination already exists: $($s.To)" }
+        else {
+            try {
+                New-Item -ItemType Directory -Path (Split-Path $to -Parent) -Force | Out-Null
+                Move-Item -LiteralPath $from -Destination $to -ErrorAction Stop
+                $good = $true
+            } catch { $detail = $_.Exception.Message }
+        }
+    }
+    $done += [PSCustomObject]@{ id = $s.Id; label = $s.Label; ok = $good; detail = $detail }
+    if ($good) { Write-Host "  [OK]   $($s.Label)" -ForegroundColor Green }
+    else {
+        Write-Host "  [FAIL] $($s.Label): $detail" -ForegroundColor Red
+        $ok = $false
+        break
+    }
+}
+
+if ($ReportPath) {
+    $rep = [PSCustomObject]@{ branch = $Branch; ok = $ok; steps = $done }
+    [System.IO.File]::WriteAllText($ReportPath, ($rep | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+Write-Host ""
+if ($ok) { Write-Host "Done. $Branch is cleaned up." -ForegroundColor Green; exit 0 }
+Write-Host "Stopped at the failed step above. The later steps were not run." -ForegroundColor Red
+exit 1

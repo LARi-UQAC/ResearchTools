@@ -9,6 +9,38 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+### Changed
+- Chapter 06 of the manual (the aider pipeline) is brought in line with the local coding
+  contract. It names no orchestrating product, so "Claude Code" becomes "interactive harness"
+  there, in `docs/aider-setup.md` and in one cell of chapter 12. It says a `local-coder` dispatch
+  executes one whole plan, that the aider driver neither validates nor uses the plan header, that
+  the R35 bounds govern the review of the pushed branch and not aider's internal loop, and that the
+  generated `rules.md` covers R0 to R27 only, so the night's models do not see R35, R36 or R38.
+- Chapter 12 of the manual and its process figure are corrected. Memory is consulted through
+  `local-writer` before the brainstorm, the review loop ends when the branch is safe to merge (or
+  a bound is reached and you are asked), a last memory upkeep writes the lessons to the vault and
+  updates the graph, and the wrapper is described as a low-cost cloud model with no model named.
+  The chapter now carries the table of when memory is read and written.
+- One table in `workflows.md` ("When memory is read and written") now says when the vault and the
+  graph are read and written through `local-writer`, who must not read them, and how a write is
+  verified. The dispatch stays in the background and the session adapts when the one-line result
+  arrives. The review loop of R35 also stops when the branch is safe to merge (suite green, no
+  Critical or High finding after re-grading, minors deferred), in every copy of the rule. The hook
+  enforces the bounds only, so the findings re-graded as minor are listed in the PR body.
+
+### Fixed
+- Memory work through `local-writer` is quiet. The Stop hook reminder shrinks from about 1900 to about 500 characters, tells the session not to narrate the dispatch or repeat the agent's answer unless it reports a failure, and its status message no longer carries detail. `local-writer` returns one line on success and the full account only on failure. The live `settings.json` is not changed by this: replace its Stop entry with the template's by hand, since setup recognises the entry by its first script name and treats the old one as already present.
+- The published documentation site no longer has dead cross-links. 73 links from pages
+  under `docs/` to files outside it (`README.md`, `Architecture.md`, `.claude/...` rules and
+  skills) returned 404 on the site because MkDocs only serves `docs/`. A build hook,
+  `scripts/docs/mkdocs_hooks.py`, now sends those links to their GitHub page at build time,
+  and the Markdown keeps its relative links. Heading anchors written for GitHub, such as
+  `#scopus--scopus-academic-search`, now resolve too. `mkdocs build --strict` goes from 73
+  warnings to none. The site updates when the owner next runs `mkdocs gh-deploy` from `main`.
+- Heading ids on the site now follow GitHub's slug (a removed dash or slash leaves a double dash),
+  so 49 of the 142 heading ids change. A bookmark to the old id of one of those headings lands at
+  the top of its page. A repeated heading keeps MkDocs's `_1` suffix where GitHub writes `-1`.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

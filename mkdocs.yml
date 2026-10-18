@@ -37,6 +37,19 @@ theme:
 # still leads back to this site.
 extra:
   homepage: https://lari.uqac.ca/
+  # Branch that links leaving docs/ point at on the built site (scripts/docs/mkdocs_hooks.py).
+  # Chosen 2026-10-17: the live site is deployed from main with `mkdocs gh-deploy`.
+  docs_source_ref: main
+
+# Build hook: sends a link to a file outside docs/ to its GitHub page. Source links stay relative.
+hooks:
+  - scripts/docs/mkdocs_hooks.py
+
+# A dead link or a dead heading anchor is a warning, so `mkdocs build --strict` fails on it.
+validation:
+  links:
+    not_found: warn
+  anchors: warn
 
 extra_css:
   - assets/extra.css
@@ -53,6 +66,11 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      # GitHub-style heading ids (a removed dash or slash leaves a double dash), so anchors written
+      # for GitHub resolve on the site too.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
 
 nav:
   - Home: index.md

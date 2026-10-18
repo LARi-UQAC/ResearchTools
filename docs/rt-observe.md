@@ -177,8 +177,8 @@ stop.
 
 ## The optional journal (identity, traces, audit)
 
-Added 2026-09-24, per
-[docs/superpowers/plans/done/2026-09-24-rt-observe-journal-durable-DONE.md](superpowers/plans/done/2026-09-24-rt-observe-journal-durable-DONE.md),
+Added 2026-09-24, per the plan `docs/superpowers/plans/done/2026-09-24-rt-observe-journal-durable-DONE.md`
+(a local planning file that is not tracked by git, so it has no public page),
 for the lab's five-student multi-sandbox GPU server.
 Every claim above about a fresh clone still holds: with no database and no log store
 configured, rt-observe reports exactly what it reported before this section existed, and the

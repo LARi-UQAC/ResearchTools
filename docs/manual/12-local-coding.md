@@ -11,8 +11,8 @@ is installed.
 ## Why local coding exists
 
 A local model generates code on your GPU, so that generation costs no cloud tokens. The cloud
-still pays for the plan, for a small Haiku wrapper that drives the local model, and for the
-review of the result. Local coding saves tokens only while four things hold: the plan is
+still pays for the plan, for a small wrapper on a low-cost cloud model that drives the local
+model, and for the review of the result. Local coding saves tokens only while four things hold: the plan is
 dispatched to the local agent as a whole, the review loop is bounded, the explanation of the
 mechanism is correct, and you can see what the local model is doing. Four failures defeated it
 before this chapter: `local-coder` was never dispatched because it took one task per call, the
@@ -24,14 +24,16 @@ was barely visible in the dashboard.
 
 ```mermaid
 flowchart TD
-    A["Coding request<br/>superpowers:brainstorming"] --> B{Single step, no deliverable?}
+    A0["Coding request"] --> X["Consult both memories<br/>local-writer: vault and graph<br/>silent, distilled hits"]
+    X --> A["Brainstorm with the hits<br/>superpowers:brainstorming"]
+    A --> B{Single step, no deliverable?}
     B -- yes --> C[Answer directly]
     B -- no --> D["Write spec, plans and progress<br/>superpowers:writing-plans"]
     D --> E[Ask the owner the bounds]
     E --> F[Write the header: executor, tier, bounds]
     F --> G{Which executor?}
     G -- judgment or no local role --> H["cloud: superpowers:executing-plans"]
-    G -- one plan --> J[local-coder, Haiku wrapper and bridge]
+    G -- one plan --> J[local-coder, low-cost cloud model wrapper and bridge]
     J --> K{Step output fits the coder window?}
     K -- yes --> L[tier simple or standard]
     K -- no --> M[tier large, session role]
@@ -41,17 +43,22 @@ flowchart TD
     M --> O
     N --> O
     O --> P[Review round on the diff]
-    P --> Q{Findings?}
-    Q -- none --> R[Pull request, owner merges]
-    Q -- some --> S{Bound reached?}
+    P --> Q{"Safe to merge?<br/>suite green, no Critical or High finding"}
+    Q -- yes --> Y["Memory upkeep<br/>local-writer writes lessons to the vault<br/>and updates the graph, silent"]
+    Y --> R[Pull request, owner merges]
+    Q -- no --> S{Bound reached?}
     S -- no --> T[Fix, failing test first] --> P
-    S -- yes --> U[Stop, ask the owner]
+    S -- yes --> U[Stop, report what remains, ask the owner]
     F -.-> V[rt-observe follows every stage]
 ```
 
 The source of this diagram is [local-coding-flow.mmd](diagrams/local-coding-flow.mmd), and a
 test fails when the two differ. Reading it from the top:
 
+- Before the brainstorm, `local-writer` consults both memories, the Obsidian vault for past
+  decisions and failures and the code graph for questions about this code, and returns distilled
+  hits that are folded into the brainstorm. The session never reads either itself, and the
+  consult prints nothing in the chat.
 - A request that is a single step with no deliverable of its own, such as reading one file, is
   answered directly. Anything larger gets plan files first.
 - The session asks you for the review bounds before it writes the plan header, because the
@@ -60,9 +67,13 @@ test fails when the two differ. Reading it from the top:
   `local-coder`, or several plans go to aider.
 - For `local-coder` the question is whether each step's prompt plus output fits the coder
   window. If it does not and the step cannot be split, the plan takes the large tier.
-- Every path ends in the same place: a worktree branch, a review round on its diff, and a pull
-  request that you merge. A review round that still finds something is fixed with a failing
-  test first, until a bound stops the loop and the session asks you.
+- Every path ends in the same place: a worktree branch and a review round on its diff. The loop
+  stops when the branch is safe to merge, meaning the full suite is green and a re-graded round
+  leaves no Critical or High finding, minors being deferred and listed. Otherwise a round
+  that still finds something is fixed with a failing test first, until a bound stops the loop
+  and the session reports what remains and asks you.
+- A safe branch gets a last memory upkeep: `local-writer` writes the lessons to the vault and
+  updates the graph for the code that was added, then the pull request opens and you merge.
 
 ## Choosing an executor
 
@@ -71,7 +82,7 @@ test fails when the two differ. Reading it from the top:
 | Judgment, security, design, a repository-wide change, or no qualified local role | The session itself, with `executing-plans` | Nothing to save: the work needs the best model |
 | One plan, a test as oracle per step, each step's prompt plus output fits the coder window | `local-coder`, tier simple or standard | The cloud pays for the plan, the wrapper and the review; the code is generated locally |
 | One plan whose step output cannot fit the coder window and cannot be split | `local-coder`, tier large | Same, with a window large enough for long output |
-| Two or more plans, or an unattended night | aider (spec, plan files, progress, a writer model and a reviewer model) | No Claude Code is involved once the run starts |
+| Two or more plans, or an unattended night | aider (spec, plan files, progress, a writer model and a reviewer model) | No interactive harness is involved once the run starts |
 | A whole session on Ollama or Augure | Your manual choice with `claude-switch.ps1`, never written in a plan | The session itself is local |
 
 Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. A fix found
@@ -170,18 +181,54 @@ written, and each row says where.
 | large | session | 262144 tokens, stored with `--num-ctx` | about 2.4 tokens per second | Adoption of 2026-10-09 in `local-model-state.json`, thread sweep by `aider-thread-probe.py`; the entry on this machine records no window yet |
 | any | none qualified | not applicable | not applicable | Read 2026-10-17: with no qualified role the plan runs on the cloud executor |
 
-The large tier is the Haiku wrapper plus the bridge with the session role. It is not a subagent
+The large tier is the low-cost cloud model wrapper plus the bridge with the session role. It is not a subagent
 on a local endpoint, which Claude Code does not offer. At about 2.4 tokens per second a 4000
 token file takes roughly 28 minutes to generate, so use it only when a step truly cannot be
 split.
 
-## What the Haiku wrapper does and costs
+## What the wrapper does and costs
 
-`local-coder` and `local-writer` run on a cheap cloud model that frames the task, assembles one
-self-contained prompt, checks it fits the window, runs the bridge with the role, reads the
+`local-coder` and `local-writer` run on a low-cost cloud model that frames the task, assembles
+one self-contained prompt, checks it fits the window, runs the bridge with the role, reads the
 result and writes it. The bridge speaks Ollama's HTTP API, asks the resolver for the model, and
 refuses rather than substituting a weaker one. The wrapper is the only cloud generation cost of
 a local step, and it is small because it never writes the code itself.
+
+The reasoning stays with an edge cloud model, which writes the plans and reviews the result.
+This chapter names no model, because the process holds for any cloud model. One limit applies to
+all of them: a subagent has no endpoint of its own, so a model from another provider is
+reachable only by switching the whole session, which Claude Code does not support. The
+`claude-augure` switch of the paths above is that case.
+
+## When memory is read and written
+
+Both memories, the vault and the graph, are reached through `local-writer` and nothing else. The
+full table, with how each result is verified, is the Memory rule of
+[workflows.md](../../.claude/rules/workflows.md). The rows are:
+
+| Event | Action | Target |
+|---|---|---|
+| Before brainstorming or planning a non-trivial task | Read | Vault: past decisions and failures on the subject. Graph: only for a question about this code |
+| Loop start | Read | Vault, same scope as above |
+| Checkpoint in a loop | Read | Vault, the project `Decisions.md` |
+| Error recovery | Read | Vault lessons on the error signature |
+| A failure with a root cause | Write | Atomic lesson note under the technology folder of the vault |
+| Loop checkpoint | Write | Project `Decisions.md`, and `CodeReview.md` with the score |
+| Significant review finding | Write | Project `CodeReview.md`, plus an atomic note when the pattern is reusable |
+| Gate reached or loop finished | Write | Project `index.md` properties (score, release) |
+| Correction or new method | Write | Atomic method note, and the project `Revisions.md` |
+| Code added or changed | Write | Graph refresh with `graphify update` on the repository root, AST only unless a document changed |
+| End of the task, before the pull request | Write | A last upkeep pass: the lessons, the project log, the graph |
+| Execution wrapper (`executing-plans`) and cloud review | Never read | Nothing: the plan already carries the knowledge |
+| `local-coder` | Never reads or writes | It reports a learning to the session, which hands it to `local-writer` |
+
+The dispatch runs in the background, as one agent, sequential, never a fan-out. On success it
+prints nothing in the chat except one short line of counts and paths, and the session says
+nothing about it. The result reaches the session later. A failure is shown in full, and the
+session then adapts: a missing note is a write to redo, and a lesson that changes the approach
+changes the plan or the spec. A write that is never reported back is treated as not done. The
+silence on success is tested in `test_memory_silence.py`, and the live effect needs the synced
+settings of your machine, so it is unverified until a real session shows it.
 
 ## Review bounds and the two hooks
 

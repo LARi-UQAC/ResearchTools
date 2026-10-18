@@ -183,6 +183,35 @@ Talk rendering on Windows: `paper2talk` converts a deck to PDF through **PowerPo
 `module 'socket' has no attribute 'AF_UNIX'`; `soffice` is tried first only when it is on
 `PATH`. Page images come from Poppler's `pdftoppm`, which ships with the MiKTeX install.
 
+### When memory is read and written
+
+One table, so nobody guesses. Every row goes through `local-writer` and nothing else touches the
+vault or the graph. The session never reads either itself.
+
+| Event | Action | Target | Verified by |
+|---|---|---|---|
+| Before brainstorming or planning a non-trivial task | Read | Vault: past decisions and failures on the subject. Graph: only for a question about this code | The distilled hits are folded into the brainstorm |
+| Loop start | Read | Vault, same scope as above | The hits are given to the first plan or prompt |
+| Checkpoint in a loop | Read | Vault, the project `Decisions.md` | Hits that change the next step are noted in `progress.md` |
+| Error recovery | Read | Vault lessons on the error signature | The lesson is quoted in the fix, or its absence is stated |
+| A failure with a root cause | Write | Atomic lesson note under the technology folder of the vault | The note is staged in the outbox and its path is in the one-line result |
+| Loop checkpoint | Write | Project `Decisions.md`, and `CodeReview.md` with the score | The appended entry is named in the one-line result |
+| Significant review finding | Write | Project `CodeReview.md`, plus an atomic note when the pattern is reusable | Same as above |
+| Gate reached or loop finished | Write | Project `index.md` properties (score, release) | The property read back in the one-line result |
+| Correction or new method | Write | Atomic method note, and the project `Revisions.md` | The note path is in the one-line result |
+| Code added or changed | Write | Graph refresh with `graphify update` on the repository root, AST only unless a document changed | The one-line result says the graph was updated |
+| End of the task, before the pull request | Write | A last upkeep pass: the lessons, the project log, the graph | The one-line result lists what was written |
+| Execution wrapper (`executing-plans`) and cloud review | Never read | Nothing: the plan already carries the knowledge | Not applicable |
+| `local-coder` | Never reads or writes | It reports a learning to the session, which hands it to `local-writer` | Not applicable |
+
+Dispatch is in the background and the agent is one agent, sequential, never a fan-out. On success it
+prints one line (counts and paths) and the session says nothing about it. The result reaches the
+session later. A failure result is shown in full, and the session then adapts: a missing note is a
+write to redo, and a lesson that changes the approach changes the plan or the spec. A write that is
+never reported back is treated as not done.
+A staged note reaches the vault at the next flush (session start, session end, or the vault
+daemon), so in the middle of a session check the outbox, not the vault.
+
 ## Plan shape
 
 **R26 - a multi-step task is planned in files, and the files have a fixed shape.**
@@ -291,9 +320,12 @@ session, not left to the reviewer on GitHub:
    `python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`. In any project other than ResearchTools the script is under `~/.claude/skills/loop-engineer/scripts/`.
    After each round it runs `loop_bounds.py tick --findings N`. The hook `review-loop-guard.py`
    refuses a review skill with no bounds or past one. The loop stops at the first of `max_rounds`,
-   `max_tokens`, `plateau` or a round with no finding, and the session names which. Only after a
-   round with no finding is the PR opened (R30), and the PR body names the review rounds and
-   what each fixed. When a bound stops the loop first, the session reports what remains and asks
+   `max_tokens`, `plateau`, a round with no finding or a branch that is safe to merge, and the
+   session names which. A branch is safe to merge when the full suite is green and a re-graded
+   round leaves no Critical or High finding, the minors being deferred and listed. The hook enforces
+   the bounds only: the safe-to-merge stop is the session's own re-grading, so the findings it
+   re-graded as minor are listed in the PR body. The PR is opened (R30) only for a safe branch,
+   and the PR body names the review rounds and what each fixed. When a bound stops the loop first, the session reports what remains and asks
    whether to raise a bound; it never opens the PR on its own. Measured 2026-10-17: seven
    unbounded iterations and no question put to the owner, which is why "until no finding" alone
    is no longer the rule. Whether a review typed by hand as a slash command reaches the hook is
@@ -639,7 +671,9 @@ repo-root `scripts/` tree's own named subfolders (`scripts/audit/`, `scripts/tes
 `scripts/lib/`, `scripts/local/` for personal Claude-Code routing utilities such as
 `claude-switch.ps1`, and `scripts/ci/` for helpers a GitHub Actions workflow calls, today
 `review_mirror.py` and its `review-mirror.json`, owned by `review.yml`, with its offline test in
-`.claude/hooks/Test/test_review_workflow.py`) - and belongs there instead; what `scripts/` is not a home for is code
+`.claude/hooks/Test/test_review_workflow.py`, and `scripts/docs/` for the MkDocs build hook
+`mkdocs_hooks.py`, owned by `mkdocs.yml`, with its offline test in
+`.claude/hooks/Test/test_mkdocs_links.py`) - and belongs there instead; what `scripts/` is not a home for is code
 that exactly one SKILL drives, which belongs beside that skill instead.
 
 The test of ownership is who calls it. Measured 2026-08-28: a PowerShell script restarting a

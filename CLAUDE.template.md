@@ -565,7 +565,9 @@ first round, ask the owner with `AskUserQuestion` for `max_rounds`, `max_tokens`
 unless the plan header carries them, then run
 `python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`. In any project other than ResearchTools the script is under `~/.claude/skills/loop-engineer/scripts/`.
 After each round run `loop_bounds.py tick --findings N`. The loop stops at the first bound
-reached or at a round with no finding, and you name which. When a bound stops it first, report
+reached, at a round with no finding, or when the branch is safe to merge (the full suite is green
+and a re-graded round leaves no Critical or High finding, minors deferred), and you name
+which. When a bound stops it first, report
 what remains and ask whether to raise a bound. The hook `review-loop-guard.py` refuses a review
 skill with no bounds or past one. Full rule: R35 in `.claude/rules/workflows.md`.
 

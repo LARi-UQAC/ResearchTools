@@ -67,8 +67,10 @@ comparison (baseline vs post), hard-gated so execution only completes when the s
 pushing token-heavy generation to local models on the GPU. Each agent runs on a cheap cloud
 model (Haiku) that only frames the task and drives a local model over `ollama_bridge.py`,
 which speaks Ollama's HTTP API and takes `--role writer` or `--role coder` instead of a model
-name; the bulk text or code is generated locally and free. No gateway is used and cloud stays
-on your normal subscription auth, so only the small Haiku wrapper spends cloud tokens.
+name; the bulk text or code is generated locally and free. Claude Code has one API endpoint per
+process and no per-subagent endpoint, so a subagent cannot be pointed at Ollama while the main
+session stays on Anthropic. That, and not the subscription, is why the Haiku wrapper drives
+the bridge, and only that small wrapper spends cloud tokens.
 
 Requirements: Ollama running, and a qualified tag for the role you are about to use
 (`model_resolver.py --resolve --role coder`). There is no fallback tag: an unqualified role

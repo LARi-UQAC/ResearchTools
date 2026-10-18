@@ -558,6 +558,35 @@ now follows step 2's fallback below instead. Part 4 (never install ad hoc) and
 The full rule, with the reasoning, is R36 in ResearchTools' own
 `.claude/rules/workflows.md`.
 
+## Review-loop bounds (R35 as amended)
+
+A review loop (`/code-review`, `/security-review`) never repeats without a bound. Before the
+first round, ask the owner with `AskUserQuestion` for `max_rounds`, `max_tokens` and `plateau`
+unless the plan header carries them, then run
+`python .claude/skills/loop-engineer/scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N`. In any project other than ResearchTools the script is under `~/.claude/skills/loop-engineer/scripts/`.
+After each round run `loop_bounds.py tick --findings N`. The loop stops at the first bound
+reached or at a round with no finding, and you name which. When a bound stops it first, report
+what remains and ask whether to raise a bound. The hook `review-loop-guard.py` refuses a review
+skill with no bounds or past one. Full rule: R35 in `.claude/rules/workflows.md`.
+
+## Plan contract (R38)
+
+Any coding request beyond a single step gets plan files with a header before any code: `spec.md`,
+`plan<N>.md` and `progress.md`, with the ceilings of `context-budget.json`. Each plan's front
+matter names `executor` (`local-coder`, `aider`, `cloud`), `tier` (`simple`, `standard`,
+`large`) and the review `bounds`. The cloud model writes the header after asking the owner for
+the bounds, and checks it with `python .claude/skills/loop-engineer/scripts/plan_contract.py
+validate <plan>`. One plan is one `local-coder` dispatch, named by a `PLAN: <path>` line in the
+prompt, and local-coder audits nothing: R35 runs in the calling harness. Several plans or an
+unattended night go to aider. Judgment, security work and any plan with no qualified local role
+run in the session with `executing-plans`. Every step uses a skill (R36 applies to any task):
+`superpowers:brainstorming` for the request, `superpowers:writing-plans` for the plan files,
+`superpowers:executing-plans` for the execution, `code-review` and `security-review` for the
+review. A similar toolset such as speckit may replace them, and each step still names its skill;
+ruflow is not installed or verified here. The hooks `review-loop-guard.py` and
+`local-coder-dispatch-guard.py` enforce this and stay silent when their dependency is absent.
+Full rule: R38 in `.claude/rules/workflows.md`.
+
 ## Role and mission
 
 You are an academic and scientific faculty member, with a full professor position, head of
@@ -669,7 +698,7 @@ README.md and Architecture.md.
 | Build the conference talk from an accepted paper (deck + timed speaker notes on the lab gabarit, PowerPoint / Beamer / web; six opening questions, 130 wpm budget, visual QA loop) | `paper2talk` skill / `talk-builder` agent | `/talk` |
 | Author LaTeX, Beamer, or TiKZ | `latex-writer` (+ `scientific-writing`) | by context |
 | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries; NOT LaTeX text authoring) | `local-writer` agent (haiku wrapper + the resolver's writer-role model) | by context / by name |
-| Local code generation against a spec/failing test, refactor snippets, scaffolds. PRECONDITION: the plan handed to it must carry the size budget the user specified when `superpowers:writing-plans` was invoked, since plan and generated code share one window; with no such specification, do not dispatch this agent at all (see the size limits in rules/code-style.md) | `local-coder` agent (haiku wrapper + the resolver's coder-role model) | by context / by name |
+| Execute ONE whole plan with a local model (R38): the dispatch prompt carries a `PLAN: <path>` line whose header names `executor: local-coder`, a `tier` and the review `bounds`, enforced by `local-coder-dispatch-guard.py`. The agent resolves the tier to a resolver role with `plan_contract.py resolve` (coder, or the 262K session role for tier large), generates each open step over the bridge, ticks `progress.md`, and audits nothing: review runs in the calling harness under R35. With no qualified role the plan runs in the session instead. Size ceilings come from `context-budget.json` (see rules/code-style.md) | `local-coder` agent (haiku wrapper + the resolver's role model) | by context / by name |
 | Tune a local Ollama model for this GPU (largest context window that stays 100 percent resident in VRAM among configurations clearing a decode-throughput floor; builds the tuned tag, sweeps `num_ctx` against the KV cache type, declares the candidate, stops before qualification) | `opt-local-vram-llm` skill | `/opt-local-vram-llm` |
 | Take a model you just downloaded all the way to the adoption gate (tune for this card, score against the frozen task set writing nothing, compare it with every other candidate, then STOP: `--qualify` changes what every local agent executes, so it stays a command a human runs) | `opt-local-vram-llm` skill, `tune-new-model.ps1` | `tune-new-model.ps1 <base-tag> -Role <writer\|coder>` |
 | Choose the voice panel's speech-to-text model for this GPU: download the named models (faster-whisper sizes or CTranslate2 repo ids, the four measured 2026-09-26 by default), measure each in a fresh process beside the resident LLM, and print one scored table - word error against YOUR reference words, live-caption speed against the panel's refresh budget, dedicated VRAM, and how much of the LLM each pushes out of VRAM (a gate). Stops before adoption, like its sibling: editing `observe-config.json` `voice.stt.*` stays a human edit | `opt-local-stt-vram` skill | `/opt-local-stt-vram` |

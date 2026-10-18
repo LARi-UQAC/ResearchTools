@@ -92,7 +92,8 @@ $script:AugureBaseUrl = "https://api.augureai.ca/v1"   # supplied by the operato
 $script:RoutingVarNames = @(
     "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
     "ANTHROPIC_SMALL_FAST_MODEL", "API_TIMEOUT_MS",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
 )
 $script:EnvSaved = $false   # explicit init: a read before any switch must never hit an
                             # unset variable under Set-StrictMode (round 2, finding M4)
@@ -189,6 +190,66 @@ function Resolve-PythonInterpreter {
     return $resolved.Python
 }
 
+function Get-ResolverInvocation {
+    <#
+    .SYNOPSIS
+        Finds model_resolver.py and the interpreter that runs it, once, for every caller that
+        asks the resolver something (the tag, the window).
+
+    Outputs:
+        result (hashtable | $null): @{ Python; Resolver }, or $null when the repository root,
+        the resolver script or the interpreter cannot be found.
+    #>
+    $repoRoot = $null
+    try {
+        $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+    } catch { }
+    if (-not $repoRoot -and $env:RESEARCHTOOLS_ROOT) {
+        $repoRoot = $env:RESEARCHTOOLS_ROOT
+    }
+    if (-not $repoRoot) { return $null }
+
+    $resolverPath = Join-Path $repoRoot ".claude\skills\loop-engineer\scripts\model_resolver.py"
+    if (-not (Test-Path $resolverPath)) { return $null }
+
+    $python = Resolve-PythonInterpreter -RepoRoot $repoRoot
+    if (-not $python) { return $null }
+    return @{ Python = $python; Resolver = $resolverPath }
+}
+
+function Resolve-SessionWindow {
+    <#
+    .SYNOPSIS
+        The context window, in tokens, of the model the manually adopted "session" role
+        resolves to, so claude-ollama can tell Claude Code (CLAUDE_CODE_MAX_CONTEXT_TOKENS)
+        instead of letting it assume 200K for an unrecognised model ID.
+
+    .DESCRIPTION
+        Asks `model_resolver.py --window --role session`. The window is the SESSION role's,
+        so it is answered only when the requested tag IS that role's tag: the window of one
+        model is never lent to another (R8).
+
+    Inputs:
+        ForTag (string): the tag claude-ollama is about to route to.
+
+    Outputs:
+        result (int | $null): the window, or $null when the tag is not the session role's,
+        the resolver cannot be reached, or the window is unknown.
+    #>
+    param([Parameter(Mandatory)][string]$ForTag)
+    $sessionTag = Resolve-SessionModelTag
+    if (-not $sessionTag -or (Format-OllamaTag $sessionTag) -ne (Format-OllamaTag $ForTag)) { return $null }
+    $context = Get-ResolverInvocation
+    if (-not $context) { return $null }
+    $output = & $context.Python $context.Resolver --window --role session 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $output) { return $null }
+    $lines = @($output | Where-Object { $_.Trim() -ne "" })
+    if ($lines.Count -eq 0) { return $null }
+    $parsed = 0
+    if (-not [int]::TryParse($lines[-1].Trim(), [ref]$parsed) -or $parsed -le 0) { return $null }
+    return $parsed
+}
+
 function Resolve-SessionModelTag {
     <#
     .SYNOPSIS
@@ -220,20 +281,10 @@ function Resolve-SessionModelTag {
         resolver cannot be found, is not installed, or refuses (including
         the require-role refusal above) - never an invented tag (R8).
     #>
-    $repoRoot = $null
-    try {
-        $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-    } catch { }
-    if (-not $repoRoot -and $env:RESEARCHTOOLS_ROOT) {
-        $repoRoot = $env:RESEARCHTOOLS_ROOT
-    }
-    if (-not $repoRoot) { return $null }
-
-    $resolverPath = Join-Path $repoRoot ".claude\skills\loop-engineer\scripts\model_resolver.py"
-    if (-not (Test-Path $resolverPath)) { return $null }
-
-    $python = Resolve-PythonInterpreter -RepoRoot $repoRoot
-    if (-not $python) { return $null }
+    $context = Get-ResolverInvocation
+    if (-not $context) { return $null }
+    $python = $context.Python
+    $resolverPath = $context.Resolver
 
     $output = & $python $resolverPath --resolve --role session --require-role 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $output) { return $null }
@@ -348,6 +399,18 @@ function claude-ollama {
 
     Save-OriginalEnvOnce
 
+    # 1c. Tell Claude Code the window of the model it is about to talk to. An unrecognised
+    #     model ID is assumed to have 200K, so a 262K session would compact too early (and a
+    #     smaller one too late). Only the session role's own window is known here; any other
+    #     tag leaves the variable unset and says so.
+    $window = Resolve-SessionWindow -ForTag $Model
+    if ($window) {
+        $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = "$window"
+    } else {
+        Remove-Item Env:\CLAUDE_CODE_MAX_CONTEXT_TOKENS -ErrorAction SilentlyContinue
+        Write-Host "Window of '$Model' is not recorded, so Claude Code will assume 200K tokens. Record it with model_resolver.py --adopt-role session <tag> --reason ... --num-ctx <N>." -ForegroundColor Yellow
+    }
+
     # 2. Redirect the agent to Ollama (native Anthropic API, no proxy)
     $env:ANTHROPIC_BASE_URL         = "http://${script:OllamaHost}:${script:OllamaPort}"
     $env:ANTHROPIC_AUTH_TOKEN       = "ollama"            # bearer token Ollama expects, not an Anthropic key
@@ -414,7 +477,8 @@ function claude-augure {
         Env:\ANTHROPIC_MODEL, `
         Env:\ANTHROPIC_SMALL_FAST_MODEL, `
         Env:\API_TIMEOUT_MS, `
-        Env:\CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC `
+        Env:\CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, `
+        Env:\CLAUDE_CODE_MAX_CONTEXT_TOKENS `
         -ErrorAction SilentlyContinue
 
     $env:ANTHROPIC_BASE_URL = $script:AugureBaseUrl

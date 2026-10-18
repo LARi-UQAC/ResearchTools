@@ -745,6 +745,7 @@ svg.fanout .edge-label { font-size: 10px; fill: var(--rt-alarm); }
 }
 .phases li[data-state="done"] .lbl { color: var(--rt-ink); }
 .phases li[data-state="todo"] .lbl { color: var(--rt-muted); }
+.phases li[data-state="blocked"] .st,
 .phases li[data-state="unproven"] .st,
 .phases li[data-state="unreported"] .st { color: var(--rt-alarm); }
 .next {
@@ -2517,11 +2518,49 @@ function renderRepoPanel(state) {
   return panel;
 }
 
+function appendRounds(panel, state) {
+  /* The plan stages of a round folder and the review-loop gauges, in the state
+     styling the matrix and the phase list already use. Nothing is drawn when the
+     server sent no `rounds` section. */
+  var rows = roundRows(state);
+  if (!rows.length) { return; }
+  var head = el("div", "next");
+  head.appendChild(el("span", null, "rounds"));
+  panel.appendChild(head);
+  var list = el("ul", "phases");
+  rows.forEach(function (row) {
+    var li = el("li");
+    li.dataset.state = { open: "todo", blocked: "blocked", done: "done" }[row.state]
+      || "todo";
+    li.dataset.detail = "note";
+    if (row.kind === "plan") {
+      li.dataset.detailTitle = row.name;
+      li.dataset.detailNote = (row.executor
+        ? row.executor + (row.tier ? " / " + row.tier : "") : "no plan header")
+        + ": " + row.text + (row.blocked ? ", " + row.blocked + " blocked" : "");
+      li.appendChild(el("span", "num", row.done + "/" + row.total));
+    } else {
+      li.dataset.detailTitle = "review loop " + row.name;
+      li.dataset.detailNote = row.text + " in worktree " + row.worktree
+        + ". The loop stops at max rounds, max tokens or a plateau";
+      li.appendChild(el("span", "num", row.used + "/" + (row.max || "?")));
+    }
+    var body = el("div");
+    body.appendChild(el("span", "lbl", row.kind === "plan"
+      ? row.name.replace(/\.md$/, "") : "review " + row.name));
+    body.appendChild(el("span", "st", row.kind === "plan" ? row.state : row.text));
+    li.appendChild(body);
+    list.appendChild(li);
+  });
+  panel.appendChild(list);
+}
+
 function renderPlanPanel(state) {
   var panel = railPanel("Plan");
   var progress = state.progress || {};
   if (progress.status !== "ok") {
     unavailable(panel, "Plan unavailable", progress);
+    appendRounds(panel, state);
     return panel;
   }
   var list = el("ul", "phases");
@@ -2556,6 +2595,7 @@ function renderPlanPanel(state) {
   titleBlock(block, [["from", progress.file],
                      ["against", (cross.plan || "").split("/").pop()]], false);
   panel.appendChild(block);
+  appendRounds(panel, state);
   return panel;
 }
 
@@ -3523,6 +3563,13 @@ function meterRow(host, spec) {
     row.appendChild(el("b", "live-spend--none",
       thousands(spec.used) + "K used. Type a maximum for a bar."));
   }
+  if (spec.fixed) {
+    /* A window the harness or the resolver MEASURED is not the operator's to edit: the box
+       would write a key that has no entry in LIMIT_KEYS and silently revert. */
+    row.appendChild(el("b", null, spec.max ? Math.round(spec.max / 1000) + "K" : ""));
+    host.appendChild(row);
+    return ratio;
+  }
   var input = document.createElement("input");
   input.type = "number";
   input.min = "0";
@@ -3609,6 +3656,113 @@ function sharedState(state) {
   return out;
 }
 
+function tokenNote(tokens) {
+  /* What an aider ring means, in words. The driver reserves a FIXED cost out of
+     every window (reply room, harness overhead, the always-on rule files) and
+     leaves the rest as the task budget, so `held` is the fixed cost and the ring
+     fills toward the whole window. Without this note the same number reads as
+     the run's progress, which it is not. A harness that reports no task budget
+     gets no note. */
+  var t = tokens || {};
+  if (!t.task_budget || !t.window) { return ""; }
+  return "fixed cost " + thousands(t.held || 0) + "K, task budget "
+    + thousands(t.task_budget) + "K of the " + thousands(t.window) + "K window";
+}
+
+function laneNote(lane) {
+  /* The one sentence the hover layer shows for a lane, by kind, so a lane and
+     its hover cannot learn to say two different things. */
+  var note;
+  if (lane.kind === "subagent") {
+    note = "a subagent: its own tools, its own skills, the same memories";
+  } else if (lane.kind === "local") {
+    note = "a bridge role (a call to a local model through ollama_bridge.py, not a "
+      + "Claude Code session), model " + (lane.model || "not reported") + ", "
+      + (lane.ended ? "idle, its last call is not recent"
+          : lane.state === "generating" ? "generating now"
+          : "idle, its last call finished recently")
+      + ". The ring counts the last call's prompt plus completion tokens "
+      + "against the model's window";
+  } else {
+    note = "a session of " + (lane.harnessLabel || "this harness")
+      + (lane.ended ? ", ended (its process is gone), stopped at "
+                    : ", currently ")
+      + (lane.state || "idle");
+  }
+  var budget = tokenNote(lane.tokens);
+  return budget ? note + "; " + budget : note;
+}
+
+function localLanes(state) {
+  /* One lane per bridge role seen in the log, drawn like a session lane with no
+     step timeline. They come AFTER the session lanes so the state-machine strip
+     (which follows the first lane) still describes a real session. A role is
+     `active` or `idle` for the same filter as a session, and an absent or
+     unavailable section is no lane and no warning: a server older than the page
+     sends none, and that is not an error. `held` is the LAST call's prompt plus
+     completion, a null counting as 0 so nothing prints undefined or NaN. */
+  var section = (state || {}).local_calls;
+  if (!section || section.status !== "ok") { return []; }
+  var recent = section.recent || [];
+  var lanes = [];
+  Object.keys(section.roles || {}).forEach(function (role) {
+    var row = section.roles[role] || {};
+    if (sessionFilter[row.active ? "active" : "idle"] === false) { return; }
+    var last = recent.filter(function (call) { return call.role === role; })[0] || {};
+    var base = String(row.plan || "").split(/[\\/]/).filter(Boolean).pop();
+    lanes.push({
+      id: "l:" + role,
+      label: base ? role + " " + base : role,
+      kind: "local",
+      harness: "bridge",
+      harnessLabel: "bridge role",
+      model: row.tag || null,
+      ended: !row.active,
+      declared: [],
+      /* `generating` is a start record with no end yet; `active` also covers a call that
+         finished a moment ago, which is drawn live but is not described as generating. */
+      state: row.generating ? "generating" : (row.active ? "recent" : "idle"),
+      tokens: { status: "ok",
+                held: (last.prompt_tokens || 0) + (last.completion_tokens || 0),
+                window: row.num_ctx || null },
+      steps: [],
+      hooks: []
+    });
+  });
+  return lanes;
+}
+
+function roundRows(state) {
+  /* The plan stages, as rows: one per plan (executor, tier, tasks done of
+     total, blocked) and one gauge per review loop (rounds used of the maximum).
+     A section the server did not send, or could not answer, is no rows. */
+  var section = (state || {}).rounds;
+  if (!section || section.status !== "ok") { return []; }
+  var rows = [];
+  (section.rounds || []).forEach(function (round) {
+    (round.plans || []).forEach(function (plan) {
+      rows.push({
+        kind: "plan", folder: round.folder, name: plan.name,
+        executor: plan.executor || null, tier: plan.tier || null,
+        done: plan.tasks_done || 0, total: plan.tasks_total || 0,
+        blocked: plan.tasks_blocked || 0, state: plan.state || "open",
+        text: (plan.tasks_done || 0) + " of " + (plan.tasks_total || 0) + " tasks"
+      });
+    });
+  });
+  (section.review_loops || []).forEach(function (loop) {
+    var used = loop.rounds_used || 0;
+    var max = loop.max_rounds || null;
+    rows.push({
+      kind: "loop", name: loop.branch, worktree: loop.worktree, used: used,
+      max: max, plateau: loop.plateau || null,
+      state: max && used >= max ? "blocked" : "open",
+      text: max ? used + " of " + max + " rounds" : used + " rounds"
+    });
+  });
+  return rows;
+}
+
 function laneModel(state) {
   /* What is running, as lines. The main line is the session; each subagent it
      dispatched is a line of its own, carrying whatever the harness reports of
@@ -3678,7 +3832,7 @@ function laneModel(state) {
       });
     });
   });
-  return lanes;
+  return lanes.concat(localLanes(state));
 }
 
 function edgeLabel(edge) {
@@ -4108,7 +4262,9 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
     /* A window the harness MEASURED (aider's driver records its own) outranks
        the one the operator typed, which exists only because Claude Code's
        transcript never says what window its tokens sit in. */
-    var ringMax = tokens.window || sessionMax;
+    /* The operator's session limit is a Claude Code number: a bridge role with
+       no recorded window gets no ring rather than that one. */
+    var ringMax = tokens.window || (lane.kind === "local" ? 0 : sessionMax);
     var ratio = (ringMax && tokens.held) ? tokens.held / ringMax : 0;
     var awake = lane.state !== "idle" && lane.kind !== "subagent"
       && !lane.ended;
@@ -4116,12 +4272,7 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
       + (lane.state === "idle" || lane.ended
           ? " fx-agent--idle" : " fx-agent--live")
       + '" data-detail="note" data-detail-title="' + escapeText(lane.label)
-      + '" data-detail-note="' + escapeText(lane.kind === "subagent"
-          ? "a subagent: its own tools, its own skills, the same memories"
-          : "a session of " + (lane.harnessLabel || "this harness")
-            + (lane.ended ? ", ended (its process is gone), stopped at "
-                          : ", currently ")
-            + (lane.state || "idle"))
+      + '" data-detail-note="' + escapeText(laneNote(lane))
       + '" tabindex="0">'
       /* A ping leaving the node, repeating while the session works. The
          operator's test of the panel is whether it looks ALIVE when something
@@ -4264,6 +4415,19 @@ function sessionMeters(host, state) {
       sessionFull = sessionFull || full;
       drawn += 1;
     });
+  });
+  /* A bridge role holds a window of its own, never the operator's session limit,
+     and an idle one holds nothing, for the same reason a dead run has no meter. */
+  localLanes(state).forEach(function (lane) {
+    if (lane.ended || !lane.tokens.window) { return; }
+    meterRow(block, {
+      label: lane.label.slice(0, 12),
+      key: "local",
+      fixed: true,
+      used: lane.tokens.held,
+      max: lane.tokens.window
+    });
+    drawn += 1;
   });
   if (drawn) { host.appendChild(block); }
 }

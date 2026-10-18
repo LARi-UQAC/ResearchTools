@@ -9,6 +9,30 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-17
+
+### Added
+- Rule R38: any coding request beyond one step gets plan files with a header (`executor`,
+  `tier`, review `bounds`) before any code. `plan_contract.py` validates the header, the file
+  limit of the tier and the size ceilings, and resolves the tier to a resolver role. Every
+  step of the process names a skill (R36): brainstorming, writing-plans, executing-plans.
+- Review-loop bounds (R35 as amended): `loop_bounds.py` stores `max_rounds`, `max_tokens` and
+  `plateau` per branch, and the `review-loop-guard.py` hook refuses `/code-review` or
+  `/security-review` past a bound. `token_count.py` counts tokens exactly when tiktoken is
+  there and says "estimate" otherwise.
+- `local-coder-dispatch-guard.py`: refuses a `local-coder` dispatch with no valid plan. A
+  local-coder run now executes one whole plan.
+- A role's context window comes from its adoption (`model_resolver.py --adopt-role ... --num-ctx`),
+  for the bridge and the budget; `claude-ollama` sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
+- Dashboard: `local_calls` and `rounds` sections and Real-Time lanes for each bridge role,
+  aider's task budget, plan tasks and review loops.
+- Manual chapter 12, "Local coding and the cloud", with its flowchart.
+
+### Changed
+- The two hooks only protect a machine whose live `settings.json` declares them; add the two
+  entries from `settings.template.json` and see each fire once. The window cap of
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` with `claude-local` is untried.
+
 ## [0.2.2] - 2026-10-17
 
 ### Fixed

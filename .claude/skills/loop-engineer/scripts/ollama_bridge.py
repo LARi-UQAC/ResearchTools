@@ -177,7 +177,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1105,7 +1106,7 @@ def restore_target(path: Path, previous: bytes | None) -> None:
         path.write_bytes(previous)
 
 
-def _resolve_num_ctx(model: str) -> int:
+def _resolve_num_ctx(model: str, role: str | None = None) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -1117,17 +1118,28 @@ def _resolve_num_ctx(model: str) -> int:
 
     Inputs:
         model (str): the tag resolve_model returned for this run.
+        role (str | None): the resolver role of this run. When given, the window is
+            model_resolver.window_for_role(role), so a manually adopted role (such as
+            `session`, which has no sweep entry) is read from its own adoption record.
+            None keeps the lookup by tag.
 
     Outputs:
-        result (int): models[<model>].retained_num_ctx from
-        local-model-config.json.
+        result (int): the role's window, or models[<model>].retained_num_ctx from
+        local-model-config.json when no role is given.
 
     Raises:
         context_budget.ConfigError: the config, the entry, or the field is
-        missing. Never substitutes a default - the same refusal the
-        planning-time gate makes.
+        missing, or the role's window is unknown. Never substitutes a default
+        - the same refusal the planning-time gate makes.
     --------------------------------------------------------------------------
     """
+    if role is not None:
+        import model_resolver  # noqa: PLC0415 - the resolver imports this module
+
+        # A forced tag (the LARI_LOCAL_MODEL override) is not the role's adopted tag, so the
+        # role's window would describe another model: that run keeps the lookup by tag.
+        if not os.environ.get(model_resolver.ENV_OVERRIDE_VAR):
+            return context_budget.resolve_window(context_budget.DEFAULT_CONFIG_PATH, None, role)
     return context_budget.read_retained_num_ctx(context_budget.DEFAULT_CONFIG_PATH, model)
 
 
@@ -1140,6 +1152,8 @@ def run_bridge(
     max_retries: int = MAX_GENERATION_RETRIES,
     num_ctx: int | None = None,
     role: str | None = None,
+    plan: str | Path | None = None,
+    clock: Callable[[], str] | None = None,
 ) -> int:
     """
     --------------------------------------------------------------------------
@@ -1183,6 +1197,11 @@ def run_bridge(
         role (str | None): task kind forwarded to resolve_model, so the
             coder role can be served by a different tag than the writer role
             (P4). None keeps the pre-P4 single-tag behaviour.
+        plan (str | Path | None): the plan this call serves, recorded in the log
+            so rt-observe can follow a plan across calls. None when unknown.
+        clock (Callable | None): returns the UTC time as an ISO string, called
+            AFTER each generation (R19: the bridge never reads the wall clock
+            itself). main supplies the real one; None logs "at" as null.
 
     Outputs:
         result (int): 0 on an accepted attempt, 1 on any refusal or on
@@ -1205,7 +1224,8 @@ def run_bridge(
 
     if num_ctx is None:
         try:
-            num_ctx = _resolve_num_ctx(model)
+            num_ctx = (_resolve_num_ctx(model) if role is None
+                       else _resolve_num_ctx(model, role))
         except context_budget.ConfigError as exc:
             logger.error("%s", exc)
             return 1
@@ -1223,12 +1243,27 @@ def run_bridge(
         attempt_seed = seed + (attempt - 1)
         payload = build_payload(prompt, model, attempt_seed, num_ctx)
 
+        # The attempt record below is written only when a generation ENDS, and one can take
+        # many minutes on a small card. This start record lets a dashboard tell a role that is
+        # generating from one that is idle (R35 round 2).
+        append_log(resolved_log_path, {
+            "event": "start", "at": clock() if clock is not None else None,
+            "role": role, "tag": model, "num_ctx": num_ctx,
+            "plan": str(plan) if plan is not None else None, "attempt": attempt,
+        })
+
         t0 = time.monotonic()
         try:
             response = _post_generate(payload, REQUEST_TIMEOUT_S)
         except BridgeError as exc:
             # A daemon/model-level refusal never gets a fallback tag (D7).
             logger.error("%s", exc)
+            # Close the start record: without it a failed call reads as a generation in
+            # progress for the whole generation limit (R35 round 4).
+            append_log(resolved_log_path, {
+                "event": "failed", "at": clock() if clock is not None else None,
+                "role": role, "tag": model, "attempt": attempt, "error": str(exc)[:300],
+            })
             return 1
         generation_s = time.monotonic() - t0
 
@@ -1266,6 +1301,13 @@ def run_bridge(
         )
 
         append_log(resolved_log_path, {
+            "at": clock() if clock is not None else None,
+            "role": role,
+            "tag": model,
+            "num_ctx": num_ctx,
+            "prompt_tokens": response.get("prompt_eval_count"),
+            "completion_tokens": response.get("eval_count"),
+            "plan": str(plan) if plan is not None else None,
             "attempt": attempt,
             "seed": attempt_seed,
             "prompt_hash": prompt_hash,
@@ -1424,6 +1466,22 @@ def write_prompt_with_vault_context(
     return combined
 
 
+def _utc_now_iso() -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The real clock, supplied to run_bridge by main only (R19).
+
+    Inputs:
+        None.
+
+    Outputs:
+        now_iso (str): the current UTC time, ISO 8601, to the second.
+    --------------------------------------------------------------------------
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def main(argv: list[str] | None = None) -> int:
     """
     --------------------------------------------------------------------------
@@ -1448,6 +1506,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verify", type=str, default=None, dest="verify_command")
     parser.add_argument("--target", type=Path, default=None, dest="target_path")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    parser.add_argument(
+        "--plan", type=str, default=None, dest="plan",
+        help="the plan file this call serves (recorded in the attempt log for rt-observe, "
+             "never read by the bridge).",
+    )
     parser.add_argument(
         "--role", type=str, default=None, dest="role",
         help="task kind this call is doing (writer, coder, ... as declared in "
@@ -1511,6 +1574,8 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         log_path=args.log_path,
         role=args.role,
+        plan=args.plan,
+        clock=_utc_now_iso,
     )
 
 

@@ -1238,6 +1238,112 @@ class TestAdoptRole(unittest.TestCase):
             self.assertEqual(state["current_by_role"]["session"]["tag"], "vendor:7b")
 
 
+class TestRoleWindow(unittest.TestCase):
+    """A role's context window (local coding contract, plan 4). `--adopt-role ... --num-ctx N`
+    stores it for a manual role, `window_for_role` reads it, and `--window --role R` prints it.
+    R21: state and config are injected or patched, nothing machine-local is read. R20: every
+    refusal is asserted, and a tag with no window never borrows another tag's."""
+
+    STATE = {"current": "vendor-a:9b",
+             "current_by_role": {
+                 "session": {"tag": "vendor-a:9b", "manual": True, "num_ctx": 262144},
+                 "coder": {"tag": "vendor:7b", "passed": 3, "total": 3},
+                 "bare": {"tag": "vendor-a:9b", "manual": True}}}
+    CONFIG = {"models": {"vendor:7b": {"retained_num_ctx": 16384}}}
+
+    def _seeded(self, d: Path) -> Path:
+        state_path = d / "local-model-state.json"
+        _write_json(state_path, {
+            "current": "vendor-a:9b", "current_by_role": {}, "history": [],
+            "score": {"passed": 6, "total": 6, "ratio": 1.0, "by_kind": _by_kind(3, 3, 3, 3)},
+            "qualified_at": "2026-08-14T00:00:00+00:00"})
+        return state_path
+
+    def test_adopt_role_stores_a_positive_int_num_ctx(self):
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            state_path = self._seeded(Path(d))
+            with mock.patch.object(mr, "STATE_PATH", state_path),                  mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST),                  redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                for bad in (0, -1, "262144", True):
+                    self.assertEqual(mr.cmd_adopt_role("session", "vendor-a:9b", "r",
+                                                       num_ctx=bad), 1, bad)
+                self.assertNotIn("session", json.loads(
+                    state_path.read_text(encoding="utf-8"))["current_by_role"])
+                rc = mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "measured",
+                              "--num-ctx", "262144"])
+            self.assertEqual(rc, 0)
+            entry = json.loads(state_path.read_text(encoding="utf-8"))["current_by_role"]["session"]
+            self.assertEqual(entry["num_ctx"], 262144)
+
+    def test_re_adopting_the_same_tag_without_num_ctx_keeps_the_recorded_window(self):
+        # Code review 2026-10-17: updating only the reason erased the window silently.
+        with tempfile.TemporaryDirectory() as d, _pop_override():
+            os.environ.pop(mr.ENV_OVERRIDE_VAR, None)
+            state_path = self._seeded(Path(d))
+            with mock.patch.object(mr, "STATE_PATH", state_path), \
+                 mock.patch.object(mr, "_ollama_list_raw", return_value=FAKE_OLLAMA_LIST), \
+                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "first",
+                         "--num-ctx", "262144"])
+                mr.main(["--adopt-role", "session", "vendor-a:9b", "--reason", "new reason"])
+                same = json.loads(state_path.read_text(encoding="utf-8"))
+                mr.main(["--adopt-role", "session", "vendor:7b", "--reason", "other tag"])
+                other = json.loads(state_path.read_text(encoding="utf-8"))
+        entry = same["current_by_role"]["session"]
+        self.assertEqual((entry["num_ctx"], entry["reason"]), (262144, "new reason"))
+        # A different tag has a different window: it is never carried over.
+        self.assertNotIn("num_ctx", other["current_by_role"]["session"])
+
+    def test_window_for_a_manual_role_is_its_num_ctx(self):
+        self.assertEqual(mr.window_for_role("session", self.STATE, {}), 262144)
+
+    def test_window_for_a_qualified_role_is_the_tags_retained_ctx(self):
+        self.assertEqual(mr.window_for_role("coder", self.STATE, self.CONFIG), 16384)
+
+    def test_a_role_with_no_entry_uses_the_current_tag_like_resolve_does(self):
+        state = {"current": "vendor:7b", "current_by_role": {}}
+        self.assertEqual(mr.window_for_role("writer", state, self.CONFIG), 16384)
+
+    def test_a_manual_role_without_num_ctx_names_the_command_that_fixes_it(self):
+        with self.assertRaises(mr.ResolverError) as ctx:
+            mr.window_for_role("bare", self.STATE, self.CONFIG)
+        message = str(ctx.exception)
+        self.assertIn("--adopt-role bare vendor-a:9b", message)
+        self.assertIn("--num-ctx", message)
+
+    def test_window_never_borrows_another_tags_value(self):
+        state = {"current": "vendor-a:9b",
+                 "current_by_role": {"writer": {"tag": "vendor-a:9b", "passed": 1, "total": 1}}}
+        with self.assertRaises(mr.ResolverError) as ctx:
+            mr.window_for_role("writer", state, self.CONFIG)
+        self.assertIn("vendor-a:9b", str(ctx.exception))
+
+    def test_cli_window_prints_the_integer_and_refuses_with_exit_2(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            state_path, config_path = d / "state.json", d / "config.json"
+            _write_json(state_path, self.STATE)
+            _write_json(config_path, self.CONFIG)
+            out = io.StringIO()
+            with mock.patch.object(mr, "STATE_PATH", state_path),                  mock.patch.object(mr, "MODEL_CONFIG_PATH", config_path):
+                with redirect_stdout(out):
+                    self.assertEqual(mr.main(["--window", "--role", "session"]), 0)
+                self.assertEqual(out.getvalue().strip(), "262144")
+                err = io.StringIO()
+                with redirect_stderr(err):
+                    self.assertEqual(mr.main(["--window", "--role", "bare"]), 2)
+                self.assertIn("--num-ctx", err.getvalue())
+                with redirect_stderr(io.StringIO()):
+                    self.assertEqual(mr.main(["--window"]), 1)
+
+    def test_num_ctx_without_adopt_role_is_refused(self):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = mr.main(["--list", "--num-ctx", "10"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("--num-ctx", err.getvalue())
+
+
 class TestRequireRole(unittest.TestCase):
     """--resolve --role KIND --require-role: refuse instead of silently falling back to the
     global 'current' tag (PR #61 review round 2, finding H1)."""

@@ -1922,7 +1922,8 @@ def cmd_qualify(tag: str, role: str | None = None) -> int:
     return 0
 
 
-def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False) -> int:
+def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False,
+                   num_ctx: int | None = None) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -1949,9 +1950,14 @@ def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False) -> int
         force (bool): required to overwrite an existing QUALIFIED (non-
             manual) entry for `role`. Not needed for a fresh role or one
             that is already manual.
+        num_ctx (int | None): the context window of this adoption, stored in the
+            role's entry so window_for_role can answer for a role that has no
+            sweep entry in local-model-config.json (a manual role never does).
+            Must be a positive int (a bool is refused). None stores nothing.
 
     Outputs:
-        result (int): 0 on adoption, 1 on refusal (no --reason, no
+        result (int): 0 on adoption, 1 on refusal (no --reason, a num_ctx that
+        is not a positive int, no
         incumbent state at all in STATE_PATH, or an unforced overwrite of a
         qualified role).
 
@@ -1966,6 +1972,11 @@ def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False) -> int
             "(R4) or a later reader cannot tell a measured choice from a guess.",
             file=sys.stderr,
         )
+        return 1
+    if num_ctx is not None and (isinstance(num_ctx, bool) or not isinstance(num_ctx, int)
+                                or num_ctx <= 0):
+        print(f"[RESOLVER] refusing --num-ctx {num_ctx!r}: the window must be a positive "
+              "integer count of tokens.", file=sys.stderr)
         return 1
     _verify_installed(tag)
     previous = _load_state_for_qualify()
@@ -1997,6 +2008,13 @@ def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False) -> int
         return 1
 
     by_role[role] = {"tag": tag, "manual": True, "reason": reason, "adopted": today}
+    if num_ctx is not None:
+        by_role[role]["num_ctx"] = num_ctx
+    elif (isinstance(previous_entry, dict) and previous_entry.get("manual")
+          and previous_entry.get("tag") == tag and previous_entry.get("num_ctx")):
+        # Re-adopting the SAME tag (to update the reason, say) must not erase its recorded
+        # window. A different tag has a different window and never inherits this one.
+        by_role[role]["num_ctx"] = previous_entry["num_ctx"]
 
     history = list(previous.get("history", []))
     history.append({
@@ -2015,6 +2033,104 @@ def cmd_adopt_role(role: str, tag: str, reason: str, force: bool = False) -> int
         f"[RESOLVER] {tag} manually adopted for role {role!r} ({reason}); now current for "
         f"that role in {STATE_PATH} (the overall 'current' tag is unchanged)."
     )
+    return 0
+
+
+def window_for_role(role: str, state: dict[str, Any], config: dict[str, Any]) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The context window, in tokens, of the model a ROLE resolves to. The one place
+        that answers this, called by context_budget.py and ollama_bridge.py (R18), so a
+        manually adopted role such as `session` (which has no sweep entry in
+        local-model-config.json) and a qualified role are read from where each is
+        recorded.
+
+    Details:
+        A manual role carries its own `num_ctx` (set by `--adopt-role ... --num-ctx N`).
+        Any other role reads `retained_num_ctx` of ITS OWN tag in the config. A role with
+        no entry resolves, like resolve(), to the state's overall `current` tag. The value
+        of another tag is never used (R8).
+
+    Inputs:
+        role (str): the resolver role.
+        state (dict): the parsed local-model-state.json.
+        config (dict): the parsed local-model-config.json, {} when absent.
+
+    Outputs:
+        window (int): the window in tokens.
+
+    Raises:
+        ResolverError: a manual role with no num_ctx (the message names the command that
+        fixes it), or a tag with no retained_num_ctx.
+    --------------------------------------------------------------------------
+    """
+    entry = (state.get("current_by_role") or {}).get(role)
+    if isinstance(entry, dict) and entry.get("tag"):
+        tag = entry["tag"]
+        if entry.get("manual"):
+            window = entry.get("num_ctx")
+            if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+                raise ResolverError(
+                    f"[RESOLVER] role {role!r} is adopted manually for {tag} with no num_ctx, "
+                    f"so its window is unknown. Adopt it again with: model_resolver.py "
+                    f"--adopt-role {role} {tag} --reason \"...\" --num-ctx <N>")
+            return window
+    else:
+        tag = state.get("current")
+    window = ((config.get("models") or {}).get(tag) or {}).get("retained_num_ctx")
+    if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+        raise ResolverError(
+            f"[RESOLVER] no measured context window for {tag!r} (role {role!r}) in "
+            "local-model-config.json; the window of another tag is never borrowed.")
+    return window
+
+
+def window_of_role(role: str, config_path: Path | None = None) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Load the state and the measurement document at run time and answer window_for_role.
+        The entry point context_budget.py and ollama_bridge.py call for a role (R18).
+
+    Inputs:
+        role (str): the resolver role.
+        config_path (Path | None): the measurement document, MODEL_CONFIG_PATH when omitted
+            (read at call time, so a test can patch it).
+
+    Outputs:
+        window (int): the window in tokens.
+
+    Raises:
+        ResolverError: no state file, or the window is unknown (see window_for_role).
+    --------------------------------------------------------------------------
+    """
+    state = _load_state_strict()
+    try:
+        config = json.loads((config_path or MODEL_CONFIG_PATH).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        config = {}
+    return window_for_role(role, state, config)
+
+
+def cmd_window(role: str) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Implement `--window --role ROLE`: print the role's window as a bare integer.
+
+    Inputs:
+        role (str): the resolver role.
+
+    Outputs:
+        result (int): 0 with the integer on stdout, 2 on refusal with the reason on stderr.
+    --------------------------------------------------------------------------
+    """
+    try:
+        print(window_of_role(role))
+    except ResolverError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     return 0
 
 
@@ -2041,6 +2157,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group.add_argument("--resolve", action="store_true", help="print the current tag, nothing else")
     group.add_argument("--qualify", type=str, metavar="TAG", help="qualify TAG against the frozen task set")
     group.add_argument(
+        "--window", action="store_true",
+        help="print the context window, in tokens, of the model --role resolves to. Exit 2 "
+             "when the window is unknown, with the command that records it.")
+    group.add_argument(
         "--matrix", action="store_true",
         help="score EVERY declared and installed candidate on EVERY task, then print the "
              "per-task grid and the comparative summary. Writes nothing. Exists because a "
@@ -2064,6 +2184,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--reason", type=str, default="", metavar="TEXT",
         help="with --adopt-role, the required measurement/provenance note (R4) recorded in "
              "the history entry. Invalid without --adopt-role.")
+    parser.add_argument(
+        "--num-ctx", type=int, default=None, dest="num_ctx",
+        help="with --adopt-role, the context window of this adoption in tokens, a positive "
+             "integer, stored in the role's entry. Invalid without --adopt-role.")
     parser.add_argument(
         "--force", action="store_true",
         help="with --adopt-role, confirms overwriting a role that currently holds a "
@@ -2128,6 +2252,14 @@ def main(argv: list[str] | None = None) -> int:
         print("[RESOLVER] --force only applies to --adopt-role; it would otherwise be "
               "silently ignored.", file=sys.stderr)
         return 1
+    if args.num_ctx is not None and not args.adopt_role:
+        print("[RESOLVER] --num-ctx only applies to --adopt-role; it would otherwise be "
+              "silently ignored.", file=sys.stderr)
+        return 1
+    if args.window and not args.role:
+        print("[RESOLVER] --window needs --role: a window belongs to the model a role "
+              "resolves to.", file=sys.stderr)
+        return 1
     if args.adopt_role and args.role:
         print("[RESOLVER] --role does not apply to --adopt-role; the role is the first "
               "value of --adopt-role itself, and a second --role would be silently ignored.",
@@ -2145,6 +2277,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.list:
             return cmd_list()
+        if args.window:
+            return cmd_window(args.role)
         if args.resolve:
             return cmd_resolve(args.role, require_role=args.require_role)
         if args.qualify:
@@ -2155,7 +2289,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_matrix(args.json)
         if args.adopt_role:
             role, tag = args.adopt_role
-            return cmd_adopt_role(role, tag, args.reason, force=args.force)
+            return cmd_adopt_role(role, tag, args.reason, force=args.force,
+                                  num_ctx=args.num_ctx)
     except ResolverError as exc:
         print(str(exc), file=sys.stderr)
         return 1

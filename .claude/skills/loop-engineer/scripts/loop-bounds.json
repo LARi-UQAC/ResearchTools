@@ -1,0 +1,26 @@
+{
+  "state_file_name": {
+    "value": "rt-review-loop.json",
+    "provenance": "chosen 2026-10-17 by the session for plan 1 of the local coding contract; lives in the worktree's own git directory so it is never committed"
+  },
+  "git_timeout_s": {
+    "value": 10,
+    "provenance": "chosen 2026-10-17 (R10); a local git rev-parse answers in milliseconds, so ten seconds only bounds a hung process"
+  },
+  "lock_timeout_s": {
+    "value": 5,
+    "provenance": "chosen 2026-10-17 (R10) after review round 5; two review hooks fire within one tool turn and a read-modify-write of a few kilobytes takes milliseconds, so five seconds only bounds a stuck holder"
+  },
+  "lock_stale_s": {
+    "value": 30,
+    "provenance": "chosen 2026-10-17 after review round 5; far above the milliseconds a holder keeps the lock, so only a holder that died is reclaimed"
+  },
+  "lock_poll_s": {
+    "value": 0.05,
+    "provenance": "chosen 2026-10-17 after review round 5; short against the hold time, long enough not to spin"
+  },
+  "transcript_scan_max_bytes": {
+    "value": 67108864,
+    "provenance": "chosen 2026-10-17; far above the 2650628-byte transcript measured that day, so a normal session is always read and only a runaway file degrades to 'unknown'"
+  }
+}

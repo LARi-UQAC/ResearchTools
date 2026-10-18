@@ -71,6 +71,8 @@ import ollama_bridge as ob  # noqa: E402
 # locally. Tests that care about a specific window still pass num_ctx explicitly, and that
 # explicit value always wins over this patch.
 _TEST_NUM_CTX = 16384
+# The real seam, kept before setUpModule patches it, for the tests that exercise it.
+_REAL_RESOLVE_NUM_CTX = ob._resolve_num_ctx
 
 
 def setUpModule():
@@ -451,7 +453,8 @@ class TestLogFileFormat(unittest.TestCase):
                 rc = ob.run_bridge(prompt_path, None, None, seed=11, log_path=log_path, max_retries=3)
 
             self.assertEqual(rc, 0)
-            lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+            lines = [ln for ln in log_path.read_text(encoding="utf-8").strip().splitlines()
+                     if '"event": "start"' not in ln]  # start records are plan 6 / R35 round 2
             self.assertEqual(len(lines), 2)  # one line per GENERATION attempt (probe not logged)
             for i, line in enumerate(lines, start=1):
                 record = json.loads(line)
@@ -910,6 +913,208 @@ class TestNumCtxIsResolvedPerResolvedTag(unittest.TestCase):
         self.assertTrue(captured)
         for payload in captured:
             self.assertEqual(payload["options"]["num_ctx"], 32768)
+
+
+class TestRoleWindowInTheBridge(unittest.TestCase):
+    """Local coding contract plan 4: with --role the num_ctx the bridge sends, and the budget
+    it checks, are the window of the model that ROLE resolves to (a manually adopted role has
+    no sweep entry). Without a role nothing changes. R21: the lookups are mocked, no state or
+    measurement file of this machine is read."""
+
+    def _run(self, role, resolve_window, read_retained, env=None):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            prompt_path = d / "prompt.txt"
+            prompt_path.write_text("Petit prompt.", encoding="utf-8")
+            captured = []
+
+            def transport(payload, timeout):
+                captured.append(payload)
+                if _is_probe(payload):
+                    return {"prompt_eval_count": 12}
+                return {"response": "Reponse propre."}
+
+            environ = {k: v for k, v in os.environ.items() if k != "LARI_LOCAL_MODEL"}
+            environ.update(env or {})
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
+                 mock.patch.object(ob, "_resolve_num_ctx", _REAL_RESOLVE_NUM_CTX), \
+                 mock.patch.object(ob.context_budget, "resolve_window", resolve_window), \
+                 mock.patch.object(ob.context_budget, "read_retained_num_ctx", read_retained), \
+                 mock.patch.dict(os.environ, environ, clear=True), \
+                 mock.patch.object(ob, "_post_generate", side_effect=transport):
+                rc = ob.run_bridge(prompt_path=prompt_path, verify_command=None,
+                                   target_path=None, seed=ob.DEFAULT_SEED,
+                                   log_path=d / "log.jsonl", role=role)
+        return rc, captured
+
+    def test_role_session_sends_the_roles_num_ctx_and_checks_the_budget_against_it(self):
+        window = mock.Mock(return_value=262144)
+        by_tag = mock.Mock(return_value=8192)
+        rc, captured = self._run("session", window, by_tag)
+        self.assertEqual(rc, 0)
+        window.assert_called_once_with(ob.context_budget.DEFAULT_CONFIG_PATH, None, "session")
+        by_tag.assert_not_called()
+        self.assertTrue(captured)
+        for payload in captured:
+            self.assertEqual(payload["options"]["num_ctx"], 262144)
+
+    def test_no_role_is_unchanged(self):
+        window = mock.Mock(return_value=262144)
+        by_tag = mock.Mock(return_value=8192)
+        rc, captured = self._run(None, window, by_tag)
+        self.assertEqual(rc, 0)
+        window.assert_not_called()
+        by_tag.assert_called_once_with(ob.context_budget.DEFAULT_CONFIG_PATH, "vendor-a:9b")
+        for payload in captured:
+            self.assertEqual(payload["options"]["num_ctx"], 8192)
+
+    def test_a_forced_tag_keeps_the_lookup_by_tag_even_with_a_role(self):
+        window = mock.Mock(return_value=262144)
+        by_tag = mock.Mock(return_value=8192)
+        rc, _ = self._run("session", window, by_tag, env={"LARI_LOCAL_MODEL": "vendor-a:9b"})
+        self.assertEqual(rc, 0)
+        window.assert_not_called()
+        by_tag.assert_called_once()
+
+    def test_an_unknown_role_window_is_a_refusal_not_a_default(self):
+        def refuse(config_path, tag, role):
+            raise ob.context_budget.ConfigError("role window unknown")
+
+        rc, captured = self._run("session", refuse, mock.Mock(return_value=8192))
+        self.assertEqual(rc, 1)
+        self.assertEqual(captured, [])
+
+
+class TestLogRecordFields(unittest.TestCase):
+    """Local coding contract plan 6: every attempt record also says which role ran, on which
+    model, at what window, with how many tokens and for which plan, so rt-observe can read it.
+    The old keys are untouched (additive). R19: the time is injected and stamped AFTER the
+    call. R21: nothing machine-local is read."""
+
+    OLD_KEYS = {"attempt", "seed", "prompt_hash", "response_hash", "empty_body",
+                "reasoning_anomaly", "hygiene_violations", "verify_ok", "verify_output",
+                "accepted", "generation_s", "verify_s"}
+
+    def _run(self, role="coder", plan=None, extra=None, clock=None):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            prompt_path = d / "prompt.txt"
+            prompt_path.write_text("Petit prompt.", encoding="utf-8")
+            posted = []
+
+            def transport(payload, timeout):
+                if _is_probe(payload):
+                    return {"prompt_eval_count": 12}
+                posted.append(True)
+                return {"response": "Reponse propre.", **(extra or {})}
+
+            kwargs = {} if plan is None else {"plan": plan}
+            if clock is not None:
+                kwargs["clock"] = lambda: clock(bool(posted))
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
+                 mock.patch.object(ob, "_post_generate", side_effect=transport):
+                rc = ob.run_bridge(prompt_path=prompt_path, verify_command=None,
+                                   target_path=None, seed=ob.DEFAULT_SEED,
+                                   log_path=d / "log.jsonl", role=role, **kwargs)
+            lines = (d / "log.jsonl").read_text(encoding="utf-8").splitlines()
+        return rc, [json.loads(line) for line in lines]
+
+    def test_a_record_carries_role_tag_window_tokens_and_plan(self):
+        rc, records = self._run(plan="plans/plan1.md",
+                                extra={"prompt_eval_count": 120, "eval_count": 45},
+                                clock=lambda posted: "2026-10-17T12:00:00+00:00")
+        self.assertEqual(rc, 0)
+        record = records[-1]
+        self.assertEqual(record["role"], "coder")
+        self.assertEqual(record["tag"], "vendor-a:9b")
+        self.assertEqual(record["num_ctx"], _TEST_NUM_CTX)
+        self.assertEqual((record["prompt_tokens"], record["completion_tokens"]), (120, 45))
+        self.assertEqual(record["plan"], "plans/plan1.md")
+
+    def test_missing_daemon_counts_are_null_not_zero(self):
+        _, records = self._run(extra={})
+        self.assertIsNone(records[-1]["prompt_tokens"])
+        self.assertIsNone(records[-1]["completion_tokens"])
+
+    def test_old_keys_are_unchanged(self):
+        _, records = self._run()
+        self.assertTrue(self.OLD_KEYS <= set(records[-1]))
+
+    def test_at_is_stamped_from_the_injected_clock_after_the_call(self):
+        seen = []
+
+        def clock(posted):
+            seen.append(posted)
+            return "2026-10-17T12:00:00+00:00"
+
+        _, records = self._run(clock=clock)
+        self.assertEqual(records[-1]["at"], "2026-10-17T12:00:00+00:00")
+        # first call: the start record, BEFORE the generation; second: the end, AFTER it
+        self.assertEqual(seen, [False, True])
+        _, records = self._run()
+        self.assertIsNone(records[-1]["at"])
+
+    def test_plan_is_optional_and_the_cli_accepts_it(self):
+        _, records = self._run()
+        self.assertIsNone(records[-1]["plan"])
+        with tempfile.TemporaryDirectory() as d:
+            prompt = Path(d) / "p.txt"
+            prompt.write_text("x", encoding="utf-8")
+            with mock.patch.object(ob, "run_bridge", return_value=0) as run:
+                rc = ob.main(["--prompt-file", str(prompt), "--no-vault-context",
+                              "--role", "coder", "--plan", "plans/plan1.md"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(run.call_args.kwargs["plan"], "plans/plan1.md")
+        self.assertTrue(callable(run.call_args.kwargs["clock"]))
+
+
+class TestStartRecord(unittest.TestCase):
+    """R35 round 2: a start record is logged BEFORE the generation so a dashboard can tell a
+    role that is generating from one that is idle."""
+
+    _run = TestLogRecordFields._run
+
+    def test_a_start_record_precedes_the_attempt_record(self):
+        _, records = self._run(role="session", plan="plans/plan1.md",
+                               clock=lambda posted: "2026-10-17T12:00:00+00:00")
+        self.assertEqual(records[0]["event"], "start")
+        self.assertEqual((records[0]["role"], records[0]["tag"], records[0]["plan"]),
+                         ("session", "vendor-a:9b", "plans/plan1.md"))
+        self.assertEqual(records[0]["at"], "2026-10-17T12:00:00+00:00")
+        self.assertNotIn("event", records[-1])
+        self.assertEqual(len(records), 2)
+
+    def test_a_failed_generation_closes_the_start_record(self):
+        # R35 round 4: a daemon error left a start with no end, so the role read as
+        # generating for half an hour.
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            prompt = d / "p.txt"
+            prompt.write_text("Petit prompt.", encoding="utf-8")
+
+            def transport(payload, timeout):
+                if _is_probe(payload):
+                    return {"prompt_eval_count": 12}
+                raise ob.BridgeError("daemon is down")
+
+            with mock.patch.object(ob, "resolve_model", return_value="vendor-a:9b"), \
+                 mock.patch.object(ob, "_post_generate", side_effect=transport):
+                rc = ob.run_bridge(prompt_path=prompt, verify_command=None, target_path=None,
+                                   seed=ob.DEFAULT_SEED, log_path=d / "log.jsonl",
+                                   role="coder", clock=lambda: "2026-10-17T12:00:00+00:00")
+            records = [json.loads(x) for x in
+                       (d / "log.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(rc, 1)
+        self.assertEqual([r.get("event") for r in records], ["start", "failed"])
+        self.assertEqual(records[-1]["role"], "coder")
+        self.assertIn("daemon is down", records[-1]["error"])
+
+    def test_no_clock_gives_a_null_start_time(self):
+        _, records = self._run()
+        self.assertIsNone(records[0]["at"])
 
 
 class TestMissingMeasuredWindowIsRefusedNotDefaulted(unittest.TestCase):

@@ -16,6 +16,18 @@ The score contract and the stop rules are in `scripts/loop_audit.py` (the scorer
 `scripts/loop_engineer.py` (the driver). Read `references/LOOP.md` before a live run - it is
 the contract for the pipeline, the model tiering, and the safety gates.
 
+## Bounds (R35 as amended)
+
+The review loop never repeats without a bound. Before the first round the session asks the owner
+with `AskUserQuestion` for `max_rounds`, `max_tokens` (input + cache_creation + output, cache
+reads excluded) and `plateau`, unless the plan header carries them, then runs
+`python scripts/loop_bounds.py init --max-rounds N --max-tokens N --plateau N` and, after each
+round, `loop_bounds.py tick --findings N`. The hook `.claude/hooks/review-loop-guard.py` refuses a
+review skill with no bounds or past one. The loop stops at the first bound reached or at a round
+with no finding, and the session names which. The driver flag `--loop` of `loop_engineer.py` is
+not wired (it exits at once), so `/loopdev` is a procedure the session follows and `--dry-run`
+still exercises the guard logic offline.
+
 ## Option contract
 
 ```
@@ -65,7 +77,7 @@ the contract for the pipeline, the model tiering, and the safety gates.
     `local-coder` never writes to the vault - it hands any learning to local-writer. Captures
     also fire at the error/checkpoint (step 9) and gate (step 12), not only here.
 11. Convergence check - the loop wraps steps 7 -> 9 -> 8. Stop on the composite gate, the
-    budget cap, the max-iterations cap, a no-progress plateau, or a security regression.
+    declared bounds (max_rounds, max_tokens, plateau), or a security regression.
 12. Human-gated finish - on a gate pass, local-coder commits + pushes the branch and opens a
     PR (token permitting); the merge to a protected branch waits for explicit user confirmation.
 
@@ -139,7 +151,9 @@ skill's SDK driver, which is the way to get a hard `max_budget_usd` cap. See
 
 ## Environment and safety
 
-- Standalone Agent SDK program; runs on the user's subscription auth (no gateway, no API key).
+- Standalone Agent SDK program. Claude Code has one API endpoint per process and no
+  per-subagent endpoint (documentation read 2026-10-17), so local models are reached through
+  the bridge below and never through a subagent model name.
 - The local models are reached through `ollama_bridge.py` (the Ollama HTTP API, not
   `ollama run`) inside the local-coder / local-writer agents. There is NO fallback tag: the
   bridge asks `model_resolver.py`, and a resolver that names no qualified model is an
@@ -153,11 +167,8 @@ skill's SDK driver, which is the way to get a hard `max_budget_usd` cap. See
 
 ## Running
 
-Live run (needs claude-agent-sdk + Ollama + the review plugins):
-
-```bash
-python scripts/loop_engineer.py --loop --budget 2.00 --score 90 "add input validation to X"
-```
+The live driver run is not wired: `--loop` exits at once. Follow the procedure in
+`.claude/commands/loopdev.md` instead, with the bounds above.
 
 Control-logic dry run (offline, no SDK/models - drives the guards over precomputed reports):
 

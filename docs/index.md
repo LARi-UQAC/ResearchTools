@@ -57,7 +57,7 @@ cloud — a design/plan/code/review loop that keeps token cost down. Which model
 measured, not guessed: `opt-local-vram-llm` tunes the LLM, `opt-local-stt-vram` scores
 speech-to-text models beside it.
 
-[Agents →](manual/10-agents.md)
+[Agents →](manual/10-agents.md) · [Local coding and the cloud →](manual/12-local-coding.md)
 
 </div>
 
@@ -127,6 +127,7 @@ The manual lives in [`manual/`](manual/00-purpose.md), one chapter per topic:
 | 09 | [ThesisTracker integration](manual/09-thesistracker-integration.md) |
 | 10 | [Agents](manual/10-agents.md) |
 | 11 | [File locations](manual/11-file-locations.md) |
+| 12 | [Local coding and the cloud](manual/12-local-coding.md) |
 
 ## Deep-dive references
 

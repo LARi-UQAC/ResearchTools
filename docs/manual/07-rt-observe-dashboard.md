@@ -69,6 +69,16 @@ as code structure, not progress, since the graph is AST-only and holds no decisi
 or the per-part wait (`timeouts_seconds.voice_ask_wait`) runs out. Every spoken part is read
 back through the browser's own `speechSynthesis`, not a new server-side voice.
 
+<!-- local-coding:begin -->
+**Local calls and plan stages.** Two snapshot sections follow local coding. `local_calls`,
+read by `collect_local.py`, reads a bounded tail of the bridge log and shows each role with its
+model, window, call and token totals and whether it is active. `rounds`, read by
+`collect_rounds.py`, lists each plan of a round folder with its executor, tier and task counts,
+and the review loop of every worktree as rounds used of the maximum. The Real-Time tab draws a
+lane and a token ring for each active bridge role, and shows an aider run's fixed cost and task
+budget in the hover. See [chapter 12](12-local-coding.md).
+<!-- local-coding:end -->
+
 ## The `/rt-dashboard` command
 
 Starts the `rt-observe` dashboard on loopback and reports the URL. With no argument it dry-runs

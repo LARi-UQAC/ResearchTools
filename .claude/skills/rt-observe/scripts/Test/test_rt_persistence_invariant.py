@@ -42,7 +42,9 @@ PRE_EXISTING_SECTIONS = {
     "mirrors", "registry", "repo_state", "progress", "graph", "mcp",
     "services", "fleet", "usage",
 }
-NEW_SECTIONS = {"identity", "traces"}
+# identity and traces came with the journal-durable plan; local_calls and rounds (plan 6) came with the
+# local coding contract (plans 6 and 7, 2026-10-17), also additive and read-only.
+NEW_SECTIONS = {"identity", "traces", "local_calls", "rounds"}
 
 
 class TempTree(unittest.TestCase):
@@ -65,7 +67,7 @@ class SectionSetTest(TempTree):
         builders = rt_state.section_builders(self.repo, self.home, config)
         self.assertTrue(PRE_EXISTING_SECTIONS.issubset(set(builders.keys())))
 
-    def test_the_only_new_keys_are_identity_and_traces(self):
+    def test_the_only_new_keys_are_the_declared_additive_ones(self):
         config = {}
         builders = rt_state.section_builders(self.repo, self.home, config)
         added = set(builders.keys()) - PRE_EXISTING_SECTIONS

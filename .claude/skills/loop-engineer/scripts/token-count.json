@@ -1,0 +1,30 @@
+{
+  "encoding": {
+    "value": "cl100k_base",
+    "provenance": "specified: the encoder aider uses for its own counts, see count_tokens in .claude/skills/aider-setup/scripts/aider-rules-sync.py"
+  },
+  "chars_per_token": {
+    "value": 4.0,
+    "provenance": "specified: context_budget.CHARS_PER_TOKEN, the planning-time rule of thumb of this repository for English prose"
+  },
+  "estimate_margin": {
+    "value": 1.25,
+    "provenance": "measured 2026-10-17 by the session on the twelve files of the local coding contract round: real tokens over estimated tokens ranged 0.99 to 1.20, so 1.25 covers the worst file seen"
+  },
+  "binary_probe_bytes": {
+    "value": 8192,
+    "provenance": "chosen 2026-10-17 by the session: a NUL byte in the first 8192 bytes marks a file as binary, as git and grep do on a similar window"
+  },
+  "max_file_bytes": {
+    "value": 5000000,
+    "provenance": "chosen 2026-10-17 by the session: above 5 MB a source is named and skipped rather than read, far above any plan, spec or code file this repository holds"
+  },
+  "encoder_load_timeout_s": {
+    "value": 10,
+    "provenance": "chosen 2026-10-17 by the session (R10): loading an encoder may download its file, and this runs inside a PreToolUse hook with a 30 second deadline, so a stalled download degrades to the estimate after ten seconds"
+  },
+  "skip_dir_names": {
+    "value": [".git", "__pycache__", "node_modules"],
+    "provenance": "chosen 2026-10-17 by the session: directories never holding a counted source when a folder is walked"
+  }
+}

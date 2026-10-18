@@ -368,8 +368,16 @@ none has qualified. The score is computed
 by `scripts/loop_audit.py`, a deterministic aggregator over the installed reviewers
 (`/code-review`, `/security-guidance`, `pr-review-toolkit`, `systematic-debugging`) and the
 betterleaks / pip-audit hooks; it is distinct from the referenced loop-audit tool, which
-scores loop *readiness* rather than code quality. Cloud runs on the user's subscription auth
-and local via the bridge; no gateway and no separate API key are involved.
+scores loop *readiness* rather than code quality. Claude Code has one API endpoint per process
+and no per-subagent endpoint, environment or provider (documentation read 2026-10-17), so a
+subagent cannot be pointed at Ollama while the main session stays on Anthropic: that, and not
+the subscription, is why local models are reached through the bridge from a Haiku wrapper.
+Switching the whole session with `claude-switch.ps1` works and was measured here, but
+Anthropic documents that it does not support routing Claude Code to non-Claude models through
+a gateway, and Remote Control is unavailable while the base URL is not api.anthropic.com. A
+model ID Claude Code does not recognise is assumed to have a 200K window unless
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` is set, and whether that variable is capped at the model's own
+window is not documented and untried here.
 
 Before a local model can be qualified for a role it first needs a tuned tag, which is what the
 [opt-local-vram-llm](skills/opt-local-vram-llm) skill produces: it reads the base tag's manifest

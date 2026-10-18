@@ -61,7 +61,9 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
                         # SECTION_TTL_KEY entry) does not KeyError; no
                         # 'postgres'/'openobserve' block means both sections
                         # report unavailable regardless of their TTL.
-                        "identity": value(30), "traces": value(30)},
+                        "identity": value(30), "traces": value(30),
+                        # Local coding contract (2026-10-17): the bridge-log section.
+                        "local_calls": value(10), "rounds": value(15)},
         # The floors a VIEWER cannot ask below. mcp_live's floor is its own
         # TTL, which is the point: the refresh control may speed up a local
         # collector and must never speed up the one that leaves the machine.

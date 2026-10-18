@@ -13,7 +13,13 @@ Rules, each proven in .claude/hooks/Test/test_mkdocs_links.py:
     image or inline code in its text. A fence may sit in a list item or a blockquote.
   * Stated limits: an indented code block (four spaces, no fence) is not detected, a title in single
     quotes or parentheses, a `)` inside a target, a reference-style definition and an HTML `href`
-    are not rewritten, so such a link stays as MkDocs finds it and `--strict` reports it.
+    are not rewritten, so such a link stays as MkDocs finds it and `--strict` reports it. Link text
+    that spans lines or holds a bare bracket is not found either. An image whose source leaves docs/
+    is not rewritten (MkDocs does not serve it, and a GitHub page is not an image), so it renders
+    broken and `--strict` reports it. A link to a directory inside docs/ goes to its GitHub `tree`
+    page instead of warning, since MkDocs serves no directory. The hook checks that a target exists
+    on disk, not that git tracks it: the corpus test catches an untracked target before a pull
+    request.
   * The target is resolved first, then must sit inside the repository root (R24). A target that
     does not exist is left alone so MkDocs still warns about a genuinely broken link.
   * A file MkDocs serves is left alone. A file that exists but is not served (outside docs_dir, or
@@ -179,6 +185,8 @@ def rewrite_links(
     fence: str | None = None
     for line in markdown.splitlines(keepends=True):
         opening = _FENCE.match(line.rstrip("\r\n"))
+        if opening and opening.group(1)[0] == "`" and "`" in line[opening.end():]:
+            opening = None  # CommonMark: a backtick fence's info string holds no backtick
         if fence is not None:
             out.append(line)
             if (

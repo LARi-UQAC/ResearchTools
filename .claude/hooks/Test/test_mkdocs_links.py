@@ -239,6 +239,12 @@ class RewriteRules(Fixture):
         self.assertEqual(done, ["../README.md"])
         self.assertTrue(out.endswith(f"[R]({BASE}/blob/{REF}/README.md)\n"))
 
+    def test_inline_triple_backtick_line_does_not_open_a_fence(self):
+        text = "```code``` see [R](../README.md)\n\n[S](../README.md)\n"
+        out, done = self.run_rewrite(text)
+        self.assertEqual(done, ["../README.md", "../README.md"])
+        self.assertEqual(out.count(f"{BASE}/blob/{REF}/README.md"), 2)
+
     def test_second_pass_changes_nothing(self):
         once, _ = self.run_rewrite("[R](../README.md) [x](hidden/x.md)")
         twice, done = self.run_rewrite(once)
@@ -321,8 +327,13 @@ def untracked_by_git(root: Path, rels: list) -> list:
 
 def exclude_patterns(text: str) -> list:
     """The exclude_docs patterns of mkdocs.yml, one per indented line."""
-    block = text.split("exclude_docs: |\n", 1)[1]
-    return [ln.strip() for ln in block.splitlines() if ln[:1] in (" ", "\t") and ln.strip()]
+    patterns = []
+    for ln in text.split("exclude_docs: |\n", 1)[1].splitlines():
+        if ln.strip() and ln[:1] not in (" ", "\t"):
+            break  # the next top-level key ends the block scalar
+        if ln.strip():
+            patterns.append(ln.strip())
+    return patterns
 
 
 def strip_code(text: str) -> str:
@@ -332,6 +343,10 @@ def strip_code(text: str) -> str:
 
 
 class MkdocsWiring(unittest.TestCase):
+    def test_exclude_patterns_stop_at_the_next_top_level_key(self):
+        text = "exclude_docs: |\n  superpowers/**\n  drafts/*.md\n\nplugins:\n  - search\n"
+        self.assertEqual(exclude_patterns(text), ["superpowers/**", "drafts/*.md"])
+
     def test_mkdocs_yml_declares_hook_ref_and_validation(self):
         text = read_yml()
         self.assertRegex(text, r"(?m)^hooks:\s*\n\s+-\s+scripts/docs/mkdocs_hooks\.py\s*$")

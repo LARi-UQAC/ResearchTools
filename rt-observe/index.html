@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#rt-observe-harness-neutral-toolkit-state-and-mirror-matrix" class="md-skip">
+        <a href="#rt-observe--harness-neutral-toolkit-state-and-mirror-matrix" class="md-skip">
           Skip to content
         </a>
       
@@ -1116,10 +1116,10 @@
   
 
 
-<h1 id="rt-observe-harness-neutral-toolkit-state-and-mirror-matrix">rt-observe — harness-neutral toolkit state and mirror matrix<a class="headerlink" href="#rt-observe-harness-neutral-toolkit-state-and-mirror-matrix" title="Permanent link">&para;</a></h1>
+<h1 id="rt-observe--harness-neutral-toolkit-state-and-mirror-matrix">rt-observe — harness-neutral toolkit state and mirror matrix<a class="headerlink" href="#rt-observe--harness-neutral-toolkit-state-and-mirror-matrix" title="Permanent link">&para;</a></h1>
 <p>Full reference for the <code>rt-observe</code> skill: the mirror matrix, the loopback dashboard, and
-everything the CLI/JSON snapshot reports. See the root <a href="../README.md">README.md</a> Skills
-table for the one-line summary and <a href="../Architecture.md">Architecture.md</a> for how it fits the
+everything the CLI/JSON snapshot reports. See the root <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">README.md</a> Skills
+table for the one-line summary and <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">Architecture.md</a> for how it fits the
 rest of the toolkit.</p>
 <p>Answers one question: is this toolkit correctly deployed to every harness in use, and which
 empty cells are deliberate. <code>install.ps1</code> computes a verdict for every mirror it generates,
@@ -1170,7 +1170,7 @@ two that look identical on disk:</p>
 </tr>
 </tbody>
 </table>
-<p>Intent comes from <a href="../mirror-policy.json">mirror-policy.json</a> at the repository root, which
+<p>Intent comes from <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/mirror-policy.json">mirror-policy.json</a> at the repository root, which
 <code>install.ps1</code> reads as well: one declaration, two consumers, and the <code>by-design</code> / <code>lost</code>
 distinction becomes readable on any OS from a fresh clone by someone who cannot run PowerShell.</p>
 <div class="highlight"><pre><span></span><code>python<span class="w"> </span>.claude/skills/rt-observe/scripts/rt_state.py<span class="w">            </span><span class="c1"># human summary</span>
@@ -1247,7 +1247,7 @@ state. The diagram's boxes can also be dragged, and their edges follow, because 
 drawn from the node's own coordinates rather than from a stored copy of them.</p>
 <p><strong>Acting on what it reports.</strong> The rail carries an Actions panel, and every button in it runs
 one entry of a closed whitelist held as data in
-<a href="../.claude/skills/rt-observe/actions.json">.claude/skills/rt-observe/actions.json</a>: an id maps to
+<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/rt-observe/actions.json">.claude/skills/rt-observe/actions.json</a>: an id maps to
 a FIXED argv, the page posts only that id, and nothing from the request ever reaches a command
 line. Every id points at a script this repository already ships and already tests -
 <code>install.ps1 -Personal</code> (the fix for the mirrors the matrix reports lost), <code>-Manifest</code>,
@@ -1278,7 +1278,7 @@ a 400px side panel to a wide monitor. The eight cell states are distinguishable 
 removed, because colour marks only the one state that must never be missed: on this surface no
 second status hue cleared the colour-vision-deficiency floors against the alarm red, so every
 other state is carried by a two-letter code, a texture and an edge weight. Its design tokens
-are extracted to <a href="../assets/rt-tokens.css">assets/rt-tokens.css</a>, the first shared token file in
+are extracted to <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/assets/rt-tokens.css">assets/rt-tokens.css</a>, the first shared token file in
 this repository, and a test asserts the page and that file cannot drift apart.</p>
 <p>Standard library only: no pip install, no npm, no Docker, no build step, and the core never
 shells out to a <code>.ps1</code>. Exit 0 is clean, 1 means something is <code>lost</code> or <code>stale</code>, 2 is a refusal
@@ -1298,8 +1298,8 @@ a snapshot that <code>local-writer</code> produced, because <code>vault-access-g
 every other caller and a server reading it on your behalf is the bypass that guard exists to
 stop.</p>
 <h2 id="the-optional-journal-identity-traces-audit">The optional journal (identity, traces, audit)<a class="headerlink" href="#the-optional-journal-identity-traces-audit" title="Permanent link">&para;</a></h2>
-<p>Added 2026-09-24, per
-<a href="../superpowers/plans/done/2026-09-24-rt-observe-journal-durable-DONE/">docs/superpowers/plans/done/2026-09-24-rt-observe-journal-durable-DONE.md</a>,
+<p>Added 2026-09-24, per the plan <code>docs/superpowers/plans/done/2026-09-24-rt-observe-journal-durable-DONE.md</code>
+(a local planning file that is not tracked by git, so it has no public page),
 for the lab's five-student multi-sandbox GPU server.
 Every claim above about a fresh clone still holds: with no database and no log store
 configured, rt-observe reports exactly what it reported before this section existed, and the
@@ -1309,11 +1309,11 @@ documentation states that data is immutable once ingested and only a whole reten
 be dropped - the right shape for a trace/audit log, the wrong one for an identity table a lab
 member might need to fix by hand. So:</p>
 <ul>
-<li><strong>PostgreSQL</strong> (<a href="../.claude/skills/rt-observe/scripts/rt_store.py">rt_store.py</a>) holds three
+<li><strong>PostgreSQL</strong> (<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/rt-observe/scripts/rt_store.py">rt_store.py</a>) holds three
   mutable tables: who has an account, which system account/container/OpenObserve organisation
   maps to which person, and a history of snapshots taken. <code>rt_store.py --migrate --dry-run</code>
   (default) prints the DDL; <code>--yes</code> applies it, idempotently.</li>
-<li><strong>OpenObserve</strong> (<a href="../.claude/skills/rt-observe/scripts/rt_openobserve.py">rt_openobserve.py</a>)
+<li><strong>OpenObserve</strong> (<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/rt-observe/scripts/rt_openobserve.py">rt_openobserve.py</a>)
   holds the immutable stream: agent traces and, as a second sink beside the existing
   <code>~/.claude/rt-state-actions.jsonl</code>, the dashboard's own action-audit log. The JSONL is never
   replaced - it is the fallback that survives an OpenObserve outage, since every action is
@@ -1353,11 +1353,11 @@ and the trace stream's own shape (row count, distinct sessions, newest event) - 
 recomputed token total, which stays owned by the usage panel's existing, already-decided
 counting rule.</p>
 <h2 id="the-voice-panel-2026-09-26">The voice panel (2026-09-26)<a class="headerlink" href="#the-voice-panel-2026-09-26" title="Permanent link">&para;</a></h2>
-<p><a href="../.claude/skills/rt-observe/scripts/voice_ask.py">voice_ask.py</a> writes a question into
+<p><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/rt-observe/scripts/voice_ask.py">voice_ask.py</a> writes a question into
 <code>~/.claude/obsidian-outbox/ask/requests/</code> and polls <code>ask/answers/</code> for the reply, following the
-exact file shapes <a href="../.claude/skills/obsidian-cli/scripts/daemon_ask.py">daemon_ask.py</a> (the
+exact file shapes <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/obsidian-cli/scripts/daemon_ask.py">daemon_ask.py</a> (the
 <code>obsidian-cli</code> skill) expects on the other side. Neither this module nor
-<a href="../.claude/skills/rt-observe/scripts/stt_engine.py">stt_engine.py</a> (local speech-to-text,
+<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/rt-observe/scripts/stt_engine.py">stt_engine.py</a> (local speech-to-text,
 <code>faster-whisper</code> as a lazily-imported optional dependency) ever opens <code>OBSIDIAN_VAULT</code> or
 <code>graphify-out/</code>: the vault/graph reasoning is entirely the daemon's, reached only through the
 outbox files above, which already sit outside the vault boundary the rest of this skill's

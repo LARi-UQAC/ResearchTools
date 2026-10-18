@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#aider-setup-the-aider-nightly-local-coding-pipeline" class="md-skip">
+        <a href="#aider-setup--the-aider-nightly-local-coding-pipeline" class="md-skip">
           Skip to content
         </a>
       
@@ -1027,12 +1027,12 @@
   
 
 
-<h1 id="aider-setup-the-aider-nightly-local-coding-pipeline">aider-setup — the aider nightly local-coding pipeline<a class="headerlink" href="#aider-setup-the-aider-nightly-local-coding-pipeline" title="Permanent link">&para;</a></h1>
+<h1 id="aider-setup--the-aider-nightly-local-coding-pipeline">aider-setup — the aider nightly local-coding pipeline<a class="headerlink" href="#aider-setup--the-aider-nightly-local-coding-pipeline" title="Permanent link">&para;</a></h1>
 <p>Index page. The <code>aider-setup</code> skill is a second, independent local-coding harness that needs
-no Claude Code: two local Ollama models (a writer that codes and tests, a reviewer that never
+no interactive harness: two local Ollama models (a writer that codes and tests, a reviewer that never
 edits, gated by measured token budgets) run one aider process per plan overnight, driven by
-<code>aider-plan.ps1</code> / <code>aider-night.ps1</code>. See the root <a href="../README.md">README.md</a> Skills table for
-the one-line summary and <a href="../Architecture.md">Architecture.md</a> for how it fits the rest of the
+<code>aider-plan.ps1</code> / <code>aider-night.ps1</code>. See the root <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">README.md</a> Skills table for
+the one-line summary and <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">Architecture.md</a> for how it fits the rest of the
 toolkit.</p>
 <p>Its own docs live beside the skill, not here, so the code and its documentation stay one
 commit apart (R18):</p>
@@ -1045,28 +1045,28 @@ commit apart (R18):</p>
 </thead>
 <tbody>
 <tr>
-<td><a href="../.claude/skills/aider-setup/SKILL.md"><code>.claude/skills/aider-setup/SKILL.md</code></a></td>
+<td><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/aider-setup/SKILL.md"><code>.claude/skills/aider-setup/SKILL.md</code></a></td>
 <td>What the skill does, the three pieces and their lifetimes, the <code>scripts/build/</code> packaging pipeline for the student-facing <code>aider-kit.zip</code></td>
 </tr>
 <tr>
-<td><a href="../.claude/skills/aider-setup/MANUAL.md"><code>.claude/skills/aider-setup/MANUAL.md</code></a></td>
+<td><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/aider-setup/MANUAL.md"><code>.claude/skills/aider-setup/MANUAL.md</code></a></td>
 <td>The full runbook: install, build the kit, test the computer, tune Ollama and build the tag, create a project, write the three inputs, run a night, read the result, budgets, git during a run</td>
 </tr>
 <tr>
-<td><a href="../.claude/skills/aider-setup/CONFIG_OLLAMA.md"><code>.claude/skills/aider-setup/CONFIG_OLLAMA.md</code></a></td>
+<td><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/aider-setup/CONFIG_OLLAMA.md"><code>.claude/skills/aider-setup/CONFIG_OLLAMA.md</code></a></td>
 <td>Measured Ollama tuning for THIS harness: the input-token floor, the GPU/context/thread test, <code>num_ctx</code>/<code>num_gpu</code>/<code>num_thread</code>, tuning the reviewer too</td>
 </tr>
 <tr>
-<td><a href="../.claude/skills/aider-setup/EXAMPLE-PROMPT-robot.md"><code>.claude/skills/aider-setup/EXAMPLE-PROMPT-robot.md</code></a></td>
+<td><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/aider-setup/EXAMPLE-PROMPT-robot.md"><code>.claude/skills/aider-setup/EXAMPLE-PROMPT-robot.md</code></a></td>
 <td>A worked planning-prompt example (mobile robot path planner) for a first run</td>
 </tr>
 <tr>
-<td><a href="../.claude/skills/aider-setup/MEMORY.md"><code>.claude/skills/aider-setup/MEMORY.md</code></a></td>
+<td><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/aider-setup/MEMORY.md"><code>.claude/skills/aider-setup/MEMORY.md</code></a></td>
 <td>Continuity notes for the next session working on this skill: where things live, traps, what is left undone</td>
 </tr>
 </tbody>
 </table>
-<p>Nightly entry point, once the machine is set up (no Claude Code involved):</p>
+<p>Nightly entry point, once the machine is set up (no interactive harness involved):</p>
 <div class="highlight"><pre><span></span><code><span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">aider-setup</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">aider-night</span><span class="p">.</span><span class="n">ps1</span>
 </code></pre></div>
 

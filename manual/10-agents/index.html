@@ -1227,7 +1227,7 @@
 
 
 <h1 id="agents">Agents<a class="headerlink" href="#agents" title="Permanent link">&para;</a></h1>
-<p>Chapter 10 of the ResearchTools manual. Back to <a href="../../README.md">table of contents</a>.</p>
+<p>Chapter 10 of the ResearchTools manual. Back to <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">table of contents</a>.</p>
 <p>Agents are specialists Claude delegates to automatically based on context, or explicitly on
 request ("use the <code>scopus-auditor</code> agent to…"). Twenty ship in this repo; most back a slash
 command. Two of them (<code>local-writer</code>, <code>local-coder</code>) are local-delegation agents: a cheap
@@ -1431,14 +1431,14 @@ installed reviewers (<code>/code-review</code>, <code>/security-guidance</code>,
 <code>systematic-debugging</code>) plus the betterleaks / pip-audit hooks, with security as a hard floor
 (any CRITICAL fails the gate regardless of the aggregate). The final merge to a protected
 branch is human-gated: the loop stops at "ready to merge" and waits for your confirmation.
-The loop diagram and the use-case diagram are in <a href="../../Architecture.md">Architecture.md</a>
+The loop diagram and the use-case diagram are in <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">Architecture.md</a>
 ("Layer 5 — Loop engineering").</p>
 <p>The same loop applies to writing through the <code>authoring-loop</code> agent (the ScholarEval-gated
 variant): define a subject, author with an authoring agent (<code>/litreview</code>, <code>latex-writer</code>,
 <code>/replyreviewer</code>, …) on Fable 5, audit with the <code>scholar-evaluation</code> skill on Sonnet or Haiku
 to get a score, loop until the ScholarEval target or the budget is reached, then record the
 learnings to memory via <code>local-writer</code>. The five steps are documented in the loop-engineer
-<a href="../../.claude/skills/loop-engineer/SKILL.md">SKILL.md</a>.</p>
+<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/loop-engineer/SKILL.md">SKILL.md</a>.</p>
 <h2 id="obsidian-knowledge-capture-loop">Obsidian knowledge-capture loop<a class="headerlink" href="#obsidian-knowledge-capture-loop" title="Permanent link">&para;</a></h2>
 <p>Both loops read and write the Obsidian vault so learnings persist across iterations and projects
 (Claude Code has no cross-project memory of its own; the vault is that broad memory).
@@ -1449,7 +1449,7 @@ recovery); <code>executing-plans</code> does not read. Writes land in <code>10_P
 reusable <code>30_Ressources/</code> atomic notes through the outbox only - the SessionStart/SessionEnd
 <code>obsidian-outbox-flush.py</code> hook is the sole write path, never a fallback. The <code>~/bin/obsidian</code>
 wrapper is for reads. Requires Obsidian open with the CLI enabled. Full design in <a href="../../contributor-notes/">docs/contributor-notes.md</a>
-section 5; routing in <a href="../../.claude/CLAUDE.md">.claude/CLAUDE.md</a>.</p>
+section 5; routing in <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/CLAUDE.md">.claude/CLAUDE.md</a>.</p>
 <h2 id="calling-an-agent-explicitly">Calling an agent explicitly<a class="headerlink" href="#calling-an-agent-explicitly" title="Permanent link">&para;</a></h2>
 <p>Agents are normally triggered automatically by context. To invoke one directly, address it
 by name in your message:</p>
@@ -1531,7 +1531,7 @@ links each <code>.claude/agents/&lt;name&gt;.md</code> into <code>~/.claude/agen
 fallback when Developer Mode is off — re-run after a <code>git pull</code> that changes agents).
 Skills keep their per-folder junctions.</p>
 <hr />
-<p><a href="../09-thesistracker-integration/">← 09 ThesisTracker integration</a> | <a href="../../README.md">Table of contents</a> | <a href="../11-file-locations/">11 File locations →</a></p>
+<p><a href="../09-thesistracker-integration/">← 09 ThesisTracker integration</a> | <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">Table of contents</a> | <a href="../11-file-locations/">11 File locations →</a></p>
 
 
 

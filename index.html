@@ -392,7 +392,7 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#academic-writing" class="md-nav__link">
+  <a href="#-academic-writing" class="md-nav__link">
     <span class="md-ellipsis">
       
         📚 Academic writing
@@ -403,7 +403,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#software-hardware-review" class="md-nav__link">
+  <a href="#-software--hardware-review" class="md-nav__link">
     <span class="md-ellipsis">
       
         🛠️ Software &amp; hardware review
@@ -414,7 +414,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#local-model-dev-loop" class="md-nav__link">
+  <a href="#-local-model-dev-loop" class="md-nav__link">
     <span class="md-ellipsis">
       
         ⚙️ Local-model dev loop
@@ -1138,7 +1138,7 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#academic-writing" class="md-nav__link">
+  <a href="#-academic-writing" class="md-nav__link">
     <span class="md-ellipsis">
       
         📚 Academic writing
@@ -1149,7 +1149,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#software-hardware-review" class="md-nav__link">
+  <a href="#-software--hardware-review" class="md-nav__link">
     <span class="md-ellipsis">
       
         🛠️ Software &amp; hardware review
@@ -1160,7 +1160,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#local-model-dev-loop" class="md-nav__link">
+  <a href="#-local-model-dev-loop" class="md-nav__link">
     <span class="md-ellipsis">
       
         ⚙️ Local-model dev loop
@@ -1261,20 +1261,20 @@ does.</p>
 </div>
 <div class="rt-feature-grid">
 <div class="rt-feature-card">
-<h3 id="academic-writing">📚 Academic writing<a class="headerlink" href="#academic-writing" title="Permanent link">&para;</a></h3>
+<h3 id="-academic-writing">📚 Academic writing<a class="headerlink" href="#-academic-writing" title="Permanent link">&para;</a></h3>
 <p>Literature reviews, paper and thesis audits, BibTeX cleanup, reviewer responses, submission
 packages — a ScholarEval score before the reviewer ever sees it.</p>
 <p><a href="manual/04-skills/">Skills →</a></p>
 </div>
 <div class="rt-feature-card">
-<h3 id="software-hardware-review">🛠️ Software &amp; hardware review<a class="headerlink" href="#software-hardware-review" title="Permanent link">&para;</a></h3>
+<h3 id="-software--hardware-review">🛠️ Software &amp; hardware review<a class="headerlink" href="#-software--hardware-review" title="Permanent link">&para;</a></h3>
 <p>Code, PCB, and 3D CAD design review, with the <code>rt-observe</code> dashboard to watch the agents work
 and log what they did - and to ask it a question out loud: hold P, and a local model answers
 from the toolkit's own memory, spoken back, nothing leaving the machine.</p>
 <p><a href="manual/07-rt-observe-dashboard/">See it in action →</a></p>
 </div>
 <div class="rt-feature-card">
-<h3 id="local-model-dev-loop">⚙️ Local-model dev loop<a class="headerlink" href="#local-model-dev-loop" title="Permanent link">&para;</a></h3>
+<h3 id="-local-model-dev-loop">⚙️ Local-model dev loop<a class="headerlink" href="#-local-model-dev-loop" title="Permanent link">&para;</a></h3>
 <p><code>local-writer</code> / <code>local-coder</code> push routine generation to a local Ollama model instead of the
 cloud — a design/plan/code/review loop that keeps token cost down. Which model fits your GPU is
 measured, not guessed: <code>opt-local-vram-llm</code> tunes the LLM, <code>opt-local-stt-vram</code> scores
@@ -1332,12 +1332,15 @@ or a plain GitHub browse would read.</p>
 requirements-docs.txt</code> into <code>.venv-docs</code>), then open the printed <code>http://127.0.0.1:8000</code>.
 <strong>Publish:</strong> <code>mkdocs gh-deploy</code>, run by hand whenever the docs change — no GitHub Actions
 workflow, matching this repo's no-CI/CD policy — then enable Settings → Pages → Deploy from
-a branch → <code>gh-pages</code>. Two known gaps in the built site (not on the raw GitHub browse): links
-that reach outside <code>docs/</code> (to <code>README.md</code>, <code>Architecture.md</code>, <code>.claude/CLAUDE.md</code>) resolve
-on GitHub but not inside the MkDocs build, since its <code>docs_dir</code> is <code>docs/</code> only; and
-<code>04-skills.md</code>'s internal table of contents uses GitHub's heading-slug algorithm, which
-differs slightly from MkDocs' own slugifier, so those specific in-page anchors don't jump
-correctly inside the built site.</p>
+a branch → <code>gh-pages</code>. Links that reach outside <code>docs/</code> (to <code>README.md</code>, <code>Architecture.md</code>,
+<code>.claude/CLAUDE.md</code>) stay relative in the Markdown, so they work on GitHub and in the editor.
+MkDocs only serves <code>docs/</code>, so the build hook <code>scripts/docs/mkdocs_hooks.py</code> sends each such
+link to its page on GitHub (<code>blob</code> or <code>tree</code> on the branch named by <code>extra.docs_source_ref</code> in
+<code>mkdocs.yml</code>, currently <code>main</code>), which means those links only resolve once the change is on
+that branch. Heading ids use GitHub's slug algorithm (<code>toc.slugify</code> in <code>mkdocs.yml</code>), so the
+double-dash anchors of <code>04-skills.md</code> jump correctly (a repeated heading still gets MkDocs's <code>_1</code>
+suffix where GitHub writes <code>-1</code>). <code>mkdocs build --strict</code> is clean, and
+fails on a dead link or a dead anchor.</p>
 <h2 id="start-here">Start here<a class="headerlink" href="#start-here" title="Permanent link">&para;</a></h2>
 <p>The manual lives in <a href="manual/00-purpose/"><code>manual/</code></a>, one chapter per topic:</p>
 <table>
@@ -1418,12 +1421,12 @@ correctly inside the built site.</p>
 </ul>
 <h2 id="elsewhere-in-the-repository">Elsewhere in the repository<a class="headerlink" href="#elsewhere-in-the-repository" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../README.md">../README.md</a> — repository root entry point</li>
-<li><a href="../Architecture.md">../Architecture.md</a> — this repository's own 7-layer component
+<li><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">../README.md</a> — repository root entry point</li>
+<li><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">../Architecture.md</a> — this repository's own 7-layer component
   architecture</li>
-<li><a href="../NEW_ARCHITECTURE.md">../NEW_ARCHITECTURE.md</a> — the architecture shared with the
+<li><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/NEW_ARCHITECTURE.md">../NEW_ARCHITECTURE.md</a> — the architecture shared with the
   sibling repository ThesisTracker</li>
-<li><a href="../CONTRIBUTING.md">../CONTRIBUTING.md</a> · <a href="../CODE_OF_CONDUCT.md">../CODE_OF_CONDUCT.md</a></li>
+<li><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/CONTRIBUTING.md">../CONTRIBUTING.md</a> · <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/CODE_OF_CONDUCT.md">../CODE_OF_CONDUCT.md</a></li>
 </ul>
 
 

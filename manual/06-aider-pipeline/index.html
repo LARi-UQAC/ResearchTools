@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#aider-nightly-pipeline-student-kit" class="md-skip">
+        <a href="#aider-nightly-pipeline--student-kit" class="md-skip">
           Skip to content
         </a>
       
@@ -655,7 +655,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#local-coder-vs-the-aider-setup-pipeline-two-lanes-not-a-duplicate" class="md-nav__link">
+  <a href="#local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate" class="md-nav__link">
     <span class="md-ellipsis">
       
         local-coder vs. the aider-setup pipeline - two lanes, not a duplicate
@@ -1097,7 +1097,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#local-coder-vs-the-aider-setup-pipeline-two-lanes-not-a-duplicate" class="md-nav__link">
+  <a href="#local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate" class="md-nav__link">
     <span class="md-ellipsis">
       
         local-coder vs. the aider-setup pipeline - two lanes, not a duplicate
@@ -1138,34 +1138,41 @@
   
 
 
-<h1 id="aider-nightly-pipeline-student-kit">Aider Nightly Pipeline &amp; Student Kit<a class="headerlink" href="#aider-nightly-pipeline-student-kit" title="Permanent link">&para;</a></h1>
-<p>Chapter 06 of the ResearchTools manual. Back to <a href="../../README.md">table of contents</a>.
+<h1 id="aider-nightly-pipeline--student-kit">Aider Nightly Pipeline &amp; Student Kit<a class="headerlink" href="#aider-nightly-pipeline--student-kit" title="Permanent link">&para;</a></h1>
+<p>Chapter 06 of the ResearchTools manual. Back to <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">table of contents</a>.
 Skill row: <a href="../04-skills/">04-skills.md</a>. Local-delegation counterpart: <a href="../10-agents/">10-agents.md</a>.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>A second, independent local-coding harness that needs no Claude Code: two local Ollama models
+<p>A second, independent local-coding pipeline that needs no interactive harness: two local Ollama models
 (a writer that codes and tests, a reviewer that never edits, gated by measured token budgets)
 run one aider process per plan overnight, driven by <code>aider-plan.ps1</code> / <code>aider-night.ps1</code>. Owns
 the packaging pipeline that assembles the student-facing <code>aider-kit.zip</code> from this skill's own
 canonical sources.</p>
 <p>Full manual, Ollama tuning reference, worked example, and continuity notes:
 <a href="../../aider-setup/">docs/aider-setup.md</a>.</p>
-<h2 id="local-coder-vs-the-aider-setup-pipeline-two-lanes-not-a-duplicate"><code>local-coder</code> vs. the <code>aider-setup</code> pipeline - two lanes, not a duplicate<a class="headerlink" href="#local-coder-vs-the-aider-setup-pipeline-two-lanes-not-a-duplicate" title="Permanent link">&para;</a></h2>
+<h2 id="local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate"><code>local-coder</code> vs. the <code>aider-setup</code> pipeline - two lanes, not a duplicate<a class="headerlink" href="#local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate" title="Permanent link">&para;</a></h2>
 <p>Both generate code on a local model for free, and it is worth being precise about why one did
-not replace the other. <code>local-coder</code> is <strong>synchronous, in-session, single-step</strong>: the cloud
-orchestrator (loop-engineer, a plan step) hands it one precise task - implement this function
-against this failing test - and reviews the result immediately, inside a running Claude Code
-session. <code>aider-setup</code> is <strong>asynchronous, unattended, whole-plan</strong>: it runs a full night with
-Claude Code closed entirely, driving one aider process per plan file for hours with no one
-watching, then leaves an audit report for the morning. Neither can stand in for the other -
-<code>local-coder</code> cannot run when nobody is present to dispatch and review it, and Aider's nightly
-driver has no synchronous entry point a mid-session orchestrator could call. The aider-kit
-integration deliberately left <code>local-coder</code>'s definition, model resolution, and prompt untouched
-for this reason.</p>
+not replace the other. Since 2026-10-17 a <code>local-coder</code> dispatch executes <strong>one whole plan</strong>. The
+prompt carries a line <code>PLAN: &lt;path&gt;</code>, the plan opens with a header (<code>executor</code>, <code>tier</code>,
+<code>bounds</code>), and the hook <code>local-coder-dispatch-guard.py</code> refuses a dispatch with no valid plan.
+The agent ticks <code>progress.md</code> with its three marks, audits nothing and never commits. It is
+<strong>synchronous and in-session</strong>: the calling harness reviews the branch afterwards. <code>aider-setup</code>
+is <strong>asynchronous, unattended and multi-plan</strong>: it runs a full night with every interactive
+harness closed, driving one aider process per plan file for hours with no one watching, with its
+own writer and reviewer models, then leaves an audit report for the morning. So the difference
+is no longer one step against many. It is one plan in a session, reviewed by the calling
+harness, against several plans or a night with no one present. Neither can stand in for the
+other: <code>local-coder</code> cannot run when nobody is present to dispatch it and review the branch, and
+aider's nightly driver has no synchronous entry point a mid-session orchestrator could call. The
+original aider-kit integration left <code>local-coder</code>'s definition, model resolution, and prompt
+untouched for this reason.</p>
 <!-- local-coding:begin -->
 <p><strong>Plans and the local coding contract.</strong> Since 2026-10-17 every plan, for aider or for
-<code>local-coder</code>, opens with a header naming <code>executor</code>, <code>tier</code> and the review bounds, and aider's
-driver skips that header when it lists the files a plan names. The size limits it enforces come
-from <code>context-budget.json</code>, which is also the single source for every project:</p>
+<code>local-coder</code>, opens with a header naming <code>executor</code>, <code>tier</code> and the review bounds. The aider
+driver neither validates nor uses those three keys: it only skips a closed leading front matter
+block when it lists the files a plan names (<code>Get-PlanTargets</code> in <code>aider-plan-core.ps1</code>, proven by
+<code>verify-aider-plan.ps1</code>). The header is validated by <code>plan_contract.py</code> in the harness that
+writes the plan. The size limits the driver enforces come from <code>context-budget.json</code>, which is
+also the single source for every project:</p>
 <table>
 <thead>
 <tr>
@@ -1193,14 +1200,18 @@ from <code>context-budget.json</code>, which is also the single source for every
 </tbody>
 </table>
 <p>The tier-to-role table lives in <code>plan-tiers.json</code> and applies to <code>local-coder</code>, not to aider,
-whose writer and reviewer models are chosen in its own configuration. The choice between the
-two is described in <a href="../12-local-coding/">chapter 12</a>.</p>
+whose writer and reviewer models are chosen in its own configuration. The review-loop bounds of
+R35 do not govern aider's internal writer-reviewer loop. They govern the <code>/code-review</code> and
+<code>/security-review</code> run by the calling harness on the branch the night pushes, before any pull
+request, and the night never merges. During a run the Real-Time tab of the dashboard shows the
+run's fixed cost and task budget (<a href="../07-rt-observe-dashboard/">chapter 07</a>). The choice between
+the two executors is described in <a href="../12-local-coding/">chapter 12</a>.</p>
 <!-- local-coding:end -->
 
 <h2 id="the-nightly-run">The nightly run<a class="headerlink" href="#the-nightly-run" title="Permanent link">&para;</a></h2>
-<p><code>aider-setup</code> is not a wrapper around <code>local-coder</code>, and does not go through Claude Code at
-all once installed - the point, since it is built to run when Claude Code and every model it
-drives are both closed. Two local Ollama tags do the work: a writer that codes its own tests,
+<p><code>aider-setup</code> is not a wrapper around <code>local-coder</code>, and does not go through an interactive
+harness at all once installed - the point, since it is built to run when every interactive
+harness is closed. Two local Ollama tags do the work: a writer that codes its own tests,
 and a reviewer, sandboxed and content-hash checked, that can never edit code however its
 prompt is answered. The driver (<code>aider-plan.ps1</code>) runs <strong>one aider process per plan file</strong>,
 which is what drops the context window between plans; after each plan it runs the test suite,
@@ -1209,11 +1220,18 @@ A plain <code>cmd</code> entry point (<code>aider-night.ps1</code>/<code>.bat</c
 Windows' Modern Standby does not throttle an unattended run, and pushes a branch at the end -
 merging to a protected branch stays a human decision, made the next morning after reading
 <code>audit.md</code>. The rules every model follows (<code>config/rules.md</code>) are generated at build time from
-this repository's own <code>.claude/rules/*.md</code>, so they cannot drift from what every other harness
-enforces. Setup, tuning, and rebuilding the student-facing kit: see
-<a href="../../.claude/skills/aider-setup/SKILL.md">.claude/skills/aider-setup/SKILL.md</a> and its <code>MANUAL.md</code>.</p>
+this repository's own <code>.claude/rules/*.md</code>, with the longest ones abridged. The file currently
+covers R0 to R27 only (its header reads "Rules: 28 (R0-R27)"), so the night's models do not see
+the rules after R27, among them R35 (review bounds), R36 (a skill for every step) and R38 (the
+plan header). R28 to R38 were never synced into it, so it was not regenerated with the local
+coding contract. A dry run of the generator on 2026-10-17, which
+writes nothing, reports 39 rules, R0 to R38, but with no tokenizer in that interpreter no cap was
+applied. The capped regeneration measured about 5153 tokens against the 3500 ceiling of the
+file on 2026-10-17 (recorded in <code>IMPROVEMENTS.md</code>, not re-measured here), which is why it is a
+decision for the aider kit. Setup, tuning, and rebuilding the student-facing kit: see
+<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/aider-setup/SKILL.md">.claude/skills/aider-setup/SKILL.md</a> and its <code>MANUAL.md</code>.</p>
 <hr />
-<p><a href="../05-security-audit/">← 05 Security audit</a> | <a href="../../README.md">Table of contents</a> | <a href="../07-rt-observe-dashboard/">07 rt-observe &amp; dashboard →</a></p>
+<p><a href="../05-security-audit/">← 05 Security audit</a> | <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">Table of contents</a> | <a href="../07-rt-observe-dashboard/">07 rt-observe &amp; dashboard →</a></p>
 
 
 

@@ -1354,9 +1354,9 @@ or <strong>command</strong> in ResearchTools and propagating it to every assista
 GitHub Copilot, OpenCode, Continue, Aider) plus any tool that reads the <code>AGENTS.md</code>
 convention (OpenHuman, Hermes Agent, Codex, and others). Follow the matching section;
 you should not need to re-investigate the mirror machinery.</p>
-<p>Related: <a href="../README.md">README.md</a> and <a href="../Architecture.md">Architecture.md</a> are the
-authoritative inventories; <a href="../.claude/CLAUDE.md">.claude/CLAUDE.md</a> holds the routing
-table; <a href="../.claude/rules/workflows.md">.claude/rules/workflows.md</a> lists task flows.</p>
+<p>Related: <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">README.md</a> and <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">Architecture.md</a> are the
+authoritative inventories; <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/CLAUDE.md">.claude/CLAUDE.md</a> holds the routing
+table; <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/rules/workflows.md">.claude/rules/workflows.md</a> lists task flows.</p>
 <h2 id="1-the-model-one-source-generated-mirrors">1. The model: one source, generated mirrors<a class="headerlink" href="#1-the-model-one-source-generated-mirrors" title="Permanent link">&para;</a></h2>
 <p><code>.claude/</code> is the <strong>single source of truth</strong>. Every other tool reads either the repo
 directly or a file <strong>generated</strong> from <code>.claude/</code>. Never hand-edit a generated mirror; edit
@@ -1398,7 +1398,7 @@ the canonical source and regenerate.</p>
 </tbody>
 </table>
 <p>The first row (bold) and first column of any table you add follow the repo table rules in
-<a href="../.claude/CLAUDE.md">.claude/CLAUDE.md</a>.</p>
+<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/CLAUDE.md">.claude/CLAUDE.md</a>.</p>
 <h2 id="2-the-mirror-map-what-each-tool-consumes">2. The mirror map (what each tool consumes)<a class="headerlink" href="#2-the-mirror-map-what-each-tool-consumes" title="Permanent link">&para;</a></h2>
 <p><code>install.ps1</code> regenerates all of these idempotently from the canonical sources:</p>
 <table>
@@ -1642,10 +1642,10 @@ see "Agent pipeline integrity" in .claude/CLAUDE.md and model on
 <ol>
 <li>Update the inventories and routing:</li>
 <li><code>.claude/CLAUDE.md</code> "Tooling" table: add a routing row (canonical registration).</li>
-<li><a href="../README.md">README.md</a>: bump the agent count where stated; add the agents-table row.</li>
-<li><a href="../Architecture.md">Architecture.md</a>: add the agent node/edge in the mermaid graph and
+<li><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">README.md</a>: bump the agent count where stated; add the agents-table row.</li>
+<li><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">Architecture.md</a>: add the agent node/edge in the mermaid graph and
      any inventory count.</li>
-<li><a href="../.claude/rules/workflows.md">.claude/rules/workflows.md</a>: add a flow row if it maps a
+<li><a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/rules/workflows.md">.claude/rules/workflows.md</a>: add a flow row if it maps a
      user goal to this agent.</li>
 <li>Regenerate + commit (section 9). <code>install.ps1</code> emits the Copilot, OpenCode, and Continue
    mirrors automatically.</li>
@@ -1683,11 +1683,11 @@ description: "&lt;what it does&gt;. Use when &lt;triggers, including slash and n
      generated <code>.agents/skills/&lt;name&gt;/SKILL.md</code> pointer instead, so keep the canonical
      <code>description</code> trigger-rich AND reasonably short: it is the whole trigger surface there,
      and every skill added tightens the shared list budget the others must fit in.
-   - <a href="../README.md">README.md</a>: bump the skill count in the three places it appears
+   - <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">README.md</a>: bump the skill count in the three places it appears
      (header "N skills", the "N ship" sentence, the File-Locations "(N skills)"); add the
      skills-table row, a <code>### &lt;name&gt;</code> subsection, a Prerequisites row for new deps, and the
      File-Locations tree entry (fix the <code>└──</code>/<code>├──</code> on the previous last skill).
-   - <a href="../Architecture.md">Architecture.md</a>: update the skill inventory/count.
+   - <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">Architecture.md</a>: update the skill inventory/count.
    - <code>install.ps1</code> skills-pointer sentence in <code>.github/copilot-instructions.md</code> names a few
      helper skills; add yours there only if it should be called out (edit the generator's
      master text, not the mirror).
@@ -1711,12 +1711,12 @@ $ARGUMENTS
 <p>End user-facing command bodies with: "Respond in French unless the active file is in
    English." <code>install.ps1</code> rewrites <code>$ARGUMENTS</code> for the Copilot prompt automatically.
 2. Update the inventories:
-   - <a href="../README.md">README.md</a>: bump the command count (header "N commands", File-Locations
+   - <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">README.md</a>: bump the command count (header "N commands", File-Locations
      "(N commands)"), add the Commands-table row and the File-Locations commands-tree entry
      (fix the <code>└──</code> on the previous last command).
-   - <a href="../Architecture.md">Architecture.md</a>: add the command node + edge (command -&gt; agent, or
+   - <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/Architecture.md">Architecture.md</a>: add the command node + edge (command -&gt; agent, or
      command -&gt; skill directly when the skill has no agent).
-   - <a href="../.claude/rules/workflows.md">.claude/rules/workflows.md</a>: add the flow row.
+   - <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/rules/workflows.md">.claude/rules/workflows.md</a>: add the flow row.
 3. Regenerate + commit (section 9). A Copilot prompt <code>.github/prompts/&lt;name&gt;.prompt.md</code> is
    emitted (unless <code>&lt;name&gt;</code> is a session-mode command: <code>concis</code>, <code>slim</code>, <code>focus</code>, <code>ctx</code>).</p>
 <h2 id="9-regenerate-verify-commit">9. Regenerate, verify, commit<a class="headerlink" href="#9-regenerate-verify-commit" title="Permanent link">&para;</a></h2>

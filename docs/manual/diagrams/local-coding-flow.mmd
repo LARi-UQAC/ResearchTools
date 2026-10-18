@@ -1,12 +1,14 @@
 flowchart TD
-    A["Coding request<br/>superpowers:brainstorming"] --> B{Single step, no deliverable?}
+    A0["Coding request"] --> X["Consult both memories<br/>local-writer: vault and graph<br/>silent, distilled hits"]
+    X --> A["Brainstorm with the hits<br/>superpowers:brainstorming"]
+    A --> B{Single step, no deliverable?}
     B -- yes --> C[Answer directly]
     B -- no --> D["Write spec, plans and progress<br/>superpowers:writing-plans"]
     D --> E[Ask the owner the bounds]
     E --> F[Write the header: executor, tier, bounds]
     F --> G{Which executor?}
     G -- judgment or no local role --> H["cloud: superpowers:executing-plans"]
-    G -- one plan --> J[local-coder, Haiku wrapper and bridge]
+    G -- one plan --> J[local-coder, low-cost cloud model wrapper and bridge]
     J --> K{Step output fits the coder window?}
     K -- yes --> L[tier simple or standard]
     K -- no --> M[tier large, session role]
@@ -16,9 +18,10 @@ flowchart TD
     M --> O
     N --> O
     O --> P[Review round on the diff]
-    P --> Q{Findings?}
-    Q -- none --> R[Pull request, owner merges]
-    Q -- some --> S{Bound reached?}
+    P --> Q{"Safe to merge?<br/>suite green, no Critical or Important finding"}
+    Q -- yes --> Y["Memory upkeep<br/>local-writer writes lessons to the vault<br/>and updates the graph, silent"]
+    Y --> R[Pull request, owner merges]
+    Q -- no --> S{Bound reached?}
     S -- no --> T[Fix, failing test first] --> P
-    S -- yes --> U[Stop, ask the owner]
+    S -- yes --> U[Stop, report what remains, ask the owner]
     F -.-> V[rt-observe follows every stage]

@@ -10,6 +10,11 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Changed
+- Chapter 12 of the manual and its process figure are corrected. Memory is consulted through
+  `local-writer` before the brainstorm, the review loop ends when the branch is safe to merge (or
+  a bound is reached and you are asked), a last memory upkeep writes the lessons to the vault and
+  updates the graph, and the wrapper is described as a low-cost cloud model with no model named.
+  The chapter now carries the table of when memory is read and written.
 - One table in `workflows.md` ("When memory is read and written") now says when the vault and the
   graph are read and written through `local-writer`, who must not read them, and how a write is
   verified. The dispatch stays in the background and the session adapts when the one-line result

@@ -9,8 +9,11 @@ so GitHub, the editor preview and the tests that check that links resolve on dis
 Rules, each proven in .claude/hooks/Test/test_mkdocs_links.py:
 
   * Only inline links `[text](target)` outside fenced and inline code are considered. A URL with a
-    scheme, a bare `#anchor`, an absolute path and an image are left alone. An indented code block
-    is not detected, which is a stated limit.
+    scheme, a bare `#anchor`, an absolute path and an image are left alone. A link may hold an
+    image or inline code in its text. A fence may sit in a list item or a blockquote.
+  * Stated limits: an indented code block (four spaces, no fence) is not detected, a title in single
+    quotes or parentheses, a `)` inside a target, a reference-style definition and an HTML `href`
+    are not rewritten, so such a link stays as MkDocs finds it and `--strict` reports it.
   * The target is resolved first, then must sit inside the repository root (R24). A target that
     does not exist is left alone so MkDocs still warns about a genuinely broken link.
   * A file MkDocs serves is left alone. A file that exists but is not served (outside docs_dir, or
@@ -28,10 +31,13 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import quote, unquote
 
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_FENCE = re.compile(r"^[ \t>]*(`{3,}|~{3,})")
 _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+# The link text may hold an inline image, tried before a plain character so that the `!` of
+# `![alt](src)` is never read as the start of the link.
 _LINK = re.compile(
-    r"(?<!!)\[(?P<text>[^\]\n]*)\]\((?P<target>(?:<[^>\n]+>)|[^)\s]+)(?P<title>\s+\"[^\"\n]*\")?\)"
+    r"(?<!!)\[(?P<text>(?:!\[[^\]\n]*\]\([^)\n]*\)|(?!!\[)[^\]\n])*)\]"
+    r"\((?P<target>(?:<[^>\n]+>)|[^)\s]+)(?P<title>\s+\"[^\"\n]*\")?\)"
 )
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 _PATH_AND_SUFFIX = re.compile(r"^([^?#]*)(.*)$")
@@ -175,8 +181,12 @@ def rewrite_links(
         opening = _FENCE.match(line.rstrip("\r\n"))
         if fence is not None:
             out.append(line)
-            closes = opening and opening.group(1)[0] == fence[0] and len(opening.group(1)) >= len(fence)
-            if closes and not line.strip().lstrip(fence[0]):
+            if (
+                opening
+                and opening.group(1)[0] == fence[0]
+                and len(opening.group(1)) >= len(fence)
+                and not line[opening.end():].strip()
+            ):
                 fence = None
             continue
         if opening:

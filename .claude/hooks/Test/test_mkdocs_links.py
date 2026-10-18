@@ -16,10 +16,16 @@ import importlib.util
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from urllib.parse import unquote
+
+# Timeouts in seconds. Chosen 2026-10-17: the full strict build was measured at 1.4 s and a git
+# listing of this repository at well under a second, so these are generous ceilings, not tuned.
+BUILD_TIMEOUT_S = 300
+GIT_TIMEOUT_S = 60
 
 REPO = Path(__file__).resolve().parents[3]
 HOOK_PATH = REPO / "scripts" / "docs" / "mkdocs_hooks.py"
@@ -94,6 +100,7 @@ class Fixture(unittest.TestCase):
             "docs/page.md": "page",
             "docs/sub/b.md": "b",
             "docs/hidden/x.md": "hidden",
+            "img.png": "png",
         }
         for rel, body in files.items():
             path = self.root / rel
@@ -213,6 +220,25 @@ class RewriteRules(Fixture):
         self.assertEqual(out, f"`[R](../README.md)` then [R]({BASE}/blob/{REF}/README.md)")
         self.assertEqual(done, ["../README.md"])
 
+    def test_image_inside_link_text_is_left_alone_and_the_link_is_rewritten(self):
+        out, done = self.run_rewrite("[![badge](../img.png)](../README.md)")
+        self.assertEqual(out, f"[![badge](../img.png)]({BASE}/blob/{REF}/README.md)")
+        self.assertEqual(done, ["../README.md"])
+
+    def test_fence_inside_a_list_item_or_a_blockquote_is_code(self):
+        listed = "1. step\n    ```md\n    [x](../README.md)\n    ```\n"
+        quoted = "> ```md\n> [x](../README.md)\n> ```\n"
+        for text in (listed, quoted):
+            out, done = self.run_rewrite(text)
+            self.assertEqual(out, text)
+            self.assertEqual(done, [])
+
+    def test_text_after_a_closed_indented_fence_is_still_rewritten(self):
+        text = "1. step\n    ```md\n    [x](../README.md)\n    ```\n\n[R](../README.md)\n"
+        out, done = self.run_rewrite(text)
+        self.assertEqual(done, ["../README.md"])
+        self.assertTrue(out.endswith(f"[R]({BASE}/blob/{REF}/README.md)\n"))
+
     def test_second_pass_changes_nothing(self):
         once, _ = self.run_rewrite("[R](../README.md) [x](hidden/x.md)")
         twice, done = self.run_rewrite(once)
@@ -266,10 +292,31 @@ def read_yml() -> str:
     return (REPO / "mkdocs.yml").read_text(encoding="utf-8")
 
 
-def nav_pages(text: str) -> list:
-    """The .md files named in the nav block of mkdocs.yml."""
-    block = text.split("\nnav:\n", 1)[1].split("\nexclude_docs:", 1)[0]
-    return re.findall(r":\s+(\S+\.md)\s*$", block, re.M)
+def untracked_by_git(root: Path, rels: list) -> list:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Name the repository-relative paths that git does not track. A rewritten link to an
+        untracked file would be a 404 on GitHub while the file still exists on the build machine.
+
+    Inputs:
+        root (Path): the repository root.
+        rels (list): repository-relative POSIX paths, files or directories.
+
+    Outputs:
+        missing (list): the paths with no tracked file at or under them.
+    --------------------------------------------------------------------------
+    """
+    done = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=GIT_TIMEOUT_S, check=True,
+    )
+    tracked = [name for name in done.stdout.split("\0") if name]
+    return [
+        rel for rel in rels
+        if not any(name == rel or name.startswith(rel.rstrip("/") + "/") for name in tracked)
+    ]
 
 
 def exclude_patterns(text: str) -> list:
@@ -293,7 +340,7 @@ class MkdocsWiring(unittest.TestCase):
         self.assertRegex(text, r"(?ms)^validation:.*?^\s+anchors:\s*warn\b")
         self.assertIn("pymdownx.slugs.slugify", text)
 
-    def test_no_nav_page_keeps_a_relative_link_leaving_docs(self):
+    def test_no_served_page_keeps_a_relative_link_leaving_docs(self):
         hooks = load_hooks()
         text = read_yml()
         docs = REPO / "docs"
@@ -313,9 +360,10 @@ class MkdocsWiring(unittest.TestCase):
         ref = re.search(r"(?m)^\s+docs_source_ref:\s*(\S+)", text)
         self.assertIsNotNone(ref, "extra.docs_source_ref is missing from mkdocs.yml")
         offenders = []
-        for page in nav_pages(text):
+        rewritten = set()
+        for page in sorted(name for name in served if name.endswith(".md")):
             source = docs / page
-            out, _ = hooks.rewrite_links(
+            out, done = hooks.rewrite_links(
                 source.read_text(encoding="utf-8"),
                 page_dir=source.parent,
                 docs_dir=docs,
@@ -324,6 +372,9 @@ class MkdocsWiring(unittest.TestCase):
                 ref=ref.group(1),
                 is_served=is_served,
             )
+            for raw in done:
+                resolved = (source.parent / unquote(re.split(r"[?#]", raw)[0])).resolve()
+                rewritten.add(resolved.relative_to(REPO.resolve()).as_posix())
             for target in re.findall(
                 r"!?\[[^\]\n]*\]\(([^)\s<>]+)(?:\s+\"[^\"\n]*\")?\)", strip_code(out)
             ):
@@ -333,6 +384,39 @@ class MkdocsWiring(unittest.TestCase):
                 if not is_served(path):
                     offenders.append(f"{page} -> {target}")
         self.assertEqual(offenders, [], "links that would stay dead on the built site")
+        self.assertGreater(len(rewritten), 0, "the corpus rewrote nothing, so this proves nothing")
+        self.assertEqual(
+            untracked_by_git(REPO, sorted(rewritten)), [],
+            "rewritten links to files git does not track, a 404 on GitHub",
+        )
+
+    def test_untracked_finder_reports_an_untracked_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", str(root)], check=True, timeout=GIT_TIMEOUT_S)
+            (root / "kept.md").write_text("k", encoding="utf-8")
+            (root / "dir").mkdir()
+            (root / "dir" / "inner.md").write_text("i", encoding="utf-8")
+            (root / "loose.md").write_text("l", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "kept.md", "dir/inner.md"],
+                check=True, timeout=GIT_TIMEOUT_S,
+            )
+            self.assertEqual(untracked_by_git(root, ["kept.md", "dir", "loose.md"]), ["loose.md"])
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("mkdocs") and importlib.util.find_spec("material"),
+        "mkdocs and mkdocs-material are not installed in this interpreter",
+    )
+    def test_strict_build_exits_zero(self):
+        with tempfile.TemporaryDirectory() as out:
+            done = subprocess.run(
+                [sys.executable, "-m", "mkdocs", "build", "--strict",
+                 "-f", str(REPO / "mkdocs.yml"), "-d", out],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO,
+                timeout=BUILD_TIMEOUT_S,
+            )
+        self.assertEqual(done.returncode, 0, (done.stdout + done.stderr)[-2000:])
 
 
 if __name__ == "__main__":

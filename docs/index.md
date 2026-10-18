@@ -108,7 +108,8 @@ MkDocs only serves `docs/`, so the build hook `scripts/docs/mkdocs_hooks.py` sen
 link to its page on GitHub (`blob` or `tree` on the branch named by `extra.docs_source_ref` in
 `mkdocs.yml`, currently `main`), which means those links only resolve once the change is on
 that branch. Heading ids use GitHub's slug algorithm (`toc.slugify` in `mkdocs.yml`), so the
-double-dash anchors of `04-skills.md` jump correctly. `mkdocs build --strict` is clean, and
+double-dash anchors of `04-skills.md` jump correctly (a repeated heading still gets MkDocs's `_1`
+suffix where GitHub writes `-1`). `mkdocs build --strict` is clean, and
 fails on a dead link or a dead anchor.
 
 ## Start here

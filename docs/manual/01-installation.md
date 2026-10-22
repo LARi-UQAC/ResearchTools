@@ -293,8 +293,8 @@ no hook sees GitHub comments.
 ## Update an existing installation
 
 Run these from the root of your clone, the folder that holds `setup.ps1` (the `ResearchTools`
-folder `git clone` created), in PowerShell. The first two lines are yours to run. The last two are
-the update itself:
+folder `git clone` created), in PowerShell. The first two lines are prerequisites. The next two are
+the update itself (a preview, then the real one). The last line is an optional proof:
 
 ```powershell
 git pull --ff-only origin main        # get the new version

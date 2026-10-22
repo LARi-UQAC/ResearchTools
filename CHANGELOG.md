@@ -39,10 +39,13 @@ This file is for someone following releases. For the dated, engineering-level de
 - `setup.ps1 -Update` replaces changed hook commands after the sync instead of before it, skips an
   entry whose script the sync held, skips the hook update when Git Bash or Node.js was not found,
   reports a differing `matcher` or `timeout`, counts a failed `settings.json` edit in its exit code,
-  and no longer restores a stale `settings.json.bak` after a failed add. `install-junctions.ps1 -Sync
+  and restores the exact bytes it read (BOM included), not a stale `settings.json.bak`, after a failed
+  edit. A held hook config `.json` holds its hook, and an entry with no `statusMessage` is a note, not
+  a difference. `-StrictExit` also fails when another session holds the sync lock. `install-junctions.ps1 -Sync
   -StrictExit` (used by `-Update`) exits 1 when the sync throws; the SessionStart form still exits 0.
 - `finish-branch.ps1` queries the exact ref on origin and refuses when origin cannot be queried,
-  rejects a branch name that starts with a dash, and finds links without walking through junctions.
+  rejects a branch name that starts with a dash, finds links without walking through junctions,
+  keeps `gh` warnings out of the JSON it parses and leaves the caller's shell in its own folder.
 - `install-junctions.ps1 -Sync -WhatIf` no longer writes. It ignored `-WhatIf` and copied agents
   into `~/.claude` while claiming to preview.
 - `install-junctions.ps1` (the links step) no longer calls a plain copy of an agent a `[CONFLICT]`

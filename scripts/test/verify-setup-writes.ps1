@@ -522,7 +522,7 @@ try {
     Check "-Update runs the links step as advisory, to be judged by the final check" `
         ($setupText -match 'Invoke-JunctionsScript\s+-Advisory')
     Check "the links function can report a conflict without failing the run" `
-        ($setupText -match '(?s)function Invoke-JunctionsScript\s*\{\s*param\(\[switch\]\$Advisory\)' -and $setupText -match 'judged by the final')
+        ($setupText -match '(?s)function Invoke-JunctionsScript\s*\{.{0,900}?param\(\[switch\]\$Advisory\).*?\$Advisory -and.*?return.*?Set-InstallerExit "install-junctions\.ps1"' -and $setupText -match 'judged by the final')
     Check "a failing deployment check does not fail a preview" `
         ($setupText -match '(?s)function Invoke-CheckScript.*?\$Preview.*?Set-InstallerExit "check-deployment')
     Check "setup.ps1 declares -KeepHooks as a list of names" ($setupText -match '\[string\[\]\]\$KeepHooks')

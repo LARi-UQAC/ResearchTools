@@ -1,0 +1,2 @@
+# opt-local-stt-vram skill - runtime dependencies. Added 2026-10-22: the benchmark imported faster_whisper and declared nothing.
+faster-whisper==1.2.1  # engines/faster_whisper_engine.py; also reuses the CUDA DLL packages listed in rt-observe/scripts/requirements.txt

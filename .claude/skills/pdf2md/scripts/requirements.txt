@@ -15,3 +15,4 @@ mineru-llama-cpp==0.1.2
 # pymupdf4llm/pymupdf dependency with no extra pin needed here -- see
 # .claude/skills/extract-statistic/scripts/requirements.txt for the pinned
 # versions and the licence note (AGPL-3.0, acceptable for local/private use).
+PyMuPDF==1.27.2.3  # the independent second PDF reader of validate, repair and fix (import fitz)

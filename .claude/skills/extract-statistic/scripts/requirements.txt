@@ -54,3 +54,4 @@ markitdown[pdf]==0.1.6
 # implemented).
 psycopg[binary]==3.3.6
 pgvector==0.5.0
+requests==2.34.2  # extract_text.py / download path; was imported but not declared (inventory 2026-10-22)

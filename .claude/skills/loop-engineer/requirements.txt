@@ -8,3 +8,4 @@
 # tests use the standard library only. Pin the exact resolved version after the first
 # install (security.md prefers exact pins over a range).
 claude-agent-sdk>=0.1.0
+tiktoken==0.14.0  # optional: token_count.py --method tiktoken and aider-rules-sync.py; without it the count is an estimate and says so

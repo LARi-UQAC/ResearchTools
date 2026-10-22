@@ -88,7 +88,7 @@ workflow that runs the test suites, they are run by hand as above.
 
 ## This documentation site
 
-The site is built by MkDocs Material from `mkdocs.yml` at the repository root and the pages under
+The site is built by MkDocs Material (the libraries of `.venv-docs` are listed in [chapter 02](02-profiles.md#python-environments-every-library)) from `mkdocs.yml` at the repository root and the pages under
 `docs/`. Chapter order is the `nav` list in that file, and the chapter table in `README.md` and in
 `docs/index.md` follows it. A chapter that is added, removed or renamed updates all three.
 

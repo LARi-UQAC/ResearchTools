@@ -315,7 +315,7 @@ second "Proceed?".
 
 | # | Step | Command it stands for |
 |---|---|---|
-| 1 | Global configuration, with the hook update | `.\setup.ps1 -UpdateHooks` |
+| 1 | Global configuration (hook entries are added; changed hook commands are replaced after step 5) | `.\setup.ps1 -UpdateHooks` |
 | 2 | Claude Code links | `.\setup.ps1 -InstallJunctions` |
 | 3 | Mirrors for the other tools | `.\install.ps1 -Profile <profile>` and `-Personal` when you said yes to Copilot |
 | 4 | Offline test suite, only when you asked | `.\scripts\test\run-offline-tests.ps1` |
@@ -339,7 +339,13 @@ replaced when they differ. The file is edited as text, so nothing else in it mov
 back after, and the backup is restored when the read-back fails. An entry it cannot match with
 certainty (the same tag twice in one event, or an old value that does not occur exactly once) is
 reported and left alone. **A hand edit of a recognised entry is overwritten**, and the backup keeps
-it. Without the switch, `setup.ps1` only reports how many entries differ. Preview it first with
+it. Under `-Update` the replacement is made after the sync (step 5), once the scripts are in place,
+because a new command that calls an old script can exit non-zero and refuse every tool of its
+matcher. An entry whose script the sync held (no green suite) is skipped by name and listed, and the
+update tells you to run the suite, `-Sync`, then `-UpdateHooks`. It also skips the whole hook update
+when Git Bash or Node.js was not found, rather than write a path that does not exist. A `matcher`
+or `timeout` that differs from the template is reported, not edited, since only `command` and
+`statusMessage` are replaced. Without the switch, `setup.ps1` only reports how many entries differ. Preview it first with
 `.\setup.ps1 -UpdateHooks -Preview`.
 
 **Keeping a local variant (`-KeepHooks`).** A hook entry you changed on purpose on this machine is

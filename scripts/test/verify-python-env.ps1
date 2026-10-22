@@ -65,7 +65,7 @@ $stampBefore = if ($venvBefore) { (Get-Item $RealVenv).LastWriteTimeUtc.Ticks } 
 # ------------------------------------------------------- the requirements list ---
 # R14: a file this repository claims to install has to exist. The list is the one
 # place the switch's scope is stated, so a stale entry here is a silent no-op there.
-$reqs = @(Get-RtSuiteRequirements -RepoRoot $RepoRoot)
+$reqs = @(@(Get-RtEnvironments -RepoRoot $RepoRoot | Where-Object { $_.Name -eq ".venv-skills" })[0].Requirements)
 Check "the list is not empty"                    ($reqs.Count -ge 1)
 Check "every requirements file exists"           (@($reqs | Where-Object { -not $_.Exists }).Count -eq 0)
 Check "every entry says which suite needs it"    (@($reqs | Where-Object { [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0)
@@ -97,11 +97,39 @@ Check "(control) the agreement check can see a stale pin"     (@(@("6.19.0", "6.
 
 # Negative control: the Exists flag has to be able to say no, or the check above
 # passes on a list of files that were never looked for.
-$ghost = @(Get-RtSuiteRequirements -RepoRoot (Join-Path $Fake "no-such-repo"))
+$ghost = @(Get-RtEnvironments -RepoRoot (Join-Path $Fake "no-such-repo") | ForEach-Object { $_.Requirements })
 Check "Exists can report false"                  (@($ghost | Where-Object { $_.Exists }).Count -eq 0)
 
-$tools = @(Get-RtToolRequirements)
+$tools = @(@(Get-RtEnvironments -RepoRoot $RepoRoot | Where-Object { $_.Name -eq ".venv-skills" })[0].Tools)
 Check "pip-audit is installed by the installer"  (@($tools | Where-Object { $_.Spec -match '^pip-audit==' }).Count -eq 1)
+
+# ------------------------------------------------------- the two environments ---
+# 2026-10-22 (D1, D2): one data file declares .venv-skills and .venv-docs. Each rule has a
+# failure case against a temp copy of the JSON passed with -Path (R20).
+$envs = @()
+try { $envs = @(Get-RtEnvironments -RepoRoot $RepoRoot) } catch { Write-Host "  (loader threw: $($_.Exception.Message))" -ForegroundColor Red }
+Check "the data file declares two environments, .venv-skills first then .venv-docs" ($envs.Count -eq 2 -and $envs[0].Name -eq ".venv-skills" -and $envs[1].Name -eq ".venv-docs")
+Check "every environment has a why and every requirement a path and a why" ($envs.Count -ge 1 -and @($envs | Where-Object { [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0 -and @($envs | ForEach-Object { $_.Requirements } | Where-Object { [string]::IsNullOrWhiteSpace($_.Path) -or [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0)
+$docsEnv  = @($envs | Where-Object { $_.Name -eq ".venv-docs" })
+Check "the .venv-docs environment lists exactly requirements-docs.txt and no tool" ($docsEnv.Count -eq 1 -and @($docsEnv[0].Requirements).Count -eq 1 -and $docsEnv[0].Requirements[0].Path -eq "requirements-docs.txt" -and @($docsEnv[0].Tools).Count -eq 0)
+$skillEnv = @($envs | Where-Object { $_.Name -eq ".venv-skills" })
+Check "the .venv-skills environment carries pip-audit as its tool" ($skillEnv.Count -eq 1 -and @($skillEnv[0].Tools | Where-Object { $_.Spec -match '^pip-audit==' }).Count -eq 1)
+
+New-Item -ItemType Directory -Path $Fake -Force | Out-Null
+$realData = Get-Content (Join-Path $RepoRoot "scripts\lib\rt-python-requirements.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+function Test-BadData([string]$label, [scriptblock]$mutate, [string]$key) {
+    $copy = $script:realData | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+    try { & $mutate $copy } catch { Check "a data file with $label can be built (schema present)" $false; return }
+    $path = Join-Path $script:Fake "bad-$label.json"
+    [System.IO.File]::WriteAllText($path, ($copy | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
+    $msg = ""
+    try { $null = @(Get-RtEnvironments -RepoRoot $script:RepoRoot -Path $path) } catch { $msg = $_.Exception.Message }
+    Check "a data file with $label is refused, naming the file and $key" ($msg -ne "" -and $msg -match [regex]::Escape("bad-$label.json") -and $msg -match [regex]::Escape($key))
+}
+Test-BadData "no-environments"  { param($d) $d.PSObject.Properties.Remove("environments") } "environments"
+Test-BadData "no-name"          { param($d) $d.environments[1].PSObject.Properties.Remove("name") } "environments[1].name"
+Test-BadData "duplicate-name"   { param($d) $d.environments[1].name = $d.environments[0].name } "environments[1].name"
+Test-BadData "empty-requirements" { param($d) $d.environments[1].requirements = @() } "environments[1].requirements"
 
 # ------------------------------------------------------ the docling exclusion ---
 $real = Get-Content (Join-Path $RepoRoot ".claude\skills\extract-statistic\scripts\requirements.txt") -Encoding UTF8

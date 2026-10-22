@@ -28,7 +28,7 @@
 
     The decisions are separated from the work so the offline check can drive them
     with injected values: nothing in Resolve-RtPythonEnvAction or Select-RtBasePython
-    touches the disk, and nothing in Get-RtSuiteRequirements runs a process.
+    touches the disk, and nothing in Get-RtEnvironments runs a process.
 
 .NOTES
     Same shape, and the same reason, as scripts\lib\rt-daemon-install.ps1 and
@@ -46,58 +46,127 @@ function Read-RtRequirementsData {
     .SYNOPSIS
         Load rt-python-requirements.json. A missing or unparsable file is an
         explicit error naming the file (R3), never an empty list.
-    #>
-    if (-not (Test-Path -LiteralPath $script:RtRequirementsFile -PathType Leaf)) {
-        throw "package list not found: $script:RtRequirementsFile"
-    }
-    try {
-        return (Get-Content -LiteralPath $script:RtRequirementsFile -Raw -Encoding UTF8 | ConvertFrom-Json)
-    } catch {
-        throw "package list does not parse: $script:RtRequirementsFile ($($_.Exception.Message))"
-    }
-}
 
-function Get-RtSuiteRequirements {
-    <#
-    .SYNOPSIS
-        The requirements files -InstallPython applies, in install order.
-
-    .DESCRIPTION
-        Data, not logic (R6): the list lives in rt-python-requirements.json. Each
-        entry says why it is there, so a reader can delete it the day nothing
-        imports the package any more.
-
-        A path that does not exist is returned all the same, with Exists false:
-        the caller reports the absence by name rather than installing a shorter
-        list than it announced (R3).
+    .PARAMETER Path
+        The data file to read. Defaults to the one beside this script; a test passes
+        a temp copy.
 
     .OUTPUTS
-        PSCustomObject[] with Path, Full, Why, Exists, Exclude.
+        PSCustomObject - the parsed JSON.
     #>
-    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+    param([string]$Path = $script:RtRequirementsFile)
 
-    $data = Read-RtRequirementsData
-    foreach ($e in @($data.requirements)) {
-        $full = Join-Path $RepoRoot ($e.path -replace '/', '\')
-        [pscustomobject]@{
-            Path    = $e.path
-            Full    = $full
-            Why     = [string]$e.why
-            Exists  = (Test-Path -LiteralPath $full -PathType Leaf)
-            Exclude = @($e.exclude)
-        }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "package list not found: $Path"
+    }
+    try {
+        return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+    } catch {
+        throw "package list does not parse: $Path ($($_.Exception.Message))"
     }
 }
 
-function Get-RtToolRequirements {
+function Get-RtDataValue {
     <#
     .SYNOPSIS
-        Packages the installer itself relies on (pip-audit), as pip specs.
+        One property of a parsed JSON object, or $null when it is absent. StrictMode
+        throws on a missing property, and a missing key here has to become a named
+        error instead.
     #>
-    $data = Read-RtRequirementsData
-    foreach ($t in @($data.tools)) {
-        [pscustomobject]@{ Spec = [string]$t.spec; Why = [string]$t.why }
+    param($Object, [Parameter(Mandatory = $true)][string]$Name)
+    if ($null -eq $Object) { return $null }
+    $p = $Object.PSObject.Properties[$Name]
+    if ($null -eq $p) { return $null }
+    return $p.Value
+}
+
+function Get-RtEnvironments {
+    <#
+    .SYNOPSIS
+        The Python environments -InstallPython builds, in file order, each with its
+        requirements files and its tools.
+
+    .DESCRIPTION
+        Data, not logic (R6): the list lives in rt-python-requirements.json, key
+        'environments'. Each entry says why it is there, so a reader can delete it
+        the day nothing imports the package any more.
+
+        Validated at load time, each refusal naming the file and the dotted key
+        (R3): the array is present and not empty, every name is a non-empty string,
+        names are unique (a duplicate would install the same folder twice), and every
+        'requirements' is a non-empty array whose entries carry a 'path'.
+
+        A requirements path that does not exist is returned all the same, with
+        Exists false: the caller reports the absence by name rather than installing
+        a shorter list than it announced (R3).
+
+    .PARAMETER RepoRoot
+        The root the requirements paths are relative to.
+
+    .PARAMETER Path
+        The data file, defaulting to the one beside this script.
+
+    .OUTPUTS
+        PSCustomObject[] with Name, Why, Requirements (Path, Full, Why, Exists,
+        Exclude) and Tools (Spec, Why).
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$Path = $script:RtRequirementsFile
+    )
+
+    $data = Read-RtRequirementsData -Path $Path
+    $list = Get-RtDataValue $data "environments"
+    if ($null -eq $list -or @($list).Count -eq 0) {
+        throw "package list ${Path}: key 'environments' is missing or empty"
     }
+    $seen = @{}
+    $i = 0
+    $result = @()
+    foreach ($e in @($list)) {
+        $key = "environments[$i]"
+        $name = Get-RtDataValue $e "name"
+        if (-not ($name -is [string]) -or [string]::IsNullOrWhiteSpace($name)) {
+            throw "package list ${Path}: key '$key.name' is missing or not a non-empty string"
+        }
+        if ($seen.ContainsKey($name.ToLowerInvariant())) {
+            throw "package list ${Path}: key '$key.name' repeats the environment name '$name'"
+        }
+        $seen[$name.ToLowerInvariant()] = 1
+        $reqList = Get-RtDataValue $e "requirements"
+        if ($null -eq $reqList -or @($reqList).Count -eq 0) {
+            throw "package list ${Path}: key '$key.requirements' is missing or empty"
+        }
+        $reqs = @()
+        $j = 0
+        foreach ($r in @($reqList)) {
+            $rel = Get-RtDataValue $r "path"
+            if (-not ($rel -is [string]) -or [string]::IsNullOrWhiteSpace($rel)) {
+                throw "package list ${Path}: key '$key.requirements[$j].path' is missing"
+            }
+            $full = Join-Path $RepoRoot ($rel -replace '/', '\')
+            $reqs += [pscustomobject]@{
+                Path    = $rel
+                Full    = $full
+                Why     = [string](Get-RtDataValue $r "why")
+                Exists  = (Test-Path -LiteralPath $full -PathType Leaf)
+                Exclude = @(Get-RtDataValue $r "exclude" | Where-Object { $null -ne $_ })
+            }
+            $j++
+        }
+        $tools = @()
+        foreach ($t in @(Get-RtDataValue $e "tools" | Where-Object { $null -ne $_ })) {
+            $tools += [pscustomobject]@{ Spec = [string](Get-RtDataValue $t "spec"); Why = [string](Get-RtDataValue $t "why") }
+        }
+        $result += [pscustomobject]@{
+            Name         = $name
+            Why          = [string](Get-RtDataValue $e "why")
+            Requirements = $reqs
+            Tools        = $tools
+        }
+        $i++
+    }
+    return $result
 }
 
 function Get-RtFilteredRequirementLines {
@@ -432,7 +501,8 @@ function Install-RtPythonEnv {
     $venv       = Join-Path $target ".venv-skills"
     $venvPython = Join-Path $venv "Scripts\python.exe"
 
-    $reqs = @(Get-RtSuiteRequirements -RepoRoot $RepoRoot)
+    $skillsEnv = @(Get-RtEnvironments -RepoRoot $RepoRoot | Where-Object { $_.Name -eq ".venv-skills" })[0]
+    $reqs = @($skillsEnv.Requirements)
     $missing = @($reqs | Where-Object { -not $_.Exists })
     if ($missing.Count -gt 0) {
         foreach ($m in $missing) {
@@ -493,7 +563,7 @@ function Install-RtPythonEnv {
         } else {
             Write-Host "  [--]  base interpreter: $base (exists, current profile; the venv probe is NOT run in a preview)"
         }
-        foreach ($t in (Get-RtToolRequirements)) {
+        foreach ($t in @($skillsEnv.Tools)) {
             Write-Host "  [--]  Would install $($t.Spec)"
         }
         foreach ($r in $reqs) {
@@ -526,7 +596,7 @@ function Install-RtPythonEnv {
     $temps = @()
     $applied = @()
     try {
-        $tools = @(Get-RtToolRequirements)
+        $tools = @($skillsEnv.Tools)
         if ($tools.Count -gt 0) {
             $toolFile = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-tools-" + [guid]::NewGuid().ToString("N") + ".txt")
             [System.IO.File]::WriteAllLines($toolFile, [string[]]@($tools | ForEach-Object { $_.Spec }), (New-Object System.Text.UTF8Encoding($false)))

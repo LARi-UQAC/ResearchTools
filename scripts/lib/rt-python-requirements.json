@@ -1,31 +1,49 @@
 {
-  "_comment": "Data for setup.ps1 -InstallPython (R6). Read by scripts/lib/rt-python-env.ps1. A path that does not exist is reported by name, never skipped (R3). 'exclude' names packages dropped from a requirements file before pip sees it: the file itself is never edited, because the skill that owns it still wants the line.",
-  "requirements": [
+  "_comment": "Data for setup.ps1 -InstallPython (R6), read by scripts/lib/rt-python-env.ps1 and scripts/docs/python_libs.py. One list for both Python environments of the repository: each entry of 'environments' is built in the main clone, in file order. pip-audit is a tool of the first environment only and audits the requirements files of both, so the docs environment never gains pip-audit's dependencies. A path that does not exist is reported by name, never skipped (R3). An 'exclude' entry names a package the installer drops from a requirements file before pip sees it: the file itself is never edited, because the skill that owns it still wants the line.",
+  "environments": [
     {
-      "path": ".claude/skills/paper2talk/scripts/requirements.txt",
-      "why": "paper2talk: test_to_a4 (pypdf), the Jinja render path (jinja2), test_talk_pptx (python-pptx), OOXML reads (defusedxml)",
-      "exclude": []
+      "name": ".venv-skills",
+      "why": "The interpreter of the offline suite, the dashboard and every skill script the repository runs.",
+      "requirements": [
+        {
+          "path": ".claude/skills/paper2talk/scripts/requirements.txt",
+          "why": "paper2talk: test_to_a4 (pypdf), the Jinja render path (jinja2), test_talk_pptx (python-pptx), OOXML reads (defusedxml)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/recommendation-letter/scripts/requirements.txt",
+          "why": "recommendation-letter: test_letter_identity (PyYAML, safe_load over profiles/<active>.yaml)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/scopus/scripts/requirements.txt",
+          "why": "scopus: requests (scopus_api, download_pdf), google-genai and openai (reviewers), curl_cffi (publisher tier), playwright (browser_fetch tier 8; the Chromium binary is a separate 'playwright install chromium')",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/extract-statistic/scripts/requirements.txt",
+          "why": "extract-statistic: pymupdf and pymupdf4llm (extract_text.py), markitdown, psycopg and pgvector (corpus_index.py)",
+          "exclude": ["docling"]
+        }
+      ],
+      "tools": [
+        {
+          "spec": "pip-audit==2.10.1",
+          "why": "security.md: pip-audit runs on every requirements file this installer applies. Pinned to the version found in the working environment on 2026-10-16; the install step used to call it without ever installing it."
+        }
+      ]
     },
     {
-      "path": ".claude/skills/recommendation-letter/scripts/requirements.txt",
-      "why": "recommendation-letter: test_letter_identity (PyYAML, safe_load over profiles/<active>.yaml)",
-      "exclude": []
-    },
-    {
-      "path": ".claude/skills/scopus/scripts/requirements.txt",
-      "why": "scopus: requests (scopus_api, download_pdf), google-genai and openai (reviewers), curl_cffi (publisher tier), playwright (browser_fetch tier 8; the Chromium binary is a separate 'playwright install chromium')",
-      "exclude": []
-    },
-    {
-      "path": ".claude/skills/extract-statistic/scripts/requirements.txt",
-      "why": "extract-statistic: pymupdf and pymupdf4llm (extract_text.py), markitdown, psycopg and pgvector (corpus_index.py)",
-      "exclude": ["docling"]
-    }
-  ],
-  "tools": [
-    {
-      "spec": "pip-audit==2.10.1",
-      "why": "security.md: pip-audit runs on every requirements file this installer applies. Pinned to the version found in the working environment on 2026-10-16; the install step used to call it without ever installing it."
+      "name": ".venv-docs",
+      "why": "The interpreter that builds the MkDocs site (mkdocs build --strict, mkdocs gh-deploy).",
+      "requirements": [
+        {
+          "path": "requirements-docs.txt",
+          "why": "mkdocs, mkdocs-material and the build hook scripts/docs/mkdocs_hooks.py, pinned with their transitives (D3)",
+          "exclude": []
+        }
+      ],
+      "tools": []
     }
   ],
   "settings": {

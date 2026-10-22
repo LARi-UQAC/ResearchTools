@@ -603,6 +603,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#update-an-existing-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update an existing installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#contributing-improvements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1262,6 +1273,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#update-an-existing-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update an existing installation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#contributing-improvements" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1364,8 +1386,8 @@ and whether the login shortcut exists at all.</p>
 </tr>
 <tr>
 <td>Other switches</td>
-<td><code>-InstallDaemon</code> (vault daemon at login), <code>-InstallPython</code> (<code>.venv-skills</code> for the offline suite)</td>
-<td>-</td>
+<td><code>-InstallDaemon</code> (vault daemon at login), <code>-InstallPython</code> (<code>.venv-skills</code> for the offline suite), <code>-UpdateHooks</code> (replace a changed hook entry of <code>~/.claude/settings.json</code>), <code>-KeepHooks &lt;names&gt;</code> (leave a local hook variant as it is), <code>-Update</code> (the whole update in one command, see <a href="#update-an-existing-installation">Update an existing installation</a>)</td>
+<td><code>-Sync</code> (copy the files a green offline-suite run has proven into <code>~/.claude</code>), <code>-WhatIf</code></td>
 <td>-</td>
 </tr>
 </tbody>
@@ -1678,6 +1700,127 @@ folder</strong> (OneDrive, Dropbox, Google Drive, a network share): the list hol
 be copied off the machine. If it refuses, run <code>-Uninstall</code>, then install again with
 <code>-Target &lt;a local folder&gt;</code>. Never paste a name into an issue, a pull request or a commit message:
 no hook sees GitHub comments.</p>
+<h2 id="update-an-existing-installation">Update an existing installation<a class="headerlink" href="#update-an-existing-installation" title="Permanent link">&para;</a></h2>
+<p>Run these from the root of your clone, the folder that holds <code>setup.ps1</code> (the <code>ResearchTools</code>
+folder <code>git clone</code> created), in PowerShell. The first two lines are prerequisites. The next two are
+the update itself (a preview, then the real one). The last line is an optional proof:</p>
+<div class="highlight"><pre><span></span><code><span class="n">git</span> <span class="n">pull</span> <span class="p">-</span><span class="n">-ff-only</span> <span class="n">origin</span> <span class="n">main</span>        <span class="c"># get the new version</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span>            <span class="c"># only if .venv-skills is missing, or you want to run the offline suite</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Update</span> <span class="n">-Preview</span>          <span class="c"># shows every step and writes nothing to ~/.claude</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Update</span>                   <span class="c"># does the update, and asks the three questions below first</span>
+<span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">test</span><span class="p">\</span><span class="n">run-all-checks</span><span class="p">.</span><span class="n">ps1</span>     <span class="c"># optional proof: the offline suite and the verify-*.ps1 of scripts/test (about 15 minutes)</span>
+</code></pre></div>
+<p><strong>What <code>-Update</code> asks, once, before it changes anything.</strong> The domain profile (the names found in
+<code>profiles/</code>, and Enter keeps the profile recorded today; an unknown name is refused). Whether to
+also install GitHub Copilot at user level (default no). Whether to run the offline test suite first
+(about 15 minutes, default no), which is what lets the sync copy changed hooks, see below. The
+vault stored in the <code>OBSIDIAN_VAULT</code> user variable is reused without a question, and there is no
+second "Proceed?".</p>
+<p><strong>What it then runs, in this order:</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Step</th>
+<th>Command it stands for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Global configuration (hook entries are added; changed hook commands are replaced after step 5)</td>
+<td><code>.\setup.ps1 -UpdateHooks</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Claude Code links</td>
+<td><code>.\setup.ps1 -InstallJunctions</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Mirrors for the other tools</td>
+<td><code>.\install.ps1 -Profile &lt;profile&gt;</code> and <code>-Personal</code> when you said yes to Copilot</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Offline test suite, only when you asked</td>
+<td><code>.\scripts\test\run-offline-tests.ps1</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Copy the proven files into <code>~/.claude</code></td>
+<td><code>.\install-junctions.ps1 -Sync</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Deployment check, read-only</td>
+<td><code>.\scripts\audit\check-deployment.ps1</code></td>
+</tr>
+</tbody>
+</table>
+<p>In <code>-Preview</code> the links and the sync run as <code>-WhatIf</code>, step 3 is skipped (<code>install.ps1</code> has no
+preview mode) and step 4 is left out, while the read-only check still runs. The check lists what the
+real update would fix, so in a preview it does not turn the exit code into a failure. A step that
+fails does not stop the later ones, and the exit code is the worst one. Step 2 is advisory: a
+conflict it reports is a warning, because step 5 refreshes stale copies and the check at the end
+judges the state the update leaves. Scripted runs need
+<code>-NonInteractive -Profile &lt;name&gt;</code>, and add <code>-Personal</code> and <code>-RunSuite</code> for the two yes answers.</p>
+<p><strong>Changed hook entries (<code>-UpdateHooks</code>).</strong> <code>setup.ps1</code> used to add a hook entry only when it was
+absent from <code>~/.claude/settings.json</code>, so a changed command never arrived (the memory reminder was
+the first case). With <code>-UpdateHooks</code>, an entry the template declares and the live file already has
+is recognised by its own script name or bracket tag, and its <code>command</code> and <code>statusMessage</code> are
+replaced when they differ. The file is edited as text, so nothing else in it moves. A backup
+<code>settings.json.bak-&lt;date&gt;-&lt;time&gt;</code> is made first, the result is parsed before it is written and read
+back after, and the backup is restored when the read-back fails. An entry it cannot match with
+certainty (the same tag twice in one event, or an old value that does not occur exactly once) is
+reported and left alone. <strong>A hand edit of a recognised entry is overwritten</strong>, and the backup keeps
+it. Under <code>-Update</code> the replacement is made after the sync (step 5), once the scripts are in place,
+because a new command that calls an old script can exit non-zero and refuse every tool of its
+matcher. An entry whose script the sync held (no green suite) is skipped by name and listed, and the
+update tells you to run the suite, <code>-Sync</code>, then <code>-UpdateHooks</code>. It also skips the whole hook update
+when Git Bash or Node.js was not found, rather than write a path that does not exist. A <code>matcher</code>
+or <code>timeout</code> that differs from the template is reported, not edited, since only <code>command</code> and
+<code>statusMessage</code> are replaced. Without the switch, <code>setup.ps1</code> only reports how many entries differ. Preview it first with
+<code>.\setup.ps1 -UpdateHooks -Preview</code>.</p>
+<p><strong>Keeping a local variant (<code>-KeepHooks</code>).</strong> A hook entry you changed on purpose on this machine is
+not an old version, and <code>-UpdateHooks</code> cannot tell the two apart. Name it and it is left exactly as
+it is, with no backup and no edit: <code>.\setup.ps1 -Update -KeepHooks 'AUTO-SYNC CHECK'</code>. The names are
+the ones the output prints (a script name such as <code>review-loop-guard.py</code>, or the bracket tag of an
+inline hook), written with or without the brackets and in any case. Several names are separated by
+commas. The lab owner's machine needs it for the git-sync entry, whose folder-name guard differs
+from the template on purpose.</p>
+<p><strong>Why the sync may hold files.</strong> <code>install-junctions.ps1 -Sync</code> copies a hook or an agent into
+<code>~/.claude</code> only when a green offline-suite run has proven that exact file. With no green stamp it
+copies prose such as agents and holds the code, and says which. If it held files, run
+<code>.\setup.ps1 -Update -RunSuite</code> (or the suite and then <code>.\install-junctions.ps1 -Sync</code>), or fix the
+failing suite first.</p>
+<p><strong>Checking the result (<code>run-all-checks.ps1</code>).</strong> <code>run-offline-tests.ps1</code> runs only the Python suites,
+so a green suite does not cover the PowerShell verifiers (<code>verify-setup-writes.ps1</code>,
+<code>verify-sync-writes.ps1</code> and the others). <code>.\scripts\test\run-all-checks.ps1</code> runs the suite and then
+every <code>verify-*.ps1</code> of <code>scripts/test</code>, each in its own process, runs all of them even when one
+fails, prints which failed and exits 1 if any did. Five verifiers live elsewhere and are not run by
+it: <code>scripts/local/Test/verify-claude-switch.ps1</code>, the three <code>verify-*.ps1</code> of
+<code>.claude/skills/aider-setup/scripts/Test</code>, and <code>.claude/skills/aider-setup/scripts/build/verify-kit-install.ps1</code>. It leaves out <code>verify-graph-health.ps1</code>, which only the
+<code>local-writer</code> agent may run. <code>-DryRun</code> lists the checks and runs none, <code>-SkipSuite</code> skips the
+15-minute suite, <code>-Only verify-setup-writes,verify-sync-writes</code> runs just those, and
+<code>-ReportPath result.json</code> also writes a JSON report. If <code>.venv-skills</code> is missing the suite stops
+and names the command that rebuilds it: <code>.\setup.ps1 -InstallPython</code>. A green run also writes
+<code>.rt-green.json</code>, which is what lets the sync copy changed hooks (run <code>.\install-junctions.ps1 -Sync</code>
+afterwards, or <code>.\setup.ps1 -Update</code> again).</p>
+<p><strong>What is still yours:</strong></p>
+<ul>
+<li>Close and reopen VS Code and Claude Code. Hooks and rules are read when a session starts, and
+  the <code>[HOOKS ACTIVE]</code> line at the start of the session must say <code>0 missing</code>.</li>
+<li><code>install.ps1 -Profile</code> records the profile in <code>.claude\CLAUDE.md</code>, a tracked file, so <code>git status</code>
+  will show it. Keep the change or restore the file with git.</li>
+<li>A <code>[CONFLICT]</code> line from the links step means a real file in <code>~/.claude\agents</code> that differs from
+  the repository shadows it. A real file that is byte-for-byte the repository version (the copy the
+  sync makes when Windows refuses a link) is reported as already there and is not a conflict. A
+  differing one is a warning during <code>-Update</code>, since the sync that follows refreshes it, and the
+  check at the end says whether anything still shadows the repository. Run alone, the links step
+  still exits with code 1 on a differing file and does not remove it for you.</li>
+<li><code>git pull</code> and the Python environment are not part of <code>-Update</code>. Run them first, as above.</li>
+</ul>
 <h2 id="contributing-improvements">Contributing improvements<a class="headerlink" href="#contributing-improvements" title="Permanent link">&para;</a></h2>
 <p>Fork the repository, improve an agent or skill on a feature branch, and open a
 pull request against <code>main</code>. The repository owner reviews and merges; a <code>git pull</code>

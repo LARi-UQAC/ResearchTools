@@ -1443,6 +1443,7 @@ was barely visible in the dashboard.</p>
     P --&gt; Q{"Safe to merge?&lt;br/&gt;suite green, no Critical or High finding"}
     Q -- yes --&gt; Y["Memory upkeep&lt;br/&gt;local-writer writes lessons to the vault&lt;br/&gt;and updates the graph, silent"]
     Y --&gt; R[Pull request, owner merges]
+    R --&gt; Z["After the merge: finish-branch.ps1&lt;br/&gt;removes the worktree and the branches,&lt;br/&gt;moves the plans to done"]
     Q -- no --&gt; S{Bound reached?}
     S -- no --&gt; T[Fix, failing test first] --&gt; P
     S -- yes --&gt; U[Stop, report what remains, ask the owner]
@@ -1563,6 +1564,22 @@ skill is a gap to report, never a step run without one.</p>
 </tr>
 </tbody>
 </table>
+<p><strong>After the merge.</strong> The last step is a script, not a skill, because it only runs git and <code>gh</code>:
+<code>scripts/test/finish-branch.ps1</code>, started from the main clone. It removes the branch's worktree,
+deletes the branch locally and on origin, prunes, and moves the plans folder from
+<code>docs/superpowers/todo/</code> to <code>done/</code>. It does nothing until you add <code>-Yes</code>, and it never uses
+<code>--force</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd </span><span class="p">&lt;</span><span class="n">main</span> <span class="n">clone</span><span class="p">&gt;</span>
+<span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">test</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Branch</span> <span class="n">feat</span><span class="p">/</span><span class="n">my-branch</span>                 <span class="c"># dry run: lists the steps</span>
+<span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">test</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Branch</span> <span class="n">feat</span><span class="p">/</span><span class="n">my-branch</span> <span class="n">-Yes</span> <span class="n">-PlansFolder</span> <span class="n">2026</span><span class="p">-</span><span class="n">10</span><span class="p">-</span><span class="n">17-my-effort</span>
+</code></pre></div>
+<p>It refuses, and says why, when <code>gh</code> finds no merged pull request for the branch, when the local
+branch holds commits that were never pushed, when origin's branch has a commit pushed after the
+merge or origin cannot be queried (an unreachable origin is never read as a branch that is gone), when the main clone has modified tracked files (R32), when the worktree has uncommitted files,
+git-ignored files (add <code>-DiscardIgnored</code> once you have kept what you need) or holds a
+junction or a symbolic link (removing it would follow the link and delete its target, R37), when
+the main clone is not on <code>main</code> (it never switches the checked-out branch, R32), or when it was
+started from inside the worktree it would remove. A second run finds nothing to clean and exits 0.</p>
 <p>A similar toolset may replace the three process skills, for example the <code>speckit-*</code> skills
 (<code>speckit-specify</code>, <code>speckit-plan</code>, <code>speckit-tasks</code>, <code>speckit-implement</code>), and the plan still
 names the skill used at each step. ruflow was named by the owner and is not installed or

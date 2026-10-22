@@ -48,7 +48,8 @@
 param(
     [switch]$WhatIf,
     [switch]$Sync,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$StrictExit   # with -Sync: exit 1 when the sync throws (default: always 0, the hook contract)
 )
 
 Set-StrictMode -Version Latest
@@ -61,12 +62,21 @@ $ErrorActionPreference = "Stop"
 if ($Sync) {
     . (Join-Path $PSScriptRoot "scripts\lib\rt-sync.ps1")
     $script:RtQuiet = $Quiet.IsPresent
+    $script:RtWhatIf = $WhatIf.IsPresent   # -Sync -WhatIf used to write anyway (measured 2026-10-17)
     $rtHomeClaude = Join-Path $env:USERPROFILE ".claude"
     if (-not (Test-Path $rtHomeClaude)) { exit 0 }
+    $script:RtSyncBusy = $false
     try { Invoke-RtSync $PSScriptRoot $rtHomeClaude } catch {
         # Never non-zero: this runs as a SessionStart hook, and a failing hook refuses
         # every tool of its matcher for the rest of the session.
         if (-not $script:RtQuiet) { Write-Host "  [RT-SYNC] $($_.Exception.Message)" -ForegroundColor Red }
+        # Only setup.ps1 -Update asks for this: it ran "Update steps done." over a sync that did nothing.
+        if ($StrictExit) { exit 1 }
+    }
+    # A held lock is a quiet return from the engine; for the update it is "the sync did not run".
+    if ($StrictExit -and $script:RtSyncBusy) {
+        Write-Host "  [RT-SYNC] another session holds the sync lock (younger than 60 s): nothing was synced. Run again in a minute." -ForegroundColor Red
+        exit 1
     }
     exit 0
 
@@ -113,14 +123,27 @@ function New-JunctionSafe([string]$linkPath, [string]$target) {
     $stats.Created++
 }
 
+function Test-SameFileBytes([string]$a, [string]$b) {
+    # Purpose: tell whether two files hold the same bytes. Any read error answers $false, so
+    # an unreadable file stays a reported conflict and is never taken for an up-to-date one.
+    try {
+        return ((Get-FileHash -LiteralPath $a -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $b -Algorithm SHA256).Hash)
+    } catch { return $false }
+}
+
 function New-SymlinkSafe([string]$linkPath, [string]$target) {
     if (Test-Path $linkPath -PathType Leaf) {
         $item = Get-Item $linkPath -Force
         if ($item.LinkType -eq "SymbolicLink" -or $item.LinkType -eq "HardLink") {
             Write-Exists "$linkPath  ->  $target"
             $stats.AlreadyExists++
+        } elseif (Test-SameFileBytes $linkPath $target) {
+            # A plain copy made by -Sync when Windows refused a link. It masks nothing: it is the
+            # repository's file, byte for byte, so the repository version IS the one loaded.
+            Write-Exists "$linkPath  (identical copy of $target)"
+            $stats.AlreadyExists++
         } else {
-            Write-Conflict "$linkPath exists as a real file — skipping (remove manually to replace)"
+            Write-Conflict "$linkPath exists as a real file that differs from the repository — skipping (run -Sync to refresh it, or remove it manually)"
             $stats.Conflicts++
             $script:conflictPaths += $linkPath
         }

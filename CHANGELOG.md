@@ -9,6 +9,53 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ## [Unreleased]
 
+### Added
+- `.\setup.ps1 -Update` updates an existing installation in one command. It asks the domain
+  profile, whether to install GitHub Copilot at user level and whether to run the offline suite
+  first, then runs the global configuration with the hook update, the Claude Code links,
+  `install.ps1 -Profile`, the suite when asked, `install-junctions.ps1 -Sync` and the read-only
+  deployment check, and ends with what is still to do by hand. `-Update -Preview` shows every
+  step and writes nothing. Chapter 01 of the manual describes it.
+- `.\setup.ps1 -UpdateHooks` replaces the `command` and `statusMessage` of a hook entry of
+  `~/.claude/settings.json` that the template declares and whose text changed, which `setup.ps1`
+  could not do before. A text edit with a timestamped backup, checked before and after writing.
+  Without the switch, `setup.ps1` reports how many entries differ.
+
+- `.\setup.ps1 -Update -KeepHooks 'AUTO-SYNC CHECK'` (also with `-UpdateHooks`) leaves a hook entry
+  you changed on purpose on this machine exactly as it is: no edit, no backup. The names are the ones
+  the output prints, case ignored, brackets optional.
+
+- `scripts/test/run-all-checks.ps1` runs the offline suite and the `verify-*.ps1` of `scripts/test` in one go (not the five
+  verifiers of `scripts/local` and the aider-setup skill), runs
+  them all even when one fails, and says which failed. `run-offline-tests.ps1` alone never covered
+  the PowerShell verifiers. It is part of the update procedure in manual chapter 01.
+- `scripts/test/finish-branch.ps1` cleans up after a merged pull request: worktree, local and
+  remote branch, plans folder. Dry run until `-Yes`, never `--force`, and it refuses an unmerged
+  branch, unpushed commits, a commit pushed to origin after the merge, a modified main clone, a
+  dirty worktree, git-ignored files in it (unless `-DiscardIgnored`) and a worktree holding a link. It is the last step in
+  the figure of manual chapter 12.
+
+### Fixed
+- `setup.ps1 -Update` replaces changed hook commands after the sync instead of before it, skips an
+  entry whose script the sync held, skips the hook update when Git Bash or Node.js was not found,
+  reports a differing `matcher` or `timeout`, counts a failed `settings.json` edit in its exit code,
+  and restores the exact bytes it read (BOM included), not a stale `settings.json.bak`, after a failed
+  edit. A held hook config `.json` holds its hook, and an entry with no `statusMessage` is a note, not
+  a difference. `-StrictExit` also fails when another session holds the sync lock. `install-junctions.ps1 -Sync
+  -StrictExit` (used by `-Update`) exits 1 when the sync throws; the SessionStart form still exits 0.
+- `finish-branch.ps1` queries the exact ref on origin and refuses when origin cannot be queried,
+  rejects a branch name that starts with a dash, finds links without walking through junctions,
+  keeps `gh` warnings out of the JSON it parses and leaves the caller's shell in its own folder.
+- `install-junctions.ps1 -Sync -WhatIf` no longer writes. It ignored `-WhatIf` and copied agents
+  into `~/.claude` while claiming to preview.
+- `install-junctions.ps1` (the links step) no longer calls a plain copy of an agent a `[CONFLICT]`
+  when it is byte-for-byte the repository file. `-Sync` makes such copies when Windows refuses a
+  link, and the links step then exited 1 on them, so `setup.ps1 -Update` ended in failure on a state
+  the sync fixes. A differing copy is still a conflict.
+- In `setup.ps1 -Update` the links step is advisory and the final deployment check judges the
+  result. In `-Update -Preview` the check lists what the real run would fix and does not fail the
+  preview.
+
 ### Changed
 - Chapter 06 of the manual (the aider pipeline) is brought in line with the local coding
   contract. It names no orchestrating product, so "Claude Code" becomes "interactive harness"

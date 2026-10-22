@@ -152,6 +152,80 @@ $jHash = (Get-FileHash (Join-Path $Fake "settings.json") -Algorithm SHA256).Hash
 Update-RtSettings $RepoRoot $Fake
 Check "unparseable settings.json refused, untouched" ((Get-FileHash (Join-Path $Fake "settings.json") -Algorithm SHA256).Hash -eq $jHash)
 
+# --- -WhatIf must write nothing (R16) ----------------------------------------
+# Measured 2026-10-17: `install-junctions.ps1 -Sync -WhatIf` ignored -WhatIf and copied three
+# agents into the real ~/.claude\agents, found while previewing `setup.ps1 -Update`. A preview
+# that writes is worse than none, since it is run precisely to see what would happen first.
+# Driven here against temp folders only, each refusal paired with a control that proves the
+# same call DOES write when the flag is off.
+$WhatIfDir = "$Fake-whatif"
+if (Test-Path $WhatIfDir) { Remove-Item $WhatIfDir -Recurse -Force }
+New-Item -ItemType Directory -Path $WhatIfDir | Out-Null
+$srcAgent = Join-Path $RepoRoot ".claude\agents\local-writer.md"
+
+$script:RtChanged = @()
+$script:RtWhatIf = $true
+$dstWhatIf = Join-Path $WhatIfDir "agents\local-writer.md"
+Sync-RtFile $srcAgent $dstWhatIf "agents\local-writer.md"
+Check "-WhatIf: an agent file is not created" (-not (Test-Path $dstWhatIf) -and -not (Test-Path (Split-Path $dstWhatIf -Parent)))
+Check "-WhatIf: the file is still reported as one that would change" ($script:RtChanged -contains "agents\local-writer.md")
+$script:RtWhatIf = $false
+$script:RtChanged = @()
+Sync-RtFile $srcAgent $dstWhatIf "agents\local-writer.md"
+Check "(control) without -WhatIf the same call creates the file" (Test-Path $dstWhatIf)
+
+$script:RtWhatIf = $true
+$skillSrc = Get-ChildItem (Join-Path $RepoRoot ".claude\skills") -Directory | Select-Object -First 1
+$skillDst = Join-Path $WhatIfDir "skills\$($skillSrc.Name)"
+Sync-RtSkill $skillSrc.FullName $skillDst $skillSrc.Name
+Check "-WhatIf: a new skill junction is not created" (-not (Test-Path $skillDst))
+
+$whatIfClaude = Join-Path $WhatIfDir "CLAUDE.md"
+[System.IO.File]::WriteAllText($whatIfClaude, "# my own file`r`n", $utf8NoBom)
+$wcHash = (Get-FileHash $whatIfClaude -Algorithm SHA256).Hash
+Update-RtClaudeMd $RepoRoot $WhatIfDir
+Check "-WhatIf: CLAUDE.md is untouched and no backup is made" `
+    ((Get-FileHash $whatIfClaude -Algorithm SHA256).Hash -eq $wcHash -and -not (Test-Path "$whatIfClaude.bak"))
+
+$whatIfSettings = Join-Path $WhatIfDir "settings.json"
+[System.IO.File]::WriteAllText($whatIfSettings, "{`r`n  `"hooks`": {`r`n    `"SessionStart`": [`r`n      { `"hooks`": [ { `"type`": `"command`", `"command`": `"echo kept`" } ] }`r`n    ]`r`n  }`r`n}`r`n", $utf8NoBom)
+$wsHash = (Get-FileHash $whatIfSettings -Algorithm SHA256).Hash
+Update-RtSettings $RepoRoot $WhatIfDir
+Check "-WhatIf: settings.json is untouched and no backup is made" `
+    ((Get-FileHash $whatIfSettings -Algorithm SHA256).Hash -eq $wsHash -and -not (Test-Path "$whatIfSettings.bak"))
+
+# Controls: with the flag off, the very same two calls on the very same files DO write.
+# Without them the two checks above would also pass on a function that never writes.
+$script:RtWhatIf = $false
+Update-RtClaudeMd $RepoRoot $WhatIfDir
+Check "(control) without -WhatIf the same call changes CLAUDE.md" ((Get-FileHash $whatIfClaude -Algorithm SHA256).Hash -ne $wcHash)
+Update-RtSettings $RepoRoot $WhatIfDir
+Check "(control) without -WhatIf the same call changes settings.json" ((Get-FileHash $whatIfSettings -Algorithm SHA256).Hash -ne $wsHash)
+$script:RtWhatIf = $true
+
+$undoRepo = Join-Path $WhatIfDir "undo-repo"
+New-Item -ItemType Directory -Path (Join-Path $undoRepo ".rt-undo") -Force | Out-Null
+1..25 | ForEach-Object { [System.IO.File]::WriteAllText((Join-Path $undoRepo ".rt-undo\f$_.txt"), "x", $utf8NoBom) }
+Remove-RtUndoExcess $undoRepo
+Check "-WhatIf: the .rt-undo pruning deletes nothing" (@(Get-ChildItem (Join-Path $undoRepo ".rt-undo")).Count -eq 25)
+$script:RtWhatIf = $false
+Remove-RtUndoExcess $undoRepo
+Check "(control) without -WhatIf the pruning keeps only 20" (@(Get-ChildItem (Join-Path $undoRepo ".rt-undo")).Count -eq 20)
+
+# The whole engine, against an empty home: nothing may appear in it, not even the lock file.
+$emptyHome = Join-Path $WhatIfDir "empty-home"
+New-Item -ItemType Directory -Path $emptyHome | Out-Null
+$script:RtWhatIf = $true
+$script:RtChanged = @(); $script:RtHeld = @()
+Invoke-RtSync $RepoRoot $emptyHome
+Check "-WhatIf: the whole sync leaves an empty home empty, lock file included" `
+    (@(Get-ChildItem $emptyHome -Force -Recurse).Count -eq 0)
+Check "-WhatIf: the whole sync still reports what it would do" ($script:RtChanged.Count -gt 0)
+$script:RtWhatIf = $false
+Check "install-junctions.ps1 passes -WhatIf to the sync engine" `
+    ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "install-junctions.ps1")) -match 'RtWhatIf\s*=\s*\$WhatIf')
+Remove-Item $WhatIfDir -Recurse -Force
+
 # --- what -Sync SELECTS out of .claude\hooks ---------------------------------
 # Read off rt-sync.ps1 itself rather than driven, because the copy loop walks the real
 # repository and writes into ~/.claude\hooks; the two writes this script drives are the
@@ -234,6 +308,90 @@ foreach ($site in @(@("scripts\lib\rt-sync.ps1", "the -Sync engine"),
 $auditText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\audit\check-deployment.ps1"))
 Check "the deployment audit no longer lists hooks with -Filter *.py" (-not ($auditText -match 'hooksRepo\s+-File\s+-Filter\s+\*\.py'))
 Check "the runner takes its file list from Get-RtCodeFiles"       ([System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\test\run-offline-tests.ps1")) -match 'Get-RtCodeFiles\s+-RepoRoot')
+
+# The links step (install-junctions.ps1 without -Sync) and a copy that -Sync made when Windows
+# refused a link. Measured 2026-10-17 on the owner's machine: 16 of 21 agents were plain copies,
+# byte-identical to the repository, and the links step called each one a CONFLICT and exited 1,
+# so `setup.ps1 -Update` concluded "failed". A copy identical to the repository masks nothing.
+# A copy that differs does, and stays a conflict. The script is run for real in a child process
+# against a throwaway repository and a throwaway home (USERPROFILE), never the live ~/.claude.
+$LinkRepo = Join-Path $Fake "linkrepo"
+$LinkHome = Join-Path $Fake "linkhome"
+New-Item -ItemType Directory -Path (Join-Path $LinkRepo ".claude\agents") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $LinkHome ".claude\agents") -Force | Out-Null
+Copy-Item (Join-Path $RepoRoot "install-junctions.ps1") $LinkRepo
+[System.IO.File]::WriteAllText((Join-Path $LinkRepo ".claude\agents\alpha.md"), "alpha body`r`n")
+[System.IO.File]::WriteAllText((Join-Path $LinkRepo ".claude\agents\beta.md"),  "beta body`r`n")
+
+function Invoke-LinksScript([string]$extra) {
+    $saved = $env:USERPROFILE
+    $env:USERPROFILE = $LinkHome
+    try {
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $LinkRepo "install-junctions.ps1") $extra *>&1 | Out-String
+        return [PSCustomObject]@{ Code = $LASTEXITCODE; Text = $out }
+    } finally { $env:USERPROFILE = $saved }
+}
+
+# 1. both live agents are plain copies, identical to the repository
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\alpha.md"), "alpha body`r`n")
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"),  "beta body`r`n")
+$r = Invoke-LinksScript ""
+Check "links: an identical real copy is not a conflict (exit 0)"      ($r.Code -eq 0)
+Check "links: an identical real copy is reported as already there"    ($r.Text -match 'EXISTS.*alpha\.md' -and $r.Text -cnotmatch 'CONFLICT')
+Check "links: the identical copies are left byte-for-byte alone"      ([System.IO.File]::ReadAllText((Join-Path $LinkHome ".claude\agents\alpha.md")) -ceq "alpha body`r`n")
+
+# 2. one copy differs: it shadows the repository, so it stays a conflict (control)
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"), "beta OLD body`r`n")
+$r = Invoke-LinksScript ""
+Check "links: (control) a differing real copy is still a conflict, exit 1"   ($r.Code -eq 1 -and $r.Text -cmatch 'CONFLICT.*beta\.md')
+Check "links: (control) the identical one beside it is still not reported"   ($r.Text -cnotmatch 'CONFLICT.*alpha\.md')
+Check "links: (control) the differing copy is not overwritten"               ([System.IO.File]::ReadAllText((Join-Path $LinkHome ".claude\agents\beta.md")) -ceq "beta OLD body`r`n")
+
+# 3. only a line-ending difference: still the same file for a reader of the agent
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"), "beta body`n")
+$r = Invoke-LinksScript ""
+Check "links: a copy that differs only by line endings is a conflict (bytes decide, as -Sync does)" ($r.Code -eq 1)
+
+# 4. -WhatIf behaves the same way
+[System.IO.File]::WriteAllText((Join-Path $LinkHome ".claude\agents\beta.md"), "beta body`r`n")
+$r = Invoke-LinksScript "-WhatIf"
+Check "links: -WhatIf with identical copies exits 0"                  ($r.Code -eq 0 -and $r.Text -cnotmatch 'CONFLICT')
+Remove-Item $LinkRepo, $LinkHome -Recurse -Force -ErrorAction SilentlyContinue
+
+# -Sync is also run as a SessionStart hook, and a hook that exits non-zero must not be allowed to
+# refuse tools (R11), so it ALWAYS exited 0, even when the sync threw. -Update could therefore end
+# with "Update steps done." over a sync that did nothing (code-review finding, 2026-10-22). The
+# explicit -StrictExit lets the update, and only the update, see the failure. Run for real against
+# the real repository with USERPROFILE on a throwaway home (the failure is a ".claude" that is a file).
+function Invoke-SyncChild([string]$HomeDir, [string[]]$More) {
+    $saved = $env:USERPROFILE
+    $env:USERPROFILE = $HomeDir
+    try {
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "install-junctions.ps1") -Sync @More *>&1 | Out-String
+        return [PSCustomObject]@{ Code = $LASTEXITCODE; Text = $out }
+    } finally { $env:USERPROFILE = $saved }
+}
+$BadHome = Join-Path $Fake "badhome"
+New-Item -ItemType Directory -Path $BadHome -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $BadHome ".claude"), "this is a file, not a folder")
+$r = Invoke-SyncChild $BadHome @()
+Check "-Sync stays exit 0 when the sync fails (the SessionStart hook contract, R11)" ($r.Code -eq 0)
+$r = Invoke-SyncChild $BadHome @("-StrictExit")
+Check "-Sync -StrictExit exits 1 on the same failure" ($r.Code -eq 1)
+$GoodHome = Join-Path $Fake "goodhome"
+New-Item -ItemType Directory -Path (Join-Path $GoodHome ".claude") -Force | Out-Null
+$r = Invoke-SyncChild $GoodHome @("-StrictExit", "-WhatIf")
+Check "(control) -Sync -StrictExit -WhatIf on a healthy home exits 0" ($r.Code -eq 0)
+# Another session holding the sync lock made Invoke-RtSync return without a word, so -StrictExit
+# exited 0 over a sync that never ran (code-review round 4).
+$LockHome = Join-Path $Fake "lockhome"
+New-Item -ItemType Directory -Path (Join-Path $LockHome ".claude") -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $LockHome ".claude\.rt-sync.lock"), "held by another session")
+$r = Invoke-SyncChild $LockHome @("-StrictExit", "-WhatIf")
+Check "-Sync -StrictExit exits 1 when another session holds the sync lock" ($r.Code -eq 1 -and $r.Text -match "lock")
+$r = Invoke-SyncChild $LockHome @("-WhatIf")
+Check "(control) without -StrictExit the same lock is a quiet exit 0 (the hook contract)" ($r.Code -eq 0)
+Remove-Item $BadHome, $GoodHome, $LockHome -Recurse -Force -ErrorAction SilentlyContinue
 
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)
 Check "live ~/.claude/CLAUDE.md never written"      ((Get-FileHash $liveClaude   -Algorithm SHA256).Hash -eq $liveClaudeHash)

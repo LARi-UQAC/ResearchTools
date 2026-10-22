@@ -37,7 +37,7 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `abstract-writer` | Extract a paper's own content (`extract-paper-idea` skill) and draft or refresh its abstract, grounded in its own contribution/method/results/limitations rather than a paraphrase; for a UQAC thesis, drafts the Résumé (French) + Abstract (English) pair from the same extraction. No citations, no Scopus, no deliberation. Self-checks against `composition_rules.md` + the `latex-hygiene` AI-usage scanner; confirms before overwriting existing content | `/abstract` | `.claude/agents/abstract-writer.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
 | `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via the resolver's writer-role model over a Bash bridge; NOT LaTeX text authoring. It is also the only agent allowed to read or write the two memories, the Obsidian vault (through the outbox) and the graphify code graph, enforced by `vault-access-guard.py` ([chapter 07](07-hooks.md)) | by context / by name | `.claude/agents/local-writer.md` |
-| `local-coder` | Executes ONE whole plan with a local model: the dispatch prompt carries a `PLAN: <path>` line whose header names `executor`, `tier` and the review bounds, and the agent generates each open step over the bridge, ticking `progress.md`. It audits nothing and runs no state-changing git; `local-coder-dispatch-guard.py` refuses a dispatch with no valid plan (rule R38, [chapter 10](10-local-coding.md)) | by context / by name | `.claude/agents/local-coder.md` |
+| `local-coder` | Executes ONE whole plan with a local model: the dispatch prompt carries a `PLAN: <path>` line whose header names `executor`, `tier` and the review bounds, and the agent generates each open step over the bridge, ticking `progress.md`. It audits nothing and runs no state-changing git; `local-coder-dispatch-guard.py` refuses a dispatch with no valid plan (rule R38, [chapter 11](11-local-coding.md)) | by context / by name | `.claude/agents/local-coder.md` |
 | `professor-expertise-finder` | Find university professors closest to a set of expertise keywords in a user-supplied location (never hardcoded): reuse or build a verified department/faculty-list table, rank with a /5 rubric grounded in Scopus-verified recent approved-publisher articles (`scopus` AU-ID + `publications` mode) and each article's own stated contribution (`extract-contributions`), never a guessed title match. Test mode, exclusion lists, an optional reviewers reference file, and a batch allocation mode (no-reuse, one-university-per-evaluator, conflict-of-interest, all enforced by script) | `/expertfinder` | `.claude/agents/professor-expertise-finder.md` |
 
 The four ScholarEval auditors (`scopus-auditor`, `paper-auditor`, `thesis-auditor`,
@@ -81,7 +81,7 @@ scientific and LaTeX redaction stays with `latex-writer` + `scientific-writing` 
 latest cloud Claude model.
 
 `aider-setup` is a second, separate local-coding lane that needs no Claude Code at all — how it
-differs from `local-coder` and the nightly run itself: chapter [11](11-aider-pipeline.md).
+differs from `local-coder` and the nightly run itself: chapter [14](14-aider-pipeline.md).
 
 ## Loop engineering (local-model dev loop)
 
@@ -95,7 +95,7 @@ review) for the actions, and delegates code and comments to the local `local-cod
 The loop is a procedure the session follows through `/loopdev [--score N] [--no-merge-pr]`, see
 [chapter 04](04-commands.md). The driver flag `--loop` of `loop_engineer.py` is not wired, so there
 is no `--budget` option: the stop bounds (`max_rounds`, `max_tokens`, `plateau`) are asked of the
-owner and declared with `loop_bounds.py init`, see [chapter 10](10-local-coding.md). The default
+owner and declared with `loop_bounds.py init`, see [chapter 11](11-local-coding.md). The default
 stop gate is composite: tests green AND no CRITICAL/HIGH review findings AND aggregate score
 `>=` min_score (default 90); a literal 100 is opt-in. The loop also stops at the first bound
 reached. The score aggregates findings from the

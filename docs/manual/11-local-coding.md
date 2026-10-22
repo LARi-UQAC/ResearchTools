@@ -185,7 +185,7 @@ calling session.
 **Several plans through aider.** Aider keeps its own internal loop: a writer model codes and
 tests, and a different reviewer model audits and never edits. It reads `spec.md`, each
 `plan<N>.md` and `progress.md`, and a plan header does not change the files it names. See
-chapter [11](11-aider-pipeline.md).
+chapter [14](14-aider-pipeline.md).
 
 **A whole session switched by hand.** `claude-switch.ps1` provides `claude-ollama`,
 `claude-augure` and `claude-cloud`. This is your choice and is never written in a plan.
@@ -285,7 +285,7 @@ the bridge log and shows each role with its model, window, calls, tokens and whe
 active. `rounds` lists each plan of a round folder with its executor, tier and task counts, and
 the review loop of every worktree as rounds used of the maximum. The Real-Time tab draws a lane
 and a token ring for each active bridge role, and shows an aider run's fixed cost and task
-budget. See chapter [12](12-rt-observe-dashboard.md).
+budget. See chapter [10](10-rt-observe-dashboard.md).
 
 ## What is verified, unsupported and untried
 
@@ -315,4 +315,4 @@ Also untried until one live firing on this machine: that both hooks fire on thei
   says why instead of drawing an empty panel.
 
 ---
-[← 09 Harnesses and mirrors](09-harnesses.md) | [Table of contents](../../README.md) | [11 Aider nightly pipeline →](11-aider-pipeline.md)
+[← 10 rt-observe & dashboard](10-rt-observe-dashboard.md) | [Table of contents](../../README.md) | [12 PCB design, mixed signals →](12-pcb-design.md)

@@ -147,7 +147,7 @@ Full detail, including the three settings (`privacyguard.enabled`,
 `privacyguard.absolutePaths`, `privacyguard.minTermLength`) and every installed file:
 [01-installation.md, Step 6](01-installation.md) and
 [`.claude/rules/security.md`](../../.claude/rules/security.md)'s "Personal-data guard" section.
-File locations: [16-file-locations.md](16-file-locations.md).
+File locations: [18-file-locations.md](18-file-locations.md).
 
 ## Automated pull-request review (billed, optional)
 
@@ -206,4 +206,4 @@ Full detail, with every finding and decision of the review that shaped it:
 how to set the same workflow up in another repository.
 
 ---
-[← 12 rt-observe & dashboard](12-rt-observe-dashboard.md) | [Table of contents](../../README.md) | [14 ThesisTracker integration →](14-thesistracker-integration.md)
+[← 14 Aider nightly pipeline](14-aider-pipeline.md) | [Table of contents](../../README.md) | [16 Maintenance, checks and CI →](16-maintenance.md)

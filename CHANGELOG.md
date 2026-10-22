@@ -11,12 +11,13 @@ This file is for someone following releases. For the dated, engineering-level de
 
 ### Added
 - Manual: four new chapters, `07 Hooks and guards`, `08 Rules and conventions`, `09 Harnesses and
-  mirrors` and `15 Maintenance, checks and CI`, and two placeholder chapters, `17 PCB design` and
-  `18 3D CAD design`. The chapters are reordered so that commands, agents and skills come first
-  (04 Commands, 05 Agents, 06 Skills), and the chapter files are renamed to match. The links in
+  mirrors` and `16 Maintenance, checks and CI`, and two placeholder chapters, `12 PCB design, mixed
+  signals` and `13 3D CAD design, CNC, 3D printing`. The chapters are reordered so that commands,
+  agents and skills come first (04 Commands, 05 Agents, 06 Skills) and the dashboard, local coding
+  and design chapters follow (10 to 14), and the chapter files are renamed to match. The links in
   `README.md`, `docs/index.md`, `mkdocs.yml` and four documentation tests follow.
 - Manual: the SkillSpector scan now covers all 25 skills (289 findings, rated by rule family in
-  chapter 13), and the open findings it confirmed are listed there.
+  chapter 15), and the open findings it confirmed are listed there.
 - Manual: chapter 02 lists every third-party Python library of the two environments, `.venv-skills`
   and `.venv-docs`, one row per library with its installed version, the requirements file that
   declares it and whether `setup.ps1 -InstallPython` installs it. Built from the `import`
@@ -28,7 +29,7 @@ This file is for someone following releases. For the dated, engineering-level de
   Flash and GitHub Models routes, and lists `COPILOT_TOKEN`, `GH_OAUTH_TOKEN` and the other
   variables the toolkit reads. Chapter 05 no longer documents the unwired `--loop --budget`
   option, chapter 06 no longer gives a `/drawio2tikz` command that does not exist, and the counts
-  in chapters 00 and 16 are 25 skills, 21 agents and 32 commands.
+  in chapters 00 and 18 are 25 skills, 21 agents and 32 commands.
 - `.\setup.ps1 -Update` updates an existing installation in one command. It asks the domain
   profile, whether to install GitHub Copilot at user level and whether to run the offline suite
   first, then runs the global configuration with the hook update, the Claude Code links,

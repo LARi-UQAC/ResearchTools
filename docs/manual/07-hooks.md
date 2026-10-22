@@ -42,8 +42,8 @@ path, the `graphify` command at command position, and the two graph audit script
 [chapter 06](06-skills.md#the-two-memories---the-vault-and-the-code-graph).
 
 `review-loop-guard.py` and `local-coder-dispatch-guard.py` are detailed in
-[chapter 10](10-local-coding.md), and `worktree-link-guard.py` in
-[chapter 13](13-security-audit.md).
+[chapter 11](11-local-coding.md), and `worktree-link-guard.py` in
+[chapter 15](15-security-audit.md).
 
 ## Scanners after a tool call (PostToolUse)
 
@@ -66,7 +66,7 @@ written inside it. It uses regular expressions only, so a long path can trigger 
 | Session status (inline) | SessionStart | Supplies the `Session: RTK=... \| Caveman=... \| git-sync=on` line |
 | `session-hooks-inventory.py` | SessionStart | Prints the hook inventory and any `[HOOKS ALERT]` |
 | `obsidian-outbox-flush.py` | SessionStart, SessionEnd | Writes the notes waiting in `~/.claude/obsidian-outbox/` into the vault through the filesystem, and checks the effect by file size |
-| `rt-inbox-deliver.py` | UserPromptSubmit | Hands the session the messages the [dashboard](12-rt-observe-dashboard.md) left for it, then moves them to `delivered/` |
+| `rt-inbox-deliver.py` | UserPromptSubmit | Hands the session the messages the [dashboard](10-rt-observe-dashboard.md) left for it, then moves them to `delivered/` |
 | Memory upkeep (inline) | Stop | At the end of a turn that changed the working tree, reminds the session to dispatch `local-writer` for the vault note, the project log and the graph refresh. Silent for a turn that changed nothing |
 
 Only the standard output of a SessionStart hook reaches the session context. A hook that writes to
@@ -95,7 +95,7 @@ would look configured and do nothing (see [chapter 01](01-installation.md)).
 
 The global `pre-commit` and `pre-push` hooks of the personal-data guard run on every `git commit`
 and `git push` of every repository on the machine, not inside a Claude session. They are installed
-once with `.claude/hooks/git/install-git-hooks.ps1`, see [chapter 13](13-security-audit.md).
+once with `.claude/hooks/git/install-git-hooks.ps1`, see [chapter 15](15-security-audit.md).
 
 ## Adding or changing a hook
 
@@ -103,7 +103,7 @@ Edit `.claude/settings.template.json`, then `.\setup.ps1 -UpdateHooks` replaces 
 live file (a stamped backup is made first). A deliberate local variant is kept with
 `-KeepHooks <names>`. A hook script and its JSON config are copied to `~/.claude/hooks/` by
 `install-junctions.ps1 -Sync` once the offline suite is green, see
-[chapter 15](15-maintenance.md).
+[chapter 16](16-maintenance.md).
 
 ---
 [← 06 Skills](06-skills.md) | [Table of contents](../../README.md) | [08 Rules and conventions →](08-rules.md)

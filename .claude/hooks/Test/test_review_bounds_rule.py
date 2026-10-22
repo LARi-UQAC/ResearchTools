@@ -160,7 +160,7 @@ class TestHandTypedReviewIsNotOverClaimed(unittest.TestCase):
         manual = REPO / "docs" / "manual"
         texts = {"R35": r35_block(WORKFLOWS.read_text(encoding="utf-8")),
                  "04-commands": (manual / "04-commands.md").read_text(encoding="utf-8"),
-                 "10-local-coding": (manual / "10-local-coding.md").read_text(encoding="utf-8")}
+                 "11-local-coding": (manual / "11-local-coding.md").read_text(encoding="utf-8")}
         for label, text in texts.items():
             with self.subTest(where=label):
                 body = flat(text)

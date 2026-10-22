@@ -40,14 +40,14 @@ Ordre actuel (illogique: Skills au 04, Commands au 08, Agents au 10, File locati
 | 11 | File locations |
 | 12 | Local coding and the cloud |
 
-Ordre proposé et appliqué le 2026-10-22 (parcours du lecteur: comprendre, installer, configurer, utiliser, gouverner,
+Ordre appliqué le 2026-10-22 (parcours du lecteur: comprendre, installer, configurer, utiliser, gouverner,
 exploiter, référence). Les chapitres marqués NEW comblent un manque de la section 2.
 
-| Proposé | Titre | Origine | Raison de la place |
+| Appliqué | Titre | Origine | Raison de la place |
 |---|---|---|---|
 | 00 | Purpose & overview | 00 | inchangé |
 | 01 | Installation | 01 | inchangé |
-| 02 | Profiles & environment | 02 | inchangé |
+| 02 | Profiles & environment | 02 | inchangé, reçoit aussi les tableaux des bibliothèques Python |
 | 03 | Token management | 03 | inchangé, hygiène de session avant tout travail |
 | 04 | Commands | 08 | ce que l'utilisateur tape en premier |
 | 05 | Agents | 10 | ce que les commandes appellent |
@@ -55,15 +55,18 @@ exploiter, référence). Les chapitres marqués NEW comblent un manque de la sec
 | 07 | Hooks and guards | NEW | ce qui s'exécute tout seul autour des outils |
 | 08 | Rules and conventions | NEW | R0 à R38 et les cinq fichiers `.claude/rules/` |
 | 09 | Harnesses and mirrors | NEW (tiré de 10 et 01) | Claude Code, Copilot, OpenCode, Continue, Aider, Codex |
-| 10 | Local coding and the cloud | 12 | choix de l'exécuteur, plans, bornes |
-| 11 | Aider nightly pipeline | 06 | une des voies du chapitre 10 |
-| 12 | rt-observe & dashboard | 07 | observer ce qui précède |
-| 13 | Security audit and guards | 05 | garde de données personnelles, revue PR, SkillSpector |
-| 14 | ThesisTracker integration | 09 | frontière avec le dépôt frère |
-| 15 | Maintenance, checks and CI | NEW | `run-all-checks`, `finish-branch`, `verify-*`, `mkdocs gh-deploy`, workflows |
-| 16 | File locations | 11 | référence |
-| 17 | PCB design | NEW, placeholder | demandé par le propriétaire le 2026-10-22, à rédiger la semaine du 2026-10-26 |
-| 18 | 3D CAD design | NEW, placeholder | idem |
+| 10 | rt-observe & dashboard | 07 | observer ce qui précède |
+| 11 | Local coding and the cloud | 12 | choix de l'exécuteur, plans, bornes |
+| 12 | PCB design, mixed signals | NEW, placeholder | la conception matérielle est du code généré; à rédiger la semaine du 2026-10-26 |
+| 13 | 3D CAD design, CNC, 3D printing | NEW, placeholder | idem (Build123d, Aider); à rédiger la semaine du 2026-10-26 |
+| 14 | Aider nightly pipeline | 06 | la voie qui peut générer ces conceptions |
+| 15 | Security audit and guards | 05 | garde de données personnelles, revue PR, SkillSpector |
+| 16 | Maintenance, checks and CI | NEW | `run-all-checks`, `finish-branch`, `verify-*`, `mkdocs gh-deploy`, workflows |
+| 17 | ThesisTracker integration | 09 | frontière avec le dépôt frère |
+| 18 | File locations | 11 | référence, en dernier |
+
+Ordre révisé par le propriétaire le 2026-10-22, après une première version qui plaçait les deux
+placeholders en 17 et 18.
 
 Renommer les fichiers touche 30 fichiers (156 occurrences): `mkdocs.yml`, `README.md`,
 `docs/index.md`, tous les chapitres, deux fichiers de règles, deux instructions Copilot
@@ -75,7 +78,7 @@ historique) reste tel quel.
 
 ### 2.1 Agents (21)
 
-Chapitre actuel: 10 Agents. Tous ont une ligne dans le tableau du chapitre.
+Chapitre d'origine (ancienne numérotation): 10 Agents. Tous ont une ligne dans le tableau du chapitre.
 
 | Élément | Statut | Note | Corrigé |
 |---|---|---|---|
@@ -105,7 +108,7 @@ Chapitre actuel: 10 Agents. Tous ont une ligne dans le tableau du chapitre.
 
 ### 2.2 Skills (25 dans le dépôt, plus graphify externe)
 
-Chapitre actuel: 04 Skills.
+Chapitre d'origine (ancienne numérotation): 04 Skills.
 
 | Élément | Statut | Note | Corrigé |
 |---|---|---|---|
@@ -140,7 +143,7 @@ Chapitre actuel: 04 Skills.
 
 ### 2.3 Commandes (32)
 
-Chapitre actuel: 08 Commands. Les 32 ont une ligne dans le tableau.
+Chapitre d'origine (ancienne numérotation): 08 Commands. Les 32 ont une ligne dans le tableau.
 
 | Élément | Statut | Note | Corrigé |
 |---|---|---|---|
@@ -185,7 +188,7 @@ Aucun chapitre ne les décrit. Ils sont cités en passant (prérequis, sécurit�
 
 | Élément | Statut | Note | Corrigé |
 |---|---|---|---|
-| Chapitre "Hooks and guards" | X | à créer (07 proposé) | ☑ |
+| Chapitre "Hooks and guards" | X | à créer (07) | ☑ |
 | betterleaks-hook.py (PreToolUse, secrets) | m | cité comme prérequis, rôle non décrit | ☑ |
 | vault-access-guard.py (PreToolUse, coffre et graphe) | m | cité une fois | ☑ |
 | askuserquestion-clarity.py (PreToolUse, R25) | X | | ☑ |
@@ -209,7 +212,7 @@ Aucun chapitre ne les décrit. Ils sont cités en passant (prérequis, sécurit�
 
 | Élément | Statut | Note | Corrigé |
 |---|---|---|---|
-| Chapitre "Rules and conventions" | X | à créer (08 proposé) | ☑ |
+| Chapitre "Rules and conventions" | X | à créer (08) | ☑ |
 | `.claude/rules/code-style.md` (R0 à R19, R27) | X | | ☑ |
 | `.claude/rules/preferences.md` (R14, R15, R22, R23, R25, R28) | X | | ☑ |
 | `.claude/rules/security.md` (R24) | m | privacy guard décrit au chapitre 05 | ☑ |
@@ -221,11 +224,11 @@ Aucun chapitre ne les décrit. Ils sont cités en passant (prérequis, sécurit�
 
 ### 2.6 Harnais et miroirs
 
-Chapitre actuel: 10 Agents (section "Using the agents outside Claude Code") et 01 (Step 4).
+Chapitre d'origine (ancienne numérotation): 10 Agents (section "Using the agents outside Claude Code") et 01 (Step 4).
 
 | Élément | Statut | Note | Corrigé |
 |---|---|---|---|
-| Chapitre "Harnesses and mirrors" | X | à créer (09 proposé) | ☑ |
+| Chapitre "Harnesses and mirrors" | X | à créer (09) | ☑ |
 | Claude Code (natif, `.claude/`) | ✓ | | ☑ |
 | GitHub Copilot: agents `.github/agents/` | m | "five large agents ship as stubs", le décompte mesuré en compte sept | ☑ |
 | GitHub Copilot: invites `.github/prompts/` | m | "13 prompt files", il y en a 28 | ☑ |
@@ -261,7 +264,7 @@ Chapitre actuel: 10 Agents (section "Using the agents outside Claude Code") et 0
 | Workflow `review.yml` | ✓ | chapitre 05 | ☑ |
 | `deploy/form-service/` (API HTTP) | ✓ | chapitres 04 et 09 | ☑ |
 | `deploy/` compose, Caddyfile, initdb | X | | ☑ |
-| Chapitre "Maintenance, checks and CI" | X | à créer (15 proposé) | ☑ |
+| Chapitre "Maintenance, checks and CI" | X | à créer (16) | ☑ |
 
 ### 2.8 Services, mémoires, variables d'environnement
 
@@ -297,13 +300,13 @@ retrait de texte faux.
 
 | Bloquant | Correction |
 |---|---|
-| Chapitre 05 "All eight skills" | Scan relancé sur les 25 skills, résultat dans le chapitre 13, chapitre renommé Security audit and guards |
-| Chapitre 00 PCB et CAO 3D | Phrase limitée à ce que le dépôt livre, chapitres 17 et 18 créés comme placeholders, carte de `docs/index.md` corrigée |
+| Chapitre 05 "All eight skills" | Scan relancé sur les 25 skills, résultat dans le chapitre 15, chapitre renommé Security audit and guards |
+| Chapitre 00 PCB et CAO 3D | Phrase limitée à ce que le dépôt livre, chapitres 12 et 13 créés comme placeholders, carte de `docs/index.md` corrigée |
 | Chapitre 10 `--loop --budget` | Contrat d'options retiré, renvoi aux chapitres 04 et 10 |
 | Chapitre 04 `/drawio2tikz` | Entrée remplacée par "le skill, aucune commande" |
 | Chapitre 02 Gemini 2.0 Flash et `GITHUB_TOKEN` | Table réécrite d'après le SKILL.md de deliberation |
 
-Constats du scan à traiter hors de cette session (voir le chapitre 13): déclaration de permissions
+Constats du scan à traiter hors de cette session (voir le chapitre 15): déclaration de permissions
 absente (`LP3`) dans neuf skills, avis `pypdf` 6.19.0 (corrigé en 6.21.1) dans `form-service`,
 `narrative-cv` et `paper2talk`, avis `pillow` 12.3.0 (corrigé en 13.0.0) dans `extract-statistic`
 et `pdf2md`, avis `docling` 2.103.0 dans `extract-statistic`, `claude-agent-sdk` non épinglé dans

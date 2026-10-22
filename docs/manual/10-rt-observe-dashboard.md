@@ -76,7 +76,7 @@ model, window, call and token totals and whether it is active. `rounds`, read by
 `collect_rounds.py`, lists each plan of a round folder with its executor, tier and task counts,
 and the review loop of every worktree as rounds used of the maximum. The Real-Time tab draws a
 lane and a token ring for each active bridge role, and shows an aider run's fixed cost and task
-budget in the hover. See [chapter 10](10-local-coding.md).
+budget in the hover. See [chapter 11](11-local-coding.md).
 <!-- local-coding:end -->
 
 ## The `/rt-dashboard` command
@@ -101,4 +101,4 @@ The command is a convenience, never the only way in. `rt-dashboard.ps1`, `rt-das
 **File:** `.claude/commands/rt-dashboard.md`
 
 ---
-[← 11 Aider nightly pipeline](11-aider-pipeline.md) | [Table of contents](../../README.md) | [13 Security audit and guards →](13-security-audit.md)
+[← 09 Harnesses and mirrors](09-harnesses.md) | [Table of contents](../../README.md) | [11 Local coding and the cloud →](11-local-coding.md)

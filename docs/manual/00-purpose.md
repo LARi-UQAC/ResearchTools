@@ -21,7 +21,7 @@ a thesis committee, or a grant panel does. It offers a Dashboard to follow the w
 https://www.uqac.ca/ressourcespedago/iag/
 
 
-<a href="https://lari-uqac.github.io/ResearchTools/">ResearchTools</a> contains two loop for authoring and coding. It covers the whole process: starting a literature review, auditing an existing review, a complete paper, a UQAC thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy. Moreover, it offers the process to design code, with a full Dashboard to see the agents working in background including some controls. The chapters on PCB design and 3D CAD design ([17](17-pcb-design.md) and [18](18-cad-design.md)) are placeholders, to be written.
+<a href="https://lari-uqac.github.io/ResearchTools/">ResearchTools</a> contains two loop for authoring and coding. It covers the whole process: starting a literature review, auditing an existing review, a complete paper, a UQAC thesis or thesis proposal, cleaning/improving a BibTeX file, helping to respond to peer reviewers, checking submission readiness against a target journal, building the submission package, and converting Word to LaTeX with high accuracy. Moreover, it offers the process to design code, with a full Dashboard to see the agents working in background including some controls. The chapters on PCB design and 3D CAD design ([12](12-pcb-design.md) and [13](13-cad-design.md)) are placeholders, to be written.
 
 Every check is grounded in the same working norms: no reference enters a document without being validated against Scopus (no fabricated citations, no invented DOIs), weaknesses are reported as actionable findings with an executable improvement plan rather than vague encouragement, and drafts pass a multi-model deliberation (Gemini + GitHub Copilot debate, arbitrated with Claude) before a plan or review is finalized. Each improvment is evaluated with a score and then you can see the quantitative improvments.
 
@@ -59,7 +59,7 @@ flat file — the root `README.md` is now a table of contents, not the full text
 share a similar name and a different job: `Architecture.md` maps this repository's own
 agents/skills/commands (7 layers); `NEW_ARCHITECTURE.md`, at the repo root, is the architecture
 shared with the sibling repository ThesisTracker (committed identically to `main` in both).
-Chapter [14](14-thesistracker-integration.md) covers that boundary.
+Chapter [17](17-thesistracker-integration.md) covers that boundary.
 
 ---
 [Table of contents](../../README.md) | [01 Installation →](01-installation.md)

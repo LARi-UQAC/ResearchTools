@@ -53,7 +53,7 @@ Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
 | `OBSIDIAN_VAULT` | the vault hooks, the vault daemon, `local-writer` | Root of your Obsidian vault. `setup.ps1` offers to set it at user scope when it is unset and never replaces an existing value |
 | `PROFESSOR_EXPERTISE_DATA` | `professor-expertise-finder` | Folder holding the location tables and batch registries. Default `~/workspace/professor-expertise` |
 | `AUGUREAI_API_KEY` | `claude-augure` in `scripts/local/claude-switch.ps1` | Key sent as `ANTHROPIC_API_KEY` when a session is routed through AugureAI, see [chapter 03](03-token-management.md) |
-| `FORM_SERVICE_KEY`, `FORM_SERVICE_HOST` | `deploy/form-service/` | Shared secret and public host name of the PDF-form API, see [chapter 14](14-thesistracker-integration.md) |
+| `FORM_SERVICE_KEY`, `FORM_SERVICE_HOST` | `deploy/form-service/` | Shared secret and public host name of the PDF-form API, see [chapter 17](17-thesistracker-integration.md) |
 | `WP_NONCE`, `WP_COOKIES`, `WP_BASE` | `wp-portfolio-sync` | WordPress cookie authentication, its cookie file and the site address, for the one-time portfolio migration |
 | `RT_PG_PASSWORD` | `rt_store.py` of the dashboard | Password of the optional PostgreSQL identity layer, read only when `observe-config.json` declares a `postgres` block |
 | `RT_OO_USER`, `RT_OO_PASSWORD` | `rt_openobserve.py` of the dashboard | Credentials of the optional OpenObserve trace stream, read only when an `openobserve` block is declared |
@@ -99,7 +99,7 @@ the listed ones (`mineru` pulls a very large tree).
 |---|---|---|---|---|---|---|---|
 | ☑ | `requests` | requests | 2.34.2 | scopus `==2.34.2`; extract-statistic `==2.34.2 (added)`; form-service `==2.34.2`; wp-portfolio-sync `==2.34.2` | scopus, extract-statistic, form-service, wp-portfolio-sync | ☑ |  |
 | ☑ | `PyYAML` | yaml | 6.0.3 | narrative-cv `==6.0.3`; pdf2md `==6.0.3`; recommendation-letter `==6.0.3`; wp-portfolio-sync `==6.0.3` | narrative-cv, pdf2md, recommendation-letter, wp-portfolio-sync | ☑ |  |
-| ☑ | `pypdf` | pypdf | 6.19.0 | form-service `==6.19.0`; narrative-cv `==6.19.0`; paper2talk `==6.19.0` | form-service, narrative-cv, paper2talk | ☑ | advisories, fixed in 6.21.1 (chapter 13) |
+| ☑ | `pypdf` | pypdf | 6.19.0 | form-service `==6.19.0`; narrative-cv `==6.19.0`; paper2talk `==6.19.0` | form-service, narrative-cv, paper2talk | ☑ | advisories, fixed in 6.21.1 (chapter 15) |
 | ☑ | `defusedxml` | defusedxml | 0.7.1 | drawio2tikz `==0.7.1 (added)`; paper2talk `==0.7.1`; wp-portfolio-sync `==0.7.1` | drawio2tikz, paper2talk, wp-portfolio-sync | ☑ |  |
 | ☑ | `Jinja2` | jinja2 | 3.1.6 | paper2talk `==3.1.6` | paper2talk | ☑ |  |
 | ☐ | `MarkupSafe` | markupsafe | 3.0.4 | none | paper2talk | ☐ | imported by `talk_model.py`; a dependency of Jinja2, so not declared on its own |
@@ -107,7 +107,7 @@ the listed ones (`mineru` pulls a very large tree).
 | ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | extract-statistic `==1.27.2.3`; pdf2md `==1.27.2.3 (added)`; paper2talk `==1.27.2.3 (added, optional)`; geolocalisation `commented, optional` | extract-statistic, pdf2md, paper2talk, geolocalisation, scopus | ☑ | `scopus` uses it when present and states in its own header that it is not a declared dependency; AGPL-3.0 licence |
 | ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | extract-statistic `==1.27.2.3` | extract-statistic | ☑ | AGPL-3.0 licence |
 | ☑ | `markitdown` | markitdown | 0.1.6 | extract-statistic `[pdf]==0.1.6` | extract-statistic | ☑ | MIT licence |
-| ☑ | `docling` | docling | not installed | extract-statistic `==2.103.0` | extract-statistic | ☑ | left out of `-InstallPython` (pulls torch) and not installed here; advisories (chapter 13) |
+| ☑ | `docling` | docling | not installed | extract-statistic `==2.103.0` | extract-statistic | ☑ | left out of `-InstallPython` (pulls torch) and not installed here; advisories (chapter 15) |
 | ☑ | `psycopg` | psycopg | 3.3.6 | extract-statistic `[binary]==3.3.6`; rt-observe `[binary]==3.3.6 (added, optional)` | extract-statistic, rt-observe | ☑ |  |
 | ☑ | `pgvector` | (none) | 0.5.0 | extract-statistic `==0.5.0` | extract-statistic | ☑ | declared, but no `.py` file imports it: the vector store is SQL. Candidate for removal |
 | ☑ | `openpyxl` | openpyxl | 3.1.5 | professor-expertise-finder `==3.1.5` | professor-expertise-finder | ☐ |  |
@@ -120,14 +120,14 @@ the listed ones (`mineru` pulls a very large tree).
 | ☑ | `cryptography` | cryptography | 50.0.2 | form-service `==50.0.2 (added)` | form-service | ☐ | `deploy/form-service` pins 50.0.1 for its own environment |
 | ☑ | `matplotlib` | matplotlib | not installed | geolocalisation `==3.9.2` | geolocalisation | ☐ | manual by design, not installed here |
 | ☑ | `folium` | folium | not installed | geolocalisation `commented ==0.17.0, optional` | geolocalisation | ☐ | not installed here |
-| ☑ | `pillow` | PIL | 12.3.0 | geolocalisation `>=12.3.0`; word2latex `>=12.3.0 (added)` | geolocalisation, word2latex | ☐ | 12.3.0 has advisories, fixed in 13.0.0 (chapter 13) |
+| ☑ | `pillow` | PIL | 12.3.0 | geolocalisation `>=12.3.0`; word2latex `>=12.3.0 (added)` | geolocalisation, word2latex | ☐ | 12.3.0 has advisories, fixed in 13.0.0 (chapter 15) |
 | ☑ | `numpy` | numpy | 2.4.6 | word2latex `==2.4.6 (added)` | word2latex, aider-setup | ☐ | `aider-setup` also imports it, in aider's own interpreter |
 | ☑ | `faster-whisper` | faster_whisper | 1.2.1 | rt-observe `==1.2.1 (added)`; opt-local-stt-vram `==1.2.1 (added)` | rt-observe, opt-local-stt-vram | ☐ | pulls ctranslate2 |
 | ☑ | `nvidia-cublas-cu12` | (DLLs) | 12.9.2.10 | rt-observe `==12.9.2.10 (added)` | rt-observe | ☐ | never imported: `stt_engine.py` puts its DLL folder on PATH for GPU speech-to-text |
 | ☑ | `nvidia-cudnn-cu12` | (DLLs) | 9.26.0.51 | rt-observe `==9.26.0.51 (added)` | rt-observe | ☐ | same |
 | ☑ | `nvidia-cuda-nvrtc-cu12` | (DLLs) | 12.9.86 | rt-observe `==12.9.86 (added)` | rt-observe | ☐ | same |
 | ☑ | `tiktoken` | tiktoken | not installed | loop-engineer `==0.14.0 (added, optional)` | loop-engineer, aider-setup | ☐ | not installed here; `aider-setup` uses the copy in aider's interpreter |
-| ☑ | `claude-agent-sdk` | claude_agent_sdk | not installed | loop-engineer `>=0.1.0` | loop-engineer | ☐ | not pinned and not installed here (chapter 13) |
+| ☑ | `claude-agent-sdk` | claude_agent_sdk | not installed | loop-engineer `>=0.1.0` | loop-engineer | ☐ | not pinned and not installed here (chapter 15) |
 | ☑ | `mineru` | (mineru-kit command) | 4.0.11 | pdf2md `==4.0.11` | pdf2md | ☐ | used through the `mineru-kit` command |
 | ☑ | `mineru-llama-cpp` | mineru_llama_cpp | 0.1.2 | pdf2md `==0.1.2` | pdf2md | ☐ |  |
 | ☑ | `pip-audit` | (module run) | 2.10.1 | setup `==2.10.1 (data file `tools`)` | the dependency audit of every requirements file | ☑ | run as a module, never imported |
@@ -142,7 +142,7 @@ changes what the installer installs.
 ### `.venv-docs`
 
 Python 3.13.3 on this machine. It is created by hand, `setup.ps1` does not create it: see
-[chapter 15](15-maintenance.md). It holds the 40 pinned lines of `requirements-docs.txt` plus pip, and the
+[chapter 16](16-maintenance.md). It holds the 40 pinned lines of `requirements-docs.txt` plus pip, and the
 installed versions match the pins exactly. The site needs `mkdocs` and `mkdocs-material` (the
 theme), `pymdown-extensions` and `Markdown` (the extensions listed in `mkdocs.yml`: `attr_list`,
 `md_in_html`, `tables`, `toc`, `pymdownx.superfences`, `pymdownx.highlight` and
@@ -210,7 +210,7 @@ tests run in that environment, not in `.venv-skills`.
 No script regenerates them. A library added to a skill without a line in its requirements file is
 exactly the gap this section was written to close, so a change that adds an `import` of a new
 third-party library also adds the line, with an exact version checked by `pip-audit`
-([chapter 15](15-maintenance.md)), and one row here.
+([chapter 16](16-maintenance.md)), and one row here.
 
 ---
 [← 01 Installation](01-installation.md) | [Table of contents](../../README.md) | [03 Token management →](03-token-management.md)

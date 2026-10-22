@@ -66,7 +66,7 @@ committed by that protocol.
 2. Update the documentation of what the change touched in the same pull request (R31, R33), see
    [chapter 08](08-rules.md).
 3. Before the pull request opens, run the bounded security and code review of R35 and fix what it
-   finds. The review bounds are declared first, see [chapter 10](10-local-coding.md).
+   finds. The review bounds are declared first, see [chapter 11](11-local-coding.md).
 4. Run `scripts/test/run-all-checks.ps1` once, after the last commit.
 5. Open the pull request. The owner merges it, never a session.
 6. After the merge, from the main clone, `scripts/test/finish-branch.ps1 -Branch <branch>`.
@@ -83,7 +83,7 @@ when it is started from inside the worktree it removes. A second run finds nothi
 
 Two GitHub workflows run on pull requests. `privacy-scan.yml` is free and static: it scans the added
 commits for secrets and personal-data shapes. `review.yml` is billed and optional: a headless review
-posts one consolidated comment. Both are described in [chapter 13](13-security-audit.md). There is no
+posts one consolidated comment. Both are described in [chapter 15](15-security-audit.md). There is no
 workflow that runs the test suites, they are run by hand as above.
 
 ## This documentation site
@@ -109,7 +109,7 @@ updates the published site by itself, and the deploy is the only way the live pa
 
 `deploy/` holds the container set for the `form-service` HTTP API: `docker-compose.yml`, a
 `Caddyfile` reverse proxy, `initdb/` which enables pgvector on the PostgreSQL 17 container, and
-`form-service/` for the service itself. Its boundary with ThesisTracker is in [chapter 14](14-thesistracker-integration.md).
+`form-service/` for the service itself. Its boundary with ThesisTracker is in [chapter 17](17-thesistracker-integration.md).
 
 ---
-[← 14 ThesisTracker integration](14-thesistracker-integration.md) | [Table of contents](../../README.md) | [16 File locations →](16-file-locations.md)
+[← 15 Security audit and guards](15-security-audit.md) | [Table of contents](../../README.md) | [17 ThesisTracker integration →](17-thesistracker-integration.md)

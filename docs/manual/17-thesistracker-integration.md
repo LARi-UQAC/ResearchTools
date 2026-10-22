@@ -53,4 +53,4 @@ When a plan changes something both sides depend on, `NEW_ARCHITECTURE.md` is the
 records it — update it there, in both checkouts, rather than in this manual.
 
 ---
-[← 13 Security audit and guards](13-security-audit.md) | [Table of contents](../../README.md) | [15 Maintenance, checks and CI →](15-maintenance.md)
+[← 16 Maintenance, checks and CI](16-maintenance.md) | [Table of contents](../../README.md) | [18 File locations →](18-file-locations.md)

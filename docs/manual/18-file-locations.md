@@ -12,7 +12,7 @@ ResearchTools\
 │   ├── skills\               25 folders: SKILL.md, scripts\, Test\      (chapter 06)
 │   │   └── AGENTS.md         nested instructions that Codex reads
 │   ├── hooks\                8 hook scripts with their JSON configs, Test\,
-│   │   └── git\              the global personal-data guard             (chapters 07, 13)
+│   │   └── git\              the global personal-data guard             (chapters 07, 15)
 │   ├── rules\                code-style, preferences, security, testing, workflows (chapter 08)
 │   ├── settings.template.json  hook entries and env, merged into ~/.claude/settings.json
 │   ├── settings.json         shared project settings, committed
@@ -22,7 +22,7 @@ ResearchTools\
 ├── .opencode\ .continue\ .agents\    generated mirrors for other harnesses (chapter 09)
 ├── docs\                    index.md, manual\ (the 19 chapters), deep-dive pages,
 │                             superpowers\ (plans, specs, notes: not published)
-├── scripts\                 audit\ ci\ docs\ lib\ local\ test\       (chapter 15)
+├── scripts\                 audit\ ci\ docs\ lib\ local\ test\       (chapter 16)
 ├── deploy\                  form-service API, compose file, Caddyfile, initdb\
 ├── profiles\                engineering, cosmetic, _template            (chapter 02)
 ├── setup.ps1  install.ps1  install-junctions.ps1  rt-dashboard.(ps1|sh|bat)
@@ -44,13 +44,13 @@ are the authority.
 `.claude/hooks/`: `review-loop-guard.py` and `local-coder-dispatch-guard.py`, each with a JSON
 config beside it. The review-loop bounds of a worktree live in `rt-review-loop.json` inside that
 worktree's git directory, so they are never committed and two worktrees never share them. The
-chapter is `docs/manual/10-local-coding.md`, with its flowchart source under
-`docs/manual/diagrams/`. See [chapter 10](10-local-coding.md).
+chapter is `docs/manual/11-local-coding.md`, with its flowchart source under
+`docs/manual/diagrams/`. See [chapter 11](11-local-coding.md).
 <!-- local-coding:end -->
 
 ## Machine-local files (never committed)
 
-The git privacy guard (`.claude/hooks/git/`, see [13-security-audit.md](13-security-audit.md)
+The git privacy guard (`.claude/hooks/git/`, see [15-security-audit.md](15-security-audit.md)
 and [`security.md`](../../.claude/rules/security.md)) is installed from repo-tracked source
 into three places, neither of the latter two part of the repository tree above:
 
@@ -76,4 +76,4 @@ into three places, neither of the latter two part of the repository tree above:
     shorter than the configured length floor).
 
 ---
-[← 15 Maintenance, checks and CI](15-maintenance.md) | [Table of contents](../../README.md) | [17 PCB design →](17-pcb-design.md)
+[← 17 ThesisTracker integration](17-thesistracker-integration.md) | [Table of contents](../../README.md)

@@ -21,7 +21,7 @@ single source of truth. Never edit a mirror by hand, since the next run overwrit
 | OpenCode | `.opencode/agent/<name>.md` | repo | `.claude/agents/` | Full body, no size ceiling, so it never degrades to a stub |
 | Continue | `.continue/rules/researchtools.md` | repo | `.claude/rules/` | One rule that points at the canonical files and the routing table |
 | Aider | `CONVENTIONS.md` | repo | the repository | A pointer paragraph. Created once and never overwritten, so your edits survive |
-| Aider, nightly pipeline | `.claude/skills/aider-setup/config/rules.md` | repo | `.claude/rules/` | Not made by `install.ps1`: the kit build regenerates it from the rules, see [chapter 11](11-aider-pipeline.md) |
+| Aider, nightly pipeline | `.claude/skills/aider-setup/config/rules.md` | repo | `.claude/rules/` | Not made by `install.ps1`: the kit build regenerates it from the rules, see [chapter 14](14-aider-pipeline.md) |
 | Any `AGENTS.md` reader | `AGENTS.md` | repo | the repository | The distilled master: agent list, routing pointer, skills examples, cross-cutting rules. Readers include Hermes Agent, OpenHuman and Codex |
 | Codex, skills | `.agents/skills/<name>/SKILL.md` | repo | `.claude/skills/` | Codex is the only harness with a native skill convention. Each mirror holds the frontmatter only, since the description is the whole trigger surface. Descriptions are trimmed to whole sentences to fit Codex's skill-list budget, and the state is reported `trimmed` |
 | Codex, nested instructions | `.claude/skills/AGENTS.md` | repo | the repository | Adds the script-surface rule for work inside the skills tree. Codex drops the deepest file when the chain exceeds its size cap |
@@ -49,7 +49,7 @@ skill-list budget), and the empty cells that are deliberate. Both `install.ps1` 
 collector read it, so an empty cell is judged against intent: a by-design skip is never reported as a
 loss, and a lost cell is never softened into by-design. The matrix has eight states: `ok`, `stubbed`,
 `trimmed`, `lost`, `by-design`, `orphan`, `stale` and `unknown`. The page that shows it is in
-[chapter 12](12-rt-observe-dashboard.md).
+[chapter 10](10-rt-observe-dashboard.md).
 
 ## Session adapters
 
@@ -66,4 +66,4 @@ A mirror is added in `mirror-policy.json` and in `install.ps1` together, with a 
 `Architecture.md` stay the discovery path for every harness that has no native skill convention.
 
 ---
-[← 08 Rules and conventions](08-rules.md) | [Table of contents](../../README.md) | [10 Local coding and the cloud →](10-local-coding.md)
+[← 08 Rules and conventions](08-rules.md) | [Table of contents](../../README.md) | [10 rt-observe & dashboard →](10-rt-observe-dashboard.md)

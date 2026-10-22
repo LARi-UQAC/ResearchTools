@@ -45,7 +45,7 @@ and log what they did - and to ask it a question out loud: hold P, and a local m
 from the toolkit's own memory, spoken back, nothing leaving the machine. The PCB and 3D CAD
 chapters are placeholders.
 
-[See it in action →](manual/12-rt-observe-dashboard.md) · [PCB →](manual/17-pcb-design.md) · [3D CAD →](manual/18-cad-design.md)
+[See it in action →](manual/10-rt-observe-dashboard.md) · [PCB →](manual/12-pcb-design.md) · [3D CAD →](manual/13-cad-design.md)
 
 </div>
 
@@ -58,7 +58,7 @@ cloud — a design/plan/code/review loop that keeps token cost down. Which model
 measured, not guessed: `opt-local-vram-llm` tunes the LLM, `opt-local-stt-vram` scores
 speech-to-text models beside it.
 
-[Agents →](manual/05-agents.md) · [Local coding and the cloud →](manual/10-local-coding.md)
+[Agents →](manual/05-agents.md) · [Local coding and the cloud →](manual/11-local-coding.md)
 
 </div>
 
@@ -129,15 +129,15 @@ The manual lives in [`manual/`](manual/00-purpose.md), one chapter per topic:
 | 07 | [Hooks and guards](manual/07-hooks.md) |
 | 08 | [Rules and conventions](manual/08-rules.md) |
 | 09 | [Harnesses and mirrors](manual/09-harnesses.md) |
-| 10 | [Local coding and the cloud](manual/10-local-coding.md) |
-| 11 | [Aider nightly pipeline](manual/11-aider-pipeline.md) |
-| 12 | [rt-observe & dashboard](manual/12-rt-observe-dashboard.md) |
-| 13 | [Security audit and guards](manual/13-security-audit.md) |
-| 14 | [ThesisTracker integration](manual/14-thesistracker-integration.md) |
-| 15 | [Maintenance, checks and CI](manual/15-maintenance.md) |
-| 16 | [File locations](manual/16-file-locations.md) |
-| 17 | [PCB design](manual/17-pcb-design.md) |
-| 18 | [3D CAD design](manual/18-cad-design.md) |
+| 10 | [rt-observe & dashboard](manual/10-rt-observe-dashboard.md) |
+| 11 | [Local coding and the cloud](manual/11-local-coding.md) |
+| 12 | [PCB design, mixed signals](manual/12-pcb-design.md) |
+| 13 | [3D CAD design, CNC, 3D printing](manual/13-cad-design.md) |
+| 14 | [Aider nightly pipeline](manual/14-aider-pipeline.md) |
+| 15 | [Security audit and guards](manual/15-security-audit.md) |
+| 16 | [Maintenance, checks and CI](manual/16-maintenance.md) |
+| 17 | [ThesisTracker integration](manual/17-thesistracker-integration.md) |
+| 18 | [File locations](manual/18-file-locations.md) |
 
 ## Deep-dive references
 

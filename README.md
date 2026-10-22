@@ -63,7 +63,7 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 | Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
 | Receive a thesis, an article or a talk as a PDF with no LaTeX source and re-type it before it can be audited | `pdf2md` converts it with mineru to markdown (the UQAC thesis layout, or one document for an article or a talk) and measures what the conversion lost against a second reader of the PDF |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
-| Know whether a coding task should run on the cloud, through `local-coder`, through aider, or on a switched session | A plan header names `executor`, `tier` and the review bounds, `plan_contract.py` checks it, two hooks enforce it, and the process has a flowchart ([chapter 12](docs/manual/10-local-coding.md)) |
+| Know whether a coding task should run on the cloud, through `local-coder`, through aider, or on a switched session | A plan header names `executor`, `tier` and the review bounds, `plan_contract.py` checks it, two hooks enforce it, and the process has a flowchart ([chapter 11](docs/manual/11-local-coding.md)) |
 | Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
 | Catch a committed secret but not a committed real name (a student, a co-author, an account path) | A global git privacy guard (pre-commit/pre-push, every repository) scans the diff against both betterleaks' secret rules and a machine-local deny list of real names, extended for each new student and never leaving the machine |
 
@@ -79,7 +79,7 @@ service. A push-to-talk voice panel (hold P) lets you ask it a question about th
 own memory out loud, answered by the local LLM through the vault daemon's ask queue and spoken
 back in two parts: the vault answer first, then a code-structure note from the matched
 project's own `graphify` graph when its vault folder names a `repo:`. Full walkthrough:
-[docs/manual/12-rt-observe-dashboard.md](docs/manual/12-rt-observe-dashboard.md).
+[docs/manual/10-rt-observe-dashboard.md](docs/manual/10-rt-observe-dashboard.md).
 
 ## Quickstart
 
@@ -122,7 +122,7 @@ graph LR
 |---|---|---|
 | 00 | [Purpose & overview](docs/manual/00-purpose.md) | Mission, 2026 roadmap, manual conventions |
 | 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the install steps, updating a machine |
-| 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys and other environment variables |
+| 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys, and every Python library of `.venv-skills` and `.venv-docs` |
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx`, switching the session identity |
 | 04 | [Commands](docs/manual/04-commands.md) | All slash commands |
 | 05 | [Agents](docs/manual/05-agents.md) | All agents, local delegation, loop engineering |
@@ -130,20 +130,20 @@ graph LR
 | 07 | [Hooks and guards](docs/manual/07-hooks.md) | Every hook the toolkit declares: guards before a tool call, scanners, session hooks, git hooks |
 | 08 | [Rules and conventions](docs/manual/08-rules.md) | The rules R0 to R38 and the five files that hold them |
 | 09 | [Harnesses and mirrors](docs/manual/09-harnesses.md) | Claude Code, Copilot, OpenCode, Continue, Aider and Codex: what each receives, `mirror-policy.json`, session adapters |
-| 10 | [Local coding and the cloud](docs/manual/10-local-coding.md) | Which executor runs a coding task (cloud, `local-coder`, aider, a switched session), the plan header, review bounds, size ceilings, the flowchart |
-| 11 | [Aider nightly pipeline](docs/manual/11-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
-| 12 | [rt-observe & dashboard](docs/manual/12-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard`, the voice panel |
-| 13 | [Security audit and guards](docs/manual/13-security-audit.md) | SkillSpector findings, the global git privacy guard (deny list of real names + secret rules, every repo), the optional billed pull-request review workflow |
-| 14 | [ThesisTracker integration](docs/manual/14-thesistracker-integration.md) | The sibling repository, `NEW_ARCHITECTURE.md`, the `form-service` boundary |
-| 15 | [Maintenance, checks and CI](docs/manual/15-maintenance.md) | The green stamp, `run-all-checks`, `finish-branch`, the verifiers, the workflows, publishing this site |
-| 16 | [File locations](docs/manual/16-file-locations.md) | Directory tree summary, machine-local files |
-| 17 | [PCB design](docs/manual/17-pcb-design.md) | Placeholder, to be written |
-| 18 | [3D CAD design](docs/manual/18-cad-design.md) | Placeholder, to be written |
+| 10 | [rt-observe & dashboard](docs/manual/10-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard`, the voice panel |
+| 11 | [Local coding and the cloud](docs/manual/11-local-coding.md) | Which executor runs a coding task (cloud, `local-coder`, aider, a switched session), the plan header, review bounds, size ceilings, the flowchart |
+| 12 | [PCB design, mixed signals](docs/manual/12-pcb-design.md) | Placeholder, to be written |
+| 13 | [3D CAD design, CNC, 3D printing](docs/manual/13-cad-design.md) | Placeholder, to be written |
+| 14 | [Aider nightly pipeline](docs/manual/14-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
+| 15 | [Security audit and guards](docs/manual/15-security-audit.md) | SkillSpector scan of all 25 skills, the global git privacy guard (deny list of real names + secret rules, every repo), the optional billed pull-request review workflow |
+| 16 | [Maintenance, checks and CI](docs/manual/16-maintenance.md) | The green stamp, `run-all-checks`, `finish-branch`, the verifiers, the workflows, publishing this site |
+| 17 | [ThesisTracker integration](docs/manual/17-thesistracker-integration.md) | The sibling repository, `NEW_ARCHITECTURE.md`, the `form-service` boundary |
+| 18 | [File locations](docs/manual/18-file-locations.md) | Directory tree summary, machine-local files |
 
 Relationship diagrams and the 7-layer execution architecture for **this** repository:
 [Architecture.md](Architecture.md). The architecture **shared with the sibling repository
 ThesisTracker** (form catalogue, twenty-two-unit delivery plan) is a separate file,
-[NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 14 above; do not confuse the two.
+[NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 17 above; do not confuse the two.
 
 ## Supported harnesses
 

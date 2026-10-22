@@ -88,7 +88,7 @@ EXPLICIT_INSTALL_PHRASE = "outside ResearchTools"
 GREEN_STAMP_PHRASES = (".rt-green.json", "not author")
 FLOOR_AND_FALLBACK_FILES = (
     ".claude/CLAUDE.md", ".claude/rules/workflows.md", "install.ps1",
-    "docs/authoring-and-mirrors.md", "docs/manual/04-skills.md",
+    "docs/authoring-and-mirrors.md", "docs/manual/06-skills.md",
 )
 # .claude/CLAUDE.md and workflows.md each carry a SECOND, unrelated OWNER UNKNOWN /
 # "inside ResearchTools" source: the "Improving ResearchTools from another folder"

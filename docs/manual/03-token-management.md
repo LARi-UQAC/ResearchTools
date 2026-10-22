@@ -63,4 +63,4 @@ tag is then registered as the script's default with `model_resolver.py --adopt-r
 | `/compact` | After `/ctx` reports moderate/high pressure |
 
 ---
-[← 02 Profiles & environment](02-profiles.md) | [Table of contents](../../README.md) | [04 Skills →](04-skills.md)
+[← 02 Profiles & environment](02-profiles.md) | [Table of contents](../../README.md) | [04 Commands →](04-commands.md)

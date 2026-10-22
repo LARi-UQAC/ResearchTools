@@ -1,7 +1,7 @@
 # Aider Nightly Pipeline & Student Kit
 
-Chapter 06 of the ResearchTools manual. Back to [table of contents](../../README.md).
-Skill row: [04-skills.md](04-skills.md). Local-delegation counterpart: [10-agents.md](10-agents.md).
+Chapter 11 of the ResearchTools manual. Back to [table of contents](../../README.md).
+Skill row: [06-skills.md](06-skills.md). Local-delegation counterpart: [05-agents.md](05-agents.md).
 
 ## Overview
 
@@ -53,8 +53,8 @@ whose writer and reviewer models are chosen in its own configuration. The review
 R35 do not govern aider's internal writer-reviewer loop. They govern the `/code-review` and
 `/security-review` run by the calling harness on the branch the night pushes, before any pull
 request, and the night never merges. During a run the Real-Time tab of the dashboard shows the
-run's fixed cost and task budget ([chapter 07](07-rt-observe-dashboard.md)). The choice between
-the two executors is described in [chapter 12](12-local-coding.md).
+run's fixed cost and task budget ([chapter 12](12-rt-observe-dashboard.md)). The choice between
+the two executors is described in [chapter 10](10-local-coding.md).
 <!-- local-coding:end -->
 
 ## The nightly run
@@ -82,4 +82,4 @@ decision for the aider kit. Setup, tuning, and rebuilding the student-facing kit
 [.claude/skills/aider-setup/SKILL.md](../../.claude/skills/aider-setup/SKILL.md) and its `MANUAL.md`.
 
 ---
-[← 05 Security audit](05-security-audit.md) | [Table of contents](../../README.md) | [07 rt-observe & dashboard →](07-rt-observe-dashboard.md)
+[← 10 Local coding and the cloud](10-local-coding.md) | [Table of contents](../../README.md) | [12 rt-observe & dashboard →](12-rt-observe-dashboard.md)

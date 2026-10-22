@@ -1,44 +1,81 @@
-# Security Audit (SkillSpector)
+# Security audit and guards
 
-Chapter 05 of the ResearchTools manual. Back to [table of contents](../../README.md).
+Chapter 13 of the ResearchTools manual. Back to [table of contents](../../README.md).
 
-All eight skills under `.claude/skills/` were scanned with **SkillSpector v2.2.3** in
-static-only mode (`skillspector scan <skill> --no-llm`) on **2026-06-18**, every dependency
-finding cross-checked against `pip-audit`.
+Every skill under `.claude/skills/` is scanned with **SkillSpector v2.2.3** in static-only mode
+(`skillspector scan <skill> --no-llm`), and every dependency finding is cross-checked against
+`pip-audit`. The scan is rerun by hand: nothing schedules it.
 
-**True positives — corrected**
+## Skill scan of 2026-10-22 (all 25 skills)
 
-- **LP3 (missing permission declaration):** added to the frontmatter of `scopus`, `deliberation`,
-  `extract-statistic`, `scholar-evaluation`, `word2latex`, and `drawio2tikz` a per-skill
-  `permissions:` list declaring exactly the capabilities each skill's scripts use (e.g. `scopus`
-  → `[env, read, write, network]`), plus an `allowed-tools: [Read, Write, Edit, Bash]` runtime
-  restriction. Re-scan confirms LP3 cleared with no LP1/LP4 regression.
-- **SC1 (unpinned dependencies):** pinned `>=` to exact `==` versions in
-  `scopus/scripts/requirements.txt` (requests, google-genai, openai) and
-  `extract-statistic/scripts/requirements.txt` (pymupdf4llm, pymupdf, docling, markitdown),
-  using versions confirmed clean by `pip-audit`.
+The first scan, on 2026-06-18, covered the eight skills that existed then. The repository now holds
+25, so the scan was rerun on all of them on 2026-10-22. Result: 289 findings, 3 critical, 135 high, 136 medium and 15 low.
 
-**False positives — reviewed and ignored**
+| Skill | Findings | Critical | High | Medium | Low | SkillSpector verdict |
+|---|---|---|---|---|---|---|
+| `aider-setup` | 56 | 0 | 39 | 17 | 0 | DO_NOT_INSTALL |
+| `deliberation` | 13 | 0 | 5 | 5 | 3 | DO_NOT_INSTALL |
+| `drawio2tikz` | 0 | 0 | 0 | 0 | 0 | SAFE |
+| `extract-contributions` | 1 | 0 | 0 | 1 | 0 | SAFE |
+| `extract-futureworks` | 0 | 0 | 0 | 0 | 0 | SAFE |
+| `extract-paper-idea` | 2 | 0 | 0 | 2 | 0 | CAUTION |
+| `extract-statistic` | 7 | 0 | 6 | 1 | 0 | DO_NOT_INSTALL |
+| `form-service` | 2 | 0 | 0 | 1 | 1 | SAFE |
+| `geolocalisation` | 9 | 1 | 6 | 1 | 1 | DO_NOT_INSTALL |
+| `latex-hygiene` | 4 | 0 | 2 | 2 | 0 | DO_NOT_INSTALL |
+| `loop-engineer` | 29 | 1 | 14 | 11 | 3 | DO_NOT_INSTALL |
+| `narrative-cv` | 5 | 0 | 1 | 1 | 3 | DO_NOT_INSTALL |
+| `obsidian-cli` | 28 | 0 | 6 | 22 | 0 | DO_NOT_INSTALL |
+| `opt-local-stt-vram` | 4 | 0 | 3 | 0 | 1 | DO_NOT_INSTALL |
+| `opt-local-vram-llm` | 10 | 0 | 5 | 5 | 0 | DO_NOT_INSTALL |
+| `paper2talk` | 21 | 0 | 11 | 9 | 1 | DO_NOT_INSTALL |
+| `pdf2md` | 8 | 0 | 6 | 2 | 0 | DO_NOT_INSTALL |
+| `professor-expertise-finder` | 4 | 0 | 0 | 3 | 1 | CAUTION |
+| `recommendation-letter` | 3 | 0 | 1 | 2 | 0 | DO_NOT_INSTALL |
+| `rt-observe` | 25 | 0 | 8 | 16 | 1 | DO_NOT_INSTALL |
+| `scholar-evaluation` | 0 | 0 | 0 | 0 | 0 | SAFE |
+| `scientific-writing` | 1 | 0 | 0 | 1 | 0 | SAFE |
+| `scopus` | 41 | 1 | 14 | 26 | 0 | DO_NOT_INSTALL |
+| `word2latex` | 0 | 0 | 0 | 0 | 0 | SAFE |
+| `wp-portfolio-sync` | 16 | 0 | 8 | 8 | 0 | DO_NOT_INSTALL |
 
-- **SC4 (vulnerable dependency):** flagged by package name only; `pip-audit` resolves every
-  declared `>=` floor to a patched release (`No known vulnerabilities found`).
-- **E1 / E2 (external transmission / env harvesting):** skills reading their own configured API
-  keys and querying their own research APIs (Elsevier, Unpaywall, Semantic Scholar).
-- **TT2 (taint flow):** the https-only, redirect-disabled PDF download in `download_pdf.py`.
-- **PE3 / RA2 / EA1 / EA2 / P6:** keyword matches inside docstrings/markdown (e.g. `SNIPList`,
-  the `GITHUB_TOKEN` doc line, a `**…tool:**` bullet, a DOI-workflow description, a returned
-  local prompt string).
-- **AST4 (subprocess):** the test harness invoking the skill script with a fixed argument list.
+Seven skills are rated SAFE, two CAUTION and sixteen DO_NOT_INSTALL. That last verdict is a measure
+of how many patterns matched, not of intent. A static scan with no model cannot tell that a skill
+runs a subprocess, reads its own API key or writes a file **because that is its job**. The findings
+fall into two groups.
 
-`scientific-writing` and `extract-futureworks` required no changes.
+**Expected by design, judged by rule family.** Each family was judged from its rule name and the
+purpose of the skill, as in June. The 289 findings were not each opened one by one, so a real defect
+hiding inside a family is not excluded. `AST3`, `AST4` and `AST7` (a subprocess, a dynamic
+import or `getattr`) are the scripts and their tests. `E1`, `E2`, `TT2` and `TT3` are a skill reading
+its own configured key and querying its own research API: the critical `TT3` on `scopus` is the
+Elsevier key sent as a header to Elsevier. `RA1`, `RA2`, `EA1` to `EA4`, `OH1`, `OH3`, `P2`, `P6`,
+`PE3`, `TM1`, `TM3` and `YR1` or `YR4` match words in documentation prose and prompts, or the
+`aider-setup`, `rt-observe` and `loop-engineer` code that drives other processes. The two critical
+`SC4` (`pillow` in `geolocalisation`, `claude-agent-sdk` in `loop-engineer`) flag a package by name,
+and `pip-audit` reports no known vulnerability for either file.
 
-The `geolocalisation` skill was added after this scan (2026-07) and should be scanned on the
-next pass. Its declared dependencies pin exact/floor versions verified with `pip-audit`:
-`matplotlib==3.9.2`, `pillow>=12.3.0` (fixes PYSEC-2026-2253..2257), and the optional
-`folium==0.17.0` / `PyMuPDF==1.27.2`. It declares `permissions: [read]` and
-`allowed-tools: [Read, Write, Edit, Bash]`, reuses the scopus skill's network I/O through
-`download_pdf.py` rather than opening its own, and fetches only public-domain Natural Earth
-basemaps (TLS-verified, cached).
+**Real, open, and not fixed by the documentation change that recorded them.**
+
+| Finding | Where | Measured |
+|---|---|---|
+| `LP3`, no permission declaration in the skill frontmatter | `extract-contributions`, `extract-paper-idea`, `form-service`, `latex-hygiene`, `obsidian-cli`, `professor-expertise-finder`, `recommendation-letter`, `rt-observe`, `wp-portfolio-sync` | the June scan fixed this for six older skills by adding `permissions:` and `allowed-tools:`, and these nine were added later |
+| Advisories on `pypdf` 6.19.0, fixed in 6.21.1 | `form-service`, `narrative-cv`, `paper2talk` | `pip-audit` on 2026-10-22 |
+| Advisories on `pillow` 12.3.0, fixed in 13.0.0 | `extract-statistic`, `pdf2md` | `pip-audit` on 2026-10-22 |
+| Advisories on `docling` and `docling-slim` 2.103.0 | `extract-statistic` | `pip-audit` on 2026-10-22 |
+| `SC1`, unpinned `claude-agent-sdk>=0.1.0` | `loop-engineer` | the requirements file itself asks for an exact pin after the first install |
+
+The dependency advisories appeared after the last pins (2026-10-16), which is why a pinned and
+clean requirements file goes stale without any edit. Raising a pin is a change to code that needs the
+offline suite, so it is a separate change from this one.
+
+The June scan found the same kinds of false positive and its true positives were corrected then:
+the `permissions:` declarations, and exact `==` pins in the `scopus` and `extract-statistic`
+requirements. `geolocalisation` declares `permissions: [read]` and fetches only public-domain
+Natural Earth basemaps, TLS-verified and cached.
+
+The security hooks that run in every session (secret scanning, vault access, prompt-injection
+warnings) are described in [chapter 07](07-hooks.md).
 
 ## Worktree link guard (`git worktree remove`)
 
@@ -110,7 +147,7 @@ Full detail, including the three settings (`privacyguard.enabled`,
 `privacyguard.absolutePaths`, `privacyguard.minTermLength`) and every installed file:
 [01-installation.md, Step 6](01-installation.md) and
 [`.claude/rules/security.md`](../../.claude/rules/security.md)'s "Personal-data guard" section.
-File locations: [11-file-locations.md](11-file-locations.md).
+File locations: [16-file-locations.md](16-file-locations.md).
 
 ## Automated pull-request review (billed, optional)
 
@@ -169,4 +206,4 @@ Full detail, with every finding and decision of the review that shaped it:
 how to set the same workflow up in another repository.
 
 ---
-[← 04 Skills](04-skills.md) | [Table of contents](../../README.md) | [06 Aider nightly pipeline →](06-aider-pipeline.md)
+[← 12 rt-observe & dashboard](12-rt-observe-dashboard.md) | [Table of contents](../../README.md) | [14 ThesisTracker integration →](14-thesistracker-integration.md)

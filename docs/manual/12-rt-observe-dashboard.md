@@ -1,7 +1,7 @@
 # rt-observe & the Toolkit Dashboard
 
-Chapter 07 of the ResearchTools manual. Back to [table of contents](../../README.md).
-Skill row: [04-skills.md](04-skills.md). Command summary: [08-commands.md](08-commands.md).
+Chapter 12 of the ResearchTools manual. Back to [table of contents](../../README.md).
+Skill row: [06-skills.md](06-skills.md). Command summary: [04-commands.md](04-commands.md).
 
 ## What it answers
 
@@ -76,7 +76,7 @@ model, window, call and token totals and whether it is active. `rounds`, read by
 `collect_rounds.py`, lists each plan of a round folder with its executor, tier and task counts,
 and the review loop of every worktree as rounds used of the maximum. The Real-Time tab draws a
 lane and a token ring for each active bridge role, and shows an aider run's fixed cost and task
-budget in the hover. See [chapter 12](12-local-coding.md).
+budget in the hover. See [chapter 10](10-local-coding.md).
 <!-- local-coding:end -->
 
 ## The `/rt-dashboard` command
@@ -101,4 +101,4 @@ The command is a convenience, never the only way in. `rt-dashboard.ps1`, `rt-das
 **File:** `.claude/commands/rt-dashboard.md`
 
 ---
-[← 06 Aider nightly pipeline](06-aider-pipeline.md) | [Table of contents](../../README.md) | [08 Commands →](08-commands.md)
+[← 11 Aider nightly pipeline](11-aider-pipeline.md) | [Table of contents](../../README.md) | [13 Security audit and guards →](13-security-audit.md)

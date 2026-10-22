@@ -8,7 +8,7 @@ labels: bug
 ## Which piece
 
 Skill / agent / command / hook name, and where it's documented (e.g.
-`docs/manual/04-skills.md`, an agent's own `.claude/agents/<name>.md`):
+`docs/manual/06-skills.md`, an agent's own `.claude/agents/<name>.md`):
 
 ## What happened
 

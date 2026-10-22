@@ -10,6 +10,18 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Added
+- Manual: four new chapters, `07 Hooks and guards`, `08 Rules and conventions`, `09 Harnesses and
+  mirrors` and `15 Maintenance, checks and CI`, and two placeholder chapters, `17 PCB design` and
+  `18 3D CAD design`. The chapters are reordered so that commands, agents and skills come first
+  (04 Commands, 05 Agents, 06 Skills), and the chapter files are renamed to match. The links in
+  `README.md`, `docs/index.md`, `mkdocs.yml` and four documentation tests follow.
+- Manual: the SkillSpector scan now covers all 25 skills (289 findings, rated by rule family in
+  chapter 13), and the open findings it confirmed are listed there.
+- Manual (corrections): the environment-variable table of chapter 02 no longer documents the retired Gemini 2.0
+  Flash and GitHub Models routes, and lists `COPILOT_TOKEN`, `GH_OAUTH_TOKEN` and the other
+  variables the toolkit reads. Chapter 05 no longer documents the unwired `--loop --budget`
+  option, chapter 06 no longer gives a `/drawio2tikz` command that does not exist, and the counts
+  in chapters 00 and 16 are 25 skills, 21 agents and 32 commands.
 - `.\setup.ps1 -Update` updates an existing installation in one command. It asks the domain
   profile, whether to install GitHub Copilot at user level and whether to run the offline suite
   first, then runs the global configuration with the hook update, the Claude Code links,

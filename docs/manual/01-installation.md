@@ -202,7 +202,7 @@ the VS Code user profile, making them available in every workspace:
 `-Profile <name>` or answer the interactive prompt; non-interactive runs keep the
 current default (`engineering`).
 
-Details in [Using the agents outside Claude Code](10-agents.md#using-the-agents-outside-claude-code).
+Every target and the limits that stub or trim a mirror are in [chapter 09](09-harnesses.md). The agent side is in [Using the agents outside Claude Code](05-agents.md#using-the-agents-outside-claude-code).
 
 ## Step 5 — Python environment for the offline test suite (optional)
 

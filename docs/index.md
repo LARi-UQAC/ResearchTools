@@ -32,19 +32,20 @@ does.</p>
 Literature reviews, paper and thesis audits, BibTeX cleanup, reviewer responses, submission
 packages — a ScholarEval score before the reviewer ever sees it.
 
-[Skills →](manual/04-skills.md)
+[Skills →](manual/06-skills.md)
 
 </div>
 
 <div class="rt-feature-card" markdown>
 
-### 🛠️ Software & hardware review
+### 🛠️ Software review, hardware to come
 
-Code, PCB, and 3D CAD design review, with the `rt-observe` dashboard to watch the agents work
+Code design with a bounded review loop, and the `rt-observe` dashboard to watch the agents work
 and log what they did - and to ask it a question out loud: hold P, and a local model answers
-from the toolkit's own memory, spoken back, nothing leaving the machine.
+from the toolkit's own memory, spoken back, nothing leaving the machine. The PCB and 3D CAD
+chapters are placeholders.
 
-[See it in action →](manual/07-rt-observe-dashboard.md)
+[See it in action →](manual/12-rt-observe-dashboard.md) · [PCB →](manual/17-pcb-design.md) · [3D CAD →](manual/18-cad-design.md)
 
 </div>
 
@@ -57,7 +58,7 @@ cloud — a design/plan/code/review loop that keeps token cost down. Which model
 measured, not guessed: `opt-local-vram-llm` tunes the LLM, `opt-local-stt-vram` scores
 speech-to-text models beside it.
 
-[Agents →](manual/10-agents.md) · [Local coding and the cloud →](manual/12-local-coding.md)
+[Agents →](manual/05-agents.md) · [Local coding and the cloud →](manual/10-local-coding.md)
 
 </div>
 
@@ -108,7 +109,7 @@ MkDocs only serves `docs/`, so the build hook `scripts/docs/mkdocs_hooks.py` sen
 link to its page on GitHub (`blob` or `tree` on the branch named by `extra.docs_source_ref` in
 `mkdocs.yml`, currently `main`), which means those links only resolve once the change is on
 that branch. Heading ids use GitHub's slug algorithm (`toc.slugify` in `mkdocs.yml`), so the
-double-dash anchors of `04-skills.md` jump correctly (a repeated heading still gets MkDocs's `_1`
+double-dash anchors of `06-skills.md` jump correctly (a repeated heading still gets MkDocs's `_1`
 suffix where GitHub writes `-1`). `mkdocs build --strict` is clean, and
 fails on a dead link or a dead anchor.
 
@@ -122,15 +123,21 @@ The manual lives in [`manual/`](manual/00-purpose.md), one chapter per topic:
 | 01 | [Installation](manual/01-installation.md) |
 | 02 | [Profiles & environment](manual/02-profiles.md) |
 | 03 | [Token management](manual/03-token-management.md) |
-| 04 | [Skills](manual/04-skills.md) |
-| 05 | [Security audit](manual/05-security-audit.md) |
-| 06 | [Aider nightly pipeline](manual/06-aider-pipeline.md) |
-| 07 | [rt-observe & dashboard](manual/07-rt-observe-dashboard.md) |
-| 08 | [Commands](manual/08-commands.md) |
-| 09 | [ThesisTracker integration](manual/09-thesistracker-integration.md) |
-| 10 | [Agents](manual/10-agents.md) |
-| 11 | [File locations](manual/11-file-locations.md) |
-| 12 | [Local coding and the cloud](manual/12-local-coding.md) |
+| 04 | [Commands](manual/04-commands.md) |
+| 05 | [Agents](manual/05-agents.md) |
+| 06 | [Skills](manual/06-skills.md) |
+| 07 | [Hooks and guards](manual/07-hooks.md) |
+| 08 | [Rules and conventions](manual/08-rules.md) |
+| 09 | [Harnesses and mirrors](manual/09-harnesses.md) |
+| 10 | [Local coding and the cloud](manual/10-local-coding.md) |
+| 11 | [Aider nightly pipeline](manual/11-aider-pipeline.md) |
+| 12 | [rt-observe & dashboard](manual/12-rt-observe-dashboard.md) |
+| 13 | [Security audit and guards](manual/13-security-audit.md) |
+| 14 | [ThesisTracker integration](manual/14-thesistracker-integration.md) |
+| 15 | [Maintenance, checks and CI](manual/15-maintenance.md) |
+| 16 | [File locations](manual/16-file-locations.md) |
+| 17 | [PCB design](manual/17-pcb-design.md) |
+| 18 | [3D CAD design](manual/18-cad-design.md) |
 
 ## Deep-dive references
 

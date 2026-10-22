@@ -1,9 +1,9 @@
 # Agents
 
-Chapter 10 of the ResearchTools manual. Back to [table of contents](../../README.md).
+Chapter 05 of the ResearchTools manual. Back to [table of contents](../../README.md).
 
 Agents are specialists Claude delegates to automatically based on context, or explicitly on
-request ("use the `scopus-auditor` agent to…"). Twenty ship in this repo; most back a slash
+request ("use the `scopus-auditor` agent to…"). Twenty-one ship in this repo; most back a slash
 command. Two of them (`local-writer`, `local-coder`) are local-delegation agents: a cheap
 cloud wrapper that drives a local Ollama model over a Bash bridge (see "Local delegation").
 Two are loop orchestrators: `authoring-loop` (ScholarEval-gated writing loop) and the
@@ -36,8 +36,8 @@ the single source of truth; per-tool mirrors are generated from them (see
 | `authoring-loop` | ScholarEval-gated authoring loop: define subject -> author (Fable 5) -> audit with `scholar-evaluation` (Sonnet/Haiku) -> loop to `min_score` or `max_budget` -> record learnings to memory via `local-writer`. Authoring counterpart of the `loop-engineer` code loop | by name / "improve this to a ScholarEval target under a budget" | `.claude/agents/authoring-loop.md` |
 | `abstract-writer` | Extract a paper's own content (`extract-paper-idea` skill) and draft or refresh its abstract, grounded in its own contribution/method/results/limitations rather than a paraphrase; for a UQAC thesis, drafts the Résumé (French) + Abstract (English) pair from the same extraction. No citations, no Scopus, no deliberation. Self-checks against `composition_rules.md` + the `latex-hygiene` AI-usage scanner; confirms before overwriting existing content | `/abstract` | `.claude/agents/abstract-writer.md` |
 | `latex-writer` | Bilingual LaTeX authoring: papers (IEEE/Springer/Elsevier), Beamer slides, TiKZ diagrams, thesis | by context (writing) | `.claude/agents/latex-writer.md` |
-| `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via the resolver's writer-role model over a Bash bridge; NOT LaTeX text authoring | by context / by name | `.claude/agents/local-writer.md` |
-| `local-coder` | Local code generation against a spec/failing test, refactor snippets, scaffolds via the resolver's coder-role model over a Bash bridge; no state-changing git | by context / by name | `.claude/agents/local-coder.md` |
+| `local-writer` | High-token repetitive writing (docstrings, comments, Markdown docs, Obsidian summaries) via the resolver's writer-role model over a Bash bridge; NOT LaTeX text authoring. It is also the only agent allowed to read or write the two memories, the Obsidian vault (through the outbox) and the graphify code graph, enforced by `vault-access-guard.py` ([chapter 07](07-hooks.md)) | by context / by name | `.claude/agents/local-writer.md` |
+| `local-coder` | Executes ONE whole plan with a local model: the dispatch prompt carries a `PLAN: <path>` line whose header names `executor`, `tier` and the review bounds, and the agent generates each open step over the bridge, ticking `progress.md`. It audits nothing and runs no state-changing git; `local-coder-dispatch-guard.py` refuses a dispatch with no valid plan (rule R38, [chapter 10](10-local-coding.md)) | by context / by name | `.claude/agents/local-coder.md` |
 | `professor-expertise-finder` | Find university professors closest to a set of expertise keywords in a user-supplied location (never hardcoded): reuse or build a verified department/faculty-list table, rank with a /5 rubric grounded in Scopus-verified recent approved-publisher articles (`scopus` AU-ID + `publications` mode) and each article's own stated contribution (`extract-contributions`), never a guessed title match. Test mode, exclusion lists, an optional reviewers reference file, and a batch allocation mode (no-reuse, one-university-per-evaluator, conflict-of-interest, all enforced by script) | `/expertfinder` | `.claude/agents/professor-expertise-finder.md` |
 
 The four ScholarEval auditors (`scopus-auditor`, `paper-auditor`, `thesis-auditor`,
@@ -81,7 +81,7 @@ scientific and LaTeX redaction stays with `latex-writer` + `scientific-writing` 
 latest cloud Claude model.
 
 `aider-setup` is a second, separate local-coding lane that needs no Claude Code at all — how it
-differs from `local-coder` and the nightly run itself: chapter [06](06-aider-pipeline.md).
+differs from `local-coder` and the nightly run itself: chapter [11](11-aider-pipeline.md).
 
 ## Loop engineering (local-model dev loop)
 
@@ -92,10 +92,13 @@ orchestrator/judge, uses cheaper cloud tiers (Opus for plans, Sonnet for executi
 review) for the actions, and delegates code and comments to the local `local-coder` /
 `local-writer` agents so the heavy generation is free.
 
-Option contract: `--loop --budget <max_usd> --score <min_score> [--max-iters N]`. The default
+The loop is a procedure the session follows through `/loopdev [--score N] [--no-merge-pr]`, see
+[chapter 04](04-commands.md). The driver flag `--loop` of `loop_engineer.py` is not wired, so there
+is no `--budget` option: the stop bounds (`max_rounds`, `max_tokens`, `plateau`) are asked of the
+owner and declared with `loop_bounds.py init`, see [chapter 10](10-local-coding.md). The default
 stop gate is composite: tests green AND no CRITICAL/HIGH review findings AND aggregate score
-`>=` min_score (default 90); a literal 100 is opt-in. The loop also stops on the hard budget
-cap, the max-iterations cap, or a no-progress plateau. The score aggregates findings from the
+`>=` min_score (default 90); a literal 100 is opt-in. The loop also stops at the first bound
+reached. The score aggregates findings from the
 installed reviewers (`/code-review`, `/security-guidance`, `pr-review-toolkit`,
 `systematic-debugging`) plus the betterleaks / pip-audit hooks, with security as a hard floor
 (any CRITICAL fails the gate regardless of the aggregate). The final merge to a protected
@@ -147,18 +150,10 @@ files. Run it after adding or editing an agent, then commit the regenerated outp
 `-Personal` to also copy the Copilot agent profiles to `~/.copilot/agents/`, which makes
 them available to Copilot CLI in every project (re-run after agent edits to refresh).
 
-| Tool | Generated target | Notes |
-| --- | --- | --- |
-| GitHub Copilot (agents) | `.github/agents/<name>.agent.md` | Auto-discovered once on the default branch (GitHub.com agents panel, coding agent, VS Code, Copilot CLI `/agent` or `copilot --agent <name>`). Copilot caps agent prompts at 30,000 characters, so the five large agents ship as stubs that read the canonical file first. |
-| GitHub Copilot (commands) | `.github/prompts/<name>.prompt.md` | One prompt file per task command (13); invoke as `/<name>` in Copilot Chat. The Claude session modes (`concis`, `slim`, `focus`, `ctx`) are skipped. |
-| GitHub Copilot (rules) | `.github/instructions/<name>.instructions.md` | One per `.claude/rules/*.md`, applied to all files (`applyTo: "**"`), plus the master `.github/copilot-instructions.md` (mission, agent routing, skills pointer). |
-| GitHub Copilot (skills) | none needed | Skills are plain repo folders (`.claude/skills/<name>/SKILL.md`); Copilot agents read them directly, and the master instructions point there. |
-| OpenCode | `.opencode/agent/<name>.md` | Full body, `description` frontmatter. |
-| Continue | `.continue/rules/researchtools.md` | One rule pointing at the canonical files and routing table. |
-| Aider | `CONVENTIONS.md` | Pointer paragraph (created once, never overwritten). |
-| `AGENTS.md` readers (OpenHuman, Hermes Agent, Codex, and others) | `AGENTS.md` | Distilled master, regenerated on every run; agent list, routing pointer, skills examples, and the cross-cutting rules. |
-| Codex (skills) | `.agents/skills/<name>/SKILL.md` | Codex is the one harness with a native skill convention: it scans `.agents/skills` from the working directory up to the repo root. Each mirror is a **pointer** carrying only the frontmatter, since the description is the whole trigger surface and the body it then reads is the canonical file. Descriptions are trimmed to whole sentences to fit Codex's skill-list budget (8000 chars when the context window is unknown); over budget Codex shortens and then omits entries, so the trim is deliberate rather than left to chance. |
-| Codex (nested instructions) | `.claude/skills/AGENTS.md` | Codex concatenates one `AGENTS.md` per directory from the git root down to the working directory, later files overriding earlier ones, capped by `project_doc_max_bytes` (32 KiB default). This one adds the script-surface rule for sessions working inside the skills tree. |
+Every harness, the file each one receives, and the limits that stub or trim a mirror (Copilot caps
+an agent prompt at 30,000 characters, Codex budgets its skill list) are in
+[chapter 09](09-harnesses.md). Copilot prompts are generated for every task command, not only for
+the agents, so the count of prompt files follows the commands.
 
 For global availability in Claude Code (any working directory), `install-junctions.ps1`
 links each `.claude/agents/<name>.md` into `~/.claude/agents/` per file (symlink; hard-link
@@ -166,4 +161,4 @@ fallback when Developer Mode is off — re-run after a `git pull` that changes a
 Skills keep their per-folder junctions.
 
 ---
-[← 09 ThesisTracker integration](09-thesistracker-integration.md) | [Table of contents](../../README.md) | [11 File locations →](11-file-locations.md)
+[← 04 Commands](04-commands.md) | [Table of contents](../../README.md) | [06 Skills →](06-skills.md)

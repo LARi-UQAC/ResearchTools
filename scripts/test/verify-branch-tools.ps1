@@ -91,6 +91,11 @@ Check "ignored files in the worktree are refused, named, with the way out" (@($r
 $r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -WorktreePath "W" -IgnoredFiles @("!! debug.log") -DiscardIgnored $true `
         -MainHead "main" -MainBranch "main")
 Check "(control) -DiscardIgnored accepts them" (@($r).Count -eq 0)
+$r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -RemoteError "fatal: unable to access" -MainHead "main" -MainBranch "main")
+Check "an origin that cannot be queried is a refusal, never read as 'the branch is gone' (R8)" (@($r).Count -eq 1 -and $r[0] -like "*could not be queried*")
+Check "a plain branch name is accepted" ((Test-RtBranchName "feat/setup-update-hooks") -and (Test-RtBranchName "fix_1.2/x"))
+Check "a name starting with a dash is refused, git would read it as an option" (-not (Test-RtBranchName "-r") -and -not (Test-RtBranchName "--force") -and -not (Test-RtBranchName "-D"))
+Check "a name with .. or a trailing slash or .lock or a space is refused" (-not (Test-RtBranchName "a..b") -and -not (Test-RtBranchName "a/") -and -not (Test-RtBranchName "a.lock") -and -not (Test-RtBranchName "a b"))
 $r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -MainDirty @(" M README.md") -MainHead "main" -MainBranch "main")
 Check "a modified main clone is refused: the pull would rewrite another session's files (R32)" (@($r).Count -eq 1 -and $r[0] -like "*main clone has*modified*")
 
@@ -106,6 +111,29 @@ Check "a plans folder that is not there is not moved" (-not (@($np | Where-Objec
 Check "a plain folder name is accepted" (Test-RtPlansFolderName "2026-10-17-update")
 Check "a name with a separator or .. is refused (R24)" (-not (Test-RtPlansFolderName "..\x") -and -not (Test-RtPlansFolderName "a/b") -and -not (Test-RtPlansFolderName "..") -and -not (Test-RtPlansFolderName "C:x"))
 Check "an empty name is refused" (-not (Test-RtPlansFolderName ""))
+
+# --- the link scan: junctions are reported and never followed (R37) -------------------
+Write-Host ""
+Write-Host "  -- the link scan --" -ForegroundColor DarkCyan
+$Scan = Join-Path $Tmp "scan"
+$ScanTarget = Join-Path $Tmp "scan-target"
+New-Item -ItemType Directory -Path (Join-Path $Scan "plain\deeper"), (Join-Path $Scan "sub"), $ScanTarget -Force | Out-Null
+Write-Text (Join-Path $Scan "plain\deeper\file.txt") "x`n"
+Write-Text (Join-Path $ScanTarget "inside.txt") "x`n"
+& cmd /c mklink /J (Join-Path $Scan "lnk") $ScanTarget | Out-Null
+& cmd /c mklink /J (Join-Path $Scan "sub\lnk2") $ScanTarget | Out-Null
+& cmd /c mklink /J (Join-Path $ScanTarget "back") $Scan | Out-Null   # a cycle: target -> scan -> lnk -> target
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+$found = @(Find-RtReparsePoints -Root $Scan)
+$sw.Stop()
+Check "both junctions are found, at the top and nested" (@($found).Count -eq 2 -and ($found -contains (Join-Path $Scan "lnk")) -and ($found -contains (Join-Path $Scan "sub\lnk2")))
+Check "the target of a junction is not walked (the back link inside it is not listed)" (-not (@($found | Where-Object { $_ -like "*back*" }).Count))
+Check "a cycle of junctions ends at once" ($sw.Elapsed.TotalSeconds -lt 20)
+Check "(control) a tree with no link reports none" (@(Find-RtReparsePoints -Root (Join-Path $Scan "plain")).Count -eq 0)
+& cmd /c rmdir (Join-Path $ScanTarget "back") | Out-Null
+& cmd /c rmdir (Join-Path $Scan "lnk") | Out-Null
+& cmd /c rmdir (Join-Path $Scan "sub\lnk2") | Out-Null
+Check "the junction targets are intact after the scan and the cleanup" (Test-Path (Join-Path $ScanTarget "inside.txt"))
 
 # --- the check list -------------------------------------------------------------------
 Write-Host ""
@@ -294,6 +322,31 @@ try {
     $res = Invoke-Finish $c4 @("-Yes")
     Check "(refusal) an origin tip that moved after the merge exits 2" ($res.Code -eq 2 -and $res.Text -match "pushed after the merge")
     Check "(refusal) the remote branch and the worktree are still there" (Alive $c4)
+
+    # a branch name git would read as an option
+    $res = Invoke-Child (Join-Path $main "scripts\test\finish-branch.ps1") @("-Branch:-r") $main $bin
+    Check "(refusal) a branch name starting with a dash exits 2" ($res.Code -eq 2 -and $res.Text -match "not a branch this script will clean")
+
+    # origin cannot be queried: that is not the same as "the branch is gone"
+    $okUrl = Invoke-Git $main @("remote", "get-url", "origin")
+    Invoke-Git $main @("remote", "set-url", "origin", (Join-Path $Tmp "missing.git")) | Out-Null
+    $res = Invoke-Finish $c1 @("-Yes")
+    Invoke-Git $main @("remote", "set-url", "origin", $okUrl) | Out-Null
+    Check "(refusal) an unreachable origin exits 2 and says it could not be queried" ($res.Code -eq 2 -and $res.Text -match "could not be queried")
+    Check "(refusal) nothing was removed" (Alive $c1)
+
+    # another branch whose name ENDS with ours must not be taken for it
+    $c5 = New-Case "c5"; Set-Merged $c5
+    Invoke-Git $c5.Worktree @("push", "-q", "origin", "HEAD:refs/heads/aaa/$($c5.Branch)") | Out-Null
+    Write-Text (Join-Path $other "decoy.txt") "x`n"
+    Invoke-Git $other @("fetch", "-q", "origin") | Out-Null
+    Invoke-Git $other @("checkout", "-q", "-B", "decoy", "origin/aaa/$($c5.Branch)") | Out-Null
+    Invoke-Git $other @("commit", "-q", "--allow-empty", "-m", "decoy tip") | Out-Null
+    Invoke-Git $other @("push", "-q", "origin", "HEAD:refs/heads/aaa/$($c5.Branch)") | Out-Null
+    $res = Invoke-Finish $c5 @("-Yes")
+    Check "a branch whose name only ENDS with ours does not confuse the tip check: exit 0" ($res.Code -eq 0)
+    Check "the exact branch is deleted on origin" (-not [bool](Invoke-Git $main @("ls-remote", "--heads", "origin", "refs/heads/$($c5.Branch)")))
+    Check "the look-alike branch is left alone on origin" ([bool](Invoke-Git $main @("ls-remote", "--heads", "origin", "refs/heads/aaa/$($c5.Branch)")))
 
     # the proceeding case
     $c2 = New-Case "c2"; Set-Merged $c2

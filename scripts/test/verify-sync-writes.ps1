@@ -358,6 +358,32 @@ $r = Invoke-LinksScript "-WhatIf"
 Check "links: -WhatIf with identical copies exits 0"                  ($r.Code -eq 0 -and $r.Text -cnotmatch 'CONFLICT')
 Remove-Item $LinkRepo, $LinkHome -Recurse -Force -ErrorAction SilentlyContinue
 
+# -Sync is also run as a SessionStart hook, and a hook that exits non-zero must not be allowed to
+# refuse tools (R11), so it ALWAYS exited 0, even when the sync threw. -Update could therefore end
+# with "Update steps done." over a sync that did nothing (code-review finding, 2026-10-22). The
+# explicit -StrictExit lets the update, and only the update, see the failure. Run for real against
+# the real repository with USERPROFILE on a throwaway home (the failure is a ".claude" that is a file).
+function Invoke-SyncChild([string]$HomeDir, [string[]]$More) {
+    $saved = $env:USERPROFILE
+    $env:USERPROFILE = $HomeDir
+    try {
+        $out = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "install-junctions.ps1") -Sync @More *>&1 | Out-String
+        return [PSCustomObject]@{ Code = $LASTEXITCODE; Text = $out }
+    } finally { $env:USERPROFILE = $saved }
+}
+$BadHome = Join-Path $Fake "badhome"
+New-Item -ItemType Directory -Path $BadHome -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $BadHome ".claude"), "this is a file, not a folder")
+$r = Invoke-SyncChild $BadHome @()
+Check "-Sync stays exit 0 when the sync fails (the SessionStart hook contract, R11)" ($r.Code -eq 0)
+$r = Invoke-SyncChild $BadHome @("-StrictExit")
+Check "-Sync -StrictExit exits 1 on the same failure" ($r.Code -eq 1)
+$GoodHome = Join-Path $Fake "goodhome"
+New-Item -ItemType Directory -Path (Join-Path $GoodHome ".claude") -Force | Out-Null
+$r = Invoke-SyncChild $GoodHome @("-StrictExit", "-WhatIf")
+Check "(control) -Sync -StrictExit -WhatIf on a healthy home exits 0" ($r.Code -eq 0)
+Remove-Item $BadHome, $GoodHome -Recurse -Force -ErrorAction SilentlyContinue
+
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)
 Check "live ~/.claude/CLAUDE.md never written"      ((Get-FileHash $liveClaude   -Algorithm SHA256).Hash -eq $liveClaudeHash)
 

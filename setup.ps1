@@ -226,7 +226,8 @@ function Invoke-SyncScript {
         exit 1
     }
     $global:LASTEXITCODE = 0
-    if ($Preview) { & $junctionsScript -Sync -WhatIf } else { & $junctionsScript -Sync }
+    # -StrictExit: the SessionStart hook form never fails (R11); the update must see a failure.
+    if ($Preview) { & $junctionsScript -Sync -StrictExit -WhatIf } else { & $junctionsScript -Sync -StrictExit }
     Set-InstallerExit "install-junctions.ps1 -Sync" $LASTEXITCODE
 }
 
@@ -566,49 +567,92 @@ if ($UpdateHooks -and -not $script:HookPathsDetected) {
     Write-Err "Git Bash or Node.js was not found, so the hook update is SKIPPED: it would replace working commands with a path that does not exist. Install them or give their real path, then run again."
     Set-InstallerExit "hook update skipped (Git Bash or Node.js not found)" 1
 }
-$updateHooksNow = $UpdateHooks -and $script:HookPathsDetected
+# Under -Update the hook COMMANDS are replaced after the sync (Invoke-HookCommandUpdate), once the
+# scripts they call are in place: replacing them first would make a new command call an old script,
+# and a hook that exits non-zero refuses every tool of its matcher (R11, code review 2026-10-22).
+# Entries are still ADDED here, and a script that is held (no green stamp) is never given a new command.
+$deferHookUpdate = $Update -and $UpdateHooks
+$updateHooksNow = $UpdateHooks -and $script:HookPathsDetected -and -not $deferHookUpdate
+$heldNow = @($hooksResult.Differing)
 
-$settingsResult = Merge-RtGlobalSettings `
-    -TemplatePath (Join-Path $WorkspaceRoot ".claude\settings.template.json") `
-    -TargetPath (Join-Path $homeClaude "settings.json") `
-    -Vars $settingsVars `
-    -UpdateChanged:$updateHooksNow `
-    -KeepHooks $KeepHooks `
-    -BackupStamp (Get-Date -Format "yyyy-MM-dd-HHmm") `
-    -Preview:$Preview
+function Invoke-SettingsMergeReport {
+    <#
+        Purpose: run the settings.json merge and print what it did, the same way every time.
+        Inputs: UpdateChanged (bool) replace changed commands; HeldScripts (string[]) hook script
+            file names that must not get a new command because the script is held
+        Outputs: the merge result; side effects: output, and a failed merge counted in the exit code
+    #>
+    param([bool]$UpdateChanged, [string[]]$HeldScripts = @())
+    $result = Merge-RtGlobalSettings `
+        -TemplatePath (Join-Path $WorkspaceRoot ".claude\settings.template.json") `
+        -TargetPath (Join-Path $homeClaude "settings.json") `
+        -Vars $settingsVars `
+        -UpdateChanged:$UpdateChanged `
+        -KeepHooks $KeepHooks `
+        -HeldScripts $HeldScripts `
+        -BackupStamp (Get-Date -Format "yyyy-MM-dd-HHmm") `
+        -Preview:$Preview
 
-switch ($settingsResult.Action) {
-    "created"        { Write-Ok   "settings.json: $($settingsResult.Message)" }
-    "merged"         { Write-Ok   "settings.json: $($settingsResult.Message)" }
-    "updated"        { Write-Ok   "settings.json: $($settingsResult.Message)" }
-    "unchanged"      { Write-Ok   "settings.json: $($settingsResult.Message)" }
-    "preview-create" { Write-Host "  [--]  settings.json: $($settingsResult.Message)" -ForegroundColor DarkGray }
-    "preview-merge"  { Write-Host "  [--]  settings.json: $($settingsResult.Message)" -ForegroundColor DarkGray }
-    default          { Write-Err  "settings.json: $($settingsResult.Message)" }
+    switch ($result.Action) {
+        "created"        { Write-Ok   "settings.json: $($result.Message)" }
+        "merged"         { Write-Ok   "settings.json: $($result.Message)" }
+        "updated"        { Write-Ok   "settings.json: $($result.Message)" }
+        "unchanged"      { Write-Ok   "settings.json: $($result.Message)" }
+        "preview-create" { Write-Host "  [--]  settings.json: $($result.Message)" -ForegroundColor DarkGray }
+        "preview-merge"  { Write-Host "  [--]  settings.json: $($result.Message)" -ForegroundColor DarkGray }
+        default          { Write-Err  "settings.json: $($result.Message)" }
+    }
+    if (@("refused", "restored") -contains $result.Action) {
+        # Without this the update would print "Update steps done." over a settings.json it failed to edit.
+        Set-InstallerExit "settings.json merge ($($result.Action))" 1
+    }
+    foreach ($entry in $result.Added) {
+        Write-Host "        + $($entry.Event): $($entry.Token)"
+    }
+    foreach ($entry in $result.Updated) {
+        Write-Host "        ~ $($entry.Event): $($entry.Token) (command and statusMessage replaced)"
+    }
+    foreach ($entry in $result.Kept) {
+        Write-Host "        = $($entry.Event): $($entry.Token) (kept as it is, as asked with -KeepHooks)"
+    }
+    if (@($result.Updated).Count -gt 0 -and $Preview) {
+        Write-Warn "an entry above that is a deliberate local variant of yours is replaced too: add -KeepHooks '<name>' to leave it as it is"
+    }
+    if (-not $UpdateHooks -and @($result.Differs).Count -gt 0) {
+        Write-Warn "$(@($result.Differs).Count) hook entr(y/ies) of settings.json differ from the template: $((@($result.Differs) | ForEach-Object { $_.Token }) -join ', ')"
+        Write-Warn "  run .\setup.ps1 -UpdateHooks -Preview to see them, then .\setup.ps1 -UpdateHooks (add -KeepHooks '<name>' to leave one as it is)"
+    }
+    foreach ($entry in $result.Skipped) {
+        Write-Warn "skipped ($($entry.Event): $($entry.Token)) - $($entry.Reason)"
+    }
+    return $result
 }
-if (@("refused", "restored") -contains $settingsResult.Action) {
-    # Without this the update would print "Update steps done." over a settings.json it failed to edit.
-    Set-InstallerExit "settings.json merge ($($settingsResult.Action))" 1
+
+function Invoke-HookCommandUpdate {
+    <#
+        Purpose: the -Update pass that replaces changed hook commands, run after the sync. A hook
+            script the sync did not copy (still different from the repository) is skipped by name.
+        Inputs: none (reads the script-scope switches and paths)
+        Outputs: none; side effects: output, settings.json, the exit code
+    #>
+    if (-not ($Update -and $UpdateHooks)) { return }
+    Write-Header "Hook commands in settings.json (after the sync)"
+    if (-not $script:HookPathsDetected) {
+        Write-Warn "skipped: Git Bash or Node.js was not found (reported in step 1)"
+        return
+    }
+    $after = Install-RtGlobalHooks `
+        -SourceDir (Join-Path $WorkspaceRoot ".claude\hooks") `
+        -TargetDir (Join-Path $homeClaude "hooks") `
+        -Preview
+    if (@($after.Differing).Count -gt 0) {
+        Write-Warn "hook script(s) still differ from the repository, so their commands are NOT updated: $(@($after.Differing) -join ', ')"
+        Write-Warn "  run .\scripts\test\run-all-checks.ps1 (or the suite), then .\install-junctions.ps1 -Sync, then .\setup.ps1 -UpdateHooks"
+    }
+    $null = Invoke-SettingsMergeReport -UpdateChanged $true -HeldScripts @($after.Differing)
 }
-foreach ($entry in $settingsResult.Added) {
-    Write-Host "        + $($entry.Event): $($entry.Token)"
-}
-foreach ($entry in $settingsResult.Updated) {
-    Write-Host "        ~ $($entry.Event): $($entry.Token) (command and statusMessage replaced)"
-}
-foreach ($entry in $settingsResult.Kept) {
-    Write-Host "        = $($entry.Event): $($entry.Token) (kept as it is, as asked with -KeepHooks)"
-}
-if (@($settingsResult.Updated).Count -gt 0 -and $Preview) {
-    Write-Warn "an entry above that is a deliberate local variant of yours is replaced too: add -KeepHooks '<name>' to leave it as it is"
-}
-if (-not $UpdateHooks -and @($settingsResult.Differs).Count -gt 0) {
-    Write-Warn "$(@($settingsResult.Differs).Count) hook entr(y/ies) of settings.json differ from the template: $((@($settingsResult.Differs) | ForEach-Object { $_.Token }) -join ', ')"
-    Write-Warn "  run .\setup.ps1 -UpdateHooks -Preview to see them, then .\setup.ps1 -UpdateHooks (add -KeepHooks '<name>' to leave one as it is)"
-}
-foreach ($entry in $settingsResult.Skipped) {
-    Write-Warn "not added ($($entry.Event): $($entry.Token)) - $($entry.Reason)"
-}
+
+$settingsResult = Invoke-SettingsMergeReport -UpdateChanged $updateHooksNow -HeldScripts $heldNow
 
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
@@ -626,7 +670,7 @@ if ($Update) {
             "junctions" { Invoke-JunctionsScript -Advisory }
             "tools"     { Invoke-ToolsScript -ProfileName $step.Profile }
             "suite"     { Invoke-SuiteScript }
-            "sync"      { Invoke-SyncScript }
+            "sync"      { Invoke-SyncScript; Invoke-HookCommandUpdate }
             "check"     { Invoke-CheckScript }
         }
     }

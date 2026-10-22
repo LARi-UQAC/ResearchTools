@@ -87,8 +87,8 @@ function Get-Git([string]$Dir, [string[]]$GitArgs) {
 }
 
 # --- facts -------------------------------------------------------------------------------
-if ($Branch -notmatch '^[A-Za-z0-9._/-]+$' -or $Branch.Contains('..') -or $Branch -eq $MainBranch) {
-    Write-Refused @("'$Branch' is not a branch this script will clean (letters, digits, . _ / - only, and not $MainBranch).")
+if (-not (Test-RtBranchName $Branch) -or $Branch -eq $MainBranch) {
+    Write-Refused @("'$Branch' is not a branch this script will clean (it must start with a letter or digit, hold letters, digits, . _ / - only, and not be $MainBranch).")
     exit 2
 }
 if ($PlansFolder -and -not (Test-RtPlansFolderName $PlansFolder)) {
@@ -141,13 +141,23 @@ foreach ($line in ((& git -C $mainRoot worktree list --porcelain 2>$null) -split
 }
 
 $localOid = Get-Git $mainRoot @("rev-parse", "--verify", "--quiet", "refs/heads/$Branch")
-$remoteLine = Get-Git $mainRoot @("ls-remote", "--heads", "origin", $Branch)
-$remoteExists = [bool]$remoteLine
-$remoteOid = if ($remoteLine) { (($remoteLine -split "`r?`n")[0] -split "\s+")[0] } else { "" }
+# The exact ref, and the exit code: ls-remote with a bare name matches every branch that ENDS
+# with it, and a failed call returns nothing, which is not the same as "the branch is gone".
+$remoteExists = $false; $remoteOid = ""; $remoteError = ""
+$lsOut = & git -C $mainRoot ls-remote --heads origin "refs/heads/$Branch" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    $remoteError = ((($lsOut | Out-String).Trim() -split "`r?`n") | Select-Object -Last 1)
+    if (-not $remoteError) { $remoteError = "git ls-remote exited with code $LASTEXITCODE" }
+} else {
+    foreach ($line in (($lsOut | Out-String) -split "`r?`n")) {
+        $parts = $line.Trim() -split "\s+"
+        if ($parts.Count -ge 2 -and $parts[1] -eq "refs/heads/$Branch") { $remoteExists = $true; $remoteOid = $parts[0] }
+    }
+}
 $plansPresent = $false
 if ($PlansFolder) { $plansPresent = Test-Path -LiteralPath (Join-Path $mainRoot "docs\superpowers\todo\$PlansFolder") }
 
-if (-not $worktree -and -not $localOid -and -not $remoteExists -and -not $plansPresent) {
+if (-not $worktree -and -not $localOid -and -not $remoteExists -and -not $plansPresent -and -not $remoteError) {
     Write-Host "Nothing to clean: no worktree, no local branch and no branch on origin for $Branch." -ForegroundColor Green
     exit 0
 }
@@ -157,14 +167,14 @@ if ($worktree -and (Test-Path -LiteralPath $worktree)) {
     $status = @((& git -C $worktree status --porcelain --ignored 2>$null) | Where-Object { $_ })
     $dirty = @($status | Where-Object { $_ -notlike '!! *' })
     $ignored = @($status | Where-Object { $_ -like '!! *' })
-    $links = @(Get-ChildItem -LiteralPath $worktree -Force -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    $links = @(Find-RtReparsePoints -Root $worktree)
 }
 $runFromWorktree = [bool]($worktree -and ($scriptRepo.TrimEnd('\') -ieq $worktree.TrimEnd('\')))
 $mainHead = Get-Git $mainRoot @("symbolic-ref", "--short", "HEAD")
 $mainDirty = @((& git -C $mainRoot status --porcelain --untracked-files=no 2>$null) | Where-Object { $_ })
 
 $reasons = @(Get-RtFinishRefusals -Branch $Branch -PrMerged $prMerged -PrReason $prReason -PrHeadOid $prHead `
-    -LocalOid $localOid -RemoteOid $remoteOid -WorktreePath $worktree -DirtyFiles $dirty -Links $links `
+    -LocalOid $localOid -RemoteOid $remoteOid -RemoteError $remoteError -WorktreePath $worktree -DirtyFiles $dirty -Links $links `
     -IgnoredFiles $ignored -DiscardIgnored $DiscardIgnored.IsPresent -MainDirty $mainDirty `
     -MainHead $mainHead -MainBranch $MainBranch -RunFromWorktree $runFromWorktree)
 if (@($reasons).Count -gt 0) {

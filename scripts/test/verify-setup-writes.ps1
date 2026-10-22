@@ -245,10 +245,11 @@ try {
         return $null
     }
     function Invoke-Update([string]$Template, [string]$Live, [switch]$Switch, [switch]$Preview,
-                           [string]$Stamp = "t1", [scriptblock]$ReadBack, [string[]]$Keep) {
+                           [string]$Stamp = "t1", [scriptblock]$ReadBack, [string[]]$Keep, [string[]]$Held) {
         try {
             $splat = @{ TemplatePath = $Template; TargetPath = $Live; Vars = $settingsVars }
             if ($Keep)     { $splat.KeepHooks = $Keep }
+            if ($Held)     { $splat.HeldScripts = $Held }
             if ($Switch)   { $splat.UpdateChanged = $true; $splat.BackupStamp = $Stamp }
             if ($Preview)  { $splat.Preview = $true }
             if ($ReadBack) { $splat.ReadBack = $ReadBack }
@@ -424,6 +425,52 @@ try {
     $r = Invoke-Update $tagTemplate $liveT -Switch
     Check "(control) the same inline hook is updated when not kept" ($null -ne $r -and (Get-Prop $r "Action") -eq "updated")
 
+    # Round 3 and 4 of the code review (2026-10-22).
+    # 1. A hook whose SCRIPT is held (no green stamp, so the sync did not copy it) must not get a new
+    #    command: the new command would call the old script, and a hook that exits non-zero refuses
+    #    every tool of its matcher (R11).
+    $liveHd = Join-Path $updDir "held.json"
+    Write-HookFile $liveHd (New-LiveText $oldCmdLit $oldStatLit)
+    $hashHd = Get-Hash $liveHd
+    $r = Invoke-Update $updTemplate $liveHd -Switch -Held @("my-hook.py")
+    Check "an entry whose script is held is left untouched" ($null -ne $r -and (Get-Hash $liveHd) -eq $hashHd -and (Get-Prop $r "Action") -eq "unchanged")
+    Check "it is reported as skipped, saying the script is held" `
+        ($null -ne $r -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*held*" }).Count -eq 1)
+    $r = Invoke-Update $updTemplate $liveHd -Switch -Held @("some-other-hook.py")
+    Check "(control) a held script of ANOTHER hook does not block this update" ($null -ne $r -and (Get-Prop $r "Action") -eq "updated")
+
+    # 2. The update replaces command and statusMessage only. A different matcher or timeout used to
+    #    pass in silence as "already present"; it is now reported, and still not edited.
+    $tplMatcher = Join-Path $updDir "template-matcher.json"
+    Write-HookFile $tplMatcher ('{ "hooks": { "Stop": [ { "matcher": "Bash|Read", "hooks": [ { "type": "command", "command": ' + $newCmdLit + ', "timeout": 15, "statusMessage": ' + $newStatLit + ' } ] } ] } }')
+    $liveMt = Join-Path $updDir "matcher.json"
+    Write-HookFile $liveMt ('{ "hooks": { "Stop": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": ' + $newCmdLit + ', "timeout": 15, "statusMessage": ' + $newStatLit + ' } ] } ] } }')
+    $hashMt = Get-Hash $liveMt
+    $r = Invoke-Update $tplMatcher $liveMt -Switch
+    Check "a different matcher is reported as skipped, naming the matcher" `
+        ($null -ne $r -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*matcher*" }).Count -eq 1)
+    Check "a different matcher is not edited" ((Get-Hash $liveMt) -eq $hashMt)
+    $liveTm = Join-Path $updDir "timeout.json"
+    Write-HookFile $liveTm ('{ "hooks": { "Stop": [ { "matcher": "Bash|Read", "hooks": [ { "type": "command", "command": ' + $newCmdLit + ', "timeout": 99, "statusMessage": ' + $newStatLit + ' } ] } ] } }')
+    $r = Invoke-Update $tplMatcher $liveTm -Switch
+    Check "a different timeout is reported as skipped, naming the timeout" `
+        ($null -ne $r -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*timeout*" }).Count -eq 1)
+    $liveOk = Join-Path $updDir "same.json"
+    Write-HookFile $liveOk ('{ "hooks": { "Stop": [ { "matcher": "Bash|Read", "hooks": [ { "type": "command", "command": ' + $newCmdLit + ', "timeout": 15, "statusMessage": ' + $newStatLit + ' } ] } ] } }')
+    $r = Invoke-Update $tplMatcher $liveOk -Switch
+    Check "(control) an identical matcher and timeout is not reported" ($null -ne $r -and @((Get-Prop $r "Skipped")).Count -eq 0)
+
+    # 3. A failed read-back after the ADD path restored the old settings.json.bak, a snapshot made
+    #    once and never refreshed, instead of the text read just before the edit.
+    $liveSt = Join-Path $updDir "stale-bak.json"
+    $textSt = '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "python other-tool.py" } ] } ] } }'
+    Write-HookFile $liveSt $textSt
+    Write-HookFile "$liveSt.bak" '{ "stale": "weeks old" }'
+    $hashSt = Get-Hash $liveSt
+    $r = Invoke-Update $updTemplate $liveSt -ReadBack { param($p) "{ broken" }
+    Check "a failed read-back after an ADD reports restored" ($null -ne $r -and (Get-Prop $r "Action") -eq "restored")
+    Check "the file is the text read before the edit, not the stale .bak" ((Get-Hash $liveSt) -eq $hashSt)
+
     # A template entry with no statusMessage leaves the live one alone.
     $templateNoStat = Join-Path $updDir "template-nostat.json"
     Write-HookFile $templateNoStat @"
@@ -535,7 +582,7 @@ try {
     $setupText = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "setup.ps1"))
     Check "setup.ps1 declares the -UpdateHooks switch" ($setupText -match '\[switch\]\$UpdateHooks')
     Check "setup.ps1 passes the switch and a backup stamp to the merge" `
-        ($setupText -match '-UpdateChanged:\$UpdateHooks' -and $setupText -match '-BackupStamp')
+        ($setupText -match '-UpdateChanged:\$UpdateChanged' -and $setupText -match '-BackupStamp')
     Check "setup.ps1 names the switch in its help and tells how to use -Preview with it" `
         ($setupText -match '-UpdateHooks -Preview')
     # The verdict of -Update. Measured 2026-10-17: the links step exited 1 on stale agent copies that
@@ -551,16 +598,21 @@ try {
     # Code-review findings of 2026-10-22. setup.ps1 cannot be dot-sourced (it would prompt and write
     # to ~/.claude), so these wiring checks read the text, as the ones above do.
     Check "a refused or restored settings.json merge is counted in the exit code" `
-        ($setupText -match '@\("refused", "restored"\) -contains \$settingsResult\.Action\)\s*\{\s*(#[^\n]*\n\s*)*Set-InstallerExit')
+        ($setupText -match '@\("refused", "restored"\) -contains \$result\.Action\)\s*\{\s*(#[^\n]*\n\s*)*Set-InstallerExit')
     Check "a detected-path flag is set from the paths that really exist" `
         ($setupText -match '\$script:HookPathsDetected = \(Test-Path -LiteralPath \$gitBashPath\) -and \(Test-Path -LiteralPath \$nodePath\)')
     Check "the hook update is applied only when those paths exist" `
-        ($setupText -match '\$updateHooksNow = \$UpdateHooks -and \$script:HookPathsDetected' -and $setupText -match '-UpdateChanged:\$updateHooksNow')
+        ($setupText -match '\$updateHooksNow = \$UpdateHooks -and \$script:HookPathsDetected' -and $setupText -match 'Invoke-SettingsMergeReport -UpdateChanged \$updateHooksNow')
     Check "an update skipped for a missing path is an error, not a quiet pass" `
         ($setupText -match '(?s)if \(\$UpdateHooks -and -not \$script:HookPathsDetected\).*?Set-InstallerExit')
+    Check "under -Update the hook commands are updated after the sync, once the scripts are in place" `
+        ($setupText -match '(?s)"sync"\s*\{\s*Invoke-SyncScript.*?Invoke-HookCommandUpdate')
+    Check "the held hook scripts are passed to the merge" ($setupText -match '-HeldScripts')
+    Check "-Sync can be asked to fail loudly, only by the update" `
+        ($setupText -match 'install-junctions\.ps1.*-StrictExit' -or $setupText -match '-Sync -StrictExit')
     Check "setup.ps1 declares -KeepHooks as a list of names" ($setupText -match '\[string\[\]\]\$KeepHooks')
     Check "setup.ps1 passes -KeepHooks to the merge and reports what was kept" `
-        ($setupText -match '-KeepHooks\s+\$KeepHooks' -and $setupText -match '\$settingsResult\.Kept')
+        ($setupText -match '-KeepHooks\s+\$KeepHooks' -and $setupText -match '\$result\.Kept')
     Check "setup.ps1 names -KeepHooks in its help and in the differ warning" `
         (([regex]::Matches($setupText, '-KeepHooks')).Count -ge 4)
 

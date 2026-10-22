@@ -334,6 +334,20 @@ function Test-RtHookKept {
     return $false
 }
 
+function Test-RtScriptHeld {
+    <#
+        Purpose: tell whether a hook entry's script is one the sync held back.
+        Inputs: Token (string) from Get-RtHookToken; Held (string[]) script file names
+        Outputs: held (bool); an inline hook (no script file name) is never held
+    #>
+    param([string]$Token, [string[]]$Held)
+    if (-not $Held) { return $false }
+    foreach ($name in $Held) {
+        if ([string]::Equals([string]$name, $Token, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
 function Merge-RtGlobalSettings {
     <#
         --------------------------------------------------------------------------
@@ -348,6 +362,8 @@ function Merge-RtGlobalSettings {
         Inputs:
             TemplatePath, TargetPath, Vars, Preview: as Invoke-RtSettingsMerge
             UpdateChanged (switch): also update changed entries (a text edit)
+            HeldScripts (string[]): hook script file names whose script is NOT in step with
+            the repository (held by the sync): an entry calling one is never given a new command
             KeepHooks (string[]): tokens of entries to leave as they are (a deliberate
             local variant), matched without case and with or without brackets
             BackupStamp (string): suffix of the backup made before an update
@@ -366,7 +382,8 @@ function Merge-RtGlobalSettings {
         [switch]$UpdateChanged,
         [string]$BackupStamp = "update",
         [scriptblock]$ReadBack,
-        [string[]]$KeepHooks
+        [string[]]$KeepHooks,
+        [string[]]$HeldScripts
     )
     $result = Invoke-RtSettingsMerge @PSBoundParameters
     foreach ($name in @("Updated", "Differs", "Kept")) {
@@ -404,7 +421,8 @@ function Invoke-RtSettingsMerge {
         [switch]$UpdateChanged,
         [string]$BackupStamp = "update",
         [scriptblock]$ReadBack = { param($Path) [System.IO.File]::ReadAllText($Path) },
-        [string[]]$KeepHooks
+        [string[]]$KeepHooks,
+        [string[]]$HeldScripts
     )
 
     $empty = @()
@@ -504,6 +522,7 @@ function Invoke-RtSettingsMerge {
         $wantStatus = ($null -ne $templateHook.PSObject.Properties["statusMessage"])
 
         $liveHooks = @()
+        $liveMatchers = @()   # the matcher of the group each live hook sits in, same index
         if (($null -ne $liveObject.PSObject.Properties["hooks"]) -and
             ($null -ne $liveObject.hooks.PSObject.Properties[$record.Event])) {
             foreach ($liveEntry in @($liveObject.hooks.($record.Event))) {
@@ -511,6 +530,7 @@ function Invoke-RtSettingsMerge {
                     if (($null -ne $liveHookCandidate.PSObject.Properties["command"]) -and
                         (Get-RtHookToken -Command ([string]$liveHookCandidate.command)) -eq $record.Token) {
                         $liveHooks += $liveHookCandidate
+                        $liveMatchers += $(if ($null -ne $liveEntry.PSObject.Properties["matcher"]) { [string]$liveEntry.matcher } else { $null })
                     }
                 }
             }
@@ -523,7 +543,24 @@ function Invoke-RtSettingsMerge {
              (($null -ne $_.PSObject.Properties["statusMessage"]) -and
               [string]$_.statusMessage -ceq [string]$templateHook.statusMessage))
         })
-        if ($current.Count -gt 0) { continue }
+        if ($current.Count -gt 0) {
+            # The update replaces command and statusMessage only. A different matcher or timeout used
+            # to pass as "already present"; say so, and leave it to the operator.
+            if ($UpdateChanged -and $liveHooks.Count -eq 1) {
+                $why = @()
+                $templateMatcher = if ($null -ne $record.Entry.PSObject.Properties["matcher"]) { [string]$record.Entry.matcher } else { $null }
+                if ($null -ne $templateMatcher -and $liveMatchers[0] -cne $templateMatcher) { $why += "matcher" }
+                if ($null -ne $templateHook.PSObject.Properties["timeout"] -and
+                    (($null -eq $liveHooks[0].PSObject.Properties["timeout"]) -or ([string]$liveHooks[0].timeout -ne [string]$templateHook.timeout))) { $why += "timeout" }
+                if ($why.Count -gt 0) {
+                    $skipped += [PSCustomObject]@{
+                        Event = $record.Event; Token = $record.Token
+                        Reason = "differs from the template by its $($why -join ' and '); this update replaces only command and statusMessage, edit it by hand"
+                    }
+                }
+            }
+            continue
+        }
 
         if (Test-RtHookKept -Token $record.Token -Keep $KeepHooks) {
             $kept += [PSCustomObject]@{ Event = $record.Event; Token = $record.Token }
@@ -538,6 +575,13 @@ function Invoke-RtSettingsMerge {
             continue
         }
         if (-not $UpdateChanged) { continue }
+        if (Test-RtScriptHeld -Token $record.Token -Held $HeldScripts) {
+            $skipped += [PSCustomObject]@{
+                Event = $record.Event; Token = $record.Token
+                Reason = "its script is held (not in step with the repository): a new command would call the old script. Update it after the sync, once the suite is green"
+            }
+            continue
+        }
 
         $liveHook = $liveHooks[0]
         $replacements = @()
@@ -631,7 +675,8 @@ function Invoke-RtSettingsMerge {
     $holdsNewValues = $true
     foreach ($literal in $newLiterals) { if (-not $readBackText.Contains($literal)) { $holdsNewValues = $false } }
     if ($null -eq $parsedBack -or -not $holdsNewValues) {
-        Copy-Item $backup $TargetPath -Force
+        # The text read before the edit, not the legacy .bak: that one is made once and never refreshed.
+        Write-RtTextNoBom -Path $TargetPath -Text $liveText
         return [PSCustomObject]@{
             Action = "restored"; Path = $TargetPath; Added = $empty; Skipped = $skipped
             Updated = $empty; Differs = $differs

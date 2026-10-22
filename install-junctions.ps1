@@ -48,7 +48,8 @@
 param(
     [switch]$WhatIf,
     [switch]$Sync,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$StrictExit   # with -Sync: exit 1 when the sync throws (default: always 0, the hook contract)
 )
 
 Set-StrictMode -Version Latest
@@ -68,6 +69,8 @@ if ($Sync) {
         # Never non-zero: this runs as a SessionStart hook, and a failing hook refuses
         # every tool of its matcher for the rest of the session.
         if (-not $script:RtQuiet) { Write-Host "  [RT-SYNC] $($_.Exception.Message)" -ForegroundColor Red }
+        # Only setup.ps1 -Update asks for this: it ran "Update steps done." over a sync that did nothing.
+        if ($StrictExit) { exit 1 }
     }
     exit 0
 

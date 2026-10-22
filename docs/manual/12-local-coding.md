@@ -132,7 +132,9 @@ cd <main clone>
 ```
 
 It refuses, and says why, when `gh` finds no merged pull request for the branch, when the local
-branch holds commits that were never pushed, when the worktree has uncommitted files or holds a
+branch holds commits that were never pushed, when origin's branch has a commit pushed after the
+merge, when the main clone has modified tracked files (R32), when the worktree has uncommitted files,
+git-ignored files (add `-DiscardIgnored` once you have kept what you need) or holds a
 junction or a symbolic link (removing it would follow the link and delete its target, R37), when
 the main clone is not on `main` (it never switches the checked-out branch, R32), or when it was
 started from inside the worktree it would remove. A second run finds nothing to clean and exits 0.

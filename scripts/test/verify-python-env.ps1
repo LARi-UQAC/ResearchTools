@@ -255,8 +255,18 @@ Check "the probe left no scratch folder behind"  (@(Get-ChildItem $env:TEMP -Fil
 # preview exercises the interpreter-selection path whatever this machine's own
 # .venv-skills looks like (R21). Pointed at the real repository, the preview would find
 # the existing environment and take the reuse branch instead.
+# Every requirements file of every environment, so a fake root is complete for both.
+$allReqs = @($envs | ForEach-Object { $_.Requirements })
+function New-StubVenv([string]$root, [string]$name) {
+    $dir = Join-Path $root "$name\Scripts"
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    Set-Content -Path (Join-Path $dir "python.exe") -Value "stub" -Encoding ASCII
+}
+function Remove-StubVenvs([string]$root) {
+    foreach ($n in @(".venv-skills", ".venv-docs")) { Remove-Item (Join-Path $root $n) -Recurse -Force -ErrorAction SilentlyContinue }
+}
 $FreshRoot = Join-Path $Fake "fresh-root"
-foreach ($r in $reqs) {
+foreach ($r in $allReqs) {
     $dest = Join-Path $FreshRoot ($r.Path -replace '/', '\')
     New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
     Copy-Item $r.Full $dest
@@ -292,21 +302,20 @@ Check "no candidate at all is stated"            ($noneOut -match "none was foun
 # from the environment's own interpreter. A fake root with the requirements files and a
 # stub venv interpreter, and NO candidate at all, must still preview as a reuse.
 $ReuseRoot = Join-Path $Fake "reuse-root"
-foreach ($r in $reqs) {
+foreach ($r in $allReqs) {
     $dest = Join-Path $ReuseRoot ($r.Path -replace '/', '\')
     New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
     Copy-Item $r.Full $dest
 }
-$withVenv = Join-Path $ReuseRoot ".venv-skills\Scripts"
-New-Item -ItemType Directory -Path $withVenv -Force | Out-Null
-Set-Content -Path (Join-Path $withVenv "python.exe") -Value "stub" -Encoding ASCII
+New-StubVenv $ReuseRoot ".venv-skills"
+New-StubVenv $ReuseRoot ".venv-docs"
 $reuseOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "an existing venv is reused with no base python at all" ($reuseOut -match "no base interpreter needed" -and $reuseOut -match "Would install")
 Check "the reuse preview does not say it was skipped"        ($reuseOut -notmatch "skipped")
 $tripwire2 = { param($p) throw "the probe must not run when the environment exists" }
 $pickReuse = Select-RtBasePython -Candidates @($Py312) -UserProfile $Mine -Probe $tripwire2 -SkipProbe
 Check "(control) selection without an environment still works" ($pickReuse.Python -eq $Py312)
-Remove-Item (Join-Path $ReuseRoot ".venv-skills") -Recurse -Force
+Remove-StubVenvs $ReuseRoot
 $noVenvOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "(control) the same root WITHOUT the venv is skipped, naming why" ($noVenvOut -match "skipped" -and $noVenvOut -match "none was found")
 
@@ -317,13 +326,12 @@ Check "an empty profile does not throw and does not refuse" ($noProfile -eq "")
 
 # -Python while an environment exists is SAID to be ignored, never swallowed.
 $ignoredOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
-$stubScripts = Join-Path $ReuseRoot ".venv-skills\Scripts"
-New-Item -ItemType Directory -Path $stubScripts -Force | Out-Null
-Set-Content -Path (Join-Path $stubScripts "python.exe") -Value "stub" -Encoding ASCII
+New-StubVenv $ReuseRoot ".venv-skills"
+New-StubVenv $ReuseRoot ".venv-docs"
 $ignoredOut2 = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "-Python is reported ignored when the environment exists" ($ignoredOut2 -match "-Python was ignored")
 Check "(control) with no environment -Python is not reported ignored" ($ignoredOut -notmatch "was ignored")
-Remove-Item (Join-Path $ReuseRoot ".venv-skills") -Recurse -Force
+Remove-StubVenvs $ReuseRoot
 
 # A profile directly under a drive root has no profiles folder above it.
 Check "a drive-root profile does not make a machine-wide install foreign" ((Test-RtInterpreterOwner -Path "D:\Program Files\Python311\python.exe" -UserProfile "D:\alice") -eq "")
@@ -351,7 +359,7 @@ if ($null -ne (Get-Command git -ErrorAction SilentlyContinue)) {
     & git -C $Main -c user.name=Fictitious -c user.email=fictitious@example.org commit --quiet --allow-empty -m init 2>$null | Out-Null
     & git -C $Main worktree add --quiet --detach $Wt 2>$null | Out-Null
     $ErrorActionPreference = $saved
-    foreach ($r in $reqs) {
+    foreach ($r in $allReqs) {
         $dest = Join-Path $Wt ($r.Path -replace '/', '\')
         New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
         Copy-Item $r.Full $dest
@@ -364,7 +372,100 @@ if ($null -ne (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "  SKIP  worktree target (git is not installed)" -ForegroundColor Yellow
 }
 
+# --------------------------------------------- both environments, process order ---
+# 2026-10-22 (D1): -InstallPython builds .venv-skills then .venv-docs. Every process goes
+# through the injected runner, so the order and the failure paths are proven with no
+# interpreter executed. The runner records each call and, for `-m venv`, leaves a stub
+# interpreter where the environment would be (what the installer reads back, R9). The
+# scratch probe (`--without-pip`) is dropped from the order: it is not part of the install.
+$script:Calls = @()
+$script:FailPattern = ""
+$Runner = {
+    param($Exe, $Arguments)
+    $a = @($Arguments)
+    $joined = $a -join ' '
+    $script:Calls += [pscustomobject]@{ Exe = [string]$Exe; Args = $joined }
+    if ($script:FailPattern -and $joined -match $script:FailPattern) { return 1 }
+    if ($a.Count -ge 2 -and $a[0] -eq '-m' -and $a[1] -eq 'venv') {
+        $made = Join-Path $a[-1] 'Scripts\python.exe'
+        New-Item -ItemType Directory -Path (Split-Path $made -Parent) -Force | Out-Null
+        Set-Content -Path $made -Value 'stub' -Encoding ASCII
+    }
+    return 0
+}
+function New-RunRoot([string]$name, [switch]$NoDocsFile) {
+    $root = Join-Path $script:Fake $name
+    foreach ($r in $script:allReqs) {
+        if ($NoDocsFile -and $r.Path -eq "requirements-docs.txt") { continue }
+        $dest = Join-Path $root ($r.Path -replace '/', '\')
+        New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
+        Copy-Item $r.Full $dest
+    }
+    return $root
+}
+function Invoke-Install([string]$root, [hashtable]$extra = @{}) {
+    $script:Calls = @()
+    try {
+        $items = @(Install-RtPythonEnv -RepoRoot $root -UserProfile $script:Mine -ProcessRunner $script:Runner @extra 6>&1)
+    } catch {
+        return [pscustomobject]@{ Code = $null; Text = "THREW: $($_.Exception.Message)"; Calls = @() }
+    }
+    $codes = @($items | Where-Object { $_ -is [int] })
+    $text  = ($items | Where-Object { $_ -isnot [int] } | ForEach-Object { "$_" }) -join "`n"
+    $real  = @($script:Calls | Where-Object { $_.Args -notmatch 'without-pip' })
+    return [pscustomobject]@{ Code = $(if ($codes.Count) { $codes[-1] } else { $null }); Text = $text; Calls = $real }
+}
+
+$PreviewRoot = New-RunRoot "both-preview"
+$pv = Invoke-Install $PreviewRoot @{ Preview = $true; CandidatePaths = @($Py311) }
+$skillsAt = $pv.Text.IndexOf(".venv-skills"); $docsAt = $pv.Text.IndexOf(".venv-docs"); $docsFileAt = $pv.Text.IndexOf("requirements-docs.txt")
+Check "the preview names .venv-skills and .venv-docs and lists requirements-docs.txt under the second" ($pv.Code -eq 0 -and $skillsAt -ge 0 -and $docsAt -gt $skillsAt -and $docsFileAt -gt $docsAt)
+Check "the preview calls the runner zero times"  ($pv.Calls.Count -eq 0 -and -not (Test-Path (Join-Path $PreviewRoot ".venv-docs")))
+
+$NoDocsRoot = New-RunRoot "no-docs-file" -NoDocsFile
+$nd = Invoke-Install $NoDocsRoot @{ CandidatePaths = @($Py311) }
+Check "a missing requirements-docs.txt returns 1, names the file, creates neither folder and calls the runner zero times" ($nd.Code -eq 1 -and $nd.Text -match "requirements-docs\.txt" -and -not (Test-Path (Join-Path $NoDocsRoot ".venv-skills")) -and -not (Test-Path (Join-Path $NoDocsRoot ".venv-docs")) -and $script:Calls.Count -eq 0)
+
+$OrderRoot = New-RunRoot "order"
+$or = Invoke-Install $OrderRoot @{ CandidatePaths = @($Py311) }
+$skPy = Join-Path $OrderRoot ".venv-skills\Scripts\python.exe"
+$dcPy = Join-Path $OrderRoot ".venv-docs\Scripts\python.exe"
+$skillReqCount = @($skillEnv[0].Requirements).Count
+$kinds = @($or.Calls | ForEach-Object {
+    if ($_.Args -match '^-m venv ') { if ($_.Args -match 'venv-docs') { "venv-docs" } else { "venv-skills" } }
+    elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'rt-tools-') { "tool" }
+    elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'requirements-docs') { "docs-file" }
+    elseif ($_.Args -match '^-m pip install') { "skills-file" }
+    elseif ($_.Args -match '^-m pip_audit') { "audit" }
+    else { "other:" + $_.Args } })
+$expected = @("venv-skills", "tool") + @(1..$skillReqCount | ForEach-Object { "skills-file" }) + @("venv-docs", "docs-file") + @(1..($skillReqCount + 2) | ForEach-Object { "audit" })
+Check "with a recording runner the calls come in order: venv skills, tool, skills files, venv docs, docs file, then pip_audit on every file" ($or.Code -eq 0 -and ($kinds -join ',') -eq ($expected -join ','))
+if (($kinds -join ',') -ne ($expected -join ',')) { Write-Host "        got: $($kinds -join ',')" -ForegroundColor DarkGray }
+$audits = @($or.Calls | Where-Object { $_.Args -match '^-m pip_audit' })
+Check "every pip_audit call uses the skills interpreter, none the docs one" ($audits.Count -ge 1 -and @($audits | Where-Object { $_.Exe -ne $skPy }).Count -eq 0)
+Check "no pip install of pip-audit is made with the docs interpreter" (@($or.Calls | Where-Object { $_.Exe -eq $dcPy -and ($_.Args -match 'rt-tools-' -or $_.Args -match 'pip-audit') }).Count -eq 0)
+Check "pip install of the docs file uses the docs interpreter" (@($or.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Args -match 'pip install' -and $_.Exe -eq $dcPy }).Count -eq 1)
+
+$script:FailPattern = 'pip install.*requirements-docs'
+$FailDocsRoot = New-RunRoot "fail-docs"
+$fd = Invoke-Install $FailDocsRoot @{ CandidatePaths = @($Py311) }
+Check "a runner failing on the docs file returns 1 while the skills environment was installed and reported ready" ($fd.Code -eq 1 -and $fd.Text -match ("Environment ready: " + [regex]::Escape((Join-Path $FailDocsRoot ".venv-skills\Scripts\python.exe"))) -and @($fd.Calls | Where-Object { $_.Args -match 'pip install' -and $_.Exe -like '*venv-skills*' }).Count -eq ($skillReqCount + 1))
+
+$script:FailPattern = '^-m venv .*\.venv-skills'
+$FailSkillsRoot = New-RunRoot "fail-skills"
+$fs = Invoke-Install $FailSkillsRoot @{ CandidatePaths = @($Py311) }
+Check "a runner failing on the skills venv creation still attempts the docs environment and returns 1" ($fs.Code -eq 1 -and @($fs.Calls | Where-Object { $_.Args -match '^-m venv .*\.venv-docs' }).Count -eq 1)
+$script:FailPattern = ""
+
+$StubRoot = New-RunRoot "two-stubs"
+New-StubVenv $StubRoot ".venv-skills"
+New-StubVenv $StubRoot ".venv-docs"
+$st = Invoke-Install $StubRoot @{ CandidatePaths = @() }
+Check "two stub existing environments are reused with no base interpreter and no venv call" ($st.Code -eq 0 -and @($st.Calls | Where-Object { $_.Args -match '^-m venv' }).Count -eq 0 -and $st.Text -notmatch "skipped" -and @($st.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Exe -like '*venv-docs*' }).Count -ge 1)
+
 # ------------------------------------------------------------ setup.ps1 wiring ---
+$setupText = Get-Content (Join-Path $RepoRoot "setup.ps1") -Raw -Encoding UTF8
+Check "setup.ps1 contains no InstallDocs and no -InstallDocs" ($setupText -notmatch 'InstallDocs')
 $setup = Get-Content (Join-Path $RepoRoot "setup.ps1") -Raw -Encoding UTF8
 Check "setup.ps1 declares -InstallPython"        ($setup -match '\[switch\]\$InstallPython')
 Check "setup.ps1 declares -Python"               ($setup -match '\[string\]\$Python')
@@ -374,6 +475,7 @@ Check "setup.ps1 passes -Python through"         ($setup -match 'Install-RtPytho
 Check "setup.ps1 documents the switch"           ($setup -match ([regex]::Escape(".\setup.ps1 -InstallPython")))
 Check "the switch has its own dispatch branch"   ($setup -match ([regex]::Escape('if ($InstallPython -and -not $All)')))
 Check "Next steps names the switch"              ($setup -match "run-offline-tests.ps1 reports PASSED")
+Check "the help names .venv-docs"                ($setup -match '-InstallPython\s+-> \.venv-skills and \.venv-docs')
 
 # README has to name .venv-skills by that name: the runner resolves it first, and a
 # bootstrap block naming any other directory sends the operator somewhere the runner

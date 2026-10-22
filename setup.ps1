@@ -26,12 +26,12 @@
                               vault event daemon is running at login and raw drops in
                               ~/.claude/obsidian-outbox/raw are consumed instead of
                               piling up)
-        -InstallPython     -> .venv-skills (always in the MAIN clone, even when run
-                              from a worktree) plus the packages the repository's
-                              skills import: paper2talk, recommendation-letter,
-                              scopus and extract-statistic minus docling (torch is
-                              too heavy), listed in scripts\lib\rt-python-requirements.json,
-                              then pip-audit on each file. The base interpreter is
+        -InstallPython     -> .venv-skills and .venv-docs (always in the MAIN clone,
+                              even when run from a worktree): the packages the
+                              repository's skills import and those the MkDocs site
+                              needs, both environments declared in one data file,
+                              scripts\lib\rt-python-requirements.json, then
+                              pip-audit (from .venv-skills) on each file. The base interpreter is
                               CHOSEN: -Python, or a PATH / py-launcher candidate that
                               belongs to the current profile and can really create a
                               virtual environment. Otherwise it refuses and names each
@@ -72,7 +72,7 @@
     .\setup.ps1 -InstallTools -Personal      # multi-tool mirrors only (Copilot/OpenCode/...)
     .\setup.ps1 -InstallDaemon               # vault daemon at login only
     .\setup.ps1 -InstallDaemon -Preview      # say what it would install, install nothing
-    .\setup.ps1 -InstallPython               # .venv-skills for the offline test suite and the skills
+    .\setup.ps1 -InstallPython               # .venv-skills (suite, skills) and .venv-docs (MkDocs site)
     .\setup.ps1 -InstallPython -Preview      # choose the interpreter, say what would install, write nothing
     .\setup.ps1 -InstallPython -Python "C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
     .\setup.ps1 -Update -Preview             # the whole update, written nowhere: shows every step
@@ -281,7 +281,7 @@ function Read-RtAnswer {
 
 function Invoke-PythonEnvironment {
     $code = Install-RtPythonEnv -RepoRoot $WorkspaceRoot -Preview:$Preview -Python $Python
-    Set-InstallerExit "python environment (.venv-skills)" $code
+    Set-InstallerExit "python environments (.venv-skills, .venv-docs)" $code
 }
 
 function Invoke-VaultEnvironment {
@@ -730,7 +730,7 @@ if ($All) {
     Write-Host "       .\setup.ps1 -InstallDaemon   (needs OBSIDIAN_VAULT at user scope)"
     Write-Host "  4. Create the Python environment the offline test suite resolves first,"
     Write-Host "     so run-offline-tests.ps1 reports PASSED instead of NOT RUN:"
-    Write-Host "       .\setup.ps1 -InstallPython           # .venv-skills + the suite packages"
+    Write-Host "       .\setup.ps1 -InstallPython           # .venv-skills + .venv-docs and their packages"
     Write-Host "     The optional skill dependencies (scopus, extract-statistic, geolocalisation)"
     Write-Host "     stay manual - see the Prerequisites table in README.md."
     Write-Host "  Or run everything in one pass next time: .\setup.ps1 -All -Personal"

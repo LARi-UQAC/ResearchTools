@@ -65,12 +65,18 @@ if ($Sync) {
     $script:RtWhatIf = $WhatIf.IsPresent   # -Sync -WhatIf used to write anyway (measured 2026-10-17)
     $rtHomeClaude = Join-Path $env:USERPROFILE ".claude"
     if (-not (Test-Path $rtHomeClaude)) { exit 0 }
+    $script:RtSyncBusy = $false
     try { Invoke-RtSync $PSScriptRoot $rtHomeClaude } catch {
         # Never non-zero: this runs as a SessionStart hook, and a failing hook refuses
         # every tool of its matcher for the rest of the session.
         if (-not $script:RtQuiet) { Write-Host "  [RT-SYNC] $($_.Exception.Message)" -ForegroundColor Red }
         # Only setup.ps1 -Update asks for this: it ran "Update steps done." over a sync that did nothing.
         if ($StrictExit) { exit 1 }
+    }
+    # A held lock is a quiet return from the engine; for the update it is "the sync did not run".
+    if ($StrictExit -and $script:RtSyncBusy) {
+        Write-Host "  [RT-SYNC] another session holds the sync lock (younger than 60 s): nothing was synced. Run again in a minute." -ForegroundColor Red
+        exit 1
     }
     exit 0
 

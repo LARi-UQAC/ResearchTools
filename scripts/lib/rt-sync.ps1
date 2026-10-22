@@ -259,10 +259,11 @@ function Remove-RtUndoExcess([string]$repoRoot, [int]$keep = 20) {
 }
 
 function Invoke-RtSync([string]$repoRoot, [string]$homeClaude) {
+    $script:RtSyncBusy = $false   # set when another session holds the lock, so a caller can tell "did nothing" from "done"
     $lock = Join-Path $homeClaude ".rt-sync.lock"
     if (Test-Path $lock) {
         $age = (Get-Date) - (Get-Item $lock).LastWriteTime
-        if ($age.TotalSeconds -lt 60) { return }   # another session is syncing
+        if ($age.TotalSeconds -lt 60) { $script:RtSyncBusy = $true; return }   # another session is syncing
     }
     if (-not $script:RtWhatIf) { New-Item -ItemType File -Path $lock -Force | Out-Null }
 

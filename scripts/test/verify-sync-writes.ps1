@@ -382,7 +382,16 @@ $GoodHome = Join-Path $Fake "goodhome"
 New-Item -ItemType Directory -Path (Join-Path $GoodHome ".claude") -Force | Out-Null
 $r = Invoke-SyncChild $GoodHome @("-StrictExit", "-WhatIf")
 Check "(control) -Sync -StrictExit -WhatIf on a healthy home exits 0" ($r.Code -eq 0)
-Remove-Item $BadHome, $GoodHome -Recurse -Force -ErrorAction SilentlyContinue
+# Another session holding the sync lock made Invoke-RtSync return without a word, so -StrictExit
+# exited 0 over a sync that never ran (code-review round 4).
+$LockHome = Join-Path $Fake "lockhome"
+New-Item -ItemType Directory -Path (Join-Path $LockHome ".claude") -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $LockHome ".claude\.rt-sync.lock"), "held by another session")
+$r = Invoke-SyncChild $LockHome @("-StrictExit", "-WhatIf")
+Check "-Sync -StrictExit exits 1 when another session holds the sync lock" ($r.Code -eq 1 -and $r.Text -match "lock")
+$r = Invoke-SyncChild $LockHome @("-WhatIf")
+Check "(control) without -StrictExit the same lock is a quiet exit 0 (the hook contract)" ($r.Code -eq 0)
+Remove-Item $BadHome, $GoodHome, $LockHome -Recurse -Force -ErrorAction SilentlyContinue
 
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)
 Check "live ~/.claude/CLAUDE.md never written"      ((Get-FileHash $liveClaude   -Algorithm SHA256).Hash -eq $liveClaudeHash)

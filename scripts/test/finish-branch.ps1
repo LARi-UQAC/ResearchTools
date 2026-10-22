@@ -107,16 +107,23 @@ if (-not $common) {
     exit 2
 }
 $mainRoot = [System.IO.Path]::GetFullPath((Split-Path ($common -replace '/', '\') -Parent))
-Set-Location -LiteralPath $mainRoot
+# No Set-Location: this script runs in the caller's shell, which must stay where it was.
 
 # gh: is there a merged pull request with this branch as its head, and where did it end?
 $prMerged = $false; $prReason = ""; $prHead = ""
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     $prReason = "gh was not found on PATH, so the pull request cannot be checked"
 } else {
-    $raw = & gh pr list --head $Branch --state merged --json "number,headRefOid" 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        $prReason = "gh failed: $((($raw | Out-String).Trim()))"
+    # stdout is the JSON; stderr (an update notice, an auth warning) goes to a file so it can never
+    # end up inside the text that is parsed. gh needs the main clone as its folder to find the repo.
+    $ghErrFile = [System.IO.Path]::GetTempFileName()
+    Push-Location -LiteralPath $mainRoot
+    try { $raw = & gh pr list --head $Branch --state merged --json "number,headRefOid" 2>$ghErrFile; $ghCode = $LASTEXITCODE }
+    finally { Pop-Location }
+    $ghErr = [string](Get-Content -LiteralPath $ghErrFile -Raw -ErrorAction SilentlyContinue)
+    Remove-Item -LiteralPath $ghErrFile -Force -ErrorAction SilentlyContinue
+    if ($ghCode -ne 0) {
+        $prReason = "gh failed: $($ghErr.Trim())"
     } else {
         $prs = @()
         # Windows PowerShell 5.1 hands a JSON array through the pipeline as ONE object, so "[]"

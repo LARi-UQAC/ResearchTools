@@ -342,8 +342,13 @@ function Test-RtScriptHeld {
     #>
     param([string]$Token, [string[]]$Held)
     if (-not $Held) { return $false }
+    # Only a script token ("name.py") can be held. The comparison is by base name, because a hook
+    # ships a config beside its script (name.json): a held config leaves the hook running on stale
+    # settings, which R11 says is as bad as a stale script.
+    if ($Token -notmatch '\.(py|ps1|js|mjs|cjs)$') { return $false }
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($Token)
     foreach ($name in $Held) {
-        if ([string]::Equals([string]$name, $Token, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        if ([string]::Equals([System.IO.Path]::GetFileNameWithoutExtension([string]$name), $base, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     }
     return $false
 }
@@ -463,6 +468,7 @@ function Invoke-RtSettingsMerge {
         }
     }
 
+    $liveBytes = [System.IO.File]::ReadAllBytes($TargetPath)   # for a byte-exact restore, BOM included
     $liveText = [System.IO.File]::ReadAllText($TargetPath)
     try {
         $null = $liveText | ConvertFrom-Json
@@ -540,12 +546,20 @@ function Invoke-RtSettingsMerge {
         $current = @($liveHooks | Where-Object {
             [string]$_.command -ceq [string]$templateHook.command -and
             (-not $wantStatus -or
-             (($null -ne $_.PSObject.Properties["statusMessage"]) -and
-              [string]$_.statusMessage -ceq [string]$templateHook.statusMessage))
+             ($null -eq $_.PSObject.Properties["statusMessage"]) -or   # none to replace: noted below, not a difference
+             [string]$_.statusMessage -ceq [string]$templateHook.statusMessage)
         })
         if ($current.Count -gt 0) {
             # The update replaces command and statusMessage only. A different matcher or timeout used
             # to pass as "already present"; say so, and leave it to the operator.
+            if ($UpdateChanged -and $liveHooks.Count -eq 1 -and $wantStatus -and ($null -eq $liveHooks[0].PSObject.Properties["statusMessage"])) {
+                # A text replace cannot insert a key with certainty. Say so once, as a note, instead of
+                # a difference that -UpdateHooks can never clear.
+                $skipped += [PSCustomObject]@{
+                    Event = $record.Event; Token = $record.Token
+                    Reason = "the live entry has no statusMessage and a text edit cannot add one with certainty; add it by hand"
+                }
+            }
             if ($UpdateChanged -and $liveHooks.Count -eq 1) {
                 $why = @()
                 $templateMatcher = if ($null -ne $record.Entry.PSObject.Properties["matcher"]) { [string]$record.Entry.matcher } else { $null }
@@ -627,7 +641,9 @@ function Invoke-RtSettingsMerge {
         $note = if ($differs.Count -gt 0 -and -not $UpdateChanged) {
             "$($differs.Count) hook entr(y/ies) differ from the template; run setup.ps1 -UpdateHooks to update them"
         } elseif ($differs.Count -gt 0) {
-            "$($differs.Count) hook entr(y/ies) differ from the template and could not be updated; see the entries reported as not updated"
+            "$($differs.Count) hook entr(y/ies) differ from the template and could not be updated; see the entries reported as skipped"
+        } elseif ($skipped.Count -gt 0) {
+            "$($skipped.Count) hook entr(y/ies) skipped and need a hand edit; see below"
         } else { "every hook entry the template declares is already present" }
         return [PSCustomObject]@{
             Action = "unchanged"; Path = $TargetPath; Added = $empty; Skipped = $skipped
@@ -675,8 +691,9 @@ function Invoke-RtSettingsMerge {
     $holdsNewValues = $true
     foreach ($literal in $newLiterals) { if (-not $readBackText.Contains($literal)) { $holdsNewValues = $false } }
     if ($null -eq $parsedBack -or -not $holdsNewValues) {
-        # The text read before the edit, not the legacy .bak: that one is made once and never refreshed.
-        Write-RtTextNoBom -Path $TargetPath -Text $liveText
+        # The bytes read before the edit, not the legacy .bak (made once, never refreshed) and not the
+        # decoded text (which would drop a BOM).
+        [System.IO.File]::WriteAllBytes($TargetPath, $liveBytes)
         return [PSCustomObject]@{
             Action = "restored"; Path = $TargetPath; Added = $empty; Skipped = $skipped
             Updated = $empty; Differs = $differs

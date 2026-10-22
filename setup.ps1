@@ -641,6 +641,9 @@ function Invoke-HookCommandUpdate {
         Write-Warn "skipped: Git Bash or Node.js was not found (reported in step 1)"
         return
     }
+    if ($Preview) {
+        Write-Host "  [--]  preview: the sync did not run, so a script the real sync would copy shows as held here; the real run may update more commands" -ForegroundColor DarkGray
+    }
     $after = Install-RtGlobalHooks `
         -SourceDir (Join-Path $WorkspaceRoot ".claude\hooks") `
         -TargetDir (Join-Path $homeClaude "hooks") `

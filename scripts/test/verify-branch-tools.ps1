@@ -217,7 +217,8 @@ try {
     Invoke-Git $main @("push", "-q", "origin", "main") | Out-Null
 
     $bin = Join-Path $Tmp "bin"
-    Write-Text (Join-Path $bin "gh.cmd") "@echo off`r`ntype `"%GH_STUB_FILE%`"`r`n"
+    # The stub also writes a warning on stderr, as the real gh does when an update is available.
+    Write-Text (Join-Path $bin "gh.cmd") "@echo off`r`necho warning: a new release of gh is available 1>&2`r`ntype `"%GH_STUB_FILE%`"`r`n"
     $ghFile = Join-Path $Tmp "gh.json"
     $env:GH_STUB_FILE = $ghFile
 
@@ -322,6 +323,17 @@ try {
     $res = Invoke-Finish $c4 @("-Yes")
     Check "(refusal) an origin tip that moved after the merge exits 2" ($res.Code -eq 2 -and $res.Text -match "pushed after the merge")
     Check "(refusal) the remote branch and the worktree are still there" (Alive $c4)
+
+    # the caller's shell must stay where it was, after a dry run and after a refusal
+    $finishPath = Join-Path $main "scripts\test\finish-branch.ps1"
+    $oldPathEnv = $env:PATH; $env:PATH = "$bin;$oldPathEnv"
+    $keep = @((& powershell -NoProfile -Command "Set-Location -LiteralPath '$Tmp'; & '$finishPath' -Branch '$($c1.Branch)'; (Get-Location).Path" 2>&1 | Out-String).Trim() -split "`r?`n")[-1]
+    Check "after a dry run the caller is still in its own folder" ($keep -eq $Tmp)
+    Set-Merged $c1 $false
+    $keep = @((& powershell -NoProfile -Command "Set-Location -LiteralPath '$Tmp'; & '$finishPath' -Branch '$($c1.Branch)' -Yes; (Get-Location).Path" 2>&1 | Out-String).Trim() -split "`r?`n")[-1]
+    $env:PATH = $oldPathEnv
+    Set-Merged $c1
+    Check "after a refusal the caller is still in its own folder" ($keep -eq $Tmp)
 
     # a branch name git would read as an option
     $res = Invoke-Child (Join-Path $main "scripts\test\finish-branch.ps1") @("-Branch:-r") $main $bin

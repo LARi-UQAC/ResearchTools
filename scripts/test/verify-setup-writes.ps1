@@ -408,9 +408,22 @@ try {
     $r = Invoke-Update $updTemplate $liveS -Switch
     Check "a live entry without statusMessage is left untouched" ($null -ne $r -and (Get-Hash $liveS) -eq $hashS)
     Check "it is reported as skipped, naming the statusMessage" `
-        ($null -ne $r -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*statusMessage*" }).Count -eq 1)
+        ($null -ne $r -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*has no statusMessage*" }).Count -eq 1)
     Check "the message no longer claims every entry is already present" `
-        ($null -ne $r -and (Get-Prop $r "Message") -notlike "*already present*")
+        ($null -ne $r -and (Get-Prop $r "Message") -notlike "*already present*" -and (Get-Prop $r "Message") -like "*skipped*")
+    Check "it is not counted as a difference -UpdateHooks could clear (the warning would never go away)" `
+        ($null -ne $r -and @((Get-Prop $r "Differs")).Count -eq 0)
+    $r = Invoke-Update $updTemplate $liveS
+    Check "without the switch it raises no 'run -UpdateHooks' difference either" ($null -ne $r -and @((Get-Prop $r "Differs")).Count -eq 0)
+
+    # 4. A settings.json that starts with a UTF-8 BOM is restored byte for byte, BOM included.
+    $liveBm = Join-Path $updDir "bom.json"
+    $bomText = '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "python other-tool.py" } ] } ] } }'
+    $bomBytes = [byte[]](0xEF, 0xBB, 0xBF) + [System.Text.Encoding]::UTF8.GetBytes($bomText)
+    [System.IO.File]::WriteAllBytes($liveBm, $bomBytes)
+    $hashBm = Get-Hash $liveBm
+    $r = Invoke-Update $updTemplate $liveBm -ReadBack { param($p) "{ broken" }
+    Check "a failed read-back restores a BOM file byte for byte" ($null -ne $r -and (Get-Prop $r "Action") -eq "restored" -and (Get-Hash $liveBm) -eq $hashBm)
 
     # The bracket tag of an inline hook is accepted with or without its brackets.
     $tagTemplate = Join-Path $updDir "template-tag.json"
@@ -436,6 +449,9 @@ try {
     Check "an entry whose script is held is left untouched" ($null -ne $r -and (Get-Hash $liveHd) -eq $hashHd -and (Get-Prop $r "Action") -eq "unchanged")
     Check "it is reported as skipped, saying the script is held" `
         ($null -ne $r -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*held*" }).Count -eq 1)
+    $r = Invoke-Update $updTemplate $liveHd -Switch -Held @("my-hook.json")
+    Check "a held CONFIG file (.json) holds the hook of the same name" `
+        ($null -ne $r -and (Get-Hash $liveHd) -eq $hashHd -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*held*" }).Count -eq 1)
     $r = Invoke-Update $updTemplate $liveHd -Switch -Held @("some-other-hook.py")
     Check "(control) a held script of ANOTHER hook does not block this update" ($null -ne $r -and (Get-Prop $r "Action") -eq "updated")
 

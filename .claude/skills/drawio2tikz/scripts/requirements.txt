@@ -1,0 +1,2 @@
+# drawio2tikz skill - runtime dependencies. Added 2026-10-22: the skill imported defusedxml and declared nothing.
+defusedxml==0.7.1  # drawio2tikz.py parses untrusted .drawio XML

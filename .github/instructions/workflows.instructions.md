@@ -350,7 +350,7 @@ Run them from a ResearchTools clone.
   `-SkipSuite` are for the checks a change touches. The full run is made once, after the last
   commit. `verify-graph-health.ps1` is excluded because only `local-writer` may run it.
 - **After the owner merges: `scripts/test/finish-branch.ps1 -Branch <branch>`**, from the main
-  clone. A dry run until `-Yes`. It is the last node of the figure in manual chapter 12. The
+  clone. A dry run until `-Yes`. It is the last node of the figure in manual chapter 11. The
   session runs the dry run and shows it. It does not add `-Yes` unless the owner asked for the
   clean-up, because the script deletes a branch on origin.
 
@@ -657,7 +657,7 @@ card), R31 gates APPROVING/MERGING it (docs caught up). "The respective document
 whichever of these the change actually touched:
 
 - A skill, agent, or command added or edited → its entry in `README.md` /
-  `docs/manual/04-skills.md`, `10-agents.md`, or `08-commands.md`, and `Architecture.md` if
+  `docs/manual/06-skills.md`, `05-agents.md`, or `04-commands.md`, and `Architecture.md` if
   the relationship diagram changed.
 - A script's CLI surface changed (new flag, renamed subcommand, changed default) → its line
   in `.claude/rules/testing.md` (already required by R23 — this rule is the merge-time check

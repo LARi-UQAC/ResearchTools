@@ -9,7 +9,7 @@ labels: enhancement
 
 ## Does it belong in an existing skill?
 
-Check [docs/manual/04-skills.md](../../docs/manual/04-skills.md) and
+Check [docs/manual/06-skills.md](../../docs/manual/06-skills.md) and
 `.claude/rules/testing.md`'s "ResearchTools script surface" inventory first — extending an
 existing skill with a flag or subcommand is preferred over a new one.
 

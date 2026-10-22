@@ -24,7 +24,7 @@ from test_memory_triggers import RULES as WORKFLOWS_RULES  # noqa: E402
 from test_memory_triggers import read_table as memory_rows  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
-CHAPTER = REPO / "docs" / "manual" / "12-local-coding.md"
+CHAPTER = REPO / "docs" / "manual" / "11-local-coding.md"
 DIAGRAM = REPO / "docs" / "manual" / "diagrams" / "local-coding-flow.mmd"
 MKDOCS = REPO / "mkdocs.yml"
 README = REPO / "README.md"
@@ -83,9 +83,9 @@ class TestChapter(unittest.TestCase):
         self.text = CHAPTER.read_text(encoding="utf-8")
 
     def test_the_chapter_is_in_the_navigation_the_readme_and_the_landing_page(self):
-        self.assertIn("manual/12-local-coding.md", MKDOCS.read_text(encoding="utf-8"))
-        self.assertIn("docs/manual/12-local-coding.md", README.read_text(encoding="utf-8"))
-        self.assertIn("manual/12-local-coding.md", INDEX.read_text(encoding="utf-8"))
+        self.assertIn("manual/11-local-coding.md", MKDOCS.read_text(encoding="utf-8"))
+        self.assertIn("docs/manual/11-local-coding.md", README.read_text(encoding="utf-8"))
+        self.assertIn("manual/11-local-coding.md", INDEX.read_text(encoding="utf-8"))
         self.assertTrue(self.text.startswith("# Local coding and the cloud"))
 
     def test_the_inline_flowchart_is_byte_identical_to_the_mmd_source(self):
@@ -144,16 +144,16 @@ BEGIN, END = "<!-- local-coding:begin -->", "<!-- local-coding:end -->"
 # in the repository (R14), "text" names are not files (a state file kept in a git directory,
 # a snapshot section).
 NEIGHBOURS = {
-    "04-skills.md": {"plan_contract.py": "file", "token_count.py": "file",
+    "06-skills.md": {"plan_contract.py": "file", "token_count.py": "file",
                      "loop_bounds.py": "file"},
-    "06-aider-pipeline.md": {"context-budget.json": "file", "plan-tiers.json": "file"},
-    "07-rt-observe-dashboard.md": {"collect_local.py": "file", "collect_rounds.py": "file",
+    "14-aider-pipeline.md": {"context-budget.json": "file", "plan-tiers.json": "file"},
+    "10-rt-observe-dashboard.md": {"collect_local.py": "file", "collect_rounds.py": "file",
                                    "local_calls": "text", "rounds": "text"},
-    "08-commands.md": {"loop_bounds.py": "file", "review-loop-guard.py": "file"},
-    "11-file-locations.md": {"plan_contract.py": "file", "review-loop-guard.py": "file",
+    "04-commands.md": {"loop_bounds.py": "file", "review-loop-guard.py": "file"},
+    "18-file-locations.md": {"plan_contract.py": "file", "review-loop-guard.py": "file",
                              "local-coder-dispatch-guard.py": "file",
                              "plan-tiers.json": "file", "rt-review-loop.json": "text",
-                             "12-local-coding.md": "file"},
+                             "11-local-coding.md": "file"},
 }
 
 
@@ -170,8 +170,8 @@ def region_problems(text: str, names: dict, base: Path) -> list:
     if not added:
         return ["no local-coding region"]
     problems = []
-    if "12-local-coding.md" not in LINK.findall(added) and not any(
-            t.startswith("12-local-coding.md") for t in LINK.findall(added)):
+    if "11-local-coding.md" not in LINK.findall(added) and not any(
+            t.startswith("11-local-coding.md") for t in LINK.findall(added)):
         problems.append("no link to chapter 12")
     for name, kind in names.items():
         if name not in added:
@@ -278,7 +278,7 @@ class TestProcessFigure(unittest.TestCase):
         self.assertIsNone(node_id(graph, "absent"))
 
 
-AIDER_CHAPTER = REPO / "docs" / "manual" / "06-aider-pipeline.md"
+AIDER_CHAPTER = REPO / "docs" / "manual" / "14-aider-pipeline.md"
 AIDER_DEEP_DIVE = REPO / "docs" / "aider-setup.md"
 AIDER_DIR = REPO / ".claude" / "skills" / "aider-setup"
 RULES_HEADER = re.compile(r"^Rules: \d+ \(R0-R(\d+)\)", re.MULTILINE)
@@ -359,14 +359,14 @@ class TestNeighbouringChapters(unittest.TestCase):
 
     def test_the_aider_chapter_quotes_the_ceilings_the_budget_file_holds(self):
         ceilings = json.loads(BUDGET.read_text(encoding="utf-8"))["ceilings"]
-        added = region((MANUAL / "06-aider-pipeline.md").read_text(encoding="utf-8"))
+        added = region((MANUAL / "14-aider-pipeline.md").read_text(encoding="utf-8"))
         quoted = table_values(added, ("plan.md", "progress.md", "spec.md", "audit.md"))
         for key, value in quoted.items():
             with self.subTest(key=key):
                 self.assertEqual(value, ceilings[key])
 
     def test_the_commands_chapter_no_longer_documents_the_unwired_budget_flag(self):
-        text = (MANUAL / "08-commands.md").read_text(encoding="utf-8")
+        text = (MANUAL / "04-commands.md").read_text(encoding="utf-8")
         self.assertNotIn("`/loopdev --budget <max_usd>", text)
         self.assertNotIn("`--budget` required", text)
 
@@ -409,18 +409,18 @@ class TestSkillForEveryStep(unittest.TestCase):
 class TestNegativeControls(unittest.TestCase):
     def test_the_region_checker_fails_without_a_link_a_name_or_a_region(self):
         names = {"loop_bounds.py": "file"}
-        good = BEGIN + "See [chapter 12](12-local-coding.md): `loop_bounds.py`." + END
+        good = BEGIN + "See [chapter 12](11-local-coding.md): `loop_bounds.py`." + END
         self.assertEqual(region_problems(good, names, MANUAL), [])
         self.assertIn("no link to chapter 12",
-                      region_problems(good.replace("](12-local-coding.md)", "]()"), names, MANUAL))
+                      region_problems(good.replace("](11-local-coding.md)", "]()"), names, MANUAL))
         self.assertIn("does not name loop_bounds.py",
-                      region_problems(BEGIN + "[x](12-local-coding.md)" + END, names, MANUAL))
+                      region_problems(BEGIN + "[x](11-local-coding.md)" + END, names, MANUAL))
         self.assertEqual(region_problems("nothing", names, MANUAL), ["no local-coding region"])
         self.assertIn("no_such_script.py does not exist in the repository",
-                      region_problems(BEGIN + "[x](12-local-coding.md) no_such_script.py" + END,
+                      region_problems(BEGIN + "[x](11-local-coding.md) no_such_script.py" + END,
                                       {"no_such_script.py": "file"}, MANUAL))
         self.assertIn("names a model tag", region_problems(
-            BEGIN + "[x](12-local-coding.md) loop_bounds.py vendor-a:9b" + END, names, MANUAL))
+            BEGIN + "[x](11-local-coding.md) loop_bounds.py vendor-a:9b" + END, names, MANUAL))
 
     def test_the_link_finder_can_fail(self):
         base = CHAPTER.parent

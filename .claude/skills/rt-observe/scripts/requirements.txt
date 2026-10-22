@@ -1,0 +1,7 @@
+# rt-observe skill - runtime dependencies. Added 2026-10-22: the voice panel imported faster_whisper and declared nothing.
+# The rest of the dashboard uses the standard library only.
+faster-whisper==1.2.1  # voice panel speech-to-text (stt_engine.py); pulls ctranslate2
+psycopg[binary]==3.3.6  # optional: rt_store.py, the PostgreSQL identity layer; only read when observe-config.json declares a postgres block
+nvidia-cublas-cu12==12.9.2.10  # CUDA DLLs that stt_engine.add_cuda_dll_dirs puts on PATH; without them ctranslate2 fails on the first GPU call
+nvidia-cudnn-cu12==9.26.0.51  # same
+nvidia-cuda-nvrtc-cu12==12.9.86  # same

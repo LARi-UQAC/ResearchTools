@@ -159,8 +159,8 @@ class TestHandTypedReviewIsNotOverClaimed(unittest.TestCase):
     def test_no_document_says_a_hand_typed_review_is_guarded(self):
         manual = REPO / "docs" / "manual"
         texts = {"R35": r35_block(WORKFLOWS.read_text(encoding="utf-8")),
-                 "08-commands": (manual / "08-commands.md").read_text(encoding="utf-8"),
-                 "12-local-coding": (manual / "12-local-coding.md").read_text(encoding="utf-8")}
+                 "04-commands": (manual / "04-commands.md").read_text(encoding="utf-8"),
+                 "11-local-coding": (manual / "11-local-coding.md").read_text(encoding="utf-8")}
         for label, text in texts.items():
             with self.subTest(where=label):
                 body = flat(text)

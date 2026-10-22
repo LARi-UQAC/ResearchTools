@@ -10,6 +10,26 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Added
+- Manual: four new chapters, `07 Hooks and guards`, `08 Rules and conventions`, `09 Harnesses and
+  mirrors` and `16 Maintenance, checks and CI`, and two placeholder chapters, `12 PCB design, mixed
+  signals` and `13 3D CAD design, CNC, 3D printing`. The chapters are reordered so that commands,
+  agents and skills come first (04 Commands, 05 Agents, 06 Skills) and the dashboard, local coding
+  and design chapters follow (10 to 14), and the chapter files are renamed to match. The links in
+  `README.md`, `docs/index.md`, `mkdocs.yml` and four documentation tests follow.
+- Manual: the SkillSpector scan now covers all 25 skills (289 findings, rated by rule family in
+  chapter 15), and the open findings it confirmed are listed there.
+- Manual: chapter 02 lists every third-party Python library of the two environments, `.venv-skills`
+  and `.venv-docs`, one row per library with its installed version, the requirements file that
+  declares it and whether `setup.ps1 -InstallPython` installs it. Built from the `import`
+  statements of all the Python files. Libraries that the code imported and no file declared are now
+  declared: `requests` (extract-statistic), `PyMuPDF` (pdf2md, paper2talk), `playwright-stealth`
+  (scopus), `cryptography` (form-service), `tiktoken` (loop-engineer), and four new requirements
+  files for `word2latex`, `drawio2tikz`, `rt-observe` and `opt-local-stt-vram`.
+- Manual (corrections): the environment-variable table of chapter 02 no longer documents the retired Gemini 2.0
+  Flash and GitHub Models routes, and lists `COPILOT_TOKEN`, `GH_OAUTH_TOKEN` and the other
+  variables the toolkit reads. Chapter 05 no longer documents the unwired `--loop --budget`
+  option, chapter 06 no longer gives a `/drawio2tikz` command that does not exist, and the counts
+  in chapters 00 and 18 are 25 skills, 21 agents and 32 commands.
 - `.\setup.ps1 -Update` updates an existing installation in one command. It asks the domain
   profile, whether to install GitHub Copilot at user level and whether to run the offline suite
   first, then runs the global configuration with the hook update, the Claude Code links,

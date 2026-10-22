@@ -79,13 +79,8 @@ job.
 | [Git for Windows](https://git-scm.com/download/win) (includes Git Bash) | Hooks that use `bash` shell |
 | [Node.js](https://nodejs.org/) | Caveman-mode hooks (`caveman-activate.js`, etc.) |
 | Python 3.x | Scopus skill scripts + security hooks (`betterleaks`, `pip-audit`, `prompt-injection-defender`) |
-| `pip install requests google-genai openai` | Scopus skill + Gemini/Copilot cross-review |
-| `pip install pymupdf4llm pymupdf` *(optional, AGPL-3.0)* | `extract-statistic` skill PDF parsing (`mine` mode), LLM-ready Markdown + table extraction; reuses `SCOPUS_API_KEY` via `download_pdf.py`, needs no key of its own |
-| `pip install docling markitdown[pdf]` *(optional, MIT; Docling pulls torch)* | Pluggable Markdown backend for `extract_text.py` (`--stats-scan` / `--section-scan`) and HTML conversion in the any-format retrieval path. Docling is the default (best tables/layout), MarkItDown the light fallback; absent both, the parser uses pymupdf4llm + a tag-strip |
-| `pip install "psycopg[binary]" pgvector` *(optional)* | `extract-statistic`'s opt-in `corpus_index.py` (RT-7): pgvector store for ad-hoc cross-corpus retrieval. Both degrade gracefully when absent - the parse cache (`parse_cache.py`) and the chunker work without them, and the index reports itself unavailable |
-| `pip install matplotlib` *(+ optional `folium`)* | `geolocalisation` skill: world-map PNG figure (`matplotlib`) and interactive HTML map (`folium`). No geopandas/GDAL. The `--full-text` study-site scan additionally reuses `pymupdf` + `download_pdf.py` |
+| Python libraries (`pip`) | Every library each skill imports, with its version, the requirements file that declares it and whether `setup.ps1 -InstallPython` installs it: [chapter 02, Python environments](02-profiles.md#python-environments-every-library) |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
-| `pip install pypdf python-pptx jinja2 defusedxml` | `paper2talk` skill: paper-size PDF reflow (`pypdf`), the gabarit-based PowerPoint renderer (`python-pptx`), the Beamer/web renderers (`jinja2`), OOXML reading (`defusedxml`). Pinned in `.claude/skills/paper2talk/scripts/requirements.txt` |
 | `npm install pptxgenjs` *(optional)* | `paper2talk` fallback for a PowerPoint deck with no gabarit at all. Set `NODE_PATH` when building outside the tree that holds the install |
 | PowerPoint (Office 16+) **or** LibreOffice, plus Poppler `pdftoppm` | `paper2talk` render loop: deck → PDF → page images. On Windows the working path is PowerPoint COM `SaveAs(..., 32)`; the `document-skills` `soffice.py` wrapper fails here with `AF_UNIX`. Poppler ships with MiKTeX |
 | draw.io Desktop *(optional)* | `paper2talk` figure re-export at scale 3 (`fig_export.py`); locate it with `--drawio` or `DRAWIO_EXE` |
@@ -202,7 +197,7 @@ the VS Code user profile, making them available in every workspace:
 `-Profile <name>` or answer the interactive prompt; non-interactive runs keep the
 current default (`engineering`).
 
-Details in [Using the agents outside Claude Code](10-agents.md#using-the-agents-outside-claude-code).
+Every target and the limits that stub or trim a mirror are in [chapter 09](09-harnesses.md). The agent side is in [Using the agents outside Claude Code](05-agents.md#using-the-agents-outside-claude-code).
 
 ## Step 5 — Python environment for the offline test suite (optional)
 
@@ -233,7 +228,8 @@ own profile and can really create a virtual environment (it builds a scratch one
 If none qualifies it stops and names each candidate with the reason, for example "belongs to
 another account" or "python -m venv failed".
 
-It installs what the repository's skills import, listed in
+The complete list of libraries, for this environment and for `.venv-docs`, is in
+[chapter 02](02-profiles.md#python-environments-every-library). It installs what the repository's skills import, listed in
 `scripts/lib/rt-python-requirements.json`: the offline-suite packages (`paper2talk`,
 `recommendation-letter`), the `scopus` skill (`requests`, `playwright`, the reviewers' clients)
 and the `extract-statistic` skill without `docling`, plus `pip-audit`. The Chromium binary for

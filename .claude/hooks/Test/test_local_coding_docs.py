@@ -31,7 +31,7 @@ ALL = {
     "workflows.md": REPO / ".claude" / "rules" / "workflows.md",
     "Architecture.md": REPO / "Architecture.md",
     "contributor-notes.md": REPO / "docs" / "contributor-notes.md",
-    "10-agents.md": REPO / "docs" / "manual" / "10-agents.md",
+    "05-agents.md": REPO / "docs" / "manual" / "05-agents.md",
 }
 SWITCH_DOCS = ("workflows.md", "contributor-notes.md", "Architecture.md")
 

@@ -3,7 +3,7 @@
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-10243E.svg)](LICENSE)
 [![Python 3.x](https://img.shields.io/badge/python-3.x-1F9E8F.svg)](docs/manual/01-installation.md)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows-1F9E8F.svg)](docs/manual/01-installation.md)
-[![Docs](https://img.shields.io/badge/docs-12%20chapters-10243E.svg)](docs/manual/00-purpose.md)
+[![Docs](https://img.shields.io/badge/docs-19%20chapters-10243E.svg)](docs/manual/00-purpose.md)
 [![GitHub Repo stars](https://img.shields.io/github/stars/LARi-UQAC/ResearchTools?style=flat&color=C9762F)](https://github.com/LARi-UQAC/ResearchTools/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/LARi-UQAC/ResearchTools?color=1F9E8F)](https://github.com/LARi-UQAC/ResearchTools/commits/main)
 [![Contributors](https://img.shields.io/github/contributors/LARi-UQAC/ResearchTools?color=1F9E8F)](https://github.com/LARi-UQAC/ResearchTools/graphs/contributors)
@@ -63,7 +63,7 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 | Re-read a cited paper's abstract/contribution/futureworks/statistics and hope the citation says what you think it says | `extract-contributions` checks the citing sentence against the paper's own stated contribution |
 | Receive a thesis, an article or a talk as a PDF with no LaTeX source and re-type it before it can be audited | `pdf2md` converts it with mineru to markdown (the UQAC thesis layout, or one document for an article or a talk) and measures what the conversion lost against a second reader of the PDF |
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
-| Know whether a coding task should run on the cloud, through `local-coder`, through aider, or on a switched session | A plan header names `executor`, `tier` and the review bounds, `plan_contract.py` checks it, two hooks enforce it, and the process has a flowchart ([chapter 12](docs/manual/12-local-coding.md)) |
+| Know whether a coding task should run on the cloud, through `local-coder`, through aider, or on a switched session | A plan header names `executor`, `tier` and the review bounds, `plan_contract.py` checks it, two hooks enforce it, and the process has a flowchart ([chapter 11](docs/manual/11-local-coding.md)) |
 | Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
 | Catch a committed secret but not a committed real name (a student, a co-author, an account path) | A global git privacy guard (pre-commit/pre-push, every repository) scans the diff against both betterleaks' secret rules and a machine-local deny list of real names, extended for each new student and never leaving the machine |
 
@@ -79,7 +79,7 @@ service. A push-to-talk voice panel (hold P) lets you ask it a question about th
 own memory out loud, answered by the local LLM through the vault daemon's ask queue and spoken
 back in two parts: the vault answer first, then a code-structure note from the matched
 project's own `graphify` graph when its vault folder names a `repo:`. Full walkthrough:
-[docs/manual/07-rt-observe-dashboard.md](docs/manual/07-rt-observe-dashboard.md).
+[docs/manual/10-rt-observe-dashboard.md](docs/manual/10-rt-observe-dashboard.md).
 
 ## Quickstart
 
@@ -101,12 +101,12 @@ Two memories back this toolkit, and neither is read or written directly: the Obs
 (what this repository's code IS right now). Both are reached only by dispatching the
 `local-writer` agent. The graph's own state is read-only via
 `scripts/audit/check-graph-health.ps1`. Full design:
-[docs/manual/04-skills.md](docs/manual/04-skills.md#the-two-memories---the-vault-and-the-code-graph).
+[docs/manual/06-skills.md](docs/manual/06-skills.md#the-two-memories---the-vault-and-the-code-graph).
 
 ## Manual chapters
 
 At a glance — commands drive agents, agents draw on skills, and both memories are reached
-only through `local-writer` (detail: [04-skills.md](docs/manual/04-skills.md)):
+only through `local-writer` (detail: [06-skills.md](docs/manual/06-skills.md)):
 
 ```mermaid
 graph LR
@@ -121,36 +121,42 @@ graph LR
 | # | Chapter | Covers |
 |---|---|---|
 | 00 | [Purpose & overview](docs/manual/00-purpose.md) | Mission, 2026 roadmap, manual conventions |
-| 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the 5 install steps |
-| 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys |
-| 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx` |
-| 04 | [Skills](docs/manual/04-skills.md) | All 25 skills, the two memories |
-| 05 | [Security audit](docs/manual/05-security-audit.md) | SkillSpector findings, the global git privacy guard (deny list of real names + secret rules, every repo), the optional billed pull-request review workflow |
-| 06 | [Aider nightly pipeline](docs/manual/06-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
-| 07 | [rt-observe & dashboard](docs/manual/07-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard` |
-| 08 | [Commands](docs/manual/08-commands.md) | All slash commands |
-| 09 | [ThesisTracker integration](docs/manual/09-thesistracker-integration.md) | The sibling repository, `NEW_ARCHITECTURE.md`, the `form-service` boundary |
-| 10 | [Agents](docs/manual/10-agents.md) | All agents, local delegation, loop engineering |
-| 11 | [File locations](docs/manual/11-file-locations.md) | Directory tree summary |
-| 12 | [Local coding and the cloud](docs/manual/12-local-coding.md) | Which executor runs a coding task (cloud, `local-coder`, aider, a switched session), the plan header, review bounds, size ceilings, the flowchart |
+| 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the install steps, updating a machine |
+| 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys, and every Python library of `.venv-skills` and `.venv-docs` |
+| 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx`, switching the session identity |
+| 04 | [Commands](docs/manual/04-commands.md) | All slash commands |
+| 05 | [Agents](docs/manual/05-agents.md) | All agents, local delegation, loop engineering |
+| 06 | [Skills](docs/manual/06-skills.md) | All 25 skills, the two memories |
+| 07 | [Hooks and guards](docs/manual/07-hooks.md) | Every hook the toolkit declares: guards before a tool call, scanners, session hooks, git hooks |
+| 08 | [Rules and conventions](docs/manual/08-rules.md) | The rules R0 to R38 and the five files that hold them |
+| 09 | [Harnesses and mirrors](docs/manual/09-harnesses.md) | Claude Code, Copilot, OpenCode, Continue, Aider and Codex: what each receives, `mirror-policy.json`, session adapters |
+| 10 | [rt-observe & dashboard](docs/manual/10-rt-observe-dashboard.md) | Mirror matrix, `/rt-dashboard`, the voice panel |
+| 11 | [Local coding and the cloud](docs/manual/11-local-coding.md) | Which executor runs a coding task (cloud, `local-coder`, aider, a switched session), the plan header, review bounds, size ceilings, the flowchart |
+| 12 | [PCB design, mixed signals](docs/manual/12-pcb-design.md) | Placeholder, to be written |
+| 13 | [3D CAD design, CNC, 3D printing](docs/manual/13-cad-design.md) | Placeholder, to be written |
+| 14 | [Aider nightly pipeline](docs/manual/14-aider-pipeline.md) | `aider-setup`, the student `aider-kit.zip`, vs. `local-coder` |
+| 15 | [Security audit and guards](docs/manual/15-security-audit.md) | SkillSpector scan of all 25 skills, the global git privacy guard (deny list of real names + secret rules, every repo), the optional billed pull-request review workflow |
+| 16 | [Maintenance, checks and CI](docs/manual/16-maintenance.md) | The green stamp, `run-all-checks`, `finish-branch`, the verifiers, the workflows, publishing this site |
+| 17 | [ThesisTracker integration](docs/manual/17-thesistracker-integration.md) | The sibling repository, `NEW_ARCHITECTURE.md`, the `form-service` boundary |
+| 18 | [File locations](docs/manual/18-file-locations.md) | Directory tree summary, machine-local files |
 
 Relationship diagrams and the 7-layer execution architecture for **this** repository:
 [Architecture.md](Architecture.md). The architecture **shared with the sibling repository
 ThesisTracker** (form catalogue, twenty-two-unit delivery plan) is a separate file,
-[NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 09 above; do not confuse the two.
+[NEW_ARCHITECTURE.md](NEW_ARCHITECTURE.md) — see chapter 17 above; do not confuse the two.
 
 ## Supported harnesses
 
 One canonical `.claude/` source, mirrored everywhere below (detail:
-[10-agents.md](docs/manual/10-agents.md#using-the-agents-outside-claude-code)):
+[05-agents.md](docs/manual/05-agents.md#using-the-agents-outside-claude-code)):
 
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-native-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![GitHub Copilot](https://img.shields.io/badge/GitHub%20Copilot-mirrored-1F9E8F.svg?logo=githubcopilot&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![OpenCode](https://img.shields.io/badge/OpenCode-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![Continue](https://img.shields.io/badge/Continue-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![Aider](https://img.shields.io/badge/Aider-mirrored-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![Codex](https://img.shields.io/badge/Codex-mirrored-1F9E8F.svg?logo=openai&logoColor=white)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
-[![AGENTS.md readers](https://img.shields.io/badge/AGENTS.md-generic%20readers-1F9E8F.svg)](docs/manual/10-agents.md#using-the-agents-outside-claude-code)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-native-1F9E8F.svg)](docs/manual/05-agents.md#using-the-agents-outside-claude-code)
+[![GitHub Copilot](https://img.shields.io/badge/GitHub%20Copilot-mirrored-1F9E8F.svg?logo=githubcopilot&logoColor=white)](docs/manual/05-agents.md#using-the-agents-outside-claude-code)
+[![OpenCode](https://img.shields.io/badge/OpenCode-mirrored-1F9E8F.svg)](docs/manual/05-agents.md#using-the-agents-outside-claude-code)
+[![Continue](https://img.shields.io/badge/Continue-mirrored-1F9E8F.svg)](docs/manual/05-agents.md#using-the-agents-outside-claude-code)
+[![Aider](https://img.shields.io/badge/Aider-mirrored-1F9E8F.svg)](docs/manual/05-agents.md#using-the-agents-outside-claude-code)
+[![Codex](https://img.shields.io/badge/Codex-mirrored-1F9E8F.svg?logo=openai&logoColor=white)](docs/manual/05-agents.md#using-the-agents-outside-claude-code)
+[![AGENTS.md readers](https://img.shields.io/badge/AGENTS.md-generic%20readers-1F9E8F.svg)](docs/manual/05-agents.md#using-the-agents-outside-claude-code)
 
 ## License
 

@@ -79,15 +79,21 @@ nav:
       - 01 Installation: manual/01-installation.md
       - 02 Profiles & environment: manual/02-profiles.md
       - 03 Token management: manual/03-token-management.md
-      - 04 Skills: manual/04-skills.md
-      - 05 Security audit: manual/05-security-audit.md
-      - 06 Aider nightly pipeline: manual/06-aider-pipeline.md
-      - 07 rt-observe & dashboard: manual/07-rt-observe-dashboard.md
-      - 08 Commands: manual/08-commands.md
-      - 09 ThesisTracker integration: manual/09-thesistracker-integration.md
-      - 10 Agents: manual/10-agents.md
-      - 11 File locations: manual/11-file-locations.md
-      - 12 Local coding and the cloud: manual/12-local-coding.md
+      - 04 Commands: manual/04-commands.md
+      - 05 Agents: manual/05-agents.md
+      - 06 Skills: manual/06-skills.md
+      - 07 Hooks and guards: manual/07-hooks.md
+      - 08 Rules and conventions: manual/08-rules.md
+      - 09 Harnesses and mirrors: manual/09-harnesses.md
+      - 10 rt-observe & dashboard: manual/10-rt-observe-dashboard.md
+      - 11 Local coding and the cloud: manual/11-local-coding.md
+      - 12 PCB design, mixed signals (placeholder): manual/12-pcb-design.md
+      - 13 3D CAD design, CNC, 3D printing (placeholder): manual/13-cad-design.md
+      - 14 Aider nightly pipeline: manual/14-aider-pipeline.md
+      - 15 Security audit and guards: manual/15-security-audit.md
+      - 16 Maintenance, checks and CI: manual/16-maintenance.md
+      - 17 ThesisTracker integration: manual/17-thesistracker-integration.md
+      - 18 File locations: manual/18-file-locations.md
   - Deep-dive references:
       - aider-setup: aider-setup.md
       - rt-observe: rt-observe.md

@@ -1,6 +1,6 @@
 # Local coding and the cloud
 
-Chapter 12 of the ResearchTools manual. Back to [table of contents](../../README.md).
+Chapter 10 of the ResearchTools manual. Back to [table of contents](../../README.md).
 
 This chapter answers one question for any piece of coding: does it run on the cloud, through
 `local-coder`, through aider, or on a session you switched by hand, and who decides. It also
@@ -185,7 +185,7 @@ calling session.
 **Several plans through aider.** Aider keeps its own internal loop: a writer model codes and
 tests, and a different reviewer model audits and never edits. It reads `spec.md`, each
 `plan<N>.md` and `progress.md`, and a plan header does not change the files it names. See
-chapter [06](06-aider-pipeline.md).
+chapter [14](14-aider-pipeline.md).
 
 **A whole session switched by hand.** `claude-switch.ps1` provides `claude-ollama`,
 `claude-augure` and `claude-cloud`. This is your choice and is never written in a plan.
@@ -285,7 +285,7 @@ the bridge log and shows each role with its model, window, calls, tokens and whe
 active. `rounds` lists each plan of a round folder with its executor, tier and task counts, and
 the review loop of every worktree as rounds used of the maximum. The Real-Time tab draws a lane
 and a token ring for each active bridge role, and shows an aider run's fixed cost and task
-budget. See chapter [07](07-rt-observe-dashboard.md).
+budget. See chapter [10](10-rt-observe-dashboard.md).
 
 ## What is verified, unsupported and untried
 
@@ -313,3 +313,6 @@ Also untried until one live firing on this machine: that both hooks fire on thei
 - The session role has no window: adopt it again with `--num-ctx`, then try `claude-local` once.
 - The page shows no local lane: the bridge log has no record with a role yet, and the section
   says why instead of drawing an empty panel.
+
+---
+[← 10 rt-observe & dashboard](10-rt-observe-dashboard.md) | [Table of contents](../../README.md) | [12 PCB design, mixed signals →](12-pcb-design.md)

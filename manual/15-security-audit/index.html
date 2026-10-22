@@ -1,0 +1,1821 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-assisted toolbox for academic writing and software design, built on Claude Code agents/skills/commands.">
+      
+      
+      
+        <link rel="canonical" href="https://LARi-UQAC.github.io/ResearchTools/manual/15-security-audit/">
+      
+      
+        <link rel="prev" href="../14-aider-pipeline/">
+      
+      
+        <link rel="next" href="../16-maintenance/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/ResearchToolsLogo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>15 Security audit and guards - ResearchTools</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#security-audit-and-guards" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://lari.uqac.ca/" title="ResearchTools" class="md-header__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ResearchTools
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              15 Security audit and guards
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../00-purpose/" class="md-tabs__link">
+          
+  
+  
+  Manual
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../aider-setup/" class="md-tabs__link">
+          
+  
+  
+  Deep-dive references
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://lari.uqac.ca/" title="ResearchTools" class="md-nav__button md-logo" aria-label="ResearchTools" data-md-component="logo">
+      
+  <img src="../banner/LogoLARI_trim.png" alt="logo">
+
+    </a>
+    ResearchTools
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/LARi-UQAC/ResearchTools" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    LARi-UQAC/ResearchTools
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Manual
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Manual
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../00-purpose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    00 Purpose & overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../01-installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    01 Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../02-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    02 Profiles & environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../03-token-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    03 Token management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../04-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    04 Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../05-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    05 Agents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../06-skills/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    06 Skills
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../07-hooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    07 Hooks and guards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../08-rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    08 Rules and conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../09-harnesses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    09 Harnesses and mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../10-rt-observe-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10 rt-observe & dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../11-local-coding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11 Local coding and the cloud
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../12-pcb-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12 PCB design, mixed signals (placeholder)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../13-cad-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13 3D CAD design, CNC, 3D printing (placeholder)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../14-aider-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14 Aider nightly pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15 Security audit and guards
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15 Security audit and guards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#skill-scan-of-2026-10-22-all-25-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill scan of 2026-10-22 (all 25 skills)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#worktree-link-guard-git-worktree-remove" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worktree link guard (git worktree remove)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#personal-data-guard-every-git-repository-this-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personal-data guard (every git repository, this machine)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#automated-pull-request-review-billed-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automated pull-request review (billed, optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../16-maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16 Maintenance, checks and CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../17-thesistracker-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17 ThesisTracker integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../18-file-locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    18 File locations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep-dive references
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deep-dive references
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../aider-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    aider-setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rt-observe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rt-observe
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../authoring-and-mirrors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring & mirrors
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributor-notes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../github-repo-setup-playbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub repo setup playbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#skill-scan-of-2026-10-22-all-25-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill scan of 2026-10-22 (all 25 skills)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#worktree-link-guard-git-worktree-remove" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worktree link guard (git worktree remove)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#personal-data-guard-every-git-repository-this-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personal-data guard (every git repository, this machine)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#automated-pull-request-review-billed-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automated pull-request review (billed, optional)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="security-audit-and-guards">Security audit and guards<a class="headerlink" href="#security-audit-and-guards" title="Permanent link">&para;</a></h1>
+<p>Chapter 13 of the ResearchTools manual. Back to <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">table of contents</a>.</p>
+<p>Every skill under <code>.claude/skills/</code> is scanned with <strong>SkillSpector v2.2.3</strong> in static-only mode
+(<code>skillspector scan &lt;skill&gt; --no-llm</code>), and every dependency finding is cross-checked against
+<code>pip-audit</code>. The scan is rerun by hand: nothing schedules it.</p>
+<h2 id="skill-scan-of-2026-10-22-all-25-skills">Skill scan of 2026-10-22 (all 25 skills)<a class="headerlink" href="#skill-scan-of-2026-10-22-all-25-skills" title="Permanent link">&para;</a></h2>
+<p>The first scan, on 2026-06-18, covered the eight skills that existed then. The repository now holds
+25, so the scan was rerun on all of them on 2026-10-22. Result: 289 findings, 3 critical, 135 high, 136 medium and 15 low.</p>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>Findings</th>
+<th>Critical</th>
+<th>High</th>
+<th>Medium</th>
+<th>Low</th>
+<th>SkillSpector verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>aider-setup</code></td>
+<td>56</td>
+<td>0</td>
+<td>39</td>
+<td>17</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>deliberation</code></td>
+<td>13</td>
+<td>0</td>
+<td>5</td>
+<td>5</td>
+<td>3</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>drawio2tikz</code></td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>SAFE</td>
+</tr>
+<tr>
+<td><code>extract-contributions</code></td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+<td>0</td>
+<td>SAFE</td>
+</tr>
+<tr>
+<td><code>extract-futureworks</code></td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>SAFE</td>
+</tr>
+<tr>
+<td><code>extract-paper-idea</code></td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+<td>0</td>
+<td>CAUTION</td>
+</tr>
+<tr>
+<td><code>extract-statistic</code></td>
+<td>7</td>
+<td>0</td>
+<td>6</td>
+<td>1</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>form-service</code></td>
+<td>2</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>SAFE</td>
+</tr>
+<tr>
+<td><code>geolocalisation</code></td>
+<td>9</td>
+<td>1</td>
+<td>6</td>
+<td>1</td>
+<td>1</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>latex-hygiene</code></td>
+<td>4</td>
+<td>0</td>
+<td>2</td>
+<td>2</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>loop-engineer</code></td>
+<td>29</td>
+<td>1</td>
+<td>14</td>
+<td>11</td>
+<td>3</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>narrative-cv</code></td>
+<td>5</td>
+<td>0</td>
+<td>1</td>
+<td>1</td>
+<td>3</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>obsidian-cli</code></td>
+<td>28</td>
+<td>0</td>
+<td>6</td>
+<td>22</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>opt-local-stt-vram</code></td>
+<td>4</td>
+<td>0</td>
+<td>3</td>
+<td>0</td>
+<td>1</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>opt-local-vram-llm</code></td>
+<td>10</td>
+<td>0</td>
+<td>5</td>
+<td>5</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>paper2talk</code></td>
+<td>21</td>
+<td>0</td>
+<td>11</td>
+<td>9</td>
+<td>1</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>pdf2md</code></td>
+<td>8</td>
+<td>0</td>
+<td>6</td>
+<td>2</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>professor-expertise-finder</code></td>
+<td>4</td>
+<td>0</td>
+<td>0</td>
+<td>3</td>
+<td>1</td>
+<td>CAUTION</td>
+</tr>
+<tr>
+<td><code>recommendation-letter</code></td>
+<td>3</td>
+<td>0</td>
+<td>1</td>
+<td>2</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>rt-observe</code></td>
+<td>25</td>
+<td>0</td>
+<td>8</td>
+<td>16</td>
+<td>1</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>scholar-evaluation</code></td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>SAFE</td>
+</tr>
+<tr>
+<td><code>scientific-writing</code></td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1</td>
+<td>0</td>
+<td>SAFE</td>
+</tr>
+<tr>
+<td><code>scopus</code></td>
+<td>41</td>
+<td>1</td>
+<td>14</td>
+<td>26</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+<tr>
+<td><code>word2latex</code></td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>SAFE</td>
+</tr>
+<tr>
+<td><code>wp-portfolio-sync</code></td>
+<td>16</td>
+<td>0</td>
+<td>8</td>
+<td>8</td>
+<td>0</td>
+<td>DO_NOT_INSTALL</td>
+</tr>
+</tbody>
+</table>
+<p>Seven skills are rated SAFE, two CAUTION and sixteen DO_NOT_INSTALL. That last verdict is a measure
+of how many patterns matched, not of intent. A static scan with no model cannot tell that a skill
+runs a subprocess, reads its own API key or writes a file <strong>because that is its job</strong>. The findings
+fall into two groups.</p>
+<p><strong>Expected by design, judged by rule family.</strong> Each family was judged from its rule name and the
+purpose of the skill, as in June. The 289 findings were not each opened one by one, so a real defect
+hiding inside a family is not excluded. <code>AST3</code>, <code>AST4</code> and <code>AST7</code> (a subprocess, a dynamic
+import or <code>getattr</code>) are the scripts and their tests. <code>E1</code>, <code>E2</code>, <code>TT2</code> and <code>TT3</code> are a skill reading
+its own configured key and querying its own research API: the critical <code>TT3</code> on <code>scopus</code> is the
+Elsevier key sent as a header to Elsevier. <code>RA1</code>, <code>RA2</code>, <code>EA1</code> to <code>EA4</code>, <code>OH1</code>, <code>OH3</code>, <code>P2</code>, <code>P6</code>,
+<code>PE3</code>, <code>TM1</code>, <code>TM3</code> and <code>YR1</code> or <code>YR4</code> match words in documentation prose and prompts, or the
+<code>aider-setup</code>, <code>rt-observe</code> and <code>loop-engineer</code> code that drives other processes. The two critical
+<code>SC4</code> (<code>pillow</code> in <code>geolocalisation</code>, <code>claude-agent-sdk</code> in <code>loop-engineer</code>) flag a package by name,
+and <code>pip-audit</code> reports no known vulnerability for either file.</p>
+<p><strong>Real, open, and not fixed by the documentation change that recorded them.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Finding</th>
+<th>Where</th>
+<th>Measured</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LP3</code>, no permission declaration in the skill frontmatter</td>
+<td><code>extract-contributions</code>, <code>extract-paper-idea</code>, <code>form-service</code>, <code>latex-hygiene</code>, <code>obsidian-cli</code>, <code>professor-expertise-finder</code>, <code>recommendation-letter</code>, <code>rt-observe</code>, <code>wp-portfolio-sync</code></td>
+<td>the June scan fixed this for six older skills by adding <code>permissions:</code> and <code>allowed-tools:</code>, and these nine were added later</td>
+</tr>
+<tr>
+<td>Advisories on <code>pypdf</code> 6.19.0, fixed in 6.21.1</td>
+<td><code>form-service</code>, <code>narrative-cv</code>, <code>paper2talk</code></td>
+<td><code>pip-audit</code> on 2026-10-22</td>
+</tr>
+<tr>
+<td>Advisories on <code>pillow</code> 12.3.0, fixed in 13.0.0</td>
+<td><code>extract-statistic</code>, <code>pdf2md</code></td>
+<td><code>pip-audit</code> on 2026-10-22</td>
+</tr>
+<tr>
+<td>Advisories on <code>docling</code> and <code>docling-slim</code> 2.103.0</td>
+<td><code>extract-statistic</code></td>
+<td><code>pip-audit</code> on 2026-10-22</td>
+</tr>
+<tr>
+<td><code>SC1</code>, unpinned <code>claude-agent-sdk&gt;=0.1.0</code></td>
+<td><code>loop-engineer</code></td>
+<td>the requirements file itself asks for an exact pin after the first install</td>
+</tr>
+</tbody>
+</table>
+<p>The dependency advisories appeared after the last pins (2026-10-16), which is why a pinned and
+clean requirements file goes stale without any edit. Raising a pin is a change to code that needs the
+offline suite, so it is a separate change from this one.</p>
+<p>The June scan found the same kinds of false positive and its true positives were corrected then:
+the <code>permissions:</code> declarations, and exact <code>==</code> pins in the <code>scopus</code> and <code>extract-statistic</code>
+requirements. <code>geolocalisation</code> declares <code>permissions: [read]</code> and fetches only public-domain
+Natural Earth basemaps, TLS-verified and cached.</p>
+<p>The security hooks that run in every session (secret scanning, vault access, prompt-injection
+warnings) are described in <a href="../07-hooks/">chapter 07</a>.</p>
+<h2 id="worktree-link-guard-git-worktree-remove">Worktree link guard (<code>git worktree remove</code>)<a class="headerlink" href="#worktree-link-guard-git-worktree-remove" title="Permanent link">&para;</a></h2>
+<p>A third, narrow layer: the <code>worktree-link-guard.py</code> hook refuses <code>git worktree remove</code> when the
+worktree holds a junction or a symbolic link. Measured 2026-10-16 on a throwaway copy: with a
+link that git ignores, which is the real case since <code>.gitignore</code> carries <code>.venv*/</code>, even a plain
+<code>git worktree remove</code> with no <code>--force</code> follows the link and empties the folder it points at.
+That is how the main clone's <code>.venv-skills</code> was lost on 2026-10-06 (rule R37).</p>
+<p>The refusal lists each link and gives the command that deletes the link and never its target
+(<code>cmd /c rmdir "&lt;link&gt;"</code>). Its limits are stated rather than hidden: it judges that one command
+through the Bash and PowerShell tools only, so it does not see <code>rm -rf</code> or <code>Remove-Item
+-Recurse</code>, and it cannot resolve a path held in a variable or a command substitution. A scan
+that reaches <code>max_entries</code> (<code>.claude/hooks/worktree-link-guard.json</code>) before finishing is
+refused too, since a link could hide in the part not reached. A missing or broken config
+disables the gate in silence and never blocks a tool (R11). The hook is declared in
+<code>.claude/settings.template.json</code>. <code>install-junctions.ps1 -Sync</code> copies the script and its
+config once the offline suite is green: the green stamp hashes the hook <code>.json</code> files as
+well as the <code>.py</code> ones (before 2026-10-16 it hashed <code>.py</code> only, so every hook config was
+held forever and had to be copied by hand). The entry reaches a live <code>settings.json</code> through
+the default flow of <code>setup.ps1</code>, which adds the entries that are missing and touches nothing
+else. <code>setup.ps1 -InstallJunctions</code> alone does not edit <code>settings.json</code>.</p>
+<h2 id="personal-data-guard-every-git-repository-this-machine">Personal-data guard (every git repository, this machine)<a class="headerlink" href="#personal-data-guard-every-git-repository-this-machine" title="Permanent link">&para;</a></h2>
+<p>A second, separate layer from the SkillSpector scan above: a global git hook, installed once
+for every repository on this machine (<code>core.hooksPath</code>, via
+<code>.claude/hooks/git/install-git-hooks.ps1</code>), that blocks three different things in the staged
+or pushed diff before they reach a remote:</p>
+<ul>
+<li><strong>Secrets</strong>, via betterleaks' own rule shapes (keys, tokens, credentials).</li>
+<li><strong>Personal-data shapes</strong>, via <code>privacy-rules.toml</code> (account paths, Quebec code permanent,
+  <code>@etu.uqac.ca</code> addresses, FRQ ids). This machine's own account name is NOT a <code>toml</code> rule: it
+  is a separate dynamic check in pre-commit (reads <code>USERNAME</code>/<code>USER</code>, whole-token match in
+  added lines and staged paths), since a static rules file cannot know the account name of
+  whoever runs it.</li>
+<li><strong>Real names</strong>, via a machine-local <strong>deny list</strong> - students, co-authors - extended for
+  each new student with
+  <code>install-git-hooks.ps1 -TermsFrom &lt;student folders&gt; [-TermsDepth N]</code>: the installer only
+  appends names it does not already have, never rewrites the list, into <code>private-terms.txt</code>
+  (generated), alongside <code>private-terms.extra.txt</code> (hand-added terms) and
+  <code>private-terms.excluded.txt</code> (fragments the extractor set aside: common words, or shorter
+  than the configured length floor). It also refuses to write the list into a
+  OneDrive/Dropbox/network-synced folder. A name has no detectable SHAPE the way a secret
+  or an account path does, which is why this deny list exists as its own layer.</li>
+</ul>
+<p>Three layers, in order: a <code>pre-commit</code> hook (the staged diff), a <code>pre-push</code> hook (every commit
+a push would publish, including one made with <code>--no-verify</code> or by a rebase/cherry-pick that
+never ran <code>pre-commit</code>), and CI's <code>privacy-scan</code> workflow as a last, SHAPE-only backstop - it
+runs on every push AND pull request, with its verdict taken from the rules committed on <code>main</code>
+so a pull request cannot weaken them, but it cannot hold the machine-local deny list, since
+that list is deliberately never committed - see below.</p>
+<p><strong>What this does not cover, stated plainly:</strong></p>
+<ul>
+<li><strong>The deny list never leaves this machine</strong>, by design (an operator ruling, 2026-10-15): it
+  is machine-local, outside every repository, so CI's own <code>privacy-scan</code> workflow enforces
+  secret/shape rules only, never the real-name list. A name caught locally is NOT re-checked
+  in CI.</li>
+<li><strong>GitHub comments, PR bodies, and issues have no automatic control at all.</strong> A real name
+  typed into a PR description or a review comment is not scanned by anything in this guard.</li>
+<li><strong>A determined bypass still exists.</strong> <code>--no-verify</code> at commit skips only pre-commit;
+  pre-push still scans every outgoing commit, so evading both needs <code>--no-verify</code> at BOTH
+  commit AND push. A repository-local <code>core.hooksPath</code> override, or
+  <code>git config privacyguard.enabled false</code>, also skips the check - the global hook is a
+  convenience, not a technical guarantee a determined commit cannot evade.</li>
+</ul>
+<p>Full detail, including the three settings (<code>privacyguard.enabled</code>,
+<code>privacyguard.absolutePaths</code>, <code>privacyguard.minTermLength</code>) and every installed file:
+<a href="../01-installation/">01-installation.md, Step 6</a> and
+<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/rules/security.md"><code>.claude/rules/security.md</code></a>'s "Personal-data guard" section.
+File locations: <a href="../18-file-locations/">18-file-locations.md</a>.</p>
+<h2 id="automated-pull-request-review-billed-optional">Automated pull-request review (billed, optional)<a class="headerlink" href="#automated-pull-request-review-billed-optional" title="Permanent link">&para;</a></h2>
+<p>A second workflow, <code>.github/workflows/review.yml</code> (Issue #65, PR #67), asks a headless Claude Code
+session to run two built-in review skills, <code>security-review</code> and <code>code-review</code>, on every pull
+request opened from a branch of this repository. It posts ONE consolidated list, Critical to Low,
+as a single pull-request comment that is updated on each push, and copies it onto the Issue named
+by a <code>Fixes #N</code> line in the PR description. Unlike <code>privacy-scan</code> it is <strong>not free</strong>: each run
+spends Anthropic API tokens, capped per run by <code>MAX_BUDGET_USD</code> in the workflow (a number the
+operator chose, not measured, to be set to fit the account). It needs the repository secret
+<code>ANTHROPIC_API_KEY</code>, which only the repository owner adds. Without it the check ends neutral and
+nothing is billed. A fork or a Dependabot pull request is skipped, and so is a pull request that
+changes only regenerated files.</p>
+<p>What protects the key, since the session reads an untrusted diff:</p>
+<ul>
+<li>The session has four tools only (<code>Skill</code>, <code>Read</code>, <code>Grep</code>, <code>Glob</code>): no shell, no file writes, no
+  sub-agent, no plugin, no project settings. After the run, a guard reads the session's own tool
+  list and fails the job if anything else is there or the list cannot be read.</li>
+<li>The session posts nothing. A later step with no key sanitises its reply (no mention, no issue
+  or pull-request reference, no link, no image, no raw HTML, no math, no invisible character) and
+  writes the comment, so a crafted line in a diff cannot ping anyone or leak a secret.</li>
+<li>The job that writes to Issues holds no key, and the job that holds the key cannot write to
+  Issues.</li>
+</ul>
+<p><strong>What this does not cover, stated plainly:</strong></p>
+<ul>
+<li><strong>A collaborator with write access can run a modified copy of the workflow with the secret.</strong>
+  The <code>Main protection</code> ruleset requires a code-owner review for a merge into <code>main</code>, not for the
+  run. The first run therefore uses a throwaway key with a low spend limit, which is rotated
+  afterwards.</li>
+<li><strong>Three behaviours are unverified until that first run:</strong> that the pinned Claude Code honours
+  the tool restriction, that the two skills run in a headless session, and that the <code>/proc</code> read
+  denial is accepted. The workflow header lists them, and the guard fails closed on the first.</li>
+<li><strong>It is advisory.</strong> It does not replace a human review, and it is not a required check.</li>
+<li><code>tech-debt</code> and <code>ai-firstify</code> are not run in CI: the action cannot pin a plugin source, so third
+  party code could change unreviewed beside the key. They remain available in a local session.</li>
+</ul>
+<p><strong>Using AugureAI instead of Anthropic (planned rework, about one month out, not done yet).</strong> The
+workflow is written for Anthropic only. Switching to AugureAI would need these changes, none made:</p>
+<ul>
+<li>A repository secret <code>AUGUREAI_API_KEY</code>, read in the key check and in the action's key input
+  instead of <code>ANTHROPIC_API_KEY</code>.</li>
+<li>The variable <code>ANTHROPIC_BASE_URL</code> set to <code>https://api.augureai.ca/v1</code> in the agent step. That is
+  the endpoint the local <code>claude-augure</code> function already uses for a Claude Code session.</li>
+<li>The header comment, the CI section of <code>testing.md</code>, the playbook and <code>test_review_workflow.py</code>
+  updated to the new secret name, since the test pins where the secret may be named.</li>
+</ul>
+<p>Three points are unverified: whether the action passes <code>ANTHROPIC_BASE_URL</code> through to Claude
+Code, whether AugureAI honours the tool restriction and the spend cap, and whether the execution
+file keeps the same shape for the tool-list guard. The first throwaway-key run would answer them.</p>
+<p>Full detail, with every finding and decision of the review that shaped it:
+<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/rules/testing.md"><code>.claude/rules/testing.md</code></a>'s "CI" section and
+<a href="../../github-repo-setup-playbook/"><code>docs/github-repo-setup-playbook.md</code></a> Phase 6d, which tells you
+how to set the same workflow up in another repository.</p>
+<hr />
+<p><a href="../14-aider-pipeline/">← 14 Aider nightly pipeline</a> | <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">Table of contents</a> | <a href="../16-maintenance/">16 Maintenance, checks and CI →</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

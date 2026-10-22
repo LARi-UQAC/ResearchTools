@@ -446,6 +446,10 @@ if ($nodePath) {
     if (-not $nodePath) { $nodePath = "C:\\Program Files\\nodejs\\node.exe" }
 }
 
+# Hook commands are written with these two paths. A path that does not exist (the made-up default
+# above, or a mistyped answer) must never replace a working command: code review, 2026-10-22.
+$script:HookPathsDetected = (Test-Path -LiteralPath $gitBashPath) -and (Test-Path -LiteralPath $nodePath)
+
 # ─── Detect Obsidian vault ────────────────────────────────────────────────────
 
 Write-Header "Obsidian vault (optional)"
@@ -558,11 +562,17 @@ if ($hooksResult.Differing.Count -gt 0) {
     Write-Warn "  run install-junctions.ps1 -Sync to update them (gated on the offline suite being green)"
 }
 
+if ($UpdateHooks -and -not $script:HookPathsDetected) {
+    Write-Err "Git Bash or Node.js was not found, so the hook update is SKIPPED: it would replace working commands with a path that does not exist. Install them or give their real path, then run again."
+    Set-InstallerExit "hook update skipped (Git Bash or Node.js not found)" 1
+}
+$updateHooksNow = $UpdateHooks -and $script:HookPathsDetected
+
 $settingsResult = Merge-RtGlobalSettings `
     -TemplatePath (Join-Path $WorkspaceRoot ".claude\settings.template.json") `
     -TargetPath (Join-Path $homeClaude "settings.json") `
     -Vars $settingsVars `
-    -UpdateChanged:$UpdateHooks `
+    -UpdateChanged:$updateHooksNow `
     -KeepHooks $KeepHooks `
     -BackupStamp (Get-Date -Format "yyyy-MM-dd-HHmm") `
     -Preview:$Preview
@@ -575,6 +585,10 @@ switch ($settingsResult.Action) {
     "preview-create" { Write-Host "  [--]  settings.json: $($settingsResult.Message)" -ForegroundColor DarkGray }
     "preview-merge"  { Write-Host "  [--]  settings.json: $($settingsResult.Message)" -ForegroundColor DarkGray }
     default          { Write-Err  "settings.json: $($settingsResult.Message)" }
+}
+if (@("refused", "restored") -contains $settingsResult.Action) {
+    # Without this the update would print "Update steps done." over a settings.json it failed to edit.
+    Set-InstallerExit "settings.json merge ($($settingsResult.Action))" 1
 }
 foreach ($entry in $settingsResult.Added) {
     Write-Host "        + $($entry.Event): $($entry.Token)"

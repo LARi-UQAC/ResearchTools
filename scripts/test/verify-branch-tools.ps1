@@ -78,6 +78,22 @@ Check "a link names the remedy that deletes the link and not its target" (($r -j
 $r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -DirtyFiles @("?? a") -Links @("W\lnk") -MainHead "main" -MainBranch "main")
 Check "(control) dirty files and links are ignored when there is no worktree" (@($r).Count -eq 0)
 
+# Code-review findings of 2026-10-22: what could still be lost after the checks above.
+$r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -PrHeadOid "aaaaaaa1" -LocalOid "aaaaaaa1" -RemoteOid "ddddddd4" `
+        -MainHead "main" -MainBranch "main")
+Check "an origin tip that is not the merged tip is refused (pushed after the merge)" (@($r).Count -eq 1 -and $r[0] -like "*pushed after the merge*")
+$r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -PrHeadOid "aaaaaaa1" -LocalOid "aaaaaaa1" -RemoteOid "aaaaaaa1" `
+        -MainHead "main" -MainBranch "main")
+Check "(control) an origin tip equal to the merged tip is not refused" (@($r).Count -eq 0)
+$r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -WorktreePath "W" -IgnoredFiles @("!! debug.log", "!! cache/") `
+        -MainHead "main" -MainBranch "main")
+Check "ignored files in the worktree are refused, named, with the way out" (@($r).Count -eq 1 -and $r[0] -like "*debug.log*" -and $r[0] -like "*-DiscardIgnored*")
+$r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -WorktreePath "W" -IgnoredFiles @("!! debug.log") -DiscardIgnored $true `
+        -MainHead "main" -MainBranch "main")
+Check "(control) -DiscardIgnored accepts them" (@($r).Count -eq 0)
+$r = @(Get-RtFinishRefusals -Branch "feat/x" -PrMerged $true -MainDirty @(" M README.md") -MainHead "main" -MainBranch "main")
+Check "a modified main clone is refused: the pull would rewrite another session's files (R32)" (@($r).Count -eq 1 -and $r[0] -like "*main clone has*modified*")
+
 $s = Resolve-RtFinishSteps -Branch "feat/x" -MainBranch "main" -WorktreePath "W" -PlansFolder "p1" -PlansPresent $true
 Check "the steps run in the safe order" ((($s | ForEach-Object { $_.Id }) -join ",") -eq "pull,worktree,branch,remote,prune,fetch,plans")
 Check "the worktree is removed without --force" (-not (($s | Where-Object Id -eq "worktree").Argv -contains "--force"))
@@ -163,6 +179,7 @@ try {
     & git init --bare -q $origin 2>&1 | Out-Null
     & git clone -q $origin $main 2>&1 | Out-Null
     Write-Text (Join-Path $main "README.md") "fixture`n"
+    Write-Text (Join-Path $main ".gitignore") "*.log`n.worktrees/`n"
     $finishSrc = Join-Path $RepoRoot "scripts\test\finish-branch.ps1"
     New-Item -ItemType Directory -Path (Join-Path $main "scripts\test"), (Join-Path $main "scripts\lib") -Force | Out-Null
     if (Test-Path -LiteralPath $finishSrc) { Copy-Item $finishSrc (Join-Path $main "scripts\test\finish-branch.ps1") -Force }
@@ -248,6 +265,35 @@ try {
 
     $res = Invoke-Finish $c1 @("-Yes", "-PlansFolder", "..\x")
     Check "(refusal) a -PlansFolder that walks out is refused (R24)" ($res.Code -eq 2 -and $res.Text -match "PlansFolder")
+
+    # a modified main clone: the pull would rewrite files another session may be editing (R32)
+    Add-Content -LiteralPath (Join-Path $main "README.md") -Value "local edit"
+    $res = Invoke-Finish $c1 @("-Yes")
+    Check "(refusal) a modified tracked file in the main clone exits 2" ($res.Code -eq 2 -and $res.Text -match "main clone has")
+    Check "(refusal) nothing was removed" (Alive $c1)
+    Invoke-Git $main @("checkout", "--", "README.md") | Out-Null
+
+    # an ignored file in the worktree: git worktree remove would delete it without a word
+    $c3 = New-Case "c3"; Set-Merged $c3
+    Write-Text (Join-Path $c3.Worktree "debug.log") "valuable`n"
+    $res = Invoke-Finish $c3 @("-Yes")
+    Check "(refusal) an ignored file in the worktree exits 2 and names it" ($res.Code -eq 2 -and $res.Text -match "debug\.log" -and $res.Text -match "DiscardIgnored")
+    Check "(refusal) the ignored file and the worktree are still there" ((Test-Path (Join-Path $c3.Worktree "debug.log")) -and (Alive $c3))
+    $res = Invoke-Finish $c3 @("-Yes", "-DiscardIgnored")
+    Check "(control) -DiscardIgnored lets the same case proceed and the worktree goes" ($res.Code -eq 0 -and -not (Test-Path -LiteralPath $c3.Worktree))
+
+    # origin moved after the merge: deleting the remote branch would lose the new commit
+    $c4 = New-Case "c4"; Set-Merged $c4
+    $other = Join-Path $Tmp "other-clone"
+    & git clone -q $origin $other 2>&1 | Out-Null
+    Invoke-Git $other @("checkout", "-q", $c4.Branch) | Out-Null
+    Write-Text (Join-Path $other "late.txt") "pushed after the merge`n"
+    Invoke-Git $other @("add", "late.txt") | Out-Null
+    Invoke-Git $other @("commit", "-q", "-m", "late") | Out-Null
+    Invoke-Git $other @("push", "-q", "origin", $c4.Branch) | Out-Null
+    $res = Invoke-Finish $c4 @("-Yes")
+    Check "(refusal) an origin tip that moved after the merge exits 2" ($res.Code -eq 2 -and $res.Text -match "pushed after the merge")
+    Check "(refusal) the remote branch and the worktree are still there" (Alive $c4)
 
     # the proceeding case
     $c2 = New-Case "c2"; Set-Merged $c2

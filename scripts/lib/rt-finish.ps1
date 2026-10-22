@@ -18,9 +18,16 @@ function Get-RtFinishRefusals {
             PrReason (string): why PrMerged is false, may be empty
             PrHeadOid (string): the commit the merged pull request ended on
             LocalOid (string): the commit the local branch is on, empty when none
+            RemoteOid (string): the commit origin's branch is on, empty when it is gone
             WorktreePath (string): the worktree holding the branch, empty when none
             DirtyFiles (string[]): output of git status --porcelain in that worktree
             Links (string[]): junctions and symbolic links found in that worktree
+            IgnoredFiles (string[]): git-ignored entries in that worktree (git status
+                --porcelain --ignored lines starting with "!!"); git worktree remove
+                deletes them without a word
+            DiscardIgnored (bool): the operator accepted losing those ignored entries
+            MainDirty (string[]): modified tracked files in the main clone; the pull
+                would rewrite files another session may be editing (R32)
             MainHead (string): the branch checked out in the main clone
             MainBranch (string): the branch that must be checked out there
             RunFromWorktree (bool): this script was started from inside the worktree
@@ -35,9 +42,13 @@ function Get-RtFinishRefusals {
         [string]$PrReason = "",
         [string]$PrHeadOid = "",
         [string]$LocalOid = "",
+        [string]$RemoteOid = "",
         [string]$WorktreePath = "",
         [string[]]$DirtyFiles = @(),
         [string[]]$Links = @(),
+        [string[]]$IgnoredFiles = @(),
+        [bool]$DiscardIgnored = $false,
+        [string[]]$MainDirty = @(),
         [Parameter(Mandatory = $true)][string]$MainHead,
         [Parameter(Mandatory = $true)][string]$MainBranch,
         [bool]$RunFromWorktree = $false
@@ -50,6 +61,12 @@ function Get-RtFinishRefusals {
     if ($PrMerged -and $LocalOid -and $PrHeadOid -and ($LocalOid -ne $PrHeadOid)) {
         $reasons += "the local branch is on $($LocalOid.Substring(0, [Math]::Min(7, $LocalOid.Length))) but the merged pull request ended on $($PrHeadOid.Substring(0, [Math]::Min(7, $PrHeadOid.Length))): the branch holds commits that were never pushed. Push or save them, then run again."
     }
+    if ($PrMerged -and $RemoteOid -and $PrHeadOid -and ($RemoteOid -ne $PrHeadOid)) {
+        $reasons += "origin/$Branch is on $($RemoteOid.Substring(0, [Math]::Min(7, $RemoteOid.Length))) but the merged pull request ended on $($PrHeadOid.Substring(0, [Math]::Min(7, $PrHeadOid.Length))): a commit was pushed after the merge, and deleting the branch would lose it. Look at it first."
+    }
+    if (@($MainDirty).Count -gt 0) {
+        $reasons += "the main clone has $(@($MainDirty).Count) modified tracked file(s) ($((@($MainDirty) | Select-Object -First 3) -join '; ')): another session may be editing there, and the pull would rewrite files under it (R32). Commit or restore them, then run again."
+    }
     if ($MainHead -ne $MainBranch) {
         $reasons += "the main clone has $MainHead checked out, not $MainBranch. This script never switches the checked-out branch (R32): switch it yourself after checking no other session is working there."
     }
@@ -59,6 +76,9 @@ function Get-RtFinishRefusals {
         }
         if (@($DirtyFiles).Count -gt 0) {
             $reasons += "the worktree has $(@($DirtyFiles).Count) uncommitted or untracked file(s): commit or discard them first."
+        }
+        if (@($IgnoredFiles).Count -gt 0 -and -not $DiscardIgnored) {
+            $reasons += "the worktree holds $(@($IgnoredFiles).Count) git-ignored entr(y/ies) ($((@($IgnoredFiles) | Select-Object -First 5) -join '; ')) that git worktree remove deletes without warning. Keep what you need, then run again with -DiscardIgnored."
         }
         if (@($Links).Count -gt 0) {
             $reasons += "the worktree holds a junction or symbolic link ($((@($Links)) -join ', ')); removing the worktree would follow it and delete its target (R37). Remove each link with: cmd /c rmdir <link>"

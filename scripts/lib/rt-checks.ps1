@@ -7,7 +7,7 @@ function Get-RtCheckList {
         --------------------------------------------------------------------------
         Purpose:
             List, in run order, the scripts that make up "all the checks": the
-            offline suite first, then every verify-*.ps1 of the same folder in name
+            offline suite first, then every verify-*.ps1 of that one folder (not other folders) in name
             order. verify-graph-health.ps1 is left out by default because
             vault-access-guard.py refuses it to every caller but local-writer.
 

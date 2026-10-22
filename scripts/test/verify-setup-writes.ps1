@@ -388,6 +388,29 @@ try {
     Check "(control) an entry not named in -KeepHooks is still updated" `
         ($null -ne $r -and (Get-Prop $r "Action") -eq "updated" -and @((Get-Prop $r "Kept")).Count -eq 0)
 
+    # A comma list reaches the script as ONE string when it is run with -File, and the manual says
+    # several names are separated by commas (code-review finding, 2026-10-22).
+    Write-HookFile $liveK (New-LiveText $oldCmdLit $oldStatLit)   # the control above updated it
+    $hashK = Get-Hash $liveK
+    $r = Invoke-Update $updTemplate $liveK -Switch -Keep @("some-other.py, my-hook.py")
+    Check "a comma-separated list of kept names is split" `
+        ($null -ne $r -and (Get-Hash $liveK) -eq $hashK -and @((Get-Prop $r "Kept")).Count -eq 1)
+    $r = Invoke-Update $updTemplate $liveK -Switch -Keep @("some-other.py,third.py")
+    Check "(control) a comma list naming no live entry keeps nothing and still updates" `
+        ($null -ne $r -and (Get-Prop $r "Action") -eq "updated" -and @((Get-Prop $r "Kept")).Count -eq 0)
+
+    # A live entry with the template's command but NO statusMessage can never be fixed by a text
+    # replace. It must be said, not reported as "already present" (code-review finding).
+    $liveS = Join-Path $updDir "s.json"
+    Write-HookFile $liveS ('{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": ' + $newCmdLit + ' } ] } ] } }')
+    $hashS = Get-Hash $liveS
+    $r = Invoke-Update $updTemplate $liveS -Switch
+    Check "a live entry without statusMessage is left untouched" ($null -ne $r -and (Get-Hash $liveS) -eq $hashS)
+    Check "it is reported as skipped, naming the statusMessage" `
+        ($null -ne $r -and @((Get-Prop $r "Skipped") | Where-Object { $_.Reason -like "*statusMessage*" }).Count -eq 1)
+    Check "the message no longer claims every entry is already present" `
+        ($null -ne $r -and (Get-Prop $r "Message") -notlike "*already present*")
+
     # The bracket tag of an inline hook is accepted with or without its brackets.
     $tagTemplate = Join-Path $updDir "template-tag.json"
     Write-HookFile $tagTemplate '{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "echo \"[TAG ONE] new\"" } ] } ] } }'
@@ -525,6 +548,16 @@ try {
         ($setupText -match '(?s)function Invoke-JunctionsScript\s*\{.{0,900}?param\(\[switch\]\$Advisory\).*?\$Advisory -and.*?return.*?Set-InstallerExit "install-junctions\.ps1"' -and $setupText -match 'judged by the final')
     Check "a failing deployment check does not fail a preview" `
         ($setupText -match '(?s)function Invoke-CheckScript.*?\$Preview.*?Set-InstallerExit "check-deployment')
+    # Code-review findings of 2026-10-22. setup.ps1 cannot be dot-sourced (it would prompt and write
+    # to ~/.claude), so these wiring checks read the text, as the ones above do.
+    Check "a refused or restored settings.json merge is counted in the exit code" `
+        ($setupText -match '@\("refused", "restored"\) -contains \$settingsResult\.Action\)\s*\{\s*(#[^\n]*\n\s*)*Set-InstallerExit')
+    Check "a detected-path flag is set from the paths that really exist" `
+        ($setupText -match '\$script:HookPathsDetected = \(Test-Path -LiteralPath \$gitBashPath\) -and \(Test-Path -LiteralPath \$nodePath\)')
+    Check "the hook update is applied only when those paths exist" `
+        ($setupText -match '\$updateHooksNow = \$UpdateHooks -and \$script:HookPathsDetected' -and $setupText -match '-UpdateChanged:\$updateHooksNow')
+    Check "an update skipped for a missing path is an error, not a quiet pass" `
+        ($setupText -match '(?s)if \(\$UpdateHooks -and -not \$script:HookPathsDetected\).*?Set-InstallerExit')
     Check "setup.ps1 declares -KeepHooks as a list of names" ($setupText -match '\[string\[\]\]\$KeepHooks')
     Check "setup.ps1 passes -KeepHooks to the merge and reports what was kept" `
         ($setupText -match '-KeepHooks\s+\$KeepHooks' -and $setupText -match '\$settingsResult\.Kept')

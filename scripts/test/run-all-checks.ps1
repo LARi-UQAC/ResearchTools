@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Run the offline suite and every verify-*.ps1 check in one go, and say which failed.
+    Run the offline suite and every verify-*.ps1 of this folder in one go, and say which failed.
 
 .DESCRIPTION
     run-offline-tests.ps1 runs only the Python suites. The PowerShell verifiers
@@ -10,6 +10,10 @@
     verifier in name order, each in its own PowerShell process so one that calls exit cannot
     stop the others. Every check runs even when an earlier one fails. The exit code is 0 only
     when all of them exit 0.
+
+    Not run, because they live elsewhere: scripts\local\Test\verify-claude-switch.ps1, the three
+    verify-*.ps1 of .claude\skills\aider-setup\scripts\Test and verify-kit-install.ps1 of its
+    scripts\build folder. Run those by name.
 
     verify-graph-health.ps1 is left out by default: vault-access-guard.py refuses it to every
     caller but local-writer (it reads the code graph). Dispatch local-writer for that one.

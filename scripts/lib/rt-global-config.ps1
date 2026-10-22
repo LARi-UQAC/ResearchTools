@@ -324,9 +324,12 @@ function Test-RtHookKept {
     param([string]$Token, [string[]]$Keep)
     if (-not $Keep) { return $false }
     $bare = $Token.Trim('[', ']')
-    foreach ($name in $Keep) {
-        if ([string]::IsNullOrWhiteSpace($name)) { continue }
-        if ([string]::Equals($name.Trim().Trim('[', ']'), $bare, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    # A comma list typed after -File reaches the script as ONE string, so each item is split.
+    foreach ($item in $Keep) {
+        foreach ($name in ([string]$item -split ',')) {
+            if ([string]::IsNullOrWhiteSpace($name)) { continue }
+            if ([string]::Equals($name.Trim().Trim('[', ']'), $bare, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        }
     }
     return $false
 }
@@ -557,7 +560,17 @@ function Invoke-RtSettingsMerge {
             }
             continue
         }
-        if ($replacements.Count -eq 0) { continue }
+        if ($replacements.Count -eq 0) {
+            # The command matches but the live entry has no statusMessage: a text replace cannot
+            # insert a key with certainty, so say so instead of reading as "already present".
+            if ($wantStatus -and ($null -eq $liveHook.PSObject.Properties["statusMessage"])) {
+                $skipped += [PSCustomObject]@{
+                    Event = $record.Event; Token = $record.Token
+                    Reason = "the live entry has no statusMessage and a text edit cannot add one with certainty; add it by hand"
+                }
+            }
+            continue
+        }
         foreach ($replacement in $replacements) {
             $at = $merged.IndexOf($replacement.Old, [System.StringComparison]::Ordinal)
             $merged = $merged.Substring(0, $at) + $replacement.New + $merged.Substring($at + $replacement.Old.Length)
@@ -569,6 +582,8 @@ function Invoke-RtSettingsMerge {
     if ($added.Count -eq 0 -and $updated.Count -eq 0) {
         $note = if ($differs.Count -gt 0 -and -not $UpdateChanged) {
             "$($differs.Count) hook entr(y/ies) differ from the template; run setup.ps1 -UpdateHooks to update them"
+        } elseif ($differs.Count -gt 0) {
+            "$($differs.Count) hook entr(y/ies) differ from the template and could not be updated; see the entries reported as not updated"
         } else { "every hook entry the template declares is already present" }
         return [PSCustomObject]@{
             Action = "unchanged"; Path = $TargetPath; Added = $empty; Skipped = $skipped

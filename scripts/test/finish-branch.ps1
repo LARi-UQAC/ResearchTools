@@ -14,7 +14,13 @@
         means it holds commits that were never pushed,
       - the main clone does not have the main branch checked out (it never switches the
         checked-out branch: R32),
+      - origin's branch is on a commit other than the merged pull request's last one (someone
+        pushed after the merge, and deleting it would lose that commit),
+      - the main clone has modified tracked files (the pull would rewrite files under another
+        session, R32),
       - the worktree has uncommitted or untracked files,
+      - the worktree holds git-ignored files, which `git worktree remove` deletes without a word
+        (pass -DiscardIgnored once you have kept what you need),
       - the worktree holds a junction or a symbolic link, because removing the worktree would
         follow it and delete its target (R37),
       - it was started from inside the worktree it would remove.
@@ -41,6 +47,9 @@
 .PARAMETER ReportPath
     Optional. Write a JSON report: the branch, ok, and each step with its outcome.
 
+.PARAMETER DiscardIgnored
+    Accept that git-ignored files in the worktree (logs, caches, local state) are deleted with it.
+
 .PARAMETER Yes
     Actually do it. Without it, nothing is changed.
 
@@ -53,6 +62,7 @@ param(
     [string]$MainBranch = "main",
     [string]$PlansFolder = "",
     [string]$ReportPath = "",
+    [switch]$DiscardIgnored,
     [switch]$Yes
 )
 
@@ -131,7 +141,9 @@ foreach ($line in ((& git -C $mainRoot worktree list --porcelain 2>$null) -split
 }
 
 $localOid = Get-Git $mainRoot @("rev-parse", "--verify", "--quiet", "refs/heads/$Branch")
-$remoteExists = [bool](Get-Git $mainRoot @("ls-remote", "--heads", "origin", $Branch))
+$remoteLine = Get-Git $mainRoot @("ls-remote", "--heads", "origin", $Branch)
+$remoteExists = [bool]$remoteLine
+$remoteOid = if ($remoteLine) { (($remoteLine -split "`r?`n")[0] -split "\s+")[0] } else { "" }
 $plansPresent = $false
 if ($PlansFolder) { $plansPresent = Test-Path -LiteralPath (Join-Path $mainRoot "docs\superpowers\todo\$PlansFolder") }
 
@@ -140,16 +152,20 @@ if (-not $worktree -and -not $localOid -and -not $remoteExists -and -not $plansP
     exit 0
 }
 
-$dirty = @(); $links = @()
+$dirty = @(); $links = @(); $ignored = @()
 if ($worktree -and (Test-Path -LiteralPath $worktree)) {
-    $dirty = @((& git -C $worktree status --porcelain 2>$null) | Where-Object { $_ })
+    $status = @((& git -C $worktree status --porcelain --ignored 2>$null) | Where-Object { $_ })
+    $dirty = @($status | Where-Object { $_ -notlike '!! *' })
+    $ignored = @($status | Where-Object { $_ -like '!! *' })
     $links = @(Get-ChildItem -LiteralPath $worktree -Force -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
 }
 $runFromWorktree = [bool]($worktree -and ($scriptRepo.TrimEnd('\') -ieq $worktree.TrimEnd('\')))
 $mainHead = Get-Git $mainRoot @("symbolic-ref", "--short", "HEAD")
+$mainDirty = @((& git -C $mainRoot status --porcelain --untracked-files=no 2>$null) | Where-Object { $_ })
 
 $reasons = @(Get-RtFinishRefusals -Branch $Branch -PrMerged $prMerged -PrReason $prReason -PrHeadOid $prHead `
-    -LocalOid $localOid -WorktreePath $worktree -DirtyFiles $dirty -Links $links `
+    -LocalOid $localOid -RemoteOid $remoteOid -WorktreePath $worktree -DirtyFiles $dirty -Links $links `
+    -IgnoredFiles $ignored -DiscardIgnored $DiscardIgnored.IsPresent -MainDirty $mainDirty `
     -MainHead $mainHead -MainBranch $MainBranch -RunFromWorktree $runFromWorktree)
 if (@($reasons).Count -gt 0) {
     Write-Refused $reasons

@@ -44,6 +44,18 @@
         }
       ],
       "tools": []
+    },
+    {
+      "name": ".venv-pdf2md",
+      "why": "The interpreter that runs pdf2md's conversion (mineru, mineru-llama-cpp). Kept apart by the owner on 2026-10-22: mineru 4.0.11 needs gradio, and every gradio up to 6.30.0 caps pillow below 13.0.0, the version that clears pillow 12.3.0's advisories in .venv-skills.",
+      "requirements": [
+        {
+          "path": ".claude/skills/pdf2md/scripts/requirements.txt",
+          "why": "pdf2md: mineru and mineru-llama-cpp (the conversion engine), PyYAML, PyMuPDF (the second PDF reader of validate, repair and fix)",
+          "exclude": []
+        }
+      ],
+      "tools": []
     }
   ],
   "settings": {

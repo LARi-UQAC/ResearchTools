@@ -6,9 +6,9 @@
 # in the extract-statistic skill and is never installed here.
 fastapi==0.141.1
 uvicorn==0.54.0
-pypdf==6.19.0  # pip-audit clean 2026-10-16; 6.15.0 had 11 and 6.16.1 had 8 known CVEs (PYSEC-2026-3910 to 4160)
+pypdf==6.21.1  # pip-audit 2026-10-22: 6.19.0 carries 8 advisories (CVE-2026-113786 to 113795), lowest fix 6.21.1; earlier 6.15.0 had 11 and 6.16.1 had 8
 pyHanko==0.37.0
-cryptography==50.0.1
+cryptography==50.0.2  # same pin as the form-service skill (one version per library, verify-python-env.ps1)
 requests==2.34.2
 
 # Test extra: the Starlette test client needs httpx, and python-multipart is

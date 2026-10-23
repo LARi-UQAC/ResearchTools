@@ -1,4 +1,4 @@
 # word2latex skill - runtime dependencies (docx_inspect.py). Added 2026-10-22: the skill imported both and declared none.
 # pandoc is a separate program, not a pip package.
-pillow>=12.3.0  # docx_inspect.py image comparison; floor as in geolocalisation (12.3.0 carries advisories fixed in 13.0.0)
+pillow==13.0.0  # docx_inspect.py image comparison; 12.3.0 carries advisories fixed in 13.0.0 (pip-audit 2026-10-22)
 numpy==2.4.6  # docx_inspect.py image comparison

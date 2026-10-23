@@ -8,7 +8,7 @@ matplotlib==3.9.2
 # Security floor: matplotlib pulls Pillow transitively; < 12.3.0 carries
 # PYSEC-2026-2253..2257 (image-decoder CVEs). This skill only writes PNGs, so the
 # realistic exposure is low, but pin the fixed version anyway.
-pillow>=12.3.0
+pillow==13.0.0  # pip-audit 2026-10-22: 12.3.0 carries 35 advisories, all fixed in 13.0.0
 
 # Optional - interactive HTML map (generate_geomap.py --formats ...,html):
 # folium==0.17.0

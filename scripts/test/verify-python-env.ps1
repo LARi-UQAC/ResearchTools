@@ -95,6 +95,41 @@ Check "every file that pins pypdf pins it exactly"            (@($pypdfPins | Wh
 Check "the four pypdf pins agree on one version"              (@($pypdfPins | Select-Object -ExpandProperty Version -Unique).Count -eq 1)
 Check "(control) the agreement check can see a stale pin"     (@(@("6.19.0", "6.15.0") | Select-Object -Unique).Count -eq 2)
 
+# 2026-10-22: one pin per library across EVERY requirements file, not pypdf alone. Reads the
+# files the data file names for both environments, every requirements.txt under
+# .claude\skills (a file not yet in the data file still pins a library a skill runs with),
+# and deploy\form-service\requirements.txt.
+function Get-RtPinnedVersions([string]$Path) {
+    foreach ($line in @(Get-Content -LiteralPath $Path -Encoding UTF8)) {
+        $m = [regex]::Match($line, '^\s*([A-Za-z0-9][A-Za-z0-9._-]*)(\[[^\]]*\])?\s*==\s*([^\s;#]+)')
+        if ($m.Success) {
+            [pscustomobject]@{ Name = ($m.Groups[1].Value.ToLowerInvariant() -replace '[-_.]+', '-'); Version = $m.Groups[3].Value; File = $Path }
+        }
+    }
+}
+function Get-RtPinConflicts([string[]]$Files) {
+    $pins = @(foreach ($f in $Files) { Get-RtPinnedVersions $f })
+    foreach ($g in @($pins | Group-Object Name)) {
+        $versions = @($g.Group | Select-Object -ExpandProperty Version -Unique)
+        if ($versions.Count -gt 1) {
+            [pscustomobject]@{ Name = $g.Name; Detail = (($g.Group | ForEach-Object { "$($_.Version) in $($_.File)" }) -join "; ") }
+        }
+    }
+}
+$pinFiles = @(@(Get-RtEnvironments -RepoRoot $RepoRoot) | ForEach-Object { $_.Requirements } | ForEach-Object { $_.Full })
+$pinFiles += @(Get-ChildItem (Join-Path $RepoRoot ".claude\skills") -Recurse -Filter "requirements.txt" -File | ForEach-Object { $_.FullName })
+$pinFiles += (Join-Path $RepoRoot "deploy\form-service\requirements.txt")
+$pinFiles = @($pinFiles | Where-Object { Test-Path -LiteralPath $_ } | Sort-Object -Unique)
+$conflicts = @(Get-RtPinConflicts $pinFiles)
+Check "no library is pinned to two different versions across the requirements files" ($conflicts.Count -eq 0)
+foreach ($c in $conflicts) { Write-Host "        $($c.Name): $($c.Detail)" -ForegroundColor DarkGray }
+$pinFix = Join-Path $Fake "pin-fixtures"
+New-Item -ItemType Directory -Path $pinFix -Force | Out-Null
+Set-Content (Join-Path $pinFix "a.txt") "acme_widget==1.0.0`nshared==2.0" -Encoding ASCII
+Set-Content (Join-Path $pinFix "b.txt") "Acme-Widget==1.1.0 ; sys_platform == 'win32'`nshared==2.0" -Encoding ASCII
+$fixConflicts = @(Get-RtPinConflicts @((Join-Path $pinFix "a.txt"), (Join-Path $pinFix "b.txt")))
+Check "(control) two files pinning one library differently are reported, naming both files" ($fixConflicts.Count -eq 1 -and $fixConflicts[0].Name -eq "acme-widget" -and $fixConflicts[0].Detail -match "a\.txt" -and $fixConflicts[0].Detail -match "b\.txt")
+
 # Negative control: the Exists flag has to be able to say no, or the check above
 # passes on a list of files that were never looked for.
 $ghost = @(Get-RtEnvironments -RepoRoot (Join-Path $Fake "no-such-repo") | ForEach-Object { $_.Requirements })
@@ -108,7 +143,12 @@ Check "pip-audit is installed by the installer"  (@($tools | Where-Object { $_.S
 # failure case against a temp copy of the JSON passed with -Path (R20).
 $envs = @()
 try { $envs = @(Get-RtEnvironments -RepoRoot $RepoRoot) } catch { Write-Host "  (loader threw: $($_.Exception.Message))" -ForegroundColor Red }
-Check "the data file declares two environments, .venv-skills first then .venv-docs" ($envs.Count -eq 2 -and $envs[0].Name -eq ".venv-skills" -and $envs[1].Name -eq ".venv-docs")
+Check "the data file declares three environments: .venv-skills, .venv-docs, .venv-pdf2md" ($envs.Count -eq 3 -and $envs[0].Name -eq ".venv-skills" -and $envs[1].Name -eq ".venv-docs" -and $envs[2].Name -eq ".venv-pdf2md")
+# D9 (owner, 2026-10-22): mineru needs gradio, every gradio caps pillow below 13.0.0, so pdf2md
+# lives in its own environment and .venv-skills can carry the fixed pillow.
+$pdfEnv = @($envs | Where-Object { $_.Name -eq ".venv-pdf2md" })
+Check "the .venv-pdf2md environment lists exactly the pdf2md file and no tool" ($pdfEnv.Count -eq 1 -and @($pdfEnv[0].Requirements).Count -eq 1 -and $pdfEnv[0].Requirements[0].Path -eq ".claude/skills/pdf2md/scripts/requirements.txt" -and @($pdfEnv[0].Tools).Count -eq 0)
+Check "the pdf2md file is not in .venv-skills" (@(@($envs | Where-Object { $_.Name -eq ".venv-skills" }) | ForEach-Object { $_.Requirements } | Where-Object { $_.Path -match 'pdf2md' }).Count -eq 0)
 Check "every environment has a why and every requirement a path and a why" ($envs.Count -ge 1 -and @($envs | Where-Object { [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0 -and @($envs | ForEach-Object { $_.Requirements } | Where-Object { [string]::IsNullOrWhiteSpace($_.Path) -or [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0)
 $docsEnv  = @($envs | Where-Object { $_.Name -eq ".venv-docs" })
 Check "the .venv-docs environment lists exactly requirements-docs.txt and no tool" ($docsEnv.Count -eq 1 -and @($docsEnv[0].Requirements).Count -eq 1 -and $docsEnv[0].Requirements[0].Path -eq "requirements-docs.txt" -and @($docsEnv[0].Tools).Count -eq 0)
@@ -263,7 +303,7 @@ function New-StubVenv([string]$root, [string]$name) {
     Set-Content -Path (Join-Path $dir "python.exe") -Value "stub" -Encoding ASCII
 }
 function Remove-StubVenvs([string]$root) {
-    foreach ($n in @(".venv-skills", ".venv-docs")) { Remove-Item (Join-Path $root $n) -Recurse -Force -ErrorAction SilentlyContinue }
+    foreach ($n in @(".venv-skills", ".venv-docs", ".venv-pdf2md")) { Remove-Item (Join-Path $root $n) -Recurse -Force -ErrorAction SilentlyContinue }
 }
 $FreshRoot = Join-Path $Fake "fresh-root"
 foreach ($r in $allReqs) {
@@ -309,6 +349,7 @@ foreach ($r in $allReqs) {
 }
 New-StubVenv $ReuseRoot ".venv-skills"
 New-StubVenv $ReuseRoot ".venv-docs"
+New-StubVenv $ReuseRoot ".venv-pdf2md"
 $reuseOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "an existing venv is reused with no base python at all" ($reuseOut -match "no base interpreter needed" -and $reuseOut -match "Would install")
 Check "the reuse preview does not say it was skipped"        ($reuseOut -notmatch "skipped")
@@ -328,6 +369,7 @@ Check "an empty profile does not throw and does not refuse" ($noProfile -eq "")
 $ignoredOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 New-StubVenv $ReuseRoot ".venv-skills"
 New-StubVenv $ReuseRoot ".venv-docs"
+New-StubVenv $ReuseRoot ".venv-pdf2md"
 $ignoredOut2 = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "-Python is reported ignored when the environment exists" ($ignoredOut2 -match "-Python was ignored")
 Check "(control) with no environment -Python is not reported ignored" ($ignoredOut -notmatch "was ignored")
@@ -432,13 +474,14 @@ $skPy = Join-Path $OrderRoot ".venv-skills\Scripts\python.exe"
 $dcPy = Join-Path $OrderRoot ".venv-docs\Scripts\python.exe"
 $skillReqCount = @($skillEnv[0].Requirements).Count
 $kinds = @($or.Calls | ForEach-Object {
-    if ($_.Args -match '^-m venv ') { if ($_.Args -match 'venv-docs') { "venv-docs" } else { "venv-skills" } }
+    if ($_.Args -match '^-m venv ') { if ($_.Args -match 'venv-docs') { "venv-docs" } elseif ($_.Args -match 'venv-pdf2md') { "venv-pdf2md" } else { "venv-skills" } }
     elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'rt-tools-') { "tool" }
     elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'requirements-docs') { "docs-file" }
+    elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'pdf2md') { "pdf2md-file" }
     elseif ($_.Args -match '^-m pip install') { "skills-file" }
     elseif ($_.Args -match '^-m pip_audit') { "audit" }
     else { "other:" + $_.Args } })
-$expected = @("venv-skills", "tool") + @(1..$skillReqCount | ForEach-Object { "skills-file" }) + @("venv-docs", "docs-file") + @(1..($skillReqCount + 2) | ForEach-Object { "audit" })
+$expected = @("venv-skills", "tool") + @(1..$skillReqCount | ForEach-Object { "skills-file" }) + @("venv-docs", "docs-file", "venv-pdf2md", "pdf2md-file") + @(1..($skillReqCount + 3) | ForEach-Object { "audit" })
 Check "with a recording runner the calls come in order: venv skills, tool, skills files, venv docs, docs file, then pip_audit on every file" ($or.Code -eq 0 -and ($kinds -join ',') -eq ($expected -join ','))
 if (($kinds -join ',') -ne ($expected -join ',')) { Write-Host "        got: $($kinds -join ',')" -ForegroundColor DarkGray }
 $audits = @($or.Calls | Where-Object { $_.Args -match '^-m pip_audit' })
@@ -460,8 +503,9 @@ $script:FailPattern = ""
 $StubRoot = New-RunRoot "two-stubs"
 New-StubVenv $StubRoot ".venv-skills"
 New-StubVenv $StubRoot ".venv-docs"
+New-StubVenv $StubRoot ".venv-pdf2md"
 $st = Invoke-Install $StubRoot @{ CandidatePaths = @() }
-Check "two stub existing environments are reused with no base interpreter and no venv call" ($st.Code -eq 0 -and @($st.Calls | Where-Object { $_.Args -match '^-m venv' }).Count -eq 0 -and $st.Text -notmatch "skipped" -and @($st.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Exe -like '*venv-docs*' }).Count -ge 1)
+Check "three stub existing environments are reused with no base interpreter and no venv call" ($st.Code -eq 0 -and @($st.Calls | Where-Object { $_.Args -match '^-m venv' }).Count -eq 0 -and $st.Text -notmatch "skipped" -and @($st.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Exe -like '*venv-docs*' }).Count -ge 1)
 
 # ------------------------------------------------------------ setup.ps1 wiring ---
 $setupText = Get-Content (Join-Path $RepoRoot "setup.ps1") -Raw -Encoding UTF8

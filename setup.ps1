@@ -26,17 +26,18 @@
                               vault event daemon is running at login and raw drops in
                               ~/.claude/obsidian-outbox/raw are consumed instead of
                               piling up)
-        -InstallPython     -> .venv-skills and .venv-docs (always in the MAIN clone,
-                              even when run from a worktree): the packages the
-                              repository's skills import and those the MkDocs site
-                              needs, both environments declared in one data file,
+        -InstallPython     -> .venv-skills, .venv-docs and .venv-pdf2md (always in the
+                              MAIN clone, even when run from a worktree): the packages
+                              the repository's skills import, those the MkDocs site
+                              needs and those of the pdf2md conversion, the three
+                              environments declared in one data file,
                               scripts\lib\rt-python-requirements.json, then
                               pip-audit (from .venv-skills) on each file. The base interpreter is
                               CHOSEN: -Python, or a PATH / py-launcher candidate that
                               belongs to the current profile and can really create a
                               virtual environment. Otherwise it refuses and names each
-                              candidate with the reason. docling and geolocalisation
-                              stay manual, documented in README.md
+                              candidate with the reason. Chapter 01, Step 5, of the
+                              manual lists what each environment holds
         -UpdateHooks       -> with the config generation: also REPLACE the command and
                               statusMessage of a hook entry of ~/.claude/settings.json
                               that the template declares and whose text changed. A text
@@ -72,7 +73,7 @@
     .\setup.ps1 -InstallTools -Personal      # multi-tool mirrors only (Copilot/OpenCode/...)
     .\setup.ps1 -InstallDaemon               # vault daemon at login only
     .\setup.ps1 -InstallDaemon -Preview      # say what it would install, install nothing
-    .\setup.ps1 -InstallPython               # .venv-skills (suite, skills) and .venv-docs (MkDocs site)
+    .\setup.ps1 -InstallPython               # .venv-skills (suite, skills), .venv-docs (MkDocs site), .venv-pdf2md
     .\setup.ps1 -InstallPython -Preview      # choose the interpreter, say what would install, write nothing
     .\setup.ps1 -InstallPython -Python "C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
     .\setup.ps1 -Update -Preview             # the whole update, written nowhere: shows every step
@@ -281,7 +282,7 @@ function Read-RtAnswer {
 
 function Invoke-PythonEnvironment {
     $code = Install-RtPythonEnv -RepoRoot $WorkspaceRoot -Preview:$Preview -Python $Python
-    Set-InstallerExit "python environments (.venv-skills, .venv-docs)" $code
+    Set-InstallerExit "python environments (.venv-skills, .venv-docs, .venv-pdf2md)" $code
 }
 
 function Invoke-VaultEnvironment {
@@ -728,11 +729,10 @@ if ($All) {
     Write-Host "  3. Have the vault event daemon running at login, so raw drops in"
     Write-Host "     ~/.claude/obsidian-outbox/raw are filed instead of piling up:"
     Write-Host "       .\setup.ps1 -InstallDaemon   (needs OBSIDIAN_VAULT at user scope)"
-    Write-Host "  4. Create the Python environment the offline test suite resolves first,"
-    Write-Host "     so run-offline-tests.ps1 reports PASSED instead of NOT RUN:"
-    Write-Host "       .\setup.ps1 -InstallPython           # .venv-skills + .venv-docs and their packages"
-    Write-Host "     The optional skill dependencies (scopus, extract-statistic, geolocalisation)"
-    Write-Host "     stay manual - see the Prerequisites table in README.md."
+    Write-Host "  4. Create the Python environments (the offline suite resolves .venv-skills"
+    Write-Host "     first, so run-offline-tests.ps1 reports PASSED instead of NOT RUN):"
+    Write-Host "       .\setup.ps1 -InstallPython           # .venv-skills + .venv-docs + .venv-pdf2md"
+    Write-Host "     Programs that are not pip packages are in the Prerequisites table of README.md."
     Write-Host "  Or run everything in one pass next time: .\setup.ps1 -All -Personal"
     Write-Host ""
 }

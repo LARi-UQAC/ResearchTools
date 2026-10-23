@@ -30,7 +30,7 @@ whatever `python` is on the `PATH`.
 `run-all-checks.ps1` takes `-DryRun` (list, run nothing), `-SkipSuite`, `-Only a,b`, `-Exclude names`
 and `-ReportPath file.json`. It leaves out `verify-graph-health.ps1` for the same reason as above.
 
-The ten verifiers in `scripts/test/` each prove one installer or tool by running it for real against a
+The eleven verifiers in `scripts/test/` each prove one installer or tool by running it for real against a
 throwaway home or repository, never your own:
 
 | Verifier | Proves |
@@ -39,7 +39,8 @@ throwaway home or repository, never your own:
 | `verify-daemon-install.ps1` | `setup.ps1 -InstallDaemon` and the `OBSIDIAN_VAULT` offer |
 | `verify-graph-health.ps1` | The graph health script (`local-writer` only) |
 | `verify-no-personal-data.ps1` | No published file carries the account name of whoever runs it |
-| `verify-python-env.ps1` | `setup.ps1 -InstallPython` |
+| `verify-python-env.ps1` | `setup.ps1 -InstallPython`: the three environments, their order, one pin per library, every requirements file registered |
+| `verify-python-libs.ps1` | Every third-party import is declared and the library tables of chapter 02 are current (`scripts/docs/python_libs.py --check`) |
 | `verify-rt-contract.ps1` | The generated `RT-CONTRACT` block of the global `CLAUDE.md` |
 | `verify-setup-writes.ps1` | The three writes `setup.ps1` makes to the global configuration |
 | `verify-sync-writes.ps1` | The two irreversible writes of `-Sync` and what it selects |
@@ -94,7 +95,7 @@ The site is built by MkDocs Material (the libraries of `.venv-docs` are listed i
 
 | Task | Command |
 |---|---|
-| Install the tools, once | `python -m venv .venv-docs` then `.venv-docs\Scripts\python.exe -m pip install -r requirements-docs.txt` |
+| Install the tools, once | `.\setup.ps1 -InstallPython`, which builds `.venv-docs` from `requirements-docs.txt` with the other environments ([chapter 01](01-installation.md), Step 5) |
 | Preview | `.venv-docs\Scripts\python.exe -m mkdocs serve`, then open the printed local address |
 | Check links and anchors | `.venv-docs\Scripts\python.exe -m mkdocs build --strict`, which must print no warning |
 | Publish | `.venv-docs\Scripts\python.exe -m mkdocs gh-deploy`, run by hand from `main` after the merge |

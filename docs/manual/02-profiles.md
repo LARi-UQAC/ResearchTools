@@ -67,33 +67,37 @@ registry, not to Claude Code's `env` block, see [chapter 01](01-installation.md)
 
 A skill that imports a library nobody declared works on the machine that happens to have it and
 fails on every other one, so this section lists every third-party library the repository's Python
-code needs, one row per library. It was built on 2026-10-22 by reading the `import` statements of
-all 404 `.py` files (skills, hooks, scripts and tests, but not `docs/superpowers/`), then comparing
-them with every requirements file and with what each environment really holds. The environments are
-two: `.venv-skills`, for the skills, the hooks' tests and the offline suite, and `.venv-docs`, for
-this site. A library used in both has a row in each table with its own version, since the two
-environments are independent and do not always agree.
+code needs, one row per library and per environment. The repository has three environments, all
+built in the main clone by `.\setup.ps1 -InstallPython` from one data file,
+`scripts/lib/rt-python-requirements.json`:
 
-How to read the tables:
+- `.venv-skills`, for the skills, the hooks' tests and the offline suite;
+- `.venv-docs`, for this site;
+- `.venv-pdf2md`, for the `pdf2md` conversion.
 
-- ☑ in the first column means the library is declared in a requirements file. ☐ means the code
-  uses it and no file declares it, and the note says why.
-- "Version" is what the environment holds on this machine on 2026-10-22, measured with
-  `pip list`, and not the version a fresh install would resolve.
-- `(added)` marks a line added to a requirements file on 2026-10-22 because the code imported the
-  library and no file declared it.
-- A library that is optional in code (a guarded or lazy `import`) is marked `optional`.
+The three are independent, so a library used in two of them has a row in each table with its own
+pin.
+
+The tables below are generated, not written by hand. `scripts/docs/python_libs.py` reads the data
+file, every requirements file it names, and the `import` statements of every `.py` file under
+`.claude/skills`, `.claude/hooks` and `scripts`, then fills the tables between the
+`python-libs` marker comments of this page. How to read them:
+
+- ☑ in the first column means a requirements file declares the library. ☐ means the code imports
+  it and no file declares it, which `python_libs.py --check` reports as an error.
+- "Pin" is the version the requirements files fix, not a version measured on a machine.
+  `python_libs.py --drift` compares it with what an environment holds.
+- "Optional" means the import is guarded (inside `try` or a function) or the requirements line
+  says so.
+- The notes, licences included, come from `scripts/docs/python-libs-notes.json`.
 - Programs that are not pip packages (pandoc, Poppler, MiKTeX, Ollama, Node.js) are in the
   Prerequisites table of [chapter 01](01-installation.md).
 
 ### `.venv-skills`
 
-Python 3.11.0 on this machine. Created by `.\setup.ps1 -InstallPython`, which installs only the
-requirements files named in `scripts/lib/rt-python-requirements.json`: `paper2talk`,
-`recommendation-letter`, `scopus` and `extract-statistic` (without `docling`), plus `pip-audit`.
-The last column says whether that command installs the library. Everything else was installed by
-hand. The environment holds 180 packages, and most of the ones not listed here are dependencies of
-the listed ones (`mineru` pulls a very large tree).
+The interpreter every skill script, hook test and launcher uses. It holds fourteen requirements
+files (every skill file except `pdf2md`'s) plus `pip-audit`, which audits the requirements files of
+all three environments after the install.
 
 <!-- python-libs:begin .venv-skills -->
 | Declared | Library | Import | Pin | Declared in | Used by | Optional | Note |
@@ -131,27 +135,17 @@ the listed ones (`mineru` pulls a very large tree).
 | ☑ | `tiktoken` | tiktoken | 0.14.0 | loop-engineer `==0.14.0` | aider-setup, loop-engineer | yes | aider-setup also uses the copy in aider's own interpreter |
 <!-- python-libs:end .venv-skills -->
 
-Eleven skills declare their libraries in a file that `-InstallPython` does not read:
-`rt-observe`, `opt-local-stt-vram`, `word2latex` and `drawio2tikz` (all four with a requirements
-file created on 2026-10-22), `form-service`, `pdf2md`, `geolocalisation`, `narrative-cv`,
-`wp-portfolio-sync`, `professor-expertise-finder` and `loop-engineer`. Adding them
-to the data file is a one-line change per file and is left for a separate change, because it
-changes what the installer installs.
-
 ### `.venv-docs`
 
-Python 3.13.3 on this machine. It is created by hand, `setup.ps1` does not create it: see
-[chapter 16](16-maintenance.md). It holds the 40 pinned lines of `requirements-docs.txt` plus pip, and the
-installed versions match the pins exactly. The site needs `mkdocs` and `mkdocs-material` (the
-theme), `pymdown-extensions` and `Markdown` (the extensions listed in `mkdocs.yml`: `attr_list`,
-`md_in_html`, `tables`, `toc`, `pymdownx.superfences`, `pymdownx.highlight` and
-`pymdownx.slugs`), `ghp-import` (the `gh-deploy` command) and `PyYAML`. The build hook
-`scripts/docs/mkdocs_hooks.py` uses the standard library only.
-
-Eleven lines are marked orphan: nothing installed in this environment requires them, or they are
-required only by another orphan. They are not needed to build the site. Their set matches the
-dependencies of `pip-audit`, which suggests a past install of it, but that is an inference and not
-checked. They are left in `requirements-docs.txt` for now.
+The interpreter that builds this site (see [chapter 16](16-maintenance.md)). It holds
+`requirements-docs.txt`, every line pinned, transitive dependencies included. The site needs
+`mkdocs` and `mkdocs-material` (the theme), `pymdown-extensions` and `Markdown` (the extensions
+listed in `mkdocs.yml`: `attr_list`, `md_in_html`, `tables`, `toc`, `pymdownx.superfences`,
+`pymdownx.highlight` and `pymdownx.slugs`), `ghp-import` (the `gh-deploy` command), `Pygments` and
+`PyYAML`. Those are `direct` in the Role column, and every other line is `transitive`. The build
+hook `scripts/docs/mkdocs_hooks.py` uses the standard library only. Eleven lines that nothing in
+this environment required were removed on 2026-10-22. A `.venv-docs` built before that date still
+holds them until it is deleted and rebuilt.
 
 <!-- python-libs:begin .venv-docs -->
 | Declared | Library | Pin | Role | Note |
@@ -189,7 +183,11 @@ checked. They are left in `requirements-docs.txt` for now.
 
 ### `.venv-pdf2md`
 
-The environment of the `pdf2md` conversion (mineru), kept apart from `.venv-skills` because mineru needs gradio and every gradio caps pillow below 13.0.0.
+The interpreter of the `pdf2md` conversion (`mineru`, `mineru-llama-cpp`). It is kept apart from
+`.venv-skills` by the owner's decision of 2026-10-22: `mineru` 4.0.11 needs `gradio`, every
+`gradio` up to 6.30.0 caps `pillow` below 13.0.0, and 13.0.0 is the version that clears the
+advisories of `pillow` 12.3.0 in `.venv-skills`. This environment therefore keeps `pillow` 12, with
+its advisories accepted and recorded in `IMPROVEMENTS.md`.
 
 <!-- python-libs:begin .venv-pdf2md -->
 | Declared | Library | Import | Pin | Declared in | Used by | Optional | Note |
@@ -200,20 +198,31 @@ The environment of the `pdf2md` conversion (mineru), kept apart from `.venv-skil
 | ☑ | `PyYAML` | yaml | 6.0.3 | pdf2md `==6.0.3` | narrative-cv, pdf2md, recommendation-letter, wp-portfolio-sync |  | read with yaml.safe_load only |
 <!-- python-libs:end .venv-pdf2md -->
 
-### A third environment
+### The form service
 
 `deploy/form-service/` has its own environment, `%LOCALAPPDATA%\ResearchTools\venv-form-service`,
-described by `deploy/form-service/requirements.txt`: `fastapi==0.141.1`, `uvicorn==0.54.0`,
-`pypdf==6.19.0`, `pyHanko==0.37.0`, `cryptography==50.0.1` and `requests==2.34.2`. Two of them
-differ from `.venv-skills`, which holds `fastapi` 0.159.1 and `cryptography` 50.0.2. The service
-tests run in that environment, not in `.venv-skills`.
+which `setup.ps1` does not build. It is described by `deploy/form-service/requirements.txt`:
+`fastapi==0.141.1`, `uvicorn==0.54.0`, `pypdf==6.21.1`, `pyHanko==0.37.0`, `cryptography==50.0.2`
+and `requests==2.34.2`. Its pins of the libraries it shares with the `form-service` skill are the
+same, and `verify-python-env.ps1` checks that. The service tests run in that environment, not in
+`.venv-skills`.
 
 ### Keeping these tables true
 
-No script regenerates them. A library added to a skill without a line in its requirements file is
-exactly the gap this section was written to close, so a change that adds an `import` of a new
-third-party library also adds the line, with an exact version checked by `pip-audit`
-([chapter 16](16-maintenance.md)), and one row here.
+A change that adds an `import` of a new third-party library also adds its line to the skill's
+requirements file, with an exact version checked by `pip-audit` ([chapter 16](16-maintenance.md)).
+A new requirements file is also named in `scripts/lib/rt-python-requirements.json`. Then, with
+the `.venv-skills` interpreter:
+
+```powershell
+python scripts\docs\python_libs.py --write    # regenerate the tables of this page
+python scripts\docs\python_libs.py --check    # exit 1 on an omission or a stale table
+python scripts\docs\python_libs.py --drift    # compare the pins with what each environment holds
+```
+
+`scripts\test\verify-python-libs.ps1`, run by `run-all-checks.ps1`, fails when `--check` does. An
+import the notes file cannot map to a distribution is reported too, and a new entry in
+`scripts/docs/python-libs-notes.json` fixes it.
 
 ---
 [← 01 Installation](01-installation.md) | [Table of contents](../../README.md) | [03 Token management →](03-token-management.md)

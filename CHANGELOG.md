@@ -10,6 +10,20 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Added
+- `setup.ps1 -InstallPython` builds three Python environments in the main clone, in order:
+  `.venv-skills` (fourteen skill requirements files plus `pip-audit`), `.venv-docs` (the MkDocs
+  site, which used to be created by hand) and `.venv-pdf2md` (the `pdf2md` conversion, kept apart
+  because `mineru` needs a `pillow` below 13). An existing environment is reused, a missing
+  requirements file stops the run before anything is installed, and `pip-audit` checks every file
+  applied.
+- One data file, `scripts/lib/rt-python-requirements.json`, declares the three environments.
+  Every skill `requirements.txt` is named in it, and `verify-python-env.ps1` (124 checks) fails on
+  an unregistered file or a library pinned to two versions in one environment.
+- `scripts/docs/python_libs.py` regenerates the library tables of manual chapter 02 (`--write`),
+  reports an undeclared import, an unregistered file, a pin conflict or a stale table (`--check`),
+  and compares the pins with an installed environment (`--drift`). `verify-python-libs.ps1` runs
+  it from `run-all-checks.ps1`. Its first run found `folium`, imported by `geolocalisation` and
+  declared nowhere, now pinned to 0.20.0.
 - Manual: four new chapters, `07 Hooks and guards`, `08 Rules and conventions`, `09 Harnesses and
   mirrors` and `16 Maintenance, checks and CI`, and two placeholder chapters, `12 PCB design, mixed
   signals` and `13 3D CAD design, CNC, 3D printing`. The chapters are reordered so that commands,
@@ -77,6 +91,11 @@ This file is for someone following releases. For the dated, engineering-level de
   preview.
 
 ### Changed
+- Pins raised to clear `pip-audit` advisories: `pypdf` 6.21.1 (four files), `cryptography`
+  50.0.2 in `deploy/form-service`, `docling` 2.142.0, `pillow` 13.0.0 in `.venv-skills`,
+  `claude-agent-sdk` 0.2.172 (now exact), `certifi` 2026.10.19. The three NVIDIA CUDA lines of
+  `rt-observe` carry a Windows-or-Linux marker. Eleven unused lines were removed from
+  `requirements-docs.txt` (40 to 29).
 - Chapter 06 of the manual (the aider pipeline) is brought in line with the local coding
   contract. It names no orchestrating product, so "Claude Code" becomes "interactive harness"
   there, in `docs/aider-setup.md` and in one cell of chapter 12. It says a `local-coder` dispatch

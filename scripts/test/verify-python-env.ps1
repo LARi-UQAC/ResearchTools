@@ -558,7 +558,7 @@ Check "setup.ps1 passes -Python through"         ($setup -match 'Install-RtPytho
 Check "setup.ps1 documents the switch"           ($setup -match ([regex]::Escape(".\setup.ps1 -InstallPython")))
 Check "the switch has its own dispatch branch"   ($setup -match ([regex]::Escape('if ($InstallPython -and -not $All)')))
 Check "Next steps names the switch"              ($setup -match "run-offline-tests.ps1 reports PASSED")
-Check "the help names .venv-docs"                ($setup -match '-InstallPython\s+-> \.venv-skills and \.venv-docs')
+Check "the help names the three environments"    ($setup -match '-InstallPython\s+-> \.venv-skills, \.venv-docs and \.venv-pdf2md')
 
 # README has to name .venv-skills by that name: the runner resolves it first, and a
 # bootstrap block naming any other directory sends the operator somewhere the runner

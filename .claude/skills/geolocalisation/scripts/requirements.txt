@@ -10,8 +10,10 @@ matplotlib==3.9.2
 # realistic exposure is low, but pin the fixed version anyway.
 pillow==13.0.0  # pip-audit 2026-10-22: 12.3.0 carries 35 advisories, all fixed in 13.0.0
 
-# Optional - interactive HTML map (generate_geomap.py --formats ...,html):
-# folium==0.17.0
+# Optional - interactive HTML map (generate_geomap.py --formats ...,html). Declared
+# 2026-10-23 because the code imports it (python_libs.py --check); 0.20.0 is the
+# latest release and pip-audit found no known vulnerability that day.
+folium==0.20.0  # optional
 
 # Optional - full-text study-site fallback (extract_locations.py --full-text).
 # Reads downloaded PDFs; the download itself reuses the scopus skill's

@@ -95,42 +95,41 @@ The last column says whether that command installs the library. Everything else 
 hand. The environment holds 180 packages, and most of the ones not listed here are dependencies of
 the listed ones (`mineru` pulls a very large tree).
 
-| Declared | Library | Import | Version | Declared in | Used by | Installed by `-InstallPython` | Note |
+<!-- python-libs:begin .venv-skills -->
+| Declared | Library | Import | Pin | Declared in | Used by | Optional | Note |
 |---|---|---|---|---|---|---|---|
-| ☑ | `requests` | requests | 2.34.2 | scopus `==2.34.2`; extract-statistic `==2.34.2 (added)`; form-service `==2.34.2`; wp-portfolio-sync `==2.34.2` | scopus, extract-statistic, form-service, wp-portfolio-sync | ☑ |  |
-| ☑ | `PyYAML` | yaml | 6.0.3 | narrative-cv `==6.0.3`; pdf2md `==6.0.3`; recommendation-letter `==6.0.3`; wp-portfolio-sync `==6.0.3` | narrative-cv, pdf2md, recommendation-letter, wp-portfolio-sync | ☑ |  |
-| ☑ | `pypdf` | pypdf | 6.19.0 | form-service `==6.19.0`; narrative-cv `==6.19.0`; paper2talk `==6.19.0` | form-service, narrative-cv, paper2talk | ☑ | advisories, fixed in 6.21.1 (chapter 15) |
-| ☑ | `defusedxml` | defusedxml | 0.7.1 | drawio2tikz `==0.7.1 (added)`; paper2talk `==0.7.1`; wp-portfolio-sync `==0.7.1` | drawio2tikz, paper2talk, wp-portfolio-sync | ☑ |  |
-| ☑ | `Jinja2` | jinja2 | 3.1.6 | paper2talk `==3.1.6` | paper2talk | ☑ |  |
-| ☐ | `MarkupSafe` | markupsafe | 3.0.4 | none | paper2talk | ☐ | imported by `talk_model.py`; a dependency of Jinja2, so not declared on its own |
-| ☑ | `python-pptx` | pptx | 1.0.2 | paper2talk `==1.0.2` | paper2talk | ☑ | `pypptx-with-oxml` is also installed here and provides the same `pptx` module name |
-| ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | extract-statistic `==1.27.2.3`; pdf2md `==1.27.2.3 (added)`; paper2talk `==1.27.2.3 (added, optional)`; geolocalisation `commented, optional` | extract-statistic, pdf2md, paper2talk, geolocalisation, scopus | ☑ | `scopus` uses it when present and states in its own header that it is not a declared dependency; AGPL-3.0 licence |
-| ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | extract-statistic `==1.27.2.3` | extract-statistic | ☑ | AGPL-3.0 licence |
-| ☑ | `markitdown` | markitdown | 0.1.6 | extract-statistic `[pdf]==0.1.6` | extract-statistic | ☑ | MIT licence |
-| ☑ | `docling` | docling | not installed | extract-statistic `==2.103.0` | extract-statistic | ☑ | left out of `-InstallPython` (pulls torch) and not installed here; advisories (chapter 15) |
-| ☑ | `psycopg` | psycopg | 3.3.6 | extract-statistic `[binary]==3.3.6`; rt-observe `[binary]==3.3.6 (added, optional)` | extract-statistic, rt-observe | ☑ |  |
-| ☑ | `pgvector` | (none) | 0.5.0 | extract-statistic `==0.5.0` | extract-statistic | ☑ | declared, but no `.py` file imports it: the vector store is SQL. Candidate for removal |
-| ☑ | `openpyxl` | openpyxl | 3.1.5 | professor-expertise-finder `==3.1.5` | professor-expertise-finder | ☐ |  |
-| ☑ | `google-genai` | google.genai | 2.8.0 | scopus `==2.8.0` | scopus | ☑ |  |
-| ☑ | `openai` | openai | 2.43.0 | scopus `==2.43.0` | scopus | ☑ |  |
-| ☑ | `curl_cffi` | curl_cffi | 0.15.0 | scopus `==0.15.0` | scopus | ☑ | optional |
-| ☑ | `playwright` | playwright | 1.61.0 | scopus `==1.61.0` | scopus | ☑ | optional; the Chromium binary is a separate `playwright install chromium` |
-| ☑ | `playwright-stealth` | playwright_stealth | not installed | scopus `==2.0.3 (added, optional)` | scopus | ☑ | optional; not installed here |
-| ☑ | `pyHanko` | pyhanko | 0.37.0 | form-service `==0.37.0` | form-service | ☐ |  |
-| ☑ | `cryptography` | cryptography | 50.0.2 | form-service `==50.0.2 (added)` | form-service | ☐ | `deploy/form-service` pins 50.0.1 for its own environment |
-| ☑ | `matplotlib` | matplotlib | not installed | geolocalisation `==3.9.2` | geolocalisation | ☐ | manual by design, not installed here |
-| ☑ | `folium` | folium | not installed | geolocalisation `commented ==0.17.0, optional` | geolocalisation | ☐ | not installed here |
-| ☑ | `pillow` | PIL | 12.3.0 | geolocalisation `>=12.3.0`; word2latex `>=12.3.0 (added)` | geolocalisation, word2latex | ☐ | 12.3.0 has advisories, fixed in 13.0.0 (chapter 15) |
-| ☑ | `numpy` | numpy | 2.4.6 | word2latex `==2.4.6 (added)` | word2latex, aider-setup | ☐ | `aider-setup` also imports it, in aider's own interpreter |
-| ☑ | `faster-whisper` | faster_whisper | 1.2.1 | rt-observe `==1.2.1 (added)`; opt-local-stt-vram `==1.2.1 (added)` | rt-observe, opt-local-stt-vram | ☐ | pulls ctranslate2 |
-| ☑ | `nvidia-cublas-cu12` | (DLLs) | 12.9.2.10 | rt-observe `==12.9.2.10 (added)` | rt-observe | ☐ | never imported: `stt_engine.py` puts its DLL folder on PATH for GPU speech-to-text |
-| ☑ | `nvidia-cudnn-cu12` | (DLLs) | 9.26.0.51 | rt-observe `==9.26.0.51 (added)` | rt-observe | ☐ | same |
-| ☑ | `nvidia-cuda-nvrtc-cu12` | (DLLs) | 12.9.86 | rt-observe `==12.9.86 (added)` | rt-observe | ☐ | same |
-| ☑ | `tiktoken` | tiktoken | not installed | loop-engineer `==0.14.0 (added, optional)` | loop-engineer, aider-setup | ☐ | not installed here; `aider-setup` uses the copy in aider's interpreter |
-| ☑ | `claude-agent-sdk` | claude_agent_sdk | not installed | loop-engineer `>=0.1.0` | loop-engineer | ☐ | not pinned and not installed here (chapter 15) |
-| ☑ | `mineru` | (mineru-kit command) | 4.0.11 | pdf2md `==4.0.11` | pdf2md | ☐ | used through the `mineru-kit` command |
-| ☑ | `mineru-llama-cpp` | mineru_llama_cpp | 0.1.2 | pdf2md `==0.1.2` | pdf2md | ☐ |  |
-| ☑ | `pip-audit` | (module run) | 2.10.1 | setup `==2.10.1 (data file `tools`)` | the dependency audit of every requirements file | ☑ | run as a module, never imported |
+| ☑ | `claude-agent-sdk` | claude_agent_sdk | 0.2.172 | loop-engineer `==0.2.172` | loop-engineer | yes | only the live loop path of loop_engineer.py |
+| ☑ | `cryptography` | cryptography | 50.0.2 | form-service `==50.0.2` | form-service | yes |  |
+| ☑ | `curl_cffi` | curl_cffi | 0.15.0 | scopus `==0.15.0` | scopus | yes |  |
+| ☑ | `defusedxml` | defusedxml | 0.7.1 | paper2talk `==0.7.1`; drawio2tikz `==0.7.1`; wp-portfolio-sync `==0.7.1` | drawio2tikz, paper2talk, wp-portfolio-sync | yes |  |
+| ☑ | `docling` | docling | 2.142.0 | extract-statistic `==2.142.0` | extract-statistic | yes | MIT licence; pulls torch and downloads layout models on first run |
+| ☑ | `faster-whisper` | faster_whisper | 1.2.1 | opt-local-stt-vram `==1.2.1`; rt-observe `==1.2.1` | opt-local-stt-vram, rt-observe | yes | pulls ctranslate2 |
+| ☑ | `folium` | folium | 0.20.0 | geolocalisation `==0.20.0` | geolocalisation | yes |  |
+| ☑ | `google-genai` | google | 2.8.0 | scopus `==2.8.0` | scopus | yes | imported as google.genai |
+| ☑ | `Jinja2` | jinja2 | 3.1.6 | paper2talk `==3.1.6` | paper2talk | yes |  |
+| ☑ | `markitdown` | markitdown | 0.1.6 | extract-statistic `[pdf]==0.1.6` | extract-statistic | yes | MIT licence |
+| ☑ | `matplotlib` | matplotlib | 3.9.2 | geolocalisation `==3.9.2` | geolocalisation | yes |  |
+| ☑ | `numpy` | numpy | 2.4.6 | word2latex `==2.4.6` | aider-setup, word2latex | yes | aider-setup also imports it, in aider's own interpreter |
+| ☑ | `nvidia-cublas-cu12` | (none) | 12.9.2.10 | rt-observe `==12.9.2.10` | - | yes | never imported: stt_engine.py puts its DLL folder on PATH for GPU speech-to-text; Windows and Linux only |
+| ☑ | `nvidia-cuda-nvrtc-cu12` | (none) | 12.9.86 | rt-observe `==12.9.86` | - | yes | same, Windows and Linux only |
+| ☑ | `nvidia-cudnn-cu12` | (none) | 9.26.0.51 | rt-observe `==9.26.0.51` | - | yes | same, Windows and Linux only |
+| ☑ | `openai` | openai | 2.43.0 | scopus `==2.43.0` | scopus | yes |  |
+| ☑ | `openpyxl` | openpyxl | 3.1.5 | professor-expertise-finder `==3.1.5` | professor-expertise-finder | yes | only for .xlsx and .xlsm input |
+| ☑ | `pgvector` | (none) | 0.5.0 | extract-statistic `==0.5.0` | - | yes | no .py file imports it: the vector store is SQL |
+| ☑ | `pillow` | PIL | 13.0.0 | extract-statistic `==13.0.0`; geolocalisation `==13.0.0`; word2latex `==13.0.0` | word2latex | yes | also pinned where it is only transitive, to keep the fixed version |
+| ☑ | `pip-audit` | (none) | 2.10.1 | data file tools `==2.10.1` | - |  | run as a module (python -m pip_audit), never imported |
+| ☑ | `playwright` | playwright | 1.61.0 | scopus `==1.61.0` | scopus | yes | the Chromium binary is a separate playwright install chromium |
+| ☑ | `playwright-stealth` | playwright_stealth | 2.0.3 | scopus `==2.0.3` | scopus | yes |  |
+| ☑ | `psycopg` | psycopg | 3.3.6 | extract-statistic `[binary]==3.3.6`; rt-observe `[binary]==3.3.6` | extract-statistic, rt-observe | yes |  |
+| ☑ | `pyHanko` | pyhanko | 0.37.0 | form-service `==0.37.0` | form-service |  | MIT licence |
+| ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | paper2talk `==1.27.2.3`; extract-statistic `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, pdf2md, scopus | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |
+| ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | extract-statistic `==1.27.2.3` | extract-statistic | yes | AGPL-3.0 licence |
+| ☑ | `pypdf` | pypdf | 6.21.1 | paper2talk `==6.21.1`; form-service `==6.21.1`; narrative-cv `==6.21.1` | form-service, narrative-cv, paper2talk |  |  |
+| ☑ | `python-pptx` | pptx | 1.0.2 | paper2talk `==1.0.2` | paper2talk | yes |  |
+| ☑ | `PyYAML` | yaml | 6.0.3 | recommendation-letter `==6.0.3`; narrative-cv `==6.0.3`; wp-portfolio-sync `==6.0.3` | narrative-cv, pdf2md, recommendation-letter, wp-portfolio-sync |  | read with yaml.safe_load only |
+| ☑ | `requests` | requests | 2.34.2 | scopus `==2.34.2`; extract-statistic `==2.34.2`; form-service `==2.34.2`; wp-portfolio-sync `==2.34.2` | extract-statistic, form-service, scopus, wp-portfolio-sync |  |  |
+| ☑ | `tiktoken` | tiktoken | 0.14.0 | loop-engineer `==0.14.0` | aider-setup, loop-engineer | yes | aider-setup also uses the copy in aider's own interpreter |
+<!-- python-libs:end .venv-skills -->
 
 Eleven skills declare their libraries in a file that `-InstallPython` does not read:
 `rt-observe`, `opt-local-stt-vram`, `word2latex` and `drawio2tikz` (all four with a requirements
@@ -154,48 +153,52 @@ required only by another orphan. They are not needed to build the site. Their se
 dependencies of `pip-audit`, which suggests a past install of it, but that is an inference and not
 checked. They are left in `requirements-docs.txt` for now.
 
-| Declared | Library | Version | Role | Required by | Version in `.venv-skills` |
-|---|---|---|---|---|---|
-| ☑ | `babel` | 2.18.0 | transitive | mkdocs-material | not installed |
-| ☑ | `backrefs` | 8.0 | transitive | mkdocs-material | not installed |
-| ☑ | `CacheControl` | 0.14.4 | orphan | nothing installed here | 0.14.4 |
-| ☑ | `certifi` | 2026.7.22 | transitive | requests | 2026.7.22 |
-| ☑ | `charset-normalizer` | 3.5.1 | transitive | requests | 3.5.2 |
-| ☑ | `click` | 8.5.0 | transitive | mkdocs | 8.5.0 |
-| ☑ | `colorama` | 0.4.6 | transitive | mkdocs, mkdocs-material | 0.4.6 |
-| ☑ | `defusedxml` | 0.7.1 | orphan | nothing installed here | 0.7.1 |
-| ☑ | `filelock` | 4.0.4 | orphan | nothing installed here | 3.32.7 |
-| ☑ | `ghp-import` | 2.1.0 | direct | mkdocs | not installed |
-| ☑ | `idna` | 3.20 | transitive | requests | 3.20 |
-| ☑ | `Jinja2` | 3.1.6 | transitive | mkdocs, mkdocs-material | 3.1.6 |
-| ☑ | `Markdown` | 3.11 | direct | mkdocs, mkdocs-material, pymdown-extensions | not installed |
-| ☑ | `markdown-it-py` | 4.2.0 | orphan | rich | 4.2.0 |
-| ☑ | `MarkupSafe` | 3.0.3 | transitive | Jinja2, mkdocs | 3.0.4 |
-| ☑ | `mdurl` | 0.1.2 | orphan | markdown-it-py | 0.1.2 |
-| ☑ | `mergedeep` | 1.3.4 | transitive | mkdocs, mkdocs-get-deps | not installed |
-| ☑ | `mkdocs` | 1.6.1 | direct | mkdocs-material | not installed |
-| ☑ | `mkdocs-get-deps` | 0.2.2 | transitive | mkdocs | not installed |
-| ☑ | `mkdocs-material` | 9.7.7 | direct | nothing installed here | not installed |
-| ☑ | `mkdocs-material-extensions` | 1.3.1 | transitive | mkdocs-material | not installed |
-| ☑ | `msgpack` | 1.2.2 | orphan | CacheControl | 1.2.3 |
-| ☑ | `packaging` | 26.3 | transitive | mkdocs | 26.3 |
-| ☑ | `paginate` | 0.5.7 | transitive | mkdocs-material | not installed |
-| ☑ | `pathspec` | 1.1.1 | transitive | mkdocs | not installed |
-| ☑ | `platformdirs` | 4.12.0 | transitive | mkdocs-get-deps | 4.13.3 |
-| ☑ | `Pygments` | 2.21.0 | direct | mkdocs-material, rich | 2.21.0 |
-| ☑ | `pymdown-extensions` | 12.1 | direct | mkdocs-material | not installed |
-| ☑ | `pyparsing` | 3.3.3 | orphan | nothing installed here | 3.3.3 |
-| ☑ | `python-dateutil` | 2.9.0.post0 | transitive | ghp-import | 3.0.0 |
-| ☑ | `PyYAML` | 6.0.3 | direct | mkdocs, mkdocs-get-deps, pymdown-extensions, pyyaml_env_tag | 6.0.3 |
-| ☑ | `pyyaml_env_tag` | 1.1 | transitive | mkdocs | not installed |
-| ☑ | `requests` | 2.34.2 | transitive | CacheControl, mkdocs-material | 2.34.2 |
-| ☑ | `rich` | 15.0.0 | orphan | nothing installed here | 15.0.0 |
-| ☑ | `six` | 1.17.0 | transitive | python-dateutil | 1.17.0 |
-| ☑ | `sortedcontainers` | 2.4.0 | orphan | nothing installed here | 2.4.0 |
-| ☑ | `tomli` | 2.4.1 | orphan | nothing installed here | 2.5.0 |
-| ☑ | `tomli_w` | 1.2.0 | orphan | nothing installed here | 1.2.0 |
-| ☑ | `urllib3` | 2.8.0 | transitive | requests | 2.8.0 |
-| ☑ | `watchdog` | 6.0.0 | transitive | mkdocs | not installed |
+<!-- python-libs:begin .venv-docs -->
+| Declared | Library | Pin | Role | Note |
+|---|---|---|---|---|
+| ☑ | `babel` | 2.18.0 | transitive |  |
+| ☑ | `backrefs` | 8.0 | transitive |  |
+| ☑ | `certifi` | 2026.10.19 | transitive |  |
+| ☑ | `charset-normalizer` | 3.5.1 | transitive |  |
+| ☑ | `click` | 8.5.0 | transitive |  |
+| ☑ | `colorama` | 0.4.6 | transitive |  |
+| ☑ | `ghp-import` | 2.1.0 | direct |  |
+| ☑ | `idna` | 3.20 | transitive |  |
+| ☑ | `Jinja2` | 3.1.6 | transitive |  |
+| ☑ | `Markdown` | 3.11 | direct |  |
+| ☑ | `MarkupSafe` | 3.0.3 | transitive | a dependency of Jinja2, imported directly by talk_model.py |
+| ☑ | `mergedeep` | 1.3.4 | transitive |  |
+| ☑ | `mkdocs` | 1.6.1 | direct |  |
+| ☑ | `mkdocs-get-deps` | 0.2.2 | transitive |  |
+| ☑ | `mkdocs-material` | 9.7.7 | direct |  |
+| ☑ | `mkdocs-material-extensions` | 1.3.1 | transitive |  |
+| ☑ | `packaging` | 26.3 | transitive |  |
+| ☑ | `paginate` | 0.5.7 | transitive |  |
+| ☑ | `pathspec` | 1.1.1 | transitive |  |
+| ☑ | `platformdirs` | 4.12.0 | transitive |  |
+| ☑ | `Pygments` | 2.21.0 | direct |  |
+| ☑ | `pymdown-extensions` | 12.1 | direct |  |
+| ☑ | `python-dateutil` | 2.9.0.post0 | transitive |  |
+| ☑ | `PyYAML` | 6.0.3 | direct | read with yaml.safe_load only |
+| ☑ | `pyyaml_env_tag` | 1.1 | transitive |  |
+| ☑ | `requests` | 2.34.2 | transitive |  |
+| ☑ | `six` | 1.17.0 | transitive |  |
+| ☑ | `urllib3` | 2.8.0 | transitive |  |
+| ☑ | `watchdog` | 6.0.0 | transitive |  |
+<!-- python-libs:end .venv-docs -->
+
+### `.venv-pdf2md`
+
+The environment of the `pdf2md` conversion (mineru), kept apart from `.venv-skills` because mineru needs gradio and every gradio caps pillow below 13.0.0.
+
+<!-- python-libs:begin .venv-pdf2md -->
+| Declared | Library | Import | Pin | Declared in | Used by | Optional | Note |
+|---|---|---|---|---|---|---|---|
+| ☑ | `mineru` | (none) | 4.0.11 | pdf2md `==4.0.11` | - |  | used through the mineru-kit command |
+| ☑ | `mineru-llama-cpp` | mineru_llama_cpp | 0.1.2 | pdf2md `==0.1.2` | pdf2md | yes | the VLM server binary mineru starts |
+| ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | pdf2md `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, pdf2md, scopus | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |
+| ☑ | `PyYAML` | yaml | 6.0.3 | pdf2md `==6.0.3` | narrative-cv, pdf2md, recommendation-letter, wp-portfolio-sync |  | read with yaml.safe_load only |
+<!-- python-libs:end .venv-pdf2md -->
 
 ### A third environment
 

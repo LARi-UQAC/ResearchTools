@@ -69,7 +69,9 @@ exercise them, set the required environment variables, then dry-run the entry po
   `--no-network` replays from its cache), `litreview_update.py`
   (incremental `/litupdate` bookkeeping: baseline fingerprint, delta dedup, dated paths,
   CHANGELOG scaffold; offline), `semantic_scholar_api.py`
-  (fallback + `external_ids_for_doi`), `download_pdf.py` (any-format full-text retrieval:
+  (fallback + `external_ids_for_doi`; since 2026-10-22 also a discovery source: `search <keywords>
+  [--year 2025-2026] [--limit N]` on `/paper/search`, limit 1-100, empty query or bad limit exit 2,
+  HTTP failure an empty list; proven by `Test/test_semantic_scholar_search.py`), `download_pdf.py` (any-format full-text retrieval:
   Elsevier/S2 PDF, then Unpaywall/arXiv/PMC/landing HTML, then an opt-in browser tier;
   plus `audit`, which re-examines a refs/ ALREADY on disk. That third mode exists because
   retrieval is presence-gated - the agent skips any paper whose `refs/<citekey>.pdf`

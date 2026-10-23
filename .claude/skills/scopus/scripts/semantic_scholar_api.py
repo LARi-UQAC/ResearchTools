@@ -50,6 +50,15 @@ except ImportError:
 BASE_URL = "https://api.semanticscholar.org/graph/v1"
 PAPER_PATH = "/paper/DOI:{doi}"
 MATCH_PATH = "/paper/search/match"
+SEARCH_PATH = "/paper/search"
+
+# Fields returned by keyword search: enough to triage a candidate (venue,
+# DOI for the publisher-prefix check, abstract for relevance) in one call.
+SEARCH_FIELDS = "title,abstract,year,venue,externalIds,authors,citationCount,publicationTypes"
+
+# The relevance search endpoint caps one page at 100 results (API docs,
+# /paper/search, read 2026-10-22).
+_SEARCH_PAGE_MAX = 100
 
 # Default fields pulled for a general paper lookup. `authors` returns an
 # ordered list of {authorId, name}; the order matches the publication's
@@ -329,6 +338,48 @@ def match_title(title: str, fields: str = FULL_REFERENCE_FIELDS) -> dict[str, An
     return data[0] if data else None
 
 
+def search_papers(
+    query: str,
+    year: str | None = None,
+    limit: int = 20,
+    fields: str = SEARCH_FIELDS,
+) -> list[dict[str, Any]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Keyword relevance search on the Academic Graph /paper/search endpoint,
+        so Semantic Scholar can be used as a discovery source beside Scopus
+        and Consensus, not only as a DOI backfill.
+
+    Inputs:
+        query (str): plain-text keyword query
+        year (str | None): year or range in the API's own syntax ("2026",
+            "2025-2026", "2025-"); None means no year filter
+        limit (int): number of results wanted, 1 to _SEARCH_PAGE_MAX
+        fields (str): comma-separated Academic Graph field list
+
+    Outputs:
+        records (list[dict]): S2 paper objects in relevance order; an empty
+        list when nothing matches or the request failed (logged to stderr).
+
+    Raises:
+        ValueError: the query is empty or limit is outside 1.._SEARCH_PAGE_MAX.
+    --------------------------------------------------------------------------
+    """
+    query = (query or "").strip()
+    if not query:
+        raise ValueError("search query is empty")
+    if not 1 <= limit <= _SEARCH_PAGE_MAX:
+        raise ValueError(f"limit must be between 1 and {_SEARCH_PAGE_MAX}")
+    params: dict[str, Any] = {"query": query, "limit": limit, "fields": fields}
+    if year:
+        params["year"] = year
+    body = _request(SEARCH_PATH, params)
+    if not body:
+        return []
+    return body.get("data") or []
+
+
 def structured_authors(record: dict[str, Any]) -> list[dict[str, str]]:
     """
     --------------------------------------------------------------------------
@@ -351,11 +402,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Semantic Scholar Academic Graph client (fallback for the /scopus skill)"
     )
-    parser.add_argument("mode", choices=["authors", "paper", "match", "oa"])
-    parser.add_argument("query", help="DOI (authors/paper/oa mode) or title (match mode)")
+    parser.add_argument("mode", choices=["authors", "paper", "match", "oa", "search"])
+    parser.add_argument(
+        "query", help="DOI (authors/paper/oa mode), title (match mode) or keywords (search mode)"
+    )
+    parser.add_argument("--year", default=None, help="search mode: year or range, e.g. 2025-2026")
+    parser.add_argument("--limit", type=int, default=20, help="search mode: results wanted (1-100)")
     args = parser.parse_args()
 
-    if args.mode == "authors":
+    if args.mode == "search":
+        try:
+            records = search_papers(args.query, year=args.year, limit=args.limit)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(2)
+        result = {"mode": "search", "query": args.query, "year": args.year,
+                  "count": len(records), "records": records}
+    elif args.mode == "authors":
         result = {"mode": "authors", "doi": args.query, "authors": authors_for_doi(args.query)}
     elif args.mode == "match":
         result = {"mode": "match", "title": args.query, "record": match_title(args.query)}

@@ -22,8 +22,58 @@
         },
         {
           "path": ".claude/skills/extract-statistic/scripts/requirements.txt",
-          "why": "extract-statistic: pymupdf and pymupdf4llm (extract_text.py), markitdown, psycopg and pgvector (corpus_index.py)",
-          "exclude": ["docling"]
+          "why": "extract-statistic: pymupdf and pymupdf4llm (extract_text.py), markitdown and docling (Markdown backends, docling pulls torch, D4), psycopg and pgvector (corpus_index.py)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/drawio2tikz/scripts/requirements.txt",
+          "why": "drawio2tikz: defusedxml (drawio2tikz.py parses untrusted .drawio XML)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/form-service/scripts/requirements.txt",
+          "why": "form-service: requests (pdf_ingest.py), pypdf (field_map.py, fill_form.py), pyHanko and cryptography (sign_form.py)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/geolocalisation/scripts/requirements.txt",
+          "why": "geolocalisation: matplotlib and pillow (generate_geomap.py, the PNG map)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/loop-engineer/requirements.txt",
+          "why": "loop-engineer: claude-agent-sdk (loop_engineer.py live loop), tiktoken (token_count.py --method tiktoken)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/narrative-cv/scripts/requirements.txt",
+          "why": "narrative-cv: PyYAML (cv_inventory.py, cv_common.py), pypdf (cv_build.py page-budget check)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/opt-local-stt-vram/scripts/requirements.txt",
+          "why": "opt-local-stt-vram: faster-whisper (engines/faster_whisper_engine.py)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/professor-expertise-finder/scripts/requirements.txt",
+          "why": "professor-expertise-finder: openpyxl (file_search.py and exclusions.py, .xlsx input)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/rt-observe/scripts/requirements.txt",
+          "why": "rt-observe: faster-whisper (stt_engine.py, voice panel), psycopg (rt_store.py, optional), the three nvidia CUDA DLL packages stt_engine.add_cuda_dll_dirs puts on PATH (D5)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/word2latex/scripts/requirements.txt",
+          "why": "word2latex: pillow and numpy (docx_inspect.py image comparison)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/wp-portfolio-sync/scripts/requirements.txt",
+          "why": "wp-portfolio-sync: PyYAML (mapping and extras files), requests (wp_common.py WpClient), defusedxml (cihr_cv.py, parse_cv.py)",
+          "exclude": []
         }
       ],
       "tools": [

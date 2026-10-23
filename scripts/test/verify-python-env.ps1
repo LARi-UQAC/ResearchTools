@@ -75,11 +75,31 @@ Check "recommendation-letter is covered"         (@($reqs | Where-Object { $_.Pa
 Check "scopus is covered"                        (@($reqs | Where-Object { $_.Path -match 'scopus' }).Count -eq 1)
 Check "extract-statistic is covered"             (@($reqs | Where-Object { $_.Path -match 'extract-statistic' }).Count -eq 1)
 $stat = @($reqs | Where-Object { $_.Path -match 'extract-statistic' })[0]
-Check "extract-statistic drops docling (torch)"  ($stat.Exclude -contains "docling")
+# D4 (owner, 2026-10-22): docling is installed, torch tree included, so nothing is excluded.
+Check "the extract-statistic entry excludes nothing (docling is installed)" ($stat.Exclude.Count -eq 0)
 $scopus = @($reqs | Where-Object { $_.Path -match 'scopus' })[0]
 Check "scopus excludes nothing"                  ($scopus.Exclude.Count -eq 0)
-# Still deliberately out of scope.
-Check "geolocalisation is not installed"         (@($reqs | Where-Object { $_.Path -match 'geolocalisation' }).Count -eq 0)
+# 2026-10-22: every requirements.txt under .claude\skills is named in the data file, so a file
+# added to a skill later and forgotten here is reported by path.
+function Get-RtUnregisteredRequirements([string]$Root, [object[]]$Environments) {
+    $named = @{}
+    foreach ($e in $Environments) { foreach ($r in @($e.Requirements)) { $named[($r.Path -replace '\\', '/').ToLowerInvariant()] = 1 } }
+    $skills = Join-Path $Root ".claude\skills"
+    if (-not (Test-Path $skills)) { return @() }
+    foreach ($f in @(Get-ChildItem $skills -Recurse -Filter "requirements.txt" -File)) {
+        $rel = $f.FullName.Substring($Root.TrimEnd('\').Length + 1) -replace '\\', '/'
+        if (-not $named.ContainsKey($rel.ToLowerInvariant())) { $rel }
+    }
+}
+$unregistered = @(Get-RtUnregisteredRequirements $RepoRoot @(Get-RtEnvironments -RepoRoot $RepoRoot))
+Check "every requirements.txt under .claude/skills is named in the data file" ($unregistered.Count -eq 0)
+foreach ($u in $unregistered) { Write-Host "        not in the data file: $u" -ForegroundColor DarkGray }
+$regFix = Join-Path $Fake "registry-root"
+$extraReq = Join-Path $regFix ".claude\skills\zeta-fictitious\scripts\requirements.txt"
+New-Item -ItemType Directory -Path (Split-Path $extraReq -Parent) -Force | Out-Null
+Set-Content $extraReq "acme-widget==1.0" -Encoding ASCII
+$regFound = @(Get-RtUnregisteredRequirements $regFix @(Get-RtEnvironments -RepoRoot $regFix))
+Check "(control) an unregistered requirements file is reported by its path" ($regFound -contains ".claude/skills/zeta-fictitious/scripts/requirements.txt")
 
 # pypdf is pinned in four requirements files. Measured 2026-10-16 by a pip --dry-run: running
 # -InstallPython would have DOWNGRADED the installed pypdf 6.19.0 to the paper2talk pin
@@ -130,6 +150,24 @@ Set-Content (Join-Path $pinFix "b.txt") "Acme-Widget==1.1.0 ; sys_platform == 'w
 $fixConflicts = @(Get-RtPinConflicts @((Join-Path $pinFix "a.txt"), (Join-Path $pinFix "b.txt")))
 Check "(control) two files pinning one library differently are reported, naming both files" ($fixConflicts.Count -eq 1 -and $fixConflicts[0].Name -eq "acme-widget" -and $fixConflicts[0].Detail -match "a\.txt" -and $fixConflicts[0].Detail -match "b\.txt")
 
+# D5 (owner, 2026-10-22): the nvidia CUDA packages belong in .venv-skills, but PyPI ships them
+# for Windows and Linux only (file lists read 2026-10-22), so each line carries a platform marker.
+function Get-RtUnmarkedNvidia([string[]]$Lines) {
+    @($Lines | Where-Object { $_ -match '^\s*nvidia-[A-Za-z0-9._-]+' -and $_ -notmatch ';\s*sys_platform' })
+}
+$rtObserve = Get-Content (Join-Path $RepoRoot ".claude\skills\rt-observe\scripts\requirements.txt") -Encoding UTF8
+Check "the three nvidia lines carry a platform marker" (@($rtObserve | Where-Object { $_ -match '^\s*nvidia-' }).Count -eq 3 -and @(Get-RtUnmarkedNvidia $rtObserve).Count -eq 0)
+Check "(control) an nvidia line without a marker is found" (@(Get-RtUnmarkedNvidia @("nvidia-cublas-cu12==1.0  # same", "requests==2.0")).Count -eq 1)
+
+# D3 (owner, 2026-10-22): requirements-docs.txt alone describes .venv-docs, every line pinned
+# exactly, and without the eleven lines pip-audit leaves behind (required by no installed package).
+$docsLines = @(Get-Content (Join-Path $RepoRoot "requirements-docs.txt") -Encoding UTF8 | Where-Object { $_ -notmatch '^\s*(#|$)' })
+Check "requirements-docs.txt pins every line with an exact version" ($docsLines.Count -ge 1 -and @($docsLines | Where-Object { $_ -notmatch '^\s*[A-Za-z0-9][A-Za-z0-9._\[\]-]*==\S+' }).Count -eq 0)
+$orphans = @("cachecontrol", "defusedxml", "filelock", "markdown-it-py", "mdurl", "msgpack", "pyparsing", "rich", "sortedcontainers", "tomli", "tomli-w")
+$docsNames = @($docsLines | ForEach-Object { ([regex]::Match($_, '^\s*([A-Za-z0-9][A-Za-z0-9._-]*)').Groups[1].Value.ToLowerInvariant() -replace '[-_.]+', '-') })
+Check "requirements-docs.txt holds none of the eleven lines pip-audit leaves behind" (@($docsNames | Where-Object { $orphans -contains $_ }).Count -eq 0)
+foreach ($o in @($docsNames | Where-Object { $orphans -contains $_ })) { Write-Host "        orphan still listed: $o" -ForegroundColor DarkGray }
+
 # Negative control: the Exists flag has to be able to say no, or the check above
 # passes on a list of files that were never looked for.
 $ghost = @(Get-RtEnvironments -RepoRoot (Join-Path $Fake "no-such-repo") | ForEach-Object { $_.Requirements })
@@ -173,7 +211,8 @@ Test-BadData "empty-requirements" { param($d) $d.environments[1].requirements = 
 
 # ------------------------------------------------------ the docling exclusion ---
 $real = Get-Content (Join-Path $RepoRoot ".claude\skills\extract-statistic\scripts\requirements.txt") -Encoding UTF8
-$kept = @(Get-RtFilteredRequirementLines -Lines $real -Exclude $stat.Exclude)
+# The exclude key stays supported (D4): proven on the real file with a fixture exclusion.
+$kept = @(Get-RtFilteredRequirementLines -Lines $real -Exclude @("docling"))
 $isReq = { param($l, $n) $l -match ('^\s*' + [regex]::Escape($n) + '\b') -and $l -notmatch '^\s*#' }
 Check "the real file carries docling to begin with" (@($real | Where-Object { & $isReq $_ "docling" }).Count -ge 1)
 Check "docling is gone from the filtered lines"  (@($kept | Where-Object { & $isReq $_ "docling" }).Count -eq 0)
@@ -322,7 +361,7 @@ Check "-Preview returns 0"                       ($previewCode -eq 0)
 Check "-Preview says what it would install"      ($previewOut -match "Would install")
 Check "-Preview names pip-audit"                 ($previewOut -match "pip-audit")
 Check "-Preview names a requirements file"       ($previewOut -match ([regex]::Escape("requirements.txt")))
-Check "-Preview names the docling exclusion"     ($previewOut -match "without: docling")
+Check "-Preview names no exclusion (docling is installed)" ($previewOut -notmatch "without: docling")
 Check "-Preview names the interpreter it chose"  ($previewOut -match [regex]::Escape($Py311))
 Check "-Preview says the probe is not run"       ($previewOut -match "NOT run")
 Check "-Preview created no environment"          ((Test-Path $RealVenv) -eq $venvBefore -and -not (Test-Path (Join-Path $FreshRoot ".venv-skills")))

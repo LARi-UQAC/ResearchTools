@@ -407,6 +407,25 @@ Search with author backfill:
 python scripts/scopus_api.py search "soft robotics actuator" --count 5 --enrich-authors
 ```
 
+### Semantic Scholar keyword search (discovery, since 2026-10-22)
+
+`semantic_scholar_api.py search` runs a relevance search on `/paper/search`, so
+Semantic Scholar can find candidates beside Scopus and Consensus. Every hit is still
+validated against Scopus before it is cited, and the publisher is still checked
+against the approved list.
+
+```powershell
+python scripts/semantic_scholar_api.py search "quantity takeoff floor plan" --year 2025-2026 --limit 20
+```
+
+| Concern | Behaviour |
+|---|---|
+| Fields | title, abstract, year, venue, externalIds (DOI), authors, citationCount, publicationTypes |
+| `--limit` | 1 to 100 (one page), default 20 |
+| `--year` | `2019`, `2016-2020`, `2010-` or `-2015`; anything else is refused before a request |
+| Exit codes | 0 results (possibly none), 1 the request failed (never reported as "no papers"), 2 a refused input, including `--year` or `--limit` in another mode |
+| Not handled | no `total` and no paging past the first 100; a hyphenated term is sent as typed |
+
 ---
 
 ## Discovery tools beside Scopus

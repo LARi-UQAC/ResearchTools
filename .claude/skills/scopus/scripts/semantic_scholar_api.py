@@ -2,11 +2,13 @@
 semantic_scholar_api.py — Semantic Scholar Academic Graph client for the /scopus skill.
 
 Role:
-    Fallback metadata source. Scopus search results expose only the first
+    Two roles. First, a fallback metadata source: Scopus search results expose only the first
     creator (`dc:creator`), and some Scopus abstract records return an empty
     author block. When that happens, scopus_api.py calls this module to
     resolve the paper by DOI on Semantic Scholar and recover the missing
     fields (primarily the full, ordered author list).
+    Second, since 2026-10-22, a discovery source beside Scopus and Consensus:
+    `search` runs a keyword relevance search on /paper/search.
 
 Rate limit:
     Semantic Scholar allows 1 request per second, cumulative across ALL
@@ -23,10 +25,15 @@ Design note — non-fatal:
     Unlike scopus_api.py, this client NEVER calls sys.exit on an API error.
     It is a best-effort enrichment layer; on failure it logs to stderr and
     returns None so the caller keeps the Scopus data it already has.
+    The exception is `search`: a discovery source that read a failed request
+    as "no papers" would record an empty source (R8), so search_papers raises
+    SearchError and the CLI exits 1. A refused input (empty query, bad limit
+    or year, a search flag in another mode) exits 2 (R12).
 
 Usage (standalone, for testing):
     python semantic_scholar_api.py authors "10.1109/TRO.2020.1234567"
     python semantic_scholar_api.py paper   "10.1109/TRO.2020.1234567"
+    python semantic_scholar_api.py search  "quantity takeoff" --year 2025-2026 --limit 20
 
 References:
     API docs : https://api.semanticscholar.org/api-docs/graph
@@ -38,6 +45,7 @@ import argparse
 import json
 import os
 import sys
+import re
 import time
 from typing import Any
 
@@ -59,6 +67,18 @@ SEARCH_FIELDS = "title,abstract,year,venue,externalIds,authors,citationCount,pub
 # The relevance search endpoint caps one page at 100 results (API docs,
 # /paper/search, read 2026-10-22).
 _SEARCH_PAGE_MAX = 100
+
+# Results asked for when --limit is not given. Chosen 2026-10-22 by the author
+# of the search mode (R4): one screen of candidates to triage, a fifth of a page.
+_SEARCH_DEFAULT_LIMIT = 20
+
+# The year filter's own syntax (API docs, /paper/search, read 2026-10-22):
+# "2019", "2016-2020", "2010-" (and later), "-2015" (and earlier).
+_YEAR_RE = re.compile(r"\d{4}|\d{4}-|-\d{4}|\d{4}-\d{4}")
+
+
+class SearchError(Exception):
+    """The search request failed (HTTP error, network error, bad JSON); see stderr."""
 
 # Default fields pulled for a general paper lookup. `authors` returns an
 # ordered list of {authorId, name}; the order matches the publication's
@@ -341,7 +361,7 @@ def match_title(title: str, fields: str = FULL_REFERENCE_FIELDS) -> dict[str, An
 def search_papers(
     query: str,
     year: str | None = None,
-    limit: int = 20,
+    limit: int = _SEARCH_DEFAULT_LIMIT,
     fields: str = SEARCH_FIELDS,
 ) -> list[dict[str, Any]]:
     """
@@ -360,23 +380,28 @@ def search_papers(
 
     Outputs:
         records (list[dict]): S2 paper objects in relevance order; an empty
-        list when nothing matches or the request failed (logged to stderr).
+        list only when the API answered and nothing matches.
 
     Raises:
-        ValueError: the query is empty or limit is outside 1.._SEARCH_PAGE_MAX.
+        ValueError: the query is empty, limit is not an int in
+            1.._SEARCH_PAGE_MAX, or year is not in the API's syntax.
+        SearchError: the request failed (the cause is logged to stderr), so an
+            empty result is never mistaken for a failed one.
     --------------------------------------------------------------------------
     """
     query = (query or "").strip()
     if not query:
         raise ValueError("search query is empty")
-    if not 1 <= limit <= _SEARCH_PAGE_MAX:
-        raise ValueError(f"limit must be between 1 and {_SEARCH_PAGE_MAX}")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= _SEARCH_PAGE_MAX:
+        raise ValueError(f"limit must be an integer between 1 and {_SEARCH_PAGE_MAX}")
     params: dict[str, Any] = {"query": query, "limit": limit, "fields": fields}
     if year:
+        if not _YEAR_RE.fullmatch(year):
+            raise ValueError(f"year must look like 2019, 2016-2020, 2010- or -2015, not {year!r}")
         params["year"] = year
     body = _request(SEARCH_PATH, params)
-    if not body:
-        return []
+    if body is None:
+        raise SearchError("Semantic Scholar search failed; the cause is on stderr")
     return body.get("data") or []
 
 
@@ -400,22 +425,35 @@ def structured_authors(record: dict[str, Any]) -> list[dict[str, str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Semantic Scholar Academic Graph client (fallback for the /scopus skill)"
+        description="Semantic Scholar Academic Graph client for the /scopus skill: DOI fallback and keyword search"
     )
     parser.add_argument("mode", choices=["authors", "paper", "match", "oa", "search"])
     parser.add_argument(
         "query", help="DOI (authors/paper/oa mode), title (match mode) or keywords (search mode)"
     )
     parser.add_argument("--year", default=None, help="search mode: year or range, e.g. 2025-2026")
-    parser.add_argument("--limit", type=int, default=20, help="search mode: results wanted (1-100)")
+    parser.add_argument("--limit", type=int, default=None,
+                        help=f"search mode: results wanted (1-{_SEARCH_PAGE_MAX}, default {_SEARCH_DEFAULT_LIMIT})")
     args = parser.parse_args()
+    # Abstracts carry characters a cp1252 console cannot encode; without this a
+    # piped run dies on UnicodeEncodeError with nothing printed.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    if args.mode != "search" and (args.year is not None or args.limit is not None):
+        # A flag silently ignored reads as a filter that was applied.
+        parser.error("--year and --limit apply to search mode only")
 
     if args.mode == "search":
+        limit = _SEARCH_DEFAULT_LIMIT if args.limit is None else args.limit
         try:
-            records = search_papers(args.query, year=args.year, limit=args.limit)
+            records = search_papers(args.query, year=args.year, limit=limit)
         except ValueError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(2)
+        except SearchError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
         result = {"mode": "search", "query": args.query, "year": args.year,
                   "count": len(records), "records": records}
     elif args.mode == "authors":

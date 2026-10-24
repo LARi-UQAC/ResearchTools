@@ -11,8 +11,9 @@
 #   PowerPoint or LibreOffice   the PDF conversion backend (talk_render.py)
 #   draw.io Desktop   fig_export.py, for the scale-3 figure re-export
 #   a LaTeX toolchain the Beamer target
-pypdf==6.21.1  # pip-audit 2026-10-22: 6.19.0 carries 8 advisories (CVE-2026-113786 to 113795), lowest fix 6.21.1; earlier 6.15.0 had 11 and 6.16.1 had 8
+pypdf==6.21.2  # pip-audit 2026-10-24: 6.21.1 carries 3 advisories (CVE-2026-115572, 115580, 115585), fixed in 6.21.2; before it 6.19.0 had 8, 6.15.0 had 11 and 6.16.1 had 8
 python-pptx==1.0.2
 defusedxml==0.7.1
 jinja2==3.1.6
+MarkupSafe==3.0.3  # imported directly by talk_model.py; a Jinja2 dependency, declared 2026-10-24 (python_libs.py --check), same pin as requirements-docs.txt, pip-audit clean
 PyMuPDF==1.27.2.3  # optional: PDF paper input (paper_extract.py, talk_doctor.py); a LaTeX source works without it

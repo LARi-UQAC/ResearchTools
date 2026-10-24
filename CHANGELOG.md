@@ -91,7 +91,7 @@ This file is for someone following releases. For the dated, engineering-level de
   preview.
 
 ### Changed
-- Pins raised to clear `pip-audit` advisories: `pypdf` 6.21.1 (four files), `cryptography`
+- Pins raised to clear `pip-audit` advisories: `pypdf` 6.21.2 (four files), `cryptography`
   50.0.2 in `deploy/form-service`, `docling` 2.142.0, `pillow` 13.0.0 in `.venv-skills`,
   `claude-agent-sdk` 0.2.172 (now exact), `certifi` 2026.10.19. The three NVIDIA CUDA lines of
   `rt-observe` carry a Windows-or-Linux marker. Eleven unused lines were removed from

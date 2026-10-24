@@ -22,9 +22,14 @@
     The base interpreter is therefore CHOSEN, not taken: an explicit -Python, or a
     candidate from PATH and the py launcher that belongs to the current profile and
     can really create a virtual environment. A refusal names every candidate and why
-    it was rejected. The package list moved to rt-python-requirements.json (R6) and
-    now covers the skills whose scripts the repository runs, minus docling, whose
-    torch dependency would turn a setup step into a multi-gigabyte download.
+    it was rejected. The package list moved to rt-python-requirements.json (R6).
+
+    Extended 2026-10-22 (issue #92): the data file declares three environments,
+    .venv-skills (every skill requirements file but pdf2md's, docling included by
+    owner decision D4, about 339 MB with torch), .venv-docs (the MkDocs site) and
+    .venv-pdf2md (mineru, kept apart because gradio caps pillow below 13, D9). Each
+    environment's files are installed by ONE pip call so pip resolves them together,
+    then pip-audit, from .venv-skills, audits every file applied.
 
     The decisions are separated from the work so the offline check can drive them
     with injected values: nothing in Resolve-RtPythonEnvAction or Select-RtBasePython
@@ -597,6 +602,11 @@ function Install-RtEnvironment {
         $result.Applied += [pscustomobject]@{ Label = "$($Environment.Name) tools"; File = $toolFile }
     }
 
+    # Every file of the environment goes into ONE pip call, so pip resolves them together. One
+    # call per file let a later file move a package an earlier one pinned, with only a resolver
+    # warning and exit 0 (code review, 2026-10-24).
+    $pipArgs = @("-m", "pip", "install", "--quiet", "--disable-pip-version-check")
+    $applied = @()
     foreach ($r in $reqs) {
         $file = $r.Full
         if ($r.Exclude.Count -gt 0) {
@@ -614,12 +624,16 @@ function Install-RtEnvironment {
             $result.Temps += $file
         }
         Write-Host "  pip install -r $($r.Path)$(if ($r.Exclude.Count) { '  (without: ' + ($r.Exclude -join ', ') + ')' })"
-        $code = Invoke-RtProcess -Runner $ProcessRunner -Exe $venvPython -Arguments @("-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", $file)
+        $pipArgs += @("-r", $file)
+        $applied += [pscustomobject]@{ Label = $r.Path; File = $file }
+    }
+    if ($applied.Count -gt 0) {
+        $code = Invoke-RtProcess -Runner $ProcessRunner -Exe $venvPython -Arguments $pipArgs
         if ($code -ne 0) {
-            Write-Host "  [ERR] install failed for $($r.Path) (exit $code)" -ForegroundColor Red
+            Write-Host "  [ERR] install failed for the requirements files of $($Environment.Name) (exit $code)" -ForegroundColor Red
             $result.Code = 1; return $result
         }
-        $result.Applied += [pscustomobject]@{ Label = $r.Path; File = $file }
+        $result.Applied += $applied
     }
 
     Write-Host "  [OK]  Environment ready: $venvPython" -ForegroundColor Green

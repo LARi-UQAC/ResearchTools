@@ -112,6 +112,7 @@ all three environments after the install.
 | ☑ | `google-genai` | google | 2.8.0 | scopus `==2.8.0` | scopus | yes | imported as google.genai |
 | ☑ | `Jinja2` | jinja2 | 3.1.6 | paper2talk `==3.1.6` | paper2talk | yes |  |
 | ☑ | `markitdown` | markitdown | 0.1.6 | extract-statistic `[pdf]==0.1.6` | extract-statistic | yes | MIT licence |
+| ☑ | `MarkupSafe` | markupsafe | 3.0.3 | paper2talk `==3.0.3` | paper2talk | yes | a dependency of Jinja2, imported directly by talk_model.py |
 | ☑ | `matplotlib` | matplotlib | 3.9.2 | geolocalisation `==3.9.2` | geolocalisation | yes |  |
 | ☑ | `numpy` | numpy | 2.4.6 | word2latex `==2.4.6` | aider-setup, word2latex | yes | aider-setup also imports it, in aider's own interpreter |
 | ☑ | `nvidia-cublas-cu12` | (none) | 12.9.2.10 | rt-observe `==12.9.2.10` | - | yes | never imported: stt_engine.py puts its DLL folder on PATH for GPU speech-to-text; Windows and Linux only |
@@ -128,7 +129,7 @@ all three environments after the install.
 | ☑ | `pyHanko` | pyhanko | 0.37.0 | form-service `==0.37.0` | form-service |  | MIT licence |
 | ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | paper2talk `==1.27.2.3`; extract-statistic `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, pdf2md, scopus | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |
 | ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | extract-statistic `==1.27.2.3` | extract-statistic | yes | AGPL-3.0 licence |
-| ☑ | `pypdf` | pypdf | 6.21.1 | paper2talk `==6.21.1`; form-service `==6.21.1`; narrative-cv `==6.21.1` | form-service, narrative-cv, paper2talk |  |  |
+| ☑ | `pypdf` | pypdf | 6.21.2 | paper2talk `==6.21.2`; form-service `==6.21.2`; narrative-cv `==6.21.2` | form-service, narrative-cv, paper2talk |  |  |
 | ☑ | `python-pptx` | pptx | 1.0.2 | paper2talk `==1.0.2` | paper2talk | yes |  |
 | ☑ | `PyYAML` | yaml | 6.0.3 | recommendation-letter `==6.0.3`; narrative-cv `==6.0.3`; wp-portfolio-sync `==6.0.3` | narrative-cv, pdf2md, recommendation-letter, wp-portfolio-sync |  | read with yaml.safe_load only |
 | ☑ | `requests` | requests | 2.34.2 | scopus `==2.34.2`; extract-statistic `==2.34.2`; form-service `==2.34.2`; wp-portfolio-sync `==2.34.2` | extract-statistic, form-service, scopus, wp-portfolio-sync |  |  |
@@ -195,6 +196,7 @@ its advisories accepted and recorded in `IMPROVEMENTS.md`.
 | ☑ | `mineru` | (none) | 4.0.11 | pdf2md `==4.0.11` | - |  | used through the mineru-kit command |
 | ☑ | `mineru-llama-cpp` | mineru_llama_cpp | 0.1.2 | pdf2md `==0.1.2` | pdf2md | yes | the VLM server binary mineru starts |
 | ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | pdf2md `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, pdf2md, scopus | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |
+| ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | pdf2md `==1.27.2.3` | extract-statistic | yes | AGPL-3.0 licence |
 | ☑ | `PyYAML` | yaml | 6.0.3 | pdf2md `==6.0.3` | narrative-cv, pdf2md, recommendation-letter, wp-portfolio-sync |  | read with yaml.safe_load only |
 <!-- python-libs:end .venv-pdf2md -->
 
@@ -202,7 +204,7 @@ its advisories accepted and recorded in `IMPROVEMENTS.md`.
 
 `deploy/form-service/` has its own environment, `%LOCALAPPDATA%\ResearchTools\venv-form-service`,
 which `setup.ps1` does not build. It is described by `deploy/form-service/requirements.txt`:
-`fastapi==0.141.1`, `uvicorn==0.54.0`, `pypdf==6.21.1`, `pyHanko==0.37.0`, `cryptography==50.0.2`
+`fastapi==0.141.1`, `uvicorn==0.54.0`, `pypdf==6.21.2`, `pyHanko==0.37.0`, `cryptography==50.0.2`
 and `requests==2.34.2`. Its pins of the libraries it shares with the `form-service` skill are the
 same, and `verify-python-env.ps1` checks that. The service tests run in that environment, not in
 `.venv-skills`.

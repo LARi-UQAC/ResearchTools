@@ -91,7 +91,7 @@ try {
     } | ConvertTo-Json -Depth 6)
     Write-Text $notes (@{
         skip_dirs = @("__pycache__"); files_cap = 3; unused_check_environments = @()
-        docs_direct = @(); role_table_environments = @()
+        docs_direct = @(); role_table_environments = @(); pip_list_timeout_s = 30
         distributions = @{ "acme-lib" = @{ imports = @("acmelib"); optional = $false; runtime_only = $false; note = "" } }
     } | ConvertTo-Json -Depth 6)
     Write-Text $fdoc "# Fixture`n`n<!-- python-libs:begin .venv-skills -->`nold`n<!-- python-libs:end .venv-skills -->`n"

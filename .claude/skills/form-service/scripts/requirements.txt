@@ -14,6 +14,6 @@
 # Pinned exactly, then audited before use:
 #   pip-audit -r .claude/skills/form-service/requirements.txt --strict
 requests==2.34.2
-pypdf==6.21.1  # pip-audit 2026-10-22: 6.19.0 carries 8 advisories (CVE-2026-113786 to 113795), lowest fix 6.21.1; earlier 6.15.0 had 11 and 6.16.1 had 8
+pypdf==6.21.2  # pip-audit 2026-10-24: 6.21.1 carries 3 advisories (CVE-2026-115572, 115580, 115585), fixed in 6.21.2; before it 6.19.0 had 8, 6.15.0 had 11 and 6.16.1 had 8
 pyHanko==0.37.0
 cryptography==50.0.2  # sign_form.py builds the test certificate chain; pyHanko pulls it in too, but the code imports it directly

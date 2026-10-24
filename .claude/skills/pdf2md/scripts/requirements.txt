@@ -11,8 +11,9 @@ mineru-llama-cpp==0.1.2
 
 # pdf2md_validate.py (Stage 7) imports extract-statistic's extract_text.py
 # directly (R18, the same cross-skill-import pattern extract-contributions
-# and extract-paper-idea already use), so it inherits that skill's
-# pymupdf4llm/pymupdf dependency with no extra pin needed here -- see
-# .claude/skills/extract-statistic/scripts/requirements.txt for the pinned
-# versions and the licence note (AGPL-3.0, acceptable for local/private use).
+# and extract-paper-idea already use). Since 2026-10-22 pdf2md runs in its own
+# .venv-pdf2md, where extract-statistic's file is not installed, so its reader
+# is pinned here too, at the same version (AGPL-3.0, acceptable for
+# local/private use; pip-audit 2026-10-24: no known vulnerability).
 PyMuPDF==1.27.2.3  # the independent second PDF reader of validate, repair and fix (import fitz)
+pymupdf4llm==1.27.2.3  # extract_text.py's Markdown reader, used by validate

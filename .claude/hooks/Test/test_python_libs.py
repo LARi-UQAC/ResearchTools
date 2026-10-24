@@ -20,6 +20,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -106,6 +107,7 @@ class Fixture:
             "unused_check_environments": [".venv-skills"],
             "docs_direct": ["mkdocs"],
             "role_table_environments": [".venv-docs"],
+            "pip_list_timeout_s": 30,
             "distributions": {
                 "PyYAML": {"imports": ["yaml"], "optional": False, "runtime_only": False, "note": ""},
                 "acme-lib": {"imports": ["acmelib"], "optional": False, "runtime_only": False, "note": ""},
@@ -384,6 +386,115 @@ class DriftTests(Base):
         report = PL.drift(self.fx.root, self.fx.data, provider)
         skills = report["environments"][0]
         self.assertEqual(skills["differs"], [{"name": "pyyaml", "pinned": "6.0.3", "installed": "absent"}])
+
+
+class EnvironmentScopeTests(Base):
+    def test_import_must_be_declared_in_the_environment_that_runs_it(self) -> None:
+        # beta runs in .venv-gamma; yaml is declared only in .venv-skills (alpha).
+        self.fx.write_py("beta", "conv.py", "import yaml\n")
+        self.fx.write_req("beta", "acme-lib==1.0\n")
+        self.fx.envs.append({"name": ".venv-gamma", "why": "conversion", "requirements": [
+            {"path": ".claude/skills/beta/scripts/requirements.txt", "why": "beta", "exclude": []}],
+            "tools": []})
+        self.fx.save()
+        self.fx.doc.write_text(self.fx.doc.read_text(encoding="utf-8") +
+                               "\n<!-- python-libs:begin .venv-gamma -->\n<!-- python-libs:end .venv-gamma -->\n",
+                               encoding="utf-8")
+        found = [f for f in self.fx.findings() if f["kind"] == "undeclared"]
+        self.assertEqual(len(found), 1)
+        self.assertIn(".venv-gamma", found[0]["detail"])
+        self.assertIn("beta", found[0]["detail"])
+        self.fx.write_req("beta", "acme-lib==1.0\nPyYAML==6.0.3\n")
+        self.assertNotIn("undeclared", kinds(self.fx.findings()))
+
+    def test_an_excluded_line_is_not_a_declaration(self) -> None:
+        self.fx.envs[0]["requirements"][0]["exclude"] = ["PyYAML"]
+        self.fx.save()
+        found = [f for f in self.fx.findings() if f["kind"] == "undeclared"]
+        self.assertEqual(len(found), 1)
+        self.assertIn("PyYAML", found[0]["detail"])
+
+
+class DataValidationTests(Base):
+    def test_a_requirement_without_path_is_refused_by_key(self) -> None:
+        del self.fx.envs[0]["requirements"][0]["path"]
+        self.fx.save()
+        code, out = self.fx.run("--check")
+        self.assertEqual(code, 2)
+        self.assertIn("environments[0].requirements[0].path", out)
+
+    def test_an_environment_without_name_is_refused_by_key(self) -> None:
+        del self.fx.envs[1]["name"]
+        self.fx.save()
+        code, out = self.fx.run("--check")
+        self.assertEqual(code, 2)
+        self.assertIn("environments[1].name", out)
+
+    def test_missing_pip_timeout_key_refuses(self) -> None:
+        del self.fx.notes_data["pip_list_timeout_s"]
+        self.fx.save()
+        code, out = self.fx.run("--check")
+        self.assertEqual(code, 2)
+        self.assertIn("pip_list_timeout_s", out)
+
+
+class PipListTests(unittest.TestCase):
+    def test_a_timeout_is_a_refusal(self) -> None:
+        def boom(*a, **k):
+            raise PL.subprocess.TimeoutExpired(cmd="pip", timeout=1)
+        with unittest.mock.patch.object(PL.subprocess, "run", boom):
+            with self.assertRaises(PL.Refusal):
+                PL._pip_list(Path("python"), 1)
+
+    def test_output_that_is_not_json_is_a_refusal(self) -> None:
+        done = PL.subprocess.CompletedProcess(args=[], returncode=0, stdout="WARNING: x\n[]", stderr="")
+        with unittest.mock.patch.object(PL.subprocess, "run", lambda *a, **k: done):
+            with self.assertRaises(PL.Refusal):
+                PL._pip_list(Path("python"), 1)
+
+    def test_the_timeout_is_passed_to_pip(self) -> None:
+        seen = {}
+        def run(*a, **k):
+            seen.update(k)
+            return PL.subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr="")
+        with unittest.mock.patch.object(PL.subprocess, "run", run):
+            self.assertEqual(PL._pip_list(Path("python"), 7), {})
+        self.assertEqual(seen["timeout"], 7)
+
+
+class DriftScopeTests(Base):
+    def test_an_absent_environment_fails_drift(self) -> None:
+        env_root = Path(self._tmp.name) / "empty-envs"
+        env_root.mkdir()
+        code, out = self.fx.run("--drift", "--env-root", str(env_root))
+        self.assertEqual(code, 1)
+        self.assertIn("not present", out)
+
+    def test_main_clone_of_a_linked_worktree(self) -> None:
+        main = Path(self._tmp.name) / "mainclone"
+        gitdir = main / ".git" / "worktrees" / "wt"
+        gitdir.mkdir(parents=True)
+        (gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+        wt = Path(self._tmp.name) / "wt"
+        wt.mkdir()
+        (wt / ".git").write_text(f"gitdir: {gitdir.as_posix()}\n", encoding="utf-8")
+        self.assertEqual(PL.main_clone(wt), main.resolve())
+        self.assertEqual(PL.main_clone(main), main.resolve())
+        (main / ".git" / "worktrees").rename(main / "moved")
+        self.assertEqual(PL.main_clone(wt), wt.resolve())   # unreadable pointer: the clone itself
+
+    def test_a_marker_line_absent_here_is_skipped_not_drift(self) -> None:
+        self.fx.write_req("alpha", "PyYAML==6.0.3\nnvlib==1.0 ; sys_platform == \"win32\" or sys_platform == \"linux\"\n")
+        provider = lambda env: ({"pyyaml": "6.0.3", "pip-audit": "2.10.1"} if env == ".venv-skills" else {})
+        skills = PL.drift(self.fx.root, self.fx.data, provider)["environments"][0]
+        self.assertEqual(skills["differs"], [])
+        self.assertEqual(skills["skipped"], ["nvlib"])
+
+    def test_a_marker_line_installed_at_another_version_is_drift(self) -> None:
+        self.fx.write_req("alpha", "PyYAML==6.0.3\nnvlib==1.0 ; sys_platform == \"win32\"\n")
+        provider = lambda env: ({"pyyaml": "6.0.3", "nvlib": "0.9", "pip-audit": "2.10.1"} if env == ".venv-skills" else {})
+        skills = PL.drift(self.fx.root, self.fx.data, provider)["environments"][0]
+        self.assertEqual([d["name"] for d in skills["differs"]], ["nvlib"])
 
 
 class ReportTests(Base):

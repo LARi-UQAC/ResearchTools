@@ -186,6 +186,10 @@ Check "the data file declares three environments: .venv-skills, .venv-docs, .ven
 # lives in its own environment and .venv-skills can carry the fixed pillow.
 $pdfEnv = @($envs | Where-Object { $_.Name -eq ".venv-pdf2md" })
 Check "the .venv-pdf2md environment lists exactly the pdf2md file and no tool" ($pdfEnv.Count -eq 1 -and @($pdfEnv[0].Requirements).Count -eq 1 -and $pdfEnv[0].Requirements[0].Path -eq ".claude/skills/pdf2md/scripts/requirements.txt" -and @($pdfEnv[0].Tools).Count -eq 0)
+# pdf2md_validate imports extract-statistic's extract_text, whose reader is pymupdf4llm; extract-statistic's
+# file is not installed in .venv-pdf2md, so the pdf2md file has to carry it (code review, 2026-10-24).
+$pdfReq = Get-Content (Join-Path $RepoRoot ".claude\skills\pdf2md\scripts\requirements.txt") -Encoding UTF8
+Check "the pdf2md file pins pymupdf4llm, which extract_text needs in .venv-pdf2md" (@($pdfReq | Where-Object { $_ -match '^\s*pymupdf4llm==' }).Count -eq 1)
 Check "the pdf2md file is not in .venv-skills" (@(@($envs | Where-Object { $_.Name -eq ".venv-skills" }) | ForEach-Object { $_.Requirements } | Where-Object { $_.Path -match 'pdf2md' }).Count -eq 0)
 Check "every environment has a why and every requirement a path and a why" ($envs.Count -ge 1 -and @($envs | Where-Object { [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0 -and @($envs | ForEach-Object { $_.Requirements } | Where-Object { [string]::IsNullOrWhiteSpace($_.Path) -or [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0)
 $docsEnv  = @($envs | Where-Object { $_.Name -eq ".venv-docs" })
@@ -520,8 +524,12 @@ $kinds = @($or.Calls | ForEach-Object {
     elseif ($_.Args -match '^-m pip install') { "skills-file" }
     elseif ($_.Args -match '^-m pip_audit') { "audit" }
     else { "other:" + $_.Args } })
-$expected = @("venv-skills", "tool") + @(1..$skillReqCount | ForEach-Object { "skills-file" }) + @("venv-docs", "docs-file", "venv-pdf2md", "pdf2md-file") + @(1..($skillReqCount + 3) | ForEach-Object { "audit" })
-Check "with a recording runner the calls come in order: venv skills, tool, skills files, venv docs, docs file, then pip_audit on every file" ($or.Code -eq 0 -and ($kinds -join ',') -eq ($expected -join ','))
+$expected = @("venv-skills", "tool", "skills-file", "venv-docs", "docs-file", "venv-pdf2md", "pdf2md-file") + @(1..($skillReqCount + 3) | ForEach-Object { "audit" })
+Check "with a recording runner the calls come in order: venv skills, tool, ONE install of the skills files, venv docs, docs file, venv pdf2md, pdf2md file, then pip_audit on every file" ($or.Code -eq 0 -and ($kinds -join ',') -eq ($expected -join ','))
+# pip resolves only the files one call names, so every file of an environment goes in one call:
+# file by file, a later file could move a package an earlier one pinned with a warning and exit 0.
+$skillInstall = @($or.Calls | Where-Object { $_.Exe -eq $skPy -and $_.Args -match '^-m pip install' -and $_.Args -notmatch 'rt-tools-' })
+Check "the one skills install names every skills requirements file with -r" ($skillInstall.Count -eq 1 -and ([regex]::Matches($skillInstall[0].Args, '(^| )-r ')).Count -eq $skillReqCount)
 if (($kinds -join ',') -ne ($expected -join ',')) { Write-Host "        got: $($kinds -join ',')" -ForegroundColor DarkGray }
 $audits = @($or.Calls | Where-Object { $_.Args -match '^-m pip_audit' })
 Check "every pip_audit call uses the skills interpreter, none the docs one" ($audits.Count -ge 1 -and @($audits | Where-Object { $_.Exe -ne $skPy }).Count -eq 0)
@@ -531,7 +539,7 @@ Check "pip install of the docs file uses the docs interpreter" (@($or.Calls | Wh
 $script:FailPattern = 'pip install.*requirements-docs'
 $FailDocsRoot = New-RunRoot "fail-docs"
 $fd = Invoke-Install $FailDocsRoot @{ CandidatePaths = @($Py311) }
-Check "a runner failing on the docs file returns 1 while the skills environment was installed and reported ready" ($fd.Code -eq 1 -and $fd.Text -match ("Environment ready: " + [regex]::Escape((Join-Path $FailDocsRoot ".venv-skills\Scripts\python.exe"))) -and @($fd.Calls | Where-Object { $_.Args -match 'pip install' -and $_.Exe -like '*venv-skills*' }).Count -eq ($skillReqCount + 1))
+Check "a runner failing on the docs file returns 1 while the skills environment was installed and reported ready" ($fd.Code -eq 1 -and $fd.Text -match ("Environment ready: " + [regex]::Escape((Join-Path $FailDocsRoot ".venv-skills\Scripts\python.exe"))) -and @($fd.Calls | Where-Object { $_.Args -match 'pip install' -and $_.Exe -like '*venv-skills*' }).Count -eq 2)
 
 $script:FailPattern = '^-m venv .*\.venv-skills'
 $FailSkillsRoot = New-RunRoot "fail-skills"

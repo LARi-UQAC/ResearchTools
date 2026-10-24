@@ -23,7 +23,13 @@ Procedure:
 1. Parse `$ARGUMENTS`. The PDF path and `-o/--output-dir` are both required;
    refuse to start without either, naming which one is missing.
 2. Run bootstrap first, report-only, so the user sees what is missing
-   before anything is installed or downloaded:
+   before anything is installed or downloaded. Every `python` below is the
+   interpreter of `.venv-pdf2md` in the main clone
+   (`.venv-pdf2md\Scripts\python.exe`, built by `setup.ps1 -InstallPython`),
+   never `.venv-skills`: bootstrap installs mineru into the interpreter that
+   runs it, and mineru's gradio would pull `.venv-skills`' pillow back below
+   13 (owner decision D9, 2026-10-22). If `.venv-pdf2md` is missing, stop and
+   name `setup.ps1 -InstallPython`.
    ```bash
    python .claude/skills/pdf2md/scripts/pdf2md.py bootstrap --server-url http://127.0.0.1:<port>/v1
    ```

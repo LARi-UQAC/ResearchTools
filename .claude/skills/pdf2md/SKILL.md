@@ -62,6 +62,13 @@ docs:
 
 ## The pipeline
 
+Run every stage with the interpreter of `.venv-pdf2md` in the main clone
+(`.venv-pdf2md\Scripts\python.exe`, built by `setup.ps1 -InstallPython` from this skill's
+`requirements.txt`), never with `.venv-skills`. The bootstrap installs mineru into the
+interpreter that runs it (`sys.executable -m pip`), and mineru's gradio caps pillow below 13,
+the version `.venv-skills` pins to clear pillow 12's advisories (owner decision D9,
+2026-10-22). `mineru-kit` is then on that environment's `Scripts` folder, not on PATH.
+
 Run stages 1 to 4 with `pdf2md.py run <pdf> -o <dir> [--tier advanced]
 [--yes]` (a dry run without `--yes`: it reports the bootstrap and what it would
 launch, and starts nothing), or each stage separately for more control. A

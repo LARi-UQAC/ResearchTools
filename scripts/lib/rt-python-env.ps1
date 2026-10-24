@@ -134,6 +134,11 @@ function Get-RtEnvironments {
         if (-not ($name -is [string]) -or [string]::IsNullOrWhiteSpace($name)) {
             throw "package list ${Path}: key '$key.name' is missing or not a non-empty string"
         }
+        # R24: the name becomes a folder of the main clone (Join-Path, python -m venv), so only
+        # a bare folder name is accepted: no separator, no drive, no dot segment.
+        if ($name -notmatch '^[A-Za-z0-9_.-]+$' -or $name -eq '.' -or $name -eq '..') {
+            throw "package list ${Path}: key '$key.name' must be a bare folder name, got '$name'"
+        }
         if ($seen.ContainsKey($name.ToLowerInvariant())) {
             throw "package list ${Path}: key '$key.name' repeats the environment name '$name'"
         }

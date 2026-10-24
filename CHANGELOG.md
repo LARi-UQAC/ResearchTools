@@ -17,7 +17,7 @@ This file is for someone following releases. For the dated, engineering-level de
   requirements file stops the run before anything is installed, and `pip-audit` checks every file
   applied.
 - One data file, `scripts/lib/rt-python-requirements.json`, declares the three environments.
-  Every skill `requirements.txt` is named in it, and `verify-python-env.ps1` (124 checks) fails on
+  Every skill `requirements.txt` is named in it, and `verify-python-env.ps1` (129 checks) fails on
   an unregistered file or a library pinned to two versions in one environment.
 - `scripts/docs/python_libs.py` regenerates the library tables of manual chapter 02 (`--write`),
   reports an undeclared import, an unregistered file, a pin conflict or a stale table (`--check`),

@@ -212,6 +212,10 @@ Test-BadData "no-environments"  { param($d) $d.PSObject.Properties.Remove("envir
 Test-BadData "no-name"          { param($d) $d.environments[1].PSObject.Properties.Remove("name") } "environments[1].name"
 Test-BadData "duplicate-name"   { param($d) $d.environments[1].name = $d.environments[0].name } "environments[1].name"
 Test-BadData "empty-requirements" { param($d) $d.environments[1].requirements = @() } "environments[1].requirements"
+# R24: the name becomes a folder of the main clone, so only a bare folder name is accepted.
+Test-BadData "parent-name"      { param($d) $d.environments[1].name = "..\shared-venv" } "environments[1].name"
+Test-BadData "absolute-name"    { param($d) $d.environments[1].name = "C:\Python\venv" } "environments[1].name"
+Test-BadData "dot-dot-name"     { param($d) $d.environments[1].name = ".." } "environments[1].name"
 
 # ------------------------------------------------------ the docling exclusion ---
 $real = Get-Content (Join-Path $RepoRoot ".claude\skills\extract-statistic\scripts\requirements.txt") -Encoding UTF8

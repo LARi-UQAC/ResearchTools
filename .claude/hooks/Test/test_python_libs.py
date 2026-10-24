@@ -415,7 +415,41 @@ class EnvironmentScopeTests(Base):
         self.assertIn("PyYAML", found[0]["detail"])
 
 
+class UnparsableTests(Base):
+    def test_a_file_that_does_not_parse_is_an_error(self) -> None:
+        self.fx.write_py("alpha", "broken.py", "import acmelib\ndef (:\n")
+        found = [f for f in self.fx.findings() if f["kind"] == "unparsable"]
+        self.assertEqual(len(found), 1)
+        self.assertIn("broken.py", found[0]["detail"])
+        self.assertEqual(found[0]["level"], "error")
+
+
+class UsedByTests(Base):
+    def test_used_by_lists_only_the_scopes_this_environment_runs(self) -> None:
+        self.fx.write_py("beta", "conv.py", "import yaml\n")
+        self.fx.write_req("beta", "PyYAML==6.0.3\n")
+        self.fx.envs.append({"name": ".venv-gamma", "why": "c", "requirements": [
+            {"path": ".claude/skills/beta/scripts/requirements.txt", "why": "beta", "exclude": []}], "tools": []})
+        self.fx.save()
+        tables = PL.render_tables(self.fx.root, PL.load_environments(self.fx.data), PL.load_notes(self.fx.notes),
+                                  PL.scan_imports(self.fx.root, ["__pycache__"]))
+        skills_row = [l for l in tables[".venv-skills"].splitlines() if "`PyYAML`" in l][0]
+        gamma_row = [l for l in tables[".venv-gamma"].splitlines() if "`PyYAML`" in l][0]
+        self.assertIn("alpha", skills_row)
+        self.assertNotIn("beta", skills_row.split("|")[6])
+        self.assertIn("beta", gamma_row.split("|")[6])
+        self.assertNotIn("alpha", gamma_row.split("|")[6])
+
+
 class DataValidationTests(Base):
+    def test_an_environment_name_that_is_not_a_bare_folder_is_refused(self) -> None:
+        for bad in ("..\\shared", "C:/venv", "a/b", ".."):
+            self.fx.envs[1]["name"] = bad
+            self.fx.save()
+            code, out = self.fx.run("--check")
+            self.assertEqual(code, 2, bad)
+            self.assertIn("environments[1].name", out)
+
     def test_a_requirement_without_path_is_refused_by_key(self) -> None:
         del self.fx.envs[0]["requirements"][0]["path"]
         self.fx.save()
@@ -486,9 +520,22 @@ class DriftScopeTests(Base):
     def test_a_marker_line_absent_here_is_skipped_not_drift(self) -> None:
         self.fx.write_req("alpha", "PyYAML==6.0.3\nnvlib==1.0 ; sys_platform == \"win32\" or sys_platform == \"linux\"\n")
         provider = lambda env: ({"pyyaml": "6.0.3", "pip-audit": "2.10.1"} if env == ".venv-skills" else {})
-        skills = PL.drift(self.fx.root, self.fx.data, provider)["environments"][0]
+        skills = PL.drift(self.fx.root, self.fx.data, provider, platform="darwin")["environments"][0]
         self.assertEqual(skills["differs"], [])
         self.assertEqual(skills["skipped"], ["nvlib"])
+
+    def test_a_marker_true_here_and_absent_is_drift(self) -> None:
+        self.fx.write_req("alpha", "PyYAML==6.0.3\nnvlib==1.0 ; sys_platform == \"win32\" or sys_platform == \"linux\"\n")
+        provider = lambda env: ({"pyyaml": "6.0.3", "pip-audit": "2.10.1"} if env == ".venv-skills" else {})
+        skills = PL.drift(self.fx.root, self.fx.data, provider, platform="win32")["environments"][0]
+        self.assertEqual(skills["differs"], [{"name": "nvlib", "pinned": "1.0", "installed": "absent"}])
+        self.assertEqual(skills["skipped"], [])
+
+    def test_marker_evaluation(self) -> None:
+        self.assertTrue(PL.marker_true('sys_platform == "win32" or sys_platform == "linux"', "linux"))
+        self.assertFalse(PL.marker_true('sys_platform == "win32" or sys_platform == "linux"', "darwin"))
+        self.assertFalse(PL.marker_true("sys_platform != 'win32'", "win32"))
+        self.assertIsNone(PL.marker_true('python_version < "3.12"', "win32"))
 
     def test_a_marker_line_installed_at_another_version_is_drift(self) -> None:
         self.fx.write_req("alpha", "PyYAML==6.0.3\nnvlib==1.0 ; sys_platform == \"win32\"\n")

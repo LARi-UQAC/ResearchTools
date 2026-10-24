@@ -135,10 +135,24 @@ class _ImportVisitor(ast.NodeVisitor):
     """Collect absolute top-level import names with a guarded flag per occurrence."""
 
     def __init__(self) -> None:
+        """Purpose: start with no import found and depth 0 (module level, not guarded)."""
         self.found = []  # list of (name, guarded)
         self._depth = 0
 
     def _guarded_body(self, node: ast.AST) -> None:
+        """
+        --------------------------------------------------------------------------
+        Purpose:
+            Visit a function body one guard level deeper: an import there runs only when the
+            function is called, so a missing package fails late and optionally.
+
+        Inputs:
+            node (ast.AST): a FunctionDef or AsyncFunctionDef.
+
+        Outputs:
+            None: imports found are appended to self.found.
+        --------------------------------------------------------------------------
+        """
         self._depth += 1
         self.generic_visit(node)
         self._depth -= 1
@@ -147,6 +161,19 @@ class _ImportVisitor(ast.NodeVisitor):
     visit_AsyncFunctionDef = _guarded_body
 
     def visit_Try(self, node: ast.Try) -> None:
+        """
+        --------------------------------------------------------------------------
+        Purpose:
+            Visit a try statement. Only the try BODY is guarded: an import in an except,
+            else or finally clause runs unguarded when reached, so it keeps the outer depth.
+
+        Inputs:
+            node (ast.Try): the try statement (TryStar too).
+
+        Outputs:
+            None: imports found are appended to self.found.
+        --------------------------------------------------------------------------
+        """
         self._depth += 1
         for child in node.body:
             self.visit(child)
@@ -157,15 +184,17 @@ class _ImportVisitor(ast.NodeVisitor):
     visit_TryStar = visit_Try
 
     def visit_Import(self, node: ast.Import) -> None:
+        """Purpose: record the top-level name of each `import a.b` with the current guard flag."""
         for alias in node.names:
             self.found.append((alias.name.split(".")[0], self._depth > 0))
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        """Purpose: record `from a.b import c` as `a`; a relative import (level > 0) is local, skipped."""
         if node.level == 0 and node.module:
             self.found.append((node.module.split(".")[0], self._depth > 0))
 
 
-def scan_imports(root: Path, skip_dirs: list, files_cap: int = 3) -> dict:
+def scan_imports(root: Path, skip_dirs: list, files_cap: int = 3, unparsable: list | None = None) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -180,6 +209,8 @@ def scan_imports(root: Path, skip_dirs: list, files_cap: int = 3) -> dict:
         root (Path): the repository root.
         skip_dirs (list): folder names never entered.
         files_cap (int): how many file paths to keep per import.
+        unparsable (list | None): when given, receives the relative path of every file that
+            does not parse, whose imports therefore went unchecked (reported, never silent, R8).
 
     Outputs:
         dict: name -> {"scopes": sorted list, "guarded_only": bool, "files": sorted capped list}.
@@ -192,7 +223,9 @@ def scan_imports(root: Path, skip_dirs: list, files_cap: int = 3) -> dict:
     for path in files:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-        except SyntaxError:
+        except (SyntaxError, ValueError):
+            if unparsable is not None:
+                unparsable.append(path.relative_to(root).as_posix())
             continue
         visitor = _ImportVisitor()
         visitor.visit(tree)
@@ -295,6 +328,7 @@ def load_environments(data: Path) -> list:
         raise Refusal(f"data file {data}: key 'environments' is missing or empty")
 
     def need(obj, key: str, where: str):
+        """Purpose: the non-empty string at obj[key], else a Refusal naming '<where>.<key>'."""
         value = obj.get(key) if isinstance(obj, dict) else None
         if not isinstance(value, str) or not value.strip():
             raise Refusal(f"data file {data}: key '{where}.{key}' is missing or empty")
@@ -303,6 +337,10 @@ def load_environments(data: Path) -> list:
     out = []
     for i, e in enumerate(envs):
         name = need(e, "name", f"environments[{i}]")
+        # The name becomes a folder of the main clone (R24): a bare name only, no separator,
+        # no drive, no dot segment.
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", name) or name in (".", ".."):
+            raise Refusal(f"data file {data}: key 'environments[{i}].name' must be a bare folder name, got {name!r}")
         reqs = e.get("requirements") or []
         paths, excludes = [], {}
         for j, r in enumerate(reqs):
@@ -611,6 +649,7 @@ def render_tables(root: Path, envs: list, notes: dict, imports: dict) -> dict:
         dist = _import_to_dist(name, notes, declared_all)
         key = dist or normalize(name)
         u = uses.setdefault(key, {"imports": set(), "scopes": set(), "guarded": True})
+        # scopes stays global here; each table filters it to the scopes its environment runs.
         u["imports"].add(name)
         u["scopes"].update(info["scopes"])
         u["guarded"] = u["guarded"] and info["guarded_only"]
@@ -638,7 +677,8 @@ def render_tables(root: Path, envs: list, notes: dict, imports: dict) -> dict:
             where = "; ".join(f"{d['label']} `{d['entry']['spec'] or 'unpinned'}`" for d in decls) or "none"
             u = uses.get(dist)
             imp = ", ".join(sorted(u["imports"])) if u else (", ".join(info.get("imports", [])) or "(none)")
-            used_by = ", ".join(sorted(u["scopes"])) if u else "-"
+            mine = sorted(s for s in u["scopes"] if runs_in.get(s, first) == env["name"]) if u else []
+            used_by = ", ".join(mine) or "-"
             optional = "yes" if (info.get("optional") or any(d["entry"]["optional"] for d in decls) or (u and u["guarded"])) else ""
             note = info.get("note", "")
             if full:
@@ -740,7 +780,39 @@ def _pip_list(python: Path, timeout_s: float) -> dict:
         raise Refusal(f"pip list for {python} printed something that is not its JSON list") from exc
 
 
-def drift(root: Path, data: Path, provider: Callable[[str], dict | None]) -> dict:
+_MARKER_TERM = re.compile(r"""^\s*sys_platform\s*(==|!=)\s*["']([^"']+)["']\s*$""")
+
+
+def marker_true(marker: str, platform: str) -> bool | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Evaluate an environment marker made only of `sys_platform == / != "x"` terms joined
+        by `or` or by `and`, which is every marker the repository's files carry.
+
+    Inputs:
+        marker (str): the text after ';' on a requirement line.
+        platform (str): the sys_platform to evaluate against (injected, R19/R21).
+
+    Outputs:
+        bool | None: the marker's value, or None for any other marker (a python_version, a
+        mix of or and and, parentheses), which this standard-library script does not evaluate.
+    --------------------------------------------------------------------------
+    """
+    text = marker.strip()
+    if not text or "(" in text or (" or " in text and " and " in text):
+        return None
+    joiner = " or " if " or " in text else " and "
+    values = []
+    for term in text.split(joiner):
+        m = _MARKER_TERM.match(term)
+        if not m:
+            return None
+        values.append((platform == m.group(2)) == (m.group(1) == "=="))
+    return any(values) if joiner == " or " else all(values)
+
+
+def drift(root: Path, data: Path, provider: Callable[[str], dict | None], platform: str = sys.platform) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -776,9 +848,13 @@ def drift(root: Path, data: Path, provider: Callable[[str], dict | None]) -> dic
             for dist, decls in sorted(table.items()):
                 pins = {d["entry"]["version"] for d in decls if d["entry"]["pinned"]}
                 have = installed.get(dist)
+                # A marker false here means pip correctly skipped the line. A marker true here
+                # leaves an absent package as drift. A marker this script cannot evaluate is
+                # listed as skipped, so the reader sees it was not compared.
                 if have is None and pins and all(d["entry"]["marker"] for d in decls):
-                    entry["skipped"].append(dist)
-                    continue
+                    if not any(marker_true(d["entry"]["marker"], platform) for d in decls):
+                        entry["skipped"].append(dist)
+                        continue
                 if pins and have not in pins:
                     entry["differs"].append({"name": dist, "pinned": ", ".join(sorted(pins)), "installed": have or "absent"})
             entry["undeclared"] = sorted(d for d in installed if d not in table)
@@ -841,6 +917,7 @@ def main(argv: list | None = None) -> int:
     doc_path = Path(args.doc) if args.doc else root / "docs" / "manual" / "02-profiles.md"
 
     def emit(report: dict, lines: list) -> None:
+        """Purpose: print the JSON report with --json (R17), else the human lines."""
         if args.json:
             print(json.dumps(report, indent=2, ensure_ascii=False))
         else:
@@ -854,6 +931,7 @@ def main(argv: list | None = None) -> int:
             timeout_s = float(load_notes(notes_path)["pip_list_timeout_s"])
 
             def provider(name: str) -> dict | None:
+                """Purpose: the installed versions of env_root/<name>, or None when it has no interpreter."""
                 py = env_root / name / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
                 return _pip_list(py, timeout_s) if py.is_file() else None
             report = drift(root, data, provider)
@@ -875,8 +953,12 @@ def main(argv: list | None = None) -> int:
             raise Refusal(f"--doc resolves outside --root: {doc_path}")
         envs = load_environments(data)
         notes = load_notes(notes_path)
-        imports = scan_imports(root, notes["skip_dirs"], int(notes["files_cap"]))
+        unparsable: list = []
+        imports = scan_imports(root, notes["skip_dirs"], int(notes["files_cap"]), unparsable)
         findings = find_findings(root, envs, notes, imports)
+        findings += [{"level": "error", "kind": "unparsable",
+                      "detail": f"{rel} does not parse with this interpreter, so its imports were not checked"}
+                     for rel in unparsable]
         tables = render_tables(root, envs, notes, imports)
         current = doc_path.read_text(encoding="utf-8") if doc_path.is_file() else ""
         wanted = apply_markers(current, tables)

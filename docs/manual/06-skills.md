@@ -67,7 +67,7 @@ registration steps of a new skill.
 
 | Skill | Purpose | Entry point |
 |---|---|---|
-| `scopus` | Search Scopus (citation-ordered, title/abstract/keyword scoped), validate references (ambiguity-flagged), fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback). | `/scopus`, `.claude/skills/scopus/SKILL.md` |
+| `scopus` | Search Scopus (citation-ordered, title/abstract/keyword scoped), validate references (ambiguity-flagged), fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback), and search Semantic Scholar by keyword for candidates beside Scopus. | `/scopus`, `.claude/skills/scopus/SKILL.md` |
 | `scientific-writing` | Core writing skill: scientific manuscripts in flowing IMRAD prose with verified citations (IEEE/APA/AMA/Vancouver) and reporting guidelines (CONSORT/STROBE/PRISMA). | `.claude/skills/scientific-writing/SKILL.md` |
 | `scholar-evaluation` | ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations. | `.claude/skills/scholar-evaluation/SKILL.md` |
 | `deliberation` | Two-round debate between Gemini and GitHub Copilot (a local reasoning model, named at run time by the resolver, is the fallback when Copilot does not answer) over a near-final draft or any object of the work submitted with its full context (question, methodology, table, result); the envelope now carries a stable id per suggestion and a context record, and the Log must account for every id; Claude arbitrates and validates any new references against Scopus. Used inside the auditor/researcher agents. | `.claude/skills/deliberation/SKILL.md` |

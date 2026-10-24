@@ -245,7 +245,7 @@ flowchart TD
   EP4 --> ELS
 
   API -.->|"0 authors on cite/verify<br/>or --enrich-authors"| S2
-  S2["semantic_scholar_api.py<br/>authors · paper<br/>1 req/s throttle"] --> S2EP[("Semantic Scholar<br/>Academic Graph")]
+  S2["semantic_scholar_api.py<br/>authors · paper · match · oa · search<br/>1 req/s throttle"] --> S2EP[("Semantic Scholar<br/>Academic Graph")]
   S2 -.->|"ordered authors backfill"| API
 
   subgraph D["download_pdf.py — any-format full text"]
@@ -280,7 +280,7 @@ flowchart TD
 | Script | Modes / subcommands | External endpoint | Env var |
 | --- | --- | --- | --- |
 | [scopus_api.py](skills/scopus/scripts/scopus_api.py) | search · cite · validate · verify · author · journal · publications | Elsevier Search / Abstract Retrieval / Author Search / Serial Title | `SCOPUS_API_KEY` |
-| [semantic_scholar_api.py](skills/scopus/scripts/semantic_scholar_api.py) | authors · paper · external_ids_for_doi | Semantic Scholar Academic Graph | `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` (optional) |
+| [semantic_scholar_api.py](skills/scopus/scripts/semantic_scholar_api.py) | authors · paper · match · oa · search (keyword search with `--year`, `--limit`), plus `external_ids_for_doi` | Semantic Scholar Academic Graph | `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` (optional) |
 | [download_pdf.py](skills/scopus/scripts/download_pdf.py) | doi · bib (any format: pdf/html/md) | Elsevier → S2 → publisher → Unpaywall → arXiv → PMC → DOI landing → browser (`--browser`) | `SCOPUS_API_KEY`, `UNPAYWALL_EMAIL` (optional) |
 | [browser_fetch.py](skills/scopus/scripts/browser_fetch.py) | tier 8 for download_pdf.py (opt-in) | real Playwright Chromium; per-paper `refs/_sources.json` override URL (e.g. ResearchGate) | optional: `playwright` + `playwright install chromium` |
 | [bib_batch.py](skills/scopus/scripts/bib_batch.py) | resolve · enrich · bib · all (candidates → `.bib`: title→DOI, grade A–D, BibTeX) | wraps `scopus_api.py` | `SCOPUS_API_KEY` |

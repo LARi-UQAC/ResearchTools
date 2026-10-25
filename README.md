@@ -87,7 +87,7 @@ project's own `graphify` graph when its vault folder names a `repo:`. Full walkt
 git clone https://github.com/LARi-UQAC/ResearchTools.git
 cd ResearchTools
 .\setup.ps1 -All -Personal   # config + Claude links + all tool mirrors
-.\setup.ps1 -InstallPython   # optional: .venv-skills (in the main clone) for the test suite and the skills
+.\setup.ps1 -InstallPython   # optional: .venv-skills, .venv-docs and .venv-pdf2md (in the main clone)
 .\setup.ps1 -Update          # update an existing installation in one command (try -Update -Preview first); see manual chapter 01
 ```
 
@@ -122,7 +122,7 @@ graph LR
 |---|---|---|
 | 00 | [Purpose & overview](docs/manual/00-purpose.md) | Mission, 2026 roadmap, manual conventions |
 | 01 | [Installation](docs/manual/01-installation.md) | `setup.ps1` / `install.ps1` / `install-junctions.ps1`, prerequisites, the install steps, updating a machine |
-| 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys, and every Python library of `.venv-skills` and `.venv-docs` |
+| 02 | [Profiles & environment](docs/manual/02-profiles.md) | Domain profiles, API keys, and every Python library of `.venv-skills`, `.venv-docs` and `.venv-pdf2md` (generated tables) |
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx`, switching the session identity |
 | 04 | [Commands](docs/manual/04-commands.md) | All slash commands |
 | 05 | [Agents](docs/manual/05-agents.md) | All agents, local delegation, loop engineering |

@@ -22,13 +22,18 @@
     The base interpreter is therefore CHOSEN, not taken: an explicit -Python, or a
     candidate from PATH and the py launcher that belongs to the current profile and
     can really create a virtual environment. A refusal names every candidate and why
-    it was rejected. The package list moved to rt-python-requirements.json (R6) and
-    now covers the skills whose scripts the repository runs, minus docling, whose
-    torch dependency would turn a setup step into a multi-gigabyte download.
+    it was rejected. The package list moved to rt-python-requirements.json (R6).
+
+    Extended 2026-10-22 (issue #92): the data file declares three environments,
+    .venv-skills (every skill requirements file but pdf2md's, docling included by
+    owner decision D4, about 339 MB with torch), .venv-docs (the MkDocs site) and
+    .venv-pdf2md (mineru, kept apart because gradio caps pillow below 13, D9). Each
+    environment's files are installed by ONE pip call so pip resolves them together,
+    then pip-audit, from .venv-skills, audits every file applied.
 
     The decisions are separated from the work so the offline check can drive them
     with injected values: nothing in Resolve-RtPythonEnvAction or Select-RtBasePython
-    touches the disk, and nothing in Get-RtSuiteRequirements runs a process.
+    touches the disk, and nothing in Get-RtEnvironments runs a process.
 
 .NOTES
     Same shape, and the same reason, as scripts\lib\rt-daemon-install.ps1 and
@@ -46,58 +51,132 @@ function Read-RtRequirementsData {
     .SYNOPSIS
         Load rt-python-requirements.json. A missing or unparsable file is an
         explicit error naming the file (R3), never an empty list.
-    #>
-    if (-not (Test-Path -LiteralPath $script:RtRequirementsFile -PathType Leaf)) {
-        throw "package list not found: $script:RtRequirementsFile"
-    }
-    try {
-        return (Get-Content -LiteralPath $script:RtRequirementsFile -Raw -Encoding UTF8 | ConvertFrom-Json)
-    } catch {
-        throw "package list does not parse: $script:RtRequirementsFile ($($_.Exception.Message))"
-    }
-}
 
-function Get-RtSuiteRequirements {
-    <#
-    .SYNOPSIS
-        The requirements files -InstallPython applies, in install order.
-
-    .DESCRIPTION
-        Data, not logic (R6): the list lives in rt-python-requirements.json. Each
-        entry says why it is there, so a reader can delete it the day nothing
-        imports the package any more.
-
-        A path that does not exist is returned all the same, with Exists false:
-        the caller reports the absence by name rather than installing a shorter
-        list than it announced (R3).
+    .PARAMETER Path
+        The data file to read. Defaults to the one beside this script; a test passes
+        a temp copy.
 
     .OUTPUTS
-        PSCustomObject[] with Path, Full, Why, Exists, Exclude.
+        PSCustomObject - the parsed JSON.
     #>
-    param([Parameter(Mandatory = $true)][string]$RepoRoot)
+    param([string]$Path = $script:RtRequirementsFile)
 
-    $data = Read-RtRequirementsData
-    foreach ($e in @($data.requirements)) {
-        $full = Join-Path $RepoRoot ($e.path -replace '/', '\')
-        [pscustomobject]@{
-            Path    = $e.path
-            Full    = $full
-            Why     = [string]$e.why
-            Exists  = (Test-Path -LiteralPath $full -PathType Leaf)
-            Exclude = @($e.exclude)
-        }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "package list not found: $Path"
+    }
+    try {
+        return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+    } catch {
+        throw "package list does not parse: $Path ($($_.Exception.Message))"
     }
 }
 
-function Get-RtToolRequirements {
+function Get-RtDataValue {
     <#
     .SYNOPSIS
-        Packages the installer itself relies on (pip-audit), as pip specs.
+        One property of a parsed JSON object, or $null when it is absent. StrictMode
+        throws on a missing property, and a missing key here has to become a named
+        error instead.
     #>
-    $data = Read-RtRequirementsData
-    foreach ($t in @($data.tools)) {
-        [pscustomobject]@{ Spec = [string]$t.spec; Why = [string]$t.why }
+    param($Object, [Parameter(Mandatory = $true)][string]$Name)
+    if ($null -eq $Object) { return $null }
+    $p = $Object.PSObject.Properties[$Name]
+    if ($null -eq $p) { return $null }
+    return $p.Value
+}
+
+function Get-RtEnvironments {
+    <#
+    .SYNOPSIS
+        The Python environments -InstallPython builds, in file order, each with its
+        requirements files and its tools.
+
+    .DESCRIPTION
+        Data, not logic (R6): the list lives in rt-python-requirements.json, key
+        'environments'. Each entry says why it is there, so a reader can delete it
+        the day nothing imports the package any more.
+
+        Validated at load time, each refusal naming the file and the dotted key
+        (R3): the array is present and not empty, every name is a non-empty string,
+        names are unique (a duplicate would install the same folder twice), and every
+        'requirements' is a non-empty array whose entries carry a 'path'.
+
+        A requirements path that does not exist is returned all the same, with
+        Exists false: the caller reports the absence by name rather than installing
+        a shorter list than it announced (R3).
+
+    .PARAMETER RepoRoot
+        The root the requirements paths are relative to.
+
+    .PARAMETER Path
+        The data file, defaulting to the one beside this script.
+
+    .OUTPUTS
+        PSCustomObject[] with Name, Why, Requirements (Path, Full, Why, Exists,
+        Exclude) and Tools (Spec, Why).
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$Path = $script:RtRequirementsFile
+    )
+
+    $data = Read-RtRequirementsData -Path $Path
+    $list = Get-RtDataValue $data "environments"
+    if ($null -eq $list -or @($list).Count -eq 0) {
+        throw "package list ${Path}: key 'environments' is missing or empty"
     }
+    $seen = @{}
+    $i = 0
+    $result = @()
+    foreach ($e in @($list)) {
+        $key = "environments[$i]"
+        $name = Get-RtDataValue $e "name"
+        if (-not ($name -is [string]) -or [string]::IsNullOrWhiteSpace($name)) {
+            throw "package list ${Path}: key '$key.name' is missing or not a non-empty string"
+        }
+        # R24: the name becomes a folder of the main clone (Join-Path, python -m venv), so only
+        # a bare folder name is accepted: no separator, no drive, no dot segment.
+        if ($name -notmatch '^[A-Za-z0-9_.-]+$' -or $name -eq '.' -or $name -eq '..') {
+            throw "package list ${Path}: key '$key.name' must be a bare folder name, got '$name'"
+        }
+        if ($seen.ContainsKey($name.ToLowerInvariant())) {
+            throw "package list ${Path}: key '$key.name' repeats the environment name '$name'"
+        }
+        $seen[$name.ToLowerInvariant()] = 1
+        $reqList = Get-RtDataValue $e "requirements"
+        if ($null -eq $reqList -or @($reqList).Count -eq 0) {
+            throw "package list ${Path}: key '$key.requirements' is missing or empty"
+        }
+        $reqs = @()
+        $j = 0
+        foreach ($r in @($reqList)) {
+            $rel = Get-RtDataValue $r "path"
+            if (-not ($rel -is [string]) -or [string]::IsNullOrWhiteSpace($rel)) {
+                throw "package list ${Path}: key '$key.requirements[$j].path' is missing"
+            }
+            $full = Join-Path $RepoRoot ($rel -replace '/', '\')
+            $reqs += [pscustomobject]@{
+                Path    = $rel
+                Full    = $full
+                Why     = [string](Get-RtDataValue $r "why")
+                Exists  = (Test-Path -LiteralPath $full -PathType Leaf)
+                Exclude = @(Get-RtDataValue $r "exclude" | Where-Object { $null -ne $_ })
+            }
+            $j++
+        }
+        $tools = @()
+        foreach ($t in @(Get-RtDataValue $e "tools" | Where-Object { $null -ne $_ })) {
+            $tools += [pscustomobject]@{ Spec = [string](Get-RtDataValue $t "spec"); Why = [string](Get-RtDataValue $t "why") }
+        }
+        $result += [pscustomobject]@{
+            Name         = $name
+            Why          = [string](Get-RtDataValue $e "why")
+            Requirements = $reqs
+            Tools        = $tools
+        }
+        $i++
+    }
+    return $result
 }
 
 function Get-RtFilteredRequirementLines {
@@ -341,7 +420,7 @@ function Select-RtBasePython {
         return [pscustomobject]@{ Python = $c; Rejected = $rejected; Message = "" }
     }
 
-    $lines = @("no usable Python interpreter to build .venv-skills from.")
+    $lines = @("no usable Python interpreter to build the Python environments from.")
     if ($list.Count -eq 0) { $lines += "  none was found on PATH or through the py launcher." }
     foreach ($r in $rejected) { $lines += "  $($r.Path): $($r.Reason)" }
     $lines += "Install Python 3 under your own profile, or pass -Python <path to a working interpreter>."
@@ -385,30 +464,261 @@ function Resolve-RtPythonEnvAction {
     }
 }
 
+function Invoke-RtProcess {
+    <#
+    .SYNOPSIS
+        Start one process for the installer and return its exit code.
+
+    .DESCRIPTION
+        The single place the installer starts a process, so a test can carry every
+        call through an injected runner (a scriptblock taking the executable and an
+        argument array and returning an exit code) and run nothing. With no runner
+        the process runs natively; its output goes to the host, never to the
+        pipeline, so it cannot pollute the caller's return value.
+
+        ErrorActionPreference is Continue for the call: under setup.ps1's Stop
+        preference, Windows PowerShell 5.1 turns the first merged stderr line of a
+        native command into a terminating error.
+
+    .PARAMETER Quiet
+        Discard the process's output (pip-audit's report: only its code matters here).
+
+    .OUTPUTS
+        int - the exit code.
+    #>
+    param(
+        [scriptblock]$Runner = $null,
+        [Parameter(Mandatory = $true)][string]$Exe,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [switch]$Quiet
+    )
+
+    if ($null -ne $Runner) {
+        $r = @(& $Runner $Exe $Arguments)
+        if ($r.Count -eq 0) { return 1 }
+        return [int]$r[-1]
+    }
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        if ($Quiet) { & $Exe @Arguments 2>&1 | Out-Null }
+        else        { & $Exe @Arguments | Out-Host }
+        return [int]$LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $saved
+    }
+}
+
+function Install-RtEnvironment {
+    <#
+    .SYNOPSIS
+        Create one environment when absent and install its tools and requirements
+        files into it.
+
+    .DESCRIPTION
+        The per-environment worker of Install-RtPythonEnv. It never audits: the
+        orchestrator audits every applied file at the end, from the interpreter of
+        the environment that carries pip-audit, so the docs environment never gains
+        pip-audit's dependencies.
+
+        A requirements entry with an 'exclude' list is installed from a filtered
+        copy in TEMP; the copies are returned in Temps and the CALLER removes them,
+        after the audit that still needs them.
+
+        -Preview prints what would be done and starts nothing (R16).
+
+    .PARAMETER Environment
+        One object of Get-RtEnvironments.
+
+    .PARAMETER Target
+        The main clone the environment folder is created in.
+
+    .PARAMETER Base
+        The base interpreter for a creation. Ignored when the environment exists.
+
+    .PARAMETER ProcessRunner
+        Test seam, see Invoke-RtProcess.
+
+    .OUTPUTS
+        PSCustomObject: Code (0 or 1), Python (the environment's interpreter path),
+        Applied (objects Label, File for the audit), Temps (files to remove).
+    #>
+    param(
+        [Parameter(Mandatory = $true)]$Environment,
+        [Parameter(Mandatory = $true)][string]$Target,
+        [AllowEmptyString()][string]$Base = "",
+        [switch]$Preview,
+        [scriptblock]$ProcessRunner = $null
+    )
+
+    $venv       = Join-Path $Target $Environment.Name
+    $venvPython = Join-Path $venv "Scripts\python.exe"
+    $exists     = Test-Path -LiteralPath $venvPython -PathType Leaf
+    $result     = [pscustomobject]@{ Code = 0; Python = $venvPython; Applied = @(); Temps = @() }
+    $reqs       = @($Environment.Requirements)
+    $tools      = @($Environment.Tools)
+
+    Write-Host "  -- $($Environment.Name): $($Environment.Why)"
+    $decision = Resolve-RtPythonEnvAction -VenvPath $venv -VenvExists $exists -BasePython $(if ($exists) { $venvPython } else { $Base })
+
+    if ($Preview) {
+        Write-Host "  [--]  $($decision.Message)"
+        if ($exists) {
+            Write-Host "  [--]  no base interpreter needed: pip runs from the existing environment ($venvPython)"
+        } else {
+            Write-Host "  [--]  base interpreter: $Base (exists, current profile; the venv probe is NOT run in a preview)"
+        }
+        foreach ($t in $tools) { Write-Host "  [--]  Would install $($t.Spec)" }
+        foreach ($r in $reqs) {
+            Write-Host "  [--]  Would install -r $($r.Path)$(if ($r.Exclude.Count) { '  (without: ' + ($r.Exclude -join ', ') + ')' })"
+            Write-Host "        $($r.Why)" -ForegroundColor DarkGray
+        }
+        return $result
+    }
+
+    if ($decision.Action -eq "create") {
+        Write-Host "  Creating $venv ..."
+        $code = Invoke-RtProcess -Runner $ProcessRunner -Exe $Base -Arguments @("-m", "venv", $venv)
+        if ($code -ne 0) {
+            Write-Host "  [ERR] python -m venv failed for $($Environment.Name) (exit $code)" -ForegroundColor Red
+            $result.Code = 1; return $result
+        }
+    } else {
+        Write-Host "  $($decision.Message)"
+    }
+
+    # R9: the environment is only real if its interpreter is on disk afterwards.
+    if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
+        Write-Host "  [ERR] no interpreter at $venvPython after creation" -ForegroundColor Red
+        $result.Code = 1; return $result
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    if ($tools.Count -gt 0) {
+        $toolFile = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-tools-" + [guid]::NewGuid().ToString("N") + ".txt")
+        [System.IO.File]::WriteAllLines($toolFile, [string[]]@($tools | ForEach-Object { $_.Spec }), $utf8)
+        $result.Temps += $toolFile
+        Write-Host "  pip install $(($tools | ForEach-Object { $_.Spec }) -join ' ')"
+        $code = Invoke-RtProcess -Runner $ProcessRunner -Exe $venvPython -Arguments @("-m", "pip", "install", "--quiet", "--disable-pip-version-check", "-r", $toolFile)
+        if ($code -ne 0) {
+            Write-Host "  [ERR] install failed for the installer's own tools in $($Environment.Name) (exit $code)" -ForegroundColor Red
+            $result.Code = 1; return $result
+        }
+        $result.Applied += [pscustomobject]@{ Label = "$($Environment.Name) tools"; File = $toolFile }
+    }
+
+    # Every file of the environment goes into ONE pip call, so pip resolves them together. One
+    # call per file let a later file move a package an earlier one pinned, with only a resolver
+    # warning and exit 0 (code review, 2026-10-24).
+    $pipArgs = @("-m", "pip", "install", "--quiet", "--disable-pip-version-check")
+    $applied = @()
+    foreach ($r in $reqs) {
+        $file = $r.Full
+        if ($r.Exclude.Count -gt 0) {
+            $source = @(Get-Content -LiteralPath $r.Full -Encoding UTF8)
+            # The filtered copy lives in TEMP, where pip would resolve a relative `-r` or
+            # `-c` include against the wrong folder. No file does that today; if one ever
+            # does, say so rather than let pip fail with "No such file" (R8).
+            if (Test-RtRequirementHasInclude -Lines $source) {
+                Write-Host "  [ERR] $($r.Path) uses an include (-r/-c) and also has packages to exclude; the filtered copy cannot resolve it" -ForegroundColor Red
+                $result.Code = 1; return $result
+            }
+            $lines = @(Get-RtFilteredRequirementLines -Lines $source -Exclude $r.Exclude)
+            $file = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-req-" + [guid]::NewGuid().ToString("N") + ".txt")
+            [System.IO.File]::WriteAllLines($file, [string[]]$lines, $utf8)
+            $result.Temps += $file
+        }
+        Write-Host "  pip install -r $($r.Path)$(if ($r.Exclude.Count) { '  (without: ' + ($r.Exclude -join ', ') + ')' })"
+        $pipArgs += @("-r", $file)
+        $applied += [pscustomobject]@{ Label = $r.Path; File = $file }
+    }
+    if ($applied.Count -gt 0) {
+        $code = Invoke-RtProcess -Runner $ProcessRunner -Exe $venvPython -Arguments $pipArgs
+        if ($code -ne 0) {
+            Write-Host "  [ERR] install failed for the requirements files of $($Environment.Name) (exit $code)" -ForegroundColor Red
+            $result.Code = 1; return $result
+        }
+        $result.Applied += $applied
+    }
+
+    Write-Host "  [OK]  Environment ready: $venvPython" -ForegroundColor Green
+    return $result
+}
+
+function Invoke-RtRequirementsAudit {
+    <#
+    .SYNOPSIS
+        Run pip-audit on every applied requirements file, from one interpreter.
+
+    .DESCRIPTION
+        security.md: pip-audit runs on any requirements file this repository
+        installs. A finding is REPORTED and never fatal: the pins are the
+        repository's to change, and a setup that refused to finish because a
+        transitive package published a CVE overnight would be unusable.
+
+    .PARAMETER AuditPython
+        The interpreter that has pip-audit (the .venv-skills one).
+
+    .PARAMETER Applied
+        Objects Label, File, as Install-RtEnvironment returns them.
+
+    .PARAMETER ProcessRunner
+        Test seam, see Invoke-RtProcess.
+
+    .OUTPUTS
+        None. Prints one OK or warning line per file.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$AuditPython,
+        [AllowEmptyCollection()][object[]]$Applied = @(),
+        [scriptblock]$ProcessRunner = $null
+    )
+
+    foreach ($a in $Applied) {
+        $code = Invoke-RtProcess -Runner $ProcessRunner -Exe $AuditPython -Arguments @("-m", "pip_audit", "--strict", "-r", $a.File) -Quiet
+        if ($code -eq 0) {
+            Write-Host "  [OK]  pip-audit clean: $($a.Label)" -ForegroundColor Green
+        } else {
+            Write-Host "  [!!]  pip-audit reported findings for $($a.Label) - run it yourself on that file" -ForegroundColor Yellow
+            Write-Host "          (minus any excluded package): $AuditPython -m pip_audit --strict -r <file>"
+        }
+    }
+}
+
 function Install-RtPythonEnv {
     <#
     .SYNOPSIS
-        Create .venv-skills if absent and install what the repository's skills import.
+        Create .venv-skills and .venv-docs if absent and install what the repository's
+        skills and its documentation site import.
 
     .DESCRIPTION
         Returns an exit code: 0 for done, previewed or deliberately skipped, 1 for
-        a real failure. A failure here must not take the rest of setup down with
-        it - junctions and mirrors are useful on a machine with no Python at all -
-        so the caller records the code and carries on.
+        a real failure in any environment. A failure here must not take the rest of
+        setup down with it - junctions and mirrors are useful on a machine with no
+        Python at all - so the caller records the code and carries on. A failure in
+        one environment does not skip the next (2026-10-22, D1).
 
-        The environment always lives in the MAIN clone, never in a linked worktree
+        The environments are the entries of rt-python-requirements.json, built in
+        file order. Every requirements file of every environment is checked for
+        existence BEFORE any process starts, so a missing file is named and nothing
+        is half-built (R3).
+
+        The environments always live in the MAIN clone, never in a linked worktree
         (rt-venv.ps1's rule, 2026-10-16): a second environment per worktree is what
         led to linking one, and a link is what let a worktree removal delete the
         real one. Run from a worktree, this builds or extends the main clone's.
+
+        One base interpreter is chosen once, and only when an environment has to be
+        created. An existing environment is reused: pip runs from ITS interpreter.
+        With no usable base interpreter, the environments that would need creating
+        are skipped with the reason, and the existing ones are still extended.
 
         -Preview creates nothing and starts no process that writes: the base
         interpreter is checked for existence and ownership only, and the scratch
         venv probe is announced rather than run (R16).
 
-        pip-audit runs afterwards on every file installed, per security.md. Its
-        finding is REPORTED and does not fail the step: the pins are the
-        repository's to change, and a setup that refused to finish because a
-        transitive package published a CVE overnight would be unusable.
+        pip-audit runs afterwards on every file installed, from the interpreter of
+        the environment that carries it as a tool.
 
     .PARAMETER Python
         An explicit base interpreter. Refused when it belongs to another account or
@@ -419,21 +729,25 @@ function Install-RtPythonEnv {
 
     .PARAMETER UserProfile
         Test seam: the profile to judge ownership against. Defaults to USERPROFILE.
+
+    .PARAMETER ProcessRunner
+        Test seam: a scriptblock taking the executable and an argument array and
+        returning an exit code. Every process the installer starts goes through it,
+        the scratch venv probe included. $null (the default) runs them natively.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$RepoRoot,
         [switch]$Preview,
         [string]$Python = "",
         [string[]]$CandidatePaths = $null,
-        [string]$UserProfile = $env:USERPROFILE
+        [string]$UserProfile = $env:USERPROFILE,
+        [scriptblock]$ProcessRunner = $null
     )
 
-    $target     = Get-RtMainRepoRoot -RepoRoot $RepoRoot
-    $venv       = Join-Path $target ".venv-skills"
-    $venvPython = Join-Path $venv "Scripts\python.exe"
+    $target = Get-RtMainRepoRoot -RepoRoot $RepoRoot
+    $envs   = @(Get-RtEnvironments -RepoRoot $RepoRoot)
 
-    $reqs = @(Get-RtSuiteRequirements -RepoRoot $RepoRoot)
-    $missing = @($reqs | Where-Object { -not $_.Exists })
+    $missing = @($envs | ForEach-Object { $_.Requirements } | Where-Object { -not $_.Exists })
     if ($missing.Count -gt 0) {
         foreach ($m in $missing) {
             Write-Host "  [ERR] requirements file not found: $($m.Path)" -ForegroundColor Red
@@ -441,152 +755,82 @@ function Install-RtPythonEnv {
         return 1
     }
 
-    $candidates = $CandidatePaths
-    if ($null -eq $candidates) { $candidates = @(Get-RtPythonCandidates) }
-    $settings = (Read-RtRequirementsData).settings
-    $timeout  = [int]$settings.venv_probe_timeout_s.value
-    # A plain scriptblock, not a closure: it resolves Test-RtVenvCreates and $timeout
-    # through the call stack, which a closure's private module scope would not see.
-    $probe    = { param($p) Test-RtVenvCreates -Python $p -TimeoutSeconds $timeout }
-
-    # An environment that already exists is reused: pip runs from ITS interpreter, so no
-    # base interpreter is chosen and no scratch venv is built to prove one (code-review
-    # finding: a healthy .venv-skills used to be refused, or delayed by a probe of up to
-    # the configured timeout per candidate, just because PATH held no usable python).
-    $venvExists = Test-Path -LiteralPath $venvPython -PathType Leaf
-    if ($venvExists) {
-        $pick = [pscustomobject]@{ Python = $venvPython; Rejected = @(); Message = "" }
-        if (-not [string]::IsNullOrWhiteSpace($Python)) {
-            # Said, not swallowed: -Python names the interpreter an environment is BUILT from,
-            # and there is nothing to build here. Repairing a broken base means deleting the
-            # environment first, which this installer never does on its own.
-            Write-Host "  [!!]  -Python was ignored: $venv already exists and is reused as it is." -ForegroundColor Yellow
-            Write-Host "        To rebuild it from $Python, remove that folder yourself first." -ForegroundColor Yellow
-        }
-    } else {
-        $pick = Select-RtBasePython -Candidates $candidates -Explicit $Python `
-                                    -UserProfile $UserProfile -Probe $probe -SkipProbe:$Preview
-    }
-
-    $decision = Resolve-RtPythonEnvAction `
-        -VenvPath $venv `
-        -VenvExists $venvExists `
-        -BasePython $pick.Python
-
-    if ($decision.Action -eq "no-python") {
-        Write-Host "  [!!]  Python environment skipped:" -ForegroundColor Yellow
-        foreach ($line in ($pick.Message -split "`n")) { Write-Host "        $line" -ForegroundColor Yellow }
-        return 0
-    }
-    $base = $pick.Python
-
     $sameRoot = ([System.IO.Path]::GetFullPath($target).TrimEnd('\', '/') -ieq
                  [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\', '/'))
     if (-not $sameRoot) {
-        Write-Host "  [--]  this is a linked worktree: the environment belongs to the main clone ($target)"
+        Write-Host "  [--]  this is a linked worktree: the environments belong to the main clone ($target)"
     }
 
-    if ($Preview) {
-        Write-Host "  [--]  $($decision.Message)"
-        if ($venvExists) {
-            Write-Host "  [--]  no base interpreter needed: pip runs from the existing environment ($base)"
+    $toCreate = @($envs | Where-Object { -not (Test-Path -LiteralPath (Join-Path $target "$($_.Name)\Scripts\python.exe") -PathType Leaf) })
+    $base = ""
+    $skipNames = @()
+    if ($toCreate.Count -gt 0) {
+        $candidates = $CandidatePaths
+        if ($null -eq $candidates) { $candidates = @(Get-RtPythonCandidates) }
+        $settings = (Read-RtRequirementsData).settings
+        $timeout  = [int]$settings.venv_probe_timeout_s.value
+        if ($null -ne $ProcessRunner) {
+            # The probe goes through the runner too, so a test starts no process at all.
+            $probe = {
+                param($p)
+                $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-venv-probe-" + [guid]::NewGuid().ToString("N"))
+                try {
+                    $c = Invoke-RtProcess -Runner $ProcessRunner -Exe $p -Arguments @("-m", "venv", "--without-pip", $scratch)
+                    if ($c -ne 0) { return "python -m venv failed (exit $c)" }
+                    return ""
+                } finally { Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue }
+            }
         } else {
-            Write-Host "  [--]  base interpreter: $base (exists, current profile; the venv probe is NOT run in a preview)"
+            # A plain scriptblock, not a closure: it resolves Test-RtVenvCreates and $timeout
+            # through the call stack, which a closure's private module scope would not see.
+            $probe = { param($p) Test-RtVenvCreates -Python $p -TimeoutSeconds $timeout }
         }
-        foreach ($t in (Get-RtToolRequirements)) {
-            Write-Host "  [--]  Would install $($t.Spec)"
+        $pick = Select-RtBasePython -Candidates $candidates -Explicit $Python `
+                                    -UserProfile $UserProfile -Probe $probe -SkipProbe:$Preview
+        $base = $pick.Python
+        if ([string]::IsNullOrWhiteSpace($base)) {
+            $skipNames = @($toCreate | ForEach-Object { $_.Name })
+            Write-Host "  [!!]  Python environment skipped: $($skipNames -join ', ')" -ForegroundColor Yellow
+            foreach ($line in ($pick.Message -split "`n")) { Write-Host "        $line" -ForegroundColor Yellow }
         }
-        foreach ($r in $reqs) {
-            Write-Host "  [--]  Would install -r $($r.Path)$(if ($r.Exclude.Count) { '  (without: ' + ($r.Exclude -join ', ') + ')' })"
-            Write-Host "        $($r.Why)" -ForegroundColor DarkGray
-        }
-        Write-Host "  [--]  Would then run pip-audit on each file"
-        return 0
+    } elseif (-not [string]::IsNullOrWhiteSpace($Python)) {
+        # Said, not swallowed: -Python names the interpreter an environment is BUILT from,
+        # and there is nothing to build here. Repairing a broken base means deleting the
+        # environment first, which this installer never does on its own.
+        Write-Host "  [!!]  -Python was ignored: every environment already exists and is reused as it is." -ForegroundColor Yellow
+        Write-Host "        To rebuild one from $Python, remove its folder yourself first." -ForegroundColor Yellow
     }
 
-    if ($decision.Action -eq "create") {
-        Write-Host "  Creating $venv ..."
-        & $base -m venv $venv
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  [ERR] python -m venv failed (exit $LASTEXITCODE)" -ForegroundColor Red
-            return 1
-        }
-    } else {
-        Write-Host "  $($decision.Message)"
-    }
-
-    # R9: the environment is only real if its interpreter is on disk afterwards.
-    if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
-        Write-Host "  [ERR] no interpreter at $venvPython after creation" -ForegroundColor Red
-        return 1
-    }
-
-    # Files handed to pip and to pip-audit: the original when nothing is excluded,
-    # a filtered temp copy otherwise. Tracked so the finally block removes them.
-    $temps = @()
+    $worst = 0
     $applied = @()
+    $temps = @()
+    $auditPython = ""
     try {
-        $tools = @(Get-RtToolRequirements)
-        if ($tools.Count -gt 0) {
-            $toolFile = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-tools-" + [guid]::NewGuid().ToString("N") + ".txt")
-            [System.IO.File]::WriteAllLines($toolFile, [string[]]@($tools | ForEach-Object { $_.Spec }), (New-Object System.Text.UTF8Encoding($false)))
-            $temps += $toolFile
-            Write-Host "  pip install $(($tools | ForEach-Object { $_.Spec }) -join ' ')"
-            & $venvPython -m pip install --quiet --disable-pip-version-check -r $toolFile
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "  [ERR] install failed for the installer's own tools (exit $LASTEXITCODE)" -ForegroundColor Red
-                return 1
-            }
-            $applied += [pscustomobject]@{ Label = "tools"; File = $toolFile }
+        foreach ($e in $envs) {
+            if ($skipNames -contains $e.Name) { continue }
+            $r = Install-RtEnvironment -Environment $e -Target $target -Base $base -Preview:$Preview -ProcessRunner $ProcessRunner
+            $temps   += @($r.Temps)
+            $applied += @($r.Applied)
+            if ($r.Code -gt $worst) { $worst = $r.Code }
+            if (@($e.Tools | Where-Object { $_.Spec -match '^pip-audit' }).Count -gt 0 -and $r.Code -eq 0) { $auditPython = $r.Python }
         }
 
-        foreach ($r in $reqs) {
-            $file = $r.Full
-            if ($r.Exclude.Count -gt 0) {
-                $source = @(Get-Content -LiteralPath $r.Full -Encoding UTF8)
-                # The filtered copy lives in TEMP, where pip would resolve a relative `-r` or
-                # `-c` include against the wrong folder. No file does that today; if one ever
-                # does, say so rather than let pip fail with "No such file" (R8).
-                if (Test-RtRequirementHasInclude -Lines $source) {
-                    Write-Host "  [ERR] $($r.Path) uses an include (-r/-c) and also has packages to exclude; the filtered copy cannot resolve it" -ForegroundColor Red
-                    return 1
-                }
-                $lines = @(Get-RtFilteredRequirementLines -Lines $source -Exclude $r.Exclude)
-                $file = Join-Path ([System.IO.Path]::GetTempPath()) ("rt-req-" + [guid]::NewGuid().ToString("N") + ".txt")
-                [System.IO.File]::WriteAllLines($file, [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))
-                $temps += $file
+        if ($Preview) {
+            if ($applied.Count -eq 0 -and $skipNames.Count -lt $envs.Count) {
+                Write-Host "  [--]  Would then run pip-audit on each file, from the environment that carries it"
             }
-            Write-Host "  pip install -r $($r.Path)$(if ($r.Exclude.Count) { '  (without: ' + ($r.Exclude -join ', ') + ')' })"
-            & $venvPython -m pip install --quiet --disable-pip-version-check -r $file
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "  [ERR] install failed for $($r.Path) (exit $LASTEXITCODE)" -ForegroundColor Red
-                return 1
-            }
-            $applied += [pscustomobject]@{ Label = $r.Path; File = $file }
+            return 0
         }
 
-        # security.md: pip-audit runs on any requirements file this repository installs.
-        # Reported, never fatal - see the header.
-        foreach ($a in $applied) {
-            # Continue, not Stop: under setup.ps1's Stop preference, Windows PowerShell 5.1
-            # turns the first merged stderr line of a native command into a terminating
-            # error, and an audit finding would abort the install instead of being reported.
-            $savedPreference = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            & $venvPython -m pip_audit --strict -r $a.File 2>&1 | Out-Null
-            $auditExit = $LASTEXITCODE
-            $ErrorActionPreference = $savedPreference
-            if ($auditExit -eq 0) {
-                Write-Host "  [OK]  pip-audit clean: $($a.Label)" -ForegroundColor Green
+        if ($applied.Count -gt 0) {
+            if ([string]::IsNullOrWhiteSpace($auditPython)) {
+                Write-Host "  [!!]  pip-audit not run: the environment that carries it was not installed" -ForegroundColor Yellow
             } else {
-                Write-Host "  [!!]  pip-audit reported findings for $($a.Label) - run it yourself on that file" -ForegroundColor Yellow
-                Write-Host "          (minus any excluded package): $venvPython -m pip_audit --strict -r <file>"
+                Invoke-RtRequirementsAudit -AuditPython $auditPython -Applied $applied -ProcessRunner $ProcessRunner
             }
         }
     } finally {
         foreach ($t in $temps) { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }
     }
-
-    Write-Host "  [OK]  Environment ready: $venvPython" -ForegroundColor Green
-    return 0
+    return $worst
 }

@@ -31,8 +31,8 @@ ResearchTools\
     AGENTS.md  CONVENTIONS.md  CHANGELOG.md  IMPROVEMENTS.md
 ```
 
-Four things sit in the clone and are never committed: the Python environments `.venv-skills` and
-`.venv-docs`, the green stamp `.rt-green.json`, the undo copies in `.rt-undo/`, and the built site in
+Four things sit in the clone and are never committed: the three Python environments `.venv-skills`,
+`.venv-docs` and `.venv-pdf2md` (built in the main clone by `setup.ps1 -InstallPython`), the green stamp `.rt-green.json`, the undo copies in `.rt-undo/`, and the built site in
 `site/`. The generated code graph folder is also local, and it is reached only through the
 `local-writer` agent. The per-skill file lists that this chapter used to carry are gone: they went
 stale as skills were added, and each skill's own `SKILL.md` and the [skills chapter](06-skills.md)

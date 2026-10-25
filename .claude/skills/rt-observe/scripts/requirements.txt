@@ -2,6 +2,9 @@
 # The rest of the dashboard uses the standard library only.
 faster-whisper==1.2.1  # voice panel speech-to-text (stt_engine.py); pulls ctranslate2
 psycopg[binary]==3.3.6  # optional: rt_store.py, the PostgreSQL identity layer; only read when observe-config.json declares a postgres block
-nvidia-cublas-cu12==12.9.2.10  # CUDA DLLs that stt_engine.add_cuda_dll_dirs puts on PATH; without them ctranslate2 fails on the first GPU call
-nvidia-cudnn-cu12==9.26.0.51  # same
-nvidia-cuda-nvrtc-cu12==12.9.86  # same
+# The three CUDA packages below ship wheels for win_amd64 and manylinux (x86_64, aarch64) only,
+# with no macOS wheel (PyPI file lists read 2026-10-22; Windows sizes 553, 746 and 76 MB), so
+# each carries a platform marker and a macOS install skips them instead of failing.
+nvidia-cublas-cu12==12.9.2.10 ; sys_platform == "win32" or sys_platform == "linux"  # CUDA DLLs that stt_engine.add_cuda_dll_dirs puts on PATH; without them ctranslate2 fails on the first GPU call
+nvidia-cudnn-cu12==9.26.0.51 ; sys_platform == "win32" or sys_platform == "linux"  # same
+nvidia-cuda-nvrtc-cu12==12.9.86 ; sys_platform == "win32" or sys_platform == "linux"  # same

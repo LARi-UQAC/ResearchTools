@@ -99,8 +99,8 @@ brand palette in [assets/extra.css](assets/extra.css) — navy `#10243E`, teal `
 Nothing here duplicates the manual; every link points at the same file a Claude Code session
 or a plain GitHub browse would read.
 
-**Preview locally:** `.venv-docs\Scripts\python.exe -m mkdocs serve` (env: `pip install -r
-requirements-docs.txt` into `.venv-docs`), then open the printed `http://127.0.0.1:8000`.
+**Preview locally:** `.venv-docs\Scripts\python.exe -m mkdocs serve` (the environment comes from
+`.\setup.ps1 -InstallPython`), then open the printed `http://127.0.0.1:8000`.
 **Publish:** `mkdocs gh-deploy`, run by hand whenever the docs change — no GitHub Actions
 workflow, matching this repo's no-CI/CD policy — then enable Settings → Pages → Deploy from
 a branch → `gh-pages`. Links that reach outside `docs/` (to `README.md`, `Architecture.md`,

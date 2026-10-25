@@ -32,12 +32,12 @@ and whether the login shortcut exists at all.
 | | `setup.ps1` | `install-junctions.ps1` | `install.ps1` |
 |---|---|---|---|
 | Job | Detect this machine's paths (Git Bash, Node, Obsidian) and fill the gaps in the GLOBAL Claude Code configuration from the two templates | Link the repo into `~/.claude` so Claude Code loads agents/skills/rules/commands in every workspace | Generate mirrors for other coders: GitHub Copilot, OpenCode, Continue, Aider, `AGENTS.md` readers (`-Personal` adds the user-level Copilot install) |
-| Output | Nothing inside the repository. Additively: `~/.claude/CLAUDE.md` (whole file only when absent), `~/.claude/settings.json` (only the hook entries the template declares and the live file lacks), `OBSIDIAN_VAULT` at USER scope (only when unset), and `.venv-skills/` in the clone with `-InstallPython` | Links in `C:\Users\<you>\.claude\` | Generated files committed in the repo (`.github\`, `.opencode\`, `.continue\`, `CONVENTIONS.md`, `AGENTS.md`) + optional user copies |
+| Output | Nothing inside the repository. Additively: `~/.claude/CLAUDE.md` (whole file only when absent), `~/.claude/settings.json` (only the hook entries the template declares and the live file lacks), `OBSIDIAN_VAULT` at USER scope (only when unset), and `.venv-skills/`, `.venv-docs/` and `.venv-pdf2md/` in the main clone with `-InstallPython` | Links in `C:\Users\<you>\.claude\` | Generated files committed in the repo (`.github\`, `.opencode\`, `.continue\`, `CONVENTIONS.md`, `AGENTS.md`) + optional user copies |
 | When to run | Once after clone (or when machine paths change) | Once after clone; re-run when an agent or skill is ADDED (or a hardlink detached after a pull) | After every agent/command/rule EDIT, then commit the output |
 | Privilege | none | symlinks want Developer Mode (automatic hardlink fallback) | none |
 | Interactive | yes (asks vault path, confirms) - `-NonInteractive` refuses with exit 2 instead of assuming a default, and `-Preview` writes nothing at all | no | no |
 | Via `setup.ps1` | - | `-InstallJunctions` | `-InstallTools` |
-| Other switches | `-InstallDaemon` (vault daemon at login), `-InstallPython` (`.venv-skills` for the offline suite), `-UpdateHooks` (replace a changed hook entry of `~/.claude/settings.json`), `-KeepHooks <names>` (leave a local hook variant as it is), `-Update` (the whole update in one command, see [Update an existing installation](#update-an-existing-installation)) | `-Sync` (copy the files a green offline-suite run has proven into `~/.claude`), `-WhatIf` | - |
+| Other switches | `-InstallDaemon` (vault daemon at login), `-InstallPython` (the three Python environments, see Step 5), `-UpdateHooks` (replace a changed hook entry of `~/.claude/settings.json`), `-KeepHooks <names>` (leave a local hook variant as it is), `-Update` (the whole update in one command, see [Update an existing installation](#update-an-existing-installation)) | `-Sync` (copy the files a green offline-suite run has proven into `~/.claude`), `-WhatIf` | - |
 
 ```powershell
 .\setup.ps1 -All -Personal   # new machine: config + Claude links + all tool mirrors
@@ -79,7 +79,7 @@ job.
 | [Git for Windows](https://git-scm.com/download/win) (includes Git Bash) | Hooks that use `bash` shell |
 | [Node.js](https://nodejs.org/) | Caveman-mode hooks (`caveman-activate.js`, etc.) |
 | Python 3.x | Scopus skill scripts + security hooks (`betterleaks`, `pip-audit`, `prompt-injection-defender`) |
-| Python libraries (`pip`) | Every library each skill imports, with its version, the requirements file that declares it and whether `setup.ps1 -InstallPython` installs it: [chapter 02, Python environments](02-profiles.md#python-environments-every-library) |
+| Python libraries (`pip`) | Every library each skill imports, with its pin, the requirements file that declares it and the environment `setup.ps1 -InstallPython` puts it in: [chapter 02, Python environments](02-profiles.md#python-environments-every-library) |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
 | `npm install pptxgenjs` *(optional)* | `paper2talk` fallback for a PowerPoint deck with no gabarit at all. Set `NODE_PATH` when building outside the tree that holds the install |
 | PowerPoint (Office 16+) **or** LibreOffice, plus Poppler `pdftoppm` | `paper2talk` render loop: deck → PDF → page images. On Windows the working path is PowerPoint COM `SaveAs(..., 32)`; the `document-skills` `soffice.py` wrapper fails here with `AF_UNIX`. Poppler ships with MiKTeX |
@@ -199,7 +199,7 @@ current default (`engineering`).
 
 Every target and the limits that stub or trim a mirror are in [chapter 09](09-harnesses.md). The agent side is in [Using the agents outside Claude Code](05-agents.md#using-the-agents-outside-claude-code).
 
-## Step 5 — Python environment for the offline test suite (optional)
+## Step 5 — Python environments (optional)
 
 `scripts/test/run-offline-tests.ps1`, the dashboard launchers, the vault drill and the other
 launchers all take their Python from `.venv-skills` of the clone, then of the **main clone**
@@ -215,38 +215,48 @@ Without the environment several suites cannot import what they need and are repo
 **NOT RUN** — which is honest, and means the suite is not actually proving what it looks like
 it is proving.
 
+One command builds the three environments of the repository, in the order of the data file
+`scripts/lib/rt-python-requirements.json`:
+
+| Environment | For | Holds |
+|---|---|---|
+| `.venv-skills` | the skills, the hooks' tests, the offline suite and the launchers | fourteen skill requirements files (every one except `pdf2md`'s) plus `pip-audit` |
+| `.venv-docs` | building this site with MkDocs | `requirements-docs.txt` |
+| `.venv-pdf2md` | the `pdf2md` conversion (`mineru`) | the `pdf2md` requirements file, kept apart because `mineru` needs an older `pillow` |
+
 ```powershell
-.\setup.ps1 -InstallPython            # creates .venv-skills, installs, then pip-audits
+.\setup.ps1 -InstallPython            # creates or extends the three environments, then pip-audits every file
 .\setup.ps1 -InstallPython -Preview   # choose the interpreter, say what it would install, write nothing
 .\setup.ps1 -InstallPython -Python "C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe"
 ```
 
-The environment is always built in the main clone, even when you run the command from a
-worktree. The base interpreter is chosen, not assumed: the switch tries `-Python`, then the
-`python` entries on `PATH` and the py launcher, and keeps the first one that belongs to your
-own profile and can really create a virtual environment (it builds a scratch one to check).
-If none qualifies it stops and names each candidate with the reason, for example "belongs to
-another account" or "python -m venv failed".
+The environments are always built in the main clone, even when you run the command from a
+worktree. An environment that already exists is reused and its requirements are installed into
+it. The base interpreter is chosen only when one of them has to be created, and it is chosen, not
+assumed: the switch tries `-Python`, then the `python` entries on `PATH` and the py launcher,
+and keeps the first one that belongs to your own profile and can really create a virtual
+environment (it builds a scratch one to check). If none qualifies it stops and names each
+candidate with the reason, for example "belongs to another account" or "python -m venv failed".
+A requirements file named in the data file that does not exist stops the run before anything is
+installed. After the install, `pip-audit` (installed in `.venv-skills`) audits every
+requirements file it applied.
 
-The complete list of libraries, for this environment and for `.venv-docs`, is in
-[chapter 02](02-profiles.md#python-environments-every-library). It installs what the repository's skills import, listed in
-`scripts/lib/rt-python-requirements.json`: the offline-suite packages (`paper2talk`,
-`recommendation-letter`), the `scopus` skill (`requests`, `playwright`, the reviewers' clients)
-and the `extract-statistic` skill without `docling`, plus `pip-audit`. The Chromium binary for
-Playwright stays a separate `playwright install chromium`, and `docling` and the
-`geolocalisation` dependencies stay manual on purpose: `docling` alone pulls `torch`, and a CVE
-in a skill you never run should not block the environment your tests need.
+`docling`, part of `extract-statistic`, is installed too and pulls `torch` (a dry run of
+2026-10-22 counted 105 packages, about 339 MB). The three NVIDIA CUDA packages of `rt-observe` carry a
+platform marker, so a macOS install skips them. The Chromium binary for Playwright stays a
+separate `playwright install chromium`. The complete list of libraries, per environment, is in
+[chapter 02](02-profiles.md#python-environments-every-library).
 
-By hand, if you would rather not use the switch:
+By hand, as an alternative to the switch, for one environment and one requirements file:
 
 ```powershell
-python -m venv .venv-skills
-.\.venv-skills\Scripts\python.exe -m pip install -r .claude\skills\paper2talk\scripts\requirements.txt
-.\.venv-skills\Scripts\python.exe -m pip install -r .claude\skills\recommendation-letter\scripts\requirements.txt
-.\.venv-skills\Scripts\python.exe -m pip_audit --strict -r .claude\skills\paper2talk\scripts\requirements.txt
+python -m venv .venv-docs
+.\.venv-docs\Scripts\python.exe -m pip install -r requirements-docs.txt
+.\.venv-skills\Scripts\python.exe -m pip_audit --strict -r requirements-docs.txt
 ```
 
-The directory name matters: name it anything else and the launchers will not look there.
+The directory names matter: name an environment anything else and the launchers will not look
+there.
 
 **Never link `.venv-skills` into a worktree** (junction or symbolic link). Removing the worktree
 with `git worktree remove` (no `--force` needed when git ignores the link, as it does `.venv*/`) follows the link and deletes the real environment
@@ -294,7 +304,7 @@ the update itself (a preview, then the real one). The last line is an optional p
 
 ```powershell
 git pull --ff-only origin main        # get the new version
-.\setup.ps1 -InstallPython            # only if .venv-skills is missing, or you want to run the offline suite
+.\setup.ps1 -InstallPython            # builds or extends .venv-skills, .venv-docs and .venv-pdf2md after a requirements change
 .\setup.ps1 -Update -Preview          # shows every step and writes nothing to ~/.claude
 .\setup.ps1 -Update                   # does the update, and asks the three questions below first
 .\scripts\test\run-all-checks.ps1     # optional proof: the offline suite and the verify-*.ps1 of scripts/test (about 15 minutes)

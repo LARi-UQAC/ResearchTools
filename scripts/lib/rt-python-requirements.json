@@ -1,31 +1,111 @@
 {
-  "_comment": "Data for setup.ps1 -InstallPython (R6). Read by scripts/lib/rt-python-env.ps1. A path that does not exist is reported by name, never skipped (R3). 'exclude' names packages dropped from a requirements file before pip sees it: the file itself is never edited, because the skill that owns it still wants the line.",
-  "requirements": [
+  "_comment": "Data for setup.ps1 -InstallPython (R6), read by scripts/lib/rt-python-env.ps1 and scripts/docs/python_libs.py. One list for every Python environment of the repository: each entry of 'environments' is built in the main clone, in file order, with all its requirements files in one pip call. pip-audit is a tool of the first environment only and audits the requirements files of all of them, so the other environments never gain pip-audit's dependencies. A path that does not exist is reported by name, never skipped (R3). An 'exclude' entry names a package the installer drops from a requirements file before pip sees it: the file itself is never edited, because the skill that owns it still wants the line.",
+  "environments": [
     {
-      "path": ".claude/skills/paper2talk/scripts/requirements.txt",
-      "why": "paper2talk: test_to_a4 (pypdf), the Jinja render path (jinja2), test_talk_pptx (python-pptx), OOXML reads (defusedxml)",
-      "exclude": []
+      "name": ".venv-skills",
+      "why": "The interpreter of the offline suite, the dashboard and every skill script the repository runs.",
+      "requirements": [
+        {
+          "path": ".claude/skills/paper2talk/scripts/requirements.txt",
+          "why": "paper2talk: test_to_a4 (pypdf), the Jinja render path (jinja2), test_talk_pptx (python-pptx), OOXML reads (defusedxml)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/recommendation-letter/scripts/requirements.txt",
+          "why": "recommendation-letter: test_letter_identity (PyYAML, safe_load over profiles/<active>.yaml)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/scopus/scripts/requirements.txt",
+          "why": "scopus: requests (scopus_api, download_pdf), google-genai and openai (reviewers), curl_cffi (publisher tier), playwright (browser_fetch tier 8; the Chromium binary is a separate 'playwright install chromium')",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/extract-statistic/scripts/requirements.txt",
+          "why": "extract-statistic: pymupdf and pymupdf4llm (extract_text.py), markitdown and docling (Markdown backends, docling pulls torch, D4), psycopg and pgvector (corpus_index.py)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/drawio2tikz/scripts/requirements.txt",
+          "why": "drawio2tikz: defusedxml (drawio2tikz.py parses untrusted .drawio XML)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/form-service/scripts/requirements.txt",
+          "why": "form-service: requests (pdf_ingest.py), pypdf (field_map.py, fill_form.py), pyHanko and cryptography (sign_form.py)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/geolocalisation/scripts/requirements.txt",
+          "why": "geolocalisation: matplotlib and pillow (generate_geomap.py, the PNG map)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/loop-engineer/requirements.txt",
+          "why": "loop-engineer: claude-agent-sdk (loop_engineer.py live loop), tiktoken (token_count.py --method tiktoken)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/narrative-cv/scripts/requirements.txt",
+          "why": "narrative-cv: PyYAML (cv_inventory.py, cv_common.py), pypdf (cv_build.py page-budget check)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/opt-local-stt-vram/scripts/requirements.txt",
+          "why": "opt-local-stt-vram: faster-whisper (engines/faster_whisper_engine.py)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/professor-expertise-finder/scripts/requirements.txt",
+          "why": "professor-expertise-finder: openpyxl (file_search.py and exclusions.py, .xlsx input)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/rt-observe/scripts/requirements.txt",
+          "why": "rt-observe: faster-whisper (stt_engine.py, voice panel), psycopg (rt_store.py, optional), the three nvidia CUDA DLL packages stt_engine.add_cuda_dll_dirs puts on PATH (D5)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/word2latex/scripts/requirements.txt",
+          "why": "word2latex: pillow and numpy (docx_inspect.py image comparison)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/wp-portfolio-sync/scripts/requirements.txt",
+          "why": "wp-portfolio-sync: PyYAML (mapping and extras files), requests (wp_common.py WpClient), defusedxml (cihr_cv.py, parse_cv.py)",
+          "exclude": []
+        }
+      ],
+      "tools": [
+        {
+          "spec": "pip-audit==2.10.1",
+          "why": "security.md: pip-audit runs on every requirements file this installer applies. Pinned to the version found in the working environment on 2026-10-16; the install step used to call it without ever installing it."
+        }
+      ]
     },
     {
-      "path": ".claude/skills/recommendation-letter/scripts/requirements.txt",
-      "why": "recommendation-letter: test_letter_identity (PyYAML, safe_load over profiles/<active>.yaml)",
-      "exclude": []
+      "name": ".venv-docs",
+      "why": "The interpreter that builds the MkDocs site (mkdocs build --strict, mkdocs gh-deploy).",
+      "requirements": [
+        {
+          "path": "requirements-docs.txt",
+          "why": "mkdocs, mkdocs-material and the build hook scripts/docs/mkdocs_hooks.py, pinned with their transitives (D3)",
+          "exclude": []
+        }
+      ],
+      "tools": []
     },
     {
-      "path": ".claude/skills/scopus/scripts/requirements.txt",
-      "why": "scopus: requests (scopus_api, download_pdf), google-genai and openai (reviewers), curl_cffi (publisher tier), playwright (browser_fetch tier 8; the Chromium binary is a separate 'playwright install chromium')",
-      "exclude": []
-    },
-    {
-      "path": ".claude/skills/extract-statistic/scripts/requirements.txt",
-      "why": "extract-statistic: pymupdf and pymupdf4llm (extract_text.py), markitdown, psycopg and pgvector (corpus_index.py)",
-      "exclude": ["docling"]
-    }
-  ],
-  "tools": [
-    {
-      "spec": "pip-audit==2.10.1",
-      "why": "security.md: pip-audit runs on every requirements file this installer applies. Pinned to the version found in the working environment on 2026-10-16; the install step used to call it without ever installing it."
+      "name": ".venv-pdf2md",
+      "why": "The interpreter that runs pdf2md's conversion (mineru, mineru-llama-cpp). Kept apart by the owner on 2026-10-22: mineru 4.0.11 needs gradio, and every gradio up to 6.30.0 caps pillow below 13.0.0, the version that clears pillow 12.3.0's advisories in .venv-skills.",
+      "requirements": [
+        {
+          "path": ".claude/skills/pdf2md/scripts/requirements.txt",
+          "why": "pdf2md: mineru and mineru-llama-cpp (the conversion engine), PyYAML, PyMuPDF (the second PDF reader of validate, repair and fix)",
+          "exclude": []
+        }
+      ],
+      "tools": []
     }
   ],
   "settings": {

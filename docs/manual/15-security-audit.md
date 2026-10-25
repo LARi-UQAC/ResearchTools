@@ -60,14 +60,18 @@ and `pip-audit` reports no known vulnerability for either file.
 | Finding | Where | Measured |
 |---|---|---|
 | `LP3`, no permission declaration in the skill frontmatter | `extract-contributions`, `extract-paper-idea`, `form-service`, `latex-hygiene`, `obsidian-cli`, `professor-expertise-finder`, `recommendation-letter`, `rt-observe`, `wp-portfolio-sync` | the June scan fixed this for six older skills by adding `permissions:` and `allowed-tools:`, and these nine were added later |
-| Advisories on `pypdf` 6.19.0, fixed in 6.21.1 | `form-service`, `narrative-cv`, `paper2talk` | `pip-audit` on 2026-10-22 |
-| Advisories on `pillow` 12.3.0, fixed in 13.0.0 | `extract-statistic`, `pdf2md` | `pip-audit` on 2026-10-22 |
-| Advisories on `docling` and `docling-slim` 2.103.0 | `extract-statistic` | `pip-audit` on 2026-10-22 |
-| `SC1`, unpinned `claude-agent-sdk>=0.1.0` | `loop-engineer` | the requirements file itself asks for an exact pin after the first install |
+| Advisories on `pillow` 12.3.0 (37 on 2026-10-24), fixed in 13.0.0 | `pdf2md`, in its own environment `.venv-pdf2md` | accepted by the owner (decision D9, 2026-10-22): `mineru` needs `gradio`, and every `gradio` up to 6.30.0 caps `pillow` below 13, so this environment keeps `pillow` 12 and `pip-audit` reports it at every install |
 
-The dependency advisories appeared after the last pins (2026-10-16), which is why a pinned and
-clean requirements file goes stale without any edit. Raising a pin is a change to code that needs the
-offline suite, so it is a separate change from this one.
+**Fixed since, in the change that split the Python environments (issue #92).** The dependency
+advisories appeared after the last pins (2026-10-16), which is why a pinned and clean requirements
+file goes stale without any edit.
+
+| Finding | Where | Fix |
+|---|---|---|
+| Advisories on `pypdf` 6.19.0, then three more on 6.21.1 (2026-10-24) | `form-service`, `narrative-cv`, `paper2talk`, `deploy/form-service` | pinned 6.21.2, `pip-audit` clean on 2026-10-24 |
+| Advisories on `pillow` 12.3.0 | `extract-statistic`, `geolocalisation`, `word2latex` (`.venv-skills`) | pinned 13.0.0 |
+| Advisories on `docling` and `docling-slim` 2.103.0 | `extract-statistic` | pinned 2.142.0, the first release whose `docling-slim` allows `pillow` 13 |
+| `SC1`, unpinned `claude-agent-sdk>=0.1.0` | `loop-engineer` | pinned exactly, 0.2.172 |
 
 The June scan found the same kinds of false positive and its true positives were corrected then:
 the `permissions:` declarations, and exact `==` pins in the `scopus` and `extract-statistic`

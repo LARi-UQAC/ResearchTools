@@ -65,7 +65,7 @@ $stampBefore = if ($venvBefore) { (Get-Item $RealVenv).LastWriteTimeUtc.Ticks } 
 # ------------------------------------------------------- the requirements list ---
 # R14: a file this repository claims to install has to exist. The list is the one
 # place the switch's scope is stated, so a stale entry here is a silent no-op there.
-$reqs = @(Get-RtSuiteRequirements -RepoRoot $RepoRoot)
+$reqs = @(@(Get-RtEnvironments -RepoRoot $RepoRoot | Where-Object { $_.Name -eq ".venv-skills" })[0].Requirements)
 Check "the list is not empty"                    ($reqs.Count -ge 1)
 Check "every requirements file exists"           (@($reqs | Where-Object { -not $_.Exists }).Count -eq 0)
 Check "every entry says which suite needs it"    (@($reqs | Where-Object { [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0)
@@ -75,11 +75,31 @@ Check "recommendation-letter is covered"         (@($reqs | Where-Object { $_.Pa
 Check "scopus is covered"                        (@($reqs | Where-Object { $_.Path -match 'scopus' }).Count -eq 1)
 Check "extract-statistic is covered"             (@($reqs | Where-Object { $_.Path -match 'extract-statistic' }).Count -eq 1)
 $stat = @($reqs | Where-Object { $_.Path -match 'extract-statistic' })[0]
-Check "extract-statistic drops docling (torch)"  ($stat.Exclude -contains "docling")
+# D4 (owner, 2026-10-22): docling is installed, torch tree included, so nothing is excluded.
+Check "the extract-statistic entry excludes nothing (docling is installed)" ($stat.Exclude.Count -eq 0)
 $scopus = @($reqs | Where-Object { $_.Path -match 'scopus' })[0]
 Check "scopus excludes nothing"                  ($scopus.Exclude.Count -eq 0)
-# Still deliberately out of scope.
-Check "geolocalisation is not installed"         (@($reqs | Where-Object { $_.Path -match 'geolocalisation' }).Count -eq 0)
+# 2026-10-22: every requirements.txt under .claude\skills is named in the data file, so a file
+# added to a skill later and forgotten here is reported by path.
+function Get-RtUnregisteredRequirements([string]$Root, [object[]]$Environments) {
+    $named = @{}
+    foreach ($e in $Environments) { foreach ($r in @($e.Requirements)) { $named[($r.Path -replace '\\', '/').ToLowerInvariant()] = 1 } }
+    $skills = Join-Path $Root ".claude\skills"
+    if (-not (Test-Path $skills)) { return @() }
+    foreach ($f in @(Get-ChildItem $skills -Recurse -Filter "requirements.txt" -File)) {
+        $rel = $f.FullName.Substring($Root.TrimEnd('\').Length + 1) -replace '\\', '/'
+        if (-not $named.ContainsKey($rel.ToLowerInvariant())) { $rel }
+    }
+}
+$unregistered = @(Get-RtUnregisteredRequirements $RepoRoot @(Get-RtEnvironments -RepoRoot $RepoRoot))
+Check "every requirements.txt under .claude/skills is named in the data file" ($unregistered.Count -eq 0)
+foreach ($u in $unregistered) { Write-Host "        not in the data file: $u" -ForegroundColor DarkGray }
+$regFix = Join-Path $Fake "registry-root"
+$extraReq = Join-Path $regFix ".claude\skills\zeta-fictitious\scripts\requirements.txt"
+New-Item -ItemType Directory -Path (Split-Path $extraReq -Parent) -Force | Out-Null
+Set-Content $extraReq "acme-widget==1.0" -Encoding ASCII
+$regFound = @(Get-RtUnregisteredRequirements $regFix @(Get-RtEnvironments -RepoRoot $regFix))
+Check "(control) an unregistered requirements file is reported by its path" ($regFound -contains ".claude/skills/zeta-fictitious/scripts/requirements.txt")
 
 # pypdf is pinned in four requirements files. Measured 2026-10-16 by a pip --dry-run: running
 # -InstallPython would have DOWNGRADED the installed pypdf 6.19.0 to the paper2talk pin
@@ -95,17 +115,112 @@ Check "every file that pins pypdf pins it exactly"            (@($pypdfPins | Wh
 Check "the four pypdf pins agree on one version"              (@($pypdfPins | Select-Object -ExpandProperty Version -Unique).Count -eq 1)
 Check "(control) the agreement check can see a stale pin"     (@(@("6.19.0", "6.15.0") | Select-Object -Unique).Count -eq 2)
 
+# 2026-10-22: one pin per library across EVERY requirements file, not pypdf alone. Reads the
+# files the data file names for both environments, every requirements.txt under
+# .claude\skills (a file not yet in the data file still pins a library a skill runs with),
+# and deploy\form-service\requirements.txt.
+function Get-RtPinnedVersions([string]$Path) {
+    foreach ($line in @(Get-Content -LiteralPath $Path -Encoding UTF8)) {
+        $m = [regex]::Match($line, '^\s*([A-Za-z0-9][A-Za-z0-9._-]*)(\[[^\]]*\])?\s*==\s*([^\s;#]+)')
+        if ($m.Success) {
+            [pscustomobject]@{ Name = ($m.Groups[1].Value.ToLowerInvariant() -replace '[-_.]+', '-'); Version = $m.Groups[3].Value; File = $Path }
+        }
+    }
+}
+function Get-RtPinConflicts([string[]]$Files) {
+    $pins = @(foreach ($f in $Files) { Get-RtPinnedVersions $f })
+    foreach ($g in @($pins | Group-Object Name)) {
+        $versions = @($g.Group | Select-Object -ExpandProperty Version -Unique)
+        if ($versions.Count -gt 1) {
+            [pscustomobject]@{ Name = $g.Name; Detail = (($g.Group | ForEach-Object { "$($_.Version) in $($_.File)" }) -join "; ") }
+        }
+    }
+}
+$pinFiles = @(@(Get-RtEnvironments -RepoRoot $RepoRoot) | ForEach-Object { $_.Requirements } | ForEach-Object { $_.Full })
+$pinFiles += @(Get-ChildItem (Join-Path $RepoRoot ".claude\skills") -Recurse -Filter "requirements.txt" -File | ForEach-Object { $_.FullName })
+$pinFiles += (Join-Path $RepoRoot "deploy\form-service\requirements.txt")
+$pinFiles = @($pinFiles | Where-Object { Test-Path -LiteralPath $_ } | Sort-Object -Unique)
+$conflicts = @(Get-RtPinConflicts $pinFiles)
+Check "no library is pinned to two different versions across the requirements files" ($conflicts.Count -eq 0)
+foreach ($c in $conflicts) { Write-Host "        $($c.Name): $($c.Detail)" -ForegroundColor DarkGray }
+$pinFix = Join-Path $Fake "pin-fixtures"
+New-Item -ItemType Directory -Path $pinFix -Force | Out-Null
+Set-Content (Join-Path $pinFix "a.txt") "acme_widget==1.0.0`nshared==2.0" -Encoding ASCII
+Set-Content (Join-Path $pinFix "b.txt") "Acme-Widget==1.1.0 ; sys_platform == 'win32'`nshared==2.0" -Encoding ASCII
+$fixConflicts = @(Get-RtPinConflicts @((Join-Path $pinFix "a.txt"), (Join-Path $pinFix "b.txt")))
+Check "(control) two files pinning one library differently are reported, naming both files" ($fixConflicts.Count -eq 1 -and $fixConflicts[0].Name -eq "acme-widget" -and $fixConflicts[0].Detail -match "a\.txt" -and $fixConflicts[0].Detail -match "b\.txt")
+
+# D5 (owner, 2026-10-22): the nvidia CUDA packages belong in .venv-skills, but PyPI ships them
+# for Windows and Linux only (file lists read 2026-10-22), so each line carries a platform marker.
+function Get-RtUnmarkedNvidia([string[]]$Lines) {
+    @($Lines | Where-Object { $_ -match '^\s*nvidia-[A-Za-z0-9._-]+' -and $_ -notmatch ';\s*sys_platform' })
+}
+$rtObserve = Get-Content (Join-Path $RepoRoot ".claude\skills\rt-observe\scripts\requirements.txt") -Encoding UTF8
+Check "the three nvidia lines carry a platform marker" (@($rtObserve | Where-Object { $_ -match '^\s*nvidia-' }).Count -eq 3 -and @(Get-RtUnmarkedNvidia $rtObserve).Count -eq 0)
+Check "(control) an nvidia line without a marker is found" (@(Get-RtUnmarkedNvidia @("nvidia-cublas-cu12==1.0  # same", "requests==2.0")).Count -eq 1)
+
+# D3 (owner, 2026-10-22): requirements-docs.txt alone describes .venv-docs, every line pinned
+# exactly, and without the eleven lines pip-audit leaves behind (required by no installed package).
+$docsLines = @(Get-Content (Join-Path $RepoRoot "requirements-docs.txt") -Encoding UTF8 | Where-Object { $_ -notmatch '^\s*(#|$)' })
+Check "requirements-docs.txt pins every line with an exact version" ($docsLines.Count -ge 1 -and @($docsLines | Where-Object { $_ -notmatch '^\s*[A-Za-z0-9][A-Za-z0-9._\[\]-]*==\S+' }).Count -eq 0)
+$orphans = @("cachecontrol", "defusedxml", "filelock", "markdown-it-py", "mdurl", "msgpack", "pyparsing", "rich", "sortedcontainers", "tomli", "tomli-w")
+$docsNames = @($docsLines | ForEach-Object { ([regex]::Match($_, '^\s*([A-Za-z0-9][A-Za-z0-9._-]*)').Groups[1].Value.ToLowerInvariant() -replace '[-_.]+', '-') })
+Check "requirements-docs.txt holds none of the eleven lines pip-audit leaves behind" (@($docsNames | Where-Object { $orphans -contains $_ }).Count -eq 0)
+foreach ($o in @($docsNames | Where-Object { $orphans -contains $_ })) { Write-Host "        orphan still listed: $o" -ForegroundColor DarkGray }
+
 # Negative control: the Exists flag has to be able to say no, or the check above
 # passes on a list of files that were never looked for.
-$ghost = @(Get-RtSuiteRequirements -RepoRoot (Join-Path $Fake "no-such-repo"))
+$ghost = @(Get-RtEnvironments -RepoRoot (Join-Path $Fake "no-such-repo") | ForEach-Object { $_.Requirements })
 Check "Exists can report false"                  (@($ghost | Where-Object { $_.Exists }).Count -eq 0)
 
-$tools = @(Get-RtToolRequirements)
+$tools = @(@(Get-RtEnvironments -RepoRoot $RepoRoot | Where-Object { $_.Name -eq ".venv-skills" })[0].Tools)
 Check "pip-audit is installed by the installer"  (@($tools | Where-Object { $_.Spec -match '^pip-audit==' }).Count -eq 1)
+
+# ------------------------------------------------------- the two environments ---
+# 2026-10-22 (D1, D2): one data file declares .venv-skills and .venv-docs. Each rule has a
+# failure case against a temp copy of the JSON passed with -Path (R20).
+$envs = @()
+try { $envs = @(Get-RtEnvironments -RepoRoot $RepoRoot) } catch { Write-Host "  (loader threw: $($_.Exception.Message))" -ForegroundColor Red }
+Check "the data file declares three environments: .venv-skills, .venv-docs, .venv-pdf2md" ($envs.Count -eq 3 -and $envs[0].Name -eq ".venv-skills" -and $envs[1].Name -eq ".venv-docs" -and $envs[2].Name -eq ".venv-pdf2md")
+# D9 (owner, 2026-10-22): mineru needs gradio, every gradio caps pillow below 13.0.0, so pdf2md
+# lives in its own environment and .venv-skills can carry the fixed pillow.
+$pdfEnv = @($envs | Where-Object { $_.Name -eq ".venv-pdf2md" })
+Check "the .venv-pdf2md environment lists exactly the pdf2md file and no tool" ($pdfEnv.Count -eq 1 -and @($pdfEnv[0].Requirements).Count -eq 1 -and $pdfEnv[0].Requirements[0].Path -eq ".claude/skills/pdf2md/scripts/requirements.txt" -and @($pdfEnv[0].Tools).Count -eq 0)
+# pdf2md_validate imports extract-statistic's extract_text, whose reader is pymupdf4llm; extract-statistic's
+# file is not installed in .venv-pdf2md, so the pdf2md file has to carry it (code review, 2026-10-24).
+$pdfReq = Get-Content (Join-Path $RepoRoot ".claude\skills\pdf2md\scripts\requirements.txt") -Encoding UTF8
+Check "the pdf2md file pins pymupdf4llm, which extract_text needs in .venv-pdf2md" (@($pdfReq | Where-Object { $_ -match '^\s*pymupdf4llm==' }).Count -eq 1)
+Check "the pdf2md file is not in .venv-skills" (@(@($envs | Where-Object { $_.Name -eq ".venv-skills" }) | ForEach-Object { $_.Requirements } | Where-Object { $_.Path -match 'pdf2md' }).Count -eq 0)
+Check "every environment has a why and every requirement a path and a why" ($envs.Count -ge 1 -and @($envs | Where-Object { [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0 -and @($envs | ForEach-Object { $_.Requirements } | Where-Object { [string]::IsNullOrWhiteSpace($_.Path) -or [string]::IsNullOrWhiteSpace($_.Why) }).Count -eq 0)
+$docsEnv  = @($envs | Where-Object { $_.Name -eq ".venv-docs" })
+Check "the .venv-docs environment lists exactly requirements-docs.txt and no tool" ($docsEnv.Count -eq 1 -and @($docsEnv[0].Requirements).Count -eq 1 -and $docsEnv[0].Requirements[0].Path -eq "requirements-docs.txt" -and @($docsEnv[0].Tools).Count -eq 0)
+$skillEnv = @($envs | Where-Object { $_.Name -eq ".venv-skills" })
+Check "the .venv-skills environment carries pip-audit as its tool" ($skillEnv.Count -eq 1 -and @($skillEnv[0].Tools | Where-Object { $_.Spec -match '^pip-audit==' }).Count -eq 1)
+
+New-Item -ItemType Directory -Path $Fake -Force | Out-Null
+$realData = Get-Content (Join-Path $RepoRoot "scripts\lib\rt-python-requirements.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+function Test-BadData([string]$label, [scriptblock]$mutate, [string]$key) {
+    $copy = $script:realData | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+    try { & $mutate $copy } catch { Check "a data file with $label can be built (schema present)" $false; return }
+    $path = Join-Path $script:Fake "bad-$label.json"
+    [System.IO.File]::WriteAllText($path, ($copy | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
+    $msg = ""
+    try { $null = @(Get-RtEnvironments -RepoRoot $script:RepoRoot -Path $path) } catch { $msg = $_.Exception.Message }
+    Check "a data file with $label is refused, naming the file and $key" ($msg -ne "" -and $msg -match [regex]::Escape("bad-$label.json") -and $msg -match [regex]::Escape($key))
+}
+Test-BadData "no-environments"  { param($d) $d.PSObject.Properties.Remove("environments") } "environments"
+Test-BadData "no-name"          { param($d) $d.environments[1].PSObject.Properties.Remove("name") } "environments[1].name"
+Test-BadData "duplicate-name"   { param($d) $d.environments[1].name = $d.environments[0].name } "environments[1].name"
+Test-BadData "empty-requirements" { param($d) $d.environments[1].requirements = @() } "environments[1].requirements"
+# R24: the name becomes a folder of the main clone, so only a bare folder name is accepted.
+Test-BadData "parent-name"      { param($d) $d.environments[1].name = "..\shared-venv" } "environments[1].name"
+Test-BadData "absolute-name"    { param($d) $d.environments[1].name = "C:\Python\venv" } "environments[1].name"
+Test-BadData "dot-dot-name"     { param($d) $d.environments[1].name = ".." } "environments[1].name"
 
 # ------------------------------------------------------ the docling exclusion ---
 $real = Get-Content (Join-Path $RepoRoot ".claude\skills\extract-statistic\scripts\requirements.txt") -Encoding UTF8
-$kept = @(Get-RtFilteredRequirementLines -Lines $real -Exclude $stat.Exclude)
+# The exclude key stays supported (D4): proven on the real file with a fixture exclusion.
+$kept = @(Get-RtFilteredRequirementLines -Lines $real -Exclude @("docling"))
 $isReq = { param($l, $n) $l -match ('^\s*' + [regex]::Escape($n) + '\b') -and $l -notmatch '^\s*#' }
 Check "the real file carries docling to begin with" (@($real | Where-Object { & $isReq $_ "docling" }).Count -ge 1)
 Check "docling is gone from the filtered lines"  (@($kept | Where-Object { & $isReq $_ "docling" }).Count -eq 0)
@@ -227,8 +342,18 @@ Check "the probe left no scratch folder behind"  (@(Get-ChildItem $env:TEMP -Fil
 # preview exercises the interpreter-selection path whatever this machine's own
 # .venv-skills looks like (R21). Pointed at the real repository, the preview would find
 # the existing environment and take the reuse branch instead.
+# Every requirements file of every environment, so a fake root is complete for both.
+$allReqs = @($envs | ForEach-Object { $_.Requirements })
+function New-StubVenv([string]$root, [string]$name) {
+    $dir = Join-Path $root "$name\Scripts"
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    Set-Content -Path (Join-Path $dir "python.exe") -Value "stub" -Encoding ASCII
+}
+function Remove-StubVenvs([string]$root) {
+    foreach ($n in @(".venv-skills", ".venv-docs", ".venv-pdf2md")) { Remove-Item (Join-Path $root $n) -Recurse -Force -ErrorAction SilentlyContinue }
+}
 $FreshRoot = Join-Path $Fake "fresh-root"
-foreach ($r in $reqs) {
+foreach ($r in $allReqs) {
     $dest = Join-Path $FreshRoot ($r.Path -replace '/', '\')
     New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
     Copy-Item $r.Full $dest
@@ -244,7 +369,7 @@ Check "-Preview returns 0"                       ($previewCode -eq 0)
 Check "-Preview says what it would install"      ($previewOut -match "Would install")
 Check "-Preview names pip-audit"                 ($previewOut -match "pip-audit")
 Check "-Preview names a requirements file"       ($previewOut -match ([regex]::Escape("requirements.txt")))
-Check "-Preview names the docling exclusion"     ($previewOut -match "without: docling")
+Check "-Preview names no exclusion (docling is installed)" ($previewOut -notmatch "without: docling")
 Check "-Preview names the interpreter it chose"  ($previewOut -match [regex]::Escape($Py311))
 Check "-Preview says the probe is not run"       ($previewOut -match "NOT run")
 Check "-Preview created no environment"          ((Test-Path $RealVenv) -eq $venvBefore -and -not (Test-Path (Join-Path $FreshRoot ".venv-skills")))
@@ -264,21 +389,21 @@ Check "no candidate at all is stated"            ($noneOut -match "none was foun
 # from the environment's own interpreter. A fake root with the requirements files and a
 # stub venv interpreter, and NO candidate at all, must still preview as a reuse.
 $ReuseRoot = Join-Path $Fake "reuse-root"
-foreach ($r in $reqs) {
+foreach ($r in $allReqs) {
     $dest = Join-Path $ReuseRoot ($r.Path -replace '/', '\')
     New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
     Copy-Item $r.Full $dest
 }
-$withVenv = Join-Path $ReuseRoot ".venv-skills\Scripts"
-New-Item -ItemType Directory -Path $withVenv -Force | Out-Null
-Set-Content -Path (Join-Path $withVenv "python.exe") -Value "stub" -Encoding ASCII
+New-StubVenv $ReuseRoot ".venv-skills"
+New-StubVenv $ReuseRoot ".venv-docs"
+New-StubVenv $ReuseRoot ".venv-pdf2md"
 $reuseOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "an existing venv is reused with no base python at all" ($reuseOut -match "no base interpreter needed" -and $reuseOut -match "Would install")
 Check "the reuse preview does not say it was skipped"        ($reuseOut -notmatch "skipped")
 $tripwire2 = { param($p) throw "the probe must not run when the environment exists" }
 $pickReuse = Select-RtBasePython -Candidates @($Py312) -UserProfile $Mine -Probe $tripwire2 -SkipProbe
 Check "(control) selection without an environment still works" ($pickReuse.Python -eq $Py312)
-Remove-Item (Join-Path $ReuseRoot ".venv-skills") -Recurse -Force
+Remove-StubVenvs $ReuseRoot
 $noVenvOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "(control) the same root WITHOUT the venv is skipped, naming why" ($noVenvOut -match "skipped" -and $noVenvOut -match "none was found")
 
@@ -289,13 +414,13 @@ Check "an empty profile does not throw and does not refuse" ($noProfile -eq "")
 
 # -Python while an environment exists is SAID to be ignored, never swallowed.
 $ignoredOut = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
-$stubScripts = Join-Path $ReuseRoot ".venv-skills\Scripts"
-New-Item -ItemType Directory -Path $stubScripts -Force | Out-Null
-Set-Content -Path (Join-Path $stubScripts "python.exe") -Value "stub" -Encoding ASCII
+New-StubVenv $ReuseRoot ".venv-skills"
+New-StubVenv $ReuseRoot ".venv-docs"
+New-StubVenv $ReuseRoot ".venv-pdf2md"
 $ignoredOut2 = Install-RtPythonEnv -RepoRoot $ReuseRoot -Preview -Python $Py311 -CandidatePaths @() -UserProfile $Mine 6>&1 | Out-String
 Check "-Python is reported ignored when the environment exists" ($ignoredOut2 -match "-Python was ignored")
 Check "(control) with no environment -Python is not reported ignored" ($ignoredOut -notmatch "was ignored")
-Remove-Item (Join-Path $ReuseRoot ".venv-skills") -Recurse -Force
+Remove-StubVenvs $ReuseRoot
 
 # A profile directly under a drive root has no profiles folder above it.
 Check "a drive-root profile does not make a machine-wide install foreign" ((Test-RtInterpreterOwner -Path "D:\Program Files\Python311\python.exe" -UserProfile "D:\alice") -eq "")
@@ -323,7 +448,7 @@ if ($null -ne (Get-Command git -ErrorAction SilentlyContinue)) {
     & git -C $Main -c user.name=Fictitious -c user.email=fictitious@example.org commit --quiet --allow-empty -m init 2>$null | Out-Null
     & git -C $Main worktree add --quiet --detach $Wt 2>$null | Out-Null
     $ErrorActionPreference = $saved
-    foreach ($r in $reqs) {
+    foreach ($r in $allReqs) {
         $dest = Join-Path $Wt ($r.Path -replace '/', '\')
         New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
         Copy-Item $r.Full $dest
@@ -336,7 +461,106 @@ if ($null -ne (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "  SKIP  worktree target (git is not installed)" -ForegroundColor Yellow
 }
 
+# --------------------------------------------- both environments, process order ---
+# 2026-10-22 (D1): -InstallPython builds .venv-skills then .venv-docs. Every process goes
+# through the injected runner, so the order and the failure paths are proven with no
+# interpreter executed. The runner records each call and, for `-m venv`, leaves a stub
+# interpreter where the environment would be (what the installer reads back, R9). The
+# scratch probe (`--without-pip`) is dropped from the order: it is not part of the install.
+$script:Calls = @()
+$script:FailPattern = ""
+$Runner = {
+    param($Exe, $Arguments)
+    $a = @($Arguments)
+    $joined = $a -join ' '
+    $script:Calls += [pscustomobject]@{ Exe = [string]$Exe; Args = $joined }
+    if ($script:FailPattern -and $joined -match $script:FailPattern) { return 1 }
+    if ($a.Count -ge 2 -and $a[0] -eq '-m' -and $a[1] -eq 'venv') {
+        $made = Join-Path $a[-1] 'Scripts\python.exe'
+        New-Item -ItemType Directory -Path (Split-Path $made -Parent) -Force | Out-Null
+        Set-Content -Path $made -Value 'stub' -Encoding ASCII
+    }
+    return 0
+}
+function New-RunRoot([string]$name, [switch]$NoDocsFile) {
+    $root = Join-Path $script:Fake $name
+    foreach ($r in $script:allReqs) {
+        if ($NoDocsFile -and $r.Path -eq "requirements-docs.txt") { continue }
+        $dest = Join-Path $root ($r.Path -replace '/', '\')
+        New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
+        Copy-Item $r.Full $dest
+    }
+    return $root
+}
+function Invoke-Install([string]$root, [hashtable]$extra = @{}) {
+    $script:Calls = @()
+    try {
+        $items = @(Install-RtPythonEnv -RepoRoot $root -UserProfile $script:Mine -ProcessRunner $script:Runner @extra 6>&1)
+    } catch {
+        return [pscustomobject]@{ Code = $null; Text = "THREW: $($_.Exception.Message)"; Calls = @() }
+    }
+    $codes = @($items | Where-Object { $_ -is [int] })
+    $text  = ($items | Where-Object { $_ -isnot [int] } | ForEach-Object { "$_" }) -join "`n"
+    $real  = @($script:Calls | Where-Object { $_.Args -notmatch 'without-pip' })
+    return [pscustomobject]@{ Code = $(if ($codes.Count) { $codes[-1] } else { $null }); Text = $text; Calls = $real }
+}
+
+$PreviewRoot = New-RunRoot "both-preview"
+$pv = Invoke-Install $PreviewRoot @{ Preview = $true; CandidatePaths = @($Py311) }
+$skillsAt = $pv.Text.IndexOf(".venv-skills"); $docsAt = $pv.Text.IndexOf(".venv-docs"); $docsFileAt = $pv.Text.IndexOf("requirements-docs.txt")
+Check "the preview names .venv-skills and .venv-docs and lists requirements-docs.txt under the second" ($pv.Code -eq 0 -and $skillsAt -ge 0 -and $docsAt -gt $skillsAt -and $docsFileAt -gt $docsAt)
+Check "the preview calls the runner zero times"  ($pv.Calls.Count -eq 0 -and -not (Test-Path (Join-Path $PreviewRoot ".venv-docs")))
+
+$NoDocsRoot = New-RunRoot "no-docs-file" -NoDocsFile
+$nd = Invoke-Install $NoDocsRoot @{ CandidatePaths = @($Py311) }
+Check "a missing requirements-docs.txt returns 1, names the file, creates neither folder and calls the runner zero times" ($nd.Code -eq 1 -and $nd.Text -match "requirements-docs\.txt" -and -not (Test-Path (Join-Path $NoDocsRoot ".venv-skills")) -and -not (Test-Path (Join-Path $NoDocsRoot ".venv-docs")) -and $script:Calls.Count -eq 0)
+
+$OrderRoot = New-RunRoot "order"
+$or = Invoke-Install $OrderRoot @{ CandidatePaths = @($Py311) }
+$skPy = Join-Path $OrderRoot ".venv-skills\Scripts\python.exe"
+$dcPy = Join-Path $OrderRoot ".venv-docs\Scripts\python.exe"
+$skillReqCount = @($skillEnv[0].Requirements).Count
+$kinds = @($or.Calls | ForEach-Object {
+    if ($_.Args -match '^-m venv ') { if ($_.Args -match 'venv-docs') { "venv-docs" } elseif ($_.Args -match 'venv-pdf2md') { "venv-pdf2md" } else { "venv-skills" } }
+    elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'rt-tools-') { "tool" }
+    elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'requirements-docs') { "docs-file" }
+    elseif ($_.Args -match '^-m pip install' -and $_.Args -match 'pdf2md') { "pdf2md-file" }
+    elseif ($_.Args -match '^-m pip install') { "skills-file" }
+    elseif ($_.Args -match '^-m pip_audit') { "audit" }
+    else { "other:" + $_.Args } })
+$expected = @("venv-skills", "tool", "skills-file", "venv-docs", "docs-file", "venv-pdf2md", "pdf2md-file") + @(1..($skillReqCount + 3) | ForEach-Object { "audit" })
+Check "with a recording runner the calls come in order: venv skills, tool, ONE install of the skills files, venv docs, docs file, venv pdf2md, pdf2md file, then pip_audit on every file" ($or.Code -eq 0 -and ($kinds -join ',') -eq ($expected -join ','))
+# pip resolves only the files one call names, so every file of an environment goes in one call:
+# file by file, a later file could move a package an earlier one pinned with a warning and exit 0.
+$skillInstall = @($or.Calls | Where-Object { $_.Exe -eq $skPy -and $_.Args -match '^-m pip install' -and $_.Args -notmatch 'rt-tools-' })
+Check "the one skills install names every skills requirements file with -r" ($skillInstall.Count -eq 1 -and ([regex]::Matches($skillInstall[0].Args, '(^| )-r ')).Count -eq $skillReqCount)
+if (($kinds -join ',') -ne ($expected -join ',')) { Write-Host "        got: $($kinds -join ',')" -ForegroundColor DarkGray }
+$audits = @($or.Calls | Where-Object { $_.Args -match '^-m pip_audit' })
+Check "every pip_audit call uses the skills interpreter, none the docs one" ($audits.Count -ge 1 -and @($audits | Where-Object { $_.Exe -ne $skPy }).Count -eq 0)
+Check "no pip install of pip-audit is made with the docs interpreter" (@($or.Calls | Where-Object { $_.Exe -eq $dcPy -and ($_.Args -match 'rt-tools-' -or $_.Args -match 'pip-audit') }).Count -eq 0)
+Check "pip install of the docs file uses the docs interpreter" (@($or.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Args -match 'pip install' -and $_.Exe -eq $dcPy }).Count -eq 1)
+
+$script:FailPattern = 'pip install.*requirements-docs'
+$FailDocsRoot = New-RunRoot "fail-docs"
+$fd = Invoke-Install $FailDocsRoot @{ CandidatePaths = @($Py311) }
+Check "a runner failing on the docs file returns 1 while the skills environment was installed and reported ready" ($fd.Code -eq 1 -and $fd.Text -match ("Environment ready: " + [regex]::Escape((Join-Path $FailDocsRoot ".venv-skills\Scripts\python.exe"))) -and @($fd.Calls | Where-Object { $_.Args -match 'pip install' -and $_.Exe -like '*venv-skills*' }).Count -eq 2)
+
+$script:FailPattern = '^-m venv .*\.venv-skills'
+$FailSkillsRoot = New-RunRoot "fail-skills"
+$fs = Invoke-Install $FailSkillsRoot @{ CandidatePaths = @($Py311) }
+Check "a runner failing on the skills venv creation still attempts the docs environment and returns 1" ($fs.Code -eq 1 -and @($fs.Calls | Where-Object { $_.Args -match '^-m venv .*\.venv-docs' }).Count -eq 1)
+$script:FailPattern = ""
+
+$StubRoot = New-RunRoot "two-stubs"
+New-StubVenv $StubRoot ".venv-skills"
+New-StubVenv $StubRoot ".venv-docs"
+New-StubVenv $StubRoot ".venv-pdf2md"
+$st = Invoke-Install $StubRoot @{ CandidatePaths = @() }
+Check "three stub existing environments are reused with no base interpreter and no venv call" ($st.Code -eq 0 -and @($st.Calls | Where-Object { $_.Args -match '^-m venv' }).Count -eq 0 -and $st.Text -notmatch "skipped" -and @($st.Calls | Where-Object { $_.Args -match 'requirements-docs' -and $_.Exe -like '*venv-docs*' }).Count -ge 1)
+
 # ------------------------------------------------------------ setup.ps1 wiring ---
+$setupText = Get-Content (Join-Path $RepoRoot "setup.ps1") -Raw -Encoding UTF8
+Check "setup.ps1 contains no InstallDocs and no -InstallDocs" ($setupText -notmatch 'InstallDocs')
 $setup = Get-Content (Join-Path $RepoRoot "setup.ps1") -Raw -Encoding UTF8
 Check "setup.ps1 declares -InstallPython"        ($setup -match '\[switch\]\$InstallPython')
 Check "setup.ps1 declares -Python"               ($setup -match '\[string\]\$Python')
@@ -346,6 +570,7 @@ Check "setup.ps1 passes -Python through"         ($setup -match 'Install-RtPytho
 Check "setup.ps1 documents the switch"           ($setup -match ([regex]::Escape(".\setup.ps1 -InstallPython")))
 Check "the switch has its own dispatch branch"   ($setup -match ([regex]::Escape('if ($InstallPython -and -not $All)')))
 Check "Next steps names the switch"              ($setup -match "run-offline-tests.ps1 reports PASSED")
+Check "the help names the three environments"    ($setup -match '-InstallPython\s+-> \.venv-skills, \.venv-docs and \.venv-pdf2md')
 
 # README has to name .venv-skills by that name: the runner resolves it first, and a
 # bootstrap block naming any other directory sends the operator somewhere the runner

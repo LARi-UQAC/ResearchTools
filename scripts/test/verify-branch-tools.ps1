@@ -182,6 +182,8 @@ $res = Invoke-Child $runAll @("-TestDir", $Fx, "-DryRun")
 Check "-DryRun lists the checks and runs none of them (R16)" ($res.Code -eq 0 -and $res.Text -match "verify-a\.ps1" -and @(Get-ChildItem -LiteralPath $Fx -Filter "*.ran").Count -eq 0)
 $res = Invoke-Child $runAll @("-TestDir", $Fx, "-Only", "nosuch")
 Check "an unknown -Only name is a refusal, exit 2" ($res.Code -eq 2 -and $res.Text -match "nosuch")
+$res = Invoke-Child $runAll @("-SkipSuite", "-DryRun")
+Check "on the real folder: run-all-checks lists verify-python-libs.ps1 in its dry run" ($res.Code -eq 0 -and $res.Text -match "verify-python-libs\.ps1")
 
 # --- finish-branch.ps1, run for real --------------------------------------------------
 Write-Host ""

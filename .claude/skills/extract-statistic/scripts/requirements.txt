@@ -42,7 +42,7 @@ pymupdf==1.27.2.3
 #   pip-audit -r <(echo "docling>=2.103.0"; echo "markitdown[pdf]>=0.1.6")
 # Re-run pip-audit after install and report any CVE.
 
-docling==2.103.0
+docling==2.142.0  # pip-audit 2026-10-22: 2.103.0 and its docling-slim carry 17 advisories fixed in 2.132.0, but docling-slim 2.132.0 to 2.141.0 cap pillow below 13.0.0, so 2.142.0 is the lowest that resolves with the pillow fix (docling pins docling-slim to its own version)
 markitdown[pdf]==0.1.6
 
 # corpus_index.py (OPTIONAL, RT-7): pgvector store and the local embedder.
@@ -55,3 +55,4 @@ markitdown[pdf]==0.1.6
 psycopg[binary]==3.3.6
 pgvector==0.5.0
 requests==2.34.2  # extract_text.py / download path; was imported but not declared (inventory 2026-10-22)
+pillow==13.0.0  # transitive (docling, markitdown, pymupdf4llm); pinned 2026-10-22 because the resolved 12.3.0 carries 35 advisories fixed in 13.0.0

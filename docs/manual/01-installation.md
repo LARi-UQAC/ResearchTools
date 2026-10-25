@@ -304,7 +304,7 @@ the update itself (a preview, then the real one). The last line is an optional p
 
 ```powershell
 git pull --ff-only origin main        # get the new version
-.\setup.ps1 -InstallPython            # only if .venv-skills is missing, or you want to run the offline suite
+.\setup.ps1 -InstallPython            # builds or extends .venv-skills, .venv-docs and .venv-pdf2md after a requirements change
 .\setup.ps1 -Update -Preview          # shows every step and writes nothing to ~/.claude
 .\setup.ps1 -Update                   # does the update, and asks the three questions below first
 .\scripts\test\run-all-checks.ps1     # optional proof: the offline suite and the verify-*.ps1 of scripts/test (about 15 minutes)

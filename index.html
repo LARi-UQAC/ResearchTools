@@ -1497,8 +1497,8 @@ brand palette in <a href="assets/extra.css">assets/extra.css</a> — navy <code>
 <code>#C9762F</code>, taken from the project's own design system in <code>post-media/Series Template.dc.html</code>).
 Nothing here duplicates the manual; every link points at the same file a Claude Code session
 or a plain GitHub browse would read.</p>
-<p><strong>Preview locally:</strong> <code>.venv-docs\Scripts\python.exe -m mkdocs serve</code> (env: <code>pip install -r
-requirements-docs.txt</code> into <code>.venv-docs</code>), then open the printed <code>http://127.0.0.1:8000</code>.
+<p><strong>Preview locally:</strong> <code>.venv-docs\Scripts\python.exe -m mkdocs serve</code> (the environment comes from
+<code>.\setup.ps1 -InstallPython</code>), then open the printed <code>http://127.0.0.1:8000</code>.
 <strong>Publish:</strong> <code>mkdocs gh-deploy</code>, run by hand whenever the docs change — no GitHub Actions
 workflow, matching this repo's no-CI/CD policy — then enable Settings → Pages → Deploy from
 a branch → <code>gh-pages</code>. Links that reach outside <code>docs/</code> (to <code>README.md</code>, <code>Architecture.md</code>,

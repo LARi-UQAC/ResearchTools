@@ -1606,30 +1606,46 @@ and <code>pip-audit</code> reports no known vulnerability for either file.</p>
 <td>the June scan fixed this for six older skills by adding <code>permissions:</code> and <code>allowed-tools:</code>, and these nine were added later</td>
 </tr>
 <tr>
-<td>Advisories on <code>pypdf</code> 6.19.0, fixed in 6.21.1</td>
-<td><code>form-service</code>, <code>narrative-cv</code>, <code>paper2talk</code></td>
-<td><code>pip-audit</code> on 2026-10-22</td>
+<td>Advisories on <code>pillow</code> 12.3.0 (37 on 2026-10-24), fixed in 13.0.0</td>
+<td><code>pdf2md</code>, in its own environment <code>.venv-pdf2md</code></td>
+<td>accepted by the owner (decision D9, 2026-10-22): <code>mineru</code> needs <code>gradio</code>, and every <code>gradio</code> up to 6.30.0 caps <code>pillow</code> below 13, so this environment keeps <code>pillow</code> 12 and <code>pip-audit</code> reports it at every install</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fixed since, in the change that split the Python environments (issue #92).</strong> The dependency
+advisories appeared after the last pins (2026-10-16), which is why a pinned and clean requirements
+file goes stale without any edit.</p>
+<table>
+<thead>
+<tr>
+<th>Finding</th>
+<th>Where</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Advisories on <code>pypdf</code> 6.19.0, then three more on 6.21.1 (2026-10-24)</td>
+<td><code>form-service</code>, <code>narrative-cv</code>, <code>paper2talk</code>, <code>deploy/form-service</code></td>
+<td>pinned 6.21.2, <code>pip-audit</code> clean on 2026-10-24</td>
 </tr>
 <tr>
-<td>Advisories on <code>pillow</code> 12.3.0, fixed in 13.0.0</td>
-<td><code>extract-statistic</code>, <code>pdf2md</code></td>
-<td><code>pip-audit</code> on 2026-10-22</td>
+<td>Advisories on <code>pillow</code> 12.3.0</td>
+<td><code>extract-statistic</code>, <code>geolocalisation</code>, <code>word2latex</code> (<code>.venv-skills</code>)</td>
+<td>pinned 13.0.0</td>
 </tr>
 <tr>
 <td>Advisories on <code>docling</code> and <code>docling-slim</code> 2.103.0</td>
 <td><code>extract-statistic</code></td>
-<td><code>pip-audit</code> on 2026-10-22</td>
+<td>pinned 2.142.0, the first release whose <code>docling-slim</code> allows <code>pillow</code> 13</td>
 </tr>
 <tr>
 <td><code>SC1</code>, unpinned <code>claude-agent-sdk&gt;=0.1.0</code></td>
 <td><code>loop-engineer</code></td>
-<td>the requirements file itself asks for an exact pin after the first install</td>
+<td>pinned exactly, 0.2.172</td>
 </tr>
 </tbody>
 </table>
-<p>The dependency advisories appeared after the last pins (2026-10-16), which is why a pinned and
-clean requirements file goes stale without any edit. Raising a pin is a change to code that needs the
-offline suite, so it is a separate change from this one.</p>
 <p>The June scan found the same kinds of false positive and its true positives were corrected then:
 the <code>permissions:</code> declarations, and exact <code>==</code> pins in the <code>scopus</code> and <code>extract-statistic</code>
 requirements. <code>geolocalisation</code> declares <code>permissions: [read]</code> and fetches only public-domain

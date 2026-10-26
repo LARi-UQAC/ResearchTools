@@ -1447,7 +1447,7 @@ whatever <code>python</code> is on the <code>PATH</code>.</p>
 </table>
 <p><code>run-all-checks.ps1</code> takes <code>-DryRun</code> (list, run nothing), <code>-SkipSuite</code>, <code>-Only a,b</code>, <code>-Exclude names</code>
 and <code>-ReportPath file.json</code>. It leaves out <code>verify-graph-health.ps1</code> for the same reason as above.</p>
-<p>The ten verifiers in <code>scripts/test/</code> each prove one installer or tool by running it for real against a
+<p>The eleven verifiers in <code>scripts/test/</code> each prove one installer or tool by running it for real against a
 throwaway home or repository, never your own:</p>
 <table>
 <thead>
@@ -1475,7 +1475,11 @@ throwaway home or repository, never your own:</p>
 </tr>
 <tr>
 <td><code>verify-python-env.ps1</code></td>
-<td><code>setup.ps1 -InstallPython</code></td>
+<td><code>setup.ps1 -InstallPython</code>: the three environments, their order, one pin per library, every requirements file registered</td>
+</tr>
+<tr>
+<td><code>verify-python-libs.ps1</code></td>
+<td>Every third-party import is declared and the library tables of chapter 02 are current (<code>scripts/docs/python_libs.py --check</code>)</td>
 </tr>
 <tr>
 <td><code>verify-rt-contract.ps1</code></td>
@@ -1547,7 +1551,7 @@ workflow that runs the test suites, they are run by hand as above.</p>
 <tbody>
 <tr>
 <td>Install the tools, once</td>
-<td><code>python -m venv .venv-docs</code> then <code>.venv-docs\Scripts\python.exe -m pip install -r requirements-docs.txt</code></td>
+<td><code>.\setup.ps1 -InstallPython</code>, which builds <code>.venv-docs</code> from <code>requirements-docs.txt</code> with the other environments (<a href="../01-installation/">chapter 01</a>, Step 5)</td>
 </tr>
 <tr>
 <td>Preview</td>

@@ -581,10 +581,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5--python-environment-for-the-offline-test-suite-optional" class="md-nav__link">
+  <a href="#step-5--python-environments-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5 — Python environment for the offline test suite (optional)
+        Step 5 — Python environments (optional)
       
     </span>
   </a>
@@ -1419,10 +1419,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5--python-environment-for-the-offline-test-suite-optional" class="md-nav__link">
+  <a href="#step-5--python-environments-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 5 — Python environment for the offline test suite (optional)
+        Step 5 — Python environments (optional)
       
     </span>
   </a>
@@ -1524,7 +1524,7 @@ and whether the login shortcut exists at all.</p>
 </tr>
 <tr>
 <td>Output</td>
-<td>Nothing inside the repository. Additively: <code>~/.claude/CLAUDE.md</code> (whole file only when absent), <code>~/.claude/settings.json</code> (only the hook entries the template declares and the live file lacks), <code>OBSIDIAN_VAULT</code> at USER scope (only when unset), and <code>.venv-skills/</code> in the clone with <code>-InstallPython</code></td>
+<td>Nothing inside the repository. Additively: <code>~/.claude/CLAUDE.md</code> (whole file only when absent), <code>~/.claude/settings.json</code> (only the hook entries the template declares and the live file lacks), <code>OBSIDIAN_VAULT</code> at USER scope (only when unset), and <code>.venv-skills/</code>, <code>.venv-docs/</code> and <code>.venv-pdf2md/</code> in the main clone with <code>-InstallPython</code></td>
 <td>Links in <code>C:\Users\&lt;you&gt;\.claude\</code></td>
 <td>Generated files committed in the repo (<code>.github\</code>, <code>.opencode\</code>, <code>.continue\</code>, <code>CONVENTIONS.md</code>, <code>AGENTS.md</code>) + optional user copies</td>
 </tr>
@@ -1554,7 +1554,7 @@ and whether the login shortcut exists at all.</p>
 </tr>
 <tr>
 <td>Other switches</td>
-<td><code>-InstallDaemon</code> (vault daemon at login), <code>-InstallPython</code> (<code>.venv-skills</code> for the offline suite), <code>-UpdateHooks</code> (replace a changed hook entry of <code>~/.claude/settings.json</code>), <code>-KeepHooks &lt;names&gt;</code> (leave a local hook variant as it is), <code>-Update</code> (the whole update in one command, see <a href="#update-an-existing-installation">Update an existing installation</a>)</td>
+<td><code>-InstallDaemon</code> (vault daemon at login), <code>-InstallPython</code> (the three Python environments, see Step 5), <code>-UpdateHooks</code> (replace a changed hook entry of <code>~/.claude/settings.json</code>), <code>-KeepHooks &lt;names&gt;</code> (leave a local hook variant as it is), <code>-Update</code> (the whole update in one command, see <a href="#update-an-existing-installation">Update an existing installation</a>)</td>
 <td><code>-Sync</code> (copy the files a green offline-suite run has proven into <code>~/.claude</code>), <code>-WhatIf</code></td>
 <td>-</td>
 </tr>
@@ -1632,7 +1632,7 @@ job.</p>
 </tr>
 <tr>
 <td>Python libraries (<code>pip</code>)</td>
-<td>Every library each skill imports, with its version, the requirements file that declares it and whether <code>setup.ps1 -InstallPython</code> installs it: <a href="../02-profiles/#python-environments-every-library">chapter 02, Python environments</a></td>
+<td>Every library each skill imports, with its pin, the requirements file that declares it and the environment <code>setup.ps1 -InstallPython</code> puts it in: <a href="../02-profiles/#python-environments-every-library">chapter 02, Python environments</a></td>
 </tr>
 <tr>
 <td><code>pandoc</code></td>
@@ -1783,7 +1783,7 @@ the VS Code user profile, making them available in every workspace:</p>
 <code>-Profile &lt;name&gt;</code> or answer the interactive prompt; non-interactive runs keep the
 current default (<code>engineering</code>).</p>
 <p>Every target and the limits that stub or trim a mirror are in <a href="../09-harnesses/">chapter 09</a>. The agent side is in <a href="../05-agents/#using-the-agents-outside-claude-code">Using the agents outside Claude Code</a>.</p>
-<h2 id="step-5--python-environment-for-the-offline-test-suite-optional">Step 5 — Python environment for the offline test suite (optional)<a class="headerlink" href="#step-5--python-environment-for-the-offline-test-suite-optional" title="Permanent link">&para;</a></h2>
+<h2 id="step-5--python-environments-optional">Step 5 — Python environments (optional)<a class="headerlink" href="#step-5--python-environments-optional" title="Permanent link">&para;</a></h2>
 <p><code>scripts/test/run-offline-tests.ps1</code>, the dashboard launchers, the vault drill and the other
 launchers all take their Python from <code>.venv-skills</code> of the clone, then of the <strong>main clone</strong>
 when you work in a linked worktree (they ask git for its common directory, so no link is
@@ -1796,31 +1796,60 @@ pass <code>-Python &lt;path&gt;</code>. The interpreter in use is always printed
 <p>Without the environment several suites cannot import what they need and are reported
 <strong>NOT RUN</strong> — which is honest, and means the suite is not actually proving what it looks like
 it is proving.</p>
-<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span>            <span class="c"># creates .venv-skills, installs, then pip-audits</span>
+<p>One command builds the three environments of the repository, in the order of the data file
+<code>scripts/lib/rt-python-requirements.json</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Environment</th>
+<th>For</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.venv-skills</code></td>
+<td>the skills, the hooks' tests, the offline suite and the launchers</td>
+<td>fourteen skill requirements files (every one except <code>pdf2md</code>'s) plus <code>pip-audit</code></td>
+</tr>
+<tr>
+<td><code>.venv-docs</code></td>
+<td>building this site with MkDocs</td>
+<td><code>requirements-docs.txt</code></td>
+</tr>
+<tr>
+<td><code>.venv-pdf2md</code></td>
+<td>the <code>pdf2md</code> conversion (<code>mineru</code>)</td>
+<td>the <code>pdf2md</code> requirements file, kept apart because <code>mineru</code> needs an older <code>pillow</code></td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span>            <span class="c"># creates or extends the three environments, then pip-audits every file</span>
 <span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span> <span class="n">-Preview</span>   <span class="c"># choose the interpreter, say what it would install, write nothing</span>
 <span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span> <span class="n">-Python</span> <span class="s2">"C:\Users\&lt;you&gt;\AppData\Local\Programs\Python\Python311\python.exe"</span>
 </code></pre></div>
-<p>The environment is always built in the main clone, even when you run the command from a
-worktree. The base interpreter is chosen, not assumed: the switch tries <code>-Python</code>, then the
-<code>python</code> entries on <code>PATH</code> and the py launcher, and keeps the first one that belongs to your
-own profile and can really create a virtual environment (it builds a scratch one to check).
-If none qualifies it stops and names each candidate with the reason, for example "belongs to
-another account" or "python -m venv failed".</p>
-<p>The complete list of libraries, for this environment and for <code>.venv-docs</code>, is in
-<a href="../02-profiles/#python-environments-every-library">chapter 02</a>. It installs what the repository's skills import, listed in
-<code>scripts/lib/rt-python-requirements.json</code>: the offline-suite packages (<code>paper2talk</code>,
-<code>recommendation-letter</code>), the <code>scopus</code> skill (<code>requests</code>, <code>playwright</code>, the reviewers' clients)
-and the <code>extract-statistic</code> skill without <code>docling</code>, plus <code>pip-audit</code>. The Chromium binary for
-Playwright stays a separate <code>playwright install chromium</code>, and <code>docling</code> and the
-<code>geolocalisation</code> dependencies stay manual on purpose: <code>docling</code> alone pulls <code>torch</code>, and a CVE
-in a skill you never run should not block the environment your tests need.</p>
-<p>By hand, if you would rather not use the switch:</p>
-<div class="highlight"><pre><span></span><code><span class="n">python</span> <span class="n">-m</span> <span class="n">venv</span> <span class="p">.</span><span class="n">venv-skills</span>
-<span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">paper2talk</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
-<span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">recommendation-letter</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
-<span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip_audit</span> <span class="p">-</span><span class="n">-strict</span> <span class="n">-r</span> <span class="p">.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">paper2talk</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">requirements</span><span class="p">.</span><span class="n">txt</span>
+<p>The environments are always built in the main clone, even when you run the command from a
+worktree. An environment that already exists is reused and its requirements are installed into
+it. The base interpreter is chosen only when one of them has to be created, and it is chosen, not
+assumed: the switch tries <code>-Python</code>, then the <code>python</code> entries on <code>PATH</code> and the py launcher,
+and keeps the first one that belongs to your own profile and can really create a virtual
+environment (it builds a scratch one to check). If none qualifies it stops and names each
+candidate with the reason, for example "belongs to another account" or "python -m venv failed".
+A requirements file named in the data file that does not exist stops the run before anything is
+installed. After the install, <code>pip-audit</code> (installed in <code>.venv-skills</code>) audits every
+requirements file it applied.</p>
+<p><code>docling</code>, part of <code>extract-statistic</code>, is installed too and pulls <code>torch</code> (a dry run of
+2026-10-22 counted 105 packages, about 339 MB). The three NVIDIA CUDA packages of <code>rt-observe</code> carry a
+platform marker, so a macOS install skips them. The Chromium binary for Playwright stays a
+separate <code>playwright install chromium</code>. The complete list of libraries, per environment, is in
+<a href="../02-profiles/#python-environments-every-library">chapter 02</a>.</p>
+<p>By hand, as an alternative to the switch, for one environment and one requirements file:</p>
+<div class="highlight"><pre><span></span><code><span class="n">python</span> <span class="n">-m</span> <span class="n">venv</span> <span class="p">.</span><span class="n">venv-docs</span>
+<span class="p">.\.</span><span class="n">venv-docs</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">-r</span> <span class="n">requirements-docs</span><span class="p">.</span><span class="n">txt</span>
+<span class="p">.\.</span><span class="n">venv-skills</span><span class="p">\</span><span class="n">Scripts</span><span class="p">\</span><span class="n">python</span><span class="p">.</span><span class="n">exe</span> <span class="n">-m</span> <span class="n">pip_audit</span> <span class="p">-</span><span class="n">-strict</span> <span class="n">-r</span> <span class="n">requirements-docs</span><span class="p">.</span><span class="n">txt</span>
 </code></pre></div>
-<p>The directory name matters: name it anything else and the launchers will not look there.</p>
+<p>The directory names matter: name an environment anything else and the launchers will not look
+there.</p>
 <p><strong>Never link <code>.venv-skills</code> into a worktree</strong> (junction or symbolic link). Removing the worktree
 with <code>git worktree remove</code> (no <code>--force</code> needed when git ignores the link, as it does <code>.venv*/</code>) follows the link and deletes the real environment
 (<a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/rules/workflows.md">R37</a>). A worktree needs no link.</p>
@@ -1854,7 +1883,7 @@ no hook sees GitHub comments.</p>
 folder <code>git clone</code> created), in PowerShell. The first two lines are prerequisites. The next two are
 the update itself (a preview, then the real one). The last line is an optional proof:</p>
 <div class="highlight"><pre><span></span><code><span class="n">git</span> <span class="n">pull</span> <span class="p">-</span><span class="n">-ff-only</span> <span class="n">origin</span> <span class="n">main</span>        <span class="c"># get the new version</span>
-<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span>            <span class="c"># only if .venv-skills is missing, or you want to run the offline suite</span>
+<span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-InstallPython</span>            <span class="c"># builds or extends .venv-skills, .venv-docs and .venv-pdf2md after a requirements change</span>
 <span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Update</span> <span class="n">-Preview</span>          <span class="c"># shows every step and writes nothing to ~/.claude</span>
 <span class="p">.\</span><span class="n">setup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Update</span>                   <span class="c"># does the update, and asks the three questions below first</span>
 <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">test</span><span class="p">\</span><span class="n">run-all-checks</span><span class="p">.</span><span class="n">ps1</span>     <span class="c"># optional proof: the offline suite and the verify-*.ps1 of scripts/test (about 15 minutes)</span>

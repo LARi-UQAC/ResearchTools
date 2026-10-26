@@ -1290,8 +1290,8 @@
 └── README.md  Architecture.md  NEW_ARCHITECTURE.md  CLAUDE.template.md
     AGENTS.md  CONVENTIONS.md  CHANGELOG.md  IMPROVEMENTS.md
 </code></pre></div>
-<p>Four things sit in the clone and are never committed: the Python environments <code>.venv-skills</code> and
-<code>.venv-docs</code>, the green stamp <code>.rt-green.json</code>, the undo copies in <code>.rt-undo/</code>, and the built site in
+<p>Four things sit in the clone and are never committed: the three Python environments <code>.venv-skills</code>,
+<code>.venv-docs</code> and <code>.venv-pdf2md</code> (built in the main clone by <code>setup.ps1 -InstallPython</code>), the green stamp <code>.rt-green.json</code>, the undo copies in <code>.rt-undo/</code>, and the built site in
 <code>site/</code>. The generated code graph folder is also local, and it is reached only through the
 <code>local-writer</code> agent. The per-skill file lists that this chapter used to carry are gone: they went
 stale as skills were added, and each skill's own <code>SKILL.md</code> and the <a href="../06-skills/">skills chapter</a>

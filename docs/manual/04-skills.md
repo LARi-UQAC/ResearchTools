@@ -72,7 +72,7 @@ registration steps of a new skill.
 | `extract-futureworks` | Future-works analysis (reuses `extract_text.py --section-scan`). Mode `audit`: review a work's own future works (presence, testability, link-to-limitation, novelty) and validate its hypotheses against the cited-corpus future works, proposing stronger ones. Mode `mine`: extract every corpus paper's stated future works, build a review-fit table, Pareto 80/20-rank it (low effort, high impact first), and emit a research-opportunity list. Used inside the four auditors (audit) and `scopus-researcher` (mine), where it is a hard gate: no hypothesis/project without it. | `.claude/skills/extract-futureworks/SKILL.md` |
 | `extract-contributions` | What a cited paper says it CONTRIBUTES, out of its full text (reuses `extract_text.py`; ships no reader). Mode `validate`: pair every `\cite{}` of a manuscript with the paper's own contribution sentences and flag the citations the paper does not support. Mode `mine`: tabulate a `refs/` corpus by kind. Surfaces evidence verbatim and decides nothing; `ok` / `no-contribution` / `empty` / `unreadable` are kept apart so a retrieval failure is never read as a property of the paper. Markers are data in `contribution_markers.json`. | `.claude/skills/extract-contributions/SKILL.md` |
 | `extract-paper-idea` | Extract a paper's OWN content into one JSON, the basis for drafting or refreshing its abstract (or, for a UQAC thesis, its Résumé + Abstract pair). Ships no reader of its own: reuses `paper2talk`'s `\input`/`\include` flattening and section map, `extract-statistic`'s future-works-cue section scan, and `extract-contributions`' marker scan (pointed at the paper's own text instead of a cited one). Detects document type (`uqac.cls` on the flattened text) and the document's own language; never a forced bilingual pair for a paper, always both languages for a thesis. Delegates the drafting to the `abstract-writer` agent. | `/abstract`, `.claude/skills/extract-paper-idea/SKILL.md` |
-| `paper2talk` | Accepted paper -> conference talk. Asks six questions before reading the paper (audience, duration, output target, aspect ratio, PDF format, deck ending), echoes a build contract, then builds ONE `talk_model.json` and renders it to PowerPoint (pptxgenjs), LaTeX Beamer on the lab gabarit, or a self-contained web page. Speaker notes budgeted at 130 wpm aiming under the slot, figures re-exported through the draw.io CLI at scale 3, and a visual QA loop (PowerPoint COM -> `pdftoppm`) with a legibility gate and a no-text-only-slide rule. Delegates the loop to the `talk-builder` agent. | `/talk`, `.claude/skills/paper2talk/SKILL.md` |
+| `paper2talk` | Accepted paper -> conference talk. Asks six questions before reading the paper (audience, duration, output target, aspect ratio, PDF format, deck ending), echoes a build contract, then builds ONE `talk_model.json` and renders it to PowerPoint on the lab gabarit (`talk_pptx.py`; pptxgenjs only as the no-gabarit fallback), LaTeX Beamer on the lab gabarit, or a self-contained LARI web deck that opens in the browser only after its offline check passes. Speaker notes budgeted at 130 wpm aiming under the slot, figures re-exported through the draw.io CLI at scale 3, and a visual QA loop (PowerPoint COM -> `pdftoppm`) with a legibility gate and a no-text-only-slide rule. Delegates the loop to the `talk-builder` agent. | `/talk`, `.claude/skills/paper2talk/SKILL.md` |
 | `word2latex` | Convert a Word `.docx` template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the `word-to-latex` agent. | `/word2latex`, `.claude/skills/word2latex/SKILL.md` |
 | `drawio2tikz` | Convert one `.drawio` sheet into a coordinate-exact TikZ fragment (absolute coordinates, edge anchoring, braces, rotation, FR→EN `--translate`). The sanctioned absolute-coordinate exception to the hand-authored TiKZ rules. | `/drawio2tikz`, `.claude/skills/drawio2tikz/SKILL.md` |
 | `geolocalisation` | Map a review corpus in space from its `.bib`: resolve each paper's study/case-study site (per-DOI Scopus abstract + title + keywords, optional `--full-text` PDF scan via `download_pdf.py`, matched against an offline Natural Earth gazetteer), write a reviewable draft table with a confidence column and a per-paper provenance note, then render CSV, KML (Google My Maps), GeoJSON (QGIS/Leaflet), a world-map PNG, an interactive HTML map, and a per-country count table. Human-reviewed; an override CSV always wins. | `/geolocalisation`, `.claude/skills/geolocalisation/SKILL.md` |
@@ -217,8 +217,8 @@ slide is authored.
 | 1 — brand | `talk_template.py <gabarit.pptx> --out brand.json --extract-media assets/` | canvas, layouts, master background, every object in inches with `srcRect` as a keep-fraction |
 | 2 — figures | `fig_export.py <fig.svg> --out <fig.png> --scale 3 [--fix-text map.json]` | projector-grade PNG + implied-DPI report (warns below 150) |
 | 3 — model | `talk_model.py <talk_model.json>` | block-vocabulary check, no-text-only-slide rule, exhibit coverage, budget aggregation |
-| 4 — render | `talk_pptx.py --template <gabarit.pptx>` · `talk_model.py --render …tex.j2` (Beamer) · `…html.j2` (web) | `.pptx` built on the gabarit's own layouts, `.tex`, or one self-contained `.html`, all from the same model |
-| 5 — gates | `talk_validate.py` · `talk_notes.py` · `talk_render.py [--paper a4]` | package + legibility checks, spoken budget and cadence, PDF + page images, A4/Letter reflow |
+| 4 — render | `talk_pptx.py --template <gabarit.pptx>` · `talk_model.py --render …tex.j2` (Beamer) · `talk_model.py --render …html.j2 --lab-dir <gabarit slides folder>` (web) | `.pptx` built on the gabarit's own layouts, `.tex`, or one self-contained `.html` in the LARI identity, all from the same model |
+| 5 — gates | `talk_validate.py` · `talk_validate.py --web <deck>` (web; `--open` once, on the final clean pass) · `talk_notes.py` · `talk_render.py [--paper a4]` (PowerPoint) | package + legibility checks, the web deck's offline check then opening only if clean, spoken budget and cadence, PDF + page images, A4/Letter reflow |
 
 - **Cadence.** One slide per minute counts **content** slides only:
   `n_content = floor(minutes - 0.5*(title+thanks) - 0.33*dividers)`. A 13-minute talk is 12
@@ -234,8 +234,24 @@ slide is authored.
   its own speaker notes (matched on subject keywords, never filenames).
 - **Gabarits.** `../gabarit_these_maitrise_DSA_UQAC/src/slides/`: `Gabarit169.pptx` (16:9, 18
   named layouts), `Gabarit43.pptx` (4:3, preferred when an A4 handout is the deliverable),
-  `main.tex` for Beamer. The deck is built **on** the gabarit with python-pptx rather than
-  imitated, so the lab branding, layouts and placeholders are used as designed.
+  `main.tex` for Beamer, and the banner `en-tete1260.jpg` and logo `LogoLARI_FINAL.png` the web
+  deck embeds. The PowerPoint deck is built **on** the gabarit with python-pptx
+  (`talk_pptx.py`) rather than imitated, so the lab branding, layouts and placeholders are used
+  as designed; the pptxgenjs skeleton is only the fallback for a deck with no gabarit at all.
+- **LARI web deck.** The web target reproduces the canonical Beamer gabarit as it renders:
+  lab green `#006341`, sans-serif type, a green frame-title band, green and red alert blocks,
+  the UQAC banner and LARI logo on the title slide only, and a footer row (short author, short
+  title, date, `n / N`) on every other slide. Six slide kinds: `title`, `outline` (the model's
+  sections, drawn as its own layout but timed as a divider), `content`, `divider`, `thanks`,
+  `backup`. The render needs the gabarit slides folder as `--lab-dir` and is refused without
+  it; if the folder cannot be found the agent asks for its path rather than substituting
+  another template. The output is one self-contained `.html`: figures and lab images embedded
+  as `data:` URIs, no CDN, webfont or build step, and the offline check fails any `http(s)`,
+  protocol-relative or relative reference. By default `/talk` opens the deck in the default
+  browser through `talk_validate.py --web <deck> --open`, only after that check is clean; a
+  deck with findings is never opened, and `/talk --no-open` validates without opening. In the
+  room: arrow keys, Space, click or swipe to move, `N` for notes with pacing, `F` fullscreen,
+  `B` black screen, `?` for the keys, and `#/n` to open slide n; it prints one slide per page.
 - **Nothing invented.** `talk_model.py --check-numbers inventory.json` compares every number
   on every slide against the numbers the paper states, on normalised values (a French decimal
   comma and an English point are one number), so a figure that entered the deck from nowhere is
@@ -247,15 +263,15 @@ slide is authored.
 
 **Files:**
 - `.claude/skills/paper2talk/SKILL.md`
-- `.claude/skills/paper2talk/scripts/talk_rules.py` — audience profiles, tier costs, cadence, budget, build contract
-- `.claude/skills/paper2talk/scripts/talk_model.py` — deck-as-data validation + Jinja render of the Beamer/web targets
+- `.claude/skills/paper2talk/scripts/talk_rules.py` — audience profiles, tier costs (`outline` timed as a divider), cadence, budget, build contract, web constants
+- `.claude/skills/paper2talk/scripts/talk_model.py` — deck-as-data validation + Jinja render of the Beamer/web targets; `--lab-dir` and figure embedding for the web deck
 - `.claude/skills/paper2talk/scripts/talk_doctor.py` — preflight: buildable targets, per-tool degradation
 - `.claude/skills/paper2talk/scripts/paper_extract.py` — paper → inventory (`\input` flattening, floats, equations, numbers)
 - `.claude/skills/paper2talk/scripts/talk_pptx.py` — PowerPoint renderer: opens the lab gabarit, drops its sample slides, builds on its own layouts and placeholders
-- `.claude/skills/paper2talk/scripts/talk_template.py` · `fig_export.py` · `talk_render.py` · `talk_notes.py` · `to_a4.py` · `talk_validate.py`
-- `.claude/skills/paper2talk/assets/deck_skeleton.js` (no-gabarit fallback) · `beamer_skeleton.tex.j2` · `web_skeleton.html.j2`
+- `.claude/skills/paper2talk/scripts/talk_template.py` · `fig_export.py` · `talk_render.py` · `talk_notes.py` · `to_a4.py` · `talk_validate.py` (web offline check, `--open`)
+- `.claude/skills/paper2talk/assets/deck_skeleton.js` (no-gabarit fallback) · `beamer_skeleton.tex.j2` · `web_skeleton.html.j2` (the LARI web deck)
 - `.claude/skills/paper2talk/references/renderer-contracts.md` · `qa-loop.md`
-- `.claude/skills/paper2talk/scripts/Test/` — thirteen offline suites, 182 tests (fixtures built in the test; no Office, no network)
+- `.claude/skills/paper2talk/scripts/Test/` — fourteen offline suites, 327 tests (fixtures built in the test; no Office, no network)
 - Harvest and licence findings: `docs/superpowers/notes/2026-08-11-reference-skill-harvest.md`
 
 ### The two memories - the vault and the code graph

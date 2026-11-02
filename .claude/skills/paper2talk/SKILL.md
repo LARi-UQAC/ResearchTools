@@ -149,6 +149,7 @@ skill are always relative - the workspace root differs from machine to machine.
 | `16:9` | `Gabarit169.pptx` | 10 x 5.625 in | 18 named (`1- Titre` … `8- Titre`, `Programme`, `Page separatrice`, `Vide`, `1- Contenu` … `6- Contenu`, `Fin`) |
 | `4:3` | `Gabarit43.pptx` | 10 x 7.5 in | 11 standard, brand carried by the master background |
 | Beamer | `main.tex` in the same folder | `aspectratio=169` | see `references/renderer-contracts.md` |
+| Web | `en-tete1260.jpg` (banner) and `LogoLARI_FINAL.png` (logo) in the same folder, passed with `--lab-dir` | 1920 x 1080 px stage for `16:9`, 1080 x 1920 for `9:16`, 1920 x 1440 for `4:3` or any other `meta.aspect` value, a missing one included | six slide kinds, below |
 
 **`Gabarit43.ppt` is legacy binary** (OLE compound document), which no Python OOXML reader
 opens. `Gabarit43.pptx` is the converted copy beside it; the original is left untouched. If a
@@ -175,11 +176,59 @@ text box of the sample slides in inches, with `srcRect` already converted to a k
 
 **The PowerPoint deck is built ON the gabarit, not in its image.** `talk_pptx.py` opens the
 gabarit with python-pptx, drops the sample slides the file ships (six of them in the 16:9), and
-adds each slide on the layout its tier selects, filling the real placeholders. The content band
+adds each slide on the layout its kind, then its tier, selects (an `outline` is timed as a divider but never takes the `divider` layout), filling the real placeholders. The content band
 comes from the layout's own body placeholder, so the lab's clearance around the banner and the
 wordmark is respected without a single hardcoded number. `assets/deck_skeleton.js` (pptxgenjs)
 remains the fallback for a deck with **no** gabarit at all, since pptxgenjs cannot read another
 file's layouts.
+
+**The web deck is the LARI deck.** Its visual source is the canonical Beamer gabarit as it
+renders when compiled, not a free design, and it needs the gabarit folder too: the banner and
+the logo are read from it at render time and embedded in the file. Without `--lab-dir` the
+render is refused (exit 2); a folder that lacks either image is refused by name. There is no
+stand-in.
+
+```bash
+python .claude/skills/paper2talk/scripts/talk_model.py talk_model.json \
+       --render .claude/skills/paper2talk/assets/web_skeleton.html.j2 \
+       --lab-dir ../gabarit_these_maitrise_DSA_UQAC/src/slides --out out/deck.html
+python .claude/skills/paper2talk/scripts/talk_validate.py --web out/deck.html          # every QA pass
+python .claude/skills/paper2talk/scripts/talk_validate.py --web out/deck.html --open   # once, on the final clean pass
+```
+
+The deck is opened once, on the final clean pass, and not at all with `/talk --no-open`.
+
+- **Identity.** Lab green `#006341` (overridden by `palette.brand`), sans-serif type, a
+  full-width green frame-title band, green blocks and red alert blocks (`"alert": true` on a
+  `takeaway` or a `cards` item). The LARI logo appears on the title slide only.
+- **Six slide kinds.** `title` (UQAC banner, rounded green title box with the subtitle, then
+  authors, institute, `meta.date`, and the logo); `outline` (the model's sections, in order);
+  `content`; `divider` (the section name, large and centred, no band); `thanks` (its text as a
+  large green headline); `backup`.
+- **Footer.** Every slide except the title slide carries one footer row, outside the content
+  area: `meta.short_author` (otherwise the authors joined with ", "), `meta.short_title`
+  (otherwise the title), `meta.date`, and `n / N`. When it renders the web deck, `talk_model.py`
+  reports a footer field longer than `talk_rules.FOOTER_FIELD_MAX_CHARS`, whether a long field
+  with no short form or a short form that is itself too long, so a footer is shortened in the
+  model instead of being clipped on every slide. Beamer
+  and PowerPoint do not read the short forms, so their models are not held to that cap.
+- **One file.** Every figure is embedded as a `data:` URI, resolved relative to the folder of
+  `talk_model.json`. A missing figure, one resolving outside that folder, one over
+  `talk_rules.WEB_ASSET_MAX_BYTES`, or one that is not a PNG, JPEG, GIF or SVG by its content
+  is refused (exit 2) rather than left as a path. `talk_validate.py --web` then fails the deck
+  on any `src`, `href` or CSS `url()` that is `http(s)`, protocol-relative (`//`) or relative;
+  only `data:`, `#fragment` and `mailto:` pass.
+- **Opening.** `--open` hands the deck to the system's default browser only after that check
+  is clean. A deck with findings (exit 1) or one that cannot be read (exit 2) is never opened,
+  and without `--open` nothing opens. A browser that fails to start is reported with the file
+  to open by hand; the clean verdict stands. In a Unix session with no display and no `BROWSER`
+  set, nothing is started either (the standard library would wait on a console browser): the
+  deck is named to open by hand, and the run still exits 0.
+- **In the room.** Arrows, Space, PageUp/PageDown, Home and End move; a click or a single-touch
+  swipe moves too; `N` shows the speaker notes with pacing against the notes budget; `F`
+  fullscreen, `B` or `.` black screen (a move while it is up only brings the slide back),
+  `?` the key list. The address `#/n` opens slide n. The
+  stage keeps its fixed canvas, scaled and centred on any screen, and prints one page per slide.
 
 Full renderer contracts, layout mapping, and the two-greens problem:
 `references/renderer-contracts.md`.
@@ -208,6 +257,11 @@ Worked at 13 minutes, and the difference is the point:
 | --- | --- | --- | --- |
 | No dividers (title + thanks + refs) | `13 - 1.0` | 12 | **15** |
 | Five section dividers | `13 - 1.0 - 5 x 0.33` | 10 | **18** |
+
+An **outline** slide (`"kind": "outline"`) is drawn as its own layout, the model's sections in
+order, but it is timed as a divider: `talk_rules.KIND_TIER` maps the kind to the divider tier,
+so it counts in `n_dividers` above and costs what a divider costs. The divider's cost is
+written once, in `talk_rules.TIER_MINUTES`; the outline has none of its own.
 
 The divider-bearing deck runs *fewer* content slides and *more* slides overall. Both are
 legal; the choice is rhetorical. `talk_notes.py` reports the cadence next to the word count as
@@ -376,18 +430,18 @@ whose provenance is gone is a deck nobody can revise six months later.
 | --- | --- |
 | `scripts/talk_doctor.py` | preflight: which targets this machine can build, and what degrades without each missing tool |
 | `scripts/paper_extract.py` | read the paper: `\input` flattening, sections, floats, equations, citations, and the number inventory the deck is checked against |
-| `scripts/talk_rules.py` | audience profiles, tier costs, cadence formula, word budget, build contract (import-only) |
-| `scripts/talk_model.py` | the deck as data: block vocabulary, validation, budget aggregation, Jinja rendering for the Beamer and web targets |
+| `scripts/talk_rules.py` | audience profiles, tier costs, the kind-to-tier map (`outline` timed as a divider), cadence formula, word budget, build contract, web interaction and footer constants (import-only) |
+| `scripts/talk_model.py` | the deck as data: block and slide-kind vocabulary, validation, budget aggregation, Jinja rendering for the Beamer and web targets; for the web, `--lab-dir` and the embedding of the lab images and every figure as `data:` URIs |
 | `scripts/talk_template.py` | read a template `.pptx`, emit the brand contract as JSON, extract media |
 | `scripts/fig_export.py` | re-export a figure through the draw.io CLI at scale 3, with `--fix-text` label repair into a copy |
 | `scripts/talk_render.py` | deck to PDF (soffice, else PowerPoint COM) to page images, page-count gate, `--paper` reflow |
 | `scripts/talk_notes.py` | spoken budget, per-slide and per-section drift, cadence block, exhibit coverage |
 | `scripts/to_a4.py` | reflow a slide-sized PDF onto A4 or Letter, with `--handout 2\|4\|6` |
-| `scripts/talk_validate.py` | package checks (plugin validator, located not hardcoded), legibility gate, text-only-slide check, web self-containment |
+| `scripts/talk_validate.py` | package checks (plugin validator, located not hardcoded), legibility gate, text-only-slide check, web self-containment (no `http(s)`, protocol-relative or relative reference), and `--open` to view a web deck once it is clean |
 | `scripts/talk_pptx.py` | **the PowerPoint renderer**: opens the lab gabarit, drops its sample slides, adds each slide on one of its own layouts, fills the placeholders, writes the notes pane |
 | `assets/deck_skeleton.js` | pptxgenjs fallback for a deck with no gabarit; carries the design system as functions |
 | `assets/beamer_skeleton.tex.j2` | Beamer renderer on the canonical lab gabarit |
-| `assets/web_skeleton.html.j2` | one self-contained HTML file, fixed stage, presenter notes, print path |
+| `assets/web_skeleton.html.j2` | the LARI web deck: one self-contained HTML file, six slide kinds, lab banner and logo, footer row, keyboard, click and swipe navigation, presenter notes with pacing, scaled and centred fixed stage, print path; requires `--lab-dir` |
 
 Dependencies: `scripts/requirements.txt` (pypdf, python-pptx, defusedxml, jinja2), optional
 `pymupdf` for PDF input (already a dependency of `extract-statistic`), plus Poppler

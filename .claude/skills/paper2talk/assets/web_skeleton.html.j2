@@ -3,7 +3,7 @@
 {# requires: lab-assets #}
 {#- One rule for the footer author: exactly the field talk_model._footer_problems measures. -#}
 {%- set foot_author = meta.short_author or (meta.authors or []) | join(', ') -%}
-{%- set foot_title = meta.short_title or meta.title -%}
+{%- set foot_title = meta.short_title or meta.title or '' -%}
 {%- macro blocks(items) -%}
 {% for b in items %}
 {% if b.kind == "bullets" %}
@@ -76,8 +76,8 @@
   green frame-title band, a rounded green title box with the UQAC banner above it and the
   LARI logo beside it on the title slide only, green blocks with red alert blocks, and one
   green footer row. Its defects are not reproduced: the footer is a row of its own, so no
-  content runs under it; its fields are the short forms talk_model.validate_model keeps
-  within the footer box, so nothing is clipped; and there are no navigation icons.
+  content runs under it; talk_model reports, when it renders this deck, any footer field
+  longer than the footer box, so nothing is clipped; and there are no navigation icons.
 
   ONE self-contained file: inline CSS and JS, every image a data: URI (talk_model embeds the
   figures and the two lab images), safe-list system fonts and no webfont, no CDN, no build
@@ -151,8 +151,8 @@
   .slide-body { grid-area: body; min-height: 0; overflow: hidden; box-sizing: border-box;
                 padding: 40px 60px; display: flex; flex-direction: column; gap: 28px; }
 
-  /* Footer: one green row, its own grid area. Fields are short forms kept within the
-     box by validate_model; nowrap keeps one line. */
+  /* Footer: one green row, its own grid area. A field longer than the box is reported
+     by talk_model at the web render; nowrap keeps one line. */
   .footline { grid-area: foot; display: grid;
               grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto auto;
               background: var(--brand); color: #fff; font-size: var(--caption); }
@@ -307,7 +307,7 @@
       </div>
 {% endif %}
 {% if kind != "title" %}
-      <footer class="footline"><span class="foot-author">{{ foot_author }}</span><span class="foot-title">{{ foot_title }}</span><span class="foot-date">{{ meta.date | default('') }}</span><span class="foot-num">{{ loop.index }} / {{ loop.length }}</span></footer>
+      <footer class="footline"><span class="foot-author">{{ foot_author }}</span><span class="foot-title">{{ foot_title }}</span><span class="foot-date">{{ meta.date or '' }}</span><span class="foot-num">{{ loop.index }} / {{ loop.length }}</span></footer>
 {% endif %}
     </section>
 {% endfor %}
@@ -325,7 +325,7 @@
     <dt>Home End</dt><dd>first and last slide</dd>
     <dt>N</dt><dd>speaker notes and pacing</dd>
     <dt>F</dt><dd>fullscreen</dd>
-    <dt>B or .</dt><dd>black screen</dd>
+    <dt>B or .</dt><dd>black screen; any move first brings the slide back</dd>
     <dt>?</dt><dd>this help; Escape closes it</dd>
   </dl>
   <button type="button" id="help-close">Close</button>
@@ -335,8 +335,8 @@
 <aside class="notes" id="notes"><div id="pacing" class="pacing"></div><div id="notes-text"></div></aside>
 
 <script>
-// The deck's interaction layer, plain JavaScript written for this template. Every number
-// it acts on arrives in DECK: the swipe threshold from talk_rules.WEB_INTERACTION and the
+// The deck's interaction layer, plain JavaScript written for this template. Every configured
+// number it acts on arrives in DECK (the one-second clock tick is the clock's own unit): the swipe threshold from talk_rules.WEB_INTERACTION and the
 // spoken seconds of each slide from the notes budget (talk_model.slide_pacing).
 const DECK = {{ {"swipe_threshold_px": web.swipe_threshold_px, "pacing": pacing} | tojson }};
 // Speaker notes travel with the deck, exactly as they do in the PowerPoint notes
@@ -354,6 +354,7 @@ const help = document.getElementById('help');
 let index = 0;
 let scale = 1;
 let started = null;      // the talk clock starts at the first move away from a slide
+let startFirst = 0;      // the slide that move reached: the first one the clock budgets
 let lastFocus = null;
 
 function fit() {
@@ -380,8 +381,12 @@ function clock(seconds) {
 }
 
 function updatePacing() {
-  // Elapsed talk time against the cumulative spoken budget up to the end of this slide.
-  const planned = DECK.pacing.slice(0, index + 1).reduce((a, b) => a + b, 0);
+  // Elapsed talk time against the cumulative spoken budget up to the end of this slide,
+  // counted from the slide the starting move reached, whichever its direction: the slide
+  // it left was spoken before the clock ran. Back before that slide, the slide now being
+  // spoken is counted again.
+  const first = started === null ? 0 : Math.min(startFirst, index);
+  const planned = DECK.pacing.slice(first, index + 1).reduce((a, b) => a + b, 0);
   const elapsed = started === null ? 0 : (Date.now() - started) / 1000;
   const lead = planned - elapsed;
   pacingEl.textContent = 'this slide ' + clock(DECK.pacing[index] || 0)
@@ -407,8 +412,10 @@ function show(i) {
 }
 
 function go(i) {
-  if (started === null && i !== index) started = Date.now();
-  show(i);
+  // Clamp first: a move that changes nothing (Left on the first slide) starts no clock.
+  const target = Math.max(0, Math.min(slides.length - 1, i));
+  if (started === null && target !== index) { started = Date.now(); startFirst = target; }
+  show(target);
 }
 
 function toggleFullscreen() {
@@ -440,13 +447,20 @@ window.addEventListener('hashchange', () => {
 });
 document.getElementById('help-close').addEventListener('click', closeHelp);
 
+const NAV_KEYS = ['Escape', 'ArrowRight', 'PageDown', ' ', 'ArrowLeft', 'PageUp', 'Home', 'End'];
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.altKey || e.metaKey || isTyping(e.target)) return;
   if (!help.hidden) {
     if (e.key === 'Escape' || e.key === '?') { closeHelp(); e.preventDefault(); }
     return;
   }
-  if (e.key === 'Escape' && !blackout.hidden) { blackout.hidden = true; return; }
+  // On the black screen a move only brings the slide back, as a click does: a clicker's
+  // PageDown must not turn the page unseen.
+  if (!blackout.hidden && NAV_KEYS.includes(e.key)) {
+    blackout.hidden = true;
+    e.preventDefault();
+    return;
+  }
   if (['ArrowRight', 'PageDown', ' '].includes(e.key)) go(index + 1);
   else if (['ArrowLeft', 'PageUp'].includes(e.key)) go(index - 1);
   else if (e.key === 'Home') go(0);
@@ -469,6 +483,7 @@ document.addEventListener('click', (e) => {
   // presenter's own panels, and except when the presenter was selecting text.
   if (e.button !== 0) return;
   if (e.target.closest('a, button, input, select, textarea, [contenteditable], #help, .notes')) return;
+  if (!help.hidden) return;          // the dialog is modal: the deck behind it stays put
   if (!blackout.hidden) { blackout.hidden = true; return; }
   if (String(window.getSelection()).length) return;
   go(index + 1);
@@ -476,6 +491,12 @@ document.addEventListener('click', (e) => {
 
 let touch = null;
 document.addEventListener('touchstart', (e) => {
+  // The open help is modal and the notes are the presenter's own panel: no page turn
+  // there, the same rule as a click.
+  if (!help.hidden || (e.target.closest && e.target.closest('#help, .notes'))) {
+    touch = null;
+    return;
+  }
   // A second finger makes the whole gesture a pinch or a zoom, never a page turn.
   touch = e.touches.length > 1 ? { multi: true }
                                : { x: e.touches[0].clientX, y: e.touches[0].clientY, multi: false };
@@ -490,6 +511,10 @@ document.addEventListener('touchend', (e) => {
   const dy = (t.clientY - touch.y) / scale;
   touch = null;
   if (Math.abs(dx) >= DECK.swipe_threshold_px && Math.abs(dx) > Math.abs(dy)) {
+    // On a small screen the threshold is inside the tap slop, so the browser would
+    // also synthesize a click for this gesture and turn the page a second time.
+    e.preventDefault();
+    if (!blackout.hidden) { blackout.hidden = true; return; }   // as a click does
     go(index + (dx < 0 ? 1 : -1));
   }
 });

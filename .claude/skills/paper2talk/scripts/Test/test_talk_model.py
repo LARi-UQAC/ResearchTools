@@ -201,6 +201,39 @@ class TestOutlineKind(unittest.TestCase):
         model = fx.model(self._slides("Intro", "Method", "Intro", "Results"))
         self.assertEqual(tm.outline_sections(model), ["Intro", "Method", "Results"])
 
+    def test_backup_sections_are_not_listed_by_the_outline(self):
+        # R35 round 3: backup slides sit outside the talk slot (the budget excludes
+        # them), so their section is never presented and must not be promised.
+        slides = self._slides("Intro", "Results")
+        slides.append({"n": 9, "kind": "backup", "section": "Appendix", "title": "B",
+                       "blocks": [], "notes": ""})
+        self.assertEqual(tm.outline_sections(fx.model(slides)), ["Intro", "Results"])
+
+    def test_chrome_slides_do_not_list_their_own_section(self):
+        # R35 round 4: an outline tagged section "Outline" listed itself, and alone it
+        # satisfied the "a slide declares a section" check.
+        slides = self._slides("Intro", "Results")
+        slides[0]["section"] = "Outline"
+        slides.insert(0, {"n": 0, "kind": "title", "section": "Opening", "title": "T",
+                          "blocks": [], "notes": ""})
+        slides.append({"n": 8, "kind": "thanks", "section": "Closing", "title": "Q",
+                       "blocks": [], "notes": ""})
+        self.assertEqual(tm.outline_sections(fx.model(slides)), ["Intro", "Results"])
+        alone = self._slides()
+        alone[0]["section"] = "Outline"
+        problems = tm.validate_model(fx.model(alone))
+        self.assertTrue(any("outline" in p and "section" in p for p in problems), problems)
+        # R35 round 13: the refusal names the rule, or the author edits the wrong slide.
+        self.assertTrue(any("no content or divider slide declares a section" in p
+                            for p in problems), problems)
+
+    def test_a_divider_section_is_listed(self):
+        # Negative control: a divider opens a section of the talk and stays listed.
+        slides = self._slides("Intro")
+        slides.append({"n": 5, "kind": "divider", "section": "Method", "title": "Method",
+                       "blocks": [], "notes": ""})
+        self.assertEqual(tm.outline_sections(fx.model(slides)), ["Intro", "Method"])
+
     def test_an_outline_with_no_section_to_list_is_reported(self):
         problems = tm.validate_model(fx.model(self._slides()))
         # Not the unknown-kind message: the problem is that there is nothing to list.
@@ -243,6 +276,21 @@ class TestOutlineKind(unittest.TestCase):
         first, second = tex.find(r"\item Intro"), tex.find(r"\item Method")
         self.assertTrue(0 <= first < second, "sections missing or out of order")
         self.assertEqual(tex.count(r"\item Intro"), 1)
+
+    def test_a_beamer_outline_draws_its_own_blocks_after_the_sections(self):
+        # R35 round 2: the web and PowerPoint outlines draw the slide's blocks, the
+        # Beamer outline frame dropped them while assert_renderable stayed silent.
+        slides = self._slides("Intro", "Method")
+        slides[0]["blocks"] = [{"kind": "takeaway", "text": "Fictitious plan claim"}]
+        base = tempfile.mkdtemp()
+        out = os.path.join(base, "main.tex")
+        tm.render_template(fx.model(slides), BEAMER_TEMPLATE, out)
+        with open(out, encoding="utf8") as fh:
+            tex = fh.read()
+        frame = tex[tex.find(r"\item Intro"):]
+        frame = frame[:frame.find(r"\end{frame}")]
+        self.assertIn("Fictitious plan claim", frame)
+        self.assertLess(frame.find(r"\item Method"), frame.find("Fictitious plan claim"))
 
     def test_a_beamer_outline_with_no_sections_renders_no_empty_list(self):
         # An empty itemize is a LaTeX error, so nothing is emitted rather than a list.
@@ -309,6 +357,18 @@ class TestTemplateContext(unittest.TestCase):
         normal, _ = self._render(model)
         self.assertAlmostEqual(slow[1], 2 * normal[1], places=6)
 
+    def test_a_backup_slide_adds_nothing_to_the_pacing(self):
+        # R35 round 7: backup slides sit outside the slot, but their notes' seconds were
+        # added to the deck's planned time, so a presenter in the Q&A read "ahead".
+        slides = self._slides() + [{"n": 4, "kind": "backup", "title": "B", "blocks": [],
+                                    "notes": " ".join(f"w{i}" for i in range(150))}]
+        pacing, _ = self._render(fx.model(slides))
+        expected = [row["seconds"] for row in tm.budget_rows(fx.model(self._slides()))]
+        self.assertEqual(len(pacing), 4)
+        self.assertEqual(pacing[3], 0)
+        for got, want in zip(pacing[:3], expected):
+            self.assertAlmostEqual(got, want, places=6)
+
     def test_web_carries_the_swipe_threshold(self):
         _, swipe = self._render(fx.model(self._slides()))
         self.assertEqual(swipe, "40")
@@ -326,10 +386,62 @@ class TestFooterFields(unittest.TestCase):
     LONG_TITLE = "A deliberately long fictitious title that cannot fit its footer box"
     LONG_AUTHORS = ["Wick, J.", "Doe, A.", "Roe, B.", "Poe, C.", "Moe, D.", "Zoe, E."]
 
+    def _model(self, **meta):
+        # Bullets, not a figure: an .html render embeds figures, and this suite is about
+        # the footer, not about a figure file on disk.
+        return fx.model([{"n": 1, "kind": "content", "title": "S1",
+                          "blocks": [{"kind": "bullets", "items": ["a"]}], "notes": "blink"}],
+                        **meta)
+
     def _problems(self, **meta):
-        model = fx.model([{"n": 1, "kind": "content", "title": "S1",
-                           "blocks": [BLOCK_SAMPLES["figure"]], "notes": "blink"}], **meta)
-        return [p for p in tm.validate_model(model) if "footer" in p]
+        return [p for p in tm.footer_problems(self._model(**meta)) if "footer" in p]
+
+    def _main(self, model, *argv):
+        base = tempfile.mkdtemp()
+        path = os.path.join(base, "talk_model.json")
+        with open(path, "w", encoding="utf8") as fh:
+            json.dump(model, fh)
+        template = os.path.join(base, "plain.html.j2")
+        with open(template, "w", encoding="utf8") as fh:
+            fh.write("{# supported-blocks: bullets figure #}\nTITLE={{ meta.title }}\n")
+        argv = [a.replace("{template}", template).replace("{base}", base) for a in argv]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            tm.main([path, *argv])
+        return [line for line in out.getvalue().splitlines() if "footer" in line]
+
+    def test_validation_alone_does_not_report_a_web_footer(self):
+        # R35 round 1: the cap guards the web footer, which alone reads short_title.
+        # Reported by validate_model, it failed every Beamer and PowerPoint model with a
+        # long title and named a remedy those targets never read.
+        model = self._model(title=self.LONG_TITLE, authors=self.LONG_AUTHORS)
+        self.assertEqual([p for p in tm.validate_model(model) if "footer" in p], [])
+        self.assertEqual(self._main(model), [])
+        self.assertEqual(self._main(model, "--render", "{template}",
+                                    "--out", os.path.join("{base}", "deck.txt")), [])
+
+    def test_a_web_render_with_json_prints_parseable_json(self):
+        # R35 round 15 (R17): the footer check now runs only on an .html render, so its
+        # one machine-readable form is --render ... --json, and the "rendered" line printed
+        # before the JSON on stdout made that output unparseable.
+        base = tempfile.mkdtemp()
+        path = os.path.join(base, "talk_model.json")
+        with open(path, "w", encoding="utf8") as fh:
+            json.dump(self._model(title=self.LONG_TITLE), fh)
+        template = os.path.join(base, "plain.html.j2")
+        with open(template, "w", encoding="utf8") as fh:
+            fh.write("{# supported-blocks: bullets figure #}\nTITLE={{ meta.title }}\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            tm.main([path, "--render", template, "--out", os.path.join(base, "d.html"), "--json"])
+        report = json.loads(out.getvalue())
+        self.assertTrue(any("short_title" in p for p in report["problems"]), report["problems"])
+
+    def test_a_web_render_reports_the_long_footer_field(self):
+        model = self._model(title=self.LONG_TITLE)
+        lines = self._main(model, "--render", "{template}",
+                           "--out", os.path.join("{base}", "deck.html"))
+        self.assertTrue(any("short_title" in line for line in lines), lines)
 
     def test_the_fixture_fields_are_over_the_cap(self):
         self.assertGreater(len(self.LONG_TITLE), rules.FOOTER_FIELD_MAX_CHARS)
@@ -464,6 +576,42 @@ class TestAssetEmbedding(unittest.TestCase):
                 self._write(os.path.join(self.root, name), data)
                 uri = tm.embed_asset(name, self.root, self.cap)
                 self.assertTrue(uri.startswith(f"data:{mime};base64,"), uri[:40])
+
+    def test_an_svg_with_a_doctype_or_comment_prologue_is_recognised(self):
+        # R35 round 1: matplotlib and draw.io write a DOCTYPE before <svg>, Inkscape a
+        # comment; both were refused as "not a recognised image".
+        prologues = {
+            "doctype.svg": (b'<?xml version="1.0" encoding="utf-8" standalone="no"?>\n'
+                            b'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"\n'
+                            b'  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n'),
+            "comment.svg": (b'<?xml version="1.0"?>\n'
+                            b'<!-- Created with a fictitious editor -->\n'),
+            "subset.svg": b'<!DOCTYPE svg [ <!ENTITY probe "x"> ]>\n<!-- a > b -->\n',
+        }
+        for name, prologue in prologues.items():
+            with self.subTest(name=name):
+                self._write(os.path.join(self.root, name), prologue + SVG_BARE_BYTES)
+                uri = tm.embed_asset(name, self.root, self.cap)
+                self.assertTrue(uri.startswith("data:image/svg+xml;base64,"), uri[:40])
+
+    def test_a_prologue_followed_by_another_root_is_still_refused(self):
+        # Negative control: skipping the prologue must not admit an HTML page.
+        for name, data in (("page.svg", b"<!DOCTYPE html>\n<html></html>"),
+                           ("note.svg", b"<!-- svg -->\n<html></html>"),
+                           ("open.svg", b"<!-- never closed <svg></svg>")):
+            with self.subTest(name=name):
+                self._write(os.path.join(self.root, name), data)
+                with self.assertRaises(tm.AssetError):
+                    tm.embed_asset(name, self.root, self.cap)
+
+    def test_an_asset_that_is_not_a_path_is_refused(self):
+        # R35 round 7: a list, mapping or number as "asset" raised TypeError out of
+        # os.path.join, an uncaught traceback, instead of the named refusal (exit 2).
+        for asset in (["figures/fig1.png"], {"path": "figures/fig1.png"}, 5, None):
+            with self.subTest(asset=asset):
+                with self.assertRaises(tm.AssetError) as ctx:
+                    tm.embed_asset(asset, self.root, self.cap)
+                self.assertIn("path", str(ctx.exception))
 
     def test_a_missing_file_is_refused_by_name(self):
         with self.assertRaises(tm.AssetError) as ctx:
@@ -617,6 +765,90 @@ class TestLabAssets(unittest.TestCase):
         self.assertEqual(reqs["supported-blocks"], {"bullets", "figure"})
         self.assertEqual(reqs["supported-kinds"], {"title", "content"})
         self.assertEqual(reqs["requires"], {"lab-assets"})
+
+    def test_a_header_with_whitespace_control_is_read_the_same(self):
+        # R35 round 1: "{#- requires: lab-assets -#}" parsed as key "- requires" and the
+        # requirement vanished, so no --lab-dir was demanded.
+        for opener, closer in (("{#-", "-#}"), ("((#-", "-#))")):
+            with self.subTest(opener=opener):
+                path = self._template("ws.html.j2",
+                                      f"{opener} supported-kinds: title content {closer}\n"
+                                      f"{opener} requires: lab-assets {closer}\n<html></html>\n")
+                reqs = tm.template_requirements(path)
+                self.assertEqual(reqs["supported-kinds"], {"title", "content"})
+                self.assertEqual(reqs["requires"], {"lab-assets"})
+
+    def test_a_blank_line_inside_the_header_drops_nothing(self):
+        # R35 round 9: reading stopped at the first blank line, so a declaration below
+        # it vanished in silence and the check failed open (every kind accepted, no lab).
+        path = self._template("gap.html.j2",
+                              "{# supported-blocks: bullets #}\n\n"
+                              "{# supported-kinds: title content #}\n   \n"
+                              "{# requires: lab-assets #}\n<html></html>\n"
+                              "{# not-a-header: ignored #}\n")
+        reqs = tm.template_requirements(path)
+        self.assertEqual(reqs["supported-kinds"], {"title", "content"})
+        self.assertEqual(reqs["requires"], {"lab-assets"})
+
+    def test_a_byte_order_mark_hides_no_declaration(self):
+        # R35 round 10: a template saved with a UTF-8 BOM (as some Windows editors do)
+        # declared nothing, so every kind was accepted and --lab-dir was not demanded.
+        path = os.path.join(self.base, "bom.html.j2")
+        with open(path, "w", encoding="utf-8-sig") as fh:
+            fh.write("{# supported-kinds: title content #}\n{# requires: lab-assets #}\n<html>\n")
+        reqs = tm.template_requirements(path)
+        self.assertEqual(reqs["supported-kinds"], {"title", "content"})
+        self.assertEqual(reqs["requires"], {"lab-assets"})
+
+    def test_a_key_declared_on_two_lines_keeps_both(self):
+        # R35 round 10: a repeated key replaced the first line, so a requirement or a
+        # wrapped block list silently lost its first half.
+        path = self._template("twice.html.j2",
+                              "{# supported-blocks: bullets figure #}\n"
+                              "{# supported-blocks: table #}\n"
+                              "{# requires: lab-assets #}\n{# requires: other #}\n<html>\n")
+        reqs = tm.template_requirements(path)
+        self.assertEqual(reqs["supported-blocks"], {"bullets", "figure", "table"})
+        self.assertEqual(reqs["requires"], {"lab-assets", "other"})
+
+    def test_a_refusal_carries_the_tag_once(self):
+        # R35 round 10: the asset and lab refusals already start with the tag, and main
+        # added it again: "[MODEL] [MODEL] ... requires the lab assets".
+        code, err = self._main()
+        self.assertEqual(code, 2)
+        self.assertEqual(err.count(tm.TAG), 1, err)
+
+    def test_the_header_still_ends_at_the_first_content_line(self):
+        # Negative control: a comment after real content is not a declaration.
+        path = self._template("late.html.j2",
+                              "{# supported-blocks: bullets #}\n<html>\n"
+                              "{# requires: lab-assets #}\n")
+        self.assertEqual(tm.template_requirements(path)["requires"], set())
+
+    def test_model_keys_never_override_what_the_render_computes(self):
+        # R35 round 1: the .html path merged the whole model back over the context, so
+        # a model key named lab, web, sections or pacing replaced the computed value
+        # (a remote "lab" logo then passed --web with an uppercase scheme).
+        probe = self._template("probe.html.j2", (
+            "{# supported-blocks: bullets #}\n{# requires: lab-assets #}\n"
+            "BANNER={{ lab.banner }}\nLOGO={{ lab.logo }}\n"
+            "SWIPE={{ web.swipe_threshold_px }}\nSECTIONS={{ sections | join('|') }}\n"
+            "PACING={{ pacing | length }}\nTITLE={{ slides[0].title }}\n"))
+        model = dict(self.model)
+        model.update({"lab": {"banner": "HTTP://evil.example/b.png",
+                              "logo": "HTTP://evil.example/l.png"},
+                      "web": {"swipe_threshold_px": 1}, "sections": ["Forged"],
+                      "pacing": [99, 99, 99]})
+        tm.render_template(model, probe, self.out, model_dir=self.base, lab_dir=self.lab)
+        with open(self.out, encoding="utf8") as fh:
+            out = dict(line.split("=", 1) for line in fh.read().splitlines() if "=" in line)
+        self.assertTrue(out["BANNER"].startswith("data:image/jpeg;base64,"), out["BANNER"][:30])
+        self.assertTrue(out["LOGO"].startswith("data:image/png;base64,"), out["LOGO"][:30])
+        self.assertEqual(out["SWIPE"], "40")
+        self.assertNotIn("Forged", out["SECTIONS"])
+        self.assertEqual(out["PACING"], "1")
+        # Positive control: the slides themselves still come from the model.
+        self.assertEqual(out["TITLE"], "T")
 
     def test_an_undeclared_requirement_is_empty(self):
         self.assertEqual(tm.template_requirements(self.plain_template)["requires"], set())

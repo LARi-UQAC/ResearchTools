@@ -181,6 +181,82 @@ class TestWebTarget(unittest.TestCase):
         )
         self.assertEqual(tv.check_web(page), [])
 
+    def test_url_in_slide_text_or_notes_is_not_a_reference(self):
+        # R35 round 2: the CSS url() scan ran over every line, so a bullet or a speaker
+        # note that MENTIONS url(...) failed the deck; a browser loads nothing for it.
+        for body in ('<li>use url(data) here</li>',
+                     '<script>const NOTES = ["the CSS url(logo.png) call"];</script>',
+                     '<p>see\nurl(figures/a.png) in the text</p>'):
+            with self.subTest(body=body):
+                self.assertEqual(tv.check_web(self._html("prose.html", body)), [])
+
+    def test_url_in_a_tag_spread_over_several_lines_is_still_a_reference(self):
+        # R35 round 3: the round-2 scoping read tags one line at a time, so the url()
+        # of a tag spread over lines - the template's own <polyline>, or a newline a
+        # model value carries into a style attribute - was no longer reported.
+        for body in ('<polyline fill="none" stroke-width="3"\n'
+                     '          stroke="url(//host.example/p.svg#g)"\n'
+                     '          points="0,0 1,1"/>',
+                     '<span class="chip" style="background:#000;\n'
+                     'background-image:url(a.png)">x</span>',
+                     '<div title="a&gt;b"\n style="background:url(a.png)"></div>'):
+            with self.subTest(body=body):
+                problems = tv.check_web(self._html("multi.html", body))
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn("multi.html:2", problems[0])
+
+    def test_a_form_feed_or_line_separator_does_not_shift_the_report(self):
+        # R35 round 4: url() findings were numbered by "\n" and every other finding by
+        # str.splitlines, which also breaks on \f and U+2028, so after slide text
+        # carrying one the two disagreed and one reference could be reported twice.
+        for sep in ("\f", " ", "\x85"):
+            with self.subTest(sep=repr(sep)):
+                body = (f"<p>a{sep}b</p>\n"
+                        '<img src="https://e.example/x.png" '
+                        'style="background:url(https://e.example/y.png)">')
+                problems = tv.check_web(self._html("sep.html", body))
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn("sep.html:2", problems[0])
+
+    def test_url_in_a_caption_or_label_attribute_is_not_a_reference(self):
+        # R35 round 7: every attribute of a tag was scanned, so a caption carried into
+        # alt, or a chart title into aria-label, that MENTIONS url() failed the deck.
+        for body in ('<img src="data:image/png;base64,AA" alt="Loss via url(cache.png)">',
+                     '<svg role="img" aria-label="Rate url(x)"></svg>',
+                     '<a href="#/2" title="see url(a.png)">next</a>'):
+            with self.subTest(body=body):
+                self.assertEqual(tv.check_web(self._html("label.html", body)), [])
+
+    def test_url_inside_the_deck_script_is_not_a_reference(self):
+        # Negative control for the whole-document scan: a comparison in the deck's own
+        # script must not open a "tag" that swallows the code after it.
+        body = ("<script>\nfor (let i = 0; i<slides.length; i++) {\n"
+                "  el.style.background = 'url(a.png)';\n}\n</script>")
+        self.assertEqual(tv.check_web(self._html("script.html", body)), [])
+
+    def test_url_in_a_style_attribute_or_block_is_still_a_reference(self):
+        # Negative control: where a browser does resolve url(), it is still reported,
+        # including a <style> block spread over several lines.
+        for body in ('<div style="background:url(fig.png)"></div>',
+                     '<style>\n.band {\n  background: url(fig.png);\n}\n</style>',
+                     '<svg><rect fill="url(paint.svg#g)"/></svg>'):
+            with self.subTest(body=body):
+                problems = tv.check_web(self._html("style.html", body))
+                self.assertEqual(len(problems), 1, problems)
+
+    def test_an_external_reference_in_any_case_or_spacing_is_reported(self):
+        # R35 round 1: the reference loop skipped every http(s) value on the belief
+        # that the external-URL pattern had reported it, but that pattern is
+        # case-sensitive and wants the scheme right after the quote, so these four
+        # passed --web as "clean" while a browser loads every one of them.
+        for body in ('<img src="HTTPS://example.org/x.png">',
+                     '<link href="Https://fonts.example.org/f.css">',
+                     '<div style="background:URL(HTTP://example.org/c)"></div>',
+                     '<img src=" https://example.org/x.png">'):
+            with self.subTest(body=body):
+                problems = tv.check_web(self._html("case.html", body))
+                self.assertEqual(len(problems), 1, problems)
+
     def test_an_external_reference_is_reported_once(self):
         # Preserve the existing message, and do not report the same URL twice.
         page = self._html("ext.html", '<img src="https://example.org/fig.png">')
@@ -268,6 +344,11 @@ class TestOpenAfterCheck(unittest.TestCase):
     """
 
     def setUp(self):
+        # R35 round 12 (R21): the no-display guard reads the platform and the display, so
+        # every case runs on a pinned desktop platform; the Unix cases override it.
+        platform = mock.patch.object(tv.sys, "platform", "win32")
+        platform.start()
+        self.addCleanup(platform.stop)
         self.dir = tempfile.mkdtemp()
         self.clean = self._html("clean.html", '<img src="data:image/png;base64,iVBORw0KG">')
         self.bad = self._html("bad.html", '<img src="figures/fig1.png">')
@@ -314,6 +395,70 @@ class TestOpenAfterCheck(unittest.TestCase):
         code, opener, err = self._main(["--beamer", "main.tex", "--open"])
         self.assertEqual(code, 2)
         self.assertIn("--open", err)
+        opener.assert_not_called()
+
+    def test_open_with_no_web_deck_names_the_missing_flag(self):
+        # R35 round 12 (R20): the other cause of the refusal, with no --beamer at all.
+        for argv in (["--open"], ["deck.pptx", "--open"]):
+            with self.subTest(argv=argv):
+                code, opener, err = self._main(argv)
+                self.assertEqual(code, 2)
+                self.assertIn("--web is missing", err)
+                opener.assert_not_called()
+
+    def test_a_terminal_only_unix_session_is_never_handed_to_a_browser(self):
+        # R35 round 9: with no display, the standard library falls back to a console
+        # browser (lynx, w3m) and waits on it with no timeout (R10), hanging the run.
+        # BROWSER is removed too (R35 round 11, R21): a devcontainer or VS Code Remote
+        # terminal sets it, and the verdict must not depend on the machine.
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("DISPLAY", "WAYLAND_DISPLAY", "BROWSER")}
+        with mock.patch.object(tv.sys, "platform", "linux"), \
+                mock.patch.dict(tv.os.environ, env, clear=True):
+            code, opener, err = self._main(["--web", self.clean, "--open"])
+        self.assertEqual(code, 0)
+        opener.assert_not_called()
+        self.assertIn("by hand", err)
+
+    def test_cygwin_is_guarded_like_any_unix_session(self):
+        # R35 round 13: Cygwin Python's webbrowser takes the Unix path (console browsers
+        # waited on with no timeout), so it must not be exempted like native Windows.
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("DISPLAY", "WAYLAND_DISPLAY", "BROWSER")}
+        with mock.patch.object(tv.sys, "platform", "cygwin"), \
+                mock.patch.dict(tv.os.environ, env, clear=True):
+            code, opener, err = self._main(["--web", self.clean, "--open"])
+        self.assertEqual(code, 0)
+        opener.assert_not_called()
+        self.assertIn("by hand", err)
+
+    def test_a_browser_named_by_the_user_is_honoured_without_a_display(self):
+        # R35 round 10: BROWSER (wslview under WSL, an SSH-forwarded opener) works with no
+        # display; the round-9 guard must not override the user's own choice.
+        env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+        env["BROWSER"] = "wslview"
+        with mock.patch.object(tv.sys, "platform", "linux"), \
+                mock.patch.dict(tv.os.environ, env, clear=True):
+            code, opener, _ = self._main(["--web", self.clean, "--open"])
+        self.assertEqual(code, 0)
+        opener.assert_called_once()
+
+    def test_a_unix_session_with_a_display_still_opens(self):
+        # Positive control: the guard is about the missing display, not about Unix.
+        with mock.patch.object(tv.sys, "platform", "linux"), \
+                mock.patch.dict(tv.os.environ, {"DISPLAY": ":0"}):
+            code, opener, _ = self._main(["--web", self.clean, "--open"])
+        self.assertEqual(code, 0)
+        opener.assert_called_once()
+
+    def test_open_with_beamer_is_a_usage_refusal(self):
+        # R35 round 5: --beamer runs first and returns 0, so a --web deck given beside it
+        # was neither checked nor opened while the run reported success.
+        code, opener, err = self._main(["--web", self.clean, "--beamer", "main.tex", "--open"])
+        self.assertEqual(code, 2)
+        self.assertIn("--open", err)
+        # R35 round 8: the refusal must name the real cause, --beamer, not a missing --web.
+        self.assertIn("--beamer", err)
         opener.assert_not_called()
 
     def test_a_browser_that_does_not_open_leaves_the_clean_verdict(self):

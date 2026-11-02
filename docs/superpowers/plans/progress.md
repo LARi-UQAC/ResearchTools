@@ -161,12 +161,158 @@ reason. One section per plan file. Updated by the executing model only.
 
 ## plan3.md
 
-- [ ] Task 9 - SKILL.md and renderer-contracts.md
-- [ ] Task 10 - talk-builder.md and talk.md
-- [ ] Task 11 - testing.md, docs/manual/04-skills.md, README.md
+- [x] Task 9 - SKILL.md and renderer-contracts.md (2026-10-08). Documentation only, no new
+  test. `SKILL.md`: section 3 gains a Web row (banner and logo from the same gabarit folder via
+  `--lab-dir`, stage sizes, six kinds) and a "web deck is the LARI deck" block (render and
+  `--web --open` commands with relative paths, identity, the six kinds, footer rule, embedding
+  and the strict offline check, the opening contract, keys and `#/n`); section 4 states that
+  `outline` is timed as a divider through `talk_rules.KIND_TIER` and counts in `n_dividers`,
+  no new timing value; section 11 rows for `talk_rules`, `talk_model`, `talk_validate` and the
+  web template. `renderer-contracts.md`: `kind` is no longer called the tier (six kinds,
+  `KIND_TIER`, `tier_of`); template headers `supported-kinds` and `requires: lab-assets`; a
+  "What a template receives" table (`sections`, `pacing`, `web`, `lab`, figure `data_uri`);
+  the web render command now carries `--lab-dir` (relative) followed by `--web --open`; web
+  target mechanics state the rendered-Beamer source, logo on the title slide only, stage
+  centring, embedding refusals, the strict reference check, opening only what passed, print
+  chrome and the interaction contract. Checks: `description:` line sha256 identical to HEAD
+  (e73780a5cd252d3b); every named constant, function, flag and file present in code; no
+  deferred feature, absolute user path, real name or email in the added lines; `git diff
+  --check` clean. Carried forward: `docs/index.md` was reviewed and is to be left unchanged
+  (no existing paper2talk capability entry), README.md likewise unless Task 11 finds an entry;
+  for plan 4 Task 12 the OpenCode mirror is `.opencode/agent/talk-builder.md`, not
+  `.opencode/agents/talk-builder.md`.
+- [x] Task 10 - talk-builder.md and talk.md (2026-10-08). Documentation only, no new test.
+  `talk-builder.md`: Step 3 "Web: none needed" replaced by the lab folder passed as
+  `--lab-dir` (template `requires: lab-assets`, banner and logo embedded, exit 2 without them),
+  and the ask-for-the-path rule extended to the lab folder and its two images; Step 5 gains the
+  web render command (relative `--lab-dir`), the web gate `talk_validate.py --web out/deck.html
+  --open` by default or without `--open` on `/talk --no-open`, stated as the deck's only
+  opening path (findings exit 1, unreadable exit 2, never opened), and the `talk_render.py`
+  page-count gate is now PowerPoint-only. `talk.md`: `[--no-open]` in the synopsis, defined as
+  web-only and answering no opening question; step 3 states it adds no question; step 5's
+  page-count gate is PowerPoint-only; a web paragraph requires the lab folder (`--lab-dir`, ask
+  for the path, no substitute template) and states render -> validate -> open only if clean.
+  `/talk` exposes no `--open` flag. Checks: agent `description:` sha256 identical to HEAD
+  (d5ef46bbd7711726); Step 1 two calls / six questions unchanged; no `webbrowser` or other
+  browser mechanism in either file; `--lab-dir` in talk_model.py, `--open` gated after
+  `check_web` in talk_validate.py, `requires: lab-assets` in the web template; no deferred
+  feature, absolute user path, real name or email added; `git diff --check` clean. Mirrors
+  intentionally left stale until plan 4 Task 12.
+- [x] Task 11 - testing.md, docs/manual/04-skills.md, README.md (2026-10-08). Documentation
+  only, no test or source change. `testing.md` (R23): paper2talk script-surface line extended
+  for `talk_rules.py` (`KIND_TIER`/`tier_of`, web constants), `talk_model.py` (six kinds and
+  `supported-kinds`, footer cap, `--lab-dir` and `requires: lab-assets` with exit 2, figure
+  embedding and its refusals, the template context), `talk_pptx.py` (outline layout) and
+  `talk_validate.py` (strict `--web` reference check, `--open` only for a clean deck, refusal
+  without `--web`); offline block gains measured counts (`test_talk_model.py` 62,
+  `test_talk_validate.py` 39, `test_talk_notes.py` 14) and a `test_web_skeleton.py` line (34);
+  "thirteen" -> "fourteen" paper2talk suites in the current-inventory paragraph only, the dated
+  2026-08-29 "thirteen paper2talk cases" left as it was. `docs/manual/04-skills.md` (R33):
+  summary row says PowerPoint on the gabarit via `talk_pptx.py` with pptxgenjs only as the
+  no-gabarit fallback (verified in `talk_doctor.py` and SKILL.md) plus the LARI web deck;
+  render row adds `--lab-dir`; gates row adds `--web --open` and marks `talk_render.py`
+  PowerPoint-only; gabarit bullet names the two web images; new "LARI web deck" bullet
+  (identity, six kinds with outline timed as a divider, `--lab-dir` and ask-for-the-path,
+  offline output, default validate-then-open, `/talk --no-open`, keys); files list updated and
+  "fourteen offline suites, 284 tests" (measured: 14 suites, 284 tests by `Ran`, two of them
+  NOT RUN here for missing optional packages; 182 before Issue #53 + 102 added). R33 decisions:
+  README.md reviewed and intentionally left unchanged - no existing paper2talk capability
+  entry; docs/index.md reviewed and intentionally left unchanged - no existing paper2talk
+  capability entry. Checks: every path, script and flag named exists; section anchor unchanged,
+  no link added; no deferred feature, absolute user path, real name or email added; `git diff
+  --check` clean; no diff in README.md, docs/index.md, paper2talk scripts or assets. The
+  `testing.md` mirror is intentionally stale until plan 4 Task 12.
 
 ## plan4.md
 
-- [ ] Task 12 - mirrors regenerated
-- [ ] Task 13 - full suite, offline render, manual visual check
-- [ ] Task 14 - R35 review loop clean, rounds recorded
+- [x] Task 12 - mirrors regenerated (2026-10-08). Command: `.\install.ps1 -Profile engineering`
+  (no `-Personal`, no `-Manifest`), log ends "Done. Commit the regenerated mirrors.", no error;
+  the seven `[STUB]` lines are the known long agents. Mapping: `talk-builder.md` ->
+  `.github/agents/talk-builder.agent.md` and `.opencode/agent/talk-builder.md` (the plan's
+  `.opencode/agents/` path does not exist); `talk.md` -> `.github/prompts/talk.prompt.md`;
+  `testing.md` -> `.github/instructions/testing.instructions.md`; `SKILL.md` ->
+  `.agents/skills/paper2talk/SKILL.md` (frontmatter-only, description unchanged so unchanged);
+  `renderer-contracts.md`, `docs/manual/04-skills.md`, `progress.md` have no mirror. Of 105
+  fingerprinted generator outputs exactly those four changed (+80 / -26), none created. Sync:
+  agent mirrors carry the canonical body (one trailing blank line, as at HEAD); the prompt
+  applies the documented H1 -> description and `$ARGUMENTS` rewrite, as at HEAD; the
+  instructions mirror holds the rule body in its `applyTo` wrapper. A second run changed no
+  file (idempotent). Unchanged vs HEAD: `.agents/skills/paper2talk/SKILL.md`, `AGENTS.md`,
+  `CONVENTIONS.md`, `.github/copilot-instructions.md`, `.continue/rules/researchtools.md`,
+  `.claude/skills/AGENTS.md`, `CLAUDE.template.md`, `.claude/CLAUDE.md`; SKILL `description:`
+  sha256 e73780a5cd252d3b as at HEAD; no source, test, README.md or docs/index.md change; no
+  untracked file, no `.rt-mirrors.json`; no private data in the mirror diffs; `git diff
+  --check` clean.
+- [x] Task 13 - full suite, offline render, manual visual check (2026-10-08). Verification
+  only, no source, test, template or doc change. Focused paper2talk suites green (talk_model
+  62, talk_validate 39, web_skeleton 34, talk_notes 14 and the other eight); talk_pptx and
+  to_a4 not runnable here (`pptx`, `pypdf` absent). `run-offline-tests.ps1`: exit 0, 106
+  suites, 101 passed, 0 failed, 5 not run (pypdf x3, pyhanko, pptx), `.rt-green.json`
+  rewritten. `install.ps1 -Profile engineering` re-run: 0 of 105 outputs changed. Fictitious
+  10-slide fixture (all six kinds, PNG and SVG figures, cards, alert, table, matrix) outside
+  the repository: render without `--lab-dir` exit 2 and no file; with `--lab-dir` rendered,
+  `talk_validate.py --web` clean (no `--open`); 0 external, protocol-relative or relative
+  reference, every image a data URI. Offline headless Edge (unresolvable hosts, dead proxy):
+  10 screenshots match the gabarit (banner and logo on the title only, #006341, footer on
+  slides 2-10, nothing under the footer); interaction probe 57/57 at 1894x940 and 998x628
+  (keys, modifier and typing guards, hash clamp, click and its guards, 40 px swipe, vertical
+  and multi-touch ignored, help, blackout, F calls requestFullscreen, notes and pacing,
+  centred scale); print-to-PDF 10 pages for 10 slides, chrome hidden. `git diff --check`
+  clean, nothing staged or untracked, no personal data in the diff. Known: the repository's
+  `verify-no-personal-data.ps1` exits 1 on 6 pre-existing substring hits of this machine's
+  account name in files this branch does not touch.
+- [x] Task 14 - R35 loop run to round 18, clean: security clean from round 4 to 18, the last
+  code-review round left two doc items, fixed (see R18 below). Target: `git diff dbe3058` (3 commits plus
+  the working tree), `/security-review` and `/code-review` at high effort each round. Classes:
+  A fixed (a test failing first where testable), B pre-existing or accepted, C false positive or
+  scoped by the approved spec/plan, D excluded. Security: rounds 1-3 found the two issues below,
+  rounds 4-16 clean (13 in a row). Who can bypass `--web`/`--open`: no model, figure or flag
+  combination; `--open` runs only after a clean check on the same path. Fixes per round (A):
+  - R1: a model key (`lab`, `web`, `sections`, `pacing`) overrode computed context; `check_web`
+    missed an uppercase or space-prefixed scheme; SVG behind a DOCTYPE/comment refused; header
+    `{#-` ignored; footer cap failed Beamer/PPTX models (moved to the web render); outline took
+    the PPTX `divider` map entry (`requested_layout`).
+  - R2: Beamer outline dropped its blocks; prose/notes `url()` failed the deck; stale footer
+    docs. R3: R2 scoping missed multi-line tags (regression, fixed whole-document); swipe also
+    fired a click; outline listed backup sections; click behind the open help turned the page.
+  - R4: swipe on help/notes; pacing counted the start slide; no-op move started the clock; two
+    line counts; null date printed None; outline listed its own section; `--layout-map` help.
+    R5: backward-start pacing; `--open` beside `--beamer`; per-char newline loop (2.81 s ->
+    0.026 s on 40 MB). R6: pacing after a backward start then forward (`startFirst`); footer
+    check out of the gates; null footer title. R7: `url()` in alt/aria-label; non-string asset
+    traceback; paper-PDF gate lost; backup slides paced. R8: refusal message cause. R9: `--open`
+    could block with no display (R10); blank line in header failed open; docstring. R10: BOM
+    header; BROWSER honoured; repeated header key merged; navigation on the black screen;
+    doubled tag. R11: R21 test dependency on BROWSER; open once on the final clean pass; help
+    text. R12: platform pinned in tests (R21); `--web is missing` test; dead `SLIDE_TIERS`;
+    SKILL/agent opening wording. R13: Cygwin guarded; outline refusal wording; inventory.
+    R14: comment, SKILL example, talk.md, testing.md wording. R15: `--render --json` stdout
+    parseable; module usage; qa-loop gate row; outline layout row; checklist item 7.
+    R16: usage line break; R23 inventory line.
+  - B/C/D (evidence in the round reviews): pre-existing colour/palette CSS sinks
+    (`image-set`, `@import` reachable only there); base `<title>`/`<h2>` None, NOTES|tojson,
+    0.68, raw `s.kind`, `--beamer`/`--web` precedence, pptxgenjs fallback ignoring kinds,
+    talk_notes .pptx-only (accepted); approved spec: swipe at stage scale, title date not venue,
+    no section eyebrow, palette.brand override, asset paths per target; C: srcset/unquoted/
+    split attributes, comments, SVG internals, BROWSER blocking opener, hashchange on black,
+    empty or non-deck file passing `--web`, perf and simplification items; D: plan4.md
+    OpenCode path, README/index unchanged (operator decisions).
+  - Operator decisions after R16 (Option 1 both): R16-2 footer keeps the short author, spec
+    amended; R16-3 "available to blocks" means defined in the template design system, no
+    named-colour syntax. Declined findings recorded in `audit.md`.
+  - R17: doc findings in the planning records (audit.md citations, spec colour sentence and
+    process section, this entry), fixed. R18: two C (undeclared supported-kinds accept
+    `outline`, by design and tested; n / N counts backup slides) and two doc items fixed:
+    "per tier" became "by kind, then tier" in SKILL.md and renderer-contracts.md, and the web
+    stage size now says 1920 x 1440 for 4:3 or any other `meta.aspect` value, a missing one
+    included, as the template computes it.
+  - Final verification 2026-11-02: `run-offline-tests.ps1` exit 0, 101 passed, 0 failed, 5 not
+    run (pypdf x3, pyhanko, pptx), green stamp rewritten.
+  - Tests added: talk_model 62 -> 80, talk_validate 39 -> 52, web_skeleton 34 -> 43, talk_pptx
+    21 -> 24 (outline-layout cases run without python-pptx). Paper2talk total 284 -> 327.
+  - Verification: every runnable paper2talk suite green; `run-offline-tests.ps1` exit 0, 101
+    passed, 0 failed, 5 not run (pypdf x3, pyhanko, pptx), green stamp rewritten; offline headless
+    Edge probes 67/67 and pacing 5/5 at 1920x1080 and 1024x768; QA deck `--web` clean; mirrors
+    regenerated after each canonical change, final regeneration idempotent; `git diff --check`
+    clean; no personal data in the branch diff; nothing staged, nothing untracked; README.md and
+    docs/index.md untouched. Per the operator, declines are recorded here, not in `audit.md`.

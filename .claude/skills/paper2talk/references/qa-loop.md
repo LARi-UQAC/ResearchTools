@@ -57,7 +57,7 @@ numbers. Margins default to 5 mm because no desk printer reaches the edge.
 | --- | --- |
 | PowerPoint | `talk_validate.py deck.pptx --original gabarit.pptx --audience <a> --model talk_model.json` |
 | Beamer | the LaTeX log: compile, then `/latex` |
-| Web | `talk_validate.py --web deck.html` - no external `http(s)` in `src`, `href` or `url(...)` |
+| Web | `talk_validate.py --web deck.html` - no `http(s)`, protocol-relative (`//`) or relative reference in `src`, `href` or a resolved `url(...)`; only `data:`, `#fragment` and `mailto:` pass. Opened once, with `--open`, on the final clean pass |
 
 `talk_validate.py` locates the `document-skills:pptx` validator rather than copying it: the
 plugin lives at a cache path carrying a hash (`f17010c9bb48` on 2026-08-11) that changes on

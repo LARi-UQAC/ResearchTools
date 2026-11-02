@@ -290,6 +290,91 @@ class TestInteractions(_Deck):
         self.assertIn("addEventListener('click'", js)
         self.assertRegex(js, r"closest\('a, button, input, select, textarea")
 
+    def _handler(self, js, event):
+        opener = f"document.addEventListener('{event}'"
+        start = js.index(opener)
+        end = js.find("addEventListener(", start + len(opener))
+        return js[start:end if end != -1 else len(js)]
+
+    def test_a_click_while_the_help_is_open_does_not_turn_the_page(self):
+        # R35 round 3: keys are inert behind the open dialog, but a click beside it
+        # still advanced the hidden deck and started the talk clock.
+        click = self._handler(self.script(self.render(self.model())), "click")
+        guard = click.find("!help.hidden")
+        self.assertNotEqual(guard, -1, click)
+        self.assertLess(guard, click.index("go(index + 1)"))
+
+    def test_a_swipe_cancels_the_click_the_browser_would_synthesize(self):
+        # R35 round 3: on a phone the threshold is a few screen pixels, inside the tap
+        # slop, so the same gesture fired a swipe AND a click and skipped a slide.
+        touchend = self._handler(self.script(self.render(self.model())), "touchend")
+        cancel = touchend.find("e.preventDefault()")
+        self.assertNotEqual(cancel, -1, touchend)
+        self.assertLess(touchend.index("DECK.swipe_threshold_px"), cancel)
+        self.assertLess(cancel, touchend.index("go(index"))
+
+    def test_a_swipe_is_ignored_on_the_open_help_and_on_the_notes(self):
+        # R35 round 4: the click was made inert behind the modal help in round 3, but a
+        # swipe still turned the page there, and inside the presenter's notes panel.
+        start = self._handler(self.script(self.render(self.model())), "touchstart")
+        self.assertIn("!help.hidden", start)
+        self.assertIn("closest('#help, .notes')", start)
+
+    def _function(self, js, name):
+        start = js.index(f"function {name}(")
+        return js[start:js.index("\nfunction ", start + 1)]
+
+    def test_the_clock_starts_only_when_the_slide_really_changes(self):
+        # R35 round 4: Left on slide 1 started the clock although the deck did not move.
+        go = self._function(self.script(self.render(self.model())), "go")
+        self.assertLess(go.index("Math.min(slides.length - 1"), go.index("started = Date.now()"))
+
+    def test_pacing_counts_from_the_slide_the_clock_started_on(self):
+        # R35 rounds 4 to 6. The clock starts on the move AWAY from a slide, so that
+        # slide was spoken before it ran (round 4: counting it showed "ahead" all talk).
+        # The first counted slide is the one that move REACHED, whichever the direction
+        # (round 5: a backward start counted nothing; round 6: moving forward again then
+        # dropped the slides already spoken). Exactly this rule, nothing looser.
+        js = self.script(self.render(self.model()))
+        go = self._function(js, "go")
+        pacing = self._function(js, "updatePacing")
+        self.assertIn("started = Date.now(); startFirst = target;", go)
+        self.assertIn("const first = started === null ? 0 : Math.min(startFirst, index);",
+                      pacing)
+        self.assertIn("DECK.pacing.slice(first, index + 1)", pacing)
+        self.assertNotIn("startIndex", js)
+
+    def test_a_move_while_blacked_out_only_brings_the_slide_back(self):
+        # R35 round 10: a click on the black screen only unblanks, but a key (a clicker's
+        # PageDown) or a swipe moved the deck unseen and could start the clock.
+        js = self.script(self.render(self.model()))
+        keydown = self._handler(js, "keydown")
+        guard = keydown.find("if (!blackout.hidden && NAV_KEYS.includes(e.key))")
+        self.assertNotEqual(guard, -1, keydown)
+        self.assertLess(guard, keydown.index("go(index + 1)"))
+        touchend = self._handler(js, "touchend")
+        self.assertLess(touchend.index("!blackout.hidden"), touchend.index("go(index"))
+
+    def test_the_help_states_what_a_move_does_on_the_black_screen(self):
+        # R35 round 11: the in-deck key list must not promise "next slide" for a key that
+        # only brings the slide back while the screen is black.
+        html = self.render(self.model())
+        help_box = html[html.index('<div id="help"'):html.index("</div>", html.index('<div id="help"'))]
+        self.assertIn("black screen; any move first brings the slide back", help_box)
+
+    def test_a_null_title_prints_nothing_in_the_footer(self):
+        # R35 round 6: the footer title fell back to meta.title, and a null one printed
+        # "None" on every slide, the class round 4 fixed for the date.
+        html = self.render(self.model(title=None))
+        self.assertNotIn('<span class="foot-title">None</span>', html)
+        self.assertIn('<span class="foot-title"></span>', html)
+
+    def test_a_missing_date_prints_nothing_in_the_footer(self):
+        # R35 round 4: default('') covers an undefined date only; null printed "None".
+        html = self.render(self.model(date=None))
+        self.assertNotIn(">None<", html)
+        self.assertIn('<span class="foot-date"></span>', html)
+
     def test_a_single_touch_swipe_moves_and_multi_touch_never_does(self):
         js = self.script(self.render(self.model()))
         self.assertIn("touchstart", js)

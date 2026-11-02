@@ -92,9 +92,13 @@ repository - never write an absolute path, the workspace root differs per machin
   converted `.pptx`, or run `talk_template.py <file.ppt> --convert`.
 - **Beamer**: the canonical theme is `main.tex` in the same folder. The other three copies in
   the workspace are not the reference.
-- **Web**: none needed.
+- **Web**: the same folder, passed whole to the render as `--lab-dir`. The web template
+  declares `requires: lab-assets`: it embeds the lab banner (`en-tete1260.jpg`) and logo
+  (`LogoLARI_FINAL.png`) from that folder, and `talk_model.py` refuses the render (exit 2)
+  without the folder or when either image is missing from it.
 
-If a gabarit is missing, **ask for the path**; do not fall back to a stand-in. If the chosen
+If a gabarit, or for the web the lab folder or one of its two images, is missing, **ask for
+the path**; do not fall back to a stand-in or another template. If the chosen
 aspect ratio has no gabarit (`9:16`), say what will happen to the branded background before
 proceeding: a 4:3 or 16:9 background cannot be stretched into portrait without distortion, so
 it has to be re-laid or re-supplied.
@@ -116,18 +120,31 @@ TRANSITION / ANTICIPATED QUESTIONS) - the labels are stripped before the word co
 cost nothing. Add a backup-tier Q&A slide carrying three to five anticipated questions with
 their short answers; backup slides are outside the time budget.
 
+For the web target, render with the lab folder resolved in Step 3:
+
+```bash
+python .claude/skills/paper2talk/scripts/talk_model.py talk_model.json \
+       --render .claude/skills/paper2talk/assets/web_skeleton.html.j2 \
+       --lab-dir ../gabarit_these_maitrise_DSA_UQAC/src/slides --out out/deck.html
+```
+
 Gate, all five:
 
 - `talk_model.py <model>` clean (no unknown block, no text-only content slide, every exhibit
-  covered by its own notes).
+  covered by its own notes). For a web deck, the render command above exits 0 as well: only
+  the web render reports a footer field longer than its box, and that problem gives exit 1.
 - `talk_model.py <model> --check-numbers inventory.json` clean: every number on a slide is one
   the paper states.
-- `talk_validate.py` clean, with `--original` for a gabarit-derived deck and the audience's
-  font floor; it also reports overlapping shapes, an oversized deck, and a semantic triad too
-  close in lightness.
+- `talk_validate.py` clean. For a PowerPoint deck: with `--original` for a gabarit-derived
+  deck and the audience's font floor; it also reports overlapping shapes, an oversized deck,
+  and a semantic triad too close in lightness. For a web deck: `talk_validate.py --web
+  out/deck.html`, without `--open` while the deck is still being built: every pass of Step 7
+  re-runs this gate, and opening it there would show unfinished decks, one tab per pass.
 - `talk_notes.py` inside tolerance, sections within 5 %, total under the slot.
-- `talk_render.py` page count equal to slide count, and `--paper` applied when question 5 asked
-  for paper output.
+- For a PowerPoint deck, `talk_render.py` page count equal to slide count (it counts the slides
+  of the `.pptx`). For every target, the paper-size PDF made when question 5 asked for paper
+  output: `talk_render.py --paper` for PowerPoint, `to_a4.py` on the compiled or printed PDF
+  for Beamer and web.
 
 ### Step 6 - Inspect every rendered page
 
@@ -140,7 +157,12 @@ trusted.
 
 ### Step 7 - Fix, rebuild, re-render, re-inspect
 
-Ship only on a clean pass.
+Ship only on a clean pass. For a web deck, open it once, on that clean pass:
+`talk_validate.py --web out/deck.html --open` by default, or skip this when the operator opted
+out (`/talk --no-open`). This is the deck's only opening path: `--open` hands it to the default
+browser only after the check is clean, so a deck with findings (exit 1) or one that cannot be
+read (exit 2) is never opened. Do not open the deck in the operator's browser any other way;
+the headless browser of the Step 6 inspection and of the printed PDF is not an opening.
 
 Report progress as you go, one line per phase (`[3/8] figures: 4 exported, 1 below 150 DPI`),
 so a long build is legible while it runs.
@@ -177,7 +199,8 @@ Through `local-writer`, per the root `CLAUDE.md` case 1 (project log in
 [x] 4. Figures exported at scale 3, DPI reported
 [x] 5. talk_model.json built; validate / numbers / notes / render gates green
 [x] 6. Every rendered page inspected
-[x] 7. Clean pass reached; working parts saved beside the deck
+[x] 7. Clean pass reached; working parts saved beside the deck; a web deck opened once
+       with --open on that pass (not at all under --no-open)
 [x] 8. Journalled to Obsidian
 ```
 

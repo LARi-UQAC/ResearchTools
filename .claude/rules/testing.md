@@ -81,9 +81,21 @@ exercise them, set the required environment variables, then dry-run the entry po
   with a per-paper `refs/_sources.json` override URL), and the cross-review cores
   (`gemini_reviewer.py`, `github_reviewer.py`, `gemini_table.py`).
 - `paper2talk` skill: `talk_rules.py` (import-only: audience profiles, three-tier cadence, the
-  130 wpm budget), `talk_model.py` (deck-as-data validation, budget aggregation, Jinja render
-  of the Beamer and web targets), `talk_pptx.py` (PowerPoint renderer built ON the lab gabarit
-  via python-pptx: drops its sample slides, adds each slide on one of its own layouts),
+  130 wpm budget, `KIND_TIER` mapping the `outline` kind to the divider tier through
+  `tier_of` so the divider cost exists once, and the web asset, lab-file, interaction and
+  footer constants), `talk_model.py` (deck-as-data validation, budget aggregation, Jinja render
+  of the Beamer and web targets; six slide kinds checked against a template's
+  `supported-kinds`; on an `.html` render, a footer field over the cap reported, whether a long
+  field with no `short_title`/`short_author` or a short form itself over the cap, and with
+  `--json` the `rendered` line goes to stderr so stdout carries the JSON report alone;
+  `--lab-dir` required by a template declaring `requires: lab-assets`, refused with exit 2
+  when the folder or an image is missing; figures embedded as `data:` URIs for an `.html`
+  output, refusing a missing file, a path outside the model's folder, an oversized file or a
+  non-image by content; the template receives `sections`, `pacing`, `web` and `lab`),
+  `talk_pptx.py` (PowerPoint renderer built ON the lab gabarit via python-pptx: drops its
+  sample slides, adds each slide on one of its own layouts, an `outline` on a
+  Programme/Sommaire/Outline/Agenda layout when the gabarit has one; `--layout-map` is looked up
+  by kind, then tier, and an outline never takes the `divider` entry),
   `talk_template.py` (brand contract out of any `.pptx`; detects a legacy `.ppt` and converts
   it with `--convert`), `paper_extract.py` (LaTeX `\input` flattening, sections, floats,
   equations, citations, number inventory; refuses an encrypted or scanned PDF),
@@ -91,7 +103,13 @@ exercise them, set the required environment variables, then dry-run the entry po
   `fig_export.py` (draw.io re-export at scale 3), `talk_render.py` (PDF via `soffice` else
   PowerPoint COM, then `pdftoppm`; `--paper` reflow), `talk_notes.py` (spoken budget, cadence,
   exhibit coverage), `to_a4.py` (A4/Letter reflow, `--handout`), `talk_validate.py` (package
-  checks, legibility gate, text-only-slide check, web self-containment).
+  checks, legibility gate, text-only-slide check, web self-containment: `--web` fails any
+  `src`, `href` or CSS `url()` that is `http(s)`, protocol-relative or relative, only `data:`,
+  `#fragment` and `mailto:` passing; `--open` with `--web` hands a clean deck to the default
+  browser through the standard-library `webbrowser`, never a deck with findings (exit 1) or an
+  unreadable one (exit 2), and `--open` without `--web`, or beside `--beamer`, is refused with exit 2;
+  in a Unix session with no display and no `BROWSER` set nothing is started, since the standard library would wait on
+  a console browser with no timeout, and the deck is named to open by hand).
 - `extract-statistic` skill: `extract_text.py` (`--stats-scan` and `--section-scan`; pluggable
   Markdown backend Docling -> pymupdf4llm/MarkItDown -> tag-strip). The `extract-futureworks`
   skill ships no script of its own and reuses `extract_text.py --section-scan`. Two output
@@ -614,22 +632,24 @@ python .claude/skills/latex-hygiene/scripts/Test/test_tex_patch.py        # 10 t
 python .claude/skills/latex-hygiene/scripts/Test/test_tex_build.py        # 11 tests: accept resolution, pdflatex/bibtex/pdflatex/pdflatex sequence, BIBINPUTS, output-dir .bib refusal, plus the 2026-09-16 artifact-decoding block. `parse_counters` read the .log with a strict UTF-8 decode, and MiKTeX under a French Windows writes paths and messages in the system codepage, so byte 0xe9 raised UnicodeDecodeError and `build` reported NOTHING although pdflatex and bibtex had both succeeded and the 61-page PDF was on disk - a build whose result cannot be read is indistinguishable from a build that failed. Artifacts now go through `tex_common.read_artifact_text` (errors="replace"), which is safe because every counter it extracts - "!", "undefined", "doi.org", the page count - is pure ASCII and a replaced byte can neither create nor destroy one, and that is asserted rather than assumed: a replaced byte is planted on the same line as each of the four. The load-bearing negative control is the one that keeps the fix narrow - `read_text` must STILL raise on a .tex that is not UTF-8, since a source file in the wrong encoding is an authoring defect to surface while a log in the wrong encoding is the ordinary output of the engine. A clean UTF-8 log is asserted unchanged, or the fix would have silently moved every existing measurement
 
 python .claude/skills/paper2talk/scripts/Test/test_talk_template.py      # EMU->inch, srcRect keep-fraction, object extraction
-python .claude/skills/paper2talk/scripts/Test/test_talk_notes.py         # slide-number strip, rels-based notes mapping, tolerance exit
+python .claude/skills/paper2talk/scripts/Test/test_talk_notes.py         # 14 tests: slide-number strip, rels-based notes mapping, tolerance exit, an outline slide counted as a divider
 python .claude/skills/paper2talk/scripts/Test/test_fig_export.py         # --fix-text into a copy, CLI discovery, raster refused
 python .claude/skills/paper2talk/scripts/Test/test_talk_render.py        # backend order, page-count gate, --paper delegation
 python .claude/skills/paper2talk/scripts/Test/test_to_a4.py              # A4/Letter maths, mediabox, margin guard, handout grid
-python .claude/skills/paper2talk/scripts/Test/test_talk_validate.py      # plugin locator, dangling r:embed, chart axes, web URLs
-python .claude/skills/paper2talk/scripts/Test/test_talk_model.py         # block kinds, renderer gap raises, budget agreement
+python .claude/skills/paper2talk/scripts/Test/test_talk_validate.py      # 52 tests: plugin locator, dangling r:embed, chart axes, web URLs including relative and protocol-relative references, an external reference reported whatever its scheme case or leading space, a CSS url() counted only inside a tag, a tag spread over several lines included, or a <style> block (a relative url() merely mentioned in slide text or notes is not a reference), every finding numbered on the same line count, and inside a tag only a style attribute or an SVG URL attribute counts (never alt, title or aria-label text), with data:/#/mailto: and script-text negative controls, and --open opening only a clean deck (webbrowser patched in every case: findings, unreadable deck, no --open and --open without --web or beside --beamer never open, nor in a Unix or Cygwin session with no display and no BROWSER set; a browser that fails to start keeps exit 0)
+python .claude/skills/paper2talk/scripts/Test/test_talk_model.py         # 80 tests: block kinds, renderer gap raises, budget agreement; figure embedding (data URI, an asset that is not a path string refused, containment, image by content including an SVG behind a DOCTYPE or comment, size cap, Beamer keeps the path); lab assets via --lab-dir; the outline kind timed as a divider and drawn by all three renderers, its own blocks included, listing only content and divider sections (no backup or chrome slide); pacing (a backup slide counts 0) and web context, which a model key of the same name never overrides; a header written with Jinja whitespace control, blank lines, a byte-order mark or a key repeated on two lines; a refusal printed with its tag once; the footer field cap, checked on a web render only, whose `--json` report stays parseable
+python .claude/skills/paper2talk/scripts/Test/test_web_skeleton.py       # 43 tests: the real web template rendered with generated images and fictitious authors - lab identity, six layouts, logo on the title slide only, no footer on the title slide and one on every other, no serif, self-contained and passing check_web, escaping, the interaction and accessibility markers (a click beside the open help, a swipe on the help or the notes, and the click a swipe would synthesize never turn the page; the clock starts only on a real move and pacing counts from the slide the starting move reached, in either direction; a move on the black screen only brings the slide back, and the in-deck help says so; a null date or title prints nothing in the footer), print chrome, and the centred stage (needs jinja2, reported NOT RUN without it)
 python .claude/skills/paper2talk/scripts/Test/test_audience_rules.py     # font floors, equation policy, legibility gate
 python .claude/skills/paper2talk/scripts/Test/test_cadence.py            # three-tier formula, 130 wpm, backup outside the slot
 python .claude/skills/paper2talk/scripts/Test/test_content_hierarchy.py  # text-only slides, exhibit coverage by keyword
-python .claude/skills/paper2talk/scripts/Test/test_talk_pptx.py          # gabarit layout choice, sample slides dropped, all block kinds, notes pane
+python .claude/skills/paper2talk/scripts/Test/test_talk_pptx.py          # gabarit layout choice (an outline never taking the layout map's divider entry), sample slides dropped, all block kinds, notes pane
 python .claude/skills/paper2talk/scripts/Test/test_paper_extract.py      # include flattening, missing/circular include, number normalisation, PDF guards
 python .claude/skills/paper2talk/scripts/Test/test_talk_doctor.py        # per-target buildability, absent vs not-probed, degradation text
 ```
 
-The thirteen `paper2talk` suites build their `.pptx` fixtures in the test (`Test/_fixtures.py`,
-and python-pptx's packaged default template standing in for the lab gabarit), so
+The fourteen `paper2talk` suites build their fixtures in the test - `.pptx` files through
+`Test/_fixtures.py` and python-pptx's packaged default template standing in for the lab
+gabarit, and the web suite's images and lab folder generated as stand-ins - so
 no PowerPoint, LibreOffice, draw.io, Poppler or LaTeX is needed; `shutil.which`,
 `platform.system` and `subprocess` are patched for the render and figure tiers. `test_to_a4.py`
 needs `pypdf` (6.15.0, no known CVE per `pip-audit`) and the Jinja render path needs `jinja2`;

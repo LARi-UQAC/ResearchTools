@@ -33,10 +33,15 @@ Produced from the paper and reviewed before any rendering.
 
 Two fields are load-bearing and easy to omit:
 
-- **`kind` on the slide** is its chrome tier (`content`, `title`, `thanks`, `divider`,
-  `backup`). It is declared, never inferred from position: a deck reordered by hand keeps its
-  declarations and loses its positions. `talk_notes.py --model` reads the tiers from here
-  instead of taking four command-line lists.
+- **`kind` on the slide** is what the slide is, and through it what it costs. Six kinds exist:
+  `title`, `outline`, `content`, `divider`, `thanks`, `backup`. Five of them are also the
+  chrome tiers of `talk_rules.TIER_MINUTES`; `outline` is drawn as its own layout but timed as
+  a divider, through `talk_rules.KIND_TIER = {"outline": "divider"}`, and `talk_rules.tier_of`
+  resolves any kind to its tier (an unknown kind raises). The divider's cost therefore exists
+  once, and an outline has no cost of its own. The kind is declared, never inferred from
+  position: a deck reordered by hand keeps its declarations and loses its positions.
+  `talk_notes.py --model` reads the tiers from here, through `tier_of`, instead of taking four
+  command-line lists.
 - **`keywords` on an exhibit** is what the say-what-you-show check matches on. A figure named
   `fig5_evolution.png` is covered when the notes mention its subject (`blink`, `interval`,
   `axis`), because no speaker reads a filename out loud. An exhibit with no keywords is
@@ -62,12 +67,46 @@ argument that nobody sees until the room does; `talk_model.assert_renderable` ra
 | `chart` | `series` | yes |
 | `equation` | `tex` (+ `label`, `where`, `image`, `runs`) | yes |
 
-A Jinja renderer declares what it implements on its first line, which is what
-`talk_model.py --render` checks before writing anything:
+A Jinja renderer declares what it implements in its header, the run of comment lines at the
+top of the file (`{# ... #}` in HTML, `((# ... #))` in LaTeX), which is what
+`talk_model.py --render` checks before writing anything. Blank lines, a byte-order mark and
+Jinja's `-` whitespace control are allowed in it, and a key repeated on another line adds to
+the first. The web template's header:
 
 ```jinja
 {# supported-blocks: bullets figure takeaway cards chips stats table matrix zoneband chart equation #}
+{# supported-kinds: title outline content divider thanks backup #}
+{# requires: lab-assets #}
 ```
+
+- `supported-blocks`: a block outside the list raises `RendererGap` before anything is written.
+- `supported-kinds`: a slide whose kind is outside the list raises `RendererGap` the same way.
+  A template that does not declare it accepts every known kind. The Beamer and web templates
+  declare all six.
+- `requires: lab-assets`: the render needs the lab gabarit folder (`--lab-dir`); without it,
+  or with a folder that lacks the banner or the logo, `talk_model.py` refuses with exit 2. Only
+  the web template declares it, so the Beamer and PowerPoint flows need no such flag.
+
+### What a template receives
+
+The model's own keys (`meta`, `palette`, `budget`, `slides`), plus four computed values:
+
+| Key | Content | Source |
+| --- | --- | --- |
+| `sections` | the distinct `section` values of the slides, in first-seen order, from content and divider slides only (a backup, title, outline or thanks slide lists nothing): what an `outline` lists | `talk_model.outline_sections` |
+| `pacing` | the spoken seconds of each slide, in the model's slide order, at the `--wpm` rate; a backup slide counts 0, being outside the slot | `talk_model.slide_pacing`, from `budget_rows` |
+| `web` | the interaction values (`swipe_threshold_px`) | `talk_rules.WEB_INTERACTION` |
+| `lab` | `banner` and `logo` as `data:` URIs, only for a template requiring `lab-assets` | `talk_model.load_lab_assets`, file names from `talk_rules.LAB_ASSET_FILES` |
+
+A model key named `sections`, `pacing` or `web` never replaces the computed value, and neither
+does `lab` for a template requiring `lab-assets`; `lab` is not computed for any other template.
+
+For an `.html` output, every `figure` block also gains `data_uri`, its asset embedded by
+`talk_model.embed_asset` (see "Web target mechanics"); the caller's model is not modified.
+
+The web deck also reads `meta.subtitle`, `meta.institute`, `meta.date`, `meta.short_title`
+and `meta.short_author`, none of them in the example above. None is required, but without
+`meta.date` the title slide and every footer show no date.
 
 ## The three renderers
 
@@ -76,7 +115,7 @@ A Jinja renderer declares what it implements on its first line, which is what
 | **PowerPoint** | `scripts/talk_pptx.py` (python-pptx) | `.pptx` built **on** the lab gabarit, using its layouts | inherited from the gabarit: `Gabarit169.pptx` is 10 x 5.625 in, `Gabarit43.pptx` is 10 x 7.5 in |
 | PowerPoint, no gabarit | `assets/deck_skeleton.js` (pptxgenjs) | `.pptx` generated from scratch | `pres.layout` from `meta.aspect`; 4:3 = 10 x 7.5, 16:9 = 13.33 x 7.5, 9:16 = 7.5 x 13.33 via `defineLayout` |
 | **Beamer** | `assets/beamer_skeleton.tex.j2` | `.tex` + compiled PDF on the lab theme | `\documentclass[aspectratio=169]` / `43`; 9:16 needs `\geometry{papersize={...}}` |
-| **Web** | `assets/web_skeleton.html.j2` | one self-contained `.html` | CSS custom properties `--slide-w` / `--slide-h` on a fixed stage |
+| **Web** | `assets/web_skeleton.html.j2` | one self-contained `.html` in the LARI identity, the lab banner and logo read from `--lab-dir` | CSS custom properties `--slide-w` / `--slide-h` on a fixed stage: 1920 x 1080 px for 16:9, 1080 x 1920 for 9:16, 1920 x 1440 for 4:3 or any other `meta.aspect` value, a missing one included |
 
 ```bash
 python scripts/talk_pptx.py talk_model.json \
@@ -84,7 +123,9 @@ python scripts/talk_pptx.py talk_model.json \
        --out out/deck.pptx
 node assets/deck_skeleton.js talk_model.json brand.json out/deck.pptx     # no gabarit only
 python scripts/talk_model.py talk_model.json --render assets/beamer_skeleton.tex.j2 --out out/main.tex
-python scripts/talk_model.py talk_model.json --render assets/web_skeleton.html.j2 --out out/deck.html
+python scripts/talk_model.py talk_model.json --render assets/web_skeleton.html.j2 \
+       --lab-dir ../gabarit_these_maitrise_DSA_UQAC/src/slides --out out/deck.html
+python scripts/talk_validate.py --web out/deck.html --open
 ```
 
 ### Why the PowerPoint target opens the gabarit instead of imitating it
@@ -100,9 +141,10 @@ copy in step with a template the lab will keep editing.
 1. **Drop the sample slides** the file ships (six in the 16:9), keeping masters, layouts, theme
    and media. Shipping the lab's example slides inside a conference deck is not a subtle
    defect.
-2. **Pick the layout per tier**, by name. Explicit wins (`layout` on the slide, or
+2. **Pick the layout by kind, then tier**, by name. Explicit wins (`layout` on the slide, or
    `--layout-map`), then ordered patterns per tier - the branded `1- Contenu` before a generic
-   `Titre et contenu`:
+   `Titre et contenu`. An `outline` is timed as a divider but never takes the map's `divider`
+   entry: without an `outline` entry it goes to the agenda patterns:
 
    | Tier | Preferred layouts |
    | --- | --- |
@@ -111,6 +153,7 @@ copy in step with a template the lab will keep editing.
    | `divider` | `Page separatrice`, `En-tete de section`, `Section Header` |
    | `thanks` | `Fin`, `Merci`, `Thank …` |
    | `backup` | `Vide`, `Blank`, then the content layouts |
+   | `outline` (kind) | `Programme`, `Sommaire`, `Outline`, `Agenda`, then the content layouts |
 
 3. **Fill the real placeholders** (title, body) and draw the remaining blocks inside the body
    placeholder's rectangle. That rectangle is the content band: the lab already positioned it
@@ -196,24 +239,70 @@ Record it in `brand.json` as `content_band` (`left`, `top`, `right`, `bottom` in
 
 ## Web target mechanics
 
-Borrowed from `github.com/zarazhangrui/frontend-slides` (MIT) and reimplemented:
+The look comes from the canonical Beamer gabarit **as it renders** when compiled: the green
+frame-title band, the rounded green title box with the UQAC banner above it, green blocks and
+red alert blocks, one green footer row. The source places the LARI logo beside every frame
+title, but the compiled pages do not show it there, so the web deck carries the logo on the
+title slide only. The sample's defects are not reproduced: the footer is a row of its own that
+nothing sits under, a field longer than its box is reported by `talk_model.py` when it renders
+the web deck (`footer_problems`), and there are no navigation icons.
+
+The stage mechanics were borrowed from `github.com/zarazhangrui/frontend-slides` (MIT) and
+reimplemented:
 
 - **Fixed stage.** One stage of fixed pixel size, scaled by a single CSS transform on resize.
   Letterbox and pillarbox are fine; content never re-lays out, and there are no responsive
   breakpoints inside a slide. An aspect change touches `--slide-w` / `--slide-h` and nothing
-  else.
+  else. The stage centres itself: its centre is pinned to the viewport's centre and the
+  transform is `translate(-50%, -50%) scale(min(vw / w, vh / h))`. Grid centring is not used,
+  because a grid item larger than its container starts at the container's corner, and the
+  scaled stage then lands off-centre and cropped on any screen smaller than the canvas.
 - **Slide switching** uses `visibility` / `opacity` / `pointer-events`. Never `display: none`
   / `display: block`: a later `display: flex` on the slide content overrides the `none` and
   every slide becomes visible at once.
 - **A negated CSS function is silently ignored** - `-clamp()`, `-min()`, `-max()` do nothing.
   Write `calc(-1 * clamp(...))`.
 - **`prefers-reduced-motion`** is honoured on every animation.
-- **Self-contained or nothing.** Inline CSS and JS, images as `data:` URIs, safe-list fonts.
-  No CDN, no build step; `talk_validate.py --web` fails the deck on any external `http(s)`
-  reference, because a conference laptop has no network.
+- **Self-contained or nothing.** Inline CSS and JS, images as `data:` URIs, safe-list system
+  fonts. No CDN, no webfont, no build step. `talk_model.embed_asset` embeds each figure,
+  resolved relative to the folder of `talk_model.json`, and both lab images; it refuses a
+  missing file, a path resolving outside its root, a file over
+  `talk_rules.WEB_ASSET_MAX_BYTES`, and a file that is not an image by its content (the PNG,
+  JPEG and GIF leading bytes of `talk_rules.IMAGE_SIGNATURES`, or an `<svg>` root element after
+  an optional XML declaration, comments and DOCTYPE, as matplotlib, draw.io and Inkscape write
+  them), so a renamed HTML or script file is never inlined.
+  `talk_validate.py --web` then fails the deck on any `src`, `href` or CSS `url()` reference
+  that is `http(s)`, protocol-relative (`//`) or relative, because a conference laptop has no
+  network and a relative path breaks once the deck leaves the build machine. Only `data:`,
+  `#fragment` and `mailto:` pass. A CSS `url()` counts where a browser resolves it: a `<style>`
+  block, a `style` attribute, or an SVG attribute that takes a URL (`fill`, `stroke`, ...), a
+  tag spread over several lines included; text that only mentions `url()` (slide text, notes,
+  `alt`, `title` or `aria-label`) is not a reference.
+- **Open only what passed.** `talk_validate.py --web <deck> --open` hands the deck to the
+  system's default browser (Python's `webbrowser`, no browser named) only after a clean check.
+  A deck with findings exits 1 and an unreadable one exits 2; neither is opened. `--open`
+  without `--web`, or beside `--beamer`, is refused (exit 2). In a Unix session with no display
+  no browser is started (the standard library would wait on a console browser with no
+  timeout) unless the user set `BROWSER`; the deck is named to open by hand. A browser that fails to start is reported with the file
+  to open by hand, and the clean verdict stands (exit 0).
 - **PDF from the print path**, not from screenshots: the `@media print` block lays each slide
   out as its own page, so headless Chromium gives one page per slide with selectable vector
-  text. Hand that PDF to `to_a4.py` when paper output was asked for.
+  text. The footer prints with its slide; the counter, progress bar, help, black screen,
+  live-region and notes do not. Hand that PDF to `to_a4.py` when paper output was asked for.
+- **Interaction.** The deck's own script reads one JSON literal (`DECK`: the swipe threshold
+  and the per-slide pacing) and holds no copy of either. Keys are ignored while an input,
+  textarea, select or editable element has focus and while Ctrl, Alt or Meta is held. The
+  address `#/n` is read on load (clamped to the deck; anything that is not `#/` and digits is
+  ignored) and kept current with `replaceState`. A click advances except on a link, button,
+  form field, the help dialog or the notes, and never while the help dialog is open; a
+  single-touch swipe at least the threshold long, measured at stage scale, moves and cancels
+  the click the browser would synthesize for the same gesture, except on the open help or the
+  notes; a second finger cancels the gesture. While the black screen is up, a navigation key or
+  a swipe only brings the slide back, as a click does. The talk clock starts at the first move that
+  changes the slide, and pacing compares the elapsed time with the budget of the slides from
+  the one that move reached, in either direction, to the current one (the slide that move
+  left was spoken before the clock ran). An `aria-live` region
+  announces each slide and inactive slides carry `aria-hidden`.
 - **Style previews**, when offered, must look like a real first slide of this deck and must
   never render internal workflow text - no option letters, no preset names, no file paths, no
   notes such as "safe option" or "audience: ...". Those belong in the message, not on a slide.

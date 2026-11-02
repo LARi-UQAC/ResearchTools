@@ -103,19 +103,6 @@
 \end{frame}
 ((* if s.notes *))\note{((( s.notes )))}
 ((* endif *))
-((* elif s.kind == "outline" *))
-%% Outline: the model's own sections, in order. Not Beamer's table of contents,
-%% since this skeleton emits no section commands; and no list at all when there is
-%% nothing to list, because an empty itemize does not compile.
-\begin{frame}{((( s.title )))}
-((* if sections *))
-  \begin{itemize}
-((* for name in sections *))    \item ((( name )))
-((* endfor *))  \end{itemize}
-((* endif *))
-\end{frame}
-((* if s.notes *))\note{((( s.notes )))}
-((* endif *))
 ((* elif s.kind == "divider" *))
 \begin{frame}[plain]
   \begin{center}
@@ -127,6 +114,15 @@
 ((* else *))
 %% Slide ((( s.n ))) - ((( s.section | default('') )))
 \begin{frame}{((( s.title )))}
+((* if s.kind == "outline" and sections *))
+%% Outline: the model's own sections, in order, then the slide's own blocks like any
+%% frame. Not Beamer's table of contents, since this skeleton emits no section
+%% commands; and no list at all when there is nothing to list, because an empty
+%% itemize does not compile.
+  \begin{itemize}
+((* for name in sections *))    \item ((( name )))
+((* endfor *))  \end{itemize}
+((* endif *))
 ((* for b in s.blocks *))
 ((* if b.kind == "bullets" *))
   \begin{itemize}

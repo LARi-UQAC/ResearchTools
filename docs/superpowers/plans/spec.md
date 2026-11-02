@@ -46,12 +46,16 @@ keyboard, pointer and accessibility interactions. Requested by the lab director 
 ## MVP scope
 
 **Lab identity (web template).** Default brand `#006341`; the gabarit's `secondary`,
-`accent1-3` and risk colours available to blocks. Layouts per kind: `title`, `outline`,
+`accent1-3` and risk colours available to blocks, meaning defined in the template's design
+system as named CSS colours. Block colour fields keep their existing forms (chips and zone
+bands a hex value, a chart series any CSS colour, as at the base), and the model gains no
+named-colour syntax (operator decision, R35 round 16). Layouts per kind: `title`, `outline`,
 `content` (text, figure, table), `divider`, `thanks`, `backup`. Title slide: UQAC banner,
 rounded green title box with subtitle, authors, institute, fixed `meta.date`, LARI logo.
 Other slides: full-width green frame-title band, sans-serif type, green and red alert blocks.
-Footer on every non-title slide: author (institute), title, date, `n / N`, built from
-`meta.short_author` and `meta.short_title` when present.
+Footer on every non-title slide: author, title, date, `n / N`, built from
+`meta.short_author` and `meta.short_title` when present. The author field is the short author
+alone, with no institute, as plan2 approved (operator decision, R35 round 16).
 
 **Offline.** Every figure and both lab images embedded as `data:` URIs. A missing asset, an
 asset resolving outside its root (R24), an unrecognised image type or an oversized file is a
@@ -115,9 +119,10 @@ Execution method: native, sequential.
 - The full offline suite passes; docs are updated in the same PR (R23, R31, R33).
 - The R35 loop returns clean, and the PR body records each review round and its fixes.
 
-## Process decisions still open
+## Process decisions
 
-- `docs/superpowers/` is gitignored; committing these planning files needs `git add -f`.
-  Decide at the first commit.
-- The privacy git hooks (`install-git-hooks.ps1`, needs Betterleaks) are installed before the
-  first commit, with operator approval.
+- `docs/superpowers/` is gitignored; the planning files are committed with `git add -f`, as
+  `2dd3a20` did for this spec, the plans and `progress.md`. `audit.md` is force-added the same
+  way with the final commit.
+- The privacy git hooks (`install-git-hooks.ps1`, Betterleaks) were installed with operator
+  approval before the first commit, through the global `core.hooksPath`.

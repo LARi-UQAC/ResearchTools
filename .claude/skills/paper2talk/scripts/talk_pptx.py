@@ -16,7 +16,8 @@ adds slides from ITS layouts. Nothing about the branding is re-created.
 The template's own sample slides are dropped from the copy; its masters, layouts,
 theme and media are kept. The gabarit file itself is never written to.
 
-`--layout-map` overrides the tier-to-layout choice, and a slide may name its layout
+`--layout-map` overrides the layout choice by slide kind, then by timing tier (an
+`outline` never takes the `divider` entry), and a slide may name its layout
 directly with a `layout` field:
 
     {"title": "1- Titre", "content": "1- Contenu", "divider": "Page separatrice",
@@ -140,6 +141,33 @@ def pick_layout(prs, kind: str, wanted: str | None = None):
             if re.search(pattern, layout.name.strip(), re.I):
                 return layout
     return available[0]
+
+
+def requested_layout(entry: dict, layout_map: dict) -> str | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The layout name a slide explicitly asks for: its own "layout", then the
+        --layout-map entry for its kind, then the entry for its timing tier.
+
+    Details:
+        An outline is timed as a divider but is not drawn as one, so it never
+        borrows the map's "divider" entry; with no "outline" entry it gets None and
+        pick_layout's agenda patterns choose.
+
+    Inputs:
+        entry (dict): one entry of model["slides"]
+        layout_map (dict): kind or tier -> layout name, from --layout-map
+
+    Outputs:
+        name (str | None): the layout name, or None when nothing was requested
+    --------------------------------------------------------------------------
+    """
+    kind = tm.slide_kind(entry)
+    wanted = entry.get("layout") or layout_map.get(kind)
+    if wanted or kind == "outline":
+        return wanted
+    return layout_map.get(tm.slide_tier(entry))
 
 
 def drop_sample_slides(prs) -> int:
@@ -289,8 +317,7 @@ def render(model: dict, template: str, out_path: str,
     sections = tm.outline_sections(model)
     for entry in model.get("slides", []):
         kind = tm.slide_kind(entry)
-        tier = tm.slide_tier(entry)
-        wanted = entry.get("layout") or layout_map.get(kind) or layout_map.get(tier)
+        wanted = requested_layout(entry, layout_map)
         layout = pick_layout(prs, kind, wanted)
         slide = prs.slides.add_slide(layout)
         set_title(slide, entry.get("title", ""), title_pt, palette)
@@ -557,7 +584,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("model", nargs="?")
     ap.add_argument("--template", required=True, help="the lab gabarit .pptx")
     ap.add_argument("--out", help="destination deck")
-    ap.add_argument("--layout-map", help="JSON mapping tier -> layout name")
+    ap.add_argument("--layout-map", help="JSON mapping kind or tier -> layout name; the "
+                    "kind wins, and an outline never takes the divider entry")
     ap.add_argument("--list-layouts", action="store_true",
                     help="print the template's layout names and exit")
     args = ap.parse_args(argv)

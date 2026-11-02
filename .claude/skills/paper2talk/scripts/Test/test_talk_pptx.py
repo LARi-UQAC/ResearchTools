@@ -102,6 +102,30 @@ class TestOutlineLayout(unittest.TestCase):
                 prs = _Prs("1- Titre", "1- Contenu", name)
                 self.assertEqual(tp.pick_layout(prs, "outline").name, name)
 
+    # R35 round 1: an outline is TIMED as a divider, but it is not drawn as one. With the
+    # documented --layout-map, an outline fell through to the map's "divider" entry and
+    # landed on the full-bleed separator page instead of the agenda layout.
+    LAYOUT_MAP = {"title": "1- Titre", "content": "1- Contenu", "divider": "Page separatrice"}
+
+    def test_an_outline_does_not_borrow_the_divider_layout_from_the_map(self):
+        outline = {"n": 2, "kind": "outline", "title": "Outline"}
+        self.assertIsNone(tp.requested_layout(outline, self.LAYOUT_MAP))
+        prs = _Prs("1- Titre", "1- Contenu", "Programme", "Page separatrice")
+        wanted = tp.requested_layout(outline, self.LAYOUT_MAP)
+        self.assertEqual(tp.pick_layout(prs, "outline", wanted).name, "Programme")
+
+    def test_an_outline_entry_in_the_map_and_the_slide_layout_still_win(self):
+        outline = {"n": 2, "kind": "outline", "title": "Outline"}
+        self.assertEqual(tp.requested_layout(outline, {**self.LAYOUT_MAP, "outline": "Agenda"}),
+                         "Agenda")
+        self.assertEqual(tp.requested_layout({**outline, "layout": "Fin"}, self.LAYOUT_MAP),
+                         "Fin")
+
+    def test_a_divider_still_takes_the_divider_entry(self):
+        # Negative control: the fix is about outlines, not about the map's tiers.
+        self.assertEqual(tp.requested_layout({"n": 3, "kind": "divider", "title": "Method"},
+                                             self.LAYOUT_MAP), "Page separatrice")
+
 
 class TestRender(unittest.TestCase):
     def setUp(self):

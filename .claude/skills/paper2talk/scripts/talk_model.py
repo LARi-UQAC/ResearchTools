@@ -16,10 +16,14 @@ Usage
     python talk_model.py <talk_model.json> [--audience field] [--json]
     python talk_model.py <talk_model.json> --render ../assets/beamer_skeleton.tex.j2 \
            --out out/main.tex
+    python talk_model.py <talk_model.json> --render ../assets/web_skeleton.html.j2 \
+           --lab-dir <gabarit slides folder> --out out/deck.html
 
 Prints the model's problems, the exhibit-coverage state, and the budget
-aggregation. Exit 0 when the model is clean, 1 when it has problems, 2 on a file
-or usage error.
+aggregation. Exit 0 when the model is clean, 1 when it has problems (an .html
+render adds a footer field over its box to them, and still writes the deck), 2 on
+a file or usage error, or on a render refused (a template requiring the lab assets
+given no usable --lab-dir, a figure that cannot be embedded, a renderer gap).
 """
 from __future__ import annotations
 
@@ -57,9 +61,9 @@ BLOCK_KINDS: dict[str, tuple[str, ...]] = {
 # pure prose.
 EXHIBIT_KINDS = frozenset({"figure", "table", "chart", "matrix", "zoneband", "equation"})
 
-# Slide tiers, mirroring talk_rules.TIER_MINUTES, and the slide kinds a model may
-# declare (every tier plus the kinds talk_rules.KIND_TIER times as one of them).
-SLIDE_TIERS = frozenset(rules.TIERS)
+# The slide kinds a model may declare: every tier of talk_rules.TIER_MINUTES plus the
+# kinds talk_rules.KIND_TIER times as one of them. A tier is reached through
+# talk_rules.tier_of, never validated against a second list here.
 SLIDE_KINDS = frozenset(rules.KINDS)
 
 # Jinja delimiters for a LaTeX target. The defaults collide with LaTeX braces -
@@ -150,12 +154,18 @@ def slide_tier(slide: dict) -> str:
     return rules.tier_of(slide_kind(slide))
 
 
+# The kinds whose section is part of the talk an outline announces.
+_SECTION_KINDS = ("content", "divider")
+
+
 def outline_sections(model: dict) -> list[str]:
     """
     --------------------------------------------------------------------------
     Purpose:
         List what an outline slide shows: the distinct section names the model's
-        slides declare, in the order they first appear.
+        slides declare, in the order they first appear. Only content and divider
+        slides count: a backup slide sits outside the talk slot, and a title,
+        outline or thanks slide is chrome that would otherwise list itself.
 
     Inputs:
         model (dict): a parsed talk_model.json
@@ -166,6 +176,10 @@ def outline_sections(model: dict) -> list[str]:
     """
     sections: list[str] = []
     for slide in model.get("slides", []):
+        # Read the declared kind directly: slide_kind raises on an unknown one, which
+        # validate_model reports itself rather than crashing here.
+        if str(slide.get("kind", "content")).strip().lower() not in _SECTION_KINDS:
+            continue
         name = str(slide.get("section") or "").strip()
         if name and name not in sections:
             sections.append(name)
@@ -246,6 +260,24 @@ def _footer_problems(meta: dict) -> list[str]:
     return problems
 
 
+def footer_problems(model: dict) -> list[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The footer-field check for the web target, the one renderer whose footer
+        reads meta.short_title and meta.short_author. Beamer and PowerPoint do not
+        read them, so the check is not part of validate_model.
+
+    Inputs:
+        model (dict): a parsed talk_model.json
+
+    Outputs:
+        problems (list): one line per footer field over the cap, empty when clean
+    --------------------------------------------------------------------------
+    """
+    return _footer_problems(model.get("meta") or {})
+
+
 def validate_model(model: dict, audience: str | None = None) -> list[str]:
     """
     --------------------------------------------------------------------------
@@ -271,8 +303,6 @@ def validate_model(model: dict, audience: str | None = None) -> list[str]:
     except ValueError as exc:
         problems.append(str(exc))
 
-    problems += _footer_problems(meta)
-
     slides = model.get("slides") or []
     if not slides:
         problems.append(f"{TAG} the model declares no slides")
@@ -291,8 +321,8 @@ def validate_model(model: dict, audience: str | None = None) -> list[str]:
         if not str(slide.get("title", "")).strip() and tier != "backup":
             problems.append(f"{TAG} slide {n} has no title")
         if slide_kind(slide) == "outline" and not outline_sections(model):
-            problems.append(f"{TAG} slide {n} is an outline, but no slide declares a "
-                            "section for it to list")
+            problems.append(f"{TAG} slide {n} is an outline, but no content or divider "
+                            "slide declares a section for it to list")
 
         for block in slide.get("blocks", []):
             kind = block.get("kind")
@@ -497,8 +527,9 @@ def supported_blocks(template_path: str) -> set[str]:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Read the block kinds a Jinja template implements from its first line,
-        which every renderer template in assets/ declares:
+        Read the block kinds a Jinja template implements from its comment header
+        (template_requirements reads the whole header, blank lines included, up to
+        the first content line), which every renderer template in assets/ declares:
 
             {# supported-blocks: bullets figure takeaway ... #}
 
@@ -530,8 +561,9 @@ def template_requirements(template_path: str) -> dict:
     Details:
         The header is the run of comment lines at the top of the file, in either
         delimiter the templates use ({# ... #} for HTML, ((# ... #)) for LaTeX).
-        Each line holds one "key: value value ..." declaration. Reading stops at
-        the first line that is not a comment.
+        Each line holds one "key: value value ..." declaration, Jinja's "-"
+        whitespace control allowed. Blank lines are skipped; reading stops at the
+        first other line that is not a comment.
 
     Inputs:
         template_path (str): path to the .j2 template
@@ -542,16 +574,22 @@ def template_requirements(template_path: str) -> dict:
     --------------------------------------------------------------------------
     """
     declared: dict = {"supported-blocks": None, "supported-kinds": None, "requires": set()}
-    with open(template_path, encoding="utf8") as fh:
+    # utf-8-sig: a template saved with a byte-order mark keeps its header readable.
+    with open(template_path, encoding="utf-8-sig") as fh:
         for line in fh:
             text = line.strip()
+            if not text:
+                continue        # a blank line inside the header ends nothing
             if not text.startswith(("{#", "((#")):
                 break
-            body = text.lstrip("{(#").replace("#}", " ").replace("#))", " ").strip()
+            # "{#-" / "-#}" are Jinja whitespace control, not part of the key.
+            body = text.lstrip("{(#").lstrip("-").replace("#}", " ").replace("#))", " ")
+            body = body.strip().rstrip("-").strip()
             key, sep, payload = body.partition(":")
             key = key.strip()
             if sep and key in _HEADER_KEYS:
-                declared[key] = {v for v in payload.split() if v}
+                # A key repeated on another line adds to it, never replaces it.
+                declared[key] = (declared[key] or set()) | {v for v in payload.split() if v}
     return declared
 
 
@@ -591,7 +629,9 @@ def _image_mime(head: bytes) -> str | None:
 
     Details:
         SVG has no fixed signature: it is accepted when, after an optional BOM,
-        whitespace and XML declaration, the first element is <svg.
+        whitespace, XML declaration, comments and DOCTYPE (matplotlib and draw.io
+        write a DOCTYPE, Inkscape a comment), the first element is <svg. A prologue
+        item that is never closed, or any other root element, is not an image.
 
     Inputs:
         head (bytes): the start of the file
@@ -605,9 +645,26 @@ def _image_mime(head: bytes) -> str | None:
         if head.startswith(signature):
             return mime
     text = head.lstrip(b"\xef\xbb\xbf").lstrip()
-    if text.startswith(b"<?xml"):
-        end = text.find(b"?>")
-        text = text[end + 2:].lstrip() if end != -1 else b""
+    while True:
+        if text.startswith(b"<?xml"):
+            end, close = text.find(b"?>"), 2
+        elif text.startswith(b"<!--"):
+            end, close = text.find(b"-->"), 3
+        elif text.startswith(b"<!DOCTYPE"):
+            # An internal subset ([ ... ]) may itself hold a '>', so close after it.
+            subset = text.find(b"[")
+            gt = text.find(b">")
+            close = 1
+            if subset != -1 and (gt == -1 or subset < gt):
+                end = text.find(b"]", subset)
+                end = text.find(b">", end) if end != -1 else -1
+            else:
+                end = gt
+        else:
+            break
+        if end == -1:
+            return None
+        text = text[end + close:].lstrip()
     if text.startswith(b"<svg"):
         return rules.SVG_MIME
     return None
@@ -634,10 +691,13 @@ def embed_asset(path: str, root: str, max_bytes: int) -> str:
         uri (str): "data:<mime>;base64,<payload>"
 
     Raises:
-        AssetError: the path resolves outside root, the file is missing, it is
-            larger than max_bytes, or its leading bytes are not a recognised image.
+        AssetError: the asset is not a path string, it resolves outside root, the
+            file is missing, it is larger than max_bytes, or its leading bytes are not
+            a recognised image.
     --------------------------------------------------------------------------
     """
+    if not isinstance(path, str):
+        raise AssetError(f"{TAG} asset {path!r} is not a path string; refused")
     root_real = os.path.realpath(root)
     target = os.path.realpath(os.path.join(root_real, path))
     try:
@@ -728,6 +788,7 @@ def slide_pacing(model: dict, wpm: float = rules.DEFAULT_WPM) -> list[float]:
     Purpose:
         The spoken seconds of each slide, in the order a template renders them
         (the model's own order), from the same budget_rows talk_notes agrees with.
+        A backup slide counts 0: it sits outside the slot.
 
     Inputs:
         model (dict): a parsed talk_model.json
@@ -739,7 +800,8 @@ def slide_pacing(model: dict, wpm: float = rules.DEFAULT_WPM) -> list[float]:
     """
     # budget_rows sorts by slide number; a model listed out of order must still pair
     # each rendered slide with its own seconds.
-    by_number = {row["slide"]: row["seconds"] for row in budget_rows(model, wpm)}
+    by_number = {row["slide"]: (0.0 if row["tier"] == "backup" else row["seconds"])
+                 for row in budget_rows(model, wpm)}
     return [by_number[slide.get("n")] for slide in model.get("slides", [])]
 
 
@@ -804,7 +866,10 @@ def render_template(model: dict, template_path: str, out_path: str, *,
                              "slides folder with --lab-dir")
         context["lab"] = load_lab_assets(lab_dir)
     if out_path.lower().endswith((".html", ".htm")):
-        context.update(_embed_figures(model, model_dir))
+        # Only the slides change when figures are embedded. Merging the whole model
+        # back would let a model key named lab, web, sections or pacing replace the
+        # value computed above.
+        context["slides"] = _embed_figures(model, model_dir).get("slides", [])
     # Escaping is decided by what is being written, not by the template's suffix:
     # every template here ends in .j2, so select_autoescape would never fire and a
     # title containing an ampersand would break the web deck.
@@ -891,9 +956,15 @@ def main(argv: list[str] | None = None) -> int:
                                       model_dir=os.path.dirname(os.path.abspath(args.model)),
                                       lab_dir=args.lab_dir, wpm=args.wpm)
         except (OSError, RuntimeError, RendererGap, AssetError) as exc:
-            print(f"{TAG} {exc}", file=sys.stderr)
+            # The module's own refusals already carry the tag; an OSError does not.
+            message = str(exc)
+            print(message if message.startswith(TAG) else f"{TAG} {message}", file=sys.stderr)
             return 2
-        print(f"{TAG} rendered {args.render} -> {written}")
+        # With --json, stdout carries the JSON report alone (R17); the human line moves.
+        print(f"{TAG} rendered {args.render} -> {written}",
+              file=sys.stderr if args.json else sys.stdout)
+        if written.lower().endswith((".html", ".htm")):
+            problems += footer_problems(model)
 
     if args.json:
         print(json.dumps({"problems": problems, "totals": totals,

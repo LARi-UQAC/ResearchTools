@@ -42,6 +42,7 @@ professor's call, made with the number in front of him.
 from __future__ import annotations
 
 import argparse
+import bisect
 import glob
 import json
 import os
@@ -78,12 +79,27 @@ _RE_SUBSUP = re.compile(r'<a:rPr\b[^>]*baseline="-?\d+"')
 _RE_SHAPE_NAME = re.compile(r'<p:cNvPr\b[^>]*name="([^"]*)"')
 _RE_OFF = re.compile(r'<a:off\b[^>]*x="(-?\d+)"[^>]*y="(-?\d+)"')
 _RE_EXT = re.compile(r'<a:ext\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"')
-_RE_EXTERNAL = re.compile(r'(?:src|href)\s*=\s*["\']https?://|url\(\s*["\']?https?://')
+# A browser reads the scheme case-insensitively and trims the space inside the quotes,
+# so "HTTPS://" and " https://" load exactly like "https://".
+_RE_EXTERNAL = re.compile(r'(?:src|href)\s*=\s*["\']\s*https?://|url\(\s*["\']?\s*https?://',
+                          re.IGNORECASE)
 # Any other reference a browser resolves when the page opens: an HTML src/href attribute
 # (not a property or a string in the deck's own script, hence the look-behind) and a CSS
 # url(). A relative path works on the build machine and breaks once the deck is copied.
 _RE_ATTR_REF = re.compile(r"(?<![\w.\-\"'])(?:src|href)\s*=\s*([\"'])(.*?)\1", re.IGNORECASE)
 _RE_CSS_URL = re.compile(r"url\(\s*([\"']?)([^\"')\s]+)\1\s*\)", re.IGNORECASE)
+# Where a CSS url() is actually resolved: inside a tag, or between <style> and </style>.
+# Matched over the whole document, never one line at a time: a tag may span lines and a
+# quoted attribute value may hold '>' or a newline. The deck's own script is masked
+# first, since a comparison such as "i<n" there would otherwise open a "tag".
+_RE_TAG = re.compile(r"<[A-Za-z](?:[^>\"']|\"[^\"]*\"|'[^']*')*>")
+_RE_STYLE_BLOCK = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.IGNORECASE | re.DOTALL)
+_RE_SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+# Inside a tag, url() is resolved only in a style attribute and in the SVG attributes
+# that take a URL; alt, title and aria-label merely carry text, a caption for instance.
+_RE_ATTR_VALUE = re.compile(r"([\w:-]+)\s*=\s*(\"[^\"]*\"|'[^']*')")
+_CSS_URL_ATTRS = frozenset({"style", "fill", "stroke", "filter", "clip-path", "mask",
+                            "marker-start", "marker-mid", "marker-end", "cursor"})
 # References that load nothing from outside the file.
 _INLINE_PREFIXES = ("data:", "#", "mailto:")
 _EXTERNAL_PREFIXES = ("http://", "https://")
@@ -431,7 +447,10 @@ def check_web(path: str) -> list[str]:
 
     Details:
         data: URIs, #fragments and mailto: links load nothing and pass. An
-        http(s) reference keeps its original message and is reported once.
+        http(s) reference keeps its original message and is reported once, and is
+        still caught anywhere on a line. Any other CSS url() counts only inside a
+        tag (spanning lines or not) or a <style> block, where a browser resolves
+        it; slide text or a speaker note that mentions url() is not one.
 
     Inputs:
         path (str): the .html file
@@ -444,19 +463,40 @@ def check_web(path: str) -> list[str]:
     with open(path, encoding="utf8", errors="replace") as fh:
         html = fh.read()
     problems = []
-    for line_no, line in enumerate(html.splitlines(), 1):
-        if _RE_EXTERNAL.search(line):
+    # url() is resolved only inside a tag (a style attribute, an SVG paint) or a <style>
+    # block; slide text and the notes in the deck's script merely mention it. Each
+    # reference is filed under the line it sits on, so a report names that line.
+    masked = _RE_SCRIPT_BLOCK.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), html)
+    spans = [(tag.start() + attr.start(2), attr.group(2))
+             for tag in _RE_TAG.finditer(masked)
+             for attr in _RE_ATTR_VALUE.finditer(tag.group(0))
+             if attr.group(1).lower() in _CSS_URL_ATTRS]
+    spans += [(m.start(1), m.group(1)) for m in _RE_STYLE_BLOCK.finditer(masked)]
+    # Lines are counted on "\n" alone, for both kinds of finding: str.splitlines also
+    # breaks on \f, \x85 or U+2028 carried by slide text, and the two counts drifted.
+    breaks = [m.start() for m in re.finditer("\n", masked)]
+    css_refs: dict[int, list[str]] = {}
+    for start, text in spans:
+        for m in _RE_CSS_URL.finditer(text):
+            line_no = bisect.bisect_left(breaks, start + m.start()) + 1
+            css_refs.setdefault(line_no, []).append(m.group(2))
+    for line_no, line in enumerate(html.split("\n"), 1):
+        external_reported = bool(_RE_EXTERNAL.search(line))
+        if external_reported:
             problems.append(
                 f"{TAG} {path}:{line_no} references an external URL; the web target must "
                 "inline every asset (data: URIs), or it breaks offline"
             )
         refs = [m.group(2) for m in _RE_ATTR_REF.finditer(line)]
-        refs += [m.group(2) for m in _RE_CSS_URL.finditer(line)]
+        refs += css_refs.get(line_no, [])
         for ref in refs:
             value = ref.strip()
             lowered = value.lower()
+            # An http(s) value is skipped only when this line was already reported as
+            # external; a form the external pattern misses is still reported here,
+            # never dropped by both checks.
             if (not value or lowered.startswith(_INLINE_PREFIXES)
-                    or lowered.startswith(_EXTERNAL_PREFIXES)):
+                    or (external_reported and lowered.startswith(_EXTERNAL_PREFIXES))):
                 continue
             problems.append(
                 f"{TAG} {path}:{line_no} references {value!r}, which is not inlined; the "
@@ -476,6 +516,9 @@ def open_in_browser(path: str) -> bool:
     Details:
         A browser that cannot be started is reported on stderr with the file to open
         by hand. It does not change the validation verdict, which was already clean.
+        On a Unix session with no display and no BROWSER set, the standard library
+        would fall back to a console browser and wait on it with no timeout, so
+        nothing is started there.
 
     Inputs:
         path (str): the .html deck
@@ -484,6 +527,15 @@ def open_in_browser(path: str) -> bool:
         opened (bool): True when the browser accepted the file:// URI
     --------------------------------------------------------------------------
     """
+    # A BROWSER the user set (wslview, an SSH-forwarded opener) is their own choice and
+    # works with no display, so it is honoured.
+    # Cygwin is not exempt: its webbrowser takes the Unix path, console browsers included.
+    if (sys.platform not in ("win32", "darwin")
+            and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+                     or os.environ.get("BROWSER"))):
+        print(f"{TAG} no graphical session to open a browser in; open {path} by hand",
+              file=sys.stderr)
+        return False
     uri = pathlib.Path(os.path.abspath(path)).as_uri()
     try:
         opened = bool(webbrowser.open(uri))
@@ -509,9 +561,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="with --web: open the deck in the default browser, only if clean")
     args = ap.parse_args(argv)
 
-    if args.open and not args.web:
-        print(f"{TAG} --open applies to --web only: it opens a web deck after a clean check",
-              file=sys.stderr)
+    # --beamer runs first and returns, so --open beside it would open nothing while the
+    # run reported success; refused like --open without --web.
+    if args.open and (not args.web or args.beamer):
+        cause = "it cannot be combined with --beamer" if args.beamer else "--web is missing"
+        print(f"{TAG} --open applies to --web only ({cause}): it opens a web deck after a "
+              "clean check", file=sys.stderr)
         return 2
 
     if args.beamer:

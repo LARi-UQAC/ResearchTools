@@ -1,4 +1,5 @@
-# rt-finish.ps1 - the decisions of scripts\test\finish-branch.ps1, with no side effect.
+# rt-finish.ps1 - the decisions of finish-branch.ps1 (beside it, in the finish-branch skill),
+# with no side effect.
 #
 # Dot-sourced by finish-branch.ps1 and by scripts\test\verify-branch-tools.ps1. The script
 # spawns git and gh, which cannot be tested offline, so what it decides lives here as pure

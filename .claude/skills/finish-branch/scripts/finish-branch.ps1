@@ -31,8 +31,8 @@
 
     Run the copy that sits in the MAIN clone (after the merge it is there):
         cd <main clone>
-        .\scripts\test\finish-branch.ps1 -Branch feat/my-branch          # dry run
-        .\scripts\test\finish-branch.ps1 -Branch feat/my-branch -Yes
+        .\.claude\skills\finish-branch\scripts\finish-branch.ps1 -Branch feat/my-branch          # dry run
+        .\.claude\skills\finish-branch\scripts\finish-branch.ps1 -Branch feat/my-branch -Yes
 
 .PARAMETER Branch
     The branch of the merged pull request, for example feat/setup-update-hooks.
@@ -70,7 +70,7 @@ Set-StrictMode -Version Latest
 # Native commands write progress to stderr; that is not an error here, the exit code is checked.
 $ErrorActionPreference = "Continue"
 
-. (Join-Path $PSScriptRoot "..\lib\rt-finish.ps1")
+. (Join-Path $PSScriptRoot "rt-finish.ps1")
 
 function Write-Refused([string[]]$Reasons) {
     Write-Host ""
@@ -100,7 +100,8 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 2
 }
 
-$scriptRepo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
+# The script sits in <repo>\.claude\skills\finish-branch\scripts, four levels below the root.
+$scriptRepo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\.."))
 $common = Get-Git $scriptRepo @("rev-parse", "--path-format=absolute", "--git-common-dir")
 if (-not $common) {
     Write-Refused @("$scriptRepo is not inside a git repository.")

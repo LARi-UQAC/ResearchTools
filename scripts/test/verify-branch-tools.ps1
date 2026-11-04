@@ -1,11 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Offline check of scripts\test\run-all-checks.ps1 and scripts\test\finish-branch.ps1.
+    Offline check of scripts\test\run-all-checks.ps1 and .claude\skills\finish-branch\scripts\finish-branch.ps1.
 
 .DESCRIPTION
     Both scripts spawn processes (git, gh, powershell), so what they decide lives in
-    scripts\lib\rt-checks.ps1 and scripts\lib\rt-finish.ps1 and is checked here as pure
+    scripts\lib\rt-checks.ps1 and .claude\skills\finish-branch\scripts\rt-finish.ps1 and is checked here as pure
     functions. Then each script is RUN for real, in a child process, against a throwaway
     world under $env:TEMP: a bare origin, a main clone, real worktrees with real junctions
     (R37), and a stub gh.cmd placed first on PATH. There is no bypass flag in either script
@@ -30,7 +30,7 @@ $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $Tmp      = Join-Path $env:TEMP "rt-branch-tools-$PID"
 $failures = 0
 . (Join-Path $RepoRoot "scripts\lib\rt-checks.ps1")
-. (Join-Path $RepoRoot "scripts\lib\rt-finish.ps1")
+. (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1")
 
 function Check([string]$name, [bool]$ok) {
     if ($ok) { Write-Host "  PASS  $name" -ForegroundColor DarkGray }
@@ -210,10 +210,10 @@ try {
     & git clone -q $origin $main 2>&1 | Out-Null
     Write-Text (Join-Path $main "README.md") "fixture`n"
     Write-Text (Join-Path $main ".gitignore") "*.log`n.worktrees/`n"
-    $finishSrc = Join-Path $RepoRoot "scripts\test\finish-branch.ps1"
-    New-Item -ItemType Directory -Path (Join-Path $main "scripts\test"), (Join-Path $main "scripts\lib") -Force | Out-Null
-    if (Test-Path -LiteralPath $finishSrc) { Copy-Item $finishSrc (Join-Path $main "scripts\test\finish-branch.ps1") -Force }
-    Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-finish.ps1") (Join-Path $main "scripts\lib\rt-finish.ps1") -Force
+    $finishSrc = Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\finish-branch.ps1"
+    New-Item -ItemType Directory -Path (Join-Path $main ".claude\skills\finish-branch\scripts") -Force | Out-Null
+    if (Test-Path -LiteralPath $finishSrc) { Copy-Item $finishSrc (Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1") -Force }
+    Copy-Item (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1") (Join-Path $main ".claude\skills\finish-branch\scripts\rt-finish.ps1") -Force
     Invoke-Git $main @("add", "-A") | Out-Null
     Invoke-Git $main @("commit", "-q", "-m", "fixture") | Out-Null
     Invoke-Git $main @("push", "-q", "origin", "main") | Out-Null
@@ -240,7 +240,7 @@ try {
         Write-Text $ghFile $json
     }
     function Invoke-Finish($Case, [string[]]$More = @(), [string]$Script = "") {
-        $s = if ($Script) { $Script } else { Join-Path $main "scripts\test\finish-branch.ps1" }
+        $s = if ($Script) { $Script } else { Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1" }
         return (Invoke-Child $s (@("-Branch", $Case.Branch) + $More) $main $bin)
     }
     function Alive($Case) {
@@ -290,7 +290,7 @@ try {
     Invoke-Git $main @("checkout", "-q", "main") | Out-Null
     Invoke-Git $main @("branch", "-q", "-D", "other") | Out-Null
 
-    $res = Invoke-Finish $c1 @("-Yes") (Join-Path $c1.Worktree "scripts\test\finish-branch.ps1")
+    $res = Invoke-Finish $c1 @("-Yes") (Join-Path $c1.Worktree ".claude\skills\finish-branch\scripts\finish-branch.ps1")
     Check "(refusal) started from inside the worktree it would remove, exit 2" ($res.Code -eq 2 -and $res.Text -match "inside the worktree")
     Check "(refusal) nothing was removed" (Alive $c1)
 
@@ -327,7 +327,7 @@ try {
     Check "(refusal) the remote branch and the worktree are still there" (Alive $c4)
 
     # the caller's shell must stay where it was, after a dry run and after a refusal
-    $finishPath = Join-Path $main "scripts\test\finish-branch.ps1"
+    $finishPath = Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1"
     $oldPathEnv = $env:PATH; $env:PATH = "$bin;$oldPathEnv"
     $keep = @((& powershell -NoProfile -Command "Set-Location -LiteralPath '$Tmp'; & '$finishPath' -Branch '$($c1.Branch)'; (Get-Location).Path" 2>&1 | Out-String).Trim() -split "`r?`n")[-1]
     Check "after a dry run the caller is still in its own folder" ($keep -eq $Tmp)
@@ -338,7 +338,7 @@ try {
     Check "after a refusal the caller is still in its own folder" ($keep -eq $Tmp)
 
     # a branch name git would read as an option
-    $res = Invoke-Child (Join-Path $main "scripts\test\finish-branch.ps1") @("-Branch:-r") $main $bin
+    $res = Invoke-Child (Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1") @("-Branch:-r") $main $bin
     Check "(refusal) a branch name starting with a dash exits 2" ($res.Code -eq 2 -and $res.Text -match "not a branch this script will clean")
 
     # origin cannot be queried: that is not the same as "the branch is gone"

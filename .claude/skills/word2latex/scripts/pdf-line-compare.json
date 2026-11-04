@@ -1,0 +1,22 @@
+{
+  "tolerance_cm": {
+    "value": 0.02,
+    "provenance": "chosen by the owner's request of 2026-10-30 that the LaTeX rendering of the Mitacs v2 form be visually identical to Word: 0.02 cm (0.2 mm) is under one pixel at 120 dpi, the resolution word2latex renders pages at for visual checks"
+  },
+  "match_prefix_chars": {
+    "value": 24,
+    "provenance": "chosen 2026-10-30 while comparing the Mitacs v2 form: long enough that two different lines of that form never share a prefix, short enough to survive a line whose end moved to the next line"
+  },
+  "ignored_glyphs": {
+    "value": "☐☒↖",
+    "provenance": "measured 2026-10-30: Word draws these symbols with a fallback font (Segoe UI Symbol, MS Gothic, Cambria Math) as separate spans, so they are dropped from the matching key; their position is still covered by the line's x0"
+  },
+  "list_label_regex": {
+    "value": "^\\s*([a-d]|i{1,3}|iv|[1-9])[.)]\\s*",
+    "provenance": "measured 2026-10-30: Word extracts a list label and its text as one line while LaTeX may emit the label as its own line; the label is stripped from the key only, never from the reported text"
+  },
+  "max_extra_reported": {
+    "value": 15,
+    "provenance": "chosen 2026-10-30: candidate lines with no reference match are listed up to this count in the human report; the JSON report always carries all of them"
+  }
+}

@@ -112,6 +112,29 @@ Check "a plain folder name is accepted" (Test-RtPlansFolderName "2026-10-17-upda
 Check "a name with a separator or .. is refused (R24)" (-not (Test-RtPlansFolderName "..\x") -and -not (Test-RtPlansFolderName "a/b") -and -not (Test-RtPlansFolderName "..") -and -not (Test-RtPlansFolderName "C:x"))
 Check "an empty name is refused" (-not (Test-RtPlansFolderName ""))
 
+# --- refresh helpers (Issue #102): profile, setup.ps1 arguments, reminders ---------------
+Write-Host ""
+Write-Host "  -- refresh helpers --" -ForegroundColor DarkCyan
+$cmdWith = Join-Path $Tmp "helpers\with\CLAUDE.md"
+$cmdWithout = Join-Path $Tmp "helpers\without\CLAUDE.md"
+Write-Text $cmdWith "# x`n`n``````yaml`nactive_profile: engineering`n```````n"
+Write-Text $cmdWithout "# x`n`nno selector here`n"
+Check "the active profile is read from its machine line" ((Get-RtActiveProfile $cmdWith) -eq "engineering")
+Check "a CLAUDE.md without the line gives an empty profile" ((Get-RtActiveProfile $cmdWithout) -eq "")
+Check "a missing CLAUDE.md gives an empty profile" ((Get-RtActiveProfile (Join-Path $Tmp "helpers\absent\CLAUDE.md")) -eq "")
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/rules/a.md") -KeepHooks @())
+Check "refresh args: -Update -Profile <p> -RunSuite -NonInteractive -Force, in that order" (($a -join " ") -eq "-Update -Profile engineering -RunSuite -NonInteractive -Force")
+Check "refresh args: no agent or command change, no -Personal" (-not ($a -contains "-Personal"))
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/commands/x.md") -KeepHooks @())
+Check "refresh args: a changed command adds -Personal" ($a -contains "-Personal")
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/agents/y.md") -KeepHooks @("AUTO-SYNC CHECK"))
+Check "refresh args: a changed agent adds -Personal" ($a -contains "-Personal")
+$k = [array]::IndexOf($a, "-KeepHooks")
+Check "refresh args: -KeepHooks passes the name as ONE element" ($k -ge 0 -and $a[$k + 1] -eq "AUTO-SYNC CHECK" -and $a.Count -eq $k + 2)
+Check "reminders: a rule change needs no gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @(".claude/rules/a.md")).Count -eq 0)
+Check "reminders: a docs page asks for gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @("docs/manual/02-profiles.md")) -join " " -match "gh-deploy")
+Check "reminders: mkdocs.yml asks for gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @("mkdocs.yml")).Count -eq 1)
+
 # --- the link scan: junctions are reported and never followed (R37) -------------------
 Write-Host ""
 Write-Host "  -- the link scan --" -ForegroundColor DarkCyan

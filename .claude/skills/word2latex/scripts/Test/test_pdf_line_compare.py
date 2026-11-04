@@ -141,6 +141,30 @@ class KeysAndRefusals(unittest.TestCase):
                 plc.load_config(cfg)
             self.assertIn("match_prefix_chars", str(ctx.exception))
 
+    def _config_with(self, tmp: str, key: str, value) -> Path:
+        raw = json.loads(plc.CONFIG_FILE.read_text(encoding="utf-8"))
+        raw[key]["value"] = value
+        cfg = Path(tmp) / "c.json"
+        cfg.write_text(json.dumps(raw), encoding="utf-8")
+        return cfg
+
+    def test_invalid_regex_is_a_refusal_not_a_difference(self):
+        # Review round 1 (2026-11-04): a broken regex raised re.error later, exit 1,
+        # which reads as "the PDFs differ" instead of a broken configuration.
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._config_with(tmp, "list_label_regex", "^\\s*([a-d]")
+            with self.assertRaises(plc.CompareError) as ctx:
+                plc.load_config(cfg)
+            self.assertIn("list_label_regex", str(ctx.exception))
+
+    def test_non_numeric_values_are_refused(self):
+        for key, bad in (("tolerance_cm", "0.02cm"), ("match_prefix_chars", "x"),
+                         ("max_extra_reported", None), ("tolerance_cm", True)):
+            with self.subTest(key=key, bad=bad), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(plc.CompareError) as ctx:
+                    plc.load_config(self._config_with(tmp, key, bad))
+                self.assertIn(key, str(ctx.exception))
+
     def test_shipped_config_carries_provenance(self):
         raw = json.loads(plc.CONFIG_FILE.read_text(encoding="utf-8"))
         for key in plc.CONFIG_KEYS:

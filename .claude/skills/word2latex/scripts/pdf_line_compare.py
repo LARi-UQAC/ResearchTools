@@ -62,7 +62,46 @@ def load_config(path: Path = CONFIG_FILE) -> dict[str, Any]:
         if not isinstance(entry, dict) or "value" not in entry:
             raise CompareError(f"configuration key '{key}' is missing from {path}")
         config[key] = entry["value"]
+    _check_types(config, path)
     return config
+
+
+def _check_types(config: dict[str, Any], path: Path) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Refuse a configuration value of the wrong type before any PDF is read, so
+        a broken configuration exits 2 (refusal) and never 1 (differences found).
+
+    Inputs:
+        config (dict): key -> value, as read by load_config.
+        path (Path): the configuration file, named in the message.
+
+    Outputs:
+        None.
+
+    Raises:
+        CompareError: a numeric key is not a non-negative number (a bool is not a
+            number here), a text key is not a string, or the regex does not compile.
+    --------------------------------------------------------------------------
+    """
+    def number(key: str, integer: bool) -> None:
+        v = config[key]
+        kinds = (int,) if integer else (int, float)
+        if isinstance(v, bool) or not isinstance(v, kinds) or v < 0:
+            kind = "a non-negative integer" if integer else "a non-negative number"
+            raise CompareError(f"configuration key '{key}' in {path} must be {kind}, got {v!r}")
+
+    number("tolerance_cm", integer=False)
+    number("match_prefix_chars", integer=True)
+    number("max_extra_reported", integer=True)
+    for key in ("ignored_glyphs", "list_label_regex"):
+        if not isinstance(config[key], str):
+            raise CompareError(f"configuration key '{key}' in {path} must be a string")
+    try:
+        re.compile(config["list_label_regex"])
+    except re.error as exc:
+        raise CompareError(f"configuration key 'list_label_regex' in {path} is not a valid regex: {exc}") from exc
 
 
 def to_cm(points: float) -> float:

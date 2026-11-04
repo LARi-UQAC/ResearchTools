@@ -219,11 +219,15 @@ python .claude/skills/word2latex/scripts/docx_track.py apply "<file>.docx" edits
 `paragraphs`); optional `occurrence` (1-based) and `highlight` (a Word colour name, e.g. `cyan`
 for placeholders the author must fill). Text is matched across Word's fragmented runs, never
 across two paragraphs. Refusals, each listed as a `FAILS:` line: text not found, text found
-several times without `occurrence`, a match inside a field (an EndNote citation or a
-cross-reference, which Word rewrites on update), and a boundary inside a run holding a tab,
-a break or a drawing. One failure writes nothing (exit 1). After writing, the file is read
-back: rejecting every revision must give the original text (R9). Exit 0 applied, 1 an edit
-failed, 2 refusal (output equal to input, unreadable edit file). New citations are inserted
+several times without `occurrence`, a match inside a field (an EndNote citation, a
+cross-reference, or a field spanning several paragraphs such as the EndNote bibliography,
+which Word rewrites on update), a boundary inside a run holding a tab, a break or a drawing,
+a deletion covering such a run, and an edit of the wrong shape. A tab is read as `\t` and a
+line break as `\n`, so a find string must name them to match across them. One failure
+writes nothing (exit 1). After writing, the file is read back: rejecting every revision,
+in the output and in the input, must give the same text (R9), so a file that already carries
+a co-author's tracked changes verifies too. Exit 0 applied, 1 an edit failed, 2 refusal
+(output equal to input, unreadable edit file, input that is not a readable .docx). New citations are inserted
 as EndNote temporary citations `{Author, Year}`: import the references into the EndNote
 library, then *Update Citations and Bibliography* turns them into live fields.
 

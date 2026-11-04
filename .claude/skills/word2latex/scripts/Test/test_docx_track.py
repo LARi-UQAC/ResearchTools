@@ -227,6 +227,94 @@ class DocxTrackTest(unittest.TestCase):
             edits.write_text("[]", encoding="utf-8")
             self.assertEqual(dt.main(base + ["-o", str(self.dir / "o3.docx")]), 2)
 
+    # ---- Review round 1 (2026-11-04): each case below failed on commit 75b494d ----
+
+    def _rewrite(self, mutate) -> Path:
+        """Write a copy of the fixture whose document part was changed by `mutate(root)`."""
+        root = dt.read_document(self.src)
+        mutate(root)
+        path = self.dir / "variant.docx"
+        dt.write_docx(self.src, path, root)
+        return path
+
+    def _para(self, root, prefix: str):
+        return [q for q in dt.body_paragraphs(root) if dt.paragraph_text(q).startswith(prefix)][0]
+
+    def test_prior_tracked_insertion_still_verifies(self) -> None:
+        # A co-author's earlier insertion is kept by the accepted view and dropped by the
+        # rejected one; comparing those two views made every such file a MISMATCH.
+        def mutate(root):
+            run = self._para(root, "A plain").find(dt.w("r"))
+            ins = etree.Element(dt.w("ins"))
+            for k, v in (("id", "900"), ("author", "Earlier Author"), ("date", DATE)):
+                ins.set(dt.w(k), v)
+            run.addprevious(ins)
+            ins.append(run)
+        src = self._rewrite(mutate)
+        rep = dt.apply_file(src, [{"op": "delete", "find": "robot "}], self.out, AUTHOR, DATE, False)
+        self.assertEqual(rep.fails, [])
+        self.assertTrue(rep.verified)
+
+    def test_field_spanning_paragraphs_is_refused_in_its_middle(self) -> None:
+        # An EndNote bibliography field opens in one paragraph and closes in a later one;
+        # resetting the depth per paragraph let an edit land in the middle of it.
+        def mutate(root):
+            first = self._para(root, "Repeated")
+            begin = etree.SubElement(first, dt.w("r"))
+            etree.SubElement(begin, dt.w("fldChar")).set(dt.w("fldCharType"), "begin")
+            etree.SubElement(begin, dt.w("instrText")).text = " ADDIN EN.REFLIST "
+            etree.SubElement(begin, dt.w("fldChar")).set(dt.w("fldCharType"), "separate")
+            middle = etree.Element(dt.w("p"))
+            etree.SubElement(etree.SubElement(middle, dt.w("r")), dt.w("t")).text = "Middle entry of the list."
+            first.addnext(middle)
+            last = [q for q in dt.body_paragraphs(root) if dt.paragraph_text(q) == "Repeated text here."][-1]
+            end = etree.SubElement(last, dt.w("r"))
+            etree.SubElement(end, dt.w("fldChar")).set(dt.w("fldCharType"), "end")
+        src = self._rewrite(mutate)
+        rep = dt.apply_file(src, [{"op": "replace", "find": "Middle entry", "with": "Other"}],
+                            self.out, AUTHOR, DATE, False)
+        self.assertEqual(len(rep.fails), 1)
+        self.assertIn("field", rep.fails[0]["reason"])
+        # Control: text after the field closed is still editable.
+        rep = dt.apply_file(src, [{"op": "replace", "find": "A plain", "with": "A short"}],
+                            self.out, AUTHOR, DATE, False)
+        self.assertEqual(rep.fails, [])
+
+    def test_fully_covered_run_with_a_tab_is_not_deleted(self) -> None:
+        # A run "Name:<tab>Doe" read as "Name:Doe" and, covered whole, went into w:del
+        # with its tab, while the read-back (which ignores tabs) still passed.
+        def mutate(root):
+            run = self._para(root, "A plain").find(dt.w("r"))
+            for t in run.findall(dt.w("t")):
+                run.remove(t)
+            etree.SubElement(run, dt.w("t")).text = "Name:"
+            etree.SubElement(run, dt.w("tab"))
+            etree.SubElement(run, dt.w("t")).text = "Doe"
+        src = self._rewrite(mutate)
+        for find in ("Name:Doe", "Name:\tDoe"):
+            with self.subTest(find=find):
+                rep = dt.apply_file(src, [{"op": "delete", "find": find}], self.out, AUTHOR, DATE, False)
+                self.assertEqual(len(rep.fails), 1)
+                self.assertFalse(self.out.exists())
+
+    def test_malformed_edit_is_a_failure_not_a_crash(self) -> None:
+        for bad in ({"op": "delete", "find": 5}, {"op": "insert_paragraphs_after", "anchor": "A plain",
+                                                  "paragraphs": "Hello"}, "not an object"):
+            with self.subTest(bad=bad):
+                rep = self.run_edits([bad])
+                self.assertEqual(len(rep.fails), 1)
+                self.assertFalse(self.out.exists())
+
+    def test_input_that_is_not_a_docx_is_a_refusal(self) -> None:
+        fake = self.dir / "renamed.docx"
+        fake.write_bytes(b"not a zip archive")
+        edits = self.dir / "edits.json"
+        edits.write_text(json.dumps({"edits": [{"op": "delete", "find": "x"}]}), encoding="utf-8")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(dt.main(["paragraphs", str(fake)]), 2)
+            self.assertEqual(dt.main(["apply", str(fake), str(edits), "-o", str(self.out),
+                                      "--author", AUTHOR, "--date", DATE]), 2)
+
     def test_paragraphs_listing(self) -> None:
         buf = io.StringIO()
         with redirect_stdout(buf):

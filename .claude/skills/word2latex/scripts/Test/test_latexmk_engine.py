@@ -75,6 +75,13 @@ class EngineChoice(unittest.TestCase):
         p = self._tex("lua.tex", "% !TEX program = lualatex\n")
         self.assertEqual(engine_for(str(p)), "pdflatex")
 
+    def test_utf8_bom_before_the_magic_comment_is_ignored(self):
+        # Review round 1 (2026-11-04): a .tex saved by Notepad or PowerShell starts with a
+        # BOM, and the ^\s*% anchor missed the comment, building with pdflatex silently.
+        p = self.dir / "bom.tex"
+        p.write_bytes(b"\xef\xbb\xbf% !TEX program = xelatex\n\\documentclass{article}\n")
+        self.assertEqual(engine_for(str(p)), "xelatex")
+
     def test_unreadable_file_falls_back_to_pdflatex(self):
         self.assertEqual(engine_for(str(self.dir / "absent.tex")), "pdflatex")
 

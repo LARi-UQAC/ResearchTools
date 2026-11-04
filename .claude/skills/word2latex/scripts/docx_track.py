@@ -38,6 +38,11 @@ OPS = {"replace", "delete", "insert_after", "insert_before", "insert_paragraphs_
 RUN_CONTAINERS = {"hyperlink", "smartTag", "ins", "fldSimple", "customXml", "sdtContent", "sdt"}
 # Run children that carry no content, only a hint of Word's last layout; safe to split around.
 RENDER_HINTS = {"lastRenderedPageBreak"}
+# Run children that are content without a w:t: shown in the paragraph text so a find
+# string must name them, and never split or deleted (see _split and _check_plain).
+BREAK_TEXT = {"tab": "\t", "br": "\n", "cr": "\n"}
+FIELD_DEPTH_XPATH = ("count(preceding::w:fldChar[@w:fldCharType='begin'])"
+                     " - count(preceding::w:fldChar[@w:fldCharType='end'])")
 
 
 def w(tag: str) -> str:
@@ -73,16 +78,29 @@ def _run_text(run: etree._Element) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Visible text of one run (its w:t children only).
+        Visible text of one run: its w:t text, with a tab read as '\\t' and a line
+        break as '\\n', so a match cannot silently span a tab or a break.
 
     Inputs:
         run (lxml element): a w:r element.
 
     Outputs:
-        text (str): concatenated w:t text, '' when the run holds none.
+        text (str): the run's text in child order, '' when the run holds none.
     --------------------------------------------------------------------------
     """
-    return "".join(t.text or "" for t in run.findall(w("t")))
+    parts = []
+    for c in run:
+        name = etree.QName(c).localname
+        if name == "t":
+            parts.append(c.text or "")
+        elif name in BREAK_TEXT:
+            parts.append(BREAK_TEXT[name])
+    return "".join(parts)
+
+
+def _plain_run(run: etree._Element) -> bool:
+    """Purpose: True when a run holds only formatting, text and render hints. Inputs: run (w:r). Outputs: bool."""
+    return all(etree.QName(c).localname in ("rPr", "t", *RENDER_HINTS) for c in run)
 
 
 def paragraph_spans(p: etree._Element) -> list[RunSpan]:
@@ -96,6 +114,9 @@ def paragraph_spans(p: etree._Element) -> list[RunSpan]:
     Details:
         Runs inside w:del are skipped (not visible). Complex fields are tracked
         through w:fldChar begin/end; w:fldSimple content counts as in a field.
+        The starting depth counts the fields opened and not yet closed before the
+        paragraph, because an EndNote bibliography or a TOC field spans several
+        paragraphs and its middle paragraphs hold no fldChar of their own.
 
     Inputs:
         p (lxml element): a w:p element.
@@ -105,7 +126,7 @@ def paragraph_spans(p: etree._Element) -> list[RunSpan]:
     --------------------------------------------------------------------------
     """
     spans: list[RunSpan] = []
-    depth = 0
+    depth = max(0, int(p.xpath(FIELD_DEPTH_XPATH, namespaces={"w": W_NS})))
     pos = 0
 
     def walk(node: etree._Element, simple_field: bool) -> None:
@@ -211,8 +232,7 @@ def _split(span: RunSpan, offset: int) -> None:
     --------------------------------------------------------------------------
     """
     run = span.run
-    extra = [c for c in run if etree.QName(c).localname not in ("rPr", "t", *RENDER_HINTS)]
-    if extra:
+    if not _plain_run(run):
         raise EditError("match boundary inside a run holding non-text content")
     text = _run_text(run)
     cut = offset - span.start
@@ -333,6 +353,46 @@ def _check_not_field(spans: list[RunSpan]) -> None:
         raise EditError("match touches a field (EndNote citation or cross-reference); choose another anchor")
 
 
+def _check_plain(spans: list[RunSpan]) -> None:
+    """Purpose: refuse deleting a run that holds a tab, break or drawing. Inputs: spans. Outputs: None. Raises: EditError."""
+    if not all(_plain_run(s.run) for s in spans):
+        raise EditError("match covers a run holding a tab, break or drawing; choose a narrower anchor")
+
+
+STR_KEYS = ("find", "with", "anchor", "text", "highlight")
+
+
+def _check_shape(e: object) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Refuse an edit whose shape is wrong before it touches the document, so a
+        malformed edit file is reported as a failed edit and never as a traceback.
+
+    Inputs:
+        e (object): one entry of the edit list.
+
+    Outputs:
+        None.
+
+    Raises:
+        EditError: the edit is not an object, a text key is not a string,
+            'paragraphs' is not a list of strings, or 'occurrence' is not an int.
+    --------------------------------------------------------------------------
+    """
+    if not isinstance(e, dict):
+        raise EditError(f"an edit must be an object, got {type(e).__name__}")
+    for key in STR_KEYS:
+        if key in e and e[key] is not None and not isinstance(e[key], str):
+            raise EditError(f"key '{key}' must be a string")
+    if "paragraphs" in e and not (isinstance(e["paragraphs"], list)
+                                  and all(isinstance(x, str) for x in e["paragraphs"])):
+        raise EditError("key 'paragraphs' must be a list of strings")
+    occ = e.get("occurrence")
+    if occ is not None and (isinstance(occ, bool) or not isinstance(occ, int)):
+        raise EditError("key 'occurrence' must be an integer")
+
+
 def apply_edit(root: etree._Element, rev: Reviser, e: dict) -> None:
     """
     --------------------------------------------------------------------------
@@ -355,6 +415,7 @@ def apply_edit(root: etree._Element, rev: Reviser, e: dict) -> None:
         EditError: unknown op, missing key, or an anchor that cannot be applied.
     --------------------------------------------------------------------------
     """
+    _check_shape(e)
     op = e.get("op")
     if op not in OPS:
         raise EditError(f"unknown op {op!r}")
@@ -364,6 +425,7 @@ def apply_edit(root: etree._Element, rev: Reviser, e: dict) -> None:
             p, start = _find(root, e["find"], occ)
             spans = _isolate(p, start, start + len(e["find"]))
             _check_not_field(spans)
+            _check_plain(spans)
             template = spans[0].run
             last = rev.delete(spans)
             if op == "replace" and e["with"]:
@@ -441,8 +503,13 @@ def view_texts(root: etree._Element, accepted: bool) -> list[str]:
 
 
 def verify(original: etree._Element, revised: etree._Element) -> bool:
-    """Purpose: R9 read-back, rejecting every revision must give the original text. Inputs: two roots. Outputs: bool."""
-    return view_texts(original, accepted=True) == view_texts(revised, accepted=False)
+    """
+    Purpose: R9 read-back, rejecting every revision of both files must give the same text.
+    Both sides use the rejected view, so revisions the input already carried (a co-author's
+    earlier w:ins/w:del) cancel out instead of making every such file a mismatch.
+    Inputs: original, revised (lxml roots). Outputs: bool.
+    """
+    return view_texts(original, accepted=False) == view_texts(revised, accepted=False)
 
 
 def read_document(path: Path) -> etree._Element:
@@ -497,7 +564,7 @@ def apply_file(src: Path, edits: list[dict], out: Path, author: str, date: str, 
     root = read_document(src)
     rev = Reviser(root, author, date)
     for i, e in enumerate(edits):
-        eid = e.get("id", f"#{i + 1}")
+        eid = e.get("id", f"#{i + 1}") if isinstance(e, dict) else f"#{i + 1}"
         try:
             apply_edit(root, rev, e)
             report.applied.append(eid)
@@ -553,8 +620,13 @@ def main(argv: list[str] | None = None) -> int:
     if not args.docx.is_file():
         print(f"REFUSED: {args.docx} not found", file=sys.stderr)
         return 2
+    try:
+        doc = read_document(args.docx)
+    except (zipfile.BadZipFile, KeyError, etree.XMLSyntaxError, OSError) as err:
+        print(f"REFUSED: {args.docx} is not a readable .docx: {err}", file=sys.stderr)
+        return 2
     if args.cmd == "paragraphs":
-        texts = [paragraph_text(p) for p in body_paragraphs(read_document(args.docx))]
+        texts = [paragraph_text(p) for p in body_paragraphs(doc)]
         rows = [{"index": i + 1, "text": t} for i, t in enumerate(texts) if t]
         print(json.dumps(rows, ensure_ascii=False, indent=1) if args.json
               else "\n".join(f"[{r['index']}] {r['text']}" for r in rows))

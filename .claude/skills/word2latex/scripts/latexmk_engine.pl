@@ -33,6 +33,8 @@ sub word2latex_engine_for {
     my $n = 0;
     while (my $line = <$fh>) {
         last if ++$n > $word2latex_magic_lines;
+        # A UTF-8 BOM (Notepad, PowerShell Out-File) would hide the comment from ^\s*%.
+        $line =~ s/^\xEF\xBB\xBF// if $n == 1;
         if ($line =~ /^\s*%\s*!TEX\s+(?:TS-)?program\s*=\s*xelatex\b/i) {
             close $fh;
             return 'xelatex';

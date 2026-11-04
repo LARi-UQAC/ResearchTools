@@ -68,11 +68,19 @@ committed by that protocol.
    [chapter 08](08-rules.md).
 3. Before the pull request opens, run the bounded security and code review of R35 and fix what it
    finds. The review bounds are declared first, see [chapter 11](11-local-coding.md).
-4. Run `scripts/test/run-all-checks.ps1` once, after the last commit.
+4. Regenerate the mirrors with `install.ps1 -Profile <active>` and commit them in the same pull
+   request. Then run `scripts/test/run-all-checks.ps1` once, after the last commit. Its
+   `verify-mirrors-fresh.ps1` fails when the mirrors were not regenerated.
 5. Open the pull request. The owner merges it, never a session.
-6. After the merge, from the main clone, `scripts/test/finish-branch.ps1 -Branch <branch>`.
+6. After the merge, from the main clone:
+   `.claude/skills/finish-branch/scripts/finish-branch.ps1 -Branch <branch> -Refresh`. The
+   `finish-branch` skill (command `/finish-branch`, or "clean the project") runs these steps in
+   order and shows the dry run before any `-Yes`.
 
-`finish-branch.ps1` removes the merged branch's worktree, deletes the branch locally and on origin,
+`-Refresh` runs `setup.ps1 -Update -Profile <active> -RunSuite -NonInteractive -Force` after the
+clean-up. It adds `-Personal` when the merged pull request changed an agent or a command, and passes
+`-KeepHooks` on. It prints a reminder to run `mkdocs gh-deploy` when `docs/` changed. A failed
+refresh exits 1. `finish-branch.ps1` removes the merged branch's worktree, deletes the branch locally and on origin,
 prunes, and moves a plans folder from `docs/superpowers/todo` to `done`. It is a dry run until `-Yes`,
 and it never uses `--force`. It refuses, listing every reason at once and changing nothing, when no
 merged pull request has that head, when the local or the origin branch is not on the merged commit,

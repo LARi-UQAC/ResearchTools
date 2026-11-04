@@ -9,6 +9,7 @@
   "distributions": {
     "PyYAML": {"imports": ["yaml"], "optional": false, "runtime_only": false, "note": "read with yaml.safe_load only"},
     "python-pptx": {"imports": ["pptx"], "optional": false, "runtime_only": false, "note": ""},
+    "python-docx": {"imports": ["docx"], "optional": true, "runtime_only": false, "note": "word2latex test fixtures only (test_docx_track.py); docx_track.py itself edits the XML with lxml"},
     "PyMuPDF": {"imports": ["fitz", "pymupdf"], "optional": false, "runtime_only": false, "note": "AGPL-3.0 licence; scopus uses it when present without declaring it"},
     "pymupdf4llm": {"imports": ["pymupdf4llm"], "optional": false, "runtime_only": false, "note": "AGPL-3.0 licence"},
     "markitdown": {"imports": ["markitdown"], "optional": true, "runtime_only": false, "note": "MIT licence"},

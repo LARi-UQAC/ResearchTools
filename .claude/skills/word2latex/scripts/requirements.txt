@@ -2,3 +2,6 @@
 # pandoc is a separate program, not a pip package.
 pillow==13.0.0  # docx_inspect.py image comparison; 12.3.0 carries advisories fixed in 13.0.0 (pip-audit 2026-10-22)
 numpy==2.4.6  # docx_inspect.py image comparison
+PyMuPDF==1.27.2.3  # pdf_line_compare.py (import fitz); same pin as extract-statistic, paper2talk, pdf2md
+lxml==6.1.3  # docx_track.py (tracked changes in an existing .docx); version installed in .venv-skills 2026-10-30
+python-docx==1.2.0  # Test/test_docx_track.py builds its .docx fixtures; version installed in .venv-skills 2026-11-04

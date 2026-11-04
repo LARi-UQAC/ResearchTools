@@ -67,7 +67,7 @@
         },
         {
           "path": ".claude/skills/word2latex/scripts/requirements.txt",
-          "why": "word2latex: pillow and numpy (docx_inspect.py image comparison)",
+          "why": "word2latex: pillow and numpy (docx_inspect.py image comparison), PyMuPDF (pdf_line_compare.py), lxml (docx_track.py), python-docx (test_docx_track.py fixtures)",
           "exclude": []
         },
         {

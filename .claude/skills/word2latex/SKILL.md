@@ -14,7 +14,18 @@ Before running, verify:
 1. `pandoc` installed: `pandoc --version`
 2. `python-docx` available (used by `docx_inspect.py`): `python -c "import docx; print('OK')"` — if missing, `pip install python-docx`
 3. `pdflatex` and `pdftoppm` reachable from the shell (any TeX distribution + poppler)
-4. The `.docx` file is closed in Word (otherwise the `~$` lock file blocks reads)
+4. **LaTeX compiler.** Two cases, decided by how close to Word the output must be:
+
+   | Output required | Compiler | Fonts | Declared in the `.tex` |
+   |---|---|---|---|
+   | Readable LaTeX version of the form (default) | `pdflatex` | `helvet` stands in for Arial | nothing |
+   | Visually identical to the Word file | `xelatex` (with `fontspec`, MiKTeX or TeX Live) | the real Windows fonts installed on the machine: Arial, Calibri, Segoe UI Symbol, MS Gothic, Cambria Math | `% !TEX program = xelatex` on line 1 |
+
+   With `latexmk` (and VS Code LaTeX Workshop, which calls it), the choice is made per file
+   by `scripts/latexmk_engine.pl` through a one-line project `latexmkrc` (see Step 5), so a
+   folder can mix both. Check before building: `xelatex --version` and
+   `fc-list | findstr /i "Arial Calibri"` (or the Fonts control panel).
+5. The `.docx` file is closed in Word (otherwise the `~$` lock file blocks reads)
 
 ## Mode dispatch
 
@@ -116,6 +127,12 @@ pdftoppm -png -r 120 out\<file>.pdf out\page
 
 Two `pdflatex` passes are required for `\pageref{LastPage}` and longtable column widths.
 
+For a `.tex` marked `% !TEX program = xelatex`, replace `pdflatex` by `xelatex` in both
+passes, or let `latexmk` choose:
+`latexmk -pdf -outdir=out -auxdir=out "<file>"` (the project `latexmkrc` loads
+`latexmk_engine.pl`). Two passes are also needed when headers or footers are placed with
+TikZ `remember picture`.
+
 ### Step 5 — Visual verification
 
 Read at minimum:
@@ -126,6 +143,57 @@ Read at minimum:
 
 If any page does not match, return to the agent with the specific page index and the discrepancy.
 
+**Measured comparison (when the output must look identical to Word).** Export the `.docx`
+to PDF with Word itself (Word COM `SaveAs(..., 17)`), then compare it line by line:
+
+```powershell
+python .claude/skills/word2latex/scripts/pdf_line_compare.py "<file>_word.pdf" out\<file>.pdf
+```
+
+Each line of the Word PDF is paired with the same line of the LaTeX PDF; a pair is flagged
+(`!!`) when the page, the baseline, the left edge or the right edge of the last visible
+glyph differs by more than `tolerance_cm` (`pdf-line-compare.json`, 0.02 cm). `MISSING` and
+`EXTRA` lines usually mean a different line break. `--json` gives the full report. Exit 0
+identical, 1 differences, 2 refusal. Lessons measured on the Mitacs v2 form (2026-10-30),
+each a cause of flagged lines before it was fixed:
+
+- Word sizes and spacings are in PostScript points: write them in `bp`, not `pt`
+  (TeX's `pt` is 0.4 % smaller).
+- pdflatex kerns Helvetica and Word does not kern Arial: lines came out 0.6 % narrower and
+  line breaks moved. Identical output needs XeLaTeX with the real fonts and
+  `Kerning=Off, Ligatures=NoCommon` (Word applies no ligature either).
+- Word's line box is `size x 1.149 x spacing` with the baseline 0.905 x size below its top
+  (Arial), and the gap between paragraphs is `max(space after, space before)`, not the sum.
+
+**Running XeLaTeX from latexmk without changing other files.** A project folder holds a
+one-line `latexmkrc`:
+
+```perl
+do "$ENV{USERPROFILE}/.claude/skills/word2latex/scripts/latexmk_engine.pl";
+```
+
+Then a `.tex` whose first lines contain `% !TEX program = xelatex` is built with xelatex,
+and every other `.tex` of the folder keeps pdflatex. `~/.latexmkrc` (out/, bibtex) is not
+touched, and only the engine token of its `$pdflatex` is replaced, so its options
+(`-synctex`, `-shell-escape`) apply to both engines.
+
+**VS Code: disable LaTeX Workshop's magic comments in that workspace.** LaTeX Workshop
+10.x reads `% !TEX program` itself and, by default, bypasses its latexmk recipe: it runs
+the named engine once, with no bibtex and no `-outdir`, so every citation is undefined
+and the outputs land beside the `.tex`. Measured 2026-10-30 on LaTeX Workshop 10.20.0:
+100 undefined citations, 18 pages instead of 22. Its changelog (#4792) replaced
+`latex.build.forceRecipeUsage` by `latex.build.enableMagicComments` (default `true`);
+`package.json` still lists the old key, which the code no longer reads. Put in the
+workspace `.vscode/settings.json`:
+
+```json
+"latex-workshop.latex.build.enableMagicComments": false
+```
+
+Then the save runs the latexmk recipe, which loads the folder `latexmkrc`, which runs
+xelatex with bibtex into `out/`. Set it per workspace, not in the user settings: another
+project may rely on its magic comments and have no `latexmkrc`.
+
 ## Output formatting
 
 Final response to the user lists:
@@ -135,6 +203,41 @@ Final response to the user lists:
 3. For each landscape page: dimensions in inches
 4. Any unresolved overfull `\hbox` ≥ 5 pt (smaller are absorbed by `\hfuzz=3pt`)
 5. The verification rendering folder (`out/page-*.png`)
+
+## Tracked changes in a Word file that stays in Word
+
+Some manuscripts cannot move to LaTeX (a revision of a paper submitted in Word, for example).
+`docx_track.py` is the Word counterpart of `latex-hygiene`'s `tex_patch.py`: it applies an edit
+list to an existing `.docx` as real Word revisions (`<w:ins>` / `<w:del>`), under one author.
+
+```powershell
+python .claude/skills/word2latex/scripts/docx_track.py paragraphs "<file>.docx"          # visible text, for anchors
+python .claude/skills/word2latex/scripts/docx_track.py apply "<file>.docx" edits.json -o "<file>_rev.docx" --author "<name>" --date 2026-10-30T00:00:00Z [--dry-run] [--json]
+```
+
+`edits.json` holds `{"edits": [...]}`. Operations: `replace` (`find`, `with`), `delete` (`find`),
+`insert_after` / `insert_before` (`anchor`, `text`), `insert_paragraphs_after` (`anchor`,
+`paragraphs`); optional `occurrence` (1-based) and `highlight` (a Word colour name, e.g. `cyan`
+for placeholders the author must fill). Text is matched across Word's fragmented runs, never
+across two paragraphs. Refusals, each listed as a `FAILS:` line: text not found, text found
+several times without `occurrence`, a match inside a field (an EndNote citation, a
+cross-reference, or a field spanning several paragraphs such as the EndNote bibliography,
+which Word rewrites on update), a boundary inside a run holding a tab, a break or a drawing,
+a deletion covering such a run or stepping over a footnote reference, image or symbol,
+new paragraphs that would land inside a field, and an edit of the wrong shape. A tab is
+read as `\t` and a line break as `\n`, so a find string must name them to match across
+them. One failure writes nothing (exit 1). Before the output is put in place, the written
+archive is read back: rejecting every revision, in the output and in the input, must give
+the same text (R9), so a file that already carries a co-author's tracked changes verifies
+too, and a mismatch also writes nothing (exit 1). Exit 0 applied, 1 an edit or the
+read-back failed, 2 refusal (output equal to input, unreadable edit file, input that is
+not a readable .docx). New citations are inserted
+as EndNote temporary citations `{Author, Year}`: import the references into the EndNote
+library, then *Update Citations and Bibliography* turns them into live fields.
+
+Validate the result with the docx skill's `validate.py --original <file>.docx --author
+<name>`. Under Windows run it with `PYTHONUTF8=1`: it opens XML files without an encoding
+and otherwise reads them in cp1252, which reports a false "new error" on any curly quote.
 
 ## Error handling
 
@@ -158,3 +261,6 @@ Final response to the user lists:
 - Manuscript bibliography reference: `.claude/skills/word2latex/references/manuscript_bibliography.md`
 - Inspector script: `.claude/skills/word2latex/scripts/docx_inspect.py`
 - Bibliography module: `.claude/skills/word2latex/scripts/manuscript_bib.py`
+- Line comparison against the Word PDF: `.claude/skills/word2latex/scripts/pdf_line_compare.py` (settings in `pdf-line-compare.json`)
+- latexmk engine choice (xelatex by magic comment, pdflatex otherwise): `.claude/skills/word2latex/scripts/latexmk_engine.pl`
+- Tracked changes in an existing .docx: `.claude/skills/word2latex/scripts/docx_track.py`

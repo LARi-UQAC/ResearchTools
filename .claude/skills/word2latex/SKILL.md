@@ -174,7 +174,8 @@ do "$ENV{USERPROFILE}/.claude/skills/word2latex/scripts/latexmk_engine.pl";
 
 Then a `.tex` whose first lines contain `% !TEX program = xelatex` is built with xelatex,
 and every other `.tex` of the folder keeps pdflatex. `~/.latexmkrc` (out/, bibtex) is not
-touched.
+touched, and only the engine token of its `$pdflatex` is replaced, so its options
+(`-synctex`, `-shell-escape`) apply to both engines.
 
 **VS Code: disable LaTeX Workshop's magic comments in that workspace.** LaTeX Workshop
 10.x reads `% !TEX program` itself and, by default, bypasses its latexmk recipe: it runs
@@ -222,12 +223,15 @@ across two paragraphs. Refusals, each listed as a `FAILS:` line: text not found,
 several times without `occurrence`, a match inside a field (an EndNote citation, a
 cross-reference, or a field spanning several paragraphs such as the EndNote bibliography,
 which Word rewrites on update), a boundary inside a run holding a tab, a break or a drawing,
-a deletion covering such a run, and an edit of the wrong shape. A tab is read as `\t` and a
-line break as `\n`, so a find string must name them to match across them. One failure
-writes nothing (exit 1). After writing, the file is read back: rejecting every revision,
-in the output and in the input, must give the same text (R9), so a file that already carries
-a co-author's tracked changes verifies too. Exit 0 applied, 1 an edit failed, 2 refusal
-(output equal to input, unreadable edit file, input that is not a readable .docx). New citations are inserted
+a deletion covering such a run or stepping over a footnote reference, image or symbol,
+new paragraphs that would land inside a field, and an edit of the wrong shape. A tab is
+read as `\t` and a line break as `\n`, so a find string must name them to match across
+them. One failure writes nothing (exit 1). Before the output is put in place, the written
+archive is read back: rejecting every revision, in the output and in the input, must give
+the same text (R9), so a file that already carries a co-author's tracked changes verifies
+too, and a mismatch also writes nothing (exit 1). Exit 0 applied, 1 an edit or the
+read-back failed, 2 refusal (output equal to input, unreadable edit file, input that is
+not a readable .docx). New citations are inserted
 as EndNote temporary citations `{Author, Year}`: import the references into the EndNote
 library, then *Update Citations and Bibliography* turns them into live fields.
 

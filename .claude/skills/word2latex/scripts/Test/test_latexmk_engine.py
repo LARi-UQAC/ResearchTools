@@ -92,6 +92,15 @@ class EngineChoice(unittest.TestCase):
         self.assertIn("internal word2latex_engine", res.stdout)
         self.assertIn("%O %S", res.stdout)
 
+    def test_options_of_the_users_pdflatex_command_are_kept(self):
+        # Review round 2 (2026-11-04): the file replaced $pdflatex whole, so a
+        # -shell-escape set in ~/.latexmkrc was lost for every build of the folder.
+        script = ('$main::pdflatex = q{pdflatex -shell-escape -synctex=1 %O %S};'
+                  ' do $ARGV[0] or die "load: $@ $!"; print $main::pdflatex;')
+        res = subprocess.run([PERL, "-e", script, str(ENGINE_FILE)], capture_output=True,
+                             text=True, timeout=PERL_TIMEOUT_S, check=True)
+        self.assertEqual(res.stdout, "internal word2latex_engine -shell-escape -synctex=1 %O %S")
+
 
 if __name__ == "__main__":
     unittest.main()

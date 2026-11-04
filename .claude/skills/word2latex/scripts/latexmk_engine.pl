@@ -51,8 +51,12 @@ sub word2latex_engine {
     return system($engine, @args);
 }
 
-# latexmk: replace the pdflatex command (pdf_mode = 1 in ~/.latexmkrc). xelatex writes a
-# PDF directly, so latexmk's pdf_mode = 1 bookkeeping is unchanged.
-$main::pdflatex = 'internal word2latex_engine -synctex=1 -interaction=nonstopmode -file-line-error %O %S';
+# latexmk: replace only the engine token of the pdflatex command (pdf_mode = 1 in
+# ~/.latexmkrc), so the options ~/.latexmkrc gave it (-shell-escape, -synctex, ...) stay.
+# xelatex writes a PDF directly, so latexmk's pdf_mode = 1 bookkeeping is unchanged.
+# Outside latexmk $pdflatex is undefined, and latexmk's own default is used.
+my $word2latex_cmd = defined $main::pdflatex ? $main::pdflatex : 'pdflatex %O %S';
+$word2latex_cmd =~ s/^\s*(?:internal\s+\S+|"[^"]*"|\S+)/internal word2latex_engine/;
+$main::pdflatex = $word2latex_cmd;
 
 1;

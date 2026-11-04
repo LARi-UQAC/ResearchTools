@@ -315,6 +315,107 @@ class DocxTrackTest(unittest.TestCase):
             self.assertEqual(dt.main(["apply", str(fake), str(edits), "-o", str(self.out),
                                       "--author", AUTHOR, "--date", DATE]), 2)
 
+    # ---- Review round 2 (2026-11-04): each case below failed on commit 5282c21 ----
+
+    def _open_field_after_first_repeated(self, root) -> None:
+        """Open a field at the end of the first 'Repeated' paragraph, close it in the second."""
+        first = self._para(root, "Repeated")
+        begin = etree.SubElement(first, dt.w("r"))
+        etree.SubElement(begin, dt.w("fldChar")).set(dt.w("fldCharType"), "begin")
+        etree.SubElement(begin, dt.w("instrText")).text = " ADDIN EN.REFLIST "
+        etree.SubElement(begin, dt.w("fldChar")).set(dt.w("fldCharType"), "separate")
+        last = [q for q in dt.body_paragraphs(root) if dt.paragraph_text(q) == "Repeated text here."][-1]
+        etree.SubElement(etree.SubElement(last, dt.w("r")), dt.w("fldChar")).set(dt.w("fldCharType"), "end")
+
+    def test_new_paragraphs_are_never_written_inside_a_field(self) -> None:
+        src = self._rewrite(self._open_field_after_first_repeated)
+        for occ in (1, 2):
+            with self.subTest(occurrence=occ):
+                rep = dt.apply_file(src, [{"op": "insert_paragraphs_after", "anchor": "Repeated",
+                                           "occurrence": occ, "paragraphs": ["X."]}],
+                                    self.out, AUTHOR, DATE, False)
+                self.assertEqual(len(rep.fails), 1)
+                self.assertIn("field", rep.fails[0]["reason"])
+        # Control: a paragraph outside the field still takes new paragraphs.
+        rep = dt.apply_file(src, [{"op": "insert_paragraphs_after", "anchor": "A plain",
+                                   "paragraphs": ["X."]}], self.out, AUTHOR, DATE, False)
+        self.assertEqual(rep.fails, [])
+
+    def test_match_across_a_footnote_reference_is_refused(self) -> None:
+        def mutate(root):
+            p = self._para(root, "A plain")
+            run = p.find(dt.w("r"))
+            run.find(dt.w("t")).text = "A plain"
+            ref = etree.Element(dt.w("r"))
+            etree.SubElement(ref, dt.w("footnoteReference")).set(dt.w("id"), "1")
+            tail = etree.Element(dt.w("r"))
+            etree.SubElement(tail, dt.w("t")).text = " closing sentence."
+            run.addnext(ref)
+            ref.addnext(tail)
+        src = self._rewrite(mutate)
+        rep = dt.apply_file(src, [{"op": "replace", "find": "plain closing", "with": "short"}],
+                            self.out, AUTHOR, DATE, False)
+        self.assertEqual(len(rep.fails), 1)
+        self.assertFalse(self.out.exists())
+        rep = dt.apply_file(src, [{"op": "replace", "find": "plain", "with": "short"}],
+                            self.out, AUTHOR, DATE, False)
+        self.assertEqual(rep.fails, [])
+        self.assertTrue(rep.verified)
+
+    def _template_rpr(self, root, *children) -> None:
+        run = self._para(root, "A plain").find(dt.w("r"))
+        rpr = run.find(dt.w("rPr"))
+        if rpr is None:
+            rpr = etree.Element(dt.w("rPr"))
+            run.insert(0, rpr)
+        for el in children:
+            rpr.append(el)
+
+    def test_inserted_text_does_not_copy_a_formatting_revision(self) -> None:
+        def mutate(root):
+            change = etree.Element(dt.w("rPrChange"))
+            for k, v in (("id", "12"), ("author", "Earlier Author"), ("date", DATE)):
+                change.set(dt.w(k), v)
+            etree.SubElement(change, dt.w("rPr"))
+            self._template_rpr(root, change)
+        src = self._rewrite(mutate)
+        rep = dt.apply_file(src, [{"op": "insert_after", "anchor": "A plain", "text": " short"}],
+                            self.out, AUTHOR, DATE, False)
+        self.assertEqual(rep.fails, [])
+        root = dt.read_document(self.out)
+        self.assertEqual(root.findall(f".//{dt.w('ins')}//{dt.w('rPrChange')}"), [])
+        # The anchor run is split in two; both halves keep the formatting revision, each
+        # under its own id (a deepcopy alone gave both halves id 12).
+        self.assertEqual(len(list(root.iter(dt.w("rPrChange")))), 2)
+        ids = [e.get(dt.w("id")) for e in root.iter() if e.get(dt.w("id")) is not None
+               and etree.QName(e).localname in ("ins", "del", "rPrChange")]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_highlight_keeps_the_schema_order_of_rpr(self) -> None:
+        def mutate(root):
+            self._template_rpr(root, etree.Element(dt.w("sz")), etree.Element(dt.w("u")),
+                               etree.Element(dt.w("lang")))
+        src = self._rewrite(mutate)
+        rep = dt.apply_file(src, [{"op": "insert_after", "anchor": "A plain", "text": " short",
+                                   "highlight": "cyan"}], self.out, AUTHOR, DATE, False)
+        self.assertEqual(rep.fails, [])
+        rpr = dt.read_document(self.out).find(f".//{dt.w('ins')}/{dt.w('r')}/{dt.w('rPr')}")
+        names = [etree.QName(c).localname for c in rpr]
+        self.assertLess(names.index("sz"), names.index("highlight"))
+        self.assertLess(names.index("highlight"), names.index("u"))
+
+    def test_failed_read_back_leaves_nothing_on_disk(self) -> None:
+        orig = dt.verify
+        dt.verify = lambda a, b: False
+        try:
+            rep = self.run_edits([{"op": "delete", "find": " closing"}])
+        finally:
+            dt.verify = orig
+        self.assertFalse(rep.verified)
+        self.assertIsNone(rep.written)
+        self.assertFalse(self.out.exists())
+        self.assertEqual([p.name for p in self.dir.iterdir() if p.suffix == ".tmp"], [])
+
     def test_paragraphs_listing(self) -> None:
         buf = io.StringIO()
         with redirect_stdout(buf):

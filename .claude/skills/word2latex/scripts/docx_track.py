@@ -11,8 +11,9 @@ Usage:
     python docx_track.py apply IN.docx EDITS.json -o OUT.docx --author NAME --date ISO
                                 [--dry-run] [--json]
 
-Exit codes: 0 every edit applied, 1 at least one edit failed (nothing is written),
-2 refusal by design (bad arguments, unreadable edit file, output equal to input).
+Exit codes: 0 every edit applied, 1 at least one edit failed or the read-back failed
+(nothing is written in either case), 2 refusal by design (bad arguments, unreadable edit
+file, input that is not a readable .docx, output equal to input).
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ import sys
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from lxml import etree
 
@@ -43,6 +45,12 @@ RENDER_HINTS = {"lastRenderedPageBreak"}
 BREAK_TEXT = {"tab": "\t", "br": "\n", "cr": "\n"}
 FIELD_DEPTH_XPATH = ("count(preceding::w:fldChar[@w:fldCharType='begin'])"
                      " - count(preceding::w:fldChar[@w:fldCharType='end'])")
+# Depth once the paragraph is over: a new paragraph inserted after it starts at this depth.
+FIELD_DEPTH_AFTER_XPATH = (FIELD_DEPTH_XPATH + " + count(.//w:fldChar[@w:fldCharType='begin'])"
+                           " - count(.//w:fldChar[@w:fldCharType='end'])")
+# CT_RPr children that the schema places AFTER w:highlight (ECMA-376 Part 1, 17.3.2.28).
+AFTER_HIGHLIGHT = {"u", "effect", "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em",
+                   "lang", "eastAsianLayout", "specVanish", "oMath", "rPrChange"}
 
 
 def w(tag: str) -> str:
@@ -211,7 +219,7 @@ def _set_text(run: etree._Element, text: str) -> None:
     ts[0].set(f"{{{XML_NS}}}space", "preserve")
 
 
-def _split(span: RunSpan, offset: int) -> None:
+def _split(span: RunSpan, offset: int, rev: "Reviser") -> None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -221,6 +229,8 @@ def _split(span: RunSpan, offset: int) -> None:
     Inputs:
         span (RunSpan): the run containing the offset (start < offset < end).
         offset (int): absolute offset in the paragraph text.
+        rev (Reviser): gives the copy's formatting revision (w:rPrChange) a new id,
+            since two elements sharing a revision id corrupt Accept and Reject.
 
     Outputs:
         None. Side effect: the run is shortened and a copy holding the rest is
@@ -240,12 +250,14 @@ def _split(span: RunSpan, offset: int) -> None:
     # A render hint marks where Word last broke the page; it belongs to the left part only.
     for hint in [c for c in right if etree.QName(c).localname in RENDER_HINTS]:
         right.remove(hint)
+    for change in right.iter(w("rPrChange")):
+        change.set(w("id"), rev.new_id())
     _set_text(run, text[:cut])
     _set_text(right, text[cut:])
     run.addnext(right)
 
 
-def _isolate(p: etree._Element, start: int, end: int) -> list[RunSpan]:
+def _isolate(p: etree._Element, start: int, end: int, rev: "Reviser") -> list[RunSpan]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -254,6 +266,7 @@ def _isolate(p: etree._Element, start: int, end: int) -> list[RunSpan]:
 
     Inputs:
         p (lxml element): paragraph. start, end (int): offsets, start <= end.
+        rev (Reviser): revision id counter, passed to _split.
 
     Outputs:
         spans (list[RunSpan]): the covering runs (empty when start == end).
@@ -262,7 +275,7 @@ def _isolate(p: etree._Element, start: int, end: int) -> list[RunSpan]:
     for cut in (start, end):
         for s in paragraph_spans(p):
             if s.start < cut < s.end:
-                _split(s, cut)
+                _split(s, cut, rev)
                 break
     return [s for s in paragraph_spans(p) if s.start >= start and s.end <= end and s.end > s.start]
 
@@ -277,12 +290,16 @@ class Reviser:
         ids = [int(v) for v in root.xpath("//@w:id", namespaces={"w": W_NS}) if str(v).lstrip("-").isdigit()]
         self.next_id = max(ids, default=0) + 1
 
+    def new_id(self) -> str:
+        """Purpose: next free revision id. Inputs: None. Outputs: id (str)."""
+        self.next_id += 1
+        return str(self.next_id - 1)
+
     def attrs(self, el: etree._Element) -> etree._Element:
         """Purpose: stamp id, author, date on a revision element. Inputs: el. Outputs: el."""
-        el.set(w("id"), str(self.next_id))
+        el.set(w("id"), self.new_id())
         el.set(w("author"), self.author)
         el.set(w("date"), self.date)
-        self.next_id += 1
         return el
 
     def ins_run(self, text: str, template: etree._Element | None, highlight: str | None) -> etree._Element:
@@ -293,7 +310,10 @@ class Reviser:
 
         Details:
             The template's highlight is dropped so new text is not confused with the
-            author's own highlighted additions; `highlight` sets a new one.
+            author's own highlighted additions; `highlight` sets a new one, placed where
+            the CT_RPr sequence requires it. The template's w:rPrChange (a co-author's
+            formatting revision) is dropped too, since copying it would duplicate its
+            revision id and attribute a formatting change to text that author never saw.
 
         Inputs:
             text (str): inserted text. template (w:r | None): run whose rPr is copied.
@@ -308,14 +328,19 @@ class Reviser:
         rpr = None
         if template is not None and template.find(w("rPr")) is not None:
             rpr = copy.deepcopy(template.find(w("rPr")))
-            for h in rpr.findall(w("highlight")):
+            for h in rpr.findall(w("highlight")) + rpr.findall(w("rPrChange")):
                 rpr.remove(h)
             run.append(rpr)
         if highlight:
             if rpr is None:
                 rpr = etree.SubElement(run, w("rPr"))
-            hl = etree.SubElement(rpr, w("highlight"))
+            hl = etree.Element(w("highlight"))
             hl.set(w("val"), highlight)
+            later = [c for c in rpr if etree.QName(c).localname in AFTER_HIGHLIGHT]
+            if later:
+                later[0].addprevious(hl)
+            else:
+                rpr.append(hl)
         t = etree.SubElement(run, w("t"))
         t.text = text
         t.set(f"{{{XML_NS}}}space", "preserve")
@@ -353,10 +378,40 @@ def _check_not_field(spans: list[RunSpan]) -> None:
         raise EditError("match touches a field (EndNote citation or cross-reference); choose another anchor")
 
 
-def _check_plain(spans: list[RunSpan]) -> None:
-    """Purpose: refuse deleting a run that holds a tab, break or drawing. Inputs: spans. Outputs: None. Raises: EditError."""
+def _check_plain(p: etree._Element, spans: list[RunSpan]) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Refuse a deletion that would cover, or step over, content with no plain text:
+        a tab, break or drawing inside a covered run, or a run with no w:t (footnote
+        reference, inline image, symbol) sitting between the first and last covered run,
+        which would otherwise be left stranded before the inserted text.
+
+    Inputs:
+        p (lxml element): the paragraph. spans (list[RunSpan]): the covered runs.
+
+    Outputs:
+        None.
+
+    Raises:
+        EditError: a covered run is not plain, or a non-text run lies inside the match.
+    --------------------------------------------------------------------------
+    """
     if not all(_plain_run(s.run) for s in spans):
         raise EditError("match covers a run holding a tab, break or drawing; choose a narrower anchor")
+    covered = {id(s.run) for s in spans}
+    runs = [r for r in p.iter(w("r")) if not any(a.tag == w("del") for a in r.iterancestors())]
+    first, last = (next(i for i, r in enumerate(runs) if id(r) in covered),
+                   max(i for i, r in enumerate(runs) if id(r) in covered))
+    for r in runs[first:last + 1]:
+        if id(r) not in covered and not _plain_run(r):
+            raise EditError("match spans a footnote reference, image or symbol; choose a narrower anchor")
+
+
+def _check_no_open_field_after(p: etree._Element) -> None:
+    """Purpose: refuse inserting paragraphs after `p` when a field is still open there. Inputs: p. Outputs: None. Raises: EditError."""
+    if int(p.xpath(FIELD_DEPTH_AFTER_XPATH, namespaces={"w": W_NS})) > 0:
+        raise EditError("new paragraphs would land inside a field (EndNote bibliography or TOC); choose another anchor")
 
 
 STR_KEYS = ("find", "with", "anchor", "text", "highlight")
@@ -423,9 +478,9 @@ def apply_edit(root: etree._Element, rev: Reviser, e: dict) -> None:
     try:
         if op in ("replace", "delete"):
             p, start = _find(root, e["find"], occ)
-            spans = _isolate(p, start, start + len(e["find"]))
+            spans = _isolate(p, start, start + len(e["find"]), rev)
             _check_not_field(spans)
-            _check_plain(spans)
+            _check_plain(p, spans)
             template = spans[0].run
             last = rev.delete(spans)
             if op == "replace" and e["with"]:
@@ -433,7 +488,7 @@ def apply_edit(root: etree._Element, rev: Reviser, e: dict) -> None:
         elif op in ("insert_after", "insert_before"):
             p, start = _find(root, e["anchor"], occ)
             at = start + len(e["anchor"]) if op == "insert_after" else start
-            _isolate(p, at, at)
+            _isolate(p, at, at, rev)
             spans = paragraph_spans(p)
             if op == "insert_after":
                 ref = [s for s in spans if s.end == at][-1]
@@ -446,6 +501,8 @@ def apply_edit(root: etree._Element, rev: Reviser, e: dict) -> None:
         else:
             p, _ = _find(root, e["anchor"], occ)
             spans = paragraph_spans(p)
+            _check_not_field(spans)
+            _check_no_open_field_after(p)
             template = spans[0].run if spans else None
             anchor = p
             for text in e["paragraphs"]:
@@ -518,29 +575,44 @@ def read_document(path: Path) -> etree._Element:
         return etree.fromstring(z.read(DOC_PART))
 
 
-def write_docx(src: Path, out: Path, root: etree._Element) -> None:
+def write_docx(src: Path, out: Path, root: etree._Element,
+               check: Callable[[Path], bool] | None = None) -> bool:
     """
     --------------------------------------------------------------------------
     Purpose:
         Write a copy of `src` whose document part is `root`; every other part is
         copied byte for byte.
 
+    Details:
+        The archive is written to `<out>.tmp`. When `check` is given it reads that
+        temporary file, and `out` is replaced only when it returns True; otherwise,
+        or on any error, the temporary file is removed and `out` is left as it was.
+
     Inputs:
         src (Path): original .docx. out (Path): target. root (lxml element): new document.
+        check (Callable[[Path], bool] | None): read-back run on the temporary file.
 
     Outputs:
-        None. Side effect: `out` is written through a temporary file then renamed.
+        written (bool): True when `out` now holds the new document.
     --------------------------------------------------------------------------
     """
     # Word's own declaration, double-quoted: some readers sniff it with a regex and fall
     # back to the system code page when lxml's single-quoted form is written instead.
     data = WORD_XML_DECL + etree.tostring(root, encoding="UTF-8")
     tmp = out.with_suffix(out.suffix + ".tmp")
-    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(tmp, "w") as zout:
-        for item in zin.infolist():
-            payload = data if item.filename == DOC_PART else zin.read(item.filename)
-            zout.writestr(item, payload)
-    tmp.replace(out)
+    try:
+        with zipfile.ZipFile(src) as zin, zipfile.ZipFile(tmp, "w") as zout:
+            for item in zin.infolist():
+                payload = data if item.filename == DOC_PART else zin.read(item.filename)
+                zout.writestr(item, payload)
+        if check is not None and not check(tmp):
+            tmp.unlink()
+            return False
+        tmp.replace(out)
+        return True
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def apply_file(src: Path, edits: list[dict], out: Path, author: str, date: str, dry_run: bool) -> Report:
@@ -556,7 +628,8 @@ def apply_file(src: Path, edits: list[dict], out: Path, author: str, date: str, 
 
     Outputs:
         report (Report): applied ids, failures, written path, verification result.
-        Side effect: `out` written only when every edit applied and not dry_run.
+        Side effect: `out` written only when every edit applied, not dry_run, and
+        the read-back of the written archive passed (R9); otherwise nothing is left.
     --------------------------------------------------------------------------
     """
     report = Report()
@@ -572,9 +645,8 @@ def apply_file(src: Path, edits: list[dict], out: Path, author: str, date: str, 
             report.fails.append({"id": eid, "reason": str(err)})
     if report.fails or dry_run:
         return report
-    write_docx(src, out, root)
-    report.written = str(out)
-    report.verified = verify(original, read_document(out))
+    report.verified = write_docx(src, out, root, lambda tmp: verify(original, read_document(tmp)))
+    report.written = str(out) if report.verified else None
     return report
 
 
@@ -647,7 +719,9 @@ def main(argv: list[str] | None = None) -> int:
         for f in rep.fails:
             print(f"FAILS: {f['id']}: {f['reason']}")
         if rep.written:
-            print(f"written {rep.written}, read-back {'OK' if rep.verified else 'MISMATCH'}")
+            print(f"written {rep.written}, read-back OK")
+        elif rep.verified is False:
+            print("read-back MISMATCH: nothing written")
     if rep.fails or rep.verified is False:
         return 1
     return 0

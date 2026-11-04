@@ -50,6 +50,17 @@
 .PARAMETER DiscardIgnored
     Accept that git-ignored files in the worktree (logs, caches, local state) are deleted with it.
 
+.PARAMETER Refresh
+    After the clean-up (or when there is nothing to clean), refresh this machine from the
+    updated main: setup.ps1 -Update -Profile <active> -RunSuite -NonInteractive -Force, with
+    -Personal when the merged pull request changed an agent or a command. The profile is read
+    from the active_profile line of the main clone's .claude/CLAUDE.md; a missing line is a
+    refusal (R8). A dry run prints the command and runs nothing. A reminder to publish the
+    site (mkdocs gh-deploy) is printed when the merged pull request changed docs/.
+
+.PARAMETER KeepHooks
+    With -Refresh: hook entry names setup.ps1 must leave as they are on this machine.
+
 .PARAMETER Yes
     Actually do it. Without it, nothing is changed.
 
@@ -63,6 +74,8 @@ param(
     [string]$PlansFolder = "",
     [string]$ReportPath = "",
     [switch]$DiscardIgnored,
+    [switch]$Refresh,
+    [string[]]$KeepHooks = @(),
     [switch]$Yes
 )
 
@@ -104,14 +117,63 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 $scriptRepo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\.."))
 $common = Get-Git $scriptRepo @("rev-parse", "--path-format=absolute", "--git-common-dir")
 if (-not $common) {
-    Write-Refused @("$scriptRepo is not inside a git repository.")
+    Write-Refused @("$scriptRepo is not inside a git repository. Run the script that sits in the ResearchTools clone (.claude\skills\finish-branch\scripts\finish-branch.ps1 in the main clone), not a copy or a path through a ~/.claude junction.")
     exit 2
 }
 $mainRoot = [System.IO.Path]::GetFullPath((Split-Path ($common -replace '/', '\') -Parent))
 # No Set-Location: this script runs in the caller's shell, which must stay where it was.
 
+# -Refresh needs the active profile and setup.ps1; refuse before anything else is looked at.
+$profileName = ""; $setupScript = Join-Path $mainRoot "setup.ps1"
+if ($Refresh) {
+    $profileName = Get-RtActiveProfile (Join-Path $mainRoot ".claude\CLAUDE.md")
+    $why = @()
+    if (-not $profileName) { $why += "-Refresh needs the 'active_profile: <name>' line in $mainRoot\.claude\CLAUDE.md, and none was found; no profile is guessed." }
+    if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) { $why += "-Refresh needs $setupScript, which does not exist." }
+    if ($why.Count -gt 0) { Write-Refused $why; exit 2 }
+}
+
+function Get-PrFiles([string]$Number) {
+    <# Purpose: paths changed by merged PR $Number, via gh; @() and a warning when gh fails. #>
+    if (-not $Number) { return @() }
+    $errFile = [System.IO.Path]::GetTempFileName()
+    Push-Location -LiteralPath $mainRoot
+    try { $raw = & gh pr view $Number --json files 2>$errFile; $code = $LASTEXITCODE }
+    finally { Pop-Location; Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue }
+    $paths = @()
+    if ($code -eq 0) {
+        try {
+            $parsed = ConvertFrom-Json -InputObject ($raw | Out-String)
+            if ($null -ne $parsed -and $null -ne $parsed.PSObject.Properties["files"]) {
+                foreach ($f in $parsed.files) { if ($f.path) { $paths += [string]$f.path } }
+            }
+        } catch { $code = 1 }
+    }
+    if ($code -ne 0) { Write-Host "  [WARN] the files of pull request #$Number could not be read; refreshing without -Personal." -ForegroundColor Yellow }
+    return $paths
+}
+
+function Invoke-Refresh([string[]]$ChangedFiles) {
+    <# Purpose: print, or with -Yes run, setup.ps1 with the refresh arguments. Outputs: exit code (0 in a dry run). #>
+    $argv = @(Get-RtRefreshArgs -ProfileName $profileName -ChangedFiles $ChangedFiles -KeepHooks $KeepHooks)
+    $shown = "setup.ps1 " + ($argv -join " ")
+    if (-not $Yes) { Write-Host "  refresh (dry run, not run): $shown"; return 0 }
+    Write-Host ""
+    Write-Host "=== machine refresh: $shown ===" -ForegroundColor Cyan
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $setupScript @argv | Out-Host
+    $code = $LASTEXITCODE
+    if ($code -ne 0) { Write-Host "  [FAIL] machine refresh: setup.ps1 exited $code" -ForegroundColor Red }
+    else { Write-Host "  [OK]   machine refresh" -ForegroundColor Green }
+    return $code
+}
+
+function Write-Reminders([string[]]$ChangedFiles) {
+    <# Purpose: print the owner's remaining steps (gh-deploy) for the merged PR's files. #>
+    foreach ($r in @(Get-RtFinishReminders -ChangedFiles $ChangedFiles)) { Write-Host "  [TODO] $r" -ForegroundColor Yellow }
+}
+
 # gh: is there a merged pull request with this branch as its head, and where did it end?
-$prMerged = $false; $prReason = ""; $prHead = ""
+$prMerged = $false; $prReason = ""; $prHead = ""; $prNumber = ""
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     $prReason = "gh was not found on PATH, so the pull request cannot be checked"
 } else {
@@ -136,7 +198,10 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
                 if ($null -ne $p -and $null -ne $p.PSObject.Properties["headRefOid"]) { $prs += $p }
             }
         } catch { $prReason = "gh answered something that is not JSON" }
-        if ($prs.Count -gt 0) { $prMerged = $true; $prHead = [string]$prs[0].headRefOid }
+        if ($prs.Count -gt 0) {
+            $prMerged = $true; $prHead = [string]$prs[0].headRefOid
+            if ($null -ne $prs[0].PSObject.Properties["number"]) { $prNumber = [string]$prs[0].number }
+        }
     }
 }
 
@@ -167,6 +232,12 @@ if ($PlansFolder) { $plansPresent = Test-Path -LiteralPath (Join-Path $mainRoot 
 
 if (-not $worktree -and -not $localOid -and -not $remoteExists -and -not $plansPresent -and -not $remoteError) {
     Write-Host "Nothing to clean: no worktree, no local branch and no branch on origin for $Branch." -ForegroundColor Green
+    if ($Refresh) {
+        $files = @(Get-PrFiles $prNumber)
+        $rc = Invoke-Refresh $files
+        Write-Reminders $files
+        if ($rc -ne 0) { exit 1 }
+    }
     exit 0
 }
 
@@ -206,6 +277,7 @@ foreach ($s in $steps) {
 
 if (-not $Yes) {
     Write-Host ""
+    if ($Refresh) { $files = @(Get-PrFiles $prNumber); [void](Invoke-Refresh $files); Write-Reminders $files }
     Write-Host "Dry run: nothing was changed. Run again with -Yes to do it." -ForegroundColor DarkGray
     exit 0
 }
@@ -246,6 +318,15 @@ if ($ReportPath) {
 }
 
 Write-Host ""
-if ($ok) { Write-Host "Done. $Branch is cleaned up." -ForegroundColor Green; exit 0 }
+if ($ok) {
+    Write-Host "Done. $Branch is cleaned up." -ForegroundColor Green
+    if ($Refresh) {
+        $files = @(Get-PrFiles $prNumber)
+        $rc = Invoke-Refresh $files
+        Write-Reminders $files
+        if ($rc -ne 0) { exit 1 }
+    }
+    exit 0
+}
 Write-Host "Stopped at the failed step above. The later steps were not run." -ForegroundColor Red
 exit 1

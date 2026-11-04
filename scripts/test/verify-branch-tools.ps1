@@ -243,7 +243,10 @@ try {
 
     $bin = Join-Path $Tmp "bin"
     # The stub also writes a warning on stderr, as the real gh does when an update is available.
-    Write-Text (Join-Path $bin "gh.cmd") "@echo off`r`necho warning: a new release of gh is available 1>&2`r`ntype `"%GH_STUB_FILE%`"`r`n"
+    # `gh pr view` (the merged PR's file list, asked only by -Refresh) reads its own file.
+    Write-Text (Join-Path $bin "gh.cmd") "@echo off`r`necho warning: a new release of gh is available 1>&2`r`nif `"%1 %2`"==`"pr view`" (type `"%GH_FILES_FILE%`" & exit /b 0)`r`ntype `"%GH_STUB_FILE%`"`r`n"
+    $env:GH_FILES_FILE = Join-Path $Tmp "gh-files.json"
+    Write-Text $env:GH_FILES_FILE "{`"files`":[{`"path`":`".claude/commands/x.md`"},{`"path`":`"docs/manual/a.md`"}]}"
     $ghFile = Join-Path $Tmp "gh.json"
     $env:GH_STUB_FILE = $ghFile
 
@@ -401,6 +404,41 @@ try {
     Check "the JSON report lists the steps with their outcome" ($null -ne $frep -and @($frep.steps).Count -ge 5 -and $frep.ok -eq $true)
     $res = Invoke-Finish $c2 @("-Yes")
     Check "(idempotent) a second run finds nothing to clean and exits 0" ($res.Code -eq 0 -and $res.Text -match "nothing to clean")
+
+    # -Refresh (Issue #102): a stub setup.ps1 in the main clone records its arguments.
+    # CLAUDE.md and setup.ps1 stay untracked, so the main clone is not "dirty" (R32 check).
+    $argsFile = Join-Path $Tmp "setup-args.txt"
+    $claudeMd = Join-Path $main ".claude\CLAUDE.md"
+    Write-Text $claudeMd "# fixture`n`nactive_profile: engineering`n"
+    Write-Text (Join-Path $main "setup.ps1") "Add-Content -LiteralPath '$argsFile' -Value (`$args -join ' ')`r`nif (`$env:SETUP_STUB_CODE) { exit [int]`$env:SETUP_STUB_CODE }`r`nexit 0`r`n"
+    $c6 = New-Case "c6"; Set-Merged $c6
+    $res = Invoke-Finish $c6 @("-Refresh")
+    Check "-Refresh dry run: names setup.ps1 -Update and runs nothing" ($res.Code -eq 0 -and $res.Text -match "setup\.ps1 -Update" -and -not (Test-Path -LiteralPath $argsFile))
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh", "-KeepHooks", "AUTO-SYNC CHECK")
+    $got = if (Test-Path -LiteralPath $argsFile) { [IO.File]::ReadAllText($argsFile) } else { "" }
+    Check "-Yes -Refresh: cleaned, then setup.ps1 ran with the active profile" ($res.Code -eq 0 -and -not (Alive $c6) -and $got -match "-Update -Profile engineering -RunSuite -NonInteractive -Force")
+    Check "-Refresh: a changed command adds -Personal, -KeepHooks reaches setup.ps1" ($got -match "-Personal" -and $got -match "-KeepHooks AUTO-SYNC CHECK")
+    Check "-Refresh: a changed docs page prints the gh-deploy reminder" ($res.Text -match "gh-deploy")
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "-Refresh with nothing to clean still refreshes" ($res.Code -eq 0 -and @([IO.File]::ReadAllLines($argsFile)).Count -eq 2)
+    $env:SETUP_STUB_CODE = "1"
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Remove-Item Env:SETUP_STUB_CODE -ErrorAction SilentlyContinue
+    Check "(failure) a refresh that fails exits 1 and names setup.ps1" ($res.Code -eq 1 -and $res.Text -match "setup\.ps1")
+    Write-Text $claudeMd "# fixture without the selector`n"
+    $c7 = New-Case "c7"; Set-Merged $c7
+    $res = Invoke-Finish $c7 @("-Yes", "-Refresh")
+    Check "(refusal) -Refresh with no active_profile line exits 2 and names it" ($res.Code -eq 2 -and $res.Text -match "active_profile")
+    Check "(refusal) nothing was removed" (Alive $c7)
+    $res = Invoke-Finish $c7 @("-Yes")
+    Check "without -Refresh the missing profile does not matter" ($res.Code -eq 0 -and -not (Alive $c7))
+
+    # started from a copy outside any git repository (for example a ~/.claude junction path)
+    $outside = Join-Path $Tmp "outside\.claude\skills\finish-branch\scripts"
+    New-Item -ItemType Directory -Path $outside -Force | Out-Null
+    Copy-Item (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\*.ps1") $outside -Force
+    $res = Invoke-Child (Join-Path $outside "finish-branch.ps1") @("-Branch", "feat/x") $Tmp $bin
+    Check "(refusal) a copy outside git exits 2 and names the ResearchTools clone" ($res.Code -eq 2 -and $res.Text -match "ResearchTools clone")
     $script:finishSectionCompleted = $true
 }
 finally {
@@ -408,6 +446,7 @@ finally {
     if (-not $saved.GC) { Remove-Item Env:GIT_CONFIG_GLOBAL -ErrorAction SilentlyContinue }
     if (-not $saved.NS) { Remove-Item Env:GIT_CONFIG_NOSYSTEM -ErrorAction SilentlyContinue }
     if (-not $saved.GS) { Remove-Item Env:GH_STUB_FILE -ErrorAction SilentlyContinue }
+    Remove-Item Env:GH_FILES_FILE, Env:SETUP_STUB_CODE -ErrorAction SilentlyContinue
     # Junctions were removed with rmdir above; list again before any recursive delete (R37).
     $left = @(Get-ChildItem -LiteralPath $Tmp -Force -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue)
     foreach ($l in $left) { & cmd /c rmdir "$($l.FullName)" | Out-Null }

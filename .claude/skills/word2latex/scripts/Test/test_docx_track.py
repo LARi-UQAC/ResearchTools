@@ -416,6 +416,30 @@ class DocxTrackTest(unittest.TestCase):
         self.assertFalse(self.out.exists())
         self.assertEqual([p.name for p in self.dir.iterdir() if p.suffix == ".tmp"], [])
 
+    # ---- Review round 3 (2026-11-04): each case below failed on commit f75b536 ----
+
+    def test_more_malformed_edits_fail_cleanly(self) -> None:
+        for bad in ({"op": ["replace"], "find": "A plain", "with": "B"},
+                    {"op": "replace", "find": "A plain", "with": None},
+                    {"op": "replace", "find": "A plain", "with": ""},
+                    {"op": "insert_after", "anchor": "A plain", "text": ""},
+                    {"op": "insert_after", "anchor": "A plain", "text": " x", "highlight": "Cyan"}):
+            with self.subTest(bad=bad):
+                rep = self.run_edits([bad])
+                self.assertEqual(len(rep.fails), 1)
+                self.assertFalse(self.out.exists())
+
+    def test_bad_date_or_missing_output_folder_is_a_refusal(self) -> None:
+        edits = self.dir / "edits.json"
+        edits.write_text(json.dumps({"edits": [{"op": "delete", "find": " closing"}]}), encoding="utf-8")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(dt.main(["apply", str(self.src), str(edits), "-o", str(self.out),
+                                      "--author", AUTHOR, "--date", "2026-10-30"]), 2)
+            self.assertEqual(dt.main(["apply", str(self.src), str(edits), "-o",
+                                      str(self.dir / "absent" / "o.docx"), "--author", AUTHOR,
+                                      "--date", DATE]), 2)
+        self.assertFalse(self.out.exists())
+
     def test_paragraphs_listing(self) -> None:
         buf = io.StringIO()
         with redirect_stdout(buf):

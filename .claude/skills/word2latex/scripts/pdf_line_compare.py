@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import re
 import sys
 import unicodedata
@@ -85,15 +86,19 @@ def _check_types(config: dict[str, Any], path: Path) -> None:
             number here), a text key is not a string, or the regex does not compile.
     --------------------------------------------------------------------------
     """
-    def number(key: str, integer: bool) -> None:
+    def number(key: str, integer: bool, positive: bool = False) -> None:
         v = config[key]
         kinds = (int,) if integer else (int, float)
-        if isinstance(v, bool) or not isinstance(v, kinds) or v < 0:
-            kind = "a non-negative integer" if integer else "a non-negative number"
+        # NaN fails every comparison, so a NaN tolerance would flag nothing at all.
+        if (isinstance(v, bool) or not isinstance(v, kinds) or not math.isfinite(v)
+                or v < 0 or (positive and v == 0)):
+            sign = "a positive" if positive else "a non-negative"
+            kind = f"{sign} integer" if integer else f"{sign} finite number"
             raise CompareError(f"configuration key '{key}' in {path} must be {kind}, got {v!r}")
 
     number("tolerance_cm", integer=False)
-    number("match_prefix_chars", integer=True)
+    # A zero prefix makes every matching key empty, and empty keys are never compared.
+    number("match_prefix_chars", integer=True, positive=True)
     number("max_extra_reported", integer=True)
     for key in ("ignored_glyphs", "list_label_regex"):
         if not isinstance(config[key], str):

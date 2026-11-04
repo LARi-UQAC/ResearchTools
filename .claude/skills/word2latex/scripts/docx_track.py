@@ -21,6 +21,7 @@ import argparse
 import copy
 import json
 import logging
+import re
 import sys
 import zipfile
 from dataclasses import dataclass, field
@@ -48,6 +49,12 @@ FIELD_DEPTH_XPATH = ("count(preceding::w:fldChar[@w:fldCharType='begin'])"
 # Depth once the paragraph is over: a new paragraph inserted after it starts at this depth.
 FIELD_DEPTH_AFTER_XPATH = (FIELD_DEPTH_XPATH + " + count(.//w:fldChar[@w:fldCharType='begin'])"
                            " - count(.//w:fldChar[@w:fldCharType='end'])")
+# ST_HighlightColor (ECMA-376 Part 1, 17.18.40): any other value makes Word reject the part.
+HIGHLIGHT_COLORS = {"black", "blue", "cyan", "green", "magenta", "red", "yellow", "white",
+                    "darkBlue", "darkCyan", "darkGreen", "darkMagenta", "darkRed",
+                    "darkYellow", "darkGray", "lightGray", "none"}
+# xsd:dateTime as Word writes it in w:date (seconds required, optional fraction and zone).
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?")
 # CT_RPr children that the schema places AFTER w:highlight (ECMA-376 Part 1, 17.3.2.28).
 AFTER_HIGHLIGHT = {"u", "effect", "bdr", "shd", "fitText", "vertAlign", "rtl", "cs", "em",
                    "lang", "eastAsianLayout", "specVanish", "oMath", "rPrChange"}
@@ -437,9 +444,19 @@ def _check_shape(e: object) -> None:
     """
     if not isinstance(e, dict):
         raise EditError(f"an edit must be an object, got {type(e).__name__}")
+    if not isinstance(e.get("op"), str):
+        raise EditError("key 'op' must be a string")
     for key in STR_KEYS:
         if key in e and e[key] is not None and not isinstance(e[key], str):
             raise EditError(f"key '{key}' must be a string")
+    # An empty or null replacement would silently turn a replace into a deletion, and an
+    # empty insertion would add an empty revision; 'delete' says the first on purpose.
+    for key in ("with", "text"):
+        if key in e and not e[key]:
+            raise EditError(f"key '{key}' must be a non-empty string (use op 'delete' to delete)")
+    hl = e.get("highlight")
+    if hl is not None and hl not in HIGHLIGHT_COLORS:
+        raise EditError(f"highlight {hl!r} is not a Word highlight colour ({', '.join(sorted(HIGHLIGHT_COLORS))})")
     if "paragraphs" in e and not (isinstance(e["paragraphs"], list)
                                   and all(isinstance(x, str) for x in e["paragraphs"])):
         raise EditError("key 'paragraphs' must be a list of strings")
@@ -705,6 +722,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.out.resolve() == args.docx.resolve():
         print("REFUSED: --out must differ from the input file", file=sys.stderr)
+        return 2
+    if not args.out.resolve().parent.is_dir():
+        print(f"REFUSED: the folder of --out does not exist: {args.out.parent}", file=sys.stderr)
+        return 2
+    if not DATE_RE.fullmatch(args.date):
+        print(f"REFUSED: --date {args.date!r} is not an ISO date-time such as 2026-10-30T00:00:00Z",
+              file=sys.stderr)
         return 2
     try:
         edits = _load_edits(args.edits)

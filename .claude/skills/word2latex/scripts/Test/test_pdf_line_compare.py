@@ -159,7 +159,10 @@ class KeysAndRefusals(unittest.TestCase):
 
     def test_non_numeric_values_are_refused(self):
         for key, bad in (("tolerance_cm", "0.02cm"), ("match_prefix_chars", "x"),
-                         ("max_extra_reported", None), ("tolerance_cm", True)):
+                         ("max_extra_reported", None), ("tolerance_cm", True),
+                         # Round 3: a zero prefix makes every key empty and a NaN tolerance
+                         # never compares, so both reported two different PDFs identical.
+                         ("match_prefix_chars", 0), ("tolerance_cm", float("nan"))):
             with self.subTest(key=key, bad=bad), tempfile.TemporaryDirectory() as tmp:
                 with self.assertRaises(plc.CompareError) as ctx:
                     plc.load_config(self._config_with(tmp, key, bad))

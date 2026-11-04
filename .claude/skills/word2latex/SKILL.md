@@ -25,7 +25,7 @@ Before running, verify:
    by `scripts/latexmk_engine.pl` through a one-line project `latexmkrc` (see Step 5), so a
    folder can mix both. Check before building: `xelatex --version` and
    `fc-list | findstr /i "Arial Calibri"` (or the Fonts control panel).
-4. The `.docx` file is closed in Word (otherwise the `~$` lock file blocks reads)
+5. The `.docx` file is closed in Word (otherwise the `~$` lock file blocks reads)
 
 ## Mode dispatch
 

@@ -168,6 +168,16 @@ class KeysAndRefusals(unittest.TestCase):
                     plc.load_config(self._config_with(tmp, key, bad))
                 self.assertIn(key, str(ctx.exception))
 
+    def test_config_that_is_not_an_object_or_not_utf8_is_a_refusal(self):
+        # Round 4: both raised past the CompareError handler, exit 1 ("differences").
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, data in (("list.json", b"[1, 2]"), ("cp1252.json", '{"a": "☐"}'.encode("cp1252", "replace") + b"\xe9")):
+                with self.subTest(name=name):
+                    cfg = Path(tmp) / name
+                    cfg.write_bytes(data)
+                    with self.assertRaises(plc.CompareError):
+                        plc.load_config(cfg)
+
     def test_shipped_config_carries_provenance(self):
         raw = json.loads(plc.CONFIG_FILE.read_text(encoding="utf-8"))
         for key in plc.CONFIG_KEYS:

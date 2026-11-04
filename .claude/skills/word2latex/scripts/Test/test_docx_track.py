@@ -440,6 +440,32 @@ class DocxTrackTest(unittest.TestCase):
                                       "--date", DATE]), 2)
         self.assertFalse(self.out.exists())
 
+    # ---- Review round 4 (2026-11-04): each case below failed on commit ff7e985 ----
+
+    def test_new_paragraphs_after_a_paragraph_holding_a_closed_citation(self) -> None:
+        # Round 2 refused every paragraph holding a citation field, closed or not, which
+        # made the op unusable in a reviewer response; only an open field must block it.
+        rep = self.run_edits([{"op": "insert_paragraphs_after", "anchor": "the gain is fixed",
+                               "paragraphs": ["X."]}])
+        self.assertEqual(rep.fails, [])
+        self.assertTrue(rep.verified)
+
+    def test_locked_output_is_a_refusal(self) -> None:
+        edits = self.dir / "edits.json"
+        edits.write_text(json.dumps({"edits": [{"op": "delete", "find": " closing"}]}), encoding="utf-8")
+        orig = dt.write_docx
+
+        def locked(*a, **k):
+            raise PermissionError(13, "The process cannot access the file")
+        dt.write_docx = locked
+        try:
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                code = dt.main(["apply", str(self.src), str(edits), "-o", str(self.out),
+                                "--author", AUTHOR, "--date", DATE])
+        finally:
+            dt.write_docx = orig
+        self.assertEqual(code, 2)
+
     def test_paragraphs_listing(self) -> None:
         buf = io.StringIO()
         with redirect_stdout(buf):

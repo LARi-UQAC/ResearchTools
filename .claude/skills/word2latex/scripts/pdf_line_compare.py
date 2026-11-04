@@ -55,8 +55,10 @@ def load_config(path: Path = CONFIG_FILE) -> dict[str, Any]:
         raise CompareError(f"configuration file not found: {path}")
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise CompareError(f"configuration file is not valid JSON: {path}: {exc}") from exc
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise CompareError(f"configuration file is not valid UTF-8 JSON: {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise CompareError(f"configuration file must hold a JSON object: {path}")
     config: dict[str, Any] = {}
     for key in CONFIG_KEYS:
         entry = raw.get(key)

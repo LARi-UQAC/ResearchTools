@@ -416,8 +416,14 @@ def _check_plain(p: etree._Element, spans: list[RunSpan]) -> None:
 
 
 def _check_no_open_field_after(p: etree._Element) -> None:
-    """Purpose: refuse inserting paragraphs after `p` when a field is still open there. Inputs: p. Outputs: None. Raises: EditError."""
-    if int(p.xpath(FIELD_DEPTH_AFTER_XPATH, namespaces={"w": W_NS})) > 0:
+    """
+    Purpose: refuse inserting paragraphs after `p` when `p` sits inside a field that
+    spans paragraphs, or a field is still open at its end. A field opened and closed
+    inside `p` (an ordinary citation) does not block it.
+    Inputs: p (w:p). Outputs: None. Raises: EditError.
+    """
+    ns = {"w": W_NS}
+    if int(p.xpath(FIELD_DEPTH_XPATH, namespaces=ns)) > 0 or int(p.xpath(FIELD_DEPTH_AFTER_XPATH, namespaces=ns)) > 0:
         raise EditError("new paragraphs would land inside a field (EndNote bibliography or TOC); choose another anchor")
 
 
@@ -518,7 +524,6 @@ def apply_edit(root: etree._Element, rev: Reviser, e: dict) -> None:
         else:
             p, _ = _find(root, e["anchor"], occ)
             spans = paragraph_spans(p)
-            _check_not_field(spans)
             _check_no_open_field_after(p)
             template = spans[0].run if spans else None
             anchor = p
@@ -735,7 +740,12 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as err:
         print(f"REFUSED: {err}", file=sys.stderr)
         return 2
-    rep = apply_file(args.docx, edits, args.out, args.author, args.date, args.dry_run)
+    try:
+        rep = apply_file(args.docx, edits, args.out, args.author, args.date, args.dry_run)
+    except OSError as err:
+        # Most often the output is still open in Word; nothing was put in place.
+        print(f"REFUSED: cannot write {args.out} (open in Word?): {err}", file=sys.stderr)
+        return 2
     if args.json:
         print(json.dumps(rep.__dict__, ensure_ascii=False, indent=1))
     else:

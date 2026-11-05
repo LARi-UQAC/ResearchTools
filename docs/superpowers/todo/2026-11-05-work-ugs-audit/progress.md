@@ -12,6 +12,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
   only; images capped at 1568 px long edge, PNG for line art, JPEG for photos.
 - find-skills 2026-11-05: no figure-evaluation equivalent; how-to-review-figure and figure-results-review
   read for ideas only.
+- 2026-11-05 owner: bridge reply reserve = code_file_output + fence_overhead_tokens (6, measured), was 1024; fix 8511579. Plan 3 coder role ornith:9b-gpu output unusable (truncation + self-import), wrapper rewrote; model for plans 4-6, 8 awaits owner.
 
 ## plan1.md
 

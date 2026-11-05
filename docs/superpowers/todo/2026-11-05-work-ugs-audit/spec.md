@@ -10,7 +10,7 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
    LaTeX action, PDF action), a ready-to-fill correction table, and the five research agents
    (`paper-auditor`, `thesis-auditor`, `thesis-proposal-auditor`, `scopus-auditor`,
    `reviewer-response`) migrated to it with no behaviour change.
-2. Skill and agent `work-ugs-audit`, command `/gradeugs`: grades undergraduate lab and project reports
+2. Skill and agent `work-ugs-audit`, command `/work-ugs-audit`: grades undergraduate lab and project reports
    (PDF from Moodle) against the professor's rubric, **entirely on local models**, writes annotations
    into a copy of each PDF, appends the completed rubric, computes totals by script, analyses the batch
    against a calibration band, re-grades the whole batch when out of band (two loops, then ask).
@@ -43,6 +43,10 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
   format (Anthropic Vision doc, read 2026-11-05), so every image sent to a model is cropped, downscaled
   to a long edge of at most 1568 px, and written as PNG for line art or JPEG for a photo. A local model's
   own image cost is measured by `vision_probe.py`.
+- D15 (owner, 2026-11-05) Anchored levels per item: absent 0, attempted 0.5, partial 0.75, complete and
+  correct 0.88, exemplary 1.0. Qwen3.8 grades, Gemma4 audits (resolver roles). Annotations carry the
+  professor's name read from the active profile's `author.name`, never written in code. Command
+  `/work-ugs-audit`, output folder `_correction/` beside the reports.
 - D7 Reports read with `pymupdf4llm` page by page (page number kept for anchoring); `pdf2md` not used.
 - D8 References: ISO/CSA/IEC standards and web pages acceptable; standards checked for form, URLs for
   reachability with a timeout, every reference for a citation in the text. No reference status costs
@@ -82,7 +86,7 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
 ## Model roles
 
 Resolver roles `ugs-grader`, `ugs-auditor`, `ugs-vision`, adopted by the owner with
-`model_resolver.py --adopt-role` (today Gemma4 grades, Qwen3.8 audits). No tag in code (R2). A figure
+`model_resolver.py --adopt-role` (owner 2026-11-05: Qwen3.8 grades, Gemma4 audits). No tag in code (R2). A figure
 step whose role has not passed `vision_probe.py` is `not_run`.
 
 ## Constraints

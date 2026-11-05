@@ -26,7 +26,9 @@ PyMuPDF and appends the pages. Both refuse to write over their input.
 
 ## Global Constraints
 
-`spec.md` "Constraints". The note author field is a fixed label from config, never a person's name.
+`spec.md` "Constraints". The note author field is a parameter: the driver passes
+`ugs_config.annotation_author()` (the professor's name from the active profile, owner 2026-11-05); no
+name is written in this code or its fixtures.
 A passage not found is reported and never placed elsewhere (design anti-goal "annotations that move").
 Output path resolved inside the working folder (R24).
 
@@ -63,7 +65,7 @@ Output path resolved inside the working folder (R24).
   `test_accented_quote_is_found`; `test_missing_quote_is_reported_not_placed`;
   `test_duplicate_quote_uses_first_and_is_reported`; `test_rect_item_gets_a_rectangle_annotation`;
   `test_source_file_is_unchanged` (hash before and after); `test_dst_equal_to_src_is_refused`;
-  `test_author_is_the_configured_label`.
+  `test_author_is_the_value_passed_in` (a fictitious name).
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3:** implement. **Step 4: Run.** Expected: all OK.
 - [ ] **Step 5: Commit:** `feat(work-ugs-audit): native PDF annotations from JSON (#104)`.
 

@@ -13,7 +13,7 @@ bounds:
 > SKILL.md is authored with superpowers:writing-skills and skill-creator:skill-creator. `progress.md` is
 > the ledger.
 
-**Goal:** The professor can type `/gradeugs`, the `work-ugs-audit` agent drives the plan 8 driver while
+**Goal:** The professor can type `/work-ugs-audit`, the `work-ugs-audit` agent drives the plan 8 driver while
 staying blind to report content, and every inventory names the three new skills (`language-review`, `figure-review`, `work-ugs-audit`).
 
 **Architecture:** The agent is a cheap cloud wrapper in the `local-coder` shape: tools `Read, Bash`,
@@ -47,7 +47,7 @@ PR. The agent never runs `Read` on a path under the reports folder except `_corr
 
 **Files:**
 - Create: `.claude/agents/work-ugs-audit.md`
-- Create: `.claude/commands/gradeugs.md`
+- Create: `.claude/commands/work-ugs-audit.md`
 - Create: `.claude/skills/work-ugs-audit/SKILL.md`
 - Modify: `.claude/CLAUDE.md`
 - Modify: `README.md`
@@ -81,4 +81,4 @@ PR. The agent never runs `Read` on a path under the reports folder except `_corr
   row in `.claude/CLAUDE.md`, the README row and counts, the Architecture relation, and the three manual
   pages (chapter 06 also gets `language-review` and `figure-review`; chapter 04 names `/tikz` pointing to `figure-review`).
 - [ ] **Step 4: Run** the test. Expected: OK.
-- [ ] **Step 5: Commit:** `feat(work-ugs-audit): agent, /gradeugs command, routing and docs (#104)`.
+- [ ] **Step 5: Commit:** `feat(work-ugs-audit): agent, /work-ugs-audit command, routing and docs (#104)`.

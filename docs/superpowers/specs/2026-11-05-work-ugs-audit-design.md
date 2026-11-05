@@ -83,7 +83,7 @@ The same effort gathers language correction, today duplicated across five agents
   output folder beside the reports, never in the repository.
 - **No model tag in code (R2).** Grader, auditor and vision models are resolver roles, adopted with
   `model_resolver.py --adopt-role` like the `session` role. The owner named Gemma4 and Qwen3.8; which one
-  grades and which audits is adopted, not written in code. *Guess: Gemma4 grades, Qwen3.8 audits.*
+  grades and which audits is adopted, not written in code. Owner, 2026-11-05: Qwen3.8 grades (its 262K window reads a large report whole), Gemma4 audits.
 - **Vision is measured, not assumed.** A figure is handed only to a role whose vision capability has been
   checked on this machine; otherwise the figure step reports `NOT RUN`, never a score (vault lesson
   `quality-gates-three-outcomes`).
@@ -288,7 +288,7 @@ were read for ideas only, nothing installed.
 
 - JSON field names, annex layout, annotation colours.
 - Matching a quoted passage split across lines (normalize whitespace and hyphenation first).
-- Command name (proposal: `/gradeugs`).
+- Command name `/work-ugs-audit` (owner, 2026-11-05).
 - How a report too large for the window is split, as long as nothing is truncated.
 
 ## 10. Tests and evidence

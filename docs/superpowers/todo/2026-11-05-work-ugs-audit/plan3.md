@@ -62,6 +62,12 @@ totals. Standard library only.
   - `ugs_config.load(path: Path) -> dict` returns plain values; `ConfigError(ValueError)` names the
     dotted key and the file (R3). `ugs_config.default_path() -> Path` is `assets/ugs_config.json` beside
     the skill.
+  - `ugs_config.annotation_author(repo_root: Path) -> str` (owner 2026-11-05: annotations carry his
+    name): reads the active profile from `.claude/CLAUDE.md` (`active_profile:` line), then `author.name`
+    of `profiles/<active>.yaml` with `yaml.safe_load`, as `narrative-cv/scripts/cv_common.py`
+    `load_author_identity` does (own copy, R18). A missing profile, block or key raises `ConfigError`
+    naming it; there is no fallback to another profile or a default name (R8). The name is never written
+    in code or in a fixture (R34): tests build a fictitious profile under a temporary root (R21).
   - `rubric_check.validate(rubric: dict) -> dict` returns `{"items": n, "total_points": str}`; raises
     `RubricError(ValueError)` for: missing key, unknown `assessment_type`, empty `items`, duplicate or
     malformed `id` (pattern `I` plus two digits), `max_points` not positive, empty `title`, sum of
@@ -81,7 +87,7 @@ totals. Standard library only.
   (eleven fictitious items whose points sum to 100); `test_checklist_rubric_with_fractional_points_totalling_28_5_passes`
   (twelve items: 1, 2, 10, 5, 5, 0.5, 0.5, 1, 1, 1, 1, 0.5); `test_a_sum_mismatch_names_both_sums`;
   one test per other `RubricError` cause; `test_config_loads_and_a_missing_key_is_named`;
-  `test_shipped_config_values_carry_provenance`. `test_grade_total.py`: `test_total_and_percent_on_a_full_grade`
+  `test_shipped_config_values_carry_provenance`; `test_annotation_author_reads_the_active_profile` (fictitious profile in a temporary root); `test_missing_profile_or_author_is_refused_naming_it`. `test_grade_total.py`: `test_total_and_percent_on_a_full_grade`
   (exact `"28.5"` when all scores are full); `test_not_applicable_is_excluded_from_the_maximum`;
   `test_an_absent_element_rated_zero_counts_as_zero`; `test_not_run_makes_the_total_null_and_lists_the_item`;
   `test_all_not_applicable_gives_null_percent`; one test per `GradeError` cause; `test_cli_exit_codes`.

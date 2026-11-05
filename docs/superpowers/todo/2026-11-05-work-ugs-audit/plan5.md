@@ -63,7 +63,7 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
     `PrepareError` when `work_dir` resolves outside `reports_dir`.
   - `main(argv)`: `--reports DIR --work DIR [--dry-run] [--json]`; the JSON line carries ids and counts
     only. Exit 0, 2 refusal, 1 failure.
-  - `requirements.txt` pins `PyMuPDF==1.27.2.3` and `pymupdf4llm==1.27.2.3` with the AGPL note; the
+  - `requirements.txt` pins `PyMuPDF==1.27.2.3`, `pymupdf4llm==1.27.2.3` (AGPL note) and PyYAML at the pin the other skills of `.venv-skills` use (for `ugs_config.annotation_author`); the
     `figure-review` copy pins `PyMuPDF==1.27.2.3` only. The fixture helper lives in `figure-review`
     (the lower layer) and `work-ugs-audit` tests import it from there, never the reverse.
 

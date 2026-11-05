@@ -55,13 +55,16 @@ Run each step from the MAIN clone, never from inside the worktree being removed.
    `-DiscardIgnored`.
 4. **Add `-Yes` only when the owner asked for the clean-up.** It deletes a branch on origin.
    Pass `-KeepHooks 'AUTO-SYNC CHECK'` (or the names the owner keeps) when this machine has a
-   deliberate local hook variant. `-Refresh` then:
-   - pulls `main`, removes the worktree and the branch, and prunes;
-   - runs `setup.ps1 -Update -Profile <active> -RunSuite -NonInteractive -Force`, which runs the
-     suite on the merged `main` and the links step, regenerates the mirrors and runs
-     `install-junctions.ps1 -Sync`. It adds `-Personal` when the PR changed an agent or a
-     command;
-   - exits 1 when the refresh fails. Report that as not done, not as a warning.
+   deliberate local hook variant.
+   - `-Yes` alone does the git clean-up: it pulls `main`, removes the worktree and the branch,
+     and prunes.
+   - `-Refresh` adds the machine refresh after it: `setup.ps1 -Update -Profile <active>
+     -RunSuite -NonInteractive -Force`, which runs the suite on the merged `main`, the links
+     step and the mirrors, then `install-junctions.ps1 -Sync`. It adds `-Personal` when the PR
+     changed an agent, a command or a rule, or when its file list could not be read whole.
+   - When nothing is left to clean, `-Refresh` still refreshes. It first refuses a main clone
+     that is not on `main` or holds modified tracked files (R32), then pulls `main`.
+   - A failed refresh exits 1. Report that as not done, not as a warning.
 5. **Relay the reminders** printed with `[TODO]`. When `docs/` changed, the site is published by
    the owner with `mkdocs gh-deploy` from `main`. No script does it.
 6. **Verify the end state** and report it in a few lines: on `main`, at `origin/main`, no

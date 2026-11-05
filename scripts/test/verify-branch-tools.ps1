@@ -31,6 +31,7 @@ $Tmp      = Join-Path $env:TEMP "rt-branch-tools-$PID"
 $failures = 0
 . (Join-Path $RepoRoot "scripts\lib\rt-checks.ps1")
 . (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1")
+. (Join-Path $RepoRoot "scripts\lib\rt-update.ps1")
 
 function Check([string]$name, [bool]$ok) {
     if ($ok) { Write-Host "  PASS  $name" -ForegroundColor DarkGray }
@@ -119,12 +120,20 @@ $cmdWith = Join-Path $Tmp "helpers\with\CLAUDE.md"
 $cmdWithout = Join-Path $Tmp "helpers\without\CLAUDE.md"
 Write-Text $cmdWith "# x`n`n``````yaml`nactive_profile: engineering`n```````n"
 Write-Text $cmdWithout "# x`n`nno selector here`n"
-Check "the active profile is read from its machine line" ((Get-RtActiveProfile $cmdWith) -eq "engineering")
-Check "a CLAUDE.md without the line gives an empty profile" ((Get-RtActiveProfile $cmdWithout) -eq "")
-Check "a missing CLAUDE.md gives an empty profile" ((Get-RtActiveProfile (Join-Path $Tmp "helpers\absent\CLAUDE.md")) -eq "")
-$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/rules/a.md") -KeepHooks @())
+# The profile reader is rt-update.ps1's own (review round 1, #5): one definition, no duplicate.
+Check "the active profile is read from its machine line" ((Get-RtActiveProfile -ClaudeMdPath $cmdWith) -eq "engineering")
+Check "a CLAUDE.md without the line gives an empty profile" ((Get-RtActiveProfile -ClaudeMdPath $cmdWithout) -eq "")
+Check "a missing CLAUDE.md gives an empty profile" ((Get-RtActiveProfile -ClaudeMdPath (Join-Path $Tmp "helpers\absent\CLAUDE.md")) -eq "")
+$finishLib = [IO.File]::ReadAllText((Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1"))
+Check "(review #5) rt-finish.ps1 defines no second Get-RtActiveProfile" ($finishLib -notmatch 'function\s+Get-RtActiveProfile')
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/skills/x/SKILL.md") -KeepHooks @())
 Check "refresh args: -Update -Profile <p> -RunSuite -NonInteractive -Force, in that order" (($a -join " ") -eq "-Update -Profile engineering -RunSuite -NonInteractive -Force")
-Check "refresh args: no agent or command change, no -Personal" (-not ($a -contains "-Personal"))
+Check "refresh args: a skill-only change needs no -Personal" (-not ($a -contains "-Personal"))
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/rules/a.md") -KeepHooks @())
+Check "(review #3) a changed rule adds -Personal (its instructions mirror lives in the VS Code profile)" ($a -contains "-Personal")
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @() -KeepHooks @() -FilesUnknown)
+Check "(review #4) an unknown or capped file list assumes -Personal" ($a -contains "-Personal")
+Check "(review #4) an unknown file list still reminds gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @() -FilesUnknown) -join " " -match "gh-deploy")
 $a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/commands/x.md") -KeepHooks @())
 Check "refresh args: a changed command adds -Personal" ($a -contains "-Personal")
 $a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/agents/y.md") -KeepHooks @("AUTO-SYNC CHECK"))
@@ -237,6 +246,8 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $main ".claude\skills\finish-branch\scripts") -Force | Out-Null
     if (Test-Path -LiteralPath $finishSrc) { Copy-Item $finishSrc (Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1") -Force }
     Copy-Item (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1") (Join-Path $main ".claude\skills\finish-branch\scripts\rt-finish.ps1") -Force
+    New-Item -ItemType Directory -Path (Join-Path $main "scripts\lib") -Force | Out-Null
+    Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-update.ps1") (Join-Path $main "scripts\lib\rt-update.ps1") -Force
     Invoke-Git $main @("add", "-A") | Out-Null
     Invoke-Git $main @("commit", "-q", "-m", "fixture") | Out-Null
     Invoke-Git $main @("push", "-q", "origin", "main") | Out-Null
@@ -425,6 +436,30 @@ try {
     $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
     Remove-Item Env:SETUP_STUB_CODE -ErrorAction SilentlyContinue
     Check "(failure) a refresh that fails exits 1 and names setup.ps1" ($res.Code -eq 1 -and $res.Text -match "setup\.ps1")
+
+    # review round 1 (#6): the report records the refresh, also on the nothing-to-clean path
+    $rp2 = Join-Path $Tmp "refresh-report.json"
+    $env:SETUP_STUB_CODE = "1"
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh", "-ReportPath", $rp2)
+    Remove-Item Env:SETUP_STUB_CODE -ErrorAction SilentlyContinue
+    $rep2 = $null; try { $rep2 = Get-Content -LiteralPath $rp2 -Raw | ConvertFrom-Json } catch { $rep2 = $null }
+    Check "(review #6) a failed refresh is in the report: ok false, refresh code 1" ($null -ne $rep2 -and $rep2.ok -eq $false -and $rep2.refresh.code -eq 1)
+
+    # review round 1 (#1, #2): nothing to clean still means a clean main on main, pulled first
+    $linesBefore = @([IO.File]::ReadAllLines($argsFile)).Count
+    Write-Text (Join-Path $main "README.md") "edited by a peer`n"
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "(review #1) nothing to clean + -Refresh with modified tracked files in main: exit 2" ($res.Code -eq 2)
+    Check "(review #1) and setup.ps1 did not run" (@([IO.File]::ReadAllLines($argsFile)).Count -eq $linesBefore)
+    Invoke-Git $main @("checkout", "--", "README.md") | Out-Null
+    Write-Text (Join-Path $other "late.txt") "merged later`n"
+    Invoke-Git $other @("checkout", "-q", "-B", "main", "origin/main") | Out-Null
+    Invoke-Git $other @("add", "late.txt") | Out-Null
+    Invoke-Git $other @("commit", "-q", "-m", "a later merge on main") | Out-Null
+    Invoke-Git $other @("push", "-q", "origin", "main") | Out-Null
+    $originMain = (Invoke-Git $other @("rev-parse", "HEAD"))
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "(review #2) nothing to clean + -Refresh pulls main before refreshing" ($res.Code -eq 0 -and (Invoke-Git $main @("rev-parse", "HEAD")) -eq $originMain)
     Write-Text $claudeMd "# fixture without the selector`n"
     $c7 = New-Case "c7"; Set-Merged $c7
     $res = Invoke-Finish $c7 @("-Yes", "-Refresh")

@@ -84,6 +84,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
 . (Join-Path $PSScriptRoot "rt-finish.ps1")
+# Get-RtActiveProfile has one definition, in scripts\lib\rt-update.ps1 (review round 1, #5). A copy
+# outside the repository has no such file; it is refused below as outside git.
+$updateLib = Join-Path $PSScriptRoot "..\..\..\..\scripts\lib\rt-update.ps1"
+if (Test-Path -LiteralPath $updateLib -PathType Leaf) { . $updateLib }
 
 function Write-Refused([string[]]$Reasons) {
     Write-Host ""
@@ -126,16 +130,31 @@ $mainRoot = [System.IO.Path]::GetFullPath((Split-Path ($common -replace '/', '\'
 # -Refresh needs the active profile and setup.ps1; refuse before anything else is looked at.
 $profileName = ""; $setupScript = Join-Path $mainRoot "setup.ps1"
 if ($Refresh) {
-    $profileName = Get-RtActiveProfile (Join-Path $mainRoot ".claude\CLAUDE.md")
+    if (-not (Get-Command Get-RtActiveProfile -ErrorAction SilentlyContinue)) {
+        Write-Refused @("-Refresh needs scripts\lib\rt-update.ps1 beside this repository's scripts, and it was not found."); exit 2
+    }
+    $profileName = Get-RtActiveProfile -ClaudeMdPath (Join-Path $mainRoot ".claude\CLAUDE.md")
     $why = @()
     if (-not $profileName) { $why += "-Refresh needs the 'active_profile: <name>' line in $mainRoot\.claude\CLAUDE.md, and none was found; no profile is guessed." }
     if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) { $why += "-Refresh needs $setupScript, which does not exist." }
     if ($why.Count -gt 0) { Write-Refused $why; exit 2 }
 }
 
+# `gh pr view --json files` lists at most 100 files (gh queries one GraphQL page of 100; raised
+# by review round 1, #4, not measured here); a list that long is treated as incomplete.
+$GhFilesCap = 100
+
 function Get-PrFiles([string]$Number) {
-    <# Purpose: paths changed by merged PR $Number, via gh; @() and a warning when gh fails. #>
-    if (-not $Number) { return @() }
+    <#
+        Purpose: paths changed by merged PR $Number, via gh.
+        Outputs: PSCustomObject Files (string[]) and Unknown (bool, true when there is no PR
+        number, gh failed, or the list reached the gh cap). The callers then assume the
+        conservative case (-Personal, gh-deploy reminder) rather than a silently partial list.
+    #>
+    if (-not $Number) {
+        Write-Host "  [WARN] no merged pull request number is known; the refresh assumes agents, commands, rules and docs changed." -ForegroundColor Yellow
+        return [PSCustomObject]@{ Files = @(); Unknown = $true }
+    }
     $errFile = [System.IO.Path]::GetTempFileName()
     Push-Location -LiteralPath $mainRoot
     try { $raw = & gh pr view $Number --json files 2>$errFile; $code = $LASTEXITCODE }
@@ -149,27 +168,42 @@ function Get-PrFiles([string]$Number) {
             }
         } catch { $code = 1 }
     }
-    if ($code -ne 0) { Write-Host "  [WARN] the files of pull request #$Number could not be read; refreshing without -Personal." -ForegroundColor Yellow }
-    return $paths
+    $unknown = ($code -ne 0 -or $paths.Count -ge $GhFilesCap)
+    if ($code -ne 0) { Write-Host "  [WARN] the files of pull request #$Number could not be read; the refresh assumes the worst case." -ForegroundColor Yellow }
+    elseif ($unknown) { Write-Host "  [WARN] pull request #$Number lists $($paths.Count) files, the gh cap; the refresh assumes the worst case." -ForegroundColor Yellow }
+    return [PSCustomObject]@{ Files = $paths; Unknown = $unknown }
 }
 
-function Invoke-Refresh([string[]]$ChangedFiles) {
-    <# Purpose: print, or with -Yes run, setup.ps1 with the refresh arguments. Outputs: exit code (0 in a dry run). #>
-    $argv = @(Get-RtRefreshArgs -ProfileName $profileName -ChangedFiles $ChangedFiles -KeepHooks $KeepHooks)
+$script:refreshRecord = $null
+function Invoke-Refresh($Info) {
+    <# Purpose: print, or with -Yes run, setup.ps1 with the refresh arguments; record the outcome for the report. Outputs: exit code (0 in a dry run). #>
+    $argv = @(Get-RtRefreshArgs -ProfileName $profileName -ChangedFiles $Info.Files -KeepHooks $KeepHooks -FilesUnknown:([bool]$Info.Unknown))
     $shown = "setup.ps1 " + ($argv -join " ")
-    if (-not $Yes) { Write-Host "  refresh (dry run, not run): $shown"; return 0 }
+    if (-not $Yes) {
+        Write-Host "  refresh (dry run, not run): $shown"
+        $script:refreshRecord = [PSCustomObject]@{ ran = $false; code = 0; command = $shown }
+        return 0
+    }
     Write-Host ""
     Write-Host "=== machine refresh: $shown ===" -ForegroundColor Cyan
     & powershell -NoProfile -ExecutionPolicy Bypass -File $setupScript @argv | Out-Host
     $code = $LASTEXITCODE
     if ($code -ne 0) { Write-Host "  [FAIL] machine refresh: setup.ps1 exited $code" -ForegroundColor Red }
     else { Write-Host "  [OK]   machine refresh" -ForegroundColor Green }
+    $script:refreshRecord = [PSCustomObject]@{ ran = $true; code = $code; command = $shown }
     return $code
 }
 
-function Write-Reminders([string[]]$ChangedFiles) {
+function Write-Reminders($Info) {
     <# Purpose: print the owner's remaining steps (gh-deploy) for the merged PR's files. #>
-    foreach ($r in @(Get-RtFinishReminders -ChangedFiles $ChangedFiles)) { Write-Host "  [TODO] $r" -ForegroundColor Yellow }
+    foreach ($r in @(Get-RtFinishReminders -ChangedFiles $Info.Files -FilesUnknown:([bool]$Info.Unknown))) { Write-Host "  [TODO] $r" -ForegroundColor Yellow }
+}
+
+function Write-Report([bool]$Ok, $Steps) {
+    <# Purpose: write the -ReportPath JSON (R17), the refresh outcome included (review round 1, #6). Outputs: none. #>
+    if (-not $ReportPath) { return }
+    $rep = [PSCustomObject]@{ branch = $Branch; ok = $Ok; steps = @($Steps); refresh = $script:refreshRecord }
+    [System.IO.File]::WriteAllText($ReportPath, ($rep | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 # gh: is there a merged pull request with this branch as its head, and where did it end?
@@ -230,13 +264,36 @@ if ($LASTEXITCODE -ne 0) {
 $plansPresent = $false
 if ($PlansFolder) { $plansPresent = Test-Path -LiteralPath (Join-Path $mainRoot "docs\superpowers\todo\$PlansFolder") }
 
+$mainHead = Get-Git $mainRoot @("symbolic-ref", "--short", "HEAD")
+$mainDirty = @((& git -C $mainRoot status --porcelain --untracked-files=no 2>$null) | Where-Object { $_ })
+
 if (-not $worktree -and -not $localOid -and -not $remoteExists -and -not $plansPresent -and -not $remoteError) {
     Write-Host "Nothing to clean: no worktree, no local branch and no branch on origin for $Branch." -ForegroundColor Green
     if ($Refresh) {
-        $files = @(Get-PrFiles $prNumber)
-        $rc = Invoke-Refresh $files
-        Write-Reminders $files
+        # The refresh rewrites mirrors and syncs ~/.claude from the main clone: it needs the same
+        # main-clone guarantees as the clean-up (R32), and an up-to-date main (review round 1, #1, #2).
+        $why = @()
+        if ($mainHead -ne $MainBranch) { $why += "the main clone is on '$mainHead', not '$MainBranch'; the refresh never switches the checked-out branch (R32)." }
+        if ($mainDirty.Count -gt 0) { $why += "the main clone has modified tracked files ($(($mainDirty | Select-Object -First 3) -join '; ')); the refresh would rewrite files under another session (R32)." }
+        if ($why.Count -gt 0) { Write-Refused $why; exit 2 }
+        if (-not $Yes) {
+            Write-Host "  pull (dry run, not run): git pull --ff-only origin $MainBranch"
+        } else {
+            $out = & git -C $mainRoot pull --ff-only origin $MainBranch 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  [FAIL] git pull --ff-only origin ${MainBranch}: $((($out | Out-String).Trim() -split "`r?`n") | Select-Object -Last 1)" -ForegroundColor Red
+                Write-Report $false @()
+                exit 1
+            }
+            Write-Host "  [OK]   bring $MainBranch up to date" -ForegroundColor Green
+        }
+        $info = Get-PrFiles $prNumber
+        $rc = Invoke-Refresh $info
+        Write-Reminders $info
+        Write-Report ($rc -eq 0) @()
         if ($rc -ne 0) { exit 1 }
+    } else {
+        Write-Report $true @()
     }
     exit 0
 }
@@ -249,8 +306,6 @@ if ($worktree -and (Test-Path -LiteralPath $worktree)) {
     $links = @(Find-RtReparsePoints -Root $worktree)
 }
 $runFromWorktree = [bool]($worktree -and ($scriptRepo.TrimEnd('\') -ieq $worktree.TrimEnd('\')))
-$mainHead = Get-Git $mainRoot @("symbolic-ref", "--short", "HEAD")
-$mainDirty = @((& git -C $mainRoot status --porcelain --untracked-files=no 2>$null) | Where-Object { $_ })
 
 $reasons = @(Get-RtFinishRefusals -Branch $Branch -PrMerged $prMerged -PrReason $prReason -PrHeadOid $prHead `
     -LocalOid $localOid -RemoteOid $remoteOid -RemoteError $remoteError -WorktreePath $worktree -DirtyFiles $dirty -Links $links `
@@ -277,7 +332,7 @@ foreach ($s in $steps) {
 
 if (-not $Yes) {
     Write-Host ""
-    if ($Refresh) { $files = @(Get-PrFiles $prNumber); [void](Invoke-Refresh $files); Write-Reminders $files }
+    if ($Refresh) { $info = Get-PrFiles $prNumber; [void](Invoke-Refresh $info); Write-Reminders $info }
     Write-Host "Dry run: nothing was changed. Run again with -Yes to do it." -ForegroundColor DarkGray
     exit 0
 }
@@ -312,21 +367,20 @@ foreach ($s in $steps) {
     }
 }
 
-if ($ReportPath) {
-    $rep = [PSCustomObject]@{ branch = $Branch; ok = $ok; steps = $done }
-    [System.IO.File]::WriteAllText($ReportPath, ($rep | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
-}
-
 Write-Host ""
 if ($ok) {
     Write-Host "Done. $Branch is cleaned up." -ForegroundColor Green
     if ($Refresh) {
-        $files = @(Get-PrFiles $prNumber)
-        $rc = Invoke-Refresh $files
-        Write-Reminders $files
+        $info = Get-PrFiles $prNumber
+        $rc = Invoke-Refresh $info
+        Write-Reminders $info
+        Write-Report ($rc -eq 0) $done
         if ($rc -ne 0) { exit 1 }
+        exit 0
     }
+    Write-Report $true $done
     exit 0
 }
+Write-Report $false $done
 Write-Host "Stopped at the failed step above. The later steps were not run." -ForegroundColor Red
 exit 1

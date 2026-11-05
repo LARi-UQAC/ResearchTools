@@ -26,21 +26,29 @@ function Test-RtMirrorsFresh {
         Outputs:
             result (PSCustomObject): Ok (bool), Differs (string[] of repository-
             relative paths changed or created), Error ("" or why install could not
-            be judged: the file list, the copy or install.ps1 failed).
+            be judged: the file list, the copy or install.ps1 failed), CopyPath (the
+            TEMP folder this call used, already removed).
         --------------------------------------------------------------------------
     #>
     param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$ProfileName)
-    $fail = { param($m) [PSCustomObject]@{ Ok = $false; Differs = @(); Error = $m } }
+    $copy = Join-Path $env:TEMP ("rt-mirror-copy-" + [guid]::NewGuid().ToString("N").Substring(0, 12))
+    # CopyPath lets a caller check that THIS run's copy is gone, not every copy in a shared TEMP.
+    $fail = { param($m) [PSCustomObject]@{ Ok = $false; Differs = @(); Error = $m; CopyPath = $copy } }
     if (-not (Test-Path -LiteralPath (Join-Path $Root "install.ps1") -PathType Leaf)) {
         return (& $fail "no install.ps1 in $Root")
     }
+    # -z and quotepath=false, read as UTF-8: a path with an accent would otherwise come back
+    # C-quoted and be skipped as if deleted (review round 1, #8).
     $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    $list = @(& git -C $Root ls-files -co --exclude-standard 2>$null)
-    $listCode = $LASTEXITCODE
-    $ErrorActionPreference = $prev
+    $prevEnc = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+        $raw = (& git -c core.quotepath=false -C $Root ls-files -co --exclude-standard -z 2>$null) -join ""
+        $listCode = $LASTEXITCODE
+    } finally { [Console]::OutputEncoding = $prevEnc; $ErrorActionPreference = $prev }
+    $list = @($raw -split [char]0 | Where-Object { $_ })
     if ($listCode -ne 0 -or $list.Count -eq 0) { return (& $fail "git ls-files failed in $Root (exit $listCode)") }
 
-    $copy = Join-Path $env:TEMP ("rt-mirror-copy-" + [guid]::NewGuid().ToString("N").Substring(0, 12))
     try {
         foreach ($rel in $list) {
             $src = Join-Path $Root $rel
@@ -69,7 +77,7 @@ function Test-RtMirrorsFresh {
             if (-not $hashes.ContainsKey($rel) -or $hashes[$rel] -ne $h) { $differs += ($rel -replace '\\', '/') }
         }
         $differs = @($differs | Sort-Object)
-        return [PSCustomObject]@{ Ok = ($differs.Count -eq 0); Differs = $differs; Error = "" }
+        return [PSCustomObject]@{ Ok = ($differs.Count -eq 0); Differs = $differs; Error = ""; CopyPath = $copy }
     }
     catch {
         return (& $fail "the copy could not be built or read: $($_.Exception.Message)")

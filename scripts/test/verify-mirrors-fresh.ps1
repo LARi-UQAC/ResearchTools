@@ -25,7 +25,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 . (Join-Path $RepoRoot "scripts\lib\rt-mirrors-fresh.ps1")
-. (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1")
+. (Join-Path $RepoRoot "scripts\lib\rt-update.ps1")
 $Tmp = Join-Path $env:TEMP "rt-mirrors-fresh-$PID"
 $failures = 0
 
@@ -50,7 +50,7 @@ Write-Host ""
 Write-Host "=== mirrors fresh: install.ps1 changes nothing ===" -ForegroundColor Cyan
 try {
     # a. the real repository
-    $profileName = Get-RtActiveProfile (Join-Path $RepoRoot ".claude\CLAUDE.md")
+    $profileName = Get-RtActiveProfile -ClaudeMdPath (Join-Path $RepoRoot ".claude\CLAUDE.md")
     Check "the active profile is readable" ([bool]$profileName)
     $before = (& git -C $RepoRoot status --porcelain 2>$null | Out-String)
     $res = Test-RtMirrorsFresh -Root $RepoRoot -ProfileName $profileName
@@ -79,9 +79,21 @@ try {
     $bad = Join-Path $Tmp "bad"
     New-FakeRepo $bad "param([string]`$Profile)`r`nWrite-Output 'boom in install'`r`nexit 3`r`n"
     $res = Test-RtMirrorsFresh -Root $bad -ProfileName "fixture"
-    Check "(failure) a failing install.ps1 is never a pass" ((-not $res.Ok) -and $res.Error -match "3")
+    Check "(failure) a failing install.ps1 is never a pass, with its exit code" ((-not $res.Ok) -and $res.Error -match "exited 3 ")
     Check "(failure) the error carries the install output" ($res.Error -match "boom in install")
-    Check "no TEMP copy is left behind" (@(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter "rt-mirror-copy-*" -ErrorAction SilentlyContinue).Count -eq 0)
+    # review round 1 (#7): judge THIS run's copy, not every rt-mirror-copy-* of a shared TEMP
+    Check "this run's TEMP copy is removed" ($res.CopyPath -and -not (Test-Path -LiteralPath $res.CopyPath))
+
+    # d. review round 1 (#8): a tracked path with an accent reaches the copy
+    $accent = Join-Path $Tmp "accent"
+    $fileName = "r" + [char]0x00E8 + "gle.md"
+    New-FakeRepo $accent ("param([string]`$Profile)`r`nif (-not (Test-Path -LiteralPath (Join-Path `$PSScriptRoot ('r' + [char]0x00E8 + 'gle.md')))) { exit 4 }`r`nexit 0`r`n")
+    [IO.File]::WriteAllText((Join-Path $accent $fileName), "accented`n", (New-Object System.Text.UTF8Encoding($false)))
+    $ErrorActionPreference = "Continue"   # git warns about line endings on stderr
+    & git -C $accent add -A 2>&1 | Out-Null
+    $ErrorActionPreference = "Stop"
+    $res = Test-RtMirrorsFresh -Root $accent -ProfileName "fixture"
+    Check "(review #8) a file named with an accent is copied (install.ps1 finds it)" ($res.Ok)
 }
 finally {
     Remove-Item -LiteralPath $Tmp -Recurse -Force -ErrorAction SilentlyContinue

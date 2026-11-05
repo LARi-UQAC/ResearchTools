@@ -84,7 +84,10 @@ does not fit the item is `not_run` with the reason and `[!]` in `progress.md`. T
     placeholder); `select_pages(item: dict, pages: list[str], window_tokens: int) -> list[int]`;
     `normalize_rubric(work, rubric_text, assessment_type, call)`; `grade_report(work, rid, loop, call,
     calibration_note)`; `language_report(work, rid, loop, call)`; `figures_report(work, rid, loop, call,
-    vision_ok: bool)`; `audit_report(work, rid, loop, call, retries)`; `assemble_report(work, rid, loop,
+    vision_ok: bool)` (runs `figure_extract`, then `figure_checks`, then one fresh call per figure with the
+    model-judged criteria of `figure_criteria.json` that apply to its kind; a failed criterion becomes a
+    `figure` annotation whose text is that criterion's `comment_fr` or `comment_en` plus the model's
+    reason); `audit_report(work, rid, loop, call, retries)`; `assemble_report(work, rid, loop,
     reports_dir)` (writes `annotations.json`, runs `ref_check` on the reference section found by heading
     `Références`, `References` or `Bibliographie`, then `pdf_annotate` into `loop-<n>/R01/annotated.pdf`
     and `pdf_annex`); `extract_references(pages: list[str]) -> list[str]`.
@@ -101,6 +104,8 @@ does not fit the item is `not_run` with the reason and `[!]` in `progress.md`. T
   `test_invalid_grader_answer_is_retried_once_then_not_run`;
   `test_audit_disagreement_regrades_once_then_flags`;
   `test_figures_are_not_run_when_vision_is_not_ok`;
+  `test_only_applicable_criteria_are_sent_and_an_unknown_id_in_the_answer_is_rejected`;
+  `test_a_failed_figure_criterion_becomes_an_annotation_with_its_template_comment`;
   `test_assemble_writes_annotated_copy_and_annex_and_leaves_original_unchanged`;
   `test_resume_continues_from_the_first_open_mark` (fake call raising `NotRun` midway);
   `test_marker_sentence_never_reaches_stdout_or_progress` (fake call echoes prompt text into comments);

@@ -13,7 +13,8 @@ bounds:
 > the oracle; tick `progress.md`. No audit inside the wrapper (R38).
 
 **Goal:** A copy of the student PDF carries every remark as a native annotation and ends with the
-completed rubric; the original is never touched.
+completed rubric; the original is never touched. The figure correction template holds the 21 criteria,
+and the six measurable ones are decided by script.
 
 **Architecture:** `pdf_annotate.py` places highlight annotations with a pop-up note on a quoted passage,
 or a rectangle annotation on a figure. `pdf_annex.py` renders the rubric from an HTML template with
@@ -72,7 +73,6 @@ Output path resolved inside the working folder (R24).
 - Create: `.claude/skills/work-ugs-audit/assets/annex.template.html`
 - Create: `.claude/skills/work-ugs-audit/scripts/pdf_annex.py`
 - Test: `.claude/skills/work-ugs-audit/scripts/Test/test_pdf_annex.py`
-- Modify: `.claude/rules/testing.md`
 
 **Interfaces:**
 - Consumes: `grade_total.compute` output, `rubric.json`, `grade.json`.
@@ -90,5 +90,49 @@ Output path resolved inside the working folder (R24).
   (every comment string found in the extracted text); `test_html_special_characters_are_escaped`;
   `test_not_run_item_shows_not_run_and_total_is_withheld`; `test_accents_render`.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3:** implement. **Step 4: Run.** Expected: all OK.
-- [ ] **Step 5: Add** both script lines to `.claude/rules/testing.md`, tick `progress.md`.
-- [ ] **Step 6: Commit:** `feat(work-ugs-audit): completed rubric appended to the PDF (#104)`.
+- [ ] **Step 5: Commit:** `feat(work-ugs-audit): completed rubric appended to the PDF (#104)`.
+
+### Task 3: figure correction template and script-measured criteria
+
+**Files:**
+- Create: `.claude/skills/work-ugs-audit/assets/figure_criteria.json`
+- Create: `.claude/skills/work-ugs-audit/assets/figure_analysis.template.json`
+- Create: `.claude/skills/work-ugs-audit/scripts/figure_checks.py`
+- Test: `.claude/skills/work-ugs-audit/scripts/Test/test_figure_checks.py`
+- Modify: `.claude/rules/testing.md`
+
+**Interfaces:**
+- Consumes: `figure_extract.extract` records (plan 5), `report_prepare` page Markdown, `ugs_config.load`
+  (`figure.space_ratio_min`, `figure.min_effective_dpi`, `figure.min_text_ratio`).
+- Produces:
+  - `figure_criteria.json` (the correction template): `criteria[]`, 21 entries in the order of design
+    7.4, each `id` (snake case), `group` (`owner`, `readability`, `text_link`, `technical`, `diagram`),
+    `label_fr`, `label_en`, `judged_by` (`script`, `model`, `script_then_model`), `applies_to` (list of
+    figure kinds), `standard` (`ISO 80000`, `ISO 5807` or null, marked "named by the session, to be
+    confirmed"), `comment_fr`, `comment_en` (the ready-to-use failure comment, polite, one sentence,
+    addressed to an undergraduate). Owner provenance on the six original criteria.
+  - `figure_analysis.template.json`: the `figures.json` shape of `spec.md`, with `criteria` holding every
+    id of `figure_criteria.json` at `{verdict: "not_run", reason: ""}` and an empty `extra` object.
+  - `figure_checks.check(figures: list[dict], pages: list[str], body_font_size: float, cfg: dict,
+    criteria: list[dict]) -> list[dict]`: returns the records with the script verdicts filled:
+    `space_used_over_70` (ratio against `space_ratio_min`), `effective_resolution` (pixels over displayed
+    inches against `min_effective_dpi`, raster only, else `not_applicable`), `text_size` (vector only:
+    smallest span inside the rect over `body_font_size`, raster left `not_run` for the model),
+    `numbered_in_sequence`, `called_before_appearing` (first "Figure N" or "Fig. N" mention page not after
+    the figure page), `source_cited` (`[n]` or "Source" in the caption, else `not_run` for the model when a
+    borrowed figure is suspected). Each verdict carries its measured number in `reason`.
+  - `body_font_size(pdf: Path) -> float`: the most frequent span size of the document.
+  - `failure_comment(criterion_id: str, criteria: list[dict], language: str) -> str`.
+
+- [ ] **Step 1: Write the two assets.** `comment_fr` in plain French with accents; the 21 ids match the
+  template keys exactly.
+- [ ] **Step 2: Write the failing tests:** `test_criteria_file_has_21_unique_ids_and_both_comments`;
+  `test_template_keys_equal_the_criteria_ids`; `test_space_ratio_pass_and_fail_at_the_configured_bound`;
+  `test_low_dpi_raster_fails_and_vector_is_not_applicable`; `test_small_vector_text_fails`;
+  `test_numbering_gap_fails`; `test_figure_called_after_it_appears_fails`;
+  `test_source_marker_in_caption_passes`; `test_reason_carries_the_measured_number`;
+  `test_failure_comment_in_french_keeps_accents`.
+- [ ] **Step 3: Run.** Expected: FAIL. **Step 4:** implement. **Step 5: Run.** Expected: all OK.
+- [ ] **Step 6: Add** the three script lines (`pdf_annotate`, `pdf_annex`, `figure_checks`) to
+  `.claude/rules/testing.md`, tick `progress.md`.
+- [ ] **Step 7: Commit:** `feat(work-ugs-audit): figure correction template and measured criteria (#104)`.

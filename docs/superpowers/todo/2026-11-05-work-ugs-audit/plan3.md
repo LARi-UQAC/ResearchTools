@@ -55,7 +55,8 @@ totals. Standard library only.
 **Interfaces:**
 - Produces:
   - `ugs_config.json`, every value `{value, provenance}`: `figure.min_area_pt2` 2500, `figure.background_threshold`
-    245, `figure.space_ratio_min` 0.70 (owner 2026-11-05), `annotation.colors` (one per kind:
+    245, `figure.space_ratio_min` 0.70 (owner 2026-11-05), `figure.min_effective_dpi` 150,
+    `figure.min_text_ratio` 0.7 (figure text height over body text height), `annotation.colors` (one per kind:
     technical, figure, language, reference), `references.url_timeout_s` 10, `references.max_retries` 1,
     `batch.outlier_z` 2.0, `driver.audit_retries` 1, `driver.request_timeout_s` 600. Provenance
     "proposal 2026-11-05, tuned at the owner's review" except the owner value.

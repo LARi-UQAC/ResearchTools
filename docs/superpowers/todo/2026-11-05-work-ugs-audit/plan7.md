@@ -37,8 +37,10 @@ in `evidence`. No model tag (R2).
 - A grade prompt that lets the model give full marks with no evidence: the schema requires at least one
   evidence entry for a `rated` item with a score below the maximum.
 - The audit prompt drifting into re-grading: it returns `agree` or `disagree` with a reason, nothing else.
-- The figure prompt judging criteria the script already measured (`space_used_over_70`): it receives the
-  measured ratio and only explains it.
+- The figure prompt judging criteria the script already measured (`space_used_over_70`,
+  `effective_resolution` and the four others): it receives the measured verdicts and only explains them.
+- A block diagram judged on axes and units: only the criteria whose `applies_to` holds the figure kind
+  are sent; the others are `not_applicable`.
 - A rubric whose text holds checkboxes `[]` and fractional points (`/0.5`): the normalize prompt keeps
   each section as one item with its checklist lines.
 
@@ -67,12 +69,15 @@ in `evidence`. No model tag (R2).
   - `audit_item.md`: `{{ITEM}}`, `{{GRADE_RECORD}}`, `{{EVIDENCE_PAGES}}`.
   - `language.md`: `{{LANGUAGE_TABLE}}` (undergraduate-scope entries of `language_categories.json`),
     `{{SECTION}}`, `{{LANGUAGE_OF_REPORT}}`.
-  - `figure.md`: `{{CAPTION}}`, `{{CITING_TEXT}}`, `{{MEASURED_RATIO}}`, `{{CRITERIA}}`; the image travels
-    in the request's `images` field (plan 8), not in the text.
+  - `figure.md`: `{{CAPTION}}`, `{{CITING_TEXT}}`, `{{FIGURE_KIND}}`, `{{SCRIPT_VERDICTS}}` (the six
+    script-measured verdicts with their numbers, to explain, never to overturn), `{{CRITERIA}}` (the
+    model-judged entries of `figure_criteria.json` that apply to this kind, with their labels); the image
+    travels in the request's `images` field (plan 8), not in the text. The model first names the figure
+    kind, then judges each listed criterion.
   - `schemas.json`: keys `rubric`, `grade_item`, `audit_item`, `language`, `figure`, each an Ollama
     `format` schema matching `spec.md` "Data shapes" (`language` answers a list of
-    `{page, code, quote, proposed, reason}`; `figure` answers the five model-judged criteria with
-    `verdict` and `reason`).
+    `{page, code, quote, proposed, reason}`; `figure` answers `kind` and a list of
+    `{id, verdict, reason}` restricted to the ids it was given; the driver rejects any other id).
   - `undergraduate_framework.md`: five anchored levels per item as a share of `max_points` (absent 0,
     attempted 0.5, partial 0.75, complete and correct 0.88, exemplary 1.0), when each applies for a
     technical report, and the statuses `rated`, `not_applicable`, `not_run`.

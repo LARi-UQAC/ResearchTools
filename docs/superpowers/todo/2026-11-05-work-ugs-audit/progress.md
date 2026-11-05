@@ -36,6 +36,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [ ] T1 pdf_annotate
 - [ ] T2 pdf_annex
+- [ ] T3 figure_criteria.json (21 criteria), figure_checks
 
 ## plan7.md
 

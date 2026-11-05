@@ -28,9 +28,11 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
 - D5 Calibration for lab and project reports: target mean 88 percent, sd 4. Re-grade when the mean leaves
   83 to 93 or the sd leaves 2 to 6 (read as percentage points). Two loops, then ask.
 - D6 Figures: count, position and extract each as PNG; judge each in its own fresh model call; state per
-  figure in `progress.md`; result in `figures.json` from a template. Criteria: cited in the text with
-  meaningful content, curves visible, over 70 percent of the image used by the drawing (measured by
-  script), axis titles relevant, units adequate, a legend when several curves.
+  figure in `progress.md`; result in `figures.json` from a template. 21 criteria held as data in
+  `figure_criteria.json` (owner kept all on 2026-11-05; design 7.4 lists them). Script-measured: drawing
+  over 70 percent of the image, effective DPI, text size (vector), numbering in sequence, called before it
+  appears, source marker in the caption. The rest are judged by the vision model. Each criterion carries a
+  ready-to-use FR and EN failure comment. Figures cost points only through the rubric item covering them.
 - D7 Reports read with `pymupdf4llm` page by page (page number kept for anchoring); `pdf2md` not used.
 - D8 References: ISO/CSA/IEC standards and web pages acceptable; standards checked for form, URLs for
   reachability with a timeout, every reference for a citation in the text. No reference status costs
@@ -52,8 +54,9 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
   maximum), `not_run` (model unavailable or failed: never a zero, the total is refused).
 - `annotations.json`: list of `page`, `kind` (`technical`, `figure`, `language`, `reference`), `code`,
   `quote` (or null), `rect` (or null), `comment`.
-- `figures.json`: `report_id`, `figures[]` with `figure_id` (`F01`...), `page`, `rect`, `file`,
-  `drawing_area_ratio`, `caption`, `cited_in_text`, `criteria{}` where each criterion is
+- `figures.json`: `report_id`, `figures[]` with `figure_id` (`F01`...), `page`, `rect`, `file`, `kind`
+  (`chart`, `diagram`, `flowchart`, `photo`, `other`), `drawing_area_ratio`, `effective_dpi`, `caption`,
+  `cited_in_text`, `criteria{}` keyed by the ids of `figure_criteria.json`, each
   `{verdict: pass|fail|not_applicable|not_run, reason}`.
 - Working folder beside the reports: `_correction/` with `ids.json`, `spec.md`, `rubric.json`,
   `progress.md`, `loop_state.json`, `loop-<n>/R01/...`, `loop-<n>/grades.csv`,

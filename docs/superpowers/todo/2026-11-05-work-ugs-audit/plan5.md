@@ -80,7 +80,6 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
 ### Task 2: `figure_extract.py`
 
 **Files:**
-- Create: `.claude/skills/work-ugs-audit/assets/figure_analysis.template.json`
 - Create: `.claude/skills/work-ugs-audit/scripts/figure_extract.py`
 - Test: `.claude/skills/work-ugs-audit/scripts/Test/test_figure_extract.py`
 - Modify: `.claude/rules/testing.md`
@@ -88,13 +87,11 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
 **Interfaces:**
 - Consumes: `ugs_config.load` (`figure.min_area_pt2`, `figure.background_threshold`); fixtures above.
 - Produces:
-  - `figure_analysis.template.json`: the `figures.json` shape of `spec.md` with the six criteria of D6
-    as keys (`cited_meaningfully`, `curves_visible`, `space_used_over_70`, `axis_titles`, `units`,
-    `legend_when_multiple`), each `{verdict: "not_run", reason: ""}`, plus an `extra` object for criteria
-    the professor adds.
   - `extract(pdf: Path, out_dir: Path, cfg: dict) -> list[dict]`: one record per figure with `figure_id`,
-    `page`, `rect`, `file` (relative PNG path), `drawing_area_ratio` (0 to 1, 3 decimals), `caption`
-    (text block starting with Figure, Fig. or Figure in French, nearest below or above, or null).
+    `page`, `rect`, `file` (relative PNG path), `source` (`raster` or `vector`), `pixel_size` (width,
+    height, raster only), `drawing_area_ratio` (0 to 1, 3 decimals), `caption` (text block starting with
+    Figure, Fig. or Figure in French, nearest below or above, or null). Plan 6 adds the other measured
+    criteria from these fields.
   - `drawing_area_ratio(samples, width, height, n, threshold: int) -> float`: bounding box of pixels
     darker than `threshold` in any channel, over the image area.
   - `main(argv)`: `--pdf FILE --out DIR [--json]`, prints counts per page and ids.
@@ -103,7 +100,7 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
   `test_logo_under_min_area_is_ignored`; `test_png_files_written_inside_out_dir`;
   `test_ratio_of_a_full_chart_is_above_0_7` and `test_ratio_of_a_small_chart_in_a_large_frame_is_below_0_7`;
   `test_caption_found_below_and_in_french`; `test_figure_without_caption_has_null_caption`;
-  `test_template_has_the_six_criteria`.
+  `test_raster_record_carries_pixel_size_and_vector_record_does_not`.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3:** implement. **Step 4: Run.** Expected: all OK.
 - [ ] **Step 5: Add** both script lines to `.claude/rules/testing.md`, tick `progress.md`.
 - [ ] **Step 6: Commit:** `feat(work-ugs-audit): figure extraction with drawing-area ratio (#104)`.

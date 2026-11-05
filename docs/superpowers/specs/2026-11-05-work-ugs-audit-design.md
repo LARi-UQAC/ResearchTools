@@ -222,16 +222,27 @@ local model can apply it from the prompt alone. The research framework is unchan
    criterion.
 2. Each figure is judged in **its own fresh bridge call** (owner: "a new session per image"), with the
    vision role, its caption and the paragraph that cites it. `progress.md` holds the state per figure.
-3. The result goes into `figures.json`, built from `figure_analysis.template.json`. Criteria (owner):
-   - cited in the text with meaningful content;
-   - curves visible;
-   - more than 70 percent of the space used by the visual representation;
-   - axes with relevant titles;
-   - adequate units;
-   - a legend when several curves are present;
-   - open to extension ("etc.") through the template.
-4. Each criterion is `pass`, `fail` or `not_applicable` (a block diagram has no axes), with a one-line
-   reason. The figure remarks are annotated on the figure's rectangle in the PDF.
+3. The result goes into `figures.json`, built from `figure_analysis.template.json`. The criteria live in
+   `figure_criteria.json` (a correction template: id, FR and EN label, judged by script or model, the
+   figure kinds it applies to, a ready-to-use FR and EN comment for a failure). 21 criteria, all kept by
+   the owner on 2026-11-05 (S = script, M = vision model):
+   - owner's six: cited in the text with meaningful content (M), curves visible (M), more than 70 percent
+     of the space used by the drawing (S), relevant axis titles (M), adequate units (M), a legend when
+     several curves (M);
+   - readability: effective resolution of a raster image (S), text inside the figure large enough
+     against the body text (S for vector, M for raster), curves distinguished by more than colour and
+     readable in grey (M), legend not covering data (M);
+   - link with the text: numbered in sequence (S), called in the text before it appears (S), caption
+     understandable on its own (M), source cited for a borrowed figure (S then M);
+   - technical content: SI units consistent with the text, ISO 80000 (M), error bars or uncertainty for
+     a measurement (M), honest axis scale (M), values consistent with the text (M, low reliability on a
+     local model);
+   - block diagrams and flowcharts: inputs and outputs identified, arrows oriented and labelled (M),
+     standard flowchart symbols, ISO 5807 (M), no screenshot of code in place of a flowchart or text (M).
+   The two standards are named by the session and checked before they are quoted to students.
+4. Each criterion is `pass`, `fail`, `not_applicable` (a block diagram has no axes) or `not_run`, with a
+   one-line reason. The figure remarks are annotated on the figure's rectangle in the PDF. Points move
+   only through the rubric item that covers figures, as for references.
 
 ## 8. Decided by the owner (2026-11-05)
 

@@ -78,13 +78,11 @@ DEFAULT_CONFIG_PATH = CLAUDE_DIR / "local-model-config.json"
 # ollama_bridge.py's own, deliberately pessimistic pre-filter ratio.
 CHARS_PER_TOKEN = 4.0
 
-# Mirrors ollama_bridge.py's own RESPONSE_RESERVE_TOKENS (1024): tokens set aside for the
-# local model's own reply inside the window, so a task that fills the window with input
-# alone would leave the model no room to answer. Kept as an independent constant rather
-# than imported from ollama_bridge.py, because ollama_bridge.py imports THIS module (for
-# read_retained_num_ctx) - importing back would create a cycle. If the bridge's own
-# reserve is ever re-measured, this paired constant should be re-checked alongside it.
-TASK_RESPONSE_RESERVE_TOKENS = 1024
+# The repository's own local-coding budget (R26). reply_reserve_tokens() reads the reply
+# reserve from it for this gate AND for ollama_bridge.py, so the planning-time and
+# generation-time gates hold back the same number. It replaced two paired 1024 literals
+# (2026-11-05, Issue #104).
+DEFAULT_BUDGET_PATH = CLAUDE_DIR / "skills" / "aider-setup" / "config" / "context-budget.json"
 
 # The repository rule this module exists to enforce (see .claude/rules/code-style.md): no
 # source file should exceed a quarter of the measured window.
@@ -327,35 +325,111 @@ class BudgetResult(NamedTuple):
         return self.margin_tokens >= 0
 
 
-def check_task_budget(items: list[TaskItemSize], window: int) -> BudgetResult:
+def _positive_int(block: Any, key: str, dotted: str, path: Path) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read one positive integer out of a context-budget.json block.
+
+    Inputs:
+        block (Any): the parsed sub-object ('ceilings' or 'reserve').
+        key (str): the key inside that block.
+        dotted (str): the dotted name used in the refusal.
+        path (Path): the file, named in the refusal.
+
+    Outputs:
+        value (int): the integer.
+
+    Raises:
+        ConfigError: the key is absent, a bool, not an integer, or below 1 (R3).
+    --------------------------------------------------------------------------
+    """
+    value = block.get(key) if isinstance(block, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"[BUDGET] {path} declares no usable {dotted} (a positive integer)")
+    return value
+
+
+def reply_reserve_tokens(budget_path: Path | None = None) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Return the tokens held back for a local model's reply: one new file
+        at the local-coding ceiling plus the fence around it. One local-coder
+        step writes one file per bridge call, so the reserve is sized for
+        that file and nothing else.
+
+    Details:
+        The value is ceilings.code_file_output plus reserve.fence_overhead_tokens
+        of the repository's own context-budget.json, the single source of the
+        local-coding ceilings (R26). The repository copy is read rather than
+        the installed copies plan_contract.py tries first, because the bridge
+        that calls this lives in the same clone and an installed copy may
+        predate the fence key. It replaces a hardcoded 1024 that cut every
+        generated file past about 100 lines (2026-11-05, Issue #104).
+
+    Inputs:
+        budget_path (Path | None): the budget file; None reads
+            DEFAULT_BUDGET_PATH at call time, so a test can patch it.
+
+    Outputs:
+        reserve (int): code_file_output + fence_overhead_tokens.
+
+    Raises:
+        ConfigError: the file is missing or not JSON, or either key is absent
+            or not a positive integer, naming the key and the file (R3).
+    --------------------------------------------------------------------------
+    """
+    path = Path(budget_path) if budget_path is not None else DEFAULT_BUDGET_PATH
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ConfigError(f"[BUDGET] cannot read {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"[BUDGET] {path} is not a JSON object")
+    output = _positive_int(data.get("ceilings"), "code_file_output",
+                           "ceilings.code_file_output", path)
+    fence = _positive_int(data.get("reserve"), "fence_overhead_tokens",
+                          "reserve.fence_overhead_tokens", path)
+    return output + fence
+
+
+def check_task_budget(items: list[TaskItemSize], window: int,
+                      reserve: int | None = None) -> BudgetResult:
     """
     --------------------------------------------------------------------------
     Purpose:
         Compare a task bundle's total estimated size against the measured
-        window, minus TASK_RESPONSE_RESERVE_TOKENS held back for the local
-        model's own reply. This is the planning-time counterpart of
-        ollama_bridge.py's check_budget: same shape of decision (a reserve
-        subtracted from the window), applied before a task is ever
-        dispatched rather than at generation time.
+        window, minus the reply reserve held back for the local model's own
+        reply. This is the planning-time counterpart of ollama_bridge.py's
+        check_budget: same shape of decision (a reserve subtracted from the
+        window), applied before a task is ever dispatched rather than at
+        generation time.
 
     Inputs:
         items (list[TaskItemSize]): the sized bundle (see load_task_items).
         window (int): the measured retained_num_ctx (see
             read_retained_num_ctx).
+        reserve (int | None): the reply reserve; None reads
+            reply_reserve_tokens(), the same value the bridge holds back.
 
     Outputs:
         result (BudgetResult): total, budget, margin, and the single
         heaviest item (by tokens; None only if items is empty), so a caller
         refusing an oversized task can name exactly what to trim first.
+
+    Raises:
+        ConfigError: reserve is None and the budget file is unusable.
     --------------------------------------------------------------------------
     """
+    held = reply_reserve_tokens() if reserve is None else reserve
     total = sum(item.tokens for item in items)
-    budget = window - TASK_RESPONSE_RESERVE_TOKENS
+    budget = window - held
     margin = budget - total
     heaviest = max(items, key=lambda item: item.tokens, default=None)
     return BudgetResult(
         items=items, total_tokens=total, window=window,
-        reserve_tokens=TASK_RESPONSE_RESERVE_TOKENS, budget_tokens=budget,
+        reserve_tokens=held, budget_tokens=budget,
         margin_tokens=margin, heaviest=heaviest,
     )
 
@@ -453,11 +527,11 @@ def cmd_task(spec_path: Path, config_path: Path, model_tag: str | None,
     try:
         window = resolve_window(config_path, model_tag, role)
         items = load_task_items(spec_path)
+        result = check_task_budget(items, window)
     except ContextBudgetError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    result = check_task_budget(items, window)
     message = format_task_report(result, str(spec_path))
     if result.compliant:
         print(message)

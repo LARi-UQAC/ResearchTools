@@ -1244,5 +1244,45 @@ class TestResolverFailureIsABridgeError(unittest.TestCase):
                 ob.resolve_model("writer")
 
 
+class TestReplyReserveFollowsTheBudget(unittest.TestCase):
+    """The reply reserve is one new file at ceilings.code_file_output plus its fence, read
+    from context-budget.json (2026-11-05, Issue #104). The hardcoded 1024 cut every generated
+    file past about 100 lines, so a local plan came back truncated."""
+
+    def test_payload_num_predict_is_the_budget_reserve(self):
+        payload = ob.build_payload("prompt", "some:tag", 7, 16384)
+        self.assertEqual(payload["options"]["num_predict"],
+                         ob.context_budget.reply_reserve_tokens())
+        self.assertGreater(payload["options"]["num_predict"], 1024)
+
+    def test_an_explicit_num_predict_wins(self):
+        payload = ob.build_payload("prompt", "some:tag", 7, 16384, num_predict=77)
+        self.assertEqual(payload["options"]["num_predict"], 77)
+
+    def test_check_budget_holds_back_the_budget_reserve(self):
+        reserve = ob.context_budget.reply_reserve_tokens()
+        num_ctx = 16384
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=num_ctx - reserve + 1):
+            with self.assertRaises(ob.BridgeError) as ctx:
+                ob.check_budget("short prompt", "some:tag", num_ctx)
+        self.assertIn(f"{reserve}-token reply", str(ctx.exception))
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=num_ctx - reserve):
+            ob.check_budget("short prompt", "some:tag", num_ctx)
+
+    def test_a_broken_budget_file_is_a_bridge_error_naming_the_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "context-budget.json"
+            path.write_text(json.dumps({"ceilings": {"code_file_output": 4000}}),
+                            encoding="utf-8")
+            with mock.patch.object(ob.context_budget, "DEFAULT_BUDGET_PATH", path):
+                with self.assertRaises(ob.BridgeError) as ctx:
+                    ob.reply_reserve()
+        self.assertIn("fence_overhead_tokens", str(ctx.exception))
+
+    def test_no_reserve_literal_is_left_in_the_bridge(self):
+        source = Path(ob.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("RESPONSE_RESERVE_TOKENS = ", source)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1506,9 +1506,9 @@
 
 <h1 id="skills">Skills<a class="headerlink" href="#skills" title="Permanent link">&para;</a></h1>
 <p>Chapter 06 of the ResearchTools manual. Back to <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">table of contents</a>.</p>
-<p>Skills bundle scripts and references the agents reuse. Twenty-five ship in this repo (counted
-2026-10-22 from <code>.claude/skills/</code>), and every one of them is written here. A twenty-sixth,
-<code>graphify</code>, is external and appears in the table for that reason.</p>
+<p>Skills bundle scripts and references the agents reuse. Twenty-six ship in this repo (counted
+2026-11-04 from <code>.claude/skills/</code>, after <code>finish-branch</code> was added), and every one of them is
+written here. A twenty-seventh, <code>graphify</code>, is external and appears in the table for that reason.</p>
 <p><strong>This repository vendors no skill it did not write.</strong> Two were vendored on 2026-08-30 and both
 were removed the same day, because each already had its own delivery path and the copy only
 created a second one that would drift:</p>
@@ -1623,6 +1623,11 @@ registration steps of a new skill.</p>
 <td><code>word2latex</code></td>
 <td>Convert a Word <code>.docx</code> template (Mitacs, CRSNG, FRQNT, UQAC, partner forms) into a faithful LaTeX source. Delegates the patch work to the <code>word-to-latex</code> agent.</td>
 <td><code>/word2latex</code>, <code>.claude/skills/word2latex/SKILL.md</code></td>
+</tr>
+<tr>
+<td><code>finish-branch</code></td>
+<td>Finish a ResearchTools branch in one order. Before the pull request, it regenerates the mirrors (<code>install.ps1 -Profile &lt;active&gt;</code>) and runs <code>scripts/test/run-all-checks.ps1</code>, whose <code>verify-mirrors-fresh.ps1</code> fails on stale mirrors. After the owner merges ("clean the project"), it confirms the merge, compares the main checkout's leftovers before discarding them, and shows the dry run of <code>finish-branch.ps1 -Branch &lt;b&gt; -Refresh</code>. With <code>-Yes</code> (the owner's request only), that script removes the worktree and the branch, then refreshes the machine with <code>setup.ps1 -Update</code> and reminds <code>mkdocs gh-deploy</code> when <code>docs/</code> changed. ResearchTools clone only. See <a href="../16-maintenance/">chapter 16</a>.</td>
+<td><code>/finish-branch</code>, <code>.claude/skills/finish-branch/SKILL.md</code></td>
 </tr>
 <tr>
 <td><code>pdf2md</code></td>

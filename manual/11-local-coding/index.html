@@ -1611,7 +1611,7 @@ was barely visible in the dashboard.</p>
     P --&gt; Q{"Safe to merge?&lt;br/&gt;suite green, no Critical or High finding"}
     Q -- yes --&gt; Y["Memory upkeep&lt;br/&gt;local-writer writes lessons to the vault&lt;br/&gt;and updates the graph, silent"]
     Y --&gt; R[Pull request, owner merges]
-    R --&gt; Z["After the merge: finish-branch.ps1&lt;br/&gt;removes the worktree and the branches,&lt;br/&gt;moves the plans to done"]
+    R --&gt; Z["After the merge: finish-branch skill&lt;br/&gt;finish-branch.ps1 -Refresh removes the worktree&lt;br/&gt;and the branches, moves the plans to done,&lt;br/&gt;then setup.ps1 -Update refreshes this machine"]
     Q -- no --&gt; S{Bound reached?}
     S -- no --&gt; T[Fix, failing test first] --&gt; P
     S -- yes --&gt; U[Stop, report what remains, ask the owner]
@@ -1732,14 +1732,16 @@ skill is a gap to report, never a step run without one.</p>
 </tr>
 </tbody>
 </table>
-<p><strong>After the merge.</strong> The last step is a script, not a skill, because it only runs git and <code>gh</code>:
-<code>scripts/test/finish-branch.ps1</code>, started from the main clone. It removes the branch's worktree,
-deletes the branch locally and on origin, prunes, and moves the plans folder from
-<code>docs/superpowers/todo/</code> to <code>done/</code>. It does nothing until you add <code>-Yes</code>, and it never uses
-<code>--force</code>.</p>
+<p><strong>After the merge.</strong> The last step is the <code>finish-branch</code> skill (command <code>/finish-branch</code>, or just
+say "clean the project"). It runs <code>.claude/skills/finish-branch/scripts/finish-branch.ps1</code> from the
+main clone. The script removes the branch's worktree, deletes the branch locally and on origin,
+prunes, and moves the plans folder from <code>docs/superpowers/todo/</code> to <code>done/</code>. With <code>-Refresh</code> it
+then refreshes this machine with <code>setup.ps1 -Update</code>: the suite on the merged <code>main</code>, the mirrors
+and the sync to <code>~/.claude</code>. It also reminds you to publish the site when <code>docs/</code> changed. It does
+nothing until you add <code>-Yes</code>, and it never uses <code>--force</code>.</p>
 <div class="highlight"><pre><span></span><code><span class="nb">cd </span><span class="p">&lt;</span><span class="n">main</span> <span class="n">clone</span><span class="p">&gt;</span>
-<span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">test</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Branch</span> <span class="n">feat</span><span class="p">/</span><span class="n">my-branch</span>                 <span class="c"># dry run: lists the steps</span>
-<span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">test</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Branch</span> <span class="n">feat</span><span class="p">/</span><span class="n">my-branch</span> <span class="n">-Yes</span> <span class="n">-PlansFolder</span> <span class="n">2026</span><span class="p">-</span><span class="n">10</span><span class="p">-</span><span class="n">17-my-effort</span>
+<span class="p">.\.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Branch</span> <span class="n">feat</span><span class="p">/</span><span class="n">my-branch</span> <span class="n">-Refresh</span>     <span class="c"># dry run: lists the steps</span>
+<span class="p">.\.</span><span class="n">claude</span><span class="p">\</span><span class="n">skills</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">\</span><span class="n">scripts</span><span class="p">\</span><span class="n">finish-branch</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-Branch</span> <span class="n">feat</span><span class="p">/</span><span class="n">my-branch</span> <span class="n">-Refresh</span> <span class="n">-Yes</span> <span class="n">-PlansFolder</span> <span class="n">2026</span><span class="p">-</span><span class="n">10</span><span class="p">-</span><span class="n">17-my-effort</span>
 </code></pre></div>
 <p>It refuses, and says why, when <code>gh</code> finds no merged pull request for the branch, when the local
 branch holds commits that were never pushed, when origin's branch has a commit pushed after the

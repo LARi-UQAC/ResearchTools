@@ -353,7 +353,7 @@ Before the pull request, in the branch:
    skipped. The session reports the suite and the verifiers separately, and "the checks are green"
    means this script exited 0 (or names the check that failed). `verify-graph-health.ps1` is
    excluded because only `local-writer` may run it.
-3. When an agent or a command was added, tell the owner that `install.ps1 -Personal` must run.
+3. When an agent, a command or a rule changed, tell the owner that `install.ps1 -Personal` must run.
 
 After the owner merges, from the main clone:
 
@@ -362,7 +362,7 @@ After the owner merges, from the main clone:
 5. `.claude/skills/finish-branch/scripts/finish-branch.ps1 -Branch <b> -Refresh` as a dry run,
    shown to the owner. `-Yes` is added only when the owner asked for the clean-up, because it
    deletes a branch on origin. `-Refresh` then runs `setup.ps1 -Update -Profile <active> -RunSuite
-   -NonInteractive -Force` (adding `-Personal` when agents or commands changed). That command
+   -NonInteractive -Force` (adding `-Personal` when agents, commands or rules changed, or when the file list could not be read whole). That command
    proves the merged `main`, regenerates the mirrors and runs `install-junctions.ps1 -Sync`. A
    failed refresh exits 1.
 6. The owner publishes the site with `mkdocs gh-deploy` when `docs/` changed. The script prints

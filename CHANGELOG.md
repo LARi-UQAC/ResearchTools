@@ -13,7 +13,7 @@ This file is for someone following releases. For the dated, engineering-level de
 - `finish-branch` skill and `/finish-branch` command (Issue #102): one ordered end of a branch.
   Before the pull request it regenerates the mirrors and runs `run-all-checks.ps1`. After the
   merge ("clean the project"), `finish-branch.ps1 -Refresh` cleans the branch, then runs
-  `setup.ps1 -Update` (suite, mirrors, sync, and `-Personal` when agents or commands changed) and
+  `setup.ps1 -Update` (suite, mirrors, sync, and `-Personal` when agents, commands or rules changed) and
   reminds `mkdocs gh-deploy` when docs changed. `finish-branch.ps1` moved from `scripts/test/`
   into the skill.
 - `scripts/test/verify-mirrors-fresh.ps1`: `run-all-checks.ps1` now fails when `install.ps1`

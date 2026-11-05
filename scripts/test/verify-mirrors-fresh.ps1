@@ -94,6 +94,15 @@ try {
     $ErrorActionPreference = "Stop"
     $res = Test-RtMirrorsFresh -Root $accent -ProfileName "fixture"
     Check "(review #8) a file named with an accent is copied (install.ps1 finds it)" ($res.Ok)
+
+    # e. review round 2: a file that cannot be copied is an error, even for a caller on Continue
+    $locked = Join-Path $Tmp "locked"
+    New-FakeRepo $locked $copyBody
+    $ErrorActionPreference = "Continue"
+    $handle = [IO.File]::Open((Join-Path $locked "src.md"), "Open", "ReadWrite", "None")
+    try { $res = Test-RtMirrorsFresh -Root $locked -ProfileName "fixture" } finally { $handle.Dispose() }
+    $ErrorActionPreference = "Stop"
+    Check "(review round 2) an uncopyable file gives Ok=false with an error, never a partial pass" ((-not $res.Ok) -and $res.Error -match "copy")
 }
 finally {
     Remove-Item -LiteralPath $Tmp -Recurse -Force -ErrorAction SilentlyContinue

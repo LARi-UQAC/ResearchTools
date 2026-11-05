@@ -53,7 +53,7 @@
 .PARAMETER Refresh
     After the clean-up (or when there is nothing to clean), refresh this machine from the
     updated main: setup.ps1 -Update -Profile <active> -RunSuite -NonInteractive -Force, with
-    -Personal when the merged pull request changed an agent or a command. The profile is read
+    -Personal when the merged pull request changed an agent, a command or a rule (or its file list could not be read whole). The profile is read
     from the active_profile line of the main clone's .claude/CLAUDE.md; a missing line is a
     refusal (R8). A dry run prints the command and runs nothing. A reminder to publish the
     site (mkdocs gh-deploy) is printed when the merged pull request changed docs/.
@@ -119,6 +119,18 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 
 # The script sits in <repo>\.claude\skills\finish-branch\scripts, four levels below the root.
 $scriptRepo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\.."))
+# Started through a junction (~/.claude/skills/finish-branch is one), "four levels up" is not the
+# repository but whatever folder holds the junction, possibly another git repository. Refuse
+# rather than act there (review round 2).
+$walk = [System.IO.Path]::GetFullPath($PSScriptRoot)
+while ($walk -and ($walk.TrimEnd('\') -ne $scriptRepo.TrimEnd('\'))) {
+    $item = Get-Item -LiteralPath $walk -Force -ErrorAction SilentlyContinue
+    if ($null -ne $item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        Write-Refused @("this script was started through a junction or symbolic link ($walk). Run the copy inside the ResearchTools clone (.claude\skills\finish-branch\scripts\finish-branch.ps1 in the main clone).")
+        exit 2
+    }
+    $walk = Split-Path $walk -Parent
+}
 $common = Get-Git $scriptRepo @("rev-parse", "--path-format=absolute", "--git-common-dir")
 if (-not $common) {
     Write-Refused @("$scriptRepo is not inside a git repository. Run the script that sits in the ResearchTools clone (.claude\skills\finish-branch\scripts\finish-branch.ps1 in the main clone), not a copy or a path through a ~/.claude junction.")
@@ -273,6 +285,10 @@ if (-not $worktree -and -not $localOid -and -not $remoteExists -and -not $plansP
         # The refresh rewrites mirrors and syncs ~/.claude from the main clone: it needs the same
         # main-clone guarantees as the clean-up (R32), and an up-to-date main (review round 1, #1, #2).
         $why = @()
+        if (-not $prMerged) {
+            $detail = if ($prReason) { " ($prReason)" } else { "" }
+            $why += "no merged pull request has '$Branch' as its head$detail; the refresh runs only after a merge. Check the branch name (review round 2)."
+        }
         if ($mainHead -ne $MainBranch) { $why += "the main clone is on '$mainHead', not '$MainBranch'; the refresh never switches the checked-out branch (R32)." }
         if ($mainDirty.Count -gt 0) { $why += "the main clone has modified tracked files ($(($mainDirty | Select-Object -First 3) -join '; ')); the refresh would rewrite files under another session (R32)." }
         if ($why.Count -gt 0) { Write-Refused $why; exit 2 }
@@ -333,6 +349,7 @@ foreach ($s in $steps) {
 if (-not $Yes) {
     Write-Host ""
     if ($Refresh) { $info = Get-PrFiles $prNumber; [void](Invoke-Refresh $info); Write-Reminders $info }
+    Write-Report $true @()   # a dry run reports too, like the nothing-to-clean path (review round 2)
     Write-Host "Dry run: nothing was changed. Run again with -Yes to do it." -ForegroundColor DarkGray
     exit 0
 }

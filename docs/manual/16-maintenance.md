@@ -78,7 +78,7 @@ committed by that protocol.
    order and shows the dry run before any `-Yes`.
 
 `-Refresh` runs `setup.ps1 -Update -Profile <active> -RunSuite -NonInteractive -Force` after the
-clean-up. It adds `-Personal` when the merged pull request changed an agent or a command, and passes
+clean-up. It adds `-Personal` when the merged pull request changed an agent, a command or a rule, and passes
 `-KeepHooks` on. It prints a reminder to run `mkdocs gh-deploy` when `docs/` changed. A failed
 refresh exits 1. `finish-branch.ps1` removes the merged branch's worktree, deletes the branch locally and on origin,
 prunes, and moves a plans folder from `docs/superpowers/todo` to `done`. It is a dry run until `-Yes`,

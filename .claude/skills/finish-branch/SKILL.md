@@ -30,7 +30,7 @@ Do these after the last code change and before R35's review loop is called safe:
    the Python suite and every `verify-*.ps1`, including `verify-mirrors-fresh.ps1`, which fails
    when step 1 was skipped. Report the suite and the verifiers separately. "Green" means this
    script exited 0. Otherwise, name the check that failed.
-3. **If an agent or a command was added,** also tell the owner that `.\install.ps1 -Personal` must
+3. **If an agent, a command or a rule changed,** also tell the owner that `.\install.ps1 -Personal` must
    run on their machine. The ordinary run never reaches `~/.copilot/agents` or the VS Code user
    profile.
 
@@ -75,7 +75,7 @@ Run each step from the MAIN clone, never from inside the worktree being removed.
 | Script | Role | Proven by |
 |---|---|---|
 | `scripts/finish-branch.ps1` | the clean-up and `-Refresh` | `scripts/test/verify-branch-tools.ps1` |
-| `scripts/rt-finish.ps1` | its pure decisions (refusals, steps, profile, refresh arguments, reminders) | same |
+| `scripts/rt-finish.ps1` | its pure decisions (refusals, steps, refresh arguments, reminders); the profile is read by `scripts/lib/rt-update.ps1` (`Get-RtActiveProfile`) | same |
 | `scripts/test/run-all-checks.ps1` (repo-wide) | the pre-PR gate | same |
 | `scripts/lib/rt-mirrors-fresh.ps1` (repo-wide) | stale-mirror detection | `scripts/test/verify-mirrors-fresh.ps1` |
 

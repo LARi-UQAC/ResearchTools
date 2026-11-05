@@ -460,6 +460,32 @@ try {
     $originMain = (Invoke-Git $other @("rev-parse", "HEAD"))
     $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
     Check "(review #2) nothing to clean + -Refresh pulls main before refreshing" ($res.Code -eq 0 -and (Invoke-Git $main @("rev-parse", "HEAD")) -eq $originMain)
+
+    # review round 2 (#2): a branch name that matches no merged pull request refreshes nothing
+    Set-Merged $c6 $false
+    $linesBefore = @([IO.File]::ReadAllLines($argsFile)).Count
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "(review round 2) nothing to clean + -Refresh with no merged pull request: exit 2" ($res.Code -eq 2 -and $res.Text -match "merged")
+    Check "(review round 2) and setup.ps1 did not run" (@([IO.File]::ReadAllLines($argsFile)).Count -eq $linesBefore)
+    Set-Merged $c6
+
+    # review round 2 (#6): a dry run writes its report too
+    $c8 = New-Case "c8"; Set-Merged $c8
+    $rp3 = Join-Path $Tmp "dry-report.json"
+    $res = Invoke-Finish $c8 @("-ReportPath", $rp3)
+    Check "(review round 2) a dry run with -ReportPath writes the report" ($res.Code -eq 0 -and (Test-Path -LiteralPath $rp3) -and (Alive $c8))
+
+    # review round 2 (#1): started through a junction (as under ~/.claude/skills), even when the
+    # folder four levels up is itself a git repository, it refuses instead of acting there
+    $fakeHome = Join-Path $Tmp "home"
+    New-Item -ItemType Directory -Path (Join-Path $fakeHome ".claude\skills") -Force | Out-Null
+    & git init -q $fakeHome 2>&1 | Out-Null
+    $jlink = Join-Path $fakeHome ".claude\skills\finish-branch"
+    & cmd /c mklink /J "$jlink" "$(Join-Path $main '.claude\skills\finish-branch')" | Out-Null
+    $res = Invoke-Child (Join-Path $jlink "scripts\finish-branch.ps1") @("-Branch", $c8.Branch, "-Yes") $Tmp $bin
+    & cmd /c rmdir "$jlink" | Out-Null
+    Check "(review round 2) a run through a junction is refused (exit 2) and names it" ($res.Code -eq 2 -and $res.Text -match "junction")
+    Check "(review round 2) nothing was removed" (Alive $c8)
     Write-Text $claudeMd "# fixture without the selector`n"
     $c7 = New-Case "c7"; Set-Merged $c7
     $res = Invoke-Finish $c7 @("-Yes", "-Refresh")

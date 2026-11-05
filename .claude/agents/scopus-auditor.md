@@ -306,6 +306,8 @@ Step 6b runs the single mandatory `deliberation`.
 
 ### Step 2e — Composition and register audit
 
+**Language codes.** The flags of this step, their rule numbers and their LaTeX action are entries of the `language-review` skill table, `.claude/skills/language-review/assets/language_categories.json` (codes and examples in `.claude/skills/language-review/references/categories.md`). Print the entry `flag` text exactly, cite its `rule`, and apply its `latex_action`: `direct_fix` for an isolated spelling or punctuation fix, `\replaced` otherwise. The table is the single list of language categories, so none is restated here.
+
 Audit the review prose against `composition_rules.md`. Scan every prose paragraph and every
 `\caption{}` of the source. Exclude math environments, `verbatim` / `lstlisting` bodies, the
 bibliography, and LaTeX comments.

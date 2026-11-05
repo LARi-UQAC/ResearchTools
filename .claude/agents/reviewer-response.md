@@ -128,10 +128,15 @@ For each extracted comment, assign:
 - **Target section**: best-matching section title from the Step 1 map (or `[GENERAL]` if no
   specific section can be identified)
 
+A language comment takes the code `G` (grammar or spelling) or `S` (style or writing). Their finer
+categories, labels and LaTeX action come from the `language-review` skill table,
+`.claude/skills/language-review/assets/language_categories.json`: `G` covers the entries whose
+`latex_action` is `direct_fix` (SP, AG, PN, TYPO), applied with no markup, and `S` covers the entries
+whose `latex_action` is `replaced`, applied with `\replaced[id=RN]{new}{old}`. Name the finer code
+beside `G` or `S` when it helps the author (`G/SP`). Every other comment takes a content code:
+
 | Code | Category |
 |---|---|
-| G | Grammar / spelling correction |
-| S | Style / writing improvement |
 | SC | Scientific issue (claim, logic, or interpretation) |
 | M | Methodology — add, clarify, or justify |
 | R | Results — add, clarify, or reanalyse |
@@ -614,7 +619,7 @@ When the user says "Execute reviewer response for [paper file]" or "Apply review
 - All paths used in shell commands are relative to the workspace root — never absolute
 - Drafts must score below 10% on the AI-style risk check (see CLAUDE.md for signal list); load `.claude/skills/scientific-writing/references/writing_principles.md` before drafting to verify tense consistency, conciseness, and common pitfalls
 - Reviewer file order is fixed: first file = R1, second = R2, regardless of filename
-- Grammar-only fixes (G category, no structural change): apply directly, no changes markup
+- Grammar-only fixes (G category, a `direct_fix` entry of the language-review table, no structural change): apply directly, no changes markup
 - Every other change: use `\added{}`, `\deleted{}`, `\replaced{}{}` (changes package) so the author can review before final submission
 - Never fabricate a reference — only cite Scopus-validated papers
 - Every reference proposed to answer any comment must be validated via Scopus, including DOI validation (Steps 3 and 6)

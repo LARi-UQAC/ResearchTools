@@ -19,7 +19,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan2.md
 
-- [ ] T1 five agents and chapter 04 point to language-review, contract test
+- [x] T1 five agents + ch.04 point to language-review; contract 7 OK; flags before 9/9/9/9/0 = after 9/9/9/9/0. Ruling: G and S kept as reviewer-response top codes, finer codes from the table (no behaviour change).
 
 ## plan3.md
 

@@ -743,6 +743,8 @@ Record in Section J of the plan. The IAg items go in a `### J-IAg` subsection.
 
 ### Step 12.5 — Composition and register audit (all prose chapters)
 
+**Language codes.** The flags of this step, their rule numbers and their LaTeX action are entries of the `language-review` skill table, `.claude/skills/language-review/assets/language_categories.json` (codes and examples in `.claude/skills/language-review/references/categories.md`). Print the entry `flag` text exactly, cite its `rule`, and apply its `latex_action`: `direct_fix` for an isolated spelling or punctuation fix, `\replaced` otherwise. The table is the single list of language categories, so none is restated here.
+
 Audit the prose against `composition_rules.md`. Process chapter by chapter and report a per-chapter
 count plus a thesis-wide total. Scan every prose paragraph and every `\caption{}`; exclude math
 environments, `verbatim` / `lstlisting` / algorithm bodies, the bibliography, and LaTeX comments.

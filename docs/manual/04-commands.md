@@ -160,12 +160,13 @@ Example:
    `\definechangesauthor` per reviewer (R1 blue, R2 red, R3 orange, R4+ purple) added to the
    preamble automatically.
 
-**Comment categories processed:**
+**Comment categories processed:** a language comment is coded `G` (grammar or spelling, a direct fix
+with no markup) or `S` (style, `\replaced[id=RN]{new}{old}`). Its finer categories come from the
+`language-review` skill table (`.claude/skills/language-review/assets/language_categories.json`),
+shared with the research auditors and the undergraduate grader. Content comments use these codes:
 
 | Code | Category | Paper change |
 |---|---|---|
-| G | Grammar / spelling | Direct fix, no markup |
-| S | Style / writing | `\replaced[id=RN]{new}{old}` |
 | SC | Scientific issue | `\added[id=RN]{...}` |
 | M | Methodology addition | `\added[id=RN]{...}` |
 | R | Results addition | `\added[id=RN]{...}` |

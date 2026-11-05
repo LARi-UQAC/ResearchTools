@@ -338,24 +338,38 @@ round each, every one of them a bypass a local "who can weaken this?" pass would
 about. Three review rounds on a public repository is three windows in which a known gap was
 already merged-ready.
 
-After R35, two scripts of ResearchTools close the loop (2026-10-17, issue 87). They belong to this
-repository: `scripts/test/` is not synced to `~/.claude`, and `finish-branch.ps1` finds the
-repository to clean from its own location, so neither can be pointed at another project's clone.
-Run them from a ResearchTools clone.
+After R35 the end of a branch follows one ordered list, held by the `finish-branch` skill and its
+`/finish-branch` command (2026-11-04, Issue #102). The prompt "clean the project" routes there.
+Measured on PR #101: three of these steps already existed in separate files and were skipped, so
+the mirrors went stale, the merged `main` was never re-checked, and `~/.claude` was never synced.
+They run from a ResearchTools clone only, since `finish-branch.ps1` finds the repository from its
+own location.
 
-- **Before the pull request is called safe: `scripts/test/run-all-checks.ps1`.**
-  `run-offline-tests.ps1` runs only the Python suites, so its green stamp never covered the
-  PowerShell `verify-*.ps1`. The session reports the suite and the verifiers separately, and "the
-  checks are green" means this script exited 0 (or names the check that failed). `-Only` and
-  `-SkipSuite` are for the checks a change touches. The full run is made once, after the last
-  commit. `verify-graph-health.ps1` is excluded because only `local-writer` may run it.
-- **After the owner merges: `scripts/test/finish-branch.ps1 -Branch <branch>`**, from the main
-  clone. A dry run until `-Yes`. It is the last node of the figure in manual chapter 11. The
-  session runs the dry run and shows it. It does not add `-Yes` unless the owner asked for the
-  clean-up, because the script deletes a branch on origin.
+Before the pull request, in the branch:
 
-Neither is a new rule number: they apply R35 and R37. Making them usable from other projects needs a
-`-Repo` argument for `finish-branch.ps1` and a synced location, which is not done.
+1. `install.ps1 -Profile <active>`, with the regenerated mirrors committed in the same PR.
+2. `scripts/test/run-all-checks.ps1`, once after the last commit. It runs the Python suite and
+   every `verify-*.ps1`, including `verify-mirrors-fresh.ps1`, which fails when step 1 was
+   skipped. The session reports the suite and the verifiers separately, and "the checks are green"
+   means this script exited 0 (or names the check that failed). `verify-graph-health.ps1` is
+   excluded because only `local-writer` may run it.
+3. When an agent, a command or a rule changed, tell the owner that `install.ps1 -Personal` must run.
+
+After the owner merges, from the main clone:
+
+4. Confirm the pull request is `MERGED`. Compare any leftover copies in the main checkout with the
+   branch before discarding them (R32).
+5. `.claude/skills/finish-branch/scripts/finish-branch.ps1 -Branch <b> -Refresh` as a dry run,
+   shown to the owner. `-Yes` is added only when the owner asked for the clean-up, because it
+   deletes a branch on origin. `-Refresh` then runs `setup.ps1 -Update -Profile <active> -RunSuite
+   -NonInteractive -Force` (adding `-Personal` when agents, commands or rules changed, or when the file list could not be read whole). That command
+   proves the merged `main`, regenerates the mirrors and runs `install-junctions.ps1 -Sync`. A
+   failed refresh exits 1.
+6. The owner publishes the site with `mkdocs gh-deploy` when `docs/` changed. The script prints
+   this as a reminder and never runs it.
+
+None of this is a new rule number: it applies R30, R35, R32 and R37. Using it on another project
+needs a `-Repo` argument for `finish-branch.ps1`, which is not done.
 
 ## Shared working tree
 

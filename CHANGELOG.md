@@ -10,6 +10,15 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Added
+- `finish-branch` skill and `/finish-branch` command (Issue #102): one ordered end of a branch.
+  Before the pull request it regenerates the mirrors and runs `run-all-checks.ps1`. After the
+  merge ("clean the project"), `finish-branch.ps1 -Refresh` cleans the branch, then runs
+  `setup.ps1 -Update` (suite, mirrors, sync, and `-Personal` when agents, commands or rules changed) and
+  reminds `mkdocs gh-deploy` when docs changed. `finish-branch.ps1` moved from `scripts/test/`
+  into the skill.
+- `scripts/test/verify-mirrors-fresh.ps1`: `run-all-checks.ps1` now fails when `install.ps1`
+  would still change a file. On its first run it found the `testing.md` mirror left stale by
+  PR #101.
 - `setup.ps1 -InstallPython` builds three Python environments in the main clone, in order:
   `.venv-skills` (fourteen skill requirements files plus `pip-audit`), `.venv-docs` (the MkDocs
   site, which used to be created by hand) and `.venv-pdf2md` (the `pdf2md` conversion, kept apart

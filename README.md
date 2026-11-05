@@ -126,7 +126,7 @@ graph LR
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx`, switching the session identity |
 | 04 | [Commands](docs/manual/04-commands.md) | All slash commands |
 | 05 | [Agents](docs/manual/05-agents.md) | All agents, local delegation, loop engineering |
-| 06 | [Skills](docs/manual/06-skills.md) | All 25 skills, the two memories |
+| 06 | [Skills](docs/manual/06-skills.md) | All 26 skills, the two memories |
 | 07 | [Hooks and guards](docs/manual/07-hooks.md) | Every hook the toolkit declares: guards before a tool call, scanners, session hooks, git hooks |
 | 08 | [Rules and conventions](docs/manual/08-rules.md) | The rules R0 to R38 and the five files that hold them |
 | 09 | [Harnesses and mirrors](docs/manual/09-harnesses.md) | Claude Code, Copilot, OpenCode, Continue, Aider and Codex: what each receives, `mirror-policy.json`, session adapters |

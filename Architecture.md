@@ -165,6 +165,8 @@ graph TD
 
 `/portfolio` drives the [wp-portfolio-agent](agents/wp-portfolio-agent.md) agent, likewise omitted from this matrix: it consumes only its own [wp-portfolio-sync](skills/wp-portfolio-sync) skill, none of `scopus`, `deliberation`, `scholar-evaluation`, `scientific-writing`, `extract-statistic`, or `extract-futureworks` - the push is a deterministic migration, not an authoring or audit pipeline.
 
+`/finish-branch` invokes the [finish-branch](skills/finish-branch) skill directly (no agent, none of the shared skills above), so it is omitted from this matrix. It is the end of every ResearchTools branch. Before the pull request, it runs `install.ps1 -Profile <active>` and `scripts/test/run-all-checks.ps1`, whose `verify-mirrors-fresh.ps1` (`scripts/lib/rt-mirrors-fresh.ps1`) fails when the mirrors are stale. After the merge, it runs the skill's own `scripts/finish-branch.ps1 -Refresh`, which removes the worktree and the branch, then calls `setup.ps1 -Update`: the suite on the merged `main`, the mirrors and `install-junctions.ps1 -Sync` (Issue #102).
+
 ### Domain profiles
 
 Domain-specific values live outside the agents, in `profiles/<name>.yaml` at the repo root

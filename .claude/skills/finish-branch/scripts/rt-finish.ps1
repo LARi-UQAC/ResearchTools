@@ -1,4 +1,5 @@
-# rt-finish.ps1 - the decisions of scripts\test\finish-branch.ps1, with no side effect.
+# rt-finish.ps1 - the decisions of finish-branch.ps1 (beside it, in the finish-branch skill),
+# with no side effect.
 #
 # Dot-sourced by finish-branch.ps1 and by scripts\test\verify-branch-tools.ps1. The script
 # spawns git and gh, which cannot be tested offline, so what it decides lives here as pure
@@ -206,4 +207,68 @@ function Find-RtReparsePoints {
         }
     }
     return $found
+}
+
+# The active profile is read with Get-RtActiveProfile of scripts\lib\rt-update.ps1, which
+# finish-branch.ps1 dot-sources: one definition (review round 1, #5).
+
+function Get-RtRefreshArgs {
+    <#
+        --------------------------------------------------------------------------
+        Purpose:
+            Build the arguments of `setup.ps1` for the machine refresh run after a
+            merged branch is cleaned up.
+
+        Details:
+            -NonInteractive and -Force because no prompt can be answered from here.
+            -Personal is added when the merged pull request changed an agent, a
+            command or a rule: only install.ps1 -Personal reaches ~/.copilot/agents
+            and the VS Code user profile, which holds the prompt files (commands)
+            and the instructions files (rules). An unknown or capped file list
+            assumes it is needed, since an extra copy costs nothing and a missed
+            one leaves a stale mirror.
+
+        Inputs:
+            ProfileName (string): the active domain profile.
+            ChangedFiles (string[]): repository-relative paths the merged PR changed.
+            KeepHooks (string[]): hook entry names to leave as they are on this machine.
+            FilesUnknown (switch): the file list could not be read whole.
+
+        Outputs:
+            args (string[]): `-Update -Profile <p> -RunSuite -NonInteractive -Force`,
+            then `-Personal` when needed, then `-KeepHooks` and the names.
+        --------------------------------------------------------------------------
+    #>
+    param([string]$ProfileName, [string[]]$ChangedFiles = @(), [string[]]$KeepHooks = @(), [switch]$FilesUnknown)
+    $a = @("-Update", "-Profile", $ProfileName, "-RunSuite", "-NonInteractive", "-Force")
+    $personal = @($ChangedFiles | Where-Object { $_ -like ".claude/agents/*" -or $_ -like ".claude/commands/*" -or $_ -like ".claude/rules/*" })
+    if ($FilesUnknown -or $personal.Count -gt 0) { $a += "-Personal" }
+    $names = @($KeepHooks | Where-Object { $_ })
+    if ($names.Count -gt 0) { $a += "-KeepHooks"; $a += ($names -join ",") }
+    return $a
+}
+
+function Get-RtFinishReminders {
+    <#
+        --------------------------------------------------------------------------
+        Purpose:
+            List the owner's steps that no script may take, for the files a merged
+            pull request changed.
+
+        Inputs:
+            ChangedFiles (string[]): repository-relative paths the merged PR changed.
+            FilesUnknown (switch): the file list could not be read whole; the
+                reminder is then given, since a missed publication is the costlier error.
+
+        Outputs:
+            lines (string[]): one gh-deploy line when docs/ or mkdocs.yml changed
+            (the site is published by hand from main), else empty.
+        --------------------------------------------------------------------------
+    #>
+    param([string[]]$ChangedFiles = @(), [switch]$FilesUnknown)
+    $docs = @($ChangedFiles | Where-Object { $_ -like "docs/*" -or $_ -eq "mkdocs.yml" })
+    if ($FilesUnknown -or $docs.Count -gt 0) {
+        return @("If the documentation changed, publish the site from main with 'mkdocs gh-deploy' (the owner's step).")
+    }
+    return @()
 }

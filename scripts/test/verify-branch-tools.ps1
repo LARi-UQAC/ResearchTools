@@ -1,11 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Offline check of scripts\test\run-all-checks.ps1 and scripts\test\finish-branch.ps1.
+    Offline check of scripts\test\run-all-checks.ps1 and .claude\skills\finish-branch\scripts\finish-branch.ps1.
 
 .DESCRIPTION
     Both scripts spawn processes (git, gh, powershell), so what they decide lives in
-    scripts\lib\rt-checks.ps1 and scripts\lib\rt-finish.ps1 and is checked here as pure
+    scripts\lib\rt-checks.ps1 and .claude\skills\finish-branch\scripts\rt-finish.ps1 and is checked here as pure
     functions. Then each script is RUN for real, in a child process, against a throwaway
     world under $env:TEMP: a bare origin, a main clone, real worktrees with real junctions
     (R37), and a stub gh.cmd placed first on PATH. There is no bypass flag in either script
@@ -30,7 +30,8 @@ $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $Tmp      = Join-Path $env:TEMP "rt-branch-tools-$PID"
 $failures = 0
 . (Join-Path $RepoRoot "scripts\lib\rt-checks.ps1")
-. (Join-Path $RepoRoot "scripts\lib\rt-finish.ps1")
+. (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1")
+. (Join-Path $RepoRoot "scripts\lib\rt-update.ps1")
 
 function Check([string]$name, [bool]$ok) {
     if ($ok) { Write-Host "  PASS  $name" -ForegroundColor DarkGray }
@@ -111,6 +112,37 @@ Check "a plans folder that is not there is not moved" (-not (@($np | Where-Objec
 Check "a plain folder name is accepted" (Test-RtPlansFolderName "2026-10-17-update")
 Check "a name with a separator or .. is refused (R24)" (-not (Test-RtPlansFolderName "..\x") -and -not (Test-RtPlansFolderName "a/b") -and -not (Test-RtPlansFolderName "..") -and -not (Test-RtPlansFolderName "C:x"))
 Check "an empty name is refused" (-not (Test-RtPlansFolderName ""))
+
+# --- refresh helpers (Issue #102): profile, setup.ps1 arguments, reminders ---------------
+Write-Host ""
+Write-Host "  -- refresh helpers --" -ForegroundColor DarkCyan
+$cmdWith = Join-Path $Tmp "helpers\with\CLAUDE.md"
+$cmdWithout = Join-Path $Tmp "helpers\without\CLAUDE.md"
+Write-Text $cmdWith "# x`n`n``````yaml`nactive_profile: engineering`n```````n"
+Write-Text $cmdWithout "# x`n`nno selector here`n"
+# The profile reader is rt-update.ps1's own (review round 1, #5): one definition, no duplicate.
+Check "the active profile is read from its machine line" ((Get-RtActiveProfile -ClaudeMdPath $cmdWith) -eq "engineering")
+Check "a CLAUDE.md without the line gives an empty profile" ((Get-RtActiveProfile -ClaudeMdPath $cmdWithout) -eq "")
+Check "a missing CLAUDE.md gives an empty profile" ((Get-RtActiveProfile -ClaudeMdPath (Join-Path $Tmp "helpers\absent\CLAUDE.md")) -eq "")
+$finishLib = [IO.File]::ReadAllText((Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1"))
+Check "(review #5) rt-finish.ps1 defines no second Get-RtActiveProfile" ($finishLib -notmatch 'function\s+Get-RtActiveProfile')
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/skills/x/SKILL.md") -KeepHooks @())
+Check "refresh args: -Update -Profile <p> -RunSuite -NonInteractive -Force, in that order" (($a -join " ") -eq "-Update -Profile engineering -RunSuite -NonInteractive -Force")
+Check "refresh args: a skill-only change needs no -Personal" (-not ($a -contains "-Personal"))
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/rules/a.md") -KeepHooks @())
+Check "(review #3) a changed rule adds -Personal (its instructions mirror lives in the VS Code profile)" ($a -contains "-Personal")
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @() -KeepHooks @() -FilesUnknown)
+Check "(review #4) an unknown or capped file list assumes -Personal" ($a -contains "-Personal")
+Check "(review #4) an unknown file list still reminds gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @() -FilesUnknown) -join " " -match "gh-deploy")
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/commands/x.md") -KeepHooks @())
+Check "refresh args: a changed command adds -Personal" ($a -contains "-Personal")
+$a = @(Get-RtRefreshArgs -ProfileName "engineering" -ChangedFiles @(".claude/agents/y.md") -KeepHooks @("AUTO-SYNC CHECK"))
+Check "refresh args: a changed agent adds -Personal" ($a -contains "-Personal")
+$k = [array]::IndexOf($a, "-KeepHooks")
+Check "refresh args: -KeepHooks passes the name as ONE element" ($k -ge 0 -and $a[$k + 1] -eq "AUTO-SYNC CHECK" -and $a.Count -eq $k + 2)
+Check "reminders: a rule change needs no gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @(".claude/rules/a.md")).Count -eq 0)
+Check "reminders: a docs page asks for gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @("docs/manual/02-profiles.md")) -join " " -match "gh-deploy")
+Check "reminders: mkdocs.yml asks for gh-deploy" (@(Get-RtFinishReminders -ChangedFiles @("mkdocs.yml")).Count -eq 1)
 
 # --- the link scan: junctions are reported and never followed (R37) -------------------
 Write-Host ""
@@ -210,17 +242,22 @@ try {
     & git clone -q $origin $main 2>&1 | Out-Null
     Write-Text (Join-Path $main "README.md") "fixture`n"
     Write-Text (Join-Path $main ".gitignore") "*.log`n.worktrees/`n"
-    $finishSrc = Join-Path $RepoRoot "scripts\test\finish-branch.ps1"
-    New-Item -ItemType Directory -Path (Join-Path $main "scripts\test"), (Join-Path $main "scripts\lib") -Force | Out-Null
-    if (Test-Path -LiteralPath $finishSrc) { Copy-Item $finishSrc (Join-Path $main "scripts\test\finish-branch.ps1") -Force }
-    Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-finish.ps1") (Join-Path $main "scripts\lib\rt-finish.ps1") -Force
+    $finishSrc = Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\finish-branch.ps1"
+    New-Item -ItemType Directory -Path (Join-Path $main ".claude\skills\finish-branch\scripts") -Force | Out-Null
+    if (Test-Path -LiteralPath $finishSrc) { Copy-Item $finishSrc (Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1") -Force }
+    Copy-Item (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\rt-finish.ps1") (Join-Path $main ".claude\skills\finish-branch\scripts\rt-finish.ps1") -Force
+    New-Item -ItemType Directory -Path (Join-Path $main "scripts\lib") -Force | Out-Null
+    Copy-Item (Join-Path $RepoRoot "scripts\lib\rt-update.ps1") (Join-Path $main "scripts\lib\rt-update.ps1") -Force
     Invoke-Git $main @("add", "-A") | Out-Null
     Invoke-Git $main @("commit", "-q", "-m", "fixture") | Out-Null
     Invoke-Git $main @("push", "-q", "origin", "main") | Out-Null
 
     $bin = Join-Path $Tmp "bin"
     # The stub also writes a warning on stderr, as the real gh does when an update is available.
-    Write-Text (Join-Path $bin "gh.cmd") "@echo off`r`necho warning: a new release of gh is available 1>&2`r`ntype `"%GH_STUB_FILE%`"`r`n"
+    # `gh pr view` (the merged PR's file list, asked only by -Refresh) reads its own file.
+    Write-Text (Join-Path $bin "gh.cmd") "@echo off`r`necho warning: a new release of gh is available 1>&2`r`nif `"%1 %2`"==`"pr view`" (type `"%GH_FILES_FILE%`" & exit /b 0)`r`ntype `"%GH_STUB_FILE%`"`r`n"
+    $env:GH_FILES_FILE = Join-Path $Tmp "gh-files.json"
+    Write-Text $env:GH_FILES_FILE "{`"files`":[{`"path`":`".claude/commands/x.md`"},{`"path`":`"docs/manual/a.md`"}]}"
     $ghFile = Join-Path $Tmp "gh.json"
     $env:GH_STUB_FILE = $ghFile
 
@@ -240,7 +277,7 @@ try {
         Write-Text $ghFile $json
     }
     function Invoke-Finish($Case, [string[]]$More = @(), [string]$Script = "") {
-        $s = if ($Script) { $Script } else { Join-Path $main "scripts\test\finish-branch.ps1" }
+        $s = if ($Script) { $Script } else { Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1" }
         return (Invoke-Child $s (@("-Branch", $Case.Branch) + $More) $main $bin)
     }
     function Alive($Case) {
@@ -290,7 +327,7 @@ try {
     Invoke-Git $main @("checkout", "-q", "main") | Out-Null
     Invoke-Git $main @("branch", "-q", "-D", "other") | Out-Null
 
-    $res = Invoke-Finish $c1 @("-Yes") (Join-Path $c1.Worktree "scripts\test\finish-branch.ps1")
+    $res = Invoke-Finish $c1 @("-Yes") (Join-Path $c1.Worktree ".claude\skills\finish-branch\scripts\finish-branch.ps1")
     Check "(refusal) started from inside the worktree it would remove, exit 2" ($res.Code -eq 2 -and $res.Text -match "inside the worktree")
     Check "(refusal) nothing was removed" (Alive $c1)
 
@@ -327,7 +364,7 @@ try {
     Check "(refusal) the remote branch and the worktree are still there" (Alive $c4)
 
     # the caller's shell must stay where it was, after a dry run and after a refusal
-    $finishPath = Join-Path $main "scripts\test\finish-branch.ps1"
+    $finishPath = Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1"
     $oldPathEnv = $env:PATH; $env:PATH = "$bin;$oldPathEnv"
     $keep = @((& powershell -NoProfile -Command "Set-Location -LiteralPath '$Tmp'; & '$finishPath' -Branch '$($c1.Branch)'; (Get-Location).Path" 2>&1 | Out-String).Trim() -split "`r?`n")[-1]
     Check "after a dry run the caller is still in its own folder" ($keep -eq $Tmp)
@@ -338,7 +375,7 @@ try {
     Check "after a refusal the caller is still in its own folder" ($keep -eq $Tmp)
 
     # a branch name git would read as an option
-    $res = Invoke-Child (Join-Path $main "scripts\test\finish-branch.ps1") @("-Branch:-r") $main $bin
+    $res = Invoke-Child (Join-Path $main ".claude\skills\finish-branch\scripts\finish-branch.ps1") @("-Branch:-r") $main $bin
     Check "(refusal) a branch name starting with a dash exits 2" ($res.Code -eq 2 -and $res.Text -match "not a branch this script will clean")
 
     # origin cannot be queried: that is not the same as "the branch is gone"
@@ -378,6 +415,91 @@ try {
     Check "the JSON report lists the steps with their outcome" ($null -ne $frep -and @($frep.steps).Count -ge 5 -and $frep.ok -eq $true)
     $res = Invoke-Finish $c2 @("-Yes")
     Check "(idempotent) a second run finds nothing to clean and exits 0" ($res.Code -eq 0 -and $res.Text -match "nothing to clean")
+
+    # -Refresh (Issue #102): a stub setup.ps1 in the main clone records its arguments.
+    # CLAUDE.md and setup.ps1 stay untracked, so the main clone is not "dirty" (R32 check).
+    $argsFile = Join-Path $Tmp "setup-args.txt"
+    $claudeMd = Join-Path $main ".claude\CLAUDE.md"
+    Write-Text $claudeMd "# fixture`n`nactive_profile: engineering`n"
+    Write-Text (Join-Path $main "setup.ps1") "Add-Content -LiteralPath '$argsFile' -Value (`$args -join ' ')`r`nif (`$env:SETUP_STUB_CODE) { exit [int]`$env:SETUP_STUB_CODE }`r`nexit 0`r`n"
+    $c6 = New-Case "c6"; Set-Merged $c6
+    $res = Invoke-Finish $c6 @("-Refresh")
+    Check "-Refresh dry run: names setup.ps1 -Update and runs nothing" ($res.Code -eq 0 -and $res.Text -match "setup\.ps1 -Update" -and -not (Test-Path -LiteralPath $argsFile))
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh", "-KeepHooks", "AUTO-SYNC CHECK")
+    $got = if (Test-Path -LiteralPath $argsFile) { [IO.File]::ReadAllText($argsFile) } else { "" }
+    Check "-Yes -Refresh: cleaned, then setup.ps1 ran with the active profile" ($res.Code -eq 0 -and -not (Alive $c6) -and $got -match "-Update -Profile engineering -RunSuite -NonInteractive -Force")
+    Check "-Refresh: a changed command adds -Personal, -KeepHooks reaches setup.ps1" ($got -match "-Personal" -and $got -match "-KeepHooks AUTO-SYNC CHECK")
+    Check "-Refresh: a changed docs page prints the gh-deploy reminder" ($res.Text -match "gh-deploy")
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "-Refresh with nothing to clean still refreshes" ($res.Code -eq 0 -and @([IO.File]::ReadAllLines($argsFile)).Count -eq 2)
+    $env:SETUP_STUB_CODE = "1"
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Remove-Item Env:SETUP_STUB_CODE -ErrorAction SilentlyContinue
+    Check "(failure) a refresh that fails exits 1 and names setup.ps1" ($res.Code -eq 1 -and $res.Text -match "setup\.ps1")
+
+    # review round 1 (#6): the report records the refresh, also on the nothing-to-clean path
+    $rp2 = Join-Path $Tmp "refresh-report.json"
+    $env:SETUP_STUB_CODE = "1"
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh", "-ReportPath", $rp2)
+    Remove-Item Env:SETUP_STUB_CODE -ErrorAction SilentlyContinue
+    $rep2 = $null; try { $rep2 = Get-Content -LiteralPath $rp2 -Raw | ConvertFrom-Json } catch { $rep2 = $null }
+    Check "(review #6) a failed refresh is in the report: ok false, refresh code 1" ($null -ne $rep2 -and $rep2.ok -eq $false -and $rep2.refresh.code -eq 1)
+
+    # review round 1 (#1, #2): nothing to clean still means a clean main on main, pulled first
+    $linesBefore = @([IO.File]::ReadAllLines($argsFile)).Count
+    Write-Text (Join-Path $main "README.md") "edited by a peer`n"
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "(review #1) nothing to clean + -Refresh with modified tracked files in main: exit 2" ($res.Code -eq 2)
+    Check "(review #1) and setup.ps1 did not run" (@([IO.File]::ReadAllLines($argsFile)).Count -eq $linesBefore)
+    Invoke-Git $main @("checkout", "--", "README.md") | Out-Null
+    Write-Text (Join-Path $other "late.txt") "merged later`n"
+    Invoke-Git $other @("checkout", "-q", "-B", "main", "origin/main") | Out-Null
+    Invoke-Git $other @("add", "late.txt") | Out-Null
+    Invoke-Git $other @("commit", "-q", "-m", "a later merge on main") | Out-Null
+    Invoke-Git $other @("push", "-q", "origin", "main") | Out-Null
+    $originMain = (Invoke-Git $other @("rev-parse", "HEAD"))
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "(review #2) nothing to clean + -Refresh pulls main before refreshing" ($res.Code -eq 0 -and (Invoke-Git $main @("rev-parse", "HEAD")) -eq $originMain)
+
+    # review round 2 (#2): a branch name that matches no merged pull request refreshes nothing
+    Set-Merged $c6 $false
+    $linesBefore = @([IO.File]::ReadAllLines($argsFile)).Count
+    $res = Invoke-Finish $c6 @("-Yes", "-Refresh")
+    Check "(review round 2) nothing to clean + -Refresh with no merged pull request: exit 2" ($res.Code -eq 2 -and $res.Text -match "merged")
+    Check "(review round 2) and setup.ps1 did not run" (@([IO.File]::ReadAllLines($argsFile)).Count -eq $linesBefore)
+    Set-Merged $c6
+
+    # review round 2 (#6): a dry run writes its report too
+    $c8 = New-Case "c8"; Set-Merged $c8
+    $rp3 = Join-Path $Tmp "dry-report.json"
+    $res = Invoke-Finish $c8 @("-ReportPath", $rp3)
+    Check "(review round 2) a dry run with -ReportPath writes the report" ($res.Code -eq 0 -and (Test-Path -LiteralPath $rp3) -and (Alive $c8))
+
+    # review round 2 (#1): started through a junction (as under ~/.claude/skills), even when the
+    # folder four levels up is itself a git repository, it refuses instead of acting there
+    $fakeHome = Join-Path $Tmp "home"
+    New-Item -ItemType Directory -Path (Join-Path $fakeHome ".claude\skills") -Force | Out-Null
+    & git init -q $fakeHome 2>&1 | Out-Null
+    $jlink = Join-Path $fakeHome ".claude\skills\finish-branch"
+    & cmd /c mklink /J "$jlink" "$(Join-Path $main '.claude\skills\finish-branch')" | Out-Null
+    $res = Invoke-Child (Join-Path $jlink "scripts\finish-branch.ps1") @("-Branch", $c8.Branch, "-Yes") $Tmp $bin
+    & cmd /c rmdir "$jlink" | Out-Null
+    Check "(review round 2) a run through a junction is refused (exit 2) and names it" ($res.Code -eq 2 -and $res.Text -match "junction")
+    Check "(review round 2) nothing was removed" (Alive $c8)
+    Write-Text $claudeMd "# fixture without the selector`n"
+    $c7 = New-Case "c7"; Set-Merged $c7
+    $res = Invoke-Finish $c7 @("-Yes", "-Refresh")
+    Check "(refusal) -Refresh with no active_profile line exits 2 and names it" ($res.Code -eq 2 -and $res.Text -match "active_profile")
+    Check "(refusal) nothing was removed" (Alive $c7)
+    $res = Invoke-Finish $c7 @("-Yes")
+    Check "without -Refresh the missing profile does not matter" ($res.Code -eq 0 -and -not (Alive $c7))
+
+    # started from a copy outside any git repository (for example a ~/.claude junction path)
+    $outside = Join-Path $Tmp "outside\.claude\skills\finish-branch\scripts"
+    New-Item -ItemType Directory -Path $outside -Force | Out-Null
+    Copy-Item (Join-Path $RepoRoot ".claude\skills\finish-branch\scripts\*.ps1") $outside -Force
+    $res = Invoke-Child (Join-Path $outside "finish-branch.ps1") @("-Branch", "feat/x") $Tmp $bin
+    Check "(refusal) a copy outside git exits 2 and names the ResearchTools clone" ($res.Code -eq 2 -and $res.Text -match "ResearchTools clone")
     $script:finishSectionCompleted = $true
 }
 finally {
@@ -385,6 +507,7 @@ finally {
     if (-not $saved.GC) { Remove-Item Env:GIT_CONFIG_GLOBAL -ErrorAction SilentlyContinue }
     if (-not $saved.NS) { Remove-Item Env:GIT_CONFIG_NOSYSTEM -ErrorAction SilentlyContinue }
     if (-not $saved.GS) { Remove-Item Env:GH_STUB_FILE -ErrorAction SilentlyContinue }
+    Remove-Item Env:GH_FILES_FILE, Env:SETUP_STUB_CODE -ErrorAction SilentlyContinue
     # Junctions were removed with rmdir above; list again before any recursive delete (R37).
     $left = @(Get-ChildItem -LiteralPath $Tmp -Force -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue)
     foreach ($l in $left) { & cmd /c rmdir "$($l.FullName)" | Out-Null }

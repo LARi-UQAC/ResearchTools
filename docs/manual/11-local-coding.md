@@ -46,7 +46,7 @@ flowchart TD
     P --> Q{"Safe to merge?<br/>suite green, no Critical or High finding"}
     Q -- yes --> Y["Memory upkeep<br/>local-writer writes lessons to the vault<br/>and updates the graph, silent"]
     Y --> R[Pull request, owner merges]
-    R --> Z["After the merge: finish-branch.ps1<br/>removes the worktree and the branches,<br/>moves the plans to done"]
+    R --> Z["After the merge: finish-branch skill<br/>finish-branch.ps1 -Refresh removes the worktree<br/>and the branches, moves the plans to done,<br/>then setup.ps1 -Update refreshes this machine"]
     Q -- no --> S{Bound reached?}
     S -- no --> T[Fix, failing test first] --> P
     S -- yes --> U[Stop, report what remains, ask the owner]
@@ -119,16 +119,18 @@ skill is a gap to report, never a step run without one.
 | Review | `code-review` and `security-review` | Under the bounds of R35 |
 | Pull request | `superpowers:finishing-a-development-branch` | You merge, never the session |
 
-**After the merge.** The last step is a script, not a skill, because it only runs git and `gh`:
-`scripts/test/finish-branch.ps1`, started from the main clone. It removes the branch's worktree,
-deletes the branch locally and on origin, prunes, and moves the plans folder from
-`docs/superpowers/todo/` to `done/`. It does nothing until you add `-Yes`, and it never uses
-`--force`.
+**After the merge.** The last step is the `finish-branch` skill (command `/finish-branch`, or just
+say "clean the project"). It runs `.claude/skills/finish-branch/scripts/finish-branch.ps1` from the
+main clone. The script removes the branch's worktree, deletes the branch locally and on origin,
+prunes, and moves the plans folder from `docs/superpowers/todo/` to `done/`. With `-Refresh` it
+then refreshes this machine with `setup.ps1 -Update`: the suite on the merged `main`, the mirrors
+and the sync to `~/.claude`. It also reminds you to publish the site when `docs/` changed. It does
+nothing until you add `-Yes`, and it never uses `--force`.
 
 ```powershell
 cd <main clone>
-.\scripts\test\finish-branch.ps1 -Branch feat/my-branch                 # dry run: lists the steps
-.\scripts\test\finish-branch.ps1 -Branch feat/my-branch -Yes -PlansFolder 2026-10-17-my-effort
+.\.claude\skills\finish-branch\scripts\finish-branch.ps1 -Branch feat/my-branch -Refresh     # dry run: lists the steps
+.\.claude\skills\finish-branch\scripts\finish-branch.ps1 -Branch feat/my-branch -Refresh -Yes -PlansFolder 2026-10-17-my-effort
 ```
 
 It refuses, and says why, when `gh` finds no merged pull request for the branch, when the local

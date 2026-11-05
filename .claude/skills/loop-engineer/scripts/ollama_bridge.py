@@ -541,7 +541,8 @@ def probe_prompt_tokens(prompt: str, model: str, num_ctx: int, timeout: float = 
     return count
 
 
-def check_budget(prompt: str, model: str, num_ctx: int, reserve: int | None = None) -> None:
+def check_budget(prompt: str, model: str, num_ctx: int, reserve: int | None = None,
+                 exact_only: bool = False) -> None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -558,6 +559,11 @@ def check_budget(prompt: str, model: str, num_ctx: int, reserve: int | None = No
         model (str): the resolved Ollama tag (the probe needs one).
         num_ctx (int): the context window this attempt will request.
         reserve (int | None): the reply reserve; None reads reply_reserve().
+        exact_only (bool): skip the character pre-filter and decide on the
+            exact probe count alone. The local-coder driver sets it: its prompt
+            carries whole source files, where the 0.5 chars-per-token
+            pre-filter over-estimates eightfold (a measured 4225-token prompt
+            was refused as 32644 on 2026-11-05).
 
     Outputs:
         None.
@@ -574,7 +580,7 @@ def check_budget(prompt: str, model: str, num_ctx: int, reserve: int | None = No
     budget = num_ctx - held
 
     prefilter_tokens = estimate_tokens(prompt)
-    if prefilter_tokens > budget:
+    if not exact_only and prefilter_tokens > budget:
         raise BridgeError(
             f"[BRIDGE] prompt is at least {prefilter_tokens} tokens by a deliberately "
             f"pessimistic character-count pre-filter alone, over the {budget}-token "
@@ -792,6 +798,74 @@ def strip_reasoning(text: str) -> str:
 
 
 _FENCE_LINE_RE = re.compile(r"^\s*```[A-Za-z0-9_+.-]*\s*$")
+
+
+_FILE_FENCE_OPEN_RE = re.compile(r"^(`{3,})[A-Za-z0-9_+.-]*\s*$")
+_FILE_PATH_RE = re.compile(r"^#\s*file:\s*(\S.*?)\s*$")
+
+
+def split_files(text: str) -> list[tuple[str, str]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Split a local-coder reply into the files it carries. The driver asks
+        the model for a whole plan in one answer, as aider-setup does, so one
+        reply holds several files (Issue #104, plan 13).
+
+    Details:
+        A file is a fenced block whose first inner line is
+        `# file: <relative path>`. The closing fence is a line of backticks
+        at least as long as the opening one (CommonMark), so a Markdown file
+        that holds its own three-backtick fences is wrapped in four. Text
+        outside the blocks is ignored: it is the model's commentary, never a
+        file. The path is returned as written; the caller resolves it and
+        checks it against the plan (R24).
+
+    Inputs:
+        text (str): the reply, after reasoning has been stripped.
+
+    Outputs:
+        files (list[tuple[str, str]]): (path, body) in reply order; each body
+            ends with one newline.
+
+    Raises:
+        BridgeError: no file at all, a block with no `# file:` line, the same
+            path twice, or a fence left open (a truncated reply).
+    --------------------------------------------------------------------------
+    """
+    lines = text.splitlines()
+    files: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    index = 0
+    while index < len(lines):
+        opening = _FILE_FENCE_OPEN_RE.match(lines[index])
+        if not opening:
+            index += 1
+            continue
+        fence = opening.group(1)
+        first = lines[index + 1] if index + 1 < len(lines) else ""
+        path_match = _FILE_PATH_RE.match(first)
+        if not path_match:
+            raise BridgeError(f"[BRIDGE] reply block at line {index + 1} has no '# file: <path>' line")
+        path = path_match.group(1)
+        if path in seen:
+            raise BridgeError(f"[BRIDGE] reply carries {path} twice")
+        body: list[str] = []
+        cursor = index + 2
+        while cursor < len(lines):
+            stripped = lines[cursor].strip()
+            if stripped and set(stripped) == {"`"} and len(stripped) >= len(fence):
+                break
+            body.append(lines[cursor])
+            cursor += 1
+        else:
+            raise BridgeError(f"[BRIDGE] reply block for {path} is never closed (truncated reply?)")
+        seen.add(path)
+        files.append((path, "\n".join(body).rstrip("\n") + "\n"))
+        index = cursor + 1
+    if not files:
+        raise BridgeError("[BRIDGE] reply carries no '# file:' block")
+    return files
 
 
 def unwrap_sole_code_fence(text: str) -> str:

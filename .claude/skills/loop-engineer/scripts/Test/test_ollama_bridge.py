@@ -1284,5 +1284,66 @@ class TestReplyReserveFollowsTheBudget(unittest.TestCase):
         self.assertNotIn("RESPONSE_RESERVE_TOKENS = ", source)
 
 
+FENCE = "`" * 3
+LONG_FENCE = "`" * 4
+
+
+class TestSplitFiles(unittest.TestCase):
+    """A local-coder reply carries every file of a plan in one answer, each block opened by a
+    '# file: <path>' line (2026-11-05, Issue #104 plan 13, the aider-setup file set)."""
+
+    def test_two_files_in_order_and_prose_ignored(self):
+        reply = (f"Here is the plan.\n{FENCE}python\n# file: pkg/a.py\nA = 1\n{FENCE}\n"
+                 f"Some prose between.\n{FENCE}python\n# file: pkg/Test/test_a.py\nimport a\n{FENCE}\n")
+        self.assertEqual(ob.split_files(reply),
+                         [("pkg/a.py", "A = 1\n"), ("pkg/Test/test_a.py", "import a\n")])
+
+    def test_a_longer_fence_keeps_an_inner_fence_inside_the_file(self):
+        reply = (f"{LONG_FENCE}markdown\n# file: docs/x.md\nText\n{FENCE}python\nx = 1\n{FENCE}\n"
+                 f"{LONG_FENCE}\n")
+        self.assertEqual(ob.split_files(reply),
+                         [("docs/x.md", f"Text\n{FENCE}python\nx = 1\n{FENCE}\n")])
+
+    def test_accented_content_is_kept(self):
+        reply = f"{FENCE}python\n# file: a.py\nLABEL = \"Écart à la cible\"\n{FENCE}\n"
+        self.assertEqual(ob.split_files(reply)[0][1], 'LABEL = "Écart à la cible"\n')
+
+    def test_a_block_without_a_path_is_refused(self):
+        with self.assertRaises(ob.BridgeError):
+            ob.split_files(f"{FENCE}python\nA = 1\n{FENCE}\n")
+
+    def test_a_duplicate_path_is_refused(self):
+        block = f"{FENCE}python\n# file: a.py\nA = 1\n{FENCE}\n"
+        with self.assertRaises(ob.BridgeError) as ctx:
+            ob.split_files(block + block)
+        self.assertIn("a.py", str(ctx.exception))
+
+    def test_an_unterminated_fence_is_refused(self):
+        with self.assertRaises(ob.BridgeError):
+            ob.split_files(f"{FENCE}python\n# file: a.py\nA = 1\n")
+
+    def test_a_reply_with_no_file_is_refused(self):
+        with self.assertRaises(ob.BridgeError):
+            ob.split_files("I could not do it.")
+
+
+class TestExactOnlyBudget(unittest.TestCase):
+    """The character pre-filter (0.5 chars per token) refused a measured 4225-token prompt as
+    32644 on 2026-11-05. The driver checks with the exact count only."""
+
+    def test_exact_only_accepts_what_the_prefilter_refuses(self):
+        prompt = "x" * 20000
+        with self.assertRaises(ob.BridgeError):
+            ob.check_budget(prompt, "some:tag", 16384, reserve=4000)
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=5000) as probe:
+            ob.check_budget(prompt, "some:tag", 16384, reserve=4000, exact_only=True)
+        probe.assert_called_once()
+
+    def test_exact_only_still_refuses_over_the_probe_budget(self):
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=12385):
+            with self.assertRaises(ob.BridgeError):
+                ob.check_budget("x" * 20000, "some:tag", 16384, reserve=4000, exact_only=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

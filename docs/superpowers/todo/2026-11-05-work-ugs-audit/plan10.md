@@ -7,78 +7,64 @@ bounds:
   plateau: 2
 ---
 
-# Plan 10 - Agent, command, skill definition, routing and documentation
+# Plan 10 - Migrate the four auditors and `/tikz` to `figure-review`
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans (session, judgment work). The
-> SKILL.md is authored with superpowers:writing-skills and skill-creator:skill-creator. `progress.md` is
-> the ledger.
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans (session, judgment work).
+> `progress.md` is the ledger.
 
-**Goal:** The professor can type `/gradeugs`, the `work-ugs-audit` agent drives the plan 8 driver while
-staying blind to report content, and every inventory names the three new skills (`language-review`, `figure-review`, `work-ugs-audit`).
+**Goal:** `paper-auditor`, `thesis-auditor`, `thesis-proposal-auditor`, `scopus-auditor` and `/tikz` stop
+carrying their own figure checklists and call `figure-review`, for TikZ, draw.io and other vector figures
+as well as bitmaps, with rendering as an option; no behaviour change otherwise.
 
-**Architecture:** The agent is a cheap cloud wrapper in the `local-coder` shape: tools `Read, Bash`,
-reads only `progress.md` and the driver's JSON lines, pauses for the rubric confirmation and at the end of
-each batch, and ends with the pipeline checklist. The command is a thin wrapper over the agent.
+**Architecture:** Each auditor keeps its figure step and its LaTeX markup rows, but the list of figure
+checks is replaced by a reference to `figure_criteria.json` (scope `research` and `both`), the script
+checks come from `figure_tex.text_checks`, and visual review uses `figure_render.py --render` when the
+caller asks for it. The auditor's cloud model judges the `model` criteria.
 
-**Tech Stack:** Markdown definitions, existing documentation pages.
+**Tech Stack:** Markdown agent definitions, Python `unittest`.
 
-**Spec:** `spec.md` items 1 to 3, D1 to D11; design section 7.2 "Agent pipeline".
+**Spec:** `spec.md` item 4, D12, D13; design section 7.5.
 
 ## Global Constraints
 
-`spec.md` "Constraints". R22 (definition files English; the agent speaks to the professor in his
-language). R31 and R33: README, Architecture, the routing table and the manual pages change in this same
-PR. The agent never runs `Read` on a path under the reports folder except `_correction/progress.md` and
-`_correction/spec.md` (the rubric, written by the professor, carries no student text).
+`spec.md` "Constraints". Every figure flag an auditor prints today stays reachable with the same text
+and LaTeX action (proof as in plan 2). Agent pipeline integrity: no step removed. The rendering option
+defaults to off in every auditor; the dispatch prompt or the user turns it on.
 
 ## Review Focus
 
-- The agent reading `grade.json`, `annotations.json`, a page Markdown file or an annotated PDF: forbidden;
-  the definition states it, and a documentation test fails if the definition names any of those files
-  as something to read.
-- The rubric confirmation pause skipped by a caller in a hurry: `PIPELINE-PAUSED @ rubric-confirmation`
-  is mandatory (agent pipeline integrity).
-- A third loop started without the professor's answer.
-- The description's first sentence lacking trigger words (Codex trims to whole sentences).
+- An auditor that used to look at a PNG directly losing that ability because rendering is off: bitmaps
+  are native and are always shown, the option only concerns non-native formats.
+- `/tikz` validating code only: it keeps its nine rules as `source` criteria and gains the render option.
+- An auditor's report template naming a figure flag the criteria file lacks.
 
 ---
 
-### Task 1: definitions, routing, documentation
+### Task 1: four auditors, `/tikz`, contract test
 
 **Files:**
-- Create: `.claude/agents/work-ugs-audit.md`
-- Create: `.claude/commands/gradeugs.md`
-- Create: `.claude/skills/work-ugs-audit/SKILL.md`
-- Modify: `.claude/CLAUDE.md`
-- Modify: `README.md`
-- Modify: `Architecture.md`
-- Modify: `docs/manual/04-commands.md`
-- Modify: `docs/manual/05-agents.md`
-- Modify: `docs/manual/06-skills.md`
-- Test: `.claude/hooks/Test/test_work_ugs_audit_contract.py`
+- Modify: `.claude/agents/paper-auditor.md`
+- Modify: `.claude/agents/thesis-auditor.md`
+- Modify: `.claude/agents/thesis-proposal-auditor.md`
+- Modify: `.claude/agents/scopus-auditor.md`
+- Modify: `.claude/commands/tikz.md`
+- Test: `.claude/hooks/Test/test_figure_review_contract.py`
 
 **Interfaces:**
-- Consumes: `ugs_driver.py` subcommands and exit codes (plan 8), `batch_stats` verdicts (plan 4),
-  `vision_probe.py` (plan 8).
-- Produces: agent steps, in order: 1 `ugs_driver.py prepare`, show `spec.md` and figure counts,
-  `PIPELINE-PAUSED @ rubric-confirmation`; 2 `vision_probe.py` for the vision role; 3 `ugs_driver.py run`,
-  polling `status`; 4 `ugs_driver.py batch`, present the verdict and options from numbers only (accept,
-  re-grade, adjust one item's anchors); 5 out of band: next loop with the calibration note, after loop 2
-  `PIPELINE-PAUSED @ third-loop`; 6 final checklist, outputs listed by relative path inside `_correction/`.
-  Model roles named, never tags; the owner action `model_resolver.py --adopt-role ugs-grader|ugs-auditor|ugs-vision`
-  documented.
+- Consumes: `figure_criteria.json` (`flag`, `scope`, `needs`), `figure_tex.text_checks`,
+  `figure_render.py --render` (plan 9).
+- Produces: in each definition, one paragraph naming `figure-review`, the option (render non-native
+  figures to PNG, off by default), and the rule that a mixed document is handled figure by figure.
 
-- [ ] **Step 1: Write the failing test:** `test_agent_tools_are_read_and_bash_only`;
-  `test_agent_names_no_forbidden_read_target` (`grade.json`, `annotations.json`, `pages/`,
-  `annotated.pdf`, `ids.json`); `test_agent_has_both_pause_points`; `test_agent_ends_with_a_checklist`;
-  `test_command_dispatches_the_agent`; `test_skill_description_first_sentence_has_trigger_words` (grading,
-  correction, rubric or grille, undergraduate or premier cycle, PDF) and is at least 120 characters;
-  `test_routing_table_readme_architecture_and_manual_name_the_three_skills`; a negative control on a
-  fictitious definition naming `grade.json`.
-- [ ] **Step 2: Run** `.venv-skills\Scripts\python.exe .claude/hooks/Test/test_work_ugs_audit_contract.py`.
+- [ ] **Step 1: Snapshot.** List every figure flag and check in the five files (scratchpad): the "before"
+  set. Plan 9 has used this list to fill the research entries; check it is complete.
+- [ ] **Step 2: Write the failing test:** `test_each_auditor_and_tikz_point_to_figure_review`;
+  `test_each_states_the_render_option_off_by_default`; `test_every_figure_flag_an_auditor_prints_is_in_the_criteria`;
+  `test_no_auditor_restates_the_tikz_rule_list`; `test_undergraduate_scope_excludes_research_only_entries`;
+  a negative control on fictitious text.
+- [ ] **Step 3: Run** `.venv-skills\Scripts\python.exe .claude/hooks/Test/test_figure_review_contract.py`.
   Expected: FAIL.
-- [ ] **Step 3: Write** the agent, the command, the SKILL.md (writing-skills, skill-creator), the routing
-  row in `.claude/CLAUDE.md`, the README row and counts, the Architecture relation, and the three manual
-  pages (chapter 06 also gets `language-review` and `figure-review`; chapter 04 names `/tikz` pointing to `figure-review`).
-- [ ] **Step 4: Run** the test. Expected: OK.
-- [ ] **Step 5: Commit:** `feat(work-ugs-audit): agent, /gradeugs command, routing and docs (#104)`.
+- [ ] **Step 4: Edit** the four auditors and `/tikz`.
+- [ ] **Step 5: Run** the test; the "after" flag set equals the "before" set. Record both counts in
+  `progress.md`.
+- [ ] **Step 6: Commit:** `refactor(agents): figure checks come from figure-review (#104)`.

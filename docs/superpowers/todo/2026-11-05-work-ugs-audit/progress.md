@@ -7,7 +7,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - Branch feat/work-ugs-audit, worktree .worktrees/work-ugs-audit, design committed ac8c1aa.
 - Bounds (owner 2026-11-05): max_rounds 3, max_tokens 1500000, plateau 2.
-- Order: plan1 to plan11 in number order. Full suite once, in plan11.
+- Order: plan1 to plan12 in number order. Full suite once, in plan12.
 - To confirm with the owner: outlier threshold |z| > 2 (before plan4); 150 DPI and text ratio 0.7
   (before plan6); a 22nd figure criterion, style consistency across one report's figures (open question).
 - find-skills 2026-11-05: no figure-evaluation equivalent; how-to-review-figure and figure-results-review
@@ -53,13 +53,17 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan9.md
 
-- [ ] T1 figure-review skill, research criteria, figure_tex, four auditors and /tikz migrated
+- [ ] T1 figure-review SKILL.md, research criteria, figure_tex, figure_render (option)
 
 ## plan10.md
 
-- [ ] T1 agent, command, SKILL.md, routing and docs
+- [ ] T1 four auditors and /tikz migrated to figure-review
 
 ## plan11.md
+
+- [ ] T1 agent, command, SKILL.md, routing and docs
+
+## plan12.md
 
 - [ ] T1 mirrors and full checks
 - [ ] T2 R35 review loop

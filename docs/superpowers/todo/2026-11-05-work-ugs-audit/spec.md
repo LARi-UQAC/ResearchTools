@@ -49,6 +49,10 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
 - D12 Figure checks gathered in `figure-review` and the four auditors migrated in this effort.
   `find-skills` (2026-11-05) found no equivalent; two skills read for ideas only. `figure-review` is the
   lower layer: it reads no `work-ugs-audit` file, and its thresholds live in `figure_criteria.json`.
+- D13 The auditors handle vector figures (TikZ, draw.io, SVG, EPS, PDF) and bitmaps (PNG, JPG, GIF, BMP,
+  TIFF, WebP), figure by figure, since one document may hold both. As an option (off by default), a
+  figure in a format the model cannot see is rendered to PNG; PNG and JPEG go to the model as they are.
+  Vector sources keep their source checks (TikZ rules) whether or not they are rendered.
 
 ## Data shapes (fixed here, used across plans)
 
@@ -88,4 +92,4 @@ R35, R36. French text: every text check is tested on accented input.
 
 Every new script has an offline suite with a failure path. A fixture report carrying a marker sentence
 proves the marker never reaches a wrapper-visible output. The five research agents keep every language
-flag text, R1.x number and LaTeX action. `run-all-checks.ps1` exits 0 once, at the end (plan 11).
+flag text, R1.x number and LaTeX action. `run-all-checks.ps1` exits 0 once, at the end (plan 12).

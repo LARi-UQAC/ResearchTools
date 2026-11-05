@@ -253,6 +253,13 @@ plus research-scope entries such as the nine TikZ rules, each with `scope`, `sev
 measured, and FR/EN failure comments), `figure_extract.py` (PDF), `figure_tex.py` (LaTeX), `figure_checks.py`
 (script verdicts) and `prompts/figure.md`. It is the lower layer: it reads nothing from `work-ugs-audit`.
 The caller's model judges the `model` criteria (local for undergraduate grading, cloud for the auditors).
+
+Vector and bitmap figures (owner, 2026-11-05). A thesis, an article or any other work may hold both kinds,
+so every figure is handled on its own. Vector sources (TikZ, draw.io, SVG, EPS, PDF) keep their source
+checks. As an option, off by default, a figure in a format the model cannot see natively is rendered to
+PNG by `figure_render.py` (TikZ through `pdflatex` with the document's preamble, draw.io through
+`paper2talk`'s `fig_export.py`, SVG and PDF through PyMuPDF, EPS through `epstopdf`, GIF, BMP, TIFF and
+WebP converted). PNG and JPEG go to the model as they are. A missing tool makes that figure `not_run`.
 `find-skills` found no equivalent on 2026-11-05; `how-to-review-figure` (quantumbfs/sci-brain, 18-rule
 scorecard with severity-ranked findings) and `figure-results-review` (claim against displayed evidence)
 were read for ideas only, nothing installed.

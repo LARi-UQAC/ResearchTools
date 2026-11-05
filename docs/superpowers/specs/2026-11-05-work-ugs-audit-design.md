@@ -244,6 +244,19 @@ local model can apply it from the prompt alone. The research framework is unchan
    one-line reason. The figure remarks are annotated on the figure's rectangle in the PDF. Points move
    only through the rubric item that covers figures, as for references.
 
+### 7.5 Skill `figure-review` (owner, 2026-11-05)
+
+The figure work of 7.4 lives in its own skill, called by `work-ugs-audit` and by the research auditors
+(`paper-auditor`, `thesis-auditor`, `thesis-proposal-auditor`, `scopus-auditor`) and `/tikz`, which are
+migrated to it in this effort with no behaviour change. It holds `figure_criteria.json` (the 21 criteria
+plus research-scope entries such as the nine TikZ rules, each with `scope`, `severity`, a threshold when
+measured, and FR/EN failure comments), `figure_extract.py` (PDF), `figure_tex.py` (LaTeX), `figure_checks.py`
+(script verdicts) and `prompts/figure.md`. It is the lower layer: it reads nothing from `work-ugs-audit`.
+The caller's model judges the `model` criteria (local for undergraduate grading, cloud for the auditors).
+`find-skills` found no equivalent on 2026-11-05; `how-to-review-figure` (quantumbfs/sci-brain, 18-rule
+scorecard with severity-ranked findings) and `figure-results-review` (claim against displayed evidence)
+were read for ideas only, nothing installed.
+
 ## 8. Decided by the owner (2026-11-05)
 
 - Draft only; the professor reviews and uploads to Moodle.

@@ -95,29 +95,35 @@ Output path resolved inside the working folder (R24).
 ### Task 3: figure correction template and script-measured criteria
 
 **Files:**
-- Create: `.claude/skills/work-ugs-audit/assets/figure_criteria.json`
-- Create: `.claude/skills/work-ugs-audit/assets/figure_analysis.template.json`
-- Create: `.claude/skills/work-ugs-audit/scripts/figure_checks.py`
-- Test: `.claude/skills/work-ugs-audit/scripts/Test/test_figure_checks.py`
+- Create: `.claude/skills/figure-review/assets/figure_criteria.json`
+- Create: `.claude/skills/figure-review/assets/figure_analysis.template.json`
+- Create: `.claude/skills/figure-review/scripts/figure_checks.py`
+- Test: `.claude/skills/figure-review/scripts/Test/test_figure_checks.py`
 - Modify: `.claude/rules/testing.md`
 
 **Interfaces:**
-- Consumes: `figure_extract.extract` records (plan 5), `report_prepare` page Markdown, `ugs_config.load`
-  (`figure.space_ratio_min`, `figure.min_effective_dpi`, `figure.min_text_ratio`).
+- Consumes: `figure_extract.extract` records (plan 5), page Markdown (any list of page strings). Nothing
+  from `work-ugs-audit`: `figure-review` is the lower layer.
 - Produces:
-  - `figure_criteria.json` (the correction template): `criteria[]`, 21 entries in the order of design
-    7.4, each `id` (snake case), `group` (`owner`, `readability`, `text_link`, `technical`, `diagram`),
-    `label_fr`, `label_en`, `judged_by` (`script`, `model`, `script_then_model`), `applies_to` (list of
-    figure kinds), `standard` (`ISO 80000`, `ISO 5807` or null, marked "named by the session, to be
-    confirmed"), `comment_fr`, `comment_en` (the ready-to-use failure comment, polite, one sentence,
-    addressed to an undergraduate). Owner provenance on the six original criteria.
+  - `figure_criteria.json` (the correction template): an `extraction` block (`min_area_pt2` 2500,
+    `background_threshold` 245, each `{value, provenance}`, provenance "proposal 2026-11-05, tuned at the
+    owner's review") and `criteria[]`, 21 entries in the order of design 7.4, each `id` (snake case),
+    `group` (`owner`, `readability`, `text_link`, `technical`, `diagram`), `scope` (`undergraduate`,
+    `research`, `both`; all 21 are `both`), `severity` (`minor`, `major`), `label_fr`, `label_en`,
+    `judged_by` (`script`, `model`, `script_then_model`), `applies_to` (list of figure kinds), `threshold`
+    (`{value, provenance}` or null: `space_used_over_70` 0.70 owner 2026-11-05, `effective_resolution`
+    150 DPI and `text_size` 0.7 proposals), `standard` (`ISO 80000`, `ISO 5807` or null, marked "named
+    by the session, to be confirmed"), `comment_fr`, `comment_en` (the ready-to-use failure comment,
+    polite, one sentence, addressed to an undergraduate). Owner provenance on the six original criteria.
+  - `load_criteria(path: Path) -> dict` raising `CriteriaError(ValueError)` naming the entry and key (R3).
   - `figure_analysis.template.json`: the `figures.json` shape of `spec.md`, with `criteria` holding every
     id of `figure_criteria.json` at `{verdict: "not_run", reason: ""}` and an empty `extra` object.
-  - `figure_checks.check(figures: list[dict], pages: list[str], body_font_size: float, cfg: dict,
-    criteria: list[dict]) -> list[dict]`: returns the records with the script verdicts filled:
-    `space_used_over_70` (ratio against `space_ratio_min`), `effective_resolution` (pixels over displayed
-    inches against `min_effective_dpi`, raster only, else `not_applicable`), `text_size` (vector only:
-    smallest span inside the rect over `body_font_size`, raster left `not_run` for the model),
+  - `figure_checks.check(figures: list[dict], pages: list[str], body_font_size: float,
+    criteria_doc: dict) -> list[dict]`: returns the records with the script verdicts filled, each
+    threshold read from its criterion: `space_used_over_70` (ratio against its threshold),
+    `effective_resolution` (pixels over displayed inches, raster only, else `not_applicable`),
+    `text_size` (vector only: smallest span inside the rect over `body_font_size`, raster left `not_run`
+    for the model),
     `numbered_in_sequence`, `called_before_appearing` (first "Figure N" or "Fig. N" mention page not after
     the figure page), `source_cited` (`[n]` or "Source" in the caption, else `not_run` for the model when a
     borrowed figure is suspected). Each verdict carries its measured number in `reason`.

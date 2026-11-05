@@ -15,6 +15,10 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
    into a copy of each PDF, appends the completed rubric, computes totals by script, analyses the batch
    against a calibration band, re-grades the whole batch when out of band (two loops, then ask).
 3. `scholar-evaluation/references/undergraduate_framework.md`: anchored levels for technical reports.
+4. Skill `figure-review`: the figure criteria (21 undergraduate and research criteria, plus the research
+   TikZ rules), the figure extraction and script checks for PDF and LaTeX, the figure prompt and the
+   template. Called by `work-ugs-audit` and by `paper-auditor`, `thesis-auditor`,
+   `thesis-proposal-auditor`, `scopus-auditor` and `/tikz`, which are migrated to it (D12).
 
 ## Decisions (owner, 2026-11-05)
 
@@ -42,6 +46,9 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
 - D10 Templates in the skills' `assets/`.
 - D11 Build executor: judgment plans in the session (`superpowers:executing-plans`), script plans by
   `local-coder` (one dispatch per plan). Review bounds: 3 rounds, 1500000 tokens, plateau 2.
+- D12 Figure checks gathered in `figure-review` and the four auditors migrated in this effort.
+  `find-skills` (2026-11-05) found no equivalent; two skills read for ideas only. `figure-review` is the
+  lower layer: it reads no `work-ugs-audit` file, and its thresholds live in `figure_criteria.json`.
 
 ## Data shapes (fixed here, used across plans)
 
@@ -81,4 +88,4 @@ R35, R36. French text: every text check is tested on accented input.
 
 Every new script has an offline suite with a failure path. A fixture report carrying a marker sentence
 proves the marker never reaches a wrapper-visible output. The five research agents keep every language
-flag text, R1.x number and LaTeX action. `run-all-checks.ps1` exits 0 once, at the end (plan 10).
+flag text, R1.x number and LaTeX action. `run-all-checks.ps1` exits 0 once, at the end (plan 11).

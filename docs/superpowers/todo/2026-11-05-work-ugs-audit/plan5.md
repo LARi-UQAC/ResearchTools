@@ -44,10 +44,11 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
 ### Task 1: fixtures and `report_prepare.py`
 
 **Files:**
-- Create: `.claude/skills/work-ugs-audit/scripts/Test/_pdf_fixtures.py`
+- Create: `.claude/skills/figure-review/scripts/Test/_pdf_fixtures.py`
 - Create: `.claude/skills/work-ugs-audit/scripts/report_prepare.py`
 - Test: `.claude/skills/work-ugs-audit/scripts/Test/test_report_prepare.py`
 - Create: `.claude/skills/work-ugs-audit/scripts/requirements.txt`
+- Create: `.claude/skills/figure-review/scripts/requirements.txt`
 - Modify: `scripts/lib/rt-python-requirements.json`
 - Modify: `docs/manual/02-profiles.md`
 
@@ -62,7 +63,9 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
     `PrepareError` when `work_dir` resolves outside `reports_dir`.
   - `main(argv)`: `--reports DIR --work DIR [--dry-run] [--json]`; the JSON line carries ids and counts
     only. Exit 0, 2 refusal, 1 failure.
-  - `requirements.txt` pins `PyMuPDF==1.27.2.3` and `pymupdf4llm==1.27.2.3` with the AGPL note.
+  - `requirements.txt` pins `PyMuPDF==1.27.2.3` and `pymupdf4llm==1.27.2.3` with the AGPL note; the
+    `figure-review` copy pins `PyMuPDF==1.27.2.3` only. The fixture helper lives in `figure-review`
+    (the lower layer) and `work-ugs-audit` tests import it from there, never the reverse.
 
 - [ ] **Step 1: Write the failing tests:** `test_ids_follow_sorted_names_and_are_stable_on_rerun`;
   `test_non_pdf_files_are_skipped_and_counted`; `test_one_markdown_file_per_page_with_accents_kept`;
@@ -80,14 +83,17 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
 ### Task 2: `figure_extract.py`
 
 **Files:**
-- Create: `.claude/skills/work-ugs-audit/scripts/figure_extract.py`
-- Test: `.claude/skills/work-ugs-audit/scripts/Test/test_figure_extract.py`
+- Create: `.claude/skills/figure-review/scripts/figure_extract.py`
+- Test: `.claude/skills/figure-review/scripts/Test/test_figure_extract.py`
 - Modify: `.claude/rules/testing.md`
 
 **Interfaces:**
-- Consumes: `ugs_config.load` (`figure.min_area_pt2`, `figure.background_threshold`); fixtures above.
+- Consumes: the fixtures above. No configuration file: the two thresholds are parameters, whose values
+  live in `figure-review/assets/figure_criteria.json` (`extraction` block, plan 6) and are passed by the
+  caller; tests pass their own.
 - Produces:
-  - `extract(pdf: Path, out_dir: Path, cfg: dict) -> list[dict]`: one record per figure with `figure_id`,
+  - `extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold: int) -> list[dict]`:
+    one record per figure with `figure_id`,
     `page`, `rect`, `file` (relative PNG path), `source` (`raster` or `vector`), `pixel_size` (width,
     height, raster only), `drawing_area_ratio` (0 to 1, 3 decimals), `caption` (text block starting with
     Figure, Fig. or Figure in French, nearest below or above, or null). Plan 6 adds the other measured

@@ -55,7 +55,7 @@ in `evidence`. No model tag (R2).
 - Create: `.claude/skills/work-ugs-audit/prompts/grade_item.md`
 - Create: `.claude/skills/work-ugs-audit/prompts/audit_item.md`
 - Create: `.claude/skills/work-ugs-audit/prompts/language.md`
-- Create: `.claude/skills/work-ugs-audit/prompts/figure.md`
+- Create: `.claude/skills/figure-review/prompts/figure.md`
 - Create: `.claude/skills/work-ugs-audit/prompts/schemas.json`
 - Create: `.claude/skills/work-ugs-audit/assets/spec.template.md`
 - Create: `.claude/skills/work-ugs-audit/assets/progress.template.md`

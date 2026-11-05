@@ -1,0 +1,31 @@
+{
+  "annotation.colors": {
+    "value": {
+      "technical": "#0072B2",
+      "figure": "#E69F00",
+      "language": "#009E73",
+      "reference": "#CC79A7"
+    },
+    "provenance": "proposal 2026-11-05, tuned at the owner's review (Okabe-Ito hues, one per annotation kind)"
+  },
+  "references.url_timeout_s": {
+    "value": 10,
+    "provenance": "proposal 2026-11-05, tuned at the owner's review (seconds per URL reachability check)"
+  },
+  "references.max_retries": {
+    "value": 1,
+    "provenance": "proposal 2026-11-05, tuned at the owner's review (retries of a reachability check)"
+  },
+  "batch.outlier_z": {
+    "value": 2.0,
+    "provenance": "owner decision 2026-11-05 (a grade whose |z| exceeds this value is an outlier)"
+  },
+  "driver.audit_retries": {
+    "value": 1,
+    "provenance": "proposal 2026-11-05, tuned at the owner's review (re-asks of the auditor role after a refusal)"
+  },
+  "driver.request_timeout_s": {
+    "value": 600,
+    "provenance": "proposal 2026-11-05, tuned at the owner's review (seconds per bridge call, a local model is slow)"
+  }
+}

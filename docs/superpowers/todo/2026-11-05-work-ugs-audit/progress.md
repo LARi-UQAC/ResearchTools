@@ -23,7 +23,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan3.md
 
-- [ ] T1 config loader, rubric_check, grade_total
+- [x] T1 config loader, rubric_check, grade_total: test_rubric_check 18 OK, test_grade_total 14 OK; local output truncated at the 1024-token reply cap, rubric_check and grade_total corrected by hand.
 
 ## plan4.md
 

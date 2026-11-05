@@ -1,0 +1,17 @@
+{
+  "report_id": "R01",
+  "loop": 1,
+  "items": [
+    {
+      "item_id": "I01",
+      "status": "rated",
+      "score": 8,
+      "comment": "Fictitious comment: the equipment is listed but its settings are missing.",
+      "evidence": [
+        {"page": 2, "quote": "Fictitious quote from the report."}
+      ],
+      "audit": "not_run",
+      "flag": false
+    }
+  ]
+}

@@ -13,10 +13,10 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 - find-skills 2026-11-05: no figure-evaluation equivalent; how-to-review-figure and figure-results-review
   read for ideas only.
 - 2026-11-05 owner: bridge reply reserve = code_file_output + fence_overhead_tokens (6, measured), was 1024; fix 8511579. Plan 3 coder role ornith:9b-gpu output unusable (truncation + self-import), wrapper rewrote; model for plans 4-6, 8 awaits owner.
-- Owner 2026-11-05 (R39, plan14): no code in the cloud from plan14 on; local-coder gets aider's full budget
-  (input 18548 + 16000 per file read, reply 14336, window 49152) through plan13's driver, one dispatch per
-  progress.md. Plans 13-14 are the last cloud-written code. Question: owner wrote "local-writer"; read as
-  local-coder (the coding agent). Say if local-writer must take the aider budget too.
+- Owner 2026-11-05 (R39, plans 13-14, last cloud-written code): local-coder submits to the coder model the
+  exact file set of aider-setup (conventions, rules, spec, plan, skill stage, progress, plan targets,
+  plan message; same context-budget.json), one LLM call per plan; ONE dispatch runs the whole ledger;
+  then the cloud reads the source files and runs code-review and security-review.
 
 ## plan1.md
 
@@ -33,7 +33,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 ## plan13.md
 
 - [ ] T1 bridge multi-file reply, exact-only budget
-- [ ] T2 local_coder_driver.py, local_coder budget block
+- [ ] T2 local_coder_driver.py: aider's file set, one call per plan, whole ledger
 - [ ] T3 coder tag swept at 49152; owner adopts
 
 ## plan14.md

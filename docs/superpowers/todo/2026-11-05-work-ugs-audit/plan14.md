@@ -13,7 +13,10 @@ bounds:
 > after plan 13. The last cloud-written code of this effort; from here every code task is local.
 
 **Goal:** A written, tested rule that the cloud never generates code, and a `local-coder` agent that
-only launches plan 13's driver, once for a whole `progress.md`, with the same parameters as aider-setup.
+only launches plan 13's driver, once for a whole `progress.md`. The driver submits to the coder model
+exactly the files aider-setup submits (plan 13's table), calls the model once per plan, and runs every
+plan of the ledger to the end. Only then does the cloud session read the produced source files and run
+the review (R35).
 
 **Owner decisions (2026-11-05):** coding is local only; the cloud designs spec, plans, progress, reviews
 and memory upkeep; a plan the local model cannot execute is the cloud's defect, fixed in the plan, never
@@ -43,9 +46,11 @@ changes from one dispatch per plan to one dispatch per `progress.md`. No model t
   effort, the driver, the window from the role, `reserve.reply_tokens`)
 - Modify: `.claude/CLAUDE.md` (exported region: R39 in three sentences; local-coder routing row)
 - Modify: `.claude/rules/code-style.md` (rule index: R39 in `workflows.md`, range R0 to R39)
-- Modify: `.claude/agents/local-coder.md` (rewrite: preflight `plan_contract.py resolve` per plan,
-  then one `local_coder_driver.py --progress ... --root ...` run, report its JSON; never reads, writes
-  or edits code; a `[!]` is reported for plan revision)
+- Modify: `.claude/agents/local-coder.md` (rewrite: the dispatch prompt carries `PROGRESS: <path>` and
+  the `PLAN:` line of the first open plan, which the existing dispatch guard already validates; the
+  wrapper runs `local_coder_driver.py --progress ... --root ...` once, which calls the model once per
+  plan until every plan of the ledger is done or blocked; it reports the driver's JSON only; it never
+  reads, writes or edits code; a `[!]` goes back to the cloud for plan revision)
 - Modify: `.claude/skills/loop-engineer/SKILL.md` (driver entry and the rule)
 - Modify: `docs/manual/11-local-coding.md` (the driver, the aider-equivalent budget table, R39)
 - Test: `.claude/hooks/Test/test_cloud_never_codes_rule.py`
@@ -60,7 +65,8 @@ and its plan is revised; the local coder receives the full budget of `context-bu
 regenerated mirrors (`install.ps1`) and data files a plan lists as data (JSON, CSV, templates).
 
 - [ ] Step 1: failing test `test_cloud_never_codes_rule.py`: R39 present in `workflows.md` and in the
-  exported region; `local-coder.md` names `local_coder_driver.py`, `--progress`, carries no edit
+  exported region; `local-coder.md` names `local_coder_driver.py`, `PROGRESS:`, `--progress`, says the
+  model is called once per plan with aider-setup's file set, carries no edit
   instruction (no "Edit", "rewrite", "fix the code"), and its tools line has no Edit and no Write;
   chapter 11 names the driver and R39; `code-style.md` index lists R39; a negative control plants an
   edit instruction in fictitious agent text and the finder reports it.
@@ -70,6 +76,11 @@ regenerated mirrors (`install.ps1`) and data files a plan lists as data (JSON, C
   `docs(rules): R39 code is local only, local-coder launches the driver (#104)`.
 
 ## After this plan
+
+The loop from here, for every effort: the cloud writes spec, plans and `progress.md`; ONE `local-coder`
+dispatch runs the driver over the whole ledger; when it returns, the cloud session reads the produced
+source files and runs `code-review` and `security-review` (R35); a finding becomes a revised or new plan
+for the next dispatch, never a cloud edit.
 
 Plans 4, 5, 6 and 8 are revised by the cloud so each task names its files, its test command and its
 fixture layout; then they run through local-coder (driver). Any script or test in plans 7, 9, 10 and 11

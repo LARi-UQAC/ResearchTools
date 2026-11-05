@@ -15,7 +15,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan1.md
 
-- [ ] T1 language-review skill, table, correction template, checker
+- [x] T1 language-review: 16 codes, checker, 11 tests OK, f6c17c4. Rulings: R3/R4 structure and IAG flags in `not_language`; composition flags scope research; colours Okabe-Ito (design 9); skill-creator eval loop needs a human, deferred to owner.
 
 ## plan2.md
 

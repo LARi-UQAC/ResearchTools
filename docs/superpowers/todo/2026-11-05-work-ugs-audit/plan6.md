@@ -13,7 +13,7 @@ bounds:
 > the oracle; tick `progress.md`. No audit inside the wrapper (R38).
 
 **Goal:** A copy of the student PDF carries every remark as a native annotation and ends with the
-completed rubric; the original is never touched. The figure correction template holds the 21 criteria,
+completed rubric; the original is never touched. The figure correction template holds the 22 criteria,
 and the six measurable ones are decided by script.
 
 **Architecture:** `pdf_annotate.py` places highlight annotations with a pop-up note on a quoted passage,
@@ -105,19 +105,25 @@ Output path resolved inside the working folder (R24).
 - Consumes: `figure_extract.extract` records (plan 5), page Markdown (any list of page strings). Nothing
   from `work-ugs-audit`: `figure-review` is the lower layer.
 - Produces:
-  - `figure_criteria.json` (the correction template): an `extraction` block (`min_area_pt2` 2500,
-    `background_threshold` 245, each `{value, provenance}`, provenance "proposal 2026-11-05, tuned at the
-    owner's review") and `criteria[]`, 21 entries in the order of design 7.4, each `id` (snake case),
-    `group` (`owner`, `readability`, `text_link`, `technical`, `diagram`), `scope` (`undergraduate`,
-    `research`, `both`; all 21 are `both`), `severity` (`minor`, `major`), `label_fr`, `label_en`,
-    `judged_by` (`script`, `model`, `script_then_model`), `applies_to` (list of figure kinds), `threshold`
-    (`{value, provenance}` or null: `space_used_over_70` 0.70 owner 2026-11-05, `effective_resolution`
-    150 DPI and `text_size` 0.7 proposals), `standard` (`ISO 80000`, `ISO 5807` or null, marked "named
-    by the session, to be confirmed"), `comment_fr`, `comment_en` (the ready-to-use failure comment,
-    polite, one sentence, addressed to an undergraduate). Owner provenance on the six original criteria.
+  - `figure_criteria.json` (the correction template): an `extraction` block, each `{value, provenance}`:
+    `min_area_pt2` 2500 and `background_threshold` 245 ("proposal 2026-11-05, tuned at the owner's
+    review"), `max_long_edge` 1568 (owner 2026-11-05: the long edge of any image sent to a model),
+    `photo_colors` 4096 and `jpeg_quality` 85 (proposals: above that many distinct colours an image is a
+    photo and goes as JPEG). Then `criteria[]`, 22 entries: the 21 in the order of design 7.4, plus
+    `style_consistency` (owner 2026-11-05: judged once per report on a contact sheet, comment only).
+    Each entry: `id` (snake case), `group` (`owner`, `readability`, `text_link`, `technical`, `diagram`,
+    `report`), `level` (`figure` or `report`), `scope` (`undergraduate`, `research`, `both`; all 22 are
+    `both`), `scoring` (`scored`, or `comment_only` for `style_consistency`), `severity` (`minor`,
+    `major`), `label_fr`, `label_en`, `judged_by` (`script`, `model`, `script_then_model`), `applies_to`
+    (list of figure kinds), `threshold` (`{value, provenance}` or null: `space_used_over_70` 0.70,
+    `effective_resolution` 150 DPI, `text_size` 0.7, all owner 2026-11-05), `standard` (`ISO 80000`,
+    `ISO 5807` or null, marked "named by the session, to be confirmed"), `comment_fr`, `comment_en` (the
+    ready-to-use failure comment, polite, one sentence, addressed to an undergraduate). Owner provenance
+    on the six original criteria.
   - `load_criteria(path: Path) -> dict` raising `CriteriaError(ValueError)` naming the entry and key (R3).
-  - `figure_analysis.template.json`: the `figures.json` shape of `spec.md`, with `criteria` holding every
-    id of `figure_criteria.json` at `{verdict: "not_run", reason: ""}` and an empty `extra` object.
+  - `figure_analysis.template.json`: the `figures.json` shape of `spec.md`, with each figure's `criteria`
+    holding every `level: figure` id at `{verdict: "not_run", reason: ""}`, a `report_criteria` object
+    holding `style_consistency`, and an empty `extra` object.
   - `figure_checks.check(figures: list[dict], pages: list[str], body_font_size: float,
     criteria_doc: dict) -> list[dict]`: returns the records with the script verdicts filled, each
     threshold read from its criterion: `space_used_over_70` (ratio against its threshold),
@@ -130,9 +136,10 @@ Output path resolved inside the working folder (R24).
   - `body_font_size(pdf: Path) -> float`: the most frequent span size of the document.
   - `failure_comment(criterion_id: str, criteria: list[dict], language: str) -> str`.
 
-- [ ] **Step 1: Write the two assets.** `comment_fr` in plain French with accents; the 21 ids match the
+- [ ] **Step 1: Write the two assets.** `comment_fr` in plain French with accents; the 22 ids match the
   template keys exactly.
-- [ ] **Step 2: Write the failing tests:** `test_criteria_file_has_21_unique_ids_and_both_comments`;
+- [ ] **Step 2: Write the failing tests:** `test_criteria_file_has_22_unique_ids_and_both_comments`;
+  `test_style_consistency_is_report_level_and_comment_only`; `test_extraction_block_has_max_long_edge_1568`;
   `test_template_keys_equal_the_criteria_ids`; `test_space_ratio_pass_and_fail_at_the_configured_bound`;
   `test_low_dpi_raster_fails_and_vector_is_not_applicable`; `test_small_vector_text_fails`;
   `test_numbering_gap_fails`; `test_figure_called_after_it_appears_fails`;

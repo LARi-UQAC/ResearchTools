@@ -57,7 +57,7 @@ totals. Standard library only.
   - `ugs_config.json`, every value `{value, provenance}` (figure thresholds are NOT here: they belong to
     `figure-review`, plan 6): `annotation.colors` (one per kind:
     technical, figure, language, reference), `references.url_timeout_s` 10, `references.max_retries` 1,
-    `batch.outlier_z` 2.0, `driver.audit_retries` 1, `driver.request_timeout_s` 600. Provenance
+    `batch.outlier_z` 2.0 (owner 2026-11-05), `driver.audit_retries` 1, `driver.request_timeout_s` 600. Provenance
     "proposal 2026-11-05, tuned at the owner's review" except the owner value.
   - `ugs_config.load(path: Path) -> dict` returns plain values; `ConfigError(ValueError)` names the
     dotted key and the file (R3). `ugs_config.default_path() -> Path` is `assets/ugs_config.json` beside

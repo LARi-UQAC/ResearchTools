@@ -31,7 +31,9 @@ copied, R18), `unittest` with every subprocess and `shutil.which` patched.
 ## Global Constraints
 
 `spec.md` "Constraints". Model-native formats: PNG and JPEG (both accepted by the Claude API and by an
-Ollama vision model); GIF, BMP, TIFF and WebP are converted to PNG. A missing tool is a stated `not_run`,
+Ollama vision model). Token cost depends on pixel size, not format (Anthropic Vision doc, 2026-11-05),
+so every image a model receives, native or rendered, goes through `fit_for_model` (plan 5): long edge
+at most `max_long_edge` 1568 (owner), PNG for line art, JPEG for a photo. A missing tool is a stated `not_run`,
 never a silent skip and never a substitute tool (R8). Every rendered file goes into an output folder the
 caller gives, resolved and confined (R24); the source figure is never modified.
 
@@ -62,7 +64,7 @@ caller gives, resolved and confined (R24); the source figure is never modified.
 - Produces:
   - `figure_criteria.json` gains `scope: research` entries: the nine TikZ rules of `.claude/CLAUDE.md`
     "Figures" (judged on the TikZ source, `applies_to: [tikz]`) plus every research figure check of the
-    four auditors not already among the 21 (inventory in plan 10, step 1, is done first here by reading
+    four auditors not already among the 22 (inventory in plan 10, step 1, is done first here by reading
     the agents). Each entry may carry `flag`, the auditor's exact bracket text. A new key per criterion,
     `needs` (`source`, `image`, `either`), says whether it is judged on code or on pixels.
   - `figure_tex.figures(tex_text: str, base_dir: Path | None) -> list[dict]`: each `figure` environment
@@ -74,10 +76,12 @@ caller gives, resolved and confined (R24); the source figure is never modified.
     label form), same record shape as `figure_checks.check`.
   - `figure_render.native(kind: str) -> bool` (true for `png`, `jpg`).
   - `figure_render.render(source: dict, out_dir: Path, preamble: str | None, *, which=shutil.which,
-    run=subprocess.run, timeout: float) -> dict` with `status` (`rendered`, `native`, `not_run`), `png`
-    (path or null), `reason`, `tool`. TikZ: a `standalone` document with the given preamble through
-    `pdflatex`, then page 1 to PNG with PyMuPDF. draw.io: `fig_export.export`. SVG and PDF: PyMuPDF.
-    EPS: `epstopdf` then PyMuPDF. GIF, BMP, TIFF, WebP: PyMuPDF pixmap to PNG.
+    run=subprocess.run, timeout: float, max_long_edge: int) -> dict` with `status` (`rendered`,
+    `native`, `not_run`), `file` (path or null), `format`, `estimated_tokens`, `reason`, `tool`. TikZ: a
+    `standalone` document with the given preamble through `pdflatex`, then page 1 rasterised with
+    PyMuPDF. draw.io: `fig_export.export`. SVG and PDF: PyMuPDF. EPS: `epstopdf` then PyMuPDF. GIF, BMP,
+    TIFF, WebP: PyMuPDF pixmap. A native PNG or JPEG is not re-encoded but is still downscaled when over
+    `max_long_edge`. Every result then goes through `figure_extract.fit_for_model`.
   - `figure_render.main(argv)`: `--tex FILE --out DIR [--render] [--json]`; without `--render` it lists
     sources and kinds only. Timeout and DPI of the rendering in `figure_criteria.json`'s `extraction`
     block (`render_dpi`, `render_timeout_s`, each `{value, provenance}`).
@@ -91,6 +95,7 @@ caller gives, resolved and confined (R24); the source figure is never modified.
   text); `test_drawio_goes_through_fig_export`; `test_missing_tool_is_not_run_naming_it`;
   `test_timeout_is_not_run_with_reason`; `test_bmp_is_converted_to_png` (real PyMuPDF on a generated
   bitmap); `test_without_render_flag_no_subprocess_is_called`; `test_output_outside_out_dir_is_refused`;
+  `test_a_large_native_png_is_downscaled_to_max_long_edge`; `test_rendered_tikz_is_png_and_a_photo_is_jpeg`;
   `test_criteria_file_has_research_entries_and_needs_key`.
 - [ ] **Step 2: Run** both with `.venv-skills\Scripts\python.exe`. Expected: FAIL.
 - [ ] **Step 3: Implement** both modules and extend `figure_criteria.json`.

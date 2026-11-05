@@ -85,9 +85,11 @@ does not fit the item is `not_run` with the reason and `[!]` in `progress.md`. T
     `normalize_rubric(work, rubric_text, assessment_type, call)`; `grade_report(work, rid, loop, call,
     calibration_note)`; `language_report(work, rid, loop, call)`; `figures_report(work, rid, loop, call,
     vision_ok: bool)` (runs `figure_extract`, then `figure_checks`, then one fresh call per figure with the
-    model-judged criteria of `figure_criteria.json` that apply to its kind; a failed criterion becomes a
-    `figure` annotation whose text is that criterion's `comment_fr` or `comment_en` plus the model's
-    reason); `audit_report(work, rid, loop, call, retries)`; `assemble_report(work, rid, loop,
+    model-judged criteria of `figure_criteria.json` that apply to its kind, the image passed through
+    `fit_for_model` with `max_long_edge` from the `extraction` block; then ONE `## set` call on a
+    `contact_sheet` of all the report's figures for `style_consistency`, written to `report_criteria`
+    and never to the score; a failed criterion becomes a `figure` annotation whose text is that
+    criterion's `comment_fr` or `comment_en` plus the model's reason); `audit_report(work, rid, loop, call, retries)`; `assemble_report(work, rid, loop,
     reports_dir)` (writes `annotations.json`, runs `ref_check` on the reference section found by heading
     `Références`, `References` or `Bibliographie`, then `pdf_annotate` into `loop-<n>/R01/annotated.pdf`
     and `pdf_annex`); `extract_references(pages: list[str]) -> list[str]`.
@@ -106,6 +108,8 @@ does not fit the item is `not_run` with the reason and `[!]` in `progress.md`. T
   `test_figures_are_not_run_when_vision_is_not_ok`;
   `test_only_applicable_criteria_are_sent_and_an_unknown_id_in_the_answer_is_rejected`;
   `test_a_failed_figure_criterion_becomes_an_annotation_with_its_template_comment`;
+  `test_every_image_sent_is_within_max_long_edge` (the fake call records image sizes);
+  `test_style_consistency_is_one_call_per_report_and_never_scored`;
   `test_assemble_writes_annotated_copy_and_annex_and_leaves_original_unchanged`;
   `test_resume_continues_from_the_first_open_mark` (fake call raising `NotRun` midway);
   `test_marker_sentence_never_reaches_stdout_or_progress` (fake call echoes prompt text into comments);
@@ -122,12 +126,15 @@ does not fit the item is `not_run` with the reason and `[!]` in `progress.md`. T
 - Modify: `.claude/rules/testing.md`
 
 **Interfaces:**
-- Produces: `probe(role: str, call, image: Path, expected: dict) -> dict` with `role`, `ok`, `answers`;
-  the fixture chart (made by `_pdf_fixtures`) has a known axis title, unit and curve count, and `ok` is
-  true only when all three come back. `main(argv)`: `--role R --work DIR`, writes `vision_probe.json`
-  in the work folder, which `figures_report` reads.
+- Produces: `probe(role: str, call, image: Path, expected: dict) -> dict` with `role`, `ok`, `answers`,
+  `image_tokens`; the fixture chart (made by `_pdf_fixtures`) has a known axis title, unit and curve
+  count, and `ok` is true only when all three come back. `image_tokens` is the measured cost of the image
+  for that local model: `prompt_eval_count` of the call with the image minus the same prompt without it
+  (Ollama reports it; the cloud formula does not apply to a local encoder). `main(argv)`:
+  `--role R --work DIR`, writes `vision_probe.json` in the work folder, which `figures_report` reads.
 - [ ] **Step 1: Failing tests:** `test_probe_passes_when_the_three_facts_come_back`;
-  `test_probe_fails_on_a_wrong_axis_title`; `test_probe_is_not_ok_when_the_call_is_not_run`.
+  `test_probe_fails_on_a_wrong_axis_title`; `test_probe_is_not_ok_when_the_call_is_not_run`;
+  `test_image_tokens_is_the_difference_of_the_two_prompt_counts`.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3:** implement. **Step 4: Run.** Expected: OK.
 - [ ] **Step 5: Add** the four script lines to `.claude/rules/testing.md`, tick `progress.md`.
 - [ ] **Step 6: Commit:** `feat(work-ugs-audit): vision capability probe (#104)`.

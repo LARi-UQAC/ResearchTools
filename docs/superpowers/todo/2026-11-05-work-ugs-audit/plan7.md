@@ -73,11 +73,14 @@ in `evidence`. No model tag (R2).
     script-measured verdicts with their numbers, to explain, never to overturn), `{{CRITERIA}}` (the
     model-judged entries of `figure_criteria.json` that apply to this kind, with their labels); the image
     travels in the request's `images` field (plan 8), not in the text. The model first names the figure
-    kind, then judges each listed criterion.
-  - `schemas.json`: keys `rubric`, `grade_item`, `audit_item`, `language`, `figure`, each an Ollama
+    kind, then judges each listed criterion. The file has two sections: `## single` (above) and `## set`
+    with `{{FIGURE_COUNT}}` and `{{CRITERION}}`, for the per-report style criterion judged on one contact
+    sheet image.
+  - `schemas.json`: keys `rubric`, `grade_item`, `audit_item`, `language`, `figure`, `figure_set`, each an Ollama
     `format` schema matching `spec.md` "Data shapes" (`language` answers a list of
     `{page, code, quote, proposed, reason}`; `figure` answers `kind` and a list of
-    `{id, verdict, reason}` restricted to the ids it was given; the driver rejects any other id).
+    `{id, verdict, reason}` restricted to the ids it was given; the driver rejects any other id;
+    `figure_set` answers `{verdict, reason, figures_involved[]}`).
   - `undergraduate_framework.md`: five anchored levels per item as a share of `max_points` (absent 0,
     attempted 0.5, partial 0.75, complete and correct 0.88, exemplary 1.0), when each applies for a
     technical report, and the statuses `rated`, `not_applicable`, `not_run`.

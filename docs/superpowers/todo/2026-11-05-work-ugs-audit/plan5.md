@@ -100,13 +100,25 @@ reports appear only in `ids.json`; nothing printed carries one. Accented text su
     criteria from these fields.
   - `drawing_area_ratio(samples, width, height, n, threshold: int) -> float`: bounding box of pixels
     darker than `threshold` in any channel, over the image area.
+  - `fit_for_model(src: Path, dst_dir: Path, max_long_edge: int, photo_colors: int, jpeg_quality: int)
+    -> dict`: the image the model receives, to limit tokens (Anthropic Vision doc, read 2026-11-05: cost is
+    `ceil(w/28) * ceil(h/28)` visual tokens, the format does not change it). Cropped to the figure already,
+    downscaled so the long edge is at most `max_long_edge` (never upscaled), written as PNG for line art
+    and as JPEG when the image holds more than `photo_colors` distinct colours (a photo). Returns `file`,
+    `format`, `width`, `height`, `estimated_tokens` (the formula above, for the cloud).
+  - `contact_sheet(files: list[Path], dst: Path, max_long_edge: int) -> dict`: all the figures of one
+    report tiled into ONE image within `max_long_edge`, for the per-report style criterion (one image
+    instead of N). Returns `file`, `tiles`, `estimated_tokens`.
   - `main(argv)`: `--pdf FILE --out DIR [--json]`, prints counts per page and ids.
 
 - [ ] **Step 1: Write the failing tests:** `test_counts_and_pages_of_raster_and_vector_figures`;
   `test_logo_under_min_area_is_ignored`; `test_png_files_written_inside_out_dir`;
   `test_ratio_of_a_full_chart_is_above_0_7` and `test_ratio_of_a_small_chart_in_a_large_frame_is_below_0_7`;
   `test_caption_found_below_and_in_french`; `test_figure_without_caption_has_null_caption`;
-  `test_raster_record_carries_pixel_size_and_vector_record_does_not`.
+  `test_raster_record_carries_pixel_size_and_vector_record_does_not`;
+  `test_fit_downscales_to_the_long_edge_and_never_upscales`; `test_line_art_is_png_and_photo_is_jpeg`;
+  `test_estimated_tokens_follow_the_28_pixel_patch_formula` (1092x819 gives 39 x 30 = 1170);
+  `test_contact_sheet_is_one_image_within_the_long_edge`.
 - [ ] **Step 2: Run.** Expected: FAIL. **Step 3:** implement. **Step 4: Run.** Expected: all OK.
 - [ ] **Step 5: Add** both script lines to `.claude/rules/testing.md`, tick `progress.md`.
 - [ ] **Step 6: Commit:** `feat(work-ugs-audit): figure extraction with drawing-area ratio (#104)`.

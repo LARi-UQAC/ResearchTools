@@ -8,8 +8,8 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 - Branch feat/work-ugs-audit, worktree .worktrees/work-ugs-audit, design committed ac8c1aa.
 - Bounds (owner 2026-11-05): max_rounds 3, max_tokens 1500000, plateau 2.
 - Order: plan1 to plan12 in number order. Full suite once, in plan12.
-- To confirm with the owner: outlier threshold |z| > 2 (before plan4); 150 DPI and text ratio 0.7
-  (before plan6); a 22nd figure criterion, style consistency across one report's figures (open question).
+- Owner 2026-11-05: outlier |z| > 2; 150 DPI; text ratio 0.7; 22nd criterion style_consistency, comment
+  only; images capped at 1568 px long edge, PNG for line art, JPEG for photos.
 - find-skills 2026-11-05: no figure-evaluation equivalent; how-to-review-figure and figure-results-review
   read for ideas only.
 

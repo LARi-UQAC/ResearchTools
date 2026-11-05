@@ -32,11 +32,17 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
 - D5 Calibration for lab and project reports: target mean 88 percent, sd 4. Re-grade when the mean leaves
   83 to 93 or the sd leaves 2 to 6 (read as percentage points). Two loops, then ask.
 - D6 Figures: count, position and extract each as PNG; judge each in its own fresh model call; state per
-  figure in `progress.md`; result in `figures.json` from a template. 21 criteria held as data in
+  figure in `progress.md`; result in `figures.json` from a template. 22 criteria held as data in
   `figure_criteria.json` (owner kept all on 2026-11-05; design 7.4 lists them). Script-measured: drawing
-  over 70 percent of the image, effective DPI, text size (vector), numbering in sequence, called before it
-  appears, source marker in the caption. The rest are judged by the vision model. Each criterion carries a
-  ready-to-use FR and EN failure comment. Figures cost points only through the rubric item covering them.
+  over 70 percent of the image, effective DPI (150 minimum), text size (vector, ratio 0.7 minimum),
+  numbering in sequence, called before it appears, source marker in the caption. The rest are judged by
+  the vision model. The 22nd, `style_consistency`, is judged once per report on one contact-sheet image
+  and is comment only. Each criterion carries a ready-to-use FR and EN failure comment. Figures cost
+  points only through the rubric item covering them. Outlier threshold |z| > 2 (owner).
+- D14 Image size (owner, 2026-11-05). Token cost is `ceil(w/28) * ceil(h/28)` and does not depend on the
+  format (Anthropic Vision doc, read 2026-11-05), so every image sent to a model is cropped, downscaled
+  to a long edge of at most 1568 px, and written as PNG for line art or JPEG for a photo. A local model's
+  own image cost is measured by `vision_probe.py`.
 - D7 Reports read with `pymupdf4llm` page by page (page number kept for anchoring); `pdf2md` not used.
 - D8 References: ISO/CSA/IEC standards and web pages acceptable; standards checked for form, URLs for
   reachability with a timeout, every reference for a citation in the text. No reference status costs
@@ -67,8 +73,8 @@ Condensed from `docs/superpowers/specs/2026-11-05-work-ugs-audit-design.md` (app
   `quote` (or null), `rect` (or null), `comment`.
 - `figures.json`: `report_id`, `figures[]` with `figure_id` (`F01`...), `page`, `rect`, `file`, `kind`
   (`chart`, `diagram`, `flowchart`, `photo`, `other`), `drawing_area_ratio`, `effective_dpi`, `caption`,
-  `cited_in_text`, `criteria{}` keyed by the ids of `figure_criteria.json`, each
-  `{verdict: pass|fail|not_applicable|not_run, reason}`.
+  `cited_in_text`, `criteria{}` keyed by the `level: figure` ids of `figure_criteria.json`, each
+  `{verdict: pass|fail|not_applicable|not_run, reason}`; plus `report_criteria{style_consistency}`.
 - Working folder beside the reports: `_correction/` with `ids.json`, `spec.md`, `rubric.json`,
   `progress.md`, `loop_state.json`, `loop-<n>/R01/...`, `loop-<n>/grades.csv`,
   `loop-<n>/batch_report.md`.

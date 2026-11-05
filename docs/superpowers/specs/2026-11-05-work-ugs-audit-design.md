@@ -240,6 +240,12 @@ local model can apply it from the prompt alone. The research framework is unchan
    - block diagrams and flowcharts: inputs and outputs identified, arrows oriented and labelled (M),
      standard flowchart symbols, ISO 5807 (M), no screenshot of code in place of a flowchart or text (M).
    The two standards are named by the session and checked before they are quoted to students.
+   A 22nd criterion, style consistency across one report's figures (from `figure-results-review`), is
+   judged once per report on a single contact-sheet image and is comment only (owner, 2026-11-05).
+   Thresholds (owner, 2026-11-05): 150 DPI, figure text at least 0.7 of the body text, outlier |z| > 2.
+   Image size (owner, 2026-11-05): token cost is `ceil(w/28) * ceil(h/28)` whatever the format
+   (Anthropic Vision doc, read that day), so each image is cropped, downscaled to a long edge of at most
+   1568 px, and sent as PNG for line art or JPEG for a photo.
 4. Each criterion is `pass`, `fail`, `not_applicable` (a block diagram has no axes) or `not_run`, with a
    one-line reason. The figure remarks are annotated on the figure's rectangle in the PDF. Points move
    only through the rubric item that covers figures, as for references.

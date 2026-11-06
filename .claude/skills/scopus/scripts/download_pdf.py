@@ -1546,6 +1546,12 @@ def download_one(entry: dict[str, str], out_dir: str,
             logger.warning("[FULLTEXT] tier 8 (browser) refused: %s", exc)
             _note_attempt(attempts, 8, "browser", "error", str(exc))
         else:
+            if not res:
+                # Say what the browser saw (host, title, challenge) instead of a bare miss.
+                outcome_fn = getattr(browser_fetch, "last_outcome", None)
+                detail = outcome_fn() if callable(outcome_fn) else ""
+                if isinstance(detail, str) and detail:
+                    _set_reason(detail)
             if pdf_rung(8, "browser", bool(res), "browser"):
                 logger.info("[FULLTEXT] browser %s OK: %s", res["source"], res["file"])
                 return _result(base, out_dir, res["file"], res["format"], res["source"], 8,

@@ -1634,6 +1634,26 @@ class TestSharedBrowserSession(unittest.TestCase):
         self.assertEqual(res["status"], "failed")
 
 
+class TestBrowserMissDetail(unittest.TestCase):
+
+    def _run(self, detail):
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.return_value = None
+        fake_bf.last_outcome.return_value = detail
+        res = TestBrowserTier()._run(fake_bf, use_browser=True)
+        return [a for a in res["attempts"] if a["name"] == "browser"][0]
+
+    def test_what_the_browser_saw_becomes_the_reason(self):
+        attempt = self._run("no PDF captured; last page host=www.example.org title='Sign in'")
+        self.assertEqual(attempt["outcome"], "miss")
+        self.assertIn("host=www.example.org", attempt["reason"])
+
+    def test_nothing_to_say_keeps_the_generic_reason(self):
+        self.assertEqual(self._run("")["reason"], "no PDF returned")
+        self.assertEqual(self._run(object())["reason"], "no PDF returned")   # not a string
+
+
 class TestBrowserRungRefusal(unittest.TestCase):
     """A named refusal inside rung 8 is an `error` attempt, never a crash (R8, R11)."""
 

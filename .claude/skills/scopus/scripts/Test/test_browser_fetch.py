@@ -1094,6 +1094,44 @@ class TestInstitutionalSignIn(unittest.TestCase):
         self.assertTrue(h.totp_calls[0][2]["allow"])
 
 
+class TestLastOutcome(unittest.TestCase):
+    """A failed run says what the browser saw. Measured live 2026-11-05: a six-minute
+    run ended with 'no PDF returned' and nobody could tell a paywall from a challenge."""
+
+    def _fail(self, **page_kw):
+        h = _SignInHarness(self, hosts={})
+        page = h.page(**page_kw)
+        res, _ = h.run(page)
+        self.assertIsNone(res)
+        return browser_fetch.last_outcome()
+
+    def test_it_names_the_host_and_title_of_the_last_page(self):
+        out = self._fail()
+        self.assertIn("www.example.org", out)
+        self.assertIn("Article", out)
+
+    def test_it_says_when_a_challenge_was_still_showing(self):
+        out = self._fail(challenge_waits=999)
+        self.assertIn("challenge", out)
+        self.assertNotIn("no challenge", out)
+
+    def test_it_says_when_no_challenge_was_showing(self):
+        self.assertIn("no challenge", self._fail())
+
+    def test_no_path_or_query_is_recorded(self):
+        out = self._fail(redirects={DOI_ENTRY: ARTICLE_URL + "/secret/path?token=abc"})
+        self.assertNotIn("secret", out)
+        self.assertNotIn("token", out)
+
+    def test_a_success_clears_it(self):
+        self._fail()
+        h = _SignInHarness(self, hosts={})
+        page = h.page(login=dict(LOGIN, pdf_requires_login=False))
+        res, _ = h.run(page)
+        self.assertIsNotNone(res)
+        self.assertEqual(browser_fetch.last_outcome(), "")
+
+
 class TestSessionReuse(unittest.TestCase):
     """One browser session serves a whole run: the second paper does not sign in again."""
 

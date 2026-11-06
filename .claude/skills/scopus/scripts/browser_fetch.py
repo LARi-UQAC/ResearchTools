@@ -608,6 +608,30 @@ class _use_session:
         return False
 
 
+_last_outcome = ""
+
+
+def last_outcome() -> str:
+    """What the browser saw on the last call that captured no PDF ('' after a success).
+    Host and title only, never a path or query: those can hold tokens."""
+    return _last_outcome
+
+
+def _describe_last_page(page: Any, cfg: dict[str, Any]) -> str:
+    """One line on the page the browser ended on, for the failure record."""
+    try:
+        host = urlparse(page.url or "").hostname or "(unknown)"
+    except Exception:  # pragma: no cover - a closed page
+        host = "(unknown)"
+    try:
+        title = " ".join((page.title() or "").split())[:80]
+    except _PWError:
+        title = ""
+    challenge = "a challenge was still showing" if _challenge_showing(page, cfg) \
+        else "no challenge showing"
+    return "no PDF captured; last page host=%s title=%r; %s" % (host, title, challenge)
+
+
 def _challenge_showing(page: Any, cfg: dict[str, Any]) -> bool:
     """True while a Cloudflare challenge is on screen: the page title holds a configured
     marker, or a configured selector matches. A browser error counts as not showing."""
@@ -788,6 +812,8 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
         logger.info("[BROWSER] Playwright not installed - tier skipped "
                     "(run: pip install playwright && playwright install chromium)")
         return None
+    global _last_outcome
+    _last_outcome = ""
     cfg = session.cfg if session is not None else _config(config)
     if session is not None:
         headed = session.headed
@@ -980,8 +1006,9 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                 # reachable page is a blank challenge shell or a landing/abstract
                 # page, and a print-to-PDF of it is indistinguishable junk that
                 # would pollute the corpus. Leave the paper failed / for manual.
-                logger.info("[BROWSER] no capturable PDF at %s - left for manual",
-                            override_url or doi)
+                _last_outcome = _describe_last_page(page, cfg)
+                logger.info("[BROWSER] no capturable PDF at %s - left for manual (%s)",
+                            override_url or doi, _last_outcome)
                 return None
             finally:
                 # Per-paper cleanup. The browser itself belongs to the session.

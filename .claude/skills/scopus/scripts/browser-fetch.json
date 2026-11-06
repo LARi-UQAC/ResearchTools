@@ -68,12 +68,26 @@
     "provenance": "chosen 2026-11-05, PROVISIONAL and unmeasured (R10). Seconds before a call to a secret provider's command line tool is abandoned and reported as a timeout"
   },
   "challenge_title_markers": {
-    "value": ["just a moment", "verify you are human", "attention required"],
+    "value": [
+      "just a moment",
+      "verify you are human",
+      "attention required"
+    ],
     "provenance": "chosen 2026-11-05, PROVISIONAL: lower-case fragments of the page title that Cloudflare's challenge and block pages carry (\"Just a moment...\" is the managed-challenge interstitial). While the title holds one of them, a headed run keeps waiting for the owner to clear the challenge, up to human_window_s. To be confirmed against the live ScienceDirect run"
   },
   "challenge_selectors": {
-    "value": ["iframe[src*='challenges.cloudflare.com']"],
+    "value": [
+      "iframe[src*='challenges.cloudflare.com']"
+    ],
     "provenance": "chosen 2026-11-05, PROVISIONAL: CSS selectors present while a Cloudflare Turnstile widget is on the page (the widget is served from challenges.cloudflare.com). Same use as challenge_title_markers. To be confirmed against the live ScienceDirect run"
+  },
+  "curl_impersonate": {
+    "value": "chrome",
+    "provenance": "chosen 2026-11-05 by the owner (hybrid option of Issue #11). curl_cffi's name for its newest Chrome TLS and HTTP/2 profile, used when the PDF is downloaded with the browser's cookies and user agent after the owner cleared the challenge. curl_cffi may carry a profile older than the installed Chrome (157 here), so the fingerprint can differ from the browser's even with the same user agent: whether Cloudflare accepts the clearance cookie with it is to be MEASURED in the live run, and the rung falls back to navigating the PDF link in the browser when it does not"
+  },
+  "max_redirects": {
+    "value": 5,
+    "provenance": "carried over unchanged from MAX_REDIRECTS of download_pdf.py (author's choice, never measured). Redirect hops followed by hand, https only, when the PDF is downloaded with curl_cffi; the browser's cookies are re-scoped on every hop"
   },
   "hosts": {
     "value": {},

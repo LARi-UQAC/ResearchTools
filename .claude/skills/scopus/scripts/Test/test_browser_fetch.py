@@ -186,6 +186,9 @@ class FakePage:
             return self._meta
         return None
 
+    def evaluate(self, script, *a, **k):
+        return "UA-FIXTURE/157"
+
     def title(self):
         return "Just a moment..." if len(self.waits_ms) < self.challenge_waits else "Article"
 
@@ -271,6 +274,16 @@ class _FakeContext:
 
     def remove_listener(self, event, cb):
         self.listeners -= 1
+
+    cookie_jar = None   # {host: [{"name": ..., "value": ...}]}; set by a test
+
+    def cookies(self, urls=None):
+        from urllib.parse import urlparse as _u
+        jar = self.cookie_jar or {}
+        out = []
+        for url in (urls if isinstance(urls, list) else [urls]):
+            out += jar.get(_u(url).hostname, [])
+        return out
 
     def add_init_script(self, script):
         pass
@@ -462,7 +475,7 @@ REQUIRED_KEYS = (
     "popup_wait_s", "viewer_settle_s", "download_wait_s", "download_retry_pause_s",
     "step_timeout_s", "max_pdf_bytes", "channel", "profile_dir", "user_agent",
     "secret_provider", "allow_totp_from_vault", "provider_timeout_s", "hosts",
-    "challenge_title_markers", "challenge_selectors",
+    "challenge_title_markers", "challenge_selectors", "curl_impersonate", "max_redirects",
 )
 
 GOOD_HOST = {
@@ -491,6 +504,7 @@ def _config_dict(**overrides):
         "provider_timeout_s": 15, "hosts": {},
         "challenge_title_markers": ["just a moment"],
         "challenge_selectors": ["iframe[src*='challenges.cloudflare.com']"],
+        "curl_impersonate": "chrome", "max_redirects": 5,
     }
     values.update(overrides)
     return {k: {"value": v, "provenance": "test fixture"} for k, v in values.items()}
@@ -1092,6 +1106,162 @@ class TestInstitutionalSignIn(unittest.TestCase):
         self.assertIsNotNone(res)
         self.assertIn(("#otp", "424242"), page.filled)
         self.assertTrue(h.totp_calls[0][2]["allow"])
+
+
+class _CffiResponse:
+    def __init__(self, status=200, headers=None, content=b""):
+        self.status_code = status
+        self.headers = headers or {}
+        self.content = content
+
+
+class _FakeCffi:
+    """Stand-in for curl_cffi.requests: serves queued responses, records every call."""
+
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def get(self, url, headers=None, cookies=None, impersonate=None, timeout=None,
+            allow_redirects=True, **kw):
+        self.calls.append(dict(url=url, headers=headers, cookies=cookies,
+                               impersonate=impersonate, timeout=timeout,
+                               allow_redirects=allow_redirects))
+        return self.responses.pop(0)
+
+
+JAR = {"www.example.org": [{"name": "cf_clearance", "value": "CLEAR-FIXTURE"}],
+       "assets.example.org": [{"name": "asset", "value": "A-FIXTURE"}]}
+PDF_URL = "https://www.example.org/science/pdfft"
+
+
+class TestHybridFetch(unittest.TestCase):
+    """After the owner clears the challenge, the PDF is downloaded by curl_cffi with the
+    browser's cookies and user agent and Chrome's TLS fingerprint (issue #11, option B).
+    Cookies are re-scoped on every redirect hop and never logged."""
+
+    def _setup(self, *responses, cfg_values=None):
+        page = FakePage(html=ARTICLE_HTML)
+        context = _FakeContext(page)
+        context.cookie_jar = JAR
+        cffi = _FakeCffi(*responses)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cfg.json"
+            path.write_text(__import__("json").dumps(_config_dict(**(cfg_values or {}))),
+                            encoding="utf-8")
+            cfg = browser_fetch.load_config(path)
+        return page, context, cffi, cfg
+
+    def _fetch(self, context, page, cffi, cfg, url=PDF_URL, ok=True):
+        with mock.patch.object(browser_fetch, "_cffi_requests", cffi), \
+             mock.patch.object(browser_fetch, "_CFFI_OK", ok):
+            return browser_fetch._hybrid_fetch(context, page, url, cfg)
+
+    def test_it_sends_the_browsers_cookies_user_agent_and_tls_profile(self):
+        page, context, cffi, cfg = self._setup(
+            _CffiResponse(200, {"Content-Type": "application/pdf"}, PDF_BYTES))
+        self.assertEqual(self._fetch(context, page, cffi, cfg), PDF_BYTES)
+        call = cffi.calls[0]
+        self.assertEqual(call["headers"]["User-Agent"], "UA-FIXTURE/157")
+        self.assertEqual(call["cookies"], {"cf_clearance": "CLEAR-FIXTURE"})
+        self.assertEqual(call["impersonate"], "chrome")
+        self.assertEqual(call["timeout"], cfg["nav_timeout_s"])
+        self.assertIs(call["allow_redirects"], False)         # hops are followed here, scoped
+
+    def test_cookies_are_rescoped_on_every_redirect_hop(self):
+        page, context, cffi, cfg = self._setup(
+            _CffiResponse(302, {"Location": "https://assets.example.org/f.pdf"}),
+            _CffiResponse(200, {}, PDF_BYTES))
+        self.assertEqual(self._fetch(context, page, cffi, cfg), PDF_BYTES)
+        self.assertEqual(cffi.calls[1]["url"], "https://assets.example.org/f.pdf")
+        self.assertEqual(cffi.calls[1]["cookies"], {"asset": "A-FIXTURE"})   # not cf_clearance
+
+    def test_a_plain_http_start_or_redirect_is_refused(self):
+        page, context, cffi, cfg = self._setup()
+        self.assertIsNone(self._fetch(context, page, cffi, cfg, url="http://www.example.org/x"))
+        self.assertEqual(cffi.calls, [])
+        page, context, cffi, cfg = self._setup(
+            _CffiResponse(302, {"Location": "http://assets.example.org/f.pdf"}))
+        self.assertIsNone(self._fetch(context, page, cffi, cfg))
+        self.assertEqual(len(cffi.calls), 1)
+
+    def test_redirect_hops_are_capped_by_the_config(self):
+        page, context, cffi, cfg = self._setup(
+            *[_CffiResponse(302, {"Location": "https://www.example.org/next"})] * 9,
+            cfg_values={"max_redirects": 2})
+        self.assertIsNone(self._fetch(context, page, cffi, cfg))
+        self.assertEqual(len(cffi.calls), 3)                  # first request + 2 hops
+
+    def test_a_challenge_page_a_truncated_pdf_and_an_error_status_are_rejected(self):
+        for response in (_CffiResponse(200, {"Content-Type": "text/html"},
+                                       b"<html>Just a moment</html>"),
+                         _CffiResponse(200, {}, b"%PDF-1.7 partial body no trailer"),
+                         _CffiResponse(403, {}, b"")):
+            page, context, cffi, cfg = self._setup(response)
+            with self.subTest(status=response.status_code):
+                self.assertIsNone(self._fetch(context, page, cffi, cfg))
+
+    def test_curl_cffi_absent_degrades_without_raising(self):
+        page, context, cffi, cfg = self._setup()
+        self.assertIsNone(self._fetch(context, page, cffi, cfg, ok=False))
+        self.assertEqual(cffi.calls, [])
+
+    def test_without_the_browsers_user_agent_nothing_is_sent(self):
+        # A clearance cookie is bound to the user agent that earned it.
+        page, context, cffi, cfg = self._setup()
+
+        def no_agent(*a, **k):
+            raise browser_fetch._PWError("page closed")
+        page.evaluate = no_agent
+        self.assertIsNone(self._fetch(context, page, cffi, cfg))
+        self.assertEqual(cffi.calls, [])
+
+    def test_a_network_error_is_a_miss_not_a_crash(self):
+        page, context, cffi, cfg = self._setup()
+        cffi.get = mock.Mock(side_effect=RuntimeError("connection reset"))
+        self.assertIsNone(self._fetch(context, page, cffi, cfg))
+
+    def test_cookie_values_never_reach_a_log(self):
+        page, context, cffi, cfg = self._setup(_CffiResponse(200, {}, PDF_BYTES))
+        logs = _capture_logs(browser_fetch.logger)
+        try:
+            self._fetch(context, page, cffi, cfg)
+        finally:
+            logs.close()
+        self.assertFalse(any("CLEAR-FIXTURE" in m for m in logs.messages))
+
+    def test_the_flow_downloads_the_discovered_pdf_link_through_curl_cffi(self):
+        page = FakePage(html=ARTICLE_HTML, meta=PDF_URL, redirects={DOI_ENTRY: ARTICLE_URL})
+        cffi = _FakeCffi(_CffiResponse(200, {}, PDF_BYTES))
+        with mock.patch.object(_FakeContext, "cookie_jar", JAR), \
+             mock.patch.object(browser_fetch, "_cffi_requests", cffi), \
+             mock.patch.object(browser_fetch, "_CFFI_OK", True):
+            res, on_disk = TestBrowserFetch()._run(page)
+        self.assertIsNotNone(res)
+        self.assertTrue(on_disk.startswith(b"%PDF"))
+        self.assertEqual(cffi.calls[0]["url"], PDF_URL)
+        self.assertNotIn(PDF_URL, page.goto_urls)             # no second browser navigation
+
+    def test_a_blocked_curl_cffi_falls_back_to_navigating_the_link(self):
+        page = FakePage(html=ARTICLE_HTML, meta=PDF_URL, redirects={DOI_ENTRY: ARTICLE_URL})
+        cffi = _FakeCffi(_CffiResponse(403, {}, b""))
+        with mock.patch.object(_FakeContext, "cookie_jar", JAR), \
+             mock.patch.object(browser_fetch, "_cffi_requests", cffi), \
+             mock.patch.object(browser_fetch, "_CFFI_OK", True):
+            TestBrowserFetch()._run(page)
+        self.assertIn(PDF_URL, page.goto_urls)
+
+    def test_a_ranged_reader_response_is_completed_through_curl_cffi(self):
+        # The reader streams only a chunk (no %%EOF); the full file is fetched from the
+        # same URL with the browser's session instead of Playwright's own request client.
+        page = FakePage(pdf_body=b"%PDF-1.7 partial chunk")
+        cffi = _FakeCffi(_CffiResponse(200, {}, PDF_BYTES))
+        with mock.patch.object(_FakeContext, "cookie_jar", {"host": [{"name": "c", "value": "v"}]}), \
+             mock.patch.object(browser_fetch, "_cffi_requests", cffi), \
+             mock.patch.object(browser_fetch, "_CFFI_OK", True):
+            res, on_disk = TestBrowserFetch()._run(page)
+        self.assertIsNotNone(res)
+        self.assertTrue(on_disk.endswith(b"%%EOF"))
 
 
 class TestLastOutcome(unittest.TestCase):

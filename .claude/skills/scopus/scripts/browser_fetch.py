@@ -63,6 +63,16 @@ except ImportError:  # pragma: no cover - optional dependency
     _PWError = Exception
     _PW_OK = False
 
+# curl_cffi downloads the PDF with the browser's own cookies once the owner has cleared
+# the challenge (hybrid option of Issue #11). It reproduces Chrome's TLS fingerprint; it
+# solves nothing. Optional, same degrade-with-a-hint contract as Playwright.
+try:
+    from curl_cffi import requests as _cffi_requests
+    _CFFI_OK = True
+except ImportError:  # pragma: no cover - optional dependency
+    _cffi_requests = None
+    _CFFI_OK = False
+
 # No stealth or anti-detect library (owner ruling 2026-11-05). ScienceDirect shows
 # real Chrome 157 an interactive Cloudflare Turnstile checkbox (measured
 # 2026-11-05) and answers the bundled Chromium with an interstitial that never
@@ -86,7 +96,8 @@ _NUMBER_KEYS = ("nav_timeout_s", "idle_timeout_s", "human_window_s", "headless_w
                 "download_retry_pause_s", "step_timeout_s", "provider_timeout_s")
 _REQUIRED_KEYS = _NUMBER_KEYS + ("max_pdf_bytes", "channel", "profile_dir", "user_agent",
                                  "secret_provider", "allow_totp_from_vault", "hosts",
-                                 "challenge_title_markers", "challenge_selectors")
+                                 "challenge_title_markers", "challenge_selectors",
+                                 "curl_impersonate", "max_redirects")
 _config_cache: dict[str, dict[str, Any]] = {}
 
 
@@ -201,6 +212,11 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
                 isinstance(i, str) and i.strip() for i in items):
             raise BrowserConfigError("%s: key %r must be a non-empty list of non-empty strings"
                                      % (where, key))
+    if not isinstance(values["curl_impersonate"], str) or not values["curl_impersonate"].strip():
+        raise BrowserConfigError("%s: key 'curl_impersonate' must be a non-empty string" % where)
+    redirects = values["max_redirects"]
+    if not isinstance(redirects, int) or isinstance(redirects, bool) or redirects <= 0:
+        raise BrowserConfigError("%s: key 'max_redirects' must be a positive integer" % where)
     if not isinstance(values["hosts"], dict):
         raise BrowserConfigError("%s: key 'hosts' must be an object" % where)
     for name, host in values["hosts"].items():
@@ -608,6 +624,82 @@ class _use_session:
         return False
 
 
+def _is_complete_pdf(data: Any) -> bool:
+    """A whole PDF starts with %PDF and carries an %%EOF trailer near the end. Readers
+    stream the file in HTTP ranges, so one body can look valid yet be a truncated chunk."""
+    return bool(data) and data.startswith(PDF_MAGIC) and b"%%EOF" in data[-4096:]
+
+
+def _hybrid_fetch(context: Any, page: Any, url: str, cfg: dict[str, Any]) -> bytes | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Download a PDF with curl_cffi using the cookies and user agent of the
+        browser session, after the owner cleared the challenge in it. The server
+        sees Chrome's TLS fingerprint with the clearance cookie it issued, which
+        a plain Playwright request does not reproduce. Nothing is solved or
+        hidden: without the owner's click there is no cookie to send.
+
+    Inputs:
+        context: the Playwright persistent context (cookies are read from it).
+        page: a page of that context (user agent and referring origin).
+        url (str): the PDF URL, https only.
+        cfg (dict): loaded config (curl_impersonate, max_redirects, nav_timeout_s).
+
+    Outputs:
+        data (bytes | None): the complete PDF, or None for any failure: curl_cffi
+        absent, no user agent, plain http, a redirect to http, too many hops, a
+        non-200 status, a challenge page, a truncated file. Never raises.
+        Redirects are followed by hand and the cookies are re-read for each hop,
+        so a cookie of one host is never sent to another. No cookie value is
+        logged.
+    --------------------------------------------------------------------------
+    """
+    if not _CFFI_OK:
+        logger.info("[BROWSER] curl_cffi not installed: the PDF is not downloaded with the "
+                    "browser's cookies (pip install curl_cffi)")
+        return None
+    try:
+        agent = page.evaluate("navigator.userAgent")
+    except _PWError:
+        return None
+    if not isinstance(agent, str) or not agent:
+        return None   # a clearance cookie is bound to the user agent that earned it
+    origin = urlparse(page.url or "")
+    referer = "%s://%s/" % (origin.scheme, origin.netloc) if origin.scheme and origin.netloc else ""
+    current = url
+    for _ in range(cfg["max_redirects"] + 1):
+        if urlparse(current).scheme != "https":
+            logger.info("[BROWSER] hybrid download refused a non-https URL")
+            return None
+        try:
+            cookies = {c["name"]: c["value"] for c in context.cookies([current])}
+        except _PWError:
+            cookies = {}
+        headers = {"User-Agent": agent, "Accept": "application/pdf,*/*;q=0.8"}
+        if referer:
+            headers["Referer"] = referer
+        try:
+            response = _cffi_requests.get(
+                current, headers=headers, cookies=cookies, impersonate=cfg["curl_impersonate"],
+                timeout=cfg["nav_timeout_s"], allow_redirects=False)
+        except Exception as exc:   # curl_cffi raises its own hierarchy
+            logger.info("[BROWSER] hybrid download failed (%s)", type(exc).__name__)
+            return None
+        if response.status_code in (301, 302, 303, 307, 308):
+            location = (response.headers or {}).get("Location", "")
+            if not location:
+                return None
+            current = urljoin(current, location)
+            continue
+        if response.status_code != 200:
+            logger.info("[BROWSER] hybrid download answered HTTP %s", response.status_code)
+            return None
+        return response.content if _is_complete_pdf(response.content) else None
+    logger.info("[BROWSER] hybrid download: too many redirects")
+    return None
+
+
 _last_outcome = ""
 
 
@@ -829,11 +921,7 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
     pdf_responses: list = []       # responses whose content-type is application/pdf
     pdf_urls: list = []            # their URLs, for a full (non-ranged) re-fetch
 
-    def _complete(data) -> bool:
-        # A whole PDF starts with %PDF and carries an %%EOF trailer near the end.
-        # Readers stream the file in HTTP ranges, so a single response body can be
-        # a valid-looking but truncated chunk; require the trailer to reject it.
-        return bool(data) and data.startswith(PDF_MAGIC) and b"%%EOF" in data[-4096:]
+    _complete = _is_complete_pdf
 
     def _note_response(resp) -> None:
         # Do NOT read the body inside the event handler: in the sync API
@@ -902,11 +990,15 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                             captured["data"] = body
                             return True
                     for url in list(dict.fromkeys(pdf_urls)):
-                        try:
-                            api = context.request.get(url, timeout=int(timeout_s * 1000))
-                            body = api.body() if api.ok else None
-                        except Exception:
-                            body = None
+                        # curl_cffi with the browser's cookies first (Chrome's TLS
+                        # fingerprint), Playwright's own request client second.
+                        body = _hybrid_fetch(context, page, url, cfg)
+                        if not _complete(body):
+                            try:
+                                api = context.request.get(url, timeout=int(timeout_s * 1000))
+                                body = api.body() if api.ok else None
+                            except Exception:
+                                body = None
                         if _complete(body):
                             captured["data"] = body
                             return True
@@ -987,11 +1079,17 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                     if captured["data"] is None and not override_url:
                         page_url = _discover_pdf_url(page, doi, override_url)
                         if page_url and page_url != pattern_url:
-                            try:
-                                page.goto(page_url, wait_until="domcontentloaded")
-                            except _PWError:
-                                pass
-                            _settle()
+                            # The challenge is cleared by now: download the link with the
+                            # browser's cookies; navigate to it only if that fails.
+                            data = _hybrid_fetch(context, page, page_url, cfg)
+                            if _complete(data):
+                                captured["data"] = data
+                            else:
+                                try:
+                                    page.goto(page_url, wait_until="domcontentloaded")
+                                except _PWError:
+                                    pass
+                                _settle()
                     if captured["data"] is None:
                         _try_click_through(page, captured, cfg)
                         _settle()

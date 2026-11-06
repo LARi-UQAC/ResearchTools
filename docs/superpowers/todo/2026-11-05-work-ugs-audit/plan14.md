@@ -49,8 +49,10 @@ changes from one dispatch per plan to one dispatch per `progress.md`. No model t
 - Modify: `.claude/agents/local-coder.md` (rewrite: the dispatch prompt carries `PROGRESS: <path>` and
   the `PLAN:` line of the first open plan, which the existing dispatch guard already validates; the
   wrapper runs `local_coder_driver.py --progress ... --root ...` once, which calls the model once per
-  plan until every plan of the ledger is done or blocked; it never reads, writes or edits code; a `[!]`
-  goes back to the cloud for plan revision). The wrapper is the AUDITOR, under R35's bounds, the same
+  plan until every plan of the ledger is done or blocked; it reads code only to audit it, never writes or
+  edits it; code is made only by the local coder model through local-coder's driver; a `[!]` goes back
+  to the cloud for plan revision). The wrapper follows every rule of ResearchTools (`.claude/rules/`,
+  `.claude/CLAUDE.md`), as any agent does. The wrapper is the AUDITOR, under R35's bounds, the same
   rules loop-engineering applies to any code: (1) `loop_bounds.py init --from-plan <first plan>` once
   per effort, the budget being the `bounds` block of the plan header (`max_rounds`, `max_tokens`,
   `plateau`; owner 2026-11-05: 3, 1500000, 2); (2) each round, `code-review` and `security-review` at

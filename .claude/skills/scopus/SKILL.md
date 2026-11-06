@@ -374,7 +374,9 @@ Behaviour:
   `<author>_<year>_<title>.pdf`.
 - **Presence-gated**: an existing target file is skipped — no re-download.
 - **Strict source chain** (rung N runs only when rung N-1 gave no full PDF, the first
-  success stops it, no rung is opt-in): 1) Elsevier Full-Text API (`SCOPUS_API_KEY`;
+  success stops it, no rung is opt-in on the command line; the corpus scripts of
+  `extract-statistic` and `geolocalisation` call the chain with the browser rung off):
+  1) Elsevier Full-Text API (`SCOPUS_API_KEY`;
   the institutional token from `--insttoken`, else the `ELSEVIER_INSTTOKEN` environment
   variable). 2) Semantic Scholar `openAccessPdf`. 3) publisher PDF rebuilt from the DOI
   (browser TLS + curl fallback). 4) Unpaywall (`UNPAYWALL_EMAIL`). 5) arXiv. 6) PubMed

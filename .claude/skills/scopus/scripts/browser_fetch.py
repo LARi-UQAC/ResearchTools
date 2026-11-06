@@ -23,11 +23,14 @@ Design notes:
       in download_pdf.py). When it is absent, browser_available() returns False
       and download_pdf.py skips tier 8 with a one-line hint. The base pipeline
       keeps working without it.
-    - No credentials, cookies, or session state are persisted. Institutional
-      access here is IP-based; the browser only needs to reach the entitled IP
-      and pass the JS challenge. ResearchGate (and any override host) is
-      best-effort: a login wall or captcha simply yields no PDF and the paper is
-      left for manual retrieval.
+    - Session state IS persisted: the Chrome profile named by browser-fetch.json
+      keeps a solved challenge and, for a host listed in `hosts`, an institutional
+      sign-in, across papers and runs. The profile holds session cookies, so it
+      stays outside the repository. No password is stored by this module: one is
+      read from a secret provider (browser_login.py) for a single fill. Access is
+      IP-based for most publishers, so a sign-in is attempted only for a listed
+      host. ResearchGate (and any override host) is best-effort: a login wall or
+      captcha simply yields no PDF and the paper is left for manual retrieval.
     - Self-contained: this module does NOT import download_pdf (that would be a
       circular import), so it re-declares the small set of constants and the
       atomic PDF writer it needs.
@@ -73,11 +76,15 @@ except ImportError:  # pragma: no cover - optional dependency
     _cffi_requests = None
     _CFFI_OK = False
 
-# No stealth or anti-detect library (owner ruling 2026-11-05). ScienceDirect shows
+# No stealth or anti-detect LIBRARY (owner ruling 2026-11-05). ScienceDirect shows
 # real Chrome 157 an interactive Cloudflare Turnstile checkbox (measured
 # 2026-11-05) and answers the bundled Chromium with an interstitial that never
 # clears (measured 2026-09-17). The answer is the installed Chrome and a human
-# click, not hiding the automation.
+# click. The launch still passes --disable-blink-features=AutomationControlled and
+# a navigator.webdriver override (BrowserSession.context): two small tweaks, not a
+# library, kept until the owner decides (Issue #11, open points). A plain Chrome
+# with no driver shows the same checkbox (measured 2026-11-06), so they do not
+# explain it.
 
 PDF_MAGIC = b"%PDF"
 
@@ -94,7 +101,7 @@ CONFIG_PATH = _HERE / "browser-fetch.json"
 _NUMBER_KEYS = ("nav_timeout_s", "idle_timeout_s", "human_window_s", "headless_wait_s",
                 "poll_s", "popup_wait_s", "viewer_settle_s", "download_wait_s",
                 "download_retry_pause_s", "step_timeout_s", "provider_timeout_s",
-                "stream_chunk_bytes", "title_chars", "reason_chars")
+                "stream_chunk_bytes", "title_chars")
 _REQUIRED_KEYS = _NUMBER_KEYS + ("max_pdf_bytes", "channel", "profile_dir", "user_agent",
                                  "secret_provider", "allow_totp_from_vault", "hosts",
                                  "challenge_title_markers", "challenge_selectors",
@@ -131,6 +138,13 @@ def _validate_host(name: str, host: Any, where: str) -> None:
     """Check one hosts entry; raise BrowserConfigError naming the host and the field."""
     def bad(field: str, why: str) -> BrowserConfigError:
         return BrowserConfigError("%s: hosts[%r].%s %s" % (where, name, field, why))
+
+    # The key is compared with the lower-cased host name of the page, so a capital
+    # letter, a scheme or a path would make the entry match nothing, in silence.
+    if not isinstance(name, str) or not name or name != name.lower() \
+            or urlparse("https://" + name).hostname != name:
+        raise BrowserConfigError("%s: hosts key %r must be a lower-case bare host name "
+                                 "(for example www.example.org)" % (where, name))
 
     if not isinstance(host, dict):
         raise bad("(entry)", "must be an object")
@@ -814,7 +828,10 @@ def _describe_last_page(page: Any, cfg: dict[str, Any]) -> str:
         title = ""
     challenge = "a challenge was still showing" if _challenge_showing(page, cfg) \
         else "no challenge showing"
-    return "no PDF captured; last page host=%s title=%r; %s" % (host, title, challenge)
+    # The page controls its title, and agents read this record: it is labelled as text
+    # from the web, quoted and cut, never worded as an instruction.
+    return ("no PDF captured; last page host=%s title (untrusted page text)=%r; %s"
+            % (host, title, challenge))
 
 
 def _challenge_showing(page: Any, cfg: dict[str, Any]) -> bool:
@@ -838,7 +855,7 @@ def _present(page: Any, selector: str) -> bool:
 
 
 def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any],
-             drain: Any) -> None:
+             drain: Any, wait_s: float | None = None) -> None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -855,6 +872,9 @@ def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any]
         host_cfg (dict): the validated hosts entry.
         cfg (dict): the loaded config.
         drain: callable returning True once a complete PDF has been captured.
+        wait_s (float | None): how long to wait for the signed-in marker. None
+            means the configured human window; a headless run passes the short
+            headless wait, since nobody can approve an MFA prompt there.
 
     Outputs:
         None. The page is left signed in.
@@ -938,7 +958,8 @@ def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any]
             value = None   # drop the secret at once
 
     marker, poll_ms = host_cfg["logged_in_selector"], int(cfg["poll_s"] * 1000)
-    for _ in range(max(1, int(cfg["human_window_s"] / cfg["poll_s"]))):
+    window_s = cfg["human_window_s"] if wait_s is None else wait_s
+    for _ in range(max(1, int(window_s / cfg["poll_s"]))):
         if _present(page, marker) or drain():
             return
         try:
@@ -948,7 +969,7 @@ def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any]
     if _present(page, marker) or drain():
         return
     raise refuse("did not complete within %g s: approve the MFA prompt promptly, or check the "
-                 "logged_in_selector in browser-fetch.json" % cfg["human_window_s"])
+                 "logged_in_selector in browser-fetch.json" % window_s)
 
 
 def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = None,
@@ -1013,6 +1034,8 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
     captured: dict[str, bytes | None] = {"data": None}
     pdf_responses: list = []       # responses whose content-type is application/pdf
     pdf_urls: list = []            # their URLs, for a full (non-ranged) re-fetch
+    tried_urls: set = set()        # (url, challenge showing) already re-fetched in full
+    sign_in_error: BrowserRungError | None = None   # raised at the end if nothing was captured
 
     _complete = _is_complete_pdf
 
@@ -1092,7 +1115,14 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                         if _complete(body):
                             captured["data"] = body
                             return True
+                    showing = _challenge_showing(page, cfg) if pdf_urls else False
                     for url in list(dict.fromkeys(pdf_urls)):
+                        # One try per URL and challenge state: this runs on every poll
+                        # of the human window, and a failure while the challenge shows
+                        # is retried once after the click, not every two seconds.
+                        if (url, showing) in tried_urls:
+                            continue
+                        tried_urls.add((url, showing))
                         # curl_cffi with the browser's cookies first (Chrome's TLS
                         # fingerprint), Playwright's own request client second.
                         body = _hybrid_fetch(context, page, url, cfg)
@@ -1180,16 +1210,23 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                     signed_in_now = False
                     if captured["data"] is None and host_cfg \
                             and not _present(page, host_cfg["logged_in_selector"]):
+                        # A sign-in that cannot complete does not end the paper: the
+                        # owner may be entitled by address, or the marker may render
+                        # late. The capture is still tried, and the sign-in error is
+                        # raised at the end only when nothing was captured.
                         if host in sess.failed_sign_ins:
-                            raise BrowserRungError(
+                            sign_in_error = BrowserRungError(
                                 "sign-in to %s already failed in this run (%s): not tried again"
                                 % (host, sess.failed_sign_ins[host]))
-                        try:
-                            _sign_in(page, host, host_cfg, cfg, _drain)
-                        except BrowserRungError as exc:
-                            sess.failed_sign_ins[host] = str(exc)[:int(cfg["reason_chars"])]
-                            raise
-                        signed_in_now = True
+                        else:
+                            try:
+                                _sign_in(page, host, host_cfg, cfg, _drain,
+                                         wait_s=None if headed else cfg["headless_wait_s"])
+                            except BrowserRungError as exc:
+                                sess.failed_sign_ins[host] = str(exc)
+                                sign_in_error = exc
+                            else:
+                                signed_in_now = True
                         if captured["data"] is None:
                             try:
                                 page.goto(entry_url, wait_until="domcontentloaded")
@@ -1231,6 +1268,8 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                 _last_outcome = _describe_last_page(page, cfg)
                 logger.info("[BROWSER] no capturable PDF at %s - left for manual (%s)",
                             override_url or doi, _last_outcome)
+                if sign_in_error is not None:
+                    raise sign_in_error
                 return None
             finally:
                 # Per-paper cleanup. The browser itself belongs to the session.
@@ -1248,7 +1287,29 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
         raise
     except _PWError as exc:
         logger.warning("[BROWSER] failed for %s: %s", override_url or doi, exc)
+        _last_outcome = _crash_outcome(exc)
         return None
     except Exception as exc:  # pragma: no cover - Chromium launch / unexpected
         logger.warning("[BROWSER] error for %s: %s", override_url or doi, exc)
+        _last_outcome = _crash_outcome(exc)
         return None
+
+
+def _crash_outcome(exc: BaseException) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The one-line record for a browser that did not run: a launch that failed
+        (the profile is held by another Chrome) or a window that died. The
+        exception text is left out, since it can carry a path under the home
+        directory; the full text stays in the log line written by the caller.
+
+    Inputs:
+        exc (BaseException): the error that ended the rung.
+
+    Outputs:
+        text (str): the record, naming the error type and the usual cause.
+    --------------------------------------------------------------------------
+    """
+    return ("no PDF captured; the browser could not start or stopped (%s): another Chrome "
+            "may be using the profile, or the window was closed" % type(exc).__name__)

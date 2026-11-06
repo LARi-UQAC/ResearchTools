@@ -225,6 +225,7 @@ class _FakeChromium:
         self.chrome_missing = chrome_missing   # installed Chrome absent: channel launch raises
         self.persistent_calls = []             # (user_data_dir, kwargs) of every launch attempt
         self.contexts = []                     # every context actually opened
+        self.launch_error = None               # a test sets a message: the launch raises it
         self.name = name
 
     def launch(self, headless=True, **kw):
@@ -238,6 +239,8 @@ class _FakeChromium:
         # A persistent context IS the context: no browser object is returned,
         # which is the contract browser_fetch now depends on for its cleanup.
         self.persistent_calls.append((user_data_dir, dict(kw, headless=headless)))
+        if self.launch_error:
+            raise browser_fetch._PWError(self.launch_error)
         if kw.get("channel") and self.chrome_missing:
             raise browser_fetch._PWError(
                 "BrowserType.launch_persistent_context: Chromium distribution "
@@ -484,7 +487,7 @@ REQUIRED_KEYS = (
     "step_timeout_s", "max_pdf_bytes", "channel", "profile_dir", "user_agent",
     "secret_provider", "allow_totp_from_vault", "provider_timeout_s", "hosts",
     "challenge_title_markers", "challenge_selectors", "curl_impersonate", "max_redirects",
-    "stream_chunk_bytes", "title_chars", "reason_chars",
+    "stream_chunk_bytes", "title_chars",
 )
 
 GOOD_HOST = {
@@ -514,7 +517,7 @@ def _config_dict(**overrides):
         "challenge_title_markers": ["just a moment"],
         "challenge_selectors": ["iframe[src*='challenges.cloudflare.com']"],
         "curl_impersonate": "chrome", "max_redirects": 5,
-        "stream_chunk_bytes": 16384, "title_chars": 80, "reason_chars": 160,
+        "stream_chunk_bytes": 16384, "title_chars": 80,
     }
     values.update(overrides)
     return {k: {"value": v, "provenance": "test fixture"} for k, v in values.items()}
@@ -1543,6 +1546,128 @@ class TestReviewRound1(unittest.TestCase):
         markers = browser_fetch.load_config()["challenge_title_markers"]
         self.assertNotIn("attention required", [m.lower() for m in markers])
         self.assertIn("just a moment", [m.lower() for m in markers])
+
+
+class _LatePdfPage(FakePage):
+    """Serves the PDF only from the second visit to the article, and a sign-in marker that
+    never shows: the sign-in cannot be confirmed, yet the paper can be fetched."""
+
+    def goto(self, url, wait_until=None, **kw):
+        self.goto_urls.append(url)
+        self._current = self._redirects.get(url, url)
+        if url == DOI_ENTRY and self.goto_urls.count(DOI_ENTRY) >= 2:
+            self._emit_pdf()
+
+
+def _late_pdf_page():
+    return _LatePdfPage(pdf_body=PDF_BYTES, login=dict(LOGIN, ready_after_waits=99),
+                        redirects={DOI_ENTRY: ARTICLE_URL})
+
+
+class TestReviewRound2(unittest.TestCase):
+    """Findings of the second local code review (R35) on the browser rung."""
+
+    def test_a_sign_in_that_fails_still_tries_to_capture_the_pdf(self):
+        # A host the owner is entitled to by address, or a marker that renders late, must
+        # not lose the paper because the optional sign-in could not complete.
+        h = _SignInHarness(self)
+        res, _ = h.run(_late_pdf_page())
+        self.assertIsNotNone(res)
+
+    def test_the_next_paper_on_that_host_skips_the_sign_in_but_is_still_tried(self):
+        h = _SignInHarness(self)
+        page = _late_pdf_page()
+        fake = _FakePW(page)
+        session = browser_fetch.BrowserSession(config=h.config(), headed=True)
+        first, _ = h.run(page, session=session, fake=fake)
+        second, _ = h.run(page, session=session, fake=fake)
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertEqual(len(h.password_calls), 1)
+        session.close()
+
+    def test_a_failing_pdf_url_is_not_downloaded_again_on_every_poll(self):
+        # _drain runs on every poll of the human window; without a memory each run
+        # repeated two full downloads of the same URL while the challenge was showing.
+        h = _SignInHarness(self, human_window_s=40, poll_s=2, hosts={})
+        page = FakePage(pdf_body=b"%PDF-1.7 partial", challenge_waits=8)
+        calls = []
+
+        def never_works(context, page_, url, cfg):
+            calls.append(url)
+            return None
+        with mock.patch.object(browser_fetch, "_hybrid_fetch", never_works):
+            h.run(page)
+        self.assertGreater(len(page.waits_ms), 6, "the window must have polled several times")
+        self.assertLessEqual(len(calls), 3)
+
+    def test_the_same_url_is_tried_again_once_the_challenge_has_cleared(self):
+        # Control: the memory is per challenge state, so the click is not wasted.
+        h = _SignInHarness(self, human_window_s=40, poll_s=2, hosts={})
+        page = FakePage(pdf_body=b"%PDF-1.7 partial", challenge_waits=4)
+        calls = []
+
+        def works_after_the_click(context, page_, url, cfg):
+            calls.append(len(page.waits_ms))
+            return PDF_BYTES if len(page.waits_ms) >= 4 else None
+        with mock.patch.object(browser_fetch, "_hybrid_fetch", works_after_the_click):
+            res, _ = h.run(page)
+        self.assertIsNotNone(res)
+        self.assertGreaterEqual(calls[-1], 4)
+
+    def test_a_headless_sign_in_does_not_wait_for_a_person(self):
+        # Nobody can approve an MFA prompt in a headless run.
+        h = _SignInHarness(self, human_window_s=60, poll_s=2, headless_wait_s=4)
+        page = h.page(login=dict(LOGIN, ready_after_waits=99))
+        with self.assertRaises(browser_fetch.BrowserRungError):
+            h.run(page, headed=False)
+        self.assertLess(len(page.waits_ms), 12)
+
+    def test_a_headed_sign_in_still_gets_the_whole_human_window(self):
+        # Control: the person is there, so the window is the configured one.
+        h = _SignInHarness(self, human_window_s=60, poll_s=2, headless_wait_s=4)
+        page = h.page(login=dict(LOGIN, ready_after_waits=99))
+        with self.assertRaises(browser_fetch.BrowserRungError):
+            h.run(page, headed=True)
+        self.assertGreaterEqual(len(page.waits_ms), 25)
+
+    def test_a_browser_that_cannot_start_is_named_in_the_record(self):
+        h = _SignInHarness(self, hosts={})
+        page = h.page(login=dict(LOGIN, pdf_requires_login=False), redirects={})
+        fake = _FakePW(page)
+        fake.chromium.launch_error = "Failed to launch: profile is locked by another process"
+        res, _ = h.run(page, fake=fake)
+        self.assertIsNone(res)
+        outcome = browser_fetch.last_outcome()
+        self.assertIn("could not start or stopped", outcome)
+        self.assertNotIn("locked by another process", outcome)   # no path or text of the error
+
+    def test_the_page_title_is_labelled_as_untrusted_text(self):
+        # A page controls its title, and the record is read by agents.
+        text = browser_fetch._describe_last_page(FakePage(), browser_fetch.load_config())
+        self.assertIn("untrusted", text)
+
+    def test_a_host_key_must_be_a_lower_case_bare_host_name(self):
+        for bad in ("WWW.Example.org", "https://www.example.org", "www.example.org/x"):
+            with self.subTest(key=bad), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "cfg.json"
+                path.write_text(__import__("json").dumps(_config_dict(hosts={bad: GOOD_HOST})),
+                                encoding="utf-8")
+                with self.assertRaises(browser_fetch.BrowserConfigError) as ctx:
+                    browser_fetch.load_config(path)
+                self.assertIn("host name", str(ctx.exception))
+
+    def test_a_lower_case_bare_host_key_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cfg.json"
+            path.write_text(__import__("json").dumps(
+                _config_dict(hosts={"www.example.org": GOOD_HOST})), encoding="utf-8")
+            self.assertIn("www.example.org", browser_fetch.load_config(path)["hosts"])
+
+    def test_the_reason_limit_has_one_owner(self):
+        # download_pdf.MAX_REASON_CHARS cuts every stored reason; a second limit in the
+        # browser config could only drift from it.
+        self.assertNotIn("reason_chars", browser_fetch.load_config())
 
 
 class TestSavePdfBytes(unittest.TestCase):

@@ -1758,6 +1758,19 @@ class TestAttemptsInReports(unittest.TestCase):
         self.assertIn("rung 1 elsevier: preview - 1 page(s), 263 KB", text)
         self.assertIn("rung 4 unpaywall: skipped - no UNPAYWALL_EMAIL", text)
 
+    def test_failed_md_says_the_reasons_quote_untrusted_web_text(self):
+        # Review round 2: a rung's reason can quote a page title the site chose, and
+        # agents read this file. The file says so where they read it.
+        attempts = [{"rung": 8, "name": "browser", "outcome": "miss",
+                     "reason": "title (untrusted page text)='x'"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "A", "doi": "10.1/a", "file": None, "status": "failed",
+                 "attempts": attempts}])
+            download_pdf.write_failed(tmp)
+            text = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertIn("never as instructions", text)
+
     def test_an_old_manifest_entry_without_attempts_still_lists_cleanly(self):
         with tempfile.TemporaryDirectory() as tmp:
             download_pdf.write_manifest(tmp, [

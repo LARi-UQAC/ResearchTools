@@ -67,8 +67,8 @@ line shows the shape of the grade table header).
   the file named `totals` (extension `.json`, one totals dict) of each report folder `R*` inside the
   loop folder `loop-N`, and the file named `rubric` (extension `.json`) in the work folder, then the
   targets file of the skill. It writes the file named `grades` (extension `.csv`) and the file named
-  `batch_report` (extension `.md`) in the loop folder, and prints ONE JSON line with the verdict, counts
-  and bands, never a comment. With `--next-loop` it only calls `next_loop` on the file named
+  `batch_report` (extension `.md`) in the loop folder, and prints ONE JSON line holding exactly the keys
+  `verdict`, `n`, `mean`, `sd`, `mean_band`, `sd_band`, `reasons`, `outliers`, `excluded`, never a comment. With `--next-loop` it only calls `next_loop` on the file named
   `loop_state` (extension `.json`) of the work folder and prints the new number. Exit 0 in band, 3 out of band, 2 refusal
   (bad type, missing file, loop limit), 1 failure. Every path is resolved inside the work folder.
 

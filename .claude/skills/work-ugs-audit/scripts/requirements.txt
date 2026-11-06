@@ -1,0 +1,13 @@
+# work-ugs-audit skill (Issue #104).
+#
+# PyMuPDF   : pdf_annotate.py, pdf_annex.py (import fitz), and the figure scripts of figure-review.
+# pymupdf4llm : report_prepare.py reads each report page by page as Markdown.
+# PyYAML    : ugs_config.annotation_author reads the active profile with yaml.safe_load.
+#
+# LICENCE NOTE: PyMuPDF and pymupdf4llm are AGPL-3.0, acceptable for the local use of this
+# toolkit (same note as extract-statistic). Same pins as extract-statistic, paper2talk, pdf2md.
+# Audit: pip-audit -r .claude/skills/work-ugs-audit/scripts/requirements.txt
+
+PyMuPDF==1.27.2.3
+pymupdf4llm==1.27.2.3
+PyYAML==6.0.3

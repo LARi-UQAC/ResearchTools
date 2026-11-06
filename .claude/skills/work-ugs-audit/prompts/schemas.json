@@ -1,0 +1,111 @@
+{
+  "rubric": {
+    "type": "object",
+    "required": ["assessment_type", "total_points", "items"],
+    "properties": {
+      "assessment_type": {"type": "string", "enum": ["lab_report", "project_report"]},
+      "total_points": {"type": "number"},
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["id", "title", "max_points", "criteria", "checklist"],
+          "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "max_points": {"type": "number"},
+            "criteria": {"type": "array", "items": {"type": "string"}},
+            "checklist": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    }
+  },
+  "grade_item": {
+    "type": "object",
+    "required": ["status", "score", "comment", "evidence"],
+    "properties": {
+      "status": {"type": "string", "enum": ["rated", "not_applicable"]},
+      "score": {"type": ["number", "null"]},
+      "comment": {"type": "string"},
+      "evidence": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["page", "quote"],
+          "properties": {
+            "page": {"type": "integer", "minimum": 1},
+            "quote": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "audit_item": {
+    "type": "object",
+    "required": ["verdict", "reason"],
+    "properties": {
+      "verdict": {"type": "string", "enum": ["agree", "disagree"]},
+      "reason": {"type": "string"}
+    }
+  },
+  "language": {
+    "type": "object",
+    "required": ["findings"],
+    "properties": {
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["page", "code", "quote", "proposed", "reason"],
+          "properties": {
+            "page": {"type": "integer", "minimum": 1},
+            "code": {"type": "string"},
+            "quote": {"type": "string"},
+            "proposed": {"type": "string"},
+            "reason": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "figure": {
+    "type": "object",
+    "required": ["kind", "criteria"],
+    "properties": {
+      "kind": {"type": "string", "enum": ["chart", "diagram", "flowchart", "photo", "other"]},
+      "criteria": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "verdict", "reason"],
+          "properties": {
+            "id": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["pass", "fail", "not_applicable"]},
+            "reason": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "figure_set": {
+    "type": "object",
+    "required": ["verdict", "reason", "figures_involved"],
+    "properties": {
+      "verdict": {"type": "string", "enum": ["pass", "fail", "not_applicable"]},
+      "reason": {"type": "string"},
+      "figures_involved": {"type": "array", "items": {"type": "integer"}}
+    }
+  },
+  "vision_probe": {
+    "type": "object",
+    "required": ["x_title", "y_title", "unit", "curve_count"],
+    "properties": {
+      "x_title": {"type": "string"},
+      "y_title": {"type": "string"},
+      "unit": {"type": "string"},
+      "curve_count": {"type": "integer"}
+    }
+  }
+}

@@ -9,10 +9,9 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 - Done and pushed: plans 1, 2, 3, 13, 14 (R39), 15, bridge reply reserve fix, mirrors regenerated.
 - Owner 2026-11-05: cloud splits files (moves only, byte for byte): bridge_text.py (c7f8866), driver_deps.py (a1f1a5f). Plans were re-cut so one driver reply (reserve 14336 tokens, whole files returned) holds one module and its test.
 - Authoring rule for plans: a name with a code or data extension in plan prose becomes a file to create. Write full paths only in Files/Reads lines; elsewhere write `grade`.json (split by the backtick). Check with the targets probe or a driver dry run.
-- Old plan4, plan5, plan6 deleted (replaced by 4a to 6c). plan8 not yet split: see the next-session list below.
-- Cloud DATA to write before the lot (exempt from R39): undergrad_references.json (4b), annex.template.html (6b), figure_criteria.json and figure_analysis.template.json (6c), the two requirements files and rt-python-requirements.json (5), new ugs_config.json keys (roles.grader/auditor/vision, driver.reply_reserve_tokens, grade.invalid_answer_retries, select.min_word_len), then plan 7 (prompts, schemas, templates; progress template lines: `grade I01`, `language`, `figures`, `figure F01`, `audit`, `assemble`).
-- Next session: split plan 8 into 8a bridge_images (loop-engineer), 8b ugs_bridge, 8c ugs_text, 8d ugs_grade, 8e ugs_audit, 8f ugs_language, 8g ugs_figures, 8h ugs_assemble, 8i ugs_ledger, 8j ugs_driver, 8k vision_probe, each one module plus one test; do NOT edit ollama_bridge.py (images are added by a new module that attaches them to the payload). Then dry run the whole ledger, then the owner's real lot.
-- Open points: the old test_batch_stats.py written by the cloud is set aside (scratchpad), the local model writes it. test_settings_template_distribution fails until plan 11 adds SKILL.md to work-ugs-audit.
+- Old plan4, plan5, plan6, plan8 deleted (replaced by 4a to 6c and 8a to 8l; shared contracts in spec.md "Driver contracts"). Cloud DATA and plan 7 are written before the lot (exempt from R39). The old test_batch_stats.py of the cloud is set aside; the local model writes it.
+- Plan 8 order is by dependency: 8a bridge_images, 8b ugs_bridge, 8c ugs_text, 8d ugs_ledger, 8e ugs_grade, 8f ugs_audit, 8g ugs_language, 8h ugs_figures, 8i ugs_assemble, 8j ugs_run, 8k ugs_driver, 8l vision_probe. The driver was cut in two (8j, 8k): one reply holds one module and its test.
+- Open: test_settings_template_distribution fails until plans 9 and 11 add SKILL.md to figure-review and work-ugs-audit. Inventory lines in testing.md for all new test files are the cloud's job in plan 11 (the file is over the read ceiling).
 
 ## plan1.md
 
@@ -80,7 +79,55 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan7.md
 
-- [ ] T1 undergraduate framework, prompts, spec and progress templates (cloud, before plan 8)
+- [x] T1 framework, prompts, schemas, templates written; ugs roles not adopted (step 3 skipped)
+
+## plan8a.md
+
+- [ ] T1 bridge_images and its test
+
+## plan8b.md
+
+- [ ] T1 ugs_bridge and its test
+
+## plan8c.md
+
+- [ ] T1 ugs_text and its test
+
+## plan8d.md
+
+- [ ] T1 ugs_ledger and its test
+
+## plan8e.md
+
+- [ ] T1 ugs_grade and its test
+
+## plan8f.md
+
+- [ ] T1 ugs_audit and its test
+
+## plan8g.md
+
+- [ ] T1 ugs_language and its test
+
+## plan8h.md
+
+- [ ] T1 ugs_figures and its test
+
+## plan8i.md
+
+- [ ] T1 ugs_assemble and its test
+
+## plan8j.md
+
+- [ ] T1 ugs_run and its test
+
+## plan8k.md
+
+- [ ] T1 ugs_driver and its test
+
+## plan8l.md
+
+- [ ] T1 vision_probe and its test
 
 ## plan9.md
 

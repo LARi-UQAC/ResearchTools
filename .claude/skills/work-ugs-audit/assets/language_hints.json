@@ -1,0 +1,10 @@
+{
+  "fr": {
+    "value": ["le", "la", "les", "des", "du", "de", "un", "une", "et", "est", "sont", "dans", "pour", "avec", "sur", "par", "que", "qui", "ce", "cette", "ces", "au", "aux", "nous", "il", "elle", "ont", "pas", "plus", "mais", "ou", "où", "donc", "selon", "entre", "ainsi", "lors", "afin"],
+    "provenance": "common French function words, written 2026-11-06 by the session; used only to pick the language of a report"
+  },
+  "en": {
+    "value": ["the", "of", "and", "to", "in", "is", "are", "was", "were", "for", "with", "on", "by", "that", "this", "these", "those", "as", "at", "from", "it", "we", "be", "has", "have", "not", "which", "or", "an", "can", "between", "using", "thus", "when"],
+    "provenance": "common English function words, written 2026-11-06 by the session; used only to pick the language of a report"
+  }
+}

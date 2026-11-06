@@ -27,5 +27,41 @@
   "driver.request_timeout_s": {
     "value": 600,
     "provenance": "proposal 2026-11-05, tuned at the owner's review (seconds per bridge call, a local model is slow)"
+  },
+  "roles.grader": {
+    "value": "ugs-grader",
+    "provenance": "spec.md Model roles (resolver role adopted by the owner with --adopt-role, 2026-11-05)"
+  },
+  "roles.auditor": {
+    "value": "ugs-auditor",
+    "provenance": "spec.md Model roles (resolver role adopted by the owner with --adopt-role, 2026-11-05)"
+  },
+  "roles.vision": {
+    "value": "ugs-vision",
+    "provenance": "spec.md Model roles (resolver role adopted by the owner with --adopt-role, 2026-11-05)"
+  },
+  "driver.reply_reserve_tokens": {
+    "value": 4096,
+    "provenance": "proposal 2026-11-06, tuned at the owner's review (tokens held for one JSON answer: a normalized rubric of about a dozen items is the largest)"
+  },
+  "driver.max_image_bytes": {
+    "value": 4194304,
+    "provenance": "proposal 2026-11-06, tuned at the owner's review (bytes, largest image file attached to one request)"
+  },
+  "driver.image_tokens_fallback": {
+    "value": 3136,
+    "provenance": "computed from D14: ceil(1568/28) * ceil(1568/28) patches for the largest allowed image, used until vision_probe has measured the local model"
+  },
+  "grade.invalid_answer_retries": {
+    "value": 1,
+    "provenance": "proposal 2026-11-06, tuned at the owner's review (repeats of a grader call after a refused answer)"
+  },
+  "select.min_word_len": {
+    "value": 4,
+    "provenance": "proposal 2026-11-06, tuned at the owner's review (letters; shorter words are ignored when matching a rubric item to page headings)"
+  },
+  "references.quote_chars": {
+    "value": 60,
+    "provenance": "proposal 2026-11-06, tuned at the owner's review (characters of a reference entry used to anchor its annotation)"
   }
 }

@@ -128,12 +128,12 @@ all three environments after the install.
 | ☑ | `playwright-stealth` | playwright_stealth | 2.0.3 | scopus `==2.0.3` | scopus | yes |  |
 | ☑ | `psycopg` | psycopg | 3.3.6 | extract-statistic `[binary]==3.3.6`; rt-observe `[binary]==3.3.6` | extract-statistic, rt-observe | yes |  |
 | ☑ | `pyHanko` | pyhanko | 0.37.0 | form-service `==0.37.0` | form-service |  | MIT licence |
-| ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | paper2talk `==1.27.2.3`; extract-statistic `==1.27.2.3`; word2latex `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, scopus, word2latex | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |
-| ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | extract-statistic `==1.27.2.3` | extract-statistic | yes | AGPL-3.0 licence |
+| ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | paper2talk `==1.27.2.3`; extract-statistic `==1.27.2.3`; word2latex `==1.27.2.3`; work-ugs-audit `==1.27.2.3`; figure-review `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, scopus, word2latex | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |
+| ☑ | `pymupdf4llm` | pymupdf4llm | 1.27.2.3 | extract-statistic `==1.27.2.3`; work-ugs-audit `==1.27.2.3` | extract-statistic | yes | AGPL-3.0 licence |
 | ☑ | `pypdf` | pypdf | 6.21.2 | paper2talk `==6.21.2`; form-service `==6.21.2`; narrative-cv `==6.21.2` | form-service, narrative-cv, paper2talk |  |  |
 | ☑ | `python-docx` | docx | 1.2.0 | word2latex `==1.2.0` | word2latex | yes | word2latex test fixtures only (test_docx_track.py); docx_track.py itself edits the XML with lxml |
 | ☑ | `python-pptx` | pptx | 1.0.2 | paper2talk `==1.0.2` | paper2talk | yes |  |
-| ☑ | `PyYAML` | yaml | 6.0.3 | recommendation-letter `==6.0.3`; narrative-cv `==6.0.3`; wp-portfolio-sync `==6.0.3` | narrative-cv, recommendation-letter, wp-portfolio-sync |  | read with yaml.safe_load only |
+| ☑ | `PyYAML` | yaml | 6.0.3 | recommendation-letter `==6.0.3`; narrative-cv `==6.0.3`; wp-portfolio-sync `==6.0.3`; work-ugs-audit `==6.0.3` | narrative-cv, recommendation-letter, work-ugs-audit, wp-portfolio-sync |  | read with yaml.safe_load only |
 | ☑ | `requests` | requests | 2.34.2 | scopus `==2.34.2`; extract-statistic `==2.34.2`; form-service `==2.34.2`; wp-portfolio-sync `==2.34.2` | extract-statistic, form-service, scopus, wp-portfolio-sync |  |  |
 | ☑ | `tiktoken` | tiktoken | 0.14.0 | loop-engineer `==0.14.0` | aider-setup, loop-engineer | yes | aider-setup also uses the copy in aider's own interpreter |
 <!-- python-libs:end .venv-skills -->

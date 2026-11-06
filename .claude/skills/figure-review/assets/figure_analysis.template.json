@@ -1,0 +1,23 @@
+{
+  "report_id": "R01",
+  "figures": [
+    {
+      "figure_id": "F01",
+      "page": 3,
+      "rect": [72.0, 140.0, 523.0, 420.0],
+      "file": "figures/F01.png",
+      "kind": "chart",
+      "drawing_area_ratio": 0.812,
+      "effective_dpi": 172.4,
+      "caption": "Figure 1 - Fictitious step response",
+      "cited_in_text": true,
+      "criteria": {
+        "space_used_over_70": {"verdict": "pass", "reason": "ratio 0.812 against 0.7"},
+        "axis_titles": {"verdict": "fail", "reason": "fictitious: the vertical axis has no title", "comment": "Titre d'axe absent ou peu informatif : nommer la grandeur portée sur chaque axe. fictitious: the vertical axis has no title"}
+      }
+    }
+  ],
+  "report_criteria": {
+    "style_consistency": {"verdict": "pass", "reason": "fictitious: same fonts and line weights"}
+  }
+}

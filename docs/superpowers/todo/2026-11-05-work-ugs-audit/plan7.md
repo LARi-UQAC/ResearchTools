@@ -48,54 +48,33 @@ in `evidence`. No model tag (R2).
 
 ### Task 1: framework, prompts, schemas, templates
 
-**Files:**
-- Create: `.claude/skills/scholar-evaluation/references/undergraduate_framework.md`
-- Modify: `.claude/skills/scholar-evaluation/SKILL.md`
-- Create: `.claude/skills/work-ugs-audit/prompts/rubric_normalize.md`
-- Create: `.claude/skills/work-ugs-audit/prompts/grade_item.md`
-- Create: `.claude/skills/work-ugs-audit/prompts/audit_item.md`
-- Create: `.claude/skills/work-ugs-audit/prompts/language.md`
-- Create: `.claude/skills/figure-review/prompts/figure.md`
-- Create: `.claude/skills/work-ugs-audit/prompts/schemas.json`
-- Create: `.claude/skills/work-ugs-audit/assets/spec.template.md`
-- Create: `.claude/skills/work-ugs-audit/assets/progress.template.md`
+**Files (all written 2026-11-06 by the session):**
+- `.claude/skills/scholar-evaluation/references/undergraduate_framework.md` and a paragraph in its `SKILL.md`
+- `.claude/skills/work-ugs-audit/prompts/`: `levels.md`, `rubric_normalize.md`, `grade_item.md`,
+  `audit_item.md`, `language.md`, `calibration_note.md`, `vision_probe.md`, `schemas.json`
+- `.claude/skills/figure-review/prompts/figure.md` (sections `## single` and `## set`)
+- `.claude/skills/work-ugs-audit/assets/`: `spec.template.md`, `progress.template.md`
 
-**Interfaces:**
-- Produces (plan 8 fills exactly these placeholders; a placeholder not listed here does not exist):
-  - `rubric_normalize.md`: `{{RUBRIC_TEXT}}`, `{{ASSESSMENT_TYPE}}`. Answer: `rubric.json` shape.
-  - `grade_item.md`: `{{LEVELS}}` (the framework's anchor table), `{{ITEM}}` (one rubric item as JSON),
-    `{{SECTIONS}}` (page-tagged Markdown of the relevant pages), `{{CALIBRATION_NOTE}}` (empty on loop 1,
-    the batch verdict and reasons from `batch_stats` on later loops), `{{LANGUAGE_OF_REPORT}}`.
-  - `audit_item.md`: `{{ITEM}}`, `{{GRADE_RECORD}}`, `{{EVIDENCE_PAGES}}`.
-  - `language.md`: `{{LANGUAGE_TABLE}}` (undergraduate-scope entries of `language_categories.json`),
-    `{{SECTION}}`, `{{LANGUAGE_OF_REPORT}}`.
-  - `figure.md`: `{{CAPTION}}`, `{{CITING_TEXT}}`, `{{FIGURE_KIND}}`, `{{SCRIPT_VERDICTS}}` (the six
-    script-measured verdicts with their numbers, to explain, never to overturn), `{{CRITERIA}}` (the
-    model-judged entries of `figure_criteria.json` that apply to this kind, with their labels); the image
-    travels in the request's `images` field (plan 8), not in the text. The model first names the figure
-    kind, then judges each listed criterion. The file has two sections: `## single` (above) and `## set`
-    with `{{FIGURE_COUNT}}` and `{{CRITERION}}`, for the per-report style criterion judged on one contact
-    sheet image.
-  - `schemas.json`: keys `rubric`, `grade_item`, `audit_item`, `language`, `figure`, `figure_set`, each an Ollama
-    `format` schema matching `spec.md` "Data shapes" (`language` answers a list of
-    `{page, code, quote, proposed, reason}`; `figure` answers `kind` and a list of
-    `{id, verdict, reason}` restricted to the ids it was given; the driver rejects any other id;
-    `figure_set` answers `{verdict, reason, figures_involved[]}`).
-  - `undergraduate_framework.md`: five anchored levels per item as a share of `max_points` (absent 0,
-    attempted 0.5, partial 0.75, complete and correct 0.88, exemplary 1.0), when each applies for a
-    technical report, and the statuses `rated`, `not_applicable`, `not_run`.
-  - `spec.template.md`: header (course code slot, assessment type, total), one `## I01 - title (points)`
-    section per item with its criteria and checklist. `progress.template.md`: `## notes` plus one
-    `## R01` section with the step lines of `spec.md` D3 and D6 (prepare, items, language, figures F01...,
-    audit, assemble), marks `[ ]`, `[x]`, `[!]`.
+**Interfaces (plan 8 fills exactly these slots; a slot not listed here does not exist):**
+- `levels.md`: no slot, loaded as the levels text. `rubric_normalize.md`: `{{RUBRIC_TEXT}}`,
+  `{{ASSESSMENT_TYPE}}`. `grade_item.md`: `{{LEVELS}}`, `{{ITEM}}`, `{{SECTIONS}}`, `{{CALIBRATION_NOTE}}`,
+  `{{LANGUAGE_OF_REPORT}}`. `audit_item.md`: `{{ITEM}}`, `{{GRADE_RECORD}}`, `{{EVIDENCE_PAGES}}`.
+  `language.md`: `{{LANGUAGE_TABLE}}`, `{{SECTION}}`, `{{LANGUAGE_OF_REPORT}}`. `calibration_note.md`: `{{LOOP}}`,
+  `{{MEAN}}`, `{{MEAN_BAND}}`, `{{SD}}`, `{{SD_BAND}}`, `{{VERDICT}}`, `{{REASONS}}`. `vision_probe.md`: none.
+- `figure.md` `## single`: `{{CAPTION}}`, `{{CITING_TEXT}}`, `{{SCRIPT_VERDICTS}}`, `{{CRITERIA}}`; `## set`:
+  `{{FIGURE_COUNT}}`, `{{CRITERION}}`. The figure kind is NOT a slot: it is not known before the model
+  looks (decision of 2026-11-06): the model names it, and the driver forces `not_applicable` on any
+  criterion that does not apply to that kind (plan 8h).
+- `schemas.json` keys: `rubric`, `grade_item`, `audit_item`, `language`, `figure`, `figure_set`,
+  `vision_probe`. `spec.template.md` slots: `{{ASSESSMENT_TYPE}}`, `{{TOTAL_POINTS}}`, `{{ITEMS}}`.
 
-- [ ] **Step 1: Write `undergraduate_framework.md`** and add one paragraph to `scholar-evaluation/SKILL.md`
+- [x] **Step 1: Write `undergraduate_framework.md`** and add one paragraph to `scholar-evaluation/SKILL.md`
   pointing to it for undergraduate work (research framework unchanged).
-- [ ] **Step 2: Write the five prompts and `schemas.json`.** Validate `schemas.json` parses and that each
+- [x] **Step 2: Write the five prompts and `schemas.json`.** Validate `schemas.json` parses and that each
   schema's required keys match `spec.md` (check by a one-off read in the scratchpad, not a new script).
-- [ ] **Step 3: Dry check on fictitious input:** fill `grade_item.md` by hand with a fictitious item and a
+- [!] **Step 3 (not run: roles ugs-grader, ugs-auditor, ugs-vision are not adopted yet; the owner adopts them before the real lot): Dry check on fictitious input:** fill `grade_item.md` by hand with a fictitious item and a
   fictitious page; send it once through `ollama_bridge.py --role ugs-grader --no-vault-context` if the
   role is adopted, else record `[!] role not adopted` in `progress.md` and continue (plan 8 tests fake
   the bridge). Never use a real report here.
-- [ ] **Step 4: Write the two templates.**
-- [ ] **Step 5: Commit:** `feat(work-ugs-audit): undergraduate framework and local prompts (#104)`.
+- [x] **Step 4: Write the two templates.**
+- [x] **Step 5: Commit:** `feat(work-ugs-audit): undergraduate framework and local prompts (#104)`.

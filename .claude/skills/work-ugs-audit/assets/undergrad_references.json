@@ -1,0 +1,54 @@
+{
+  "_provenance": "Written 2026-11-06 by the session for plan 4b and plan 8i (spec D8). Patterns are the builder's choice, to be tuned at the owner's review: no free registry of standard numbers exists, so the check is of form only.",
+  "accepted_kinds": ["standard", "url", "other"],
+  "standard_patterns": [
+    {
+      "name": "iso_iec",
+      "looks_like": "(?i)\\b(?:ISO|IEC)\\b",
+      "regex": "(?i)\\b(?:ISO/IEC|ISO|IEC)\\s?\\d{3,6}(?:-\\d{1,2})?(?::\\d{4})?",
+      "provenance": "ISO and IEC identifiers: organisation, 3 to 6 digits, optional part and year (ISO 9001:2015, ISO9001:2015, ISO 9001, IEC 60364-4-41)"
+    },
+    {
+      "name": "csa",
+      "looks_like": "(?i)\\bCSA\\b",
+      "regex": "(?i)\\b(?:CAN/)?CSA[\\s-]?[A-Z]?\\d{1,4}(?:\\.\\d+)?(?:-\\d{2,4})?",
+      "provenance": "CSA identifiers: optional CAN/ prefix, optional letter, number, optional part and year (CSA C22.1-21, CAN/CSA-Z462)"
+    },
+    {
+      "name": "ieee_std",
+      "looks_like": "(?i)\\bIEEE\\s+Std\\b",
+      "regex": "(?i)\\bIEEE\\s+Std\\.?\\s?\\d{1,5}(?:\\.\\d+)?(?:-\\d{4})?",
+      "provenance": "IEEE standards only (IEEE Std 1584); a journal reference that merely says IEEE is not a standard"
+    },
+    {
+      "name": "nfpa",
+      "looks_like": "(?i)\\bNFPA\\b",
+      "regex": "(?i)\\bNFPA\\s?\\d{1,5}[A-Z]?(?::\\d{4})?",
+      "provenance": "NFPA identifiers (NFPA 70E, NFPA 70:2023)"
+    },
+    {
+      "name": "astm",
+      "looks_like": "(?i)\\bASTM\\b",
+      "regex": "(?i)\\bASTM\\s?[A-Z]\\d{1,5}(?:-\\d{2,4})?",
+      "provenance": "ASTM identifiers (ASTM D638-14)"
+    }
+  ],
+  "comments": {
+    "malformed": {
+      "fr": "Norme citée sous une forme incorrecte : vérifier l'organisme, le numéro et l'année.",
+      "en": "Standard cited in an incorrect form: check the body, the number and the year."
+    },
+    "unreachable": {
+      "fr": "Adresse introuvable ou hors service : vérifier le lien.",
+      "en": "Address not found or down: check the link."
+    },
+    "blocked": {
+      "fr": "Adresse protégée, vérification impossible : confirmer à la main.",
+      "en": "Address is protected and could not be checked: confirm by hand."
+    },
+    "uncited": {
+      "fr": "Référence non citée dans le texte : ajouter l'appel ou la retirer.",
+      "en": "Reference not cited in the text: add the citation or remove it."
+    }
+  }
+}

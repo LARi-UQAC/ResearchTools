@@ -98,6 +98,31 @@ window is split by section or refused), R16/R17 (`--dry-run`, JSON report), R18,
 injected in tests), R22, R23, R24 (every output path resolved inside the working folder), R27, R29, R31,
 R35, R36. French text: every text check is tested on accented input.
 
+## Driver contracts (plans 8a to 8l)
+
+Scripts live in `.claude/skills/work-ugs-audit/scripts` (`bridge_images` in loop-engineer). A test puts the
+parent of its own folder first on `sys.path`. A module needing loop-engineer or figure-review scripts adds
+their folder to `sys.path` from its own file location.
+
+- `call(kind, prompt, schema, images=None) -> dict`: kind is `grader`, `auditor` or `vision`. The driver
+  builds the real one from `ugs_bridge.call` and the role names of the configuration; tests pass a fake.
+  It raises `ugs_bridge.NotRun` with `.kind` (`unadopted`, `over_budget`, `unreachable`, `unparsable`,
+  `invalid`, `image`) and `.retryable` (true for `unparsable` and `invalid`).
+- `ugs_text.StepContext`: `prompts` (name to text), `schemas`, `levels`, `window_tokens`, `reserve_tokens`,
+  `count` (text to tokens), `grade_retries`, `audit_retries`, `min_word_len`.
+- Answers (keys of the schemas file): grade_item `{status, score, comment, evidence[{page, quote}]}`;
+  audit_item `{verdict agree|disagree, reason}`; language `{findings[{page, code, quote, proposed, reason}]}`;
+  figure `{kind, criteria[{id, verdict, reason}]}`; figure_set `{verdict, reason, figures_involved[]}`;
+  rubric = the rubric shape; vision_probe `{x_title, y_title, unit, curve_count}`.
+- Work folder files: ids.json, rubric.json, spec.md, progress.md, loop_state.json, vision_probe.json,
+  `R01/pages/p001.md`, `R01/figures/`, `R01/model_images/`; per loop `loop-N/R01/` holds grade.json,
+  language.json, figures.json, annotations.json, totals.json, annotated.pdf; `loop-N/` holds grades.csv,
+  batch_report.md, batch.json.
+- Ledger lines of a `## R01` section: `prepare`, `grade I01`..., `language`, `figures`, `figure F01`...,
+  `audit`, `assemble`. Marks `[ ]`, `[x]`, `[!]`; an optional note after ` - ` is a short code, never
+  report text.
+- Exit codes: 0 done, 1 a model step could not run (stop, resume later), 2 refusal, 3 batch out of band.
+
 ## Acceptance
 
 Every new script has an offline suite with a failure path. A fixture report carrying a marker sentence

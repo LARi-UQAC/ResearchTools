@@ -41,18 +41,19 @@ Purpose, Inputs and Outputs header, and Raises when it raises on purpose.
 - Test: `.claude/skills/work-ugs-audit/scripts/Test/test_ref_check.py`
 
 **Reads, do not modify:** `.claude/skills/work-ugs-audit/assets/undergrad_references.json` (the key
-`standard_patterns` is a list of objects with `name`, `regex` and `provenance`; the key
+`standard_patterns` is a list of objects with `name`, `looks_like` (a loose pattern that makes a
+reference a standard), `regex` (the strict form of the identifier) and `provenance`; the key
 `accepted_kinds` lists `standard`, `url`, `other`), `.claude/skills/work-ugs-audit/scripts/ugs_config.py`
 (`load(path)` returns a flat dict of dotted keys; here `references.url_timeout_s` and
 `references.max_retries`; `default_path()` names the file).
 
 **Interfaces:**
-- `classify(ref: str, patterns: list[dict]) -> str`: `standard` when a pattern matches, `url` when the
-  text holds an http or https address, else `other`.
+- `classify(ref: str, patterns: list[dict]) -> str`: `standard` when a `looks_like` pattern finds a match
+  anywhere in the text (case ignored), `url` when the text holds an http or https address, else `other`.
 - `check(ref: str, body_text: str, patterns: list[dict], fetch, timeout: float, retries: int) -> dict`:
   returns `kind`, `status` (`form-ok`, `malformed`, `reachable`, `unreachable`, `blocked`,
-  `not_checked`) and `cited` (bool). A standard is `form-ok` when it matches a pattern completely,
-  else `malformed`. A URL is fetched through `fetch(url, timeout) -> int`, which returns an HTTP status
+  `not_checked`) and `cited` (bool). A standard is `form-ok` when a `regex` pattern of the same entry finds a match in the text (case
+  ignored), else `malformed`. A URL is fetched through `fetch(url, timeout) -> int`, which returns an HTTP status
   or raises `OSError`: 200 to 399 is `reachable`, 401 or 403 is `blocked`, any other status or an
   error after `retries` further tries is `unreachable`. `other` is `not_checked`. `cited` is true when
   a bracket marker with the reference's number, or the standard's identifier, appears in `body_text`.

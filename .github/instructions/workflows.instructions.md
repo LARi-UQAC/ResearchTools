@@ -500,32 +500,30 @@ names the tag at run time and no plan names a tag (R2).
 | Situation | Executor | Why it saves cloud tokens |
 |---|---|---|
 | Work that writes no code (R39): judgment, security review, design, prose, data files | `cloud`, `executing-plans` in the session | none to save: the work needs the best model |
-| One or more plans in one `progress.md`, a test per step, each plan's prompt plus reply fits the coder window | `local-coder`, tier simple or standard, one dispatch for the whole ledger | the cloud pays for the plans, the Haiku wrapper (launch and audit) and the review, the code is generated locally |
-| A plan whose reply cannot fit the coder window and cannot be split | `local-coder`, tier `large` (the `session` role, 262K) | same, with a window large enough for long output |
-| An unattended night with no interactive session | `aider` (spec, `plan[N]`, `progress`, a writer model and a different reviewer model) | no Claude Code involved once started |
+| One plan, a test per step, alone in its plans folder in aider-setup's layout | `local-coder`: `aider-plan.ps1` on that folder, with the kit's writer model and its required reviewer audit | the cloud pays for the plan and the R35 review, the code is generated locally and nothing needs a wrapper to start |
+| Several plans, or an unattended night with no interactive session | `aider`: `aider-night.ps1` (spec, `plan<N>`, `progress`, a writer model and a different reviewer model) | no Claude Code involved once started |
 | A whole session on Ollama or Augure | the owner's manual choice (`claude-switch.ps1`), never written in a plan | the session itself is local |
 
-Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. One
-`local-coder` dispatch runs a whole `progress.md`. Its prompt names the ledger with a `PROGRESS:
-<path>` line and the first open plan with a `PLAN: <path>` line, which the dispatch guard
-validates. The wrapper then runs `local_coder_driver.py`, which submits to the coder model the
-files aider-setup submits to aider, sized by the same `context-budget.json`, in one call per plan
-with the window of the tier's role and `reserve.reply_tokens` as the reply reserve. The wrapper
-is also the auditor: R35 as amended runs in the wrapper, under the bounds of the plan header
-(`loop_bounds.py init --from-plan`), and the wrapper never edits code (R39). A finding becomes an
-`- [ ] audit:` line in its plan's section, and the driver reruns that plan. A fix the audit asks
-for beyond that is a revised or new plan, written by the cloud. Aider keeps its internal writer
-and reviewer loop. On a machine with no qualified role for the tier, `plan_contract.py resolve`
-returns the `cloud` executor with the stated reason. For a plan that writes code that means the
-plan is not executed and the owner is told (R39), never that a weaker model or the cloud writes
-it (R8).
+Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. One plan is one
+`local-coder` run. The plan sits alone in its plans folder (`spec.md`, one `plan<N>.md`,
+`progress.md`), `aider-plan.ps1` runs every `plan<N>.md` of the folder it is given, so one plan is
+its case of one, and the kit supplies the models: the writer and the reviewer of the owner's aider
+configuration, never a model named in a plan or by the resolver (R2). The kit submits to the writer
+the files aider-setup submits to aider, sized by `context-budget.json`, runs the tests, fixes in its
+own loop, then audits with its reviewer model. That audit is required and `-NoAudit` is not used.
+The kit starts without a wrapper: the owner or the session runs the command. R35 as amended runs in
+the session before the pull request, under the bounds of the plan header (`loop_bounds.py init
+--from-plan`). A finding becomes an `- [ ] audit:` line in the plan's section of `progress.md`, and
+`aider-plan.ps1` runs the plan again. A fix beyond that is a revised or new plan, written by the
+cloud. When the kit has no model, the plan is not executed and the owner is told (R39), never that a
+weaker model or the cloud writes it (R8).
 
 Every step of this process uses a skill. That is R36 applied to R38: any task needs one, and a
 step with no skill is a gap to report, never a step run without one. The coding request is
 explored with `superpowers:brainstorming`. The spec, plans and progress are written with
 `superpowers:writing-plans`. The plans are executed in a session with
 `superpowers:executing-plans`, which loads `superpowers:test-driven-development`, and a
-`local-coder` dispatch is made by a session that follows it. The review uses `code-review` and
+`local-coder` run is started by a session that follows it. The review uses `code-review` and
 `security-review` (R35), and the pull request is prepared with
 `superpowers:finishing-a-development-branch`, which the no-merge rule overrides. A similar
 toolset may replace the three process skills, for example the speckit skills (`speckit-specify`,
@@ -549,17 +547,16 @@ project, every harness and every cloud model, the session and the Haiku wrapper 
 means source files and tests included. Four parts:
 
 1. **The cloud designs, the local model codes.** The cloud writes the spec, the plans, the
-   progress ledger, the reviews and the memory requests. The coder model receives, through
-   `local_coder_driver.py`, the full budget of `context-budget.json` and the files aider-setup
-   submits to aider, one call per plan. The `local-coder` wrapper launches the driver and audits
-   the result under the bounds of the plan header (R35). It reads code only to audit it. It never
-   writes, edits or finishes code, and it writes its findings only in the sandbox copies of the
-   audit (`--audit-begin`, `--audit-end`).
+   progress ledger, the reviews and the memory requests. The writer model of the aider kit receives,
+   through `aider-plan.ps1` (one plan) or `aider-night.ps1` (several), the full budget of
+   `context-budget.json` and the files aider-setup submits to aider. The cloud reviews the result
+   under the bounds of the plan header (R35). It reads code only to review it. It never writes,
+   edits or finishes code, and it writes its findings only as `- [ ] audit:` lines of the ledger.
 2. **A failure is a defect of the plan.** A task the local model cannot execute is marked `[!]`
    in the ledger and goes back to the cloud, which revises the plan: more precise files, an exact
    test command, a smaller step. The code is never patched on the cloud side, and a finding left
-   by an audit round becomes an `- [ ] audit:` line the driver runs again, or a revised or new plan.
-3. **A fallback is not an execution.** When no qualified local role exists, or the local model
+   by an audit round becomes an `- [ ] audit:` line the kit runs again, or a revised or new plan.
+3. **A fallback is not an execution.** When the kit has no model, or the local model
    fails, nothing falls back to a cloud model or to another local model without the owner's
    explicit order (R8). The result is reported as not executed.
 4. **Exempt, and nothing else.** Mirrors regenerated by `install.ps1`, and the data files a plan
@@ -569,7 +566,10 @@ means source files and tests included. Four parts:
 Why: measured 2026-11-05 on this effort, hand-picked prompts of 1245 to 4225 tokens inside a
 16384 window never showed the model the rules, the spec or the conventions, the wrapper spent
 366K cloud tokens on one plan, and the cloud ended up writing the code. The code of the driver
-itself (plans 13 to 15 of this effort) is the last code written by a cloud model. UNVERIFIED
+itself (plans 13 to 15 of this effort) is the last code written by a cloud model, with one more exception
+granted by the owner on 2026-11-06: two one-line fixes in aider-setup's `aider-plan-core.ps1`
+(tiktoken `disallowed_special`, and a leading dot kept by `Get-PlanTargets`) that blocked every run in this
+repository. UNVERIFIED
 (R15): nothing blocks a session that edits a source file by hand, because no hook inspects an
 edit's author. The rule is written, and `test_cloud_never_codes_rule.py` proves only that it is
 written where every project reads it and that the agent carries no instruction to write code.

@@ -112,7 +112,7 @@ function Update-RunRecord([hashtable]$fields) {
 
 function Get-TokenCount([string]$file) {
     if (-not (Test-Path -LiteralPath $venvPython)) { return -1 }
-    $code = "import sys,tiktoken;print(len(tiktoken.get_encoding('cl100k_base').encode(open(sys.argv[1],encoding='utf-8',errors='replace').read())))"
+    $code = "import sys,tiktoken;print(len(tiktoken.get_encoding('cl100k_base').encode(open(sys.argv[1],encoding='utf-8',errors='replace').read(),disallowed_special=())))"
     $out = & $venvPython -c $code $file 2>$null
     if ($LASTEXITCODE -ne 0) { return -1 }
     return [int]$out
@@ -246,7 +246,9 @@ function Get-PlanTargets([string]$planPath) {
     $found = New-Object System.Collections.Generic.List[string]
 
     foreach ($token in $text.Split($separators, [StringSplitOptions]::RemoveEmptyEntries)) {
-        $word = $token.Trim('.', '*', '#')
+        # Trailing dots only: a leading dot is part of the name (.claude/x.py), and a path such as
+        # ../../evil.py must reach the containment check below intact so that it is refused.
+        $word = $token.Trim('*', '#').TrimEnd('.')
         if ($word -eq "") { continue }
         $ext = [System.IO.Path]::GetExtension($word)
         # Code OR data: a plan legitimately creates a config file, and a file

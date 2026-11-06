@@ -52,13 +52,13 @@ still exercises the guard logic offline.
 4. TDD - `test-driven-development`: the plan names the failing tests for the acceptance criteria
    first, and the local coder model writes them with the code (rule R39: no cloud model writes
    code, tests included). **Sonnet** writes the plan, not the tests.
-5. Code - the **local-coder** agent launches `scripts/local_coder_driver.py` once for the whole
-   `progress.md` (rule R39). The driver calls the resolver's coder-role model once per plan with
-   exactly the files aider-setup submits to aider, sized by the same `context-budget.json`, and
-   ticks the ledger. The agent then audits the written files under the plan header's R35 bounds
-   (`code-review` and `security-review`, inside the `--audit-begin`/`--audit-end` sandbox) and
-   never edits code. The vault constraints reach the plan through the orchestrator, because
-   `local-coder` never reads the vault.
+5. Code - one plan at a time through the aider kit (`aider-plan.ps1`, rule R39): the plan sits alone in
+   its plans folder, the kit's writer model codes it with exactly the files aider-setup submits to
+   aider, sized by the same `context-budget.json`, runs the tests and ticks the ledger, then the
+   kit's reviewer model audits it (required). Several plans go to `aider-night.ps1`. The session
+   then reviews the written files under the plan header's R35 bounds (`code-review` and
+   `security-review`) and never edits code. The vault constraints reach the plan through the
+   orchestrator, because `local-coder` never reads the vault.
 6. Comment / doc - the **local-writer** agent (the resolver's writer-role model over the bridge). It consults the
    vault's `Methodes` and prior writing decisions the same way.
 7. Run tests + review panel - **Sonnet** runs `rtk pytest` (deterministic green/red) and the
@@ -68,7 +68,7 @@ still exercises the guard logic offline.
    findings + test result + betterleaks/pip-audit hook status into per-axis sub-scores, an
    aggregate 0-100, and the gate booleans; appends to the ledger.
 9. Correct - `writing-plans` turns the findings into a revised or new plan (**Sonnet**), and
-   local-coder runs it through the driver (rule R39: a finding is never fixed in the code by the
+   the kit runs it again (rule R39: a finding is never fixed in the code by the
    cloud). On error recovery / at the checkpoint, the orchestrator has `local-writer` re-consult
    the vault and puts the distilled lessons in the plan, so the learning captured last iteration
    is not repeated. `executing-plans` itself never reads the vault.

@@ -14,26 +14,17 @@ canonical sources.
 Full manual, Ollama tuning reference, worked example, and continuity notes:
 [docs/aider-setup.md](../aider-setup.md).
 
-## `local-coder` vs. the `aider-setup` pipeline - two lanes, not a duplicate
+## `local-coder` and the `aider-setup` pipeline - one harness at two scales
 
-Both generate code on a local model for free, and it is worth being precise about why one did
-not replace the other. Since 2026-11-05 a `local-coder` dispatch runs a **whole `progress.md`**.
-The prompt carries a line `PROGRESS: <path>` and the `PLAN: <path>` line of the first open plan,
-the plan opens with a header (`executor`, `tier`, `bounds`), and the hook
-`local-coder-dispatch-guard.py` refuses a dispatch with no valid plan. The agent launches the
-driver `local_coder_driver.py` once. The driver submits to the coder model the same files
-aider-setup submits to aider, one call per plan, and ticks `progress.md` with its three marks.
-The agent then audits the written files under R35 and never edits code or commits. It is
-**synchronous and in-session**: a session is present to dispatch it and to read its report.
-`aider-setup` is **asynchronous, unattended and multi-plan**: it runs a full night with every
-interactive harness closed, driving one aider process per plan file for hours with no one
-watching, with its own writer and reviewer models, then leaves an audit report for the morning.
-So the difference is no longer one plan against many. It is a ledger run in a session, with the
-audit done by the cloud wrapper, against a night with no one present. Neither can stand in for the
-other: `local-coder` cannot run when nobody is present to dispatch it and read its report, and
-aider's nightly driver has no synchronous entry point a mid-session orchestrator could call. The
-original aider-kit integration left `local-coder`'s definition, model resolution, and prompt
-untouched for this reason.
+Since 2026-11-06 `local-coder` no longer has a driver of its own. It is the aider kit run on **one
+plan**: the plan sits alone in its plans folder, `aider-plan.ps1` runs it with the kit's writer
+model and its required reviewer audit, and the kit starts without a wrapper. `aider-night.ps1` is
+the same engine for **several plans or an unattended night**: it adds the working branch, the wake
+lock and the optional push. A plan opens with a header (`executor`, `tier`, `bounds`) validated by
+`plan_contract.py`. The R35 review is done by the cloud session before the pull request, and a
+finding becomes an `- [ ] audit:` line that the kit runs again. The old text driver
+(`local_coder_driver.py`) is retired: it asked a small model for tool-like output in plain text and
+its replies were refused.
 
 <!-- local-coding:begin -->
 **Plans and the local coding contract.** Since 2026-10-17 every plan, for aider or for

@@ -8,6 +8,8 @@ model, the window and the test runner are fakes (R21), so no daemon and no proce
 """
 
 import json
+import os
+import unittest.mock
 import sys
 import tempfile
 import unittest
@@ -396,6 +398,48 @@ class AuditSandboxTests(unittest.TestCase):
     def test_a_sandbox_inside_the_root_is_a_refusal(self):
         with self.assertRaises(lcd.DriverError):
             lcd.audit_begin(self.progress, self.root, self.root / "sandbox", CONFIG, env=self.env)
+
+    # Security review of ed4e1da (2026-11-05): three ways an auditor could escape the sandbox.
+
+    def test_the_state_and_backups_are_kept_outside_the_sandbox(self):
+        self._begin()
+        self.assertEqual(sorted(p.name for p in self.sandbox.iterdir()), ["audit.md", "progress.md"])
+        self.assertTrue(lcd.state_dir(self.sandbox).joinpath("state.json").is_file())
+
+    def test_a_tampered_backup_is_refused_and_nothing_is_copied_back(self):
+        self._begin()
+        (self.root / "src" / "b.py").write_text("B = 99\n", encoding="utf-8")
+        backup = lcd.state_dir(self.sandbox) / "backup" / "src" / "b.py"
+        backup.write_text("B = 666\n", encoding="utf-8")
+        with open(self.sandbox / "progress.md", "a", encoding="utf-8") as handle:
+            handle.write("- [ ] audit: x\n")
+        with self.assertRaises(lcd.DriverError) as ctx:
+            self._end()
+        self.assertIn("src/b.py", str(ctx.exception))
+        self.assertNotIn("audit: x", self.progress.read_text(encoding="utf-8"))
+
+    def test_a_ledger_turned_into_a_link_is_refused(self):
+        self._begin()
+        real = lcd._is_link
+        with unittest.mock.patch.object(lcd, "_is_link",
+                                        side_effect=lambda p: Path(p).name == "progress.md" or real(p)):
+            with self.assertRaises(lcd.DriverError):
+                self._end()
+
+    def test_a_planted_junction_is_removed_and_its_target_kept(self):
+        outside = Path(self.tmp.name) / "outside"
+        outside.mkdir()
+        (outside / "keep.txt").write_text("keep\n", encoding="utf-8")
+        self._begin()
+        link = self.root / "src" / "linked"
+        made = self.subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+                                   capture_output=True, text=True)
+        if made.returncode != 0:
+            self.skipTest("directory junctions unavailable here")
+        result = self._end()
+        self.assertFalse(os.path.lexists(link))
+        self.assertTrue((outside / "keep.txt").is_file())
+        self.assertIn("src/linked", result["touched"])
 
 
 class CliTests(unittest.TestCase):

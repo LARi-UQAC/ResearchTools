@@ -664,11 +664,77 @@ def _git(root: Path, args: list[str], config: dict, env: dict | None) -> str:
     return done.stdout.strip()
 
 
+_REPARSE_POINT = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT: a symlink or a junction on Windows
+
+
+def _is_link(path: Path) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a path is a link of any kind, without following it.
+
+    Details:
+        os.path.islink misses a Windows junction before Python 3.12, so the
+        reparse-point attribute of lstat is read as well.
+
+    Inputs:
+        path (Path): the path to inspect.
+
+    Outputs:
+        is_link (bool): True for a symlink or a junction.
+    --------------------------------------------------------------------------
+    """
+    import os
+    if os.path.islink(path):
+        return True
+    try:
+        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & _REPARSE_POINT)
+
+
+def state_dir(sandbox: Path) -> Path:
+    """Purpose: the folder holding the audit state and backups, beside the sandbox and never
+    inside it, so the auditor's writable copies and the restore data stay apart. Inputs: sandbox
+    (Path). Outputs: Path."""
+    sandbox = Path(sandbox).resolve()
+    return sandbox.with_name(sandbox.name + ".state")
+
+
+def _inside(root: Path, rel: str) -> Path | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Join a relative path to root without following any link, and keep it
+        only when it stays inside root (R24).
+
+    Inputs:
+        root (Path): the resolved repository root.
+        rel (str): a relative posix path from a fingerprint.
+
+    Outputs:
+        path (Path | None): the joined path, or None when it leaves root.
+    --------------------------------------------------------------------------
+    """
+    import os
+    joined = os.path.normpath(os.path.join(str(root), rel))
+    if joined == str(root) or os.path.commonpath([joined, str(root)]) != str(root):
+        return None
+    return Path(joined)
+
+
 def _fingerprint(root: Path, skip: set[Path], config: dict) -> dict[str, str]:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Hash every project file, as Get-ProjectFingerprint does for aider.
+        Hash every project file, as Get-ProjectFingerprint does for aider,
+        never following a link.
+
+    Details:
+        A link (file symlink, directory symlink or junction) is recorded as
+        its own entry 'link:<target>' and never descended into, so a link
+        planted during the audit is seen as a new entry and removed itself.
 
     Inputs:
         root (Path): the repository root, resolved.
@@ -676,24 +742,39 @@ def _fingerprint(root: Path, skip: set[Path], config: dict) -> dict[str, str]:
         config (dict): audit_exclude dirs and name prefixes.
 
     Outputs:
-        hashes (dict[str, str]): relative posix path -> sha256.
+        hashes (dict[str, str]): relative posix path -> sha256 or link marker.
     --------------------------------------------------------------------------
     """
     import hashlib
     import os
     exclude = config["audit_exclude"]
+
+    def excluded(name: str) -> bool:
+        return name in exclude["dirs"] or any(name.startswith(p) for p in exclude["prefixes"])
+
     hashes: dict[str, str] = {}
-    for folder, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if d not in exclude["dirs"]
-                   and not any(d.startswith(p) for p in exclude["prefixes"])]
-        for name in files:
-            if any(name.startswith(p) for p in exclude["prefixes"]):
+    for folder, dirs, files in os.walk(root, followlinks=False):
+        kept = []
+        for name in dirs:
+            if excluded(name):
                 continue
             path = Path(folder) / name
-            if path.resolve() in skip:
+            if _is_link(path):
+                hashes[path.relative_to(root).as_posix()] = "link:" + os.readlink(path)
+            else:
+                kept.append(name)
+        dirs[:] = kept
+        for name in files:
+            if excluded(name):
+                continue
+            path = Path(folder) / name
+            if path in skip:
                 continue
             rel = path.relative_to(root).as_posix()
-            hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if _is_link(path):
+                hashes[rel] = "link:" + os.readlink(path)
+            else:
+                hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
     return hashes
 
 
@@ -713,6 +794,13 @@ def audit_begin(progress: Path, root: Path, sandbox: Path, config: dict,
         wrapper to write, and a fingerprint of the project to judge the audit
         by its effect (aider-plan.ps1 lines 776-860, R9).
 
+    Details:
+        The state and the backups go to state_dir(sandbox), a sibling the
+        auditor is never given, apart from its writable copies. A process of
+        the same user that rewrites state and backups consistently cannot be
+        detected by a same-user tool; that residual risk is accepted, as in
+        aider-setup.
+
     Inputs:
         progress (Path): the effort's ledger; audit.md sits beside it.
         root (Path): the repository root.
@@ -721,20 +809,25 @@ def audit_begin(progress: Path, root: Path, sandbox: Path, config: dict,
         env (dict | None): git environment; None inherits.
 
     Outputs:
-        report (dict): sandbox, files hashed, backups made. Writes the two
-            copies, backup/ (every file git reports as not committed) and
-            state.json into sandbox.
+        report (dict): sandbox, state, files hashed, backups made.
 
     Raises:
-        DriverError: the sandbox is inside root (R24), or git fails.
+        DriverError: the sandbox or its state folder is inside root (R24),
+            the ledger is a link or outside root, or git fails.
     --------------------------------------------------------------------------
     """
     import shutil
     root, sandbox = Path(root).resolve(), Path(sandbox).resolve()
-    if sandbox == root or root in sandbox.parents:
-        raise DriverError(f"the sandbox {sandbox} must sit outside the repository {root}")
+    state = state_dir(sandbox)
+    for folder in (sandbox, state):
+        if folder == root or root in folder.parents:
+            raise DriverError(f"{folder} must sit outside the repository {root}")
     ledger, audit = _effort_files(progress)
+    for path in (ledger, audit):
+        if _is_link(path) or root not in path.parents:
+            raise DriverError(f"{path} is a link or outside the repository")
     sandbox.mkdir(parents=True, exist_ok=True)
+    (state / "backup").mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ledger, sandbox / "progress.md")
     (sandbox / "audit.md").write_text(audit.read_text(encoding="utf-8") if audit.is_file() else "",
                                       encoding="utf-8")
@@ -742,15 +835,37 @@ def audit_begin(progress: Path, root: Path, sandbox: Path, config: dict,
     backups = []
     for line in _git(root, ["status", "--porcelain", "-uall"], config, env).splitlines():
         rel = line[3:].split(" -> ")[-1].strip('"')
-        if rel in hashes:
-            target = sandbox / "backup" / rel
+        if rel in hashes and not hashes[rel].startswith("link:"):
+            target = state / "backup" / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(root / rel, target)
             backups.append(rel)
     head = _git(root, ["rev-parse", "HEAD"], config, env)
-    (sandbox / "state.json").write_text(json.dumps({"head": head, "hashes": hashes,
-                                                    "backups": backups}), encoding="utf-8")
-    return {"sandbox": str(sandbox), "files": len(hashes), "backups": len(backups)}
+    (state / "state.json").write_text(json.dumps({
+        "head": head, "hashes": hashes, "backups": backups,
+        "ledger": str(ledger), "audit": str(audit)}), encoding="utf-8")
+    return {"sandbox": str(sandbox), "state": str(state), "files": len(hashes),
+            "backups": len(backups)}
+
+
+def _remove(path: Path) -> None:
+    """Purpose: delete a planted entry itself: a link (never its target), a file, or an empty
+    folder. Inputs: path (Path). Outputs: None."""
+    import os
+    if _is_link(path) and path.is_dir():
+        os.rmdir(path)  # removes a directory link or junction, never what it points to
+    else:
+        os.unlink(path)
+
+
+def _replace_file(source: Path, target: Path) -> None:
+    """Purpose: write source's bytes at target through a temporary file and os.replace, which
+    replaces a link at target rather than writing through it. Inputs: source, target (Path).
+    Outputs: None."""
+    import os
+    temporary = target.with_name(target.name + ".audit-tmp")
+    temporary.write_bytes(Path(source).read_bytes())
+    os.replace(temporary, target)
 
 
 def audit_end(progress: Path, root: Path, sandbox: Path, config: dict,
@@ -763,52 +878,70 @@ def audit_end(progress: Path, root: Path, sandbox: Path, config: dict,
         (Restore-ProjectIfTouched, aider-plan.ps1 lines 863-900).
 
     Details:
-        A new file is deleted; a changed or deleted file comes back from its
-        backup when it was not committed, else from git. A moved HEAD is
-        reported and never reset: a destructive git command is the owner's
-        (aider runs git reset --hard here).
+        Every check runs before anything is changed: the ledger, the report
+        and the sandbox copies must not be links and the ledger paths must
+        match the ones recorded; each backup must still hash to its recorded
+        value. Then a new entry is removed itself (a link is unlinked, its
+        target kept); a changed or deleted file comes back from its backup
+        when it was not committed, else from git. A moved HEAD is reported
+        and never reset (aider runs git reset --hard here; that command is
+        the owner's).
 
     Inputs:
         progress (Path), root (Path), sandbox (Path), config (dict),
         env (dict | None): as for audit_begin.
 
     Outputs:
-        report (dict): touched (relative paths restored or deleted) and
+        report (dict): touched (relative paths restored or removed) and
             head_moved (bool).
 
     Raises:
-        DriverError: no state.json in sandbox (audit_begin never ran), or git fails.
+        DriverError: no state (audit_begin never ran), a link or a moved
+            ledger, a backup that no longer matches its hash, or git fails;
+            nothing is restored or copied back then.
     --------------------------------------------------------------------------
     """
-    import shutil
+    import hashlib
     root, sandbox = Path(root).resolve(), Path(sandbox).resolve()
-    state_path = sandbox / "state.json"
+    state_path = state_dir(sandbox) / "state.json"
     if not state_path.is_file():
         raise DriverError(f"no {state_path}: run --audit-begin first")
     state = json.loads(state_path.read_text(encoding="utf-8"))
     ledger, audit = _effort_files(progress)
+    if (str(ledger), str(audit)) != (state["ledger"], state["audit"]):
+        raise DriverError("the ledger paths differ from the ones recorded at --audit-begin")
+    for path in (ledger, audit, sandbox / "progress.md", sandbox / "audit.md"):
+        if _is_link(path):
+            raise DriverError(f"{path} became a link during the audit; nothing restored or copied")
     before, backups = state["hashes"], set(state["backups"])
+    backup_root = state_dir(sandbox) / "backup"
+    for rel in sorted(backups):
+        copy = _inside(backup_root, rel)
+        if (copy is None or _is_link(copy) or not copy.is_file()
+                or hashlib.sha256(copy.read_bytes()).hexdigest() != before.get(rel)):
+            raise DriverError(f"the backup of {rel} was changed during the audit; nothing restored")
     after = _fingerprint(root, {ledger, audit}, config)
     touched = []
     for rel in sorted(set(before) | set(after)):
         if before.get(rel) == after.get(rel):
             continue
-        full = (root / rel).resolve()
-        if root not in full.parents:
+        full = _inside(root, rel)
+        if full is None:
             continue
-        if rel not in before:
-            full.unlink()
-        elif rel in backups:
-            full.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(sandbox / "backup" / rel, full)
-        else:
-            _git(root, ["checkout", "--", rel], config, env)
+        if rel in after and (rel not in before or after[rel].startswith("link:")):
+            _remove(full)
+        if rel in before and not before[rel].startswith("link:"):
+            if rel in backups:
+                full.parent.mkdir(parents=True, exist_ok=True)
+                _replace_file(backup_root / rel, full)
+            else:
+                _git(root, ["checkout", "--", rel], config, env)
         touched.append(rel)
     head_moved = _git(root, ["rev-parse", "HEAD"], config, env) != state["head"]
     # The report comes back only now, after the restore, so restoring a trespass can never also
     # discard the auditor's own output (aider-plan.ps1, same order).
-    shutil.copyfile(sandbox / "progress.md", ledger)
-    shutil.copyfile(sandbox / "audit.md", audit)
+    _replace_file(sandbox / "progress.md", ledger)
+    _replace_file(sandbox / "audit.md", audit)
     return {"touched": touched, "head_moved": head_moved}
 
 

@@ -70,16 +70,27 @@
   "challenge_title_markers": {
     "value": [
       "just a moment",
-      "verify you are human",
-      "attention required"
+      "verify you are human"
     ],
-    "provenance": "chosen 2026-11-05, PROVISIONAL: lower-case fragments of the page title that Cloudflare's challenge and block pages carry (\"Just a moment...\" is the managed-challenge interstitial). While the title holds one of them, a headed run keeps waiting for the owner to clear the challenge, up to human_window_s. To be confirmed against the live ScienceDirect run"
+    "provenance": "chosen 2026-11-05, PROVISIONAL: lower-case fragments of the page title that a Cloudflare challenge carries (\"Just a moment...\" is the managed-challenge interstitial). While the title holds one of them, a headed run keeps waiting for the owner to clear the challenge, up to human_window_s. \"attention required\" was removed 2026-11-06 (code review round 1): that title is Cloudflare's hard block page, which a person cannot clear, so waiting on it only cost the whole window. Still to be confirmed against more live runs"
   },
   "challenge_selectors": {
     "value": [
       "iframe[src*='challenges.cloudflare.com']"
     ],
     "provenance": "chosen 2026-11-05, PROVISIONAL: CSS selectors present while a Cloudflare Turnstile widget is on the page (the widget is served from challenges.cloudflare.com). Same use as challenge_title_markers. To be confirmed against the live ScienceDirect run"
+  },
+  "stream_chunk_bytes": {
+    "value": 16384,
+    "provenance": "chosen 2026-11-05 by the author, unmeasured. Bytes read per step while a PDF is streamed through curl_cffi, so the size cap can stop the read part-way. Moved here from a code constant in code review round 1 (2026-11-06)"
+  },
+  "title_chars": {
+    "value": 80,
+    "provenance": "chosen 2026-11-05 by the author, unmeasured. Characters of the last page title kept in the failure record. A title can carry a token, so the cut also limits what is written to the manifest. Moved here from a code literal in code review round 1 (2026-11-06)"
+  },
+  "reason_chars": {
+    "value": 160,
+    "provenance": "chosen 2026-11-06 by the author, unmeasured. Characters of a failed sign-in's text kept in the session's memory of that host and quoted when a later paper on the same host is skipped"
   },
   "curl_impersonate": {
     "value": "chrome",

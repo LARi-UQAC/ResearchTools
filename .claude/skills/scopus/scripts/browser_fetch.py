@@ -93,7 +93,8 @@ CONFIG_PATH = _HERE / "browser-fetch.json"
 
 _NUMBER_KEYS = ("nav_timeout_s", "idle_timeout_s", "human_window_s", "headless_wait_s",
                 "poll_s", "popup_wait_s", "viewer_settle_s", "download_wait_s",
-                "download_retry_pause_s", "step_timeout_s", "provider_timeout_s")
+                "download_retry_pause_s", "step_timeout_s", "provider_timeout_s",
+                "stream_chunk_bytes", "title_chars", "reason_chars")
 _REQUIRED_KEYS = _NUMBER_KEYS + ("max_pdf_bytes", "channel", "profile_dir", "user_agent",
                                  "secret_provider", "allow_totp_from_vault", "hosts",
                                  "challenge_title_markers", "challenge_selectors",
@@ -110,6 +111,19 @@ class BrowserConfigError(BrowserRungError, ValueError):
 
 
 def _positive_number(value: Any) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a configuration value is a usable limit.
+
+    Inputs:
+        value (Any): the value read from browser-fetch.json.
+
+    Outputs:
+        ok (bool): True for an int or float above zero. A bool is not a number
+        here, since JSON true would otherwise read as 1.
+    --------------------------------------------------------------------------
+    """
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
 
 
@@ -567,6 +581,10 @@ class BrowserSession:
         self.headed = headed
         self._manager: Any = None
         self._context: Any = None
+        # host -> why its sign-in failed in this run. A host that failed once is not
+        # tried again for the next paper: each try would re-read the secret and wait
+        # the whole human window, and repeated bad submissions can lock the account.
+        self.failed_sign_ins: dict[str, str] = {}
 
     def context(self) -> Any:
         """Return the persistent context, launching the browser on the first call."""
@@ -587,6 +605,12 @@ class BrowserSession:
             except _PWError:  # pragma: no cover
                 pass
         return self._context
+
+    def restart(self) -> Any:
+        """Drop a dead browser (the window was closed, Chrome crashed) and launch a new
+        one on the same profile. Sign-in memory is kept."""
+        self.close()
+        return self.context()
 
     def close(self) -> None:
         """Close the browser once; later calls do nothing."""
@@ -624,10 +648,31 @@ class _use_session:
         return False
 
 
+# How far from the end of a PDF the %%EOF trailer is looked for. The PDF 1.7 reference
+# (ISO 32000-1, 7.5.5) tells readers to look in the last 1024 bytes; four times that is
+# a margin for trailing padding. Specified by the standard, margin chosen by the author
+# 2026-11-05, not measured. A module constant and not a config key because
+# _is_complete_pdf takes no configuration.
+PDF_TRAILER_WINDOW_BYTES = 4096
+
+
 def _is_complete_pdf(data: Any) -> bool:
-    """A whole PDF starts with %PDF and carries an %%EOF trailer near the end. Readers
-    stream the file in HTTP ranges, so one body can look valid yet be a truncated chunk."""
-    return bool(data) and data.startswith(PDF_MAGIC) and b"%%EOF" in data[-4096:]
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a body is a whole PDF and not a truncated chunk: readers
+        stream the file in HTTP ranges, so one body can look valid yet be partial.
+
+    Inputs:
+        data (Any): the body (bytes) or None.
+
+    Outputs:
+        ok (bool): True when it starts with %PDF and carries an %%EOF trailer
+        within PDF_TRAILER_WINDOW_BYTES of its end.
+    --------------------------------------------------------------------------
+    """
+    return bool(data) and data.startswith(PDF_MAGIC) \
+        and b"%%EOF" in data[-PDF_TRAILER_WINDOW_BYTES:]
 
 
 def _hybrid_fetch(context: Any, page: Any, url: str, cfg: dict[str, Any]) -> bytes | None:
@@ -696,7 +741,7 @@ def _hybrid_fetch(context: Any, page: Any, url: str, cfg: dict[str, Any]) -> byt
             if response.status_code != 200:
                 logger.info("[BROWSER] hybrid download answered HTTP %s", response.status_code)
                 return None
-            body = _read_capped(response, cfg["max_pdf_bytes"])
+            body = _read_capped(response, cfg["max_pdf_bytes"], cfg["stream_chunk_bytes"])
             return body if _is_complete_pdf(body) else None
         except Exception as exc:   # a reset connection while streaming
             logger.info("[BROWSER] hybrid download failed (%s)", type(exc).__name__)
@@ -710,13 +755,24 @@ def _hybrid_fetch(context: Any, page: Any, url: str, cfg: dict[str, Any]) -> byt
     return None
 
 
-STREAM_CHUNK_BYTES = 16384
+def _read_capped(response: Any, cap: int, chunk_bytes: int) -> bytes | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read a streamed body, refusing it as soon as it is known to pass `cap`
+        bytes: by the declared Content-Length before any byte is read, else while
+        counting what arrives (a missing or malformed length does not switch the
+        cap off).
 
+    Inputs:
+        response: a curl_cffi response opened with stream=True.
+        cap (int): the most bytes accepted.
+        chunk_bytes (int): the size of each read (config stream_chunk_bytes).
 
-def _read_capped(response: Any, cap: int) -> bytes | None:
-    """Read a streamed body, refusing it as soon as it is known to pass `cap` bytes: by the
-    declared Content-Length before any byte is read, else while counting what arrives (a
-    missing or malformed length does not switch the cap off). None when over the cap."""
+    Outputs:
+        body (bytes | None): the whole body, or None when it is over the cap.
+    --------------------------------------------------------------------------
+    """
     try:
         declared = int((response.headers or {}).get("Content-Length", ""))
     except (TypeError, ValueError):
@@ -726,7 +782,7 @@ def _read_capped(response: Any, cap: int) -> bytes | None:
         return None
     chunks: list[bytes] = []
     size = 0
-    for chunk in response.iter_content(chunk_size=STREAM_CHUNK_BYTES):
+    for chunk in response.iter_content(chunk_size=int(chunk_bytes)):
         if not chunk:
             continue
         size += len(chunk)
@@ -753,7 +809,7 @@ def _describe_last_page(page: Any, cfg: dict[str, Any]) -> str:
     except Exception:  # pragma: no cover - a closed page
         host = "(unknown)"
     try:
-        title = " ".join((page.title() or "").split())[:80]
+        title = " ".join((page.title() or "").split())[:int(cfg["title_chars"])]
     except _PWError:
         title = ""
     challenge = "a challenge was still showing" if _challenge_showing(page, cfg) \
@@ -998,7 +1054,17 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
             page = None
             wire_popup = None
             try:
-                page = context.new_page()
+                try:
+                    page = context.new_page()
+                except _PWError as exc:
+                    # The owner closed the window or Chrome crashed: a dead shared
+                    # context would fail every later paper of the run. Only a
+                    # closed target is retried, once, on a fresh browser.
+                    if "closed" not in str(exc).lower():
+                        raise
+                    logger.warning("[BROWSER] the browser was closed: launching a new one")
+                    context = sess.restart()
+                    page = context.new_page()
                 page.set_default_timeout(int(timeout_s * 1000))
                 page.on("response", _note_response)
                 page.on("download", _on_download)
@@ -1100,16 +1166,37 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                     # the human window is not spent on a paywall page. At most one
                     # sign-in per paper: a still-valid session cookie (shared
                     # session) shows the signed-in marker and skips it.
+                    # A challenge on the landing page is cleared first: the sign-in
+                    # would otherwise navigate away from it and spend its short
+                    # step timeout on a page nobody can fill yet.
                     host = (urlparse(page.url or "").hostname or "").lower()
                     host_cfg = cfg["hosts"].get(host)
-                    if host_cfg and not _present(page, host_cfg["logged_in_selector"]):
-                        _sign_in(page, host, host_cfg, cfg, _drain)
+                    settled = False
+                    if host_cfg and headed and _challenge_showing(page, cfg):
+                        _settle()
+                        settled = True
+                        host = (urlparse(page.url or "").hostname or "").lower()
+                        host_cfg = cfg["hosts"].get(host)
+                    signed_in_now = False
+                    if captured["data"] is None and host_cfg \
+                            and not _present(page, host_cfg["logged_in_selector"]):
+                        if host in sess.failed_sign_ins:
+                            raise BrowserRungError(
+                                "sign-in to %s already failed in this run (%s): not tried again"
+                                % (host, sess.failed_sign_ins[host]))
+                        try:
+                            _sign_in(page, host, host_cfg, cfg, _drain)
+                        except BrowserRungError as exc:
+                            sess.failed_sign_ins[host] = str(exc)[:int(cfg["reason_chars"])]
+                            raise
+                        signed_in_now = True
                         if captured["data"] is None:
                             try:
                                 page.goto(entry_url, wait_until="domcontentloaded")
                             except _PWError:
                                 pass
-                    _settle()
+                    if signed_in_now or not settled:
+                        _settle()
                     # DOM-based PDF discovery is for a DOI landing page; skip it
                     # for an override host (already the target page) so we do not
                     # re-navigate and re-trigger its challenge.

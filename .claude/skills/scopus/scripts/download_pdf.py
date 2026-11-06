@@ -479,6 +479,10 @@ def resolve_out_dir(out_dir: str | None, latex: str | None) -> str:
 # --------------------------------------------------------------------------- #
 # Hardened fetch
 # --------------------------------------------------------------------------- #
+# Characters of one rung's reason kept in the manifest and in refs/_failed.md. Chosen by
+# the author 2026-11-05 and not measured (R4): long enough for a host, a title and a
+# status, short enough that an echoed page title or error text cannot bloat the record.
+# A module constant and not a config key because this module has no configuration file.
 MAX_REASON_CHARS = 160
 ATTEMPT_OUTCOMES = ("ok", "miss", "preview", "skipped", "error", "listed")
 _LAST_REASON = ""
@@ -1403,6 +1407,9 @@ def download_one(entry: dict[str, str], out_dir: str,
     """
     doi = _clean_doi(entry.get("doi", ""))
     base = {"citekey": entry.get("citekey", ""), "doi": doi}
+    # Every caller gets the environment token, not only the CLI paths of this module:
+    # extract_text.py and extract_locations.py pass the raw flag value.
+    insttoken = _insttoken_optional(insttoken)
 
     if not doi:
         return {**base, "file": target_filename(entry, "pdf"), "format": None,
@@ -1516,17 +1523,17 @@ def download_one(entry: dict[str, str], out_dir: str,
     # HTTP client cannot, and follows a per-paper override URL when supplied.
     browser_skip = None
     if not use_browser:
-        browser_skip = "browser rung disabled (--no-browser)"
-        logger.info("[FULLTEXT] tier 8 (browser) disabled by --no-browser")
-    elif browser_fetch is None:
-        browser_skip = "playwright package not installed (pip install playwright)"
+        browser_skip = ("browser rung not enabled (--no-browser, or a caller that does "
+                        "not enable it)")
+        logger.info("[FULLTEXT] tier 8 (browser) disabled by --no-browser or by the caller")
+    elif browser_fetch is None or not browser_fetch.browser_available():
+        # browser_available() is False only when the playwright package cannot be
+        # imported; a missing browser surfaces later, at launch, with its own hint.
+        browser_skip = ("playwright package not installed (pip install playwright, "
+                        "then playwright install chrome)")
         logger.warning("[FULLTEXT] tier 8 (browser) UNAVAILABLE: the playwright package "
                        "is not installed in %s - run: pip install playwright && "
-                       "playwright install chromium", sys.executable)
-    elif not browser_fetch.browser_available():
-        browser_skip = "no Chromium build found (playwright install chromium)"
-        logger.warning("[FULLTEXT] tier 8 (browser) UNAVAILABLE: playwright is installed "
-                       "but no Chromium build was found - run: playwright install chromium")
+                       "playwright install chrome", sys.executable)
     if browser_skip:
         _note_attempt(attempts, 8, "browser", "skipped", browser_skip)
     else:

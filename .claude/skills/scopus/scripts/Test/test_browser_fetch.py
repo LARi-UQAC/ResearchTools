@@ -265,6 +265,7 @@ class _FakeBrowser:
 class _FakeContext:
     def __init__(self, page):
         self._page = page
+        self.dead = False   # the user closed the window: new_page then raises
         self.closed = False
         self.close_count = 0
         self.listeners = 0
@@ -288,7 +289,14 @@ class _FakeContext:
     def add_init_script(self, script):
         pass
 
+    new_page_error = None   # a test sets a message to make new_page raise it
+
     def new_page(self):
+        if self.dead:
+            raise browser_fetch._PWError(
+                "BrowserContext.new_page: Target page, context or browser has been closed")
+        if self.new_page_error:
+            raise browser_fetch._PWError(self.new_page_error)
         return self._page
 
     def close(self):
@@ -476,6 +484,7 @@ REQUIRED_KEYS = (
     "step_timeout_s", "max_pdf_bytes", "channel", "profile_dir", "user_agent",
     "secret_provider", "allow_totp_from_vault", "provider_timeout_s", "hosts",
     "challenge_title_markers", "challenge_selectors", "curl_impersonate", "max_redirects",
+    "stream_chunk_bytes", "title_chars", "reason_chars",
 )
 
 GOOD_HOST = {
@@ -505,6 +514,7 @@ def _config_dict(**overrides):
         "challenge_title_markers": ["just a moment"],
         "challenge_selectors": ["iframe[src*='challenges.cloudflare.com']"],
         "curl_impersonate": "chrome", "max_redirects": 5,
+        "stream_chunk_bytes": 16384, "title_chars": 80, "reason_chars": 160,
     }
     values.update(overrides)
     return {k: {"value": v, "provenance": "test fixture"} for k, v in values.items()}
@@ -1437,6 +1447,102 @@ class TestSessionReuse(unittest.TestCase):
             with browser_fetch.BrowserSession(config=h.config(), headed=True) as session:
                 session.context()
         self.assertEqual(fake.chromium.contexts[0].close_count, 1)
+
+
+class _FillTimingPage(FakePage):
+    """Remembers how many waits had happened when the sign-in form was first looked up."""
+
+    waits_at_first_fill = None
+
+    def wait_for_selector(self, selector, timeout=None, **kw):
+        if self.waits_at_first_fill is None:
+            self.waits_at_first_fill = len(self.waits_ms)
+        return super().wait_for_selector(selector, timeout=timeout, **kw)
+
+
+class TestReviewRound1(unittest.TestCase):
+    """Findings of the first local code review (R35) on the browser rung."""
+
+    def test_a_failed_sign_in_is_not_repeated_for_the_next_paper_on_that_host(self):
+        # Without a memory, a 40-paper run repeats the failing sign-in 40 times, each
+        # re-reading the secret and waiting the human window, and can lock the account.
+        h = _SignInHarness(self)
+        page = h.page(login=dict(LOGIN, ready_after_waits=99))
+        fake = _FakePW(page)
+        session = browser_fetch.BrowserSession(config=h.config(), headed=True)
+        with self.assertRaises(browser_fetch.BrowserRungError):
+            h.run(page, session=session, fake=fake)
+        with self.assertRaises(browser_fetch.BrowserRungError) as ctx:
+            h.run(page, session=session, fake=fake)
+        self.assertIn("already failed", str(ctx.exception))
+        self.assertIn("www.example.org", str(ctx.exception))
+        self.assertEqual(len(h.password_calls), 1)
+        self.assertEqual(page.goto_urls.count(GOOD_HOST["entry_url"]), 1)
+        session.close()
+
+    def test_the_memory_of_a_failed_sign_in_belongs_to_one_session(self):
+        h = _SignInHarness(self)
+        page = h.page(login=dict(LOGIN, ready_after_waits=99))
+        for _ in range(2):
+            session = browser_fetch.BrowserSession(config=h.config(), headed=True)
+            with self.assertRaises(browser_fetch.BrowserRungError):
+                h.run(page, session=session, fake=_FakePW(page))
+            session.close()
+        self.assertEqual(len(h.password_calls), 2)
+
+    def test_the_challenge_is_cleared_before_the_sign_in_starts(self):
+        # A listed host that answers with the challenge page sent the flow into the
+        # sign-in before the human window that exists to clear that challenge.
+        h = _SignInHarness(self)
+        page = _FillTimingPage(pdf_body=PDF_BYTES, login=dict(LOGIN),
+                               redirects={DOI_ENTRY: ARTICLE_URL}, challenge_waits=2)
+        res, _ = h.run(page)
+        self.assertIsNotNone(res)
+        self.assertIsNotNone(page.waits_at_first_fill)
+        self.assertGreaterEqual(page.waits_at_first_fill, 2)
+
+    def test_without_a_challenge_the_sign_in_starts_at_once(self):
+        # Control: no extra wait is added when nothing is showing.
+        h = _SignInHarness(self)
+        page = _FillTimingPage(pdf_body=PDF_BYTES, login=dict(LOGIN),
+                               redirects={DOI_ENTRY: ARTICLE_URL})
+        h.run(page)
+        self.assertEqual(page.waits_at_first_fill, 0)
+
+    def test_a_closed_window_is_replaced_for_the_next_paper(self):
+        # The owner closes the headed window, or Chrome crashes: the shared context
+        # is dead and every later paper of the run used to fail with no hint.
+        h = _SignInHarness(self)
+        page = h.page(login=dict(LOGIN, pdf_requires_login=False), redirects={})
+        fake = _FakePW(page)
+        session = browser_fetch.BrowserSession(config=h.config(), headed=True)
+        first, _ = h.run(page, session=session, fake=fake)
+        self.assertIsNotNone(first)
+        fake.chromium.contexts[0].dead = True
+        second, _ = h.run(page, session=session, fake=fake)
+        self.assertIsNotNone(second)
+        self.assertEqual(len(fake.chromium.persistent_calls), 2)
+        session.close()
+
+    def test_another_page_error_does_not_relaunch_the_browser(self):
+        # Control: only a closed target is retried; any other error stays a miss.
+        h = _SignInHarness(self)
+        page = h.page(login=dict(LOGIN, pdf_requires_login=False), redirects={})
+        fake = _FakePW(page)
+        session = browser_fetch.BrowserSession(config=h.config(), headed=True)
+        h.run(page, session=session, fake=fake)
+        fake.chromium.contexts[0].new_page_error = "Timeout 30000ms exceeded"
+        second, _ = h.run(page, session=session, fake=fake)
+        self.assertIsNone(second)
+        self.assertEqual(len(fake.chromium.persistent_calls), 1)
+        session.close()
+
+    def test_a_block_page_is_not_treated_as_a_challenge_to_wait_on(self):
+        # "Attention Required" is Cloudflare's hard block (address or firewall). A
+        # person cannot clear it, so waiting the human window on it only costs time.
+        markers = browser_fetch.load_config()["challenge_title_markers"]
+        self.assertNotIn("attention required", [m.lower() for m in markers])
+        self.assertIn("just a moment", [m.lower() for m in markers])
 
 
 class TestSavePdfBytes(unittest.TestCase):

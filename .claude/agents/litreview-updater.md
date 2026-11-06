@@ -56,7 +56,9 @@ Detect the mode from the invocation:
   with the log line "Scopus.AI : skipped (unattended)". Produce the DRAFT `_up_` file + the
   CHANGELOG + a **REVIEW REQUIRED** summary; do NOT auto-include non-approved publishers and
   do NOT rewrite hypotheses — those are deferred to the human finalize pass. State the mode in
-  the output header.
+  the output header. Pass `--no-browser` to every `download_pdf.py` call: the browser rung is
+  on by default and opens a visible window that waits for a person to click a challenge, which
+  nobody is there to do. A paper that needs it stays in `refs/_failed.md` for the finalize pass.
 
 ## Reused scripts and skills (do not reimplement)
 

@@ -208,6 +208,24 @@ class TestBitwarden(unittest.TestCase):
         with self.assertRaises(browser_login.LoginError):
             browser_login.get_password(ITEM, **kwargs)
 
+    def test_every_provider_call_reads_and_writes_utf8(self):
+        # Review round 1: without an explicit encoding the pipe uses the Windows
+        # codepage, so a password with an accent is decoded to the wrong text.
+        run, kwargs = _bw()
+        browser_login.get_password(ITEM, **kwargs)
+        self.assertTrue(run.calls)
+        for _cmd, call_kwargs in run.calls:
+            self.assertEqual(call_kwargs.get("encoding"), "utf-8")
+
+    def test_output_that_is_not_utf8_is_a_refusal_not_a_crash(self):
+        # Review round 1: UnicodeDecodeError escaped the rung and aborted a whole run.
+        bad = UnicodeDecodeError("utf-8", b"\x81", 0, 1, "invalid start byte")
+        _, kwargs = _bw({"status": bad})
+        with self.assertRaises(browser_login.LoginError) as ctx:
+            browser_login.get_password(ITEM, **kwargs)
+        self.assertIn("UTF-8", str(ctx.exception))
+        self.assertNotIn("\\x81", str(ctx.exception))
+
 
 class TestKeepassxc(unittest.TestCase):
     """Unverified against a real keepassxc-cli (not installed here, R15): the

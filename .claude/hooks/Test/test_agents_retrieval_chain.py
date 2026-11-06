@@ -71,6 +71,15 @@ class TestRetrievalChainRule(unittest.TestCase):
                 self.assertIn("including a real browser with the owner's institutional sign-in",
                               flat)
 
+    def test_a_schedulable_agent_tells_an_unattended_run_to_skip_the_browser(self):
+        # Review round 1: the browser rung is on by default and opens a visible window,
+        # so a scheduled run with nobody at the keyboard would wait on a click that
+        # never comes. The agent that documents scheduling must say how to avoid it.
+        text = (AGENTS / "litreview-updater.md").read_text(encoding="utf-8")
+        flat = re.sub(r"\s+", " ", text)
+        unattended = flat[flat.find("**Unattended**"):]
+        self.assertIn("--no-browser", unattended[:1500])
+
     def test_finder_negative_controls(self):
         # A check that cannot fail is not a check.
         self.assertFalse(carries_rule("python download_pdf.py bib x.bib\nNothing else."))

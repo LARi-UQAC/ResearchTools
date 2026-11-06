@@ -189,6 +189,41 @@ class TestDownloadOne(unittest.TestCase):
 
     ENTRY = {"citekey": "Smith2024", "doi": "10.1/x", "author": "Smith", "year": "2024"}
 
+    def _token_seen(self, env, passed):
+        """The token download_one hands to the Elsevier rung, for one environment."""
+        seen = {}
+
+        def fake_elsevier(doi, dest, key, tok):
+            seen["tok"] = tok
+            return False
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.dict(os.environ, env), \
+             mock.patch.object(download_pdf, "try_elsevier", side_effect=fake_elsevier), \
+             mock.patch.object(download_pdf, "try_semantic_scholar", return_value=False), \
+             mock.patch.object(download_pdf, "try_publisher_pdf", return_value=False), \
+             mock.patch.object(download_pdf, "try_unpaywall", return_value=None), \
+             mock.patch.object(download_pdf, "try_arxiv", return_value=None), \
+             mock.patch.object(download_pdf, "try_pmc", return_value=None), \
+             mock.patch.object(download_pdf, "try_landing_html", return_value=None), \
+             mock.patch.object(download_pdf, "s2", None):
+            download_pdf.download_one(self.ENTRY, tmp, "KEY", passed)
+        return seen.get("tok")
+
+    def test_the_token_comes_from_the_environment_for_a_caller_that_passes_none(self):
+        # Review round 1: extract_text.py and extract_locations.py call download_one
+        # with the raw flag value, so the environment token never reached rung 1.
+        self.assertEqual(self._token_seen({download_pdf.INSTTOKEN_ENV: "TOKEN-FIXTURE"}, None),
+                         "TOKEN-FIXTURE")
+
+    def test_an_explicit_token_beats_the_environment(self):
+        self.assertEqual(self._token_seen({download_pdf.INSTTOKEN_ENV: "FROM-ENV"}, "FROM-FLAG"),
+                         "FROM-FLAG")
+
+    def test_no_token_anywhere_stays_none(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop(download_pdf.INSTTOKEN_ENV, None)
+            self.assertIsNone(self._token_seen({}, None))
+
     def test_skip_when_present(self):
         with tempfile.TemporaryDirectory() as tmp:
             Path(os.path.join(tmp, "smith2024.pdf")).write_bytes(b"%PDF-1.7 already")
@@ -805,12 +840,12 @@ class BrowserTierSilenceTest(unittest.TestCase):
         src = self._source()
         self.assertIn("tier 8 (browser) disabled by --no-browser", src)
         self.assertIn("the playwright package", src)
-        self.assertIn("no Chromium build was found", src)
+        self.assertNotIn("no Chromium build was found", src)
 
     def test_the_unavailable_branches_name_the_remedy(self):
         src = self._source()
         self.assertIn("pip install playwright", src)
-        self.assertIn("playwright install chromium", src)
+        self.assertIn("playwright install chrome", src)
 
     def test_the_browser_tier_is_also_preview_gated(self):
         # A browser can land on a preview too; the gate is on the artifact, not
@@ -1529,15 +1564,30 @@ class TestBrowserRungDefault(unittest.TestCase):
         self.assertEqual(browser["outcome"], "skipped")
         self.assertIn("pip install playwright", browser["reason"])
 
-    def test_no_chromium_is_a_recorded_skip_with_the_remedy(self):
+    def test_a_missing_playwright_package_names_pip_and_not_a_chromium_build(self):
+        # Review round 1: browser_available() is False only when the playwright
+        # package cannot be imported. The old reason said "no Chromium build found" and
+        # told the user to run `playwright install chromium`, which fixes nothing.
         tier = TestBrowserTier()
         fake_bf = mock.Mock()
         fake_bf.browser_available.return_value = False
         res = tier._run(fake_bf, use_browser=True)
         browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
         self.assertEqual(browser["outcome"], "skipped")
-        self.assertIn("playwright install chromium", browser["reason"])
+        self.assertIn("pip install playwright", browser["reason"])
+        self.assertNotIn("no Chromium build", browser["reason"])
         fake_bf.fetch_pdf_via_browser.assert_not_called()
+
+    def test_a_disabled_rung_says_a_caller_may_leave_it_off_too(self):
+        # Review round 1: callers other than the CLI have no --no-browser flag, so the
+        # reason must not blame a flag they never had.
+        tier = TestBrowserTier()
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        res = tier._run(fake_bf, use_browser=False)
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertIn("--no-browser", browser["reason"])
+        self.assertIn("caller", browser["reason"])
 
 
 class TestSharedBrowserSession(unittest.TestCase):

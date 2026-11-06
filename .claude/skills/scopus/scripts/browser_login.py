@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 SECRET_PROVIDERS = ("keyring", "bitwarden", "keepassxc")
 STEP_ACTIONS = ("fill_username", "fill_password", "fill_totp", "click")
 
+# The text encoding of both vault command lines (Bitwarden `bw`, `keepassxc-cli`),
+# stated by their own documentation, not a tunable value.
+PIPE_ENCODING = "utf-8"
+
 BW_SESSION_ENV = "BW_SESSION"
 KEEPASSXC_DATABASE_ENV = "KEEPASSXC_DATABASE"
 KEEPASSXC_PASSWORD_ENV = "KEEPASSXC_PASSWORD"
@@ -72,14 +76,23 @@ def _call(run: Callable[..., Any], cmd: list[str], timeout_s: float, tool: str,
     Outputs:
         completed: the CompletedProcess-like result.
 
+    Details:
+        The pipes are read and written as UTF-8, which is what both vault tools
+        use. Without it the Windows codepage decodes an accented password to the
+        wrong text and the sign-in is typed wrong.
+
     Raises:
-        LoginError: the call timed out or the tool could not be started.
+        LoginError: the call timed out, the tool could not be started, or its
+            output was not UTF-8 (the bytes are never quoted).
     --------------------------------------------------------------------------
     """
     try:
-        return run(cmd, capture_output=True, text=True, timeout=timeout_s, **extra)
+        return run(cmd, capture_output=True, text=True, encoding=PIPE_ENCODING,
+                   timeout=timeout_s, **extra)
     except subprocess.TimeoutExpired:
         raise LoginError("%s timed out after %s s" % (tool, timeout_s)) from None
+    except UnicodeError:
+        raise LoginError("%s returned output that is not UTF-8" % tool) from None
     except OSError as exc:
         raise LoginError("cannot run %s (%s)" % (tool, type(exc).__name__)) from None
 

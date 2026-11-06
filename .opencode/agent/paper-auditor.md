@@ -512,6 +512,8 @@ Record all findings in Section M of the plan.
 
 ### Step 4.8 — Composition and register audit
 
+**Language codes.** The flags of this step, their rule numbers and their LaTeX action are entries of the `language-review` skill table, `.claude/skills/language-review/assets/language_categories.json` (codes and examples in `.claude/skills/language-review/references/categories.md`). Print the entry `flag` text exactly, cite its `rule`, and apply its `latex_action`: `direct_fix` for an isolated spelling or punctuation fix, `\replaced` otherwise. The table is the single list of language categories, so none is restated here.
+
 Audit the prose against `composition_rules.md`. Scan every prose section (Abstract, Introduction,
 Literature review, Methodology, Results, Discussion, Conclusion, Future works) and every `\caption{}`.
 Exclude math environments, `verbatim` / `lstlisting` bodies, the bibliography, and LaTeX comments.

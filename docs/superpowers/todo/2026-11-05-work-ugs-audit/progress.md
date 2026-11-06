@@ -44,7 +44,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan14.md
 
-- [ ] T1 R39 local-only coding, local-coder launcher, docs and tests
+- [x] T1 R39 in workflows.md, exported region, code-style index; local-coder = launcher + auditor; ch. 05/11/14, SKILL.md, testing.md; test_cloud_never_codes_rule 20 OK (RED seen first) and 8 neighbour suites OK. Rulings: R38 "no qualified role" now means not executed, never cloud code; R38 rows "two or more plans" -> "unattended night" (aider only); old pins in test_plan_contract_rule and test_manual_local_coding rewritten. Open: driver calls skip the bridge log so the dashboard local_calls section is blind to them (owner decision); test_codex_mirror 3 FAIL are stale mirrors (plan 12).
 
 ## plan4.md
 

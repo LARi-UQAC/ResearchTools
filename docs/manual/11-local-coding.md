@@ -4,9 +4,10 @@ Chapter 10 of the ResearchTools manual. Back to [table of contents](../../README
 
 This chapter answers one question for any piece of coding: does it run on the cloud, through
 `local-coder`, through aider, or on a session you switched by hand, and who decides. It also
-says what the process costs, what stops it, and what the dashboard shows. The rule behind it is
-R38 in `.claude/rules/workflows.md`, and it binds every project on a machine where ResearchTools
-is installed.
+says what the process costs, what stops it, and what the dashboard shows. The rules behind it are
+R38 and R39 in `.claude/rules/workflows.md`, and they bind every project on a machine where
+ResearchTools is installed. R39 says that no cloud model generates code: the cloud designs, and
+a local model codes through `local_coder_driver.py` or through aider-setup.
 
 ## Why local coding exists
 
@@ -32,12 +33,12 @@ flowchart TD
     D --> E[Ask the owner the bounds]
     E --> F[Write the header: executor, tier, bounds]
     F --> G{Which executor?}
-    G -- judgment or no local role --> H["cloud: superpowers:executing-plans"]
-    G -- one plan --> J[local-coder, low-cost cloud model wrapper and bridge]
-    J --> K{Step output fits the coder window?}
+    G -- work that writes no code --> H["cloud: superpowers:executing-plans"]
+    G -- plans of one progress.md --> J[local-coder: wrapper launches the driver and audits, local coder model writes the code]
+    J --> K{Plan reply fits the coder window?}
     K -- yes --> L[tier simple or standard]
     K -- no --> M[tier large, session role]
-    G -- several plans or night --> N[aider: writer and reviewer]
+    G -- unattended night --> N[aider: writer and reviewer]
     H --> O[Worktree branch]
     L --> O
     M --> O
@@ -64,10 +65,10 @@ test fails when the two differ. Reading it from the top:
   answered directly. Anything larger gets plan files first.
 - The session asks you for the review bounds before it writes the plan header, because the
   header carries them.
-- The executor decision has three outcomes: the session itself runs the plan, one plan goes to
-  `local-coder`, or several plans go to aider.
-- For `local-coder` the question is whether each step's prompt plus output fits the coder
-  window. If it does not and the step cannot be split, the plan takes the large tier.
+- The executor decision has three outcomes: the session itself runs work that writes no code,
+  the plans of one `progress.md` go to `local-coder`, or an unattended night goes to aider.
+- For `local-coder` the question is whether each plan's prompt plus reply fits the coder
+  window. If it does not and the plan cannot be split, the plan takes the large tier.
 - Every path ends in the same place: a worktree branch and a review round on its diff. The loop
   stops when the branch is safe to merge, meaning the full suite is green and a re-graded round
   leaves no Critical or High finding, minors being deferred and listed. Otherwise a round
@@ -80,14 +81,16 @@ test fails when the two differ. Reading it from the top:
 
 | Situation | Executor | Why it saves cloud tokens |
 |---|---|---|
-| Judgment, security, design, a repository-wide change, or no qualified local role | The session itself, with `executing-plans` | Nothing to save: the work needs the best model |
-| One plan, a test as oracle per step, each step's prompt plus output fits the coder window | `local-coder`, tier simple or standard | The cloud pays for the plan, the wrapper and the review; the code is generated locally |
-| One plan whose step output cannot fit the coder window and cannot be split | `local-coder`, tier large | Same, with a window large enough for long output |
-| Two or more plans, or an unattended night | aider (spec, plan files, progress, a writer model and a reviewer model) | No interactive harness is involved once the run starts |
+| Work that writes no code (R39): judgment, security review, design, prose, data files | The session itself, with `executing-plans` | Nothing to save: the work needs the best model |
+| One or more plans in one `progress.md`, a test per step, each plan's prompt plus reply fits the coder window | `local-coder`, tier simple or standard, one dispatch for the whole ledger | The cloud pays for the plans, the wrapper and the review; the code is generated locally |
+| A plan whose reply cannot fit the coder window and cannot be split | `local-coder`, tier large | Same, with a window large enough for long output |
+| An unattended night with no interactive session | aider (spec, plan files, progress, a writer model and a reviewer model) | No interactive harness is involved once the run starts |
 | A whole session on Ollama or Augure | Your manual choice with `claude-switch.ps1`, never written in a plan | The session itself is local |
 
 Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. A fix found
-by a review round is a small plan of its own and follows the same table.
+by a review round is an `- [ ] audit:` line the driver runs again, or a small plan of its own,
+and follows the same table. A plan that writes code on a machine with no qualified local role is
+reported as not executed: the cloud does not write it in its place (R39).
 
 ## Plan files come first
 
@@ -175,16 +178,21 @@ counters remain on purpose, because the aider kit is standalone: `Get-TokenCount
 ## The four paths
 
 **The session runs the plan.** The header says `executor: cloud` and the session follows
-`executing-plans` in a worktree. This is the path for judgment, security work, and any plan on a
-machine with no qualified local role.
+`executing-plans` in a worktree. This is the path for work that writes no code: judgment,
+security review, design, prose and data files (R39).
 
-**One plan through `local-coder`.** The dispatch prompt carries a line `PLAN: <path>`. The
-agent resolves the tier to a role with `plan_contract.py resolve`, generates each open step over
-the bridge, ticks `progress.md` with one of three marks and nothing else (`- [ ]` open, `- [x]`
-done, `- [!]` blocked), and reports. It audits nothing and never commits. Review runs in the
-calling session.
+**A whole `progress.md` through `local-coder`.** The dispatch prompt carries a line `PROGRESS:
+<path>` and the `PLAN: <path>` line of the first open plan. The agent checks the plan with
+`plan_contract.py resolve`, then launches `local_coder_driver.py` once. The driver calls the coder
+model once per plan with the files aider-setup submits to aider (see the table below), writes the
+files of the reply, runs the plan's tests and ticks `progress.md` with one of three marks and
+nothing else (`- [ ]` open, `- [x]` done, `- [!]` blocked). The agent is then the auditor: it runs
+`code-review` and `security-review` under the R35 bounds of the plan header, inside the
+`--audit-begin` and `--audit-end` sandbox, and writes each finding as an `- [ ] audit:` line that
+the driver runs again. It never edits code and never commits. A `[!]` goes back to the cloud,
+which revises the plan.
 
-**Several plans through aider.** Aider keeps its own internal loop: a writer model codes and
+**An unattended night through aider.** Aider keeps its own internal loop: a writer model codes and
 tests, and a different reviewer model audits and never edits. It reads `spec.md`, each
 `plan<N>.md` and `progress.md`, and a plan header does not change the files it names. See
 chapter [14](14-aider-pipeline.md).
@@ -200,9 +208,9 @@ written, and each row says where.
 
 | Tier | Role | Window | Decode speed | Source and date |
 |---|---|---|---|---|
-| simple, standard | coder | 16384 tokens | about 26.6 tokens per second | Read 2026-10-17 from `local-model-config.json` (sweep by `optimize_ollama.py`) |
+| simple, standard | coder | 49152 tokens | about 28 tokens per second | Adopted by the owner on 2026-11-05 (Issue #104), 33 of 33 layers on the GPU, read from `model_resolver.py --window --role coder` the same day |
 | large | session | 262144 tokens, stored with `--num-ctx` | about 2.4 tokens per second | Adoption of 2026-10-09 in `local-model-state.json`, thread sweep by `aider-thread-probe.py`; the entry on this machine records no window yet |
-| any | none qualified | not applicable | not applicable | Read 2026-10-17: with no qualified role the plan runs on the cloud executor |
+| any | none qualified | not applicable | not applicable | Rule of 2026-11-05 (R39): with no qualified role, `plan_contract.py resolve` returns the cloud executor with a reason, and a plan that writes code is reported not executed (R39) |
 
 The large tier is the low-cost cloud model wrapper plus the bridge with the session role. It is not a subagent
 on a local endpoint, which Claude Code does not offer. At about 2.4 tokens per second a 4000
@@ -211,11 +219,35 @@ split.
 
 ## What the wrapper does and costs
 
-`local-coder` and `local-writer` run on a low-cost cloud model that frames the task, assembles
-one self-contained prompt, checks it fits the window, runs the bridge with the role, reads the
-result and writes it. The bridge speaks Ollama's HTTP API, asks the resolver for the model, and
-refuses rather than substituting a weaker one. The wrapper is the only cloud generation cost of
-a local step, and it is small because it never writes the code itself.
+`local-coder` and `local-writer` run on a low-cost cloud model. The `local-writer` wrapper
+assembles one self-contained prompt, checks it fits the window, runs the bridge with the role and
+writes the result. The `local-coder` wrapper does not build prompts at all (R39): it launches
+`local_coder_driver.py`, and then audits what the driver wrote. The driver talks to Ollama's HTTP
+API through the bridge, asks the resolver for the model, and refuses rather than substituting a
+weaker one or truncating a file. The wrapper's cloud cost is the launch and the audit, and it is
+small because it never writes the code itself. Measured on 2026-11-05, hand-picked prompts of
+1245 to 4225 tokens in a 16384 window cost 366K wrapper tokens on one plan and left the cloud
+writing the code, which is why the driver submits aider-setup's full input instead.
+
+What the driver submits for each plan, in this order, sized by the same `context-budget.json`
+and `skills.json` as aider-setup (an item over its ceiling, or a prompt over the window, is
+refused and never truncated):
+
+| Item | Ceiling in tokens |
+|---|---:|
+| `conventions.md` of aider's folder | 2500 |
+| `rules.md` of aider's folder | 3500 |
+| `spec.md` | 4000 |
+| The plan | 4000 |
+| The skill stage for the step (`write`, or `reopen` after a failure or an audit finding) | per `skills.json` |
+| `progress.md` | 2048 |
+| The files the plan names, as they are now | `code_file` 16000 each |
+| The plan message (`write`, `fix` or `reopen`) | per `local-coder-driver.json` |
+| Reply reserve | `reserve.reply_tokens` |
+
+The two aider files and their ceilings are read from the same budget file as the table under
+Size ceilings (read on 2026-11-05). The reply reserve comes out of the window of the tier's role:
+the driver refuses a plan whose prompt plus reserve is over that window.
 
 The reasoning stays with an edge cloud model, which writes the plans and reviews the result.
 This chapter names no model, because the process holds for any cloud model. One limit applies to

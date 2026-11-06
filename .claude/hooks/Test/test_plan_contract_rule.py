@@ -81,19 +81,20 @@ class TestRuleIsWritten(unittest.TestCase):
         self.assertIn("docs/superpowers/todo/", body)
         self.assertIn("docs/superpowers/done/", body)
 
-    def test_the_agent_is_a_plan_procedure_with_no_audit_inside(self):
+    def test_the_agent_is_a_plan_procedure_that_launches_the_driver_and_audits(self):
+        # Rewritten 2026-11-05 (Issue #104, plan 14, rule R39): the old "no audit inside" pin is
+        # retired, the wrapper now launches local_coder_driver.py and audits under R35.
         body = flat(self.agent)
-        for phrase in ("plan_contract.py resolve", "PLAN:", "progress.md", "- [ ]", "- [x]",
-                       "- [!]", "no audit"):
+        for phrase in ("plan_contract.py resolve", "PLAN:", "progress.md", "- [ ]", "[!]",
+                       "local_coder_driver.py", "audits"):
             self.assertIn(phrase, body)
 
-    def test_the_agent_passes_the_plan_to_the_bridge_so_the_log_names_it(self):
-        # Code review 2026-10-17: the bridge gained --plan for the dashboard, but the
-        # agent's own bridge command never passed it, so every record said plan null.
+    def test_the_agent_leaves_the_bridge_to_the_driver(self):
+        # Replaces the 2026-10-17 pin that the agent's own bridge command passed --plan: since
+        # R39 the agent builds no prompt and calls no bridge, the driver does.
         command = [line for line in self.agent.splitlines() if "ollama_bridge.py" in line
                    and "--prompt-file" in line]
-        self.assertEqual(len(command), 1)
-        self.assertIn("--plan", command[0])
+        self.assertEqual(command, [])
 
     def test_the_code_style_index_lists_r38(self):
         index = flat(CODE_STYLE.read_text(encoding="utf-8"))

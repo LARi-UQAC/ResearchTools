@@ -7,12 +7,12 @@ flowchart TD
     D --> E[Ask the owner the bounds]
     E --> F[Write the header: executor, tier, bounds]
     F --> G{Which executor?}
-    G -- judgment or no local role --> H["cloud: superpowers:executing-plans"]
-    G -- one plan --> J[local-coder, low-cost cloud model wrapper and bridge]
-    J --> K{Step output fits the coder window?}
+    G -- work that writes no code --> H["cloud: superpowers:executing-plans"]
+    G -- plans of one progress.md --> J[local-coder: wrapper launches the driver and audits, local coder model writes the code]
+    J --> K{Plan reply fits the coder window?}
     K -- yes --> L[tier simple or standard]
     K -- no --> M[tier large, session role]
-    G -- several plans or night --> N[aider: writer and reviewer]
+    G -- unattended night --> N[aider: writer and reviewer]
     H --> O[Worktree branch]
     L --> O
     M --> O

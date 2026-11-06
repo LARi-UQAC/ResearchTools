@@ -49,11 +49,16 @@ still exercises the guard logic offline.
 1. Design - `brainstorming` on **Fable 5** (judgment).
 2. Plan - `writing-plans` on **Opus**.
 3. Branch `feat/<slug>` - a **Sonnet** subagent with write-capable git (never the local model).
-4. TDD - `test-driven-development` on **Sonnet**: write the failing tests for the acceptance
-   criteria first.
-5. Code - the **local-coder** agent (the resolver's coder-role model over the bridge) implements against the tests.
-   At task start it consults the vault (GardeFous / Apprentissages for the module, the project
-   `Decisions.md` / `CodeReview.md`) and folds the constraints into the bridge prompt.
+4. TDD - `test-driven-development`: the plan names the failing tests for the acceptance criteria
+   first, and the local coder model writes them with the code (rule R39: no cloud model writes
+   code, tests included). **Sonnet** writes the plan, not the tests.
+5. Code - the **local-coder** agent launches `scripts/local_coder_driver.py` once for the whole
+   `progress.md` (rule R39). The driver calls the resolver's coder-role model once per plan with
+   exactly the files aider-setup submits to aider, sized by the same `context-budget.json`, and
+   ticks the ledger. The agent then audits the written files under the plan header's R35 bounds
+   (`code-review` and `security-review`, inside the `--audit-begin`/`--audit-end` sandbox) and
+   never edits code. The vault constraints reach the plan through the orchestrator, because
+   `local-coder` never reads the vault.
 6. Comment / doc - the **local-writer** agent (the resolver's writer-role model over the bridge). It consults the
    vault's `Methodes` and prior writing decisions the same way.
 7. Run tests + review panel - **Sonnet** runs `rtk pytest` (deterministic green/red) and the
@@ -62,9 +67,11 @@ still exercises the guard logic offline.
 8. Score - `scripts/loop_audit.py` (run by **local-coder**, deterministic) aggregates the
    findings + test result + betterleaks/pip-audit hook status into per-axis sub-scores, an
    aggregate 0-100, and the gate booleans; appends to the ledger.
-9. Correct - `writing-plans` then `executing-plans` on the findings (**Sonnet** + local-coder).
-   On error recovery / at the checkpoint, local-coder re-consults the vault so the learning
-   captured last iteration is not repeated. `executing-plans` itself never reads the vault.
+9. Correct - `writing-plans` turns the findings into a revised or new plan (**Sonnet**), and
+   local-coder runs it through the driver (rule R39: a finding is never fixed in the code by the
+   cloud). On error recovery / at the checkpoint, the orchestrator has `local-writer` re-consult
+   the vault and puts the distilled lessons in the plan, so the learning captured last iteration
+   is not repeated. `executing-plans` itself never reads the vault.
 10. Doc / journal - **local-writer** is the single vault writer: it captures a project log as
     an appended dated section in the project's own `Decisions.md` (and `CodeReview.md`) under
     `10_Projets/<nature>/<projet>/`, and any reusable learning as an atomic note under

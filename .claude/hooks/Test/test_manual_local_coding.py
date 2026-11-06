@@ -300,12 +300,15 @@ class TestAiderChapter(unittest.TestCase):
         self.assertFalse(says_orchestrator_product(self.text))
         self.assertFalse(says_orchestrator_product(AIDER_DEEP_DIVE.read_text(encoding="utf-8")))
         row = next(line for line in CHAPTER.read_text(encoding="utf-8").splitlines()
-                   if line.startswith("| Two or more plans"))
+                   if line.startswith("| An unattended night"))
         self.assertFalse(says_orchestrator_product(row))
 
-    def test_local_coder_is_described_as_one_whole_plan(self):
-        for phrase in ("one whole plan", "PLAN: <path>", "local-coder-dispatch-guard.py",
-                       "audits nothing", "several plans"):
+    def test_local_coder_is_described_as_running_a_whole_ledger_and_auditing_it(self):
+        # Rewritten 2026-11-05 (Issue #104, plan 14, R39): one dispatch runs a whole progress.md,
+        # and the wrapper audits, so the "one whole plan" and "audits nothing" pins are retired.
+        for phrase in ("whole `progress.md`", "PROGRESS: <path>", "PLAN: <path>",
+                       "local-coder-dispatch-guard.py", "local_coder_driver.py",
+                       "audits the written files", "unattended"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.body)
         self.assertNotIn("single-step", self.body)

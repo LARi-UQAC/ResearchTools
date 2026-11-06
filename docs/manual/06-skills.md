@@ -115,6 +115,111 @@ Searches the Scopus database via the Elsevier REST API. Requires `SCOPUS_API_KEY
 | `/scopus author <name>` | Same, when the key is entitled for the Author Search API; otherwise degrades to Semantic Scholar candidates and says so (no Scopus AU-ID can be resolved from a name without that entitlement) |
 | `/scopus journal <name or ISSN>` | Journal SJR quartile, CiteScore, subject areas |
 
+#### How a paper is downloaded
+
+Figure: the download process of `download_pdf.py`. Each download is tried in turn, and the first
+one that gives the full text ends the process.
+
+```mermaid
+flowchart TD
+    S["Reference with a DOI?"] --> A{"DOI empty?"}
+    A -- yes --> Z0["Status no-doi: stop"]
+    A -- no --> P0{"File already in refs/?"}
+    P0 -- yes --> SK["Status present: stop"]
+    P0 -- no --> P1{"SCOPUS_API_KEY set?"}
+
+    P1 -- no --> P2
+    P1 -- yes --> D1["Download 1: Elsevier Full-Text API<br/>with the key and the institutional token if set"]
+    D1 --> Q1{"PDF written?"}
+    Q1 -- no --> P2
+    Q1 -- yes --> V1{"One-page preview?"}
+    V1 -- yes --> X1["Delete the file"]
+    X1 --> P2
+    V1 -- no --> OK["File saved: stop"]
+
+    P2{"Semantic Scholar knows an open-access PDF URL?"}
+    P2 -- no --> D3
+    P2 -- yes --> D2["Download 2: Semantic Scholar open-access PDF"]
+    D2 --> Q2{"PDF written?"}
+    Q2 -- no --> D3
+    Q2 -- yes --> OK
+
+    D3["Download 3: publisher PDF built from the DOI landing page"]
+    D3 --> Q3{"PDF written?"}
+    Q3 -- no --> P4
+    Q3 -- yes --> V3{"One-page preview?"}
+    V3 -- yes --> X3["Delete the file"]
+    X3 --> P4
+    V3 -- no --> OK
+
+    P4{"UNPAYWALL_EMAIL set?"}
+    P4 -- no --> L
+    P4 -- yes --> D4["Download 4: Unpaywall<br/>PDF, else landing page HTML if HTML is allowed"]
+    D4 --> Q4{"PDF or HTML written?"}
+    Q4 -- no --> L
+    Q4 -- yes --> OK
+
+    L["Read the arXiv and PubMed Central ids from Semantic Scholar"] --> P5{"arXiv id known?"}
+    P5 -- no --> P6
+    P5 -- yes --> D5["Download 5: arXiv<br/>PDF, else arXiv HTML, else ar5iv HTML"]
+    D5 --> Q5{"PDF or HTML written?"}
+    Q5 -- no --> P6
+    Q5 -- yes --> OK
+
+    P6{"HTML allowed and PMCID known?"}
+    P6 -- no --> P7
+    P6 -- yes --> D6["Download 6: PubMed Central article HTML"]
+    D6 --> Q6{"HTML written?"}
+    Q6 -- no --> P7
+    Q6 -- yes --> OK
+
+    P7{"HTML allowed?"}
+    P7 -- no --> P8
+    P7 -- yes --> D7["Download 7: DOI landing page saved as HTML<br/>only if it passes the article check"]
+    D7 --> Q7{"HTML written?"}
+    Q7 -- no --> P8
+    Q7 -- yes --> OK
+
+    P8{"Browser rung enabled and playwright installed?"}
+    P8 -- no --> M1
+    P8 -- yes --> D8["Download 8: Chrome driven by Playwright<br/>a person clicks any challenge, sign-in if the host is configured"]
+    D8 --> R8{"Named error raised?"}
+    R8 -- yes --> M1
+    R8 -- no --> Q8{"PDF captured?"}
+    Q8 -- no --> M1
+    Q8 -- yes --> V8{"One-page preview?"}
+    V8 -- yes --> X8["Delete the file"]
+    X8 --> M1
+    V8 -- no --> OK
+
+    M1{"Publisher said the requestor is not entitled?"}
+    M1 -- yes --> M2["Reason: request it by interlibrary loan or save it by hand"]
+    M1 -- no --> M3{"A preview was seen?"}
+    M3 -- yes --> M4["Reason: probably not entitled, interlibrary loan or by hand"]
+    M3 -- no --> M5["Reason: no download gave the full text, save it by hand"]
+    M2 --> END["Status failed: list the paper in refs/_failed.md"]
+    M4 --> END
+    M5 --> END
+```
+
+The source of the figure is [download-chain.mmd](diagrams/download-chain.mmd). A test fails when the
+two differ or when the downloads no longer match the code.
+
+| Download | What the code does | Switch off with |
+|---|---|---|
+| 1 | GET the Elsevier Full-Text API as a PDF with the key, and the institutional token if set. https only, redirects followed by hand, the body must start with `%PDF` and stay under the size cap | none |
+| 2 | Ask Semantic Scholar for an open-access PDF URL, then fetch it the same way | none |
+| 3 | Resolve the DOI landing page (curl_cffi when installed, else requests with browser headers), take the MDPI `/pdf` URL or the `citation_pdf_url` meta tag, and fetch each candidate with curl_cffi, then requests, then the system curl. An Akamai proof-of-work page is solved automatically when one appears | none |
+| 4 | Ask Unpaywall for the open-access locations and fetch each PDF URL the same ways. When none works and HTML is allowed, save the best location's landing page as validated HTML | `--no-html` for the HTML |
+| 5 | arXiv PDF, then arXiv HTML, then ar5iv HTML | `--no-html` for the HTML |
+| 6 | PubMed Central article HTML | `--no-html` |
+| 7 | DOI landing page saved as HTML only when it passes the article check | `--no-html` |
+| 8 | Chrome driven by Playwright. It waits while a challenge shows (a person clicks it), signs in when the host is configured, then keeps the PDF the page streams or downloads the PDF link with the browser's cookies | `--no-browser` |
+
+When a download is missing what it needs, the code still calls it, it returns nothing, and the attempt
+is recorded as skipped. The manual list is not a download: it writes `refs/_failed.md` with the reason
+each download gave.
+
 **Files:**
 - `.claude/skills/scopus/SKILL.md`
 - `.claude/skills/scopus/scripts/scopus_api.py` — Scopus REST client. `search` orders by `-citedby-count` (`--sort recent` for date order; the alias is required because argparse refuses a value starting with a dash) and wraps a query naming no Scopus field in `TITLE-ABS-KEY()`; without both, a search answered only this year's least-cited papers, and citation ordering on an unqualified query answered the most-cited papers of all science. `validate` queries the title as a quoted phrase and publishes `title_similarity` plus an `ambiguous` flag. `journal --issn` is the reliable venue lookup: it resolves print and electronic ISSNs in turn and returns the best CiteScore subject percentile with the quartile derived from it (a lookup by title, or an ISSN lookup combined with `field=`, answers a stub). `publications` returns one author's document list, most recent first, each carrying its own DOI and an `approved_publisher` flag against the CLAUDE.md list (flagged, never dropped); `deploy/form-service/`'s `GET /publications` wraps it in a disk cache and a rate limiter so the Scopus key, the throttling, and the publisher policy never cross the service boundary to ThesisTracker

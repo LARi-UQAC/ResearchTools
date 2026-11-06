@@ -131,6 +131,11 @@ are written. Record the download summary in the report. **A download failure is 
 reason to flag, comment out, or remove a bibliography entry**: a paper behind a paywall is
 still a valid reference.
 
+Stay inside the retrieval chain: `download_pdf.py` already runs every rung in order, including a
+real browser with the owner's institutional sign-in, so never fetch a paper's PDF through the
+Playwright MCP or any other browser tool. When a paper stays in `refs/_failed.md`, report the
+per-rung reasons listed in `refs/_failed.md` and stop there.
+
 ### Step 5 — Judgment (your part)
 
 Append your own sections to `<basename>_bib_report.md`. The script wrote the measurable

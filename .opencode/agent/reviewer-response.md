@@ -408,6 +408,11 @@ bytes are validated by the `%PDF` magic number. A `[SCOPUS NOT FOUND — referen
 reference is never downloaded. Record any download failure (institutional access required)
 in the Step 8 summary alongside its DOI link; it does not block adding the reference.
 
+Stay inside the retrieval chain: `download_pdf.py` already runs every rung in order, including a
+real browser with the owner's institutional sign-in, so never fetch a paper's PDF through the
+Playwright MCP or any other browser tool. When a paper stays in `refs/_failed.md`, report the
+per-rung reasons listed in `refs/_failed.md` and stop there.
+
 ### Step 6c — Contribution grounding (extract-contributions skill)
 
 For every reference whose full text was retrieved in Step 6b, ground the confidence annotation

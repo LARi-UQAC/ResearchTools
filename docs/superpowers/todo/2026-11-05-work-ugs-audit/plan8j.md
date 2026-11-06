@@ -57,12 +57,12 @@ it raises on purpose.
   `criteria_doc`, `hints`, `vision_ok` and `settings` (for `assemble_report`). The ledger is
   `work_dir/progress.md`; the loop folder is `work_dir/loop-N/R01`. Steps in order, each skipped when
   every ledger line of it is already marked done or blocked:
-  1. `grade`: `grade_report` with the partial `grade`.json as `existing`; after each item the partial
+  1. `grade`: `grade_report` with the partial the JSON file `grade` as `existing`; after each item the partial
      file is saved and the line `grade I01` marked `[x]`, or `[!]` with the item's comment code when
      `not_run`.
-  2. `language`: `language_report`; writes `language`.json (the annotations list); mark `[x]`, or `[!]`
+  2. `language`: `language_report`; writes the JSON file `language` (the annotations list); mark `[x]`, or `[!]`
      with note `pages=<n>` when some page did not run.
-  3. `figures`: `figures_report` with the partial `figures`.json as `existing`; once the figures are
+  3. `figures`: `figures_report` with the partial the JSON file `figures` as `existing`; once the figures are
      known their ids are added to the ledger with `add_figures`; after each figure its line is marked
      `[x]`, or `[!]` when any model criterion of it is `not_run`; the `figures` line is marked `[x]`
      (or `[!]` when vision was not validated) at the end.

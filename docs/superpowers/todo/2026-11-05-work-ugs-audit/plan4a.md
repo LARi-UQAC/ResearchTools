@@ -64,12 +64,12 @@ line shows the shape of the grade table header).
   `loop`, `assessment_type`, `n`, `mean`, `mean_band`, `sd`, `sd_band`, `verdict`, `reasons`,
   `outlier_z`, `outliers`, `excluded`; a missing key raises, never a blank.
 - `main(argv)`: `--work DIR --loop N --type T [--allow-third] [--next-loop] [--json]`. It reads
-  the file named `totals` (extension `.json`, one totals dict) of each report folder `R*` inside the
-  loop folder `loop-N`, and the file named `rubric` (extension `.json`) in the work folder, then the
-  targets file of the skill. It writes the file named `grades` (extension `.csv`) and the file named
+  the file named `totals` (a JSON file holding one totals dict) of each report folder `R*` inside the
+  loop folder `loop-N`, and the file named `rubric` (a file with a data extension) in the work folder, then the
+  targets file of the skill. It writes the file named `grades` (a file with a data extension) and the file named
   `batch_report` (extension `.md`) in the loop folder, and prints ONE JSON line holding exactly the keys
   `verdict`, `n`, `mean`, `sd`, `mean_band`, `sd_band`, `reasons`, `outliers`, `excluded`, never a comment. With `--next-loop` it only calls `next_loop` on the file named
-  `loop_state` (extension `.json`) of the work folder and prints the new number. Exit 0 in band, 3 out of band, 2 refusal
+  `loop_state` (a file with a data extension) of the work folder and prints the new number. Exit 0 in band, 3 out of band, 2 refusal
   (bad type, missing file, loop limit), 1 failure. Every path is resolved inside the work folder.
 
 **Tests to write first, each failing before the code exists:**

@@ -48,7 +48,7 @@ Outputs header, and Raises when it raises on purpose.
 - `PrepareError` (a `ValueError`).
 - `prepare(reports_dir: Path, work_dir: Path) -> list[dict]`: one dict per report with `report_id`
   (`R01`, `R02`, in the sorted order of the PDF file names), `pages` (count) and `empty_pages` (list of
-  1-based numbers). It writes the id map in the work folder as a file named `ids` (extension `.json`,
+  1-based numbers). It writes the id map in the work folder as a file named `ids` (a JSON file,
   an object from id to file name, existing ids kept, new ids appended in sorted order), and for each
   report one Markdown file per page at `R01/pages/p001.md`, `R01/pages/p002.md` and so on. Files that
   are not PDFs are skipped and counted in the returned value of a second function

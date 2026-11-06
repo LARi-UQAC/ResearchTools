@@ -37,9 +37,6 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [x] T1 audit sandbox
 
-## plan16.md
-
-- [ ] T1 BridgeDeps writes start, attempt and failed records to the bridge log
 
 ## plan4a.md
 

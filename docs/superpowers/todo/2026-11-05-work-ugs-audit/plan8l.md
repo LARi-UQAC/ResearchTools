@@ -57,7 +57,7 @@ answer and a usage dict with `prompt_tokens`; `OllamaDeps`; `NotRun` with `kind`
   image_tokens: None}`; one from the second call keeps `ok` and gives `image_tokens` None.
 - `main(argv=None, *, call_usage=None) -> int`: `--work DIR --image FILE --expected FILE [--dry-run]
   [--json]`. Builds the real `call_usage` from the configuration (role `roles.vision`, reserve, timeout)
-  when none is injected. Writes `vision_probe`.json (keys `ok`, `image_tokens`, `kind`) in the work
+  when none is injected. Writes the JSON file `vision_probe` (keys `ok`, `image_tokens`, `kind`) in the work
   folder, resolved inside it (R24), and prints the same object. Exit 0 when the file is written, whatever
   `ok` says, 2 on a refusal (missing file, bad expected file, path outside the work folder), 1 on a
   failure.

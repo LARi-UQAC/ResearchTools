@@ -71,23 +71,23 @@ work_dir)`), `.claude/skills/work-ugs-audit/scripts/rubric_check.py` (`validate`
   - `prepare --reports DIR --rubric FILE --type T [--work DIR]`: work folder defaults to `_correction`
     inside the reports folder. Runs `report_prepare.prepare`; reads the rubric file (JSON is validated and
     used as it is; text, Markdown or PDF text goes through `normalize_rubric`; any other extension is a
-    refusal that says to convert it); writes `rubric`.json, `spec.md` (the spec template filled through `ugs_text.fill` with the
+    refusal that says to convert it); writes the JSON file `rubric`, `spec.md` (the spec template filled through `ugs_text.fill` with the
     slots `ASSESSMENT_TYPE`, `TOTAL_POINTS` and `ITEMS`, the last being one `## I01 - title (points)`
-    section per item with its criteria and checklist lines) and the ledger with `add_report` for every report, and `loop_state`.json is not
+    section per item with its criteria and checklist lines) and the ledger with `add_report` for every report, and the JSON file `loop_state` is not
     touched. Prints one line per report with `report_id`, `pages`, `step` `prepare`, `status` `done`.
   - `run --work DIR [--loop N] [--resume] [--only R01]`: the reports folder is the parent of the work
-    folder. For each report in id order, runs `run_report`; the source file name comes from `ids`.json.
+    folder. For each report in id order, runs `run_report`; the source file name comes from the JSON file `ids`.
     The prompts are those of the skill's `prompts` folder and of the figure-review `prompts` folder
     (`load_prompts` on each, merged), the levels text being the prompt named `levels`; the schemas are
     the skill's schemas file. The calibration note is empty on loop 1 and, after, is the
     `calibration_note` prompt filled with `LOOP`, `MEAN`, `MEAN_BAND`, `SD`, `SD_BAND`, `VERDICT` and
-    `REASONS` taken from the previous loop's `batch`.json (a band written as `83 to 93`, the reasons
+    `REASONS` taken from the previous loop's the JSON file `batch` (a band written as `83 to 93`, the reasons
     joined by a semicolon). Prints one line per report: `report_id`, `status`, and the counts
     of done and blocked steps. A refused loop number (not the current loop) is exit 2. An unretryable
     `NotRun` stops the run: a line with `step`, `status` `not_run` and the kind, exit 1.
   - `batch --work DIR --loop N [--allow-third]`: runs `batch_stats.main` for the loop, stores its JSON
-    line as `loop-N/batch`.json, prints it; when out of band and a further loop is allowed, advances
-    `loop_state`.json through `batch_stats`, reopens every ledger line except `prepare` with
+    line as the JSON file `loop-N/batch`, prints it; when out of band and a further loop is allowed, advances
+    the JSON file `loop_state` through `batch_stats`, reopens every ledger line except `prepare` with
     `reopen_all`, adds a ledger note `loop <n> opened`, and exits 3; a refused third loop is exit 2.
   - `status --work DIR`: prints the ledger counts and the first open line as one line.
   Every printed line is a JSON object whose values are ids, step labels, statuses, kinds and numbers.

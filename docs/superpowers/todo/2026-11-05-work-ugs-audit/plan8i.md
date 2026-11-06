@@ -63,9 +63,9 @@ timeout, retries)` returns dicts with `index`, `kind`, `status`, `cited`),
   first `quote_chars` characters of the entry as `quote`, `rect` None, and the comment `comments[code]
   [language]`.
 - `assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, rubric: dict, pages:
-  list[str], language: str, settings: dict, fetch) -> dict`: reads `grade`.json, and `language`.json and
-  `figures`.json when present, from `report_dir`; computes the totals and writes `totals`.json; checks
-  the references found by `split_body_and_references`; writes `annotations`.json; writes
+  list[str], language: str, settings: dict, fetch) -> dict`: reads the JSON file `grade`, and the JSON file `language` and
+  the JSON file `figures` when present, from `report_dir`; computes the totals and writes the JSON file `totals`; checks
+  the references found by `split_body_and_references`; writes the JSON file `annotations`; writes
   `annotated.pdf` with `annotate`; appends the rubric pages built from `settings["annex_template"]`.
   `settings` holds `colors`, `author`, `quote_chars`, `url_timeout_s`, `max_retries`, `patterns`,
   `ref_comments`, `annex_template`; a missing key raises `ValueError` naming it. Returns

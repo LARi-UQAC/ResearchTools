@@ -56,19 +56,24 @@ You are a GLOBAL agent, dispatched from every project on this machine, so never 
 SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
 ```
 
-1. **Check the plan.** Run `python "$SK"/loop-engineer/scripts/plan_contract.py resolve <plan>
-   --json`. Exit 2 means the plan breaks the contract: stop and report the message. A result
-   with `fallback` true means no qualified local model exists for the role the tier names: report
-   its `reason` to the cloud, which decides. You never generate the code on the cloud, never switch
-   to another model and never pass a model name: the models are the owner's aider configuration,
-   and a missing one is a refusal, not a substitution (R8).
-2. **Dry run.** The harness is the installed copy of aider-setup, `$HOME/.local/bin/aider-plan.ps1`
+1. **Check the plan.** Run `python "$SK"/loop-engineer/scripts/plan_contract.py validate <plan>`. Exit 2
+   means the plan breaks the contract (header, file limit of the tier, size ceilings): stop and report
+   the message. The models are the owner's aider configuration, never a resolver role. You never
+   generate the code on the cloud, never switch to another model and never pass a model name, and a
+   missing model is a refusal, not a substitution (R8).
+2. **Stage the plan, then dry run.** aider reads only files named `plan<N>.md`, so a plan that sits
+   in an effort folder under another name is staged first, with plain file copies and no code:
+   create `<project>/docs/superpowers/plans/<name>/`, copy the effort's `spec.md` into it, copy the
+   plan there as `plan1.md`, and write a `progress.md` holding `## plan1.md` and one `- [ ]` line per
+   task. The round is `<name>`. After the run, copy the marks back to the effort's own ledger.
+   The harness is the installed copy of aider-setup, `$HOME/.local/bin/aider-plan.ps1`
    (the repository copy refuses to run: its configuration still holds the `{{HOME}}` placeholder).
    Work out the project (the repository root), the round (the plans folder relative to
    `<project>/docs/superpowers/plans`, empty when it is that folder itself) and the test command:
    the project's own interpreter, called by absolute path (the main clone's `.venv-skills` from a
    worktree, found with `git rev-parse --git-common-dir`, rule R37), followed by each test file
-   named by the plan's `- Test:` lines. Then run `powershell -NoProfile -ExecutionPolicy Bypass
+   named by the plan's `- Test:` lines. When a path holds a space, pass the interpreter in its 8.3 short form without quotes: the kit passes
+   the command through Windows PowerShell 5.1, which breaks embedded quotes. Then run `powershell -NoProfile -ExecutionPolicy Bypass
    -File "$HOME/.local/bin/aider-plan.ps1" -Path <project> -Round <round> -TestCommand "<test
    command>" -DryRun`. Never pass `-NoAudit` (the kit's audit is required), `-AllowCloud` or `-Model`. A refusal names the
    file over its ceiling, the missing test command or the model that cannot be resolved. Stop and

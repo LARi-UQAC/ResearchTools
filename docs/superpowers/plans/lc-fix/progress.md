@@ -15,3 +15,7 @@
 ## plan4.md
 
 - [ ] T1 test_plan_contract_rule follows the one-plan local-coder
+
+## plan5.md
+
+- [ ] T1 repository sync keeps the installed aider kit scripts current

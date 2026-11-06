@@ -1109,10 +1109,28 @@ class TestInstitutionalSignIn(unittest.TestCase):
 
 
 class _CffiResponse:
+    """A streamed curl_cffi response: the body is only available through iter_content."""
+
     def __init__(self, status=200, headers=None, content=b""):
         self.status_code = status
         self.headers = headers or {}
-        self.content = content
+        self._content = content
+        self.read_bytes = 0
+        self.closed = False
+
+    @property
+    def content(self):
+        raise AssertionError("the whole body must never be read at once")
+
+    def iter_content(self, chunk_size=None):
+        step = chunk_size or 8192
+        for i in range(0, len(self._content), step):
+            chunk = self._content[i:i + step]
+            self.read_bytes += len(chunk)
+            yield chunk
+
+    def close(self):
+        self.closed = True
 
 
 class _FakeCffi:
@@ -1123,10 +1141,10 @@ class _FakeCffi:
         self.calls = []
 
     def get(self, url, headers=None, cookies=None, impersonate=None, timeout=None,
-            allow_redirects=True, **kw):
+            allow_redirects=True, stream=False, **kw):
         self.calls.append(dict(url=url, headers=headers, cookies=cookies,
                                impersonate=impersonate, timeout=timeout,
-                               allow_redirects=allow_redirects))
+                               allow_redirects=allow_redirects, stream=stream))
         return self.responses.pop(0)
 
 
@@ -1200,6 +1218,47 @@ class TestHybridFetch(unittest.TestCase):
             page, context, cffi, cfg = self._setup(response)
             with self.subTest(status=response.status_code):
                 self.assertIsNone(self._fetch(context, page, cffi, cfg))
+
+    def test_the_body_is_streamed_and_capped_by_the_config(self):
+        # Security review 2026-11-05: reading response.content whole let a hostile or
+        # broken host exhaust memory. The size cap now applies while streaming.
+        big = b"%PDF-1.7\n" + b"x" * 50_000 + b"\n%%EOF"
+        page, context, cffi, cfg = self._setup(
+            _CffiResponse(200, {}, big), cfg_values={"max_pdf_bytes": 20_000})
+        response = cffi.responses[0]
+        self.assertIsNone(self._fetch(context, page, cffi, cfg))
+        self.assertIs(cffi.calls[0]["stream"], True)
+        self.assertLess(response.read_bytes, 20_000 + 16_384)    # stopped at the cap, not at 50 000
+        self.assertTrue(response.closed)
+
+    def test_a_declared_length_over_the_cap_is_refused_before_any_byte_is_read(self):
+        page, context, cffi, cfg = self._setup(
+            _CffiResponse(200, {"Content-Length": "999999999"}, PDF_BYTES),
+            cfg_values={"max_pdf_bytes": 20_000})
+        response = cffi.responses[0]
+        self.assertIsNone(self._fetch(context, page, cffi, cfg))
+        self.assertEqual(response.read_bytes, 0)
+        self.assertTrue(response.closed)
+
+    def test_a_malformed_content_length_does_not_disable_the_cap(self):
+        big = b"%PDF-1.7\n" + b"x" * 50_000 + b"\n%%EOF"
+        page, context, cffi, cfg = self._setup(
+            _CffiResponse(200, {"Content-Length": "not a number"}, big),
+            cfg_values={"max_pdf_bytes": 20_000})
+        self.assertIsNone(self._fetch(context, page, cffi, cfg))
+
+    def test_a_body_exactly_at_the_cap_is_kept_and_the_response_is_always_closed(self):
+        body = PDF_BYTES
+        page, context, cffi, cfg = self._setup(
+            _CffiResponse(200, {}, body), cfg_values={"max_pdf_bytes": len(body)})
+        response = cffi.responses[0]
+        self.assertEqual(self._fetch(context, page, cffi, cfg), body)
+        self.assertTrue(response.closed)
+        for redirect in (_CffiResponse(302, {"Location": "https://www.example.org/n"}),
+                         _CffiResponse(403, {}, b"")):
+            page, context, cffi, cfg = self._setup(redirect, _CffiResponse(200, {}, body))
+            self._fetch(context, page, cffi, cfg)
+            self.assertTrue(redirect.closed)
 
     def test_curl_cffi_absent_degrades_without_raising(self):
         page, context, cffi, cfg = self._setup()

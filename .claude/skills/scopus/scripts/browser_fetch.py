@@ -682,22 +682,59 @@ def _hybrid_fetch(context: Any, page: Any, url: str, cfg: dict[str, Any]) -> byt
         try:
             response = _cffi_requests.get(
                 current, headers=headers, cookies=cookies, impersonate=cfg["curl_impersonate"],
-                timeout=cfg["nav_timeout_s"], allow_redirects=False)
+                timeout=cfg["nav_timeout_s"], allow_redirects=False, stream=True)
         except Exception as exc:   # curl_cffi raises its own hierarchy
             logger.info("[BROWSER] hybrid download failed (%s)", type(exc).__name__)
             return None
-        if response.status_code in (301, 302, 303, 307, 308):
-            location = (response.headers or {}).get("Location", "")
-            if not location:
+        try:
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = (response.headers or {}).get("Location", "")
+                if not location:
+                    return None
+                current = urljoin(current, location)
+                continue
+            if response.status_code != 200:
+                logger.info("[BROWSER] hybrid download answered HTTP %s", response.status_code)
                 return None
-            current = urljoin(current, location)
-            continue
-        if response.status_code != 200:
-            logger.info("[BROWSER] hybrid download answered HTTP %s", response.status_code)
+            body = _read_capped(response, cfg["max_pdf_bytes"])
+            return body if _is_complete_pdf(body) else None
+        except Exception as exc:   # a reset connection while streaming
+            logger.info("[BROWSER] hybrid download failed (%s)", type(exc).__name__)
             return None
-        return response.content if _is_complete_pdf(response.content) else None
+        finally:
+            try:
+                response.close()
+            except Exception:  # pragma: no cover - already closed
+                pass
     logger.info("[BROWSER] hybrid download: too many redirects")
     return None
+
+
+STREAM_CHUNK_BYTES = 16384
+
+
+def _read_capped(response: Any, cap: int) -> bytes | None:
+    """Read a streamed body, refusing it as soon as it is known to pass `cap` bytes: by the
+    declared Content-Length before any byte is read, else while counting what arrives (a
+    missing or malformed length does not switch the cap off). None when over the cap."""
+    try:
+        declared = int((response.headers or {}).get("Content-Length", ""))
+    except (TypeError, ValueError):
+        declared = None
+    if declared is not None and declared > cap:
+        logger.info("[BROWSER] hybrid download refused: declared length over the %d-byte cap", cap)
+        return None
+    chunks: list[bytes] = []
+    size = 0
+    for chunk in response.iter_content(chunk_size=STREAM_CHUNK_BYTES):
+        if not chunk:
+            continue
+        size += len(chunk)
+        if size > cap:
+            logger.info("[BROWSER] hybrid download refused: body over the %d-byte cap", cap)
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 _last_outcome = ""

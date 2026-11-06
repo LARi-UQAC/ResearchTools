@@ -16,7 +16,8 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 - Owner 2026-11-05 (R39, plans 13-14, last cloud-written code): local-coder submits to the coder model the
   exact file set of aider-setup (conventions, rules, spec, plan, skill stage, progress, plan targets,
   plan message; same context-budget.json), one LLM call per plan; ONE dispatch runs the whole ledger;
-  then the cloud reads the source files and runs code-review and security-review.
+  the wrapper is the auditor: code-review + security-review on the written files, bounded by the plan
+  header via loop_bounds.py (R35); findings = `- [ ] audit:` lines, the driver reruns; the wrapper never codes.
 
 ## plan1.md
 
@@ -34,7 +35,8 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [x] T1 bridge split_files + exact_only: 62 OK, 596e23c
 - [x] T2 driver: 15 OK, 2c3d6d9; dry run on this ledger: plan4 prompt 12919 + reply 14336. Ruling withdrawn: ~/.config/aider holds every aider file (my listing was cut by head); the driver reads them there, like aider. Driver settings in local-coder-driver.json; RED was the import failure, not run separately. Fix: `.claude/...` targets lost their leading dot (Get-PlanTargets trims both sides, aider has the same defect, to log in IMPROVEMENTS at plan 12); 16 OK.
-- [!] T3 owner: adopt. Measured 2026-11-05 (aider-thread-probe --mode context, ornith:9b-aider, 14 threads, 2 repeats): n_ctx 49152 = 33/33 layers on GPU, 5921 MiB VRAM, 28.0-28.3 tok/s; n_ctx 16384 = 5385 MiB, 24.6-25.3 tok/s. Owner command: model_resolver.py --adopt-role coder ornith:9b-aider --num-ctx 49152 --force --reason "<this measurement>".
+- [ ] T4 driver reruns a plan reopened by the wrapper's audit (stage reopen)
+- [x] T3 coder role = ornith:9b-gpu, window 49152, adopted by the owner 2026-11-05 (measured: 33/33 layers on GPU, 5921 MiB, 28 tok/s).
 
 ## plan14.md
 

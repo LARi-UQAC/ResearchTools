@@ -49,8 +49,17 @@ changes from one dispatch per plan to one dispatch per `progress.md`. No model t
 - Modify: `.claude/agents/local-coder.md` (rewrite: the dispatch prompt carries `PROGRESS: <path>` and
   the `PLAN:` line of the first open plan, which the existing dispatch guard already validates; the
   wrapper runs `local_coder_driver.py --progress ... --root ...` once, which calls the model once per
-  plan until every plan of the ledger is done or blocked; it reports the driver's JSON only; it never
-  reads, writes or edits code; a `[!]` goes back to the cloud for plan revision)
+  plan until every plan of the ledger is done or blocked; it never reads, writes or edits code; a `[!]`
+  goes back to the cloud for plan revision). The wrapper is the AUDITOR, under R35's bounds, the same
+  rules loop-engineering applies to any code: (1) `loop_bounds.py init --from-plan <first plan>` once
+  per effort, the budget being the `bounds` block of the plan header (`max_rounds`, `max_tokens`,
+  `plateau`; owner 2026-11-05: 3, 1500000, 2); (2) each round, `code-review` and `security-review` at
+  effort high on the files the driver wrote; (3) each finding written as
+  `- [ ] audit: <file>:<line> <finding>` in its plan's section of `progress.md`; (4)
+  `loop_bounds.py tick --findings N`; (5) findings left and no bound reached: run the driver again;
+  (6) stop at the first of: a bound reached, a round with no finding, the branch safe to merge (suite
+  green, no Critical or High finding). A bound reached first is reported with what remains, and the
+  owner decides; the wrapper never raises a bound and never edits code.
 - Modify: `.claude/skills/loop-engineer/SKILL.md` (driver entry and the rule)
 - Modify: `docs/manual/11-local-coding.md` (the driver, the aider-equivalent budget table, R39)
 - Test: `.claude/hooks/Test/test_cloud_never_codes_rule.py`
@@ -66,7 +75,8 @@ regenerated mirrors (`install.ps1`) and data files a plan lists as data (JSON, C
 
 - [ ] Step 1: failing test `test_cloud_never_codes_rule.py`: R39 present in `workflows.md` and in the
   exported region; `local-coder.md` names `local_coder_driver.py`, `PROGRESS:`, `--progress`, says the
-  model is called once per plan with aider-setup's file set, carries no edit
+  model is called once per plan with aider-setup's file set, names `loop_bounds.py init --from-plan`,
+  `tick --findings`, `code-review` and `security-review` as the wrapper's audit, carries no edit
   instruction (no "Edit", "rewrite", "fix the code"), and its tools line has no Edit and no Write;
   chapter 11 names the driver and R39; `code-style.md` index lists R39; a negative control plants an
   edit instruction in fictitious agent text and the finder reports it.

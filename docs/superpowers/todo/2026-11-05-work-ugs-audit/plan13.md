@@ -98,6 +98,28 @@ probe count decides (the character pre-filter refused a 4225-token prompt as 326
   `test_context_budget.py`. Step 5: testing.md lines (R23); commit
   `feat(loop-engineer): local-coder driver with aider-setup's input (#104)`.
 
+### Task 4: a plan reopened by the wrapper's audit runs with the reopen stage
+
+**Owner 2026-11-05:** aider-setup codes with one model and audits with another; in local-coder the
+auditor is the wrapper itself. After the driver returns, the wrapper applies `code-review` and
+`security-review` to the written files, inside the R35 bounds of the plan header (plan 14), and writes
+each finding as a `- [ ] audit: <file>:<line> <finding>` line in the plan's section of `progress.md`.
+The driver then reruns that plan. The wrapper never edits code; the driver never audits.
+
+**Files:**
+- Modify: `.claude/skills/loop-engineer/scripts/local_coder_driver.py`
+- Test: `.claude/skills/loop-engineer/scripts/Test/test_local_coder_driver.py`
+
+**Interfaces:** a plan whose open lines include `- [ ] audit:` lines runs from its first attempt with
+skill stage `reopen` and the aider reopen message (`aider-plan.ps1` lines 997-1002, added to
+`local-coder-driver.json` as `reopen_message`); the audit lines are ticked with the plan when its tests
+pass, or the first one is blocked.
+
+- [ ] Step 1: failing tests: an `audit:` line makes the first attempt use stage `reopen` and the reopen
+  message; a plan with no `audit:` line still uses `write`; audit lines ticked on success, first one
+  blocked on failure. Step 2: FAIL. Step 3: implement. Step 4: OK.
+- [ ] Step 5: commit `feat(loop-engineer): driver reruns a plan reopened by the audit (#104)`.
+
 ### Task 3: the coder role at aider's window
 
 - [ ] Step 1: with `opt-local-vram-llm`, sweep the coder tag at `num_ctx` 49152 (aider's input without

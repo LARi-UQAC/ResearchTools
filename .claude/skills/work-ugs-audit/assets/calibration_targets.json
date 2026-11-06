@@ -1,0 +1,16 @@
+{
+  "lab_report": {
+    "target_mean": {"value": 88, "provenance": "owner 2026-11-05 (calibration target mean, percent of the rubric total)"},
+    "target_sd": {"value": 4, "provenance": "owner 2026-11-05 (calibration target sample standard deviation)"},
+    "mean_tolerance": {"value": 5, "provenance": "owner 2026-11-05 (mean band is target_mean plus or minus this value)"},
+    "sd_tolerance": {"value": 2, "provenance": "owner 2026-11-05 (sd band is target_sd plus or minus this value)"},
+    "max_loops": {"value": 2, "provenance": "owner 2026-11-05 (calibration loops allowed before a human decides)"}
+  },
+  "project_report": {
+    "target_mean": {"value": 88, "provenance": "owner 2026-11-05 (calibration target mean, percent of the rubric total)"},
+    "target_sd": {"value": 4, "provenance": "owner 2026-11-05 (calibration target sample standard deviation)"},
+    "mean_tolerance": {"value": 5, "provenance": "owner 2026-11-05 (mean band is target_mean plus or minus this value)"},
+    "sd_tolerance": {"value": 2, "provenance": "owner 2026-11-05 (sd band is target_sd plus or minus this value)"},
+    "max_loops": {"value": 2, "provenance": "owner 2026-11-05 (calibration loops allowed before a human decides)"}
+  }
+}

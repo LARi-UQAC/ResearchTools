@@ -1,0 +1,43 @@
+{
+  "_purpose": "What local_coder_driver.py needs beyond context-budget.json and skills.json, so it submits to the coder model exactly what aider-plan.ps1 submits to aider (owner 2026-11-05, Issue #104 plan 13). Lists are data, not code (R6).",
+  "code_extensions": {
+    "value": [".py", ".ps1", ".js", ".ts", ".tsx", ".jsx", ".cs", ".c", ".h", ".cpp", ".java", ".go", ".rs", ".rb", ".sh", ".sql", ".m"],
+    "provenance": "copied 2026-11-05 from aider-plan.ps1 lines 77-79 ($CodeExtensions), so a plan names the same targets for both harnesses"
+  },
+  "data_extensions": {
+    "value": [".json", ".txt", ".toml", ".yml", ".yaml", ".cfg", ".ini", ".csv"],
+    "provenance": "copied 2026-11-05 from aider-plan.ps1 lines 87-88 ($DataExtensions)"
+  },
+  "installed_prefix": {
+    "value": "{{HOME}}/.config/aider/",
+    "provenance": "the prefix of always_on_files in context-budget.json and of the stage paths in skills.json"
+  },
+  "repository_config": {
+    "value": "aider-setup/config/",
+    "provenance": "ruling 2026-11-05 (plan 13), relative to the .claude/skills folder: the installed copies under ~/.config/aider are copies of this folder made by setup.ps1, and were absent on the owner's machine that day; the driver reads the source and reports it"
+  },
+  "write_message": {
+    "value": "Execute {plan}. Follow the working protocol you were given. Every source file you create or change must have a matching test file, written in the same step as the code and not deferred: a step is not done until its test exists and passes. Write into progress.md anything the next plan needs to know. Do not read or act on any other plan, and do not move or rename any file.",
+    "provenance": "aider-plan.ps1 lines 988-995, copied 2026-11-05; the ticking sentence is dropped because the driver ticks progress.md itself from the test result"
+  },
+  "fix_message": {
+    "value": "The tests of {plan} failed. Their output is below. Fix the code and its tests, and return every file you change in full. Do not read or act on any other plan, and do not move or rename any file.",
+    "provenance": "aider-plan.ps1 lines 997-1002 (reopen), adapted 2026-11-05 to a failing test run, which aider answers in its own fix loop"
+  },
+  "reply_format": {
+    "value": "Reply with every file you create or change, each in full in its own fenced block whose first line is '# file: <path relative to the repository root>'. Use four backticks for a file that itself holds three-backtick fences. Do not return progress.md.",
+    "provenance": "the format ollama_bridge.split_files reads (plan 13 task 1)"
+  },
+  "test_timeout_s": {
+    "value": 600,
+    "provenance": "proposal 2026-11-05, tuned at the owner's review: one plan's offline suites; context-budget.json tests.command has no timeout of its own"
+  },
+  "request_timeout_s": {
+    "value": 3600,
+    "provenance": "proposal 2026-11-05, tuned at the owner's review: a 14336-token reply at a few tokens per second when the window spills to CPU; the bridge's own 300 s is sized for one short file"
+  },
+  "failure_lines": {
+    "value": 40,
+    "provenance": "proposal 2026-11-05: lines of failing test output kept, from the end, in the fix prompt and in the ledger reason"
+  }
+}

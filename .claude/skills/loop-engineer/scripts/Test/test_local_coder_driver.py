@@ -293,6 +293,111 @@ class AuditReopenTests(unittest.TestCase):
             world.close()
 
 
+class AuditSandboxTests(unittest.TestCase):
+    """The wrapper audits like aider-setup's reviewer: it writes only sandbox copies of audit.md and
+    progress.md, and the driver restores any project file touched meanwhile (plan 15). A real git
+    repository in TEMP, its global config isolated so no machine hook runs (R21)."""
+
+    def setUp(self):
+        import os
+        import subprocess
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.env = dict(os.environ, GIT_CONFIG_GLOBAL=str(base / "gitconfig"), GIT_CONFIG_NOSYSTEM="1")
+        (base / "gitconfig").write_text("", encoding="utf-8")
+        self.root = base / "repo"
+        self.effort = self.root / "docs" / "effort"
+        self.effort.mkdir(parents=True)
+        (self.root / "src").mkdir()
+        (self.root / "src" / "a.py").write_text("A = 1\n", encoding="utf-8")
+        self.progress = self.effort / "progress.md"
+        self.progress.write_text("## plan1.md\n\n- [x] T1 module\n", encoding="utf-8")
+        self._git("init", "-q")
+        self._git("add", "-A")
+        self._git("-c", "user.name=Fictitious", "-c", "user.email=user@example.org",
+                  "commit", "-q", "-m", "fixture")
+        (self.root / "src" / "b.py").write_text("B = 1\n", encoding="utf-8")
+        self.sandbox = base / "sandbox"
+        self.subprocess = subprocess
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _git(self, *args):
+        import subprocess
+        return subprocess.run(["git", "-C", str(self.root), *args], env=self.env, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def _begin(self):
+        return lcd.audit_begin(self.progress, self.root, self.sandbox, CONFIG, env=self.env)
+
+    def _end(self):
+        return lcd.audit_end(self.progress, self.root, self.sandbox, CONFIG, env=self.env)
+
+    def test_an_untouched_audit_copies_the_report_and_the_audit_line_back(self):
+        self._begin()
+        (self.sandbox / "audit.md").write_text("src/a.py:1 no header\n", encoding="utf-8")
+        with open(self.sandbox / "progress.md", "a", encoding="utf-8") as handle:
+            handle.write("- [ ] audit: src/a.py:1 no header\n")
+        result = self._end()
+        self.assertEqual(result["touched"], [])
+        self.assertIn("- [ ] audit: src/a.py:1 no header", self.progress.read_text(encoding="utf-8"))
+        self.assertEqual((self.effort / "audit.md").read_text(encoding="utf-8"), "src/a.py:1 no header\n")
+
+    def test_a_committed_file_changed_during_the_audit_is_restored_from_git(self):
+        self._begin()
+        (self.root / "src" / "a.py").write_text("A = 2\n", encoding="utf-8")
+        result = self._end()
+        self.assertEqual((self.root / "src" / "a.py").read_text(encoding="utf-8"), "A = 1\n")
+        self.assertIn("src/a.py", result["touched"])
+
+    def test_an_uncommitted_file_is_restored_from_its_backup(self):
+        self._begin()
+        (self.root / "src" / "b.py").write_text("B = 99\n", encoding="utf-8")
+        self._end()
+        self.assertEqual((self.root / "src" / "b.py").read_text(encoding="utf-8"), "B = 1\n")
+
+    def test_a_new_file_is_deleted(self):
+        self._begin()
+        (self.root / "src" / "c.py").write_text("C = 1\n", encoding="utf-8")
+        result = self._end()
+        self.assertFalse((self.root / "src" / "c.py").exists())
+        self.assertIn("src/c.py", result["touched"])
+
+    def test_a_moved_head_is_reported_and_not_reset(self):
+        self._begin()
+        moved = self._git("-c", "user.name=Fictitious", "-c", "user.email=user@example.org",
+                          "commit", "-q", "--allow-empty", "-m", "auditor commit")
+        head = self._git("rev-parse", "HEAD")
+        result = self._end()
+        self.assertTrue(result["head_moved"])
+        self.assertEqual(self._git("rev-parse", "HEAD"), head)
+        self.assertEqual(moved, "")
+
+    def test_an_excluded_folder_is_ignored(self):
+        self._begin()
+        cache = self.root / "src" / "__pycache__"
+        cache.mkdir()
+        (cache / "a.pyc").write_bytes(b"x")
+        result = self._end()
+        self.assertTrue((cache / "a.pyc").exists())
+        self.assertEqual(result["touched"], [])
+
+    def test_the_ledger_comes_from_the_sandbox_not_from_a_direct_edit(self):
+        self._begin()
+        self.progress.write_text("## plan1.md\n\n- [x] T1 module\n- [x] edited outside\n", encoding="utf-8")
+        self._end()
+        self.assertNotIn("edited outside", self.progress.read_text(encoding="utf-8"))
+
+    def test_end_without_a_begin_is_a_refusal(self):
+        with self.assertRaises(lcd.DriverError):
+            self._end()
+
+    def test_a_sandbox_inside_the_root_is_a_refusal(self):
+        with self.assertRaises(lcd.DriverError):
+            lcd.audit_begin(self.progress, self.root, self.root / "sandbox", CONFIG, env=self.env)
+
+
 class CliTests(unittest.TestCase):
     def test_dry_run_writes_nothing_and_counts_tokens(self):
         world = World()

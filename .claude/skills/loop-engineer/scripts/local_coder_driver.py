@@ -30,8 +30,9 @@ from typing import Any, Callable
 SCRIPTS_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPTS_DIR.parent.parent
 DEFAULT_CONFIG = SCRIPTS_DIR.parent / "local-coder-driver.json"
-CONFIG_KEYS = ("code_extensions", "data_extensions", "aider_config_dir", "write_message", "fix_message", "reopen_message", "reply_format", "test_timeout_s",
-               "request_timeout_s", "failure_lines")
+CONFIG_KEYS = ("code_extensions", "data_extensions", "aider_config_dir", "write_message",
+               "fix_message", "reopen_message", "reply_format", "test_timeout_s",
+               "request_timeout_s", "failure_lines", "audit_exclude", "git_timeout_s")
 # Same separators as Get-PlanTargets in aider-plan-core.ps1, so both harnesses find the same files.
 _SEPARATORS = re.compile(r"[ \t\r\n,;:()\[\]{}\"'`<>|!?]+")
 _SECTION_RE = re.compile(r"^## (\S+\.md)\s*$")
@@ -632,18 +633,200 @@ class BridgeDeps:
         return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
+def _git(root: Path, args: list[str], config: dict, env: dict | None) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Run one read or restore git command on the repository (never a
+        commit, reset or push).
+
+    Inputs:
+        root (Path): the repository root.
+        args (list[str]): git arguments.
+        config (dict): from load_config (git_timeout_s, R10).
+        env (dict | None): environment; None inherits the process one.
+
+    Outputs:
+        stdout (str): the command's output, stripped.
+
+    Raises:
+        DriverError: git is missing, times out or exits non-zero.
+    --------------------------------------------------------------------------
+    """
+    try:
+        done = subprocess.run(["git", "-C", str(root), *args], env=env, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=float(config["git_timeout_s"]))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise DriverError(f"git {args[0]} failed: {exc}") from exc
+    if done.returncode != 0:
+        raise DriverError(f"git {args[0]} exited {done.returncode}: {done.stderr.strip()}")
+    return done.stdout.strip()
+
+
+def _fingerprint(root: Path, skip: set[Path], config: dict) -> dict[str, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Hash every project file, as Get-ProjectFingerprint does for aider.
+
+    Inputs:
+        root (Path): the repository root, resolved.
+        skip (set[Path]): files left out (the effort's progress.md, audit.md).
+        config (dict): audit_exclude dirs and name prefixes.
+
+    Outputs:
+        hashes (dict[str, str]): relative posix path -> sha256.
+    --------------------------------------------------------------------------
+    """
+    import hashlib
+    import os
+    exclude = config["audit_exclude"]
+    hashes: dict[str, str] = {}
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in exclude["dirs"]
+                   and not any(d.startswith(p) for p in exclude["prefixes"])]
+        for name in files:
+            if any(name.startswith(p) for p in exclude["prefixes"]):
+                continue
+            path = Path(folder) / name
+            if path.resolve() in skip:
+                continue
+            rel = path.relative_to(root).as_posix()
+            hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashes
+
+
+def _effort_files(progress: Path) -> tuple[Path, Path]:
+    """Purpose: the effort's ledger and audit report. Inputs: progress (Path). Outputs: (progress,
+    audit.md) resolved."""
+    progress = Path(progress).resolve()
+    return progress, progress.parent / "audit.md"
+
+
+def audit_begin(progress: Path, root: Path, sandbox: Path, config: dict,
+                env: dict | None = None) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Open the audit sandbox: copies of progress.md and audit.md for the
+        wrapper to write, and a fingerprint of the project to judge the audit
+        by its effect (aider-plan.ps1 lines 776-860, R9).
+
+    Inputs:
+        progress (Path): the effort's ledger; audit.md sits beside it.
+        root (Path): the repository root.
+        sandbox (Path): a folder outside root.
+        config (dict): from load_config.
+        env (dict | None): git environment; None inherits.
+
+    Outputs:
+        report (dict): sandbox, files hashed, backups made. Writes the two
+            copies, backup/ (every file git reports as not committed) and
+            state.json into sandbox.
+
+    Raises:
+        DriverError: the sandbox is inside root (R24), or git fails.
+    --------------------------------------------------------------------------
+    """
+    import shutil
+    root, sandbox = Path(root).resolve(), Path(sandbox).resolve()
+    if sandbox == root or root in sandbox.parents:
+        raise DriverError(f"the sandbox {sandbox} must sit outside the repository {root}")
+    ledger, audit = _effort_files(progress)
+    sandbox.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ledger, sandbox / "progress.md")
+    (sandbox / "audit.md").write_text(audit.read_text(encoding="utf-8") if audit.is_file() else "",
+                                      encoding="utf-8")
+    hashes = _fingerprint(root, {ledger, audit}, config)
+    backups = []
+    for line in _git(root, ["status", "--porcelain", "-uall"], config, env).splitlines():
+        rel = line[3:].split(" -> ")[-1].strip('"')
+        if rel in hashes:
+            target = sandbox / "backup" / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(root / rel, target)
+            backups.append(rel)
+    head = _git(root, ["rev-parse", "HEAD"], config, env)
+    (sandbox / "state.json").write_text(json.dumps({"head": head, "hashes": hashes,
+                                                    "backups": backups}), encoding="utf-8")
+    return {"sandbox": str(sandbox), "files": len(hashes), "backups": len(backups)}
+
+
+def audit_end(progress: Path, root: Path, sandbox: Path, config: dict,
+              env: dict | None = None) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Close the audit sandbox: restore every project file the audit
+        touched, then copy the wrapper's audit.md and progress.md back
+        (Restore-ProjectIfTouched, aider-plan.ps1 lines 863-900).
+
+    Details:
+        A new file is deleted; a changed or deleted file comes back from its
+        backup when it was not committed, else from git. A moved HEAD is
+        reported and never reset: a destructive git command is the owner's
+        (aider runs git reset --hard here).
+
+    Inputs:
+        progress (Path), root (Path), sandbox (Path), config (dict),
+        env (dict | None): as for audit_begin.
+
+    Outputs:
+        report (dict): touched (relative paths restored or deleted) and
+            head_moved (bool).
+
+    Raises:
+        DriverError: no state.json in sandbox (audit_begin never ran), or git fails.
+    --------------------------------------------------------------------------
+    """
+    import shutil
+    root, sandbox = Path(root).resolve(), Path(sandbox).resolve()
+    state_path = sandbox / "state.json"
+    if not state_path.is_file():
+        raise DriverError(f"no {state_path}: run --audit-begin first")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    ledger, audit = _effort_files(progress)
+    before, backups = state["hashes"], set(state["backups"])
+    after = _fingerprint(root, {ledger, audit}, config)
+    touched = []
+    for rel in sorted(set(before) | set(after)):
+        if before.get(rel) == after.get(rel):
+            continue
+        full = (root / rel).resolve()
+        if root not in full.parents:
+            continue
+        if rel not in before:
+            full.unlink()
+        elif rel in backups:
+            full.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(sandbox / "backup" / rel, full)
+        else:
+            _git(root, ["checkout", "--", rel], config, env)
+        touched.append(rel)
+    head_moved = _git(root, ["rev-parse", "HEAD"], config, env) != state["head"]
+    # The report comes back only now, after the restore, so restoring a trespass can never also
+    # discard the auditor's own output (aider-plan.ps1, same order).
+    shutil.copyfile(sandbox / "progress.md", ledger)
+    shutil.copyfile(sandbox / "audit.md", audit)
+    return {"touched": touched, "head_moved": head_moved}
+
+
 def main(argv: list[str] | None = None) -> int:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Command line: run or dry-run a whole progress.md.
+        Command line: run or dry-run a whole progress.md, or open and close
+        the audit sandbox.
 
     Inputs:
-        argv (list[str] | None): --progress, --root, --dry-run, --json.
+        argv (list[str] | None): --progress, --root, --dry-run, --json,
+            --audit-begin or --audit-end with --sandbox.
 
     Outputs:
-        code (int): 0 all done or skipped, 1 a plan blocked or refused,
-            2 refusal before any plan. Prints a JSON report with --json.
+        code (int): run: 0 all done or skipped, 1 a plan blocked or refused;
+            --audit-end: 0 nothing touched, 1 something restored or HEAD
+            moved; 2 refusal. Prints a JSON report with --json.
     --------------------------------------------------------------------------
     """
     for stream in (sys.stdout, sys.stderr):
@@ -654,8 +837,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--audit-begin", action="store_true")
+    parser.add_argument("--audit-end", action="store_true")
+    parser.add_argument("--sandbox", type=Path)
     args = parser.parse_args(argv)
     sys.path.insert(0, str(SCRIPTS_DIR))
+    if args.audit_begin or args.audit_end:
+        try:
+            if args.sandbox is None or (args.audit_begin and args.audit_end):
+                raise DriverError("give exactly one of --audit-begin, --audit-end, with --sandbox")
+            step = audit_begin if args.audit_begin else audit_end
+            report = step(args.progress, args.root, args.sandbox, load_config())
+        except (DriverError, OSError, ValueError, KeyError) as exc:
+            print(f"REFUSED: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, ensure_ascii=False, indent=2 if args.json else None))
+        return 1 if report.get("touched") or report.get("head_moved") else 0
     try:
         config = load_config()
         config_dir = _source(config["aider_config_dir"], Path.home())

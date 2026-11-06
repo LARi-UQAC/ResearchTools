@@ -66,5 +66,22 @@
   "failure_lines": {
     "value": 40,
     "provenance": "proposal 2026-11-05: lines of failing test output kept, from the end, in the fix prompt and in the ledger reason"
+  },
+  "audit_exclude": {
+    "value": {
+      "dirs": [
+        ".git",
+        "__pycache__"
+      ],
+      "prefixes": [
+        ".venv",
+        ".aider."
+      ]
+    },
+    "provenance": "aider-plan.ps1 lines 837-840 (Get-ProjectFingerprint skips .git/, __pycache__/, .venv/ and .aider.*), copied 2026-11-05 for the audit sandbox (plan 15); .venv widened to any .venv* folder, the repository's own name pattern"
+  },
+  "git_timeout_s": {
+    "value": 60,
+    "provenance": "proposal 2026-11-05, tuned at the owner's review: one git status, rev-parse or checkout on the repository (R10)"
   }
 }

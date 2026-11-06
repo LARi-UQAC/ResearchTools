@@ -40,7 +40,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan15.md
 
-- [ ] T1 audit sandbox: --audit-begin / --audit-end, like aider-setup's reviewer
+- [x] T1 audit sandbox --audit-begin/--audit-end like aider's reviewer: 28 OK. One difference: a moved HEAD is reported, never reset.
 
 ## plan14.md
 

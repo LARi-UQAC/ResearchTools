@@ -29,6 +29,10 @@ from typing import Any, Callable
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPTS_DIR.parent.parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+# The real dependencies live in driver_deps.py (Issue #104); re-exported under the old name.
+from driver_deps import BridgeDeps  # noqa: E402,F401
 DEFAULT_CONFIG = SCRIPTS_DIR.parent / "local-coder-driver.json"
 CONFIG_KEYS = ("code_extensions", "data_extensions", "aider_config_dir", "write_message",
                "fix_message", "reopen_message", "reply_format", "test_timeout_s",
@@ -567,70 +571,6 @@ def dry_run(progress: Path, root: Path, budget: dict, skills: dict, config: dict
             entry["refused"] = str(exc)
         report["plans"].append(entry)
     return report
-
-
-class BridgeDeps:
-    """The real dependencies: plan_contract, the resolver, the bridge and subprocess."""
-
-    def __init__(self, root: Path):
-        """Purpose: bind to a repository root. Inputs: root (Path). Outputs: None."""
-        import ollama_bridge
-        import plan_contract
-        import token_count
-        self.root = root
-        self.ob = ollama_bridge
-        self.pc = plan_contract
-        self.tc = token_count
-        self.tc_config = token_count.load_config()
-
-    def contract(self, plan: Path) -> dict:
-        """
-        Purpose: validate the plan header and resolve its executor and role.
-        Inputs: plan (Path). Outputs: dict with executor and role.
-        Raises: plan_contract.PlanError on a broken header.
-        """
-        tiers = self.pc.load_tiers()
-        header = self.pc.validate(plan, self.pc.repository_roots(self.root), tiers)
-        resolved = self.pc.resolve(header, tiers, self.pc.default_resolver)
-        return {"executor": resolved["executor"], "role": resolved["role"]}
-
-    def tag(self, role: str) -> str:
-        """Purpose: the tag the resolver adopted for role. Inputs: role (str). Outputs: str."""
-        return self.ob.resolve_model(role)
-
-    def window(self, tag: str, role: str) -> int:
-        """Purpose: the measured window of that tag or role. Inputs: tag, role (str). Outputs: int."""
-        return self.ob._resolve_num_ctx(tag, role)
-
-    def count(self, text: str) -> int:
-        """Purpose: token count used for ceilings and the window check. Inputs: text (str).
-        Outputs: int (an estimate is multiplied by the configured margin)."""
-        found = self.tc.count_text(text, config=self.tc_config)
-        if found.exact:
-            return found.tokens
-        return int(found.tokens * self.tc.config_value(self.tc_config, "estimate_margin"))
-
-    def generate(self, prompt: str, tag: str, window: int, reserve: int, timeout: float) -> str:
-        """
-        Purpose: one model call; the exact probe is checked first (R8).
-        Inputs: prompt (str), tag (str), window (int), reserve (int), timeout (float).
-        Outputs: str, the reply with reasoning stripped.
-        Raises: ollama_bridge.BridgeError when the prompt does not fit or the daemon fails.
-        """
-        self.ob.check_budget(prompt, tag, window, reserve, exact_only=True)
-        payload = self.ob.build_payload(prompt, tag, self.ob.DEFAULT_SEED, window, num_predict=reserve)
-        response = self.ob._post_generate(payload, timeout)
-        return self.ob.strip_reasoning(response.get("response", ""))
-
-    def runner(self, command: list, cwd: Path, timeout: float) -> tuple[int, str]:
-        """Purpose: run one test file. Inputs: command (list), cwd (Path), timeout (float).
-        Outputs: (exit code, combined output); a timeout is code 124."""
-        try:
-            done = subprocess.run(command, cwd=cwd, timeout=timeout, capture_output=True,
-                                  text=True, encoding="utf-8", errors="replace")
-        except subprocess.TimeoutExpired:
-            return 124, f"timed out after {timeout} s"
-        return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
 def _git(root: Path, args: list[str], config: dict, env: dict | None) -> str:

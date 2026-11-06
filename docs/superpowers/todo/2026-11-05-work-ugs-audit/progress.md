@@ -48,6 +48,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan16.md
 
+- Owner 2026-11-05: plan16 runs in the single lot, after plans 4, 5, 6, 8 are revised (no separate run). Dry run: prompt 27453 + reserve 14336 fits 49152. Plan 8 names the bridge module (17594 tokens, over code_file 16000): refused until revised.
 - [ ] T1 driver writes start, attempt and failed records to the bridge log (dashboard local_calls)
 
 ## plan4.md

@@ -860,12 +860,20 @@ def _remove(path: Path) -> None:
 
 def _replace_file(source: Path, target: Path) -> None:
     """Purpose: write source's bytes at target through a temporary file and os.replace, which
-    replaces a link at target rather than writing through it. Inputs: source, target (Path).
-    Outputs: None."""
+    replaces a link at target rather than writing through it. The temp file has a random name and
+    is created exclusively (tempfile.mkstemp, O_EXCL), so an entry planted at a guessable name is
+    never opened (security review of 018a93e). Inputs: source, target (Path). Outputs: None."""
     import os
-    temporary = target.with_name(target.name + ".audit-tmp")
-    temporary.write_bytes(Path(source).read_bytes())
-    os.replace(temporary, target)
+    import tempfile
+    handle, name = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=target.parent)
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(Path(source).read_bytes())
+        os.replace(name, target)
+    except BaseException:
+        if os.path.lexists(name):
+            os.unlink(name)
+        raise
 
 
 def audit_end(progress: Path, root: Path, sandbox: Path, config: dict,

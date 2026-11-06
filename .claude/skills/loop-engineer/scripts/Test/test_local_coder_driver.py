@@ -426,6 +426,24 @@ class AuditSandboxTests(unittest.TestCase):
             with self.assertRaises(lcd.DriverError):
                 self._end()
 
+    def test_the_copy_back_temp_name_is_unpredictable(self):
+        """Security review 2026-11-05: the temp file of the copy-back had the predictable name
+        '<name>.audit-tmp', so an entry planted there was written through. The name is now
+        random and created exclusively, so a planted '<name>.audit-tmp' is neither used nor
+        overwritten."""
+        folder = Path(self.tmp.name) / "copy"
+        folder.mkdir()
+        source, target = folder / "source.md", folder / "target.md"
+        source.write_text("NEW\n", encoding="utf-8")
+        target.write_text("OLD\n", encoding="utf-8")
+        decoy = folder / "target.md.audit-tmp"
+        decoy.write_text("DECOY\n", encoding="utf-8")
+        lcd._replace_file(source, target)
+        self.assertEqual(target.read_text(encoding="utf-8"), "NEW\n")
+        self.assertEqual(decoy.read_text(encoding="utf-8"), "DECOY\n")
+        self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                         ["source.md", "target.md", "target.md.audit-tmp"])
+
     def test_a_planted_junction_is_removed_and_its_target_kept(self):
         outside = Path(self.tmp.name) / "outside"
         outside.mkdir()

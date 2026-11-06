@@ -35,7 +35,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [x] T1 bridge split_files + exact_only: 62 OK, 596e23c
 - [x] T2 driver: 15 OK, 2c3d6d9; dry run on this ledger: plan4 prompt 12919 + reply 14336. Ruling withdrawn: ~/.config/aider holds every aider file (my listing was cut by head); the driver reads them there, like aider. Driver settings in local-coder-driver.json; RED was the import failure, not run separately. Fix: `.claude/...` targets lost their leading dot (Get-PlanTargets trims both sides, aider has the same defect, to log in IMPROVEMENTS at plan 12); 16 OK.
-- [ ] T4 driver reruns a plan reopened by the wrapper's audit (stage reopen)
+- [x] T4 driver reruns a plan reopened by the audit (reopen stage + aider reopen message): 19 OK
 - [x] T3 coder role = ornith:9b-gpu, window 49152, adopted by the owner 2026-11-05 (measured: 33/33 layers on GPU, 5921 MiB, 28 tok/s).
 
 ## plan14.md

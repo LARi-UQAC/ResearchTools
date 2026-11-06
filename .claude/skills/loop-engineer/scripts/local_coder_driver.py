@@ -30,7 +30,7 @@ from typing import Any, Callable
 SCRIPTS_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPTS_DIR.parent.parent
 DEFAULT_CONFIG = SCRIPTS_DIR.parent / "local-coder-driver.json"
-CONFIG_KEYS = ("code_extensions", "data_extensions", "aider_config_dir", "write_message", "fix_message", "reply_format", "test_timeout_s",
+CONFIG_KEYS = ("code_extensions", "data_extensions", "aider_config_dir", "write_message", "fix_message", "reopen_message", "reply_format", "test_timeout_s",
                "request_timeout_s", "failure_lines")
 # Same separators as Get-PlanTargets in aider-plan-core.ps1, so both harnesses find the same files.
 _SEPARATORS = re.compile(r"[ \t\r\n,;:()\[\]{}\"'`<>|!?]+")
@@ -326,6 +326,30 @@ def open_plans(progress: Path) -> list[str]:
     return names
 
 
+def open_lines(progress: Path, plan_name: str) -> list[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        List the open lines of one plan's section of progress.md.
+
+    Inputs:
+        progress (Path): the ledger.
+        plan_name (str): the section name.
+
+    Outputs:
+        lines (list[str]): the `- [ ]` lines, text after the mark, in order.
+    --------------------------------------------------------------------------
+    """
+    found, current = [], None
+    for line in progress.read_text(encoding="utf-8").splitlines():
+        match = _SECTION_RE.match(line)
+        if match:
+            current = match.group(1)
+        elif current == plan_name and line.startswith("- [ ]"):
+            found.append(line[5:].strip())
+    return found
+
+
 def tick(progress: Path, plan_name: str, done: bool, note: str) -> None:
     """
     --------------------------------------------------------------------------
@@ -436,14 +460,18 @@ def _run_plan(plan: Path, root: Path, deps: Any, budget: dict, skills: dict, con
     targets = plan_targets(plan, root, config)
     to_create = [p.relative_to(Path(root).resolve()).as_posix() for p in targets if not p.is_file()]
     tests = _test_files(plan)
+    # A plan the wrapper's audit reopened (its open lines start with `audit:`) runs as aider runs a
+    # reopened plan: reopen skill and reopen message from the first attempt (plan 13 task 4).
+    reopened = any(line.startswith("audit:") for line in open_lines(plan.parent / "progress.md", plan.name))
     failure = None
     for attempt in range(1, int(budget["tests"]["max_fix_attempts"]) + 1):
-        stage = "write" if attempt == 1 else "reopen"
+        stage = "reopen" if reopened or attempt > 1 else "write"
         try:
             files = file_set(plan, root, budget, skills, stage, config, home, deps.count)
         except DriverError as exc:
             return {**result, "status": "refused", "note": str(exc)}
-        message = config["write_message" if failure is None else "fix_message"].format(plan=plan.name)
+        key = "fix_message" if failure is not None else ("reopen_message" if reopened else "write_message")
+        message = config[key].format(plan=plan.name)
         prompt = build_prompt(files, root, message, config, to_create, failure)
         if deps.count(prompt) + reserve > window:
             return {**result, "status": "refused",

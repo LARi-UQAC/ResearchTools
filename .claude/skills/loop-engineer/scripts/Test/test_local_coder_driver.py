@@ -251,6 +251,48 @@ class RunTests(unittest.TestCase):
         self.assertTrue(deps.commands[0][-1].endswith("test_mod1.py"))
 
 
+class AuditReopenTests(unittest.TestCase):
+    """The wrapper audits after the driver and writes each finding as a `- [ ] audit:` line; the
+    driver reruns that plan with aider's reopen stage and message (plan 13 task 4)."""
+
+    def setUp(self):
+        self.world = World()
+        self.world.progress.write_text(
+            "# Progress\n\n## plan1.md\n\n- [x] T1 module 1 (local: 1 test OK)\n"
+            "- [ ] audit: pkg/mod1.py:1 missing header\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.world.close()
+
+    def test_an_audit_line_reopens_with_the_reopen_stage_and_message(self):
+        deps = FakeDeps([_reply("pkg/mod1.py")], [0])
+        report = self.world.run(deps)
+        prompt = deps.prompts[0]
+        self.assertIn("REOPEN-MARKER", prompt)
+        self.assertNotIn("TDD-MARKER", prompt)
+        self.assertIn("The audit reopened plan1.md", prompt)
+        self.assertEqual(report["plans"][0]["status"], "done")
+        self.assertIn("- [x] audit: pkg/mod1.py:1 missing header",
+                      self.world.progress.read_text(encoding="utf-8"))
+
+    def test_a_failing_reopened_plan_blocks_its_first_audit_line(self):
+        deps = FakeDeps([_reply("pkg/mod1.py")] * 2, [1, 1])
+        self.world.run(deps)
+        ledger = self.world.progress.read_text(encoding="utf-8")
+        self.assertIn("- [!] audit: pkg/mod1.py:1 missing header", ledger)
+        self.assertIn("- [x] T1 module 1", ledger)
+
+    def test_a_plan_without_an_audit_line_uses_the_write_stage(self):
+        world = World()
+        try:
+            deps = FakeDeps([_reply("pkg/mod1.py")], [0])
+            world.run(deps)
+            self.assertIn("TDD-MARKER", deps.prompts[0])
+            self.assertNotIn("REOPEN-MARKER", deps.prompts[0])
+        finally:
+            world.close()
+
+
 class CliTests(unittest.TestCase):
     def test_dry_run_writes_nothing_and_counts_tokens(self):
         world = World()

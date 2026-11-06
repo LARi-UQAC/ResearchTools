@@ -47,6 +47,10 @@
     "value": "The tests of {plan} failed. Their output is below. Fix the code and its tests, and return every file you change in full. Do not read or act on any other plan, and do not move or rename any file.",
     "provenance": "aider-plan.ps1 lines 997-1002 (reopen), adapted 2026-11-05 to a failing test run, which aider answers in its own fix loop"
   },
+  "reopen_message": {
+    "value": "The audit reopened {plan}. In the '## {plan}' section of progress.md, address every line still marked '- [ ]', including the ones beginning 'audit:'. Fix the code and its tests. Do not read or act on any other plan, and do not move or rename any file.",
+    "provenance": "aider-plan.ps1 lines 997-1002, copied 2026-11-05; the ticking sentences are dropped because the driver ticks progress.md itself from the test result"
+  },
   "reply_format": {
     "value": "Reply with every file you create or change, each in full in its own fenced block whose first line is '# file: <path relative to the repository root>'. Use four backticks for a file that itself holds three-backtick fences. Do not return progress.md.",
     "provenance": "the format ollama_bridge.split_files reads (plan 13 task 1)"

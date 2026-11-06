@@ -115,6 +115,14 @@ def _validate_host(name: str, host: Any, where: str) -> None:
     for field in ("username_env", "vault_item", "logged_in_selector"):
         if not isinstance(host.get(field), str) or not host[field].strip():
             raise bad(field, "must be a non-empty string")
+    # The only pages a password or a one-time code may be typed into. Bare host
+    # names: a URL or a path here would invite a prefix match.
+    login_hosts = host.get("login_hosts")
+    if not isinstance(login_hosts, list) or not login_hosts or not all(
+            isinstance(h, str) and h.strip() and urlparse("https://" + h).hostname == h.lower()
+            for h in login_hosts):
+        raise bad("login_hosts", "must be a non-empty list of bare host names "
+                                 "(the pages a secret may be typed into)")
     steps = host.get("steps")
     if not isinstance(steps, list) or not steps:
         raise bad("steps", "must be a non-empty list")
@@ -643,6 +651,18 @@ def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any]
     def refuse(why: str) -> BrowserRungError:
         return BrowserRungError("sign-in to %s: %s" % (host, why))
 
+    allowed_hosts = [h.lower() for h in host_cfg["login_hosts"]]
+
+    def require_login_origin() -> None:
+        # A redirect chain (an open redirect on the entry URL, a hijacked link)
+        # could land on a look-alike page. A secret is typed only into https pages
+        # of the configured login hosts, checked before the secret is read.
+        current = urlparse(page.url or "")
+        if current.scheme != "https" or (current.hostname or "").lower() not in allowed_hosts:
+            raise refuse("the page reached is on %r, which is not one of the login_hosts "
+                         "in browser-fetch.json, so no password or code was typed or read"
+                         % (current.hostname or "(unknown)"))
+
     try:
         page.goto(host_cfg["entry_url"], wait_until="domcontentloaded")
     except _PWError:
@@ -664,10 +684,12 @@ def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any]
             if action == "fill_username":
                 value = username
             elif action == "fill_password":
+                require_login_origin()
                 value = browser_login.get_password(
                     host_cfg["vault_item"], cfg["secret_provider"],
                     timeout_s=cfg["provider_timeout_s"], username=username)
             else:
+                require_login_origin()
                 value = browser_login.get_totp(
                     host_cfg["vault_item"], cfg["secret_provider"],
                     allow=cfg["allow_totp_from_vault"], timeout_s=cfg["provider_timeout_s"],

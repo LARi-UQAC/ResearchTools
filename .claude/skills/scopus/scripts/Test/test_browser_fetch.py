@@ -432,6 +432,7 @@ REQUIRED_KEYS = (
 
 GOOD_HOST = {
     "entry_url": "https://login.example.org/start",
+    "login_hosts": ["login.example.org"],
     "username_env": "RT_TEST_LOGIN_USER",
     "vault_item": "example-institution",
     "steps": [
@@ -541,14 +542,18 @@ class TestBrowserConfig(unittest.TestCase):
             "vault_item": dict(GOOD_HOST, vault_item=""),
             "steps": dict(GOOD_HOST, steps=[{"action": "run_script", "selector": "x"}]),
             "logged_in_selector": dict(GOOD_HOST, logged_in_selector=""),
+            "login_hosts": {k: v for k, v in GOOD_HOST.items() if k != "login_hosts"},
         }
+        for bad in ([], "login.example.org", [""], [5], ["https://login.example.org/"],
+                    ["login.example.org/path"]):
+            cases["login_hosts (%r)" % (bad,)] = dict(GOOD_HOST, login_hosts=bad)
         for field, host in cases.items():
             raw = _config_dict(hosts={"www.example.org": host})
             with tempfile.TemporaryDirectory() as tmp, self.subTest(field=field):
                 with self.assertRaises(browser_fetch.BrowserConfigError) as ctx:
                     browser_fetch.load_config(self._write(tmp, raw))
                 self.assertIn("www.example.org", str(ctx.exception))
-                self.assertIn(field, str(ctx.exception))
+                self.assertIn(field.split(" ")[0], str(ctx.exception))
 
     def test_a_step_needs_a_selector(self):
         host = dict(GOOD_HOST, steps=[{"action": "click", "selector": ""}])
@@ -894,6 +899,61 @@ class TestInstitutionalSignIn(unittest.TestCase):
             h.run(page)
         self.assertNotIn(PW_SECRET, str(ctx.exception))
         self.assertFalse(any(PW_SECRET in m for m in h.logs))
+
+    def test_a_secret_is_never_typed_into_a_page_outside_the_login_hosts(self):
+        # Security review 2026-11-05: an open redirect on the entry URL must not
+        # lead the password to a look-alike page. The origin is checked BEFORE
+        # the secret is read, and again at every password step.
+        h = _SignInHarness(self)
+        page = h.page(redirects={DOI_ENTRY: ARTICLE_URL,
+                                 GOOD_HOST["entry_url"]: "https://evil.example.net/phish?t=1"})
+        with self.assertRaises(browser_fetch.BrowserRungError) as ctx:
+            h.run(page)
+        self.assertIn("evil.example.net", str(ctx.exception))
+        self.assertIn("login_hosts", str(ctx.exception))
+        self.assertNotIn("phish", str(ctx.exception))       # no path or query in the text
+        self.assertEqual(h.password_calls, [])              # the secret was never read
+        self.assertNotIn(("#pass", PW_SECRET), page.filled)
+        self.assertFalse(any(PW_SECRET in m for m in h.logs))
+
+    def test_a_look_alike_host_and_a_plain_http_page_are_refused_too(self):
+        for final in ("https://login.example.org.evil.example.net/start",
+                      "https://evil.example.net/login.example.org",
+                      "http://login.example.org/start"):
+            h = _SignInHarness(self)
+            page = h.page(redirects={DOI_ENTRY: ARTICLE_URL, GOOD_HOST["entry_url"]: final})
+            with self.subTest(final=final), self.assertRaises(browser_fetch.BrowserRungError):
+                h.run(page)
+            self.assertEqual(h.password_calls, [])
+
+    def test_the_check_is_case_insensitive_and_accepts_any_listed_host(self):
+        host = dict(GOOD_HOST, login_hosts=["idp.example.org", "LOGIN.example.org"])
+        h = _SignInHarness(self, hosts={"www.example.org": host})
+        page = h.page(redirects={DOI_ENTRY: ARTICLE_URL,
+                                 GOOD_HOST["entry_url"]: "https://Login.Example.org/start"})
+        res, _ = h.run(page)
+        self.assertIsNotNone(res)
+
+    def test_a_one_time_code_is_checked_the_same_way(self):
+        host = dict(GOOD_HOST, steps=[{"action": "fill_totp", "selector": "#otp"}])
+        h = _SignInHarness(self, hosts={"www.example.org": host}, allow_totp_from_vault=True)
+        page = h.page(redirects={DOI_ENTRY: ARTICLE_URL,
+                                 GOOD_HOST["entry_url"]: "https://evil.example.net/x"})
+        with self.assertRaises(browser_fetch.BrowserRungError):
+            h.run(page)
+        self.assertEqual(h.totp_calls, [])
+
+    def test_the_user_name_may_be_typed_on_any_page_but_secrets_may_not(self):
+        # Only the secrets are origin-checked: the user name is not a secret and
+        # an identity provider often asks for it on its own host.
+        host = dict(GOOD_HOST, steps=[GOOD_HOST["steps"][0]])
+        h = _SignInHarness(self, hosts={"www.example.org": host})
+        page = h.page(pdf_body=None, login=dict(LOGIN),
+                      redirects={DOI_ENTRY: ARTICLE_URL,
+                                 GOOD_HOST["entry_url"]: "https://elsewhere.example.net/"})
+        with self.assertRaises(browser_fetch.BrowserRungError):
+            h.run(page)                                     # it fails later (no sign-in marker) ...
+        self.assertIn(("#user", "someone"), page.filled)    # ... but the user name was typed
 
     def test_a_totp_step_needs_the_flag_and_then_reads_the_code_from_the_vault(self):
         host = dict(GOOD_HOST, steps=GOOD_HOST["steps"][:2] + [

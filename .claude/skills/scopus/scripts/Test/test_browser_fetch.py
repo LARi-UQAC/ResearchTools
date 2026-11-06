@@ -52,6 +52,27 @@ class _FakeElement:
         return None
 
 
+class _FakeHandle:
+    """An ElementHandle: bound to the document it was taken from."""
+
+    def __init__(self, page, selector):
+        self._page = page
+        self._selector = selector
+        self._epoch = page.epoch
+
+    def _live(self):
+        if self._page.epoch != self._epoch:
+            raise browser_fetch._PWError("Element is not attached to the DOM")
+
+    def fill(self, value, **kw):
+        self._live()
+        self._page.filled.append((self._selector, value))
+
+    def click(self, **kw):
+        self._live()
+        self._page.click(self._selector)
+
+
 class _RaiseOnExit:
     """Stand-in for page.expect_popup()/expect_download(): raises a Playwright
     error on exit so the caller's `except _PWError` treats it as 'no popup'."""
@@ -138,6 +159,9 @@ class FakePage:
     def wait_for_selector(self, selector, timeout=None, **kw):
         if self._present is not None and selector not in self._present:
             raise browser_fetch._PWError("Timeout waiting for selector %s" % selector)
+        return _FakeHandle(self, selector)
+
+    epoch = 0   # bumped by a navigation; an element handle taken earlier is then stale
 
     def close(self):
         self.closed = True
@@ -915,6 +939,56 @@ class TestInstitutionalSignIn(unittest.TestCase):
         self.assertEqual(h.password_calls, [])              # the secret was never read
         self.assertNotIn(("#pass", PW_SECRET), page.filled)
         self.assertFalse(any(PW_SECRET in m for m in h.logs))
+
+    def test_a_navigation_while_the_secret_is_being_read_is_caught(self):
+        # Security review 2026-11-05 (second finding): the secret is read by a
+        # subprocess of up to provider_timeout_s, long enough for a meta-refresh
+        # or a script redirect. The origin is checked again after the read.
+        h = _SignInHarness(self)
+        page = h.page()
+
+        def navigating_password(item, provider, **kw):
+            h.password_calls.append((item, provider, kw))
+            page._current = "https://evil.example.net/phish"   # the page moved meanwhile
+            page.epoch += 1
+            return PW_SECRET
+        with mock.patch.dict(os.environ, {"RT_TEST_LOGIN_USER": "someone"}), \
+             mock.patch.object(browser_fetch, "_PW_OK", True), \
+             mock.patch.object(browser_fetch, "sync_playwright",
+                               lambda: _FakePWCtxFrom(_FakePW(page))), \
+             mock.patch.object(browser_fetch.browser_login, "get_password",
+                               navigating_password):
+            with tempfile.TemporaryDirectory() as tmp, \
+                 self.assertRaises(browser_fetch.BrowserRungError) as ctx:
+                browser_fetch.fetch_pdf_via_browser(
+                    "10.9999/x", str(Path(tmp) / "p.pdf"), config=h.config())
+        self.assertIn("evil.example.net", str(ctx.exception))
+        self.assertNotIn(("#pass", PW_SECRET), page.filled)
+        self.assertNotIn(PW_SECRET, str(ctx.exception))
+
+    def test_a_navigation_on_the_same_host_leaves_a_stale_element_that_cannot_be_filled(self):
+        # The fill goes through the element handle taken BEFORE the secret was read,
+        # so a document that was replaced in the meantime cannot receive it even
+        # when the new page is on an allowed host.
+        h = _SignInHarness(self)
+        page = h.page()
+
+        def navigating_password(item, provider, **kw):
+            page.epoch += 1                                    # same URL, new document
+            return PW_SECRET
+        with mock.patch.dict(os.environ, {"RT_TEST_LOGIN_USER": "someone"}), \
+             mock.patch.object(browser_fetch, "_PW_OK", True), \
+             mock.patch.object(browser_fetch, "sync_playwright",
+                               lambda: _FakePWCtxFrom(_FakePW(page))), \
+             mock.patch.object(browser_fetch.browser_login, "get_password",
+                               navigating_password):
+            with tempfile.TemporaryDirectory() as tmp, \
+                 self.assertRaises(browser_fetch.BrowserRungError) as ctx:
+                browser_fetch.fetch_pdf_via_browser(
+                    "10.9999/x", str(Path(tmp) / "p.pdf"), config=h.config())
+        self.assertIn("#pass", str(ctx.exception))
+        self.assertNotIn(("#pass", PW_SECRET), page.filled)
+        self.assertNotIn(PW_SECRET, str(ctx.exception))
 
     def test_a_look_alike_host_and_a_plain_http_page_are_refused_too(self):
         for final in ("https://login.example.org.evil.example.net/start",

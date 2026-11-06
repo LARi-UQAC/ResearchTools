@@ -672,14 +672,19 @@ def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any]
     for step in host_cfg["steps"]:
         selector, action = step["selector"], step["action"]
         try:
-            page.wait_for_selector(selector, timeout=int(cfg["step_timeout_s"] * 1000))
+            # The element handle is taken BEFORE a secret is read and the fill goes
+            # through it: a handle belongs to one document, so a page that was
+            # replaced while the secret was being read cannot receive it.
+            element = page.wait_for_selector(selector, timeout=int(cfg["step_timeout_s"] * 1000))
         except _PWError:
             raise refuse("the element %r did not appear within %g s (the selectors in "
                          "browser-fetch.json may need updating)"
                          % (selector, cfg["step_timeout_s"])) from None
+        if element is None:
+            raise refuse("the element %r is not available" % selector)
         try:
             if action == "click":
-                page.click(selector)
+                element.click()
                 continue
             if action == "fill_username":
                 value = username
@@ -688,13 +693,15 @@ def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any]
                 value = browser_login.get_password(
                     host_cfg["vault_item"], cfg["secret_provider"],
                     timeout_s=cfg["provider_timeout_s"], username=username)
+                require_login_origin()      # the read takes up to provider_timeout_s
             else:
                 require_login_origin()
                 value = browser_login.get_totp(
                     host_cfg["vault_item"], cfg["secret_provider"],
                     allow=cfg["allow_totp_from_vault"], timeout_s=cfg["provider_timeout_s"],
                     username=username)
-            page.fill(selector, value)
+                require_login_origin()
+            element.fill(value)
         except browser_login.LoginError as exc:
             raise refuse(str(exc)) from None
         except _PWError:

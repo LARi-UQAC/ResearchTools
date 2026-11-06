@@ -82,9 +82,16 @@ def analyze(totals: list[dict], targets: dict, outlier_z: float) -> dict:
         in_band = False
         reasons.append(f"mean {m} outside band {mean_band}")
 
-    if sd < sd_band[0] or sd > sd_band[1]:
-        in_band = False
-        reasons.append(f"sd {sd} outside band {sd_band}")
+    # Special case: If SD is 0, it is considered "in band" only if the Mean is exactly the Target Mean.
+    # This handles the case of a perfect batch (all reports identical and correct) vs a suspicious one.
+    if sd == 0:
+        if abs(m - target_mean) > 1e-9:
+            in_band = False
+            reasons.append(f"sd {sd} outside band {sd_band}")
+    else:
+        if sd < sd_band[0] or sd > sd_band[1]:
+            in_band = False
+            reasons.append(f"sd {sd} outside band {sd_band}")
 
     # Calculate outliers
     outliers = []
@@ -165,7 +172,18 @@ def write_grades_csv(totals: list[dict], rubric: dict, path: Path) -> None:
             score = t.get("by_item", {}).get(iid, "")
             row.append(str(score))
         
-        row.append(str(t.get("total", "")))
+        # Calculate total if not present
+        if "total" in t:
+            total_val = t["total"]
+        else:
+            # Sum by_item values if available
+            by_item = t.get("by_item", {})
+            if by_item:
+                total_val = sum(by_item.values())
+            else:
+                total_val = ""
+        
+        row.append(str(total_val))
         row.append(str(t.get("percent", "")))
         row.append(str(t.get("complete", "")))
         

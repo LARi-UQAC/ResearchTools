@@ -1540,6 +1540,126 @@ class TestBrowserRungDefault(unittest.TestCase):
         fake_bf.fetch_pdf_via_browser.assert_not_called()
 
 
+class TestSharedBrowserSession(unittest.TestCase):
+    """One browser session serves every paper of a CLI run (sign in once)."""
+
+    def _bib(self, tmp):
+        bib = os.path.join(tmp, "r.bib")
+        Path(bib).write_text(
+            "@article{a2024x,\n  doi = {10.1/x},\n  title = {T}\n}\n"
+            "@article{b2024y,\n  doi = {10.1/y},\n  title = {U}\n}\n", encoding="utf-8")
+        return bib
+
+    def _fake_bf(self):
+        import browser_fetch as real_bf
+        fake = mock.Mock()
+        fake.browser_available.return_value = True
+        fake.BrowserRungError = real_bf.BrowserRungError
+        fake.BrowserSession.return_value = mock.Mock(name="session")
+        return fake
+
+    def test_bib_creates_one_session_for_all_papers_and_closes_it_once(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp:
+            got_sessions = []
+            real = _run_cli
+
+            with mock.patch.object(download_pdf, "browser_fetch", fake):
+                got = real(["bib", self._bib(tmp), "--out-dir", tmp])
+        session = fake.BrowserSession.return_value
+        fake.BrowserSession.assert_called_once()
+        self.assertIs(got["kwargs"]["browser_session"], session)
+        session.close.assert_called_once()
+
+    def test_the_session_follows_the_headless_flag(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake):
+            _run_cli(["doi", "10.1/x", "--out-dir", tmp, "--headless"])
+        self.assertIs(fake.BrowserSession.call_args.kwargs["headed"], False)
+
+    def test_no_browser_creates_no_session(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp, "--no-browser"])
+        fake.BrowserSession.assert_not_called()
+        self.assertIsNone(got["kwargs"]["browser_session"])
+
+    def test_playwright_absent_creates_no_session(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", None):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp])
+        self.assertIsNone(got["kwargs"]["browser_session"])
+
+    def test_the_session_is_closed_even_when_a_download_raises(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake), \
+             mock.patch.object(download_pdf, "download_one", side_effect=RuntimeError("boom")), \
+             mock.patch.object(sys, "argv", ["download_pdf.py", "doi", "10.1/x",
+                                             "--out-dir", tmp]):
+            with self.assertRaises(RuntimeError):
+                download_pdf.main()
+        fake.BrowserSession.return_value.close.assert_called_once()
+
+    def test_a_config_error_at_session_creation_does_not_stop_the_run(self):
+        fake = self._fake_bf()
+        fake.BrowserSession.side_effect = fake.BrowserRungError("bad config")
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp])
+        self.assertIsNone(got["kwargs"]["browser_session"])
+
+    def test_download_one_hands_the_session_to_the_browser_rung(self):
+        seen = {}
+
+        def fake_fetch(doi, dest, override_url=None, headed=True, session=None):
+            seen["session"] = session
+            return None
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.side_effect = fake_fetch
+        marker = object()
+        TestBrowserTier()._run(fake_bf, use_browser=True, browser_session=marker)
+        self.assertIs(seen["session"], marker)
+
+    def test_without_a_session_the_call_is_unchanged(self):
+        def old_signature(doi, dest, override_url=None, headed=True):
+            return None
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.side_effect = old_signature
+        res = TestBrowserTier()._run(fake_bf, use_browser=True)
+        self.assertEqual(res["status"], "failed")
+
+
+class TestBrowserRungRefusal(unittest.TestCase):
+    """A named refusal inside rung 8 is an `error` attempt, never a crash (R8, R11)."""
+
+    def _run_with(self, error):
+        import browser_fetch as real_bf
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.BrowserRungError = real_bf.BrowserRungError
+        fake_bf.fetch_pdf_via_browser.side_effect = error
+        return TestBrowserTier()._run(fake_bf, use_browser=True)
+
+    def test_a_config_or_provider_refusal_is_recorded_with_its_text(self):
+        import browser_fetch as real_bf
+        res = self._run_with(real_bf.BrowserRungError(
+            "browser-fetch.json: key 'poll_s' must be a positive number"))
+        self.assertEqual(res["status"], "failed")
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertEqual(browser["outcome"], "error")
+        self.assertIn("poll_s", browser["reason"])
+        self.assertEqual(res["attempts"][-1]["rung"], 9)
+
+    def test_any_other_exception_still_propagates(self):
+        with self.assertRaises(KeyError):
+            self._run_with(KeyError("a real defect must not be swallowed"))
+
+
 class TestAttemptsInReports(unittest.TestCase):
 
     def test_the_manifest_keeps_the_attempts(self):

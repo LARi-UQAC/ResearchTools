@@ -1365,7 +1365,8 @@ def download_one(entry: dict[str, str], out_dir: str,
                  api_key: str | None, insttoken: str | None, *,
                  email: str | None = None, allow_html: bool = True,
                  use_browser: bool = False, headed: bool = True,
-                 override_url: str | None = None) -> dict[str, Any]:
+                 override_url: str | None = None,
+                 browser_session: Any = None) -> dict[str, Any]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -1389,6 +1390,8 @@ def download_one(entry: dict[str, str], out_dir: str,
         headed (bool): run the browser tier visibly (default True)
         override_url (str | None): a user-supplied full-text URL the browser tier
             fetches instead of the DOI (from refs/_sources.json)
+        browser_session (BrowserSession | None): one browser shared by every
+            paper of a run, so the institutional sign-in happens once
 
     Outputs:
         result (dict): {citekey, doi, file, format, source, tier, status} where
@@ -1528,11 +1531,25 @@ def download_one(entry: dict[str, str], out_dir: str,
         _note_attempt(attempts, 8, "browser", "skipped", browser_skip)
     else:
         _set_reason("")
-        res = browser_fetch.fetch_pdf_via_browser(
-            doi, pdf_dest, override_url=override_url, headed=headed)
-        if pdf_rung(8, "browser", bool(res), "browser"):
-            logger.info("[FULLTEXT] browser %s OK: %s", res["source"], res["file"])
-            return _result(base, out_dir, res["file"], res["format"], res["source"], 8, attempts)
+        browser_kwargs: dict[str, Any] = {"override_url": override_url, "headed": headed}
+        if browser_session is not None:
+            browser_kwargs["session"] = browser_session
+        try:
+            res = browser_fetch.fetch_pdf_via_browser(doi, pdf_dest, **browser_kwargs)
+        except Exception as exc:
+            # A named refusal of the rung (bad config, locked or missing secret
+            # provider) is recorded and the chain goes on to the manual list. Any
+            # other exception is a defect and must surface.
+            rung_error = getattr(browser_fetch, "BrowserRungError", None)
+            if not (isinstance(rung_error, type) and isinstance(exc, rung_error)):
+                raise
+            logger.warning("[FULLTEXT] tier 8 (browser) refused: %s", exc)
+            _note_attempt(attempts, 8, "browser", "error", str(exc))
+        else:
+            if pdf_rung(8, "browser", bool(res), "browser"):
+                logger.info("[FULLTEXT] browser %s OK: %s", res["source"], res["file"])
+                return _result(base, out_dir, res["file"], res["format"], res["source"], 8,
+                               attempts)
 
     # Rung 9 - the manual list. A preview anywhere in the chain means the
     # publisher answered but served only the abstract page to this network.
@@ -1800,6 +1817,33 @@ def resolve_pii_to_doi(pii: str, api_key: str, insttoken: str | None) -> str:
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+def _browser_session(args: argparse.Namespace) -> Any:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Create the one browser session a CLI run shares between its papers, or
+        None when rung 8 cannot run (--no-browser, playwright absent). Creating
+        a session launches nothing: the browser starts on the first paper that
+        reaches rung 8.
+
+    Inputs:
+        args (argparse.Namespace): needs no_browser and headless.
+
+    Outputs:
+        session (BrowserSession | None). A browser-fetch.json problem returns
+        None here and is recorded per paper by rung 8 as an `error` attempt, so
+        rungs 1 to 7 still run.
+    --------------------------------------------------------------------------
+    """
+    if args.no_browser or browser_fetch is None or not browser_fetch.browser_available():
+        return None
+    try:
+        return browser_fetch.BrowserSession(headed=not args.headless)
+    except browser_fetch.BrowserRungError as exc:
+        logger.warning("[FULLTEXT] no shared browser session: %s", exc)
+        return None
+
+
 def _run_url(args: argparse.Namespace) -> None:
     """Resolve a ScienceDirect URL or PII to a DOI, then run the usual chain. Exit 2 on refusal."""
     out_dir = resolve_out_dir(args.out_dir, args.latex)
@@ -1823,10 +1867,16 @@ def _run_url(args: argparse.Namespace) -> None:
         "year": args.year or "",
         "title": args.title or "",
     }
-    result = download_one(entry, out_dir, api_key, insttoken,
-                          email=email, allow_html=not args.no_html,
-                          use_browser=not args.no_browser, headed=not args.headless,
-                          override_url=sources.get(entry["citekey"]))
+    session = _browser_session(args)
+    try:
+        result = download_one(entry, out_dir, api_key, insttoken,
+                              email=email, allow_html=not args.no_html,
+                              use_browser=not args.no_browser, headed=not args.headless,
+                              override_url=sources.get(entry["citekey"]),
+                              browser_session=session)
+    finally:
+        if session is not None:
+            session.close()
     write_manifest(out_dir, [result])
     write_failed(out_dir)
     _summarize([result], out_dir)
@@ -1846,10 +1896,15 @@ def _run_doi(args: argparse.Namespace) -> None:
         "title": args.title or "",
     }
     override_url = sources.get(entry["citekey"]) if entry["citekey"] else None
-    result = download_one(entry, out_dir, api_key, _insttoken_optional(args.insttoken),
-                          email=email, allow_html=allow_html,
-                          use_browser=not args.no_browser, headed=not args.headless,
-                          override_url=override_url)
+    session = _browser_session(args)
+    try:
+        result = download_one(entry, out_dir, api_key, _insttoken_optional(args.insttoken),
+                              email=email, allow_html=allow_html,
+                              use_browser=not args.no_browser, headed=not args.headless,
+                              override_url=override_url, browser_session=session)
+    finally:
+        if session is not None:
+            session.close()
     write_manifest(out_dir, [result])
     write_failed(out_dir)
     _summarize([result], out_dir)
@@ -1877,11 +1932,17 @@ def _run_bib(args: argparse.Namespace) -> None:
 
     sources = _load_sources(out_dir)
     insttoken = _insttoken_optional(args.insttoken)
-    results = [download_one(e, out_dir, api_key, insttoken,
-                            email=email, allow_html=allow_html,
-                            use_browser=not args.no_browser, headed=not args.headless,
-                            override_url=sources.get(e.get("citekey") or ""))
-               for e in entries]
+    session = _browser_session(args)
+    try:
+        results = [download_one(e, out_dir, api_key, insttoken,
+                                email=email, allow_html=allow_html,
+                                use_browser=not args.no_browser, headed=not args.headless,
+                                override_url=sources.get(e.get("citekey") or ""),
+                                browser_session=session)
+                   for e in entries]
+    finally:
+        if session is not None:
+            session.close()
     write_manifest(out_dir, results)
     write_failed(out_dir)
     _summarize(results, out_dir)

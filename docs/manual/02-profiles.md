@@ -111,6 +111,7 @@ all three environments after the install.
 | ☑ | `folium` | folium | 0.20.0 | geolocalisation `==0.20.0` | geolocalisation | yes |  |
 | ☑ | `google-genai` | google | 2.8.0 | scopus `==2.8.0` | scopus | yes | imported as google.genai |
 | ☑ | `Jinja2` | jinja2 | 3.1.6 | paper2talk `==3.1.6` | paper2talk | yes |  |
+| ☑ | `keyring` | keyring | 25.7.0 | scopus `==25.7.0` | scopus | yes |  |
 | ☑ | `lxml` | lxml | 6.1.3 | word2latex `==6.1.3` | word2latex |  |  |
 | ☑ | `markitdown` | markitdown | 0.1.6 | extract-statistic `[pdf]==0.1.6` | extract-statistic | yes | MIT licence |
 | ☑ | `MarkupSafe` | markupsafe | 3.0.3 | paper2talk `==3.0.3` | paper2talk | yes | a dependency of Jinja2, imported directly by talk_model.py |
@@ -125,7 +126,6 @@ all three environments after the install.
 | ☑ | `pillow` | PIL | 13.0.0 | extract-statistic `==13.0.0`; geolocalisation `==13.0.0`; word2latex `==13.0.0` | word2latex | yes | also pinned where it is only transitive, to keep the fixed version |
 | ☑ | `pip-audit` | (none) | 2.10.1 | data file tools `==2.10.1` | - |  | run as a module (python -m pip_audit), never imported |
 | ☑ | `playwright` | playwright | 1.61.0 | scopus `==1.61.0` | scopus | yes | the Chromium binary is a separate playwright install chromium |
-| ☑ | `playwright-stealth` | playwright_stealth | 2.0.3 | scopus `==2.0.3` | scopus | yes |  |
 | ☑ | `psycopg` | psycopg | 3.3.6 | extract-statistic `[binary]==3.3.6`; rt-observe `[binary]==3.3.6` | extract-statistic, rt-observe | yes |  |
 | ☑ | `pyHanko` | pyhanko | 0.37.0 | form-service `==0.37.0` | form-service |  | MIT licence |
 | ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | paper2talk `==1.27.2.3`; extract-statistic `==1.27.2.3`; word2latex `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, scopus, word2latex | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |

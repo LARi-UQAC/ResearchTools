@@ -36,10 +36,19 @@ See .claude/rules/security.md for the file-write and input-validation rules this
 script follows.
 """
 
+import json
 import logging
 import os
 import re
+import sys
+from pathlib import Path
+from typing import Any
 from urllib.parse import urljoin, urlparse
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+import browser_login  # noqa: E402  (sibling module: provider and step vocabularies)
 
 logger = logging.getLogger(__name__)
 
@@ -54,44 +63,204 @@ except ImportError:  # pragma: no cover - optional dependency
     _PWError = Exception
     _PW_OK = False
 
-# Optional stealth layer, same degrade-with-a-hint contract as Playwright above.
-# Measured 2026-09-17: ScienceDirect answers a plain Playwright Chromium with a
-# Cloudflare interstitial that never clears, while IEEE and Taylor & Francis
-# pass. The single init script this module already injected is not enough, since
-# the challenge also reads the CDP traces, the permissions shim and the plugin
-# list. playwright-stealth patches that whole set in one place.
-try:
-    from playwright_stealth import Stealth
-    _STEALTH_OK = True
-except ImportError:  # pragma: no cover - optional dependency
-    Stealth = None
-    _STEALTH_OK = False
+# No stealth or anti-detect library (owner ruling 2026-11-05). ScienceDirect shows
+# real Chrome 157 an interactive Cloudflare Turnstile checkbox (measured
+# 2026-11-05) and answers the bundled Chromium with an interstitial that never
+# clears (measured 2026-09-17). The answer is the installed Chrome and a human
+# click, not hiding the automation.
 
 PDF_MAGIC = b"%PDF"
-MAX_PDF_BYTES = 100 * 1024 * 1024  # 100 MB cap, matching download_pdf.py
-NAV_TIMEOUT_S = 60                 # per-navigation timeout
-IDLE_TIMEOUT_S = 20                # extra wait for the JS challenge to settle
-ASSIST_WAIT_S = 45                 # headed: time for a human to accept cookies /
-#                                    solve a visible challenge; polled, breaks
-#                                    the instant a PDF is captured
-POLL_S = 1.5                       # poll interval while waiting for the PDF
 
-# Persistent browser profile. A fresh context starts with no cookies, no history
-# and no local storage, which is itself a bot signal, and it throws away the
-# clearance cookie the previous paper just earned. Reusing one profile lets a
-# solved challenge and an institutional session carry across papers in a run and
-# across runs. The directory is created on first use and is disposable: deleting
-# it costs only the stored cookies. It is NOT placed in the repository, since it
-# holds session cookies for the operator's institutional access.
-BROWSER_PROFILE_DIR = os.path.join(
-    os.path.expanduser("~"), ".claude", "scopus-browser-profile")
+# Every timeout, limit and host setting lives in browser-fetch.json beside this
+# module, each with its provenance (R0, R4). The persistent browser profile it
+# names keeps a solved challenge and an institutional session across papers in a
+# run and across runs: a fresh context starts with no cookies, no history and no
+# local storage, which is itself a bot signal. The directory is disposable
+# (deleting it costs only the stored cookies) and is NOT placed in the
+# repository, since it holds session cookies for the operator's institutional
+# access.
+CONFIG_PATH = _HERE / "browser-fetch.json"
 
-# A desktop Chrome profile string; a genuine engine drives it, so this only sets
-# the advertised UA.
-BROWSER_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-)
+_NUMBER_KEYS = ("nav_timeout_s", "idle_timeout_s", "human_window_s", "headless_wait_s",
+                "poll_s", "popup_wait_s", "viewer_settle_s", "download_wait_s",
+                "download_retry_pause_s", "step_timeout_s", "provider_timeout_s")
+_REQUIRED_KEYS = _NUMBER_KEYS + ("max_pdf_bytes", "channel", "profile_dir", "user_agent",
+                                 "secret_provider", "allow_totp_from_vault", "hosts")
+_config_cache: dict[str, dict[str, Any]] = {}
+
+
+class BrowserRungError(Exception):
+    """Rung 8 could not run for a named reason; download_pdf records it as an error."""
+
+
+class BrowserConfigError(BrowserRungError, ValueError):
+    """browser-fetch.json is missing, unreadable or holds a bad value (R3)."""
+
+
+def _positive_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _validate_host(name: str, host: Any, where: str) -> None:
+    """Check one hosts entry; raise BrowserConfigError naming the host and the field."""
+    def bad(field: str, why: str) -> BrowserConfigError:
+        return BrowserConfigError("%s: hosts[%r].%s %s" % (where, name, field, why))
+
+    if not isinstance(host, dict):
+        raise bad("(entry)", "must be an object")
+    entry = host.get("entry_url")
+    if not isinstance(entry, str) or urlparse(entry).scheme != "https" or \
+            not urlparse(entry).hostname:
+        raise bad("entry_url", "must be an https URL")
+    for field in ("username_env", "vault_item", "logged_in_selector"):
+        if not isinstance(host.get(field), str) or not host[field].strip():
+            raise bad(field, "must be a non-empty string")
+    steps = host.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise bad("steps", "must be a non-empty list")
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict) or step.get("action") not in browser_login.STEP_ACTIONS:
+            raise bad("steps", "entry %d needs an action in %s"
+                      % (index, ", ".join(browser_login.STEP_ACTIONS)))
+        if not isinstance(step.get("selector"), str) or not step["selector"].strip():
+            raise bad("steps", "entry %d needs a non-empty selector" % index)
+
+
+def load_config(path: str | Path | None = None) -> dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read browser-fetch.json and return its values with the provenance
+        stripped. Every key must be present, carry a non-empty provenance (R4)
+        and hold a value of the right kind. Nothing is defaulted (R3).
+
+    Inputs:
+        path (str | Path | None): the file to read, default CONFIG_PATH.
+
+    Outputs:
+        values (dict): key -> value, hosts already validated.
+
+    Raises:
+        BrowserConfigError: the file is missing or not JSON, a key is absent, a
+            value lacks its provenance or has the wrong kind, the secret
+            provider is unknown, or a hosts entry is malformed. The message
+            names the file and the key (and the host).
+    --------------------------------------------------------------------------
+    """
+    target = Path(path) if path else CONFIG_PATH
+    where = target.name
+    try:
+        raw = json.loads(target.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise BrowserConfigError("%s: cannot read %s (%s)"
+                                 % (where, target, type(exc).__name__)) from None
+    except ValueError:
+        raise BrowserConfigError("%s: %s is not valid JSON" % (where, target)) from None
+    if not isinstance(raw, dict):
+        raise BrowserConfigError("%s: the top level must be an object" % where)
+
+    values: dict[str, Any] = {}
+    for key in _REQUIRED_KEYS:
+        entry = raw.get(key)
+        if not isinstance(entry, dict) or "value" not in entry:
+            raise BrowserConfigError("%s: key %r is missing or has no 'value'" % (where, key))
+        if not str(entry.get("provenance") or "").strip():
+            raise BrowserConfigError("%s: key %r has no provenance (R4)" % (where, key))
+        values[key] = entry["value"]
+
+    for key in _NUMBER_KEYS:
+        if not _positive_number(values[key]):
+            raise BrowserConfigError("%s: key %r must be a positive number" % (where, key))
+    max_bytes = values["max_pdf_bytes"]
+    if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+        raise BrowserConfigError("%s: key 'max_pdf_bytes' must be a positive integer" % where)
+    for key in ("channel", "user_agent"):
+        if values[key] is not None and (not isinstance(values[key], str)
+                                        or not values[key].strip()):
+            raise BrowserConfigError("%s: key %r must be a non-empty string or null"
+                                     % (where, key))
+    if not isinstance(values["profile_dir"], str) or not values["profile_dir"].strip():
+        raise BrowserConfigError("%s: key 'profile_dir' must be a non-empty string" % where)
+    if values["secret_provider"] not in browser_login.SECRET_PROVIDERS:
+        raise BrowserConfigError("%s: key 'secret_provider' must be one of %s"
+                                 % (where, ", ".join(browser_login.SECRET_PROVIDERS)))
+    if not isinstance(values["allow_totp_from_vault"], bool):
+        raise BrowserConfigError("%s: key 'allow_totp_from_vault' must be true or false" % where)
+    if not isinstance(values["hosts"], dict):
+        raise BrowserConfigError("%s: key 'hosts' must be an object" % where)
+    for name, host in values["hosts"].items():
+        _validate_host(name, host, where)
+    return values
+
+
+def _config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """The caller's config when given, else the shipped file (read once per path)."""
+    if config is not None:
+        return config
+    key = str(CONFIG_PATH)
+    if key not in _config_cache:
+        _config_cache[key] = load_config()
+    return _config_cache[key]
+
+
+def profile_dir(config: dict[str, Any]) -> str:
+    """The persistent profile folder named by the config, with ~ expanded."""
+    return os.path.expanduser(config["profile_dir"])
+
+
+FALLBACK_PROFILE_SUFFIX = "-chromium"
+
+
+def _is_missing_channel(exc: Exception) -> bool:
+    """True when Playwright says the requested browser distribution is not installed."""
+    text = str(exc).lower()
+    return "distribution" in text and "not found" in text
+
+
+def _launch_context(pw: Any, cfg: dict[str, Any], headed: bool) -> Any:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Open the persistent browser context: the installed browser named by the
+        config's channel (Chrome) with the persistent profile. When that
+        distribution is not installed, fall back to the bundled Chromium in a
+        profile folder of its own and say so in the log, never silently. Any
+        other launch failure is not a missing Chrome and propagates.
+
+    Inputs:
+        pw: the Playwright object (pw.chromium launches the browser).
+        cfg (dict): loaded config (channel, profile_dir, user_agent).
+        headed (bool): visible window when True.
+
+    Outputs:
+        context: the Playwright persistent context.
+
+    Raises:
+        playwright Error: the launch failed for a reason other than a missing
+            Chrome, or the bundled Chromium failed too.
+    --------------------------------------------------------------------------
+    """
+    profile = profile_dir(cfg)
+    kwargs: dict[str, Any] = {
+        "headless": not headed, "accept_downloads": True,
+        "args": ["--disable-blink-features=AutomationControlled"]}
+    if cfg["user_agent"]:
+        kwargs["user_agent"] = cfg["user_agent"]
+    channel = cfg["channel"]
+    if channel:
+        os.makedirs(profile, exist_ok=True)
+        try:
+            return pw.chromium.launch_persistent_context(profile, channel=channel, **kwargs)
+        except _PWError as exc:
+            if not _is_missing_channel(exc):
+                raise
+            profile += FALLBACK_PROFILE_SUFFIX
+            logger.warning("[BROWSER] the %r browser is not installed: falling back to the "
+                           "bundled Chromium (profile %s), which ScienceDirect's challenge "
+                           "may refuse. Install Chrome or run: playwright install chrome",
+                           channel, profile)
+    os.makedirs(profile, exist_ok=True)
+    return pw.chromium.launch_persistent_context(profile, **kwargs)
 
 
 def _clean_doi(doi: str) -> str:
@@ -105,7 +274,7 @@ def _clean_doi(doi: str) -> str:
     return doi.strip()
 
 
-def _save_pdf_bytes(data: bytes, dest: str) -> bool:
+def _save_pdf_bytes(data: bytes, dest: str, max_bytes: int | None = None) -> bool:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -119,17 +288,19 @@ def _save_pdf_bytes(data: bytes, dest: str) -> bool:
         data (bytes): the candidate PDF bytes (from a captured response, a
             download, or page.pdf()).
         dest (str): final destination path for the PDF.
+        max_bytes (int | None): size cap; default the config's max_pdf_bytes.
 
     Outputs:
         ok (bool): True when a valid PDF was written; False otherwise (no partial
         file is left behind).
     --------------------------------------------------------------------------
     """
+    cap = max_bytes if max_bytes is not None else _config(None)["max_pdf_bytes"]
     if not data or not data.startswith(PDF_MAGIC):
         logger.warning("[BROWSER] not a PDF (magic mismatch) - discarded")
         return False
-    if len(data) > MAX_PDF_BYTES:
-        logger.warning("[BROWSER] exceeds %d-byte cap - discarded", MAX_PDF_BYTES)
+    if len(data) > cap:
+        logger.warning("[BROWSER] exceeds %d-byte cap - discarded", cap)
         return False
     tmp = f"{dest}.part"
     try:
@@ -248,10 +419,11 @@ def _doi_pattern_url(doi: str) -> str | None:
     return None
 
 
-def _click_download_button(pg, captured: dict) -> None:
+def _click_download_button(pg, captured: dict, cfg: dict[str, Any]) -> None:
     """In a viewer/reader page, click an explicit Download control and keep the
     downloaded file if it is a PDF. Used after a 'View PDF' click opens a reader
-    (e.g. Taylor & Francis /doi/epdf) that streams the file only on Download."""
+    (e.g. Taylor & Francis /doi/epdf) that streams the file only on Download.
+    Waits come from cfg (download_wait_s, download_retry_pause_s)."""
     for sel in ('a:has-text("Download PDF")', 'button:has-text("Download PDF")',
                 'a:has-text("Download")', 'button:has-text("Download")',
                 '[aria-label*="Download" i]', 'a[download]', 'a[href*="/doi/pdf"]'):
@@ -264,7 +436,7 @@ def _click_download_button(pg, captured: dict) -> None:
         if not el:
             continue
         try:
-            with pg.expect_download(timeout=15000) as info:
+            with pg.expect_download(timeout=int(cfg["download_wait_s"] * 1000)) as info:
                 el.click()
             download = info.value
             path = download.path()
@@ -278,12 +450,12 @@ def _click_download_button(pg, captured: dict) -> None:
             # The click may instead stream the PDF as a response (caught by the
             # context listener); give it a moment, then move on.
             try:
-                pg.wait_for_timeout(1500)
+                pg.wait_for_timeout(int(cfg["download_retry_pause_s"] * 1000))
             except _PWError:
                 pass
 
 
-def _try_click_through(page, captured: dict) -> None:
+def _try_click_through(page, captured: dict, cfg: dict[str, Any]) -> None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -298,6 +470,7 @@ def _try_click_through(page, captured: dict) -> None:
     Inputs:
         page: the loaded Playwright article page.
         captured (dict): shared {"data": bytes | None} sink.
+        cfg (dict): the loaded config (popup_wait_s, viewer_settle_s, ...).
 
     Outputs:
         none (mutates captured in place).
@@ -316,7 +489,7 @@ def _try_click_through(page, captured: dict) -> None:
             continue
         popup = None
         try:
-            with page.expect_popup(timeout=8000) as info:
+            with page.expect_popup(timeout=int(cfg["popup_wait_s"] * 1000)) as info:
                 el.click()
             popup = info.value
         except _PWError:
@@ -324,12 +497,12 @@ def _try_click_through(page, captured: dict) -> None:
         target = popup or page
         try:
             target.wait_for_load_state("domcontentloaded")
-            target.wait_for_timeout(2500)  # let the viewer stream its PDF
+            target.wait_for_timeout(int(cfg["viewer_settle_s"] * 1000))  # viewer streams its PDF
         except _PWError:
             pass
         if captured["data"] is not None:
             return
-        _click_download_button(target, captured)
+        _click_download_button(target, captured, cfg)
 
 
 def browser_available() -> bool:
@@ -338,8 +511,193 @@ def browser_available() -> bool:
     return _PW_OK
 
 
+class BrowserSession:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One browser for a whole run. The browser is launched on first use and
+        closed once, so a solved challenge and an institutional sign-in carry
+        over from one paper to the next: the second paper does not sign in again
+        while the session cookie is valid.
+
+    Inputs:
+        config (dict | None): values from load_config(); default the shipped file.
+        headed (bool): visible window when True. A shared session fixes this for
+            every paper it serves.
+
+    Outputs:
+        An object with context() (launch on demand), close() (idempotent) and
+        context-manager support.
+    --------------------------------------------------------------------------
+    """
+
+    def __init__(self, config: dict[str, Any] | None = None, headed: bool = True) -> None:
+        self.cfg = _config(config)
+        self.headed = headed
+        self._manager: Any = None
+        self._context: Any = None
+
+    def context(self) -> Any:
+        """Return the persistent context, launching the browser on the first call."""
+        if self._context is None:
+            manager = sync_playwright()
+            playwright = manager.__enter__()
+            try:
+                context = _launch_context(playwright, self.cfg, self.headed)
+            except BaseException:
+                manager.__exit__(None, None, None)
+                raise
+            self._manager, self._context = manager, context
+            # Reduce the automation fingerprint: Cloudflare/Akamai re-challenge
+            # every navigation when navigator.webdriver is true.
+            try:
+                context.add_init_script(
+                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
+            except _PWError:  # pragma: no cover
+                pass
+        return self._context
+
+    def close(self) -> None:
+        """Close the browser once; later calls do nothing."""
+        context, manager = self._context, self._manager
+        self._context = self._manager = None
+        if context is not None:
+            try:
+                context.close()
+            except _PWError:  # pragma: no cover - already gone
+                pass
+        if manager is not None:
+            manager.__exit__(None, None, None)
+
+    def __enter__(self) -> "BrowserSession":
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        self.close()
+        return False
+
+
+class _use_session:
+    """Yield the caller's session, or a private one that is closed on exit."""
+
+    def __init__(self, session: BrowserSession | None, cfg: dict[str, Any], headed: bool):
+        self._owned = session is None
+        self.session = session if session is not None else BrowserSession(cfg, headed)
+
+    def __enter__(self) -> BrowserSession:
+        return self.session
+
+    def __exit__(self, *exc: Any) -> bool:
+        if self._owned:
+            self.session.close()
+        return False
+
+
+def _present(page: Any, selector: str) -> bool:
+    """True when the selector matches an element now (a browser error counts as no)."""
+    try:
+        return page.query_selector(selector) is not None
+    except _PWError:
+        return False
+
+
+def _sign_in(page: Any, host: str, host_cfg: dict[str, Any], cfg: dict[str, Any],
+             drain: Any) -> None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Sign in to the owner's institution for a listed publisher host: open the
+        configured entry URL, run the configured steps (fill the user name, the
+        password read from the secret provider, optionally a one-time code,
+        click), then wait up to the human window for the owner to approve the MFA
+        prompt. The wait ends as soon as the signed-in marker appears or a full
+        PDF has been captured. Only the configured fields are touched.
+
+    Inputs:
+        page: the Playwright page.
+        host (str): the publisher host, for messages.
+        host_cfg (dict): the validated hosts entry.
+        cfg (dict): the loaded config.
+        drain: callable returning True once a complete PDF has been captured.
+
+    Outputs:
+        None. The page is left signed in.
+
+    Raises:
+        BrowserRungError: the user name variable is unset, a provider refused, a
+            field did not appear, a one-time code is needed but not allowed, or
+            the sign-in did not complete within the human window. No message
+            holds a secret.
+    --------------------------------------------------------------------------
+    """
+    username_env = host_cfg["username_env"]
+    username = os.environ.get(username_env, "").strip()
+    if not username:
+        raise BrowserRungError("sign-in to %s needs the user name in the environment variable "
+                               "%s, which is not set" % (host, username_env))
+    if any(s["action"] == "fill_totp" for s in host_cfg["steps"]) and \
+            not cfg["allow_totp_from_vault"]:
+        raise BrowserRungError("sign-in to %s has a fill_totp step but allow_totp_from_vault is "
+                               "false in browser-fetch.json" % host)
+
+    def refuse(why: str) -> BrowserRungError:
+        return BrowserRungError("sign-in to %s: %s" % (host, why))
+
+    try:
+        page.goto(host_cfg["entry_url"], wait_until="domcontentloaded")
+    except _PWError:
+        raise refuse("the entry page could not be opened") from None
+    logger.info("[BROWSER] signing in to %s (the secret comes from the %s provider)",
+                host, cfg["secret_provider"])
+    for step in host_cfg["steps"]:
+        selector, action = step["selector"], step["action"]
+        try:
+            page.wait_for_selector(selector, timeout=int(cfg["step_timeout_s"] * 1000))
+        except _PWError:
+            raise refuse("the element %r did not appear within %g s (the selectors in "
+                         "browser-fetch.json may need updating)"
+                         % (selector, cfg["step_timeout_s"])) from None
+        try:
+            if action == "click":
+                page.click(selector)
+                continue
+            if action == "fill_username":
+                value = username
+            elif action == "fill_password":
+                value = browser_login.get_password(
+                    host_cfg["vault_item"], cfg["secret_provider"],
+                    timeout_s=cfg["provider_timeout_s"], username=username)
+            else:
+                value = browser_login.get_totp(
+                    host_cfg["vault_item"], cfg["secret_provider"],
+                    allow=cfg["allow_totp_from_vault"], timeout_s=cfg["provider_timeout_s"],
+                    username=username)
+            page.fill(selector, value)
+        except browser_login.LoginError as exc:
+            raise refuse(str(exc)) from None
+        except _PWError:
+            raise refuse("the step %r on %r failed" % (action, selector)) from None
+        finally:
+            value = None   # drop the secret at once
+
+    marker, poll_ms = host_cfg["logged_in_selector"], int(cfg["poll_s"] * 1000)
+    for _ in range(max(1, int(cfg["human_window_s"] / cfg["poll_s"]))):
+        if _present(page, marker) or drain():
+            return
+        try:
+            page.wait_for_timeout(poll_ms)
+        except _PWError:
+            break
+    if _present(page, marker) or drain():
+        return
+    raise refuse("did not complete within %g s: approve the MFA prompt promptly, or check the "
+                 "logged_in_selector in browser-fetch.json" % cfg["human_window_s"])
+
+
 def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = None,
-                          headed: bool = True, timeout_s: int = NAV_TIMEOUT_S) -> dict | None:
+                          headed: bool = True, timeout_s: float | None = None,
+                          config: dict[str, Any] | None = None,
+                          session: BrowserSession | None = None) -> dict | None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -357,18 +715,36 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
             of the DOI (ResearchGate, author page, repository, preprint).
         headed (bool): run a visible browser (default True, more reliable against
             challenge managers).
-        timeout_s (int): per-navigation timeout in seconds.
+        timeout_s (float | None): per-navigation timeout in seconds; default the
+            config's nav_timeout_s.
+        config (dict | None): values from load_config(); default the shipped
+            browser-fetch.json.
+        session (BrowserSession | None): a browser shared by the papers of one
+            run, so a sign-in is done once. Without one, a private browser is
+            opened and closed for this call. A shared session fixes headed and
+            the config for the call.
 
     Outputs:
         result (dict | None): {"format": "pdf", "source": <s>, "file": <name>}
         where <s> is "override" (override URL used) or "browser" (DOI real PDF);
         None when no real PDF was captured (paper stays failed / manual).
+
+    Raises:
+        BrowserConfigError: browser-fetch.json is unusable (R3).
+        BrowserRungError: a sign-in was needed and could not be done (secret
+            provider locked or missing, form field absent, MFA not approved in
+            time). The text names the cause and holds no secret.
     --------------------------------------------------------------------------
     """
     if not _PW_OK:
         logger.info("[BROWSER] Playwright not installed - tier skipped "
                     "(run: pip install playwright && playwright install chromium)")
         return None
+    cfg = session.cfg if session is not None else _config(config)
+    if session is not None:
+        headed = session.headed
+    if timeout_s is None:
+        timeout_s = cfg["nav_timeout_s"]
 
     entry_url = override_url or f"https://doi.org/{_clean_doi(doi)}"
     if urlparse(entry_url).scheme != "https":
@@ -415,46 +791,16 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
         except Exception:  # pragma: no cover
             pass
 
-    # The stealth wrapper hooks the Playwright object itself, so every context
-    # and page it creates is patched. Without the package the plain driver is
-    # used and the reason is logged once: an absent optional dependency degrades
-    # the tier, it never fails the run (R8, R11).
-    _pw_cm = None
-    if _STEALTH_OK:
-        try:
-            _pw_cm = Stealth().use_sync(sync_playwright())
-        except Exception as exc:  # pragma: no cover - wrapper/version mismatch
-            logger.info("[BROWSER] stealth wrapper unusable (%s): plain driver", exc)
-            _pw_cm = None
-    if _pw_cm is None:
-        if not _STEALTH_OK:
-            logger.info("[BROWSER] playwright-stealth not installed: running the plain "
-                        "driver, which Cloudflare-gated publishers may refuse")
-        _pw_cm = sync_playwright()
-
     try:
-        with _pw_cm as pw:
-            # A persistent context returns the context directly; there is no
-            # separate browser object to close, which is why the cleanup below
-            # closes the context instead.
-            os.makedirs(BROWSER_PROFILE_DIR, exist_ok=True)
-            context = pw.chromium.launch_persistent_context(
-                BROWSER_PROFILE_DIR,
-                headless=not headed,
-                accept_downloads=True,
-                user_agent=BROWSER_UA,
-                args=["--disable-blink-features=AutomationControlled"])
-            browser = context  # closed in the finally below
+        with _use_session(session, cfg, headed) as sess:
+            # The session owns the persistent context; a private one is closed
+            # when this block ends, a shared one stays open for the next paper.
+            context = sess.context()
+            page = None
+            wire_popup = None
             try:
-                # Reduce the automation fingerprint: Cloudflare/Akamai re-challenge
-                # every navigation when navigator.webdriver is true.
-                try:
-                    context.add_init_script(
-                        "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
-                except _PWError:  # pragma: no cover
-                    pass
                 page = context.new_page()
-                page.set_default_timeout(timeout_s * 1000)
+                page.set_default_timeout(int(timeout_s * 1000))
                 page.on("response", _note_response)
                 page.on("download", _on_download)
 
@@ -463,6 +809,7 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                 def _wire_popup(popup) -> None:
                     popup.on("response", _note_response)
                     popup.on("download", _on_download)
+                wire_popup = _wire_popup
                 context.on("page", _wire_popup)
 
                 def _drain() -> bool:
@@ -482,7 +829,7 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                             return True
                     for url in list(dict.fromkeys(pdf_urls)):
                         try:
-                            api = context.request.get(url, timeout=timeout_s * 1000)
+                            api = context.request.get(url, timeout=int(timeout_s * 1000))
                             body = api.body() if api.ok else None
                         except Exception:
                             body = None
@@ -498,15 +845,15 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                     # instant a PDF is captured.
                     try:
                         page.wait_for_load_state("networkidle",
-                                                 timeout=IDLE_TIMEOUT_S * 1000)
+                                                 timeout=int(cfg["idle_timeout_s"] * 1000))
                     except _PWError:
                         pass  # challenge / reader pages often never fully idle
-                    budget_s = ASSIST_WAIT_S if headed else 3
-                    for _ in range(max(1, int(budget_s / POLL_S))):
+                    budget_s = cfg["human_window_s"] if headed else cfg["headless_wait_s"]
+                    for _ in range(max(1, int(budget_s / cfg["poll_s"]))):
                         if _drain():
                             return
                         try:
-                            page.wait_for_timeout(int(POLL_S * 1000))
+                            page.wait_for_timeout(int(cfg["poll_s"] * 1000))
                         except _PWError:
                             return
 
@@ -532,6 +879,20 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                         page.goto(entry_url, wait_until="domcontentloaded")
                     except _PWError:
                         pass
+                    # A publisher host listed in browser-fetch.json needs the
+                    # owner's institutional sign-in. Check it before settling, so
+                    # the human window is not spent on a paywall page. At most one
+                    # sign-in per paper: a still-valid session cookie (shared
+                    # session) shows the signed-in marker and skips it.
+                    host = (urlparse(page.url or "").hostname or "").lower()
+                    host_cfg = cfg["hosts"].get(host)
+                    if host_cfg and not _present(page, host_cfg["logged_in_selector"]):
+                        _sign_in(page, host, host_cfg, cfg, _drain)
+                        if captured["data"] is None:
+                            try:
+                                page.goto(entry_url, wait_until="domcontentloaded")
+                            except _PWError:
+                                pass
                     _settle()
                     # DOM-based PDF discovery is for a DOI landing page; skip it
                     # for an override host (already the target page) so we do not
@@ -545,11 +906,11 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                                 pass
                             _settle()
                     if captured["data"] is None:
-                        _try_click_through(page, captured)
+                        _try_click_through(page, captured, cfg)
                         _settle()
 
                 if captured["data"] is not None:
-                    ok = _save_pdf_bytes(captured["data"], dest)
+                    ok = _save_pdf_bytes(captured["data"], dest, cfg["max_pdf_bytes"])
                     return ({"format": "pdf", "source": source,
                              "file": os.path.basename(dest)} if ok else None)
 
@@ -562,7 +923,19 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                             override_url or doi)
                 return None
             finally:
-                browser.close()
+                # Per-paper cleanup. The browser itself belongs to the session.
+                if wire_popup is not None:
+                    try:
+                        context.remove_listener("page", wire_popup)
+                    except Exception:  # pragma: no cover - listener already gone
+                        pass
+                if page is not None:
+                    try:
+                        page.close()
+                    except _PWError:  # pragma: no cover - page already gone
+                        pass
+    except BrowserRungError:
+        raise
     except _PWError as exc:
         logger.warning("[BROWSER] failed for %s: %s", override_url or doi, exc)
         return None

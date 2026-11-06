@@ -5,9 +5,11 @@
 #   TLS impersonation to clear Akamai/Cloudflare bot gates on OA content, e.g. MDPI,
 #   Taylor & Francis OA); the publisher tier degrades to requests+curl when absent
 # browser_fetch.py (download_pdf tier 8)   : playwright (OPTIONAL, a real Chromium for
-#   challenge-gated publishers + a refs/_sources.json override URL). Needs the browser
-#   binary too: `playwright install chromium`. Tier 8 is skipped when absent (--browser
-#   opt-in). pip-audit the pin before adding it below.
+#   challenge-gated publishers + a refs/_sources.json override URL). Rung 8 launches the
+#   installed Google Chrome (browser-fetch.json "channel"), falling back to the bundled
+#   Chromium (`playwright install chromium`), and is recorded as skipped when playwright
+#   is absent. It runs by default; --no-browser turns it off. No stealth library is used
+#   (owner ruling 2026-11-05). pip-audit the pin before adding it below.
 # gemini_reviewer.py                       : google-genai   (latest PRO, auto-resolved)
 # github_reviewer.py                       : openai          (GPT-4o via GitHub Models)
 # deliberate.py (.claude/skills/deliberation/scripts) imports the two reviewers,
@@ -27,4 +29,8 @@ openai==2.43.0
 curl_cffi==0.15.0  # optional: browser-TLS PDF retrieval (download_pdf.py publisher tier)
 playwright==1.61.0  # optional: browser_fetch.py tier 8; also run `playwright install chromium`
 #   pip-audit clean 2026-07-18 at playwright 1.61.0 (+ greenlet, pyee); no CVE in the chain.
-playwright-stealth==2.0.3  # optional: browser_fetch.py tier 8, imported when present
+keyring==25.7.0  # optional: browser_login.py default secret provider (OS credential store);
+#   imported lazily, so rung 8 only needs it when the sign-in password is read from the keyring.
+#   The bitwarden and keepassxc providers need no Python package, only their command line tool.
+#   pip-audit -r on this whole file, 2026-11-05: 46 packages, no known vulnerability
+#   (keyring 25.7.0 with importlib-metadata 10.1.0, plus pywin32-ctypes 0.2.3 on Windows).

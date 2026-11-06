@@ -94,7 +94,8 @@ class FakePage:
     to simulate a PDF, and returns configurable content()/pdf()/meta/controls."""
 
     def __init__(self, *, pdf_body=None, html="", pdf_method=None, meta=None,
-                 controls=None, redirects=None, login=None, present=None):
+                 controls=None, redirects=None, login=None, present=None,
+                 challenge_waits=0, challenge_selector_waits=0):
         self._cbs = {}
         self._pdf_body = pdf_body      # served as an application/pdf response on goto
         self._html = html
@@ -110,6 +111,8 @@ class FakePage:
         # "pdf_requires_login": bool, "pdf_on_click": bool}. Clicking `submit` signs in;
         # the logged_in marker shows only once n waits have passed since the click, which
         # is how the owner's MFA approval is simulated.
+        self.challenge_waits = challenge_waits      # the Cloudflare page shows (by title)
+        self.challenge_selector_waits = challenge_selector_waits   # ... by iframe selector
         self._login = login
         self._signed_in = False
         self._waits_at_click = 0
@@ -183,7 +186,14 @@ class FakePage:
             return self._meta
         return None
 
+    def title(self):
+        return "Just a moment..." if len(self.waits_ms) < self.challenge_waits else "Article"
+
     def query_selector(self, selector):
+        if "challenges.cloudflare.com" in selector:
+            if len(self.waits_ms) < self.challenge_selector_waits:
+                return _FakeElement(self, None)
+            return None
         if selector in self._controls:
             return _FakeElement(self, self._controls[selector])
         if self._login and selector == self._login.get("logged_in") and self._signed_in_visible():
@@ -452,6 +462,7 @@ REQUIRED_KEYS = (
     "popup_wait_s", "viewer_settle_s", "download_wait_s", "download_retry_pause_s",
     "step_timeout_s", "max_pdf_bytes", "channel", "profile_dir", "user_agent",
     "secret_provider", "allow_totp_from_vault", "provider_timeout_s", "hosts",
+    "challenge_title_markers", "challenge_selectors",
 )
 
 GOOD_HOST = {
@@ -478,6 +489,8 @@ def _config_dict(**overrides):
         "profile_dir": "~/.claude/scopus-browser-profile", "user_agent": None,
         "secret_provider": "keyring", "allow_totp_from_vault": False,
         "provider_timeout_s": 15, "hosts": {},
+        "challenge_title_markers": ["just a moment"],
+        "challenge_selectors": ["iframe[src*='challenges.cloudflare.com']"],
     }
     values.update(overrides)
     return {k: {"value": v, "provenance": "test fixture"} for k, v in values.items()}
@@ -621,15 +634,52 @@ class TestBrowserConfig(unittest.TestCase):
 
     def test_the_human_window_and_poll_interval_come_from_the_config(self):
         # No PDF is ever served, so the flow settles twice (entry page, then after
-        # the click-through attempt). Each settle polls int(window / poll) times.
-        page = FakePage(html=ARTICLE_HTML)
+        # the click-through attempt).
+        # A challenge that never clears keeps the human window open in full:
+        # int(window / poll) polls per settle.
+        page = FakePage(html=ARTICLE_HTML, challenge_waits=999)
         self._fetch(page, {"human_window_s": 6, "poll_s": 2, "headless_wait_s": 1},
                     headed=True)
         self.assertEqual(page.waits_ms.count(2000), 2 * 3)
-        page = FakePage(html=ARTICLE_HTML)
+        # Headless has no human: the short budget, whatever the page shows.
+        page = FakePage(html=ARTICLE_HTML, challenge_waits=999)
         self._fetch(page, {"human_window_s": 6, "poll_s": 2, "headless_wait_s": 4},
                     headed=False)
         self.assertEqual(page.waits_ms.count(2000), 2 * 2)
+
+    def test_the_human_window_lasts_only_while_a_challenge_is_showing(self):
+        # Measured live 2026-11-05: after the owner clicked the Turnstile box the run
+        # still waited out the whole 120 s window (three times), because only a
+        # captured PDF ended the wait. The window now ends a short quiet period
+        # (headless_wait_s) after the challenge is gone.
+        page = FakePage(html=ARTICLE_HTML, challenge_waits=4)   # clears after 4 polls
+        self._fetch(page, {"human_window_s": 60, "poll_s": 2, "headless_wait_s": 2},
+                    headed=True)
+        # first settle: 4 polls while the challenge shows + the quiet period
+        # (headless_wait_s / poll_s = 1 poll); the second settle finds no challenge:
+        # one quiet poll. Far below the 2 x 30 polls of the full window.
+        self.assertEqual(page.waits_ms.count(2000), 4 + 1 + 1)
+
+    def test_a_page_that_never_shows_a_challenge_does_not_wait_for_a_human(self):
+        page = FakePage(html=ARTICLE_HTML)
+        self._fetch(page, {"human_window_s": 60, "poll_s": 2, "headless_wait_s": 2},
+                    headed=True)
+        self.assertEqual(page.waits_ms.count(2000), 2)         # one quiet poll per settle
+
+    def test_a_challenge_selector_counts_too(self):
+        page = FakePage(html=ARTICLE_HTML, challenge_selector_waits=3)
+        self._fetch(page, {"human_window_s": 60, "poll_s": 2, "headless_wait_s": 2},
+                    headed=True)
+        self.assertEqual(page.waits_ms.count(2000), 3 + 1 + 1)  # 3 polls + quiet, then quiet
+
+    def test_challenge_markers_must_be_lists_of_non_empty_strings(self):
+        for key in ("challenge_title_markers", "challenge_selectors"):
+            for bad in ("just a moment", [], [""], [5], None):
+                with tempfile.TemporaryDirectory() as tmp, self.subTest(key=key, bad=bad):
+                    path = self._write(tmp, _config_dict(**{key: bad}))
+                    with self.assertRaises(browser_fetch.BrowserConfigError) as ctx:
+                        browser_fetch.load_config(path)
+                    self.assertIn(key, str(ctx.exception))
 
     def test_the_profile_directory_comes_from_the_config(self):
         page = FakePage(pdf_body=PDF_BYTES)

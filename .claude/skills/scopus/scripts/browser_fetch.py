@@ -85,7 +85,8 @@ _NUMBER_KEYS = ("nav_timeout_s", "idle_timeout_s", "human_window_s", "headless_w
                 "poll_s", "popup_wait_s", "viewer_settle_s", "download_wait_s",
                 "download_retry_pause_s", "step_timeout_s", "provider_timeout_s")
 _REQUIRED_KEYS = _NUMBER_KEYS + ("max_pdf_bytes", "channel", "profile_dir", "user_agent",
-                                 "secret_provider", "allow_totp_from_vault", "hosts")
+                                 "secret_provider", "allow_totp_from_vault", "hosts",
+                                 "challenge_title_markers", "challenge_selectors")
 _config_cache: dict[str, dict[str, Any]] = {}
 
 
@@ -194,6 +195,12 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
                                  % (where, ", ".join(browser_login.SECRET_PROVIDERS)))
     if not isinstance(values["allow_totp_from_vault"], bool):
         raise BrowserConfigError("%s: key 'allow_totp_from_vault' must be true or false" % where)
+    for key in ("challenge_title_markers", "challenge_selectors"):
+        items = values[key]
+        if not isinstance(items, list) or not items or not all(
+                isinstance(i, str) and i.strip() for i in items):
+            raise BrowserConfigError("%s: key %r must be a non-empty list of non-empty strings"
+                                     % (where, key))
     if not isinstance(values["hosts"], dict):
         raise BrowserConfigError("%s: key 'hosts' must be an object" % where)
     for name, host in values["hosts"].items():
@@ -601,6 +608,18 @@ class _use_session:
         return False
 
 
+def _challenge_showing(page: Any, cfg: dict[str, Any]) -> bool:
+    """True while a Cloudflare challenge is on screen: the page title holds a configured
+    marker, or a configured selector matches. A browser error counts as not showing."""
+    try:
+        title = (page.title() or "").lower()
+    except _PWError:
+        title = ""
+    if any(marker.lower() in title for marker in cfg["challenge_title_markers"]):
+        return True
+    return any(_present(page, selector) for selector in cfg["challenge_selectors"])
+
+
 def _present(page: Any, selector: str) -> bool:
     """True when the selector matches an element now (a browser error counts as no)."""
     try:
@@ -877,10 +896,23 @@ def fetch_pdf_via_browser(doi: str, dest: str, *, override_url: str | None = Non
                                                  timeout=int(cfg["idle_timeout_s"] * 1000))
                     except _PWError:
                         pass  # challenge / reader pages often never fully idle
+                    # The long human window applies only while a challenge is on
+                    # screen. Once none is showing, a short quiet period
+                    # (headless_wait_s) lets the PDF stream, then the wait ends.
+                    # Measured live 2026-11-05: waiting the full window after the
+                    # owner had already clicked cost three times 120 s.
                     budget_s = cfg["human_window_s"] if headed else cfg["headless_wait_s"]
+                    quiet_polls = max(1, int(cfg["headless_wait_s"] / cfg["poll_s"]))
+                    quiet = 0
                     for _ in range(max(1, int(budget_s / cfg["poll_s"]))):
                         if _drain():
                             return
+                        if headed and _challenge_showing(page, cfg):
+                            quiet = 0
+                        else:
+                            quiet += 1
+                            if quiet > quiet_polls:
+                                return
                         try:
                             page.wait_for_timeout(int(cfg["poll_s"] * 1000))
                         except _PWError:

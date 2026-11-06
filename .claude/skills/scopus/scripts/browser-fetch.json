@@ -67,6 +67,14 @@
     "value": 15,
     "provenance": "chosen 2026-11-05, PROVISIONAL and unmeasured (R10). Seconds before a call to a secret provider's command line tool is abandoned and reported as a timeout"
   },
+  "challenge_title_markers": {
+    "value": ["just a moment", "verify you are human", "attention required"],
+    "provenance": "chosen 2026-11-05, PROVISIONAL: lower-case fragments of the page title that Cloudflare's challenge and block pages carry (\"Just a moment...\" is the managed-challenge interstitial). While the title holds one of them, a headed run keeps waiting for the owner to clear the challenge, up to human_window_s. To be confirmed against the live ScienceDirect run"
+  },
+  "challenge_selectors": {
+    "value": ["iframe[src*='challenges.cloudflare.com']"],
+    "provenance": "chosen 2026-11-05, PROVISIONAL: CSS selectors present while a Cloudflare Turnstile widget is on the page (the widget is served from challenges.cloudflare.com). Same use as challenge_title_markers. To be confirmed against the live ScienceDirect run"
+  },
   "hosts": {
     "value": {},
     "provenance": "empty on purpose 2026-11-05. A publisher host gets an entry only after a live run has verified its institutional sign-in (plan 2 step 8, UQAC SSO on ScienceDirect), because an entry URL or selector written offline would be an invented value (R14). A host that is not listed keeps the flow without sign-in. Each entry: entry_url (https), login_hosts (bare host names, the only pages a password or one-time code may be typed into, checked before the secret is read: added after the security review of 2026-11-05 so a redirect chain cannot lead a secret to a look-alike page), username_env (name of the environment variable holding the user name, never the name itself), vault_item (item the secret provider looks up), steps (a list of {action, selector} with action one of fill_username, fill_password, fill_totp, click) and logged_in_selector (a CSS selector present only once signed in)"

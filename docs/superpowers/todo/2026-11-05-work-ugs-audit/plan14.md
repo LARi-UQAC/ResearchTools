@@ -9,8 +9,8 @@ bounds:
 
 # Plan 14 - Rule R39: code is generated locally only; local-coder becomes a launcher
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, in the session. Runs right
-> after plan 13. The last cloud-written code of this effort; from here every code task is local.
+> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, in the session. Runs after
+> plans 13 and 15. The last cloud-written code of this effort; from here every code task is local.
 
 **Goal:** A written, tested rule that the cloud never generates code, and a `local-coder` agent that
 only launches plan 13's driver, once for a whole `progress.md`. The driver submits to the coder model
@@ -56,8 +56,10 @@ changes from one dispatch per plan to one dispatch per `progress.md`. No model t
   rules loop-engineering applies to any code: (1) `loop_bounds.py init --from-plan <first plan>` once
   per effort, the budget being the `bounds` block of the plan header (`max_rounds`, `max_tokens`,
   `plateau`; owner 2026-11-05: 3, 1500000, 2); (2) each round, `code-review` and `security-review` at
-  effort high on the files the driver wrote; (3) each finding written as
-  `- [ ] audit: <file>:<line> <finding>` in its plan's section of `progress.md`; (4)
+  effort high on the files the driver wrote; (3) between `local_coder_driver.py --audit-begin --sandbox <dir>` and
+  `--audit-end --sandbox <dir>` (plan 15, as aider-setup's reviewer sandbox), each finding written ONLY
+  in the sandbox copies: first in `audit.md`, then as `- [ ] audit: <file>:<line> <finding>` in its
+  plan's section of `progress.md`; `--audit-end` restores any project file touched; (4)
   `loop_bounds.py tick --findings N`; (5) findings left and no bound reached: run the driver again;
   (6) stop at the first of: a bound reached, a round with no finding, the branch safe to merge (suite
   green, no Critical or High finding). A bound reached first is reported with what remains, and the
@@ -78,8 +80,9 @@ regenerated mirrors (`install.ps1`) and data files a plan lists as data (JSON, C
 - [ ] Step 1: failing test `test_cloud_never_codes_rule.py`: R39 present in `workflows.md` and in the
   exported region; `local-coder.md` names `local_coder_driver.py`, `PROGRESS:`, `--progress`, says the
   model is called once per plan with aider-setup's file set, names `loop_bounds.py init --from-plan`,
-  `tick --findings`, `code-review` and `security-review` as the wrapper's audit, carries no edit
-  instruction (no "Edit", "rewrite", "fix the code"), and its tools line has no Edit and no Write;
+  `tick --findings`, `code-review` and `security-review` as the wrapper's audit, names
+  `--audit-begin` and `--audit-end` and says findings are written only in the sandbox copies, carries no
+  instruction to edit code (no "rewrite", "fix the code", no edit of a source file);
   chapter 11 names the driver and R39; `code-style.md` index lists R39; a negative control plants an
   edit instruction in fictitious agent text and the finder reports it.
 - [ ] Step 2: run, FAIL. Step 3: edit the files. Step 4: run it plus `test_plan_contract_rule.py`,

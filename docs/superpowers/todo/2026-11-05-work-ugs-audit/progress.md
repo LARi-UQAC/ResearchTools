@@ -7,7 +7,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - Branch feat/work-ugs-audit, worktree .worktrees/work-ugs-audit, design committed ac8c1aa.
 - Bounds (owner 2026-11-05): max_rounds 3, max_tokens 1500000, plateau 2.
-- Order (owner 2026-11-05): plan1-3, then plan13, plan14, then plan4 to plan12. Full suite once, in plan12.
+- Order (owner 2026-11-05): plan1-3, then plan13, plan15, plan14, then plan4 to plan12. Full suite once, in plan12.
 - Owner 2026-11-05: outlier |z| > 2; 150 DPI; text ratio 0.7; 22nd criterion style_consistency, comment
   only; images capped at 1568 px long edge, PNG for line art, JPEG for photos.
 - find-skills 2026-11-05: no figure-evaluation equivalent; how-to-review-figure and figure-results-review
@@ -37,6 +37,10 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 - [x] T2 driver: 15 OK, 2c3d6d9; dry run on this ledger: plan4 prompt 12919 + reply 14336. Ruling withdrawn: ~/.config/aider holds every aider file (my listing was cut by head); the driver reads them there, like aider. Driver settings in local-coder-driver.json; RED was the import failure, not run separately. Fix: `.claude/...` targets lost their leading dot (Get-PlanTargets trims both sides, aider has the same defect, to log in IMPROVEMENTS at plan 12); 16 OK.
 - [x] T4 driver reruns a plan reopened by the audit (reopen stage + aider reopen message): 19 OK
 - [x] T3 coder role = ornith:9b-gpu, window 49152, adopted by the owner 2026-11-05 (measured: 33/33 layers on GPU, 5921 MiB, 28 tok/s).
+
+## plan15.md
+
+- [ ] T1 audit sandbox: --audit-begin / --audit-end, like aider-setup's reviewer
 
 ## plan14.md
 

@@ -30,8 +30,7 @@ from typing import Any, Callable
 SCRIPTS_DIR = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPTS_DIR.parent.parent
 DEFAULT_CONFIG = SCRIPTS_DIR.parent / "local-coder-driver.json"
-CONFIG_KEYS = ("code_extensions", "data_extensions", "installed_prefix", "repository_config",
-               "write_message", "fix_message", "reply_format", "test_timeout_s",
+CONFIG_KEYS = ("code_extensions", "data_extensions", "aider_config_dir", "write_message", "fix_message", "reply_format", "test_timeout_s",
                "request_timeout_s", "failure_lines")
 # Same separators as Get-PlanTargets in aider-plan-core.ps1, so both harnesses find the same files.
 _SEPARATORS = re.compile(r"[ \t\r\n,;:()\[\]{}\"'`<>|!?]+")
@@ -72,30 +71,22 @@ def load_config(path: Path = DEFAULT_CONFIG) -> dict:
     return config
 
 
-def _source(raw: str, config: dict, skills_dir: Path) -> Path:
+def _source(raw: str, home: Path) -> Path:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Turn a path of context-budget.json or skills.json into the file read.
-
-    Details:
-        '{{HOME}}/.config/aider/X' is read from the repository's own
-        aider-setup/config/X: the installed copies are made from it by
-        setup.ps1 and may be absent (ruling 2026-11-05, plan 13).
+        Turn a path of context-budget.json or skills.json into the file read:
+        the same installed file aider-plan.ps1 reads.
 
     Inputs:
-        raw (str): the path as written in the budget or skills file.
-        config (dict): from load_config.
-        skills_dir (Path): the .claude/skills folder.
+        raw (str): the path as written, with its {{HOME}} token.
+        home (Path): the home folder; injected so a test reads no real one (R21).
 
     Outputs:
         path (Path): the file to read.
     --------------------------------------------------------------------------
     """
-    prefix = config["installed_prefix"]
-    if raw.startswith(prefix):
-        return skills_dir / config["repository_config"] / raw[len(prefix):]
-    return Path(raw.replace("{{HOME}}", str(Path.home())))
+    return Path(raw.replace("{{HOME}}", str(home)))
 
 
 def plan_targets(plan: Path, root: Path, config: dict) -> list[Path]:
@@ -129,7 +120,8 @@ def plan_targets(plan: Path, root: Path, config: dict) -> list[Path]:
     base = Path(root).resolve()
     found: list[Path] = []
     for token in _SEPARATORS.split(text):
-        word = token.strip(".*#")
+        # Trailing dots only: `.claude/x.py` keeps its leading dot (Get-PlanTargets trims both sides).
+        word = token.strip("*#").rstrip(".")
         if Path(word).suffix.lower() not in extensions:
             continue
         resolved = (base / word).resolve()
@@ -160,7 +152,7 @@ def _test_files(plan: Path) -> list[str]:
     return found
 
 
-def _stage_files(skills: dict, stage: str, config: dict, skills_dir: Path) -> list[Path]:
+def _stage_files(skills: dict, stage: str, home: Path) -> list[Path]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -173,8 +165,7 @@ def _stage_files(skills: dict, stage: str, config: dict, skills_dir: Path) -> li
     Inputs:
         skills (dict): skills.json content.
         stage (str): 'write' or 'reopen'.
-        config (dict): from load_config.
-        skills_dir (Path): the .claude/skills folder.
+        home (Path): the home folder holding .config/aider.
 
     Outputs:
         files (list[Path]): the stage's files, in order.
@@ -187,7 +178,7 @@ def _stage_files(skills: dict, stage: str, config: dict, skills_dir: Path) -> li
     if not isinstance(entry, dict):
         raise DriverError(f"skills.json declares no stage '{stage}'")
     if "bundle" in entry:
-        folder = _source(entry["bundle"], config, skills_dir)
+        folder = _source(entry["bundle"], home)
         main = folder / "SKILL.md"
         files = [main]
         if main.is_file():
@@ -195,7 +186,7 @@ def _stage_files(skills: dict, stage: str, config: dict, skills_dir: Path) -> li
                 if name != "SKILL.md" and folder / name not in files:
                     files.append(folder / name)
         return files
-    return [_source(raw, config, skills_dir) for raw in entry.get("files", [])]
+    return [_source(raw, home) for raw in entry.get("files", [])]
 
 
 def _read_checked(path: Path, ceiling: int, label: str, counter: Callable[[str], int]) -> str:
@@ -227,7 +218,7 @@ def _read_checked(path: Path, ceiling: int, label: str, counter: Callable[[str],
 
 
 def file_set(plan: Path, root: Path, budget: dict, skills: dict, stage: str, config: dict,
-             skills_dir: Path, counter: Callable[[str], int]) -> list[tuple[str, Path]]:
+             home: Path, counter: Callable[[str], int]) -> list[tuple[str, Path]]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -241,7 +232,7 @@ def file_set(plan: Path, root: Path, budget: dict, skills: dict, stage: str, con
         skills (dict): skills.json content.
         stage (str): skill stage, 'write' or 'reopen'.
         config (dict): from load_config.
-        skills_dir (Path): the .claude/skills folder.
+        home (Path): the home folder holding .config/aider.
         counter (Callable): text -> tokens.
 
     Outputs:
@@ -256,12 +247,12 @@ def file_set(plan: Path, root: Path, budget: dict, skills: dict, stage: str, con
     effort = plan.parent
     entries: list[tuple[str, Path, int]] = []
     for raw in budget["always_on_files"]:
-        path = _source(raw, config, skills_dir)
+        path = _source(raw, home)
         entries.append((path.name, path, int(ceilings[path.name])))
     entries.append(("spec.md", effort / "spec.md", int(ceilings["spec.md"])))
     entries.append(("plan.md", plan, int(ceilings["plan.md"])))
     stage_ceiling = int(skills["stages"][stage]["ceiling"])
-    stage_paths = _stage_files(skills, stage, config, skills_dir)
+    stage_paths = _stage_files(skills, stage, home)
     stage_text = ""
     for path in stage_paths:
         stage_text += _read_checked(path, stage_ceiling, f"skill stage {stage}", counter)
@@ -415,7 +406,7 @@ def _tail(text: str, lines: int) -> str:
 
 
 def _run_plan(plan: Path, root: Path, deps: Any, budget: dict, skills: dict, config: dict,
-              skills_dir: Path, split: Callable) -> dict:
+              home: Path, split: Callable) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -426,7 +417,7 @@ def _run_plan(plan: Path, root: Path, deps: Any, budget: dict, skills: dict, con
         root (Path): the repository root.
         deps (Any): contract, tag, window, count, generate, runner (see run).
         budget, skills, config (dict): the three configuration files.
-        skills_dir (Path): the .claude/skills folder.
+        home (Path): the home folder holding .config/aider.
         split (Callable): the bridge's split_files.
 
     Outputs:
@@ -449,7 +440,7 @@ def _run_plan(plan: Path, root: Path, deps: Any, budget: dict, skills: dict, con
     for attempt in range(1, int(budget["tests"]["max_fix_attempts"]) + 1):
         stage = "write" if attempt == 1 else "reopen"
         try:
-            files = file_set(plan, root, budget, skills, stage, config, skills_dir, deps.count)
+            files = file_set(plan, root, budget, skills, stage, config, home, deps.count)
         except DriverError as exc:
             return {**result, "status": "refused", "note": str(exc)}
         message = config["write_message" if failure is None else "fix_message"].format(plan=plan.name)
@@ -476,7 +467,7 @@ def _run_plan(plan: Path, root: Path, deps: Any, budget: dict, skills: dict, con
 
 
 def run(progress: Path, root: Path, deps: Any, budget: dict, skills: dict, config: dict,
-        skills_dir: Path = SKILLS_DIR, split: Callable | None = None) -> dict:
+        home: Path | None = None, split: Callable | None = None) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -490,7 +481,8 @@ def run(progress: Path, root: Path, deps: Any, budget: dict, skills: dict, confi
             timeout) and runner(command, cwd, timeout); injected (R21).
         budget, skills, config (dict): context-budget.json, skills.json and
             local-coder-driver.json content.
-        skills_dir (Path): the .claude/skills folder.
+        home (Path | None): the home folder holding .config/aider; None is
+            the user's own.
         split (Callable | None): reply splitter; None uses the bridge's.
 
     Outputs:
@@ -501,10 +493,11 @@ def run(progress: Path, root: Path, deps: Any, budget: dict, skills: dict, confi
     if split is None:
         import ollama_bridge
         split = ollama_bridge.split_files
+    home = Path.home() if home is None else home
     report: dict = {"plans": []}
     for name in open_plans(progress):
         plan = progress.parent / name
-        result = _run_plan(plan, root, deps, budget, skills, config, skills_dir, split)
+        result = _run_plan(plan, root, deps, budget, skills, config, home, split)
         report["plans"].append(result)
         if result["status"] == "done":
             tick(progress, name, True, result["note"])
@@ -516,7 +509,7 @@ def run(progress: Path, root: Path, deps: Any, budget: dict, skills: dict, confi
 
 
 def dry_run(progress: Path, root: Path, budget: dict, skills: dict, config: dict,
-            skills_dir: Path, counter: Callable[[str], int]) -> dict:
+            home: Path, counter: Callable[[str], int]) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -524,7 +517,7 @@ def dry_run(progress: Path, root: Path, budget: dict, skills: dict, config: dict
 
     Inputs:
         progress (Path), root (Path), budget, skills, config (dict),
-        skills_dir (Path), counter (Callable): as for run.
+        home (Path), counter (Callable): as for run.
 
     Outputs:
         report (dict): plans with their files and prompt_tokens, or the
@@ -536,7 +529,7 @@ def dry_run(progress: Path, root: Path, budget: dict, skills: dict, config: dict
         plan = progress.parent / name
         entry: dict = {"plan": name}
         try:
-            files = file_set(plan, root, budget, skills, "write", config, skills_dir, counter)
+            files = file_set(plan, root, budget, skills, "write", config, home, counter)
             message = config["write_message"].format(plan=name)
             prompt = build_prompt(files, root, message, config, [], None)
             entry["files"] = [str(path) for _, path in files]
@@ -635,18 +628,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     sys.path.insert(0, str(SCRIPTS_DIR))
-    config_dir = SKILLS_DIR / "aider-setup" / "config"
     try:
         config = load_config()
+        config_dir = _source(config["aider_config_dir"], Path.home())
         budget = json.loads((config_dir / "context-budget.json").read_text(encoding="utf-8"))
         skills = json.loads((config_dir / "skills.json").read_text(encoding="utf-8"))
         if not args.progress.is_file():
             raise DriverError(f"no ledger at {args.progress}")
         deps = BridgeDeps(args.root)
         if args.dry_run:
-            report = dry_run(args.progress, args.root, budget, skills, config, SKILLS_DIR, deps.count)
+            report = dry_run(args.progress, args.root, budget, skills, config, Path.home(), deps.count)
         else:
-            report = run(args.progress, args.root, deps, budget, skills, config, SKILLS_DIR)
+            report = run(args.progress, args.root, deps, budget, skills, config, Path.home())
     except (DriverError, OSError, ValueError, KeyError) as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 2

@@ -33,7 +33,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 ## plan13.md
 
 - [x] T1 bridge split_files + exact_only: 62 OK, 596e23c
-- [x] T2 driver: 15 OK, 2c3d6d9; dry run on this ledger: plan4 prompt 12919 + reply 14336. Rulings: ~/.config/aider read from aider-setup/config (absent there); driver settings in local-coder-driver.json; RED was the import failure, not run separately.
+- [x] T2 driver: 15 OK, 2c3d6d9; dry run on this ledger: plan4 prompt 12919 + reply 14336. Ruling withdrawn: ~/.config/aider holds every aider file (my listing was cut by head); the driver reads them there, like aider. Driver settings in local-coder-driver.json; RED was the import failure, not run separately. Fix: `.claude/...` targets lost their leading dot (Get-PlanTargets trims both sides, aider has the same defect, to log in IMPROVEMENTS at plan 12); 16 OK.
 - [!] T3 owner: adopt. Measured 2026-11-05 (aider-thread-probe --mode context, ornith:9b-aider, 14 threads, 2 repeats): n_ctx 49152 = 33/33 layers on GPU, 5921 MiB VRAM, 28.0-28.3 tok/s; n_ctx 16384 = 5385 MiB, 24.6-25.3 tok/s. Owner command: model_resolver.py --adopt-role coder ornith:9b-aider --num-ctx 49152 --force --reason "<this measurement>".
 
 ## plan14.md

@@ -98,8 +98,8 @@ class World:
     def __init__(self, plans=1):
         self.tmp = tempfile.TemporaryDirectory()
         base = Path(self.tmp.name)
-        self.skills_dir = base / "skills"
-        config = self.skills_dir / "aider-setup" / "config"
+        self.home = base / "home"
+        config = self.home / ".config" / "aider"
         (config / "skills" / "tdd").mkdir(parents=True)
         (config / "conventions.md").write_text("CONVENTIONS-MARKER\n", encoding="utf-8")
         (config / "rules.md").write_text("RULES-MARKER\n", encoding="utf-8")
@@ -118,7 +118,7 @@ class World:
         self.progress.write_text("\n".join(ledger), encoding="utf-8")
 
     def run(self, deps):
-        return lcd.run(self.progress, self.root, deps, BUDGET, SKILLS, CONFIG, self.skills_dir)
+        return lcd.run(self.progress, self.root, deps, BUDGET, SKILLS, CONFIG, self.home)
 
     def close(self):
         self.tmp.cleanup()
@@ -136,7 +136,7 @@ class FileSetTests(unittest.TestCase):
         (w.root / "pkg").mkdir()
         (w.root / "pkg" / "mod1.py").write_text("OLD = 0\n", encoding="utf-8")
         files = lcd.file_set(w.effort / "plan1.md", w.root, BUDGET, SKILLS, "write", CONFIG,
-                             w.skills_dir, lambda t: len(t) // 4)
+                             w.home, lambda t: len(t) // 4)
         names = [Path(path).name for _, path in files]
         self.assertEqual(names, ["conventions.md", "rules.md", "spec.md", "plan1.md", "SKILL.md",
                                  "helper.md", "progress.md", "mod1.py"])
@@ -154,10 +154,10 @@ class FileSetTests(unittest.TestCase):
 
     def test_a_missing_always_on_file_is_refused_by_name(self):
         w = self.world
-        (w.skills_dir / "aider-setup" / "config" / "rules.md").unlink()
+        (w.home / ".config" / "aider" / "rules.md").unlink()
         with self.assertRaises(lcd.DriverError) as ctx:
             lcd.file_set(w.effort / "plan1.md", w.root, BUDGET, SKILLS, "write", CONFIG,
-                         w.skills_dir, lambda t: 1)
+                         w.home, lambda t: 1)
         self.assertIn("rules.md", str(ctx.exception))
 
     def test_a_file_over_its_ceiling_is_refused(self):
@@ -165,7 +165,7 @@ class FileSetTests(unittest.TestCase):
         (w.effort / "spec.md").write_text("word " * 3000, encoding="utf-8")
         with self.assertRaises(lcd.DriverError) as ctx:
             lcd.file_set(w.effort / "plan1.md", w.root, BUDGET, SKILLS, "write", CONFIG,
-                         w.skills_dir, lambda t: len(t) // 4)
+                         w.home, lambda t: len(t) // 4)
         self.assertIn("spec.md", str(ctx.exception))
 
     def test_targets_skip_the_front_matter_and_stay_inside_the_root(self):
@@ -175,6 +175,18 @@ class FileSetTests(unittest.TestCase):
                         "- Modify: `../../evil.py` and data `c.json`\n", encoding="utf-8")
         targets = [p.relative_to(w.root).as_posix() for p in lcd.plan_targets(plan, w.root, CONFIG)]
         self.assertEqual(targets, ["a/b.py", "c.json"])
+
+
+    def test_a_target_under_a_dot_folder_keeps_its_leading_dot(self):
+        """Get-PlanTargets trims dots on both sides, so `.claude/x.py` became `claude/x.py`
+        (found 2026-11-05 on plan 4); the driver trims trailing dots only."""
+        w = self.world
+        (w.root / ".claude").mkdir()
+        (w.root / ".claude" / "x.py").write_text("X = 1\n", encoding="utf-8")
+        plan = w.effort / "plan8.md"
+        plan.write_text("- Test: `.claude/x.py`. Then `y.py`.\n", encoding="utf-8")
+        targets = [p.relative_to(w.root).as_posix() for p in lcd.plan_targets(plan, w.root, CONFIG)]
+        self.assertEqual(targets, [".claude/x.py", "y.py"])
 
 
 class RunTests(unittest.TestCase):
@@ -245,7 +257,7 @@ class CliTests(unittest.TestCase):
         try:
             before = world.progress.read_text(encoding="utf-8")
             report = lcd.dry_run(world.progress, world.root, BUDGET, SKILLS, CONFIG,
-                                 world.skills_dir, lambda t: len(t) // 4)
+                                 world.home, lambda t: len(t) // 4)
             self.assertEqual(world.progress.read_text(encoding="utf-8"), before)
             self.assertGreater(report["plans"][0]["prompt_tokens"], 0)
             self.assertFalse((world.root / "pkg").exists())

@@ -53,7 +53,9 @@ Detect the mode from the invocation:
   with the log line "Scopus.AI : skipped (unattended)". Produce the DRAFT `_up_` file + the
   CHANGELOG + a **REVIEW REQUIRED** summary; do NOT auto-include non-approved publishers and
   do NOT rewrite hypotheses — those are deferred to the human finalize pass. State the mode in
-  the output header.
+  the output header. Pass `--no-browser` to every `download_pdf.py` call: the browser rung is
+  on by default and opens a visible window that waits for a person to click a challenge, which
+  nobody is there to do. A paper that needs it stays in `refs/_failed.md` for the finalize pass.
 
 ## Reused scripts and skills (do not reimplement)
 
@@ -130,6 +132,10 @@ python SK/download_pdf.py bib delta.bib --out-dir "<review-dir>/refs"
 ```
 Only the new papers are fetched (Tier 0 presence check skips anything already in `refs/`).
 Updates `refs/_manifest.json` and `refs/_failed.md`.
+Stay inside the retrieval chain: `download_pdf.py` already runs every rung in order, including a
+real browser with the owner's institutional sign-in, so never fetch a paper's PDF through the
+Playwright MCP or any other browser tool. When a paper stays in `refs/_failed.md`, report the
+per-rung reasons listed in `refs/_failed.md` and stop there.
 
 ### Step 5 — Mine contributions, future works, and statistics (delta corpus)
 Read `.claude/skills/extract-futureworks/SKILL.md` and run it in **mine** mode on `delta.bib`,

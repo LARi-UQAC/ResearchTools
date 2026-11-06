@@ -36,6 +36,8 @@ Set these at the Windows **User** scope (PowerShell), then restart Claude Code:
 | `SCOPUS_API_KEY` | **Required** — all `/scopus`, `/auditreview`, `/auditpaper`, `/auditthesis`, `/litreview`, `/litupdate`, `/bibclean`, `/replyreviewer`, and PDF retrieval | [Elsevier Developer Portal](https://dev.elsevier.com/) |
 | `.scopus_key` file | Fallback for `SCOPUS_API_KEY` — place the key in `.claude/skills/scopus/.scopus_key` (gitignored) | same key as above |
 | `UNPAYWALL_EMAIL` | *Optional* — enables the Unpaywall open-access tier in `download_pdf.py` (HTML/PDF fallback when no publisher PDF); a plain contact email, or pass `--email` | any institutional email |
+| `ELSEVIER_INSTTOKEN` | *Optional* — the Elsevier institutional token sent with every Elsevier full-text and metadata call when `--insttoken` is absent (the flag wins). Without it, a closed-access paper returns a one-page preview from this key even on the UQAC VPN (measured 2026-11-05), so the chain falls through to the browser rung. The token itself is issued to the institution by Elsevier | UQAC library, who request it from Elsevier |
+| `BW_SESSION`, `KEEPASSXC_DATABASE`, `KEEPASSXC_PASSWORD` *(or `KEEPASSXC_KEYFILE`)* | *Optional* — only for the browser rung's institutional sign-in, and only for the chosen `secret_provider` in `browser-fetch.json`: the Bitwarden session key printed by `bw unlock`, or the KeePassXC database path and its master password. The host's user name is read from the variable its `username_env` entry names. None of them is ever logged | `bw unlock`, your own KeePassXC database |
 | `GEMINI_API_KEY` | *Optional* — the Gemini leg of the deliberation panel (cross-review, table enrichment). The model is resolved at run time from Google's own catalogue (`--gemini-model auto`), so no model name is set here | [Google AI Studio](https://aistudio.google.com/apikey) |
 | `COPILOT_TOKEN` or `GH_OAUTH_TOKEN` | *Optional* — the GitHub Copilot leg of the deliberation panel. `GH_OAUTH_TOKEN` is exchanged automatically for a Copilot token. Without either, the panel uses a local Ollama model declared for the `session` role as the second voice, and without that too the leg is skipped without stopping the pipeline | your GitHub account with Copilot |
 | `GITHUB_TOKEN` | *Legacy* — Copilot refuses a personal access token and GitHub Models was retired on 2026-07-30, so this variable no longer gives a cross-review leg. It is still the last attempt of the provider chain | GitHub → Settings → Developer settings |
@@ -111,6 +113,7 @@ all three environments after the install.
 | ☑ | `folium` | folium | 0.20.0 | geolocalisation `==0.20.0` | geolocalisation | yes |  |
 | ☑ | `google-genai` | google | 2.8.0 | scopus `==2.8.0` | scopus | yes | imported as google.genai |
 | ☑ | `Jinja2` | jinja2 | 3.1.6 | paper2talk `==3.1.6` | paper2talk | yes |  |
+| ☑ | `keyring` | keyring | 25.7.0 | scopus `==25.7.0` | scopus | yes |  |
 | ☑ | `lxml` | lxml | 6.1.3 | word2latex `==6.1.3` | word2latex |  |  |
 | ☑ | `markitdown` | markitdown | 0.1.6 | extract-statistic `[pdf]==0.1.6` | extract-statistic | yes | MIT licence |
 | ☑ | `MarkupSafe` | markupsafe | 3.0.3 | paper2talk `==3.0.3` | paper2talk | yes | a dependency of Jinja2, imported directly by talk_model.py |
@@ -125,7 +128,6 @@ all three environments after the install.
 | ☑ | `pillow` | PIL | 13.0.0 | extract-statistic `==13.0.0`; geolocalisation `==13.0.0`; word2latex `==13.0.0` | word2latex | yes | also pinned where it is only transitive, to keep the fixed version |
 | ☑ | `pip-audit` | (none) | 2.10.1 | data file tools `==2.10.1` | - |  | run as a module (python -m pip_audit), never imported |
 | ☑ | `playwright` | playwright | 1.61.0 | scopus `==1.61.0` | scopus | yes | the Chromium binary is a separate playwright install chromium |
-| ☑ | `playwright-stealth` | playwright_stealth | 2.0.3 | scopus `==2.0.3` | scopus | yes |  |
 | ☑ | `psycopg` | psycopg | 3.3.6 | extract-statistic `[binary]==3.3.6`; rt-observe `[binary]==3.3.6` | extract-statistic, rt-observe | yes |  |
 | ☑ | `pyHanko` | pyhanko | 0.37.0 | form-service `==0.37.0` | form-service |  | MIT licence |
 | ☑ | `PyMuPDF` | fitz, pymupdf | 1.27.2.3 | paper2talk `==1.27.2.3`; extract-statistic `==1.27.2.3`; word2latex `==1.27.2.3` | extract-statistic, geolocalisation, paper2talk, scopus, word2latex | yes | AGPL-3.0 licence; scopus uses it when present without declaring it |

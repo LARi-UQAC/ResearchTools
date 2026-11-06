@@ -1,0 +1,79 @@
+flowchart TD
+    S["Reference with a DOI?"] --> A{"DOI empty?"}
+    A -- yes --> Z0["Status no-doi: stop"]
+    A -- no --> P0{"File already in refs/?"}
+    P0 -- yes --> SK["Status present: stop"]
+    P0 -- no --> P1{"SCOPUS_API_KEY set?"}
+
+    P1 -- no --> P2
+    P1 -- yes --> D1["Download 1: Elsevier Full-Text API<br/>with the key and the institutional token if set"]
+    D1 --> Q1{"PDF written?"}
+    Q1 -- no --> P2
+    Q1 -- yes --> V1{"One-page preview?"}
+    V1 -- yes --> X1["Delete the file"]
+    X1 --> P2
+    V1 -- no --> OK["File saved: stop"]
+
+    P2{"Semantic Scholar knows an open-access PDF URL?"}
+    P2 -- no --> D3
+    P2 -- yes --> D2["Download 2: Semantic Scholar open-access PDF"]
+    D2 --> Q2{"PDF written?"}
+    Q2 -- no --> D3
+    Q2 -- yes --> OK
+
+    D3["Download 3: publisher PDF built from the DOI landing page"]
+    D3 --> Q3{"PDF written?"}
+    Q3 -- no --> P4
+    Q3 -- yes --> V3{"One-page preview?"}
+    V3 -- yes --> X3["Delete the file"]
+    X3 --> P4
+    V3 -- no --> OK
+
+    P4{"UNPAYWALL_EMAIL set?"}
+    P4 -- no --> L
+    P4 -- yes --> D4["Download 4: Unpaywall<br/>PDF, else landing page HTML if HTML is allowed"]
+    D4 --> Q4{"PDF or HTML written?"}
+    Q4 -- no --> L
+    Q4 -- yes --> OK
+
+    L["Read the arXiv and PubMed Central ids from Semantic Scholar"] --> P5{"arXiv id known?"}
+    P5 -- no --> P6
+    P5 -- yes --> D5["Download 5: arXiv<br/>PDF, else arXiv HTML, else ar5iv HTML"]
+    D5 --> Q5{"PDF or HTML written?"}
+    Q5 -- no --> P6
+    Q5 -- yes --> OK
+
+    P6{"HTML allowed and PMCID known?"}
+    P6 -- no --> P7
+    P6 -- yes --> D6["Download 6: PubMed Central article HTML"]
+    D6 --> Q6{"HTML written?"}
+    Q6 -- no --> P7
+    Q6 -- yes --> OK
+
+    P7{"HTML allowed?"}
+    P7 -- no --> P8
+    P7 -- yes --> D7["Download 7: DOI landing page saved as HTML<br/>only if it passes the article check"]
+    D7 --> Q7{"HTML written?"}
+    Q7 -- no --> P8
+    Q7 -- yes --> OK
+
+    P8{"Browser rung enabled and playwright installed?"}
+    P8 -- no --> M1
+    P8 -- yes --> D8["Download 8: Chrome driven by Playwright<br/>a person clicks any challenge, sign-in if the host is configured"]
+    D8 --> R8{"Named error raised?"}
+    R8 -- yes --> M1
+    R8 -- no --> Q8{"PDF captured?"}
+    Q8 -- no --> M1
+    Q8 -- yes --> V8{"One-page preview?"}
+    V8 -- yes --> X8["Delete the file"]
+    X8 --> M1
+    V8 -- no --> OK
+
+    M1{"Publisher said the requestor is not entitled?"}
+    M1 -- yes --> M2["Reason: request it by interlibrary loan or save it by hand"]
+    M1 -- no --> M3{"A preview was seen?"}
+    M3 -- yes --> M4["Reason: probably not entitled, interlibrary loan or by hand"]
+    M3 -- no --> M5["Reason: no download gave the full text, save it by hand"]
+    M2 --> END["Status failed: list the paper in refs/_failed.md"]
+    M4 --> END
+    M5 --> END

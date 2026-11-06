@@ -1,0 +1,103 @@
+{
+  "nav_timeout_s": {
+    "value": 60,
+    "provenance": "carried over unchanged from the NAV_TIMEOUT_S constant of browser_fetch.py (author's choice, never measured). Per-navigation Playwright timeout in seconds"
+  },
+  "idle_timeout_s": {
+    "value": 20,
+    "provenance": "carried over unchanged from the IDLE_TIMEOUT_S constant of browser_fetch.py (author's choice, never measured). Extra wait in seconds for a JS challenge or a reader page to reach network idle; such pages often never do, so the wait is bounded"
+  },
+  "human_window_s": {
+    "value": 120,
+    "provenance": "chosen 2026-11-05, PROVISIONAL and unmeasured. Replaces the 45 s ASSIST_WAIT_S of browser_fetch.py. Window in seconds, headed mode only, for the owner to approve an MFA prompt and click the Cloudflare Turnstile checkbox that real Chrome 157 shows on ScienceDirect (measured 2026-11-05). Polling stops the instant a PDF is captured. To be revised from the first live run (plan 2 step 8) once the UQAC sign-in is known to ask for a push or a TOTP code"
+  },
+  "headless_wait_s": {
+    "value": 3,
+    "provenance": "carried over unchanged from the literal 3 in browser_fetch.py (author's choice, never measured). Polling budget in seconds when the browser is headless, where no human can intervene"
+  },
+  "poll_s": {
+    "value": 1.5,
+    "provenance": "carried over unchanged from the POLL_S constant of browser_fetch.py (author's choice, never measured). Seconds between two checks for a captured PDF"
+  },
+  "popup_wait_s": {
+    "value": 8,
+    "provenance": "carried over unchanged from the literal 8000 ms in browser_fetch.py (author's choice, never measured). Seconds to wait for a viewer popup after clicking a PDF control"
+  },
+  "viewer_settle_s": {
+    "value": 2.5,
+    "provenance": "carried over unchanged from the literal 2500 ms in browser_fetch.py (author's choice, never measured). Seconds a PDF viewer is given to stream its file after it opens"
+  },
+  "download_wait_s": {
+    "value": 15,
+    "provenance": "carried over unchanged from the literal 15000 ms in browser_fetch.py (author's choice, never measured). Seconds to wait for a download after clicking a Download control"
+  },
+  "download_retry_pause_s": {
+    "value": 1.5,
+    "provenance": "carried over unchanged from the literal 1500 ms in browser_fetch.py (author's choice, never measured). Pause in seconds after a download click that streamed the PDF as a response instead"
+  },
+  "step_timeout_s": {
+    "value": 15,
+    "provenance": "chosen 2026-11-05, PROVISIONAL and unmeasured. Seconds Playwright waits for a login form field or button to appear before a sign-in step is reported as failed. To be revised from the first live run"
+  },
+  "max_pdf_bytes": {
+    "value": 104857600,
+    "provenance": "carried over unchanged from the MAX_PDF_BYTES constant of browser_fetch.py: 100 MiB, matching MAX_PDF_BYTES of download_pdf.py (author's choice, never measured)"
+  },
+  "channel": {
+    "value": "chrome",
+    "provenance": "chosen by the owner 2026-11-05. The installed Google Chrome gets an interactive Turnstile checkbox on ScienceDirect that a human can click (measured 2026-11-05, Chrome 157), while the bundled Chromium never clears the interstitial (measured 2026-09-17). null selects the bundled Chromium. When Chrome is not installed the module falls back to the bundled Chromium and logs that it did"
+  },
+  "profile_dir": {
+    "value": "~/.claude/scopus-browser-profile",
+    "provenance": "carried over unchanged from the BROWSER_PROFILE_DIR constant of browser_fetch.py. Persistent browser profile, expanded with the user's home directory. It holds session cookies for the owner's institutional access, so it must stay outside any repository"
+  },
+  "user_agent": {
+    "value": null,
+    "provenance": "chosen 2026-11-05. The former BROWSER_UA forced Chrome/124 and would contradict the real Chrome 157 the channel now launches, whose client hints state the true version. null leaves the browser's own user agent untouched. A string sets it for the bundled Chromium"
+  },
+  "secret_provider": {
+    "value": "keyring",
+    "provenance": "owner ruling 2026-11-05: pluggable secret provider, keyring (the operating system store) by default, bitwarden for the owner's own use, keepassxc as the third. Password only, never a TOTP secret unless allow_totp_from_vault is true"
+  },
+  "allow_totp_from_vault": {
+    "value": false,
+    "provenance": "owner ruling 2026-11-05: the password only is read from a vault by default and the human approves MFA. true lets a host step read a one-time code from the same vault, which puts both factors in one place, so a warning is logged each time it is used"
+  },
+  "provider_timeout_s": {
+    "value": 15,
+    "provenance": "chosen 2026-11-05, PROVISIONAL and unmeasured (R10). Seconds before a call to a secret provider's command line tool is abandoned and reported as a timeout"
+  },
+  "challenge_title_markers": {
+    "value": [
+      "just a moment",
+      "verify you are human"
+    ],
+    "provenance": "chosen 2026-11-05, PROVISIONAL: lower-case fragments of the page title that a Cloudflare challenge carries (\"Just a moment...\" is the managed-challenge interstitial). While the title holds one of them, a headed run keeps waiting for the owner to clear the challenge, up to human_window_s. \"attention required\" was removed 2026-11-06 (code review round 1): that title is Cloudflare's hard block page, which a person cannot clear, so waiting on it only cost the whole window. Still to be confirmed against more live runs"
+  },
+  "challenge_selectors": {
+    "value": [
+      "iframe[src*='challenges.cloudflare.com']"
+    ],
+    "provenance": "chosen 2026-11-05, PROVISIONAL: CSS selectors present while a Cloudflare Turnstile widget is on the page (the widget is served from challenges.cloudflare.com). Same use as challenge_title_markers. To be confirmed against the live ScienceDirect run"
+  },
+  "stream_chunk_bytes": {
+    "value": 16384,
+    "provenance": "chosen 2026-11-05 by the author, unmeasured. Bytes read per step while a PDF is streamed through curl_cffi, so the size cap can stop the read part-way. Moved here from a code constant in code review round 1 (2026-11-06)"
+  },
+  "title_chars": {
+    "value": 80,
+    "provenance": "chosen 2026-11-05 by the author, unmeasured. Characters of the last page title kept in the failure record. A title can carry a token, so the cut also limits what is written to the manifest. Moved here from a code literal in code review round 1 (2026-11-06)"
+  },
+  "curl_impersonate": {
+    "value": "chrome",
+    "provenance": "chosen 2026-11-05 by the owner (hybrid option of Issue #11). curl_cffi's name for its newest Chrome TLS and HTTP/2 profile, used when the PDF is downloaded with the browser's cookies and user agent after the owner cleared the challenge. curl_cffi may carry a profile older than the installed Chrome (157 here), so the fingerprint can differ from the browser's even with the same user agent: whether Cloudflare accepts the clearance cookie with it is to be MEASURED in the live run, and the rung falls back to navigating the PDF link in the browser when it does not"
+  },
+  "max_redirects": {
+    "value": 5,
+    "provenance": "carried over unchanged from MAX_REDIRECTS of download_pdf.py (author's choice, never measured). Redirect hops followed by hand, https only, when the PDF is downloaded with curl_cffi; the browser's cookies are re-scoped on every hop"
+  },
+  "hosts": {
+    "value": {},
+    "provenance": "empty on purpose 2026-11-05. A publisher host gets an entry only after a live run has verified its institutional sign-in (plan 2 step 8, UQAC SSO on ScienceDirect), because an entry URL or selector written offline would be an invented value (R14). A host that is not listed keeps the flow without sign-in. Each entry: entry_url (https), login_hosts (bare host names, the only pages a password or one-time code may be typed into, checked before the secret is read: added after the security review of 2026-11-05 so a redirect chain cannot lead a secret to a look-alike page), username_env (name of the environment variable holding the user name, never the name itself), vault_item (item the secret provider looks up), steps (a list of {action, selector} with action one of fill_username, fill_password, fill_totp, click) and logged_in_selector (a CSS selector present only once signed in)"
+  }
+}

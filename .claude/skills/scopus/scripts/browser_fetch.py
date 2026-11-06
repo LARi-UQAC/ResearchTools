@@ -76,7 +76,7 @@ except ImportError:  # pragma: no cover - optional dependency
     _cffi_requests = None
     _CFFI_OK = False
 
-# No stealth or anti-detect LIBRARY (owner ruling 2026-11-05). ScienceDirect shows
+# No stealth or anti-detect LIBRARY (chosen 2026-11-05, open to change: Issue #11). ScienceDirect shows
 # real Chrome 157 an interactive Cloudflare Turnstile checkbox (measured
 # 2026-11-05) and answers the bundled Chromium with an interstitial that never
 # clears (measured 2026-09-17). The answer is the installed Chrome and a human

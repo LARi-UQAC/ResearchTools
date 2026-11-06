@@ -447,9 +447,9 @@ class TestBrowserFetch(unittest.TestCase):
                          f"profile {prof} sits inside the repository {repo}")
 
     def test_no_anti_detect_library_is_imported(self):
-        # Owner ruling 2026-11-05: no stealth / anti-detect library. A human
-        # clicks the challenge in a real Chrome window; nothing hides the
-        # automation. The module used to import playwright_stealth when present.
+        # Chosen 2026-11-05 and open to change (Issue #11): no stealth / anti-detect
+        # library is imported. A human clicks the challenge in a real Chrome window.
+        # The module used to import playwright_stealth when present.
         src = Path(browser_fetch.__file__).read_text(encoding="utf-8")
         self.assertNotIn("import playwright_stealth", src)
         self.assertNotIn("from playwright_stealth", src)

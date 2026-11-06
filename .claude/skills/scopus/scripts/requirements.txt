@@ -9,7 +9,7 @@
 #   installed Google Chrome (browser-fetch.json "channel"), falling back to the bundled
 #   Chromium (`playwright install chromium`), and is recorded as skipped when playwright
 #   is absent. It runs by default; --no-browser turns it off. No stealth library is used
-#   (owner ruling 2026-11-05). pip-audit the pin before adding it below.
+#   (chosen 2026-11-05, open to change: Issue #11). pip-audit the pin before adding it below.
 # gemini_reviewer.py                       : google-genai   (latest PRO, auto-resolved)
 # github_reviewer.py                       : openai          (GPT-4o via GitHub Models)
 # deliberate.py (.claude/skills/deliberation/scripts) imports the two reviewers,

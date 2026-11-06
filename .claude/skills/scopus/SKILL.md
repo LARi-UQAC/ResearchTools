@@ -392,9 +392,10 @@ Behaviour:
 - **Rung 8, the browser** runs by default (`--no-browser` skips it, `--browser` is kept as
   a no-op). It launches the installed Google Chrome (falls back to the bundled Chromium
   with a logged warning), keeps a persistent profile outside the repository, and shares one
-  browser across the papers of a run. No stealth or anti-detect library and no automated
-  CAPTCHA solving: a person clicks a Cloudflare Turnstile checkbox and approves the MFA
-  prompt inside `human_window_s`. Playwright absent or no browser installed is recorded as
+  browser across the papers of a run. The tool uses no stealth or anti-detect library and
+  does not solve the checkbox: a person clicks a Cloudflare Turnstile checkbox and approves
+  the MFA prompt inside `human_window_s`. Whether to automate that click is an open
+  question in Issue #11. Playwright absent or no browser installed is recorded as
   `skipped` with the remedy.
 - **Institutional sign-in** (rung 8, per publisher host). Every timeout, limit and host
   setting is in `scripts/browser-fetch.json` with its provenance. A host listed under

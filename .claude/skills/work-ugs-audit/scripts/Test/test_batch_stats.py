@@ -97,17 +97,25 @@ class TestBatchStats(unittest.TestCase):
         self.assertEqual(result["verdict"], "insufficient")
 
     def test_outlier_uses_the_given_z(self):
-        # Mean 88. SD 4.
-        # R01: 88. z=0
-        # R02: 100. z=3
-        # R03: 76. z=-3
+        # Construct a batch where an outlier is mathematically possible (N >= 6 for Z > 2)
+        # 5 reports at 88, 1 report at 100.
+        # Mean = (5*88 + 100) / 6 = 540 / 6 = 90.
+        # Deviations: 88 -> -2 (5 times), 100 -> 10 (1 time).
+        # Squared Deviations: 4 (5 times), 100 (1 time). Sum = 20 + 100 = 120.
+        # Variance (n-1): 120 / 5 = 24.
+        # SD: sqrt(24) ≈ 4.9.
+        # Z for 100: 10 / 4.9 ≈ 2.04. (Exceeds 2.0)
+        # Z for 88: -2 / 4.9 ≈ -0.4. (Does not exceed 2.0)
         totals = [
             {"report_id": "R01", "percent": 88.0, "complete": True},
-            {"report_id": "R02", "percent": 100.0, "complete": True},
-            {"report_id": "R03", "percent": 76.0, "complete": True}
+            {"report_id": "R02", "percent": 88.0, "complete": True},
+            {"report_id": "R03", "percent": 88.0, "complete": True},
+            {"report_id": "R04", "percent": 88.0, "complete": True},
+            {"report_id": "R05", "percent": 88.0, "complete": True},
+            {"report_id": "R06", "percent": 100.0, "complete": True}
         ]
         result = batch_stats.analyze(totals, self.targets, self.outlier_z)
-        self.assertEqual(result["outliers"], ["R02", "R03"])
+        self.assertEqual(result["outliers"], ["R06"])
 
     def test_loop_counter_refuses_a_third_loop_without_the_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:

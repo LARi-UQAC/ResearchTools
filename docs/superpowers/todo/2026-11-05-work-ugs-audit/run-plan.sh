@@ -15,10 +15,10 @@ S="$W/.claude/skills/aider-setup"
 PYI="$MAIN/.venv-skills/Scripts/python.exe"
 LIVE="$HOME/.claude/aider-live"
 HOME_CFG="$LIVE/home"                                   # configuration rendered from the repository
-P="$LIVE/work/u$ID"
+P="$LIVE/work/u$ID${SUFFIX:-}"
 PL="$P/docs/superpowers/plans"
 PLAN="$HERE/plan$ID.md"
-LOG="$LIVE/u${ID}_run.log"
+LOG="$LIVE/u${ID}${SUFFIX:-}_run.log"
 
 # Paths named by the plan: Files block (create or modify) and Reads block (inputs).
 plan_paths_raw() {  # $1 = files | reads | test
@@ -45,7 +45,7 @@ case "$MODE" in
 mount)
   [ -e "$P" ] && { echo "REFUSED: $P exists"; exit 1; }
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/new-project.ps1")" \
-    -Name "u$ID" -Root "$(cygpath -w "$LIVE/work")" -Python "$(cygpath -w "$PYI")" >/dev/null 2>&1
+    -Name "u$ID${SUFFIX:-}" -Root "$(cygpath -w "$LIVE/work")" -Python "$(cygpath -w "$PYI")" >/dev/null 2>&1
   cp "$HERE/spec.md" "$PL/spec.md"
   cp "$PLAN" "$PL/plan1.md"
   { printf '# Progress\n\n**Goal.** The ledger of plan %s.\n\n**Contents.** Task lines only.\n\n## plan1.md\n' "$ID"
@@ -55,6 +55,17 @@ mount)
   # Inputs that already exist, with their repository-relative paths.
   { plan_paths reads; plan_paths files; } | while read -r f; do
     if [ -n "$f" ] && [ -f "$W/$f" ]; then mkdir -p "$P/$(dirname "$f")"; cp "$W/$f" "$P/$f"; fi
+  done
+  # Sibling modules imported by the copied files, with their tests: without them the writer invents its own.
+  for _pass in 1 2; do
+    find "$P" -name '*.py' -not -path '*/.venv/*' | while read -r src; do
+      dir="$(dirname "$src")"; rel="${dir#$P/}"
+      grep -h -E '^(from|import) [a-z_][a-z0-9_]*' "$src" | sed -E 's/^(from|import) ([a-z_][a-z0-9_]*).*/\2/' | sort -u | while read -r mod; do
+        for cand in "$rel/$mod.py" "$rel/Test/test_$mod.py"; do
+          if [ -f "$W/$cand" ] && [ ! -f "$P/$cand" ]; then mkdir -p "$P/$(dirname "$cand")"; cp "$W/$cand" "$P/$cand"; echo "copied imported sibling $cand"; fi
+        done
+      done
+    done
   done
   # PyMuPDF for the plans that use it, from the pinned and audited file of the repository.
   if grep -q -i -E "fitz|PyMuPDF" "$PLAN"; then

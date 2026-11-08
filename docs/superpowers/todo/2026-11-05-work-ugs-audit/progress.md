@@ -48,7 +48,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan4c.md
 
-- [ ] T1 SSRF guard in ref_check (automated security review of e1defb3: the checker fetches addresses taken from a student report); run right after 5a, before plans that read ref_check
+- [x] T1 SSRF guard in ref_check: kit run u4cc, 18 tests ok, the nine plan tests present, guard refuses loopback, private, link-local, reserved, multicast and unspecified hosts at every hop; residuals after 3 audit rounds: reasoning comments left in is_public_host (rule R103), a catch-all in default_fetch (R8), reviewer wrote no report in round 3
 
 ## plan5a.md
 

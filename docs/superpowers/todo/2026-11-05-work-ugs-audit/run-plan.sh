@@ -56,6 +56,7 @@ mount)
   done
   # PyMuPDF for the plans that use it, from the pinned and audited file of the repository.
   if grep -q -i -E "fitz|PyMuPDF" "$PLAN"; then
+    "$P/.venv/Scripts/python.exe" -m ensurepip >/dev/null 2>&1 || true   # the kit's venv has no pip
     "$P/.venv/Scripts/python.exe" -m pip install -q -r "$W/.claude/skills/figure-review/scripts/requirements.txt" >/dev/null 2>&1 \
       && echo "PyMuPDF installed in the project environment" || echo "WARNING: PyMuPDF install failed"
   fi

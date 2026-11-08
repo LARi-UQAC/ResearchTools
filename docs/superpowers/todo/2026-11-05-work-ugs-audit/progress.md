@@ -46,6 +46,10 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [x] T1 ref_check and its test: kit run u4b, 9 tests ok, signatures and test names match; residuals after 3 audit rounds: HTTP status literals (domain constants), no full header on default_fetch, reviewer remark on citation matching
 
+## plan4c.md
+
+- [ ] T1 SSRF guard in ref_check (automated security review of e1defb3: the checker fetches addresses taken from a student report); run right after 5a, before plans that read ref_check
+
 ## plan5a.md
 
 - [ ] T1 _pdf_fixtures and its test

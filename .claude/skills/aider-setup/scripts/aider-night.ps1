@@ -5,7 +5,7 @@
 .DESCRIPTION
   The student types a project path and nothing else. This script finds the
   configuration beside itself, creates a working branch, holds the machine awake,
-  runs every plan through aider-plan.ps1 with -Skills, and stops.
+  runs every plan through aider-plan.ps1 with the mandatory per-stage skills, and stops.
 
   It never merges. Pushing and opening a pull request are offered, because both
   are reversible and neither publishes anything to a default branch; the merge is
@@ -17,9 +17,6 @@
 .PARAMETER Branch
   The branch to work on. Created if it does not exist. Defaults to a dated name.
 
-.PARAMETER NoSkills
-  Run without the per-stage skills, which is what the pipeline did before they
-  existed. Useful for comparing one night's output against another.
 
 .PARAMETER Push
   Push the branch when every plan is done. Requires a remote.
@@ -41,7 +38,6 @@ param(
     # The escape hatch when no configuration file exists. Pinning a tag by hand
     # is acceptable; letting aider guess one from an API key is not.
     [string]$Model = "",
-    [switch]$NoSkills,
     # Run the plans and stop before the review pass. The reviewer is the slower
     # of the two models, so this is what makes a short run possible at all.
     [switch]$NoAudit,
@@ -149,12 +145,11 @@ if (-not (Test-Path -LiteralPath $aiderConf)) {
     }
 }
 
-$useSkills = -not $NoSkills
-if ($useSkills -and -not (Test-Path -LiteralPath $skillsFile)) {
-    Stop-With @("REFUSED: skills are on by default and $skillsFile is missing.",
-                "  Pass -NoSkills to run the pipeline without them.") 2
+if (-not (Test-Path -LiteralPath $skillsFile)) {
+    Stop-With @("REFUSED: the per-stage skills are mandatory and $skillsFile is missing.",
+                "  Run setup.ps1 to install the kit's configuration.") 2
 }
-Say ("  skills        : {0}" -f $(if ($useSkills) { $skillsFile } else { "off (-NoSkills)" }))
+Say ("  skills        : {0} (mandatory)" -f $skillsFile)
 
 # --- The project ------------------------------------------------------------
 if (-not (Test-Path -LiteralPath $Project)) {
@@ -311,7 +306,7 @@ public static extern uint SetThreadExecutionState(uint esFlags);
         $driverArgs = @{ Path = $Project; BudgetFile = $budgetFile }
         if ($aiderConf -ne "") { $driverArgs.Config = $aiderConf }
         if ($Model -ne "")     { $driverArgs.Model  = $Model }
-        if ($useSkills)        { $driverArgs.Skills = $true; $driverArgs.SkillsFile = $skillsFile }
+        $driverArgs.SkillsFile = $skillsFile
         if ($DryRun)           { $driverArgs.DryRun = $true }
         if ($NoAudit)          { $driverArgs.NoAudit = $true }
         # The test command names the PROJECT'S OWN interpreter, and that default
@@ -341,7 +336,7 @@ public static extern uint SetThreadExecutionState(uint esFlags);
                     "  or name your own command:    `$env:AIDER_TEST_COMMAND = '<command>'"
                 ) 2
             }
-            $testCmd = '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+            $testCmd = '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
         }
         $driverArgs.TestCommand = $testCmd
 

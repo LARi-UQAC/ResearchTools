@@ -21,6 +21,10 @@ Everything below sits in `docs/superpowers/plans/` of the project:
 A completed file moves to `docs/superpowers/plans/todo/`. The harness moves it,
 not you: never move, rename or delete any of these files yourself.
 
+A source or test file the plan names that does not exist yet is created for you
+empty and shown in the chat as an empty file. An empty file is a NEW file: write
+its whole content now with an edit block. Never ask to see it first.
+
 ## The ledger
 
 `progress.md` carries one section per plan, named exactly after the file:
@@ -111,12 +115,16 @@ the same step as the code.** A step is not done until its test exists and
 passes, so a step whose code is written and whose test is not is `- [ ]`, never
 `- [x]`.
 
-Where the test goes, first form that fits the project:
+**A test is always its own file, in a test folder. Never put test code inside the
+source file** - no test block at the bottom of it, no test class beside the code, no
+documentation example standing in for a test. The source file stays free of test
+code, and the test file uses it.
 
-| Source file | Test file |
-|---|---|
-| `calc.py` | `tests/test_calc.py` |
-| `src/parser.py` | `src/tests/test_parser.py`, else `tests/test_parser.py` |
+Where the test goes: the section "Language and conventions" of `spec.md` says. When it
+is silent, use a folder named `Test` beside the source, one test file per source file,
+named `test_<source name>`: a source in `scripts/` gets its test in `scripts/Test/`, a
+source at the project root gets it in `Test/`. A plan that names its test file wins. A
+test file runs on its own with the test command the spec gives.
 
 The harness runs the suite itself after each plan, with a fixed command the
 operator chose. You never run it and never propose a shell command: if a test

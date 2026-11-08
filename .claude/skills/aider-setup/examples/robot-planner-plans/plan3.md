@@ -31,7 +31,7 @@ and asserts a failure path.
    coordinates, summing **exactly** to `total_time`. Assign the rounding
    remainder to the last segment so the sum is exact rather than nearly right.
 
-6. **Write `tests/test_trajectory.py`.** Cover: the endpoint and zero-velocity
+6. **Write `Test/test_trajectory.py`.** Cover: the endpoint and zero-velocity
    conditions; the integral of `velocity` over the duration equalling
    `end - start` within tolerance, which is the property that makes the profile
    correct; the triangular case; the equal-value case; allocation summing to
@@ -46,4 +46,4 @@ and asserts a failure path.
    this plan does not import. **Do not install anything** - the run cannot,
    and a person installs it in the morning after reading the file.
 
-**Done when** `tests/test_trajectory.py` passes, including the integral check.
+**Done when** `Test/test_trajectory.py` passes, including the integral check.

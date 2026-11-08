@@ -35,7 +35,7 @@ never on pixels.
    fitted with the grid square and nothing clipped. The triangle and the text
    keep their size in data coordinates, so they scale with the content.
 
-8. **Write `tests/test_render_map.py`.** Cover: the obstacle patch covering
+8. **Write `Test/test_render_map.py`.** Cover: the obstacle patch covering
    exactly the configured centre cells; `draw_path` producing one green line
    whose vertex count matches the waypoints, and replacing rather than
    accumulating on a second call; the trail growing by one point per
@@ -49,4 +49,4 @@ never on pixels.
    this plan does not import. **Do not install anything** - the run cannot,
    and a person installs it in the morning after reading the file.
 
-**Done when** `tests/test_render_map.py` passes under the `Agg` backend.
+**Done when** `Test/test_render_map.py` passes under the `Agg` backend.

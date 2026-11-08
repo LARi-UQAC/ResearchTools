@@ -328,19 +328,30 @@ if ($budgetText.Contains($homeToken)) {
     $resolved = Join-Path $resolvedDir "context-budget.json"
     [System.IO.File]::WriteAllText($resolved, $budgetText.Replace($homeToken, ($HOME -replace '\\', '/')),
                                    (New-Object System.Text.UTF8Encoding $false))
+    # The per-stage skills are mandatory, and the driver looks for skills.json
+    # beside the budget file. Render it the same way, pointing its files at this
+    # skill's own config folder so the check needs nothing installed.
+    $skillsSrc = Join-Path $skillRoot "config\skills.json"
+    if (Test-Path -LiteralPath $skillsSrc) {
+        $skillsText = Get-Content -LiteralPath $skillsSrc -Raw -Encoding UTF8
+        $cfgFwd = ((Join-Path $skillRoot "config") -replace '\\', '/')
+        $skillsText = $skillsText.Replace($homeToken + "/.config/aider", $cfgFwd)
+        [System.IO.File]::WriteAllText((Join-Path $resolvedDir "skills.json"), $skillsText,
+                                       (New-Object System.Text.UTF8Encoding $false))
+    }
     Write-Host ("budget      : {0} (template, home substituted)" -f $budget)
     $budget = $resolved
 }
-$testCmd = 'python -m unittest discover -s tests -p "test_*.py"'
+$testCmd = 'python -m unittest discover -s Test -p "test_*.py"'
 
 function New-Fixture {
     $root = Join-Path $env:TEMP ("refusal-" + [guid]::NewGuid().ToString("N").Substring(0,8))
     $p = Join-Path $root "docs\superpowers\plans"
-    New-Item -ItemType Directory -Force -Path $p, (Join-Path $root "tests") | Out-Null
+    New-Item -ItemType Directory -Force -Path $p, (Join-Path $root "Test") | Out-Null
     Push-Location $root
     & cmd /c "git init -q -b work . 2>NUL"
     "def add(a, b):`n    return a + b" | Set-Content -LiteralPath (Join-Path $root "calc.py") -Encoding UTF8
-    "import unittest" | Set-Content -LiteralPath (Join-Path $root "tests\test_calc.py") -Encoding UTF8
+    "import unittest" | Set-Content -LiteralPath (Join-Path $root "Test\test_calc.py") -Encoding UTF8
     & cmd /c "git add -A 2>NUL"
     & cmd /c "git commit -qm seed 2>NUL"
     Pop-Location
@@ -472,7 +483,7 @@ $planBody = @'
 
 **Files:**
 - Create: `src/world.py`
-- Test: `tests/test_world.py`
+- Test: `Test/test_world.py`
 '@
 $planHeader = @'
 ---

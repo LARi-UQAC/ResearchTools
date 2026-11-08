@@ -35,13 +35,13 @@ the nightly runner is a bare PowerShell/`cmd` pair rather than a skill script in
 | `config/model-settings.yml` | per-model settings for the writer and reviewer tags |
 | `config/context-budget.json` | every token figure this pipeline uses, each with a `_comment` stating provenance (R13) |
 | `config/aider.conf.yml` | the aider config template `setup.ps1` installs |
-| `config/rules.md` | **generated** — never edit. Regenerated at build time by `scripts/aider-rules-sync.py` from the canonical `.claude/rules/*.md` of this repository plus `config/rules-local/` |
-| `config/rules-local/aider-kit.md` | rules this kit adds on top of the canonical set (R27) |
+| `config/rules.md` | **generated** — never edit. Assembled by `scripts/aider-rules-sync.py` from `config/rules-local/` only; no rule is imported from another project by a script |
+| `config/rules-local/aider-kit.md` | the only source of the model's coding rules: curated by hand, plain words, no reference to any other project (naming, comments, numeric literals and the rest) |
 | `config/skills.json` + `config/skills/` | the stage-to-skill-bundle map (write / audit / reopen) and the bundles themselves, MIT-licensed third-party files |
 | `scripts/aider-plan.ps1` + `scripts/aider-plan-core.ps1` | the driver (entry point) and its pure half (budget, ledger, refusals — dot-sourced, never spawns a process) |
 | `scripts/aider-night.ps1` / `.bat` | the nightly `cmd` entry point: branch, run every plan, push, never merge |
 | `scripts/run-detached.ps1` | runs a night detached, holding a wake lock so Modern Standby does not throttle it |
-| `scripts/aider-rules-sync.py` | derives `config/rules.md` from `.claude/rules/*.md` |
+| `scripts/aider-rules-sync.py` | assembles `config/rules.md` from `config/rules-local/` (a directory named by `AIDER_RULES_SOURCE` is read only if a person sets it) |
 | `scripts/aider-gpu-probe.py` / `aider-thread-probe.py` / `aider-ollama-config.py` | measure which `(model, num_ctx)` puts layers on the GPU, sweep the thread/bandwidth axes, and turn the measured numbers into a tuned Ollama tag |
 | `scripts/aider-defect-check.py` + `aider-defects.json` | tells a reader whether a run hit one of the defect signatures this pipeline has already measured and fixed once |
 | `scripts/aider-ab.ps1` | the A/B test harness: `fixture`, `snapshot`, `compare` |
@@ -78,8 +78,9 @@ against this machine's own installed aider.
 
 `config/rules.md` is the one file in this tree that is never hand-edited and never committed
 as a static copy that could go stale: `build_kit.py` regenerates it at build time by invoking
-`scripts/aider-rules-sync.py` against `.claude/rules/` of this repository, so the kit can never
-ship a rules file the repository's own rules have moved past.
+`scripts/aider-rules-sync.py`, which reads `config/rules-local/` only. Choosing which rules bind a
+model that writes code is a judgement, so it is made by a person in that file; a rule of the
+toolkit is added there, rewritten in plain words, never copied in by a script.
 
 ## Registration
 

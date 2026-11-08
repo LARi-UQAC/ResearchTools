@@ -68,11 +68,9 @@ param(
     [string]$TestCommand = "",
     [string]$Round = "",
     [switch]$AllowCloud,
-    # Bind a skill to each stage of the run. Off by default, and when it is off
-    # this file is never opened, so the pipeline behaves exactly as it did
-    # before. A SWITCH rather than a third run mode on purpose: -DryRun -Skills
-    # rehearses the new mode, which a separate mode could not have done.
-    [switch]$Skills,
+    # Where the per-stage skills are declared. The skills themselves are
+    # MANDATORY since 2026-11-07 (owner decision): there is no switch to turn
+    # them off, for the nightly run and for a single plan alike.
     [string]$SkillsFile = "",
     [string[]]$CodeExtensions = @(".py", ".ps1", ".js", ".ts", ".tsx", ".jsx",
                                   ".cs", ".c", ".h", ".cpp", ".java", ".go",
@@ -87,6 +85,11 @@ param(
     [string[]]$DataExtensions = @(".json", ".txt", ".toml", ".yml", ".yaml",
                                   ".cfg", ".ini", ".csv")
 )
+
+# Skills are always on: the writer, the reviewer and the reopened plan each get
+# their bundle (config/skills.json). Kept as a variable so the code below reads
+# the same, but it is not a parameter and no caller can switch it off.
+$Skills = $true
 
 $ErrorActionPreference = "Stop"
 
@@ -316,6 +319,7 @@ $unloadPoll     = [int](Get-BudgetValue $budget "ollama.unload_poll_seconds")
 $auditModel     = [string](Get-BudgetValue $budget "audit.model")
 $auditPerPlan   = [bool](Get-BudgetValue $budget "audit.per_plan")
 $auditRounds    = [int](Get-BudgetValue $budget "audit.max_rounds_per_plan")
+$auditNoReportRetries = [int](Get-BudgetValue $budget "audit.no_report_retries")
 $testsRequired  = [bool](Get-BudgetValue $budget "tests.required")
 $testPatterns   = @(Get-BudgetValue $budget "tests.file_patterns")
 $testExempt     = @(Get-BudgetValue $budget "tests.exempt_name_patterns")
@@ -437,8 +441,8 @@ if ($Skills) {
               }
     }
     if (-not (Test-Path -LiteralPath $sf)) {
-        Write-Refusal @("REFUSED: -Skills was passed but no skills file was found:", "  $sf",
-                        "  Pass -SkillsFile <path>, or drop -Skills to run without them.")
+        Write-Refusal @("REFUSED: the per-stage skills are mandatory and no skills file was found:", "  $sf",
+                        "  Pass -SkillsFile <path>. There is no way to run without skills.")
         exit 2
     }
     try { $skillCfg = Get-Content -LiteralPath $sf -Raw -Encoding UTF8 | ConvertFrom-Json }
@@ -976,24 +980,31 @@ $blockedPlans = 0
     # whose tests pass, and whose only fault is a review finding nobody had time
     # to act on. A failing suite is now the student's to read in progress.md in
     # the morning, not a reason to have produced nothing by then.
-    $round = 1
+    # The counter is NOT named $round: PowerShell variable names ignore case, so
+    # $round is the typed [string]$Round parameter, `$round = 1` stored the text
+    # "1" and the `$round++` further down threw OperatorRequiresNumber the first
+    # time an audit reopened a plan. Reproduced 2026-11-06 on PowerShell 5.1.
+    $planRound = 1
     while ($true) {
     $roundLabel = ""
-    if ($round -gt 1) { $roundLabel = " (round $round)" }
+    if ($planRound -gt 1) { $roundLabel = " (round $planRound)" }
     Write-Section "Plan: $($plan.Name)$roundLabel"
-    Update-RunRecord @{ state = "writing"; plan = $plan.Name; round = $round
+    Update-RunRecord @{ state = "writing"; plan = $plan.Name; round = $planRound
                         plan_index = ([array]::IndexOf($plans, $plan) + 1)
                         note = "the writer model is editing" }
 
     $message = "Execute $($plan.Name). Follow the working protocol you were given. " +
-               "Every source file you create or change must have a matching test file, " +
+               "A file that appears empty in the chat is a NEW file this plan asks you to create: " +
+               "write its whole content now with an edit block, and never ask to see it first. " +
+               "Every source file you create or change must have a matching test file of its " +
+               "own in a test folder (never test code inside the source file), " +
                "written in the same step as the code and not deferred: a step is not done " +
                "until its test exists and passes. " +
                "Tick every completed step in the '## $($plan.Name)' section of progress.md " +
                "as you finish it, mark a blocked step [!] with one line saying what blocked " +
                "it, and write into progress.md anything the next plan needs to know. Do not " +
                "read or act on any other plan, and do not move or rename any file."
-    if ($round -gt 1) {
+    if ($planRound -gt 1) {
         $message = "The audit reopened this plan. In the '## $($plan.Name)' section of " +
                    "progress.md, address every line still marked '- [ ]', including the ones " +
                    "beginning 'audit:'. Fix the code and its tests, then tick each line you " +
@@ -1057,7 +1068,7 @@ $blockedPlans = 0
     # Round 1 is work being written; a later round is work RECEIVING a review,
     # which is a different skill and not a coincidence - the audit having put a
     # step back is exactly what "receiving code review" describes.
-    $stageForRound = if ($round -le 1) { "write" } else { "reopen" }
+    $stageForRound = if ($planRound -le 1) { "write" } else { "reopen" }
     foreach ($sp in $skillFiles[$stageForRound]) { $argv += @("--read", $sp) }
     # Every --read pair goes in BEFORE the positional files, which is why
     # progress.md is appended here rather than on the line above.
@@ -1069,7 +1080,7 @@ $blockedPlans = 0
     # This message happens to carry neither today, which is why it has always
     # worked, but a later edit that adds either would fail silently and look
     # like a model defect. Measured 2026-09-03 on the audit message.
-    $planMsgFile = Join-Path $logDir "$stamp-$($plan.BaseName)-r$round-prompt.txt"
+    $planMsgFile = Join-Path $logDir "$stamp-$($plan.BaseName)-r$planRound-prompt.txt"
     if (-not $DryRun) { Write-Utf8NoBom $planMsgFile $message }
 
     $argv += @(
@@ -1224,7 +1235,22 @@ $blockedPlans = 0
         $auditSizeBefore = 0
         if (Test-Path -LiteralPath $auditMd) { $auditSizeBefore = (Get-Item -LiteralPath $auditMd).Length }
 
-        $null = Invoke-PlanAudit $plan.Name $changedSource (Join-Path $logDir "$stamp-$($plan.BaseName)-audit-r$round.log")
+        # The reviewer sometimes answers in a format aider does not apply (a whole
+        # file in a fence instead of an edit block), so audit.md does not grow
+        # although it did review the code. Measured 2026-11-07 by the two-plan live
+        # test: plan1 was left "NOT audited" on a reply that held two real findings.
+        # Ask again, a bounded number of times, before giving up on the plan.
+        $auditTry = 0
+        while ($true) {
+            $tryTag = ""
+            if ($auditTry -gt 0) { $tryTag = "-try" + ($auditTry + 1) }
+            $null = Invoke-PlanAudit $plan.Name $changedSource (Join-Path $logDir "$stamp-$($plan.BaseName)-audit-r$planRound$tryTag.log")
+            $sizeNow = 0
+            if (Test-Path -LiteralPath $auditMd) { $sizeNow = (Get-Item -LiteralPath $auditMd).Length }
+            if ($sizeNow -gt $auditSizeBefore -or $auditTry -ge $auditNoReportRetries) { break }
+            $auditTry++
+            Write-Host ("  the reviewer wrote no report; asking again (try {0} of {1})" -f ($auditTry + 1), ($auditNoReportRetries + 1)) -ForegroundColor Yellow
+        }
 
         # An audit that produced NOTHING is a failed audit, not a clean one.
         # Measured 2026-09-03: the reviewer analysed the code correctly, found a
@@ -1237,7 +1263,7 @@ $blockedPlans = 0
 
         if ($auditSizeAfter -le $auditSizeBefore) {
             Write-Host ("  STOP: the audit wrote nothing to audit.md ({0} bytes before, {1} after)." -f $auditSizeBefore, $auditSizeAfter) -ForegroundColor Yellow
-            Write-Host "        Its log is the only record of what it thought: $stamp-$($plan.BaseName)-audit-r$round.log" -ForegroundColor Yellow
+            Write-Host "        Its log is the only record of what it thought: $stamp-$($plan.BaseName)-audit-r$planRound.log" -ForegroundColor Yellow
             # The reviewer may have written its findings into the LEDGER and
             # not into the report, which is what happened on 2026-09-06. That
             # is worth naming here: the lines are visible, their reasons are
@@ -1273,14 +1299,14 @@ $blockedPlans = 0
         $openNow = (($section -join "`n") -match '(?m)^\s*-\s*\[\s\]')
 
         if ($openNow) {
-            if ($round -ge $auditRounds) {
-                Write-Host "  BLOCKED: audit still asks for fixes after $round round(s) -> next plan" -ForegroundColor Yellow
-                Add-LedgerLine $plan.Name "- [!] audit - findings still open after $round round(s), stopped by the round limit"
+            if ($planRound -ge $auditRounds) {
+                Write-Host "  BLOCKED: audit still asks for fixes after $planRound round(s) -> next plan" -ForegroundColor Yellow
+                Add-LedgerLine $plan.Name "- [!] audit - findings still open after $planRound round(s), stopped by the round limit"
                 $failed = 1; $blockedPlans++; continue plans
             }
-            Write-Host "  audit reopened the plan - round $($round + 1)" -ForegroundColor Yellow
+            Write-Host "  audit reopened the plan - round $($planRound + 1)" -ForegroundColor Yellow
             Wait-ModelsUnloaded "the writer returns"
-            $round++
+            $planRound++
             continue
         }
         Write-Host "  audit clean" -ForegroundColor Green
@@ -1323,6 +1349,25 @@ if (-not $NoAudit) {
         }
         if ($DryRun) { Write-Host "  would add the 'final audit' step to progress.md" }
         else          { Write-Host "  added the 'final audit' step to progress.md" }
+    }
+
+    # The list of source files was read BEFORE any plan ran. A project that starts
+    # empty has all of its source created by the plans, so the final audit saw
+    # "nothing tracked" and the "final audit" step stayed unticked. Measured
+    # 2026-11-07 by the single-plan live test. Read the tracked files again now.
+    Push-Location $proj
+    try {
+        $tracked = @(& git ls-files 2>$null)
+        if ($LASTEXITCODE -ne 0) { $tracked = @() }
+    } finally { Pop-Location }
+    $sourceFiles = @()
+    $sourceTokens = @{}
+    foreach ($rel in $tracked) {
+        if ($CodeExtensions -contains [System.IO.Path]::GetExtension($rel)) {
+            $full = Join-Path $proj ($rel.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            $sourceFiles += $full
+            $sourceTokens[$full] = Get-TokenCount $full
+        }
     }
 
     if ($sourceFiles.Count -eq 0) {
@@ -1412,6 +1457,17 @@ if (-not $NoAudit) {
             }
 
             $argv = @() + $baseArgs
+            # The final audit is the REVIEWER's, exactly like the per-plan audit: a
+            # different model from the one that wrote the code. Until 2026-11-07
+            # this path kept the writer model from the configuration, so the writer
+            # audited its own work, and in the two-plan live test it wandered into
+            # a list of 140 invented findings. The later --model wins over the
+            # configuration's, and the writer is evicted first so the two never
+            # sit in memory together.
+            if ($auditModel -ne "") {
+                $argv += @("--model", $auditModel)
+                if (-not $DryRun) { Wait-ModelsUnloaded "the final audit model loads" }
+            }
             $argv += @("--read", $spec, "--read", $progress)
             foreach ($f in $batch) { $argv += @("--read", $f) }
 

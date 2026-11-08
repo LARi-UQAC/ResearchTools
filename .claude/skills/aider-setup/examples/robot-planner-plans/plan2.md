@@ -29,7 +29,7 @@ and asserts a failure path.
    which one and its cell. This is a real case: a student editing `config.json`
    will hit it.
 
-6. **Write `tests/test_planner.py`.** Cover: a clear corridor giving a
+6. **Write `Test/test_planner.py`.** Cover: a clear corridor giving a
    two-waypoint path, start and goal only, because line of sight spans it; a
    path around the centre obstacle whose every waypoint is outside the obstacle;
    `line_of_sight` False through the obstacle and True beside it; **the Theta*
@@ -44,5 +44,5 @@ and asserts a failure path.
    this plan does not import. **Do not install anything** - the run cannot,
    and a person installs it in the morning after reading the file.
 
-**Done when** `tests/test_planner.py` passes and `plan_path` returns waypoints
+**Done when** `Test/test_planner.py` passes and `plan_path` returns waypoints
 avoiding the centre block.

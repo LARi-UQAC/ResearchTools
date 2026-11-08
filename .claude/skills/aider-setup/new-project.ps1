@@ -5,7 +5,7 @@
 .DESCRIPTION
   Creates the directory, initialises a git repository on a working branch,
   installs the two branch-protection hooks, writes the docs/superpowers/plans
-  skeleton with its three template files, creates tests/, and writes a
+  skeleton with its three template files, creates Test/, and writes a
   .gitignore, and creates the project's own Python virtual environment. That
   environment is the FIRST thing a project needs, so it is made by default and a
   failure to make it stops the scaffolder rather than warning.
@@ -77,7 +77,7 @@ if ($DryRun) { Warn "DRY RUN - nothing will be created" }
 
 $dirs = @(
     $proj,
-    (Join-Path $proj "tests"),
+    (Join-Path $proj "Test"),
     (Join-Path $proj "docs\superpowers\plans"),
     (Join-Path $proj "docs\superpowers\plans\todo")
 )
@@ -293,7 +293,7 @@ Say "     cd `"$proj`""
 Say "     aider-plan.ps1 -DryRun ``"
 Say "       -Config      `"`$HOME\.aider.conf.yml`" ``"
 Say "       -BudgetFile  `"`$HOME\.config\aider\context-budget.json`" ``"
-Say "       -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p `"test_*.py`"'"
+Say "       -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p `"test_*.py`"'"
 Say ""
 Say "  The hooks refuse commits on main and master. Check both directions:"
 Say "     git commit --allow-empty -m x        # on '$Branch': must SUCCEED"

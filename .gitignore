@@ -28,6 +28,11 @@ env*/
 *.egg-info/
 dist/
 build/
+# The aider-setup packaging scripts live in a folder named build; the generic
+# rule above hid them from git since 2026-09-24, so they existed on one machine only.
+!.claude/skills/aider-setup/scripts/build/
+.claude/skills/aider-setup/scripts/build/__pycache__/
+.claude/skills/aider-setup/scripts/build/*.saved
 .pytest_cache/
 
 # Node / JS

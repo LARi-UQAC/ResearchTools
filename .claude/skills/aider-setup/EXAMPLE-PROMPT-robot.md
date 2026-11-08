@@ -151,7 +151,7 @@ Controls, in one row along the bottom of the window
     start and goal cells, default final time, colours, sampling resolution,
     figure size and every tolerance live in a config.json that the code reads at
     run time. A pure mathematical constant is not configuration.
-  - Every source file has a matching test under tests/, written in the SAME step
+  - Every source file has a matching test under Test/, written in the SAME step
     as the code. A step whose code exists and whose test does not is not done.
   - Every test asserts at least one failure path, not only the happy path.
   - Every function carries a header giving Purpose, Inputs, Outputs, and Raises
@@ -167,41 +167,41 @@ exceed `ceilings["code_file_output"]` for one file.
   plan1.md  config.json + the world model: grid, cell geometry, the obstacle,
             and the conversion between grid (x,y), continuous (x,y) and polar
             (r, angle) about the bottom-left corner.
-            -> world.py, tests/test_world.py
+            -> world.py, Test/test_world.py
 
   plan2.md  Theta* path planning on the grid, returning waypoints from start to
             goal that avoid the obstacle, including the line-of-sight test that
             distinguishes Theta* from A*.
-            -> planner.py, tests/test_planner.py
+            -> planner.py, Test/test_planner.py
 
   plan3.md  The trapezoidal profile: given a start value, an end value and a
             duration, produce value(t) with accelerate / cruise / decelerate
             phases. Plus the allocation of the total final time across segments
             in proportion to their length.
-            -> trajectory.py, tests/test_trajectory.py
+            -> trajectory.py, Test/test_trajectory.py
 
   plan4.md  Arc sampling and collision verification: for each segment, drive
             r(t) and angle(t) by their own trapezoids, sample the resulting arc,
             convert each sample to a grid cell, and report any sample that
             enters the obstacle.
-            -> arcs.py, tests/test_arcs.py
+            -> arcs.py, Test/test_arcs.py
 
   plan5.md  The map view: the grid, the black obstacle, the green path, the red
             travelled trajectory, the robot triangle oriented along its motion,
             the r/angle readout, and the resize behaviour that rescales content
             to fit.
-            -> render_map.py, tests/test_render_map.py
+            -> render_map.py, Test/test_render_map.py
 
   plan6.md  The velocity view: a second axes plotting d(r)/dt, d(angle)/dt and
             the resulting Cartesian speed against time, growing as the
             simulation advances, with units, a legend and axis limits that
             follow the data.
-            -> render_velocity.py, tests/test_render_velocity.py
+            -> render_velocity.py, Test/test_render_velocity.py
 
   plan7.md  The application: the four controls, the elapsed-time display at 0.1
             second resolution, the animation loop that advances simulated time
             and redraws BOTH axes, and the wiring of everything above.
-            -> app.py, tests/test_app.py
+            -> app.py, Test/test_app.py
 
 === FILE FORMATS ===
 

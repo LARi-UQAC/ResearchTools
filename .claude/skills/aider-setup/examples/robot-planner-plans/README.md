@@ -23,7 +23,7 @@ Remove-Item "$HOME\projects\robot-planner\docs\superpowers\plans\README.md"
 
 # 4. dry-run first, then drop -DryRun to run the night
 cd "$HOME\projects\robot-planner"
-aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 **Step 2 is not optional.** `new-project.ps1` creates an EMPTY `.venv`,

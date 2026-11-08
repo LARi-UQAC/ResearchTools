@@ -1,0 +1,6 @@
+{
+  "test_command": ".\\.venv\\Scripts\\python.exe -m unittest discover -s scripts/Test",
+  "modules": ["scripts/grid_path.py", "scripts/trapezoid.py"],
+  "tests": ["scripts/Test/test_grid_path.py", "scripts/Test/test_trapezoid.py"],
+  "plans": ["plan1.md", "plan2.md"]
+}

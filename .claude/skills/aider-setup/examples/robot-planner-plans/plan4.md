@@ -37,7 +37,7 @@ that.
    clip, or silently drop a colliding arc, and it does not raise — the
    application has to draw the result and say so.
 
-7. **Write `tests/test_arcs.py`.** Cover: an arc's first and last samples
+7. **Write `Test/test_arcs.py`.** Cover: an arc's first and last samples
    landing on the two cell centres within tolerance; `t` increasing across a
    concatenated multi-segment trajectory; `cartesian_speed` zero at both ends of
    a segment because both profiles start and end at rest; **an arc that bulges
@@ -53,4 +53,4 @@ that.
    this plan does not import. **Do not install anything** - the run cannot,
    and a person installs it in the morning after reading the file.
 
-**Done when** `tests/test_arcs.py` passes, including the bulging-arc case.
+**Done when** `Test/test_arcs.py` passes, including the bulging-arc case.

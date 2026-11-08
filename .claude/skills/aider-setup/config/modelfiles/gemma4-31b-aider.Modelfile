@@ -1,0 +1,84 @@
+# gemma4:31b-aider - the tuned REVIEWER tag.
+#
+# PREPARED 2026-09-06, NOT YET BUILT AND NOT YET MEASURED. Building it is one
+# command; the parameters below are reasoned rather than swept, and two of them
+# are deliberately absent because guessing them is what this file refuses to do.
+#
+#     ollama create gemma4:31b-aider -f gemma4-31b-aider.Modelfile
+#
+# Do NOT build and load it while a night run is writing: gemma is 21 GB and the
+# coder tag is 20 GB on a 32 GB machine, and holding both transiently is the
+# case context-budget.json records as "how a machine stops". Build between two
+# plans, with the coder unloaded.
+#
+# WHY THIS TAG EXISTS
+#
+# The auditor was the only model in this harness that had never been tuned. Its
+# Modelfile carried four parameters against the coder's eleven - no num_thread,
+# no num_gpu, no num_predict - so it ran at Ollama's defaults and decoded at
+# 1.6 tokens per second against the coder's 2.8. That is not the size
+# difference it looks like: 31B against 27B does not account for it, and the
+# coder also has speculative decoding, which this model has no draft for.
+#
+# It cost a whole audit on 2026-09-06. Plan 4's review generated over 10000
+# tokens across two hours, deliberating in the open, and wrote NOTHING to
+# audit.md - defect D9 - because the reply was cut by a window aider did not
+# know about. aider reported "~35,390 of 262,144" while the daemon had opened
+# the slot at n_ctx 28928.
+
+FROM gemma4:31b-maxctx
+
+# The window, and the number the operator chose on 2026-09-06.
+#
+# Measured that evening: plan 4's audit prompt was 25605 tokens of input, and
+# audit.md is capped at 4096 tokens of findings with num_predict at 8192, so
+# one review needs about 33800. 35536 was considered first and rejected as too
+# thin - it leaves 1739 tokens of margin against an input that GROWS with the
+# code base, four modules today against eight by plan 7 - and because it is not
+# one of the rungs context-budget.json declares, which aider-ollama-config.py
+# reasons over.
+#
+# 49152 is the next rung up. A SMALLER window would not have saved anything:
+# the driver packs source files into audit batches sized against the window, so
+# shrinking it multiplies the number of audit calls rather than shortening them.
+PARAMETER num_ctx 49152
+
+# A bound on the reply, which this model has never had. Twice the 4096-token
+# audit.md ceiling, so a review that starts deliberating stops after minutes
+# instead of running for two hours.
+PARAMETER num_predict 8192
+
+# Threads. Taken from the coder tag, and it is a measurement rather than a copy:
+# context-budget.json records 14 threads at 3.39 tok/s and 81.3 percent CPU
+# against 20 threads at 3.41 and 99.4 percent. The fastest rung bought 0.6
+# percent of throughput and cost every remaining core on the machine.
+PARAMETER num_thread 14
+
+# Sampling, carried over unchanged from gemma4:31b-maxctx.
+PARAMETER temperature 1
+PARAMETER top_k 64
+PARAMETER top_p 0.95
+
+# ---------------------------------------------------------------------------
+# DELIBERATELY ABSENT
+#
+# num_gpu. The coder pins 3 layers on the card. This model is 31B and 21 GB
+# against 27B and 20 GB, so the number of layers that fits 6144 MiB is NOT the
+# same, and CONFIG_OLLAMA.md's own rule applies: an ignored setting is not a
+# measurement. Sweep it with aider-thread-probe.py and add the result here,
+# rather than inheriting a number measured on another model.
+#
+# think. It cannot be baked - Ollama reads it as a top-level field of the
+# request, not as a PARAMETER - so `think: false` stays in
+# ~/.config/aider/model-settings.yml whatever this tag does.
+#
+# AFTER BUILDING, three things must follow or the tag changes the name and
+# nothing else:
+#   1. context-budget.json  audit.model -> ollama_chat/gemma4:31b-aider
+#   2. model-settings.yml   rename the entry, keep think:false, and keep
+#      num_ctx 49152 there too: aider SENDS extra_params on every request and a
+#      request-level num_ctx OVERRIDES the Modelfile.
+#   3. Read it back with `ollama ps` and confirm the CONTEXT column says 49152.
+#      Ollama clamps a window it cannot satisfy instead of refusing it, so the
+#      granted value is the only one worth believing.
+# ---------------------------------------------------------------------------

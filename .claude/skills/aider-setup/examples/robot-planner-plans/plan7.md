@@ -39,7 +39,7 @@ and asserts a failure path.
 
 8. **Add `main()`** and the `if __name__ == "__main__"` guard.
 
-9. **Write `tests/test_app.py`** under the `Agg` backend, driving the callbacks
+9. **Write `Test/test_app.py`** under the `Agg` backend, driving the callbacks
    directly rather than clicking. Cover: Compute with the default time producing
    a path and a trajectory; Start advancing simulated time and growing both the
    trail and the velocity curves; Stop leaving the sample count unchanged and
@@ -54,4 +54,4 @@ and asserts a failure path.
    this plan does not import. **Do not install anything** - the run cannot,
    and a person installs it in the morning after reading the file.
 
-**Done when** `tests/test_app.py` passes and the whole suite is green.
+**Done when** `Test/test_app.py` passes and the whole suite is green.

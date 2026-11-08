@@ -23,9 +23,8 @@
   Where the driver's exit code is written, and ONLY when the run ends. Its
   absence is how you know the run is still going.
 
-.PARAMETER Skills
-  Run through aider-night.ps1, which loads the per-stage skills. Without it the
-  driver is called directly with no skills, which is the A side of the A/B.
+  The run always goes through aider-night.ps1, which loads the mandatory
+  per-stage skills (owner decision 2026-11-07). There is no run without skills.
 
 .PARAMETER TestCommand
   Passed through. For an A/B comparison both sides must use the SAME command, or
@@ -36,8 +35,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Project,
     [Parameter(Mandatory = $true)][string]$LogFile,
     [Parameter(Mandatory = $true)][string]$RcFile,
-    [switch]$Skills,
-    [string]$TestCommand = 'python -m unittest discover -s tests -p "test_*.py"'
+    [string]$TestCommand = 'python -m unittest discover -s Test -p "test_*.py"'
 )
 
 $inner = @'
@@ -83,19 +81,9 @@ try {
                 $line
             }
     } else {
-        & "$HOME\.local\bin\aider-plan.ps1" `
-            -Config      "$HOME\.config\aider\build\aider.conf.yml.saved" `
-            -BudgetFile  "$HOME\.config\aider\context-budget.json" `
-            -TestCommand $TestCommand *>&1 |
-            ForEach-Object {
-                $line = "$(Get-Date -Format 'HH:mm:ss')  $($_.ToString())"
-                # Per line, NOT Tee-Object, which does not flush until its
-                # pipeline ends - and the pipeline here is the whole night. A
-                # refusal printed into that buffer never reaches the log, so a
-                # run that cannot start looks exactly like one that is working.
-                Add-Content -LiteralPath $LogFile -Value $line -Encoding Unicode
-                $line
-            }
+        # Unreachable: $UseSkills is fixed to "yes". Refuse rather than run without skills.
+        "REFUSED: a run without the mandatory skills is not allowed." | Out-File -FilePath $LogFile -Encoding unicode -Append
+        $LASTEXITCODE = 2
     }
 
     # Captured on the line immediately after the call, before anything else runs.
@@ -119,7 +107,7 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) {
 
 $innerPath = Join-Path $env:TEMP ("detached-" + [guid]::NewGuid().ToString("N").Substring(0,8) + ".ps1")
 Remove-Item -LiteralPath $RcFile -ErrorAction SilentlyContinue
-$useSkills = if ($Skills) { "yes" } else { "no" }
+$useSkills = "yes"   # mandatory: the night always runs with its skills
 # The value is wrapped as a single-quoted PowerShell literal with '' doubling,
 # so it cannot be reinterpreted as code and a quote inside a test command is
 # harmless.

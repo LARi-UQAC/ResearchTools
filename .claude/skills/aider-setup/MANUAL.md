@@ -64,7 +64,7 @@ flowchart TD
         LA0["progress.md ← '- [!] audit - the reviewer wrote<br/>no report, so this plan is NOT audited'"]
         P7{"Did the audit reopen the plan?<br/>one '- [ ] audit: &lt;what to fix&gt;'<br/>per finding that must be closed"}
         P8["Round 2: fix what the audit listed"]
-        LA2["progress.md ← '- [!] audit - findings still open<br/>after 2 round(s), stopped by the round limit'"]
+        LA2["progress.md ← '- [!] audit - findings still open<br/>after 3 round(s), stopped by the round limit'"]
         P9{"Section has no '- [ ]' and no '- [!]' left?"}
         PA["Archive planN.md to todo/<br/>this is the ONLY thing that archives a plan"]
         PF["The plan is blocked. Every mark above is already<br/>in progress.md, so nothing else is written here"]
@@ -320,7 +320,7 @@ believes, and that figure must match the one you tuned to:
 
 ```powershell
 cd "$HOME\projects\my-project"
-aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 If the printed window is the model's native maximum rather than your tuned
@@ -515,7 +515,7 @@ Remove-Item "$HOME\projects\robot-planner\docs\superpowers\plans\README.md"
 
 # 4. dry-run first, then drop -DryRun to run the night
 cd "$HOME\projects\robot-planner"
-aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 **Step 2 is not optional.** `new-project.ps1` creates an EMPTY `.venv`, and
@@ -541,7 +541,7 @@ unparseable budget or an over-budget file in seconds:
 ```powershell
 cd "$HOME\projects\my-project"
 aider-plan.ps1 -DryRun `
-  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 **Then the real run.** It takes hours, so run it detached: it survives closing the
@@ -554,7 +554,7 @@ it is still going.
   -Project     "$HOME\projects\my-project" `
   -LogFile     "$env:TEMP\my-project-run.log" `
   -RcFile      "$env:TEMP\my-project-run.rc" `
-  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 Read the log as UTF-16, which is how it is written:
@@ -567,11 +567,13 @@ To watch it instead, run it in the foreground and capture the exit code on the
 **very next line** — any other command overwrites `$LASTEXITCODE`:
 
 ```powershell
-aider-plan.ps1 -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 $rc = $LASTEXITCODE; "DRIVER EXIT = $rc"
 ```
 
-`aider-night.bat <project>` is the same thing with the per-stage skills wired in.
+`aider-night.bat <project>` is the same thing. The per-stage skills are **mandatory**
+(owner decision 2026-11-07): `aider-plan.ps1`, the night and a single-plan run all load
+them, there is no `-Skills` or `-NoSkills` switch, and a missing `skills.json` is a refusal.
 
 **What it refuses before starting anything**: running on battery, being on `main`
 or `master`, no config file, a model that is not local, tests required with no
@@ -751,7 +753,7 @@ somebody's guess, and next month nobody will know which.
 **4.** Run it with `-Round`:
 
 ```powershell
-aider-plan.ps1 -Round round1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -Round round1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 Everything follows the round: its own `todo\`, its own `.logs\`, its own audit.

@@ -1,0 +1,6 @@
+{
+  "test_command": ".\\.venv\\Scripts\\python.exe scripts/Test/test_moves.py",
+  "modules": ["scripts/moves.py"],
+  "tests": ["scripts/Test/test_moves.py"],
+  "plans": ["plan1.md"]
+}

@@ -54,7 +54,7 @@ from a Haiku wrapper.
 | Choose the voice panel's speech-to-text model for this GPU, measured beside the resident LLM | `opt-local-stt-vram` skill (`/opt-local-stt-vram`) | one child process per candidate, per-process VRAM counters, the operator's reference words | Scored selection table (`stt_bench_table.md`) + JSON report; the `observe-config.json` keys to edit, never edited |
 | Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
 | Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, no daily note; single serialized writer, the outbox is the write path, not a fallback |
-| Run a nightly local-coding pipeline with no Claude Code involved: one aider process per plan, a writer model and a reviewer model that never edits code | `aider-setup` skill (daytime setup) + `aider-night.ps1`/`.bat` (the night itself, a plain `cmd` entry point) | two local Ollama tags (writer, reviewer), resolved from `model-settings.yml`, never Claude | Commits per plan step on a working branch, `audit.md`, a pushed branch with no merge; plans follow the shape R26 fixes below |
+| Run a nightly local-coding pipeline with no Claude Code involved: one aider process per plan, a writer model and a reviewer model that never edits code, each stage with its mandatory skill | `aider-setup` skill (daytime setup) + `aider-night.ps1`/`.bat` (the night itself, a plain `cmd` entry point) | two local Ollama tags (writer, reviewer), resolved from `model-settings.yml`, never Claude | Commits per plan step on a working branch, `audit.md`, a pushed branch with no merge; plans follow the shape R26 fixes below |
 
 The KV cache type is a daemon-wide environment variable that Ollama reads only at daemon
 start, not per request. `opt-local-vram-llm` therefore restarts the daemon once for each
@@ -228,6 +228,14 @@ Every planned task lives in `docs/superpowers/plans/` of its own project:
 | `plan1.md`, `plan2.md`, ... | the plan author |
 | `progress.md` | the executing model, one `## <filename>` section per file |
 | `audit.md` | the auditing model only, never the executor |
+
+**The programming language is chosen in `spec.md`.** The spec has a section "Language and
+conventions" that names the language and its version, the case of names, the form of
+documentation comments, the folder and the command of the tests, and the format and lint
+commands. A plan never chooses a language and never contradicts the spec's. The coding rules,
+both the ones in `code-style.md` and the kit's own `rules.md` for the local model, are
+language-agnostic: they say what to do, and `spec.md` says in which syntax. A spec that names no
+language is incomplete, and the plan author asks the owner (R25) before writing any plan.
 
 The size ceilings are NOT written in this rule. They are the `ceilings` of
 `.claude/skills/aider-setup/config/context-budget.json`, the single source for every project
@@ -486,7 +494,7 @@ defeated it: `local-coder` was never dispatched, the review loop of R35 had no b
 named a wrong reason for the bridge, and local work was barely visible. R36's floor still holds:
 a request that is a single step with no deliverable is answered directly. Anything larger gets
 `spec.md`, `plan<N>.md` and `progress.md` (R26 layout, ceilings from `context-budget.json`)
-before the first line of code.
+before the first line of code. The spec names the programming language (R26).
 
 The header is the front matter of each plan: `executor` (`local-coder`, `aider`, `cloud`),
 `tier` (`simple`, `standard`, `large`) and `bounds` (`max_rounds`, `max_tokens`, `plateau`,
@@ -500,14 +508,16 @@ names the tag at run time and no plan names a tag (R2).
 | Situation | Executor | Why it saves cloud tokens |
 |---|---|---|
 | Work that writes no code (R39): judgment, security review, design, prose, data files | `cloud`, `executing-plans` in the session | none to save: the work needs the best model |
-| One plan, a test per step, alone in its plans folder in aider-setup's layout | `local-coder`: `aider-plan.ps1` on that folder, with the kit's writer model and its required reviewer audit | the cloud pays for the plan and the R35 review, the code is generated locally and nothing needs a wrapper to start |
+| One plan, a test per step | `local-coder`: `aider-plan.ps1` on a small kit project mounted for that plan outside the repository, with the kit's writer model and its required reviewer audit | the cloud pays for the plan and the R35 review, the code is generated locally and nothing needs a wrapper to start |
 | Several plans, or an unattended night with no interactive session | `aider`: `aider-night.ps1` (spec, `plan<N>`, `progress`, a writer model and a different reviewer model) | no Claude Code involved once started |
 | A whole session on Ollama or Augure | the owner's manual choice (`claude-switch.ps1`), never written in a plan | the session itself is local |
 
 Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. One plan is one
-`local-coder` run. The plan sits alone in its plans folder (`spec.md`, one `plan<N>.md`,
-`progress.md`), `aider-plan.ps1` runs every `plan<N>.md` of the folder it is given, so one plan is
-its case of one, and the kit supplies the models: the writer and the reviewer of the owner's aider
+`local-coder` run. The plan is mounted as the only plan of a small kit project outside the repository, created
+with the kit's own `new-project.ps1` (`spec.md`, `plan1.md`, a `progress.md` whose step lines name their
+files, and only the existing files the plan reads or changes), so the kit audits those few files and not
+the repository. Only the files the plan names come back. The kit is an external component and is never
+modified. The kit supplies the models: the writer and the reviewer of the owner's aider
 configuration, never a model named in a plan or by the resolver (R2). The kit submits to the writer
 the files aider-setup submits to aider, sized by `context-budget.json`, runs the tests, fixes in its
 own loop, then audits with its reviewer model. That audit is required and `-NoAudit` is not used.

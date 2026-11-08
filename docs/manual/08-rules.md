@@ -51,7 +51,7 @@ script, and extend an existing one with a flag instead of forking it.
 | R23 | A change to a script's command-line surface updates its line in the `testing.md` inventory |
 | R24 | A path derived from input is resolved, then checked to sit inside an allowed root |
 | R25 | A question to the user states the origin, what each option does and what it costs, with the recommended option first |
-| R26 | A multi-step task is planned in files (`spec.md`, `plan<N>.md`, `progress.md`) with a fixed shape and size ceilings |
+| R26 | A multi-step task is planned in files (`spec.md`, `plan<N>.md`, `progress.md`) with a fixed shape and size ceilings; the programming language is chosen in `spec.md` |
 | R27 | Every function carries a header a caller can act on: purpose, inputs, outputs, raises |
 | R28 | A direct question gets a short plain answer before any action, and work waits for confirmation |
 | R29 | A plan states what to build, never a literal code block to transcribe |

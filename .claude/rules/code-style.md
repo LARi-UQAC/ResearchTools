@@ -17,6 +17,10 @@ elsewhere) — when adding a rule, update this line in the same edit, not as an 
 
 ## Naming conventions
 
+The language of a piece of work is chosen in its `spec.md` (R26), not here. The sections below give
+the convention of each language in use in this repository. For any other language the spec states
+the convention, and the rules of this file apply to it in that language's own syntax.
+
 ### Python
 - Classes: `PascalCase`
 - Functions and module variables: `snake_case`

@@ -82,7 +82,7 @@ test fails when the two differ. Reading it from the top:
 | Situation | Executor | Why it saves cloud tokens |
 |---|---|---|
 | Work that writes no code (R39): judgment, security review, design, prose, data files | The session itself, with `executing-plans` | Nothing to save: the work needs the best model |
-| One plan, a test per step, alone in its plans folder | `local-coder`: `aider-plan.ps1` on that folder, with the kit's writer model and its required reviewer audit | The cloud pays for the plan and the review; the code is generated locally and no wrapper is needed to start |
+| One plan, a test per step | `local-coder`: `aider-plan.ps1` on a small kit project mounted for that plan outside the repository, with the kit's writer model and its required reviewer audit | The cloud pays for the plan and the review; the code is generated locally and no wrapper is needed to start |
 | Several plans, or an unattended night with no interactive session | aider: `aider-night.ps1` (spec, plan files, progress, a writer model and a reviewer model) | No interactive harness is involved once the run starts |
 | A whole session on Ollama or Augure | Your manual choice with `claude-switch.ps1`, never written in a plan | The session itself is local |
 
@@ -180,8 +180,10 @@ counters remain on purpose, because the aider kit is standalone: `Get-TokenCount
 `executing-plans` in a worktree. This is the path for work that writes no code: judgment,
 security review, design, prose and data files (R39).
 
-**One plan through `local-coder`.** The plan sits alone in its plans folder in aider-setup's
-layout (`spec.md`, one `plan<N>.md`, `progress.md`). `aider-plan.ps1` runs it: the kit's writer
+**One plan through `local-coder`.** The plan is mounted as the only plan of a small kit
+project outside the repository, created with the kit's own `new-project.ps1` (`spec.md`, `plan1.md`, a
+`progress.md` whose step lines name their files, and only the existing files the plan reads or changes);
+the kit audits those few files, and only the files the plan names come back. `aider-plan.ps1` runs it: the kit's writer
 model receives the files described in the table below, writes the code and its test, runs the
 plan's tests, fixes in its own loop and ticks `progress.md` with one of three marks and nothing
 else (`- [ ]` open, `- [x]` done, `- [!]` blocked). The kit's reviewer model then audits the result;
@@ -225,7 +227,7 @@ kit refuses rather than substituting a weaker model or truncating a file. The cl
 1245 to 4225 tokens in a 16384 window cost 366K wrapper tokens on one plan and left the cloud
 writing the code, which is why the kit submits aider-setup's full input instead.
 
-What the kit submits for each plan, in this order, sized by the same `context-budget.json` and
+What the kit submits for each plan, in this order, with the mandatory per-stage skills for the writer, the reviewer and the reopened plan, sized by the same `context-budget.json` and
 `skills.json` as aider-setup (an item over its ceiling, or a prompt over the window, is refused and
 never truncated):
 

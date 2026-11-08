@@ -324,22 +324,25 @@ class TestAiderChapter(unittest.TestCase):
         self.assertIn("do not govern", self.body)
         self.assertIn("never merges", self.body)
 
-    def test_the_rules_coverage_is_the_one_the_generated_file_declares(self):
-        header = RULES_HEADER.search((AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8"))
-        self.assertIsNotNone(header)
-        self.assertIn(f"R0 to R{header.group(1)}", self.body)
+    def test_the_rules_file_is_curated_coding_rules_with_no_foreign_reference(self):
+        # Since 2026-11-07 the model reads 25 hand-curated coding rules: nothing about another
+        # project, no source label, no abridging marker, no way to ask a question it cannot ask.
+        rules = (AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8")
+        self.assertIsNotNone(RULES_HEADER.search(rules))
+        for foreign in ("ResearchTools", "source:", "[...]", "<sub>", "OBSIDIAN", "AskUserQuestion", "CLAUDE.md"):
+            with self.subTest(foreign=foreign):
+                self.assertNotIn(foreign, rules)
+        self.assertIn("curated by hand", self.body)
         self.assertNotIn("cannot drift", self.body)
 
     def test_the_overview_does_not_say_harness_twice(self):
         self.assertIn("independent local-coding pipeline that needs no interactive harness", self.body)
 
-    def test_the_rules_paragraph_is_exact_about_abridging_and_the_missing_rules(self):
-        # The generated file abridges only its longest rules, and R28 to R38 were never synced.
-        header = (AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8")
-        self.assertIn("Some rules are abridged", header)
-        self.assertNotIn("one abridged entry per rule", self.body)
-        self.assertIn("with the longest ones abridged", self.body)
-        self.assertIn("the rules after R27, among them R35", self.body)
+    def test_the_rules_paragraph_says_what_is_left_out_on_purpose(self):
+        # Rules about documents, agents or process are not given to a model that writes code.
+        self.assertIn("left out on purpose", self.body)
+        self.assertNotIn("with the longest ones abridged", self.body)
+        self.assertNotIn("the rules after R27", self.body)
 
     def test_the_ceiling_table_equals_the_budget_file(self):
         ceilings = json.loads(BUDGET.read_text(encoding="utf-8"))["ceilings"]

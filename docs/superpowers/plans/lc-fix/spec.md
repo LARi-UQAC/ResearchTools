@@ -1,7 +1,7 @@
 # Spec - local-coder runs on the aider kit (Issue 104, follow-up of 2026-11-06)
 
-`local-coder` no longer has a text driver. It is the aider kit run on ONE plan: the plan sits alone
-in its plans folder, the kit script `aider-plan.ps1` (installed in `~/.local/bin`) runs it with the
+`local-coder` no longer has a text driver. It is the aider kit run on ONE plan: the plan is mounted
+as the only plan of a small kit project outside the repository (the kit's `new-project.ps1`), the kit script `aider-plan.ps1` (installed in `~/.local/bin`) runs it with the
 kit's writer model and its required reviewer audit, and nothing needs a wrapper to start it. Several
 plans or a night go to `aider-night.ps1`. The files `local_coder_driver.py`, `driver_deps.py`,
 `local-coder-driver.json` and `test_local_coder_driver.py` were deleted. The documents were already
@@ -9,9 +9,10 @@ rewritten; the tests and the dispatch guard below must now agree with them.
 
 ## Facts the tests must assert (all already true in the files)
 
-1. Agent `.claude/agents/local-coder.md`: one plan per dispatch, a `PLAN:` line, the plan alone in its
-   plans folder (spec, one plan, progress); it launches the installed `aider-plan.ps1` with `-Path`,
-   `-Round`, `-TestCommand`, first with `-DryRun`; it never passes `-NoAudit`, `-AllowCloud` or
+1. Agent `.claude/agents/local-coder.md`: one plan per dispatch, a `PLAN:` line; it mounts a kit project outside the repository with
+   `new-project.ps1` (spec, the plan as `plan1.md`, a progress file whose step lines name their files, only the
+   files the plan reads or changes), launches the installed `aider-plan.ps1` with `-Path`, `-Config`,
+   `-BudgetFile`, `-TestCommand`, first with `-DryRun`, and brings back only the files the plan names; it never passes `-NoAudit`, `-AllowCloud` or
    `-Model`; the kit's reviewer audit is required; the kit starts without the agent; step 4 is the R35
    review (`code-review`, `security-review`) whose findings are `- [ ] audit:` lines of `progress.md`
    and `audit.md`; the agent writes and edits no code; no sandbox, no `--audit-begin`, no driver.

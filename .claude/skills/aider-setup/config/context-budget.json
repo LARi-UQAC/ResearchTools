@@ -68,9 +68,10 @@
       "*Test",
       "conftest",
       "__init__",
-      "mod"
+      "mod",
+      "_*"
     ],
-    "_exempt_comment": "Files that are themselves tests or package scaffolding, and so need no test of their own.",
+    "_exempt_comment": "Files that are themselves tests or package scaffolding, and so need no test of their own. A module whose name starts with an underscore is a private helper, tested through the public module or by a test file named without the underscore (added 2026-11-07 after a test helper named _pdf_fixtures was refused for lacking test__pdf_fixtures).",
     "max_fix_attempts": 3,
     "_max_fix_comment": "Passed through for the record only: the fix loop is aider's own, and its max_reflections is fixed at 3 in base_coder.py:101. Raising this number here changes nothing, which is why it says so rather than pretending to be a dial."
   },

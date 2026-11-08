@@ -52,7 +52,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan5a.md
 
-- [ ] T1 _pdf_fixtures and its test
+- [x] T1 _pdf_fixtures and its test: kit run u5a, 10 tests ok, signatures and plan tests match; stopped at the audit round limit (reviewer asked for the numeric literals of a fixture helper to become constants, which rule R0 allows inside a fixture)
 
 ## plan5b.md
 

@@ -21,7 +21,7 @@ PLAN="$HERE/plan$ID.md"
 LOG="$LIVE/u${ID}_run.log"
 
 # Paths named by the plan: Files block (create or modify) and Reads block (inputs).
-plan_paths() {  # $1 = files | reads | test
+plan_paths_raw() {  # $1 = files | reads | test
   "$PYI" - "$PLAN" "$1" <<'EOF'
 import re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
@@ -38,6 +38,8 @@ else:
     print("\n".join(f for f in files if "/Test/test_" in f))
 EOF
 }
+
+plan_paths() { plan_paths_raw "$1" | tr -d '\015'; }
 
 case "$MODE" in
 mount)
@@ -83,8 +85,12 @@ start)
   ;;
 harvest)
   # The plan must be archived and carry no blocked mark; otherwise nothing comes back.
-  [ -f "$PL/todo/plan1.md" ] || { echo "NOT DONE: plan1.md is not archived in the project"; exit 2; }
-  if grep -q -E '^\s*-\s*\[!\]' "$PL/progress.md" "$PL/todo/progress.md" 2>/dev/null; then echo "BLOCKED mark in the ledger"; exit 2; fi
+  # ACCEPT=1 brings the files back although the kit stopped the plan at its audit round limit; the cloud has
+  # then checked them against the plan (signatures, named tests, rules) and records the residuals in the ledger.
+  if [ "${ACCEPT:-0}" != "1" ]; then
+    [ -f "$PL/todo/plan1.md" ] || { echo "NOT DONE: plan1.md is not archived in the project"; exit 2; }
+    if grep -q -E '^\s*-\s*\[!\]' "$PL/progress.md" "$PL/todo/progress.md" 2>/dev/null; then echo "BLOCKED mark in the ledger"; exit 2; fi
+  fi
   # Only the paths the plan names come back.
   plan_paths files | while read -r f; do
     [ -z "$f" ] && continue

@@ -128,3 +128,17 @@ their folder to `sys.path` from its own file location.
 Every new script has an offline suite with a failure path. A fixture report carrying a marker sentence
 proves the marker never reaches a wrapper-visible output. The five research agents keep every language
 flag text, R1.x number and LaTeX action. `run-all-checks.ps1` exits 0 once, at the end (plan 12).
+
+## Language and conventions
+
+- **Language and version:** Python 3.11 or later. Standard library only, except PyMuPDF (`fitz`) where a plan names it,
+  declared in `.claude/skills/figure-review/scripts/requirements.txt`.
+- **Case of names:** functions are `verb_complement` in lower snake case (`compute_total`), private helpers start with
+  an underscore, classes are `PascalCase`, constants are `UPPER_SNAKE_CASE`, variables are lower snake case with the
+  scope prefixes of the coding rules.
+- **Documentation comment:** a docstring with Purpose, Inputs, Outputs and, when the function raises on purpose, Raises.
+- **Types:** a type annotation on every parameter and every return value.
+- **Tests:** `unittest`, in a folder named `Test` beside the source, one file `test_<module>.py` per module. Each test
+  file ends with `unittest.main()` and puts the parent folder of its own folder at the start of `sys.path` before it
+  imports the module under test.
+- **Format and lint:** none required.

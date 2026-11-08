@@ -40,11 +40,11 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan4a.md
 
-- [ ] T1 batch_stats and its test
+- [x] T1 batch_stats and its test: 15 tests ok, signatures and test names match the plan (aider commits 9115747 to 2d7eb2c)
 
 ## plan4b.md
 
-- [ ] T1 ref_check and its test
+- [x] T1 ref_check and its test: kit run u4b, 9 tests ok, signatures and test names match; residuals after 3 audit rounds: HTTP status literals (domain constants), no full header on default_fetch, reviewer remark on citation matching
 
 ## plan5a.md
 

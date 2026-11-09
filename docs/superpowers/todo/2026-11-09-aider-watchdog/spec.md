@@ -22,23 +22,32 @@ the processes, the GPU, the model server and the clock: no test starts a process
 
 ## Decisions
 
-- D1 The reference is measured, not fixed. After the model is loaded and generating, the first readings
-  of the model-server CPU and of the GPU become that model's reference. A new model (the reviewer after
-  the writer) gets its own reference.
+- D1 The reference is measured on this machine, not fixed and not guessed. `vram_reference.py` of the
+  skill opt-local-vram-llm (plan 2) loads a tuned model as the machine runs it, samples the model-server
+  CPU and the GPU load during one healthy generation, and keeps the median and the minimum in
+  `local-model-config.json` under `models[tag].reference_decode`, with the context length the server
+  reported. The watchdog reads that file; each model (writer, reviewer) has its own reference. A model
+  with no reference is not judged. Why a new script: that skill recorded only the context, the decode
+  speed and the GPU residency, never the CPU or the load during generation, and it has no entry for the
+  kit models, which are too large for the card and were tuned by the kit's own scripts.
 - D2 Validation of the machine tuning: once the model is loaded, the script compares the context length
-  the server reports with the `num_ctx` of the model's tuned Modelfile and logs a `config_mismatch` line
-  when they differ. It never stops the run for that.
-- D3 Nothing is judged until the model is loaded and until the run record state is `writing` or
-  `auditing`. The test phase is not watched in this version.
+  the server reports with the `num_ctx` of the model's tuned Modelfile. When they differ, the machine
+  is not running as tuned, the reference would mean nothing, and that model is not judged. Nothing is
+  written.
+- D3 Nothing is judged until the model is loaded (listed by the server) and until the run record state is
+  `writing` or `auditing`. The test phase is not watched in this version.
 - D4 A stall is `low_readings` consecutive readings in which every dimension that has a real reference
-  (CPU, GPU) is under `low_fraction` of it. The script then stops the driver's direct child that holds
+  (CPU, GPU) is under the minimum measured in the reference run, which no healthy generation went under. The script then stops the driver's direct child that holds
   the work, with its subtree, and writes the signal file `watchdog-stop.json` (the plan name).
-- D5 One log, `watchdog.log` in the plans `.logs` folder, one JSON line per event: time, event, model,
-  CPU percent, GPU percent, plan. Only a stall and a `config_mismatch` write a line.
+- D5 One log, `watchdog.log` in the plans `.logs` folder, one JSON line per stop: time, event, model,
+  CPU percent, GPU percent, plan. Only a stop writes a line.
 - D6 The script never writes the run record or `progress.md`. Exit codes: 0 normal end, 2 refusal.
 
 ## Driver patch (by hand, owner approval)
 
-In `aider-plan.ps1`: start the script after `Initialize-RunRecord`, stop it at the end of the run, and
-when `watchdog-stop.json` names the current plan after a child returns, delete the signal and move to
-the next plan without writing to `progress.md`.
+The daemon only stops the process. The driver must know that it did, so it can go on to the next plan
+instead of running its own failure path (which writes a `[!]` line in `progress.md`). In
+`aider-plan.ps1`: start the script after `Initialize-RunRecord`, giving it the reference file; stop it at
+the end of the run; and after each child returns, if `watchdog-stop.json` names the current plan, delete
+the signal and move to the next plan without writing to `progress.md`. The plan stays undone and is
+replayed at the next run.

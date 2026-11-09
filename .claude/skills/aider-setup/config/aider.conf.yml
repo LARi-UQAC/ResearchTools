@@ -43,6 +43,17 @@ read:
 # this comment used to say.
 map-tokens: 4096
 
+## Language ---------------------------------------------------------------
+# aider tells the model which language to answer in, and unless this is set it
+# takes that language from the operating system. On a French machine the writer
+# reasoned in French, the reviewer wrote reports in French and the commit
+# messages came out in French, although every file the kit supplies is English.
+# Measured 2026-11-08: no file given to the model contains French; aider's
+# --chat-language and --commit-language both default to the system settings.
+# The kit's protocol, rules and skills are English, so the model answers in English.
+chat-language: English
+commit-language: English
+
 ## Git --------------------------------------------------------------------
 # Commits are allowed, but only on a branch. Both hooks are PER REPOSITORY, in
 # that repository's own .git/hooks/: pre-commit refuses main and master, and

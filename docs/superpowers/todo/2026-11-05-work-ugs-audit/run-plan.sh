@@ -73,6 +73,11 @@ mount)
     "$P/.venv/Scripts/python.exe" -m pip install -q -r "$W/.claude/skills/figure-review/scripts/requirements.txt" >/dev/null 2>&1 \
       && echo "PyMuPDF installed in the project environment" || echo "WARNING: PyMuPDF install failed"
   fi
+  # pymupdf4llm for the plans that read PDF text: the pinned, audited version of extract-statistic.
+  if grep -q -i "pymupdf4llm" "$PLAN"; then
+    pin="$(grep -E '^pymupdf4llm==' "$W/.claude/skills/extract-statistic/scripts/requirements.txt" | head -1)"
+    "$P/.venv/Scripts/python.exe" -m pip install -q "$pin" >/dev/null 2>&1       && echo "$pin installed in the project environment" || echo "WARNING: $pin install failed"
+  fi
   rmdir "$P/Test" 2>/dev/null || true
   ( cd "$P" && git add -A >/dev/null 2>&1 && git -c core.safecrlf=false commit -q -m "mount: plan $ID" >/dev/null 2>&1 )
   echo "mounted $P"; echo "test: $(plan_paths test | head -1)"

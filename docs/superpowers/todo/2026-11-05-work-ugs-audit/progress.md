@@ -60,7 +60,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan5b.md
 
-- [ ] T1 report_prepare and its test
+- [x] T1 report_prepare and its test: kit run u5b (4th attempt), 8 tests ok, signatures and plan tests match; stopped at the audit round limit. Residuals: docstrings and comments in French (the first attempts ran before the English language settings), one comment records reasoning (R103), module constants for id and page padding, --dry-run skips the containment check; the id map file is named `ids` as plans 5b and 8k say, while plan 11 says ids.json (to align when plan 11 is run)
 
 ## plan5c.md
 

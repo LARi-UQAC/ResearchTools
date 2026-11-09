@@ -17,7 +17,8 @@ LIVE="$HOME/.claude/aider-live"
 HOME_CFG="$LIVE/home"                                   # configuration rendered from the repository
 P="$LIVE/work/u$ID${SUFFIX:-}"
 PL="$P/docs/superpowers/plans"
-PLAN="$HERE/plan$ID.md"
+PLANS_HOME="${PLANS_HOME:-$HERE}"                      # folder holding spec.md and plan<ID>.md (default: this folder)
+PLAN="$PLANS_HOME/plan$ID.md"
 LOG="$LIVE/u${ID}${SUFFIX:-}_run.log"
 
 # Paths named by the plan: Files block (create or modify) and Reads block (inputs).
@@ -46,7 +47,7 @@ mount)
   [ -e "$P" ] && { echo "REFUSED: $P exists"; exit 1; }
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/new-project.ps1")" \
     -Name "u$ID${SUFFIX:-}" -Root "$(cygpath -w "$LIVE/work")" -Python "$(cygpath -w "$PYI")" >/dev/null 2>&1
-  cp "$HERE/spec.md" "$PL/spec.md"
+  cp "$PLANS_HOME/spec.md" "$PL/spec.md"
   cp "$PLAN" "$PL/plan1.md"
   { printf '# Progress\n\n**Goal.** The ledger of plan %s.\n\n**Contents.** Task lines only.\n\n## plan1.md\n' "$ID"
     plan_paths files | while read -r f; do [ -n "$f" ] && printf -- '- [ ] create %s as plan1.md describes\n' "$f"; done

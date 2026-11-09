@@ -62,6 +62,10 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [x] T1 report_prepare and its test: kit run u5b (4th attempt), 8 tests ok, signatures and plan tests match; stopped at the audit round limit. Residuals: docstrings and comments in French (the first attempts ran before the English language settings), one comment records reasoning (R103), module constants for id and page padding, --dry-run skips the containment check; the id map file is named `ids` as plans 5b and 8k say, while plan 11 says ids.json (to align when plan 11 is run)
 
+## plan5e.md
+
+- [ ] T1 fixed failure message of report_prepare (automated security review of fb62946: `main()` printed `str(e)` for an unexpected exception, which can carry a report file name); run after 4d, before plan 8k uses the module
+
 ## plan5c.md
 
 - [ ] T1 figure_extract and its test

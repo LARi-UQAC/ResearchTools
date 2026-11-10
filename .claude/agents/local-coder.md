@@ -60,6 +60,20 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    the message. The models are the owner's aider configuration, never a resolver role. You never
    generate the code on the cloud, never switch to another model and never pass a model name, and a
    missing model is a refusal, not a substitution (R8).
+   **Then read the spec and the plan as the writer model will read them, and fix them before mounting.**
+   The writer is a local model that sees only the mounted project: `spec.md`, the plan, `progress.md`,
+   the files the plan names, and the kit's own coding rules, which are not this repository's rules. It
+   cannot see this repository, this session, the memory, the Issues, the vault or any rule number, and it
+   must never be led to think it runs in a cloud or that someone else will install or decide something
+   for it. Search both files for what it cannot use, for example with
+   `grep -n -E "\bR[0-9]{1,3}\b|\bD[0-9]+\b|owner|cloud|session|memory|Issue|vault|proposal|20[0-9]{2}-[0-9]{2}-[0-9]{2}"`,
+   and rewrite every hit as a plain instruction about the code, or delete it: rule or decision numbers,
+   dates and provenance stories, mentions of the owner, the cloud, other plans or tools of this
+   repository, and notes about who installs what. What must stay: for each file its path, what it holds,
+   its signatures and types, the names and the meaning of its tests, the exact values, the commands that
+   run in the project, and in `spec.md` the language and conventions. Every sentence must be something
+   the writer can act on from inside the project. You write the plan, so you correct it yourself; this
+   is not a reason to enlarge it.
 2. **Mount the kit project, then dry run.** The kit takes three inputs, `spec.md`, `plan<N>.md` and
    `progress.md`, in `docs/superpowers/plans/` of a project of its own. Mount it like the kit manual says:
    1. Create the project outside the repository, in a path without a space, with the kit's scaffolder

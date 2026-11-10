@@ -36,11 +36,21 @@ if kind == "files":
 elif kind == "reads":
     print("\n".join(reads))
 else:
-    print("\n".join(f for f in files if "/Test/test_" in f))
+    print("\n".join(f for f in files if "/Test/test_" in f or f.endswith("_test.go")))
 EOF
 }
 
 plan_paths() { plan_paths_raw "$1" | tr -d '\015'; }
+
+# A plan whose files are Go files is tested with `go test` in its module folder; any other plan runs its
+# Python test file. The Go toolchain is called by full path because it is not on PATH.
+GO_EXE="$HOME/.local/go-sdk/go/bin/go.exe"
+is_go() { plan_paths files | grep -q '\.go$'; }
+go_dir() { plan_paths files | grep -E '(go\.mod|\.go)$' | head -1 | xargs dirname; }
+test_command() {
+  if is_go; then printf '%s' "$(cygpath -w "$GO_EXE") test -C $(go_dir) ./..."
+  else printf '%s' ".\\.venv\\Scripts\\python.exe $(plan_paths test | head -1)"; fi
+}
 
 case "$MODE" in
 mount)
@@ -85,7 +95,7 @@ mount)
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/scripts/aider-plan.ps1")" \
     -Path "$(cygpath -w "$P")" -Config "$(cygpath -w "$HOME_CFG/.aider.conf.yml")" \
     -BudgetFile "$(cygpath -w "$HOME_CFG/.config/aider/context-budget.json")" \
-    -TestCommand ".\\.venv\\Scripts\\python.exe $(plan_paths test | head -1)" -DryRun 2>&1 \
+    -TestCommand "$(test_command)" -DryRun 2>&1 \
     | grep -a -E "editable|REFUSED|OVER|audit with" | cut -c1-170
   ;;
 start)
@@ -93,7 +103,7 @@ start)
     powershell.exe -NoProfile -Command "ollama stop $m" >/dev/null 2>&1 || true
   done
   : > "$LOG"
-  TC=".\\.venv\\Scripts\\python.exe $(plan_paths test | head -1)"
+  TC="$(test_command)"
   nohup bash -c "powershell.exe -NoProfile -ExecutionPolicy Bypass -File '$(cygpath -w "$S/scripts/aider-plan.ps1")' \
     -Path '$(cygpath -w "$P")' -Config '$(cygpath -w "$HOME_CFG/.aider.conf.yml")' \
     -BudgetFile '$(cygpath -w "$HOME_CFG/.config/aider/context-budget.json")' -TestCommand '$TC' >> '$LOG' 2>&1; \
@@ -116,7 +126,8 @@ harvest)
   done
   T="$(plan_paths test | head -1)"
   echo "--- repository test: $T"
-  ( cd "$W" && "$PYI" "$T" 2>&1 | tail -4 )
+  if is_go; then ( cd "$W" && "$GO_EXE" test -C "$(go_dir)" ./... 2>&1 | tail -6 )
+  else ( cd "$W" && "$PYI" "$T" 2>&1 | tail -4 ); fi
   ;;
 *) echo "usage: run-plan.sh mount|start|harvest <id>"; exit 64 ;;
 esac

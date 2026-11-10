@@ -1,0 +1,64 @@
+{
+  "pollSeconds": {
+    "value": 30,
+    "provenance": "initial value, adjust after measuring"
+  },
+  "negligibleReferencePercent": {
+    "value": 5,
+    "provenance": "initial value, adjust after measuring"
+  },
+  "lowReadings": {
+    "value": 6,
+    "provenance": "initial value, adjust after measuring"
+  },
+  "watchedStates": {
+    "value": [
+      "writing",
+      "auditing"
+    ],
+    "provenance": "fixed list"
+  },
+  "terminalStates": {
+    "value": [
+      "done",
+      "done_with_blocked",
+      "failed"
+    ],
+    "provenance": "fixed list"
+  },
+  "modelServerNames": {
+    "value": [
+      "ollama",
+      "llama-server"
+    ],
+    "provenance": "fixed list"
+  },
+  "ollamaURL": {
+    "value": "http://127.0.0.1:11434",
+    "provenance": "fixed list"
+  },
+  "callTimeoutSeconds": {
+    "value": 30,
+    "provenance": "initial value, adjust after measuring"
+  },
+  "sampleSeconds": {
+    "value": 2,
+    "provenance": "author's choice, unmeasured: the sampling interval of the reference command"
+  },
+  "prompt": {
+    "value": "Write one paragraph of about two hundred words describing how a lighthouse keeper spends a stormy night.",
+    "provenance": "author's choice: a fixed request that makes the model decode steadily"
+  },
+  "numPredict": {
+    "value": 256,
+    "provenance": "author's choice, unmeasured: tokens generated during the measurement"
+  },
+  "warmupNumPredict": {
+    "value": 8,
+    "provenance": "author's choice, unmeasured: tokens generated to load the model before measuring"
+  },
+  "generationTimeoutSeconds": {
+    "value": 600,
+    "provenance": "author's choice, unmeasured: upper bound of one measured generation"
+  }
+}

@@ -30,6 +30,7 @@ same thing.
 """
 import io
 import json
+import datetime
 import os
 import re
 import sys
@@ -264,13 +265,46 @@ def _alive_windows(pid):
     return True
 
 
-def _alive(pid):
+def _process_start_windows(pid):
+    """When the process began, as a naive local datetime, or None when unreadable.
+
+    The run record stores local naive times (PowerShell's Get-Date), so the
+    process time is converted to the same form to be compared with them."""
+    import ctypes
+    from ctypes import wintypes
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        created, ended, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel32.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(ended),
+                                        ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+    finally:
+        kernel32.CloseHandle(handle)
+    ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
+    seconds = ticks / 10_000_000 - 11644473600  # FILETIME counts 100 ns from 1601
+    return datetime.datetime.fromtimestamp(seconds)
+
+
+def _alive(pid, last_write=None):
     """Is the process that wrote this record still running.
 
     Liveness is asked of the PROCESS, never of the file. A run killed by a
     shutdown leaves its last record behind, and reading that as "still running"
     reports exactly backwards - the same lesson the vault daemon's singleton lock
     already carries.
+
+    A pid that exists is not proof: Windows hands a dead process's number to the
+    next process that starts, so an old record read as live whenever an unrelated
+    process held its pid, and flipped back to ended when that process exited -
+    the intermittent "idle agent drawn as active" (measured 2026-11-10 on records
+    from September and November). The writer began before it wrote its last
+    record, so a process that began AFTER `last_write` (a naive local ISO time,
+    the record's `updated`) is a stranger holding the number, and the run is gone.
+    A start time that cannot be read keeps the plain answer, as before.
     """
     try:
         pid = int(pid)
@@ -280,7 +314,13 @@ def _alive(pid):
         return None
     if sys.platform == "win32":
         try:
-            return _alive_windows(pid)
+            if not _alive_windows(pid):
+                return False
+            written = _parse_local_time(last_write)
+            began = _process_start_windows(pid) if written is not None else None
+            if began is not None and began > written:
+                return False
+            return True
         except (AttributeError, OSError):
             # ctypes/kernel32 unavailable for some reason: unknown is an
             # honest answer and False is not.
@@ -290,6 +330,14 @@ def _alive(pid):
         return True
     except OSError:
         return False
+
+
+def _parse_local_time(text):
+    """A record's naive ISO time as a datetime, or None when absent or malformed."""
+    try:
+        return datetime.datetime.fromisoformat(str(text))
+    except (TypeError, ValueError):
+        return None
     except (AttributeError, PermissionError):
         # A process owned by someone else: unknown is an honest answer and
         # False is not.
@@ -433,7 +481,7 @@ def collect(context):
         except OSError:
             age = None
 
-        alive = _alive(record.get("pid"))
+        alive = _alive(record.get("pid"), record.get("updated"))
         done = record.get("plans_done") or 0
         total = record.get("plan_count") or 0
         # Only a run still going is read: the finished ones are many.

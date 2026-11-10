@@ -53,13 +53,14 @@
       "Test/{stem}_test{ext}",
       "Test/{stem}{ext}",
       "tests/{stem}{ext}",
+      "../tests/{stem}{ext}",
       "test_{stem}{ext}",
       "{stem}_test{ext}",
       "{stem}.test{ext}",
       "{stem}.spec{ext}",
       "{stem}Test{ext}"
     ],
-    "_patterns_comment": "Where a test for <stem><ext> may live, tried in order, first beside the project root and then beside the source file. The first that exists satisfies the rule. Language-neutral since 2026-11-07: the language is chosen in spec.md, so this list covers the usual layouts of several (a Test folder, the tests folder of Rust and some JavaScript projects, a test file beside the source as in Go, .test and .spec files, a Test suffix as in Java). The spec says which one a project uses.",
+    "_patterns_comment": "Where a test for <stem><ext> may live, tried in order, first beside the project root and then beside the source file. The first that exists satisfies the rule. Language-neutral since 2026-11-07: the language is chosen in spec.md, so this list covers the usual layouts of several (a Test folder, the tests folder of Rust and some JavaScript projects, a test file beside the source as in Go, .test and .spec files, a Test suffix as in Java). The spec says which one a project uses. The pattern ../tests/{stem}{ext} (added 2026-11-09) is the Rust layout: a source in <crate>/src/ has its integration test in <crate>/tests/, one level above the source folder.",
     "exempt_name_patterns": [
       "test_*",
       "*_test",
@@ -69,9 +70,10 @@
       "conftest",
       "__init__",
       "mod",
+      "lib",
       "_*"
     ],
-    "_exempt_comment": "Files that are themselves tests or package scaffolding, and so need no test of their own. A module whose name starts with an underscore is a private helper, tested through the public module or by a test file named without the underscore (added 2026-11-07 after a test helper named _pdf_fixtures was refused for lacking test__pdf_fixtures).",
+    "_exempt_comment": "Files that are themselves tests or package scaffolding, and so need no test of their own. A module whose name starts with an underscore is a private helper, tested through the public module or by a test file named without the underscore (added 2026-11-07 after a test helper named _pdf_fixtures was refused for lacking test__pdf_fixtures). A Rust crate root named lib (src/lib.rs), which only declares the modules and re-exports them, needs no test of its own (added 2026-11-09): the logic lives in the modules, each with its own file in tests/.",
     "max_fix_attempts": 3,
     "_max_fix_comment": "Passed through for the record only: the fix loop is aider's own, and its max_reflections is fixed at 3 in base_coder.py:101. Raising this number here changes nothing, which is why it says so rather than pretending to be a dial."
   },

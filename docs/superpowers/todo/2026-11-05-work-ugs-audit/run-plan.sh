@@ -36,7 +36,8 @@ if kind == "files":
 elif kind == "reads":
     print("\n".join(reads))
 else:
-    print("\n".join(f for f in files if "/Test/test_" in f or f.endswith("_test.go")))
+    print("\n".join(f for f in files if "/Test/test_" in f or f.endswith("_test.go")
+                    or (f.endswith(".rs") and "/tests/" in f)))
 EOF
 }
 
@@ -47,8 +48,14 @@ plan_paths() { plan_paths_raw "$1" | tr -d '\015'; }
 GO_EXE="$HOME/.local/go-sdk/go/bin/go.exe"
 is_go() { plan_paths files | grep -q '\.go$'; }
 go_dir() { plan_paths files | grep -E '(go\.mod|\.go)$' | head -1 | xargs dirname; }
+# A plan whose files are Rust files is tested with `cargo test` on the crate that holds them (the folder above
+# src/ or tests/, or the folder of Cargo.toml). The toolchain is called by full path, as for Go.
+CARGO_EXE="$HOME/.cargo/bin/cargo.exe"
+is_rust() { plan_paths files | grep -q '\.rs$'; }
+rust_dir() { plan_paths files | grep -E '(Cargo\.toml|\.rs)$' | head -1 | sed -E 's#/(src|tests)/.*$##; s#/Cargo\.toml$##'; }
 test_command() {
   if is_go; then printf '%s' "$(cygpath -w "$GO_EXE") test -C $(go_dir) ./..."
+  elif is_rust; then printf '%s' "$(cygpath -w "$CARGO_EXE") test --manifest-path $(rust_dir)/Cargo.toml"
   else printf '%s' ".\\.venv\\Scripts\\python.exe $(plan_paths test | head -1)"; fi
 }
 
@@ -148,6 +155,7 @@ harvest)
   T="$(plan_paths test | head -1)"
   echo "--- repository test: $T"
   if is_go; then ( cd "$W" && "$GO_EXE" test -C "$(go_dir)" ./... 2>&1 | tail -6 )
+  elif is_rust; then ( cd "$W" && "$CARGO_EXE" test --manifest-path "$(rust_dir)/Cargo.toml" 2>&1 | tail -8 )
   else ( cd "$W" && "$PYI" "$T" 2>&1 | tail -4 ); fi
   ;;
 *) echo "usage: run-plan.sh mount|start|harvest <id>"; exit 64 ;;

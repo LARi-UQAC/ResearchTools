@@ -536,6 +536,32 @@ The dry run also tells you when a plan is too big: "this plan creates N new file
 Split the plan" means the reply cannot hold them, and a cut reply leaves the files
 empty. Split the plan before the night, not after.
 
+### Writing in Go or Rust instead of Python
+
+The language is chosen in `spec.md`, and the kit needs nothing more than a test
+command, because that command compiles first: a compile error comes back to the
+model exactly like a failing test, inside aider's fix attempts (three per run).
+
+| | Python (default) | Go | Rust |
+|---|---|---|---|
+| Test command | `.\.venv\Scripts\python.exe -m unittest discover -s Test` | `go test -C <module folder> ./...` | `cargo test --manifest-path <crate>/Cargo.toml` |
+| Test file of a source | `Test/test_<name>.py` | `<name>_test.go` beside the source | `<crate>/tests/<name>.rs` |
+| Project file a plan may name | `requirements.txt` | none: `go.mod` is not recognised (extension `.mod`) | `Cargo.toml` |
+
+- Give the command with `-TestCommand` (or `AIDER_TEST_COMMAND` for the night). If
+  the toolchain is not on `PATH`, write its full path in the command.
+- **Go**: create `go.mod` yourself before the run (a module line and the Go
+  version) and list it among the files the plan only reads.
+- **Rust**: integration tests in `tests/` see only a library, so put the logic in
+  `src/lib.rs` and its modules and keep `src/main.rs` to a few lines. A `lib.rs`
+  that only declares modules needs no test of its own; every module file does. The
+  crate's `Cargo.toml` is created by the model when the plan names it, or by you
+  with `cargo init` before the run. Prefer the standard library: a first build
+  downloads every crate the plan adds.
+- The kit does not install a toolchain. A user-level install needs no
+  administrator rights. A compiled language may need more than three attempts to
+  reach a clean build, so keep each plan small, a few files.
+
 **To take the worked example instead**, which is the fastest way to see a night
 run end to end. One uninterrupted sequence, from nothing to a dry run:
 

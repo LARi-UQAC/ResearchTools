@@ -219,6 +219,16 @@
       "unit": "round folders listed",
       "provenance": "chosen 2026-10-17 - an effort is one folder and a few may be open at once; the cap bounds a root that accumulated many finished ones"
     },
+    "aider_log_tail_bytes": {
+      "value": 65536,
+      "unit": "bytes read from the end of an aider log",
+      "provenance": "chosen 2026-11-09 - aider prints one request line of a few dozen bytes per request, so 64 KiB holds the last requests while a log that grew for hours costs a bounded read"
+    },
+    "aider_log_files": {
+      "value": 3,
+      "unit": "newest log files searched for a request line",
+      "provenance": "chosen 2026-11-09 - during a test run the newest log holds no request line, so the search goes back a few files"
+    },
     "local_calls_tail_bytes": {
       "value": 262144,
       "unit": "bytes read from the end of the bridge log",

@@ -2555,8 +2555,63 @@ function appendRounds(panel, state) {
   panel.appendChild(list);
 }
 
+/* What an aider run is doing, in words. The keys are the driver's states, which
+   the adapter lists as `flow_states`; the mode is what the reader asked for: is
+   the writer coding, is a test running, or is the reviewer auditing. */
+var AIDER_MODE = {
+  starting: "starting",
+  writing: "CODING - the writer model is editing",
+  testing: "TESTING - the test command runs",
+  evicting: "swapping the model",
+  auditing: "AUDITING - the reviewer reads the code",
+  archiving: "archiving the plan",
+  idle: "idle - no update for a while",
+  done: "done",
+  done_with_blocked: "done, needs reading",
+  failed: "stopped"
+};
+var AIDER_ENDED = { done: true, done_with_blocked: true, failed: true };
+
+function appendAiderRuns(panel, state) {
+  /* The aider runs still going, with the plan they are on, the mode and the
+     context they hold. Nothing is drawn when there is none, so a machine with no
+     aider shows the panel as before. */
+  var harness = ((state.fleet || {}).harnesses || {}).aider || {};
+  var runs = (harness.sessions || []).filter(function (s) {
+    var st = (s.flow || {}).state;
+    return s.live !== false && st && AIDER_ENDED[st] !== true;
+  }).slice(0, 3);
+  runs.forEach(function (s) {
+    var progress = s.progress || {};
+    var flow = s.flow || {};
+    var tokens = flow.tokens || {};
+    var head = el("div", "next");
+    head.appendChild(el("span", null, "aider run"));
+    panel.appendChild(head);
+    kv(panel, [
+      ["project", String(s.project || "").split(/[\\/]/).pop()],
+      ["mode", AIDER_MODE[flow.state] || flow.state],
+      ["plan", (progress.plan_index || (progress.plans_done || 0) + 1)
+        + " of " + (progress.plans_total || "?")
+        + (s.plan ? " (" + s.plan + ")" : "")
+        + (progress.round ? ", round " + progress.round : "")],
+      ["steps", (progress.steps_done || 0) + " done, "
+        + (progress.steps_open || 0) + " open"
+        + (progress.steps_blocked ? ", " + progress.steps_blocked + " blocked" : ""),
+       !!progress.steps_blocked],
+      ["context", tokens.window
+        ? (tokens.live_context !== undefined && tokens.live_context !== null
+            ? thousands(tokens.live_context) + "K of the "
+            : "not read yet, fixed reserve " + thousands(tokens.fixed_cost || 0)
+              + "K of the ") + thousands(tokens.window) + "K window"
+        : null]
+    ]);
+  });
+}
+
 function renderPlanPanel(state) {
   var panel = railPanel("Plan");
+  appendAiderRuns(panel, state);
   var progress = state.progress || {};
   if (progress.status !== "ok") {
     unavailable(panel, "Plan unavailable", progress);
@@ -3664,6 +3719,13 @@ function tokenNote(tokens) {
      the run's progress, which it is not. A harness that reports no task budget
      gets no note. */
   var t = tokens || {};
+  if (t.live_context !== undefined && t.live_context !== null && t.window) {
+    /* A run that logs its requests: the ring shows the context the model holds
+       at its last request, and the fixed reserve stays beside it. */
+    return "context " + thousands(t.live_context) + "K of the "
+      + thousands(t.window) + "K window (the last request; fixed reserve "
+      + thousands(t.fixed_cost || 0) + "K)";
+  }
   if (!t.task_budget || !t.window) { return ""; }
   return "fixed cost " + thousands(t.held || 0) + "K, task budget "
     + thousands(t.task_budget) + "K of the " + thousands(t.window) + "K window";

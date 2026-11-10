@@ -31,7 +31,90 @@ same thing.
 import io
 import json
 import os
+import re
 import sys
+from pathlib import Path
+
+# The live context. The driver writes one log per aider process into the plans
+# folder of the project, and aider prints one line per request with the prompt
+# tokens it sent ("Tokens: 21k sent, 479 received."). That prompt is the context
+# the model holds at that moment, so the last such line is the live number. This
+# is the ONE place the adapter opens a project, and only to read the tail of a
+# few log files, bounded by two caps of observe-config.json. Only a run that is
+# still going is read: finished records are many and are read on every poll.
+_LOGS_PARTS = ("docs", "superpowers", "plans", ".logs")
+_TOKENS_SENT = re.compile(r"Tokens:\s*([0-9]+(?:\.[0-9]+)?)(k?)\s+sent")
+_TICKS_PER_K = 1000  # aider prints thousands as "k": a unit, not a setting
+_UTF16_BOM = b"\xff\xfe"
+
+
+def _sent_tokens(text):
+    """The prompt tokens of the LAST request in a log text, or None."""
+    found = _TOKENS_SENT.findall(text)
+    if not found:
+        return None
+    number, unit = found[-1]
+    return int(round(float(number) * (_TICKS_PER_K if unit else 1)))
+
+
+def _read_tail(path, size):
+    """The last `size` bytes of a log as text. The driver writes its logs through
+    Windows PowerShell 5.1, which saves UTF-16 with a byte-order mark, so the
+    encoding is read from the first two bytes and a UTF-16 tail starts on an
+    even offset."""
+    with io.open(path, "rb") as handle:
+        utf16 = handle.read(len(_UTF16_BOM)) == _UTF16_BOM
+        handle.seek(0, os.SEEK_END)
+        start = max(0, handle.tell() - size)
+        if utf16:
+            start -= start % 2
+        handle.seek(start)
+        data = handle.read()
+    return data.decode("utf-16-le" if utf16 else "utf-8", errors="replace")
+
+
+def _live_context(project, caps):
+    """
+    Purpose:
+        Read the context the model holds right now from the newest aider logs
+        of a project.
+    Inputs:
+        project (str): the project path of a run record
+        caps (dict): observe-config `caps`, with `aider_log_tail_bytes` and
+            `aider_log_files`
+    Outputs:
+        (tokens, reason): the prompt tokens of the last request and None, or
+        None and why nothing could be read. The reason holds no path.
+    """
+    def plain(key):
+        # observe-config.json wraps each value as {value, unit, provenance}; a
+        # bare number (a test fixture) is read as it is.
+        entry = caps[key]
+        return entry["value"] if isinstance(entry, dict) else entry
+
+    try:
+        tail = int(plain("aider_log_tail_bytes"))
+        count = int(plain("aider_log_files"))
+    except (KeyError, TypeError, ValueError):
+        return None, "observe-config caps aider_log_tail_bytes and aider_log_files are missing"
+    if tail <= 0 or count <= 0 or not project:
+        return None, "no project or no positive cap to read the logs with"
+    try:
+        logs = Path(project).joinpath(*_LOGS_PARTS)
+        # Newest first: during a test run the newest log holds no request line,
+        # so the search goes on to the next one rather than reporting nothing.
+        files = sorted(logs.glob("*.log"), key=lambda p: p.stat().st_mtime,
+                       reverse=True)[:count]
+    except OSError:
+        return None, "the project has no readable log folder yet"
+    for path in files:
+        try:
+            sent = _sent_tokens(_read_tail(path, tail))
+        except OSError:
+            continue
+        if sent is not None:
+            return sent, None
+    return None, "no request has been logged yet"
 
 # Every state the driver can write, in the order it walks them. The adapter is
 # the ONE place this vocabulary lives on the viewer side: a page that carried its
@@ -140,8 +223,11 @@ def _alive(pid):
         return None
 
 
-def _flow(record, age_seconds, idle_after):
-    """The step list the process tab draws, and the state it is in."""
+def _flow(record, age_seconds, idle_after, live=None):
+    """The step list the process tab draws, and the state it is in.
+
+    `live` is (tokens, reason) from `_live_context`, or None when the run is
+    finished and no log was read."""
     state = str(record.get("state") or "unknown")
     note = str(record.get("note") or "")
 
@@ -184,9 +270,22 @@ def _flow(record, age_seconds, idle_after):
     # unavailable with its reason (R8) rather than a zero the page would draw.
     tokens = {"status": "ok" if window else "unavailable", "held": held,
               "task_budget": working, "window": window, "working_set": working}
+    live_tokens, live_reason = live if live else (None, None)
     if window:
-        tokens["percent"] = round(100.0 * (window - working) / window, 1)
-        tokens["percent_of"] = "the fixed cost against the window the driver measured"
+        tokens["fixed_cost"] = held
+        if live_tokens is not None:
+            # The ring and the meters read `held` and `percent`: they now show
+            # the context the model holds, and the fixed cost stays beside it.
+            tokens["held"] = live_tokens
+            tokens["live_context"] = live_tokens
+            tokens["percent"] = round(100.0 * live_tokens / window, 1)
+            tokens["percent_of"] = ("the prompt of the last request, against "
+                                    "the window the driver measured")
+        else:
+            tokens["percent"] = round(100.0 * (window - working) / window, 1)
+            tokens["percent_of"] = "the fixed cost against the window the driver measured"
+            if live_reason:
+                tokens["live_reason"] = live_reason
     else:
         tokens["reason"] = "the record carries no window"
         tokens["percent"] = None
@@ -250,6 +349,11 @@ def collect(context):
         alive = _alive(record.get("pid"))
         done = record.get("plans_done") or 0
         total = record.get("plan_count") or 0
+        # Only a run still going is read: the finished ones are many.
+        live = None
+        if str(record.get("state") or "") not in TERMINAL_STATES and alive is not False:
+            live = _live_context(record.get("project"),
+                                 (context.config or {}).get("caps") or {})
 
         sessions.append({
             "session_id": record.get("run_id") or path.stem,
@@ -275,12 +379,14 @@ def collect(context):
             "progress": {
                 "plans_done": done,
                 "plans_total": total,
+                "plan_index": record.get("plan_index") or 0,
+                "round": record.get("round") or 0,
                 "steps_done": record.get("steps_done") or 0,
                 "steps_open": record.get("steps_open") or 0,
                 "steps_blocked": record.get("steps_blocked") or 0,
                 "audit_bytes": record.get("audit_bytes") or 0,
             },
-            "flow": _flow(record, age, idle_after),
+            "flow": _flow(record, age, idle_after, live),
             # Aider has no UserPromptSubmit event, so no inbox message can ever
             # reach it. Stated rather than omitted: a missing field would be read
             # as reachable.

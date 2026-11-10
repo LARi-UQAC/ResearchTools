@@ -1077,6 +1077,64 @@ svg.machine .m-loop-label--blocked { fill: var(--rt-alarm); }
   border-color: #16232c;
 }
 svg.flowgraph { display: block; width: 100%; }
+/* Rex, the watchdog dog: a black doberman in a shield, three rings round him (the
+   model server's CPU, the GPU in VRAM, the GPU in CUDA) in the agents' colours.
+   Awake he walks slowly under the agent he watches, sways and sniffs; asleep he is
+   curled up and the rings are empty. */
+svg.flowgraph .rex-walker { transition: transform 4s ease-in-out; }
+svg.flowgraph .rex-track { fill: none; stroke: #1b2c36; stroke-width: 2; }
+svg.flowgraph .rex-arc { fill: none; stroke-width: 3; stroke-linecap: round; }
+svg.flowgraph .rex-arc--cpu { stroke: var(--rt-budget-session); }
+svg.flowgraph .rex-arc--vram { stroke: var(--rt-budget-figure); }
+svg.flowgraph .rex-arc--cuda { stroke: #6fb2d8; }
+svg.flowgraph .rex-arc--hot { stroke: var(--rt-budget-full); }
+svg.flowgraph .rex-legend { font-size: 12px; font-weight: 700; }
+svg.flowgraph .rex-leg--cpu { fill: #4fbf7a; }
+svg.flowgraph .rex-leg--vram { fill: var(--rt-budget-figure); }
+svg.flowgraph .rex-leg--cuda { fill: #6fb2d8; }
+svg.flowgraph .rex-shield {
+  fill: #dbe7ee; stroke: #6fb2d8; stroke-width: 1.5; vector-effect: non-scaling-stroke;
+}
+svg.flowgraph .rex-shield-line { fill: none; stroke: #0b141b; stroke-width: 1;
+  opacity: 0.55; vector-effect: non-scaling-stroke; }
+svg.flowgraph .rex-asleep .rex-shield { fill: #7d909b; stroke: #46626f; filter: none; }
+svg.flowgraph .rex-ink { fill: #05090c; }
+svg.flowgraph .rex-light { fill: #dbe7ee; }
+svg.flowgraph .rex-stroke { fill: none; stroke: #dbe7ee; stroke-width: 1;
+  stroke-linecap: round; vector-effect: non-scaling-stroke; }
+svg.flowgraph .rex-tail { fill: none; stroke: #05090c; stroke-width: 2.5;
+  stroke-linecap: round; vector-effect: non-scaling-stroke; }
+svg.flowgraph .rex-title { font-size: 13px; fill: #e6f1f6; }
+svg.flowgraph .rex-line { font-size: 11px; fill: #9fd0e8; }
+svg.flowgraph .rex-figure { font-size: 11px; fill: var(--rt-budget-figure); }
+svg.flowgraph .rex-awake .rex-art {
+  transform-box: fill-box; transform-origin: 50% 100%;
+  animation: rex-sway 6s ease-in-out infinite;
+}
+svg.flowgraph .rex-awake .rex-nose {
+  transform-box: fill-box; transform-origin: 50% 50%;
+  animation: rex-sniff 3.2s ease-in-out infinite;
+}
+svg.flowgraph .rex-awake .rex-waft { opacity: 0; animation: rex-waft 3.2s ease-in-out infinite; }
+svg.flowgraph .rex-asleep .rex-art { animation: rex-breathe 5s ease-in-out infinite;
+  transform-box: fill-box; transform-origin: 50% 100%; }
+svg.flowgraph .rex-z { font-size: 90px; font-weight: 700; fill: #9fd0e8; opacity: 0;
+  animation: rex-z 4s ease-in-out infinite; }
+svg.flowgraph .rex-z:nth-of-type(2) { animation-delay: 1.3s; }
+svg.flowgraph .rex-z:nth-of-type(3) { animation-delay: 2.6s; }
+@keyframes rex-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes rex-sniff {
+  0%, 55%, 100% { transform: scale(1); }
+  10%, 30% { transform: scale(1.5); }
+  20%, 40% { transform: scale(1); }
+}
+@keyframes rex-waft { 0%, 55%, 100% { opacity: 0; } 15%, 35% { opacity: 0.9; } }
+@keyframes rex-breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.03); } }
+@keyframes rex-z { 0% { opacity: 0; transform: translateY(8px); }
+  40% { opacity: 0.9; } 100% { opacity: 0; transform: translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) {
+  svg.flowgraph .rex-walker, svg.flowgraph .rex-walker * { animation: none !important; transition: none !important; }
+}
 svg.flowgraph text { fill: #cfe0e8; }
 /* The agent: a hexagon inside a token ring, lit rather than outlined. */
 svg.flowgraph .fx-hex {
@@ -4162,7 +4220,7 @@ function hookRows(lane, declared) {
   return rows;
 }
 
-function agentGraph(lanes, width, sessionMax, declared, holding) {
+function agentGraph(lanes, width, sessionMax, declared, holding, rex) {
   /* One NODE per running agent, its tool calls on curved links around it, its
      hooks named beside it, its subagents hanging below on a curve, and the
      memories every agent shares over on the right.
@@ -4174,7 +4232,7 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
   var nodeR = 30;
   var ringR = 42;
   var rowH = 250;
-  var colX = 300;
+  var colX = 300 + (rex ? REX_FIG.gutter : 0);
   var sharedX = Math.max(colX + 470, width - 170);
   var bounds = { minX: 0, minY: 0, maxX: width, maxY: 0 };
   var mark = function (x, y) {
@@ -4414,6 +4472,21 @@ function agentGraph(lanes, width, sessionMax, declared, holding) {
       });
   });
 
+  if (rex) {
+    /* Rex stands in the left gutter, level with the agent he watches. He picks among
+       the agents actually DRAWN (the filter above may hide some), by the clock, and
+       the next poll moves him: the CSS transition on his group does the walking. */
+    var rowOf = {};
+    lanes.forEach(function (lane, row) { rowOf[lane.id] = row; });
+    var drawn = rex.targets.filter(function (t) { return rowOf["s:" + t.id] !== undefined; });
+    var focus = (rex.awake && drawn.length)
+      ? drawn[Math.floor(rex.nowMs / rex.watchMs) % drawn.length] : null;
+    var rexY = centre(focus ? rowOf["s:" + focus.id] : 0).y;
+    mark(0, rexY - REX_FIG.rings[2] - 12);
+    mark(REX_FIG.cx * 2, rexY + REX_FIG.rings[2] + 90);
+    parts.push(rexFigure(rex, REX_FIG.cx, rexY, focus));
+  }
+
   var defs = '<defs>'
     + '<filter id="fxglow" x="-60%" y="-60%" width="220%" height="220%">'
     + '<feGaussianBlur stdDeviation="4" result="blur"/>'
@@ -4527,6 +4600,218 @@ function sessionMeters(host, state) {
   if (drawn) { host.appendChild(block); }
 }
 
+/* ---- Rex, the watchdog dog -------------------------------------------------
+   He lives INSIDE the agent graph, in a gutter on its left, and walks up and down it
+   to stand level with the agent he watches, facing the agents. An agent is about the
+   size of a person (a hexagon of radius 30 in a ring of 42) and Rex is about a third
+   of that: his shield is 25 by 30 and his three rings stay close round it. The
+   geometry is the figure's own layout, not a configured value; how long he looks at
+   one agent comes from the view config (rex_watch_seconds). */
+var REX_FIG = { gutter: 110, cx: 112, rings: [26, 31, 36], dog: 0.125, hot: 0.9 };
+
+var REX_SHIELD = "M100,6 L190,34 V122 C190,178 150,216 100,238 "
+  + "C50,216 10,178 10,122 V34 Z";
+/* The doberman, in the shield's own 200 x 240 space, facing right and looking up. */
+var REX_DOG = "M52,236 L58,170 C60,140 66,122 78,104 L70,34 L98,88 "
+  + "C102,86 106,85 110,84 L128,28 L132,94 C140,98 146,104 152,114 "
+  + "L184,124 L190,132 L186,142 L158,148 L148,160 L140,172 L130,184 "
+  + "L172,214 L172,236 Z";
+var REX_CROWN = "M82,22 L85,6 L93,16 L100,4 L107,16 L115,6 L118,22 Z";
+
+function rexWord(state) {
+  return (AIDER_MODE[state] || state || "").split(" - ")[0];
+}
+
+function rexTarget(session) {
+  var progress = session.progress || {};
+  var flow = session.flow || {};
+  return {
+    id: session.session_id,
+    name: String(session.project || "agent").split(/[\\/]/).pop(),
+    mode: rexWord(flow.state),
+    plan: "plan " + (progress.plan_index || (progress.plans_done || 0) + 1)
+      + " of " + (progress.plans_total || "?")
+      + (progress.round ? ", round " + progress.round : ""),
+    context: tokenNote(flow.tokens),
+    ctx: rexCtx(flow.tokens)
+  };
+}
+
+function rexCtx(tokens) {
+  /* The context in the few characters the gutter under the dog can hold. */
+  var t = tokens || {};
+  if (t.live_context === undefined || t.live_context === null || !t.window) { return ""; }
+  return "ctx " + thousands(t.live_context) + "K / " + thousands(t.window) + "K"
+    + (t.window_of === "reviewer" ? " reviewer" : "");
+}
+
+function rexModel(state, hash, nowMs) {
+  /* What Rex draws, from the snapshot alone. The agent he looks at changes every
+     rex_watch_seconds and is computed from the clock, so the figure needs no timer
+     of its own: the next poll moves him. `#rex-demo` and `#rex-sleep` force the two
+     poses so he can be seen before the watchdog program exists. */
+  var rex = state.rex || null;
+  var demo = /rex-demo/.test(hash || "");
+  var sleep = /rex-sleep/.test(hash || "");
+  if (!rex && !demo && !sleep) { return null; }
+  var aider = ((state.fleet || {}).harnesses || {}).aider || {};
+  var targets = (aider.sessions || []).filter(function (s) {
+    var st = (s.flow || {}).state;
+    return s.live !== false && st && AIDER_ENDED[st] !== true;
+  }).map(rexTarget);
+  var loads = rex || {};
+  var awake = !!loads.active;
+  if (demo) {
+    awake = true;
+    loads = { cpu_percent: 54, machine_cpu_percent: 80, vram_percent: 61, cuda_percent: 38,
+              vram_used_mb: 3706, vram_total_mb: 6144, unread: {} };
+    targets = targets.length ? targets : [
+      { id: "a", name: "uwd", mode: "AUDITING", plan: "plan 2 of 6, round 1",
+        context: "context 11K of the 49K reviewer window (the last request)",
+        ctx: "ctx 11K / 49K reviewer" },
+      { id: "b", name: "u5b", mode: "CODING", plan: "plan 1 of 1, round 2",
+        context: "context 24K of the 66K window (the last request; fixed reserve 27K)",
+        ctx: "ctx 24K / 66K" },
+      { id: "c", name: "u4d", mode: "TESTING", plan: "plan 1 of 1, round 1", context: "",
+        ctx: "" }
+    ];
+  }
+  if (sleep) { awake = false; }
+  var watch = (CFG.rex_watch_seconds || 1) * 1000;
+  var index = (awake && targets.length) ? Math.floor(nowMs / watch) % targets.length : -1;
+  return { awake: awake, targets: targets, index: index, loads: loads,
+           watchMs: watch, nowMs: nowMs };
+}
+
+function rexRing(r, ratio, cls) {
+  /* One ring round Rex, centred on him: the arc from the top, as far as the ratio. */
+  var arc = (ratio > 0)
+    ? '<path class="rex-arc rex-arc--' + cls
+      + (ratio >= REX_FIG.hot ? " rex-arc--hot" : "") + '" d="'
+      + ringPath(0, 0, r, ratio) + '"/>' : "";
+  return '<circle class="rex-track" cx="0" cy="0" r="' + r + '"/>' + arc;
+}
+
+function rexPercent(value) {
+  return (value === null || value === undefined) ? "-" : Math.round(value) + "%";
+}
+
+function rexDogArt() {
+  return '<g class="rex-art"><path class="rex-ink" d="' + REX_DOG + '"/>'
+    + '<path class="rex-ink" d="' + REX_CROWN + '"/>'
+    + '<path class="rex-light" d="M118,112 L138,106 L132,118 Z"/>'
+    + '<path class="rex-stroke" d="M80,100 L74,50 M114,88 L124,46 M150,142 L180,138"/>'
+    + '<g class="rex-nose"><circle class="rex-light" cx="183" cy="130" r="3"/></g>'
+    + '<path class="rex-stroke rex-waft" d="M193,124 C198,128 198,134 193,138 '
+    + 'M198,120 C205,127 205,135 198,142"/></g>';
+}
+
+function rexSleepingArt() {
+  return '<g class="rex-art"><path class="rex-ink" d="M36,196 C36,150 160,150 170,196 '
+    + 'C174,228 56,238 36,196 Z"/>'
+    + '<path class="rex-ink" d="M40,186 C30,166 50,150 72,158 L88,148 L92,168 '
+    + 'C98,180 82,200 60,200 Z"/><path class="rex-ink" d="M68,158 L62,134 L84,150 Z"/>'
+    + '<path class="rex-tail" d="M150,208 C180,208 190,188 178,170"/>'
+    + '<path class="rex-stroke" d="M56,180 L68,182"/></g>'
+    + '<text class="rex-z" x="104" y="140">z</text>'
+    + '<text class="rex-z" x="120" y="122">z</text>'
+    + '<text class="rex-z" x="138" y="104">Z</text>';
+}
+
+function rexFigure(model, x, y, focus) {
+  /* Rex at (x, y), the centre of his three rings: the whole machine's CPU, the GPU in
+     VRAM and the GPU in CUDA, in the agents' colours. The group carries a CSS
+     transition on its transform, so when the next poll puts him level with another
+     agent he WALKS there. Under him: his state, the agent he watches, its mode and
+     plan, its context and the loads. Awake he sways and sniffs; asleep he is curled
+     up and the rings are empty. */
+  var f = REX_FIG;
+  var loads = model.loads || {};
+  var asleep = !model.awake;
+  var cpuRing = (loads.machine_cpu_percent !== null && loads.machine_cpu_percent !== undefined)
+    ? loads.machine_cpu_percent : loads.cpu_percent;
+  var ratios = asleep ? [0, 0, 0]
+    : [(cpuRing || 0) / 100, (loads.vram_percent || 0) / 100, (loads.cuda_percent || 0) / 100];
+  var reach = f.rings[2];
+  var g = '<g class="rex-walker ' + (asleep ? "rex-asleep" : "rex-awake")
+    + '" data-detail="note" data-detail-title="Rex, the watchdog" data-detail-note="'
+    + escapeText(rexNote(model, focus, cpuRing)) + '" tabindex="0"'
+    + ' style="transform: translate(' + x + 'px, ' + y + 'px)">'
+    + rexRing(f.rings[0], ratios[0], "cpu") + rexRing(f.rings[1], ratios[1], "vram")
+    + rexRing(f.rings[2], ratios[2], "cuda")
+    + '<g transform="translate(' + (-100 * f.dog) + "," + (-120 * f.dog) + ") scale("
+    + f.dog + ')">'
+    + '<path class="rex-shield" d="' + REX_SHIELD + '"/>'
+    + '<path class="rex-shield-line" d="M100,18 L178,42 V122 C178,170 144,204 100,224 '
+    + 'C56,204 22,170 22,122 V42 Z"/>'
+    + (asleep ? rexSleepingArt() : rexDogArt()) + "</g>";
+  var ty = reach + 16;
+  g += '<text class="rex-legend" x="0" y="' + ty + '" text-anchor="middle">'
+    + '<tspan class="rex-leg rex-leg--cpu">CPU ' + rexPercent(asleep ? null : cpuRing) + "</tspan>"
+    + '<tspan class="rex-leg rex-leg--vram" dx="8">VRAM '
+    + rexPercent(asleep ? null : loads.vram_percent) + "</tspan>"
+    + '<tspan class="rex-leg rex-leg--cuda" dx="8">CUDA '
+    + rexPercent(asleep ? null : loads.cuda_percent) + "</tspan></text>";
+  var title = asleep ? "REX - asleep"
+    : (focus ? "REX - watching " + focus.name.slice(0, 14) : "REX - on guard");
+  g += '<text class="rex-title" x="0" y="' + (ty + 20) + '" text-anchor="middle">'
+    + escapeText(title) + "</text>";
+  var lines = [];
+  if (asleep) {
+    lines.push("the watchdog is not running");
+  } else if (focus) {
+    lines.push(focus.mode + " - " + focus.plan);
+    if (focus.ctx) { lines.push(focus.ctx); }
+  } else {
+    lines.push("no agent to watch");
+  }
+  if (!asleep) {
+    var bits = [];
+    if (loads.cpu_percent !== null && loads.cpu_percent !== undefined) {
+      bits.push("model server " + Math.round(loads.cpu_percent) + "%");
+    }
+    if (loads.vram_used_mb !== null && loads.vram_used_mb !== undefined && loads.vram_total_mb) {
+      bits.push("VRAM " + Math.round(loads.vram_used_mb) + "/" + Math.round(loads.vram_total_mb) + " MB");
+    }
+    if (bits.length) { lines.push(bits.join(" - ")); }
+  }
+  lines.forEach(function (line, i) {
+    g += '<text class="' + (!asleep && i === lines.length - 1 && lines.length > 1
+        ? "rex-figure" : "rex-line") + '" x="0" y="' + (ty + 36 + 15 * i)
+      + '" text-anchor="middle">' + escapeText(line) + "</text>";
+  });
+  return g + "</g>";
+}
+
+function rexNote(model, focus, cpuRing) {
+  /* The hover sentence: everything the gutter has no room for. */
+  var loads = model.loads || {};
+  if (!model.awake) {
+    return "Rex is asleep: the watchdog program is not running, so nothing is being watched";
+  }
+  var parts = [focus ? "watching " + focus.name + ": " + focus.mode + ", " + focus.plan
+                     + (focus.context ? "; " + focus.context : "")
+                     : "on guard with no agent to watch"];
+  parts.push("machine CPU " + rexPercent(cpuRing) + ", model server "
+    + rexPercent(loads.cpu_percent) + ", VRAM " + rexPercent(loads.vram_percent)
+    + (loads.vram_used_mb ? " (" + Math.round(loads.vram_used_mb) + " of "
+      + Math.round(loads.vram_total_mb) + " MB)" : "")
+    + ", CUDA " + rexPercent(loads.cuda_percent));
+  return parts.join(". ");
+}
+
+function rexAlone(model) {
+  /* The drawing when there is no agent graph to live in (no agent is shown): the same
+     figure, in the same dark panel. */
+  var f = REX_FIG;
+  var h = 190;
+  var box = el("div", "live-graph");
+  box.innerHTML = '<svg class="flowgraph" viewBox="0 0 ' + (f.cx * 2) + " " + h
+    + '" style="height:' + h + 'px" role="img" aria-label="Rex, the watchdog dog">'
+    + rexFigure(model, f.cx, f.rings[2] + 12, null) + "</svg>";
+  return box;
+}
+
 function renderLive(state) {
   var host = document.getElementById("live");
   var next = stage();
@@ -4572,6 +4857,8 @@ function renderLive(state) {
     next.appendChild(stale);
   }
 
+  var rexModelNow = rexModel(state, window.location.hash, Date.now());
+
   if (machine && lanes.length) {
     var flow = lanes[0];
     var travelled = {};
@@ -4611,9 +4898,10 @@ function renderLive(state) {
       lanes, width,
       storedLimit("session") || CFG.context_window_tokens || 0,
       machine ? machine.hook_loops : [],
-      sharedState(state));
+      sharedState(state), rexModelNow);
     next.appendChild(graph);
   } else {
+    if (rexModelNow) { next.appendChild(rexAlone(rexModelNow)); }
     next.appendChild(el("div", "unavail", hidden
       ? "Every session here is hidden by the filter above. "
         + hiddenNote(hidden) + "."

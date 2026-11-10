@@ -63,7 +63,9 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
                         # report unavailable regardless of their TTL.
                         "identity": value(30), "traces": value(30),
                         # Local coding contract (2026-10-17): the bridge-log section.
-                        "local_calls": value(10), "rounds": value(15)},
+                        "local_calls": value(10), "rounds": value(15),
+                        # 2026-11-09: the numbers behind the watchdog dog.
+                        "rex": value(3)},
         # The floors a VIEWER cannot ask below. mcp_live's floor is its own
         # TTL, which is the point: the refresh control may speed up a local
         # collector and must never speed up the one that leaves the machine.
@@ -71,7 +73,7 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
                               "usage": value(60)},
         "timeouts_seconds": {"subprocess_default": value(20),
                              "mcp_list": value(45), "action_default": value(600),
-                             "ping": value(2),
+                             "ping": value(2), "rex_probe": value(10),
                              # serve() builds the voice callables unconditionally
                              # (Task 5, 2026-09-26), so this and the two keys
                              # below are declared here for the same reason
@@ -94,6 +96,8 @@ def fixture_config(bind_host="127.0.0.1", port=8787):
         "paths": {"action_log": value("~/.claude/rt-actions.jsonl"),
                   "inbox_root": value("~/.claude/rt-inbox"),
                   "obsidian_outbox": value("~/.claude/obsidian-outbox")},
+        "rex": {"watchdog_process": value("aider-watchdog.exe"),
+                "model_server_names": value(["ollama", "llama-server"])},
         "caps": {"inbox_message_chars": value(4000),
                  "output_tail_chars": value(2000),
                  "voice_question_chars": value(500)},

@@ -29,6 +29,7 @@ import adapters  # noqa: E402
 import collect_graph  # noqa: E402
 import collect_identity  # noqa: E402
 import collect_local  # noqa: E402
+import collect_rex  # noqa: E402
 import collect_mirrors  # noqa: E402
 import collect_progress  # noqa: E402
 import collect_rounds  # noqa: E402
@@ -193,6 +194,11 @@ def section_builders(repo_root=None, home=None, config=None):
         ("local_calls", lambda now: _guarded(
             "the local calls panel",
             lambda: collect_local.collect(config, home, now))),
+        # 2026-11-09: the numbers behind Rex, the watchdog dog (is the program running,
+        # the model server's CPU, the GPU in VRAM and in CUDA). Read-only and additive.
+        ("rex", lambda now: _guarded(
+            "the watchdog dog",
+            lambda: collect_rex.collect(config, home, now))),
         ("rounds", lambda now: _guarded(
             "the rounds panel",
             lambda: collect_rounds.collect(repo_root, home, now, config))),
@@ -378,6 +384,7 @@ def view_config(config):
     return {
         "poll_ms": config_value(config, "view", "poll_ms"),
         "detail_rows": config_value(config, "view", "detail_rows"),
+        "rex_watch_seconds": config_value(config, "view", "rex_watch_seconds"),
         "flow_groups": config_value(config, "caps", "flow_groups"),
         "refresh_choices_ms": config_value(config, "view",
                                            "refresh_choices_ms"),

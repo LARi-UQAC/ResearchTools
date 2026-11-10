@@ -62,6 +62,8 @@ SECTION_TTL_KEY = {
     "usage": "usage",
     # Local coding contract plan 6: a bounded tail of one small log file.
     "local_calls": "local_calls",
+    # The dog Rex: three small local calls, on a short timer so the rings move.
+    "rex": "rex",
     # Plan stages and review loops: a few folders and small ledgers.
     "rounds": "rounds",
     # Phase 2/3 of the journal-durable plan (2026-09-24): both optional,

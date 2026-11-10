@@ -44,6 +44,11 @@
       "unit": "tokens of context window used as the DENOMINATOR of the token bar, or null for no bar at all",
       "provenance": "unset on purpose - no transcript reports the window its tokens sit in, so any number here is the operator's and not a measurement. Left null the page prints the totals and draws NO bar, because a bar relative to something arbitrary reads as fullness: measured 2026-09-01, a bar scaled to the busiest session on screen showed that session permanently full"
     },
+    "rex_watch_seconds": {
+      "value": 8,
+      "unit": "seconds Rex looks at one agent before he walks to the next",
+      "provenance": "chosen 2026-11-09 - long enough to read the figures under the dog, short enough that a second agent is not ignored; the walk itself is a slow CSS transition"
+    },
     "detail_rows": {
       "value": 6,
       "unit": "rows of named detail a hover panel lists before it says how many more there are",
@@ -165,6 +170,11 @@
       "unit": "seconds",
       "provenance": "chosen 2026-09-24 - collect_traces.py (Phase 3) reads OpenObserve over HTTP; kept short like identity rather than long like mcp_live, since a single-node OpenObserve answering `_search` on its own disk is cheap, unlike `claude mcp list` reaching 28 remote servers"
     },
+    "rex": {
+      "value": 3,
+      "unit": "seconds",
+      "provenance": "chosen 2026-11-09 - the three rings of Rex must visibly follow the load, and one collection is a tasklist call, one process-list call and one nvidia-smi call"
+    },
     "local_calls": {
       "value": 10,
       "unit": "seconds",
@@ -207,10 +217,27 @@
       "unit": "seconds",
       "provenance": "chosen 2026-09-24 - collect_traces.py's read side; longer than the ingest timeout because a _search query over a retained stream costs more than a single-record insert"
     },
+    "rex_probe": {
+      "value": 10,
+      "unit": "seconds allowed to each of the three calls behind the rex section (tasklist, the process list, nvidia-smi)",
+      "provenance": "chosen 2026-11-09 - a Windows process list through PowerShell takes about a second, so ten leaves room without letting a stuck call freeze a poll"
+    },
     "voice_ask_wait": {
       "value": 85,
       "unit": "seconds the voice panel's own poll loop keeps calling GET /api/voice/answer for one part before giving up on it (POST /api/voice/ask itself returns at once, 202 accepted, since 2026-10-02)",
       "provenance": "measured 2026-09-26 - the original 20 s timed out before any answer could arrive: daemon-config.json records a 36.991 s median writer-role call, and the resident ornith:9b-gpu decoded at 20.3 tok/s that day. Kept just under the daemon's own ask_request_ttl_s (90 s) so the dashboard never waits on a request the daemon has already expired. Since 2026-10-02 (plan2, voice-graph-lookup) this is a PER-PART wait, not a single total: the vault part and the graph part (plan1b) each get up to this long since their own last published part, so a slow graph query does not cut off a vault answer that already arrived"
+    }
+  },
+  "rex": {
+    "watchdog_process": {
+      "value": "aider-watchdog.exe",
+      "unit": "image name of the watchdog program",
+      "provenance": "specified 2026-11-09 - the name the aider-setup watchdog is built under; its presence in the process list is what wakes Rex"
+    },
+    "model_server_names": {
+      "value": ["ollama", "llama-server"],
+      "unit": "process names whose CPU time is the model server's",
+      "provenance": "specified 2026-11-09 - the Ollama daemon and the runner it starts for the loaded model, the same two names the watchdog sums"
     }
   },
   "caps": {

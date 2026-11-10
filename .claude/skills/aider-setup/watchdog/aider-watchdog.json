@@ -4,8 +4,8 @@
     "provenance": "initial value, adjust after measuring"
   },
   "negligibleReferencePercent": {
-    "value": 5,
-    "provenance": "initial value, adjust after measuring"
+    "value": 10,
+    "provenance": "measured 2026-11-10: with 88% of the model on the CPU the GPU median is 8% for the reviewer model; a dimension below this share is not the one doing the work"
   },
   "lowReadings": {
     "value": 6,

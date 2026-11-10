@@ -72,7 +72,9 @@ func measureReference(d refDeps, tag string, s settings) (referenceRecord, error
 		"options": map[string]interface{}{"num_predict": s.WarmupNumPredict},
 	}
 	warmupJSON, _ := json.Marshal(warmupBody)
-	if _, err := d.post(s.OllamaURL+"/api/generate", warmupJSON, timeout); err != nil {
+	// Loading a large model into memory takes far longer than a status call, so the warm-up gets the
+	// generation timeout.
+	if _, err := d.post(s.OllamaURL+"/api/generate", warmupJSON, time.Duration(s.GenerationTimeoutSeconds)*time.Second); err != nil {
 		return referenceRecord{}, fmt.Errorf("warmup failed: %w", err)
 	}
 
@@ -128,14 +130,16 @@ func measureReference(d refDeps, tag string, s settings) (referenceRecord, error
 	}()
 
 	// One sample: the model server's CPU seconds since the previous sample, and the GPU load.
-	sample := func() {
+	// A sample with keep false only sets the CPU baseline: taken before the model decodes, its GPU
+	// and CPU would be idle values and drag the measured minimum to zero.
+	sample := func(keep bool) {
 		now := d.now()
 		rows, err := readProcessTable(d.runner, timeout)
 		if err != nil {
 			return // this sample is skipped, the next one tries again
 		}
 		cpuSeconds := serverCPUSeconds(rows, s.ModelServerNames)
-		if !firstPoll {
+		if keep && !firstPoll {
 			elapsed := now.Sub(lastTime).Seconds()
 			if elapsed > 0 {
 				cpuSamples = append(cpuSamples, (cpuSeconds-lastCPUSeconds)/elapsed*100)
@@ -144,6 +148,9 @@ func measureReference(d refDeps, tag string, s settings) (referenceRecord, error
 		firstPoll = false
 		lastCPUSeconds = cpuSeconds
 		lastTime = now
+		if !keep {
+			return
+		}
 		if gpuPercent, err := readGPUPercent(d.runner, timeout); err == nil {
 			gpuSamples = append(gpuSamples, gpuPercent)
 		}
@@ -152,17 +159,20 @@ func measureReference(d refDeps, tag string, s settings) (referenceRecord, error
 	ticker := time.NewTicker(time.Duration(s.SampleSeconds) * time.Second)
 	defer ticker.Stop()
 
-	// The first sample is the baseline the next ones are compared with, and a last one closes the
-	// measurement, so even a very short generation yields a reading.
-	sample()
+	// The first sample is the baseline the next ones are compared with. A last one is taken only when
+	// the generation ended before any tick, so even a very short generation yields a reading; otherwise
+	// the tail of the generation, partly idle, would lower the measured minimum.
+	sample(false)
 sampling:
 	for {
 		select {
 		case <-generationDone:
-			sample()
+			if len(cpuSamples) == 0 {
+				sample(true)
+			}
 			break sampling
 		case <-ticker.C:
-			sample()
+			sample(true)
 		}
 	}
 

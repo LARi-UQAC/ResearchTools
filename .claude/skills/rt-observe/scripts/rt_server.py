@@ -428,6 +428,12 @@ def start_decision(host, port, timeout_s, subprocess_timeout_s,
             "reason": detail.get("reason", "port %d is in use" % port)}
 
 
+# The errors a socket raises when the other end has already gone away. On
+# Windows a refresh gives WinError 10053 (ConnectionAbortedError) while the
+# answer is being written.
+_CLIENT_GONE = (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)
+
+
 # --------------------------------------------------------------------------
 # Routes
 # --------------------------------------------------------------------------
@@ -452,15 +458,23 @@ def make_handler(snapshot_fn, token, page_path, asset_roots,
         def _send(self, code, body, content_type):
             if isinstance(body, str):
                 body = body.encode("utf-8")
-            self.send_response(code)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            # No CORS header, ever: another origin may send a request but must
-            # never be able to read the answer.
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(body)
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                # No CORS header, ever: another origin may send a request but
+                # must never be able to read the answer.
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(body)
+            except _CLIENT_GONE:
+                # The browser left before the answer was sent (a refresh, a
+                # closed tab): nobody is listening, so nothing is raised and
+                # nothing is printed. The connection is closed, never reused.
+                # Any OTHER error still propagates: only a vanished client is
+                # ignored.
+                self.close_connection = True
 
         def _json(self, code, payload):
             self._send(code, json.dumps(payload, indent=2, default=str),

@@ -36,17 +36,18 @@ class RexPage(unittest.TestCase):
 
     FUNCTIONS = ("thousands", "tokenNote", "escapeText", "ringPath", "rexWord", "rexCtx",
                  "rexTarget", "rexModel", "rexRing", "rexPercent", "rexDogArt",
-                 "rexSleepingArt", "rexFigure", "rexNote")
+                 "rexSleepingArt", "rexFigure", "rexNote", "rexFocus", "rexJudged", "rexMedian",
+                 "rexMood", "rexRemember")
     VARS = ("AIDER_MODE", "AIDER_ENDED", "REX_FIG", "REX_SHIELD", "REX_INNER", "REX_DOG",
             "REX_EAR_INNER", "REX_EYE", "REX_BROW", "REX_CHEEK", "REX_MUZZLE", "REX_CHEST",
-            "REX_COLLAR", "REX_MOUTH")
+            "REX_COLLAR", "REX_MOUTH", "REX_DIMS", "REX_JUDGED_MODES", "rexHistory")
 
     def setUp(self):
         self.node = shutil.which("node")
         if not self.node:
             self.skipTest("node is not on PATH; the page functions cannot run")
         script = page_script()
-        parts = ["var CFG = {rex_watch_seconds: 8};"]
+        parts = ["var CFG = {rex_watch_seconds: 8, rex_baseline_polls: 10, rex_restless_ratio: 0.6, rex_agitated_ratio: 0.3, rex_judged_percent: 10};"]
         for name in self.VARS:
             body = re.search(r"var %s = .*?;\n" % name, script, re.S)
             self.assertIsNotNone(body, "%s is not declared" % name)
@@ -222,6 +223,126 @@ class RexPage(unittest.TestCase):
         agent_ring_diameter = 2 * 42
         self.assertLessEqual(dog_height, agent_ring_diameter / 2.5)
         self.assertGreater(dog_height, agent_ring_diameter / 4)
+
+
+class RexMood(unittest.TestCase):
+    """Rex gets restless when a load falls well under its recent working level (2026-11-10)."""
+
+    def setUp(self):
+        self.node = shutil.which("node")
+        if not self.node:
+            self.skipTest("node is not on PATH; the page functions cannot run")
+        helper = RexPage("test_a_running_watchdog_wakes_rex_and_he_watches_a_live_agent")
+        helper.setUp()
+        self.page = helper
+
+    def target(self, mode):
+        return {"id": "a", "name": "uwd", "mode": mode, "plan": "plan 1 of 3", "context": "", "ctx": ""}
+
+    def model(self, mode="CODING", awake=True, **loads):
+        base = {"cpu_percent": 60, "vram_percent": 80, "cuda_percent": 6, "proven_at": "t1"}
+        base.update(loads)
+        return {"awake": awake, "targets": [self.target(mode)], "index": 0, "loads": base}
+
+    def mood(self, model, cpu_history=(60,) * 10, **other):
+        history = {"cpu": list(cpu_history), "vram": other.get("vram", [80] * 10),
+                   "cuda": other.get("cuda", [6] * 10), "at": "", "mode": "CODING"}
+        return self.page.js("rexMood(%s, %s)" % (json.dumps(model), json.dumps(history)))
+
+    def test_a_steady_load_keeps_him_calm(self):
+        self.assertEqual("calm", self.mood(self.model(cpu_percent=55))["level"])
+
+    def test_a_fall_under_the_restless_share_makes_him_uneasy_and_names_the_load(self):
+        got = self.mood(self.model(cpu_percent=30))
+        self.assertEqual("restless", got["level"])
+        self.assertEqual("CPU fell to 30% from about 60%", got["reason"])
+
+    def test_a_fall_near_idle_makes_him_agitated(self):
+        self.assertEqual("agitated", self.mood(self.model(cpu_percent=10))["level"])
+
+    def test_the_memory_falling_counts_too(self):
+        got = self.mood(self.model(vram_percent=10))
+        self.assertEqual(("agitated", "VRAM fell to 10% from about 80%"), (got["level"], got["reason"]))
+
+    def test_a_load_whose_working_level_is_negligible_is_not_judged(self):
+        self.assertEqual("calm", self.mood(self.model(cuda_percent=0))["level"])
+
+    def test_too_little_history_judges_nothing(self):
+        self.assertEqual("calm", self.mood(self.model(cpu_percent=1), cpu_history=(60, 60))["level"])
+
+    def test_only_coding_and_auditing_are_judged_never_the_tests_or_sleep(self):
+        self.assertEqual("calm", self.mood(self.model("TESTING", cpu_percent=1))["level"])
+        self.assertEqual("calm", self.mood(self.model(awake=False, cpu_percent=1))["level"])
+
+    def test_a_server_without_the_settings_judges_nothing(self):
+        self.page.prelude = self.page.prelude.replace("rex_restless_ratio: 0.6, ", "")
+        self.assertEqual("calm", self.mood(self.model(cpu_percent=1))["level"])
+
+    def test_a_missing_reading_is_not_a_fall(self):
+        self.assertEqual("calm", self.mood(self.model(cpu_percent=None))["level"])
+
+    def remember(self, model, mood_level="calm", history=None):
+        history = history or {"cpu": [], "vram": [], "cuda": [], "at": "", "mode": "CODING"}
+        return self.page.js("(function () { var h = %s; rexRemember(%s, {level: %s}, h); return h; })()"
+                            % (json.dumps(history), json.dumps(model), json.dumps(mood_level)))
+
+    def test_a_calm_reading_joins_the_working_level_once_per_collection(self):
+        once = self.remember(self.model())
+        self.assertEqual([60], once["cpu"])
+        twice = self.remember(self.model(), history=once)
+        self.assertEqual([60], twice["cpu"])
+
+    def test_a_low_reading_does_not_become_the_new_normal(self):
+        got = self.remember(self.model(cpu_percent=5), mood_level="agitated")
+        self.assertEqual([], got["cpu"])
+
+    def test_the_memory_is_trimmed_to_the_window(self):
+        history = {"cpu": [1] * 10, "vram": [], "cuda": [], "at": "old", "mode": "CODING"}
+        got = self.remember(self.model(), history=history)
+        self.assertEqual(10, len(got["cpu"]))
+        self.assertEqual(60, got["cpu"][-1])
+
+    def test_a_change_of_mode_starts_the_memory_again(self):
+        history = {"cpu": [60] * 5, "vram": [], "cuda": [], "at": "old", "mode": "CODING"}
+        got = self.remember(self.model("AUDITING"), history=history)
+        self.assertEqual("AUDITING", got["mode"])
+        self.assertEqual([60], got["cpu"])
+
+    def figure(self, level):
+        model = dict(RexPage.awake(RexPage("test_asleep_has_no_arc_and_says_why")))
+        model["mood"] = {"level": level, "reason": "CPU fell to 20% from about 60%"}
+        return self.page.js("rexFigure(%s, 100, 200, %s)" % (json.dumps(model), json.dumps(RexPage.TARGET)))
+
+    def test_a_calm_dog_wears_no_mood_class(self):
+        self.assertNotIn("rex-mood--", self.figure("calm"))
+
+    def test_an_agitated_dog_paces_and_says_why(self):
+        out = self.figure("agitated")
+        self.assertIn("rex-mood--agitated", out)
+        self.assertIn("REX - agitated", out)
+        self.assertIn("CPU fell to 20% from about 60%", out)
+        self.assertIn('class="rex-pace"', out)
+
+    def test_an_uneasy_dog_is_named_uneasy_and_the_hover_explains(self):
+        out = self.figure("restless")
+        self.assertIn("rex-mood--restless", out)
+        self.assertIn("REX - uneasy", out)
+        self.assertIn("he paces to show he has noticed", out)
+
+    def test_pacing_is_a_css_animation_switched_off_under_reduced_motion(self):
+        text = page_text()
+        self.assertIn("@keyframes rex-pace {", text)
+        self.assertIn("@keyframes rex-pace-hard", text)
+        self.assertIn(".rex-mood--agitated .rex-pace { animation: rex-pace-hard", text)
+        self.assertIn("svg.flowgraph .rex-walker, svg.flowgraph .rex-walker * { animation: none !important", text)
+
+    def test_the_view_config_carries_the_mood_settings(self):
+        import rt_state
+        view = rt_state.view_config(rt_state.load_config(SKILL))
+        self.assertIsInstance(view["rex_baseline_polls"], int)
+        for key in ("rex_restless_ratio", "rex_agitated_ratio", "rex_judged_percent"):
+            self.assertIsInstance(view[key], (int, float))
+        self.assertLess(view["rex_agitated_ratio"], view["rex_restless_ratio"])
 
 
 class RexInTheAgentGraph(unittest.TestCase):

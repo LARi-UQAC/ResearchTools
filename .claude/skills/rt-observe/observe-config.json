@@ -49,6 +49,26 @@
       "unit": "seconds Rex looks at one agent before he walks to the next",
       "provenance": "chosen 2026-11-09 - long enough to read the figures under the dog, short enough that a second agent is not ignored; the walk itself is a slow CSS transition"
     },
+    "rex_baseline_polls": {
+      "value": 30,
+      "unit": "recent readings whose median is what Rex takes as the working level of a load",
+      "provenance": "chosen 2026-11-10 - about 90 seconds of the dashboard's own 3 second readings, long enough to ignore a blip and short enough to follow a change of model; unmeasured. The watchdog's own thresholds are measured, these only decide how restless the picture looks"
+    },
+    "rex_restless_ratio": {
+      "value": 0.6,
+      "unit": "fraction of the working level under which a load makes Rex uneasy",
+      "provenance": "chosen 2026-11-10, unmeasured: the model server normally holds a steady load while it generates, so a fall to under this share is already unusual"
+    },
+    "rex_agitated_ratio": {
+      "value": 0.3,
+      "unit": "fraction of the working level under which a load makes Rex agitated",
+      "provenance": "chosen 2026-11-10, unmeasured: close to the idle level the watchdog treats as a stall"
+    },
+    "rex_judged_percent": {
+      "value": 10,
+      "unit": "percent: a load whose working level is under this is not judged",
+      "provenance": "same share as the watchdog's negligibleReferencePercent, measured 2026-11-10 (a model mostly on the CPU shows a GPU load of a few percent that says nothing about progress)"
+    },
     "detail_rows": {
       "value": 6,
       "unit": "rows of named detail a hover panel lists before it says how many more there are",

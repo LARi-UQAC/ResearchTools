@@ -1127,6 +1127,19 @@ svg.flowgraph .rex-z { font-size: 90px; font-weight: 700; fill: #9fd0e8; opacity
   animation: rex-z 4s ease-in-out infinite; }
 svg.flowgraph .rex-z:nth-of-type(2) { animation-delay: 1.3s; }
 svg.flowgraph .rex-z:nth-of-type(3) { animation-delay: 2.6s; }
+svg.flowgraph .rex-mood--restless .rex-pace { animation: rex-pace 3.2s ease-in-out infinite; }
+svg.flowgraph .rex-mood--agitated .rex-pace { animation: rex-pace-hard 0.9s ease-in-out infinite; }
+svg.flowgraph .rex-awake.rex-mood--restless .rex-art { animation-duration: 2.4s; }
+svg.flowgraph .rex-awake.rex-mood--agitated .rex-art {
+  animation-name: rex-sway-hard; animation-duration: 0.7s; }
+svg.flowgraph .rex-awake.rex-mood--restless .rex-nose { animation-duration: 1.4s; }
+svg.flowgraph .rex-awake.rex-mood--agitated .rex-nose { animation-duration: 0.6s; }
+svg.flowgraph .rex-mood--restless .rex-title { fill: var(--rt-budget-figure); }
+svg.flowgraph .rex-mood--agitated .rex-title { fill: var(--rt-budget-full); }
+@keyframes rex-pace { 0%, 100% { transform: translateX(-9px); } 50% { transform: translateX(9px); } }
+@keyframes rex-pace-hard {
+  0%, 100% { transform: translate(-14px, -3px); } 50% { transform: translate(14px, 3px); } }
+@keyframes rex-sway-hard { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
 @keyframes rex-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
 @keyframes rex-sniff {
   0%, 55%, 100% { transform: scale(1); }
@@ -4713,6 +4726,79 @@ function rexModel(state, hash, nowMs) {
            watchMs: watch, nowMs: nowMs };
 }
 
+/* Rex's mood, from what the loads do. A load that falls well under its recent working level
+   (the median of the last rex_baseline_polls readings) makes him uneasy, then agitated: he
+   starts to pace and sniff to show he has noticed. Only the states the watchdog judges count
+   (coding and auditing, never the tests), a load whose working level is negligible is not
+   judged, and the readings that are themselves low are not added to the baseline, so a stall
+   that goes on keeps him agitated instead of becoming the new normal. The memory is the
+   page's own; nothing is sent to the server. The memory is the GPU's VRAM, not the machine's
+   RAM, which the dashboard does not read. */
+var REX_DIMS = [["cpu", "cpu_percent", "CPU"], ["vram", "vram_percent", "VRAM"],
+                ["cuda", "cuda_percent", "CUDA"]];
+var REX_JUDGED_MODES = { CODING: true, AUDITING: true };
+var rexHistory = { cpu: [], vram: [], cuda: [], at: "", mode: "" };
+
+function rexFocus(model) {
+  return (model.targets && model.index >= 0) ? model.targets[model.index] : null;
+}
+
+function rexJudged(model) {
+  var focus = rexFocus(model);
+  return !!(model.awake && focus && REX_JUDGED_MODES[focus.mode]);
+}
+
+function rexMedian(values) {
+  var sorted = values.slice().sort(function (a, b) { return a - b; });
+  var mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function rexMood(model, history) {
+  var calm = { level: "calm", reason: "" };
+  if (!rexJudged(model)) { return calm; }
+  /* A server started before these settings existed sends none: judge nothing then. */
+  if (!CFG.rex_restless_ratio || !CFG.rex_agitated_ratio || !CFG.rex_baseline_polls) { return calm; }
+  var loads = model.loads || {};
+  var need = Math.ceil((CFG.rex_baseline_polls || 1) / 2);
+  var worst = null;
+  REX_DIMS.forEach(function (d) {
+    var past = history[d[0]] || [];
+    var now = loads[d[1]];
+    if (past.length < need || now === null || now === undefined) { return; }
+    var base = rexMedian(past);
+    if (base < CFG.rex_judged_percent) { return; }
+    var ratio = now / base;
+    if (worst === null || ratio < worst.ratio) {
+      worst = { ratio: ratio, name: d[2], now: now, base: base };
+    }
+  });
+  if (!worst || worst.ratio >= CFG.rex_restless_ratio) { return calm; }
+  return { level: worst.ratio < CFG.rex_agitated_ratio ? "agitated" : "restless",
+           reason: worst.name + " fell to " + Math.round(worst.now) + "% from about "
+             + Math.round(worst.base) + "%" };
+}
+
+function rexRemember(model, mood, history) {
+  /* Add this reading to the working level, once per collection and only while he is calm. */
+  var focus = rexFocus(model);
+  var mode = focus ? focus.mode : "";
+  if (mode !== history.mode) {
+    /* Coding and auditing run different models with different loads: start again. */
+    history.cpu = []; history.vram = []; history.cuda = []; history.at = ""; history.mode = mode;
+  }
+  var loads = model.loads || {};
+  if (!rexJudged(model) || mood.level !== "calm" || !loads.proven_at
+      || loads.proven_at === history.at) { return; }
+  history.at = loads.proven_at;
+  REX_DIMS.forEach(function (d) {
+    var value = loads[d[1]];
+    if (value === null || value === undefined) { return; }
+    history[d[0]].push(value);
+    while (history[d[0]].length > CFG.rex_baseline_polls) { history[d[0]].shift(); }
+  });
+}
+
 function rexRing(r, ratio, cls) {
   /* One ring round Rex, centred on him: the arc from the top, as far as the ratio. */
   var arc = (ratio > 0)
@@ -4790,17 +4876,20 @@ function rexFigure(model, x, y, focus) {
   var ratios = asleep ? [0, 0, 0]
     : [(cpuRing || 0) / 100, (loads.vram_percent || 0) / 100, (loads.cuda_percent || 0) / 100];
   var reach = f.rings[2];
+  var mood = (model.mood && !asleep) ? model.mood : { level: "calm", reason: "" };
   var g = '<g class="rex-walker ' + (asleep ? "rex-asleep" : "rex-awake")
+    + (mood.level !== "calm" ? " rex-mood--" + mood.level : "")
     + '" data-detail="note" data-detail-title="Rex, the watchdog" data-detail-note="'
-    + escapeText(rexNote(model, focus, cpuRing)) + '" tabindex="0"'
+    + escapeText(rexNote(model, focus, cpuRing, mood)) + '" tabindex="0"'
     + ' style="transform: translate(' + x + 'px, ' + y + 'px)">'
+    + '<g class="rex-pace">'
     + rexRing(f.rings[0], ratios[0], "cpu") + rexRing(f.rings[1], ratios[1], "vram")
     + rexRing(f.rings[2], ratios[2], "cuda")
     + '<g transform="translate(' + (-100 * f.dog) + "," + (-120 * f.dog) + ") scale("
     + f.dog + ')">'
     + '<path class="rex-shield" d="' + REX_SHIELD + '"/>'
     + '<path class="rex-shield-line" d="' + REX_INNER + '"/>'
-    + (asleep ? rexSleepingArt() : rexDogArt()) + "</g>";
+    + (asleep ? rexSleepingArt() : rexDogArt()) + "</g></g>";
   var ty = reach + 16;
   g += '<text class="rex-legend" x="0" y="' + ty + '" text-anchor="middle">'
     + '<tspan class="rex-leg rex-leg--cpu">CPU ' + rexPercent(asleep ? null : cpuRing) + "</tspan>"
@@ -4809,12 +4898,17 @@ function rexFigure(model, x, y, focus) {
     + '<tspan class="rex-leg rex-leg--cuda" dx="8">CUDA '
     + rexPercent(asleep ? null : loads.cuda_percent) + "</tspan></text>";
   var title = asleep ? "REX - asleep"
-    : (focus ? "REX - watching " + focus.name.slice(0, 14) : "REX - on guard");
+    : (mood.level === "agitated" ? "REX - agitated"
+      : (mood.level === "restless" ? "REX - uneasy"
+        : (focus ? "REX - watching " + focus.name.slice(0, 14) : "REX - on guard")));
   g += '<text class="rex-title" x="0" y="' + (ty + 20) + '" text-anchor="middle">'
     + escapeText(title) + "</text>";
   var lines = [];
   if (asleep) {
     lines.push("the watchdog is not running");
+  } else if (mood.level !== "calm") {
+    lines.push(mood.reason);
+    if (focus) { lines.push(focus.name.slice(0, 14) + " - " + focus.mode); }
   } else if (focus) {
     lines.push(focus.mode + " - " + focus.plan);
     if (focus.ctx) { lines.push(focus.ctx); }
@@ -4839,7 +4933,7 @@ function rexFigure(model, x, y, focus) {
   return g + "</g>";
 }
 
-function rexNote(model, focus, cpuRing) {
+function rexNote(model, focus, cpuRing, mood) {
   /* The hover sentence: everything the gutter has no room for. */
   var loads = model.loads || {};
   if (!model.awake) {
@@ -4853,6 +4947,10 @@ function rexNote(model, focus, cpuRing) {
     + (loads.vram_used_mb ? " (" + Math.round(loads.vram_used_mb) + " of "
       + Math.round(loads.vram_total_mb) + " MB)" : "")
     + ", CUDA " + rexPercent(loads.cuda_percent));
+  if (mood && mood.level !== "calm") {
+    parts.unshift("Rex is " + (mood.level === "agitated" ? "agitated" : "uneasy") + ": " + mood.reason
+      + " - he paces to show he has noticed");
+  }
   return parts.join(". ");
 }
 
@@ -4914,6 +5012,17 @@ function renderLive(state) {
   }
 
   var rexModelNow = rexModel(state, window.location.hash, Date.now());
+  if (rexModelNow) {
+    rexModelNow.mood = rexMood(rexModelNow, rexHistory);
+    rexRemember(rexModelNow, rexModelNow.mood, rexHistory);
+    /* `#rex-demo-upset` and `#rex-demo-uneasy` show the two moods before a stall happens. */
+    var hash = window.location.hash;
+    if (/upset/.test(hash)) {
+      rexModelNow.mood = { level: "agitated", reason: "CPU fell to 9% from about 60%" };
+    } else if (/uneasy/.test(hash)) {
+      rexModelNow.mood = { level: "restless", reason: "CPU fell to 31% from about 60%" };
+    }
+  }
 
   if (machine && lanes.length) {
     var flow = lanes[0];

@@ -541,6 +541,24 @@ for _rel_src, _rel_dst, _why in _REQUIRED_SCRIPTS:
             "  Reason it has to travel: %s." % (_src, _rel_dst, _why))
     copy(_src, _rel_dst)
 
+# --- the watchdog travels as source, never as a binary -----------------------
+# The driver starts aider-watchdog.exe beside itself when it finds it and runs
+# without it otherwise, with a warning. A student builds it once with Go (the
+# manual's "Protect the run with the watchdog"), so the kit carries its sources,
+# its tests and its settings. The compiled program is NOT shipped: it embeds the
+# build machine's paths, which the leak check below would rightly refuse, and a
+# binary built elsewhere is not something to run unreviewed. Each file is a
+# REFUSAL when absent, for the reason the block above already states.
+_WATCHDOG = SKILL_ROOT / "watchdog"
+for _required in ("main.go", "go.mod", "aider-watchdog.json"):
+    if not (_WATCHDOG / _required).is_file():
+        raise SystemExit(
+            "REFUSED: %s is missing, so the kit cannot ship the watchdog sources.\n"
+            "  The manual tells the student to build them with Go." % (_WATCHDOG / _required))
+for _src in sorted(_WATCHDOG.iterdir()):
+    if _src.suffix == ".go" or _src.name in ("go.mod", "aider-watchdog.json"):
+        copy(_src, "watchdog/" + _src.name)
+
 # --- the verifier travels unchanged -----------------------------------------
 # It used to be rewritten here: its config path pointed at this machine's build
 # copy, which no kit installs, so the shipped copy had to differ from the source

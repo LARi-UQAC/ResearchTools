@@ -41,6 +41,7 @@ the nightly runner is a bare PowerShell/`cmd` pair rather than a skill script in
 | `scripts/aider-plan.ps1` + `scripts/aider-plan-core.ps1` | the driver (entry point) and its pure half (budget, ledger, refusals — dot-sourced, never spawns a process) |
 | `scripts/aider-night.ps1` / `.bat` | the nightly `cmd` entry point: branch, run every plan, push, never merge |
 | `scripts/run-detached.ps1` | runs a night detached, holding a wake lock so Modern Standby does not throttle it |
+| `watchdog/` | the stall watchdog, Go standard library only: `aider-watchdog watch` is started by the driver and stops the driver's child when the model server's CPU and GPU stay under what the same model measured working; `aider-watchdog reference` measures that. Sources, tests and `aider-watchdog.json` are tracked, the compiled `.exe` is gitignored. Optional: without it the driver warns and runs unprotected |
 | `scripts/aider-rules-sync.py` | assembles `config/rules.md` from `config/rules-local/` (a directory named by `AIDER_RULES_SOURCE` is read only if a person sets it) |
 | `scripts/aider-gpu-probe.py` / `aider-thread-probe.py` / `aider-ollama-config.py` | measure which `(model, num_ctx)` puts layers on the GPU, sweep the thread/bandwidth axes, and turn the measured numbers into a tuned Ollama tag |
 | `scripts/aider-defect-check.py` + `aider-defects.json` | tells a reader whether a run hit one of the defect signatures this pipeline has already measured and fixed once |
@@ -84,6 +85,8 @@ fail. `aider.conf.yml.saved` is a machine-local test fixture (gitignored — see
 not a build input read by `build_kit.py` itself; it is the *second* CLI argument the operator
 passes, and it is also what `verify-kit-install.ps1` defaults to when driving a real dry run
 against this machine's own installed aider.
+
+The kit also carries `watchdog/` as source (its `.go` files, `go.mod` and `aider-watchdog.json`), never the compiled `.exe`: the binary embeds the build machine's paths and a student builds it once with Go, as the manual's "Protect the run with the watchdog" says. `build_kit.py` refuses to finish when one of the three required sources is missing.
 
 `config/rules.md` is the one file in this tree that is never hand-edited and never committed
 as a static copy that could go stale: `build_kit.py` regenerates it at build time by invoking

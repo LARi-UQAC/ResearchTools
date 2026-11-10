@@ -107,7 +107,11 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    without this agent: the owner or the cloud session may run it directly. The kit runs the plan in a new
    aider process with its own file set (conventions, rules, spec, plan, progress, the files the plan
    names), runs the tests, fixes in its own loop, ticks `progress.md`, then audits the project's few
-   files with its reviewer model (required). A `[!]` line means the plan is blocked: report it. When the
+   files with its reviewer model (required). A `[!]` line means the plan is blocked: report it. The driver starts the stall watchdog when it is
+   installed (the output says `watchdog started`; it only warns when it is not). If the project's
+   `docs/superpowers/plans/.logs/watchdog.log` holds a line for this plan, the watchdog stopped a stalled
+   run and the driver moved on without ticking the plan: report that line, never run the plan again
+   silently. When the
    run is finished, compare the project with its baseline commit. Only the paths named in the plan's
    Files section may come back: copy those into the repository with the same relative paths, and refuse
    and report any other changed file (a file the plan only reads must stay as it was). Then run the plan's

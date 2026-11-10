@@ -639,6 +639,55 @@ $rc = $LASTEXITCODE; "DRIVER EXIT = $rc"
 (owner decision 2026-11-07): `aider-plan.ps1`, the night and a single-plan run all load
 them, there is no `-Skills` or `-NoSkills` switch, and a missing `skills.json` is a refusal.
 
+### Protect the run with the watchdog
+
+A run can stall without stopping: the writer's own code loops, the model server goes idle
+and the driver waits for ever. One plan looped for six hours this way. The watchdog is a small
+program (Go, standard library only) that the driver starts beside itself and stops when the
+run ends. At each poll it compares the model server's CPU and GPU load with what the same
+model measured while it was working. When the load stays under that measured minimum for
+`lowReadings` readings in a row, it stops the driver's child process, writes ONE line to
+`watchdog.log` in the plans' `.logs` folder (time, event, model, CPU, GPU, plan), and the driver
+moves to the next plan without touching `progress.md`. It only judges the `writing` and
+`auditing` states, never the test phase, and never a model that has no measurement or that runs
+with another context window.
+
+It is optional. Without it the driver prints `WARNING: watchdog not started` and the run goes
+on unprotected. To install it, once per machine:
+
+1. Install Go 1.22 or later (`winget install GoLang.Go`), then open a new terminal.
+2. Build it from the kit's `watchdog` folder, test it and put it beside the driver:
+
+```powershell
+cd "$HOME\aider-kit\watchdog"
+go test ./...
+go build -o aider-watchdog.exe .
+Copy-Item aider-watchdog.exe, aider-watchdog.json "$HOME\.local\bin\"
+```
+
+3. Measure each model you run, the writer and the reviewer, with nothing else using the CPU
+   or the GPU. The program loads the model, makes it generate a fixed paragraph and records
+   the load it saw. Give the tag exactly as `ollama ps` prints it, `:latest` included, and
+   measure again whenever you change a tag or its `num_ctx` (step 4):
+
+```powershell
+$ref = "$HOME\.config\aider\model-reference.json"
+aider-watchdog.exe reference --tag "<tag as ollama ps prints it>" `
+  --settings "$HOME\.local\bin\aider-watchdog.json" --reference $ref
+```
+
+4. Tell the driver where the measurements are, then open a new terminal:
+
+```powershell
+[Environment]::SetEnvironmentVariable("AIDER_MODEL_REFERENCE", $ref, "User")
+```
+
+The next run prints `watchdog started (pid N)`. The settings are in `aider-watchdog.json`, each
+with its provenance. `lowReadings` and `pollSeconds` are not measured, so adjust them if a
+healthy run is stopped or a stall lasts too long. `negligibleReferencePercent` is the share
+under which a dimension is ignored: with most of a model on the CPU its GPU load is a few
+percent and says nothing about progress.
+
 **What it refuses before starting anything**: running on battery, being on `main`
 or `master`, no config file, a model that is not local, tests required with no
 test command, a missing budget key, an always-on file that does not exist. Each

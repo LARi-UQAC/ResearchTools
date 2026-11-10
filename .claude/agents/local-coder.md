@@ -83,7 +83,9 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
       own `.venv`. It refuses an existing directory: remove the directory of a finished run only after its
       files have been brought back and reviewed.
    2. Replace the three templates. `spec.md` is the effort's spec (within its ceiling). It must carry the section "Language and conventions" (the language is chosen there, rule R26): when it is missing, stop and report it, never guess a language. `plan1.md` is the
-      plan, copied under that name because the kit reads only `plan<N>.md`. `progress.md` holds
+      plan, copied under that name because the kit reads only `plan<N>.md`, WITHOUT its front matter
+      header (executor, tier, bounds): that header serves this repository's contract, and the writer
+      model reads the whole file, so it would only confuse it. `progress.md` holds
       `## plan1.md` and one `- [ ]` line per file of the plan's Files section, each line naming its path
       (`create <path> as plan1.md describes`, or `modify`): a step that names no file cannot be executed.
    3. Copy into the project, with their relative paths, every existing file the plan lists to read or to

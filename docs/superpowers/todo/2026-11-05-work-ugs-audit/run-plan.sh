@@ -52,13 +52,34 @@ test_command() {
   else printf '%s' ".\\.venv\\Scripts\\python.exe $(plan_paths test | head -1)"; fi
 }
 
+# The front matter of a plan (executor, tier, bounds) serves the plan contract of this repository. The writer
+# model must not read it, so the copy mounted for the kit has none.
+strip_header() { "$PYI" -c 'import sys; t=sys.stdin.read().replace("\r\n","\n"); print(t.split("\n---\n",1)[1].lstrip("\n") if t.startswith("---\n") else t, end="")'; }
+
 case "$MODE" in
+mount-all)
+  # One kit project holding every plan<N>.md of PLANS_HOME, for aider-night.ps1. ID is the project name.
+  [ -e "$P" ] && { echo "REFUSED: $P exists"; exit 1; }
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/new-project.ps1")" \
+    -Name "u$ID${SUFFIX:-}" -Root "$(cygpath -w "$LIVE/work")" -Python "$(cygpath -w "$PYI")" >/dev/null 2>&1
+  cp "$PLANS_HOME/spec.md" "$PL/spec.md"; cp "$PLANS_HOME/progress.md" "$PL/progress.md"; : > "$PL/audit.md"
+  for pf in "$PLANS_HOME"/plan*.md; do
+    strip_header < "$pf" > "$PL/$(basename "$pf")"
+    PLAN="$pf"
+    plan_paths reads | while read -r f; do
+      if [ -n "$f" ] && [ -f "$W/$f" ]; then mkdir -p "$P/$(dirname "$f")"; cp "$W/$f" "$P/$f"; fi
+    done
+  done
+  rmdir "$P/Test" 2>/dev/null || true
+  ( cd "$P" && git add -A >/dev/null 2>&1 && git -c core.safecrlf=false commit -q -m "mount: $ID" >/dev/null 2>&1 )
+  echo "mounted $P ($(ls "$PL"/plan*.md | wc -l) plans)"
+  ;;
 mount)
   [ -e "$P" ] && { echo "REFUSED: $P exists"; exit 1; }
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/new-project.ps1")" \
     -Name "u$ID${SUFFIX:-}" -Root "$(cygpath -w "$LIVE/work")" -Python "$(cygpath -w "$PYI")" >/dev/null 2>&1
   cp "$PLANS_HOME/spec.md" "$PL/spec.md"
-  cp "$PLAN" "$PL/plan1.md"
+  strip_header < "$PLAN" > "$PL/plan1.md"
   { printf '# Progress\n\n**Goal.** The ledger of plan %s.\n\n**Contents.** Task lines only.\n\n## plan1.md\n' "$ID"
     plan_paths files | while read -r f; do [ -n "$f" ] && printf -- '- [ ] create %s as plan1.md describes\n' "$f"; done
   } > "$PL/progress.md"

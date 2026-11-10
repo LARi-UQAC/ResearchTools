@@ -416,3 +416,55 @@ function Add-LedgerLine([string]$sectionName, [string]$line) {
     }
     Write-Utf8NoBom $progress $out
 }
+
+# --- The watchdog (aider-watchdog.exe) ---------------------------------------
+# A small Go program that reads the CPU of the model server and the GPU while the
+# writer or the reviewer should be generating, and stops the process in progress
+# when both have gone far under what this machine measured for that model. It
+# only stops the process: the plan it was working on is left undone and the
+# driver goes on to the next one without writing to progress.md (see
+# Test-WatchdogStop). Measured 2026-11-09: a model-written test looped for 6 hours
+# with the GPU idle and nothing noticed. Absent program or reference: say so and
+# carry on as before, never silently (R8).
+function Start-Watchdog([int]$driverPid, [string]$runRecord, [string]$logs) {
+    $exe = $null
+    foreach ($c in @((Join-Path $PSScriptRoot "aider-watchdog.exe"),
+                     (Join-Path $PSScriptRoot "..\watchdog\aider-watchdog.exe"))) {
+        if (Test-Path -LiteralPath $c) { $exe = (Resolve-Path -LiteralPath $c).Path; break }
+    }
+    $reference = $env:AIDER_MODEL_REFERENCE
+    if ([string]::IsNullOrEmpty($reference)) { $reference = Join-Path $PSScriptRoot "..\..\..\local-model-config.json" }
+    $settings = if ($null -ne $exe) { Join-Path (Split-Path $exe -Parent) "aider-watchdog.json" } else { "" }
+    if ($null -eq $exe -or -not (Test-Path -LiteralPath $settings) -or -not (Test-Path -LiteralPath $reference)) {
+        Write-Host "  WARNING: watchdog not started (needs aider-watchdog.exe, aider-watchdog.json and a reference file; set AIDER_MODEL_REFERENCE). The run goes on without it." -ForegroundColor Yellow
+        return $null
+    }
+    # One string, quoted by hand: Windows PowerShell 5.1 does not quote the items
+    # of an -ArgumentList array, and these paths hold spaces.
+    $argLine = 'watch --driver-pid {0} --run-record "{1}" --logs-dir "{2}" --settings "{3}" --reference "{4}"' -f `
+        $driverPid, $runRecord, $logs, $settings, (Resolve-Path -LiteralPath $reference).Path
+    $p = Start-Process -FilePath $exe -ArgumentList $argLine -WindowStyle Hidden -PassThru
+    Start-Sleep -Seconds 2
+    if ($p.HasExited) {
+        Write-Host ("  WARNING: the watchdog refused to start (exit {0}). The run goes on without it." -f $p.ExitCode) -ForegroundColor Yellow
+        return $null
+    }
+    Write-Host "  watchdog started (pid $($p.Id))"
+    return $p
+}
+
+function Stop-Watchdog($proc) {
+    if ($null -ne $proc -and -not $proc.HasExited) { try { $proc.Kill() } catch { } }
+}
+
+# True when the watchdog stopped the process that was working on this plan. The
+# signal is consumed, so it counts once. The caller then moves to the next plan
+# and writes nothing to progress.md: the plan simply stays undone.
+function Test-WatchdogStop([string]$logs, [string]$planName) {
+    $signal = Join-Path $logs "watchdog-stop.json"
+    if (-not (Test-Path -LiteralPath $signal)) { return $false }
+    try { $named = (Get-Content -LiteralPath $signal -Raw -Encoding UTF8 | ConvertFrom-Json).plan } catch { return $false }
+    if ($named -ne $planName) { return $false }
+    Remove-Item -LiteralPath $signal -Force
+    return $true
+}

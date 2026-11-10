@@ -963,6 +963,10 @@ $failed = 0
 # has to be able to tell them apart.
 $blockedPlans = 0
 
+# The watchdog starts with the first plan and ends with the run (Stop-Watchdog below).
+$watchdog = $null
+if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDir }
+
 # --- One plan per process --------------------------------------------------
 :plans foreach ($plan in $plans) {
     # Labelled, because every failure exit below sits inside the rounds
@@ -1110,6 +1114,10 @@ $blockedPlans = 0
 
     $code = Invoke-Aider $argv (Join-Path $logDir "$stamp-$($plan.BaseName).log")
     Write-Host "  exit=$code"
+    if (Test-WatchdogStop $logDir $plan.Name) {
+        Write-Host "  the watchdog stopped this plan; it stays undone -> next plan" -ForegroundColor Yellow
+        continue plans
+    }
 
     # --- Tests: coverage first, then the suite -----------------------------
     # Both judged by the driver. aider's own loop may already have fixed a
@@ -1245,6 +1253,10 @@ $blockedPlans = 0
             $tryTag = ""
             if ($auditTry -gt 0) { $tryTag = "-try" + ($auditTry + 1) }
             $null = Invoke-PlanAudit $plan.Name $changedSource (Join-Path $logDir "$stamp-$($plan.BaseName)-audit-r$planRound$tryTag.log")
+            if (Test-WatchdogStop $logDir $plan.Name) {
+                Write-Host "  the watchdog stopped this plan; it stays undone -> next plan" -ForegroundColor Yellow
+                continue plans
+            }
             $sizeNow = 0
             if (Test-Path -LiteralPath $auditMd) { $sizeNow = (Get-Item -LiteralPath $auditMd).Length }
             if ($sizeNow -gt $auditSizeBefore -or $auditTry -ge $auditNoReportRetries) { break }
@@ -1590,4 +1602,5 @@ Update-RunRecord @{ state = $(if ($failed -eq 0) { "done" }
                     note  = $(if ($failed -eq 0) { "the run finished cleanly" }
                               elseif ($blockedPlans -gt 0) { "every plan ran; $blockedPlans carry a [!] in progress.md - read them and audit.md" }
                               else { "the run stopped; read the transcript and audit.md" }) }
+Stop-Watchdog $watchdog
 exit $failed

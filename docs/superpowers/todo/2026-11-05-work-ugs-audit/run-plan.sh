@@ -81,6 +81,60 @@ mount-all)
   ( cd "$P" && git add -A >/dev/null 2>&1 && git -c core.safecrlf=false commit -q -m "mount: $ID" >/dev/null 2>&1 )
   echo "mounted $P ($(ls "$PL"/plan*.md | wc -l) plans)"
   ;;
+mount-night)
+  # One kit project for aider-night.ps1 holding the plans of NIGHT_IDS (space separated, in run order),
+  # renumbered plan1..planN because the night reads only plan<digits>.md. ID is the project name; the map
+  # "N id" is written to $LIVE/work/<project>.idmap so a harvest knows which plan came back.
+  [ -e "$P" ] && { echo "REFUSED: $P exists"; exit 1; }
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/new-project.ps1")" \
+    -Name "u$ID${SUFFIX:-}" -Root "$(cygpath -w "$LIVE/work")" -Python "$(cygpath -w "$PYI")" >/dev/null 2>&1
+  cp "$PLANS_HOME/spec.md" "$PL/spec.md"; : > "$PL/audit.md"; cp "$HERE/night-tests.py" "$P/run_tests.py"
+  MAP="$LIVE/work/u$ID${SUFFIX:-}.idmap"; : > "$MAP"
+  {
+    printf '# Progress\n\n**Goal.** The ledger of the night %s.\n\n**Contents.** Task lines only.\n' "$ID"
+    i=0
+    for pid in $NIGHT_IDS; do
+      i=$((i+1)); PLAN="$PLANS_HOME/plan$pid.md"
+      strip_header < "$PLAN" > "$PL/plan$i.md"
+      echo "$i $pid" >> "$MAP"
+      printf '\n## plan%s.md\n' "$i"
+      plan_paths files | while read -r f; do
+        if [ -f "$W/$f" ]; then verb=modify; else verb=create; fi
+        [ -n "$f" ] && printf -- '- [ ] %s %s as plan%s.md describes\n' "$verb" "$f" "$i"
+      done
+    done
+  } > "$PL/progress.md"
+  for pid in $NIGHT_IDS; do
+    PLAN="$PLANS_HOME/plan$pid.md"
+    { plan_paths reads; plan_paths files; } | while read -r f; do
+      if [ -n "$f" ] && [ -f "$W/$f" ]; then mkdir -p "$P/$(dirname "$f")"; cp "$W/$f" "$P/$f"; fi
+    done
+  done
+  # Sibling modules imported by the copied files, with their tests (same rule as the single mount).
+  for _pass in 1 2; do
+    find "$P" -name '*.py' -not -path '*/.venv/*' | while read -r src; do
+      dir="$(dirname "$src")"; rel="${dir#$P/}"
+      grep -h -E '^(from|import) [a-z_][a-z0-9_]*' "$src" | sed -E 's/^(from|import) ([a-z_][a-z0-9_]*).*/\2/' | sort -u | while read -r mod; do
+        for cand in "$rel/$mod.py" "$rel/Test/test_$mod.py"; do
+          if [ -f "$W/$cand" ] && [ ! -f "$P/$cand" ]; then mkdir -p "$P/$(dirname "$cand")"; cp "$W/$cand" "$P/$cand"; echo "copied imported sibling $cand"; fi
+        done
+      done
+    done
+  done
+  "$P/.venv/Scripts/python.exe" -m ensurepip >/dev/null 2>&1 || true
+  if grep -q -i -E "fitz|PyMuPDF" "$PLANS_HOME"/plan*.md; then
+    "$P/.venv/Scripts/python.exe" -m pip install -q -r "$W/.claude/skills/figure-review/scripts/requirements.txt" >/dev/null 2>&1 \
+      && echo "PyMuPDF installed in the project environment" || echo "WARNING: PyMuPDF install failed"
+  fi
+  if grep -q -i "pymupdf4llm" "$PLANS_HOME"/plan*.md; then
+    pin="$(grep -E '^pymupdf4llm==' "$W/.claude/skills/extract-statistic/scripts/requirements.txt" | head -1)"
+    "$P/.venv/Scripts/python.exe" -m pip install -q "$pin" >/dev/null 2>&1 \
+      && echo "$pin installed in the project environment" || echo "WARNING: $pin install failed"
+  fi
+  rmdir "$P/Test" 2>/dev/null || true
+  ( cd "$P" && git add -A >/dev/null 2>&1 && git -c core.safecrlf=false commit -q -m "mount: night $ID" >/dev/null 2>&1 )
+  echo "mounted $P ($(ls "$PL"/plan*.md | wc -l) plans), map $MAP"
+  ;;
 mount)
   [ -e "$P" ] && { echo "REFUSED: $P exists"; exit 1; }
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/new-project.ps1")" \

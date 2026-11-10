@@ -9,7 +9,7 @@ bounds:
 
 # Plan 5e - The failure output of report_prepare carries no exception text
 
-**Goal:** an unexpected failure of `report_prepare.py` prints only the exception type and a fixed message,
+**Goal:** an unexpected failure of the module named in the Files block prints only the exception type and a fixed message,
 never the exception text, because that text can hold a report file name or a path.
 
 **Spec:** `spec.md` "Constraints" (nothing printed carries a file name), rule R34, rule R8.

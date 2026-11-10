@@ -102,6 +102,11 @@ class RingNote(unittest.TestCase):
         self.assertEqual("context 14K of the 66K window (the last request; "
                          "fixed reserve 27K)", text)
 
+    def test_a_reviewer_context_is_named_against_the_reviewer_window(self):
+        text = self.note({"live_context": 11000, "window": 49152, "fixed_cost": None,
+                          "window_of": "reviewer"})
+        self.assertEqual("context 11K of the 49K reviewer window (the last request)", text)
+
     def test_a_run_with_no_request_yet_keeps_the_fixed_cost_wording(self):
         text = self.note({"window": 65536, "task_budget": 38063, "held": 27473})
         self.assertEqual("fixed cost 27K, task budget 38K of the 66K window", text)

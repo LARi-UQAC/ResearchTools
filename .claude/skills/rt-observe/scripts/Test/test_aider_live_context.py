@@ -168,6 +168,50 @@ class LiveContext(unittest.TestCase):
         self.assertEqual(3, session["progress"]["round"])
 
 
+class ReviewerWindow(unittest.TestCase):
+    """While the reviewer audits, the ring is drawn against ITS window, not the
+    writer's (the driver records `audit_window`; 0 or absent means unknown)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+        self.project, self.logs = make_project(self.home)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_an_audit_uses_the_reviewer_window_and_the_live_request(self):
+        write_record(self.home, self.project, state="auditing", audit_window=49152)
+        write_log(self.logs, "a-audit.log", "Tokens: 11k sent, 219 received.\n", age=5)
+        tokens, _ = tokens_of(self.home)
+        self.assertEqual(49152, tokens["window"])
+        self.assertEqual("reviewer", tokens["window_of"])
+        self.assertEqual(11000, tokens["held"])
+        self.assertEqual(round(100.0 * 11000 / 49152, 1), tokens["percent"])
+        self.assertIsNone(tokens["fixed_cost"])
+
+    def test_an_audit_with_no_request_yet_holds_nothing(self):
+        write_record(self.home, self.project, state="auditing", audit_window=49152)
+        tokens, _ = tokens_of(self.home)
+        self.assertEqual(0, tokens["held"])
+        self.assertEqual(0.0, tokens["percent"])
+        self.assertIn("reviewer", tokens["percent_of"])
+
+    def test_an_unknown_reviewer_window_keeps_the_writer_window(self):
+        for extra in ({}, {"audit_window": 0}):
+            write_record(self.home, self.project, state="auditing", **extra)
+            tokens, _ = tokens_of(self.home)
+            self.assertEqual(65536, tokens["window"])
+            self.assertEqual("writer", tokens["window_of"])
+
+    def test_the_writer_keeps_its_own_window_when_a_reviewer_window_is_recorded(self):
+        write_record(self.home, self.project, state="writing", audit_window=49152)
+        tokens, _ = tokens_of(self.home)
+        self.assertEqual(65536, tokens["window"])
+        self.assertEqual("writer", tokens["window_of"])
+        self.assertEqual(65536 - 38063, tokens["fixed_cost"])
+
+
 LEDGER = (
     "# Progress\n\n**Goal.** A demo.\n\n"
     "## plan1.md\n\n- [x] create a.go as plan1.md describes\n- [x] create b.go as plan1.md describes\n\n"

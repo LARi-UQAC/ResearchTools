@@ -338,14 +338,23 @@ def _flow(record, age_seconds, idle_after, live=None):
     # rest of the window. Reading `working_set` as held drew the ring backwards
     # (60 percent where 39.9 was committed). A record with no window reports
     # nothing held rather than a guess.
-    held = max(0, window - working) if window else 0
+    #
+    # While the reviewer audits, the model in memory is the reviewer, with its
+    # own window (`audit_window`, recorded by the driver; 0 means unknown, and
+    # the writer's window is kept). The writer's fixed reserve means nothing to
+    # it, so nothing is held until a request of its own is logged.
+    reviewer = state == "auditing" and (record.get("audit_window") or 0) > 0
+    if reviewer:
+        window, working = int(record["audit_window"]), 0
+    held = 0 if reviewer else (max(0, window - working) if window else 0)
     # `ok` means measured. A record with no window measured nothing, so it is
     # unavailable with its reason (R8) rather than a zero the page would draw.
     tokens = {"status": "ok" if window else "unavailable", "held": held,
-              "task_budget": working, "window": window, "working_set": working}
+              "task_budget": working, "window": window, "working_set": working,
+              "window_of": "reviewer" if reviewer else "writer"}
     live_tokens, live_reason = live if live else (None, None)
     if window:
-        tokens["fixed_cost"] = held
+        tokens["fixed_cost"] = None if reviewer else held
         if live_tokens is not None:
             # The ring and the meters read `held` and `percent`: they now show
             # the context the model holds, and the fixed cost stays beside it.
@@ -354,6 +363,11 @@ def _flow(record, age_seconds, idle_after, live=None):
             tokens["percent"] = round(100.0 * live_tokens / window, 1)
             tokens["percent_of"] = ("the prompt of the last request, against "
                                     "the window the driver measured")
+        elif reviewer:
+            tokens["percent"] = 0.0
+            tokens["percent_of"] = "no request of the reviewer has been logged yet"
+            if live_reason:
+                tokens["live_reason"] = live_reason
         else:
             tokens["percent"] = round(100.0 * (window - working) / window, 1)
             tokens["percent_of"] = "the fixed cost against the window the driver measured"

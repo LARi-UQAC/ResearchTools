@@ -500,7 +500,19 @@ if ($workingBudget -le 0) {
 $baseArgs += @("--map-tokens", "$mapTokens")
 $baseArgs += $alwaysOnArgs
 
-Update-RunRecord @{ window = $window; working_set = $workingBudget; model_audit = $auditModel }
+# The reviewer runs with its own window, not the writer's: a dashboard drawing the context of an
+# audit against the writer's window shows a wrong percentage. The window in force is the num_ctx
+# that model-settings.yml SENDS for the reviewer, not what aider's metadata reports (the native
+# maximum of the architecture, several times larger). 0 means unknown.
+$auditWindow = 0
+if ($auditModel -ne "" -and -not $NoAudit -and (Test-Path -LiteralPath $settingsFile)) {
+    $inAuditEntry = $false
+    foreach ($line in (Get-Content -LiteralPath $settingsFile -Encoding UTF8)) {
+        if ($line -match '^\s*-\s+name:\s*(\S+)') { $inAuditEntry = ($Matches[1] -eq $auditModel); continue }
+        if ($inAuditEntry -and $line -match '^\s+num_ctx:\s*(\d+)') { $auditWindow = [int]$Matches[1]; break }
+    }
+}
+Update-RunRecord @{ window = $window; working_set = $workingBudget; model_audit = $auditModel; audit_window = [int]$auditWindow }
 
 Write-Section "Protocol files (one ceiling per file)"
 $protocolFiles = @($spec, $progress) + @($plans | ForEach-Object { $_.FullName })

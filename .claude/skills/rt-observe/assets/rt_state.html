@@ -2602,8 +2602,10 @@ function appendAiderRuns(panel, state) {
       ["context", tokens.window
         ? (tokens.live_context !== undefined && tokens.live_context !== null
             ? thousands(tokens.live_context) + "K of the "
-            : "not read yet, fixed reserve " + thousands(tokens.fixed_cost || 0)
-              + "K of the ") + thousands(tokens.window) + "K window"
+            : "not read yet" + (tokens.fixed_cost
+              ? ", fixed reserve " + thousands(tokens.fixed_cost) + "K" : "")
+              + " of the ") + thousands(tokens.window) + "K "
+          + (tokens.window_of === "reviewer" ? "reviewer window" : "window")
         : null]
     ]);
     /* The plans of THIS run, from the project's own ledger, in the same list
@@ -3752,8 +3754,10 @@ function tokenNote(tokens) {
     /* A run that logs its requests: the ring shows the context the model holds
        at its last request, and the fixed reserve stays beside it. */
     return "context " + thousands(t.live_context) + "K of the "
-      + thousands(t.window) + "K window (the last request; fixed reserve "
-      + thousands(t.fixed_cost || 0) + "K)";
+      + thousands(t.window) + "K "
+      + (t.window_of === "reviewer" ? "reviewer window" : "window")
+      + " (the last request"
+      + (t.fixed_cost ? "; fixed reserve " + thousands(t.fixed_cost) + "K" : "") + ")";
   }
   if (!t.task_budget || !t.window) { return ""; }
   return "fixed cost " + thousands(t.held || 0) + "K, task budget "

@@ -37,7 +37,9 @@ class RexPage(unittest.TestCase):
     FUNCTIONS = ("thousands", "tokenNote", "escapeText", "ringPath", "rexWord", "rexCtx",
                  "rexTarget", "rexModel", "rexRing", "rexPercent", "rexDogArt",
                  "rexSleepingArt", "rexFigure", "rexNote")
-    VARS = ("AIDER_MODE", "AIDER_ENDED", "REX_FIG", "REX_SHIELD", "REX_DOG", "REX_CROWN")
+    VARS = ("AIDER_MODE", "AIDER_ENDED", "REX_FIG", "REX_SHIELD", "REX_INNER", "REX_DOG",
+            "REX_EAR_INNER", "REX_EYE", "REX_BROW", "REX_CHEEK", "REX_MUZZLE", "REX_CHEST",
+            "REX_COLLAR", "REX_MOUTH")
 
     def setUp(self):
         self.node = shutil.which("node")
@@ -189,6 +191,30 @@ class RexPage(unittest.TestCase):
                         "loads": {"cpu_percent": None}})
         self.assertIn("CPU -", out)
         self.assertNotIn("CPU 0%", out)
+
+    def test_the_awake_doberman_has_ears_eye_tan_marks_collar_and_is_clipped_to_the_shield(self):
+        art = self.js("rexDogArt()")
+        for part in ("rex-ear-in", "rex-tan", "rex-collar", "rex-tag", "rex-nose",
+                     'clip-path="url(#rex-clip)"', "<clipPath"):
+            self.assertIn(part, art)
+        self.assertEqual(4, art.count('class="rex-tan"'))
+        self.assertIn("rex-waft", art)
+
+    def test_the_head_outline_is_drawn_with_many_points_not_a_handful(self):
+        outline = self.js("REX_DOG")
+        self.assertGreaterEqual(len(re.findall(r"[CL]", outline)), 20)
+
+    def test_the_sleeping_dog_is_clipped_to_the_shield_too(self):
+        art = self.js("rexSleepingArt()")
+        self.assertIn('clip-path="url(#rex-clip)"', art)
+        self.assertIn("rex-ear-in", art)
+        self.assertIn("rex-z", art)
+
+    def test_the_shield_line_and_the_clip_share_one_outline(self):
+        out = self.fig({"awake": False, "targets": [], "index": -1, "loads": {}})
+        outline = self.js("REX_INNER")
+        self.assertIn('class="rex-shield-line" d="' + outline + '"', out)
+        self.assertIn('<clipPath id="rex-clip"><path d="' + outline + '"/>', out)
 
     def test_the_dog_is_about_a_third_of_an_agent(self):
         sizes = self.js("[REX_FIG.dog, REX_FIG.rings]")

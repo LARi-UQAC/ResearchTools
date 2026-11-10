@@ -1100,6 +1100,11 @@ svg.flowgraph .rex-shield-line { fill: none; stroke: #0b141b; stroke-width: 1;
 svg.flowgraph .rex-asleep .rex-shield { fill: #7d909b; stroke: #46626f; filter: none; }
 svg.flowgraph .rex-ink { fill: #05090c; }
 svg.flowgraph .rex-light { fill: #dbe7ee; }
+svg.flowgraph .rex-tan { fill: #b0652a; }
+svg.flowgraph .rex-ear-in { fill: #1d2b33; }
+svg.flowgraph .rex-collar { fill: none; stroke: #6fb2d8; stroke-width: 2; stroke-linecap: round;
+  vector-effect: non-scaling-stroke; }
+svg.flowgraph .rex-tag { fill: #e0b64a; }
 svg.flowgraph .rex-stroke { fill: none; stroke: #dbe7ee; stroke-width: 1;
   stroke-linecap: round; vector-effect: non-scaling-stroke; }
 svg.flowgraph .rex-tail { fill: none; stroke: #05090c; stroke-width: 2.5;
@@ -4611,12 +4616,37 @@ var REX_FIG = { gutter: 110, cx: 112, rings: [26, 31, 36], dog: 0.125, hot: 0.9 
 
 var REX_SHIELD = "M100,6 L190,34 V122 C190,178 150,216 100,238 "
   + "C50,216 10,178 10,122 V34 Z";
-/* The doberman, in the shield's own 200 x 240 space, facing right and looking up. */
-var REX_DOG = "M52,236 L58,170 C60,140 66,122 78,104 L70,34 L98,88 "
-  + "C102,86 106,85 110,84 L128,28 L132,94 C140,98 146,104 152,114 "
-  + "L184,124 L190,132 L186,142 L158,148 L148,160 L140,172 L130,184 "
-  + "L172,214 L172,236 Z";
-var REX_CROWN = "M82,22 L85,6 L93,16 L100,4 L107,16 L115,6 L118,22 Z";
+/* The inner outline of the shield, which also clips the dog so he is a bust in a frame. */
+var REX_INNER = "M100,18 L178,42 V122 C178,170 144,204 100,224 "
+  + "C56,204 22,170 22,122 V42 Z";
+/* The doberman, in the shield's own 200 x 240 space: a head and neck in profile, facing right,
+   held high. Cropped ears stand straight and pointed, the skull is flat with a slight stop, the
+   muzzle is long, deep and square, the jaw strong, the neck arched and thick. Drawn by hand
+   with many points so that the outline reads as a doberman and not as a fox. */
+var REX_DOG = "M52,252 C54,222 60,192 66,168 "
+  + "C70,152 74,140 75,128 C76,120 76,112 76,104 "
+  + "C77,94 79,84 81,74 C83,62 86,50 88,38 C88,33 90,30 92,35 "
+  + "C96,46 101,60 104,72 C106,79 108,85 109,92 "
+  + "C112,88 118,85 125,84 C130,83 134,84 137,87 "
+  + "C139,90 141,93 144,95 C150,97 158,100 166,102 C172,103 176,104 180,106 "
+  + "C185,107 189,111 190,117 C190,122 188,126 184,128 "
+  + "C184,131 183,134 181,137 C179,140 176,142 172,144 "
+  + "C166,147 158,150 150,153 C144,155 140,158 137,162 "
+  + "C134,166 132,170 131,176 C129,186 127,196 126,208 "
+  + "C125,222 125,238 126,252 Z";
+var REX_EAR_INNER = "M89,50 C89,62 91,72 95,80 C98,86 100,90 103,92 "
+  + "C98,90 93,85 91,79 C88,71 87,60 88,52 Z";
+var REX_EYE = "M110,99 C113,95 117,93 121,93 C125,93 129,95 132,98 "
+  + "C129,101 125,103 121,103 C117,103 113,102 110,99 Z";
+var REX_BROW = "M110,87 C114,83 120,82 126,84 C128,86 126,89 122,89 C117,89 113,89 110,87 Z";
+var REX_CHEEK = "M102,113 C108,110 116,111 121,115 C125,119 126,124 124,128 "
+  + "C119,129 112,128 107,124 C103,121 101,117 102,113 Z";
+var REX_MUZZLE = "M148,121 C156,122 166,123 176,123 C176,128 174,132 170,135 "
+  + "C164,138 156,139 150,138 C147,134 146,127 148,121 Z";
+var REX_CHEST = "M127,182 C126,194 125,206 125,218 C125,232 125,244 126,252 "
+  + "L104,252 C104,238 106,224 110,212 C114,200 119,190 127,182 Z";
+var REX_COLLAR = "M70,172 C86,181 104,186 118,187 C123,187 127,186 130,185";
+var REX_MOUTH = "M182,130 C174,134 166,137 158,140 C152,142 147,145 143,149";
 
 function rexWord(state) {
   return (AIDER_MODE[state] || state || "").split(" - ")[0];
@@ -4697,22 +4727,49 @@ function rexPercent(value) {
 }
 
 function rexDogArt() {
-  return '<g class="rex-art"><path class="rex-ink" d="' + REX_DOG + '"/>'
-    + '<path class="rex-ink" d="' + REX_CROWN + '"/>'
-    + '<path class="rex-light" d="M118,112 L138,106 L132,118 Z"/>'
-    + '<path class="rex-stroke" d="M80,100 L74,50 M114,88 L124,46 M150,142 L180,138"/>'
-    + '<g class="rex-nose"><circle class="rex-light" cx="183" cy="130" r="3"/></g>'
-    + '<path class="rex-stroke rex-waft" d="M193,124 C198,128 198,134 193,138 '
-    + 'M198,120 C205,127 205,135 198,142"/></g>';
+  /* The art is clipped to the shield, so the neck ends on its edge. The sniff lines sit
+     outside the clip, in front of the nose. */
+  return '<defs><clipPath id="rex-clip"><path d="' + REX_INNER + '"/></clipPath></defs>'
+    + '<g clip-path="url(#rex-clip)"><g class="rex-art">'
+    + '<g transform="translate(-4,12) scale(0.9)">'
+    + '<path class="rex-ink" d="' + REX_DOG + '"/>'
+    + '<path class="rex-ear-in" d="' + REX_EAR_INNER + '"/>'
+    + '<path class="rex-tan" d="' + REX_CHEEK + '"/>'
+    + '<path class="rex-tan" d="' + REX_MUZZLE + '"/>'
+    + '<path class="rex-tan" d="' + REX_CHEST + '"/>'
+    + '<path class="rex-tan" d="' + REX_BROW + '"/>'
+    + '<path class="rex-light" d="' + REX_EYE + '"/>'
+    + '<circle class="rex-ink" cx="121" cy="98" r="2.6"/>'
+    + '<circle class="rex-light" cx="122" cy="97" r="0.9"/>'
+    + '<path class="rex-stroke" d="' + REX_MOUTH + '"/>'
+    + '<path class="rex-collar" d="' + REX_COLLAR + '"/>'
+    + '<circle class="rex-tag" cx="118" cy="196" r="5"/>'
+    + '<g class="rex-nose"><ellipse class="rex-light" cx="184" cy="113" rx="3.2" ry="2.2"/></g>'
+    + '</g></g></g>'
+    + '<path class="rex-stroke rex-waft" d="M176,100 C181,104 181,110 176,114 '
+    + 'M181,96 C188,103 188,111 181,118"/>';
 }
 
 function rexSleepingArt() {
-  return '<g class="rex-art"><path class="rex-ink" d="M36,196 C36,150 160,150 170,196 '
-    + 'C174,228 56,238 36,196 Z"/>'
-    + '<path class="rex-ink" d="M40,186 C30,166 50,150 72,158 L88,148 L92,168 '
-    + 'C98,180 82,200 60,200 Z"/><path class="rex-ink" d="M68,158 L62,134 L84,150 Z"/>'
-    + '<path class="rex-tail" d="M150,208 C180,208 190,188 178,170"/>'
-    + '<path class="rex-stroke" d="M56,180 L68,182"/></g>'
+  /* Curled up, nose tucked in against his haunch, one ear still standing. Clipped to the
+     shield like the awake dog. */
+  return '<defs><clipPath id="rex-clip"><path d="' + REX_INNER + '"/></clipPath></defs>'
+    + '<g clip-path="url(#rex-clip)"><g class="rex-art"><g transform="translate(30,10) scale(0.7)">'
+    + '<path class="rex-ink" d="M36,200 C32,170 58,148 98,146 C140,144 172,162 174,192 '
+    + 'C175,216 150,230 108,232 C68,234 40,226 36,200 Z"/>'
+    + '<path class="rex-tail" d="M162,214 C190,212 196,184 178,168"/>'
+    + '<path class="rex-ink" d="M42,178 C38,162 50,150 66,150 C76,150 84,154 90,161 '
+    + 'C98,164 108,167 114,171 C118,175 116,182 110,186 C100,194 84,198 68,198 '
+    + 'C54,196 45,190 42,178 Z"/>'
+    + '<path class="rex-ink" d="M58,154 C56,140 58,128 62,116 C70,128 80,140 86,156 Z"/>'
+    + '<path class="rex-ear-in" d="M62,146 C61,138 62,130 64,124 C69,131 74,139 77,148 Z"/>'
+    + '<path class="rex-tan" d="M96,174 C104,172 112,174 114,178 C110,184 102,188 94,188 '
+    + 'C90,184 90,178 96,174 Z"/>'
+    + '<path class="rex-tan" d="M118,206 C128,200 142,200 150,206 C146,214 130,218 118,214 Z"/>'
+    + '<path class="rex-stroke" d="M64,170 C68,173 73,173 77,170"/>'
+    + '<path class="rex-tan" d="M60,160 C64,157 70,157 73,160 C70,162 64,162 60,160 Z"/>'
+    + '<path class="rex-collar" d="M94,164 C108,166 118,172 124,180"/>'
+    + '</g></g></g>'
     + '<text class="rex-z" x="104" y="140">z</text>'
     + '<text class="rex-z" x="120" y="122">z</text>'
     + '<text class="rex-z" x="138" y="104">Z</text>';
@@ -4742,8 +4799,7 @@ function rexFigure(model, x, y, focus) {
     + '<g transform="translate(' + (-100 * f.dog) + "," + (-120 * f.dog) + ") scale("
     + f.dog + ')">'
     + '<path class="rex-shield" d="' + REX_SHIELD + '"/>'
-    + '<path class="rex-shield-line" d="M100,18 L178,42 V122 C178,170 144,204 100,224 '
-    + 'C56,204 22,170 22,122 V42 Z"/>'
+    + '<path class="rex-shield-line" d="' + REX_INNER + '"/>'
     + (asleep ? rexSleepingArt() : rexDogArt()) + "</g>";
   var ty = reach + 16;
   g += '<text class="rex-legend" x="0" y="' + ty + '" text-anchor="middle">'

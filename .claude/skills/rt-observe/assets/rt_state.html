@@ -2606,17 +2606,46 @@ function appendAiderRuns(panel, state) {
               + "K of the ") + thousands(tokens.window) + "K window"
         : null]
     ]);
+    /* The plans of THIS run, from the project's own ledger, in the same list
+       styling as the phases below: a number, the plan title and its state. */
+    if ((s.plans || []).length) {
+      var plans = el("ul", "phases");
+      s.plans.forEach(function (p, i) {
+        var li = el("li");
+        li.dataset.state = { done: "done", blocked: "blocked",
+                             "in-progress": "in-progress" }[p.state] || "todo";
+        li.dataset.detail = "note";
+        li.dataset.detailTitle = p.name;
+        li.dataset.detailNote = p.done + " of " + p.total + " steps ticked"
+          + (p.blocked ? ", " + p.blocked + " blocked" : "");
+        li.appendChild(el("span", "num", String(i + 1)));
+        var body = el("div");
+        body.appendChild(el("span", "lbl", p.title || p.name));
+        body.appendChild(el("span", "st", p.state));
+        li.appendChild(body);
+        plans.appendChild(li);
+      });
+      panel.appendChild(plans);
+    }
   });
+  return runs.length;
 }
 
 function renderPlanPanel(state) {
   var panel = railPanel("Plan");
-  appendAiderRuns(panel, state);
+  var drawn = appendAiderRuns(panel, state);
   var progress = state.progress || {};
   if (progress.status !== "ok") {
     unavailable(panel, "Plan unavailable", progress);
     appendRounds(panel, state);
     return panel;
+  }
+  if (drawn) {
+    /* The list below is the repository's own PROGRESS.md, another effort than
+       the aider run above: it says so, rather than reading as its steps. */
+    var repoHead = el("div", "next");
+    repoHead.appendChild(el("span", null, "repository plan (PROGRESS.md)"));
+    panel.appendChild(repoHead);
   }
   var list = el("ul", "phases");
   (progress.phases || []).forEach(function (phase) {

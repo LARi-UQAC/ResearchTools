@@ -73,6 +73,79 @@ def _read_tail(path, size):
     return data.decode("utf-16-le" if utf16 else "utf-8", errors="replace")
 
 
+_PLANS_PARTS = ("docs", "superpowers", "plans")
+_LEDGER_SECTION = re.compile(r"^##\s+(plan[0-9]+\.md)\s*$", re.M)
+_LEDGER_MARK = re.compile(r"^\s*-\s*\[(.)\]", re.M)
+_TITLE = re.compile(r"^#\s+(?:Plan\s+[0-9]+\s*[-:]\s*)?(.+?)\s*$", re.M)
+
+
+def _plan_title(plans, name, size):
+    """The first heading of a plan file, without its "Plan N -" prefix. An
+    archived plan sits in `todo/`. Empty when neither file can be read."""
+    for folder in (plans, plans / "todo"):
+        try:
+            head = _read_head(folder / name, size)
+        except OSError:
+            continue
+        found = _TITLE.search(head)
+        if found:
+            return found.group(1)
+    return ""
+
+
+def _read_head(path, size):
+    with io.open(path, "rb") as handle:
+        return handle.read(size).decode("utf-8-sig", errors="replace")
+
+
+def _plan_ledger(project, current, caps):
+    """
+    Purpose:
+        The plans of a run still going, each with its steps ticked and open,
+        read from the project's own ledger (progress.md) and plan files.
+    Inputs:
+        project (str): the project path of a run record
+        current (str): the plan the run is on
+        caps (dict): observe-config `caps`, `aider_log_tail_bytes` bounds every read
+    Outputs:
+        list of {"name", "title", "done", "total", "blocked", "state"}, `state`
+        being done, blocked, in-progress or todo; empty when the ledger cannot
+        be read. No path is returned.
+    """
+    def plain(key):
+        entry = caps[key]
+        return entry["value"] if isinstance(entry, dict) else entry
+
+    try:
+        size = int(plain("aider_log_tail_bytes"))
+        plans = Path(project).joinpath(*_PLANS_PARTS)
+        text = _read_head(plans / "progress.md", size)
+    except (KeyError, TypeError, ValueError, OSError):
+        return []
+    sections = list(_LEDGER_SECTION.finditer(text))
+    rows = []
+    for index, section in enumerate(sections):
+        end = sections[index + 1].start() if index + 1 < len(sections) else len(text)
+        marks = [m.group(1) for m in _LEDGER_MARK.finditer(text[section.end():end])]
+        done = sum(1 for m in marks if m in ("x", "X"))
+        blocked = sum(1 for m in marks if m == "!")
+        name = section.group(1)
+        if blocked:
+            state = "blocked"
+        elif name == current:
+            # Ticked steps are not enough: the plan is archived only once its
+            # audit is clean, so the plan the run is on is still in progress.
+            state = "in-progress"
+        elif marks and done == len(marks):
+            state = "done"
+        else:
+            state = "todo"
+        rows.append({"name": name, "title": _plan_title(plans, name, size),
+                     "done": done, "total": len(marks), "blocked": blocked,
+                     "state": state})
+    return rows
+
+
 def _live_context(project, caps):
     """
     Purpose:
@@ -351,9 +424,11 @@ def collect(context):
         total = record.get("plan_count") or 0
         # Only a run still going is read: the finished ones are many.
         live = None
+        plan_rows = []
         if str(record.get("state") or "") not in TERMINAL_STATES and alive is not False:
-            live = _live_context(record.get("project"),
-                                 (context.config or {}).get("caps") or {})
+            caps = (context.config or {}).get("caps") or {}
+            live = _live_context(record.get("project"), caps)
+            plan_rows = _plan_ledger(record.get("project"), record.get("plan"), caps)
 
         sessions.append({
             "session_id": record.get("run_id") or path.stem,
@@ -372,6 +447,7 @@ def collect(context):
             "hook_errors": [],
             "age_seconds": age,
             "plan": record.get("plan"),
+            "plans": plan_rows,
             "live": alive,
             "live_reason": ("the process that wrote this record is gone, so the "
                             "state below is where it stopped, not where it is"

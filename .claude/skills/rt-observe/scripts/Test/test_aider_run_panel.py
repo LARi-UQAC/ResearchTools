@@ -58,6 +58,23 @@ class AiderModes(unittest.TestCase):
         self.assertIn("AIDER_ENDED", runs)
 
 
+class RunPlans(unittest.TestCase):
+
+    def test_the_run_lists_its_own_plans_and_titles_the_repository_list(self):
+        script = page_script()
+        runs = re.search(r"function appendAiderRuns\(.*?\n\}", script, re.S).group(0)
+        self.assertIn("s.plans", runs)
+        self.assertIn("return runs.length", runs)
+        panel = re.search(r"function renderPlanPanel\(state\) \{(.*?)\n\}", script, re.S).group(1)
+        self.assertIn("repository plan (PROGRESS.md)", panel)
+        self.assertLess(panel.index("if (drawn)"), panel.index('el("ul", "phases")'))
+
+    def test_every_plan_state_the_adapter_writes_has_a_style_in_the_page(self):
+        runs = re.search(r"function appendAiderRuns\(.*?\n\}", page_script(), re.S).group(0)
+        for state in ("done", "blocked", "in-progress", "todo"):
+            self.assertIn(state, runs)
+
+
 class RingNote(unittest.TestCase):
 
     def setUp(self):

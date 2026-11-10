@@ -168,5 +168,70 @@ class LiveContext(unittest.TestCase):
         self.assertEqual(3, session["progress"]["round"])
 
 
+LEDGER = (
+    "# Progress\n\n**Goal.** A demo.\n\n"
+    "## plan1.md\n\n- [x] create a.go as plan1.md describes\n- [x] create b.go as plan1.md describes\n\n"
+    "## plan2.md\n\n- [x] create c.go as plan2.md describes\n- [ ] create d.go as plan2.md describes\n\n"
+    "## plan3.md\n\n- [ ] create e.go as plan3.md describes\n- [!] create f.go as plan3.md describes\n\n"
+    "## plan4.md\n\n- [ ] create g.go as plan4.md describes\n")
+
+
+class PlanLedger(unittest.TestCase):
+    """The plans of a run still going, from the project's own ledger."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+        self.project, self.logs = make_project(self.home)
+        self.plans = self.logs.parent
+        (self.plans / "progress.md").write_text(LEDGER, encoding="utf-8")
+        (self.plans / "plan2.md").write_text("# Plan 2 - The stall decision\n\nbody\n", encoding="utf-8")
+        (self.plans / "todo").mkdir(exist_ok=True)
+        (self.plans / "todo" / "plan1.md").write_text(
+            "# Plan 1 - Settings and references\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def rows(self, **record):
+        write_record(self.home, self.project, **record)
+        return {p["name"]: p for p in tokens_of(self.home)[1]["plans"]}
+
+    def test_each_section_becomes_a_plan_with_its_counts(self):
+        rows = self.rows(plan="plan2.md")
+        self.assertEqual(["plan1.md", "plan2.md", "plan3.md", "plan4.md"], list(rows))
+        self.assertEqual((1, 2), (rows["plan2.md"]["done"], rows["plan2.md"]["total"]))
+
+    def test_states_are_done_in_progress_blocked_and_todo(self):
+        rows = self.rows(plan="plan2.md")
+        self.assertEqual("done", rows["plan1.md"]["state"])
+        self.assertEqual("in-progress", rows["plan2.md"]["state"])
+        self.assertEqual("blocked", rows["plan3.md"]["state"])
+        self.assertEqual("todo", rows["plan4.md"]["state"])
+        self.assertEqual(1, rows["plan3.md"]["blocked"])
+
+    def test_the_plan_the_run_is_on_stays_in_progress_when_all_its_steps_are_ticked(self):
+        rows = self.rows(plan="plan1.md")
+        self.assertEqual("in-progress", rows["plan1.md"]["state"])
+
+    def test_titles_come_from_the_plan_file_or_its_archive(self):
+        rows = self.rows(plan="plan2.md")
+        self.assertEqual("The stall decision", rows["plan2.md"]["title"])
+        self.assertEqual("Settings and references", rows["plan1.md"]["title"])
+        self.assertEqual("", rows["plan4.md"]["title"])
+
+    def test_no_ledger_gives_an_empty_list(self):
+        (self.plans / "progress.md").unlink()
+        self.assertEqual({}, self.rows(plan="plan1.md"))
+
+    def test_a_finished_run_reads_no_ledger(self):
+        self.assertEqual({}, self.rows(state="done"))
+
+    def test_no_path_reaches_the_plans(self):
+        write_record(self.home, self.project, plan="plan2.md")
+        text = json.dumps(tokens_of(self.home)[1]["plans"])
+        self.assertNotIn(self.home, text)
+
+
 if __name__ == "__main__":
     unittest.main()

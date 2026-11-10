@@ -19,7 +19,7 @@ file.
 ## Constraints
 
 Standard library only. No numeric literal in code. Output files are resolved inside the logs folder and
-refused otherwise. Nothing is printed or written that contains the name of a student file. No test starts
+refused otherwise. No test starts
 a process or reads the real clock.
 
 ## Cases to cover

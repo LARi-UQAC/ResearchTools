@@ -50,6 +50,15 @@ the nightly runner is a bare PowerShell/`cmd` pair rather than a skill script in
 | `scripts/build/` | **the packaging pipeline that produces the student-facing `aider-kit.zip` from this directory's own canonical sources.** See below |
 | `install-hooks.ps1`, `new-project.ps1`, `setup.ps1`, `git-hooks/`, `project-template/` | what the assembled kit installs on a student's or the operator's own machine |
 
+## Writing the plans for the writer model
+
+Before a plan and its spec go to the kit, clean them: the writer is a local model that sees only the
+mounted project, so anything about another project, a rule number, a person or a role, a date, a header
+meant for another program or a bare file name must be removed (a bare file name creates an empty file at
+the project root), and a plan that creates more files than one reply can hold must be split. The full
+checklist and a check command are in [MANUAL.md](MANUAL.md), Step 6, "Clean the three documents before
+the run". `local-coder` does the same review before it mounts a plan.
+
 ## Building the distribution zip
 
 The kit handed to students is assembled **from this skill's own files**, never from a copy

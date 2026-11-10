@@ -498,6 +498,44 @@ copy here.
 **A step that names no file cannot be executed**, because the driver hands over
 exactly the files a plan names as editable and nothing else.
 
+### Clean the three documents before the run
+
+The writer is a local model that sees only the project: `spec.md`, the plan being
+run, `progress.md`, the files that plan names, and this kit's own coding rules. It
+cannot see anything else, and it takes every sentence you write as a fact about its
+own world. Read each document once as the model will, and remove what it cannot use:
+
+- **Numbers that point elsewhere**: rule, decision or ticket numbers. The kit's rules
+  are already given to the model, so do not cite them, and never paste the rules of
+  another project.
+- **People, roles and other tools**: "the owner", "the cloud", "the session", an
+  assistant, a ticket, and any sentence about who installs, decides or reviews
+  something. A model that reads "the cloud installs it" starts to think it runs in a
+  cloud.
+- **Dates and stories**: "measured on...", "proposal...", why a value was chosen.
+- **Other plans, other projects, files that are not in this project**, unless the
+  plan lists them as files to read and they exist.
+- **A header written for another program** (front matter with an executor, a tier,
+  bounds). The driver skips a front matter block when it looks for file names, but
+  the model reads the whole file and sees it: mount the plan without it.
+- **A bare file name** (`main.go`, `settings.json`). The driver reads it as a new
+  file at the root of the project and creates it empty. Write the path from the
+  project root in the list of files, and describe the file elsewhere ("the settings
+  file").
+
+Keep: for each file its path and what it holds, the signatures and types, the name
+and the meaning of each test, the exact values, the command that runs in the
+project, and in `spec.md` the language and the conventions. A quick check that
+catches the usual leftovers; every hit is rewritten or deleted:
+
+```powershell
+Select-String -Path docs\superpowers\plans\*.md -Pattern '\bR[0-9]+\b','owner','cloud','session','ticket','proposal','[0-9]{4}-[0-9]{2}-[0-9]{2}'
+```
+
+The dry run also tells you when a plan is too big: "this plan creates N new files ...
+Split the plan" means the reply cannot hold them, and a cut reply leaves the files
+empty. Split the plan before the night, not after.
+
 **To take the worked example instead**, which is the fastest way to see a night
 run end to end. One uninterrupted sequence, from nothing to a dry run:
 

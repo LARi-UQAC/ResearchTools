@@ -580,14 +580,20 @@ function Invoke-TestCommand([string]$logPath) {
     Push-Location $proj
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    # Python writes through the console code page when its output is redirected, which turned an accent in a
+    # test message into a replacement character in the log. UTF-8 mode makes it write UTF-8, as Go and Rust do.
+    $prevUtf8 = $env:PYTHONUTF8
+    $env:PYTHONUTF8 = "1"
     try {
         & cmd /c "$testCmd > `"$logPath`" 2>&1"
         $code = $LASTEXITCODE
     } finally {
+        $env:PYTHONUTF8 = $prevUtf8
         $ErrorActionPreference = $prev
         Pop-Location
     }
-    if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath | Out-Host }
+    Convert-TestLogToUtf8Bom $logPath
+    if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Encoding UTF8 | Out-Host }
     return [int]$code
 }
 
@@ -1602,6 +1608,15 @@ if (Test-Path -LiteralPath $reqFile) {
 }
 if ($blockedPlans -gt 0) {
     Write-Host ("  {0} plan(s) blocked. Every plan still ran; read the [!] lines in progress.md." -f $blockedPlans) -ForegroundColor Yellow
+    # Which of the three things happened to each plan (reply limit, window, fix attempts) and what the last
+    # test said, so nobody has to open ten logs to find out.
+    $blocksFile = Join-Path (Split-Path $progress -Parent) "blocks.md"
+    try {
+        Write-Utf8NoBom $blocksFile (Get-BlockReport (Get-Content -LiteralPath $progress -Raw -Encoding UTF8) $logDir)
+        Write-Host "  what blocked each plan: $blocksFile" -ForegroundColor Yellow
+    } catch {
+        Write-Host "  (could not write the block report: $($_.Exception.Message))" -ForegroundColor Yellow
+    }
 }
 # Three states, not two. "done_with_blocked" is a run that did everything it was
 # asked to do and produced work a person must now read - it is neither a clean

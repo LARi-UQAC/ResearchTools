@@ -468,3 +468,79 @@ function Test-WatchdogStop([string]$logs, [string]$planName) {
     Remove-Item -LiteralPath $signal -Force
     return $true
 }
+
+# Re-save a test log as UTF-8 WITH a byte order mark. The test command writes through cmd's redirection, in
+# plain bytes with no mark, while every other log of a run is UTF-16 written by Tee-Object, so an editor that
+# had guessed UTF-16 for one showed the other as Chinese characters (reported 2026-11-11, the content was
+# intact). A mark is the one signal every editor and Get-Content honour, and nothing parses a log as data, so
+# unlike a JSON file it costs nothing here. A log that is already UTF-16 is converted, never read as UTF-8.
+function Convert-TestLogToUtf8Bom([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        $text = [System.Text.Encoding]::Unicode.GetString($bytes)
+    } else {
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+    }
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    [System.IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($true)))
+}
+
+# A log read as it was written: the run logs are UTF-16 with a mark (Tee-Object), the test logs UTF-8.
+function Get-LogText([string]$Path) {
+    $b = [System.IO.File]::ReadAllBytes($Path)
+    if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { return [System.Text.Encoding]::Unicode.GetString($b) }
+    $t = [System.Text.Encoding]::UTF8.GetString($b)
+    if ($t.Length -gt 0 -and $t[0] -eq [char]0xFEFF) { $t = $t.Substring(1) }
+    return $t
+}
+
+# The report of a run that blocked: for each plan carrying a [!] line, WHY, in the words of the evidence the
+# run already holds. Until 2026-11-11 the end of a run said only "10 plan(s) blocked" and the student had to
+# open each log to find out whether the model had hit its reply limit, filled its window or used its three fix
+# attempts. Inputs: the text of progress.md, the log folder, how many lines of test output to keep. Output: the
+# Markdown text (empty when nothing is blocked). It reads files and runs nothing.
+function Get-BlockReport([string]$ledgerText, [string]$logDir, [int]$tailLines = 12) {
+    $out = New-Object System.Collections.Generic.List[string]
+    $found = 0
+    foreach ($section in [regex]::Split($ledgerText, '(?m)^## ')) {
+        $lines = @($section -split "\r?\n")
+        $heading = ([string]$lines[0]).Trim()
+        $blocked = @($lines | Where-Object { $_ -match '^\s*-\s*\[!\]' })
+        if ($heading -eq "" -or $blocked.Count -eq 0) { continue }
+        $found++
+        $base = $heading -replace '\.md$', ''
+        $out.Add("## $heading")
+        $out.Add("")
+        $out.Add("Recorded in progress.md:")
+        foreach ($b in $blocked) { $out.Add($b.Trim()) }
+        $out.Add("")
+        $runLog  = @(Get-ChildItem -LiteralPath $logDir -Filter "*-$base.log" -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1)
+        $testLog = @(Get-ChildItem -LiteralPath $logDir -Filter "*-$base-tests.log" -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1)
+        if ($runLog.Count -gt 0) {
+            $t = Get-LogText $runLog[0].FullName
+            $hit = [regex]::Match($t, '(?s)has hit a token limit!.*?Input tokens: ([^\r\n]+)\r?\n\s*Output tokens: ([^\r\n]+)\r?\n\s*Total tokens: ([^\r\n]+)')
+            if ($hit.Success) {
+                $out.Add("The model hit a token limit: input $($hit.Groups[1].Value.Trim()), output $($hit.Groups[2].Value.Trim()), total $($hit.Groups[3].Value.Trim()).")
+            }
+            if ($t -match 'Only \d+ reflections') { $out.Add("aider used all its fix attempts and the tests were still failing.") }
+            $reqs = @([regex]::Matches($t, 'Tokens: ([\d.,k]+) sent, ([\d.,k]+) received') | ForEach-Object { "$($_.Groups[1].Value) sent / $($_.Groups[2].Value) received" })
+            if ($reqs.Count -gt 0) { $out.Add("Requests of the run, in order: " + ($reqs -join "; ") + ".") }
+            $out.Add("Run log: $($runLog[0].Name)")
+        }
+        if ($testLog.Count -gt 0) {
+            $tt = Get-LogText $testLog[0].FullName
+            $names = @([regex]::Matches($tt, '(?m)^(?:FAIL|ERROR): (\S+)|^--- FAIL: (\S+)|^test (\S+) \.\.\. FAILED') |
+                       ForEach-Object { ($_.Groups[1].Value + $_.Groups[2].Value + $_.Groups[3].Value) } | Select-Object -Unique)
+            if ($names.Count -gt 0) { $out.Add("Failing tests: " + ($names -join ", ") + ".") }
+            $tail = @(($tt -split "\r?\n") | Where-Object { $_.Trim() -ne "" } | Select-Object -Last $tailLines)
+            $out.Add("End of the test output ($($testLog[0].Name)):")
+            $out.Add('```')
+            foreach ($l in $tail) { $out.Add($l) }
+            $out.Add('```')
+        }
+        $out.Add("")
+    }
+    if ($found -eq 0) { return "" }
+    return ("# What blocked`n`n" + ($out -join "`n") + "`n")
+}

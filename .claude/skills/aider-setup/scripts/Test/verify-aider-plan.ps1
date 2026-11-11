@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -526,6 +526,49 @@ Check "a header never closed is not read as swallowing the whole plan" {
     $open = Join-Path $headerProj "open.md"
     Set-Content -LiteralPath $open -Value ("---`nexecutor: aider`n" + $planBody) -Encoding UTF8
     @(Get-Targets $open).Count -eq 2
+}
+
+Write-Host ""
+Check "a blocked run is reported plan by plan, with the evidence of its logs" {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("bk-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    try {
+        $ledger = "# Progress`n`n## plan1.md`n- [x] a`n`n## plan2.md`n- [ ] b`n- [!] tests - suite still failing (exit 1) after the fix loop`n"
+        $run = "Tokens: 16k sent, 5.0k received.`nModel m has hit a token limit!`nToken counts below are approximate.`n`nInput tokens: ~31,333 of 65,536`nOutput tokens: ~13,516 of 14,336 -- possibly exceeded output limit!`nTotal tokens: ~44,849 of 65,536`n`nOnly 3 reflections allowed`n"
+        [System.IO.File]::WriteAllText((Join-Path $dir "20260101-000000-plan2.log"), $run, [System.Text.Encoding]::Unicode)
+        [System.IO.File]::WriteAllText((Join-Path $dir "20260101-000000-plan2-tests.log"), "FAIL: test_one (m.T)`nRan 3 tests`nFAILED (failures=1)`n", (New-Object System.Text.UTF8Encoding($false)))
+        $r = Get-BlockReport $ledger $dir
+        ($r -match '## plan2.md') -and ($r -match 'suite still failing') -and ($r -match 'input ~31,333 of 65,536') -and
+        ($r -match 'output ~13,516 of 14,336') -and ($r -match 'Failing tests: test_one') -and ($r -match 'FAILED \(failures=1\)') -and
+        ($r -match '16k sent / 5.0k received') -and ($r -match 'used all its fix attempts') -and ($r -notmatch 'plan1')
+    } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+}
+
+Check "NEGATIVE CONTROL: a ledger with no blocked plan gives no report" {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("bk-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    try { (Get-BlockReport "# Progress`n`n## plan1.md`n- [x] a`n" $dir) -eq "" } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+}
+
+Check "a test log is re-saved as UTF-8 with a mark, content intact, once" {
+    $f = Join-Path ([System.IO.Path]::GetTempPath()) ("tl-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".log")
+    try {
+        [System.IO.File]::WriteAllBytes($f, [byte[]](0x72, 0xC3, 0xA9, 0x73))   # "r" "e acute" "s" in UTF-8, no mark
+        Convert-TestLogToUtf8Bom $f
+        Convert-TestLogToUtf8Bom $f                                              # a second pass must not add a second mark
+        $b = [System.IO.File]::ReadAllBytes($f)
+        ($b.Length -eq 7) -and ($b[0] -eq 0xEF) -and ($b[1] -eq 0xBB) -and ($b[2] -eq 0xBF) -and ($b[4] -eq 0xC3) -and ($b[5] -eq 0xA9)
+    } finally { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+}
+
+Check "a UTF-16 test log is converted, never read as UTF-8, and a missing log is left alone" {
+    $f = Join-Path ([System.IO.Path]::GetTempPath()) ("tl-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".log")
+    try {
+        [System.IO.File]::WriteAllText($f, "ok " + [char]0xE9, [System.Text.Encoding]::Unicode)
+        Convert-TestLogToUtf8Bom $f
+        Convert-TestLogToUtf8Bom (Join-Path ([System.IO.Path]::GetTempPath()) "no-such-test-log.log")
+        (Get-LogText $f) -eq ("ok " + [char]0xE9)
+    } finally { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Host ""

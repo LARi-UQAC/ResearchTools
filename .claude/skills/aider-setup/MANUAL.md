@@ -730,6 +730,28 @@ prompt reached the model damaged, not that the model is confused.
 `- [!]` lines in `progress.md` are where a plan stopped, and why. A non-zero exit
 means at least one plan was blocked; every other plan still ran.
 
+When a plan blocked, the run also writes `docs\superpowers\plans\blocks.md`. For each blocked plan it
+gives the `[!]` line, whether the model hit a token limit (with the input, output and total counts),
+whether aider used its three fix attempts, the tokens of every request, the names of the failing tests
+and the end of the last test output. Read it first: it tells you which of the three things below
+happened, without opening ten logs.
+
+Three things block a plan, and each points at a different cure:
+
+| What `blocks.md` says | What happened | What to change |
+|---|---|---|
+| Output close to the reply limit | The reply was cut, so none of its edits was applied. Either the model wrote its reasoning into comments, or the plan needs many edits (each changed call site is one edit block). | Split the plan, or reduce the number of places it changes. Do not raise the limit: a longer reply is only a longer failure. |
+| Input close to the window | The conversation grew with each fix attempt (the previous reply and the test output are sent again). | Make the plan produce less per reply, so three attempts fit. |
+| Fix attempts used, tests failing | The model could not make the tests pass in three tries. | Read the failing tests: a test that contradicts the plan is a plan defect. |
+
+aider opens `https://aider.chat/docs/troubleshooting/token-limits.html` in your browser each time a
+request hits the reply limit or fills the window, because the run uses `--yes`. The page is a signal
+that one of the first two rows happened, not a malfunction of the browser: look for it in `blocks.md`.
+
+The logs of a run are UTF-16 (`*-planN.log`, written by `Tee-Object`) except the test logs
+(`*-planN-tests.log`), which are UTF-8 with a byte order mark. Both open correctly in an editor that
+honours the mark; `Get-Content -Encoding Unicode` reads the first kind.
+
 The pipeline has no path to a merge. That is deliberate — see the last section.
 
 ---

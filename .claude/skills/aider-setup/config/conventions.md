@@ -1,11 +1,11 @@
 # Working protocol
 
-**Goal.** The working protocol handed to the model on every single call: how the ledger works, how one plan at a time is executed, what size each file may reach, and what a function's header must contain.
+**Goal.** The working protocol handed to the model on every single call: where the files live, how the ledger works, how a reply is written, what a test is and how code is written.
 
-**Contents.** Only instructions the model must follow while writing code, kept short because every token here is spent on every call - coding rules go in `rules.md`, and anything a human needs but the model does not goes in `MANUAL.md`.
+**Contents.** Only instructions the model must follow while writing code, kept short because every token here is spent on every call. What the driver does by itself (loading one plan at a time, measuring file sizes, running the suite, moving finished files, the audit passes) is not repeated here. Coding rules go in `rules.md`, and anything a human needs but the model does not goes in `MANUAL.md`.
 
 Read into context on every run, in every project. English, because these are
-instructions to the model. Written 2026-09-02.
+instructions to the model. Written 2026-09-02, shortened 2026-11-11.
 
 ## Where the files live
 
@@ -14,12 +14,11 @@ Everything below sits in `docs/superpowers/plans/` of the project:
 | File | Role | Who writes it |
 |---|---|---|
 | `spec.md` | What is being built and why. The stable reference. | The human. Read-only for you. |
-| `plan1.md`, `plan2.md`, ... | One numbered plan per stage, an ordered list of steps. | The human. Read-only for you. |
-| `progress.md` | The ledger. One `## <filename>` section per file above, each holding that file's checkboxes. | You. |
-| `audit.md` | Problems found in the finished code. Written in the audit pass, never before. | You, in the audit pass only. |
+| `plan1.md`, `plan2.md`, ... | One plan per run of yours, an ordered list of steps. | The human. Read-only for you. |
+| `progress.md` | The ledger. One `## <filename>` section per plan, each holding that plan's checkboxes. | You. |
+| `audit.md` | Problems found by the reviewer. | The reviewer. Never you. |
 
-A completed file moves to `docs/superpowers/plans/todo/`. The harness moves it,
-not you: never move, rename or delete any of these files yourself.
+Never move, rename or delete any of these files.
 
 A source or test file the plan names that does not exist yet is created for you
 empty and shown in the chat as an empty file. An empty file is a NEW file: write
@@ -44,69 +43,24 @@ Three marks, and only three:
   plan; do not carry on past it.
 
 Tick nothing you did not do. A false tick is worse than an unticked box, because
-the next run starts from it and never revisits it.
+the next run starts from it and never revisits it. Nothing you hold survives into
+the next plan: write what it needs to know into `progress.md` before you finish.
 
-## One plan at a time
+## How you answer
 
-Work only on the plan file present in your context. Never read ahead to the next
-plan, never act on a step belonging to another one.
+Your whole reply has a fixed size limit, and a reply cut off by the limit applies
+none of its edits. So:
 
-The context window is dropped between plans, because each plan runs in a new
-process. Nothing you hold now survives into the next plan. Whatever the next plan
-needs to know must be written into `progress.md` before you finish.
-
-When every step of the current plan is ticked or blocked, say so and stop.
-
-## Size ceilings
-
-Every one of these is a token count, not a line count. The harness measures each
-file before every run and reports the ones over budget.
-
-| File | Max tokens | Why that figure |
-|---|---:|---|
-| a NEW file you create | **4000** | you write it whole in one reply, so it has to fit in one reply |
-| a NEW test file you create | **4000** | same reason: it is new text, not a diff |
-| an existing file you edit | **16000** | you send a diff, not the file, so reading a large file is cheap |
-| `progress.md` | **2048** | a list of tasks pointing at the plans, nothing more |
-| `audit.md` | **4096** | you append to it per batch, so this bounds one batch of findings |
-| `spec.md` | **4000** | written once, re-read on every call |
-| each `plan<N>.md` | **4000** | only one is ever loaded at a time |
-| `rules.md` | **3500** | generated, not written by hand |
-| `conventions.md` | **2500** | this file |
-
-Three rules follow from those numbers.
-
-- **A new file you create stays under 4000 tokens**, roughly 300 to 400 lines,
-  and so does its test. You write new text whole, so it has to fit in one reply,
-  and a reply that size already takes about a quarter of an hour here. If the
-  step needs more, write the first module, say so in `progress.md`, and leave
-  the rest to the next plan.
-- **An existing file over 16000 tokens is split** along a seam that already
-  exists in the code, one module per responsibility, never at an arbitrary line
-  count. Say in `progress.md` which file you split and where the seam was.
-- **A plan touches at most ten files.** Not because any single ceiling forbids
-  more, but because ten files at 16000 tokens is already everything the window
-  has left once the fixed cost and the protocol files are paid for. A plan that
-  needs more than ten files is two plans, and saying so in `progress.md` is the
-  right answer rather than pressing on.
-
-When `progress.md` approaches its ceiling, compress the sections of finished
-plans to one summary line each and leave the current plan's detail intact.
-
-## The audit pass
-
-When the last plan is done, one more pass runs, and it is not a coding pass.
-
-- Every source file is handed to you **read-only**. You cannot edit them, and
-  that is deliberate.
-- You write `audit.md`: a numbered list of problems found, each with the file
-  and line, what is wrong, and why it matters. Order them worst first.
-- Check at least: values hard-coded where configuration belongs, silent
-  fallbacks, missing error paths, a return code trusted where the effect should
-  have been verified, a file over the 16000-token ceiling, and anything the
-  `spec.md` asked for that no plan delivered.
-- Propose no rewrite and apply no fix. The list is for a person to act on.
-- If you find nothing, say so in one line rather than padding the list.
+- Answer with edit blocks and nothing else. Do not think aloud.
+- **Never write your reasoning into the code.** A comment says why a line exists, in
+  one line. It is never a deliberation, a doubt, a second attempt or a note to
+  yourself ("let's look at...", "but the spec says...", "wait").
+- **A new file you create stays under 4000 tokens**, roughly 300 to 400 lines, and so
+  does its test. You write new text whole, so it has to fit in one reply. If the
+  step needs more, write the first module, say so in `progress.md`, and leave the
+  rest to the next plan.
+- Change an existing file with small edit blocks, one per place that changes. Do not
+  rewrite what the step did not ask you to change.
 
 ## Tests
 
@@ -158,4 +112,3 @@ every file you write.
 The full rule, with its five parts and an example, is **R27** in `rules.md`,
 which you are given on every call. It is stated once, there, so that this file
 and that rule cannot come to say different things.
-

@@ -56,7 +56,7 @@ the nightly runner is a bare PowerShell/`cmd` pair rather than a skill script in
 Before a plan and its spec go to the kit, clean them: the writer is a local model that sees only the
 mounted project, so anything about another project, a rule number, a person or a role, a date, a header
 meant for another program or a bare file name must be removed (a bare file name creates an empty file at
-the project root), and a plan that creates more files than one reply can hold must be split. The full
+the project root), and a plan that creates more files than one reply can hold must be split. Count the edit sites too: a plan that changes a function signature used in thirty tests asks for thirty edit blocks in one reply, which is how a plan hit the reply limit on 2026-11-10. The full
 checklist and a check command are in [MANUAL.md](MANUAL.md), Step 6, "Clean the three documents before
 the run". `local-coder` does the same review before it mounts a plan.
 

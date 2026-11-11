@@ -109,6 +109,13 @@ mount-night)
     { plan_paths reads; plan_paths files; } | while read -r f; do
       if [ -n "$f" ] && [ -f "$W/$f" ]; then mkdir -p "$P/$(dirname "$f")"; cp "$W/$f" "$P/$f"; fi
     done
+    # The JSON configuration files of the skills the plan writes in: a module reads its own at run time
+    # and no plan names them (measured 2026-11-11: a test failed on a missing ugs_config.json).
+    plan_paths files | sed -E 's#^([.]claude/skills/[^/]+)/.*#\1#' | sort -u | while read -r sk; do
+      for cfg in "$W/$sk"/assets/*.json "$W/$sk"/scripts/*.json; do
+        if [ -f "$cfg" ]; then rel="${cfg#$W/}"; mkdir -p "$P/$(dirname "$rel")"; cp "$cfg" "$P/$rel"; fi
+      done
+    done
   done
   # Sibling modules imported by the copied files, with their tests (same rule as the single mount).
   for _pass in 1 2; do

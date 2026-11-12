@@ -5,7 +5,7 @@
 **Contents.** Only instructions the model must follow while writing code, kept short because every token here is spent on every call. What the driver does by itself (which files are loaded, loading one plan at a time, measuring file sizes, running the suite, moving finished files, the audit passes) is not repeated here. Coding rules go in `rules.md`, and anything a human needs but the model does not goes in `MANUAL.md`.
 
 Read into context on every run, in every project. English, because these are
-instructions to the model. Written 2026-09-02, shortened 2026-11-11 (the list of files was removed: the model is given them by name).
+instructions to the model.
 
 ## The ledger
 

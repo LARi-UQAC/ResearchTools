@@ -53,7 +53,7 @@ slots `LANGUAGE_TABLE`, `SECTION` and `LANGUAGE_OF_REPORT`; prompt and schema ar
   the label in the report language (`fr` or `en`).
 - `language_report(pages: list[str], call, ctx, entries: list[dict], language: str) -> dict`: one grader
   call per page whose text is not blank, in page order. Returns `annotations` (dicts with `page`, `kind`
-  `language`, `code`, `quote`, `rect` None and `comment`, the comment being the proposal and the reason
+  `language`, `code`, `quote`, `rect` None and `comment`, the comment being the proposed text and the reason
   joined by a dash, or the reason alone), `rejected` (count of findings dropped for an unknown code or a
   quote not found in the page after `normalize`) and `not_run` (page numbers whose call failed after
   `ctx.grade_retries` repeats of a retryable `NotRun`). A finding repeated on a page with the same code

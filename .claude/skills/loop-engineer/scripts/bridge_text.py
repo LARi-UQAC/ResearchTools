@@ -6,8 +6,7 @@ Holds what has no network, no filesystem and no model in it: BridgeError, the re
 (`strip_reasoning`, `ReasoningAnomalyError`), the reply splitter (`split_files`), the sole-fence
 unwrapper (`unwrap_sole_code_fence`) and the hygiene scan (`scan_hygiene`). Every name is
 re-exported by `ollama_bridge`, so `ollama_bridge.split_files` and `except ollama_bridge.BridgeError`
-keep working and are the very same objects. The code was moved byte for byte (Issue #104, owner
-decision 2026-11-05, cloud split because the cut is delicate); nothing was rewritten.
+keep working and are the very same objects. The code was moved byte for byte; nothing was rewritten.
 """
 from __future__ import annotations
 

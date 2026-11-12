@@ -34,7 +34,7 @@ JSON line. Fictitious names only in tests (R34). Comments in English.
 - Test: `.claude/skills/work-ugs-audit/scripts/Test/test_report_prepare.py`
 
 **Interfaces:**
-- `main(argv)` keeps its signature and exit codes. In the generic failure branch the printed JSON object
+- `main(argv)` keeps its signature and exit codes. In the generic failure case the printed JSON object
   holds `status` (`failure`), `error_type` (the exception class name) and a fixed `error` message that does
   not interpolate the exception. Nothing else from the exception is printed.
 

@@ -1,4 +1,4 @@
-"""ugs_config - reads the work-ugs-audit configuration (Issue 104, plan 3)."""
+"""ugs_config - reads the work-ugs-audit configuration."""
 
 import json
 import re

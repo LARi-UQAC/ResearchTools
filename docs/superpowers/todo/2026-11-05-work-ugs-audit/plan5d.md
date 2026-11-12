@@ -18,7 +18,7 @@ configured size, written as PNG for line art or JPEG for a photo, and its token 
 set of figures can be tiled into one contact sheet.
 
 **Spec:** `spec.md` D6, D14. Token cost is the number of 28-pixel patches: the width over 28 rounded up
-times the height over 28 rounded up (Anthropic Vision documentation, read 2026-11-05); the format does
+times the height over 28 rounded up; the format does
 not change it, and a local model's own cost is measured elsewhere by the vision probe.
 
 ## Global Constraints

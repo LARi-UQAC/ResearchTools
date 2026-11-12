@@ -10,7 +10,7 @@
     side effect. Dot-sourcing install-junctions.ps1 would do exactly that, and would
     write to the real ~/.claude just by being tested.
 
-    Exercised offline by scripts\test\verify-sync-writes.ps1, which loads this file and
+    Exercised offline by scripts	esterify-sync-writes.ps1, which loads this file and
     drives it against copies in a temporary directory.
 #>
 
@@ -245,94 +245,6 @@ function Update-RtSettings([string]$repoRoot, [string]$homeClaude) {
     Write-Rt "  [SYNCED]   ~/.claude/settings.json SessionStart entry" "Green"
 }
 
-# --- aider-setup scripts -> <home>\.local\bin ---------------------------------------
-# The kit's driver and helpers are installed by setup.ps1 file by file, and its force option would also
-# overwrite the professor's tuned configuration, so nothing kept the installed scripts current: a fix in the
-# repository reached a night only after a manual install, and a stale installed driver ran without a word
-# (measured 2026-11-12). This step copies the top-level files of .claude\skills\aider-setup\scripts, which
-# are scripts and data and never configuration; ~/.config/aider is never read or written.
-$script:RtKitExtensions = @(".ps1", ".py", ".json", ".bat")
-
-function Get-RtKitRendered([string]$src, [string]$homeDir) {
-    <#
-    .SYNOPSIS
-        The text a kit file has once installed: the repository text with every home placeholder replaced
-        by the home path written with forward slashes (the rule of the kit installer).
-    #>
-    $token = "{{" + "HOME" + "}}"
-    return [System.IO.File]::ReadAllText($src).Replace($token, $homeDir.Replace('\', '/'))
-}
-
-function Test-RtKitFileProven([string]$extension, [string]$rendered, $stamp, [string]$repoRoot, [string]$fullPath) {
-    <#
-    .SYNOPSIS
-        Whether one kit file may be installed: a script must parse, a Python file must be proven by the green
-        stamp, a data file must parse as JSON, a batch file has no check.
-    #>
-    switch ($extension) {
-        ".ps1"  {
-            $errors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseInput($rendered, [ref]$null, [ref]$errors)
-            return (@($errors).Count -eq 0)
-        }
-        ".py"   { return (Test-RtProven $stamp $repoRoot $fullPath) }
-        ".json" { try { $null = $rendered | ConvertFrom-Json; return $true } catch { return $false } }
-        default { return $true }
-    }
-}
-
-function Sync-RtKitScripts([string]$repoRoot, [string]$homeBin, [string]$homeDir) {
-    <#
-    .SYNOPSIS
-        Keeps the installed kit scripts current: copies each proven top-level file of the repository's
-        aider-setup scripts folder into the install folder, substituting the home placeholder.
-
-    .DESCRIPTION
-        Silent and without effect when the repository has no kit folder or the install folder does not
-        exist (the kit is not installed, rule R11). A file that fails its proof is held and never written.
-        Before a replacement the installed file is copied into .rt-undo of the repository. With -WhatIf
-        (RtWhatIf) it reports and writes nothing, no undo copy included.
-    #>
-    $srcDir = Join-Path $repoRoot ".claude\skills\aider-setup\scripts"
-    if (-not (Test-Path -LiteralPath $srcDir -PathType Container)) { return }
-    if (-not (Test-Path -LiteralPath $homeBin -PathType Container)) { return }
-
-    $stamp = Get-RtStamp $repoRoot
-    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    Get-ChildItem -LiteralPath $srcDir -File | Where-Object { $script:RtKitExtensions -contains $_.Extension } | ForEach-Object {
-        $label = "bin\$($_.Name)"
-        try {
-            $rendered = Get-RtKitRendered $_.FullName $homeDir
-            if (-not (Test-RtKitFileProven $_.Extension $rendered $stamp $repoRoot $_.FullName)) {
-                $script:RtHeld += $label
-                Write-Rt "  [HELD]     $label (not proven: syntax, green stamp or JSON)" "Yellow"
-                return
-            }
-            $dst = Join-Path $homeBin $_.Name
-            $exists = Test-Path -LiteralPath $dst
-            if ($exists) {
-                if ((Get-Item -LiteralPath $dst -Force).PSIsContainer) {
-                    Write-Rt "  [CONFLICT] $label is a directory - not touching" "Red"
-                    return
-                }
-                if ([System.IO.File]::ReadAllText($dst) -ceq $rendered) { return }
-            }
-            if ($script:RtWhatIf) { Write-RtWhatIf $label; return }
-            if ($exists) {
-                $undo = Join-Path $repoRoot ".rt-undo"
-                New-Item -ItemType Directory -Path $undo -Force | Out-Null
-                Copy-Item -LiteralPath $dst -Destination (Join-Path $undo ("{0}-{1}" -f (Get-Date -Format "yyyy-MM-dd-HHmm"), $_.Name)) -Force
-            }
-            [System.IO.File]::WriteAllText($dst, $rendered, $utf8NoBom)
-            $script:RtChanged += $label
-            Write-Rt "  [SYNCED]   $label" "Green"
-        } catch {
-            $script:RtHeld += $label
-            Write-Rt "  [HELD]     $label (could not be installed: $($_.Exception.Message))" "Yellow"
-        }
-    }
-}
-
 # --- .rt-undo pruning ---------------------------------------------------------
 # Runs on every sync regardless of what was held, so pruning is never skipped as a
 # side effect of code being unproven.
@@ -405,11 +317,6 @@ function Invoke-RtSync([string]$repoRoot, [string]$homeClaude) {
                 }
             }
         }
-
-        # The aider kit scripts installed in <home>\.local\bin, proven like the hooks. The home is the
-        # parent of the .claude folder being synced, so a test can use a temporary one.
-        $syncHome = Split-Path $homeClaude -Parent
-        Sync-RtKitScripts $repoRoot (Join-Path $syncHome ".local\bin") $syncHome
 
         Update-RtClaudeMd $repoRoot $homeClaude
         Update-RtSettings $repoRoot $homeClaude

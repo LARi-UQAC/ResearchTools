@@ -9,10 +9,12 @@ instructions to the model. Written 2026-09-02, shortened 2026-11-11 (the list of
 
 ## The ledger
 
-`progress.md` carries one section per plan, named exactly after the file:
+`progress.md` carries one section per plan, named exactly after its plan file. You are given
+one plan per run, the file `plan<N>.md` in your context, where `<N>` is its number. Tick only the
+lines of its own section:
 
 ```markdown
-## plan1.md
+## plan<N>.md
 - [x] Add the subtract function in calc.py - returns a - b, tested
 - [ ] Wire it into the CLI
 ```
@@ -34,9 +36,7 @@ none of its edits. So:
 - Answer with edit blocks and nothing else. Do not think aloud.
 - **Never write your reasoning into the code.** A comment says why a line exists, in one line. It is never a deliberation, a doubt, a second attempt or a note to yourself ("let's look at...", "but the spec says...", "wait").
 - **A new file you create stays under 4000 tokens**, roughly 300 to 400 lines, and so does its test. You write new text whole, so it has to fit in one reply. If the step needs more, write the first module, say so in `progress.md`, and leave the rest to the next plan.
-- A source or test file the plan names that does not exist yet is created for you
-  empty and shown in the chat as an empty file. An empty file is a NEW file: write
-  its whole content now with an edit block. Never ask to see it first.
+- A source or test file the plan names that does not exist yet is created for you empty and shown in the chat as an empty file. An empty file is a NEW file: write its whole content now with an edit block. Never ask to see it first.
 - Change an existing file with small edit blocks, one per place that changes. Do not rewrite what the step did not ask you to change.
 
 ## Tests
@@ -79,6 +79,6 @@ every file you write.
 
 ### Every function you write or change carries a header
 
-The full rule, with its five parts and an example, is **R27** in `rules.md`,
+The full rule, with its five parts and an example, is **R18** in `rules.md`,
 which you are given on every call. It is stated once, there, so that this file
 and that rule cannot come to say different things.

@@ -22,7 +22,7 @@
     "_unit": "tokens",
     "_note": "One ceiling per file, by name. A single global figure cannot be right for a spec that is written once and a ledger that grows with every plan.",
     "conventions.md": 2500,
-    "_conventions_comment": "The working protocol, loaded on every call. Measured 1661 on 2026-09-05 after the function-header section was collapsed to a pointer at R27, which rules.md already carries and which is also read on every call - two statements of one convention, both paid for on every call, and already differing in wording. Raised to 2500 the same day, when it had reached 94 percent of the old 2000 ceiling.",
+    "_conventions_comment": "The working protocol, loaded on every call. Measured 1661 on 2026-09-05 after the function-header section was collapsed to a pointer at R18 (the function-header rule, R27 before the kit numbered its own rules), which rules.md already carries and which is also read on every call - two statements of one convention, both paid for on every call, and already differing in wording. Raised to 2500 the same day, when it had reached 94 percent of the old 2000 ceiling.",
     "rules.md": 2000,
     "_rules_comment": "The coding rules, loaded on every call. Measured 1618 on 2026-11-07 (token_count.py), carrying 26 rules curated by hand and language-agnostic for a model that writes code (was 2831 on 2026-09-05 with 22 rules copied from another project), ceiling 2000 chosen by the owner's direction to simplify the rules. Generated, so its growth is not under the author's control: each rule body is capped at rule_body_tokens, and a local rule added under rules-local/ arrives here on the next sync.",
     "spec.md": 4000,

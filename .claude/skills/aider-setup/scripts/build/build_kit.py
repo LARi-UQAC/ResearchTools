@@ -439,7 +439,7 @@ if rules_local.is_dir():
 else:
     raise SystemExit(
         "REFUSED: %s does not exist. It carries the rules this kit adds on top of\n"
-        "  the canonical set, R27 among them, and a kit without it ships a\n"
+        "  the kit-only rules, the function-header rule among them, and a kit without it ships a\n"
         "  rules.md whose header promises a way to add rules that is not there."
         % rules_local)
 

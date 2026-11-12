@@ -70,7 +70,7 @@ try {
     Set-Location $Project
     if ($UseSkills -eq "yes") {
         $env:AIDER_TEST_COMMAND = $TestCommand
-        & "$HOME\.local\bin\aider-night.ps1" -Project $Project *>&1 |
+        & $NightScript -Project $Project *>&1 |
             ForEach-Object {
                 $line = "$(Get-Date -Format 'HH:mm:ss')  $($_.ToString())"
                 # Per line, NOT Tee-Object, which does not flush until its
@@ -116,6 +116,7 @@ $baked = @(
     ('$Project     = ' + (ConvertTo-PsLiteral $Project)),
     ('$LogFile     = ' + (ConvertTo-PsLiteral $LogFile)),
     ('$RcFile      = ' + (ConvertTo-PsLiteral $RcFile)),
+    ('$NightScript = ' + (ConvertTo-PsLiteral (Join-Path $PSScriptRoot "aider-night.ps1"))),
     ('$UseSkills   = ' + (ConvertTo-PsLiteral $useSkills)),
     ('$TestCommand = ' + (ConvertTo-PsLiteral $TestCommand))
 ) -join [Environment]::NewLine

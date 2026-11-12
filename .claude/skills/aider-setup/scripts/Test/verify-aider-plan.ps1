@@ -725,6 +725,11 @@ Check "unittest output is read: failures and errors are subtracted, a file that 
     ($crash.total -eq 1 -and $crash.passed -eq 0) -and ($empty.total -eq 0)
 }
 
+Check "the detached launcher runs the aider-night.ps1 that sits beside it, never the copy in the home folder" {
+    $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\run-detached.ps1") -Raw -Encoding UTF8
+    ($text -notmatch '\.local\bin\aider-night') -and ($text -match '\$NightScript = ') -and ($text -match '& \$NightScript -Project')
+}
+
 Check "the four ledger marks are counted apart: a partial step is neither open nor blocked" {
     $m = Get-MarkCounts "## plan1.md`n- [x] a`n- [x] b`n- [~] c - module A written, left: module B`n- [ ] d`n- [!] e - blocked`n"
     $none = Get-MarkCounts "## plan1.md`nplain text, no mark`n"

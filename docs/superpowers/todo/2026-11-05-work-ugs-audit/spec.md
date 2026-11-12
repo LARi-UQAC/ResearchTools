@@ -30,7 +30,7 @@ This file holds what every plan needs: what is built, the choices that bind the 
   One grader role produces, one auditor role checks and never edits.
 - **One grader per report.** Consistency is checked at batch level by script.
 - **Calibration for lab and project reports:** target mean 88 percent, sd 4. Re-grade when the mean leaves
-  83 to 93 or the sd leaves 2 to 6 (read as percentage points). Two loops, then ask.
+  83 to 93 or the sd leaves 2 to 6 (read as percentage points). Two loops, then stop with exit code 3.
 - **Figures:** count, position and extract each as PNG; judge each in its own fresh model call; state per
   figure in `progress.md`; result in `figures.json` from a template. 22 criteria held as data in
   `figure_criteria.json`. Script-measured: drawing over 70 percent of the image, effective DPI (150

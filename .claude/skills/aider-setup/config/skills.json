@@ -5,14 +5,14 @@
   "_why_copied_here": "These files are copies, not pointers into ~/.claude/plugins/cache/. That cache is rewritten on every plugin update, and a file that vanishes turns every run into a refusal at startup. Copied 2026-09-03 from superpowers 6.3.0.",
   "stages": {
     "write": {
-      "bundle": "{{HOME}}/.config/aider/skills/test-driven-development",
+      "bundle": "skills/test-driven-development",
       "ceiling": 2500,
       "_measured": "724 tokens on 2026-11-12 with cl100k_base: SKILL.md 402 + writing-good-tests.md 322. Rewritten in our own words; the copy of an outside skill it replaces cost 2427.",
       "_why": "The working protocol already demands a test in the same step as the code. This says the same thing at greater length, to the model that writes."
     },
     "audit": {
       "files": [
-        "{{HOME}}/.config/aider/skills/code-reviewer.md"
+        "skills/code-reviewer.md"
       ],
       "ceiling": 2000,
       "_measured": "501 tokens on 2026-11-12 with cl100k_base. Rewritten in our own words; the copy it replaces cost 1283.",
@@ -22,7 +22,7 @@
     },
     "reopen": {
       "files": [
-        "{{HOME}}/.config/aider/skills/receiving-code-review.md"
+        "skills/receiving-code-review.md"
       ],
       "ceiling": 2000,
       "_measured": "385 tokens on 2026-11-12 with cl100k_base. Rewritten in our own words; the copy it replaces cost 1487.",

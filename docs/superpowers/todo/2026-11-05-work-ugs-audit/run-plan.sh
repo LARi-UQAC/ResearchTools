@@ -14,7 +14,6 @@ MAIN="$(cd "$W/../.." && pwd)"                          # main clone: holds the 
 S="$W/.claude/skills/aider-setup"
 PYI="$MAIN/.venv-skills/Scripts/python.exe"
 LIVE="$HOME/.claude/aider-live"
-HOME_CFG="$LIVE/home"                                   # configuration rendered from the repository
 P="$LIVE/work/u$ID${SUFFIX:-}"
 PL="$P/docs/superpowers/plans"
 PLANS_HOME="${PLANS_HOME:-$HERE}"                      # folder holding spec.md and plan<ID>.md (default: this folder)
@@ -184,8 +183,7 @@ mount)
   ( cd "$P" && git add -A >/dev/null 2>&1 && git -c core.safecrlf=false commit -q -m "mount: plan $ID" >/dev/null 2>&1 )
   echo "mounted $P"; echo "test: $(plan_paths test | head -1)"
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$S/scripts/aider-plan.ps1")" \
-    -Path "$(cygpath -w "$P")" -Config "$(cygpath -w "$HOME_CFG/.aider.conf.yml")" \
-    -BudgetFile "$(cygpath -w "$HOME_CFG/.config/aider/context-budget.json")" \
+    -Path "$(cygpath -w "$P")" \
     -TestCommand "$(test_command)" -DryRun 2>&1 \
     | grep -a -E "editable|REFUSED|OVER|audit with" | cut -c1-170
   "$PYI" "$S/scripts/plan_clean.py" "$PL/spec.md" "$PL"/plan*.md --write || true   # strip owner, rule numbers, dates for the small model; hits left are printed
@@ -197,8 +195,7 @@ start)
   : > "$LOG"
   TC="$(test_command)"
   nohup bash -c "powershell.exe -NoProfile -ExecutionPolicy Bypass -File '$(cygpath -w "$S/scripts/aider-plan.ps1")' \
-    -Path '$(cygpath -w "$P")' -Config '$(cygpath -w "$HOME_CFG/.aider.conf.yml")' \
-    -BudgetFile '$(cygpath -w "$HOME_CFG/.config/aider/context-budget.json")' -TestCommand '$TC' >> '$LOG' 2>&1; \
+    -Path '$(cygpath -w "$P")' -TestCommand '$TC' >> '$LOG' 2>&1; \
     echo KIT-FINISHED rc=\$? >> '$LOG'" >/dev/null 2>&1 &
   sleep 1; echo "started plan $ID at $(date +%H:%M), log $LOG"
   ;;

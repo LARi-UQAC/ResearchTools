@@ -19,7 +19,7 @@ model: ollama_chat/qwen3.8-aider
 
 # The REVIEWER tag, untuned, and it bakes the huge window this file warns about
 #   three lines above. It is the auditor, not a safe alternative coder:  aider --model ollama_chat/gemma4:31b-maxctx
-model-settings-file: {{HOME}}/.config/aider/model-settings.yml
+# model-settings.yml sits beside this file; the driver passes it with --model-settings-file.
 
 # The daemon address, exported into aider's own environment, so no shell profile
 # and no registry entry is needed.
@@ -27,12 +27,9 @@ set-env:
   - OLLAMA_API_BASE=http://127.0.0.1:11434
 
 ## Always-on context ------------------------------------------------------
-# Read-only, so aider can never rewrite its own rules. conventions.md is the
-# working protocol; rules.md is the coding rules, written by hand and checked by
-# aider-rules-check.py before every run.
-read:
-  - {{HOME}}/.config/aider/conventions.md
-  - {{HOME}}/.config/aider/rules.md
+# conventions.md (the working protocol) and rules.md (the coding rules) are listed in
+# context-budget.json, beside this file, and the driver passes them to aider with --read, so
+# aider can never rewrite its own rules. Nothing here names a path of this machine.
 
 ## Repo map ---------------------------------------------------------------
 # 4096 rather than the 1024 default, and it is HALF aider's own 8192 ceiling on

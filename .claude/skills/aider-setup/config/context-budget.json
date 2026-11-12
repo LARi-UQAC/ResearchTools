@@ -14,8 +14,8 @@
   "repo_map_tokens": 4096,
   "_repo_map_comment": "Passed to aider as --map-tokens, so this file is the single source of truth rather than a second copy in aider.conf.yml. aider's own default is 1024, and its own CEILING for this model is get_repo_map_tokens()*2 = 8192 (base_coder.py:270), above which it prints 'Warning: map-tokens > 8192 is not recommended. Too much irrelevant code can confuse LLMs.' Measured 2026-09-03: set to 16384 on the reasoning that a 262144 window makes the map cheap, and a plan run then produced NOTHING - the model spent its whole reply reasoning about which files it was allowed to touch. A large window makes a big map affordable; it does not make it useful.",
   "always_on_files": [
-    "{{HOME}}/.config/aider/conventions.md",
-    "{{HOME}}/.config/aider/rules.md"
+    "conventions.md",
+    "rules.md"
   ],
   "_always_on_comment": "Supplied by the DRIVER as --read on every invocation, not left to the config's own read: list. Measured 2026-09-02: a --read on the command line REPLACES the config's read list instead of adding to it, so before this every driver run silently dropped both files and the model executed plans having never seen a coding rule. The driver measures each file rather than trusting a number written here.",
   "ceilings": {

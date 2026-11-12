@@ -225,7 +225,18 @@ $venvPython = Join-Path (& uv tool dir).Trim() "aider-chat\Scripts\python.exe"
 # GEMINI_API_KEY was set. Unattended, that spends a quota all night with nothing
 # said. So the model is resolved first, printed, and refused when it is not a
 # local tag.
+# The configuration folder is found beside this script (this repository, or an unpacked kit) and nothing has to
+# be installed or copied into the home folder. See Get-KitConfigDir in aider-plan-core.ps1.
+$configDir = Get-KitConfigDir $Config $BudgetFile $PSScriptRoot ""
+$script:KitConfigDir = $configDir
+if ($Config -eq "" -and (Test-Path -LiteralPath (Join-Path $configDir "aider.conf.yml"))) {
+    $Config = Join-Path $configDir "aider.conf.yml"
+}
+$settingsFile = Join-Path $configDir "model-settings.yml"
+$settingsArgs = @()
+if (Test-Path -LiteralPath $settingsFile) { $settingsArgs = @("--model-settings-file", (Resolve-Path -LiteralPath $settingsFile).Path) }
 $baseArgs = @()
+$baseArgs += $settingsArgs
 if ($Config -ne "") {
     if (-not (Test-Path -LiteralPath $Config)) {
         Write-Refusal @("REFUSED: config file not found: $Config")
@@ -291,10 +302,9 @@ if ($resolved -notlike "ollama_chat/*" -and $resolved -notlike "ollama/*" -and -
 # Every number below is either measured here or read from context-budget.json.
 # None is written in this script (R0), and a key missing from the file is named
 # rather than defaulted (R3).
-if ($BudgetFile -eq "") {
-    if ($Config -ne "") { $BudgetFile = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $Config).Path) "context-budget.json" }
-    else                { $BudgetFile = Join-Path $HOME ".config\aider\context-budget.json" }
-}
+if ($BudgetFile -eq "") { $BudgetFile = Join-Path $configDir "context-budget.json" }
+# Relative paths of context-budget.json and skills.json are read from the folder of the budget file.
+$budgetDir = if (Test-Path -LiteralPath $BudgetFile) { Split-Path -Parent (Resolve-Path -LiteralPath $BudgetFile).Path } else { $configDir }
 if (-not (Test-Path -LiteralPath $BudgetFile)) {
     Write-Refusal @("REFUSED: context budget file not found: $BudgetFile",
                     "  Pass -BudgetFile, or place context-budget.json beside the aider config.")
@@ -319,7 +329,7 @@ $maxFilesTouched= [int](Get-BudgetValue $budget "plan.max_files_touched")
 
 $auditMargin    = [int](Get-BudgetValue $budget "audit.batch_safety_margin_tokens")
 $auditMaxFiles  = [int](Get-BudgetValue $budget "audit.max_files_per_batch")
-$alwaysOnFiles  = @(Get-BudgetValue $budget "always_on_files")
+$alwaysOnFiles  = @(Get-BudgetValue $budget "always_on_files" | ForEach-Object { Resolve-ConfigPath $budgetDir $_ })
 
 $ollamaBase     = [string](Get-BudgetValue $budget "ollama.api_base")
 $unloadWait     = [int](Get-BudgetValue $budget "ollama.unload_wait_seconds")
@@ -345,12 +355,7 @@ if ($testsRequired -and $testCmd -eq "") {
 if ($PSBoundParameters.ContainsKey('CodeCeiling')) { $codeCeiling = $CodeCeiling }
 
 Write-Section "Context budget"
-$settingsFile = Join-Path $HOME ".config\aider\model-settings.yml"
-if ($Config -ne "") {
-    $sibling = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $Config).Path) "model-settings.yml"
-    if (Test-Path -LiteralPath $sibling) { $settingsFile = $sibling }
-}
-$window = Get-ModelWindow $resolved
+$window = Get-ModelWindow $resolved $settingsFile
 if ($window -le 0) {
     Write-Refusal @("REFUSED: aider reports no context window for '$resolved'.",
                     "  Without it nothing here can be budgeted; declare max_input_tokens",
@@ -467,11 +472,7 @@ $skillCost  = @{ write = 0;  audit = 0;  reopen = 0 }
 if ($Skills) {
     $sf = $SkillsFile
     if ($sf -eq "") {
-        $sf = if ($BudgetFile -ne "") {
-                  Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $BudgetFile).Path) "skills.json"
-              } else {
-                  Join-Path $HOME ".config\aider\skills.json"
-              }
+        $sf = Join-Path $budgetDir "skills.json"
     }
     if (-not (Test-Path -LiteralPath $sf)) {
         Write-Refusal @("REFUSED: the per-stage skills are mandatory and no skills file was found:", "  $sf",
@@ -715,6 +716,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
     # for, and the only file it can act on is audit.md.
     $argv = @()
     if ($Config -ne "") { $argv += @("--config", (Resolve-Path -LiteralPath $Config).Path) }
+    $argv += $settingsArgs
     $argv += @("--model", $auditModel)
     # No repo map either: the code under review is in the message, in full, so a
     # map of summaries adds nothing but tokens and more filenames to ask about.
@@ -1443,6 +1445,7 @@ function Invoke-PlanQuality([string]$planPath, [string]$logPath) {
 
     $argv = @()
     if ($Config -ne "") { $argv += @("--config", (Resolve-Path -LiteralPath $Config).Path) }
+    $argv += $settingsArgs
     $argv += @("--model", $auditModel, "--map-tokens", "0")
     $argv += $alwaysOnArgs
     $argv += @($sandQuality, "--message-file", $msgFile, "--yes", "--no-git", "--no-check-update", "--no-suggest-shell-commands")

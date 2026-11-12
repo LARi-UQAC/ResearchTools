@@ -161,7 +161,35 @@ function Get-FileCeiling([string]$fileName) {
 
 # The window is asked of aider, never declared: a number written in a file would
 # silently disagree with whatever model is actually loaded.
-function Get-ModelWindow([string]$tag) {
+# Purpose: find the folder that holds the kit configuration (context-budget.json, skills.json, model-settings.yml,
+#   aider.conf.yml, conventions.md, rules.md), without any install step.
+# Inputs: config (string) - a -Config file, or ""; budgetFile (string) - a -BudgetFile, or ""; scriptDir (string) - the
+#   folder of the running script; homeDir (string) - the home folder, "" for the current user's.
+# Outputs: string - the folder. In order: beside an explicit -Config, beside an explicit -BudgetFile, the "config"
+#   folder next to the scripts folder when it holds context-budget.json (this repository, or an unpacked kit), and
+#   last the ".config\aider" folder of the home, which an installed student kit uses.
+function Get-KitConfigDir([string]$config = "", [string]$budgetFile = "", [string]$scriptDir = "", [string]$homeDir = "") {
+    # A path that does not exist is not resolved here: the caller refuses it by name.
+    if ($config -ne "")     { return Split-Path -Parent $(if (Test-Path -LiteralPath $config) { (Resolve-Path -LiteralPath $config).Path } else { $config }) }
+    if ($budgetFile -ne "") { return Split-Path -Parent $(if (Test-Path -LiteralPath $budgetFile) { (Resolve-Path -LiteralPath $budgetFile).Path } else { $budgetFile }) }
+    if ($scriptDir -ne "") {
+        $beside = Join-Path (Split-Path -Parent $scriptDir) "config"
+        if (Test-Path -LiteralPath (Join-Path $beside "context-budget.json")) { return (Resolve-Path -LiteralPath $beside).Path }
+    }
+    if ($homeDir -eq "") { $homeDir = $HOME }
+    return Join-Path $homeDir ".config\aider"
+}
+
+# Purpose: turn a path written in a configuration file into a usable one. A relative path is read from the folder of
+#   the file that names it, so the configuration holds no machine-specific text.
+# Inputs: baseDir (string) - the folder of the configuration file; path (string) - the path as written.
+# Outputs: string - the path itself when it is already absolute, else the path joined to baseDir.
+function Resolve-ConfigPath([string]$baseDir, [string]$path) {
+    if ([System.IO.Path]::IsPathRooted($path)) { return $path }
+    return Join-Path $baseDir $path
+}
+
+function Get-ModelWindow([string]$tag, [string]$settingsPath = "") {
     # Both files are registered, and the metadata one is not optional.
     #
     # model-settings.yml carries extra_params.num_ctx, which is what aider SENDS,
@@ -178,11 +206,7 @@ function Get-ModelWindow([string]$tag) {
           "s=[q for q in p if q.endswith('.yml')];m=[q for q in p if q.endswith('.json')];" +
           "register_models(s) if s else None;register_litellm_models(m) if m else None;" +
           "i=Model(sys.argv[1]).info or {};print(i.get('max_input_tokens') or 0)"
-    $settings = Join-Path $HOME ".config\aider\model-settings.yml"
-    if ($Config -ne "") {
-        $sibling = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $Config).Path) "model-settings.yml"
-        if (Test-Path -LiteralPath $sibling) { $settings = $sibling }
-    }
+    $settings = if ($settingsPath -ne "") { $settingsPath } else { Join-Path (Get-KitConfigDir "" "" "" "") "model-settings.yml" }
     $metadata = Join-Path $HOME ".aider.model.metadata.json"
     $out = & $venvPython -c $py $tag $settings $metadata 2>$null
     if ($LASTEXITCODE -ne 0) { return -1 }
@@ -191,8 +215,9 @@ function Get-ModelWindow([string]$tag) {
 
 function Resolve-SkillStage($stage, $entry, $file) {
     $paths = @()
+    $base = Split-Path -Parent $file
     if ($entry.bundle) {
-        $dir = $entry.bundle
+        $dir = Resolve-ConfigPath $base $entry.bundle
         if (-not (Test-Path -LiteralPath $dir)) {
             Write-Refusal @("REFUSED: skill bundle for stage '$stage' does not exist:", "  $dir")
             exit 2
@@ -220,6 +245,7 @@ function Resolve-SkillStage($stage, $entry, $file) {
     }
     foreach ($f in @($entry.files)) {
         if ($null -eq $f -or $f -eq "") { continue }
+        $f = Resolve-ConfigPath $base $f
         if (-not (Test-Path -LiteralPath $f)) {
             Write-Refusal @("REFUSED: skill file for stage '$stage' listed in $file does not exist:", "  $f")
             exit 2
@@ -478,7 +504,7 @@ function Start-Watchdog([int]$driverPid, [string]$runRecord, [string]$logs) {
         if (Test-Path -LiteralPath $c) { $exe = (Resolve-Path -LiteralPath $c).Path; break }
     }
     $reference = $env:AIDER_MODEL_REFERENCE
-    if ([string]::IsNullOrEmpty($reference)) { $reference = Join-Path $PSScriptRoot "..\..\..\local-model-config.json" }
+    if ([string]::IsNullOrEmpty($reference)) { $reference = Join-Path $script:KitConfigDir "model-reference.json" }
     $settings = if ($null -ne $exe) { Join-Path (Split-Path $exe -Parent) "aider-watchdog.json" } else { "" }
     if ($null -eq $exe -or -not (Test-Path -LiteralPath $settings) -or -not (Test-Path -LiteralPath $reference)) {
         Write-Host "  WARNING: watchdog not started (needs aider-watchdog.exe, aider-watchdog.json and a reference file; set AIDER_MODEL_REFERENCE). The run goes on without it." -ForegroundColor Yellow

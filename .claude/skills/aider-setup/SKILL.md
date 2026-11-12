@@ -14,7 +14,10 @@ model that mounts one plan, starts the kit and reviews the result. The detailed 
 
 ## 1. Run it from a command line
 
-Two entry points, both PowerShell scripts that need no Claude Code. Close the other programs first (the
+Nothing is installed or copied: the scripts run from where they are, in
+`C:\Martin Otis\OutilsLogiciels\ResearchTools\.claude\skills\aider-setup\scripts`, and read the `config` folder
+next to it. Put that `scripts` folder on the `PATH` to type the commands below from any folder. Two entry points, both
+PowerShell scripts that need no Claude Code. Close the other programs first (the
 browser, the editors, Claude Code): a 21 GB writer and a 21 GB reviewer cannot both be resident in 32 GB, so the
 driver loads one model at a time and unloads it before the next stage, and everything else steals that memory.
 
@@ -34,13 +37,16 @@ driver loads one model at a time and unloads it before the next stage, and every
 - **Never** pass `-AllowCloud` or a cloud `-Model`, and do not use `-NoAudit` unless you only want the code: the
   review by the second model is part of the kit. The per-stage skills (write, audit, reopen) are mandatory and
   have no switch.
-- **Which configuration it reads.** A script reads the `config` folder beside its own `bin` folder (kit layout) and
-  otherwise `~/.config/aider` (user layout). The log line `configuration : ... (kit layout)` or `(user layout)`
-  says which: run the script that sits next to the files you want used. A configuration still holding the
-  `{{HOME}}` placeholder is refused with "this kit has not been installed yet".
-- **The watchdog** starts with the driver only when `aider-watchdog.exe`, `aider-watchdog.json` and a model reference file
-  are found and `AIDER_MODEL_REFERENCE` names that file. Without it the output says `WARNING: watchdog not started`
-  and the run goes on unprotected: check for `watchdog started (pid N)` in the first lines of the log.
+- **Which configuration it reads.** In order: beside an explicit `-Config` or `-BudgetFile`; else the `config` folder
+  next to the `scripts` folder (this repository, or an unpacked student kit); else `~/.config/aider`, which only a
+  kit installed by `setup.ps1` for the student zip uses. The log line `configuration : ... (kit layout)` says which.
+  The configuration files name their own files by relative paths (`rules.md`, `skills/code-reviewer.md`), so they hold
+  nothing specific to a machine.
+- **The watchdog** starts with the driver when `watchdog\aider-watchdog.exe` (built from the Go sources of that folder,
+  git-ignored) and `config\model-reference.json` (the load of each model while it works, measured on this machine by
+  `aider-watchdog reference`, git-ignored) exist; `AIDER_MODEL_REFERENCE` can name another reference file. Without them
+  the output says `WARNING: watchdog not started` and the run goes on unprotected: check for `watchdog started (pid N)`
+  in the first lines of the log.
 - **Refusals before anything starts**: battery power, the branch `main` or `master`, no config, a non-local model,
   tests required with no test command, a missing budget key, an always-on file that does not exist. Each names
   what is missing.
@@ -130,8 +136,8 @@ A skill cannot run when Claude Code is closed, which is why the night is a bare 
 
 ## 5. Install, tune and build the zip
 
-- **Install** the kit with `setup.ps1` from the kit folder; the scripts then live in `~/.local/bin` and the
-  configuration in `~/.config/aider`. An edit to the repository does not reach those copies until it is run again.
+- **Install** applies only to the student zip: `setup.ps1` from the unpacked kit copies the scripts to `~/.local/bin`
+  and the configuration to `~/.config/aider`. In ResearchTools nothing is installed.
 - **Tune** a model for this GPU with the probes and `aider-ollama-config.py` (MANUAL, step 4).
 - **Build the zip** from this skill's own files, never from a copy elsewhere. From `scripts/build/`:
 

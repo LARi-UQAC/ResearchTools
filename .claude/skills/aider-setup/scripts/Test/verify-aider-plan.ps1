@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter", "Get-MarkCounts")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter", "Get-MarkCounts", "Get-KitConfigDir", "Resolve-ConfigPath")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -297,8 +297,8 @@ $skillRoot = Split-Path $scriptsDir -Parent
 $conf = ""
 $confCandidates = @()
 if ($Config -ne "") { $confCandidates += $Config }
+$confCandidates += (Join-Path $skillRoot "config\aider.conf.yml")
 $confCandidates += (Join-Path $skillRoot "scripts\build\aider.conf.yml.saved")
-$confCandidates += (Join-Path $HOME ".config\aider\build\aider.conf.yml.saved")
 $confCandidates += (Join-Path $HOME ".aider.conf.yml")
 foreach ($candidate in $confCandidates) {
     if (Test-Path -LiteralPath $candidate) { $conf = $candidate; break }
@@ -728,6 +728,68 @@ Check "unittest output is read: failures and errors are subtracted, a file that 
 Check "the detached launcher runs the aider-night.ps1 that sits beside it, never the copy in the home folder" {
     $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\run-detached.ps1") -Raw -Encoding UTF8
     ($text -notmatch '\.local\bin\aider-night') -and ($text -match '\$NightScript = ') -and ($text -match '& \$NightScript -Project')
+}
+
+Check "Get-KitConfigDir: an explicit -Config wins, then an explicit -BudgetFile" {
+    $tmp = Join-Path $env:TEMP ("kcd-" + [guid]::NewGuid().ToString("N"))
+    $a = Join-Path $tmp "a"; $b = Join-Path $tmp "b"
+    New-Item -ItemType Directory -Path $a, $b -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $a "aider.conf.yml") "x"
+    Set-Content -LiteralPath (Join-Path $b "context-budget.json") "{}"
+    $viaConfig = Get-KitConfigDir (Join-Path $a "aider.conf.yml") (Join-Path $b "context-budget.json") "" ""
+    $viaBudget = Get-KitConfigDir "" (Join-Path $b "context-budget.json") "" ""
+    Remove-Item $tmp -Recurse -Force
+    ($viaConfig -eq (Resolve-Path -LiteralPath $a -ErrorAction SilentlyContinue).Path -or $viaConfig -like "*\a") -and ($viaBudget -like "*\b")
+}
+
+Check "Get-KitConfigDir: the config folder next to the scripts folder is used when it holds context-budget.json" {
+    $tmp = Join-Path $env:TEMP ("kcd-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path (Join-Path $tmp "scripts"), (Join-Path $tmp "config") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $tmp "config\context-budget.json") "{}"
+    $got = Get-KitConfigDir "" "" (Join-Path $tmp "scripts") (Join-Path $tmp "nohome")
+    Remove-Item $tmp -Recurse -Force
+    $got -like "*\config"
+}
+
+Check "Get-KitConfigDir: without a config folder beside the scripts it falls back to .config\aider of the home, and invents nothing else" {
+    $tmp = Join-Path $env:TEMP ("kcd-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path (Join-Path $tmp "scripts") -Force | Out-Null
+    $got = Get-KitConfigDir "" "" (Join-Path $tmp "scripts") (Join-Path $tmp "fakehome")
+    $none = Test-Path -LiteralPath (Join-Path $tmp "fakehome")
+    Remove-Item $tmp -Recurse -Force
+    ($got -eq (Join-Path (Join-Path $tmp "fakehome") ".config\aider")) -and (-not $none)
+}
+
+Check "Resolve-ConfigPath: a relative path is read from the configuration folder, an absolute one is kept" {
+    ((Resolve-ConfigPath "C:\base" "rules.md") -eq "C:\base\rules.md") -and
+    ((Resolve-ConfigPath "C:\base" "skills\a.md") -eq "C:\base\skills\a.md") -and
+    ((Resolve-ConfigPath "C:\base" "D:\elsewhere\x.md") -eq "D:\elsewhere\x.md")
+}
+
+$shippedConfig = Join-Path (Split-Path $scriptsDir -Parent) "config"
+
+Check "the shipped configuration holds no home placeholder, so it runs from where it is" {
+    $token = "{{" + "HOME}}"
+    $bad = @("aider.conf.yml", "context-budget.json", "skills.json", "model-settings.yml", "conventions.md", "rules.md") |
+           Where-Object { (Get-Content -LiteralPath (Join-Path $shippedConfig $_) -Raw -Encoding UTF8).Contains($token) }
+    @($bad).Count -eq 0
+}
+
+Check "the shipped aider.conf.yml has no read list and no model-settings-file line (the driver passes both)" {
+    $conf = Get-Content -LiteralPath (Join-Path $shippedConfig "aider.conf.yml") -Encoding UTF8
+    (@($conf | Where-Object { $_ -match '^(read|model-settings-file):' }).Count -eq 0)
+}
+
+Check "the shipped always-on files and skills are relative names and every one exists beside the configuration" {
+    $b = Get-Content -LiteralPath (Join-Path $shippedConfig "context-budget.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $s = Get-Content -LiteralPath (Join-Path $shippedConfig "skills.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $names = @($b.always_on_files)
+    foreach ($stage in $s.stages.PSObject.Properties) {
+        if ($stage.Value.bundle) { $names += $stage.Value.bundle }
+        $names += @($stage.Value.files | Where-Object { $_ })
+    }
+    $bad = $names | Where-Object { [System.IO.Path]::IsPathRooted($_) -or -not (Test-Path -LiteralPath (Join-Path $shippedConfig $_)) }
+    ($names.Count -ge 4) -and (@($bad).Count -eq 0)
 }
 
 Check "the four ledger marks are counted apart: a partial step is neither open nor blocked" {

@@ -141,3 +141,5 @@ site/
 .playwright-mcp/
 .aider*
 .claude/skills/aider-setup/watchdog/aider-watchdog.exe
+# Measurements of the models on this machine, written by aider-watchdog reference.
+.claude/skills/aider-setup/config/model-reference.json

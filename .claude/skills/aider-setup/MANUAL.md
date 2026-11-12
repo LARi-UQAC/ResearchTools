@@ -518,6 +518,10 @@ own world. Read each document once as the model will, and remove what it cannot 
   something. A model that reads "the cloud installs it" starts to think it runs in a
   cloud.
 - **Dates and stories**: "measured on...", "proposal...", why a value was chosen.
+- **Where a document came from**, above all at the top of `spec.md`: "condensed from <another
+  document>", "approved by the owner on <date>", the branch or the worktree it belongs to, a path
+  outside the project. A spec says what to build and says nothing about itself: the model reads
+  its first lines as part of the job.
 - **Other plans, other projects, files that are not in this project**, unless the
   plan lists them as files to read and they exist.
 - **A header written for another program** (front matter with an executor, a tier,
@@ -534,7 +538,7 @@ project, and in `spec.md` the language and the conventions. A quick check that
 catches the usual leftovers; every hit is rewritten or deleted:
 
 ```powershell
-Select-String -Path docs\superpowers\plans\*.md -Pattern '\bR[0-9]+\b','owner','cloud','session','ticket','proposal','[0-9]{4}-[0-9]{2}-[0-9]{2}'
+Select-String -Path docs\superpowers\plans\*.md -Pattern '\bR[0-9]+\b','owner','cloud','session','ticket','proposal','approved','condensed','worktree','branch','docs/superpowers','[0-9]{4}-[0-9]{2}-[0-9]{2}'
 ```
 
 The dry run also tells you when a plan is too big: "this plan creates N new files ...

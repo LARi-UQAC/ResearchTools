@@ -1460,7 +1460,10 @@ function Invoke-PlanQuality([string]$planPath, [string]$logPath) {
 function Measure-PlanTests([string]$planPath) {
     $interp = Get-TestInterpreter $testCmd
     if ($null -eq $interp) { return $null }
-    $files = @(Get-PlanTargets $planPath | Where-Object { $_ -match '[\\/]Test[\\/]test_[^\\/]+\.py$' -and (Test-Path -LiteralPath $_ -PathType Leaf) })
+    # Assigned first: Get-PlanTargets returns its list wrapped (`return , $found`), and piping that call directly
+    # sends the whole list down the pipeline as ONE item, which became one command line holding every path.
+    $targets = Get-PlanTargets $planPath
+    $files = @($targets | Where-Object { $_ -match '[\\/]Test[\\/]test_[^\\/]+\.py$' -and (Test-Path -LiteralPath $_ -PathType Leaf) })
     if ($files.Count -eq 0) { return $null }
     $total = 0; $passed = 0
     $prevUtf8 = $env:PYTHONUTF8

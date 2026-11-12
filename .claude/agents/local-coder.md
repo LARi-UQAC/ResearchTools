@@ -66,10 +66,12 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    cannot see this repository, this session, the memory, the Issues, the vault or any rule number, and it
    must never be led to think it runs in a cloud or that someone else will install or decide something
    for it. Search both files for what it cannot use, for example with
-   `grep -n -E "\bR[0-9]{1,3}\b|\bD[0-9]+\b|owner|cloud|session|memory|Issue|vault|proposal|20[0-9]{2}-[0-9]{2}-[0-9]{2}"`,
+   `grep -n -E "\bR[0-9]{1,3}\b|\bD[0-9]+\b|owner|cloud|session|memory|Issue|vault|proposal|approved|condensed|worktree|branch|docs/superpowers|20[0-9]{2}-[0-9]{2}-[0-9]{2}"`,
    and rewrite every hit as a plain instruction about the code, or delete it: rule or decision numbers,
    dates and provenance stories, mentions of the owner, the cloud, other plans or tools of this
-   repository, and notes about who installs what. What must stay: for each file its path, what it holds,
+   repository, and notes about who installs what. This holds for `spec.md` as much as for the plan:
+   a spec states what to build and nothing about itself, so it carries no "condensed from <other
+   document>", no approval or date, no branch or worktree name, and no path outside the project. What must stay: for each file its path, what it holds,
    its signatures and types, the names and the meaning of its tests, the exact values, the commands that
    run in the project, and in `spec.md` the language and conventions. Every sentence must be something
    the writer can act on from inside the project. You write the plan, so you correct it yourself; this

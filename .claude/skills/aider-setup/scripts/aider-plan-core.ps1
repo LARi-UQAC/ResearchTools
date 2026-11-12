@@ -573,3 +573,24 @@ function Get-BlockReport([string]$ledgerText, [string]$logDir, [int]$tailLines =
     if ($found -eq 0) { return "" }
     return ("# What blocked`n`n" + ($out -join "`n") + "`n")
 }
+
+# What the reviewer is told about the plan its code answers to, and what the writer is told about the review that
+# reopened the plan. Found 2026-11-11: the reviewer judged the code against the spec alone, so it could not say that
+# a step of the plan was missing, and the writer received only the one-line `audit:` items of progress.md, never the
+# report with its file, its line and its reason. The plan's front matter is not sent (Get-PlanText drops it).
+function Get-AuditPlanBlock([string]$plansDir, [string]$planName) {
+    $path = Join-Path $plansDir $planName
+    if (-not (Test-Path -LiteralPath $path)) { return "" }
+    $text = (Get-PlanText $path).Trim()
+    if ($text -eq "") { return "" }
+    return "=== THE PLAN THIS CODE IMPLEMENTS ===`n" + $text + "`n`n"
+}
+
+function Get-ReopenReport([string]$auditPath, [string]$planName) {
+    if (-not (Test-Path -LiteralPath $auditPath)) { return "" }
+    $lines = Get-PlanSection (Get-Content -LiteralPath $auditPath -Raw -Encoding UTF8) $planName
+    if ($null -eq $lines) { return "" }
+    $body = ($lines -join "`n").Trim()
+    if ($body -eq "") { return "" }
+    return "`n`nThe reviewer's report on this plan, from audit.md. Each finding names the file, the line and why it matters:`n" + $body
+}

@@ -696,6 +696,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
         $sourceBlock += "`n`n----- $rel -----`n$body"
     }
     $specBody = Get-Content -LiteralPath $spec -Raw -Encoding UTF8
+    $planBlock = Get-AuditPlanBlock $plansDir $planName
 
     $auditSkillBlock = ""
     foreach ($sp in $skillFiles["audit"]) {
@@ -759,7 +760,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
            # undo it. It is embedded as text rather than passed with --read for
            # the same reason the source is: the ordering is then ours, not
            # aider's.
-           $auditSkillBlock +
+           $auditSkillBlock + $planBlock +
            "=== THE SPECIFICATION THIS CODE IS MEASURED AGAINST ===`n" +
            $specBody + "`n`n" +
            "=== THE CODE THIS PLAN PRODUCED OR CHANGED ===" +
@@ -1033,6 +1034,7 @@ if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDi
                    "resolved. Mark '- [!]' with one line of reason only if a fix is genuinely " +
                    "impossible. Do not read or act on any other plan, and do not move or " +
                    "rename any file."
+        $message += Get-ReopenReport $auditMd $plan.Name
     }
 
     $argv = @() + $baseArgs

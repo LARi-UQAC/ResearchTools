@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -563,6 +563,32 @@ Check "the read-only files are listed: existing ones only, never a target" {
 Check "NEGATIVE CONTROL: a plan with no reads paragraph has no read-only files" {
     $r = Get-PlanReads $plainPlan @()
     @($r).Count -eq 0
+}
+
+Write-Host ""
+# --- The reviewer sees the plan, the writer sees the report (found 2026-11-11) -----------
+$auditDir = Join-Path $scratch "auditctx"
+New-Item -ItemType Directory -Force -Path $auditDir | Out-Null
+Set-Content -LiteralPath (Join-Path $auditDir "plan1.md") -Encoding UTF8 -Value ("---`nexecutor: aider`ntier: simple`n---`n`n# Plan 1`n`nBuild the world function.`n")
+Set-Content -LiteralPath (Join-Path $auditDir "audit.md") -Encoding UTF8 -Value ("## plan1.md`n1. The world function never closes the file.`n   - File: src/world.py:12`n`n## plan2.md`n1. Something about plan two.`n")
+
+Check "the audit message carries the plan's text, without its front matter" {
+    $b = Get-AuditPlanBlock $auditDir "plan1.md"
+    ($b -match 'THE PLAN THIS CODE IMPLEMENTS') -and ($b -match 'Build the world function') -and ($b -notmatch 'executor: aider')
+}
+
+Check "NEGATIVE CONTROL: a plan that is not there gives no block, and no error" {
+    (Get-AuditPlanBlock $auditDir "plan9.md") -eq ""
+}
+
+Check "the reopen message carries the reviewer's report on THIS plan only" {
+    $r = Get-ReopenReport (Join-Path $auditDir "audit.md") "plan1.md"
+    ($r -match 'never closes the file') -and ($r -match 'src/world.py:12') -and ($r -notmatch 'plan two')
+}
+
+Check "NEGATIVE CONTROL: no report on the plan, or no audit.md, adds nothing" {
+    ((Get-ReopenReport (Join-Path $auditDir "audit.md") "plan7.md") -eq "") -and
+    ((Get-ReopenReport (Join-Path $auditDir "absent.md") "plan1.md") -eq "")
 }
 
 Write-Host ""

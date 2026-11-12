@@ -46,6 +46,11 @@
   minutes against 19 for the plan itself - so a switch that left it running was
   a switch that saved nothing, whatever its name suggested.
 
+.PARAMETER QualityOnly
+  Run nothing but the plan quality stage: for every plan of the project, archived or blocked, the reviewer model
+  lists the plan's requirements and judges how far the code meets each, and the driver writes quality.md with
+  one percentage per plan. It runs no plan and no test, so it scores the code a previous run left behind.
+
 .PARAMETER DryRun
   Report everything and start nothing.
 
@@ -61,6 +66,7 @@ param(
     [int]$CodeCeiling = 16000,
     [switch]$Strict,
     [switch]$NoAudit,
+    [switch]$QualityOnly,
     [switch]$DryRun,
     [string]$Model = "",
     [string]$Config = "",
@@ -188,6 +194,8 @@ $plans = @(Get-ChildItem -LiteralPath $plansDir -Filter "plan*.md" -File |
            Where-Object { $_.BaseName -match '^plan(\d+)$' } |
            Sort-Object { [int]([regex]::Match($_.BaseName, '\d+').Value) })
 
+# -QualityOnly runs no plan: the plans stay where they are and are only scored.
+if ($QualityOnly) { $plans = @() }
 if ($plans.Count -eq 0 -and $NoAudit) {
     Write-Refusal @("REFUSED: no plan<N>.md left in $plansDir and -NoAudit was passed.",
                     "  Nothing to do.")
@@ -1385,13 +1393,61 @@ if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDi
 }
 }
 
+# --- Plan quality: how closely each plan's code follows the plan (2026-11-11) --------------
+# One reviewer call per plan, in a sandbox that holds only quality.md, like the audit: the reviewer lists the
+# plan's requirements and judges each one, and Get-QualityScore does the counting. Runs for a blocked plan too:
+# a plan whose tests fail can be mostly right, and that is exactly what this number is for.
+function Invoke-PlanQuality([string]$planPath, [string]$logPath) {
+    $planName = Split-Path $planPath -Leaf
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($planName)
+    $brief = ""
+    foreach ($sp in $skillFiles["audit"]) {
+        $brief += "=== HOW TO REVIEW: " + (Split-Path $sp -Leaf) + " ===`n" + (Get-Content -LiteralPath $sp -Raw -Encoding UTF8) + "`n`n"
+    }
+    # Room for the code: the reviewer's window, minus what it always carries, its brief, the reply reserve, the
+    # safety margin and the plan itself. A window the driver could not read falls back to the writer's budget.
+    if ($auditWindow -gt 0) {
+        $room = $auditWindow - $alwaysOn - $skillCost["audit"] - $replyReserve - $auditMargin
+    } else {
+        $room = $workingBudget - $auditMargin
+    }
+    $planTokens = Get-TokenCount $planPath
+    if ($planTokens -gt 0) { $room -= $planTokens }
+    $prompt = Get-QualityPrompt $planPath $proj ([Math]::Max($room, 0)) $brief
+    if ($null -eq $prompt) { return $null }
+    if ($prompt.omitted.Count -gt 0) {
+        Write-Host ("    no room for: " + ($prompt.omitted -join ", ")) -ForegroundColor Yellow
+    }
+    $sandbox = Join-Path $logDir ("$stamp-$base-quality-sandbox")
+    if (Test-Path -LiteralPath $sandbox) { Remove-Item -LiteralPath $sandbox -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+    $sandQuality = Join-Path $sandbox "quality.md"
+    Write-Utf8NoBom $sandQuality ""
+    $msgFile = Join-Path $logDir "$stamp-$base-quality-prompt.txt"
+    Write-Utf8NoBom $msgFile $prompt.text
+
+    $argv = @()
+    if ($Config -ne "") { $argv += @("--config", (Resolve-Path -LiteralPath $Config).Path) }
+    $argv += @("--model", $auditModel, "--map-tokens", "0")
+    $argv += $alwaysOnArgs
+    $argv += @($sandQuality, "--message-file", $msgFile, "--yes", "--no-git", "--no-check-update", "--no-suggest-shell-commands")
+
+    $before = Get-ProjectFingerprint
+    $null = Invoke-Aider $argv $logPath $sandbox
+    $null = Restore-ProjectIfTouched $before
+
+    $text = ""
+    if (Test-Path -LiteralPath $sandQuality) { $text = Get-Content -LiteralPath $sandQuality -Raw -Encoding UTF8 }
+    return Get-QualityScore $text $planName
+}
+
 # --- The audit pass --------------------------------------------------------
 # Runs even when plans are blocked, since 2026-09-04. audit.md is precisely what
 # the student reads to pick the work back up, and withholding it from the run
 # that needed it most was the wrong way round. The cycle archiving further down
 # still refuses to move spec.md and progress.md while any step is open, so
 # nothing is filed as finished that is not.
-if (-not $NoAudit) {
+if (-not $NoAudit -and -not $QualityOnly) {
     Write-Section "Audit pass"
 
     # The audit is a step of the ledger, not a phase that happens beside it, so
@@ -1603,8 +1659,51 @@ if (-not $NoAudit) {
     }
 }
 
+# --- Plan quality ----------------------------------------------------------
+# After the audit, for every plan of the project, archived or blocked. Needs the reviewer model, so it follows
+# the audit's own conditions. With -QualityOnly it is the only thing the run does.
+if (-not $NoAudit -and $auditModel -ne "") {
+    $qualityPlans = @()
+    foreach ($dir in @($plansDir, $todoDir)) {
+        if (Test-Path -LiteralPath $dir) {
+            $qualityPlans += @(Get-ChildItem -LiteralPath $dir -Filter "plan*.md" -File |
+                               Where-Object { $_.BaseName -match '^plan(\d+)$' })
+        }
+    }
+    $qualityPlans = @($qualityPlans | Sort-Object { [int]([regex]::Match($_.BaseName, '\d+').Value) })
+    if ($qualityPlans.Count -gt 0) {
+        Write-Section "Plan quality"
+        if ($DryRun) {
+            Write-Host ("  would score {0} plan(s) against their code with {1}" -f $qualityPlans.Count, $auditModel)
+        } else {
+            Update-RunRecord @{ state = "auditing"; note = "scoring how closely each plan's code follows the plan" }
+            if ($QualityOnly) { Wait-ModelsUnloaded "the quality model loads" }
+            $scores = @()
+            foreach ($qp in $qualityPlans) {
+                Write-Host "  scoring $($qp.Name)"
+                $s = Invoke-PlanQuality $qp.FullName (Join-Path $logDir "$stamp-$($qp.BaseName)-quality.log")
+                if ($null -eq $s) {
+                    $s = @{ plan = $qp.Name; scored = $false; reason = "the plan names no file that exists yet"; total = 0; full = 0; partial = 0; missing = 0; percent = $null; lines = @() }
+                }
+                $scores += $s
+                if ($s.scored) {
+                    Write-Host ("    {0} % ({1} full, {2} partial, {3} missing)" -f $s.percent, $s.full, $s.partial, $s.missing) -ForegroundColor Green
+                } else {
+                    Write-Host "    not scored: $($s.reason)" -ForegroundColor Yellow
+                }
+            }
+            $qualityFile = Join-Path $plansDir "quality.md"
+            Write-Utf8NoBom $qualityFile (Format-QualityReport $scores)
+            Write-Host "  quality report: $qualityFile"
+            $qualityRecord = @{}
+            foreach ($s in $scores) { $qualityRecord[$s.plan] = $s.percent }
+            Update-RunRecord @{ quality = $qualityRecord }
+        }
+    }
+}
+
 # --- Archive spec and progress when the whole cycle is done ----------------
-if ($failed -eq 0 -and -not $DryRun -and -not $NoAudit) {
+if ($failed -eq 0 -and -not $DryRun -and -not $NoAudit -and -not $QualityOnly) {
     $remaining = @(Get-ChildItem -LiteralPath $plansDir -Filter "plan*.md" -File |
                    Where-Object { $_.BaseName -match '^plan(\d+)$' })
     $ledger = Get-Content -LiteralPath $progress -Raw -Encoding UTF8

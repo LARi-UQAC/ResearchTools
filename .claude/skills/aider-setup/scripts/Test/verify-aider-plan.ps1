@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -634,6 +634,58 @@ Check "a valid rules file is reported in one line and the run starts" {
     $bad = New-RulesBudget $root "**R0 - one.** Say it.`n`n**R1 - two.** Say it.`n"
     $r = Invoke-Driver $root @{ BudgetFile = $bad }
     ($r.text -match 'rules.md: 2 rules R0-R1') -and ($r.text -notmatch 'breaks its own format')
+}
+
+Write-Host ""
+# --- Plan quality: the reviewer judges requirements, the driver counts them (2026-11-11) -------------
+# Tokens are counted as a quarter of the bytes here, so this check needs no tokenizer.
+function Get-TokenCount([string]$file) { return [int]((Get-Item -LiteralPath $file).Length / 4) }
+New-Item -ItemType Directory -Force -Path (Join-Path $headerProj "src") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $headerProj "Test") | Out-Null
+Set-Content -LiteralPath (Join-Path $headerProj "src\world.py") -Value ("def world():`n    return 1`n" + ("# padding line`n" * 40)) -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $headerProj "Test\test_world.py") -Value "import unittest`n" -Encoding UTF8
+
+Check "the score is counted from the reviewer's lines: full 1, partial 0.5, missing 0" {
+    $t = "## quality plan1.md`n- [full] the world function - there`n- [full] the test file - there`n- [full] one more - ok`n- [partial] the config key - named differently`n- [partial] the exit code - 0 instead of 2`n- [missing] the logging - absent`n"
+    $s = Get-QualityScore $t "plan1.md"
+    $s.scored -and ($s.full -eq 3) -and ($s.partial -eq 2) -and ($s.missing -eq 1) -and ($s.percent -eq 67) -and ($s.lines.Count -eq 6)
+}
+
+Check "only the lines under THIS plan's quality heading count, whatever the case of the status" {
+    $t = "## quality plan2.md`n- [missing] a thing - absent`n`n## quality plan1.md`n- [FULL] a - ok`n* [Partial] b - half`n"
+    $s = Get-QualityScore $t "plan1.md"
+    ($s.total -eq 2) -and ($s.full -eq 1) -and ($s.partial -eq 1) -and ($s.percent -eq 75)
+}
+
+Check "NEGATIVE CONTROL: no usable line is 'not scored' with its reason, never 0 percent" {
+    $s = Get-QualityScore "## quality plan1.md`nIt looks fine to me.`n" "plan1.md"
+    (-not $s.scored) -and ($s.percent -eq $null) -and ($s.reason -match 'no requirement line')
+}
+
+Check "the quality message carries the plan without its header, the code, and the instruction not to count tests" {
+    $p = Get-QualityPrompt $headedPlan $proj 5000 "=== HOW TO REVIEW: brief ===`nbe careful`n`n"
+    ($null -ne $p) -and ($p.text -match 'Build the world function|world') -and ($p.text -notmatch 'executor: aider') -and
+    ($p.text -match 'def world') -and ($p.text -match 'NOT running tests') -and ($p.text -match "## quality headed.md") -and
+    ($p.text -match 'be careful') -and ($p.shown.Count -eq 2) -and ($p.omitted.Count -eq 0)
+}
+
+Check "a file that does not fit is named as left out, so the reviewer can say it could not judge it" {
+    Set-Content -LiteralPath (Join-Path $headerProj "Test\test_world.py") -Value ("import unittest`n" + ("# x`n" * 400)) -Encoding UTF8
+    $p = Get-QualityPrompt $plainPlan $proj 200 ""
+    ($null -ne $p) -and ($p.omitted.Count -ge 1) -and ($p.text -match 'Not shown, no room')
+}
+
+Check "NEGATIVE CONTROL: a plan whose files do not exist gives no message" {
+    $none = Join-Path $headerProj "nofiles.md"
+    Set-Content -LiteralPath $none -Value "Build `nope/absent.py` and its test `nope/test_absent.py`.`n" -Encoding UTF8
+    $null -eq (Get-QualityPrompt $none $proj 5000 "")
+}
+
+Check "the report has one table with the percentages and lists what is not fully met" {
+    $a = Get-QualityScore "## quality plan1.md`n- [full] a - ok`n- [missing] b - absent`n" "plan1.md"
+    $b = Get-QualityScore "no lines" "plan2.md"
+    $r = Format-QualityReport @($a, $b)
+    ($r -match '\| plan1.md \| 50 % \| 1 \| 0 \| 1 \|') -and ($r -match '\| plan2.md \| not scored') -and ($r -match '\*\*missing\*\* b - absent') -and ($r -notmatch '\*\*full\*\*')
 }
 
 Write-Host ""

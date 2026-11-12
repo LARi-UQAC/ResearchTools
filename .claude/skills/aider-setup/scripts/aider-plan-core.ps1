@@ -594,3 +594,105 @@ function Get-ReopenReport([string]$auditPath, [string]$planName) {
     if ($body -eq "") { return "" }
     return "`n`nThe reviewer's report on this plan, from audit.md. Each finding names the file, the line and why it matters:`n" + $body
 }
+
+# --- Plan quality: how closely the code follows the PLAN, not whether its tests pass (2026-11-11) ---
+# The owner asked for a measure of what was delivered against what was asked, because a plan whose code fails
+# a few tests can still be 80 percent right and cheap to finish, while a green suite says nothing about the
+# requirements nobody tested. The reviewer lists the plan's requirements and judges each one; THIS code, not
+# the model, counts them, so the number is arithmetic on its judgements and never a figure it made up.
+
+$QualityStatusWeights = @{ full = 1.0; partial = 0.5; missing = 0.0 }
+
+# The message that makes the reviewer list and judge the requirements of one plan. Inputs: the plan file, the
+# project folder, the token budget for the code shown, and the reviewer brief text. Output: a hashtable with the
+# message text, the files shown and the files left out for lack of room (named in the message, so the reviewer
+# can say it could not judge them), or $null when the plan names no file that exists.
+function Get-QualityPrompt([string]$planPath, [string]$projectRoot, [int]$maxTokens, [string]$briefText = "") {
+    $planName = Split-Path $planPath -Leaf
+    $targets = Get-PlanTargets $planPath
+    $shown = New-Object System.Collections.Generic.List[string]
+    $omitted = New-Object System.Collections.Generic.List[string]
+    $code = ""
+    $used = 0
+    foreach ($f in $targets) {
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { continue }
+        if ((Get-Item -LiteralPath $f).Length -eq 0) { continue }
+        $rel = $f
+        if ($f.StartsWith($projectRoot, [StringComparison]::OrdinalIgnoreCase)) { $rel = $f.Substring($projectRoot.Length + 1) }
+        $n = Get-TokenCount $f
+        if ($n -lt 0) { $n = $maxTokens }
+        if ($used + $n -gt $maxTokens) { $omitted.Add($rel); continue }
+        $used += $n
+        $shown.Add($rel)
+        $code += "`n`n----- $rel -----`n" + (Get-Content -LiteralPath $f -Raw -Encoding UTF8)
+    }
+    if ($shown.Count -eq 0) { return $null }
+    $note = ""
+    if ($omitted.Count -gt 0) {
+        $note = "`n`nNot shown, no room: " + ($omitted -join ", ") + ". Mark every requirement that depends only on those files [partial] and say it could not be judged.`n"
+    }
+    $text = "You are scoring how closely finished code follows its PLAN. You are NOT running tests, you are NOT editing code, and no source file is open for editing: the plan and the code are quoted below, as text. Do not count tests and do not say whether the suite passes: only compare what the plan asks for with what the code does.`n`n" +
+            "First list the requirements the plan states: each file it asks for, each function or interface with its signature, each behaviour, each constraint, each test it names. Then write ONE line per requirement, in this exact form, most important first, at most 20 lines:`n" +
+            "- [full] <the requirement> - <why, in a few words>   when the code does exactly what the plan says`n" +
+            "- [partial] <the requirement> - <what differs or is incomplete>   when it is there but not as the plan says`n" +
+            "- [missing] <the requirement> - <what is absent>   when the code does not do it`n`n" +
+            "Write these lines in quality.md under the heading '## quality $planName' and write nothing else there: no preamble, no summary, no score. There is no one to answer you: this is an unattended run, so never end your turn with a question, a request for permission or an offer to make fixes. Write the report in English.`n`n" +
+            $briefText +
+            "=== THE PLAN ===`n" + (Get-PlanText $planPath).Trim() + "`n`n" +
+            "=== THE CODE ===" + $code + $note
+    return @{ text = $text; shown = $shown.ToArray(); omitted = $omitted.ToArray() }
+}
+
+# Reads the reviewer's lines back and does the arithmetic. Inputs: the text of quality.md and the plan name.
+# Output: counts and a percentage, or scored = $false with the reason when the reviewer wrote no usable line,
+# which is reported as "not scored" and never as 0 percent.
+function Get-QualityScore([string]$qualityText, [string]$planName) {
+    $inside = $false
+    $full = 0; $partial = 0; $missing = 0
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($qualityText -split "`r?`n")) {
+        if ($line -match '^\s*##\s+(.*?)\s*$') {
+            $inside = ($Matches[1] -ieq "quality $planName")
+            continue
+        }
+        if (-not $inside) { continue }
+        if ($line -match '^\s*[-*]\s*\[(full|partial|missing)\]\s*(.+?)\s*$') {
+            $status = $Matches[1].ToLower()
+            switch ($status) { "full" { $full++ } "partial" { $partial++ } "missing" { $missing++ } }
+            $lines.Add("$status|" + $Matches[2])
+        }
+    }
+    $total = $full + $partial + $missing
+    if ($total -eq 0) {
+        return @{ plan = $planName; scored = $false; reason = "the reviewer wrote no requirement line under '## quality $planName'"; total = 0; full = 0; partial = 0; missing = 0; percent = $null; lines = @() }
+    }
+    $points = $full * $QualityStatusWeights.full + $partial * $QualityStatusWeights.partial + $missing * $QualityStatusWeights.missing
+    return @{ plan = $planName; scored = $true; reason = ""; total = $total; full = $full; partial = $partial; missing = $missing
+              percent = [int][math]::Round(100.0 * $points / $total); lines = $lines.ToArray() }
+}
+
+# The Markdown a person reads: one table, then the requirements that are not fully met, per plan. Input: the
+# list of score hashtables, in plan order. Output: text.
+function Format-QualityReport($scores) {
+    $out = New-Object System.Collections.Generic.List[string]
+    $out.Add("# Plan quality")
+    $out.Add("")
+    $out.Add("How closely the code follows each plan, judged requirement by requirement by the reviewer model and counted by the driver (full counts 1, partial 0.5, missing 0). It says nothing about whether the tests pass.")
+    $out.Add("")
+    $out.Add("| Plan | Quality | Full | Partial | Missing |")
+    $out.Add("|---|---:|---:|---:|---:|")
+    foreach ($s in $scores) {
+        if ($s.scored) { $out.Add("| $($s.plan) | $($s.percent) % | $($s.full) | $($s.partial) | $($s.missing) |") }
+        else { $out.Add("| $($s.plan) | not scored | - | - | - |") }
+    }
+    foreach ($s in $scores) {
+        $out.Add("")
+        $out.Add("## $($s.plan)")
+        $out.Add("")
+        if (-not $s.scored) { $out.Add("Not scored: $($s.reason).") ; continue }
+        $open = @($s.lines | Where-Object { -not $_.StartsWith("full|") })
+        if ($open.Count -eq 0) { $out.Add("Every requirement the reviewer listed is fully met.") }
+        foreach ($l in $open) { $parts = $l.Split("|", 2); $out.Add("- **$($parts[0])** $($parts[1])") }
+    }
+    return (($out -join "`n") + "`n")
+}

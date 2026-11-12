@@ -741,6 +741,15 @@ whether aider used its three fix attempts, the tokens of every request, the name
 and the end of the last test output. Read it first: it tells you which of the three things below
 happened, without opening ten logs.
 
+**`quality.md` says how much of each plan was delivered, whatever the tests say.** After the audit, the
+reviewer model reads each plan together with the code written for it, archived or blocked, lists the
+requirements the plan states and judges each one: fully met, partly met or missing. The driver does the
+arithmetic (full counts 1, partial 0.5, missing 0) and writes one percentage per plan, then the
+requirements that are not fully met. A plan at 80 percent with failing tests is code to finish, not code to
+rewrite. The number is the reviewer's judgement counted by a script, not a measurement: a plan whose
+reviewer wrote no usable line is shown as "not scored", never as 0. To score the code a previous run left
+behind, without running any plan, use `aider-plan.ps1 -QualityOnly` on the project.
+
 Three things block a plan, and each points at a different cure:
 
 | What `blocks.md` says | What happened | What to change |

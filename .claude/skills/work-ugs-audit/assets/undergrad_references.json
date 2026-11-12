@@ -1,5 +1,5 @@
 {
-  "_provenance": "Written 2026-11-06 by the session for plan 4b and plan 8i (spec D8). Patterns are the builder's choice, to be tuned at the owner's review: no free registry of standard numbers exists, so the check is of form only.",
+  "_provenance": "Patterns are a starting choice, to be tuned by the professor: no free registry of standard numbers exists, so the check is of form only.",
   "accepted_kinds": ["standard", "url", "other"],
   "standard_patterns": [
     {

@@ -21,7 +21,7 @@ class ImageInfo(TypedDict):
     height: int
 
 
-# Constantes pour les dimensions et couleurs (R0)
+# Constants for sizes and colours
 PAGE_WIDTH = 595
 PAGE_HEIGHT = 842
 MARGIN_LEFT = 50
@@ -42,12 +42,12 @@ VECTOR_CHART_HEIGHT = 320
 LOGO_SIZE = 40
 LOGO_MARGIN_BOTTOM = 10
 
-# Constantes pour les pixmaps (entiers 0-255)
+# Constants for pixmaps (integers 0-255)
 PIXMAP_WHITE = 255
 PIXMAP_BLUE = (0, 0, 255)
 PIXMAP_RED = (255, 0, 0)
 
-# Constantes pour les dessins vectoriels (flottants 0.0-1.0)
+# Constants for vector drawings (floats 0.0-1.0)
 VECTOR_BLACK = (0.0, 0.0, 0.0)
 VECTOR_BLUE = (0.0, 0.0, 1.0)
 

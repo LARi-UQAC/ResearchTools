@@ -1,11 +1,11 @@
 {
-  "_provenance": "Written 2026-11-06 for plans 6c, 8h and 8i from the list of design section 7.4, kept in full by the owner on 2026-11-05 (21 figure criteria plus one report criterion). Thresholds are the owner's (150 DPI, 0.7 of body text, 70 percent of the space). Labels and comments are the session's wording, to be tuned at the owner's review. ISO 80000 and ISO 5807 are named in the labels and must be checked by the session before they are quoted to students.",
+  "_provenance": "21 figure criteria plus one report criterion, all kept. Thresholds are the professor's (150 DPI, 0.7 of body text, 70 percent of the space). Labels and comments are starting wording, to be tuned by the professor. ISO 80000 and ISO 5807 are named in the labels and must be checked before they are quoted to students.",
   "extraction": {
-    "min_area_pt2": {"value": 2500, "provenance": "proposal 2026-11-06, tuned at the owner's review (a drawing smaller than about 50 by 50 points is a logo or an icon, not a figure)"},
-    "background_threshold": {"value": 200, "provenance": "proposal 2026-11-06, tuned at the owner's review (a pixel darker than this in any channel counts as drawing, 0 to 255)"},
-    "max_long_edge": {"value": 1568, "provenance": "owner decision D14, 2026-11-05 (pixels, longest side of an image sent to a model)"},
-    "photo_colors": {"value": 2000, "provenance": "proposal 2026-11-06, tuned at the owner's review (an image with more distinct colours is sent as JPEG, else as PNG)"},
-    "jpeg_quality": {"value": 85, "provenance": "proposal 2026-11-06, tuned at the owner's review (JPEG quality, 1 to 100)"}
+    "min_area_pt2": {"value": 2500, "provenance": "starting value, adjustable by the professor (a drawing smaller than about 50 by 50 points is a logo or an icon, not a figure)"},
+    "background_threshold": {"value": 200, "provenance": "starting value, adjustable by the professor (a pixel darker than this in any channel counts as drawing, 0 to 255)"},
+    "max_long_edge": {"value": 1568, "provenance": "chosen by the professor (pixels, longest side of an image sent to a model)"},
+    "photo_colors": {"value": 2000, "provenance": "starting value, adjustable by the professor (an image with more distinct colours is sent as JPEG, else as PNG)"},
+    "jpeg_quality": {"value": 85, "provenance": "starting value, adjustable by the professor (JPEG quality, 1 to 100)"}
   },
   "criteria": [
     {"id": "cited_with_content", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["all"], "threshold": null,
@@ -15,7 +15,7 @@
      "label_fr": "Courbes bien visibles", "label_en": "Curves clearly visible",
      "comment_fr": "Les courbes sont difficiles à voir : épaissir les traits ou augmenter le contraste.", "comment_en": "The curves are hard to see: thicken the lines or raise the contrast."},
     {"id": "space_used_over_70", "level": "figure", "scope": "undergraduate", "judged_by": "script", "applies_to": ["all"],
-     "threshold": {"value": 0.7, "provenance": "owner decision D6, 2026-11-05 (share of the image occupied by the drawing)"},
+     "threshold": {"value": 0.7, "provenance": "chosen by the professor (share of the image occupied by the drawing)"},
      "label_fr": "Dessin occupant plus de 70 % de l'espace", "label_en": "Drawing using more than 70 percent of the space",
      "comment_fr": "Le dessin occupe trop peu de l'image : rogner les marges ou agrandir le tracé.", "comment_en": "The drawing fills too little of the image: crop the margins or enlarge the plot."},
     {"id": "axis_titles", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["chart"], "threshold": null,
@@ -28,11 +28,11 @@
      "label_fr": "Légende présente quand il y a plusieurs courbes", "label_en": "Legend present when there are several curves",
      "comment_fr": "Plusieurs courbes sans légende : ajouter une légende qui les identifie.", "comment_en": "Several curves without a legend: add a legend that identifies them."},
     {"id": "effective_resolution", "level": "figure", "scope": "undergraduate", "judged_by": "script", "applies_to": ["all"],
-     "threshold": {"value": 150, "provenance": "owner decision D6, 2026-11-05 (dots per inch, effective resolution of a raster image)"},
+     "threshold": {"value": 150, "provenance": "chosen by the professor (dots per inch, effective resolution of a raster image)"},
      "label_fr": "Résolution effective suffisante", "label_en": "Sufficient effective resolution",
      "comment_fr": "Image trop peu définie une fois placée dans la page : insérer une version de meilleure résolution.", "comment_en": "The image is too coarse once placed on the page: insert a higher-resolution version."},
     {"id": "text_size", "level": "figure", "scope": "undergraduate", "judged_by": "script", "applies_to": ["all"], "model_when_script_not_run": true,
-     "threshold": {"value": 0.7, "provenance": "owner decision D6, 2026-11-05 (smallest text of the figure over the body text size)"},
+     "threshold": {"value": 0.7, "provenance": "chosen by the professor (smallest text of the figure over the body text size)"},
      "label_fr": "Texte de la figure assez grand par rapport au texte courant", "label_en": "Figure text large enough against the body text",
      "comment_fr": "Le texte de la figure est trop petit par rapport au texte courant : l'agrandir.", "comment_en": "The text in the figure is too small against the body text: enlarge it."},
     {"id": "curves_distinguishable_grey", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["chart"], "threshold": null,

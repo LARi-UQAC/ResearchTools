@@ -7,7 +7,7 @@
     "write": {
       "bundle": "{{HOME}}/.config/aider/skills/test-driven-development",
       "ceiling": 2500,
-      "_measured": "2427 tokens on 2026-09-05: SKILL.md 1589 + writing-good-tests.md 838, after the shipped copies were trimmed to fit. Was 3993 (2219 + 1774) on 2026-09-03, before the trim. At 97 percent of the ceiling there is no room to grow: re-check this count if you refresh either file from upstream, because the originals are larger.",
+      "_measured": "724 tokens on 2026-11-12 with cl100k_base: SKILL.md 402 + writing-good-tests.md 322. Rewritten in our own words; the copy of an outside skill it replaces cost 2427.",
       "_why": "The working protocol already demands a test in the same step as the code. This says the same thing at greater length, to the model that writes."
     },
     "audit": {
@@ -15,7 +15,7 @@
         "{{HOME}}/.config/aider/skills/code-reviewer.md"
       ],
       "ceiling": 2000,
-      "_measured": "1283 tokens on 2026-09-03 with cl100k_base.",
+      "_measured": "501 tokens on 2026-11-12 with cl100k_base. Rewritten in our own words; the copy it replaces cost 1283.",
       "_why": "This is the reviewer's actual brief - 'You are a Senior Code Reviewer ... review completed work against its plan or requirements and identify issues before they cascade'.",
       "_why_not_the_skill_md": "requesting-code-review/SKILL.md is deliberately excluded although it would fit in the budget at 681 tokens. It describes how to DISPATCH a reviewer subagent, which aider cannot do; passing it would hand over the wrapper and drop the content.",
       "_ordering_is_mandatory": "The driver's own audit instruction MUST be emitted BEFORE this text, never after. That instruction forbids the reviewer from asking for a file, and this brief was written for a subagent that may ask for one. Measured: a full cycle once ran where the reviewer did its analysis correctly, then asked permission to fix the code, and audit.md came out zero bytes. A skill placed before the guard is a skill that can undo it."
@@ -25,7 +25,7 @@
         "{{HOME}}/.config/aider/skills/receiving-code-review.md"
       ],
       "ceiling": 2000,
-      "_measured": "1487 tokens on 2026-09-03 with cl100k_base.",
+      "_measured": "385 tokens on 2026-11-12 with cl100k_base. Rewritten in our own words; the copy it replaces cost 1487.",
       "_why": "Round 2 is a plan the audit put a step back into, which is exactly work receiving a review. This bundle is one file: it references nothing.",
       "_applies_to": "The plan path, on the second and later rounds only. Round 1 gets the write stage."
     }

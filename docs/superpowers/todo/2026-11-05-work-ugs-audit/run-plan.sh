@@ -80,6 +80,7 @@ mount-all)
   rmdir "$P/Test" 2>/dev/null || true
   ( cd "$P" && git add -A >/dev/null 2>&1 && git -c core.safecrlf=false commit -q -m "mount: $ID" >/dev/null 2>&1 )
   echo "mounted $P ($(ls "$PL"/plan*.md | wc -l) plans)"
+  "$PYI" "$S/scripts/plan_clean.py" "$PL/spec.md" "$PL"/plan*.md --write || true   # strip owner, rule numbers, dates for the small model; hits left are printed
   ;;
 mount-night)
   # One kit project for aider-night.ps1 holding the plans of NIGHT_IDS (space separated, in run order),
@@ -141,6 +142,7 @@ mount-night)
   rmdir "$P/Test" 2>/dev/null || true
   ( cd "$P" && git add -A >/dev/null 2>&1 && git -c core.safecrlf=false commit -q -m "mount: night $ID" >/dev/null 2>&1 )
   echo "mounted $P ($(ls "$PL"/plan*.md | wc -l) plans), map $MAP"
+  "$PYI" "$S/scripts/plan_clean.py" "$PL/spec.md" "$PL"/plan*.md --write || true   # strip owner, rule numbers, dates for the small model; hits left are printed
   ;;
 mount)
   [ -e "$P" ] && { echo "REFUSED: $P exists"; exit 1; }
@@ -186,6 +188,7 @@ mount)
     -BudgetFile "$(cygpath -w "$HOME_CFG/.config/aider/context-budget.json")" \
     -TestCommand "$(test_command)" -DryRun 2>&1 \
     | grep -a -E "editable|REFUSED|OVER|audit with" | cut -c1-170
+  "$PYI" "$S/scripts/plan_clean.py" "$PL/spec.md" "$PL"/plan*.md --write || true   # strip owner, rule numbers, dates for the small model; hits left are printed
   ;;
 start)
   for m in $(powershell.exe -NoProfile -Command "ollama ps" | tail -n +2 | awk '{print $1}'); do

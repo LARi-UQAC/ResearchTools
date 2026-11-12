@@ -18,4 +18,6 @@ Name them here, because the coding rules do not choose a language. The model fol
 - **Case of names:** functions (a verb followed by its complement), types, constants, variables.
 - **Documentation comment:** the form that carries Purpose, Inputs, Outputs and Raises.
 - **Tests:** the folder, the file name pattern, and the one command that runs them.
+- **Dependencies file:** the file that lists third-party packages (for example `requirements.txt` at the project
+  root). When this line is absent the model uses `requirements.txt` at the project root.
 - **Format and lint commands,** if any: they must pass before a step is ticked.

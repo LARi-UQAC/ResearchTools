@@ -76,7 +76,7 @@ work_dir)`), `.claude/skills/work-ugs-audit/scripts/rubric_check.py` (`validate`
     section per item with its criteria and checklist lines) and the ledger with `add_report` for every report, and the JSON file `loop_state` is not
     touched. Prints one line per report with `report_id`, `pages`, `step` `prepare`, `status` `done`.
   - `run --work DIR [--loop N] [--resume] [--only R01]`: the reports folder is the parent of the work
-    folder. For each report in id order, runs `run_report`; the source file name comes from the JSON file `ids`.
+    folder. For each report in id order, runs `run_report`; the source file name comes from the id map, the file named by `report_prepare.IDS_FILE_NAME`.
     The prompts are those of the skill's `prompts` folder and of the figure-review `prompts` folder
     (`load_prompts` on each, merged), the levels text being the prompt named `levels`; the schemas are
     the skill's schemas file. The calibration note is empty on loop 1 and, after, is the

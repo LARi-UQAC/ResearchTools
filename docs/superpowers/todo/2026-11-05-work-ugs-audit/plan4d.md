@@ -41,9 +41,9 @@ any test. No comment records reasoning (R103).
   `ipaddress` module says it is global. Before that test, an IPv4-mapped, a 6to4 or a NAT64 address is
   replaced by the IPv4 address it embeds, and that one is tested too.
 - Add `connect_validated(url: str, resolve, connect, timeout: float) -> object`: resolves the host once, takes
-  the first address that passes `is_public_host`, and calls `connect(address, port, host, use_tls, timeout)`
-  with the validated ADDRESS, the original host name (for the Host header and the TLS server name) and the
-  scheme. It raises a `ValueError` naming the reason when no address passes. `connect` is a parameter so that
+  the first address that passes `is_public_host`, and calls `connect(address, port, host, use_tls, timeout, target)`
+  with the validated ADDRESS, the original host name (for the Host header and the TLS server name), the
+  scheme and the path with its query (`target`, sixth argument, added when the fix of 2026-11-12 made the check ask for the real page). It raises a `ValueError` naming the reason when no address passes. `connect` is a parameter so that
   tests need no network.
 - The default fetch uses `connect_validated` for every hop, and sends a HEAD request first.
 

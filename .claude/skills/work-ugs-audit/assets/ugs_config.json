@@ -16,6 +16,22 @@
     "value": 1,
     "provenance": "starting value, adjustable by the professor (retries of a reachability check)"
   },
+  "references.max_redirects": {
+    "value": 3,
+    "provenance": "starting value, adjustable by the professor (redirects followed while checking one URL)"
+  },
+  "reports.id_prefix": {
+    "value": "R",
+    "provenance": "specified by the design of the working folder (report ids look like R01)"
+  },
+  "reports.id_digits": {
+    "value": 2,
+    "provenance": "specified by the design of the working folder (R01 to R99 in a batch)"
+  },
+  "reports.page_digits": {
+    "value": 3,
+    "provenance": "specified by the design of the working folder (page files look like p001)"
+  },
   "batch.outlier_z": {
     "value": 2.0,
     "provenance": "chosen by the professor (a grade whose |z| exceeds this value is an outlier)"

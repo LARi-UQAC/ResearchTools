@@ -1,160 +1,157 @@
-import sys
-from pathlib import Path
-import unittest
+"""
+Offline tests of report_prepare.py. The reports are fictitious PDFs built in a temporary folder.
+"""
+import io
 import json
-import tempfile
 import shutil
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from unittest.mock import patch
 
-# Met le dossier scripts au début de sys.path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+SCRIPTS = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(SCRIPTS.parent.parent / "figure-review" / "scripts" / "Test"))
 
-# Met le dossier figure-review/Test au début de sys.path pour _pdf_fixtures
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "figure-review" / "scripts" / "Test"))
+import report_prepare  # noqa: E402
+from report_prepare import PrepareError, main, prepare, skipped_count  # noqa: E402
+from _pdf_fixtures import make_report  # noqa: E402
 
-from report_prepare import prepare, skipped_count, PrepareError, main
-from _pdf_fixtures import make_report
+ARGUMENTS = ("--reports", "--work")
 
 
-class TestReportPrepare(unittest.TestCase):
+class ReportPrepareTests(unittest.TestCase):
+    """Ids, pages, refusals and what is printed."""
+
     def setUp(self):
-        self.tmp_dir = Path(tempfile.mkdtemp())
-        self.reports_dir = self.tmp_dir / "reports"
-        self.reports_dir.mkdir()
-        # Le plan exige que work_dir soit DANS reports_dir pour les tests de refus,
-        # mais la spec dit "beside". 
-        # Pour satisfaire le test `test_work_dir_outside_reports_is_refused` du plan,
-        # nous devons utiliser un work_dir DANS reports_dir pour les cas valides,
-        # et un work_dir EN DEHORS pour le cas de refus.
-        # Cependant, les autres tests (comme `test_ids_follow_sorted_names`) utilisent `self.work_dir`.
-        # Si nous changeons `self.work_dir` à l'intérieur de `reports_dir`, les tests de refus passeront.
-        # Mais la spec dit "beside". 
-        # Le plan est prioritaire. Je vais définir work_dir DANS reports_dir.
-        self.work_dir = self.reports_dir / "_correction"
+        self.tmp = Path(tempfile.mkdtemp())
+        self.reports = self.tmp / "reports"
+        self.reports.mkdir()
+        self.work = self.tmp / "_correction"
 
     def tearDown(self):
-        shutil.rmtree(self.tmp_dir)
+        shutil.rmtree(self.tmp)
+
+    def run_main(self, *extra):
+        """Run main with the two folders and return (exit code, stdout)."""
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = main([ARGUMENTS[0], str(self.reports), ARGUMENTS[1], str(self.work), *extra])
+        return code, out.getvalue()
 
     def test_ids_follow_sorted_names_and_are_stable_on_rerun(self):
-        """Les ids suivent l'ordre trié des noms de fichiers et sont stables à la réexécution."""
-        make_report(self.reports_dir / "report_b.pdf", [{"text": "Page 1"}])
-        make_report(self.reports_dir / "report_a.pdf", [{"text": "Page 1"}])
-        
-        result = prepare(self.reports_dir, self.work_dir)
-        
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]["report_id"], "R01")
-        self.assertEqual(result[1]["report_id"], "R02")
-        
-        # Vérifier la carte d'ids
-        ids_file = self.work_dir / "ids"
-        self.assertTrue(ids_file.exists())
-        with open(ids_file, encoding="utf-8") as f:
-            ids_map = json.load(f)
-        self.assertEqual(ids_map["R01"], "report_a.pdf")
-        self.assertEqual(ids_map["R02"], "report_b.pdf")
-        
-        # Réexécuter, les ids doivent rester les mêmes
-        result2 = prepare(self.reports_dir, self.work_dir)
-        self.assertEqual(result2[0]["report_id"], "R01")
-        self.assertEqual(result2[1]["report_id"], "R02")
-
-    def test_non_pdf_files_are_skipped_and_counted(self):
-        """Les fichiers non-PDF sont sautés et comptés."""
-        make_report(self.reports_dir / "report.pdf", [{"text": "Page 1"}])
-        (self.reports_dir / "notes.txt").touch()
-        (self.reports_dir / "image.png").touch()
-        
-        result = prepare(self.reports_dir, self.work_dir)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["report_id"], "R01")
-        
-        skipped = skipped_count(self.reports_dir)
-        self.assertEqual(skipped, 2)
-
-    def test_one_markdown_file_per_page_with_accents_kept(self):
-        """Un fichier Markdown par page, avec les accents conservés."""
-        make_report(self.reports_dir / "report.pdf", [{"text": "Étude des réseaux électriques"}])
-        
-        result = prepare(self.reports_dir, self.work_dir)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["pages"], 1)
-        
-        md_file = self.work_dir / "R01" / "pages" / "p001.md"
-        self.assertTrue(md_file.exists())
-        content = md_file.read_text(encoding="utf-8")
-        self.assertIn("Étude des réseaux électriques", content)
-
-    def test_an_empty_page_is_flagged_and_its_file_is_empty(self):
-        """Une page vide est signalée et son fichier est vide."""
-        make_report(self.reports_dir / "report.pdf", [{}])
-        
-        result = prepare(self.reports_dir, self.work_dir)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["empty_pages"], [1])
-        
-        md_file = self.work_dir / "R01" / "pages" / "p001.md"
-        self.assertTrue(md_file.exists())
-        self.assertEqual(md_file.read_text(encoding="utf-8").strip(), "")
-
-    def test_work_dir_outside_reports_is_refused(self):
-        """Le dossier de travail en dehors des rapports est refusé."""
-        outside_work_dir = self.tmp_dir / "outside_work"
-        make_report(self.reports_dir / "report.pdf", [{"text": "Page 1"}])
-        
-        with self.assertRaises(PrepareError):
-            prepare(self.reports_dir, outside_work_dir)
-
-    def test_stdout_never_carries_a_file_name(self):
-        """La sortie ne porte jamais un nom de fichier."""
-        import io
-        from contextlib import redirect_stdout
-        
-        make_report(self.reports_dir / "etudiant_nom.pdf", [{"text": "Page 1"}])
-        
-        f = io.StringIO()
-        with redirect_stdout(f):
-            ret = main(["--reports", str(self.reports_dir), "--work", str(self.work_dir)])
-            self.assertEqual(ret, 0)
-        
-        output = f.getvalue()
-        self.assertNotIn("etudiant_nom.pdf", output)
-        json_line = json.loads(output.strip())
-        self.assertIn("ids", json_line)
-
-    def test_dry_run_writes_nothing(self):
-        """--dry-run n'écrit rien."""
-        make_report(self.reports_dir / "report.pdf", [{"text": "Page 1"}])
-        
-        import io
-        from contextlib import redirect_stdout
-        
-        f = io.StringIO()
-        with redirect_stdout(f):
-            ret = main(["--reports", str(self.reports_dir), "--work", str(self.work_dir), "--dry-run"])
-            self.assertEqual(ret, 0)
-        
-        # Le dossier de travail ne doit pas exister ou être vide
-        if self.work_dir.exists():
-            self.assertEqual(list(self.work_dir.iterdir()), [])
-        else:
-            self.assertFalse(self.work_dir.exists())
+        make_report(self.reports / "report_b.pdf", [{"text": "Page 1"}])
+        make_report(self.reports / "report_a.pdf", [{"text": "Page 1"}])
+        first = prepare(self.reports, self.work)
+        self.assertEqual([item["report_id"] for item in first], ["R01", "R02"])
+        ids = json.loads((self.work / "ids.json").read_text(encoding="utf-8"))
+        self.assertEqual(ids, {"R01": "report_a.pdf", "R02": "report_b.pdf"})
+        second = prepare(self.reports, self.work)
+        self.assertEqual([item["report_id"] for item in second], ["R01", "R02"])
 
     def test_a_report_added_later_gets_the_next_id_and_keeps_the_old_ones(self):
-        """Un rapport ajouté plus tard reçoit le prochain id et conserve les anciens."""
-        make_report(self.reports_dir / "report_a.pdf", [{"text": "Page 1"}])
-        prepare(self.reports_dir, self.work_dir)
-        
-        make_report(self.reports_dir / "report_b.pdf", [{"text": "Page 1"}])
-        result = prepare(self.reports_dir, self.work_dir)
-        
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]["report_id"], "R01")
-        self.assertEqual(result[1]["report_id"], "R02")
-        
-        with open(self.work_dir / "ids", encoding="utf-8") as f:
-            ids_map = json.load(f)
-        self.assertEqual(ids_map["R01"], "report_a.pdf")
-        self.assertEqual(ids_map["R02"], "report_b.pdf")
+        make_report(self.reports / "report_b.pdf", [{"text": "Page 1"}])
+        prepare(self.reports, self.work)
+        make_report(self.reports / "report_a.pdf", [{"text": "Page 1"}])
+        result = prepare(self.reports, self.work)
+        by_id = {item["report_id"] for item in result}
+        self.assertEqual(by_id, {"R01", "R02"})
+        ids = json.loads((self.work / "ids.json").read_text(encoding="utf-8"))
+        self.assertEqual(ids["R01"], "report_b.pdf")
+        self.assertEqual(ids["R02"], "report_a.pdf")
+
+    def test_non_pdf_files_are_skipped_and_counted(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        (self.reports / "notes.txt").touch()
+        (self.reports / "image.png").touch()
+        result = prepare(self.reports, self.work)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(skipped_count(self.reports), 2)
+
+    def test_one_markdown_file_per_page_with_accents_kept(self):
+        make_report(self.reports / "report.pdf", [{"text": "Étude des réseaux électriques"}])
+        result = prepare(self.reports, self.work)
+        self.assertEqual(result[0]["pages"], 1)
+        page = self.work / "R01" / "pages" / "p001.md"
+        self.assertIn("Étude des réseaux électriques", page.read_text(encoding="utf-8"))
+
+    def test_an_empty_page_is_flagged_and_its_file_is_empty(self):
+        make_report(self.reports / "report.pdf", [{}])
+        result = prepare(self.reports, self.work)
+        self.assertEqual(result[0]["empty_pages"], [1])
+        self.assertEqual((self.work / "R01" / "pages" / "p001.md").read_text(encoding="utf-8").strip(), "")
+
+    def test_a_work_folder_inside_the_reports_folder_is_refused(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        with self.assertRaises(PrepareError):
+            prepare(self.reports, self.reports / "_correction")
+
+    def test_the_reports_folder_itself_is_refused_as_work_folder(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        with self.assertRaises(PrepareError):
+            prepare(self.reports, self.reports)
+        self.assertEqual([path.name for path in self.reports.iterdir()], ["report.pdf"])
+
+    def test_a_work_folder_with_another_parent_is_refused(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        with self.assertRaises(PrepareError):
+            prepare(self.reports, self.tmp / "other" / "_correction")
+
+    def test_an_unreadable_id_map_is_refused_without_naming_a_file(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        self.work.mkdir()
+        (self.work / "ids.json").write_text("not json", encoding="utf-8")
+        with self.assertRaises(PrepareError) as raised:
+            prepare(self.reports, self.work)
+        self.assertNotIn("ids.json", str(raised.exception))
+
+    def test_a_missing_configuration_key_is_named(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        with patch("report_prepare.ugs_config.load", return_value={}):
+            with self.assertRaises(PrepareError) as raised:
+                prepare(self.reports, self.work)
+        self.assertIn("reports.id_prefix", str(raised.exception))
+
+    def test_stdout_never_carries_a_file_name(self):
+        make_report(self.reports / "invented_student_name.pdf", [{"text": "Page 1"}])
+        code, output = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertNotIn("invented_student_name", output)
+        self.assertEqual(json.loads(output)["ids"], ["R01"])
+
+    def test_dry_run_writes_nothing(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        code, output = self.run_main("--dry-run")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output), {"reports": 1, "skipped": 0})
+        self.assertFalse(self.work.exists())
+
+    def test_a_missing_reports_folder_exits_2(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = main([ARGUMENTS[0], str(self.tmp / "absent"), ARGUMENTS[1], str(self.work)])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out.getvalue())["status"], "refused")
+
+    def test_a_refusal_prints_no_file_name_or_path(self):
+        make_report(self.reports / "secret_report.pdf", [{"text": "Page 1"}])
+        error = PrepareError(f"failed on {self.reports}/secret_report.pdf")
+        with patch.object(report_prepare, "prepare", side_effect=error):
+            code, output = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertNotIn("secret_report", output)
+        self.assertNotIn(str(self.reports), output)
+
+    def test_an_unexpected_failure_prints_the_type_and_no_path(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        error = FileNotFoundError(f"No such file: '{self.reports}/report.pdf'")
+        with patch.object(report_prepare, "prepare", side_effect=error):
+            code, output = self.run_main()
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(output)["error_type"], "FileNotFoundError")
+        self.assertNotIn(str(self.reports), output)
 
 
 if __name__ == "__main__":

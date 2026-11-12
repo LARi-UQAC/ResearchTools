@@ -694,7 +694,7 @@ function Get-QualityPrompt([string]$planPath, [string]$projectRoot, [int]$maxTok
         $note = "`n`nNot shown, no room: " + ($omitted -join ", ") + ". Mark every requirement that depends only on those files [partial] and say it could not be judged.`n"
     }
     $text = "You are scoring how closely finished code follows its PLAN. You are NOT running tests, you are NOT editing code, and no source file is open for editing: the plan and the code are quoted below, as text. Do not count tests and do not say whether the suite passes: only compare what the plan asks for with what the code does.`n`n" +
-            "First list the requirements the plan states: each file it asks for, each function or interface with its signature, each behaviour, each constraint, each test it names. Then write ONE line per requirement, in this exact form, most important first, at most 20 lines:`n" +
+            "First list the requirements the plan states: each file it asks for, each function or interface with its signature, each behaviour, each constraint, each test it names. Then write ONE line per requirement, in this exact form, most important first. Group the trivial details that belong together (for example the imports, or the names of one family of constants) into one line instead of listing each:`n" +
             "- [full] <the requirement> - <why, in a few words>   when the code does exactly what the plan says`n" +
             "- [partial] <the requirement> - <what differs or is incomplete>   when it is there but not as the plan says`n" +
             "- [missing] <the requirement> - <what is absent>   when the code does not do it`n`n" +

@@ -1,277 +1,234 @@
 """
-Purpose: Préparer les rapports PDF en générant des ids stables et des fichiers Markdown par page.
+Report preparation - gives every PDF report of a folder a stable pseudonymous id and writes one Markdown file per page.
+
+Purpose: the ids (R01, R02...) replace the file names everywhere after this step, and each page is kept as its own
+Markdown file so that a later quote can be anchored on its page. File names appear only in the id map.
+Exit codes: 0 done, 1 unexpected failure, 2 refusal.
 """
 import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Optional
 
-# Constantes de configuration (R0: les nombres viennent de la configuration ou sont des constantes de module acceptées si non configurables)
-# Ici, nous utilisons des constantes pour les formats d'ID et le padding, car ce sont des conventions internes.
-ID_PREFIX = "R"
-ID_PADDING = 2
-PAGE_PADDING = 3
+import ugs_config
+
+EXIT_OK = 0
+EXIT_FAILURE = 1
+EXIT_REFUSAL = 2
+IDS_FILE_NAME = "ids.json"
+PAGES_FOLDER = "pages"
+PAGE_FILE_PREFIX = "p"
+CONFIG_KEYS = ("reports.id_prefix", "reports.id_digits", "reports.page_digits")
 
 
 class PrepareError(ValueError):
-    """Erreur lors de la préparation des rapports."""
-    pass
+    """Raised when the reports cannot be prepared. Its message never holds a file name."""
 
 
 def _is_pdf(file_path: Path) -> bool:
     """
-    Purpose: Vérifier si un fichier est un PDF.
+    Purpose: Tell whether a file is a PDF by its extension.
     Inputs:
-        file_path: Path - chemin du fichier.
+        file_path (Path): the file.
     Outputs:
-        bool - True si c'est un PDF, False sinon.
+        bool: True for a .pdf file, whatever the case of the extension.
     """
     return file_path.suffix.lower() == ".pdf"
 
 
-def _extract_page_text(pdf_path: Path) -> List[str]:
+def _load_settings() -> dict:
     """
-    Purpose: Extraire le texte de chaque page d'un PDF.
+    Purpose: Read the id and page-number formats from the shipped configuration.
     Inputs:
-        pdf_path: Path - chemin du fichier PDF.
+        None.
     Outputs:
-        List[str] - liste des textes de chaque page (index 0 = page 1).
+        dict: the keys of CONFIG_KEYS with their values.
     Raises:
-        PrepareError: si le fichier n'est pas un PDF valide ou si pymupdf4llm échoue.
+        PrepareError: when the configuration cannot be read or a key is missing (the message names the key).
+    """
+    try:
+        config = ugs_config.load(ugs_config.default_path())
+    except ugs_config.ConfigError as error:
+        raise PrepareError(f"configuration unreadable: {error}") from error
+    for key in CONFIG_KEYS:
+        if key not in config:
+            raise PrepareError(f"configuration key '{key}' is missing")
+    return {key: config[key] for key in CONFIG_KEYS}
+
+
+def _extract_page_text(pdf_path: Path) -> list[str]:
+    """
+    Purpose: Extract the Markdown text of every page of a PDF, page by page.
+    Inputs:
+        pdf_path (Path): the PDF.
+    Outputs:
+        list[str]: one text per page, index 0 being page 1.
+    Raises:
+        PrepareError: when pymupdf4llm is missing or cannot read the file (the message holds no file name).
     """
     try:
         import pymupdf4llm
-        # Extraire page par page avec pymupdf4llm
-        # page_chunks=True retourne une liste de dictionnaires avec 'text' et 'page'
-        chunks = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
-        
-        pages = []
-        for chunk in chunks:
-            pages.append(chunk.get("text", ""))
-        return pages
-    except ImportError:
-        raise PrepareError("pymupdf4llm est requis mais n'est pas installé.")
-    except Exception as e:
-        raise PrepareError(f"Échec de l'extraction du texte du PDF: {type(e).__name__}")
-
-
-def _write_markdown_file(work_dir: Path, report_id: str, page_num: int, text: str) -> None:
-    """
-    Purpose: Écrire un fichier Markdown pour une page.
-    Inputs:
-        work_dir: Path - dossier de travail.
-        report_id: str - id du rapport (ex: "R01").
-        page_num: int - numéro de page (1-based).
-        text: str - texte de la page.
-    Outputs:
-        None - écrit le fichier.
-    """
-    pages_dir = work_dir / report_id / "pages"
-    pages_dir.mkdir(parents=True, exist_ok=True)
-    md_file = pages_dir / f"p{page_num:0{PAGE_PADDING}d}.md"
-    md_file.write_text(text, encoding="utf-8")
-
-
-def _load_existing_ids(ids_file: Path) -> Dict[str, str]:
-    """
-    Purpose: Charger la carte d'ids existante.
-    Inputs:
-        ids_file: Path - chemin du fichier d'ids.
-    Outputs:
-        Dict[str, str] - mapping des ids existants vers les noms de fichiers.
-    """
-    if ids_file.exists():
-        with open(ids_file, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-
-def _save_ids(ids_file: Path, ids_map: Dict[str, str]) -> None:
-    """
-    Purpose: Sauvegarder la carte d'ids.
-    Inputs:
-        ids_file: Path - chemin du fichier d'ids.
-        ids_map: Dict[str, str] - mapping des ids vers les noms de fichiers.
-    Outputs:
-        None - écrit le fichier.
-    """
-    ids_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(ids_file, "w", encoding="utf-8") as f:
-        json.dump(ids_map, f, indent=2, ensure_ascii=False)
-
-
-def _check_path_containment(reports_dir: Path, work_dir: Path) -> None:
-    """
-    Purpose: Vérifier que work_dir est à l'intérieur de reports_dir (ou dans un dossier adjacent autorisé par la spec, mais le plan dit 'outside' -> refused).
-    Inputs:
-        reports_dir: Path - dossier des rapports.
-        work_dir: Path - dossier de travail.
-    Raises:
-        PrepareError: si work_dir n'est pas dans reports_dir.
-    """
+    except ImportError as error:
+        raise PrepareError("pymupdf4llm is required and is not installed") from error
     try:
-        reports_resolved = reports_dir.resolve()
-        work_resolved = work_dir.resolve()
-        # R24: confine every path derived from input. Resolve it to its canonical absolute form first,
-        # then check that it sits inside the allowed folder.
-        # Le plan dit: "Raises PrepareError when the work folder resolves outside the reports folder."
-        # Cependant, la spec dit "Working folder beside the reports: _correction/".
-        # Il y a une contradiction entre le plan (test_work_dir_outside_reports_is_refused) et la spec (beside).
-        # Le plan est l'autorité pour cette tâche. Je vais implémenter la vérification demandée par le plan.
-        if not work_resolved.is_relative_to(reports_resolved):
-            raise PrepareError("Le dossier de travail doit être à l'intérieur du dossier des rapports.")
-    except PrepareError:
-        raise
-    except Exception as e:
-        raise PrepareError(f"Erreur de vérification de chemin: {e}")
+        chunks = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
+    except Exception as error:
+        raise PrepareError(f"text extraction failed: {type(error).__name__}") from error
+    return [chunk.get("text", "") for chunk in chunks]
 
 
-def prepare(reports_dir: Path, work_dir: Path) -> List[Dict]:
+def _write_page(work_dir: Path, report_id: str, page_number: int, text: str, page_digits: int) -> None:
     """
-    Purpose: Préparer les rapports PDF en générant des ids stables et des fichiers Markdown par page.
+    Purpose: Write the Markdown file of one page.
     Inputs:
-        reports_dir: Path - dossier contenant les rapports PDF.
-        work_dir: Path - dossier de travail pour la sortie.
+        work_dir (Path): the work folder.
+        report_id (str): the id of the report.
+        page_number (int): 1-based page number.
+        text (str): the page text.
+        page_digits (int): width of the zero-padded page number.
     Outputs:
-        List[Dict] - liste des rapports préparés, chacun avec report_id, pages, empty_pages.
-    Raises:
-        PrepareError: si work_dir se résout en dehors de reports_dir.
+        None. Writes work_dir/<id>/pages/p<number>.md.
     """
-    _check_path_containment(reports_dir, work_dir)
-    
-    ids_file = work_dir / "ids"
-    existing_ids = _load_existing_ids(ids_file)
-    
-    pdf_files = sorted([f for f in reports_dir.iterdir() if f.is_file() and _is_pdf(f)])
-    
-    results = []
-    new_ids_map = dict(existing_ids)
-    
-    # Identifier les fichiers qui ont déjà un id
-    existing_file_names = set(existing_ids.values())
-    
-    # Attribuer les ids
-    next_id_num = 1
-    for rid in existing_ids.keys():
-        # Extraire le numéro de l'id existant pour déterminer le prochain
-        try:
-            num = int(rid[len(ID_PREFIX):])
-            if num >= next_id_num:
-                next_id_num = num + 1
-        except (ValueError, IndexError):
-            pass
+    pages_dir = work_dir / report_id / PAGES_FOLDER
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    (pages_dir / f"{PAGE_FILE_PREFIX}{page_number:0{page_digits}d}.md").write_text(text, encoding="utf-8")
 
-    for pdf_file in pdf_files:
-        if pdf_file.name in existing_file_names:
-            # Trouver l'id correspondant
-            report_id = None
-            for rid, fname in existing_ids.items():
-                if fname == pdf_file.name:
-                    report_id = rid
-                    break
-            if report_id is None:
-                # Cas de conflit ou de données corrompues
-                report_id = f"{ID_PREFIX}{next_id_num:0{ID_PADDING}d}"
-                new_ids_map[report_id] = pdf_file.name
-                next_id_num += 1
-        else:
-            report_id = f"{ID_PREFIX}{next_id_num:0{ID_PADDING}d}"
-            new_ids_map[report_id] = pdf_file.name
-            next_id_num += 1
-        
-        pages_text = _extract_page_text(pdf_file)
-        page_count = len(pages_text)
-        empty_pages = [i + 1 for i, text in enumerate(pages_text) if not text.strip()]
-        
-        for i, text in enumerate(pages_text):
-            _write_markdown_file(work_dir, report_id, i + 1, text)
-        
-        results.append({
-            "report_id": report_id,
-            "pages": page_count,
-            "empty_pages": empty_pages
-        })
-    
-    _save_ids(ids_file, new_ids_map)
-    
+
+def _load_ids(ids_file: Path) -> dict[str, str]:
+    """
+    Purpose: Read the id map written by an earlier run.
+    Inputs:
+        ids_file (Path): the id map file.
+    Outputs:
+        dict[str, str]: id to file name, empty when the file does not exist.
+    Raises:
+        PrepareError: when the file is not a JSON object.
+    """
+    if not ids_file.exists():
+        return {}
+    try:
+        ids = json.loads(ids_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise PrepareError("the id map is not valid JSON") from error
+    if not isinstance(ids, dict):
+        raise PrepareError("the id map is not a JSON object")
+    return ids
+
+
+def _check_work_dir(reports_dir: Path, work_dir: Path) -> None:
+    """
+    Purpose: Refuse a work folder that is not a sibling of the reports folder.
+    Details: The paths are resolved first, so links and '..' cannot escape the check. The work folder must share the
+        parent of the reports folder and must not be the reports folder itself.
+    Inputs:
+        reports_dir (Path): the reports folder.
+        work_dir (Path): the work folder.
+    Outputs:
+        None.
+    Raises:
+        PrepareError: when the work folder is the reports folder or is not beside it.
+    """
+    reports = reports_dir.resolve()
+    work = work_dir.resolve()
+    if work == reports or work.parent != reports.parent:
+        raise PrepareError("the work folder must be a different folder beside the reports folder")
+
+
+def prepare(reports_dir: Path, work_dir: Path) -> list[dict]:
+    """
+    Purpose: Give every PDF of the reports folder a stable id and write its pages as Markdown files.
+    Details: Ids follow the sorted file names. A rerun keeps the ids already given, and a report added later takes
+        the next number.
+    Inputs:
+        reports_dir (Path): the folder holding the PDF reports.
+        work_dir (Path): the work folder, beside the reports folder.
+    Outputs:
+        list[dict]: one dict per PDF with 'report_id', 'pages' (count) and 'empty_pages' (1-based numbers).
+        Side effects: writes ids.json and the page files in work_dir.
+    Raises:
+        PrepareError: when the work folder is not beside the reports folder, the id map is unreadable, the
+            configuration is incomplete or a PDF cannot be read.
+    """
+    _check_work_dir(reports_dir, work_dir)
+    settings = _load_settings()
+    prefix = settings["reports.id_prefix"]
+    id_digits = settings["reports.id_digits"]
+    page_digits = settings["reports.page_digits"]
+
+    ids_file = work_dir / IDS_FILE_NAME
+    ids = _load_ids(ids_file)
+    id_of_name = {name: report_id for report_id, name in ids.items()}
+    taken = [int(report_id[len(prefix):]) for report_id in ids if report_id[len(prefix):].isdigit()]
+    next_number = max(taken, default=0) + 1
+
+    results = []
+    for pdf_file in sorted(path for path in reports_dir.iterdir() if path.is_file() and _is_pdf(path)):
+        report_id = id_of_name.get(pdf_file.name)
+        if report_id is None:
+            report_id = f"{prefix}{next_number:0{id_digits}d}"
+            ids[report_id] = pdf_file.name
+            id_of_name[pdf_file.name] = report_id
+            next_number += 1
+        pages = _extract_page_text(pdf_file)
+        for number, text in enumerate(pages, start=1):
+            _write_page(work_dir, report_id, number, text, page_digits)
+        results.append({"report_id": report_id, "pages": len(pages),
+                        "empty_pages": [number for number, text in enumerate(pages, start=1) if not text.strip()]})
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    ids_file.write_text(json.dumps(ids, indent=2, ensure_ascii=False), encoding="utf-8")
     return results
 
 
 def skipped_count(reports_dir: Path) -> int:
     """
-    Purpose: Compter les fichiers non-PDF dans le dossier des rapports.
+    Purpose: Count the files of the reports folder that are not PDFs.
     Inputs:
-        reports_dir: Path - dossier contenant les rapports.
+        reports_dir (Path): the reports folder.
     Outputs:
-        int - nombre de fichiers non-PDF.
+        int: the number of non-PDF files (folders are not counted).
     """
-    all_files = [f for f in reports_dir.iterdir() if f.is_file()]
-    pdf_files = [f for f in all_files if _is_pdf(f)]
-    return len(all_files) - len(pdf_files)
+    return sum(1 for path in reports_dir.iterdir() if path.is_file() and not _is_pdf(path))
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     """
-    Purpose: Point d'entrée de la commande.
+    Purpose: Command-line entry point. Prints one JSON line made of ids and counts only, never a file name.
     Inputs:
-        argv: Optional[List[str]] - arguments de la ligne de commande.
+        argv (list[str] | None): --reports DIR --work DIR [--dry-run] [--json].
     Outputs:
-        int - code de sortie (0 succès, 2 refus, 1 échec).
+        int: 0 done, 2 refusal, 1 unexpected failure. With --dry-run nothing is written.
     """
-    if argv is None:
-        argv = sys.argv[1:]
-    
-    parser = argparse.ArgumentParser(description="Préparer les rapports PDF")
-    parser.add_argument("--reports", required=True, help="Dossier des rapports")
-    parser.add_argument("--work", required=True, help="Dossier de travail")
-    parser.add_argument("--dry-run", action="store_true", help="Aperçu sans écriture")
-    parser.add_argument("--json", action="store_true", help="Sortie JSON")
-    
-    args = parser.parse_args(argv)
-    
+    parser = argparse.ArgumentParser(description="Give the PDF reports of a folder an id and a Markdown file per page.")
+    parser.add_argument("--reports", required=True, help="Folder of the reports.")
+    parser.add_argument("--work", required=True, help="Work folder, beside the reports folder.")
+    parser.add_argument("--dry-run", action="store_true", help="Count the reports and write nothing.")
+    parser.add_argument("--json", action="store_true", help="JSON output (the only output).")
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
     reports_dir = Path(args.reports)
     work_dir = Path(args.work)
-    
-    if not reports_dir.exists():
-        print(json.dumps({"error": "Dossier des rapports introuvable", "status": "refused"}))
-        return 2
-
-    if args.dry_run:
-        pdf_files = sorted([f for f in reports_dir.iterdir() if f.is_file() and _is_pdf(f)])
-        skipped = skipped_count(reports_dir)
-        output = {
-            "reports": len(pdf_files),
-            "skipped": skipped
-        }
-        print(json.dumps(output))
-        return 0
-    
+    if not reports_dir.is_dir():
+        print(json.dumps({"error": "reports folder not found", "status": "refused"}))
+        return EXIT_REFUSAL
     try:
+        if args.dry_run:
+            _check_work_dir(reports_dir, work_dir)
+            pdf_count = sum(1 for path in reports_dir.iterdir() if path.is_file() and _is_pdf(path))
+            print(json.dumps({"reports": pdf_count, "skipped": skipped_count(reports_dir)}))
+            return EXIT_OK
         results = prepare(reports_dir, work_dir)
-        skipped = skipped_count(reports_dir)
-        
-        output = {
-            "reports": len(results),
-            "skipped": skipped,
-            "ids": {r["report_id"]: r["report_id"] for r in results}
-        }
-        print(json.dumps(output))
-        return 0
-    except PrepareError as e:
-        output = {
-            "error": str(e),
-            "status": "refused"
-        }
-        print(json.dumps(output))
-        return 2
-    except Exception as e:
-        output = {
-            "error": str(e),
-            "status": "failure"
-        }
-        print(json.dumps(output))
-        return 1
+        print(json.dumps({"reports": len(results), "skipped": skipped_count(reports_dir),
+                          "ids": [result["report_id"] for result in results]}))
+        return EXIT_OK
+    except PrepareError:
+        print(json.dumps({"error": "preparation refused", "status": "refused"}))
+        return EXIT_REFUSAL
+    except Exception as error:
+        print(json.dumps({"error": "unexpected error during preparation", "error_type": type(error).__name__,
+                          "status": "failure"}))
+        return EXIT_FAILURE
 
 
 if __name__ == "__main__":

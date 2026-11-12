@@ -52,7 +52,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan4d.md
 
-- [ ] T1 complete the address guard (second automated security review of baab3ba: addresses that embed another one, shared address space, and the gap between the check and the connection); run after 5b, before plan 8i
+- [x] T1 complete the address guard: night n3 wrote it (26 tests, one failing because `HTTPSConnection` has no `server_hostname`), the cloud then rewrote the module cleanly on 2026-11-12 with the owner's order: pinned connection classes, the requested path, redirects validated at every hop, `ugs_config.load` called with its path, key `references.max_redirects` added to the configuration; 33 tests ok
 
 ## plan5a.md
 
@@ -60,11 +60,11 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan5b.md
 
-- [x] T1 report_prepare and its test: kit run u5b (4th attempt), 8 tests ok, signatures and plan tests match; stopped at the audit round limit. Residuals: docstrings and comments in French (the first attempts ran before the English language settings), one comment records reasoning (R103), module constants for id and page padding, --dry-run skips the containment check; the id map file is named `ids` as plans 5b and 8k say, while plan 11 says ids.json (to align when plan 11 is run)
+- [x] T1 report_prepare and its test: kit run u5b (4th attempt), 8 tests ok, signatures and plan tests match; stopped at the audit round limit. Residuals: docstrings and comments in French (the first attempts ran before the English language settings), one comment records reasoning (R103), module constants for id and page padding, --dry-run skips the containment check; the id map file is named `ids` as plans 5b and 8k say, while plan 11 says ids.json (to align when plan 11 is run) ; 2026-11-12: residuals cleared by the owner-ordered rewrite (English, constants moved to the configuration, ids.json, containment checked in a dry run, 15 tests ok)
 
 ## plan5e.md
 
-- [ ] T1 fixed failure message of report_prepare (automated security review of fb62946: `main()` printed `str(e)` for an unexpected exception, which can carry a report file name); run after 4d, before plan 8k uses the module
+- [x] T1 fixed failure message of report_prepare: done with the 2026-11-12 rewrite of plan 5b (no exception text is printed, only its type; test_an_unexpected_failure_prints_the_type_and_no_path)
 
 ## plan5c.md
 

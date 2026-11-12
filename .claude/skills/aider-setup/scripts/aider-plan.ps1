@@ -417,6 +417,31 @@ foreach ($f in $alwaysOnFiles) {
     $alwaysOnArgs += @("--read", (Resolve-Path -LiteralPath $f).Path)
 }
 
+# rules.md is written by hand and is the only copy, so its format is checked before every pass: a rule
+# defined twice, a gap in the numbering or a rule over the per-rule cap refuses the run and names the
+# rule. Nothing cuts a long rule for the student any more (a generator used to, without saying so).
+$rulesFile = @($alwaysOnFiles | Where-Object { (Split-Path $_ -Leaf) -eq "rules.md" }) | Select-Object -First 1
+if ($rulesFile) {
+    $ruleChecker = Join-Path $PSScriptRoot "aider-rules-check.py"
+    if (-not (Test-Path -LiteralPath $ruleChecker)) {
+        Write-Refusal @("REFUSED: aider-rules-check.py is missing beside the driver: $ruleChecker",
+                        "  It validates $rulesFile before every run. Reinstall the kit (setup.ps1).")
+        exit 2
+    }
+    $ruleCap = [int](Get-BudgetValue $budget "ceilings.rule_body_tokens")
+    # stderr is captured here, and under "Stop" PowerShell 5.1 turns the first stderr line of a native
+    # command into a terminating error that hides the rest (see Invoke-TestCommand).
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { $ruleReport = & $venvPython $ruleChecker $rulesFile --max-rule-tokens $ruleCap 2>&1 }
+    finally { $ErrorActionPreference = $prevEap }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Refusal (@($ruleReport | ForEach-Object { "$_" }) + @("  Fix $rulesFile, then run again."))
+        exit 2
+    }
+    Write-Host ("  rules.md: {0}" -f (($ruleReport | ForEach-Object { "$_" }) -join " "))
+}
+
 # --- Skills, one bundle per stage ------------------------------------------
 # A skill is read-only prose. aider has no skill system: nothing invokes these
 # files and nothing enforces them, exactly as with conventions.md. They make the

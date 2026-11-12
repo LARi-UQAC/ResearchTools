@@ -28,8 +28,8 @@ set-env:
 
 ## Always-on context ------------------------------------------------------
 # Read-only, so aider can never rewrite its own rules. conventions.md is the
-# working protocol; rules.md is generated from the repository's rule files by
-# aider-rules-sync.py and is not edited by hand.
+# working protocol; rules.md is the coding rules, written by hand and checked by
+# aider-rules-check.py before every run.
 read:
   - {{HOME}}/.config/aider/conventions.md
   - {{HOME}}/.config/aider/rules.md

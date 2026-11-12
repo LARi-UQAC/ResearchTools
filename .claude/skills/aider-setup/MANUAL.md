@@ -772,8 +772,13 @@ each carries a comment saying where its number came from.
 
 **The driver prints the whole budget, against your files, at the top of every run
 including a dry run. Read that rather than any number written down here.** That
-is the one rule keeping this manual from going stale, and it is the same rule the
-kit applies to `rules.md`.
+is the one rule keeping this manual from going stale.
+
+**Every file the model reads obeys its ceiling, and the driver checks it before the first call.** A file over
+its ceiling is flagged `OVER`. `rules.md` is checked one rule at a time as well: it is written by hand and is the
+only copy of the rules, so you edit it in place, a rule opens a line as a bolded `**Rn - statement.**`, the
+numbers run from R0 without a gap, and each rule stays under `ceilings.rule_body_tokens`. A rule numbered twice,
+a gap in the numbers or a rule over the cap refuses the run and names the rule. Nothing shortens a rule for you.
 
 Two things are worth understanding before changing any ceiling:
 

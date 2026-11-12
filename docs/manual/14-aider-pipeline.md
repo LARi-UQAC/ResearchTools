@@ -64,10 +64,10 @@ then the reviewer, which writes `audit.md` and may reopen the plan for one more 
 A plain `cmd` entry point (`aider-night.ps1`/`.bat`) starts a night, holding a wake lock so
 Windows' Modern Standby does not throttle an unattended run, and pushes a branch at the end -
 merging to a protected branch stays a human decision, made the next morning after reading
-`audit.md`. The rules every model follows (`config/rules.md`) are 26 coding rules curated by hand
-in `config/rules-local/aider-kit.md` since 2026-11-07, in plain words and with no reference to this
-toolkit: constants and configuration, errors, tests, function headers, naming, comments and layout.
-The generator only assembles that file. Rules about documents, agents or process (the review bounds,
+`audit.md`. The rules every model follows (`config/rules.md`) are 26 coding rules curated by hand,
+R0 to R25, in plain words and with no reference to this toolkit: constants and configuration, errors,
+tests, function headers, naming, comments and layout. The file is the only copy and is edited in place;
+`aider-rules-check.py` validates it before every run. Rules about documents, agents or process (the review bounds,
 the plan header, the skill-first rule) are left out on purpose, because a model that writes code
 cannot apply them. The file measures 1618 tokens
 (`token_count.py`, 2026-11-07) against a ceiling of 2000. Setup, tuning, and rebuilding the student-facing kit: see

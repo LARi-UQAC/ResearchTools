@@ -441,9 +441,8 @@ provenance (R13); `scripts/aider-gpu-probe.py` / `aider-thread-probe.py` /
 `CONFIG_OLLAMA.md` is built from, on this machine's own card rather than assumed.
 
 `config/rules.md` — the file the driver passes as `--read` on every single call — is
-**generated, never a static copy**: `scripts/aider-rules-sync.py` derives it from this
-repository's own `.claude/rules/*.md` plus `config/rules-local/`, so the rules Aider's models
-follow cannot drift from the rules ResearchTools enforces everywhere else. `scripts/build/`
+**written by hand and the only copy of the rules**: `scripts/aider-rules-check.py` validates it
+before every run (no number twice, no gap from R0, no rule over the per-rule cap, nothing cut). `scripts/build/`
 is the packaging pipeline that assembles the **student-facing** `aider-kit.zip` from this same
 skill's own canonical sources — never from a copy living elsewhere — with a seven-term leak
 scan (the operator's account name, this repository's own name, the GPU model, ...) and an

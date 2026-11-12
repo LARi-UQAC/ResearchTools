@@ -281,7 +281,6 @@ class TestProcessFigure(unittest.TestCase):
 AIDER_CHAPTER = REPO / "docs" / "manual" / "14-aider-pipeline.md"
 AIDER_DEEP_DIVE = REPO / "docs" / "aider-setup.md"
 AIDER_DIR = REPO / ".claude" / "skills" / "aider-setup"
-RULES_HEADER = re.compile(r"^Rules: \d+ \(R0-R(\d+)\)", re.MULTILINE)
 
 
 def says_orchestrator_product(text: str) -> bool:
@@ -328,7 +327,11 @@ class TestAiderChapter(unittest.TestCase):
         # Since 2026-11-07 the model reads 25 hand-curated coding rules: nothing about another
         # project, no source label, no abridging marker, no way to ask a question it cannot ask.
         rules = (AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8")
-        self.assertIsNotNone(RULES_HEADER.search(rules))
+        # The file is written by hand (2026-11-11), so the numbering is read from the rules themselves:
+        # R0, R1, R2 ... without a gap, the same fact aider-rules-check.py enforces before every run.
+        numbers = [int(n) for n in re.findall(r"(?m)^\*\*R(\d+) - ", rules)]
+        self.assertGreaterEqual(len(numbers), 1)
+        self.assertEqual(list(range(len(numbers))), numbers)
         for foreign in ("ResearchTools", "source:", "[...]", "<sub>", "OBSIDIAN", "AskUserQuestion", "CLAUDE.md"):
             with self.subTest(foreign=foreign):
                 self.assertNotIn(foreign, rules)

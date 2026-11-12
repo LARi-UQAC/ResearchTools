@@ -1,7 +1,7 @@
 {
   "encoding": {
     "value": "cl100k_base",
-    "provenance": "specified: the encoder aider uses for its own counts, see count_tokens in .claude/skills/aider-setup/scripts/aider-rules-sync.py"
+    "provenance": "specified: the encoder aider uses for its own counts, see load_counter in .claude/skills/aider-setup/scripts/aider-rules-check.py"
   },
   "chars_per_token": {
     "value": 4.0,

@@ -99,7 +99,7 @@ $targets = @(
     @{ src = "MANUAL.md";                 dst = "$HOME\.config\aider\MANUAL.md" },
     @{ src = "config\aider.conf.yml";     dst = "$HOME\.aider.conf.yml" },
     @{ src = "bin\aider-plan.ps1";        dst = "$HOME\.local\bin\aider-plan.ps1" },
-    @{ src = "bin\aider-rules-sync.py";   dst = "$HOME\.local\bin\aider-rules-sync.py" }
+    @{ src = "bin\aider-rules-check.py";  dst = "$HOME\.local\bin\aider-rules-check.py" }
 )
 
 Say "Installing for: $HOME"
@@ -337,8 +337,7 @@ installation is needed.
 | `config/aider.conf.yml` | the one file aider finds by name |
 | `config/model-settings.yml` | per-model settings. The `num_ctx` here overrides a tuned tag's own Modelfile |
 | `config/conventions.md` | the working protocol the model reads on every call |
-| `config/rules.md` | the coding rules, generated. Do not edit |
-| `config/rules-local/` | where a rule of your own goes, as a bolded `**Rn - statement.**` |
+| `config/rules.md` | the coding rules, written by hand and the only copy: edit it, a rule opens a line as a bolded `**Rn - statement.**`, numbers run from R0 without a gap |
 | `config/context-budget.json` | every token ceiling, each with a comment saying where its number came from |
 | `config/skills.json` | which skill reaches the model at which stage, and its ceiling |
 | `config/skills/` | the skill files themselves, copied so no upstream update can change them mid-project |
@@ -347,7 +346,7 @@ installation is needed.
 | `bin/aider-night.ps1`, `bin/aider-night.bat` | the night entry point: one command, skills wired |
 | `bin/aider-plan.ps1` | the driver: plans, tests, audit, archiving |
 | `bin/aider-plan-core.ps1` | the driver's pure half. It must sit beside the driver, which refuses without it |
-| `bin/aider-rules-sync.py` | regenerates `rules.md` from a rules directory |
+| `bin/aider-rules-check.py` | checks `rules.md` before every run: a rule numbered twice, a gap in the numbers or a rule over its cap refuses the run |
 | `bin/aider-gpu-probe.py`, `.json` | measures which model and context actually puts layers on YOUR card |
 | `bin/aider-thread-probe.py`, `.json` | measures what bounds a model here: memory bandwidth, threads, offload, window cost |
 | `bin/aider-ollama-config.py` | turns the budget plus a measurement into a tuned tag, and reads the tag back |

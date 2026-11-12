@@ -326,6 +326,10 @@ if ($budgetText.Contains($homeToken)) {
     $resolvedDir = Join-Path $env:TEMP ("aider-budget-" + [guid]::NewGuid().ToString("N").Substring(0,8))
     New-Item -ItemType Directory -Force -Path $resolvedDir | Out-Null
     $resolved = Join-Path $resolvedDir "context-budget.json"
+    # The always-on files (conventions.md, rules.md) are rendered to THIS skill's own config folder, as the
+    # skills are below, and not to ~/.config/aider: that folder holds the installed copy of whoever runs the
+    # check, so the result depended on which kit version that machine had installed (R21).
+    $budgetText = $budgetText.Replace($homeToken + "/.config/aider", ((Join-Path $skillRoot "config") -replace '\\', '/'))
     [System.IO.File]::WriteAllText($resolved, $budgetText.Replace($homeToken, ($HOME -replace '\\', '/')),
                                    (New-Object System.Text.UTF8Encoding $false))
     # The per-stage skills are mandatory, and the driver looks for skills.json
@@ -589,6 +593,47 @@ Check "the reopen message carries the reviewer's report on THIS plan only" {
 Check "NEGATIVE CONTROL: no report on the plan, or no audit.md, adds nothing" {
     ((Get-ReopenReport (Join-Path $auditDir "audit.md") "plan7.md") -eq "") -and
     ((Get-ReopenReport (Join-Path $auditDir "absent.md") "plan1.md") -eq "")
+}
+
+Write-Host ""
+# --- rules.md is checked before every pass (2026-11-11) ---------------------------------
+function New-RulesBudget([string]$root, [string]$rulesText) {
+    $rulesFile = Join-Path $root "rules.md"
+    [System.IO.File]::WriteAllText($rulesFile, $rulesText, (New-Object System.Text.UTF8Encoding $false))
+    $bad = Join-Path $root "budget-rules.json"
+    $b = Get-Content -LiteralPath $budget -Raw -Encoding UTF8 | ConvertFrom-Json
+    $b.always_on_files = @(($rulesFile -replace '\\', '/'))
+    ($b | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath $bad -Encoding UTF8
+    return $bad
+}
+
+Check "a rule defined twice refuses the run and names it" {
+    $root = New-Fixture
+    $bad = New-RulesBudget $root "# Coding rules`n`n**R0 - one.** Say it.`n`n**R1 - two.** Say it.`n`n**R1 - again.** Say it.`n"
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.code -eq 2) -and ($r.text -match 'R1 is defined twice')
+}
+
+Check "a gap in the numbering refuses the run and names it" {
+    $root = New-Fixture
+    $bad = New-RulesBudget $root "**R0 - one.** Say it.`n`n**R2 - two.** Say it.`n"
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.code -eq 2) -and ($r.text -match 'missing: R1')
+}
+
+Check "a rule over the per-rule cap refuses the run, naming it and its size, and cuts nothing" {
+    $root = New-Fixture
+    $long = "**R0 - long.** " + (("word " * 400).Trim()) + "`n"
+    $bad = New-RulesBudget $root $long
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.code -eq 2) -and ($r.text -match 'R0 is \d+ tokens, over the cap of') -and ((Get-Content -LiteralPath (Join-Path $root "rules.md") -Raw) -eq $long)
+}
+
+Check "a valid rules file is reported in one line and the run starts" {
+    $root = New-Fixture
+    $bad = New-RulesBudget $root "**R0 - one.** Say it.`n`n**R1 - two.** Say it.`n"
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.text -match 'rules.md: 2 rules R0-R1') -and ($r.text -notmatch 'breaks its own format')
 }
 
 Write-Host ""

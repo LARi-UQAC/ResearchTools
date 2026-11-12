@@ -4,7 +4,7 @@ token_count.py - one counter for any text source (local coding contract, plan 1,
 Why it exists. The size ceilings of `context-budget.json` (spec, plans, progress, audit, code
 file) are only enforceable if something counts tokens the same way everywhere. Three counters
 already exist and none is a tool: `Get-TokenCount` in `aider-plan-core.ps1`, `count_tokens` in
-`aider-rules-sync.py` and `estimate_tokens` in `context_budget.py`. They are left alone because
+`aider-rules-check.py` and `estimate_tokens` in `context_budget.py`. They are left alone because
 the aider kit is standalone. This module counts files, folders, standard input and literal text,
 whatever their provenance, and says how much to trust each figure.
 

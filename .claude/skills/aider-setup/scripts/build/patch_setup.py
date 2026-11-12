@@ -82,7 +82,7 @@ $targets = @(
     # driver resolves it through $PSScriptRoot and exits 2 by name when it is not
     # beside it: install one without the other and every run refuses.
     @{ src = "bin\aider-plan-core.ps1";    dst = (Join-Path $binDir "aider-plan-core.ps1") },
-    @{ src = "bin\aider-rules-sync.py";    dst = (Join-Path $binDir "aider-rules-sync.py") },
+    @{ src = "bin\aider-rules-check.py";   dst = (Join-Path $binDir "aider-rules-check.py") },
     # The GPU probe and its configuration. The manual tells a student to
     # re-measure the load time, the resident size and the CPU/GPU split on their
     # own card; until 2026-09-03 it named no tool for doing it. Every number the
@@ -130,13 +130,9 @@ $targets = @(
 # this installer edited, or the page silently stops being installed and the
 # model reads an instruction naming a document it does not have.
 # Whole directories, copied file by file rather than enumerated: a bundle that
-# gains a page, or a rules directory that gains a rule, must not need this
-# installer edited. rules-local is here for the same reason the skills are: the
-# generated rules.md tells the reader to edit the source and re-run the sync, and
-# on a student machine this directory IS that source.
+# gains a page must not need this installer edited.
 $dirTargets = @(
     @{ src = (Join-Path $kit "config\skills");      dst = (Join-Path $cfgDir "skills");      label = "config\skills" },
-    @{ src = (Join-Path $kit "config\rules-local"); dst = (Join-Path $cfgDir "rules-local"); label = "config\rules-local" },
     # The worked example: the planning prompt AND the plan documents it produced.
     # A tree rather than a file list, so an example that gains a plan does not
     # need this installer edited. Installed rather than left in the archive

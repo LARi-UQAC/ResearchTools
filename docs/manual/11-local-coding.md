@@ -171,7 +171,7 @@ is exact for that encoder. Without one it estimates characters over four and mul
 before a ceiling check, because real over estimated tokens ranged from 0.99 to 1.20 on the
 twelve files of this effort (measured 2026-10-17). It never calls an estimate exact. Three older
 counters remain on purpose, because the aider kit is standalone: `Get-TokenCount` in
-`aider-plan-core.ps1`, `count_tokens` in `aider-rules-sync.py` and `estimate_tokens` in
+`aider-plan-core.ps1`, `load_counter` in `aider-rules-check.py` and `estimate_tokens` in
 `context_budget.py`.
 
 ## The four paths

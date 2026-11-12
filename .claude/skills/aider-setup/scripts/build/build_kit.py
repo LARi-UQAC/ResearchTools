@@ -185,10 +185,9 @@ def scrub(text: str) -> str:
 # --- the generated-copy banner (S44) ----------------------------------------
 # Nine files in the kit are copies of a file that lives outside it, and nothing
 # in eight of them said so, so an edit made to the kit's copy was silently
-# discarded at the next build. rules.md is the ninth and is left alone: its own
-# generator already states the fact and names an action a student can actually
-# take, since rules-local/ ships in the kit and aider-rules-sync.py does too. A
-# second banner there would be two statements of one fact.
+# discarded at the next build. rules.md is the ninth and is left alone: it is
+# written by hand and is the only copy, so a student edits it in place and
+# aider-rules-check.py validates what they wrote.
 #
 # The wording carries BOTH audiences, because "do not edit" is false for half of
 # them: config/*.json and config/*.yml are installed into the student's home by
@@ -407,41 +406,10 @@ copy(SKILL_ROOT / "config/conventions.md", "config/conventions.md")
 copy(SKILL_ROOT / "config/model-settings.yml", "config/model-settings.yml")
 copy(SKILL_ROOT / "config/context-budget.json", "config/context-budget.json")
 
-# rules.md is GENERATED, never a static copy read off disk: this build
-# regenerates it from the canonical .claude/rules/ of the repository this skill
-# now lives in, plus this skill's own rules-local/ addendum, so the kit can
-# never ship a rules.md that has drifted from the rules ResearchTools actually
-# enforces (R1, R2). Written into the skill's own config/ so the checked-in
-# copy stays what the last build actually produced.
-_rules_out = SKILL_ROOT / "config" / "rules.md"
-_sync = subprocess.run(
-    [sys.executable, str(SKILL_ROOT / "scripts" / "aider-rules-sync.py"),
-     "--out", str(_rules_out)],
-    capture_output=True, text=True)
-if _sync.returncode != 0:
-    raise SystemExit(
-        "REFUSED: aider-rules-sync.py could not regenerate rules.md.\n" + _sync.stderr)
-rules = _rules_out.read_text(encoding="utf-8")
-rules = re.sub(r"^Source: `.*`$", "Source: the rule files named by $AIDER_RULES_SOURCE",
-               rules, count=1, flags=re.MULTILINE)
-rules = re.sub(r"<sub>source: ([^<]*)</sub>", r"<sub>rule file: \1</sub>", rules)
-write("config/rules.md", rules)
-
-# The local rules directory travels with the generated file. Without it a student
-# receives the rules frozen and has nowhere to add one of their own: the
-# canonical directory does not exist on their machine, and the generated file
-# says in its own header not to edit it. Shipping the mechanism is what makes
-# that header true rather than a dead end.
-rules_local = SKILL_ROOT / "config" / "rules-local"
-if rules_local.is_dir():
-    for path in sorted(rules_local.glob("*.md")):
-        copy(path, "config/rules-local/" + path.name)
-else:
-    raise SystemExit(
-        "REFUSED: %s does not exist. It carries the rules this kit adds on top of\n"
-        "  the kit-only rules, the function-header rule among them, and a kit without it ships a\n"
-        "  rules.md whose header promises a way to add rules that is not there."
-        % rules_local)
+# rules.md is written by hand and is the only copy of the rules (2026-11-11). It used to be generated from a
+# second file by a script that cut a long rule without a word inside the file; that generator is gone and
+# aider-rules-check.py, shipped below, refuses a file whose rules are too long, numbered twice or with a gap.
+copy(SKILL_ROOT / "config/rules.md", "config/rules.md")
 
 # the aider config, as a template
 copy(pathlib.Path(sys.argv[2]), "config/aider.conf.yml")
@@ -464,6 +432,10 @@ _REQUIRED_SCRIPTS = [
     # card. Shipped 2026-09-03. Until then it carried 98 offline tests and not one
     # reached a student, while the manual told them to re-measure their own
     # hardware and named no tool for doing it.
+    ("aider-rules-check.py", "bin/aider-rules-check.py",
+     "the driver runs it before every pass and exits 2 without it"),
+    ("Test/test_aider_rules_check.py", "bin/Test/test_aider_rules_check.py",
+     "the offline checks on the rules file validator, so a student can prove it before editing rules.md"),
     ("aider-gpu-probe.py", "bin/aider-gpu-probe.py",
      "the manual's 'measure your own machine' instruction has no tool without it"),
     ("aider-gpu-probe.json", "bin/aider-gpu-probe.json",
@@ -571,12 +543,6 @@ for _src in sorted(_WATCHDOG.iterdir()):
 # The substitution is deliberately NOT replaced by another one. A build that
 # edits what it ships is a build whose artefact was never the thing that was
 # tested.
-
-sync = (SKILL_ROOT / "scripts/aider-rules-sync.py").read_text(encoding="utf-8")
-sync = re.sub(r"(?m)^DEFAULT_SOURCE = .*$",
-              'DEFAULT_SOURCE = ""   # no default: the rules directory is site-specific',
-              sync, count=1)
-write("bin/aider-rules-sync.py", sync)
 
 # --- the night entry point --------------------------------------------------
 # The whole point of these two: a student types one command. aider-night.bat is

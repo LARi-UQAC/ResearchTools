@@ -2,8 +2,6 @@
 
 These rules bind every file you write. Follow them exactly.
 
-Rules: 26 (R0-R25)
-
 ---
 
 **R0 - no numeric literal in code.** In a function body the only numbers allowed are 0, 1, 2 and -1.
@@ -80,14 +78,14 @@ folder and the test command, and the format and lint commands. Follow it exactly
 mark the step `- [!]` and say so; do not guess a language.
 
 **R20 - names say what a thing is or does.** A function name is a verb followed by what it acts on,
-`verb_complement`, in the case the spec gives for functions: `compute_speed`, `load_config`,
-`check_bounds`. A name that does not start with a verb is wrong. A private helper is marked the way the
+in the case the spec gives for functions: `compute_speed`, `ComputeSpeed` or `computeSpeed`. A name
+that does not start with a verb is wrong. A private helper is marked the way the
 language marks it. A variable is meaningful, never a single letter except the loop indices `i` and
-`j`. A boolean starts with `is_`, `has_` or `can_` in the same case. A quantity carries its unit
+`j`. A boolean reads as a question (`is_ready`, `has_data`, `can_retry`), in the form and the case
+the spec gives. A quantity carries its unit
 (`speed_mps`, `delay_s`). Types, constants and variables follow the case of the spec.
 
-**R21 - a prefix shows where a variable lives.** `l_` for a local variable of a function
-(`l_total_time`). `g_` for a global that is reassigned, and avoid those. A parameter and a field of an
+**R21 - a prefix shows where a variable lives.** `g_` for a global that is reassigned, and avoid those. A parameter and a field of an
 object carry no prefix. A constant has no prefix: it follows the constant case of the spec.
 
 **R22 - every parameter and every return value has a declared type.** A statically typed language

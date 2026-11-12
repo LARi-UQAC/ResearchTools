@@ -6,15 +6,15 @@
 
 ## plan2.md
 
-- [ ] T1 test_cloud_never_codes_rule follows the one-plan local-coder
+- [x] T1 test_cloud_never_codes_rule follows the one-plan local-coder: done by the cloud on 2026-11-12 by the owner's order (the test reads repository documents the kit project cannot hold), 20 tests ok
 
 ## plan3.md
 
-- [ ] T1 test_manual_local_coding follows the one-plan local-coder
+- [x] T1 test_manual_local_coding follows the one-plan local-coder: done by the cloud on 2026-11-12 as above, the stale diagram of chapter 11 corrected with it, 35 tests ok
 
 ## plan4.md
 
-- [ ] T1 test_plan_contract_rule follows the one-plan local-coder
+- [x] T1 test_plan_contract_rule follows the one-plan local-coder: done by the cloud on 2026-11-12, 15 tests ok
 
 ## plan5.md
 

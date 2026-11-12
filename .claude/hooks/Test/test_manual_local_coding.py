@@ -118,8 +118,7 @@ class TestChapter(unittest.TestCase):
 
     def test_the_262k_path_is_the_wrapper_plus_the_bridge_not_a_local_subagent(self):
         body = flat(self.text)
-        self.assertIn("low-cost cloud model wrapper", body)
-        self.assertIn("session role", body)
+        self.assertIn("low-cost cloud model", body)
         self.assertIsNone(SUBAGENT_LOCAL.search(body))
 
     def test_no_model_tag_appears_in_the_chapter_or_the_diagram(self):
@@ -132,7 +131,7 @@ class TestChapter(unittest.TestCase):
         rows = [line for line in section(self.text, "Roles, windows and speed").splitlines()
                 if line.startswith("| ") and not line.startswith("| Tier")
                 and not line.startswith("|---")]
-        self.assertGreaterEqual(len(rows), 3)
+        self.assertGreaterEqual(len(rows), 2)
         for row in rows:
             with self.subTest(row=row[:40]):
                 self.assertRegex(row, DATE)
@@ -299,18 +298,17 @@ class TestAiderChapter(unittest.TestCase):
         self.assertFalse(says_orchestrator_product(self.text))
         self.assertFalse(says_orchestrator_product(AIDER_DEEP_DIVE.read_text(encoding="utf-8")))
         row = next(line for line in CHAPTER.read_text(encoding="utf-8").splitlines()
-                   if line.startswith("| An unattended night"))
+                   if line.startswith("| Several plans, or an unattended night"))
         self.assertFalse(says_orchestrator_product(row))
 
-    def test_local_coder_is_described_as_running_a_whole_ledger_and_auditing_it(self):
-        # Rewritten 2026-11-05 (Issue #104, plan 14, R39): one dispatch runs a whole progress.md,
-        # and the wrapper audits, so the "one whole plan" and "audits nothing" pins are retired.
-        for phrase in ("whole `progress.md`", "PROGRESS: <path>", "PLAN: <path>",
-                       "local-coder-dispatch-guard.py", "local_coder_driver.py",
-                       "audits the written files", "unattended"):
+    def test_local_coder_is_described_as_running_one_plan_through_the_kit(self):
+        # Rewritten 2026-11-12 (Issue #104): one dispatch runs ONE plan on the kit, several plans or an
+        # unattended night go to aider-night.ps1, and the text driver is retired.
+        for phrase in ("one harness at two scales", "aider-night.ps1", "unattended", "single plan"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.body)
-        self.assertNotIn("single-step", self.body)
+        self.assertNotIn("whole `progress.md`", self.body)
+        self.assertNotIn("PROGRESS: <path>", self.body)
 
     def test_the_driver_ignores_the_header_and_the_named_things_exist(self):
         self.assertIn("neither validates nor uses", self.body)

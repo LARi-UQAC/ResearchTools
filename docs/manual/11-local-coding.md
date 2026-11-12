@@ -34,7 +34,7 @@ flowchart TD
     E --> F[Write the header: executor, tier, bounds]
     F --> G{Which executor?}
     G -- work that writes no code --> H["cloud: superpowers:executing-plans"]
-    G -- plans of one progress.md --> J[local-coder: wrapper launches the driver and audits, local coder model writes the code]
+    G -- one plan --> J[local-coder: wrapper mounts the plan, runs the kit and reviews, the kit's writer model writes the code]
     J --> K{Plan reply fits the coder window?}
     K -- yes --> L[tier simple or standard]
     K -- no --> M[tier large, session role]
@@ -66,7 +66,7 @@ test fails when the two differ. Reading it from the top:
 - The session asks you for the review bounds before it writes the plan header, because the
   header carries them.
 - The executor decision has three outcomes: the session itself runs work that writes no code,
-  the plans of one `progress.md` go to `local-coder`, or an unattended night goes to aider.
+  one plan goes to `local-coder`, and several plans or an unattended night go to aider.
 - For `local-coder` the question is whether each plan's prompt plus reply fits the coder
   window. If it does not and the plan cannot be split, the plan takes the large tier.
 - Every path ends in the same place: a worktree branch and a review round on its diff. The loop

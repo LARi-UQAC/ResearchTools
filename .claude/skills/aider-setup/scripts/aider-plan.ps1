@@ -992,7 +992,18 @@ function Invoke-Aider([string[]]$argv, [string]$logPath, [string]$workDir = "") 
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & aider @argv 2>&1 | Tee-Object -FilePath $logPath | Out-Host
+        # The log is UTF-8 with a mark, written line by line: Tee-Object wrote UTF-16, which an editor that
+        # guesses the encoding showed as Chinese characters (reported twice, 2026-11-11 and 2026-11-12).
+        # --no-detect-urls: aider otherwise scrapes every URL found in the message, plan text included, with
+        # a browser, BEFORE it calls the model. Measured 2026-11-12: a plan about a link-local address made
+        # it try to open 169.254.1.1, 192.168.1.1 and a private host, and the model never loaded.
+        [System.IO.File]::WriteAllText($logPath, "", (New-Object System.Text.UTF8Encoding($true)))
+        $noMark = New-Object System.Text.UTF8Encoding($false)
+        & aider @argv --no-detect-urls 2>&1 | ForEach-Object {
+            $text = "$_"
+            [System.IO.File]::AppendAllText($logPath, $text + "`r`n", $noMark)
+            $text
+        } | Out-Host
         return [int]$LASTEXITCODE
     } finally {
         $ErrorActionPreference = $prev
@@ -1438,7 +1449,43 @@ function Invoke-PlanQuality([string]$planPath, [string]$logPath) {
 
     $text = ""
     if (Test-Path -LiteralPath $sandQuality) { $text = Get-Content -LiteralPath $sandQuality -Raw -Encoding UTF8 }
-    return Get-QualityScore $text $planName
+    return Get-QualityScore $text $planName (Measure-PlanTests $planPath)
+}
+
+# Runs the test files a plan names, one at a time, and returns what Get-QualityScore needs: total and passed
+# counts summed over the files, or $null when they cannot be run (the test command does not start with a Python
+# interpreter, so the driver does not know how to run one file; or the plan names no test file that exists).
+# Run by the DRIVER with the interpreter of the test command, never by the model. Each file has a time limit
+# and its whole process tree is killed at it, so a hung test cannot hold the run.
+function Measure-PlanTests([string]$planPath) {
+    $interp = Get-TestInterpreter $testCmd
+    if ($null -eq $interp) { return $null }
+    $files = @(Get-PlanTargets $planPath | Where-Object { $_ -match '[\\/]Test[\\/]test_[^\\/]+\.py$' -and (Test-Path -LiteralPath $_ -PathType Leaf) })
+    if ($files.Count -eq 0) { return $null }
+    $total = 0; $passed = 0
+    $prevUtf8 = $env:PYTHONUTF8
+    $env:PYTHONUTF8 = "1"
+    try {
+        foreach ($f in $files) {
+            $tmp = [System.IO.Path]::GetTempFileName()
+            try {
+                $p = Start-Process -FilePath "cmd.exe" -ArgumentList ('/c ""{0}" "{1}" > "{2}" 2>&1"' -f $interp, $f, $tmp) -WorkingDirectory $proj -PassThru -WindowStyle Hidden
+                if (-not $p.WaitForExit($QualityTestTimeoutSeconds * 1000)) {
+                    & taskkill /T /F /PID $p.Id 2>&1 | Out-Null
+                }
+                $out = Get-Content -LiteralPath $tmp -Raw -Encoding UTF8
+                if ($null -eq $out) { $out = "" }
+                $c = Get-TestCounts $out
+                $total += $c.total; $passed += $c.passed
+            } finally {
+                Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } finally {
+        $env:PYTHONUTF8 = $prevUtf8
+    }
+    if ($total -eq 0) { return $null }
+    return @{ total = $total; passed = $passed }
 }
 
 # --- The audit pass --------------------------------------------------------
@@ -1687,7 +1734,9 @@ if (-not $NoAudit -and $auditModel -ne "") {
                 }
                 $scores += $s
                 if ($s.scored) {
-                    Write-Host ("    {0} % ({1} full, {2} partial, {3} missing)" -f $s.percent, $s.full, $s.partial, $s.missing) -ForegroundColor Green
+                    $testNote = "tests not measured"
+                    if ($s.testsMeasured) { $testNote = "tests {0}/{1}" -f $s.testsPassed, $s.testsTotal }
+                    Write-Host ("    {0} % (reviewer {1} %, {2}; {3} full, {4} partial, {5} missing)" -f $s.percent, $s.reviewer, $testNote, $s.full, $s.partial, $s.missing) -ForegroundColor Green
                 } else {
                     Write-Host "    not scored: $($s.reason)" -ForegroundColor Yellow
                 }

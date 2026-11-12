@@ -499,10 +499,11 @@ function Test-WatchdogStop([string]$logs, [string]$planName) {
 }
 
 # Re-save a test log as UTF-8 WITH a byte order mark. The test command writes through cmd's redirection, in
-# plain bytes with no mark, while every other log of a run is UTF-16 written by Tee-Object, so an editor that
-# had guessed UTF-16 for one showed the other as Chinese characters (reported 2026-11-11, the content was
-# intact). A mark is the one signal every editor and Get-Content honour, and nothing parses a log as data, so
-# unlike a JSON file it costs nothing here. A log that is already UTF-16 is converted, never read as UTF-8.
+# plain bytes with no mark, while until 2026-11-12 every other log of a run was UTF-16 written by Tee-Object, so
+# an editor that had guessed UTF-16 for one showed the other as Chinese characters (reported 2026-11-11, the
+# content was intact). Every log is now UTF-8 with a mark. A mark is the one signal every editor and Get-Content
+# honour, and nothing parses a log as data, so unlike a JSON file it costs nothing here. A log that is already
+# UTF-16 (one written by an older driver) is converted, never read as UTF-8.
 function Convert-TestLogToUtf8Bom([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return }
     $bytes = [System.IO.File]::ReadAllBytes($Path)
@@ -515,7 +516,7 @@ function Convert-TestLogToUtf8Bom([string]$Path) {
     [System.IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($true)))
 }
 
-# A log read as it was written: the run logs are UTF-16 with a mark (Tee-Object), the test logs UTF-8.
+# A log read as it was written: UTF-8 with a mark since 2026-11-12, or UTF-16 with a mark for a log an older driver wrote.
 function Get-LogText([string]$Path) {
     $b = [System.IO.File]::ReadAllBytes($Path)
     if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { return [System.Text.Encoding]::Unicode.GetString($b) }
@@ -603,6 +604,51 @@ function Get-ReopenReport([string]$auditPath, [string]$planName) {
 
 $QualityStatusWeights = @{ full = 1.0; partial = 0.5; missing = 0.0 }
 
+# Share of the final score that comes from the plan's own tests (chosen by the owner 2026-11-12, not measured).
+# The reviewer reads code and never runs it, so on 2026-11-12 it scored 100 percent a module whose central
+# call raised a TypeError (25 of 26 tests passed): the tests are the evidence it cannot produce. The other
+# 80 percent is the reviewer's judgement of the requirements.
+$QualityTestWeight = 0.2
+
+# The limit of one test file run by the quality stage, in seconds (the author's choice, unmeasured).
+$QualityTestTimeoutSeconds = 300
+
+# The interpreter the test command starts with, or $null when it does not start with one. The quality stage
+# runs one test file at a time and needs a command that takes a file; only a Python interpreter is known to.
+# Input: the whole test command. Output: the interpreter path as written, or $null.
+function Get-TestInterpreter([string]$testCommand) {
+    $c = $testCommand.Trim()
+    if ($c -eq "") { return $null }
+    if ($c.StartsWith('"')) {
+        $end = $c.IndexOf('"', 1)
+        if ($end -lt 0) { return $null }
+        $first = $c.Substring(1, $end - 1)
+    } else {
+        $first = ($c -split '\s+', 2)[0]
+    }
+    if ((Split-Path $first -Leaf) -match '^python[\d.]*(\.exe)?$') { return $first }
+    return $null
+}
+
+# Reads the end of a unittest run. Input: the output text. Output: total tests run and how many passed
+# (failures and errors are subtracted). Output that holds no "Ran N tests" line means the file never ran
+# (an import error, a syntax error), which counts as one test failed so the plan is not rewarded for it;
+# "Ran 0 tests" means the file holds no test and adds nothing.
+function Get-TestCounts([string]$output) {
+    $ran = [regex]::Matches($output, 'Ran (\d+) tests?')
+    if ($ran.Count -eq 0) { return @{ total = 1; passed = 0 } }
+    $total = [int]$ran[$ran.Count - 1].Groups[1].Value
+    $bad = 0
+    $failed = [regex]::Match($output, 'FAILED \(([^)]*)\)')
+    if ($failed.Success) {
+        foreach ($kind in @("failures", "errors")) {
+            $m = [regex]::Match($failed.Groups[1].Value, "$kind=(\d+)")
+            if ($m.Success) { $bad += [int]$m.Groups[1].Value }
+        }
+    }
+    return @{ total = $total; passed = [Math]::Max($total - $bad, 0) }
+}
+
 # The message that makes the reviewer list and judge the requirements of one plan. Inputs: the plan file, the
 # project folder, the token budget for the code shown, and the reviewer brief text. Output: a hashtable with the
 # message text, the files shown and the files left out for lack of room (named in the message, so the reviewer
@@ -643,10 +689,13 @@ function Get-QualityPrompt([string]$planPath, [string]$projectRoot, [int]$maxTok
     return @{ text = $text; shown = $shown.ToArray(); omitted = $omitted.ToArray() }
 }
 
-# Reads the reviewer's lines back and does the arithmetic. Inputs: the text of quality.md and the plan name.
+# Reads the reviewer's lines back and does the arithmetic. Inputs: the text of quality.md, the plan name and
+# optionally the plan's test counts (a hashtable with total and passed, $null when the tests could not be run).
 # Output: counts and a percentage, or scored = $false with the reason when the reviewer wrote no usable line,
-# which is reported as "not scored" and never as 0 percent.
-function Get-QualityScore([string]$qualityText, [string]$planName) {
+# which is reported as "not scored" and never as 0 percent. With test counts the percentage is the reviewer's
+# share scaled to (1 - test weight) plus the test weight times the share of tests that pass; without them it is
+# the reviewer's alone and testsMeasured is $false, so the report says so.
+function Get-QualityScore([string]$qualityText, [string]$planName, $tests = $null) {
     $inside = $false
     $full = 0; $partial = 0; $missing = 0
     $lines = New-Object System.Collections.Generic.List[string]
@@ -664,11 +713,20 @@ function Get-QualityScore([string]$qualityText, [string]$planName) {
     }
     $total = $full + $partial + $missing
     if ($total -eq 0) {
-        return @{ plan = $planName; scored = $false; reason = "the reviewer wrote no requirement line under '## quality $planName'"; total = 0; full = 0; partial = 0; missing = 0; percent = $null; lines = @() }
+        return @{ plan = $planName; scored = $false; reason = "the reviewer wrote no requirement line under '## quality $planName'"; total = 0; full = 0; partial = 0; missing = 0; percent = $null; reviewer = $null; testsMeasured = $false; testsPassed = 0; testsTotal = 0; lines = @() }
     }
     $points = $full * $QualityStatusWeights.full + $partial * $QualityStatusWeights.partial + $missing * $QualityStatusWeights.missing
+    $reviewer = 100.0 * $points / $total
+    $measured = ($null -ne $tests) -and ($tests.total -gt 0)
+    if ($measured) {
+        $percent = (1.0 - $QualityTestWeight) * $reviewer + $QualityTestWeight * 100.0 * $tests.passed / $tests.total
+    } else {
+        $percent = $reviewer
+    }
     return @{ plan = $planName; scored = $true; reason = ""; total = $total; full = $full; partial = $partial; missing = $missing
-              percent = [int][math]::Round(100.0 * $points / $total); lines = $lines.ToArray() }
+              percent = [int][math]::Round($percent); reviewer = [int][math]::Round($reviewer)
+              testsMeasured = $measured; testsPassed = $(if ($measured) { $tests.passed } else { 0 }); testsTotal = $(if ($measured) { $tests.total } else { 0 })
+              lines = $lines.ToArray() }
 }
 
 # The Markdown a person reads: one table, then the requirements that are not fully met, per plan. Input: the
@@ -677,13 +735,18 @@ function Format-QualityReport($scores) {
     $out = New-Object System.Collections.Generic.List[string]
     $out.Add("# Plan quality")
     $out.Add("")
-    $out.Add("How closely the code follows each plan, judged requirement by requirement by the reviewer model and counted by the driver (full counts 1, partial 0.5, missing 0). It says nothing about whether the tests pass.")
+    $weightPercent = [int][math]::Round(100.0 * $QualityTestWeight)
+    $out.Add("How closely the code follows each plan. Quality is $(100 - $weightPercent) percent the reviewer model's judgement of the plan's requirements, one by one (full counts 1, partial 0.5, missing 0, counted by the driver, who reads the code and does not run it), plus $weightPercent percent the share of the plan's own tests that pass. A plan whose tests could not be run is scored on the reviewer's judgement alone and the Tests column says so.")
     $out.Add("")
-    $out.Add("| Plan | Quality | Full | Partial | Missing |")
-    $out.Add("|---|---:|---:|---:|---:|")
+    $out.Add("| Plan | Quality | Reviewer | Tests | Full | Partial | Missing |")
+    $out.Add("|---|---:|---:|---:|---:|---:|---:|")
     foreach ($s in $scores) {
-        if ($s.scored) { $out.Add("| $($s.plan) | $($s.percent) % | $($s.full) | $($s.partial) | $($s.missing) |") }
-        else { $out.Add("| $($s.plan) | not scored | - | - | - |") }
+        if ($s.scored) {
+            $testCell = "not measured"
+            if ($s.testsMeasured) { $testCell = "$($s.testsPassed)/$($s.testsTotal)" }
+            $out.Add("| $($s.plan) | $($s.percent) % | $($s.reviewer) % | $testCell | $($s.full) | $($s.partial) | $($s.missing) |")
+        }
+        else { $out.Add("| $($s.plan) | not scored | - | - | - | - | - |") }
     }
     foreach ($s in $scores) {
         $out.Add("")

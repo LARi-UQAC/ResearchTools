@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -685,7 +685,51 @@ Check "the report has one table with the percentages and lists what is not fully
     $a = Get-QualityScore "## quality plan1.md`n- [full] a - ok`n- [missing] b - absent`n" "plan1.md"
     $b = Get-QualityScore "no lines" "plan2.md"
     $r = Format-QualityReport @($a, $b)
-    ($r -match '\| plan1.md \| 50 % \| 1 \| 0 \| 1 \|') -and ($r -match '\| plan2.md \| not scored') -and ($r -match '\*\*missing\*\* b - absent') -and ($r -notmatch '\*\*full\*\*')
+    ($r -match '\| plan1.md \| 50 % \| 50 % \| not measured \| 1 \| 0 \| 1 \|') -and ($r -match '\| plan2.md \| not scored') -and ($r -match '\*\*missing\*\* b - absent') -and ($r -notmatch '\*\*full\*\*')
+}
+
+# --- The tests count for 20 percent of the score (owner, 2026-11-12) ---------------------------------
+Check "20 percent of the score is the share of tests that pass: reviewer 100 and 25 of 26 tests gives 99" {
+    $t = "## quality plan1.md`n- [full] a - ok`n- [full] b - ok`n"
+    $s = Get-QualityScore $t "plan1.md" @{ total = 26; passed = 25 }
+    $s.scored -and $s.testsMeasured -and ($s.reviewer -eq 100) -and ($s.percent -eq 99) -and ($s.testsPassed -eq 25) -and ($s.testsTotal -eq 26)
+}
+
+Check "the reviewer's share is scaled to 80 and the tests fill the other 20: reviewer 50 with every test green gives 60" {
+    $t = "## quality plan1.md`n- [full] a - ok`n- [missing] b - absent`n"
+    $s = Get-QualityScore $t "plan1.md" @{ total = 10; passed = 10 }
+    ($s.reviewer -eq 50) -and ($s.percent -eq 60)
+}
+
+Check "NEGATIVE CONTROL: every test red costs the full 20 points, and no measured tests leaves the reviewer's number alone" {
+    $t = "## quality plan1.md`n- [full] a - ok`n"
+    $red = Get-QualityScore $t "plan1.md" @{ total = 4; passed = 0 }
+    $none = Get-QualityScore $t "plan1.md" $null
+    $zero = Get-QualityScore $t "plan1.md" @{ total = 0; passed = 0 }
+    ($red.percent -eq 80) -and ($none.percent -eq 100) -and (-not $none.testsMeasured) -and ($zero.percent -eq 100) -and (-not $zero.testsMeasured)
+}
+
+Check "the report shows the tests as passed over run, and the sentence on the weights" {
+    $a = Get-QualityScore "## quality plan1.md`n- [full] a - ok`n" "plan1.md" @{ total = 26; passed = 25 }
+    $r = Format-QualityReport @($a)
+    ($r -match '\| plan1.md \| 99 % \| 100 % \| 25/26 \| 1 \| 0 \| 0 \|') -and ($r -match '80 percent the reviewer') -and ($r -match '20 percent the share of the plan')
+}
+
+Check "unittest output is read: failures and errors are subtracted, a file that never ran counts as one failure" {
+    $ok = Get-TestCounts "...`nRan 10 tests in 0.1s`n`nOK`n"
+    $bad = Get-TestCounts "Ran 26 tests in 0.1s`n`nFAILED (errors=1)`n"
+    $mixed = Get-TestCounts "Ran 8 tests in 0.1s`n`nFAILED (failures=2, errors=1, skipped=1)`n"
+    $crash = Get-TestCounts "Traceback (most recent call last):`nSyntaxError: invalid syntax`n"
+    $empty = Get-TestCounts "Ran 0 tests in 0.0s`n`nNO TESTS RAN`n"
+    ($ok.total -eq 10 -and $ok.passed -eq 10) -and ($bad.total -eq 26 -and $bad.passed -eq 25) -and ($mixed.total -eq 8 -and $mixed.passed -eq 5) -and
+    ($crash.total -eq 1 -and $crash.passed -eq 0) -and ($empty.total -eq 0)
+}
+
+Check "the test interpreter is the first word of the test command, quoted or not, only when it is Python" {
+    ((Get-TestInterpreter '.\.venv\Scripts\python.exe run_tests.py') -eq '.\.venv\Scripts\python.exe') -and
+    ((Get-TestInterpreter '"C:\Program Files\Python312\python.exe" -m unittest') -eq 'C:\Program Files\Python312\python.exe') -and
+    ((Get-TestInterpreter 'python3 -m pytest') -eq 'python3') -and
+    ($null -eq (Get-TestInterpreter 'cargo test')) -and ($null -eq (Get-TestInterpreter '')) -and ($null -eq (Get-TestInterpreter '"unclosed python.exe'))
 }
 
 Write-Host ""

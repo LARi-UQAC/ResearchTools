@@ -741,12 +741,16 @@ whether aider used its three fix attempts, the tokens of every request, the name
 and the end of the last test output. Read it first: it tells you which of the three things below
 happened, without opening ten logs.
 
-**`quality.md` says how much of each plan was delivered, whatever the tests say.** After the audit, the
+**`quality.md` says how much of each plan was delivered.** After the audit, the
 reviewer model reads each plan together with the code written for it, archived or blocked, lists the
 requirements the plan states and judges each one: fully met, partly met or missing. The driver does the
 arithmetic (full counts 1, partial 0.5, missing 0) and writes one percentage per plan, then the
-requirements that are not fully met. A plan at 80 percent with failing tests is code to finish, not code to
-rewrite. The number is the reviewer's judgement counted by a script, not a measurement: a plan whose
+requirements that are not fully met. The score is 80 percent that judgement plus 20 percent the share of
+the plan's own test files that pass, because the reviewer reads code and never runs it: it scored 100 percent
+a module whose central call raised a TypeError. Reviewer 100 and 25 of 26 tests passing gives 99. The driver
+runs each test file the plan names, one at a time, with the Python interpreter that starts the test command;
+with any other test command the tests are shown as "not measured" and the score is the reviewer's alone.
+A plan at 80 percent with failing tests is code to finish, not code to rewrite. A plan whose
 reviewer wrote no usable line is shown as "not scored", never as 0. To score the code a previous run left
 behind, without running any plan, use `aider-plan.ps1 -QualityOnly` on the project.
 
@@ -762,9 +766,12 @@ aider opens `https://aider.chat/docs/troubleshooting/token-limits.html` in your 
 request hits the reply limit or fills the window, because the run uses `--yes`. The page is a signal
 that one of the first two rows happened, not a malfunction of the browser: look for it in `blocks.md`.
 
-The logs of a run are UTF-16 (`*-planN.log`, written by `Tee-Object`) except the test logs
-(`*-planN-tests.log`), which are UTF-8 with a byte order mark. Both open correctly in an editor that
-honours the mark; `Get-Content -Encoding Unicode` reads the first kind.
+Every log of a run is UTF-8 with a byte order mark since 2026-11-12, and opens correctly in any editor.
+Logs written by an older driver are UTF-16 (`Get-Content -Encoding Unicode` reads them).
+
+The driver also passes `--no-detect-urls` to aider. Without it aider scrapes every URL it finds in a
+message, plan text included, with a browser before it calls the model: a plan about network addresses
+made it try to open `169.254.1.1`, and the model never loaded.
 
 The pipeline has no path to a merge. That is deliberate — see the last section.
 

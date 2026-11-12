@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter", "Get-MarkCounts")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -723,6 +723,18 @@ Check "unittest output is read: failures and errors are subtracted, a file that 
     $empty = Get-TestCounts "Ran 0 tests in 0.0s`n`nNO TESTS RAN`n"
     ($ok.total -eq 10 -and $ok.passed -eq 10) -and ($bad.total -eq 26 -and $bad.passed -eq 25) -and ($mixed.total -eq 8 -and $mixed.passed -eq 5) -and
     ($crash.total -eq 1 -and $crash.passed -eq 0) -and ($empty.total -eq 0)
+}
+
+Check "the four ledger marks are counted apart: a partial step is neither open nor blocked" {
+    $m = Get-MarkCounts "## plan1.md`n- [x] a`n- [x] b`n- [~] c - module A written, left: module B`n- [ ] d`n- [!] e - blocked`n"
+    $none = Get-MarkCounts "## plan1.md`nplain text, no mark`n"
+    ($m.done -eq 2) -and ($m.partial -eq 1) -and ($m.open -eq 1) -and ($m.blocked -eq 1) -and
+    ($none.done -eq 0) -and ($none.partial -eq 0) -and ($none.open -eq 0) -and ($none.blocked -eq 0)
+}
+
+Check "a ledger holding only [x] and [~] has no open and no blocked step, so the run does not stop on it" {
+    $m = Get-MarkCounts "## plan1.md`n- [x] a`n- [~] b`n"
+    ($m.open -eq 0) -and ($m.blocked -eq 0) -and ($m.partial -eq 1)
 }
 
 Check "the test interpreter is the first word of the test command, quoted or not, only when it is Python" {

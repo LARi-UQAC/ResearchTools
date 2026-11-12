@@ -23,6 +23,16 @@
       "replace": "**How to answer:**"
     },
     {
+      "name": "tests are run by the harness, not by the model (step 1)",
+      "pattern": "write the tests, run the file, they fail \\((.+?) absent\\)",
+      "replace": "write the tests; they must fail while the \\1 is absent"
+    },
+    {
+      "name": "tests are run by the harness, not by the model (step 2)",
+      "pattern": "write the (module|helper), run the file, every test passes",
+      "replace": "write the \\1 so that every test passes"
+    },
+    {
       "name": "decision numbers on the spec line",
       "only_lines_matching": "^\\*\\*Spec:\\*\\*",
       "pattern": "\\bD\\d+(?:\\s*(?:,|to|and)\\s*D?\\d+)*",

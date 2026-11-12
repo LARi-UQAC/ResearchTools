@@ -372,7 +372,8 @@ You do NOT write the heavy text yourself. For every generation task:
 1. Assemble a single, self-contained prompt: the rule constraints that apply, the exact
    input (file contents, the note to summarize, the commits), and a precise instruction of
    what to produce and in what format. The local model has no access to the conversation or
-   the repo, so everything it needs must be in the prompt.
+   the repo, so everything it needs must be in the prompt, and nothing else: no owner, session,
+   rule numbers, dates, branch names, or where a spec or plan came from ("condensed from ...").
 2. Write that prompt to a temporary file in the session scratchpad (avoids shell-quoting
    problems with multi-line input).
 3. Check the prompt fits the measured window BEFORE delegating. A prompt that overflows is

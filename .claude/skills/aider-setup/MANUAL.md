@@ -111,7 +111,10 @@ A run with a blocked plan exits non-zero, so a zero exit means every plan
 finished.
 
 **A plan is archived only when its ledger section has no open line left**, `- [ ]`
-or `- [!]`. Nothing is filed as finished that is not.
+or `- [!]`. Nothing is filed as finished that is not. A line `- [~]` means a step done
+in part, with one line saying what is left: it does not stop the plan or hold it back, the
+quality score measures the share of the plan that was met, and `progress.md` itself stays in
+place while any `- [~]` remains.
 
 **The window is dropped between plans.** Whatever plan 4 needs to know must be in
 `spec.md`, in `progress.md`, or in code already on disk.

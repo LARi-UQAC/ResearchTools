@@ -71,10 +71,24 @@ function Initialize-RunRecord([string]$project, [bool]$dryRun) {
         plans_done   = 0
         steps_done   = 0
         steps_open   = 0
+        steps_partial = 0
         steps_blocked = 0
         tests_exit   = $null
         audit_bytes  = 0
         note         = ""
+    }
+}
+
+# Purpose: count the four ledger marks of a progress.md text. [~] is a step done in part: it is neither open nor
+# blocked, so it never stops a plan, and the plan quality score measures how much of the plan was met.
+# Inputs: ledger (string) - the text of progress.md or of one plan section.
+# Outputs: hashtable with the integers done, open, partial and blocked.
+function Get-MarkCounts([string]$ledger) {
+    return @{
+        done    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[x\]')).Count
+        open    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[\s\]')).Count
+        partial = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[~\]')).Count
+        blocked = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[!\]')).Count
     }
 }
 
@@ -91,9 +105,11 @@ function Update-RunRecord([hashtable]$fields) {
         # rather than tracked, which would drift from the file the model writes.
         if (Test-Path -LiteralPath $progress) {
             $ledger = Get-Content -LiteralPath $progress -Raw -Encoding UTF8
-            $script:RunRecord["steps_done"]    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[x\]')).Count
-            $script:RunRecord["steps_open"]    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[\s\]')).Count
-            $script:RunRecord["steps_blocked"] = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[!\]')).Count
+            $marks = Get-MarkCounts $ledger
+            $script:RunRecord["steps_done"]    = $marks.done
+            $script:RunRecord["steps_open"]    = $marks.open
+            $script:RunRecord["steps_partial"] = $marks.partial
+            $script:RunRecord["steps_blocked"] = $marks.blocked
         }
         $auditFile = Join-Path $plansDir "audit.md"
         if (Test-Path -LiteralPath $auditFile) {

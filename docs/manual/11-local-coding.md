@@ -185,8 +185,8 @@ project outside the repository, created with the kit's own `new-project.ps1` (`s
 `progress.md` whose step lines name their files, and only the existing files the plan reads or changes);
 the kit audits those few files, and only the files the plan names come back. `aider-plan.ps1` runs it: the kit's writer
 model receives the files described in the table below, writes the code and its test, runs the
-plan's tests, fixes in its own loop and ticks `progress.md` with one of three marks and nothing
-else (`- [ ]` open, `- [x]` done, `- [!]` blocked). The kit's reviewer model then audits the result;
+plan's tests, fixes in its own loop and ticks `progress.md` with one of four marks and nothing
+else (`- [ ]` open, `- [x]` done, `- [~]` done in part, `- [!]` blocked). The kit's reviewer model then audits the result;
 that audit is required. The cloud session reviews the written files with `code-review` and
 `security-review` under the R35 bounds of the plan header and writes each finding as an
 `- [ ] audit:` line that the kit runs again. It never edits code and never commits. A `[!]` goes

@@ -239,10 +239,11 @@ One `## <filename>` section per plan. The heading must match the plan's
 filename exactly: the harness reads that section to decide whether the plan is
 finished.
 
-Three marks, and only three:
+Four marks, and only four:
 
 - `- [ ]` not done
 - `- [x]` done, with a short result after the text
+- `- [~]` done in part, with one line saying what is written and what is left
 - `- [!]` blocked, with one line saying what blocked it
 
 The harness adds its own lines here: `- [x] tests pass` after the suite runs,

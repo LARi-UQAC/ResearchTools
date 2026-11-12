@@ -1296,6 +1296,10 @@ if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDi
         Add-LedgerLine $plan.Name "- [!] the writer left steps unticked in this section"
         $failed = 1; $blockedPlans++; continue plans
     }
+    $partialSteps = (Get-MarkCounts $sectionText).partial
+    if ($partialSteps -gt 0) {
+        Write-Host "  $partialSteps step(s) marked [~], done in part: the quality score gives the share of the plan that was met" -ForegroundColor Yellow
+    }
     if ($code -ne 0) {
         Write-Host "  BLOCKED: aider exited $code -> next plan" -ForegroundColor Yellow
         Add-LedgerLine $plan.Name "- [!] aider exited $code on this plan"
@@ -1759,7 +1763,7 @@ if ($failed -eq 0 -and -not $DryRun -and -not $NoAudit -and -not $QualityOnly) {
     $remaining = @(Get-ChildItem -LiteralPath $plansDir -Filter "plan*.md" -File |
                    Where-Object { $_.BaseName -match '^plan(\d+)$' })
     $ledger = Get-Content -LiteralPath $progress -Raw -Encoding UTF8
-    $openSteps = ($ledger -match '(?m)^\s*-\s*\[[\s!]\]')
+    $openSteps = ($ledger -match '(?m)^\s*-\s*\[[\s!~]\]')
 
     if ($remaining.Count -eq 0 -and -not $openSteps) {
         Write-Section "Cycle complete"

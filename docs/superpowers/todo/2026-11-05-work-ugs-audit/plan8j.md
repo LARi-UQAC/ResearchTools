@@ -55,7 +55,7 @@ it raises on purpose.
 - `run_report(work_dir: Path, report_id: str, loop: int, src_pdf: Path, call, ctx, services: dict,
   calibration_note: str, fetch) -> dict`. `services` holds `rubric`, `entries` (language table),
   `criteria_doc`, `hints`, `vision_ok` and `settings` (for `assemble_report`). The ledger is
-  `work_dir/progress.md`; the loop folder is `work_dir/loop-N/R01`. Steps in order, each skipped when
+  `work_dir/ledger.md`; the loop folder is `work_dir/loop-N/R01`. Steps in order, each skipped when
   every ledger line of it is already marked done or blocked:
   1. `grade`: `grade_report` with the partial the JSON file `grade` as `existing`; after each item the partial
      file is saved and the line `grade I01` marked `[x]`, or `[!]` with the item's comment code when

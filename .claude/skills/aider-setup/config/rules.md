@@ -42,12 +42,12 @@ what should have changed and fail if it did not.
 values come from the configuration (R0). No unbounded wait, no unbounded loop.
 
 **R10 - exit codes mean something.** 0 is success, 2 is a refusal by design (bad arguments, missing
-input), any other non-zero is a failure. The module header states it and define each value.
+input), any other non-zero is a failure. The module header states each value.
 
 **R11 - use only what exists.** Call only functions, options and modules that exist in the standard
 library, in a declared dependency or in this project. Never invent a name, a flag or a file.
 
-**R12 - a program that changes state offers `--dry-run`.** It prints what it would do and changes
+**R12 - a command-line program that changes state offers `--dry-run`.** (A library function does not.) It prints what it would do and changes
 nothing. A destructive action also requires `--yes`.
 
 **R13 - a program that changes state also writes a machine-readable report** (JSON) beside its text.
@@ -78,20 +78,22 @@ folder and the test command, and the format and lint commands. Follow it exactly
 mark the step `- [!]` and say so; do not guess a language.
 
 **R20 - names say what a thing is or does.** A function name is a verb followed by what it acts on,
-in the case the spec gives for functions: `compute_speed`, `ComputeSpeed` or `computeSpeed`. A name
-that does not start with a verb is wrong. A private helper is marked the way the
+in the case the spec gives for functions: `compute_speed`, `ComputeSpeed` or `computeSpeed`. A function
+name that does not start with a verb is wrong, except a test (`test_...`), an entry point (`main`) and
+the names the language or the test framework fixes. A private helper is marked the way the
 language marks it. A variable is meaningful, never a single letter except the loop indices `i` and
 `j`. A boolean reads as a question (`is_ready`, `has_data`, `can_retry`), in the form and the case
 the spec gives. A quantity carries its unit
 (`speed_mps`, `delay_s`). Types, constants and variables follow the case of the spec.
 
-**R21 - a prefix shows where a variable lives.** `g_` for a global that is reassigned, and avoid those. A parameter and a field of an
-object carry no prefix. A constant has no prefix: it follows the constant case of the spec.
+**R21 - a prefix shows where a variable lives.** `g_` marks a global that is reassigned; avoid such globals.
+A parameter and a field of an object carry no prefix. A constant has no prefix: it follows the constant
+case of the spec.
 
 **R22 - every parameter and every return value has a declared type.** A statically typed language
 does it in the signature. In a dynamic language, use the language's type annotations.
 
-**R23 - comments.** A comment says WHY: a unit, a constraint, a choice that is not obvious. It never
+**R23 - comments inside a function body** (the header of R18 is not one of them). A comment says WHY: a unit, a constraint, a choice that is not obvious. It never
 repeats what the line does, never records your reasoning, your doubts or a draft ("wait", "let's",
 "maybe", "re-read the spec"), and never keeps commented-out code. Remove such text before you
 finish. No `TODO` and no placeholder body: finish the function or mark the step `- [!]`.

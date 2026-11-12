@@ -11,20 +11,22 @@ This file holds what every plan needs: what is built, the choices that bind the 
 2. Skill and agent `work-ugs-audit`, command `/work-ugs-audit`: grades undergraduate lab and project reports
    (PDF files) against the professor's rubric, **entirely on local models**, writes annotations
    into a copy of each PDF, appends the completed rubric, computes totals by script, analyses the batch
-   against a calibration band, re-grades the whole batch when out of band (two loops, then ask).
+   against a calibration band, re-grades the whole batch when out of band (two loops, then stops with exit code 3).
 3. `scholar-evaluation/references/undergraduate_framework.md`: anchored levels for technical reports.
-4. Skill `figure-review`: the figure criteria (21 undergraduate and research criteria, plus the research
-   TikZ rules), the figure extraction and script checks for PDF and LaTeX, the figure prompt and the
+4. Skill `figure-review`: the figure criteria (22 criteria: 21 judged per figure and 1 judged per report,
+   plus the research TikZ rules), the figure extraction and script checks for PDF and LaTeX, the figure prompt and the
    template. Called by `work-ugs-audit` and by `paper-auditor`, `thesis-auditor`,
    `thesis-proposal-auditor`, `scopus-auditor` and `/tikz`, which are migrated to it.
 
 ## Design choices
 
 - **Draft only.** The professor reviews everything and uploads the result; the program never does.
-- **Local only.** No report text, quote or comment about a report leaves the machine. The wrapper that drives
-  the scripts reads only `progress.md` and JSON status lines carrying a report id (`R01`), a step, a status,
-  counts and scores.
-- **Mechanics.** `spec.md` is the normalized rubric, `progress.md` the ledger with marks `[ ]`, `[x]`, `[!]`.
+- **Local only.** No report text, quote or comment about a report leaves the machine. The assistant that runs
+  the scripts and shows their output to the professor reads only the ledger and JSON status lines carrying a
+  report id (`R01`), a step, a status, counts and scores. So a script prints nothing else.
+- **Mechanics.** The program keeps its own files in the working folder `_correction/`: `rubric.md` is the
+  normalized rubric text, `ledger.md` the ledger with marks `[ ]`, `[x]`, `[!]`. They belong to the program
+  that is built. They are not the `spec.md` and `progress.md` of the project you are coding.
   One grader role produces, one auditor role checks and never edits.
 - **One grader per report.** Consistency is checked at batch level by script.
 - **Calibration for lab and project reports:** target mean 88 percent, sd 4. Re-grade when the mean leaves
@@ -73,8 +75,8 @@ This file holds what every plan needs: what is built, the choices that bind the 
   (`chart`, `diagram`, `flowchart`, `photo`, `other`), `drawing_area_ratio`, `effective_dpi`, `caption`,
   `cited_in_text`, `criteria{}` keyed by the `level: figure` ids of `figure_criteria.json`, each
   `{verdict: pass|fail|not_applicable|not_run, reason}`; plus `report_criteria{style_consistency}`.
-- Working folder beside the reports: `_correction/` with `ids.json`, `spec.md`, `rubric.json`,
-  `progress.md`, `loop_state.json`, `loop-<n>/R01/...`, `loop-<n>/grades.csv`,
+- Working folder beside the reports: `_correction/` with `ids.json`, `rubric.md`, `rubric.json`,
+  `ledger.md`, `loop_state.json`, `loop-<n>/R01/...`, `loop-<n>/grades.csv`,
   `loop-<n>/batch_report.md`.
 
 ## Model roles
@@ -84,8 +86,7 @@ appears in code. A figure step whose role has not passed `vision_probe.py` is `n
 
 ## Constraints
 
-- No student name, file name or report text in the code, a test, a log line read by the wrapper, or a
-  plan. Test fixtures are generated fictitious PDFs.
+- No student name, file name or report text in the code, a test, a printed line, or a plan. Test fixtures are generated fictitious PDFs.
 - No numeric threshold in the code: every one is read from a JSON file that states where the value comes
   from, and a missing key raises an error that names it.
 - No cloud fallback and no truncated prompt: a prompt over the role window is split by section or refused.
@@ -113,7 +114,7 @@ their folder to `sys.path` from its own file location.
   audit_item `{verdict agree|disagree, reason}`; language `{findings[{page, code, quote, proposed, reason}]}`;
   figure `{kind, criteria[{id, verdict, reason}]}`; figure_set `{verdict, reason, figures_involved[]}`;
   rubric = the rubric shape; vision_probe `{x_title, y_title, unit, curve_count}`.
-- Work folder files: ids.json, rubric.json, spec.md, progress.md, loop_state.json, vision_probe.json,
+- Work folder files: ids.json, rubric.json, rubric.md, ledger.md, loop_state.json, vision_probe.json,
   `R01/pages/p001.md`, `R01/figures/`, `R01/model_images/`; per loop `loop-N/R01/` holds grade.json,
   language.json, figures.json, annotations.json, totals.json, annotated.pdf; `loop-N/` holds grades.csv,
   batch_report.md, batch.json.
@@ -125,7 +126,7 @@ their folder to `sys.path` from its own file location.
 ## Acceptance
 
 Every new script has an offline suite with a failure path. A fixture report carrying a marker sentence
-proves the marker never reaches a wrapper-visible output. The five research agents keep every language
+proves the marker never reaches anything a script prints or writes to the ledger. The five research agents keep every language
 flag text, writing-rule number and LaTeX action.
 
 ## Language and conventions
@@ -133,8 +134,8 @@ flag text, writing-rule number and LaTeX action.
 - **Language and version:** Python 3.11 or later. Standard library only, except PyMuPDF (`fitz`) where a plan names it,
   declared in `.claude/skills/figure-review/scripts/requirements.txt`.
 - **Case of names:** functions are `verb_complement` in lower snake case (`compute_total`), private helpers start with
-  an underscore, classes are `PascalCase`, constants are `UPPER_SNAKE_CASE`, variables are lower snake case with the
-  scope prefixes of the coding rules.
+  an underscore, classes are `PascalCase`, constants are `UPPER_SNAKE_CASE`, variables are lower snake case, with the
+  prefix `g_` for a global that is reassigned (the coding rules).
 - **Documentation comment:** a docstring with Purpose, Inputs, Outputs and, when the function raises on purpose, Raises.
 - **Types:** a type annotation on every parameter and every return value.
 - **Tests:** `unittest`, in a folder named `Test` beside the source, one file `test_<module>.py` per module. Each test

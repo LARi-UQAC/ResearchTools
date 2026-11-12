@@ -56,6 +56,21 @@ class CleanTextTests(unittest.TestCase):
         cleaned, _, _ = plan_clean.clean_text(PLAN, self.rules)
         self.assertIn("**How to answer:** Return every file.", cleaned)
 
+    def test_a_step_never_tells_the_model_to_run_a_file(self):
+        text = ("- [ ] Step 1: write the tests, run the file, they fail (module absent).\n"
+                "- [ ] Step 2: write the module, run the file, every test passes.\n"
+                "- [ ] Step 3: write the helper, run the file, every test passes.\n")
+        cleaned, _, _ = plan_clean.clean_text(text, self.rules)
+        self.assertNotIn("run the file", cleaned)
+        self.assertIn("write the tests; they must fail while the module is absent", cleaned)
+        self.assertIn("write the module so that every test passes", cleaned)
+        self.assertIn("write the helper so that every test passes", cleaned)
+
+    def test_a_sentence_that_is_not_a_run_instruction_is_left_alone(self):
+        text = "- [ ] Step 1: write the tests and keep the file small.\n"
+        cleaned, _, _ = plan_clean.clean_text(text, self.rules)
+        self.assertEqual(cleaned, text)
+
     def test_a_second_pass_changes_nothing(self):
         once, _, _ = plan_clean.clean_text(PLAN, self.rules)
         twice, changes, _ = plan_clean.clean_text(once, self.rules)

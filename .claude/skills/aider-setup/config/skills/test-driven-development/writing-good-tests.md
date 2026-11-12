@@ -32,5 +32,6 @@ and the fact that its message names the cause.
 
 ## Test file layout
 
-The test file is a program: it ends with `unittest.main()`, and it puts the parent folder of its own folder
-at the start of `sys.path` before it imports the module it tests.
+Follow the section "Language and conventions" of `spec.md` for the test framework, the test folder, the file
+names and how a test file starts and ends. This brief says nothing about those, because they depend on the
+language of the project.

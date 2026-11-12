@@ -17,7 +17,7 @@ grades near the calibration target, exist as data files the driver of plan 8 fil
 
 **Architecture:** One Markdown prompt per model call kind, with `{{PLACEHOLDER}}` slots and no student
 text. One JSON file of output schemas passed to Ollama's `format` field. The framework lives in
-`scholar-evaluation` so other agents can reuse it. Templates for `spec.md` and `progress.md` reproduce
+`scholar-evaluation` so other agents can reuse it. Templates for the working-folder `rubric.md` and `ledger.md` reproduce
 the aider-setup ledger shape.
 
 **Tech Stack:** Markdown, JSON Schema subset accepted by Ollama structured output.

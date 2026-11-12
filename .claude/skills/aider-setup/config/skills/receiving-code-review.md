@@ -16,8 +16,8 @@ so you never stop to ask: you decide, you act, and you say what you decided.
 
 ## Rules
 
-- One entry at a time. Run the tests after each fix. A fix that breaks a test that passed is undone and
-  tried again another way.
+- One entry at a time. After each fix, read the tests that touch the changed code. A fix that would break a
+  test that passed is not made that way: find another way. The harness runs the tests after your reply.
 - Fix the most serious entries first. Do not stop at the first one.
 - Do not add anything the report did not ask for: no new feature, no clean-up of code the report did not
   mention, no rewrite "while you are there".

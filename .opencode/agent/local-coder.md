@@ -57,6 +57,25 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    the message. The models are the owner's aider configuration, never a resolver role. You never
    generate the code on the cloud, never switch to another model and never pass a model name, and a
    missing model is a refusal, not a substitution (R8).
+   **Then read the spec and the plan as the writer model will read them, and fix them before mounting.**
+   The writer is a local model that sees only the mounted project: `spec.md`, the plan, `progress.md`,
+   the files the plan names, and the kit's own coding rules, which are not this repository's rules. It
+   cannot see this repository, this session, the memory, the Issues, the vault or any rule number, and it
+   must never be led to think it runs in a cloud or that someone else will install or decide something
+   for it. Search both files for what it cannot use, for example with
+   `grep -n -E "\bR[0-9]{1,3}\b|\bD[0-9]+\b|owner|cloud|session|memory|Issue|vault|proposal|approved|condensed|worktree|branch|docs/superpowers|20[0-9]{2}-[0-9]{2}-[0-9]{2}"`,
+   and rewrite every hit as a plain instruction about the code, or delete it: rule or decision numbers,
+   dates and provenance stories, mentions of the owner, the cloud, other plans or tools of this
+   repository, and notes about who installs what. This holds for `spec.md` as much as for the plan:
+   a spec states what to build and nothing about itself, so it carries no "condensed from <other
+   document>", no approval or date, no branch or worktree name, and no path outside the project.
+   Do the mechanical part with `python "$SK"/aider-setup/scripts/plan_clean.py <mounted plans folder> --write`
+   (it strips the header, rule and decision numbers and the "run by the local coder" wording), then
+   rewrite by hand every line it still lists, and run it again until it reports no hit left. What must stay: for each file its path, what it holds,
+   its signatures and types, the names and the meaning of its tests, the exact values, the commands that
+   run in the project, and in `spec.md` the language and conventions. Every sentence must be something
+   the writer can act on from inside the project. You write the plan, so you correct it yourself; this
+   is not a reason to enlarge it.
 2. **Mount the kit project, then dry run.** The kit takes three inputs, `spec.md`, `plan<N>.md` and
    `progress.md`, in `docs/superpowers/plans/` of a project of its own. Mount it like the kit manual says:
    1. Create the project outside the repository, in a path without a space, with the kit's scaffolder
@@ -66,7 +85,9 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
       own `.venv`. It refuses an existing directory: remove the directory of a finished run only after its
       files have been brought back and reviewed.
    2. Replace the three templates. `spec.md` is the effort's spec (within its ceiling). It must carry the section "Language and conventions" (the language is chosen there, rule R26): when it is missing, stop and report it, never guess a language. `plan1.md` is the
-      plan, copied under that name because the kit reads only `plan<N>.md`. `progress.md` holds
+      plan, copied under that name because the kit reads only `plan<N>.md`, WITHOUT its front matter
+      header (executor, tier, bounds): that header serves this repository's contract, and the writer
+      model reads the whole file, so it would only confuse it. `progress.md` holds
       `## plan1.md` and one `- [ ]` line per file of the plan's Files section, each line naming its path
       (`create <path> as plan1.md describes`, or `modify`): a step that names no file cannot be executed.
    3. Copy into the project, with their relative paths, every existing file the plan lists to read or to
@@ -88,7 +109,11 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    without this agent: the owner or the cloud session may run it directly. The kit runs the plan in a new
    aider process with its own file set (conventions, rules, spec, plan, progress, the files the plan
    names), runs the tests, fixes in its own loop, ticks `progress.md`, then audits the project's few
-   files with its reviewer model (required). A `[!]` line means the plan is blocked: report it. When the
+   files with its reviewer model (required). A `[!]` line means the plan is blocked: report it. The driver starts the stall watchdog when it is
+   installed (the output says `watchdog started`; it only warns when it is not). If the project's
+   `docs/superpowers/plans/.logs/watchdog.log` holds a line for this plan, the watchdog stopped a stalled
+   run and the driver moved on without ticking the plan: report that line, never run the plan again
+   silently. When the
    run is finished, compare the project with its baseline commit. Only the paths named in the plan's
    Files section may come back: copy those into the repository with the same relative paths, and refuse
    and report any other changed file (a file the plan only reads must stay as it was). Then run the plan's

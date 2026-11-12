@@ -23,7 +23,7 @@ and reports the status, printing only JSON lines that carry report ids, steps, s
 
 Local models only (D2). Every threshold, role name and count comes from the configuration (R0), and a
 missing key is named (R3). Every path is resolved inside the work folder (R24). `--dry-run` writes
-nothing (R16). The wrapper reads only what this command prints and the ledger. In tests the `call`, the
+nothing (R16). The assistant that runs this command reads only what it prints and the ledger. In tests the `call`, the
 window, the counter and the network are injected; the real ones are built only when none is given. Every
 function carries the Purpose, Inputs and Outputs header, and Raises when it raises on purpose.
 
@@ -71,7 +71,7 @@ work_dir)`), `.claude/skills/work-ugs-audit/scripts/rubric_check.py` (`validate`
   - `prepare --reports DIR --rubric FILE --type T [--work DIR]`: work folder defaults to `_correction`
     inside the reports folder. Runs `report_prepare.prepare`; reads the rubric file (JSON is validated and
     used as it is; text, Markdown or PDF text goes through `normalize_rubric`; any other extension is a
-    refusal that says to convert it); writes the JSON file `rubric`, `spec.md` (the spec template filled through `ugs_text.fill` with the
+    refusal that says to convert it); writes the JSON file `rubric`, `rubric.md` (the asset `rubric.template.md` filled through `ugs_text.fill` with the
     slots `ASSESSMENT_TYPE`, `TOTAL_POINTS` and `ITEMS`, the last being one `## I01 - title (points)`
     section per item with its criteria and checklist lines) and the ledger with `add_report` for every report, and the JSON file `loop_state` is not
     touched. Prints one line per report with `report_id`, `pages`, `step` `prepare`, `status` `done`.

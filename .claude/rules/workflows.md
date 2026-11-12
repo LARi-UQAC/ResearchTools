@@ -242,8 +242,9 @@ stale from that day. `plans/todo/` is the archive subdirectory of a project's `p
 read into a prompt carries the `code_file` ceiling; past it, split along a seam the code
 already has, never at an arbitrary line count.
 
-Three marks in `progress.md`, and only three: `- [ ]` not done, `- [x]` done with a short
-result, `- [!]` blocked with one line of reason.
+Four marks in `progress.md`, and only four: `- [ ]` not done, `- [x]` done with a short
+result, `- [~]` done in part with one line saying what is left (it does not stop the plan, and
+the plan's quality score measures the share that was met), `- [!]` blocked with one line of reason.
 
 **Every plan step names the file it touches.** Measured twice: a step reading "add a subtract
 function" with no filename made a model create a second module instead of editing the one
@@ -253,11 +254,11 @@ file. A plan names at most **ten** files - at 16 000 tokens each, eleven files a
 maximum fill everything the window has left.
 
 Lifecycle, which the rule also fixes: `plan<N>.md` moves to `todo/` when its own section is
-fully ticked **and** its audit is clean. `progress.md` moves to `todo/` when every section is
-ticked, unless the audit added a step back into a section, in which case it stays until that
-step is resolved. `audit.md` stays in `plans/` - it is what a person acts on next. Moving
-files is the harness's job, never the model's: the rule is exact (every box in a section is
-`[x]`) and a model asked to tidy up will eventually move the wrong file.
+fully ticked (every box `[x]` or `[~]`) **and** its audit is clean. `progress.md` moves to
+`todo/` when every box of every section is `[x]`, unless the audit added a step back into a
+section or a `[~]` is left, in which case it stays until that step is resolved. `audit.md` stays
+in `plans/` - it is what a person acts on next. Moving files is the harness's job, never the
+model's: the rule is exact and a model asked to tidy up will eventually move the wrong file.
 
 A ticked section whose audit is **not** clean is not done - it is unproven, the same verdict
 given a phase ticked with no evidence in the `PROGRESS.md` shape `authoring-loop` and

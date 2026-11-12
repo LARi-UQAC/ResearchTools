@@ -16,8 +16,10 @@ Read the plan first, then the code. For every requirement of the plan, check tha
 
 - **Wrong results**: an off-by-one, a wrong comparison, a case the plan lists that the code does not handle,
   an error swallowed in silence, a value that is read but never used.
-- **Calls that do not exist or do not take those arguments**: check every call to a library function against
-  what it really accepts. A call that raises on its first use is a defect even if the code looks right.
+- **Calls that do not exist or do not take those arguments**: check every call to a function against its
+  definition when the definition is in the text you were given (this project's code, or a library file
+  quoted in the message). For a library you cannot see, report a call you doubt as a question, never as a
+  fact. A call that raises on its first use is a defect even if the code looks right.
 - **Tests that prove nothing**: a test that cannot fail, a test that checks the mock instead of the code, no
   test of the failure path.
 - **The coding rules you were given**: a number written in the code, a path written in the code, a function

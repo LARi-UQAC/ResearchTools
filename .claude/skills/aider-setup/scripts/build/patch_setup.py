@@ -83,6 +83,8 @@ $targets = @(
     # beside it: install one without the other and every run refuses.
     @{ src = "bin\aider-plan-core.ps1";    dst = (Join-Path $binDir "aider-plan-core.ps1") },
     @{ src = "bin\aider-rules-check.py";   dst = (Join-Path $binDir "aider-rules-check.py") },
+    @{ src = "bin\plan_clean.py";          dst = (Join-Path $binDir "plan_clean.py") },
+    @{ src = "bin\plan-clean.json";        dst = (Join-Path $binDir "plan-clean.json") },
     # The GPU probe and its configuration. The manual tells a student to
     # re-measure the load time, the resident size and the CPU/GPU split on their
     # own card; until 2026-09-03 it named no tool for doing it. Every number the

@@ -347,6 +347,7 @@ installation is needed.
 | `bin/aider-plan.ps1` | the driver: plans, tests, audit, archiving |
 | `bin/aider-plan-core.ps1` | the driver's pure half. It must sit beside the driver, which refuses without it |
 | `bin/aider-rules-check.py` | checks `rules.md` before every run: a rule numbered twice, a gap in the numbers or a rule over its cap refuses the run |
+| `bin/plan_clean.py`, `bin/plan-clean.json` | cleans a spec and plans before a night: strips rule and decision numbers and lists what the small model cannot use |
 | `bin/aider-gpu-probe.py`, `.json` | measures which model and context actually puts layers on YOUR card |
 | `bin/aider-thread-probe.py`, `.json` | measures what bounds a model here: memory bandwidth, threads, offload, window cost |
 | `bin/aider-ollama-config.py` | turns the budget plus a measurement into a tuned tag, and reads the tag back |

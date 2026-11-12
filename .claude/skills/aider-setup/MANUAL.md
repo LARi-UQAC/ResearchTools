@@ -541,15 +541,15 @@ catches the usual leftovers; every hit is rewritten or deleted:
 Select-String -Path docs\superpowers\plans\*.md -Pattern '\bR[0-9]+\b','owner','cloud','session','ticket','proposal','approved','condensed','worktree','branch','docs/superpowers','[0-9]{4}-[0-9]{2}-[0-9]{2}'
 ```
 
-`scripts/plan_clean.py` does the mechanical part of this cleaning, from the rules in `scripts/plan-clean.json`
+`plan_clean.py` (installed beside the driver, with its rules in `plan-clean.json`) does the mechanical part of this cleaning
 (data, extend it rather than the script). Run it on the MOUNTED project, never on the source plans: it
 removes a front matter header, rule and decision numbers in parentheses, "run by the local coder model"
 and the decision numbers of the `**Spec:**` line, and it lists every line it could not fix. It is a dry run
 until `--write`, and exits 1 while a hit is left for you to rewrite by hand:
 
 ```powershell
-python scripts\plan_clean.py <project>\docs\superpowers\plans            # list what it would change and what is left
-python scripts\plan_clean.py <project>\docs\superpowers\plans --write    # apply, then fix the hits by hand
+python plan_clean.py my-project\docs\superpowers\plans            # list what it would change and what is left
+python plan_clean.py my-project\docs\superpowers\plans --write    # apply, then fix the hits by hand
 ```
 
 The dry run also tells you when a plan is too big: "this plan creates N new files ...

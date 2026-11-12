@@ -71,7 +71,10 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    dates and provenance stories, mentions of the owner, the cloud, other plans or tools of this
    repository, and notes about who installs what. This holds for `spec.md` as much as for the plan:
    a spec states what to build and nothing about itself, so it carries no "condensed from <other
-   document>", no approval or date, no branch or worktree name, and no path outside the project. What must stay: for each file its path, what it holds,
+   document>", no approval or date, no branch or worktree name, and no path outside the project.
+   Do the mechanical part with `python "$SK"/aider-setup/scripts/plan_clean.py <mounted plans folder> --write`
+   (it strips the header, rule and decision numbers and the "run by the local coder" wording), then
+   rewrite by hand every line it still lists, and run it again until it reports no hit left. What must stay: for each file its path, what it holds,
    its signatures and types, the names and the meaning of its tests, the exact values, the commands that
    run in the project, and in `spec.md` the language and conventions. Every sentence must be something
    the writer can act on from inside the project. You write the plan, so you correct it yourself; this

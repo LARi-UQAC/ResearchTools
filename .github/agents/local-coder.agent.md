@@ -73,7 +73,9 @@ SK=".claude/skills"; [ -d "$SK/loop-engineer" ] || SK="$HOME/.claude/skills"
    Stop at the first of: a bound reached, a round with no finding, or the branch safe to merge (the plan's tests
    pass and no Critical or High finding remains). When a bound stops the loop first, report what remains and ask
    the owner whether to raise it. You never raise a bound and never edit code to close a finding.
-5. **Report.** The plan done, blocked or refused, the audit rounds and their findings, the bound that stopped
+5. **Report.** The plan done, blocked or refused, **the quality percentage of the plan** (read it from `quality.md` in the
+   project's `docs/superpowers/plans/`: the line of `plan1.md` gives the percentage, the reviewer's share and the tests
+   that pass; "not scored" is reported as it is, never as 0), the audit rounds and their findings, the bound that stopped
    the loop, the files the kit wrote, and any learning for the orchestrator to route. Never commit and never
    merge.
 

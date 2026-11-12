@@ -27,6 +27,9 @@ REFUSED_ADDRESSES = {
     "IPv4-mapped loopback": "::ffff:127.0.0.1",
     "6to4 embedding a private address": "2002:ac10:0001::1",
     "NAT64 embedding a private address": "64:ff9b::c0a8:101",
+    "IPv4-compatible loopback": "::7f00:1",
+    "IPv4-compatible private address": "::a00:1",
+    "local-use NAT64 prefix": "64:ff9b:1::7f00:1",
 }
 
 

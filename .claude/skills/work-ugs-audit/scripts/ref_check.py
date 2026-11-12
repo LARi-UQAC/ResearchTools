@@ -25,6 +25,7 @@ EXIT_REFUSAL = 2
 CONFIG_KEYS = ("references.url_timeout_s", "references.max_retries", "references.max_redirects")
 HTTP_SCHEMES = ("http", "https")
 _NAT64_NETWORK = ipaddress.ip_network("64:ff9b::/96")
+_GLOBAL_UNICAST_V6 = ipaddress.ip_network("2000::/3")
 _IPV4_MASK = int(ipaddress.IPv4Address("255.255.255.255"))
 
 
@@ -52,7 +53,9 @@ def _is_public_address(address: str) -> bool:
     """
     Purpose: Tell whether one address string is a global, routable address.
     Details: Loopback, private, link-local, shared (carrier-grade NAT) and reserved ranges are not global, and an
-        embedded IPv4 address is judged instead of its wrapper.
+        embedded IPv4 address is judged instead of its wrapper. A native IPv6 address must also sit in the global
+        unicast block 2000::/3, which refuses the IPv4-compatible block ::/96 and the other translation prefixes
+        (for example 64:ff9b:1::/48) that the standard library does not mark as non-global.
     Inputs:
         address (str): the address text.
     Outputs:
@@ -62,7 +65,10 @@ def _is_public_address(address: str) -> bool:
         ip = ipaddress.ip_address(address)
     except ValueError:
         return False
-    return _judged_address(ip).is_global
+    judged = _judged_address(ip)
+    if isinstance(judged, ipaddress.IPv6Address) and judged not in _GLOBAL_UNICAST_V6:
+        return False
+    return judged.is_global
 
 
 def is_public_host(host: str, resolve: Callable[[str], list[str]]) -> bool:

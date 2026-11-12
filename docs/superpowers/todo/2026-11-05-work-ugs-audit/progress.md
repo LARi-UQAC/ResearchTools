@@ -84,7 +84,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan6c.md
 
-- [ ] T1 figure_checks and its test
+- [x] T1 figure_checks and its test: night n2 plan 7, 13 tests ok in the repository, the 13 named tests and the signatures match the plan; residuals: two reasoning-style comments in the module and three in the test (R103), module constants for thresholds to check against the criteria file
 
 ## plan7.md
 
@@ -92,7 +92,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan8a.md
 
-- [ ] T1 bridge_images and its test
+- [x] T1 bridge_images and its test: night n2 plan 8, 8 tests ok in the repository, the 7 named tests and the signatures match the plan, no comment at all
 
 ## plan8b.md
 

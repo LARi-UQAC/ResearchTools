@@ -69,8 +69,8 @@ class TestRuleIsWritten(unittest.TestCase):
 
     def test_r38_states_the_plan_before_code_requirement_and_the_five_rows(self):
         body = flat(r38(self.workflows))
-        for phrase in ("before any code", "executing-plans", "simple or standard", "large",
-                       "aider", "manual", "header"):
+        for phrase in ("before any code", "executing-plans", "aider-plan.ps1", "aider-night.ps1",
+                       "manual", "header"):
             self.assertIn(phrase, body)
 
     def test_r38_binds_every_project_and_names_both_hooks(self):
@@ -82,12 +82,13 @@ class TestRuleIsWritten(unittest.TestCase):
         self.assertIn("docs/superpowers/done/", body)
 
     def test_the_agent_is_a_plan_procedure_that_launches_the_driver_and_audits(self):
-        # Rewritten 2026-11-05 (Issue #104, plan 14, rule R39): the old "no audit inside" pin is
-        # retired, the wrapper now launches local_coder_driver.py and audits under R35.
+        # Rewritten 2026-11-12 (Issue #104): the wrapper validates the plan, runs the kit by following the
+        # aider-setup skill, brings back only the named files and reviews them under R35.
         body = flat(self.agent)
-        for phrase in ("plan_contract.py resolve", "PLAN:", "progress.md", "- [ ]", "[!]",
-                       "local_coder_driver.py", "audits"):
+        for phrase in ("plan_contract.py validate", "PLAN:", "progress.md", "- [ ]", "[!]",
+                       "aider-setup", "only the", "R35", "review"):
             self.assertIn(phrase, body)
+        self.assertNotIn("local_coder_driver.py", body)
 
     def test_the_agent_leaves_the_bridge_to_the_driver(self):
         # Replaces the 2026-10-17 pin that the agent's own bridge command passed --plan: since
@@ -108,7 +109,7 @@ class TestRuleIsWritten(unittest.TestCase):
 
     def test_the_routing_row_no_longer_says_do_not_dispatch_at_all(self):
         row = next(line for line in self.claude.splitlines()
-                   if line.startswith("| ") and "`local-coder` agent (haiku" in line)
+                   if line.startswith("| ") and "`local-coder` agent (Haiku)" in line)
         self.assertNotIn("do not dispatch this agent at all", row)
         self.assertNotIn("Local code generation against a spec", row)
         self.assertIn("PLAN:", row)

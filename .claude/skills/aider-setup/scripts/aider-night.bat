@@ -7,8 +7,7 @@ REM  Example: aider-night.bat C:\work\my-project
 REM           aider-night.bat C:\work\my-project -DryRun
 REM           aider-night.bat C:\work\my-project -PullRequest
 REM
-REM  The skills are already wired: nothing else is typed. -NoSkills turns them
-REM  off, which is how one night is compared against another.
+REM  The skills are already wired and mandatory: nothing else is typed.
 REM
 REM  Two things this file exists to get right:
 REM
@@ -24,7 +23,7 @@ if "%~1"=="" (
     echo Usage: %~nx0 ^<project-path^> [switches]
     echo.
     echo   -DryRun        print what would happen, start no model, write nothing
-    echo   -NoSkills      run without the per-stage skills
+    echo   -NoAudit       run the plans and stop before the review pass
     echo   -Branch NAME   work on NAME instead of night-YYYY-MM-DD
     echo   -Push          push the branch when every plan is done
     echo   -PullRequest   push, then open a pull request. Never merges.

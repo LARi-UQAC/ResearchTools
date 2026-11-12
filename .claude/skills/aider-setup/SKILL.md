@@ -38,6 +38,9 @@ driver loads one model at a time and unloads it before the next stage, and every
   otherwise `~/.config/aider` (user layout). The log line `configuration : ... (kit layout)` or `(user layout)`
   says which: run the script that sits next to the files you want used. A configuration still holding the
   `{{HOME}}` placeholder is refused with "this kit has not been installed yet".
+- **The watchdog** starts with the driver only when `aider-watchdog.exe`, `aider-watchdog.json` and a model reference file
+  are found and `AIDER_MODEL_REFERENCE` names that file. Without it the output says `WARNING: watchdog not started`
+  and the run goes on unprotected: check for `watchdog started (pid N)` in the first lines of the log.
 - **Refusals before anything starts**: battery power, the branch `main` or `master`, no config, a non-local model,
   tests required with no test command, a missing budget key, an always-on file that does not exist. Each names
   what is missing.

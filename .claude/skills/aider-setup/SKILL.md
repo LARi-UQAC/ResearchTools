@@ -16,7 +16,7 @@ model that mounts one plan, starts the kit and reviews the result. The detailed 
 
 Nothing is installed or copied: the scripts run from where they are, in
 `C:\Martin Otis\OutilsLogiciels\ResearchTools\.claude\skills\aider-setup\scripts`, and read the `config` folder
-next to it. Put that `scripts` folder on the `PATH` to type the commands below from any folder. Two entry points, both
+next to it. Run `.\setup.ps1 -InstallAiderPath` once from the ResearchTools clone to put that `scripts` folder on your user `PATH` (add-only, specific to your machine), then type the commands below from any folder. Two entry points, both
 PowerShell scripts that need no Claude Code. Close the other programs first (the
 browser, the editors, Claude Code): a 21 GB writer and a 21 GB reviewer cannot both be resident in 32 GB, so the
 driver loads one model at a time and unloads it before the next stage, and everything else steals that memory.

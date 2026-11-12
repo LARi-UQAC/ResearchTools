@@ -21,10 +21,9 @@
   },
   "budget_candidates": {
     "value": [
-      "~/.config/aider/context-budget.json",
       "~/.claude/skills/aider-setup/config/context-budget.json",
       "../aider-setup/config/context-budget.json"
     ],
-    "provenance": "chosen 2026-10-17, tried in order, identical on that date: the copy setup.ps1 installs and aider-plan.ps1 enforces, then the junctioned skill copy, then this repository's own copy (a relative path is resolved from the folder holding this file). Single source of the size ceilings, spec decision D9"
+    "provenance": "chosen 2026-11-12 by the operator: the junctioned skill copy, then this repository's own copy (a relative path is resolved from the folder holding this file). The installed copy in the home folder is no longer a candidate: aider-plan.ps1 runs in place and enforces the file of this repository. Single source of the size ceilings, spec decision D9"
   }
 }

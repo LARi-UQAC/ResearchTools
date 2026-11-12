@@ -88,6 +88,7 @@ git clone https://github.com/LARi-UQAC/ResearchTools.git
 cd ResearchTools
 .\setup.ps1 -All -Personal   # config + Claude links + all tool mirrors
 .\setup.ps1 -InstallPython   # optional: .venv-skills, .venv-docs and .venv-pdf2md (in the main clone)
+.\setup.ps1 -InstallAiderPath # optional: puts this clone's aider-setup scripts folder on your user Path (aider-night.bat, aider-plan.ps1)
 .\setup.ps1 -Update          # update an existing installation in one command (try -Update -Preview first); see manual chapter 01
 ```
 

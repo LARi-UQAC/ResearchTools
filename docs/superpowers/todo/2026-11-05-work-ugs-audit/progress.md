@@ -155,3 +155,12 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 - [ ] T1 mirrors and full checks
 - [ ] T2 R35 review loop
 - [ ] T3 changelog, improvements, PR
+
+## plan17.md
+
+- [ ] T1 harvest night un5, report each quality percentage
+- [ ] T2 stop the watchdog and unload the models
+- [ ] T3 delete the duplicates (kit, home, 19 old projects; the operator deletes the old config folder himself)
+- [ ] T4 check the impact on the other plans and the current configuration
+- [ ] T5 run lc-fix plan 1 with local-coder, report its quality percentage
+- [ ] T6 close: evidence in this ledger, commit, tell the operator his two actions

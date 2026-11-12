@@ -546,7 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="required to create the tag; without it this is a dry run")
     p.add_argument("--settings", default=None,
                    help="model-settings.yml to wire the tuned tag into "
-                        "(default ~/.config/aider/model-settings.yml)")
+                        "(default model-settings.yml in the configuration folder beside the scripts)")
     p.add_argument("--metadata", default=None,
                    help="litellm metadata aider reads for max_input_tokens "
                         "(default ~/.aider.model.metadata.json)")
@@ -562,7 +562,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     here = pathlib.Path(__file__).resolve().parent
-    config_dir = pathlib.Path.home() / ".config" / "aider"
+    # The configuration sits next to the scripts folder (this repository, or an unpacked kit); the home
+    # folder is only the place an installed student kit uses.
+    beside = here.parent / "config"
+    config_dir = beside if (beside / "context-budget.json").is_file() else pathlib.Path.home() / ".config" / "aider"
 
     try:
         budget_path = pathlib.Path(args.budget) if args.budget else config_dir / "context-budget.json"

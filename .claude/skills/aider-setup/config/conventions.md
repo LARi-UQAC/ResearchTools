@@ -1,28 +1,11 @@
 # Working protocol
 
-**Goal.** The working protocol handed to the model on every single call: where the files live, how the ledger works, how a reply is written, what a test is and how code is written.
+**Goal.** The working protocol handed to the model on every single call: how the ledger works, how a reply is written, what a test is and how code is written.
 
-**Contents.** Only instructions the model must follow while writing code, kept short because every token here is spent on every call. What the driver does by itself (loading one plan at a time, measuring file sizes, running the suite, moving finished files, the audit passes) is not repeated here. Coding rules go in `rules.md`, and anything a human needs but the model does not goes in `MANUAL.md`.
+**Contents.** Only instructions the model must follow while writing code, kept short because every token here is spent on every call. What the driver does by itself (which files are loaded, loading one plan at a time, measuring file sizes, running the suite, moving finished files, the audit passes) is not repeated here. Coding rules go in `rules.md`, and anything a human needs but the model does not goes in `MANUAL.md`.
 
 Read into context on every run, in every project. English, because these are
-instructions to the model. Written 2026-09-02, shortened 2026-11-11.
-
-## Where the files live
-
-Everything below sits in `docs/superpowers/plans/` of the project:
-
-| File | Role | Who writes it |
-|---|---|---|
-| `spec.md` | What is being built and why. The stable reference. | The human. Read-only for you. |
-| `plan1.md`, `plan2.md`, ... | One plan per run of yours, an ordered list of steps. | The human. Read-only for you. |
-| `progress.md` | The ledger. One `## <filename>` section per plan, each holding that plan's checkboxes. | You. |
-| `audit.md` | Problems found by the reviewer. | The reviewer. Never you. |
-
-Never move, rename or delete any of these files.
-
-A source or test file the plan names that does not exist yet is created for you
-empty and shown in the chat as an empty file. An empty file is a NEW file: write
-its whole content now with an edit block. Never ask to see it first.
+instructions to the model. Written 2026-09-02, shortened 2026-11-11 (the list of files was removed: the model is given them by name).
 
 ## The ledger
 
@@ -39,12 +22,9 @@ Three marks, and only three:
 - `- [ ]` not done.
 - `- [x]` done. The code is written and, where the plan asked for a test, the
   test passes. Add a short result after the text.
-- `- [!]` blocked. Add one line saying what blocked it. A blocked step stops the
-  plan; do not carry on past it.
+- `- [!]` blocked. Add one line saying what blocked it. A blocked step stops the plan; do not carry on past it.
 
-Tick nothing you did not do. A false tick is worse than an unticked box, because
-the next run starts from it and never revisits it. Nothing you hold survives into
-the next plan: write what it needs to know into `progress.md` before you finish.
+Tick nothing you did not do. A false tick is worse than an unticked box, because the next run starts from it and never revisits it. Nothing you hold survives into the next plan: write what it needs to know into `progress.md` before you finish.
 
 ## How you answer
 
@@ -52,15 +32,12 @@ Your whole reply has a fixed size limit, and a reply cut off by the limit applie
 none of its edits. So:
 
 - Answer with edit blocks and nothing else. Do not think aloud.
-- **Never write your reasoning into the code.** A comment says why a line exists, in
-  one line. It is never a deliberation, a doubt, a second attempt or a note to
-  yourself ("let's look at...", "but the spec says...", "wait").
-- **A new file you create stays under 4000 tokens**, roughly 300 to 400 lines, and so
-  does its test. You write new text whole, so it has to fit in one reply. If the
-  step needs more, write the first module, say so in `progress.md`, and leave the
-  rest to the next plan.
-- Change an existing file with small edit blocks, one per place that changes. Do not
-  rewrite what the step did not ask you to change.
+- **Never write your reasoning into the code.** A comment says why a line exists, in one line. It is never a deliberation, a doubt, a second attempt or a note to yourself ("let's look at...", "but the spec says...", "wait").
+- **A new file you create stays under 4000 tokens**, roughly 300 to 400 lines, and so does its test. You write new text whole, so it has to fit in one reply. If the step needs more, write the first module, say so in `progress.md`, and leave the rest to the next plan.
+- A source or test file the plan names that does not exist yet is created for you
+  empty and shown in the chat as an empty file. An empty file is a NEW file: write
+  its whole content now with an edit block. Never ask to see it first.
+- Change an existing file with small edit blocks, one per place that changes. Do not rewrite what the step did not ask you to change.
 
 ## Tests
 
@@ -69,16 +46,9 @@ the same step as the code.** A step is not done until its test exists and
 passes, so a step whose code is written and whose test is not is `- [ ]`, never
 `- [x]`.
 
-**A test is always its own file, in a test folder. Never put test code inside the
-source file** - no test block at the bottom of it, no test class beside the code, no
-documentation example standing in for a test. The source file stays free of test
-code, and the test file uses it.
+**A test is always its own file, in a test folder. Never put test code inside the source file** - no test block at the bottom of it, no test class beside the code, no documentation example standing in for a test. The source file stays free of test code, and the test file uses it.
 
-Where the test goes: the section "Language and conventions" of `spec.md` says. When it
-is silent, use a folder named `Test` beside the source, one test file per source file,
-named `test_<source name>`: a source in `scripts/` gets its test in `scripts/Test/`, a
-source at the project root gets it in `Test/`. A plan that names its test file wins. A
-test file runs on its own with the test command the spec gives.
+Where the test goes: the section "Language and conventions" of `spec.md` says. When it is silent, use a folder named `Test` beside the source, one test file per source file, named `test_<source name>`: a source in `scripts/` gets its test in `scripts/Test/`, a source at the project root gets it in `Test/`. A plan that names its test file wins. A test file runs on its own with the test command the spec gives.
 
 The harness runs the suite itself after each plan, with a fixed command the
 operator chose. You never run it and never propose a shell command: if a test

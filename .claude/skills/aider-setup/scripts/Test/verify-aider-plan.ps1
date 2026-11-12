@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -526,6 +526,43 @@ Check "a header never closed is not read as swallowing the whole plan" {
     $open = Join-Path $headerProj "open.md"
     Set-Content -LiteralPath $open -Value ("---`nexecutor: aider`n" + $planBody) -Encoding UTF8
     @(Get-Targets $open).Count -eq 2
+}
+
+Write-Host ""
+# --- Files a plan only reads are read-only, never targets (measured 2026-11-10) ---------
+New-Item -ItemType Directory -Force -Path (Join-Path $headerProj "lib") | Out-Null
+Set-Content -LiteralPath (Join-Path $headerProj "lib\shared.py") -Value "x = 1" -Encoding UTF8
+$readsBody = @'
+# Plan 2 - fictitious
+
+**Files:**
+- Create: `src/world.py`
+- Test: `Test/test_world.py`
+
+**Reads, do not modify:** `lib/shared.py` (its `x`), `lib/missing.py` and `src/world.py`.
+
+Nothing else is read here.
+'@
+$readsPlan = Join-Path $headerProj "reads.md"
+Set-Content -LiteralPath $readsPlan -Value $readsBody -Encoding UTF8
+
+Check "a file the plan only reads is not a target" {
+    (@(Get-Targets $readsPlan) | Where-Object { $_ -like "*shared.py" -or $_ -like "*missing.py" }).Count -eq 0
+}
+
+Check "the files the plan creates stay targets, even one the reads paragraph names again" {
+    $t = @(Get-Targets $readsPlan)
+    ($t.Count -eq 2) -and (($t | Where-Object { $_ -like "*world.py" -and $_ -notlike "*test_world.py" }).Count -eq 1)
+}
+
+Check "the read-only files are listed: existing ones only, never a target" {
+    $r = Get-PlanReads $readsPlan (Get-Targets $readsPlan)
+    (@($r).Count -eq 1) -and (@($r)[0] -like "*shared.py")
+}
+
+Check "NEGATIVE CONTROL: a plan with no reads paragraph has no read-only files" {
+    $r = Get-PlanReads $plainPlan @()
+    @($r).Count -eq 0
 }
 
 Write-Host ""

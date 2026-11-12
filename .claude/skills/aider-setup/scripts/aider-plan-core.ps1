@@ -214,18 +214,13 @@ function Resolve-SkillStage($stage, $entry, $file) {
 }
 
 # --- Helpers ---------------------------------------------------------------
-function Get-PlanTargets([string]$planPath) {
-    # The files a plan NAMES, added to the chat as editable rather than left for
-    # the model to request. Measured 2026-09-03: with only progress.md editable,
-    # a plan run produced NOTHING at all - the model spent its entire reply
-    # reasoning about whether it was allowed to touch calc.py, and concluded it
-    # was not. The convention already requires every plan step to name its file,
-    # so the harness reads them instead of hoping the model asks.
-    #
-    # No regex. A first version built one by joining escaped extensions, and it
-    # matched nothing while the identical pattern typed by hand matched two - an
-    # invisible character difference nobody can see in a diff. Splitting on
-    # separators and asking Path for the extension cannot fail that way.
+# The paragraph of a plan that lists the files it only READS: "**Reads, do not modify:**" up to the next
+# blank line. Its files are handed to the model read-only and are never targets. Measured 2026-11-10: they
+# were submitted as editable, and three plans edited a file that was not theirs (a shared test fixture, the
+# module of the plan before). A file the plan also lists under Files stays a target.
+$ReadsBlockPattern = '(?s)\*\*Reads, do not modify:\*\*(.*?)(?:\r?\n[ \t]*\r?\n|\z)'
+
+function Get-PlanText([string]$planPath) {
     $text = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8
 
     # A leading front matter block (executor, tier, bounds: the plan header of rule R38)
@@ -240,7 +235,14 @@ function Get-PlanTargets([string]$planPath) {
             }
         }
     }
+    return $text
+}
 
+function Get-PathsInText([string]$text) {
+    # No regex. A first version built one by joining escaped extensions, and it
+    # matched nothing while the identical pattern typed by hand matched two - an
+    # invisible character difference nobody can see in a diff. Splitting on
+    # separators and asking Path for the extension cannot fail that way.
     $separators = @(' ', "`t", "`r", "`n", ',', ';', ':', '(', ')', '[', ']',
                     '{', '}', '"', "'", '`', '<', '>', '|', '!', '?')
     $found = New-Object System.Collections.Generic.List[string]
@@ -272,6 +274,33 @@ function Get-PlanTargets([string]$planPath) {
             continue
         }
         if (-not $found.Contains($resolved)) { $found.Add($resolved) }
+    }
+    return , $found.ToArray()
+}
+
+function Get-PlanTargets([string]$planPath) {
+    # The files a plan NAMES, added to the chat as editable rather than left for
+    # the model to request. Measured 2026-09-03: with only progress.md editable,
+    # a plan run produced NOTHING at all - the model spent its entire reply
+    # reasoning about whether it was allowed to touch calc.py, and concluded it
+    # was not. The convention already requires every plan step to name its file,
+    # so the harness reads them instead of hoping the model asks. The files of the
+    # "Reads, do not modify" paragraph are not among them: see Get-PlanReads.
+    $text = [regex]::Replace((Get-PlanText $planPath), $ReadsBlockPattern, "")
+    $found = Get-PathsInText $text
+    return , $found
+}
+
+function Get-PlanReads([string]$planPath, [string[]]$targets = @()) {
+    # The files a plan only reads, existing ones only (nothing is created for a file that is merely read),
+    # given to the model with --read. A file that is also a target stays a target.
+    $found = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches((Get-PlanText $planPath), $ReadsBlockPattern)) {
+        foreach ($path in (Get-PathsInText $m.Groups[1].Value)) {
+            if ((Test-Path -LiteralPath $path -PathType Leaf) -and ($targets -notcontains $path) -and -not $found.Contains($path)) {
+                $found.Add($path)
+            }
+        }
     }
     return , $found.ToArray()
 }

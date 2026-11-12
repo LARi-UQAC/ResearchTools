@@ -498,6 +498,11 @@ copy here.
 **A step that names no file cannot be executed**, because the driver hands over
 exactly the files a plan names as editable and nothing else.
 
+**A file the plan only reads goes in its own paragraph**, which starts with the words
+`**Reads, do not modify:**` and ends at the next blank line. The files named there are given to the
+model read-only, and only if they exist. Without the paragraph they would be editable, and a plan
+would be free to rewrite a shared test fixture or the module of the plan before it.
+
 ### Clean the three documents before the run
 
 The writer is a local model that sees only the project: `spec.md`, the plan being

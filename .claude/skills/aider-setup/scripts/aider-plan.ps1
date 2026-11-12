@@ -1052,6 +1052,11 @@ if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDi
         Add-LedgerLine $plan.Name "- [!] this plan names $($targets.Count) files, over the limit of $maxFilesTouched - split it in two"
         $failed = 1; $blockedPlans++; continue plans
     }
+    # Assigned directly, like $targets: the function wraps its array so that one file survives as an array.
+    $readOnly = Get-PlanReads $plan.FullName $targets
+    if ($readOnly.Count -gt 0) {
+        Write-Host ("  read-only inputs: " + (($readOnly | ForEach-Object { Split-Path $_ -Leaf }) -join ", "))
+    }
     if ($targets.Count -gt 0) {
         Write-Host ("  editable: " + (($targets | ForEach-Object { Split-Path $_ -Leaf }) -join ", "))
     } else {
@@ -1087,6 +1092,7 @@ if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDi
     }
 
     $argv += @("--read", $spec, "--read", $plan.FullName)
+    foreach ($r in $readOnly) { $argv += @("--read", $r) }
     # Round 1 is work being written; a later round is work RECEIVING a review,
     # which is a different skill and not a coincidence - the audit having put a
     # step back is exactly what "receiving code review" describes.

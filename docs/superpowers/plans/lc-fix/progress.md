@@ -18,4 +18,4 @@
 
 ## plan5.md
 
-- [ ] T1 repository sync keeps the installed aider kit scripts current
+- [x] T1 repository sync keeps the installed aider kit scripts current: done by the cloud on 2026-11-12 by the owner order (Sync-RtKitScripts, 78 checks ok)

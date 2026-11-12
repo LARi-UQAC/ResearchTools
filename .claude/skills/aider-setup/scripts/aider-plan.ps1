@@ -752,7 +752,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
            "The only file you may edit is audit.md. Append to it, under a heading " +
            "'## $planName', your findings worst first, each naming the file, the " +
            "line, what is wrong and why it matters. Look at least for: a value " +
-           "hard-coded where configuration belongs, a silent fallback, a missing " +
+           "hard-coded where configuration belongs, a configuration value whose provenance is 'unspecified', a silent fallback, a missing " +
            "error path, a return code trusted where the effect should have been " +
            "verified, and a test that asserts only the happy path.`n`n" +
            "If you find nothing wrong, still write one line under that heading " +

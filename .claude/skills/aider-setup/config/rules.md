@@ -10,7 +10,7 @@ value, and every exponent other than 2 (use the language's square-root function,
 power), comes from a configuration file read at run time, through a key whose name carries its unit
 (`timeout_s`). A constant at the top of a module is not configuration. Numbers inside a test fixture
 and unit conversion factors may stay. If no source gives the value, put the key in the configuration
-with the provenance "unspecified" and mark the step `- [!]` with one line saying so. Never invent a default.
+with the provenance "unspecified", finish the step, and add one line to the step in `progress.md` naming the key. Never invent a default.
 
 **R1 - no hardcoded path.** An absolute path, an output folder or a program location comes from an
 environment variable or the configuration file. A path built from the module's own location is fine.

@@ -21,8 +21,7 @@ lines of its own section:
 Four marks, and only four:
 
 - `- [ ]` not done.
-- `- [x]` done. The code is written and, where the plan asked for a test, the
-  test passes. Add a short result after the text.
+- `- [x]` done. The code is written and, where the plan asked for a test, the test passes. Add a short result after the text.
 - `- [~]` done in part. Add one line saying what is written and what is left. Use it when a step is too big for one reply (see below), never for a step you could finish. It does not stop the plan: the last review measures what share of the plan was met.
 - `- [!]` blocked. Add one line saying what blocked it. A blocked step stops the plan; do not carry on past it.
 

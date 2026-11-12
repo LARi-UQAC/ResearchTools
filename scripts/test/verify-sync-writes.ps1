@@ -393,6 +393,85 @@ $r = Invoke-SyncChild $LockHome @("-WhatIf")
 Check "(control) without -StrictExit the same lock is a quiet exit 0 (the hook contract)" ($r.Code -eq 0)
 Remove-Item $BadHome, $GoodHome, $LockHome -Recurse -Force -ErrorAction SilentlyContinue
 
+# --- the aider kit scripts are kept current in <home>\.local\bin ------------------------------
+# Sync-RtKitScripts copies every top-level file of .claude\skills\aider-setup\scripts into the install
+# folder of the home that owns the .claude folder being synced. A throwaway repository and home are
+# built in a temporary folder; the owner's configuration folder is hashed before and after.
+$KitRepo = Join-Path $Fake "kitrepo"
+$KitHome = Join-Path $Fake "kithome"
+$KitSrc  = Join-Path $KitRepo ".claude\skills\aider-setup\scripts"
+$KitBin  = Join-Path $KitHome ".local\bin"
+$KitCfg  = Join-Path $KitHome ".config\aider"
+New-Item -ItemType Directory -Path (Join-Path $KitSrc "Test"), $KitBin, $KitCfg -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $KitCfg "model-settings.yml"), "tuned: yes`r`n", $utf8NoBom)
+$cfgHash = (Get-FileHash (Join-Path $KitCfg "model-settings.yml") -Algorithm SHA256).Hash
+
+$home1   = "{{" + "HOME}}"
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "alpha.ps1"), "`$cfg = '$home1/.config/aider/x'`r`n", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "bad.ps1"),   "if (`$x { broken`r`n", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "good.py"),   "print('proven')`n", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "loose.py"),  "print('not in the stamp')`n", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "data.json"), '{"a": 1}', $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "broken.json"), '{"a": ', $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "run.bat"),   "@echo off`r`n", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "Test\inside.ps1"), "'test folder'`r`n", $utf8NoBom)
+$stampKit = @{ code_hashes = @{ '.claude\skills\aider-setup\scripts\good.py' = (Get-FileHash (Join-Path $KitSrc "good.py") -Algorithm SHA256).Hash } }
+[System.IO.File]::WriteAllText((Join-Path $KitRepo ".rt-green.json"), ($stampKit | ConvertTo-Json), $utf8NoBom)
+
+$script:RtChanged = @(); $script:RtHeld = @(); $script:RtWhatIf = $false; $script:RtQuiet = $true
+$homeSlash = $KitHome.Replace('\', '/')
+
+# dry run first (R16): nothing written, nothing copied to the undo folder
+$script:RtWhatIf = $true
+Sync-RtKitScripts $KitRepo $KitBin $KitHome
+$script:RtWhatIf = $false
+Check "kit sync -WhatIf: nothing is written to the install folder" (@(Get-ChildItem $KitBin -Force).Count -eq 0)
+Check "kit sync -WhatIf: the files that would change are reported" ($script:RtChanged -contains "bin\alpha.ps1")
+Check "kit sync -WhatIf: no undo folder is made" (-not (Test-Path (Join-Path $KitRepo ".rt-undo")))
+
+$script:RtChanged = @(); $script:RtHeld = @()
+Sync-RtKitScripts $KitRepo $KitBin $KitHome
+$alphaBytes = [System.IO.File]::ReadAllBytes((Join-Path $KitBin "alpha.ps1"))
+$alphaText  = [System.IO.File]::ReadAllText((Join-Path $KitBin "alpha.ps1"))
+Check "kit sync: the home placeholder is replaced by the home with forward slashes" ($alphaText -ceq "`$cfg = '$homeSlash/.config/aider/x'`r`n")
+Check "kit sync: the installed file has no byte order mark" (-not ($alphaBytes[0] -eq 0xEF -and $alphaBytes[1] -eq 0xBB))
+Check "kit sync: a proven Python file is installed" (Test-Path (Join-Path $KitBin "good.py"))
+Check "kit sync: a Python file absent from the green stamp is held, not written" ((-not (Test-Path (Join-Path $KitBin "loose.py"))) -and ($script:RtHeld -contains "bin\loose.py"))
+Check "kit sync: a script with a syntax error is held, not written" ((-not (Test-Path (Join-Path $KitBin "bad.ps1"))) -and ($script:RtHeld -contains "bin\bad.ps1"))
+Check "kit sync: a data file that parses is installed, one that does not is held" ((Test-Path (Join-Path $KitBin "data.json")) -and (-not (Test-Path (Join-Path $KitBin "broken.json"))) -and ($script:RtHeld -contains "bin\broken.json"))
+Check "kit sync: a batch file is installed without a check" (Test-Path (Join-Path $KitBin "run.bat"))
+Check "kit sync: the Test folder is not copied" (-not (Test-Path (Join-Path $KitBin "inside.ps1")))
+
+$beforeHashes = (Get-ChildItem $KitBin -File | Sort-Object Name | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash }) -join "|"
+$script:RtChanged = @(); $script:RtHeld = @()
+Sync-RtKitScripts $KitRepo $KitBin $KitHome
+$afterHashes = (Get-ChildItem $KitBin -File | Sort-Object Name | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash }) -join "|"
+Check "kit sync: a second run changes no installed file" ($beforeHashes -eq $afterHashes)
+Check "kit sync: a second run reports nothing as changed" ($script:RtChanged.Count -eq 0)
+Check "kit sync: a first run made no undo copy (nothing was replaced)" (-not (Test-Path (Join-Path $KitRepo ".rt-undo")))
+
+[System.IO.File]::WriteAllText((Join-Path $KitSrc "alpha.ps1"), "`$cfg = 'changed'`r`n", $utf8NoBom)
+$script:RtChanged = @(); $script:RtHeld = @()
+Sync-RtKitScripts $KitRepo $KitBin $KitHome
+Check "kit sync: a changed repository file replaces the installed one" ([System.IO.File]::ReadAllText((Join-Path $KitBin "alpha.ps1")) -ceq "`$cfg = 'changed'`r`n")
+$undoCopies = @(Get-ChildItem (Join-Path $KitRepo ".rt-undo") -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-alpha.ps1" })
+Check "kit sync: the previous installed file is copied to the undo folder first" ($undoCopies.Count -eq 1 -and [System.IO.File]::ReadAllText($undoCopies[0].FullName) -ceq "`$cfg = '$homeSlash/.config/aider/x'`r`n")
+
+$script:RtChanged = @(); $script:RtHeld = @()
+$emptyHome = Join-Path $Fake "emptyhome"
+New-Item -ItemType Directory -Path $emptyHome | Out-Null
+$threw = $false
+try { Sync-RtKitScripts $KitRepo (Join-Path $emptyHome ".local\bin") $emptyHome } catch { $threw = $true }
+Check "kit sync: a missing install folder is skipped without an error and creates nothing" ((-not $threw) -and ($script:RtChanged.Count -eq 0) -and (@(Get-ChildItem $emptyHome -Force).Count -eq 0))
+$threw = $false
+try { Sync-RtKitScripts (Join-Path $Fake "no-such-repo") $KitBin $KitHome } catch { $threw = $true }
+Check "kit sync: a repository without the kit folder is skipped without an error" (-not $threw)
+
+Check "kit sync: the configuration folder is byte-for-byte unchanged" ((Get-FileHash (Join-Path $KitCfg "model-settings.yml") -Algorithm SHA256).Hash -eq $cfgHash -and @(Get-ChildItem $KitCfg -Force).Count -eq 1)
+$syncSource = [System.IO.File]::ReadAllText((Join-Path $RepoRoot "scripts\lib\rt-sync.ps1"))
+Check "Invoke-RtSync runs the kit step after the skills step" ($syncSource -match 'Sync-RtKitScripts\s+\$repoRoot')
+$script:RtQuiet = $false
+
 Check "live ~/.claude/settings.json never written"  ((Get-FileHash $liveSettings -Algorithm SHA256).Hash -eq $liveSettingsHash)
 Check "live ~/.claude/CLAUDE.md never written"      ((Get-FileHash $liveClaude   -Algorithm SHA256).Hash -eq $liveClaudeHash)
 

@@ -18,7 +18,7 @@ of the hook itself exits 0 in silence).
 ## Sync of the kit scripts
 
 No script copies only the kit scripts: the kit installer works file by file and its force option would also
-overwrite the owner's tuned configuration. The existing repository sync, run at every session start by the
+overwrite a tuned configuration. The existing repository sync, run at every session start by the
 sync option of the junction installer, is extended instead. A new function in `scripts/lib/rt-sync.ps1`
 copies every file at the top level of `.claude/skills/aider-setup/scripts` (not the `Test` folder) into the
 `.local/bin` folder of the home that owns the `.claude` folder being synced. Rules:

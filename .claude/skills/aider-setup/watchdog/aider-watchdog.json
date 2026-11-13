@@ -60,5 +60,9 @@
   "generationTimeoutSeconds": {
     "value": 600,
     "provenance": "author's choice, unmeasured: upper bound of one measured generation"
+  },
+  "maxConsecutiveFailures": {
+    "value": 10,
+    "provenance": "author's choice, unmeasured: failed tours in a row (10 at 30 s is 5 minutes) before the watch gives up; added 2026-11-13 after one failed call ended it silently in night un5b"
   }
 }

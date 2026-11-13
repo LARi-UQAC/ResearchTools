@@ -102,7 +102,8 @@ func TestShippedSettingsLoad(t *testing.T) {
 		"prompt": {"value": "Write one paragraph.", "provenance": "test"},
 		"numPredict": {"value": 256, "provenance": "test"},
 		"warmupNumPredict": {"value": 8, "provenance": "test"},
-		"generationTimeoutSeconds": {"value": 600, "provenance": "test"}
+		"generationTimeoutSeconds": {"value": 600, "provenance": "test"},
+		"maxConsecutiveFailures": {"value": 7, "provenance": "test"}
 	}`
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
@@ -136,6 +137,9 @@ func TestShippedSettingsLoad(t *testing.T) {
 	}
 	if s.CallTimeoutSeconds != 30 {
 		t.Errorf("expected CallTimeoutSeconds 30, got %d", s.CallTimeoutSeconds)
+	}
+	if s.MaxConsecutiveFailures != 7 {
+		t.Errorf("expected MaxConsecutiveFailures 7, got %d", s.MaxConsecutiveFailures)
 	}
 }
 

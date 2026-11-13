@@ -36,6 +36,22 @@ func watch(opts watchOptions, d deps) int {
 	var lastTime time.Time
 	firstPoll := true
 	iterations := 0
+	failures := 0
+
+	// A failed read or stop skips this tour. Only a run of failures with no success in between ends the
+	// watch, and each failure and the final exit leave a line in watchdog.log, so a death is never silent.
+	// Measured 2026-11-13 (night un5b): one failed call ended the process with exit 1 and no trace, and
+	// the run went on for hours with no watchdog.
+	skip := func(step string, cause error) bool {
+		failures++
+		_ = appendEventLine(opts.LogsDir, d.now(), "error", step, cause.Error(), failures)
+		if failures >= opts.Settings.MaxConsecutiveFailures {
+			_ = appendEventLine(opts.LogsDir, d.now(), "gave_up", step, cause.Error(), failures)
+			return true
+		}
+		return false
+	}
+	pause := time.Duration(opts.Settings.PollSeconds) * time.Second
 
 	for {
 		if opts.MaxIterations > 0 && iterations >= opts.MaxIterations {
@@ -47,12 +63,11 @@ func watch(opts watchOptions, d deps) int {
 		// 1. Check if parent is gone
 		rows, err := readProcessTable(d.runner, time.Duration(opts.Settings.CallTimeoutSeconds)*time.Second)
 		if err != nil {
-			// If we can't read the table, we might be in a bad state.
-			// Spec: "It ends with exit code 0 when the parent process no longer exists".
-			// If readProcessTable fails, we can't know.
-			// But usually if powershell fails, it's a hard error.
-			// Let's return 1 for failure.
-			return 1
+			if skip("process table", err) {
+				return 1
+			}
+			d.sleep(pause)
+			continue
 		}
 
 		parentAlive := false
@@ -69,17 +84,12 @@ func watch(opts watchOptions, d deps) int {
 		// 2. Check run record state
 		state, plan, err := readRunRecord(opts.RunRecord)
 		if err != nil {
-			// Missing or corrupt run record.
-			// Spec: "2 a missing argument or an unreadable settings file".
-			// Run record is not settings.
-			// If run record is missing, maybe the job is done?
-			// Spec: "It ends with exit code 0 when ... the run record state is one of terminalStates".
-			// If we can't read it, we can't check.
-			// Let's assume if it's missing, we should stop? Or fail?
-			// "A missing configuration value is an explicit error".
-			// Run record is not configuration.
-			// Let's return 1.
-			return 1
+			// The driver rewrites the record through a temporary file, so a read can fall on the swap.
+			if skip("run record", err) {
+				return 1
+			}
+			d.sleep(pause)
+			continue
 		}
 
 		if contains(opts.Settings.TerminalStates, state) {
@@ -89,10 +99,12 @@ func watch(opts watchOptions, d deps) int {
 		// 3. Read model and GPU
 		model, contextLength, err := readOllamaPS(d.getter, opts.Settings.OllamaURL, time.Duration(opts.Settings.CallTimeoutSeconds)*time.Second)
 		if err != nil {
-			// If we can't read Ollama, is it a failure?
-			// "A missing dependency ... stops the run".
-			// Ollama is a dependency.
-			return 1
+			// A model server saturating the CPU can miss the call timeout once without being down.
+			if skip("ollama", err) {
+				return 1
+			}
+			d.sleep(pause)
+			continue
 		}
 
 		gpuPercent, err := readGPUPercent(d.runner, time.Duration(opts.Settings.CallTimeoutSeconds)*time.Second)
@@ -130,38 +142,31 @@ func watch(opts watchOptions, d deps) int {
 			// Stop work
 			selfPID := os.Getpid()
 			stopped, err := stopWork(d.runner, time.Duration(opts.Settings.CallTimeoutSeconds)*time.Second, opts.ParentPID, selfPID)
+			if err == nil && !stopped {
+				err = fmt.Errorf("the process is still alive after the stop")
+			}
+			if err == nil {
+				err = appendStopLine(opts.LogsDir, d.now(), r)
+			}
+			if err == nil {
+				err = writeStopSignal(opts.LogsDir, plan)
+			}
 			if err != nil {
-				// Failed to stop?
-				// "A process still alive after the stop is reported as a failed stop."
-				// Spec doesn't say what to do on failed stop, but likely log it and continue?
-				// "On a stall it stops ... checks that the process is gone ... appends ... writes ... and starts again".
-				// If it fails, we probably should still write the log?
-				// "reported as a failed stop" - implies the log line should indicate failure?
-				// But the log line format is fixed: "time, event stop, model, cpu_percent, gpu_percent, plan".
-				// It doesn't have a "success" field.
-				// Maybe we just return 1?
-				return 1
-			}
-			if !stopped {
-				return 1
-			}
-
-			// Write log
-			if err := appendStopLine(opts.LogsDir, d.now(), r); err != nil {
-				return 1
-			}
-
-			// Write signal
-			if err := writeStopSignal(opts.LogsDir, plan); err != nil {
-				return 1
+				// The tracker is kept: the next tour tries the stop again.
+				if skip("stop", err) {
+					return 1
+				}
+				d.sleep(pause)
+				continue
 			}
 
 			// Reset tracker
 			tracker = newTracker(opts.References, opts.Settings)
 		}
 
-		// 7. Sleep
-		d.sleep(time.Duration(opts.Settings.PollSeconds) * time.Second)
+		// 7. A whole tour went through: the failure count starts again. Then sleep.
+		failures = 0
+		d.sleep(pause)
 	}
 }
 

@@ -277,6 +277,160 @@ func TestNothingIsWrittenWithoutAStall(t *testing.T) {
 	}
 }
 
+const aliveTable = `[{"ProcessId":100,"ParentProcessId":0,"Name":"parent.exe","KernelModeTime":0,"UserModeTime":0}]`
+
+func failureOptions(t *testing.T, maxFailures int) watchOptions {
+	t.Helper()
+	dir := t.TempDir()
+	recordPath := filepath.Join(dir, "run_record.json")
+	if err := os.WriteFile(recordPath, []byte(`{"state": "writing", "plan": "plan1.md"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return watchOptions{
+		ParentPID: 100,
+		RunRecord: recordPath,
+		LogsDir:   dir,
+		Settings: settings{
+			PollSeconds:            1,
+			TerminalStates:         []string{"done"},
+			WatchedStates:          []string{"writing"},
+			ModelServerNames:       []string{"ollama"},
+			MaxConsecutiveFailures: maxFailures,
+		},
+		References:    map[string]reference{},
+		MaxIterations: 20,
+	}
+}
+
+func logText(t *testing.T, opts watchOptions) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(opts.LogsDir, "watchdog.log"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func TestOneFailedOllamaCallIsLoggedAndTheWatchGoesOn(t *testing.T) {
+	opts := failureOptions(t, 3)
+	polls := 0
+	d := deps{
+		runner: func(name string, args []string, timeout time.Duration) (string, error) {
+			if name == "powershell" {
+				polls++
+				if polls >= 3 {
+					return `[]`, nil // the parent is gone: the watch ends by itself
+				}
+				return aliveTable, nil
+			}
+			return "", nil
+		},
+		getter: func(url string, timeout time.Duration) ([]byte, error) {
+			if polls == 1 {
+				return nil, os.ErrDeadlineExceeded
+			}
+			return []byte(`{"models":[]}`), nil
+		},
+		now:   func() time.Time { return time.Now() },
+		sleep: func(time.Duration) {},
+	}
+
+	if code := watch(opts, d); code != 0 {
+		t.Fatalf("expected exit code 0 after one failed call, got %d", code)
+	}
+	text := logText(t, opts)
+	if strings.Count(text, `"event":"error"`) != 1 || !strings.Contains(text, `"step":"ollama"`) {
+		t.Errorf("expected one logged error on the ollama step, got %q", text)
+	}
+	if strings.Contains(text, "gave_up") {
+		t.Errorf("the watch must not give up after one failure: %q", text)
+	}
+}
+
+func TestFailuresInARowEndTheWatchWithALoggedExit(t *testing.T) {
+	opts := failureOptions(t, 3)
+	d := deps{
+		runner: func(name string, args []string, timeout time.Duration) (string, error) {
+			if name == "powershell" {
+				return aliveTable, nil
+			}
+			return "", nil
+		},
+		getter: func(url string, timeout time.Duration) ([]byte, error) {
+			return nil, os.ErrDeadlineExceeded
+		},
+		now:   func() time.Time { return time.Now() },
+		sleep: func(time.Duration) {},
+	}
+
+	if code := watch(opts, d); code != 1 {
+		t.Fatalf("expected exit code 1 after three failures in a row, got %d", code)
+	}
+	text := logText(t, opts)
+	if strings.Count(text, `"event":"error"`) != 3 || strings.Count(text, `"event":"gave_up"`) != 1 {
+		t.Errorf("expected three errors and one gave_up line, got %q", text)
+	}
+}
+
+func TestASuccessfulTourResetsTheFailureCount(t *testing.T) {
+	opts := failureOptions(t, 2)
+	polls := 0
+	d := deps{
+		runner: func(name string, args []string, timeout time.Duration) (string, error) {
+			if name == "powershell" {
+				polls++
+				if polls >= 6 {
+					return `[]`, nil
+				}
+				return aliveTable, nil
+			}
+			return "", nil
+		},
+		getter: func(url string, timeout time.Duration) ([]byte, error) {
+			if polls%2 == 1 { // tours 1, 3 and 5 fail, tours 2 and 4 succeed
+				return nil, os.ErrDeadlineExceeded
+			}
+			return []byte(`{"models":[]}`), nil
+		},
+		now:   func() time.Time { return time.Now() },
+		sleep: func(time.Duration) {},
+	}
+
+	if code := watch(opts, d); code != 0 {
+		t.Fatalf("alternating failures must not reach the limit of 2, got exit code %d", code)
+	}
+	if strings.Contains(logText(t, opts), "gave_up") {
+		t.Error("the failure count was not reset by the successful tours")
+	}
+}
+
+func TestAMissingRunRecordIsLoggedAndEndsTheWatchAtTheLimit(t *testing.T) {
+	opts := failureOptions(t, 2)
+	if err := os.Remove(opts.RunRecord); err != nil {
+		t.Fatal(err)
+	}
+	d := deps{
+		runner: func(name string, args []string, timeout time.Duration) (string, error) {
+			if name == "powershell" {
+				return aliveTable, nil
+			}
+			return "", nil
+		},
+		getter: func(url string, timeout time.Duration) ([]byte, error) {
+			return []byte(`{"models":[]}`), nil
+		},
+		now:   func() time.Time { return time.Now() },
+		sleep: func(time.Duration) {},
+	}
+
+	if code := watch(opts, d); code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(logText(t, opts), `"step":"run record"`) {
+		t.Errorf("the run record failure is not in the log: %q", logText(t, opts))
+	}
+}
+
 func TestMissingArgumentExitsTwo(t *testing.T) {
 	// This tests the main function logic, but main() calls os.Exit.
 	// We can refactor main to call a run(args []string) int function.

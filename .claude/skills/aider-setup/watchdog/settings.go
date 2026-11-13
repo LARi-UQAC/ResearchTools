@@ -21,6 +21,7 @@ type settings struct {
 	NumPredict                 int
 	WarmupNumPredict           int
 	GenerationTimeoutSeconds   int
+	MaxConsecutiveFailures     int
 }
 
 // Purpose: Load and validate the watchdog settings from a JSON file.
@@ -54,6 +55,7 @@ func loadSettings(path string) (settings, error) {
 		"numPredict",
 		"warmupNumPredict",
 		"generationTimeoutSeconds",
+		"maxConsecutiveFailures",
 	}
 
 	for _, key := range keys {
@@ -125,6 +127,10 @@ func loadSettings(path string) (settings, error) {
 			}
 		case "generationTimeoutSeconds":
 			if err := json.Unmarshal(entry.Value, &s.GenerationTimeoutSeconds); err != nil {
+				return s, fmt.Errorf("failed to parse value for key %q in settings file %s: %w", key, path, err)
+			}
+		case "maxConsecutiveFailures":
+			if err := json.Unmarshal(entry.Value, &s.MaxConsecutiveFailures); err != nil {
 				return s, fmt.Errorf("failed to parse value for key %q in settings file %s: %w", key, path, err)
 			}
 		}

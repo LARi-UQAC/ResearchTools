@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter", "Get-MarkCounts", "Get-KitConfigDir", "Resolve-ConfigPath")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter", "Get-MarkCounts", "Get-KitConfigDir", "Resolve-ConfigPath", "Restart-WatchdogIfEnded")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -273,6 +273,31 @@ Check "Update-RunRecord before Initialize-RunRecord does nothing and does not th
     $script:RunRecordPath = ""
     Update-RunRecord @{ state = "writing" }
     $true
+}
+
+# --- The watchdog restart ---------------------------------------------------
+# Start-Watchdog is replaced by a stub so that no real process starts (R21).
+$script:restarts = 0
+function Start-Watchdog([int]$driverPid, [string]$runRecord, [string]$logs) { $script:restarts++; return "new-watchdog" }
+
+Check "an ended watchdog is started again and the new one is returned" {
+    $script:restarts = 0
+    $ended = [pscustomobject]@{ HasExited = $true; ExitCode = 1 }
+    $r = Restart-WatchdogIfEnded $ended 1 "record.json" "logs"
+    ($r -eq "new-watchdog") -and ($script:restarts -eq 1)
+}
+
+Check "a watchdog still running is left alone" {
+    $script:restarts = 0
+    $alive = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
+    $r = Restart-WatchdogIfEnded $alive 1 "record.json" "logs"
+    ([object]::ReferenceEquals($r, $alive)) -and ($script:restarts -eq 0)
+}
+
+Check "a watchdog that never started is not started by the restart check" {
+    $script:restarts = 0
+    $r = Restart-WatchdogIfEnded $null 1 "record.json" "logs"
+    ($null -eq $r) -and ($script:restarts -eq 0)
 }
 
 # --- Teardown ---------------------------------------------------------------

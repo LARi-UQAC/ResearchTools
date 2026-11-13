@@ -524,6 +524,16 @@ function Start-Watchdog([int]$driverPid, [string]$runRecord, [string]$logs) {
     return $p
 }
 
+# Purpose: Start the watchdog again when the one started with the run has ended while the run goes on.
+# Inputs: proc - the process returned by Start-Watchdog, or $null; the three arguments of Start-Watchdog.
+# Outputs: the process to use from now on: the same one when it is alive or never started, a new one after a restart.
+# Measured 2026-11-13 (night un5b): the watchdog ended on one failed call and nothing noticed for 14 hours.
+function Restart-WatchdogIfEnded($proc, [int]$driverPid, [string]$runRecord, [string]$logs) {
+    if ($null -eq $proc -or -not $proc.HasExited) { return $proc }
+    Write-Host ("  WARNING: the watchdog had ended (exit {0}); starting it again. See watchdog.log in the logs folder." -f $proc.ExitCode) -ForegroundColor Yellow
+    return (Start-Watchdog $driverPid $runRecord $logs)
+}
+
 function Stop-Watchdog($proc) {
     if ($null -ne $proc -and -not $proc.HasExited) { try { $proc.Kill() } catch { } }
 }

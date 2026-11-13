@@ -181,6 +181,41 @@ func appendStopLine(logsDir string, at time.Time, r reading) error {
 	return nil
 }
 
+// Purpose: Append a JSON line to the watchdog log for a failed step or for the end of the watch.
+// Details: Writes time, event ("error" or "gave_up"), step, detail and the count of failures in a row.
+// Inputs: logsDir (string) - Directory for the log file; at (time.Time) - Timestamp; event, step, detail (string) - What happened; failures (int) - Failures in a row.
+// Outputs: error - If writing fails.
+// Raises: error if the file cannot be opened or written to.
+func appendEventLine(logsDir string, at time.Time, event, step, detail string, failures int) error {
+	path, err := resolveInside(logsDir, "watchdog.log")
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(map[string]interface{}{
+		"time":     at.Format(time.RFC3339),
+		"event":    event,
+		"step":     step,
+		"detail":   detail,
+		"failures": failures,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal log entry: %w", err)
+	}
+	data = append(data, '\n')
+
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := file.Write(data); err != nil {
+		return fmt.Errorf("failed to write log entry: %w", err)
+	}
+	return nil
+}
+
 // Purpose: Write the stop signal file with the plan name.
 // Details: Creates a JSON file named watchdog-stop.json containing the plan.
 // Inputs: logsDir (string) - Directory for the signal file; plan (string) - The plan name.

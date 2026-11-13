@@ -1034,6 +1034,8 @@ if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDi
 
 # --- One plan per process --------------------------------------------------
 :plans foreach ($plan in $plans) {
+    # A watchdog that ended by itself is started again at each plan, and the run says so.
+    if (-not $DryRun) { $watchdog = Restart-WatchdogIfEnded $watchdog $PID $script:RunRecordPath $logDir }
     # Labelled, because every failure exit below sits inside the rounds
     # while-loop and a bare break or continue would act on THAT loop: a bare
     # break would start the next plan silently, a bare continue would re-enter

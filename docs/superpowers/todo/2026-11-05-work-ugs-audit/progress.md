@@ -159,10 +159,14 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 ## plan17.md
 
 - [x] T1 harvest night un5: files of plans 5c, 6a, 6b, 8b, 8c copied back (5d empty, dropped); quality 92 / not scored / 97 / 91 / 96 / 93 percent; all five test files still fail in the worktree (8/12, 11/13, 4/7, 21/24, 16/21); audit.md lists R0 literals and a placeholder distance_to_rect
-- [ ] T2 stop the watchdog and unload the models
-- [ ] T3 improve each plan under 100 percent with the local model from its quality.md gaps, then commit with the before and after percentages
+- [x] T2 stop the watchdog and unload the models: no aider-watchdog process left, `ollama stop` unloaded the reviewer model (ollama ps empty), commit 4b55742 holds step 1
+- [ ] T3 (RUNNING since 2026-11-13 03:25, log ~/.claude/aider-live/un5b_night.log, waiter armed; plans 5c/5d/6b reworded with exact PyMuPDF calls, audit lines in the un5 progress.md for all six) improve each plan under 100 percent with the local model from its quality.md gaps, then commit with the before and after percentages
 - [ ] T4 delete the duplicates (kit, home, 19 old projects; the operator deletes the old config folder himself)
 - [ ] T5 check the impact on the other plans and the current configuration
 - [ ] T6 run lc-fix plan 1 with local-coder, report its quality percentage
 - [ ] T7 close: evidence in this ledger, commit, tell the operator his two actions
 - [ ] T8 start the next night (plans 8d to 8l) and arm its waiter
+
+## watchdog fix (Issue #108, 2026-11-13)
+
+- [x] T1 watchdog no longer dies on one failed call: skip the tour, log each error and a gave_up line to watchdog.log, give up after maxConsecutiveFailures (10) in a row; driver restarts an ended watchdog at each plan; go test and verify-aider-plan.ps1 (79 ok) green; fresh watchdog started on the live run (pid 32996). Written by the cloud session on the owner's order, a deviation from R39 for this fix only

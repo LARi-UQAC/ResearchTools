@@ -165,3 +165,4 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 - [ ] T5 check the impact on the other plans and the current configuration
 - [ ] T6 run lc-fix plan 1 with local-coder, report its quality percentage
 - [ ] T7 close: evidence in this ledger, commit, tell the operator his two actions
+- [ ] T8 start the next night (plans 8d to 8l) and arm its waiter

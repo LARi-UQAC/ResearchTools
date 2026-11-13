@@ -219,5 +219,15 @@ harvest)
   elif is_rust; then ( cd "$W" && "$CARGO_EXE" test --manifest-path "$(rust_dir)/Cargo.toml" 2>&1 | tail -8 )
   else ( cd "$W" && "$PYI" "$T" 2>&1 | tail -4 ); fi
   ;;
-*) echo "usage: run-plan.sh mount|start|harvest <id>"; exit 64 ;;
+start-night)
+  # Launch aider-night.ps1 of this worktree on the project mounted by mount-night (u<ID>). The kit runs in place,
+  # so no configuration is passed. The log ends with NIGHT-FINISHED rc=N, which a waiter can watch for.
+  for m in $(powershell.exe -NoProfile -Command "ollama ps" | tail -n +2 | awk '{print $1}'); do
+    powershell.exe -NoProfile -Command "ollama stop $m" >/dev/null 2>&1 || true
+  done
+  NLOG="$LIVE/u${ID}${SUFFIX:-}_night.log"; : > "$NLOG"
+  AIDER_TEST_COMMAND='.\.venv\Scripts\python.exe run_tests.py' nohup bash -c "powershell.exe -NoProfile -ExecutionPolicy Bypass -File '$(cygpath -w "$S/scripts/aider-night.ps1")' '$(cygpath -w "$P")' >> '$NLOG' 2>&1; echo NIGHT-FINISHED rc=\$? >> '$NLOG'" >/dev/null 2>&1 &
+  sleep 1; echo "night started on $P, log $NLOG"
+  ;;
+*) echo "usage: run-plan.sh mount|mount-night|mount-all|start|start-night|harvest <id>"; exit 64 ;;
 esac

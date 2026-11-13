@@ -9,8 +9,9 @@ bounds:
 
 # Plan 17 - End of night un5: remove the duplicates, check nothing breaks, run the last local plan
 
-> Cloud plan, deliberately tiny so that no step is forgotten. It runs when `~/.claude/aider-live/un5_night.log`
-> holds `NIGHT-FINISHED`. Run the steps in order and tick each one in `progress.md` with its evidence.
+> Cloud plan, deliberately tiny so that no step is forgotten. **It starts by itself**: a background waiter watches
+> `~/.claude/aider-live/un5_night.log` and, when the line `NIGHT-FINISHED` appears, wakes the session that runs this
+> plan. Run the steps in order and tick each one in `progress.md` with its evidence. The last step starts the next night.
 
 **Goal:** one copy of every configuration file, in `.claude/skills/aider-setup/config`. The kit runs in place, so
 the rendered copies and the old test projects have no use left.
@@ -47,3 +48,4 @@ the rendered copies and the old test projects have no use left.
 7. **Close:** note the evidence of steps 1 to 6 in `progress.md`, commit, and tell the operator the two actions only
    he can do: delete `~\.config\aider`, and run `.\setup.ps1 -InstallAiderPath` from the main clone
    after the merge (the Path entry is specific to each machine).
+8. **Start the next night, the last step.** Its plans are the ones the ledger still lists as open and whose inputs exist: 8d to 8l (a plan that reads `ugs_bridge` or `ugs_text` waits if step 1 left 8b or 8c blocked: mount only the plans whose inputs are in the worktree, and say which ones are left out). From `docs/superpowers/todo/2026-11-05-work-ugs-audit`: `NIGHT_IDS="8d 8e 8f 8g 8h 8i 8j 8k 8l" bash run-plan.sh mount-night n6`, a dry run of `aider-night.ps1` on `~/.claude/aider-live/work/un6` (set `AIDER_TEST_COMMAND` to `.\.venv\Scripts\python.exe run_tests.py`), then `bash run-plan.sh start-night n6`, then arm a new waiter on `~/.claude/aider-live/un6_night.log` so that the harvest of that night starts by itself the same way. The kit runs in place and the watchdog starts with it; check `watchdog started` in the first lines of the log.

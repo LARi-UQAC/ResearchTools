@@ -24,12 +24,13 @@ the rendered copies and the old test projects have no use left.
    `~\.claude\aider-live\work\un5\docs\superpowers\plans\`, copy back only the files each plan names,
    run their tests in the worktree, tick the plans in this ledger, commit. Report the quality percentage of each.
 2. **Stop what the night left running:** the watchdog (`Get-Process aider-watchdog`) and the loaded models (`ollama ps`).
-3. **Delete the duplicates.** Folders: `~\.claude\aider-live\kit`, `...\aider-live\home`, and every
+3. **Bring each plan to its best quality, then commit.** For every plan of step 1 under 100 percent (the score cannot go above 100), take the requirements that `quality.md` lists as `[partial]` or `[missing]` and the failing tests, and put them back to the local model: one `- [ ] audit: <requirement>` line per gap in the plan section of the project's `progress.md`, then run the kit again on that plan (`aider-plan.ps1`, in place), inside the bounds of the plan header. The cloud writes no code (R39). Harvest the improved files, run their tests, score again, and commit by path with the percentage before and after in the message. A plan stopped by the reply limit (`Output tokens ... possibly exceeded output limit` in its log, or `blocks.md`) is not rerun as it is and its limit is never raised: the plan is split, or its wording is changed so that the model has nothing to hesitate about, and then it is run again.
+4. **Delete the duplicates.** Folders: `~\.claude\aider-live\kit`, `...\aider-live\home`, and every
    project of `...\aider-live\work\` except `un5` (cube, harness1, harness1b, moves, multi, multi2, multi3, u4b,
    u4c, u4cb, u4cc, u4d, u5a, u5b, un2, un3, un3-stopped, un4, uwd), with the `*_run.log` and `*.idmap` files of
    those projects. `un5` goes when step 1 is harvested. The operator deletes `~\.config\aider` himself
    once step 4 is green. `examples/` and `EXAMPLE-PROMPT-robot.md` stay: they are teaching material.
-4. **Check the impact on the other plans and on the current configuration**, all from the ResearchTools path:
+5. **Check the impact on the other plans and on the current configuration**, all from the ResearchTools path:
    - `aider-plan.ps1 -DryRun` on a mounted project, then `aider-night.ps1 -DryRun`: both must find
      `.claude\skills\aider-setup\config` without any flag.
    - `scripts\test\verify-aider-plan.ps1`, `scripts\test\verify-aider-path.ps1`,
@@ -40,9 +41,9 @@ the rendered copies and the old test projects have no use left.
      (installer, build scripts, manual) or a documented fallback, never a default of the ResearchTools run.
    - The remaining plans (8d to 8l, 9 to 15, lc-fix 1) must not name a deleted path: `run-plan.sh` uses `aider-live\work`
      only for its project folders.
-5. **Run lc-fix plan 1 with `local-coder`** (one plan, so the wrapper): dispatch with the line
+6. **Run lc-fix plan 1 with `local-coder`** (one plan, so the wrapper): dispatch with the line
    `PLAN: docs/superpowers/plans/lc-fix/plan1.md`. The kit is the one in place. Report the quality percentage from
    `quality.md`.
-6. **Close:** note the evidence of steps 1 to 5 in `progress.md`, commit, and tell the operator the two actions only
+7. **Close:** note the evidence of steps 1 to 6 in `progress.md`, commit, and tell the operator the two actions only
    he can do: delete `~\.config\aider`, and run `.\setup.ps1 -InstallAiderPath` from the main clone
    after the merge (the Path entry is specific to each machine).

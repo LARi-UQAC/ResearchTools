@@ -160,7 +160,8 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [ ] T1 harvest night un5, report each quality percentage
 - [ ] T2 stop the watchdog and unload the models
-- [ ] T3 delete the duplicates (kit, home, 19 old projects; the operator deletes the old config folder himself)
-- [ ] T4 check the impact on the other plans and the current configuration
-- [ ] T5 run lc-fix plan 1 with local-coder, report its quality percentage
-- [ ] T6 close: evidence in this ledger, commit, tell the operator his two actions
+- [ ] T3 improve each plan under 100 percent with the local model from its quality.md gaps, then commit with the before and after percentages
+- [ ] T4 delete the duplicates (kit, home, 19 old projects; the operator deletes the old config folder himself)
+- [ ] T5 check the impact on the other plans and the current configuration
+- [ ] T6 run lc-fix plan 1 with local-coder, report its quality percentage
+- [ ] T7 close: evidence in this ledger, commit, tell the operator his two actions

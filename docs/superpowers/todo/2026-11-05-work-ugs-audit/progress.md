@@ -68,19 +68,19 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan5c.md
 
-- [ ] T1 figure_extract and its test
+- [!] T1 figure_extract and its test: night un5 harvested, quality 92 %, tests 8/12 (2 failures, 3 errors: vector figure not found, full-chart ratio); improved in plan17 T3
 
 ## plan5d.md
 
-- [ ] T1 figure_image and its test
+- [!] T1 figure_image and its test: night un5, quality not scored, both files empty (the writer looped on fitz.Pixmap resizing until the reply limit); plan reworded and rerun in plan17 T3
 
 ## plan6a.md
 
-- [ ] T1 pdf_annotate and its test
+- [!] T1 pdf_annotate and its test: night un5 harvested, quality 97 %, tests 11/13 (main() reads sys.argv with the program name, exit 2); improved in plan17 T3
 
 ## plan6b.md
 
-- [ ] T1 pdf_annex and its test
+- [!] T1 pdf_annex and its test: night un5 harvested, quality 91 %, tests 4/7 (Story.write called with a Rect instead of a rect function, TypeError); improved in plan17 T3
 
 ## plan6c.md
 
@@ -96,11 +96,11 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan8b.md
 
-- [ ] T1 ugs_bridge and its test
+- [!] T1 ugs_bridge and its test: night un5 harvested, quality 96 %, tests 21/24 (3 errors, unparsable JSON from the fake deps); improved in plan17 T3
 
 ## plan8c.md
 
-- [ ] T1 ugs_text and its test
+- [!] T1 ugs_text and its test: night un5 harvested, quality 93 %, tests 16/21 (5 failures in split_body_and_references); improved in plan17 T3
 
 ## plan8d.md
 
@@ -158,7 +158,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan17.md
 
-- [ ] T1 harvest night un5, report each quality percentage
+- [x] T1 harvest night un5: files of plans 5c, 6a, 6b, 8b, 8c copied back (5d empty, dropped); quality 92 / not scored / 97 / 91 / 96 / 93 percent; all five test files still fail in the worktree (8/12, 11/13, 4/7, 21/24, 16/21); audit.md lists R0 literals and a placeholder distance_to_rect
 - [ ] T2 stop the watchdog and unload the models
 - [ ] T3 improve each plan under 100 percent with the local model from its quality.md gaps, then commit with the before and after percentages
 - [ ] T4 delete the duplicates (kit, home, 19 old projects; the operator deletes the old config folder himself)

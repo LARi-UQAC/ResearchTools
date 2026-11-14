@@ -3,6 +3,7 @@
 ## plan1.md
 
 - [x] T1 dispatch guard checks the aider kit - updated guard to check kit presence, removed resolver logic, tests pass
+- [x] tests: 19 tests of test_local_coder_dispatch_guard.py ok, run by the session after the writer (the driver line "no test file" was a false block: its test lookup does not know the hooks Test folder)
 
 ## plan2.md
 
@@ -19,3 +20,6 @@
 ## plan5.md
 
 - [x] T1 repository sync keeps the installed aider kit scripts current: done by the cloud on 2026-11-12 by the owner order (Sync-RtKitScripts, 78 checks ok)
+
+## final audit
+- [~] final audit not run: the driver failed copying audit.md before creating it (defect logged in Issue 108); the cloud reviewed the three changed files instead

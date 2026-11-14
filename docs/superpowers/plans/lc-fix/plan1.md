@@ -46,7 +46,8 @@ on purpose. Fictitious folders in tests (R34), built under a temporary directory
 - `judge` stops taking a resolver and stops calling the plan resolution. After the header and executor
   checks it calls `kit_missing` with the configured folder and files, and returns its sentence.
 - The configuration drops the resolver entry and gains `kit_dir` (the value `~/.claude/skills/aider-setup`)
-  and `kit_files` (`config/model-settings.yml`, `config/context-budget.json`, `scripts/aider-plan.ps1`).
+  and `kit_files` (the three file paths the Guard section of the spec lists, written as data in the
+  configuration, and never edited by this plan).
 
 **Tests to write first, each failing before the code changes:** the dispatch is refused when a kit file is
 missing and the reason names that file; it is allowed when all three files exist; the resolver is never

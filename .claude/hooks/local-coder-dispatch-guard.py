@@ -7,9 +7,9 @@ A dispatch prompt must carry a line `PLAN: <path>` naming a plan file. The plan 
 contract of `plan_contract.py` (skill loop-engineer): a header with `executor`, `tier` and the
 three review bounds, the tier's file limit, the size ceilings of `context-budget.json`, a path
 inside the repository (the worktree or its main clone, resolved before it is compared, R24). The
-executor must be `local-coder`, and the tier's resolver ROLE must have a qualified model, because
-dispatching a local agent that has no model only wastes the Haiku wrapper (R8: the plan is
-executed in the session instead, and the refusal says so).
+executor must be `local-coder`, and the aider kit must be present (the folder `kit_dir` of the
+configuration holds every file of `kit_files`), because dispatching a local agent with no kit
+only wastes the Haiku wrapper. The resolver is no longer asked for a role.
 
 WHAT IT CANNOT DO: it reads the prompt text, so a prompt that names a valid plan but asks for
 something else passes, and an Agent call that omits the dispatch tool altogether is not seen.

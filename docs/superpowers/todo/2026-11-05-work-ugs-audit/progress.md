@@ -68,19 +68,19 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan5c.md
 
-- [!] T1 figure_extract and its test: night un5 harvested, quality 92 %, tests 8/12 (2 failures, 3 errors: vector figure not found, full-chart ratio); improved in plan17 T3
+- [x] T1 figure_extract and its test: second night un5b 88 %, tests 8/12 red; corrected in the session (owner order, deviation from R39): vector line clusters (PyMuPDF treats a zero-height rectangle as empty), label zone, path confinement, Raises headers; tests 14/14 green
 
 ## plan5d.md
 
-- [!] T1 figure_image and its test: night un5, quality not scored, both files empty (the writer looped on fitz.Pixmap resizing until the reply limit); plan reworded and rerun in plan17 T3
+- [x] T1 figure_image and its test: second night un5b 100 %, tests 8/8 green (the reworded plan with exact PyMuPDF calls worked; was not scored the first night)
 
 ## plan6a.md
 
-- [!] T1 pdf_annotate and its test: night un5 harvested, quality 97 %, tests 11/13 (main() reads sys.argv with the program name, exit 2); improved in plan17 T3
+- [x] T1 pdf_annotate and its test: second night un5b 98 %, tests 12/13; one test read only the first print of a mocked stdout, fixed with StringIO; tests 13/13 green
 
 ## plan6b.md
 
-- [!] T1 pdf_annex and its test: night un5 harvested, quality 91 %, tests 4/7 (Story.write called with a Rect instead of a rect function, TypeError); improved in plan17 T3
+- [x] T1 pdf_annex and its test: second night un5b 89 %, tests 4/7; corrected in the session: annex built in memory (Windows kept the temp file locked), test compares text with whitespace folded, main refuses missing inputs and non-PDF with exit 2, default template read from assets; tests 10/10 green
 
 ## plan6c.md
 
@@ -96,11 +96,11 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan8b.md
 
-- [!] T1 ugs_bridge and its test: night un5 harvested, quality 96 %, tests 21/24 (3 errors, unparsable JSON from the fake deps); improved in plan17 T3
+- [x] T1 ugs_bridge and its test: second night un5b 98 %, tests 21/24; corrected in the session: tests use real PNG files and a valid reasoning block, security finding fixed (validation messages no longer carry the replied value, new test); tests 25/25 green
 
 ## plan8c.md
 
-- [!] T1 ugs_text and its test: night un5 harvested, quality 93 %, tests 16/21 (5 failures in split_body_and_references); improved in plan17 T3
+- [x] T1 ugs_text and its test: second night un5b not scored, one failure; corrected in the session: fill refuses every value without a slot (contradicting test fixed), entry page is where the entry starts, only a heading of the same or higher level ends the references; tests 22/22 green
 
 ## plan8d.md
 
@@ -160,7 +160,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - [x] T1 harvest night un5: files of plans 5c, 6a, 6b, 8b, 8c copied back (5d empty, dropped); quality 92 / not scored / 97 / 91 / 96 / 93 percent; all five test files still fail in the worktree (8/12, 11/13, 4/7, 21/24, 16/21); audit.md lists R0 literals and a placeholder distance_to_rect
 - [x] T2 stop the watchdog and unload the models: no aider-watchdog process left, `ollama stop` unloaded the reviewer model (ollama ps empty), commit 4b55742 holds step 1
-- [ ] T3 (RUNNING since 2026-11-13 03:25, log ~/.claude/aider-live/un5b_night.log, waiter armed; plans 5c/5d/6b reworded with exact PyMuPDF calls, audit lines in the un5 progress.md for all six) improve each plan under 100 percent with the local model from its quality.md gaps, then commit with the before and after percentages
+- [x] T3 second pass harvested and corrected in the session (owner order: do not relaunch the kit; deviation from R39, the kit wrote all code and the cloud fixed the six red plans). Quality before (night 1) 92 / not scored / 97 / 91 / 96 / 93 percent, after the second night 88 / 100 / 98 / 89 / 98 / not scored percent, all six suites green after the corrections (14, 8, 13, 10, 25, 22 tests)
 - [ ] T4 delete the duplicates (kit, home, 19 old projects; the operator deletes the old config folder himself)
 - [ ] T5 check the impact on the other plans and the current configuration
 - [ ] T6 run lc-fix plan 1 with local-coder, report its quality percentage

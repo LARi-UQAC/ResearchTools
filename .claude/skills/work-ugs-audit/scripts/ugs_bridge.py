@@ -8,7 +8,7 @@ _LOOP_ENGINEER_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "loop-e
 if str(_LOOP_ENGINEER_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LOOP_ENGINEER_SCRIPTS))
 
-from bridge_text import strip_reasoning
+from bridge_text import strip_reasoning, unwrap_sole_code_fence
 from bridge_images import ImageError, attach_images
 
 
@@ -67,15 +67,15 @@ def validate_answer(answer: Any, schema: Dict[str, Any]) -> List[str]:
                 return # No point checking further properties if type is wrong
 
         if "enum" in sch and value not in sch["enum"]:
-            errors.append(f"{path}: value {value} not in enum {sch['enum']}")
+            errors.append(f"{path}: value not in the allowed enum")
 
         if "minimum" in sch and isinstance(value, (int, float)) and not isinstance(value, bool):
             if value < sch["minimum"]:
-                errors.append(f"{path}: value {value} is less than minimum {sch['minimum']}")
+                errors.append(f"{path}: value below the minimum {sch['minimum']}")
 
         if "maximum" in sch and isinstance(value, (int, float)) and not isinstance(value, bool):
             if value > sch["maximum"]:
-                errors.append(f"{path}: value {value} is greater than maximum {sch['maximum']}")
+                errors.append(f"{path}: value above the maximum {sch['maximum']}")
 
         if isinstance(value, dict):
             for req in sch.get("required", []):
@@ -151,10 +151,8 @@ def call_with_usage(
     deps: Any,
     timeout: int,
     reserve: int,
-    image_tokens: int = 0,
-    max_image_bytes: int = 10 * 1024 * 1024 # 10MB default, but should come from config? Plan says "No numeric threshold in code". 
-    # However, max_image_bytes is a parameter. The caller should pass it. 
-    # The plan says "image_tokens=0, max_image_bytes" are args.
+    image_tokens: int,
+    max_image_bytes: int
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Purpose: Call the model and return the answer and usage.
@@ -209,13 +207,11 @@ def call_with_usage(
         raise NotRun("unreachable", f"Failed to build payload: {e}")
 
     if images:
+        # bridge_images.attach_images expects List[Path]
+        paths = [Path(img) for img in images]
         try:
-            # bridge_images.attach_images expects List[Path]
-            paths = [Path(img) for img in images]
             payload = attach_images(payload, paths, max_image_bytes)
         except ImageError as e:
-            raise NotRun("image", f"Image attachment failed: {e}")
-        except Exception as e:
             raise NotRun("image", f"Image attachment failed: {e}")
 
     try:
@@ -228,6 +224,10 @@ def call_with_usage(
     response_text = reply.get("response", "")
     stripped_text = strip_reasoning(response_text)
     
+    # If the text is still wrapped in code fences, unwrap it
+    if stripped_text.startswith("```"):
+        stripped_text = unwrap_sole_code_fence(stripped_text)
+        
     try:
         answer = json.loads(stripped_text)
     except json.JSONDecodeError as e:
@@ -256,8 +256,8 @@ def call(
     deps: Any,
     timeout: int,
     reserve: int,
-    image_tokens: int = 0,
-    max_image_bytes: int = 10 * 1024 * 1024
+    image_tokens: int,
+    max_image_bytes: int
 ) -> Dict[str, Any]:
     """
     Purpose: Call the model and return the answer.

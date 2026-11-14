@@ -1,3 +1,8 @@
+import tempfile
+import shutil
+import os
+import base64
+import atexit
 import sys
 import unittest
 from pathlib import Path
@@ -7,6 +12,30 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ugs_bridge
+
+_PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+_PNG_DIR = tempfile.mkdtemp()
+atexit.register(shutil.rmtree, _PNG_DIR, True)
+
+
+def _png_files(count):
+    """
+    Purpose: Write count tiny real PNG files and return their paths as strings.
+    Inputs:
+        count (int): Number of files to write.
+    Outputs:
+        list of str: The paths, inside a folder removed at exit.
+    """
+    paths = []
+    for i in range(count):
+        path = os.path.join(_PNG_DIR, f"img{i + 1}.png")
+        with open(path, "wb") as handle:
+            handle.write(_PNG_1X1)
+        paths.append(path)
+    return paths
+
 
 
 class FakeDeps:
@@ -139,28 +168,55 @@ class TestCallWithUsage(unittest.TestCase):
         deps = FakeDeps(post_result={"response": '{"a": "hello"}', "prompt_eval_count": 10, "eval_count": 5})
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
         answer, usage = ugs_bridge.call_with_usage(
-            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+            image_tokens=0, max_image_bytes=100
         )
         self.assertEqual(answer, {"a": "hello"})
         self.assertEqual(usage, {"prompt_tokens": 10, "completion_tokens": 5})
 
     def test_reasoning_block_is_removed_before_parsing(self):
         # Simulate a response with reasoning that strip_reasoning would remove
-        # Note: ugs_bridge uses bridge_text.strip_reasoning
-        # We mock the response to contain reasoning markers
-        deps = FakeDeps(post_result={"response": "hidden{'a': 'hello'}", "prompt_eval_count": 10, "eval_count": 5})
+        # strip_reasoning removes think... blocks or Thinking... blocks
+        # We use a format that strip_reasoning handles: think... ...done thinking.
+        reply = 'Thinking...\nsome thoughts\n...done thinking.\n{"a": "hello"}'
+        deps = FakeDeps(post_result={"response": reply, "prompt_eval_count": 10, "eval_count": 5})
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
         answer, _ = ugs_bridge.call_with_usage(
-            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+            image_tokens=0, max_image_bytes=100
         )
         self.assertEqual(answer, {"a": "hello"})
+
+    def test_invalid_reason_never_carries_the_replied_value(self):
+        # A reply value can echo student text: only the path and the constraint may be reported.
+        sentinel = "SENTINEL-STUDENT-TEXT"
+        schema = {
+            "type": "object",
+            "properties": {"a": {"enum": ["x", "y"]}, "n": {"type": "number", "minimum": 0, "maximum": 5}},
+        }
+        for reply in (
+            '{"a": "%s"}' % sentinel,
+            '{"n": -987654}',
+            '{"n": 987654}',
+        ):
+            deps = FakeDeps(post_result={"response": reply, "prompt_eval_count": 1, "eval_count": 1})
+            with self.assertRaises(ugs_bridge.NotRun) as ctx:
+                ugs_bridge.call_with_usage(
+                    role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+                    image_tokens=0, max_image_bytes=100
+                )
+            self.assertEqual(ctx.exception.kind, "invalid")
+            for leaked in (sentinel, "987654"):
+                self.assertNotIn(leaked, str(ctx.exception))
+                self.assertNotIn(leaked, ctx.exception.reason)
 
     def test_over_budget_prompt_is_not_run_and_never_posted(self):
         deps = FakeDeps(count=900, window=1000)
         schema = {"type": "object"}
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             ugs_bridge.call_with_usage(
-                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=200
+                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=200,
+                image_tokens=0, max_image_bytes=100
             )
         self.assertEqual(ctx.exception.kind, "over_budget")
         # Check that post was NOT called
@@ -173,7 +229,7 @@ class TestCallWithUsage(unittest.TestCase):
         # 900 + 0 + 100 = 1000 <= 1000 (OK)
         answer, _ = ugs_bridge.call_with_usage(
             role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
-            image_tokens=50, images=["img1", "img2"]
+            image_tokens=50, max_image_bytes=100, images=_png_files(2)
         )
         
         # Now make it exceed
@@ -181,7 +237,7 @@ class TestCallWithUsage(unittest.TestCase):
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             ugs_bridge.call_with_usage(
                 role="grader", prompt="test", schema=schema, deps=deps2, timeout=1, reserve=0,
-                image_tokens=51, images=["img1", "img2"]
+                image_tokens=51, max_image_bytes=100, images=_png_files(2)
             )
         self.assertEqual(ctx.exception.kind, "over_budget")
 
@@ -190,7 +246,8 @@ class TestCallWithUsage(unittest.TestCase):
         schema = {"type": "object"}
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             ugs_bridge.call_with_usage(
-                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+                image_tokens=0, max_image_bytes=100
             )
         self.assertEqual(ctx.exception.kind, "unparsable")
         self.assertTrue(ctx.exception.retryable)
@@ -200,7 +257,8 @@ class TestCallWithUsage(unittest.TestCase):
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             ugs_bridge.call_with_usage(
-                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+                image_tokens=0, max_image_bytes=100
             )
         self.assertEqual(ctx.exception.kind, "invalid")
         self.assertTrue(ctx.exception.retryable)
@@ -210,7 +268,8 @@ class TestCallWithUsage(unittest.TestCase):
         schema = {"type": "object"}
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             ugs_bridge.call_with_usage(
-                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+                image_tokens=0, max_image_bytes=100
             )
         self.assertEqual(ctx.exception.kind, "unreachable")
         self.assertFalse(ctx.exception.retryable)
@@ -220,7 +279,8 @@ class TestCallWithUsage(unittest.TestCase):
         schema = {"type": "object"}
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             ugs_bridge.call_with_usage(
-                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+                image_tokens=0, max_image_bytes=100
             )
         self.assertEqual(ctx.exception.kind, "unadopted")
         self.assertFalse(ctx.exception.retryable)
@@ -230,7 +290,7 @@ class TestCallWithUsage(unittest.TestCase):
         schema = {"type": "object"}
         ugs_bridge.call_with_usage(
             role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
-            images=["img1", "img2"]
+            image_tokens=0, max_image_bytes=100, images=_png_files(2)
         )
         # Check that post was called with a payload containing images
         post_call = [c for c in deps.calls if c[0] == "post"][0]
@@ -239,52 +299,26 @@ class TestCallWithUsage(unittest.TestCase):
         self.assertEqual(len(payload["images"]), 2)
 
     def test_bad_image_is_kind_image(self):
-        # We need to mock bridge_images.encode_images to raise ImageError
-        # But ugs_bridge imports it lazily. 
-        # Instead, we can mock the deps to raise an error in post? No, image error happens in attach_images.
-        # attach_images is called in ugs_bridge. 
-        # ugs_bridge imports bridge_images.
-        # We can patch ugs_bridge.bridge_images if it's accessible, or mock the import.
-        
-        # Since ugs_bridge imports bridge_images inside the function or at top?
-        # Plan says: "It imports the bridge lazily, inside its methods." 
-        # But bridge_images is a separate module in loop-engineer.
-        # ugs_bridge should import bridge_images from loop-engineer scripts.
-        
-        # Let's assume ugs_bridge does:
-        # import sys
-        # from pathlib import Path
-        # loop_engineer_scripts = Path(__file__).resolve().parent.parent.parent / "loop-engineer" / "scripts"
-        # sys.path.append(str(loop_engineer_scripts))
-        # from bridge_images import ImageError, attach_images
-        
-        # If ugs_bridge catches ImageError, it should raise NotRun("image", ...)
-        
-        # To test this, we need to force attach_images to raise ImageError.
-        # We can mock it if ugs_bridge exposes it or if we can patch it.
-        
-        # Given the constraints, I will assume ugs_bridge catches ImageError from bridge_images.
-        # I will create a test that mocks bridge_images.attach_images to raise ImageError.
-        
         import unittest.mock as mock
-        with mock.patch.dict(sys.modules, {'bridge_images': mock.MagicMock()}):
-             # This is tricky because ugs_bridge might have already imported it.
-             # Better to patch ugs_bridge.bridge_images if it's a module attribute.
-             
-             # Let's assume ugs_bridge has `import bridge_images` or similar.
-             # If I can't easily mock it, I'll skip this specific test or rely on the fact that 
-             # bridge_images raises ImageError (ValueError) and ugs_bridge catches it.
-             
-             # Actually, the test spec says: "test_bad_image_is_kind_image"
-             # I'll write the test assuming I can patch the function used by ugs_bridge.
-             
-             pass # Placeholder for now, will implement properly in source if needed.
+        from bridge_images import ImageError
+        
+        # Patch attach_images in ugs_bridge to raise ImageError
+        with mock.patch('ugs_bridge.attach_images', side_effect=ImageError("Bad image")):
+            deps = FakeDeps(post_result={"response": "{}", "prompt_eval_count": 10, "eval_count": 5})
+            schema = {"type": "object"}
+            with self.assertRaises(ugs_bridge.NotRun) as ctx:
+                ugs_bridge.call_with_usage(
+                    role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+                    images=["img1"], image_tokens=0, max_image_bytes=100
+                )
+            self.assertEqual(ctx.exception.kind, "image")
 
     def test_usage_counts_come_from_the_reply_and_none_when_absent(self):
         deps = FakeDeps(post_result={"response": "{}"}) # No prompt_eval_count or eval_count
         schema = {"type": "object"}
         _, usage = ugs_bridge.call_with_usage(
-            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+            image_tokens=0, max_image_bytes=100
         )
         self.assertIsNone(usage["prompt_tokens"])
         self.assertIsNone(usage["completion_tokens"])
@@ -294,7 +328,8 @@ class TestCallWithUsage(unittest.TestCase):
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             ugs_bridge.call_with_usage(
-                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+                role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+                image_tokens=0, max_image_bytes=100
             )
         self.assertIn("a", ctx.exception.reason)
         self.assertNotIn("123", ctx.exception.reason) # Reply text should not be in reason
@@ -305,7 +340,8 @@ class TestCall(unittest.TestCase):
         deps = FakeDeps(post_result={"response": '{"a": "hello"}', "prompt_eval_count": 10, "eval_count": 5})
         schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
         answer = ugs_bridge.call(
-            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0
+            role="grader", prompt="test", schema=schema, deps=deps, timeout=1, reserve=0,
+            image_tokens=0, max_image_bytes=100
         )
         self.assertEqual(answer, {"a": "hello"})
 

@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import sys
 import unittest
 import tempfile
@@ -79,7 +82,7 @@ class TestPdfAnnex(unittest.TestCase):
         for page in doc:
             full_text += page.get_text()
         
-        self.assertIn(long_comment, full_text)
+        self.assertIn(" ".join(long_comment.split()), " ".join(full_text.split()))
         doc.close()
 
     def test_html_special_characters_are_escaped(self):
@@ -128,6 +131,43 @@ class TestPdfAnnex(unittest.TestCase):
         doc.close()
         
         self.assertEqual(original_text, new_text)
+
+    def _write_inputs(self):
+        paths = {}
+        for name, data in (("rubric", self.rubric), ("grade", self.grade), ("totals", self.totals)):
+            paths[name] = self.test_dir / f"{name}.json"
+            paths[name].write_text(json.dumps(data), encoding="utf-8")
+        return paths
+
+    def _argv(self, paths, pdf=None):
+        return ["--pdf", str(pdf or self.pdf_path), "--rubric", str(paths["rubric"]),
+                "--grade", str(paths["grade"]), "--totals", str(paths["totals"]),
+                "--report-id", "R01", "--loop", "1"]
+
+    def test_main_with_the_default_template_adds_pages_and_prints_only_a_count(self):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = pdf_annex.main(self._argv(self._write_inputs()))
+        self.assertEqual(code, 0)
+        self.assertTrue(buffer.getvalue().strip().isdigit())
+
+    def test_main_refuses_a_missing_input_without_naming_the_path(self):
+        paths = self._write_inputs()
+        paths["grade"].unlink()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = pdf_annex.main(self._argv(paths))
+        self.assertEqual(code, 2)
+        self.assertNotIn(self.test_dir.name, err.getvalue())
+
+    def test_main_refuses_a_file_that_is_not_a_pdf_and_leaves_it_unchanged(self):
+        fake = self.test_dir / "not_a_pdf.pdf"
+        fake.write_bytes(b"plain text, not a pdf")
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = pdf_annex.main(self._argv(self._write_inputs(), pdf=fake))
+        self.assertEqual(code, 2)
+        self.assertEqual(fake.read_bytes(), b"plain text, not a pdf")
+
 
 if __name__ == "__main__":
     unittest.main()

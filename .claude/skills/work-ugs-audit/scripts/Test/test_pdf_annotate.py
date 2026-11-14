@@ -1,5 +1,7 @@
 import sys
 import unittest
+import contextlib
+import io
 import json
 import tempfile
 import os
@@ -168,9 +170,8 @@ class TestPdfAnnotate(unittest.TestCase):
             "--author", self.author
         ]
         
-        with mock.patch('sys.argv', argv):
-            exit_code = main()
-            self.assertEqual(exit_code, 2)
+        exit_code = main(argv)
+        self.assertEqual(exit_code, 2)
 
     def test_main_success(self):
         items = [
@@ -193,13 +194,8 @@ class TestPdfAnnotate(unittest.TestCase):
             "--author", self.author
         ]
         
-        with mock.patch('sys.argv', argv):
-            # We need to mock config loading or ensure it's available
-            # The plan says colors come from configuration. 
-            # ugs_config.default_path() points to assets/ugs_config.json
-            # We assume it exists and has valid data for the test environment.
-            exit_code = main()
-            self.assertEqual(exit_code, 0)
+        exit_code = main(argv)
+        self.assertEqual(exit_code, 0)
 
     def test_hyphenated_and_split_quote_is_found(self):
         # Create a PDF with hyphenated text
@@ -338,14 +334,14 @@ class TestPdfAnnotate(unittest.TestCase):
             "--author", self.author
         ]
         
-        with mock.patch('sys.argv', argv):
-            with mock.patch('sys.stdout', new_callable=mock.mock_open()) as mock_stdout:
-                exit_code = main()
-                self.assertEqual(exit_code, 0)
-                output = mock_stdout.mock_calls[0][1][0]
-                self.assertIn("Placed: 1", output)
-                self.assertIn("Not found: 0", output)
-                self.assertIn("Duplicates: 0", output)
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            exit_code = main(argv)
+        self.assertEqual(exit_code, 0)
+        output = buffer.getvalue()
+        self.assertIn("Placed: 1", output)
+        self.assertIn("Not found: 0", output)
+        self.assertIn("Duplicates: 0", output)
 
 
 if __name__ == "__main__":

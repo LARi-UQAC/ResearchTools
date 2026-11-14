@@ -1,11 +1,19 @@
 import sys
 import argparse
+import io
 import json
+import re
 import html
 from pathlib import Path
 from typing import Optional, List, Dict
 
 import fitz
+
+# Constants for PDF layout
+PAGE_MARGIN = 36
+
+DEFAULT_TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "annex.template.html"
+
 
 class AnnexError(ValueError):
     """
@@ -74,7 +82,6 @@ def build_html(template: str, rows: str, report_id: str, loop: int, total: Optio
         result = result.replace(placeholder, value)
         
     # Check for unreplaced placeholders
-    import re
     remaining = re.findall(r"\{\{.*?\}\}", result)
     if remaining:
         raise AnnexError(f"Unreplaced placeholders found: {remaining}")
@@ -90,38 +97,29 @@ def append_annex(pdf: Path, html: str) -> int:
     Outputs:
         int - Number of pages added.
     """
-    import tempfile
-    
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
-    
-    # Create a new PDF with the story content
-    writer = fitz.DocumentWriter(str(tmp_path))
+    buffer = io.BytesIO()
+    writer = fitz.DocumentWriter(buffer)
     story = fitz.Story(html=html)
-    
-    page_rect = fitz.Rect(0, 0, 595, 842)
-    
-    while story.write(writer, page_rect):
-        pass
-    
+
+    page_rect = fitz.paper_rect("a4")
+    content_rect = page_rect + (PAGE_MARGIN, PAGE_MARGIN, -PAGE_MARGIN, -PAGE_MARGIN)
+
+    def rectfn(rect_num, filled):
+        return (page_rect, content_rect, fitz.Identity)
+
+    story.write(writer, rectfn)
     writer.close()
-    
-    # Open the original PDF and append the new pages
+
+    # The annex stays in memory: a temporary file on disk stays locked on Windows
+    annex_doc = fitz.open("pdf", buffer.getvalue())
     doc = fitz.open(str(pdf))
     initial_pages = doc.page_count
-    annex_doc = fitz.open(str(tmp_path))
     doc.insert_pdf(annex_doc)
+    pages_added = doc.page_count - initial_pages
+    annex_doc.close()
     doc.saveIncr()
     doc.close()
-    annex_doc.close()
-    
-    tmp_path.unlink()
-    
-    # Count pages added
-    new_doc = fitz.open(str(pdf))
-    pages_added = new_doc.page_count - initial_pages
-    new_doc.close()
-    
+
     return pages_added
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -144,36 +142,41 @@ def main(argv: Optional[List[str]] = None) -> int:
     
     args = parser.parse_args(argv)
     
+    pdf_path = Path(args.pdf)
+    template_path = Path(args.template) if args.template else DEFAULT_TEMPLATE
+    # Messages name no path: a file name can carry a student name.
+    for path in (pdf_path, Path(args.rubric), Path(args.grade), Path(args.totals), template_path):
+        if not path.is_file():
+            print("Refusal: an input file is missing", file=sys.stderr)
+            return 2
+    with open(pdf_path, "rb") as handle:
+        if handle.read(5) != b"%PDF-":
+            print("Refusal: the file to extend is not a PDF", file=sys.stderr)
+            return 2
+
     try:
-        with open(args.rubric, "r", encoding="utf-8") as f:
-            rubric = json.load(f)
-        with open(args.grade, "r", encoding="utf-8") as f:
-            grade = json.load(f)
-        with open(args.totals, "r", encoding="utf-8") as f:
-            totals = json.load(f)
-            
-        if args.template:
-            with open(args.template, "r", encoding="utf-8") as f:
-                template = f.read()
-        else:
-            # Default template
-            template = "<html><body><h1>{{REPORT_ID}} - Loop {{LOOP}}</h1><table>{{ROWS}}</table><p>Total: {{TOTAL}}</p></body></html>"
-            
+        rubric = json.loads(Path(args.rubric).read_text(encoding="utf-8"))
+        grade = json.loads(Path(args.grade).read_text(encoding="utf-8"))
+        totals = json.loads(Path(args.totals).read_text(encoding="utf-8"))
+        template = template_path.read_text(encoding="utf-8")
+
         rows = render_rows(rubric, grade, totals)
-        html = build_html(template, rows, args.report_id, args.loop, totals.get("total"))
-        
-        pages_added = append_annex(Path(args.pdf), html)
-        
+        html_text = build_html(template, rows, args.report_id, args.loop, totals.get("total"))
+        pages_added = append_annex(pdf_path, html_text)
+
         if args.json:
             print(json.dumps({"pages_added": pages_added}))
         else:
             print(pages_added)
-            
         return 0
-        
+
+    except AnnexError as e:
+        print(f"Refusal: {e}", file=sys.stderr)
+        return 2
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Failure: {type(e).__name__}", file=sys.stderr)
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

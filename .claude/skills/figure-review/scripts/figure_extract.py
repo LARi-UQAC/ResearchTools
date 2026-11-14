@@ -5,8 +5,14 @@ from pathlib import Path
 from typing import List, Dict, Optional, Any
 import fitz
 
+CLUSTER_GAP_PT = 2.0
+RENDER_DPI = 150.0
+# Axis labels sit outside the lines of a chart. Author's choice, unmeasured.
+LABEL_MARGIN_PT = 30.0
+CAPTION_PREFIXES = ("Figure", "Fig.", "Fig ")
 
-def drawing_area_ratio(samples: bytes, width: int, height: int, n: int, threshold: int, stride: int = None) -> float:
+
+def drawing_area_ratio(samples: bytes, width: int, height: int, n: int, threshold: int) -> float:
     """
     Purpose: Calculate the area of the bounding box of pixels darker than threshold.
     Inputs:
@@ -15,12 +21,16 @@ def drawing_area_ratio(samples: bytes, width: int, height: int, n: int, threshol
         height: int - Image height in pixels.
         n: int - Number of channels.
         threshold: int - Brightness threshold (0-255).
-        stride: int - Bytes per row. Defaults to width * n if not provided.
     Outputs:
         float - Ratio of bounding box area to total image area.
+    Raises:
+        ValueError: If a dimension is not positive or samples is shorter than width * height * n.
     """
-    if stride is None:
-        stride = width * n
+    if width <= 0 or height <= 0 or n <= 0:
+        raise ValueError("image dimensions must be positive")
+    if len(samples) < width * height * n:
+        raise ValueError("samples is shorter than width * height * n")
+    stride = width * n
 
     min_x = width
     min_y = height
@@ -53,6 +63,61 @@ def drawing_area_ratio(samples: bytes, width: int, height: int, n: int, threshol
     return box_area / total_area
 
 
+def _touch(a: "fitz.Rect", b: "fitz.Rect", gap: float) -> bool:
+    """
+    Purpose: Tell whether two rectangles overlap or lie within gap points of each other.
+    Details: Done by hand because PyMuPDF treats a zero-width or zero-height rectangle
+        (every straight line of a chart) as empty and then never reports an overlap.
+    Inputs:
+        a: fitz.Rect - First rectangle.
+        b: fitz.Rect - Second rectangle.
+        gap: float - Largest gap in points that still counts as touching.
+    Outputs:
+        bool - True when the rectangles touch or overlap within gap.
+    """
+    dx = max(a.x0 - b.x1, b.x0 - a.x1)
+    dy = max(a.y0 - b.y1, b.y0 - a.y1)
+    return dx <= gap and dy <= gap
+
+
+def _union(a: "fitz.Rect", b: "fitz.Rect") -> "fitz.Rect":
+    """
+    Purpose: Return the smallest rectangle holding both inputs, empty ones included.
+    Inputs:
+        a: fitz.Rect - First rectangle.
+        b: fitz.Rect - Second rectangle.
+    Outputs:
+        fitz.Rect - The bounding rectangle.
+    """
+    return fitz.Rect(min(a.x0, b.x0), min(a.y0, b.y0), max(a.x1, b.x1), max(a.y1, b.y1))
+
+
+def _merge_clusters(rects: List["fitz.Rect"], gap: float) -> List["fitz.Rect"]:
+    """
+    Purpose: Merge rectangles that touch within gap into clusters, until none touch.
+    Inputs:
+        rects: list of fitz.Rect - The drawing rectangles of one page.
+        gap: float - Largest gap in points that still counts as touching.
+    Outputs:
+        list of fitz.Rect - One bounding rectangle per cluster.
+    """
+    clusters = list(rects)
+    changed = True
+    while changed:
+        changed = False
+        merged: List["fitz.Rect"] = []
+        for rect in clusters:
+            for i, other in enumerate(merged):
+                if _touch(rect, other, gap):
+                    merged[i] = _union(other, rect)
+                    changed = True
+                    break
+            else:
+                merged.append(rect)
+        clusters = merged
+    return clusters
+
+
 def extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold: int) -> List[Dict[str, Any]]:
     """
     Purpose: Extract figures from a PDF.
@@ -65,6 +130,7 @@ def extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold:
         List[Dict] - List of figure records.
     Raises:
         FileNotFoundError: If PDF does not exist.
+        ValueError: If a figure file would be written outside out_dir (R24).
     """
     if not pdf.exists():
         raise FileNotFoundError(f"PDF file not found: {pdf}")
@@ -94,17 +160,7 @@ def extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold:
             if rect.width > 0 or rect.height > 0:
                 vector_rects.append(rect)
 
-        # Merge touching/overlapping vector rects
-        merged_vector_rects = []
-        for rect in vector_rects:
-            merged = False
-            for i, existing in enumerate(merged_vector_rects):
-                if existing.intersects(rect):
-                    merged_vector_rects[i] = existing | rect
-                    merged = True
-                    break
-            if not merged:
-                merged_vector_rects.append(rect)
+        merged_vector_rects = _merge_clusters(vector_rects, CLUSTER_GAP_PT)
 
         # Filter merged vector rects by area and check for raster overlap
         valid_vector_rects = []
@@ -142,14 +198,16 @@ def extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold:
             figure_id = f"F{figure_count:02d}"
             
             # Render to PNG
-            # 150 DPI
-            zoom = 150 / 72
+            zoom = RENDER_DPI / 72
             mat = fitz.Matrix(zoom, zoom)
             pix = page.get_pixmap(matrix=mat, clip=rect)
             
             # Save PNG
             file_name = f"{figure_id}.png"
-            file_path = out_dir / file_name
+            out_root = out_dir.resolve()
+            file_path = (out_root / file_name).resolve()
+            if out_root not in file_path.parents:
+                raise ValueError("figure file path leaves the output folder")
             pix.save(str(file_path))
             
             record = {
@@ -165,46 +223,35 @@ def extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold:
             # Calculate ratio for both raster and vector using the rendered pixmap
             samples = pix.samples
             n = pix.n
-            stride = pix.stride
-            ratio = drawing_area_ratio(samples, pix.width, pix.height, n, background_threshold, stride)
+            ratio = drawing_area_ratio(samples, pix.width, pix.height, n, background_threshold)
             record["drawing_area_ratio"] = round(ratio, 3)
 
             if source == "raster":
                 record["pixel_size"] = [pix.width, pix.height]
             else:
                 # Vector
-                # Find text sizes inside rect
+                # Sizes of the label spans around the drawing, caption lines excluded
                 text_sizes = []
-                blocks = page.get_text("dict", clip=rect)["blocks"]
+                zone = fitz.Rect(rect.x0 - LABEL_MARGIN_PT, rect.y0 - LABEL_MARGIN_PT,
+                                 rect.x1 + LABEL_MARGIN_PT, rect.y1 + LABEL_MARGIN_PT)
+                blocks = page.get_text("dict", clip=zone)["blocks"]
                 for block in blocks:
-                    if block["type"] == 0: # Text
-                        for line in block["lines"]:
-                            for span in line["spans"]:
-                                # Check if span is inside rect (already clipped, but just in case)
+                    if block["type"] != 0:
+                        continue
+                    for line in block["lines"]:
+                        line_text = "".join(span["text"] for span in line["spans"]).strip()
+                        if line_text.startswith(CAPTION_PREFIXES):
+                            continue
+                        for span in line["spans"]:
+                            if zone.contains(fitz.Rect(span["bbox"])):
                                 text_sizes.append(span["size"])
-                
+
                 record["text_sizes"] = text_sizes
 
             # Find Caption
             # Nearest text block below, else above, that starts with Figure/Fig.
             blocks = page.get_text("blocks")
             caption = None
-            
-            # Sort blocks by distance to rect
-            def distance_to_rect(b):
-                b_rect = fitz.Rect(b[:4])
-                if b_rect.is_empty: return 99999
-                # Distance from bottom of rect to top of block (below)
-                d_below = b_rect.y0 - rect.y1
-                # Distance from top of rect to bottom of block (above)
-                d_above = rect.y0 - b_rect.y1
-                
-                # We want nearest.
-                # Prefer below? "nearest text block below, else above"
-                # This implies search below first? Or just nearest?
-                # "nearest text block below, else above" -> Search below. If found, use it. If not, search above.
-                
-                return 0 # Placeholder
 
             # Search below
             candidates_below = []
@@ -212,7 +259,7 @@ def extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold:
                 b_rect = fitz.Rect(b[:4])
                 if b_rect.y0 >= rect.y1:
                     text = b[4].strip()
-                    if text.startswith("Figure") or text.startswith("Fig.") or text.startswith("Fig "):
+                    if text.startswith(CAPTION_PREFIXES):
                         candidates_below.append((b_rect.y0 - rect.y1, text))
             
             if candidates_below:
@@ -225,7 +272,7 @@ def extract(pdf: Path, out_dir: Path, min_area_pt2: float, background_threshold:
                     b_rect = fitz.Rect(b[:4])
                     if b_rect.y1 <= rect.y0:
                         text = b[4].strip()
-                        if text.startswith("Figure") or text.startswith("Fig.") or text.startswith("Fig "):
+                        if text.startswith(CAPTION_PREFIXES):
                             candidates_above.append((rect.y0 - b_rect.y1, text))
                 
                 if candidates_above:
@@ -246,13 +293,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     Inputs:
         argv: List[str] - Command line arguments.
     Outputs:
-        int - Exit code.
+        int - Exit code: 0 done, 2 refusal (missing PDF, invalid path), 1 failure.
+    Raises:
+        SystemExit: argparse exits with code 2 on an unknown or missing option.
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--pdf", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--min-area", type=float, default=100.0)
-    parser.add_argument("--threshold", type=int, default=128)
+    parser.add_argument("--min-area", type=float, required=True)
+    parser.add_argument("--threshold", type=int, required=True)
     parser.add_argument("--json", action="store_true")
 
     args = parser.parse_args(argv)
@@ -260,13 +309,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     pdf_path = Path(args.pdf)
     out_dir = Path(args.out)
 
-    if not pdf_path.exists():
-        print(f"Error: PDF file not found: {pdf_path}", file=sys.stderr)
-        sys.exit(2)
-
+    # R17: confine every path derived from input
     try:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        records = extract(pdf_path, out_dir, args.min_area, args.threshold)
+        out_dir_resolved = out_dir.resolve()
+        pdf_path_resolved = pdf_path.resolve()
+    except Exception as e:
+        print(f"Error: Invalid path: {e}", file=sys.stderr)
+        return 2
+
+    if not pdf_path_resolved.exists():
+        print(f"Error: PDF file not found", file=sys.stderr)
+        return 2
+
+    # Check if out_dir is inside a valid location? 
+    # Spec says: "2 on a refusal (missing file, output outside the output folder)" 
+    # This likely means out_dir must be resolvable and writable.
+    
+    try:
+        out_dir_resolved.mkdir(parents=True, exist_ok=True)
+        records = extract(pdf_path_resolved, out_dir_resolved, args.min_area, args.threshold)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

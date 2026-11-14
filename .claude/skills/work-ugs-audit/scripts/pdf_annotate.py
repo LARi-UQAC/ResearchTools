@@ -39,14 +39,8 @@ def normalize(text: str) -> str:
     text = text.replace('\u201D', '"') # Right double quotation mark
     
     # Line-end hyphen joins removed
-    # This is tricky to do generally without context, but we can remove hyphen+newline
-    # The plan says "line-end hyphen joins removed". 
-    # Usually this means "hy-\nphen" -> "hyphen".
-    # We do this after collapsing whitespace? Or before?
-    # If we collapse whitespace first, "\n" becomes " ", so "hy- phen".
-    # Better to do it on the raw text or specific pattern.
-    # Let's replace "-\n" with ""
-    text = text.replace("-\n", "")
+    # Accept optional spaces between hyphen and newline
+    text = re.sub(r'-\s*\n\s*', '', text)
     
     # Whitespace collapsed to one space
     # Replace any whitespace sequence with a single space
@@ -71,57 +65,36 @@ def _find_quote_rects(page: fitz.Page, quote: str) -> List[fitz.Rect]:
     if not norm_quote:
         return []
         
-    # PyMuPDF search_for uses raw text, not normalized.
-    # We need to search for the normalized text in the normalized page text?
-    # Or search for the original quote?
-    # If the PDF has "hy-\nphen", search_for("hyphen") might fail.
-    # The plan says "matched after normalization".
-    # This implies we should extract text, normalize it, and find indices?
-    # But we need rects.
-    # fitz.Page.search_for(needle) returns rects.
-    # If the needle is normalized, it might not match the raw text.
-    
-    # Strategy:
-    # 1. Try search_for(quote).
-    # 2. If not found, try search_for(normalize(quote))? No, normalize changes chars.
-    
-    # Let's look at the plan: "A quote split across two lines or hyphenated at a line end: matched after normalization."
-    # This suggests the matching logic should handle this.
-    # PyMuPDF's search_for does not do fuzzy matching.
-    
-    # We might need to extract text blocks, normalize them, find the quote, and map back to rects.
-    # This is complex.
-    
-    # Alternative: Use search_for with the original quote. If it fails, maybe the quote is split.
-    # For the scope of this task, let's assume search_for works for simple cases, 
-    # and for hyphenation we might need a more advanced search.
-    
-    # However, the test `test_hyphenated_and_split_quote_is_found` is required.
-    # Let's implement a basic search that tries the raw quote first.
-    
-    rects = page.search_for(quote)
-    if rects:
-        return rects
+    words = page.get_text("words")
+    if not words:
+        return []
         
-    # If not found, try normalized quote?
-    # If the PDF text is "hy-\nphen", and quote is "hyphen", search_for("hyphen") fails.
-    # If we normalize quote to "hyphen", and normalize page text...
-    # We can iterate over blocks.
+    norm_words = [normalize(w[4]) for w in words]
     
-    blocks = page.get_text("blocks")
-    for block in blocks:
-        # block: (x0, y0, x1, y1, text, block_no, block_type)
-        text = block[4]
-        norm_text = normalize(text)
-        # Check if norm_quote is in norm_text
-        if norm_quote in norm_text:
-            # We found it in this block.
-            # We need to find the specific rect.
-            # This is an approximation: return the block rect.
-            # Ideally we want the exact words.
-            # For now, returning the block rect is a reasonable fallback for "found".
-            return [fitz.Rect(block[0], block[1], block[2], block[3])]
-            
+    def build_candidate(slice_words: List[str]) -> str:
+        text = ""
+        for k, w in enumerate(slice_words):
+            if k > 0:
+                if slice_words[k-1].endswith('-'):
+                    text = text[:-1]
+                else:
+                    text += " "
+            text += w
+        return text
+
+    for i in range(len(norm_words)):
+        for j in range(i, len(norm_words)):
+            candidate = build_candidate(norm_words[i:j+1])
+            if normalize(candidate) == norm_quote:
+                x0 = min(words[k][0] for k in range(i, j + 1))
+                y0 = min(words[k][1] for k in range(i, j + 1))
+                x1 = max(words[k][2] for k in range(i, j + 1))
+                y1 = max(words[k][3] for k in range(i, j + 1))
+                return [fitz.Rect(x0, y0, x1, y1)]
+                
+            if len(normalize(candidate)) > len(norm_quote):
+                break
+                
     return []
 
 

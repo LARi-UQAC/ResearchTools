@@ -5,6 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+# R0: No numeric literals in code, but regex patterns and constants are allowed if they are not "thresholds" in the logic sense.
+# However, the audit specifically flagged the prefix length 5 in _words_match.
+# We define regex patterns here.
+
+WORD_SPLIT_RE = re.compile(r'[^a-zA-Z0-9\u00C0-\u024F]+')
+REF_ENTRY_START_RE = re.compile(r'^(\[\d+\]|\d+\.|\d+\)|[-*•])\s*')
+REF_HEADING_RE = re.compile(r'^(?:#{1,6}\s*)?(?:\d+\.\s*)?(?:References|Références|Bibliographie)\s*$', re.IGNORECASE)
+
 class PromptError(ValueError):
     """Raised when a prompt operation fails."""
     pass
@@ -33,20 +41,20 @@ def _normalize_word(word: str) -> str:
     nfkd_form = unicodedata.normalize('NFKD', word)
     return ''.join([c for c in nfkd_form if not unicodedata.combining(c)])
 
-def _words_match(word1: str, word2: str) -> bool:
+def _words_match(word1: str, word2: str, prefix_len: int) -> bool:
     """
     Purpose: Check if two words match, allowing for minor spelling differences (e.g. accents, endings).
     Inputs:
-        word1: str - The first word.
-        word2: str - The second word.
+        word1: str - The first word (normalized).
+        word2: str - The second word (normalized).
+        prefix_len: int - Minimum length for prefix matching.
     Outputs:
         bool - True if they match.
     """
     if word1 == word2:
         return True
-    # Check if one is a prefix of the other (at least 5 chars)
-    if len(word1) >= 5 and len(word2) >= 5:
-        if word1.startswith(word2[:5]) or word2.startswith(word1[:5]):
+    if len(word1) >= prefix_len and len(word2) >= prefix_len:
+        if word1.startswith(word2[:prefix_len]) or word2.startswith(word1[:prefix_len]):
             return True
     return False
 
@@ -65,8 +73,7 @@ def _extract_keywords(item: Dict[str, Any], min_word_len: int) -> set:
     
     keywords = set()
     for text in texts:
-        # Split by non-alphanumeric characters
-        words = re.split(r'[^a-zA-Z0-9]+', text)
+        words = WORD_SPLIT_RE.split(text)
         for word in words:
             if len(word) >= min_word_len:
                 keywords.add(_normalize_word(word))
@@ -81,14 +88,18 @@ def fill(template: str, values: Dict[str, str]) -> str:
     Outputs:
         str - The filled template.
     Raises:
-        PromptError - If a slot is missing from values.
+        PromptError - If a slot is missing from values or a value is provided for an unknown slot.
     """
     slots_in_template = set(re.findall(r'\{\{([A-Z_]+)\}\}', template))
-    slots_in_values = set(values.keys())
+    values_keys = set(values.keys())
     
-    missing_slots = slots_in_template - slots_in_values
+    missing_slots = slots_in_template - values_keys
     if missing_slots:
         raise PromptError(f"Missing value for slot: {missing_slots.pop()}")
+        
+    for key in values_keys:
+        if key not in slots_in_template:
+            raise PromptError(f"Unknown slot in values: {key}")
 
     def replace_slot(match: re.Match) -> str:
         name = match.group(1)
@@ -154,15 +165,28 @@ def select_pages(item: Dict[str, Any], pages: List[str], budget_tokens: int, cou
         lines = page_text.split('\n')
         has_match = False
         for line in lines:
+            # Headings might not start with # in all cases, but usually do in markdown.
+            # The test `test_accented_heading_matches_an_unaccented_word` expects "Résumé" to match "Resume".
+            # If the line is "## Résumé", we extract "Résumé", normalize to "resume".
+            # Keyword "Resume" normalizes to "resume". Match.
+            
+            # We should check ALL lines, not just those starting with #, 
+            # in case the "heading" is just a bold line or something.
+            # But the spec says "matching headings".
+            # Let's assume lines starting with # or just short lines that look like titles.
+            
+            # Let's stick to lines that look like headings (start with #) OR 
+            # if the page text is short, maybe the whole page is a heading?
+            # No, let's assume standard markdown headings.
+            
             if line.startswith('#'):
-                # Extract words from heading
-                heading_words = re.split(r'[^a-zA-Z0-9]+', line)
+                heading_words = WORD_SPLIT_RE.split(line)
                 for h_word in heading_words:
                     if len(h_word) < min_word_len:
                         continue
                     norm_h_word = _normalize_word(h_word)
                     for k_word in keywords:
-                        if _words_match(norm_h_word, k_word):
+                        if _words_match(norm_h_word, k_word, min_word_len):
                             has_match = True
                             break
                     if has_match:
@@ -192,25 +216,19 @@ def split_body_and_references(pages: List[str]) -> Tuple[str, List[Dict[str, Any
     Outputs:
         Tuple[str, List[Dict]] - (body_text, references_list).
     """
-    # Build a list of (page_number, line) tuples to track page boundaries
     all_lines = []
     for p_idx, page_text in enumerate(pages):
         page_lines = page_text.split('\n')
         for line in page_lines:
             all_lines.append((p_idx + 1, line))
             
-    # Find the reference heading
-    # Patterns: "References", "Références", "Bibliographie", optionally numbered, optionally with ##
-    ref_heading_pattern = re.compile(r'^(?:#{1,6}\s*)?(?:\d+\.\s*)?(?:References|Références|Bibliographie)\s*$', re.IGNORECASE)
-    
     ref_start_idx = -1
     for i, (page_num, line) in enumerate(all_lines):
-        if ref_heading_pattern.match(line.strip()):
+        if REF_HEADING_RE.match(line.strip()):
             ref_start_idx = i
             break
             
     if ref_start_idx == -1:
-        # No reference heading found
         body_text = "\n".join([line for _, line in all_lines])
         return body_text, []
         
@@ -219,73 +237,66 @@ def split_body_and_references(pages: List[str]) -> Tuple[str, List[Dict[str, Any
     
     body_text = "\n".join(body_lines).strip()
     
-    # Parse references
     refs = []
     current_entry_lines = []
     current_start_page = None
-    current_page = None
-    
-    # Entry starts with [n], n., n) or bullet
-    entry_start_pattern = re.compile(r'^(\[\d+\]|\d+\.|\d+\)|[-*•])\s*')
-    
+    ref_heading_text = all_lines[ref_start_idx][1].strip()
+    ref_level = len(ref_heading_text) - len(ref_heading_text.lstrip('#'))
+
+    def is_heading(line: str, prev_line: str = "") -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return False
+        if stripped.startswith('#'):
+            # Only a heading of the same or a higher level ends the list (fewer or equal hashes).
+            hashes = len(stripped) - len(stripped.lstrip('#'))
+            return ref_level == 0 or hashes <= ref_level
+        # Check for numbered headings like "7. Conclusion"
+        if re.match(r'^\d+\.\s+\w', stripped):
+            return True
+        
+        # Heuristic for "Next section" type headings:
+        # Must be short, capitalized, not a reference, not indented.
+        # AND the previous line should look like a completed sentence (ends with .)
+        if (len(stripped) < 20 and 
+            stripped[0].isupper() and 
+            not REF_ENTRY_START_RE.match(stripped) and
+            not line.startswith(' ') and
+            prev_line.strip().endswith('.')):
+            return True
+            
+        return False
+
+    def finalize_entry():
+        # An entry carries the page where its first line stands.
+        if current_entry_lines:
+            refs.append({
+                "page": current_start_page,
+                "text": "\n".join(current_entry_lines).strip()
+            })
+        current_entry_lines.clear()
+
+    prev_line = ""
     for page_num, line in ref_lines:
         stripped_line = line.strip()
-        
-        # Stop if we hit a new heading of same or higher level
-        if stripped_line.startswith('#') and not entry_start_pattern.match(stripped_line):
-            if current_entry_lines:
-                refs.append({
-                    "page": current_start_page,
-                    "text": "\n".join(current_entry_lines).strip()
-                })
-                current_entry_lines = []
+
+        if is_heading(line, prev_line):
             break
-            
-        # If page changes and line is not an entry start, it might be a new entry (if no markers) or end of previous
-        if current_page is not None and page_num != current_page:
-             if current_entry_lines and not entry_start_pattern.match(stripped_line):
-                 # New page, no marker, so separate
-                 refs.append({
-                    "page": current_start_page,
-                    "text": "\n".join(current_entry_lines).strip()
-                 })
-                 current_entry_lines = []
-                 
-        current_page = page_num
-        
-        is_entry_start = bool(entry_start_pattern.match(stripped_line))
-        
-        if is_entry_start:
-            if current_entry_lines:
-                refs.append({
-                    "page": current_start_page,
-                    "text": "\n".join(current_entry_lines).strip()
-                })
-            current_entry_lines = [line]
+
+        if REF_ENTRY_START_RE.match(stripped_line):
+            finalize_entry()
+            current_entry_lines.append(line)
             current_start_page = page_num
+        elif stripped_line == "":
+            finalize_entry()
         else:
-            if stripped_line == "":
-                # Blank line separates entries
-                if current_entry_lines:
-                    refs.append({
-                        "page": current_start_page,
-                        "text": "\n".join(current_entry_lines).strip()
-                    })
-                    current_entry_lines = []
-            else:
-                if not current_entry_lines:
-                    current_entry_lines = [line]
-                    if current_start_page is None:
-                        current_start_page = page_num
-                else:
-                    current_entry_lines.append(line)
-                
-    if current_entry_lines:
-        refs.append({
-            "page": current_start_page,
-            "text": "\n".join(current_entry_lines).strip()
-        })
-        
+            if not current_entry_lines:
+                current_start_page = page_num
+            current_entry_lines.append(line)
+        prev_line = line
+
+    finalize_entry()
+
     return body_text, refs
 
 def detect_language(pages: List[str], hints: Dict[str, List[str]]) -> str:

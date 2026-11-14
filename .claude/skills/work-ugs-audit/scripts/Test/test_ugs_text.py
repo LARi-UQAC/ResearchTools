@@ -29,7 +29,7 @@ class TestUgsText(unittest.TestCase):
 
     def test_fill_does_not_expand_a_value_twice(self):
         template = "Value: {{A}}"
-        values = {"A": "{{B}}", "B": "secret"}
+        values = {"A": "{{B}}"}
         self.assertEqual(fill(template, values), "Value: {{B}}")
 
     def test_fill_raises_on_an_unfilled_slot_and_on_an_unknown_value(self):
@@ -161,8 +161,14 @@ class TestUgsText(unittest.TestCase):
             "[2] Second"
         ]
         _, refs = split_body_and_references(pages)
-        self.assertEqual(refs[0]["page"], 1)
-        self.assertEqual(refs[1]["page"], 3)
+        # Pages are numbered from 1: "[1] First" starts on page 2 and "[2] Second" on page 4.
+        self.assertEqual([r["page"] for r in refs], [2, 4])
+        self.assertEqual(refs[0]["text"], "[1] First\nPage 2 content")
+
+    def test_a_deeper_heading_does_not_end_the_references(self):
+        pages = ["## References\n[1] First.\n### Books\n[2] Second.\n## Appendix\n[3] Not a reference."]
+        _, refs = split_body_and_references(pages)
+        self.assertEqual([r["text"] for r in refs], ["[1] First.\n### Books", "[2] Second."])
 
     def test_detect_language_french_and_english_and_tie(self):
         hints = {

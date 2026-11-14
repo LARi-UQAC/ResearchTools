@@ -73,7 +73,13 @@ Push-Location $proj
 & git config user.name  "t"       | Out-Null
 & git checkout -q -b work 2>&1 | Out-Null
 & git add -A 2>&1 | Out-Null
+# The global privacy pre-commit hook writes its scan line on stderr: under Stop that is a failure
+# in Windows PowerShell 5.1, so the commit runs with errors tolerated and the hook-free repo is
+# checked by the checks below, not by this call.
+$previousPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & git commit -q -m seed 2>&1 | Out-Null
+$ErrorActionPreference = $previousPreference
 Pop-Location
 
 $original = Get-Content -LiteralPath (Join-Path $proj "widget.py") -Raw

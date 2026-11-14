@@ -13,7 +13,7 @@ bounds:
 > file you change in full. The test file runs as a script (`unittest.main()` at its end).
 
 **Goal:** the guard that judges a `local-coder` dispatch no longer asks the resolver for a role. It checks
-that the aider kit is installed, as the section "Guard" of the spec says.
+that the aider kit is present, as the section "Guard" of the spec says.
 
 **Spec:** the section "Guard" of the spec.
 
@@ -40,12 +40,13 @@ on purpose. Fictitious folders in tests (R34), built under a temporary directory
 - Modify: `.claude/hooks/Test/test_local_coder_dispatch_guard.py`
 
 **Interfaces:**
-- `kit_missing(config_dir: Path, bin_dir: Path, required: dict) -> str | None`: `required` maps a folder
-  label (`config`, `bin`) to the list of file names the folder must hold. Returns None when every file
-  exists, else one sentence naming the first missing file and its folder and saying to install the aider kit.
+- `kit_missing(kit_dir: Path, required: list[str]) -> str | None`: `required` lists the file paths, relative
+  to `kit_dir`, that the kit must hold. Returns None when every file exists, else one sentence naming the
+  first missing file and saying the aider-setup skill is not installed.
 - `judge` stops taking a resolver and stops calling the plan resolution. After the header and executor
-  checks it calls `kit_missing` with the configured folders and files, and returns its sentence.
-- The configuration drops the resolver entry and gains `kit_config_dir`, `kit_bin_dir` and `kit_files`.
+  checks it calls `kit_missing` with the configured folder and files, and returns its sentence.
+- The configuration drops the resolver entry and gains `kit_dir` (the value `~/.claude/skills/aider-setup`)
+  and `kit_files` (`config/model-settings.yml`, `config/context-budget.json`, `scripts/aider-plan.ps1`).
 
 **Tests to write first, each failing before the code changes:** the dispatch is refused when a kit file is
 missing and the reason names that file; it is allowed when all three files exist; the resolver is never

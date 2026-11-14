@@ -1,17 +1,19 @@
 # Spec - the dispatch guard and the kit script sync
 
-`local-coder` runs ONE plan on the aider kit. The kit's scripts are installed in `~/.local/bin` and its
-configuration in `~/.config/aider`. Two pieces of this repository still assume the old design and are
-changed here: the hook that judges a `local-coder` dispatch, and the sync that keeps the installed scripts
-current.
+`local-coder` runs ONE plan on the aider kit. Since the owner's decision of 2026-11-13 the kit runs in place
+from this repository: `~/.claude/skills/aider-setup` (the junction to `.claude/skills/aider-setup`) holds its
+configuration and its scripts, and nothing is installed in `~/.local/bin` or `~/.config/aider` any more
+(those two folders are unused, the student kit apart). The hook that judges a `local-coder` dispatch still
+assumes the old design and is changed here. The sync of the kit scripts, written before that decision, is
+already done and stays as it is.
 
 ## Guard
 
 `.claude/hooks/local-coder-dispatch-guard.py` stops asking the resolver for a role. It checks that the
-aider kit is installed: the folder `~/.config/aider` holds `model-settings.yml` and
-`context-budget.json`, and the folder `~/.local/bin` holds `aider-plan.ps1`. These two folders and the
-list of three file names are configuration of the guard (R0, R4 with provenance), with `~` expanded. A
-missing file is a refusal that names it and says to run the kit installer. Every other behaviour is
+aider kit is present: the folder `~/.claude/skills/aider-setup` holds `config/model-settings.yml`,
+`config/context-budget.json` and `scripts/aider-plan.ps1`. The folder and the list of three file names
+are configuration of the guard (R0, R4 with provenance), with `~` expanded. A
+missing file is a refusal that names it and says the aider-setup skill is not installed. Every other behaviour is
 unchanged: the plan header and size checks, the executor must be `local-coder`, and R11 (any failure
 of the hook itself exits 0 in silence).
 

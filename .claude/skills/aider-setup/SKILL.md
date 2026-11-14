@@ -107,6 +107,21 @@ Get-Content docs\superpowers\plans\audit.md
   a plan the reviewer could not score reads "not scored", never 0.
 - `requirements.txt`: read it before installing; it is the one place a run can ask your machine to fetch a package.
   Install with `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`.
+- **What to do with a scored plan** (rule set by the owner on 2026-11-13; a working convention for the session that
+  reads the run, not enforced by the driver, so it is unverified by any test):
+  1. A plan scoring **over 70 %** is corrected by the cloud model, in the session, from its `quality.md` gaps and
+     its failing tests.
+  2. A plan scoring over 70 % is **never run again** in the kit, whatever its tests say: the cloud corrects the code
+     directly. A plan at 70 % or under, or "not scored", is reworded or split and may be run again.
+  3. At the end of the run the session gives this table, one row per plan, and no other summary of the scores:
+
+     | plan # | score | test | corrected score | final test |
+     |---|---:|---:|---:|---:|
+
+     `score` and `test` come from `quality.md` (quality percentage, tests passed over tests run) before any
+     correction. `final test` is the same count after the cloud correction. `corrected score` is the reviewer's
+     re-score of the corrected code, run when the GPU is free; when it was not run the cell reads "not measured",
+     never an estimate.
 - A stalled run: the optional watchdog (started by the driver, `watchdog started (pid N)` in the output) stops a
   child whose model server stays idle and writes one line to `docs\superpowers\plans\.logs\watchdog.log`; the plan
   is then left unticked. Installing it is in the manual.

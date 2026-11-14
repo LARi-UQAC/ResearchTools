@@ -2,7 +2,7 @@
 
 ## plan1.md
 
-- [ ] T1 dispatch guard checks the aider kit
+- [x] T1 dispatch guard checks the aider kit - updated guard to check kit presence, removed resolver logic, tests pass
 
 ## plan2.md
 

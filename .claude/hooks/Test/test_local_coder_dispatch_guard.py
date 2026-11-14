@@ -63,7 +63,12 @@ class DispatchCase(unittest.TestCase):
         self.hook_dir = self.tmp / "hooks"
         self.hook_dir.mkdir()
         shutil.copy(HOOK, self.hook_dir / HOOK.name)
-        (self.tmp / "resolver.py").write_text(RESOLVER_SOURCE, encoding="utf-8")
+        self.kit_dir = self.tmp / "kit"
+        (self.kit_dir / "config").mkdir(parents=True)
+        (self.kit_dir / "scripts").mkdir(parents=True)
+        (self.kit_dir / "config" / "model-settings.yml").write_text("model: test", encoding="utf-8")
+        (self.kit_dir / "config" / "context-budget.json").write_text("{}", encoding="utf-8")
+        (self.kit_dir / "scripts" / "aider-plan.ps1").write_text("# kit script", encoding="utf-8")
         self.budget = self.tmp / "budget.json"
         self.set_ceilings({"spec.md": 4000, "plan.md": 4000, "progress.md": 2048,
                            "audit.md": 4096, "code_file": 16000})
@@ -83,7 +88,8 @@ class DispatchCase(unittest.TestCase):
                   "plan_line_prefix": entry("PLAN:"),
                   "plan_contract_candidates": entry([str(PLAN_CONTRACT)]),
                   "tiers_candidates": entry([str(self.tiers)]),
-                  "resolver_module": entry(str(self.tmp / "resolver.py"))}
+                  "kit_dir": entry(str(self.kit_dir)),
+                  "kit_files": entry(["config/model-settings.yml", "config/context-budget.json", "scripts/aider-plan.ps1"])}
         config.update(over)
         (self.hook_dir / CONFIG_NAME).write_text(json.dumps(config), encoding="utf-8")
 
@@ -144,10 +150,12 @@ class TestRefusals(DispatchCase):
         self.assertEqual(code, 2)
         self.assertIn("aider", err)
 
-    def test_a_plan_that_resolves_to_the_cloud_is_refused_with_the_reason(self):
-        code, _, err = self.dispatch(self.plan(plan_text(tier="large")))
+    def test_a_missing_kit_file_is_refused_and_names_the_file(self):
+        (self.kit_dir / "config" / "model-settings.yml").unlink()
+        code, _, err = self.dispatch(self.plan())
         self.assertEqual(code, 2)
-        self.assertIn("no qualified model for role session", err)
+        self.assertIn("model-settings.yml", err)
+        self.assertIn("aider-setup skill is not installed", err)
 
 
 class TestPasses(DispatchCase):
@@ -203,9 +211,8 @@ class TestShippedFiles(unittest.TestCase):
     def test_the_shipped_config_carries_provenance_on_every_key(self):
         config = json.loads(SHIPPED_CONFIG.read_text(encoding="utf-8"))
         for key in ("enabled", "guarded_agents", "plan_line_prefix", "plan_contract_candidates",
-                    "tiers_candidates", "resolver_module"):
+                    "tiers_candidates", "kit_dir", "kit_files"):
             self.assertTrue(config[key]["provenance"], key)
-        self.assertIsNone(config["resolver_module"]["value"])
         self.assertEqual(config["guarded_agents"]["value"], ["local-coder"])
 
     def test_template_declares_the_hook_on_the_verified_matcher(self):

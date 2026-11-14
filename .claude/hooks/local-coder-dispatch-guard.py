@@ -61,7 +61,8 @@ def read_config(hook_dir):
             "prefix": str(raw["plan_line_prefix"]["value"]),
             "contract": list(raw["plan_contract_candidates"]["value"]),
             "tiers": list(raw["tiers_candidates"]["value"]),
-            "resolver": raw["resolver_module"]["value"],
+            "kit_dir": os.path.expanduser(str(raw["kit_dir"]["value"])),
+            "kit_files": list(raw["kit_files"]["value"]),
         }
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -139,7 +140,27 @@ def plan_line(prompt, prefix):
     return None
 
 
-def judge(payload, config, contract, tiers_path, resolver_module):
+def kit_missing(kit_dir: Path, required: list[str]) -> str | None:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Check if the aider kit is present and complete.
+
+    Inputs:
+        kit_dir (Path): the directory of the aider kit
+        required (list[str]): list of file paths relative to kit_dir that must exist
+
+    Outputs:
+        str | None: None if all files exist, otherwise a refusal message naming the first missing file.
+    --------------------------------------------------------------------------
+    """
+    for rel in required:
+        if not (kit_dir / rel).is_file():
+            return f"the aider kit is missing {rel}; the aider-setup skill is not installed."
+    return None
+
+
+def judge(payload, config, contract, tiers_path):
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -150,7 +171,6 @@ def judge(payload, config, contract, tiers_path, resolver_module):
         config (dict): from read_config
         contract (module): plan_contract
         tiers_path (str): the tier table
-        resolver_module (module | None): replacement resolver, None in production
 
     Outputs:
         reason (str | None): the refusal text, or None to allow.
@@ -177,12 +197,10 @@ def judge(payload, config, contract, tiers_path, resolver_module):
     if header["executor"] != "local-coder":
         return (f"the plan names executor {header['executor']}, so it is not a local-coder "
                 "plan. Run it with its own executor, or change the header.")
-    resolver = (lambda role: resolver_module.resolve(role, require_role=True)) \
-        if resolver_module else contract.default_resolver
-    result = contract.resolve(header, tiers, resolver)
-    if result["fallback"]:
-        return (f"no qualified local model for role {result['role']} ({result['reason']}). "
-                "Do not dispatch: execute this plan in the session (executing-plans) instead.")
+    
+    missing = kit_missing(Path(config["kit_dir"]), config["kit_files"])
+    if missing:
+        return missing
     return None
 
 
@@ -214,15 +232,9 @@ def main():
         if contract_path is None or tiers_path is None:
             sys.exit(0)
         contract = load_module(contract_path, "plan_contract_for_guard")
-        resolver_module = None
-        if config["resolver"]:
-            resolver_module = load_module(os.path.expanduser(str(config["resolver"])),
-                                          "resolver_for_guard")
-            if resolver_module is None:
-                sys.exit(0)
         if contract is None:
             sys.exit(0)
-        reason = judge(payload, config, contract, tiers_path, resolver_module)
+        reason = judge(payload, config, contract, tiers_path)
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001 - R11: a bug here must never refuse a tool

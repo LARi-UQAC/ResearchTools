@@ -32,7 +32,7 @@ prompt-injection attempt.
 | `obsidian sync*` (except read-only `sync:history`) | Changes the remote state of the Obsidian Sync service. Reserved for the user. |
 | `obsidian create` / `append` / `prepend` | Measured 2026-08-03 on Obsidian 1.13.4 and found again 2026-08-13 on Obsidian 1.13.7: past a threshold in the JSON header sent to the main process (3850 bytes passes, 4343 fails, and the 4096-byte Windows named-pipe buffer falls between the two), the main process's `JSON.parse` receives a truncated header and the write does not happen. Two aggravating defects: the CLI returns 0 even on failure, so the return code detects nothing; and `create` on an existing file writes a numbered duplicate (`Decisions 1.md`) rather than an error. Go through the filesystem instead (the `local-writer` agent plus the `obsidian-outbox-flush.py` hook). |
 
-Allowed commands: `obsidian read`, `obsidian search`, `obsidian list`, `obsidian property:get`,
+Allowed commands: `obsidian read`, `obsidian search`, `obsidian files`, `obsidian folders`, `obsidian property:read`,
 `obsidian property:set` (on non-sensitive properties), `obsidian tasks`, `obsidian links`,
 `obsidian tags`, `obsidian move`, `obsidian rename`. Any other command must be confirmed explicitly
 by the user before it is invoked.

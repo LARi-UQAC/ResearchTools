@@ -13,7 +13,7 @@ Bounds: 3 rounds, 1500000 tokens, plateau 2 (owner, 2026-11-05). Round 1 ran on 
 
 ## Declined, by the owner
 
-- `figure_render.py`, TikZ compile, untrusted LaTeX (security review, Medium): a file-reading package such as `pgfplotstable` is not on the refusal list. Declined on 2026-11-15: audits run in a devcontainer, which is the boundary. The skill already says to render hostile input only in a throwaway account or a container, and `--render` is off by default.
+- `figure_render.py`, TikZ compile, untrusted LaTeX (security review, Medium): a file-reading package such as `pgfplotstable` is not on the refusal list. Declined on 2026-11-15, owner decision: the real boundary is the final system of Issue 107, not a devcontainer (a devcontainer is one deployment of it). The case is written into Issue 107 as a comment (scanner for executable document formats, allowlist, confined execution, acceptance tests with planted files). Until then `--render` is off by default and `SKILL.md` says not to use it on an untrusted document.
 
 ## Deferred, outside Issue #104 (the aider kit, its watchdog and the dashboard)
 

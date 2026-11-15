@@ -75,8 +75,10 @@ with `prompts/figure.md`, `## single`.
   model), and ignores case. The compile runs with `-disable-write18`, in a throwaway folder, under a timeout,
   with `openin_any=p` and `openout_any=p`. Measured 2026-11-14: MiKTeX 26.2 ignores those two variables (a
   file outside the working folder was still read), so on MiKTeX the refusal list is the only guard. A list is
-  not a sandbox and a determined author can bypass it: render hostile input only in a throwaway account or
-  container, or do not use `--render`.
+  not a sandbox and a determined author can bypass it: a file-reading package such as `pgfplotstable`,
+  `csvsimple` or `pdfpages` is not on it. The boundary that makes rendering untrusted LaTeX safe is the final
+  system of Issue 107 (a source scanner, an allowlist and a confined execution). Until it exists, do not use
+  `--render` on a document you do not trust.
 - A TikZ picture is compiled with the paper's preamble written in the `.tex` file. A macro defined in a file
   the preamble `\input`s is not carried and gives `not_run` naming the missing macro.
 - draw.io exports one image per file. Whether it is the first page is not verified (R15); the report gives

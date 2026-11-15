@@ -7,6 +7,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 - Branch feat/work-ugs-audit, worktree .worktrees/work-ugs-audit. Bounds (owner): 3 rounds, 1500000 tokens, plateau 2.
 - Done and pushed: plans 1, 2, 3, 13, 14 (R39), 15, bridge reply reserve fix, mirrors regenerated.
+- Night un6 (2026-11-13/14, plans 8d to 8l) harvested 2026-11-14: every plan came back red first on ModuleNotFoundError (the mount did not carry the loop-engineer bridge modules, fixed in run-plan.sh copy_cross_skill, 5d6d72f), then on its own defects. All corrected by the cloud in the session (R39 deviation, owner order). Rulings: the work folder lies BESIDE the reports folder (spec) so `run` takes --reports, plan 8k said inside; the driver has no BridgeDeps (retired), the window and counter come from OllamaDeps; run_report takes a call or a map of calls per step so each step uses its role.
 - Owner 2026-11-05: cloud splits files (moves only, byte for byte): bridge_text.py (c7f8866), driver_deps.py (a1f1a5f). Plans were re-cut so one driver reply (reserve 14336 tokens, whole files returned) holds one module and its test.
 - Authoring rule for plans: a name with a code or data extension in plan prose becomes a file to create. Write full paths only in Files/Reads lines; elsewhere write `grade`.json (split by the backtick). Check with the targets probe or a driver dry run.
 - Old plan4, plan5, plan6, plan8 deleted (replaced by 4a to 6c and 8a to 8l; shared contracts in spec.md "Driver contracts"). Cloud DATA and plan 7 are written before the lot (exempt from R39). The old test_batch_stats.py of the cloud is set aside; the local model writes it.
@@ -104,39 +105,39 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan8d.md
 
-- [ ] T1 ugs_ledger and its test
+- [x] T1 ugs_ledger and its test: night quality 94 percent, test in the worktree 13 tests, 4 red, corrected in the session (corrected score not measured, reviewer not re-run), final 13/13. Defects: tests of the model discarded the ledger text and a count was wrong, module right
 
 ## plan8e.md
 
-- [ ] T1 ugs_grade and its test
+- [x] T1 ugs_grade and its test: night quality 80 percent, test in the worktree 16 tests, 3 red, corrected in the session (corrected score not measured, reviewer not re-run), final 16/16. Defects: three wrong tests (a window that fits all pages, pages with no headings, one answer for two items), module right
 
 ## plan8f.md
 
-- [ ] T1 ugs_audit and its test
+- [x] T1 ugs_audit and its test: night quality 80 percent, test in the worktree 14 tests, green, corrected in the session (corrected score not measured, reviewer not re-run), final 14/14. Defects: none
 
 ## plan8g.md
 
-- [ ] T1 ugs_language and its test
+- [x] T1 ugs_language and its test: night quality 80 percent, test in the worktree 12 tests, 1 red, corrected in the session (corrected score not measured, reviewer not re-run), final 12/12. Defects: one wrong test (quote in another case), module right
 
 ## plan8h.md
 
-- [ ] T1 ugs_figures and its test
+- [x] T1 ugs_figures and its test: night quality 69 percent, test in the worktree 1 test, red, corrected in the session (corrected score not measured, reviewer not re-run), final 17/17. Defects: rewritten: research-only criteria were sent to the student audit, a bad id was never repeated, contact sheet used unfitted names, 1 test of 14
 
 ## plan8i.md
 
-- [ ] T1 ugs_assemble and its test
+- [x] T1 ugs_assemble and its test: night quality 98 percent, test in the worktree 12 tests, 1 red, corrected in the session (corrected score not measured, reviewer not re-run), final 12/12. Defects: one inconsistent mock, module right
 
 ## plan8j.md
 
-- [ ] T1 ugs_run and its test
+- [x] T1 ugs_run and its test: night quality 89 percent, test in the worktree 11 tests, 8 red, corrected in the session (corrected score not measured, reviewer not re-run), final 18/18. Defects: rewritten: dead stubs, an unbound variable in the figure callback, a stale ledger text, report text could reach a note, a silent bridge_images mock
 
 ## plan8k.md
 
-- [ ] T1 ugs_driver and its test
+- [x] T1 ugs_driver and its test: night quality 31 percent, test in the worktree 3 tests, green but 3 of 16, corrected in the session (corrected score not measured, reviewer not re-run), final 20/20. Defects: rewritten: run, batch and status were stubs returning 0
 
 ## plan8l.md
 
-- [ ] T1 vision_probe and its test
+- [x] T1 vision_probe and its test: night quality 91 percent, test in the worktree 11 tests, 2 red, corrected in the session (corrected score not measured, reviewer not re-run), final 11/11. Defects: nested config keys, wrong prompts folder, spent literals, a dry run called the model
 
 ## plan9.md
 

@@ -14,7 +14,7 @@ Speak to the professor in his language. Every file name, command and status belo
 
 ## What you may read
 
-Only two files, both inside the work folder `_correction/` (inside the reports folder), and neither holds
+Only two files, both inside the work folder `_correction/` (beside the reports folder), and neither holds
 student text:
 
 - `_correction/rubric.md`: the rubric, written from the professor's own grid.
@@ -32,7 +32,8 @@ you do not read it.
 From the dispatch prompt, or ask grouped if missing: the reports folder (absolute path), the rubric file
 (JSON, Markdown, text or PDF), and the assessment type (one word, for example `report`). The driver is
 `.claude/skills/work-ugs-audit/scripts/ugs_driver.py` (under `~/.claude/skills/` in another project), run with
-the `.venv-skills` interpreter of ResearchTools. Every subcommand takes `--dry-run` and `--json`. Exit codes:
+the `.venv-skills` interpreter of ResearchTools. `WORK` below is the work folder `<parent of the reports folder>/_correction`,
+the default of `prepare`. Every subcommand takes `--dry-run` and `--json`. Exit codes:
 0 done, 1 a model step could not run (stop, resume later), 2 refusal, 3 batch out of band.
 
 ## Pipeline
@@ -48,12 +49,12 @@ never go on because the caller is in a hurry.
 vision model reads on a chart. If the role is not adopted or the probe fails, say so and ask the professor
 whether to continue without figure grading: the run then states every figure step as not run.
 
-**Step 3 - Run.** Run `ugs_driver.py run --work DIR/_correction --loop 1`, then poll
-`ugs_driver.py status --work DIR/_correction` until no step is open. An exit 1 means a model could not run
+**Step 3 - Run.** Run `ugs_driver.py run --work WORK --reports DIR --loop 1`, then poll
+`ugs_driver.py status --work WORK` until no step is open. An exit 1 means a model could not run
 (daemon unreachable, role not adopted, over budget): tell the professor which role and the kind from the JSON
 line, never guess, and resume with `run --resume` once he has fixed it.
 
-**Step 4 - Batch.** Run `ugs_driver.py batch --work DIR/_correction --loop N`. Present the verdict from the
+**Step 4 - Batch.** Run `ugs_driver.py batch --work WORK --loop N`. Present the verdict from the
 numbers only (mean, spread, the band, the reasons): in band means accept; out of band (exit 3) offers three
 options, accept as it is, re-grade the whole loop with the calibration note, or adjust the anchors of one
 item. State the cost of each: a new loop costs a full grading pass of every report. Wait for the professor's

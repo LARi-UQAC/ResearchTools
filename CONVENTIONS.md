@@ -25,6 +25,7 @@ one of them, read the matching `.claude/agents/<name>.md` in full and follow it:
 - `thesis-proposal-auditor` - see `.claude/agents/thesis-proposal-auditor.md`
 - `thesis-to-paper` - see `.claude/agents/thesis-to-paper.md`
 - `word-to-latex` - see `.claude/agents/word-to-latex.md`
+- `work-ugs-audit` - see `.claude/agents/work-ugs-audit.md`
 - `wp-portfolio-agent` - see `.claude/agents/wp-portfolio-agent.md`
 
 The task-to-agent routing table lives in `.claude/CLAUDE.md` (section "Tooling").

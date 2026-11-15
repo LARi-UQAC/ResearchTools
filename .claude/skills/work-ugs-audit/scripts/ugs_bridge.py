@@ -1,5 +1,7 @@
 import json
+import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -11,6 +13,12 @@ if str(_LOOP_ENGINEER_SCRIPTS) not in sys.path:
 from bridge_text import strip_reasoning, unwrap_sole_code_fence, ReasoningAnomalyError
 from bridge_images import ImageError, attach_images
 
+logger = logging.getLogger(__name__)
+
+# Characters of an error text kept in a `failed` log record. Chosen 2026-11-15 to match the cut of
+# ollama_bridge.py's own `failed` record (300), so one reader (collect_local.py) sees both alike.
+_ERROR_LOG_CHARS = 300
+
 
 class NotRun(RuntimeError):
     """Raised when a model call cannot be completed."""
@@ -19,6 +27,34 @@ class NotRun(RuntimeError):
         self.kind = kind
         self.reason = reason
         self.retryable = kind in ("unparsable", "invalid")
+
+
+def _now_iso() -> str:
+    """
+    Purpose: The one wall-clock read of this module, as a UTC ISO 8601 stamp to the second.
+    Inputs: None.
+    Outputs: str: for example 2026-11-15T16:30:05+00:00. Tests patch this function (R19).
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _write_log(deps: Any, record: Dict[str, Any]) -> None:
+    """
+    Purpose: Hand one bridge log record to the deps object when it can write one.
+    Details: The log only feeds the dashboard, so a disk error is reported and the call goes on.
+        A deps object without a callable `log` writes nothing, which keeps every test fake working.
+    Inputs:
+        deps: the deps object of the call.
+        record (dict): the log record.
+    Outputs: None.
+    """
+    write = getattr(deps, "log", None)
+    if not callable(write):
+        return
+    try:
+        write(record)
+    except OSError as exc:
+        logger.warning("[UGS-BRIDGE] bridge log not written: %s", exc)
 
 
 def validate_answer(answer: Any, schema: Dict[str, Any]) -> List[str]:
@@ -129,6 +165,18 @@ class OllamaDeps:
         except Exception as e:
             raise NotRun("unreachable", f"Failed to resolve window for {tag}: {e}")
 
+    def log(self, record: Dict[str, Any]) -> None:
+        """
+        Purpose: Append one record to the machine-local bridge log that the dashboard reads.
+        Inputs:
+            record (dict): the log record.
+        Outputs: None. The line goes to the log path and the writer of ollama_bridge.
+        Raises:
+            OSError: when the log file cannot be written.
+        """
+        bridge = self._get_bridge()
+        bridge.append_log(bridge.DEFAULT_LOG_PATH, record)
+
     def count(self, prompt: str, tag: str, window: int) -> int:
         """
         Purpose: Count tokens in a prompt.
@@ -231,12 +279,20 @@ def call_with_usage(
         except ImageError as e:
             raise NotRun("image", f"Image attachment failed: {e}")
 
+    _write_log(deps, {"event": "start", "at": _now_iso(), "role": role, "tag": tag,
+                      "num_ctx": window, "plan": None, "attempt": 1})
     try:
         reply = deps.post(payload, timeout)
     except Exception as e:
+        _write_log(deps, {"event": "failed", "at": _now_iso(), "role": role, "tag": tag,
+                          "attempt": 1, "error": str(e)[:_ERROR_LOG_CHARS]})
         if isinstance(e, NotRun):
             raise
         raise NotRun("unreachable", f"Post failed: {e}")
+    _write_log(deps, {"at": _now_iso(), "role": role, "tag": tag, "num_ctx": window,
+                      "prompt_tokens": reply.get("prompt_eval_count"),
+                      "completion_tokens": reply.get("eval_count"),
+                      "plan": None, "attempt": 1, "accepted": True})
 
     response_text = reply.get("response", "")
     try:

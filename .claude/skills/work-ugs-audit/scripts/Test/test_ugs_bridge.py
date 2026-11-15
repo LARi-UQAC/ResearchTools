@@ -399,5 +399,114 @@ class TestCall(unittest.TestCase):
         self.assertEqual(answer, {"a": "hello"})
 
 
+class LoggingDeps(FakeDeps):
+    """FakeDeps that also records the bridge log records it is asked to write."""
+
+    def __init__(self, *args, log_error: Optional[Exception] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.records: List[Dict[str, Any]] = []
+        self.log_error = log_error
+
+    def log(self, record: Dict[str, Any]) -> None:
+        if self.log_error:
+            raise self.log_error
+        self.records.append(record)
+
+
+_SCHEMA_A = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
+
+
+def _call(deps, role="ugs-grader"):
+    """
+    Purpose: Run one call of ugs_bridge with fixed small settings.
+    Inputs:
+        deps: the deps object under test.
+        role (str): the role name.
+    Outputs:
+        The parsed answer.
+    """
+    return ugs_bridge.call(role=role, prompt="test", schema=_SCHEMA_A, deps=deps, timeout=1,
+                           reserve=0, image_tokens=0, max_image_bytes=100)
+
+
+class TestBridgeLog(unittest.TestCase):
+    """The records that let the dashboard see a work-ugs-audit call (Issue 118)."""
+
+    def test_a_good_call_writes_start_then_the_attempt_with_tokens(self):
+        deps = LoggingDeps(tag="tag-x", window=500,
+                           post_result={"response": '{"a": "x"}', "prompt_eval_count": 12, "eval_count": 7})
+        _call(deps)
+        self.assertEqual([r.get("event") for r in deps.records], ["start", None])
+        start, attempt = deps.records
+        self.assertEqual((start["role"], start["tag"], start["num_ctx"]), ("ugs-grader", "tag-x", 500))
+        self.assertEqual((attempt["prompt_tokens"], attempt["completion_tokens"]), (12, 7))
+        self.assertEqual((attempt["role"], attempt["tag"], attempt["num_ctx"]), ("ugs-grader", "tag-x", 500))
+        self.assertTrue(attempt["accepted"])
+        self.assertTrue(start["at"] and attempt["at"])
+
+    def test_absent_token_counts_are_none_not_zero(self):
+        deps = LoggingDeps(post_result={"response": '{"a": "x"}'})
+        _call(deps)
+        attempt = deps.records[1]
+        self.assertIsNone(attempt["prompt_tokens"])
+        self.assertIsNone(attempt["completion_tokens"])
+
+    def test_a_failing_post_writes_start_then_failed_and_still_raises(self):
+        deps = LoggingDeps(post_error=Exception("connection refused " + "x" * 400))
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            _call(deps)
+        self.assertEqual(ctx.exception.kind, "unreachable")
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+        self.assertLessEqual(len(deps.records[1]["error"]), 300)
+
+    def test_deps_without_log_make_the_same_call(self):
+        deps = FakeDeps(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        self.assertEqual(_call(deps), {"a": "x"})
+
+    def test_a_log_that_cannot_write_does_not_change_the_answer(self):
+        deps = LoggingDeps(log_error=OSError("disk full"),
+                           post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        self.assertEqual(_call(deps), {"a": "x"})
+
+    def test_an_error_other_than_oserror_in_log_is_not_hidden(self):
+        deps = LoggingDeps(log_error=ValueError("bug"))
+        with self.assertRaises(ValueError):
+            _call(deps)
+
+    def test_the_records_read_back_as_a_generating_then_idle_role(self):
+        scripts = Path(__file__).resolve().parents[3] / "rt-observe" / "scripts"
+        sys.path.insert(0, str(scripts))
+        try:
+            import collect_local
+        finally:
+            sys.path.remove(str(scripts))
+        deps = LoggingDeps(tag="tag-y", window=777,
+                           post_result={"response": '{"a": "x"}', "prompt_eval_count": 20, "eval_count": 9})
+        _call(deps)
+        start, attempt = deps.records
+        now = collect_local._stamp(attempt["at"])
+        roles, kept, skipped = collect_local._group([start], now, 60, 3600)
+        self.assertTrue(roles["ugs-grader"]["generating"])
+        roles, kept, skipped = collect_local._group([start, attempt], now, 60, 3600)
+        row = roles["ugs-grader"]
+        self.assertFalse(row["generating"])
+        self.assertEqual((row["tag"], row["num_ctx"], row["prompt_tokens"], row["completion_tokens"]),
+                         ("tag-y", 777, 20, 9))
+
+    def test_ollama_deps_log_appends_to_the_bridge_log_path(self):
+        class SpyBridge:
+            DEFAULT_LOG_PATH = Path("log-path-for-the-test")
+            written = []
+
+            @staticmethod
+            def append_log(path, record):
+                SpyBridge.written.append((path, record))
+
+        deps = ugs_bridge.OllamaDeps(1200)
+        deps._bridge = SpyBridge
+        deps.log({"event": "start"})
+        self.assertEqual(SpyBridge.written, [(Path("log-path-for-the-test"), {"event": "start"})])
+
+
 if __name__ == "__main__":
     unittest.main()

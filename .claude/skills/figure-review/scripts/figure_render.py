@@ -14,6 +14,7 @@ EXIT CODES (R12): 0 done, 2 refusal (missing document, missing configuration key
 import argparse
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -36,8 +37,41 @@ SETTING_KEYS = ("max_long_edge", "photo_colors", "jpeg_quality", "render_dpi", "
 EXIT_REFUSAL = 2
 
 
+# The LaTeX under review is untrusted, and pdflatex is run on it. These primitives read or write files or
+# start programs, so a source that uses one is not compiled. A denylist can be bypassed by a determined
+# author (token tricks the list does not name), so it is a first filter and not a sandbox: see SKILL.md.
+FORBIDDEN_TEX = re.compile(
+    r"\\(?:input|include|includeonly|import|subimport|openin|openout|read|readline|write|immediate|directlua|"
+    r"luaexec|csname|catcode|scantokens|detokenize|endlinechar|special|lstinputlisting|verbatiminput|"
+    r"VerbatimInput|pdffilesize|pdfmdfivesum|pdfshellescape|pdfliteral)(?![A-Za-z])"
+    r"|\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\b(?:catchfile|filecontents|readarray|datatool|minted|shellesc|luacode)\b")
+# openin_any and openout_any restrict the files TeX Live opens. Measured 2026-11-14: MiKTeX 26.2 ignores them
+# (a file outside the working folder was still read), so they are a measure for TeX Live only.
+PARANOID_ENV = {"openin_any": "p", "openout_any": "p"}
+
+
 class RenderError(ValueError):
     """Raised when a rendering request would write outside the output folder."""
+
+
+def forbidden_primitive(*sources: Optional[str]) -> Optional[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Find the first LaTeX primitive that reads a file, writes a file or starts a program.
+
+    Inputs:
+        sources (str | None): LaTeX texts to scan, comments are ignored
+
+    Outputs:
+        found (str | None): the offending command or package line, or None when the texts are clean.
+    --------------------------------------------------------------------------
+    """
+    for text in sources:
+        found = FORBIDDEN_TEX.search(figure_tex.strip_comments(text or ""))
+        if found:
+            return found.group(0).strip()
+    return None
 
 
 def native(kind: str) -> bool:
@@ -282,15 +316,21 @@ def _native(path: Path, kind: str, stem: str, out_dir: Path, fit: Dict[str, int]
 
 def _render_tikz(code: str, stem: str, out_dir: Path, preamble: Optional[str], which: Callable, run: Callable,
                  timeout: float, dpi: int, fit: Dict[str, int]) -> Dict[str, Any]:
+    bad = forbidden_primitive(preamble, code)
+    if bad:
+        return _not_run("the LaTeX source uses %s, which is not compiled (the figure under review is untrusted)" % bad,
+                        "pdflatex")
     exe = which("pdflatex")
     if not exe:
         return _not_run("pdflatex was not found on this machine", "pdflatex")
     with tempfile.TemporaryDirectory() as tmp:
         tex = Path(tmp) / "figure.tex"
         tex.write_text(standalone_text(code, preamble), encoding="utf-8")
-        argv = [exe, "-interaction=nonstopmode", "-halt-on-error", "-output-directory", tmp, str(tex)]
+        argv = [exe, "-interaction=nonstopmode", "-halt-on-error", "-disable-write18",
+                "-output-directory", tmp, str(tex)]
         try:
-            done = run(argv, capture_output=True, text=True, errors="replace", timeout=timeout, cwd=tmp)
+            done = run(argv, capture_output=True, text=True, errors="replace", timeout=timeout, cwd=tmp,
+                       env=dict(os.environ, **PARANOID_ENV))
         except subprocess.TimeoutExpired:
             return _not_run("pdflatex timeout after %s s" % timeout, "pdflatex")
         pdf = Path(tmp) / "figure.pdf"

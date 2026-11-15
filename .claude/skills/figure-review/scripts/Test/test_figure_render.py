@@ -143,6 +143,41 @@ class TestFigureRender(unittest.TestCase):
         self.assertLess(text.index(r"\begin{document}"), text.index(r"\begin{tikzpicture}"))
         self.assertIn("tikz", figure_render.standalone_text("X", None))
 
+    def test_pdflatex_runs_without_write18_and_with_the_paranoid_file_variables(self):
+        run = FakeLatex()
+        self.render({"kind": "tikz", "path_or_code": r"\begin{tikzpicture}\node {A};\end{tikzpicture}"}, run=run)
+        argv, kwargs = run.calls[0]
+        self.assertIn("-disable-write18", argv)
+        self.assertEqual(kwargs["env"]["openin_any"], "p")
+        self.assertEqual(kwargs["env"]["openout_any"], "p")
+
+    def test_a_file_or_shell_primitive_in_the_picture_is_refused_before_any_tool_call(self):
+        for bad in (r"\input{/etc/passwd}", r"\openin1=../secret.txt", r"\immediate\write18{calc}",
+                    r"\write18{calc}", r"\directlua{os.execute('x')}", r"\csname in\string put\endcsname",
+                    r"\catcode`\|=0 ", r"\scantokens{x}", r"\readline1 to \x", r"\include{other}"):
+            code = r"\begin{tikzpicture}\node {A};" + bad + r"\end{tikzpicture}"
+            res = self.render({"kind": "tikz", "path_or_code": code})
+            self.assertEqual(res["status"], "not_run", bad)
+            self.assertEqual(res["tool"], "pdflatex", bad)
+            self.assertIn("not compiled", res["reason"], bad)
+
+    def test_a_primitive_in_the_preamble_is_refused_and_a_comment_is_not_a_primitive(self):
+        code = r"\begin{tikzpicture}\node {A};\end{tikzpicture}"
+        res = self.render({"kind": "tikz", "path_or_code": code}, preamble=r"\input{macros}")
+        self.assertEqual(res["status"], "not_run")
+        self.assertIn(r"\input", res["reason"])
+        res = self.render({"kind": "tikz", "path_or_code": code + "\n% \\input{x}\n"}, run=FakeLatex(),
+                          preamble=r"\usepackage{tikz}", photo_colors=2000)
+        self.assertEqual(res["status"], "rendered", "a commented primitive is not compiled")
+
+    def test_a_file_reading_package_is_refused_and_a_plain_package_is_not(self):
+        code = r"\begin{tikzpicture}\end{tikzpicture}"
+        res = self.render({"kind": "tikz", "path_or_code": code}, preamble=r"\usepackage{catchfile}")
+        self.assertEqual(res["status"], "not_run")
+        res = self.render({"kind": "tikz", "path_or_code": code}, run=FakeLatex(),
+                          preamble=r"\usepackage{tikz}\usepackage[T1]{fontenc}", photo_colors=2000)
+        self.assertEqual(res["status"], "rendered")
+
     def test_a_missing_macro_is_not_run_with_the_latex_message(self):
         run = FakeLatex(fail_text="! Undefined control sequence.\nl.7 \\mymacro\n")
         res = self.render({"kind": "tikz", "path_or_code": r"\begin{tikzpicture}\mymacro\end{tikzpicture}"}, run=run)

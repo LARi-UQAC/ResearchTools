@@ -140,7 +140,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan9.md
 
-- [x] T1 figure-review SKILL.md, 16 research criteria + needs key, figure_tex (19 tests), figure_render (24 tests), all 6 suites green; manual check 2026-11-14: fictitious TikZ (paper macro kept) and draw.io rendered with --render. Rulings: fit_for_model is figure_image, not figure_extract; render() takes dpi, photo_colors, jpeg_quality, drawio_scale as keywords (R0); native png/jpg within max_long_edge returned as is; not_cited, citation_far, low_resolution_research, image_file_missing and the caption flags are judged_by model for now (scripting them is plan 10); draw.io page count reported, first-page default unverified
+- [x] T1 figure-review SKILL.md, 16 research criteria + needs key, figure_tex (19 tests), figure_render (24 tests), all 6 suites green; manual check 2026-11-14: fictitious TikZ (paper macro kept) and draw.io rendered with --render. Rulings: fit_for_model is figure_image, not figure_extract; render() takes dpi, photo_colors, jpeg_quality, drawio_scale as keywords (R0); native png/jpg within max_long_edge returned as is; not_cited, citation_far, low_resolution_research, image_file_missing and the caption flags are judged_by model for now (scripting them is plan 10); draw.io page count reported, first-page default unverified. Security review of the commit (untrusted LaTeX compiled): fixed, 4 tests RED then GREEN: file/shell primitives and file-reading packages refused before any compile, -disable-write18, paranoid env vars; MiKTeX 26.2 measured to ignore openin_any so the refusal list is its only guard (stated in SKILL.md limits)
 
 ## plan10.md
 

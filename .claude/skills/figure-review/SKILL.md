@@ -65,6 +65,14 @@ with `prompts/figure.md`, `## single`.
 ## Limits
 
 - Rendering needs `pdflatex`, `epstopdf` or draw.io on the machine. None is installed by this skill.
+- **Rendering TikZ compiles the document's own LaTeX, which is untrusted.** Before any compile, a source or
+  preamble using a file, shell or token primitive (`\input`, `\include`, `\openin`, `\write`, `\immediate`,
+  `\csname`, `\catcode`, `\scantokens`, `\directlua`, and the packages `catchfile`, `filecontents`,
+  `readarray`, `datatool`, `minted`, `shellesc`, `luacode`) is refused as `not_run`, so a paper whose
+  preamble `\input`s a macro file is not rendered. The compile runs with `-disable-write18`, in a throwaway
+  folder, under a timeout, with `openin_any=p` and `openout_any=p`. Measured 2026-11-14: MiKTeX 26.2 ignores
+  those two variables (a file outside the working folder was still read), so on MiKTeX the refusal list is the
+  only guard, and a list can be bypassed. Render hostile input only in a throwaway account or container.
 - A TikZ picture is compiled with the paper's preamble written in the `.tex` file. A macro defined in a file
   the preamble `\input`s is not carried and gives `not_run` naming the missing macro.
 - draw.io exports one image per file. Whether it is the first page is not verified (R15); the report gives

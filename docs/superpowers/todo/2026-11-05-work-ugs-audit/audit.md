@@ -17,7 +17,7 @@ Bounds: 3 rounds, 1500000 tokens, plateau 2 (owner, 2026-11-05). Round 1 ran on 
 
 ## Deferred, outside Issue #104 (the aider kit, its watchdog and the dashboard)
 
-Owner instruction: do not touch other Issues. Listed in the pull request body.
+Owner instruction: do not touch other Issues. Recorded with their source, problem and proposed fix in Issue #114, and listed in the pull request body.
 
 - `watchdog/main.go`: the stop signal is written after the kill, so the driver may read it too late.
 - `watchdog/tracker.go`: a reference negligible on both CPU and GPU leaves `isLow` true; unjudged readings do not reset the streak; zero settings accepted.

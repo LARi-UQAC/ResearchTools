@@ -44,6 +44,10 @@
     "value": 600,
     "provenance": "starting value, adjustable by the professor (seconds per bridge call, a local model is slow)"
   },
+  "driver.count_timeout_s": {
+    "value": 1200,
+    "provenance": "measured prefill of about 130 tokens per second, so 1200 seconds covers about 150000 tokens, adjustable by the professor"
+  },
   "roles.grader": {
     "value": "ugs-grader",
     "provenance": "model role name, read from the configuration; the model behind the name is chosen by the professor"

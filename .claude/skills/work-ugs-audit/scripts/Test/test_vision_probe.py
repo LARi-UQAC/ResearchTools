@@ -182,6 +182,7 @@ class TestVisionProbe(unittest.TestCase):
             vision_probe.load_config = MagicMock(return_value={
                 "roles.vision": "role-name",
                 "driver.request_timeout_s": 10,
+                "driver.count_timeout_s": 20,
                 "driver.reply_reserve_tokens": 100,
                 "driver.image_tokens_fallback": 50,
                 "driver.max_image_bytes": 1000,

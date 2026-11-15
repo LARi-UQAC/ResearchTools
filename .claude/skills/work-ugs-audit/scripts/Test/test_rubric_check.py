@@ -159,6 +159,20 @@ class ConfigTests(unittest.TestCase):
             self.assertIn("driver.audit_retries", str(ctx.exception))
             self.assertIn("config.json", str(ctx.exception))
 
+    def test_missing_count_timeout_is_named_with_its_file(self):
+        """A configuration without the count timeout is refused by name."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            shipped = json.loads(ugs_config.default_path().read_text(encoding="utf-8"))
+            del shipped["driver.count_timeout_s"]
+            (root / "config.json").write_text(json.dumps(shipped), encoding="utf-8")
+            with self.assertRaises(ConfigError) as ctx:
+                ugs_config.load(root / "config.json")
+            self.assertIn("driver.count_timeout_s", str(ctx.exception))
+            self.assertIn("config.json", str(ctx.exception))
+        values = ugs_config.load(ugs_config.default_path())
+        self.assertGreater(values["driver.count_timeout_s"], 10)
+
     def test_annotation_author_reads_the_active_profile(self):
         """Annotation author reads the active profile."""
         with tempfile.TemporaryDirectory() as td:

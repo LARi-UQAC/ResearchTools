@@ -18,6 +18,7 @@ REQUIRED_KEYS = (
     "batch.outlier_z",
     "driver.audit_retries",
     "driver.request_timeout_s",
+    "driver.count_timeout_s",
 )
 
 

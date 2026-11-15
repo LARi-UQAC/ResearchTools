@@ -213,7 +213,7 @@ def main(argv: Optional[List[str]] = None, *, call_usage: Optional[Callable] = N
 
     # Build call_usage if not injected
     if call_usage is None:
-        deps = OllamaDeps()
+        deps = OllamaDeps(config["driver.count_timeout_s"])
         role = config["roles.vision"]
         timeout = config["driver.request_timeout_s"]
         reserve = config["driver.reply_reserve_tokens"]

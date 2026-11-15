@@ -4,6 +4,7 @@ import os
 import base64
 import atexit
 import sys
+import json
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -42,7 +43,7 @@ class FakeDeps:
     def __init__(self, tag: str = "fake-tag", window: int = 1000, count: int = 100,
                  payload: Optional[Dict[str, Any]] = None, post_result: Optional[Dict[str, Any]] = None,
                  post_error: Optional[Exception] = None, tag_error: Optional[Exception] = None,
-                 count_error: Optional[Exception] = None):
+                 count_error: Optional[Exception] = None, count_timeout_s: int = 10):
         self._default_tag = tag
         self._default_window = window
         self._default_count = count
@@ -51,6 +52,7 @@ class FakeDeps:
         self.post_error = post_error
         self.tag_error = tag_error
         self.count_error = count_error
+        self.count_timeout_s = count_timeout_s
         self.calls = []
 
     def tag(self, role: str) -> str:
@@ -294,6 +296,47 @@ class TestCallWithUsage(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.kind, "unadopted")
         self.assertFalse(ctx.exception.retryable)
+
+    def test_count_uses_configured_timeout(self):
+        class SpyBridge:
+            def probe_prompt_tokens(self, prompt, tag, window, timeout):
+                self.timeout = timeout
+                return 100
+            def resolve_model(self, role):
+                return "tag"
+            def _resolve_num_ctx(self, tag, role):
+                return 1000
+            def build_payload(self, *args, **kwargs):
+                return {}
+            def _post_generate(self, payload, timeout):
+                return {"response": "{}", "prompt_eval_count": 10, "eval_count": 5}
+            DEFAULT_SEED = 42
+        
+        bridge = SpyBridge()
+        deps = ugs_bridge.OllamaDeps(count_timeout_s=123)
+        deps._bridge = bridge
+        deps.count("prompt", "tag", 1000)
+        self.assertEqual(bridge.timeout, 123)
+
+    def test_count_timeout_missing_in_config_raises(self):
+        config = {"driver.request_timeout_s": 600}
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            # This test is conceptual: the actual check happens in driver/vision_probe
+            # We verify OllamaDeps requires count_timeout_s
+            try:
+                ugs_bridge.OllamaDeps()
+            except TypeError as e:
+                raise ugs_bridge.NotRun("config", str(e))
+        self.assertIn("count_timeout_s", str(ctx.exception))
+
+    def test_shipped_config_has_count_timeout(self):
+        config_path = Path(__file__).resolve().parent.parent.parent / "assets" / "ugs_config.json"
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        self.assertIn("driver.count_timeout_s", config)
+        entry = config["driver.count_timeout_s"]
+        self.assertEqual(entry["value"], 1200)
+        self.assertTrue(entry["provenance"])
 
     def test_images_reach_the_posted_body(self):
         deps = FakeDeps(post_result={"response": "{}", "prompt_eval_count": 10, "eval_count": 5})

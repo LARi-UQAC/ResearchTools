@@ -101,8 +101,14 @@ def validate_answer(answer: Any, schema: Dict[str, Any]) -> List[str]:
 class OllamaDeps:
     """Real dependencies for ugs_bridge, lazy-loading ollama_bridge."""
     
-    def __init__(self):
+    def __init__(self, count_timeout_s: int):
+        """
+        Purpose: Initialize OllamaDeps with the count timeout.
+        Inputs:
+            count_timeout_s (int): Timeout in seconds for token counting.
+        """
         self._bridge = None
+        self.count_timeout_s = count_timeout_s
 
     def _get_bridge(self):
         if self._bridge is None:
@@ -124,8 +130,19 @@ class OllamaDeps:
             raise NotRun("unreachable", f"Failed to resolve window for {tag}: {e}")
 
     def count(self, prompt: str, tag: str, window: int) -> int:
+        """
+        Purpose: Count tokens in a prompt.
+        Inputs:
+            prompt (str): The prompt text.
+            tag (str): The model tag.
+            window (int): The context window.
+        Outputs:
+            int: The token count.
+        Raises:
+            NotRun: If the count fails.
+        """
         try:
-            return self._get_bridge().probe_prompt_tokens(prompt, tag, window, timeout=10)
+            return self._get_bridge().probe_prompt_tokens(prompt, tag, window, timeout=self.count_timeout_s)
         except Exception as e:
             raise NotRun("unreachable", f"Failed to count tokens: {e}")
 

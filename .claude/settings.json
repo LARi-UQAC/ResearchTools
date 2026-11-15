@@ -25,5 +25,10 @@
     "github@claude-plugins-official": true,
     "ai-firstify@techwolf-ai-first": true,
     "engineering@knowledge-work-plugins": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(./node_modules/.bin/agent-browser.cmd mouse:*)"
+    ]
   }
 }

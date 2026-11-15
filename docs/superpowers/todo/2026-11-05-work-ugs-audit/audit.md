@@ -25,3 +25,9 @@ Owner instruction: do not touch other Issues. Listed in the pull request body.
 - `scripts/lib/rt-aider-path.ps1`: the user Path is rewritten as an expanded REG_SZ.
 - `rt-observe/scripts/collect_rex.py`: two PowerShell processes on a 3 second TTL.
 - `aider-plan.ps1`: the cycle-archive check counts `[~]` steps as open.
+
+## Follow-up owed when Issue 107 is resolved (owner, 2026-11-15)
+
+Update the refusal text of the LaTeX render case: the limits paragraph of `.claude/skills/figure-review/SKILL.md`
+(and the `FORBIDDEN_TEX` comment of `figure_render.py`) must name the scanner, the allowlist and the confined execution
+that Issue 107 delivers, and the declined entry above must be closed.

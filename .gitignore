@@ -27,10 +27,10 @@ venv*/
 env*/
 *.egg-info/
 dist/
-build/
-# The aider-setup packaging scripts live in a folder named build; the generic
-# rule above hid them from git since 2026-09-24, so they existed on one machine only.
-!.claude/skills/aider-setup/scripts/build/
+/build/
+# The aider-setup packaging scripts live in a folder named build. A generic `build/` rule hid them
+# from git since 2026-09-24, so they existed on one machine only, and a negation to un-hide them is a
+# form verify-no-personal-data.ps1 refuses to read. The rule is anchored to the repository root instead.
 .claude/skills/aider-setup/scripts/build/__pycache__/
 .claude/skills/aider-setup/scripts/build/*.saved
 .pytest_cache/

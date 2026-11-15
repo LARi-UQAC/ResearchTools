@@ -879,10 +879,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate" class="md-nav__link">
+  <a href="#local-coder-and-the-aider-setup-pipeline---one-harness-at-two-scales" class="md-nav__link">
     <span class="md-ellipsis">
       
-        local-coder vs. the aider-setup pipeline - two lanes, not a duplicate
+        local-coder and the aider-setup pipeline - one harness at two scales
       
     </span>
   </a>
@@ -1265,10 +1265,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate" class="md-nav__link">
+  <a href="#local-coder-and-the-aider-setup-pipeline---one-harness-at-two-scales" class="md-nav__link">
     <span class="md-ellipsis">
       
-        local-coder vs. the aider-setup pipeline - two lanes, not a duplicate
+        local-coder and the aider-setup pipeline - one harness at two scales
       
     </span>
   </a>
@@ -1317,22 +1317,17 @@ the packaging pipeline that assembles the student-facing <code>aider-kit.zip</co
 canonical sources.</p>
 <p>Full manual, Ollama tuning reference, worked example, and continuity notes:
 <a href="../../aider-setup/">docs/aider-setup.md</a>.</p>
-<h2 id="local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate"><code>local-coder</code> vs. the <code>aider-setup</code> pipeline - two lanes, not a duplicate<a class="headerlink" href="#local-coder-vs-the-aider-setup-pipeline---two-lanes-not-a-duplicate" title="Permanent link">&para;</a></h2>
-<p>Both generate code on a local model for free, and it is worth being precise about why one did
-not replace the other. Since 2026-10-17 a <code>local-coder</code> dispatch executes <strong>one whole plan</strong>. The
-prompt carries a line <code>PLAN: &lt;path&gt;</code>, the plan opens with a header (<code>executor</code>, <code>tier</code>,
-<code>bounds</code>), and the hook <code>local-coder-dispatch-guard.py</code> refuses a dispatch with no valid plan.
-The agent ticks <code>progress.md</code> with its three marks, audits nothing and never commits. It is
-<strong>synchronous and in-session</strong>: the calling harness reviews the branch afterwards. <code>aider-setup</code>
-is <strong>asynchronous, unattended and multi-plan</strong>: it runs a full night with every interactive
-harness closed, driving one aider process per plan file for hours with no one watching, with its
-own writer and reviewer models, then leaves an audit report for the morning. So the difference
-is no longer one step against many. It is one plan in a session, reviewed by the calling
-harness, against several plans or a night with no one present. Neither can stand in for the
-other: <code>local-coder</code> cannot run when nobody is present to dispatch it and review the branch, and
-aider's nightly driver has no synchronous entry point a mid-session orchestrator could call. The
-original aider-kit integration left <code>local-coder</code>'s definition, model resolution, and prompt
-untouched for this reason.</p>
+<h2 id="local-coder-and-the-aider-setup-pipeline---one-harness-at-two-scales"><code>local-coder</code> and the <code>aider-setup</code> pipeline - one harness at two scales<a class="headerlink" href="#local-coder-and-the-aider-setup-pipeline---one-harness-at-two-scales" title="Permanent link">&para;</a></h2>
+<p>Since 2026-11-06 <code>local-coder</code> no longer has a driver of its own. It is the aider kit run on <strong>one
+plan</strong>: the plan is mounted as the only plan of a small kit project outside the repository (<code>new-project.ps1</code>), <code>aider-plan.ps1</code> runs it with the kit's writer
+model and its required reviewer audit, and the kit starts without a wrapper. The per-stage skills
+(write, audit, reopen) are mandatory, for a single plan as for a night: there is no switch to turn them off. <code>aider-night.ps1</code> is
+the same engine for <strong>several plans or an unattended night</strong>: it adds the working branch, the wake
+lock and the optional push. A plan opens with a header (<code>executor</code>, <code>tier</code>, <code>bounds</code>) validated by
+<code>plan_contract.py</code>. The R35 review is done by the cloud session before the pull request, and a
+finding becomes an <code>- [ ] audit:</code> line that the kit runs again. The old text driver
+(<code>local_coder_driver.py</code>) is retired: it asked a small model for tool-like output in plain text and
+its replies were refused.</p>
 <!-- local-coding:begin -->
 <p><strong>Plans and the local coding contract.</strong> Since 2026-10-17 every plan, for aider or for
 <code>local-coder</code>, opens with a header naming <code>executor</code>, <code>tier</code> and the review bounds. The aider
@@ -1387,16 +1382,13 @@ then the reviewer, which writes <code>audit.md</code> and may reopen the plan fo
 A plain <code>cmd</code> entry point (<code>aider-night.ps1</code>/<code>.bat</code>) starts a night, holding a wake lock so
 Windows' Modern Standby does not throttle an unattended run, and pushes a branch at the end -
 merging to a protected branch stays a human decision, made the next morning after reading
-<code>audit.md</code>. The rules every model follows (<code>config/rules.md</code>) are generated at build time from
-this repository's own <code>.claude/rules/*.md</code>, with the longest ones abridged. The file currently
-covers R0 to R27 only (its header reads "Rules: 28 (R0-R27)"), so the night's models do not see
-the rules after R27, among them R35 (review bounds), R36 (a skill for every step) and R38 (the
-plan header). R28 to R38 were never synced into it, so it was not regenerated with the local
-coding contract. A dry run of the generator on 2026-10-17, which
-writes nothing, reports 39 rules, R0 to R38, but with no tokenizer in that interpreter no cap was
-applied. The capped regeneration measured about 5153 tokens against the 3500 ceiling of the
-file on 2026-10-17 (recorded in <code>IMPROVEMENTS.md</code>, not re-measured here), which is why it is a
-decision for the aider kit. Setup, tuning, and rebuilding the student-facing kit: see
+<code>audit.md</code>. The rules every model follows (<code>config/rules.md</code>) are 26 coding rules curated by hand,
+R0 to R25, in plain words and with no reference to this toolkit: constants and configuration, errors,
+tests, function headers, naming, comments and layout. The file is the only copy and is edited in place;
+<code>aider-rules-check.py</code> validates it before every run. Rules about documents, agents or process (the review bounds,
+the plan header, the skill-first rule) are left out on purpose, because a model that writes code
+cannot apply them. The file measures 1618 tokens
+(<code>token_count.py</code>, 2026-11-07) against a ceiling of 2000. Setup, tuning, and rebuilding the student-facing kit: see
 <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/.claude/skills/aider-setup/SKILL.md">.claude/skills/aider-setup/SKILL.md</a> and its <code>MANUAL.md</code>.</p>
 <hr />
 <p><a href="../13-cad-design/">← 13 3D CAD design, CNC, 3D printing</a> | <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/README.md">Table of contents</a> | <a href="../15-security-audit/">15 Security audit and guards →</a></p>

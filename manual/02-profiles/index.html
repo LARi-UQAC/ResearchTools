@@ -1535,6 +1535,16 @@ procedure: <a href="https://github.com/LARi-UQAC/ResearchTools/blob/main/profile
 <td>any institutional email</td>
 </tr>
 <tr>
+<td><code>ELSEVIER_INSTTOKEN</code></td>
+<td><em>Optional</em> — the Elsevier institutional token sent with every Elsevier full-text and metadata call when <code>--insttoken</code> is absent (the flag wins). Without it, a closed-access paper returns a one-page preview from this key even on the UQAC VPN (measured 2026-11-05), so the chain falls through to the browser rung. The token itself is issued to the institution by Elsevier</td>
+<td>UQAC library, who request it from Elsevier</td>
+</tr>
+<tr>
+<td><code>BW_SESSION</code>, <code>KEEPASSXC_DATABASE</code>, <code>KEEPASSXC_PASSWORD</code> <em>(or <code>KEEPASSXC_KEYFILE</code>)</em></td>
+<td><em>Optional</em> — only for the browser rung's institutional sign-in, and only for the chosen <code>secret_provider</code> in <code>browser-fetch.json</code>: the Bitwarden session key printed by <code>bw unlock</code>, or the KeePassXC database path and its master password. The host's user name is read from the variable its <code>username_env</code> entry names. None of them is ever logged</td>
+<td><code>bw unlock</code>, your own KeePassXC database</td>
+</tr>
+<tr>
 <td><code>GEMINI_API_KEY</code></td>
 <td><em>Optional</em> — the Gemini leg of the deliberation panel (cross-review, table enrichment). The model is resolved at run time from Google's own catalogue (<code>--gemini-model auto</code>), so no model name is set here</td>
 <td><a href="https://aistudio.google.com/apikey">Google AI Studio</a></td>
@@ -1759,6 +1769,16 @@ all three environments after the install.</p>
 </tr>
 <tr>
 <td>☑</td>
+<td><code>keyring</code></td>
+<td>keyring</td>
+<td>25.7.0</td>
+<td>scopus <code>==25.7.0</code></td>
+<td>scopus</td>
+<td>yes</td>
+<td></td>
+</tr>
+<tr>
+<td>☑</td>
 <td><code>lxml</code></td>
 <td>lxml</td>
 <td>6.1.3</td>
@@ -1899,16 +1919,6 @@ all three environments after the install.</p>
 </tr>
 <tr>
 <td>☑</td>
-<td><code>playwright-stealth</code></td>
-<td>playwright_stealth</td>
-<td>2.0.3</td>
-<td>scopus <code>==2.0.3</code></td>
-<td>scopus</td>
-<td>yes</td>
-<td></td>
-</tr>
-<tr>
-<td>☑</td>
 <td><code>psycopg</code></td>
 <td>psycopg</td>
 <td>3.3.6</td>
@@ -1932,8 +1942,8 @@ all three environments after the install.</p>
 <td><code>PyMuPDF</code></td>
 <td>fitz, pymupdf</td>
 <td>1.27.2.3</td>
-<td>paper2talk <code>==1.27.2.3</code>; extract-statistic <code>==1.27.2.3</code>; word2latex <code>==1.27.2.3</code></td>
-<td>extract-statistic, geolocalisation, paper2talk, scopus, word2latex</td>
+<td>paper2talk <code>==1.27.2.3</code>; extract-statistic <code>==1.27.2.3</code>; word2latex <code>==1.27.2.3</code>; work-ugs-audit <code>==1.27.2.3</code>; figure-review <code>==1.27.2.3</code></td>
+<td>extract-statistic, figure-review, geolocalisation, paper2talk, scopus, word2latex, work-ugs-audit</td>
 <td>yes</td>
 <td>AGPL-3.0 licence; scopus uses it when present without declaring it</td>
 </tr>
@@ -1942,8 +1952,8 @@ all three environments after the install.</p>
 <td><code>pymupdf4llm</code></td>
 <td>pymupdf4llm</td>
 <td>1.27.2.3</td>
-<td>extract-statistic <code>==1.27.2.3</code></td>
-<td>extract-statistic</td>
+<td>extract-statistic <code>==1.27.2.3</code>; work-ugs-audit <code>==1.27.2.3</code></td>
+<td>extract-statistic, work-ugs-audit</td>
 <td>yes</td>
 <td>AGPL-3.0 licence</td>
 </tr>
@@ -1982,8 +1992,8 @@ all three environments after the install.</p>
 <td><code>PyYAML</code></td>
 <td>yaml</td>
 <td>6.0.3</td>
-<td>recommendation-letter <code>==6.0.3</code>; narrative-cv <code>==6.0.3</code>; wp-portfolio-sync <code>==6.0.3</code></td>
-<td>narrative-cv, recommendation-letter, wp-portfolio-sync</td>
+<td>recommendation-letter <code>==6.0.3</code>; narrative-cv <code>==6.0.3</code>; wp-portfolio-sync <code>==6.0.3</code>; work-ugs-audit <code>==6.0.3</code></td>
+<td>narrative-cv, recommendation-letter, work-ugs-audit, wp-portfolio-sync</td>
 <td></td>
 <td>read with yaml.safe_load only</td>
 </tr>
@@ -2288,7 +2298,7 @@ its advisories accepted and recorded in <code>IMPROVEMENTS.md</code>.</p>
 <td>1.27.2.3</td>
 <td>pdf2md <code>==1.27.2.3</code></td>
 <td>pdf2md</td>
-<td>yes</td>
+<td></td>
 <td>AGPL-3.0 licence; scopus uses it when present without declaring it</td>
 </tr>
 <tr>

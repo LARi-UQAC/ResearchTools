@@ -30,9 +30,12 @@ does.</p>
 ### 📚 Academic writing
 
 Literature reviews, paper and thesis audits, BibTeX cleanup, reviewer responses, submission
-packages — a ScholarEval score before the reviewer ever sees it.
+packages — a ScholarEval score before the reviewer ever sees it. The figures of a paper or a
+thesis (TikZ, draw.io, SVG, bitmap) are reviewed with one shared `figure-review` skill, and
+`/work-ugs-audit` grades a folder of undergraduate PDF reports against your rubric with local
+models only, so a confidential report never reaches a cloud model.
 
-[Skills →](manual/06-skills.md)
+[Skills →](manual/06-skills.md) · [Commands →](manual/04-commands.md)
 
 </div>
 

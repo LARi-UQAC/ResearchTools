@@ -148,7 +148,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan11.md
 
-- [ ] T1 agent, command, SKILL.md, routing and docs
+- [x] T1 agent, command, SKILL.md, routing and docs: contract test 15/15, mkdocs links and doc suites green, counts 29 skills 22 agents 34 commands. Rulings: the agent reads rubric.md and ledger.md of the work folder (spec Driver contracts), not progress.md and spec.md as the plan says, since the driver writes no such files; the driver CLI is written from plan 8k and the spec and MUST be re-checked against the harvested ugs_driver.py (subcommands, flags, file names, the module list in SKILL.md and docs); testing.md lines added for every test file that exists now, the night modules (ugs_ledger, ugs_grade, ugs_audit, ugs_language, ugs_figures, ugs_assemble, ugs_run, ugs_driver, vision_probe) get theirs after the harvest
 
 ## plan12.md
 

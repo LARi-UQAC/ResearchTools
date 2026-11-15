@@ -744,3 +744,22 @@ ThesisTracker itself is a separate system and does not belong in the Layer 1 gra
 - **authoring-loop orchestrator.** [authoring-loop](agents/authoring-loop.md) is the ScholarEval-gated writing counterpart of the code loop (Layer 5, "Authoring loop"): it runs author (Fable 5) -> `scholar-evaluation` audit (Sonnet/Haiku) -> loop to `min_score`/`max_budget` -> memory via `local-writer`. Like [thesis-to-paper](agents/thesis-to-paper.md) it runs at the top level (inline execution of the authoring/audit pipelines) and keeps a `PROGRESS.md` + ledger; its budget is advisory unless wrapped in the loop-engineer SDK driver. Invoked by name.
 - **pdf2md.** The [pdf2md](skills/pdf2md) skill is the input side of the auditors for a work that exists only as a PDF: no agent drives it, the operator runs `pdf2md.py` by stage. It drives mineru through its installed `mineru-kit` CLI (pinned versions, `pdf2md-pipeline.json`), cleans the running-header defect mineru leaves behind, and writes either the UQAC thesis layout (`--layout thesis`, the default: `main.md`, `content/` chapters, `assets/`) or one document for an article or a talk source (`--layout single`: `main.md`, `assets/bibliography.md`). Validation compares the output with an independent reader of the PDF (stages 7 and 7b). Repair (7d) and the local-vision correction loop (7e) work chapter by chapter and refuse a single layout. No auditor discovers the output on its own: [thesis-auditor](agents/thesis-auditor.md) resolves `src/main.tex` only, so the markdown is fed by hand.
 - The non-academic agents in [agents/](agents) (analysis-engine, blazor-dev, cost-tester, flask-api, react-dev, security-auditor, word-to-latex) serve the CostEstimator software project and are out of scope for this diagram.
+
+## Student report grading (work-ugs-audit)
+
+The `/work-ugs-audit` command dispatches the `work-ugs-audit` agent, a cheap cloud wrapper that reads only the rubric and
+the step ledger of the work folder and the driver's JSON lines, never a report. The driver `ugs_driver.py` runs the steps of
+each report with local roles resolved by `model_resolver.py`, using the `language-review` table and the `figure-review`
+criteria (scope `undergraduate`). The same `language-review` and `figure-review` serve the four research auditors (scope
+`research`), which keep their LaTeX track-change markup.
+
+```mermaid
+flowchart LR
+    cmd["/work-ugs-audit"] --> agent["work-ugs-audit agent<br/>reads rubric and ledger only"]
+    agent --> driver["ugs_driver.py<br/>prepare · run · batch · status"]
+    driver --> roles["local roles<br/>ugs-grader · ugs-auditor · ugs-vision"]
+    driver --> lang["language-review<br/>correction table"]
+    driver --> fig["figure-review<br/>scope undergraduate"]
+    lang -.-> aud["research auditors<br/>scope research"]
+    fig -.-> aud
+```

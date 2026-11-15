@@ -154,21 +154,29 @@ class TestFigureRender(unittest.TestCase):
     def test_a_file_or_shell_primitive_in_the_picture_is_refused_before_any_tool_call(self):
         for bad in (r"\input{/etc/passwd}", r"\openin1=../secret.txt", r"\immediate\write18{calc}",
                     r"\write18{calc}", r"\directlua{os.execute('x')}", r"\csname in\string put\endcsname",
-                    r"\catcode`\|=0 ", r"\scantokens{x}", r"\readline1 to \x", r"\include{other}"):
+                    r"\catcode`\|=0 ", r"\scantokens{x}", r"\readline1 to \x", r"\include{other}",
+                    r"\@@input{x}", r"\@input{x}", r"^^5cinput{x}", r"\RequirePackage{catchfile}",
+                    r"\InputIfFileExists{x}{}{}", r"\IfFileExists{x}{}{}", r"\includegraphics{/x.pdf}",
+                    r"\pgfimage{x}", r"\pgfdeclareimage[height=1cm]{a}{x}", r"\pdfximage{x}", r"\pdfobj{x}",
+                    r"\Input{x}"):
             code = r"\begin{tikzpicture}\node {A};" + bad + r"\end{tikzpicture}"
             res = self.render({"kind": "tikz", "path_or_code": code})
             self.assertEqual(res["status"], "not_run", bad)
             self.assertEqual(res["tool"], "pdflatex", bad)
             self.assertIn("not compiled", res["reason"], bad)
 
-    def test_a_primitive_in_the_preamble_is_refused_and_a_comment_is_not_a_primitive(self):
+    def test_a_primitive_in_the_preamble_is_refused_and_so_is_a_commented_one(self):
         code = r"\begin{tikzpicture}\node {A};\end{tikzpicture}"
         res = self.render({"kind": "tikz", "path_or_code": code}, preamble=r"\input{macros}")
         self.assertEqual(res["status"], "not_run")
         self.assertIn(r"\input", res["reason"])
-        res = self.render({"kind": "tikz", "path_or_code": code + "\n% \\input{x}\n"}, run=FakeLatex(),
+        # The scan reads the raw text: a comment is not trusted to hide what TeX would still read
+        # (verbatim material, odd category codes), so a commented primitive is refused too.
+        res = self.render({"kind": "tikz", "path_or_code": code + "\n% \\input{x}\n"})
+        self.assertEqual(res["status"], "not_run")
+        res = self.render({"kind": "tikz", "path_or_code": code}, run=FakeLatex(),
                           preamble=r"\usepackage{tikz}", photo_colors=2000)
-        self.assertEqual(res["status"], "rendered", "a commented primitive is not compiled")
+        self.assertEqual(res["status"], "rendered", "clean source still renders")
 
     def test_a_file_reading_package_is_refused_and_a_plain_package_is_not(self):
         code = r"\begin{tikzpicture}\end{tikzpicture}"

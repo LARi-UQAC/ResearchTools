@@ -43,8 +43,12 @@ EXIT_REFUSAL = 2
 FORBIDDEN_TEX = re.compile(
     r"\\(?:input|include|includeonly|import|subimport|openin|openout|read|readline|write|immediate|directlua|"
     r"luaexec|csname|catcode|scantokens|detokenize|endlinechar|special|lstinputlisting|verbatiminput|"
-    r"VerbatimInput|pdffilesize|pdfmdfivesum|pdfshellescape|pdfliteral)(?![A-Za-z])"
-    r"|\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\b(?:catchfile|filecontents|readarray|datatool|minted|shellesc|luacode)\b")
+    r"VerbatimInput|pdffilesize|pdfmdfivesum|pdfshellescape|pdfliteral|InputIfFileExists|IfFileExists|"
+    r"RequirePackage|includegraphics|pgfimage|pgfdeclareimage|pdfximage|pdfobj)(?![A-Za-z])"
+    r"|\\@[@A-Za-z]"    # kernel aliases of the primitives above, such as \@@input
+    r"|\^\^"            # a character escape can spell any of the names above
+    r"|\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\b(?:catchfile|filecontents|readarray|datatool|"
+    r"minted|shellesc|luacode)\b", re.IGNORECASE)
 # openin_any and openout_any restrict the files TeX Live opens. Measured 2026-11-14: MiKTeX 26.2 ignores them
 # (a file outside the working folder was still read), so they are a measure for TeX Live only.
 PARANOID_ENV = {"openin_any": "p", "openout_any": "p"}
@@ -61,14 +65,15 @@ def forbidden_primitive(*sources: Optional[str]) -> Optional[str]:
         Find the first LaTeX primitive that reads a file, writes a file or starts a program.
 
     Inputs:
-        sources (str | None): LaTeX texts to scan, comments are ignored
+        sources (str | None): LaTeX texts to scan as written: a comment is not trusted to hide what TeX
+        could still read, so a commented primitive is refused too
 
     Outputs:
         found (str | None): the offending command or package line, or None when the texts are clean.
     --------------------------------------------------------------------------
     """
     for text in sources:
-        found = FORBIDDEN_TEX.search(figure_tex.strip_comments(text or ""))
+        found = FORBIDDEN_TEX.search(text or "")
         if found:
             return found.group(0).strip()
     return None

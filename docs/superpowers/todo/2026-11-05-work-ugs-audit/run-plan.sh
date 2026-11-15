@@ -62,6 +62,27 @@ test_command() {
 # model must not read it, so the copy mounted for the kit has none.
 strip_header() { "$PYI" -c 'import sys; t=sys.stdin.read().replace("\r\n","\n"); print(t.split("\n---\n",1)[1].lstrip("\n") if t.startswith("---\n") else t, end="")'; }
 
+# Modules imported by the mounted files that live in ANOTHER skill's scripts folder (measured 2026-11-14,
+# night un6: ugs_bridge.py reads bridge_text.py and bridge_images.py from loop-engineer, the mount did not
+# carry them, and plans 2 to 9 failed on ModuleNotFoundError that the writer model could not repair). The module
+# is copied to the same repository-relative path, so the importing file's own sys.path line still finds it.
+# Only the module is copied, never its test: the night runner would run it. A module already beside the
+# importing file is left alone. Two passes, since a copied module may import another one.
+copy_cross_skill() {
+  for _pass in 1 2; do
+    find "$P" -name '*.py' -not -path '*/.venv/*' | while read -r src; do
+      grep -h -E '^(from|import) [a-z_][a-z0-9_]*' "$src" | sed -E 's/^(from|import) ([a-z_][a-z0-9_]*).*/\2/' | sort -u | while read -r mod; do
+        [ -f "$(dirname "$src")/$mod.py" ] && continue
+        for cand in "$W"/.claude/skills/*/scripts/"$mod".py; do
+          [ -f "$cand" ] || continue
+          rel="${cand#$W/}"
+          if [ ! -f "$P/$rel" ]; then mkdir -p "$P/$(dirname "$rel")"; cp "$cand" "$P/$rel"; echo "copied cross-skill module $rel"; fi
+        done
+      done
+    done
+  done
+}
+
 case "$MODE" in
 mount-all)
   # One kit project holding every plan<N>.md of PLANS_HOME, for aider-night.ps1. ID is the project name.
@@ -128,6 +149,7 @@ mount-night)
       done
     done
   done
+  copy_cross_skill
   "$P/.venv/Scripts/python.exe" -m ensurepip >/dev/null 2>&1 || true
   if grep -q -i -E "fitz|PyMuPDF" "$PLANS_HOME"/plan*.md; then
     "$P/.venv/Scripts/python.exe" -m pip install -q -r "$W/.claude/skills/figure-review/scripts/requirements.txt" >/dev/null 2>&1 \
@@ -168,6 +190,7 @@ mount)
       done
     done
   done
+  copy_cross_skill
   # PyMuPDF for the plans that use it, from the pinned and audited file of the repository.
   if grep -q -i -E "fitz|PyMuPDF" "$PLAN"; then
     "$P/.venv/Scripts/python.exe" -m ensurepip >/dev/null 2>&1 || true   # the kit's venv has no pip

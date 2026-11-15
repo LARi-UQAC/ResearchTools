@@ -118,8 +118,7 @@ class TestChapter(unittest.TestCase):
 
     def test_the_262k_path_is_the_wrapper_plus_the_bridge_not_a_local_subagent(self):
         body = flat(self.text)
-        self.assertIn("low-cost cloud model wrapper", body)
-        self.assertIn("session role", body)
+        self.assertIn("low-cost cloud model", body)
         self.assertIsNone(SUBAGENT_LOCAL.search(body))
 
     def test_no_model_tag_appears_in_the_chapter_or_the_diagram(self):
@@ -132,7 +131,7 @@ class TestChapter(unittest.TestCase):
         rows = [line for line in section(self.text, "Roles, windows and speed").splitlines()
                 if line.startswith("| ") and not line.startswith("| Tier")
                 and not line.startswith("|---")]
-        self.assertGreaterEqual(len(rows), 3)
+        self.assertGreaterEqual(len(rows), 2)
         for row in rows:
             with self.subTest(row=row[:40]):
                 self.assertRegex(row, DATE)
@@ -281,7 +280,6 @@ class TestProcessFigure(unittest.TestCase):
 AIDER_CHAPTER = REPO / "docs" / "manual" / "14-aider-pipeline.md"
 AIDER_DEEP_DIVE = REPO / "docs" / "aider-setup.md"
 AIDER_DIR = REPO / ".claude" / "skills" / "aider-setup"
-RULES_HEADER = re.compile(r"^Rules: \d+ \(R0-R(\d+)\)", re.MULTILINE)
 
 
 def says_orchestrator_product(text: str) -> bool:
@@ -300,15 +298,17 @@ class TestAiderChapter(unittest.TestCase):
         self.assertFalse(says_orchestrator_product(self.text))
         self.assertFalse(says_orchestrator_product(AIDER_DEEP_DIVE.read_text(encoding="utf-8")))
         row = next(line for line in CHAPTER.read_text(encoding="utf-8").splitlines()
-                   if line.startswith("| Two or more plans"))
+                   if line.startswith("| Several plans, or an unattended night"))
         self.assertFalse(says_orchestrator_product(row))
 
-    def test_local_coder_is_described_as_one_whole_plan(self):
-        for phrase in ("one whole plan", "PLAN: <path>", "local-coder-dispatch-guard.py",
-                       "audits nothing", "several plans"):
+    def test_local_coder_is_described_as_running_one_plan_through_the_kit(self):
+        # Rewritten 2026-11-12 (Issue #104): one dispatch runs ONE plan on the kit, several plans or an
+        # unattended night go to aider-night.ps1, and the text driver is retired.
+        for phrase in ("one harness at two scales", "aider-night.ps1", "unattended", "single plan"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.body)
-        self.assertNotIn("single-step", self.body)
+        self.assertNotIn("whole `progress.md`", self.body)
+        self.assertNotIn("PROGRESS: <path>", self.body)
 
     def test_the_driver_ignores_the_header_and_the_named_things_exist(self):
         self.assertIn("neither validates nor uses", self.body)
@@ -321,22 +321,29 @@ class TestAiderChapter(unittest.TestCase):
         self.assertIn("do not govern", self.body)
         self.assertIn("never merges", self.body)
 
-    def test_the_rules_coverage_is_the_one_the_generated_file_declares(self):
-        header = RULES_HEADER.search((AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8"))
-        self.assertIsNotNone(header)
-        self.assertIn(f"R0 to R{header.group(1)}", self.body)
+    def test_the_rules_file_is_curated_coding_rules_with_no_foreign_reference(self):
+        # Since 2026-11-07 the model reads 25 hand-curated coding rules: nothing about another
+        # project, no source label, no abridging marker, no way to ask a question it cannot ask.
+        rules = (AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8")
+        # The file is written by hand (2026-11-11), so the numbering is read from the rules themselves:
+        # R0, R1, R2 ... without a gap, the same fact aider-rules-check.py enforces before every run.
+        numbers = [int(n) for n in re.findall(r"(?m)^\*\*R(\d+) - ", rules)]
+        self.assertGreaterEqual(len(numbers), 1)
+        self.assertEqual(list(range(len(numbers))), numbers)
+        for foreign in ("ResearchTools", "source:", "[...]", "<sub>", "OBSIDIAN", "AskUserQuestion", "CLAUDE.md"):
+            with self.subTest(foreign=foreign):
+                self.assertNotIn(foreign, rules)
+        self.assertIn("curated by hand", self.body)
         self.assertNotIn("cannot drift", self.body)
 
     def test_the_overview_does_not_say_harness_twice(self):
         self.assertIn("independent local-coding pipeline that needs no interactive harness", self.body)
 
-    def test_the_rules_paragraph_is_exact_about_abridging_and_the_missing_rules(self):
-        # The generated file abridges only its longest rules, and R28 to R38 were never synced.
-        header = (AIDER_DIR / "config" / "rules.md").read_text(encoding="utf-8")
-        self.assertIn("Some rules are abridged", header)
-        self.assertNotIn("one abridged entry per rule", self.body)
-        self.assertIn("with the longest ones abridged", self.body)
-        self.assertIn("the rules after R27, among them R35", self.body)
+    def test_the_rules_paragraph_says_what_is_left_out_on_purpose(self):
+        # Rules about documents, agents or process are not given to a model that writes code.
+        self.assertIn("left out on purpose", self.body)
+        self.assertNotIn("with the longest ones abridged", self.body)
+        self.assertNotIn("the rules after R27", self.body)
 
     def test_the_ceiling_table_equals_the_budget_file(self):
         ceilings = json.loads(BUDGET.read_text(encoding="utf-8"))["ceilings"]

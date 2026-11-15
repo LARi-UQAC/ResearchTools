@@ -1,0 +1,34 @@
+{
+  "_provenance": "Specified 2026-11-05 by the owner in Issue #104 (design section 7.1, spec D9): G and S of reviewer-response split into finer codes, plus the composition flags the four research auditors print, each with the rule number copied from scientific-writing/references/composition_rules.md. Severity follows the priority the auditors already state (High -> major, Medium -> minor). Scope 'research' marks a rule of composition_rules.md written for manuscripts. PDF colours are the builder's choice (design section 9): Okabe-Ito colour-blind-safe blue for minor, vermilion for major.",
+  "entries": [
+    {"code": "SP", "flag": null, "label_fr": "Orthographe", "label_en": "Spelling", "severity": "minor", "scope": "both", "rule": null, "latex_action": "direct_fix", "pdf_action": {"color": "#0072B2", "prefix": "[SP]"}},
+    {"code": "AG", "flag": null, "label_fr": "Accord (genre, nombre, temps)", "label_en": "Agreement (gender, number, tense)", "severity": "minor", "scope": "both", "rule": null, "latex_action": "direct_fix", "pdf_action": {"color": "#0072B2", "prefix": "[AG]"}},
+    {"code": "PN", "flag": null, "label_fr": "Ponctuation", "label_en": "Punctuation", "severity": "minor", "scope": "both", "rule": null, "latex_action": "direct_fix", "pdf_action": {"color": "#0072B2", "prefix": "[PN]"}},
+    {"code": "SST", "flag": null, "label_fr": "Structure de la phrase", "label_en": "Sentence structure", "severity": "minor", "scope": "both", "rule": null, "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[SST]"}},
+    {"code": "REG", "flag": null, "label_fr": "Registre scientifique", "label_en": "Academic register", "severity": "minor", "scope": "both", "rule": "R1.3", "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[REG]"}},
+    {"code": "TERM", "flag": null, "label_fr": "Terminologie", "label_en": "Terminology", "severity": "minor", "scope": "both", "rule": null, "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[TERM]"}},
+    {"code": "TYPO", "flag": null, "label_fr": "Typographie", "label_en": "Typography", "severity": "minor", "scope": "both", "rule": null, "latex_action": "direct_fix", "pdf_action": {"color": "#0072B2", "prefix": "[TYPO]"}},
+    {"code": "AV", "flag": "ACTIVE VOICE UNJUSTIFIED", "label_fr": "Voix active non justifiée", "label_en": "Active voice unjustified", "severity": "minor", "scope": "research", "rule": "R1.2", "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[AV]"}},
+    {"code": "PI", "flag": "PRONOUN I FORBIDDEN", "label_fr": "Pronom « je » interdit", "label_en": "Pronoun I forbidden", "severity": "major", "scope": "research", "rule": "R1.4", "latex_action": "replaced", "pdf_action": {"color": "#D55E00", "prefix": "[PI]"}},
+    {"code": "PW", "flag": "PRONOUN WE OUT OF SCOPE", "label_fr": "Pronom « nous » hors des sections permises", "label_en": "Pronoun we out of scope", "severity": "major", "scope": "research", "rule": "R1.5", "latex_action": "replaced", "pdf_action": {"color": "#D55E00", "prefix": "[PW]"}},
+    {"code": "INF", "flag": "INFORMAL LANGUAGE", "label_fr": "Langue familière", "label_en": "Informal language", "severity": "minor", "scope": "research", "rule": "R1.6", "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[INF]"}},
+    {"code": "SEMI", "flag": "SEMICOLON IN PROSE", "label_fr": "Point-virgule dans la prose", "label_en": "Semicolon in prose", "severity": "minor", "scope": "research", "rule": "R1.7", "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[SEMI]"}},
+    {"code": "LONG", "flag": "SENTENCE TOO LONG", "label_fr": "Phrase trop longue", "label_en": "Sentence too long", "severity": "minor", "scope": "research", "rule": "R1.8", "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[LONG]"}},
+    {"code": "FRAG", "flag": "SENTENCE FRAGMENT", "label_fr": "Phrase incomplète", "label_en": "Sentence fragment", "severity": "minor", "scope": "research", "rule": "R2.4", "latex_action": "replaced", "pdf_action": {"color": "#0072B2", "prefix": "[FRAG]"}},
+    {"code": "LIST", "flag": "LIST IN PROSE SECTION", "label_fr": "Liste dans une section rédigée", "label_en": "List in prose section", "severity": "major", "scope": "research", "rule": "R2.6", "latex_action": "replaced", "pdf_action": {"color": "#D55E00", "prefix": "[LIST]"}},
+    {"code": "CLIST", "flag": "CONTRIBUTIONS AS LIST", "label_fr": "Contributions présentées en liste", "label_en": "Contributions as list", "severity": "major", "scope": "research", "rule": "R2.7", "latex_action": "replaced", "pdf_action": {"color": "#D55E00", "prefix": "[CLIST]"}}
+  ],
+  "not_language": {
+    "_provenance": "Ruling 2026-11-05 (plan1): flags printed inside a composition section that concern document structure or process, not language (spec D9). They stay in the agents.",
+    "JOURNAL GUIDELINES NOT CONSULTED": "journal-target process check (R5.x)",
+    "PRESENTATION STYLE": "paper-level style label from the method-identification step",
+    "SUBSECTIONS NOT PRESENTED": "section structure (R3.x)",
+    "SECTION CLOSING NOT TWO SENTENCES": "section structure (R3.x)",
+    "ABSTRACT LABELED SECTIONS": "abstract format (R4.x)",
+    "ABSTRACT CITATION": "abstract format (R4.x)",
+    "ABSTRACT ACRONYM": "abstract format (R4.x)",
+    "ABSTRACT EQUATION": "abstract format (R4.x)",
+    "IAG DECLARATION MISSING": "UQAC AI-use declaration check, a process flag",
+    "IAG LEVEL UNDERSTATED": "UQAC AI-use declaration check, a process flag"
+  }
+}

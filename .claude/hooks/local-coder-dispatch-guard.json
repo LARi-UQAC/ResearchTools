@@ -32,8 +32,16 @@
     ],
     "provenance": "chosen 2026-10-17: the tier table, tried in order like plan_contract_candidates"
   },
-  "resolver_module": {
-    "value": null,
-    "provenance": "chosen 2026-10-17: null in production, so plan_contract asks model_resolver. A path to a python file exposing resolve(role, require_role) replaces it, which is how the offline test stays independent of the machine's local models (R21)"
+  "kit_dir": {
+    "value": "~/.claude/skills/aider-setup",
+    "provenance": "chosen 2026-11-13: the location of the aider kit, which must be present for local-coder dispatch"
+  },
+  "kit_files": {
+    "value": [
+      "config/model-settings.yml",
+      "config/context-budget.json",
+      "scripts/aider-plan.ps1"
+    ],
+    "provenance": "chosen 2026-11-13: the required files of the aider kit, listed in spec.md Guard section"
   }
 }

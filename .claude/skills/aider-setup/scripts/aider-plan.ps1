@@ -46,6 +46,11 @@
   minutes against 19 for the plan itself - so a switch that left it running was
   a switch that saved nothing, whatever its name suggested.
 
+.PARAMETER QualityOnly
+  Run nothing but the plan quality stage: for every plan of the project, archived or blocked, the reviewer model
+  lists the plan's requirements and judges how far the code meets each, and the driver writes quality.md with
+  one percentage per plan. It runs no plan and no test, so it scores the code a previous run left behind.
+
 .PARAMETER DryRun
   Report everything and start nothing.
 
@@ -61,6 +66,7 @@ param(
     [int]$CodeCeiling = 16000,
     [switch]$Strict,
     [switch]$NoAudit,
+    [switch]$QualityOnly,
     [switch]$DryRun,
     [string]$Model = "",
     [string]$Config = "",
@@ -68,11 +74,9 @@ param(
     [string]$TestCommand = "",
     [string]$Round = "",
     [switch]$AllowCloud,
-    # Bind a skill to each stage of the run. Off by default, and when it is off
-    # this file is never opened, so the pipeline behaves exactly as it did
-    # before. A SWITCH rather than a third run mode on purpose: -DryRun -Skills
-    # rehearses the new mode, which a separate mode could not have done.
-    [switch]$Skills,
+    # Where the per-stage skills are declared. The skills themselves are
+    # MANDATORY since 2026-11-07 (owner decision): there is no switch to turn
+    # them off, for the nightly run and for a single plan alike.
     [string]$SkillsFile = "",
     [string[]]$CodeExtensions = @(".py", ".ps1", ".js", ".ts", ".tsx", ".jsx",
                                   ".cs", ".c", ".h", ".cpp", ".java", ".go",
@@ -87,6 +91,11 @@ param(
     [string[]]$DataExtensions = @(".json", ".txt", ".toml", ".yml", ".yaml",
                                   ".cfg", ".ini", ".csv")
 )
+
+# Skills are always on: the writer, the reviewer and the reopened plan each get
+# their bundle (config/skills.json). Kept as a variable so the code below reads
+# the same, but it is not a parameter and no caller can switch it off.
+$Skills = $true
 
 $ErrorActionPreference = "Stop"
 
@@ -185,6 +194,8 @@ $plans = @(Get-ChildItem -LiteralPath $plansDir -Filter "plan*.md" -File |
            Where-Object { $_.BaseName -match '^plan(\d+)$' } |
            Sort-Object { [int]([regex]::Match($_.BaseName, '\d+').Value) })
 
+# -QualityOnly runs no plan: the plans stay where they are and are only scored.
+if ($QualityOnly) { $plans = @() }
 if ($plans.Count -eq 0 -and $NoAudit) {
     Write-Refusal @("REFUSED: no plan<N>.md left in $plansDir and -NoAudit was passed.",
                     "  Nothing to do.")
@@ -214,7 +225,18 @@ $venvPython = Join-Path (& uv tool dir).Trim() "aider-chat\Scripts\python.exe"
 # GEMINI_API_KEY was set. Unattended, that spends a quota all night with nothing
 # said. So the model is resolved first, printed, and refused when it is not a
 # local tag.
+# The configuration folder is found beside this script (this repository, or an unpacked kit) and nothing has to
+# be installed or copied into the home folder. See Get-KitConfigDir in aider-plan-core.ps1.
+$configDir = Get-KitConfigDir $Config $BudgetFile $PSScriptRoot ""
+$script:KitConfigDir = $configDir
+if ($Config -eq "" -and (Test-Path -LiteralPath (Join-Path $configDir "aider.conf.yml"))) {
+    $Config = Join-Path $configDir "aider.conf.yml"
+}
+$settingsFile = Join-Path $configDir "model-settings.yml"
+$settingsArgs = @()
+if (Test-Path -LiteralPath $settingsFile) { $settingsArgs = @("--model-settings-file", (Resolve-Path -LiteralPath $settingsFile).Path) }
 $baseArgs = @()
+$baseArgs += $settingsArgs
 if ($Config -ne "") {
     if (-not (Test-Path -LiteralPath $Config)) {
         Write-Refusal @("REFUSED: config file not found: $Config")
@@ -280,10 +302,9 @@ if ($resolved -notlike "ollama_chat/*" -and $resolved -notlike "ollama/*" -and -
 # Every number below is either measured here or read from context-budget.json.
 # None is written in this script (R0), and a key missing from the file is named
 # rather than defaulted (R3).
-if ($BudgetFile -eq "") {
-    if ($Config -ne "") { $BudgetFile = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $Config).Path) "context-budget.json" }
-    else                { $BudgetFile = Join-Path $HOME ".config\aider\context-budget.json" }
-}
+if ($BudgetFile -eq "") { $BudgetFile = Join-Path $configDir "context-budget.json" }
+# Relative paths of context-budget.json and skills.json are read from the folder of the budget file.
+$budgetDir = if (Test-Path -LiteralPath $BudgetFile) { Split-Path -Parent (Resolve-Path -LiteralPath $BudgetFile).Path } else { $configDir }
 if (-not (Test-Path -LiteralPath $BudgetFile)) {
     Write-Refusal @("REFUSED: context budget file not found: $BudgetFile",
                     "  Pass -BudgetFile, or place context-budget.json beside the aider config.")
@@ -308,7 +329,7 @@ $maxFilesTouched= [int](Get-BudgetValue $budget "plan.max_files_touched")
 
 $auditMargin    = [int](Get-BudgetValue $budget "audit.batch_safety_margin_tokens")
 $auditMaxFiles  = [int](Get-BudgetValue $budget "audit.max_files_per_batch")
-$alwaysOnFiles  = @(Get-BudgetValue $budget "always_on_files")
+$alwaysOnFiles  = @(Get-BudgetValue $budget "always_on_files" | ForEach-Object { Resolve-ConfigPath $budgetDir $_ })
 
 $ollamaBase     = [string](Get-BudgetValue $budget "ollama.api_base")
 $unloadWait     = [int](Get-BudgetValue $budget "ollama.unload_wait_seconds")
@@ -316,6 +337,7 @@ $unloadPoll     = [int](Get-BudgetValue $budget "ollama.unload_poll_seconds")
 $auditModel     = [string](Get-BudgetValue $budget "audit.model")
 $auditPerPlan   = [bool](Get-BudgetValue $budget "audit.per_plan")
 $auditRounds    = [int](Get-BudgetValue $budget "audit.max_rounds_per_plan")
+$auditNoReportRetries = [int](Get-BudgetValue $budget "audit.no_report_retries")
 $testsRequired  = [bool](Get-BudgetValue $budget "tests.required")
 $testPatterns   = @(Get-BudgetValue $budget "tests.file_patterns")
 $testExempt     = @(Get-BudgetValue $budget "tests.exempt_name_patterns")
@@ -333,12 +355,7 @@ if ($testsRequired -and $testCmd -eq "") {
 if ($PSBoundParameters.ContainsKey('CodeCeiling')) { $codeCeiling = $CodeCeiling }
 
 Write-Section "Context budget"
-$settingsFile = Join-Path $HOME ".config\aider\model-settings.yml"
-if ($Config -ne "") {
-    $sibling = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $Config).Path) "model-settings.yml"
-    if (Test-Path -LiteralPath $sibling) { $settingsFile = $sibling }
-}
-$window = Get-ModelWindow $resolved
+$window = Get-ModelWindow $resolved $settingsFile
 if ($window -le 0) {
     Write-Refusal @("REFUSED: aider reports no context window for '$resolved'.",
                     "  Without it nothing here can be budgeted; declare max_input_tokens",
@@ -413,6 +430,31 @@ foreach ($f in $alwaysOnFiles) {
     $alwaysOnArgs += @("--read", (Resolve-Path -LiteralPath $f).Path)
 }
 
+# rules.md is written by hand and is the only copy, so its format is checked before every pass: a rule
+# defined twice, a gap in the numbering or a rule over the per-rule cap refuses the run and names the
+# rule. Nothing cuts a long rule for the student any more (a generator used to, without saying so).
+$rulesFile = @($alwaysOnFiles | Where-Object { (Split-Path $_ -Leaf) -eq "rules.md" }) | Select-Object -First 1
+if ($rulesFile) {
+    $ruleChecker = Join-Path $PSScriptRoot "aider-rules-check.py"
+    if (-not (Test-Path -LiteralPath $ruleChecker)) {
+        Write-Refusal @("REFUSED: aider-rules-check.py is missing beside the driver: $ruleChecker",
+                        "  It validates $rulesFile before every run. Reinstall the kit (setup.ps1).")
+        exit 2
+    }
+    $ruleCap = [int](Get-BudgetValue $budget "ceilings.rule_body_tokens")
+    # stderr is captured here, and under "Stop" PowerShell 5.1 turns the first stderr line of a native
+    # command into a terminating error that hides the rest (see Invoke-TestCommand).
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { $ruleReport = & $venvPython $ruleChecker $rulesFile --max-rule-tokens $ruleCap 2>&1 }
+    finally { $ErrorActionPreference = $prevEap }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Refusal (@($ruleReport | ForEach-Object { "$_" }) + @("  Fix $rulesFile, then run again."))
+        exit 2
+    }
+    Write-Host ("  rules.md: {0}" -f (($ruleReport | ForEach-Object { "$_" }) -join " "))
+}
+
 # --- Skills, one bundle per stage ------------------------------------------
 # A skill is read-only prose. aider has no skill system: nothing invokes these
 # files and nothing enforces them, exactly as with conventions.md. They make the
@@ -430,15 +472,11 @@ $skillCost  = @{ write = 0;  audit = 0;  reopen = 0 }
 if ($Skills) {
     $sf = $SkillsFile
     if ($sf -eq "") {
-        $sf = if ($BudgetFile -ne "") {
-                  Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $BudgetFile).Path) "skills.json"
-              } else {
-                  Join-Path $HOME ".config\aider\skills.json"
-              }
+        $sf = Join-Path $budgetDir "skills.json"
     }
     if (-not (Test-Path -LiteralPath $sf)) {
-        Write-Refusal @("REFUSED: -Skills was passed but no skills file was found:", "  $sf",
-                        "  Pass -SkillsFile <path>, or drop -Skills to run without them.")
+        Write-Refusal @("REFUSED: the per-stage skills are mandatory and no skills file was found:", "  $sf",
+                        "  Pass -SkillsFile <path>. There is no way to run without skills.")
         exit 2
     }
     try { $skillCfg = Get-Content -LiteralPath $sf -Raw -Encoding UTF8 | ConvertFrom-Json }
@@ -496,7 +534,19 @@ if ($workingBudget -le 0) {
 $baseArgs += @("--map-tokens", "$mapTokens")
 $baseArgs += $alwaysOnArgs
 
-Update-RunRecord @{ window = $window; working_set = $workingBudget; model_audit = $auditModel }
+# The reviewer runs with its own window, not the writer's: a dashboard drawing the context of an
+# audit against the writer's window shows a wrong percentage. The window in force is the num_ctx
+# that model-settings.yml SENDS for the reviewer, not what aider's metadata reports (the native
+# maximum of the architecture, several times larger). 0 means unknown.
+$auditWindow = 0
+if ($auditModel -ne "" -and -not $NoAudit -and (Test-Path -LiteralPath $settingsFile)) {
+    $inAuditEntry = $false
+    foreach ($line in (Get-Content -LiteralPath $settingsFile -Encoding UTF8)) {
+        if ($line -match '^\s*-\s+name:\s*(\S+)') { $inAuditEntry = ($Matches[1] -eq $auditModel); continue }
+        if ($inAuditEntry -and $line -match '^\s+num_ctx:\s*(\d+)') { $auditWindow = [int]$Matches[1]; break }
+    }
+}
+Update-RunRecord @{ window = $window; working_set = $workingBudget; model_audit = $auditModel; audit_window = [int]$auditWindow }
 
 Write-Section "Protocol files (one ceiling per file)"
 $protocolFiles = @($spec, $progress) + @($plans | ForEach-Object { $_.FullName })
@@ -564,14 +614,20 @@ function Invoke-TestCommand([string]$logPath) {
     Push-Location $proj
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    # Python writes through the console code page when its output is redirected, which turned an accent in a
+    # test message into a replacement character in the log. UTF-8 mode makes it write UTF-8, as Go and Rust do.
+    $prevUtf8 = $env:PYTHONUTF8
+    $env:PYTHONUTF8 = "1"
     try {
         & cmd /c "$testCmd > `"$logPath`" 2>&1"
         $code = $LASTEXITCODE
     } finally {
+        $env:PYTHONUTF8 = $prevUtf8
         $ErrorActionPreference = $prev
         Pop-Location
     }
-    if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath | Out-Host }
+    Convert-TestLogToUtf8Bom $logPath
+    if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Encoding UTF8 | Out-Host }
     return [int]$code
 }
 
@@ -660,6 +716,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
     # for, and the only file it can act on is audit.md.
     $argv = @()
     if ($Config -ne "") { $argv += @("--config", (Resolve-Path -LiteralPath $Config).Path) }
+    $argv += $settingsArgs
     $argv += @("--model", $auditModel)
     # No repo map either: the code under review is in the message, in full, so a
     # map of summaries adds nothing but tokens and more filenames to ask about.
@@ -674,6 +731,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
         $sourceBlock += "`n`n----- $rel -----`n$body"
     }
     $specBody = Get-Content -LiteralPath $spec -Raw -Encoding UTF8
+    $planBlock = Get-AuditPlanBlock $plansDir $planName
 
     $auditSkillBlock = ""
     foreach ($sp in $skillFiles["audit"]) {
@@ -696,7 +754,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
            "The only file you may edit is audit.md. Append to it, under a heading " +
            "'## $planName', your findings worst first, each naming the file, the " +
            "line, what is wrong and why it matters. Look at least for: a value " +
-           "hard-coded where configuration belongs, a silent fallback, a missing " +
+           "hard-coded where configuration belongs, a configuration value whose provenance is 'unspecified', a silent fallback, a missing " +
            "error path, a return code trusted where the effect should have been " +
            "verified, and a test that asserts only the happy path.`n`n" +
            "If you find nothing wrong, still write one line under that heading " +
@@ -737,7 +795,7 @@ function Invoke-PlanAudit([string]$planName, [string[]]$changedFiles, [string]$l
            # undo it. It is embedded as text rather than passed with --read for
            # the same reason the source is: the ordering is then ours, not
            # aider's.
-           $auditSkillBlock +
+           $auditSkillBlock + $planBlock +
            "=== THE SPECIFICATION THIS CODE IS MEASURED AGAINST ===`n" +
            $specBody + "`n`n" +
            "=== THE CODE THIS PLAN PRODUCED OR CHANGED ===" +
@@ -936,7 +994,18 @@ function Invoke-Aider([string[]]$argv, [string]$logPath, [string]$workDir = "") 
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & aider @argv 2>&1 | Tee-Object -FilePath $logPath | Out-Host
+        # The log is UTF-8 with a mark, written line by line: Tee-Object wrote UTF-16, which an editor that
+        # guesses the encoding showed as Chinese characters (reported twice, 2026-11-11 and 2026-11-12).
+        # --no-detect-urls: aider otherwise scrapes every URL found in the message, plan text included, with
+        # a browser, BEFORE it calls the model. Measured 2026-11-12: a plan about a link-local address made
+        # it try to open 169.254.1.1, 192.168.1.1 and a private host, and the model never loaded.
+        [System.IO.File]::WriteAllText($logPath, "", (New-Object System.Text.UTF8Encoding($true)))
+        $noMark = New-Object System.Text.UTF8Encoding($false)
+        & aider @argv --no-detect-urls 2>&1 | ForEach-Object {
+            $text = "$_"
+            [System.IO.File]::AppendAllText($logPath, $text + "`r`n", $noMark)
+            $text
+        } | Out-Host
         return [int]$LASTEXITCODE
     } finally {
         $ErrorActionPreference = $prev
@@ -959,8 +1028,14 @@ $failed = 0
 # has to be able to tell them apart.
 $blockedPlans = 0
 
+# The watchdog starts with the first plan and ends with the run (Stop-Watchdog below).
+$watchdog = $null
+if (-not $DryRun) { $watchdog = Start-Watchdog $PID $script:RunRecordPath $logDir }
+
 # --- One plan per process --------------------------------------------------
 :plans foreach ($plan in $plans) {
+    # A watchdog that ended by itself is started again at each plan, and the run says so.
+    if (-not $DryRun) { $watchdog = Restart-WatchdogIfEnded $watchdog $PID $script:RunRecordPath $logDir }
     # Labelled, because every failure exit below sits inside the rounds
     # while-loop and a bare break or continue would act on THAT loop: a bare
     # break would start the next plan silently, a bare continue would re-enter
@@ -976,30 +1051,38 @@ $blockedPlans = 0
     # whose tests pass, and whose only fault is a review finding nobody had time
     # to act on. A failing suite is now the student's to read in progress.md in
     # the morning, not a reason to have produced nothing by then.
-    $round = 1
+    # The counter is NOT named $round: PowerShell variable names ignore case, so
+    # $round is the typed [string]$Round parameter, `$round = 1` stored the text
+    # "1" and the `$round++` further down threw OperatorRequiresNumber the first
+    # time an audit reopened a plan. Reproduced 2026-11-06 on PowerShell 5.1.
+    $planRound = 1
     while ($true) {
     $roundLabel = ""
-    if ($round -gt 1) { $roundLabel = " (round $round)" }
+    if ($planRound -gt 1) { $roundLabel = " (round $planRound)" }
     Write-Section "Plan: $($plan.Name)$roundLabel"
-    Update-RunRecord @{ state = "writing"; plan = $plan.Name; round = $round
+    Update-RunRecord @{ state = "writing"; plan = $plan.Name; round = $planRound
                         plan_index = ([array]::IndexOf($plans, $plan) + 1)
                         note = "the writer model is editing" }
 
     $message = "Execute $($plan.Name). Follow the working protocol you were given. " +
-               "Every source file you create or change must have a matching test file, " +
+               "A file that appears empty in the chat is a NEW file this plan asks you to create: " +
+               "write its whole content now with an edit block, and never ask to see it first. " +
+               "Every source file you create or change must have a matching test file of its " +
+               "own in a test folder (never test code inside the source file), " +
                "written in the same step as the code and not deferred: a step is not done " +
                "until its test exists and passes. " +
                "Tick every completed step in the '## $($plan.Name)' section of progress.md " +
                "as you finish it, mark a blocked step [!] with one line saying what blocked " +
                "it, and write into progress.md anything the next plan needs to know. Do not " +
                "read or act on any other plan, and do not move or rename any file."
-    if ($round -gt 1) {
+    if ($planRound -gt 1) {
         $message = "The audit reopened this plan. In the '## $($plan.Name)' section of " +
                    "progress.md, address every line still marked '- [ ]', including the ones " +
                    "beginning 'audit:'. Fix the code and its tests, then tick each line you " +
                    "resolved. Mark '- [!]' with one line of reason only if a fix is genuinely " +
                    "impossible. Do not read or act on any other plan, and do not move or " +
                    "rename any file."
+        $message += Get-ReopenReport $auditMd $plan.Name
     }
 
     $argv = @() + $baseArgs
@@ -1018,6 +1101,11 @@ $blockedPlans = 0
                         "  A plan that needs more than $maxFilesTouched files is two plans.")
         Add-LedgerLine $plan.Name "- [!] this plan names $($targets.Count) files, over the limit of $maxFilesTouched - split it in two"
         $failed = 1; $blockedPlans++; continue plans
+    }
+    # Assigned directly, like $targets: the function wraps its array so that one file survives as an array.
+    $readOnly = Get-PlanReads $plan.FullName $targets
+    if ($readOnly.Count -gt 0) {
+        Write-Host ("  read-only inputs: " + (($readOnly | ForEach-Object { Split-Path $_ -Leaf }) -join ", "))
     }
     if ($targets.Count -gt 0) {
         Write-Host ("  editable: " + (($targets | ForEach-Object { Split-Path $_ -Leaf }) -join ", "))
@@ -1054,10 +1142,11 @@ $blockedPlans = 0
     }
 
     $argv += @("--read", $spec, "--read", $plan.FullName)
+    foreach ($r in $readOnly) { $argv += @("--read", $r) }
     # Round 1 is work being written; a later round is work RECEIVING a review,
     # which is a different skill and not a coincidence - the audit having put a
     # step back is exactly what "receiving code review" describes.
-    $stageForRound = if ($round -le 1) { "write" } else { "reopen" }
+    $stageForRound = if ($planRound -le 1) { "write" } else { "reopen" }
     foreach ($sp in $skillFiles[$stageForRound]) { $argv += @("--read", $sp) }
     # Every --read pair goes in BEFORE the positional files, which is why
     # progress.md is appended here rather than on the line above.
@@ -1069,7 +1158,7 @@ $blockedPlans = 0
     # This message happens to carry neither today, which is why it has always
     # worked, but a later edit that adds either would fail silently and look
     # like a model defect. Measured 2026-09-03 on the audit message.
-    $planMsgFile = Join-Path $logDir "$stamp-$($plan.BaseName)-r$round-prompt.txt"
+    $planMsgFile = Join-Path $logDir "$stamp-$($plan.BaseName)-r$planRound-prompt.txt"
     if (-not $DryRun) { Write-Utf8NoBom $planMsgFile $message }
 
     $argv += @(
@@ -1099,6 +1188,10 @@ $blockedPlans = 0
 
     $code = Invoke-Aider $argv (Join-Path $logDir "$stamp-$($plan.BaseName).log")
     Write-Host "  exit=$code"
+    if (Test-WatchdogStop $logDir $plan.Name) {
+        Write-Host "  the watchdog stopped this plan; it stays undone -> next plan" -ForegroundColor Yellow
+        continue plans
+    }
 
     # --- Tests: coverage first, then the suite -----------------------------
     # Both judged by the driver. aider's own loop may already have fixed a
@@ -1207,6 +1300,10 @@ $blockedPlans = 0
         Add-LedgerLine $plan.Name "- [!] the writer left steps unticked in this section"
         $failed = 1; $blockedPlans++; continue plans
     }
+    $partialSteps = (Get-MarkCounts $sectionText).partial
+    if ($partialSteps -gt 0) {
+        Write-Host "  $partialSteps step(s) marked [~], done in part: the quality score gives the share of the plan that was met" -ForegroundColor Yellow
+    }
     if ($code -ne 0) {
         Write-Host "  BLOCKED: aider exited $code -> next plan" -ForegroundColor Yellow
         Add-LedgerLine $plan.Name "- [!] aider exited $code on this plan"
@@ -1224,7 +1321,26 @@ $blockedPlans = 0
         $auditSizeBefore = 0
         if (Test-Path -LiteralPath $auditMd) { $auditSizeBefore = (Get-Item -LiteralPath $auditMd).Length }
 
-        $null = Invoke-PlanAudit $plan.Name $changedSource (Join-Path $logDir "$stamp-$($plan.BaseName)-audit-r$round.log")
+        # The reviewer sometimes answers in a format aider does not apply (a whole
+        # file in a fence instead of an edit block), so audit.md does not grow
+        # although it did review the code. Measured 2026-11-07 by the two-plan live
+        # test: plan1 was left "NOT audited" on a reply that held two real findings.
+        # Ask again, a bounded number of times, before giving up on the plan.
+        $auditTry = 0
+        while ($true) {
+            $tryTag = ""
+            if ($auditTry -gt 0) { $tryTag = "-try" + ($auditTry + 1) }
+            $null = Invoke-PlanAudit $plan.Name $changedSource (Join-Path $logDir "$stamp-$($plan.BaseName)-audit-r$planRound$tryTag.log")
+            if (Test-WatchdogStop $logDir $plan.Name) {
+                Write-Host "  the watchdog stopped this plan; it stays undone -> next plan" -ForegroundColor Yellow
+                continue plans
+            }
+            $sizeNow = 0
+            if (Test-Path -LiteralPath $auditMd) { $sizeNow = (Get-Item -LiteralPath $auditMd).Length }
+            if ($sizeNow -gt $auditSizeBefore -or $auditTry -ge $auditNoReportRetries) { break }
+            $auditTry++
+            Write-Host ("  the reviewer wrote no report; asking again (try {0} of {1})" -f ($auditTry + 1), ($auditNoReportRetries + 1)) -ForegroundColor Yellow
+        }
 
         # An audit that produced NOTHING is a failed audit, not a clean one.
         # Measured 2026-09-03: the reviewer analysed the code correctly, found a
@@ -1237,7 +1353,7 @@ $blockedPlans = 0
 
         if ($auditSizeAfter -le $auditSizeBefore) {
             Write-Host ("  STOP: the audit wrote nothing to audit.md ({0} bytes before, {1} after)." -f $auditSizeBefore, $auditSizeAfter) -ForegroundColor Yellow
-            Write-Host "        Its log is the only record of what it thought: $stamp-$($plan.BaseName)-audit-r$round.log" -ForegroundColor Yellow
+            Write-Host "        Its log is the only record of what it thought: $stamp-$($plan.BaseName)-audit-r$planRound.log" -ForegroundColor Yellow
             # The reviewer may have written its findings into the LEDGER and
             # not into the report, which is what happened on 2026-09-06. That
             # is worth naming here: the lines are visible, their reasons are
@@ -1273,14 +1389,14 @@ $blockedPlans = 0
         $openNow = (($section -join "`n") -match '(?m)^\s*-\s*\[\s\]')
 
         if ($openNow) {
-            if ($round -ge $auditRounds) {
-                Write-Host "  BLOCKED: audit still asks for fixes after $round round(s) -> next plan" -ForegroundColor Yellow
-                Add-LedgerLine $plan.Name "- [!] audit - findings still open after $round round(s), stopped by the round limit"
+            if ($planRound -ge $auditRounds) {
+                Write-Host "  BLOCKED: audit still asks for fixes after $planRound round(s) -> next plan" -ForegroundColor Yellow
+                Add-LedgerLine $plan.Name "- [!] audit - findings still open after $planRound round(s), stopped by the round limit"
                 $failed = 1; $blockedPlans++; continue plans
             }
-            Write-Host "  audit reopened the plan - round $($round + 1)" -ForegroundColor Yellow
+            Write-Host "  audit reopened the plan - round $($planRound + 1)" -ForegroundColor Yellow
             Wait-ModelsUnloaded "the writer returns"
-            $round++
+            $planRound++
             continue
         }
         Write-Host "  audit clean" -ForegroundColor Green
@@ -1296,13 +1412,101 @@ $blockedPlans = 0
 }
 }
 
+# --- Plan quality: how closely each plan's code follows the plan (2026-11-11) --------------
+# One reviewer call per plan, in a sandbox that holds only quality.md, like the audit: the reviewer lists the
+# plan's requirements and judges each one, and Get-QualityScore does the counting. Runs for a blocked plan too:
+# a plan whose tests fail can be mostly right, and that is exactly what this number is for.
+function Invoke-PlanQuality([string]$planPath, [string]$logPath) {
+    $planName = Split-Path $planPath -Leaf
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($planName)
+    $brief = ""
+    foreach ($sp in $skillFiles["audit"]) {
+        $brief += "=== HOW TO REVIEW: " + (Split-Path $sp -Leaf) + " ===`n" + (Get-Content -LiteralPath $sp -Raw -Encoding UTF8) + "`n`n"
+    }
+    # Room for the code: the reviewer's window, minus what it always carries, its brief, the reply reserve, the
+    # safety margin and the plan itself. A window the driver could not read falls back to the writer's budget.
+    if ($auditWindow -gt 0) {
+        $room = $auditWindow - $alwaysOn - $skillCost["audit"] - $replyReserve - $auditMargin
+    } else {
+        $room = $workingBudget - $auditMargin
+    }
+    $planTokens = Get-TokenCount $planPath
+    if ($planTokens -gt 0) { $room -= $planTokens }
+    $prompt = Get-QualityPrompt $planPath $proj ([Math]::Max($room, 0)) $brief
+    if ($null -eq $prompt) { return $null }
+    if ($prompt.omitted.Count -gt 0) {
+        Write-Host ("    no room for: " + ($prompt.omitted -join ", ")) -ForegroundColor Yellow
+    }
+    $sandbox = Join-Path $logDir ("$stamp-$base-quality-sandbox")
+    if (Test-Path -LiteralPath $sandbox) { Remove-Item -LiteralPath $sandbox -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
+    $sandQuality = Join-Path $sandbox "quality.md"
+    Write-Utf8NoBom $sandQuality ""
+    $msgFile = Join-Path $logDir "$stamp-$base-quality-prompt.txt"
+    Write-Utf8NoBom $msgFile $prompt.text
+
+    $argv = @()
+    if ($Config -ne "") { $argv += @("--config", (Resolve-Path -LiteralPath $Config).Path) }
+    $argv += $settingsArgs
+    $argv += @("--model", $auditModel, "--map-tokens", "0")
+    $argv += $alwaysOnArgs
+    $argv += @($sandQuality, "--message-file", $msgFile, "--yes", "--no-git", "--no-check-update", "--no-suggest-shell-commands")
+
+    $before = Get-ProjectFingerprint
+    $null = Invoke-Aider $argv $logPath $sandbox
+    $null = Restore-ProjectIfTouched $before
+
+    $text = ""
+    if (Test-Path -LiteralPath $sandQuality) { $text = Get-Content -LiteralPath $sandQuality -Raw -Encoding UTF8 }
+    return Get-QualityScore $text $planName (Measure-PlanTests $planPath)
+}
+
+# Runs the test files a plan names, one at a time, and returns what Get-QualityScore needs: total and passed
+# counts summed over the files, or $null when they cannot be run (the test command does not start with a Python
+# interpreter, so the driver does not know how to run one file; or the plan names no test file that exists).
+# Run by the DRIVER with the interpreter of the test command, never by the model. Each file has a time limit
+# and its whole process tree is killed at it, so a hung test cannot hold the run.
+function Measure-PlanTests([string]$planPath) {
+    $interp = Get-TestInterpreter $testCmd
+    if ($null -eq $interp) { return $null }
+    # Assigned first: Get-PlanTargets returns its list wrapped (`return , $found`), and piping that call directly
+    # sends the whole list down the pipeline as ONE item, which became one command line holding every path.
+    $targets = Get-PlanTargets $planPath
+    $files = @($targets | Where-Object { $_ -match '[\\/]Test[\\/]test_[^\\/]+\.py$' -and (Test-Path -LiteralPath $_ -PathType Leaf) })
+    if ($files.Count -eq 0) { return $null }
+    $total = 0; $passed = 0
+    $prevUtf8 = $env:PYTHONUTF8
+    $env:PYTHONUTF8 = "1"
+    try {
+        foreach ($f in $files) {
+            $tmp = [System.IO.Path]::GetTempFileName()
+            try {
+                $p = Start-Process -FilePath "cmd.exe" -ArgumentList ('/c ""{0}" "{1}" > "{2}" 2>&1"' -f $interp, $f, $tmp) -WorkingDirectory $proj -PassThru -WindowStyle Hidden
+                if (-not $p.WaitForExit($QualityTestTimeoutSeconds * 1000)) {
+                    & taskkill /T /F /PID $p.Id 2>&1 | Out-Null
+                }
+                $out = Get-Content -LiteralPath $tmp -Raw -Encoding UTF8
+                if ($null -eq $out) { $out = "" }
+                $c = Get-TestCounts $out
+                $total += $c.total; $passed += $c.passed
+            } finally {
+                Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } finally {
+        $env:PYTHONUTF8 = $prevUtf8
+    }
+    if ($total -eq 0) { return $null }
+    return @{ total = $total; passed = $passed }
+}
+
 # --- The audit pass --------------------------------------------------------
 # Runs even when plans are blocked, since 2026-09-04. audit.md is precisely what
 # the student reads to pick the work back up, and withholding it from the run
 # that needed it most was the wrong way round. The cycle archiving further down
 # still refuses to move spec.md and progress.md while any step is open, so
 # nothing is filed as finished that is not.
-if (-not $NoAudit) {
+if (-not $NoAudit -and -not $QualityOnly) {
     Write-Section "Audit pass"
 
     # The audit is a step of the ledger, not a phase that happens beside it, so
@@ -1323,6 +1527,25 @@ if (-not $NoAudit) {
         }
         if ($DryRun) { Write-Host "  would add the 'final audit' step to progress.md" }
         else          { Write-Host "  added the 'final audit' step to progress.md" }
+    }
+
+    # The list of source files was read BEFORE any plan ran. A project that starts
+    # empty has all of its source created by the plans, so the final audit saw
+    # "nothing tracked" and the "final audit" step stayed unticked. Measured
+    # 2026-11-07 by the single-plan live test. Read the tracked files again now.
+    Push-Location $proj
+    try {
+        $tracked = @(& git ls-files 2>$null)
+        if ($LASTEXITCODE -ne 0) { $tracked = @() }
+    } finally { Pop-Location }
+    $sourceFiles = @()
+    $sourceTokens = @{}
+    foreach ($rel in $tracked) {
+        if ($CodeExtensions -contains [System.IO.Path]::GetExtension($rel)) {
+            $full = Join-Path $proj ($rel.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            $sourceFiles += $full
+            $sourceTokens[$full] = Get-TokenCount $full
+        }
     }
 
     if ($sourceFiles.Count -eq 0) {
@@ -1412,6 +1635,17 @@ if (-not $NoAudit) {
             }
 
             $argv = @() + $baseArgs
+            # The final audit is the REVIEWER's, exactly like the per-plan audit: a
+            # different model from the one that wrote the code. Until 2026-11-07
+            # this path kept the writer model from the configuration, so the writer
+            # audited its own work, and in the two-plan live test it wandered into
+            # a list of 140 invented findings. The later --model wins over the
+            # configuration's, and the writer is evicted first so the two never
+            # sit in memory together.
+            if ($auditModel -ne "") {
+                $argv += @("--model", $auditModel)
+                if (-not $DryRun) { Wait-ModelsUnloaded "the final audit model loads" }
+            }
             $argv += @("--read", $spec, "--read", $progress)
             foreach ($f in $batch) { $argv += @("--read", $f) }
 
@@ -1484,12 +1718,57 @@ if (-not $NoAudit) {
     }
 }
 
+# --- Plan quality ----------------------------------------------------------
+# After the audit, for every plan of the project, archived or blocked. Needs the reviewer model, so it follows
+# the audit's own conditions. With -QualityOnly it is the only thing the run does.
+if (-not $NoAudit -and $auditModel -ne "") {
+    $qualityPlans = @()
+    foreach ($dir in @($plansDir, $todoDir)) {
+        if (Test-Path -LiteralPath $dir) {
+            $qualityPlans += @(Get-ChildItem -LiteralPath $dir -Filter "plan*.md" -File |
+                               Where-Object { $_.BaseName -match '^plan(\d+)$' })
+        }
+    }
+    $qualityPlans = @($qualityPlans | Sort-Object { [int]([regex]::Match($_.BaseName, '\d+').Value) })
+    if ($qualityPlans.Count -gt 0) {
+        Write-Section "Plan quality"
+        if ($DryRun) {
+            Write-Host ("  would score {0} plan(s) against their code with {1}" -f $qualityPlans.Count, $auditModel)
+        } else {
+            Update-RunRecord @{ state = "auditing"; note = "scoring how closely each plan's code follows the plan" }
+            if ($QualityOnly) { Wait-ModelsUnloaded "the quality model loads" }
+            $scores = @()
+            foreach ($qp in $qualityPlans) {
+                Write-Host "  scoring $($qp.Name)"
+                $s = Invoke-PlanQuality $qp.FullName (Join-Path $logDir "$stamp-$($qp.BaseName)-quality.log")
+                if ($null -eq $s) {
+                    $s = @{ plan = $qp.Name; scored = $false; reason = "the plan names no file that exists yet"; total = 0; full = 0; partial = 0; missing = 0; percent = $null; lines = @() }
+                }
+                $scores += $s
+                if ($s.scored) {
+                    $testNote = "tests not measured"
+                    if ($s.testsMeasured) { $testNote = "tests {0}/{1}" -f $s.testsPassed, $s.testsTotal }
+                    Write-Host ("    {0} % (reviewer {1} %, {2}; {3} full, {4} partial, {5} missing)" -f $s.percent, $s.reviewer, $testNote, $s.full, $s.partial, $s.missing) -ForegroundColor Green
+                } else {
+                    Write-Host "    not scored: $($s.reason)" -ForegroundColor Yellow
+                }
+            }
+            $qualityFile = Join-Path $plansDir "quality.md"
+            Write-Utf8NoBom $qualityFile (Format-QualityReport $scores)
+            Write-Host "  quality report: $qualityFile"
+            $qualityRecord = @{}
+            foreach ($s in $scores) { $qualityRecord[$s.plan] = $s.percent }
+            Update-RunRecord @{ quality = $qualityRecord }
+        }
+    }
+}
+
 # --- Archive spec and progress when the whole cycle is done ----------------
-if ($failed -eq 0 -and -not $DryRun -and -not $NoAudit) {
+if ($failed -eq 0 -and -not $DryRun -and -not $NoAudit -and -not $QualityOnly) {
     $remaining = @(Get-ChildItem -LiteralPath $plansDir -Filter "plan*.md" -File |
                    Where-Object { $_.BaseName -match '^plan(\d+)$' })
     $ledger = Get-Content -LiteralPath $progress -Raw -Encoding UTF8
-    $openSteps = ($ledger -match '(?m)^\s*-\s*\[[\s!]\]')
+    $openSteps = ($ledger -match '(?m)^\s*-\s*\[[\s!~]\]')
 
     if ($remaining.Count -eq 0 -and -not $openSteps) {
         Write-Section "Cycle complete"
@@ -1522,6 +1801,15 @@ if (Test-Path -LiteralPath $reqFile) {
 }
 if ($blockedPlans -gt 0) {
     Write-Host ("  {0} plan(s) blocked. Every plan still ran; read the [!] lines in progress.md." -f $blockedPlans) -ForegroundColor Yellow
+    # Which of the three things happened to each plan (reply limit, window, fix attempts) and what the last
+    # test said, so nobody has to open ten logs to find out.
+    $blocksFile = Join-Path (Split-Path $progress -Parent) "blocks.md"
+    try {
+        Write-Utf8NoBom $blocksFile (Get-BlockReport (Get-Content -LiteralPath $progress -Raw -Encoding UTF8) $logDir)
+        Write-Host "  what blocked each plan: $blocksFile" -ForegroundColor Yellow
+    } catch {
+        Write-Host "  (could not write the block report: $($_.Exception.Message))" -ForegroundColor Yellow
+    }
 }
 # Three states, not two. "done_with_blocked" is a run that did everything it was
 # asked to do and produced work a person must now read - it is neither a clean
@@ -1534,4 +1822,5 @@ Update-RunRecord @{ state = $(if ($failed -eq 0) { "done" }
                     note  = $(if ($failed -eq 0) { "the run finished cleanly" }
                               elseif ($blockedPlans -gt 0) { "every plan ran; $blockedPlans carry a [!] in progress.md - read them and audit.md" }
                               else { "the run stopped; read the transcript and audit.md" }) }
+Stop-Watchdog $watchdog
 exit $failed

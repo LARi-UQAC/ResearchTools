@@ -37,7 +37,7 @@ and whether the login shortcut exists at all.
 | Privilege | none | symlinks want Developer Mode (automatic hardlink fallback) | none |
 | Interactive | yes (asks vault path, confirms) - `-NonInteractive` refuses with exit 2 instead of assuming a default, and `-Preview` writes nothing at all | no | no |
 | Via `setup.ps1` | - | `-InstallJunctions` | `-InstallTools` |
-| Other switches | `-InstallDaemon` (vault daemon at login), `-InstallPython` (the three Python environments, see Step 5), `-UpdateHooks` (replace a changed hook entry of `~/.claude/settings.json`), `-KeepHooks <names>` (leave a local hook variant as it is), `-Update` (the whole update in one command, see [Update an existing installation](#update-an-existing-installation)) | `-Sync` (copy the files a green offline-suite run has proven into `~/.claude`), `-WhatIf` | - |
+| Other switches | `-InstallDaemon` (vault daemon at login), `-InstallPython` (the three Python environments, see Step 5), `-InstallAiderPath` (adds the scripts folder of aider-setup of this clone to your user Path, add-only, so `aider-night.bat` and `aider-plan.ps1` run from any folder straight from the clone), `-UpdateHooks` (replace a changed hook entry of `~/.claude/settings.json`), `-KeepHooks <names>` (leave a local hook variant as it is), `-Update` (the whole update in one command, see [Update an existing installation](#update-an-existing-installation)) | `-Sync` (copy the files a green offline-suite run has proven into `~/.claude`), `-WhatIf` | - |
 
 ```powershell
 .\setup.ps1 -All -Personal   # new machine: config + Claude links + all tool mirrors

@@ -481,6 +481,17 @@ Record in Section G of the plan. If no feasibility section is present, write `Se
 
 ### Step 9 — Figure and table audit (all chapters)
 
+**Figure review (`figure-review` skill).** Figure checks come from `.claude/skills/figure-review/`, not
+from a list kept here: apply every criterion of `assets/figure_criteria.json` whose scope is `research` or
+`both` (`figure_checks.criteria_for_scope(doc, "research")`), each flag keeping the text printed in this
+step. A document may mix TikZ, draw.io, SVG, EPS, PDF and bitmaps: handle it figure by figure, listing each
+source and its kind with `figure_render.py --tex FILE --out DIR`. A `source` criterion is judged on the
+code, an `image` criterion on the picture. Rendering a figure a model cannot see (TikZ, draw.io, SVG, EPS,
+PDF, GIF, BMP, TIFF, WebP) to PNG is the `--render` option, off by default: the dispatch prompt or the user
+turns it on. PNG and JPEG are native and are always shown. The citation, proximity, description and caption
+checks below also apply to tables and keep their text.
+
+
 Identical to `thesis-auditor` Step 9: `[NOT CITED]`, `[CITATION FAR]` (>120 lines for a thesis-scale document, but for a proposal use **>80 lines** since the document is shorter), `[INSUFFICIENT DESCRIPTION]`, `[FIGURE NUMBERING WRONG]`, `[LOW RESOLUTION]` (< 300 DPI), `[IMAGE FILE MISSING]`. Skip vector formats.
 
 **Caption check (C1-C4):** Extract the `\caption{...}` argument of the environment, and the
@@ -586,6 +597,8 @@ Record in Section J of the plan. The IAg items go in a `### J-IAg` subsection.
 ---
 
 ### Step 12.5 — Composition and register audit (all prose chapters)
+
+**Language codes.** The flags of this step, their rule numbers and their LaTeX action are entries of the `language-review` skill table, `.claude/skills/language-review/assets/language_categories.json` (codes and examples in `.claude/skills/language-review/references/categories.md`). Print the entry `flag` text exactly, cite its `rule`, and apply its `latex_action`: `direct_fix` for an isolated spelling or punctuation fix, `\replaced` otherwise. The table is the single list of language categories, so none is restated here.
 
 Audit the prose against `composition_rules.md`. Process chapter by chapter and report a per-chapter
 count plus a proposal-wide total. Scan every prose paragraph and every `\caption{}`; exclude math

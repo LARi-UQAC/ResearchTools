@@ -54,7 +54,7 @@ from a Haiku wrapper.
 | Choose the voice panel's speech-to-text model for this GPU, measured beside the resident LLM | `opt-local-stt-vram` skill (`/opt-local-stt-vram`) | one child process per candidate, per-process VRAM counters, the operator's reference words | Scored selection table (`stt_bench_table.md`) + JSON report; the `observe-config.json` keys to edit, never edited |
 | Budget-bounded develop-and-improve loop | `loop-engineer` skill (`/loopdev`) | Fable 5 orchestrates; Opus plans; Sonnet executes/reviews; local agents generate | Branch + PR at the human merge gate, `PROCESS.md` + score ledger |
 | Persist and reuse learnings in the Obsidian vault (during a loop) | `local-writer` (write) + `local-coder` (read) | haiku wrappers + bridge | Atomic notes in `30_Ressources/`, project logs in `10_Projets/`, no daily note; single serialized writer, the outbox is the write path, not a fallback |
-| Run a nightly local-coding pipeline with no Claude Code involved: one aider process per plan, a writer model and a reviewer model that never edits code | `aider-setup` skill (daytime setup) + `aider-night.ps1`/`.bat` (the night itself, a plain `cmd` entry point) | two local Ollama tags (writer, reviewer), resolved from `model-settings.yml`, never Claude | Commits per plan step on a working branch, `audit.md`, a pushed branch with no merge; plans follow the shape R26 fixes below |
+| Run a nightly local-coding pipeline with no Claude Code involved: one aider process per plan, a writer model and a reviewer model that never edits code, each stage with its mandatory skill | `aider-setup` skill (daytime setup) + `aider-night.ps1`/`.bat` (the night itself, a plain `cmd` entry point) | two local Ollama tags (writer, reviewer), resolved from `model-settings.yml`, never Claude | Commits per plan step on a working branch, `audit.md`, a pushed branch with no merge; plans follow the shape R26 fixes below |
 
 The KV cache type is a daemon-wide environment variable that Ollama reads only at daemon
 start, not per request. `opt-local-vram-llm` therefore restarts the daemon once for each
@@ -229,6 +229,14 @@ Every planned task lives in `docs/superpowers/plans/` of its own project:
 | `progress.md` | the executing model, one `## <filename>` section per file |
 | `audit.md` | the auditing model only, never the executor |
 
+**The programming language is chosen in `spec.md`.** The spec has a section "Language and
+conventions" that names the language and its version, the case of names, the form of
+documentation comments, the folder and the command of the tests, and the format and lint
+commands. A plan never chooses a language and never contradicts the spec's. The coding rules,
+both the ones in `code-style.md` and the kit's own `rules.md` for the local model, are
+language-agnostic: they say what to do, and `spec.md` says in which syntax. A spec that names no
+language is incomplete, and the plan author asks the owner (R25) before writing any plan.
+
 The size ceilings are NOT written in this rule. They are the `ceilings` of
 `.claude/skills/aider-setup/config/context-budget.json`, the single source for every project
 (`aider-plan.ps1` enforces the same file), counted with `loop-engineer/scripts/token_count.py`
@@ -238,8 +246,9 @@ stale from that day. `plans/todo/` is the archive subdirectory of a project's `p
 read into a prompt carries the `code_file` ceiling; past it, split along a seam the code
 already has, never at an arbitrary line count.
 
-Three marks in `progress.md`, and only three: `- [ ]` not done, `- [x]` done with a short
-result, `- [!]` blocked with one line of reason.
+Four marks in `progress.md`, and only four: `- [ ]` not done, `- [x]` done with a short
+result, `- [~]` done in part with one line saying what is left (it does not stop the plan, and
+the plan's quality score measures the share that was met), `- [!]` blocked with one line of reason.
 
 **Every plan step names the file it touches.** Measured twice: a step reading "add a subtract
 function" with no filename made a model create a second module instead of editing the one
@@ -249,11 +258,11 @@ file. A plan names at most **ten** files - at 16 000 tokens each, eleven files a
 maximum fill everything the window has left.
 
 Lifecycle, which the rule also fixes: `plan<N>.md` moves to `todo/` when its own section is
-fully ticked **and** its audit is clean. `progress.md` moves to `todo/` when every section is
-ticked, unless the audit added a step back into a section, in which case it stays until that
-step is resolved. `audit.md` stays in `plans/` - it is what a person acts on next. Moving
-files is the harness's job, never the model's: the rule is exact (every box in a section is
-`[x]`) and a model asked to tidy up will eventually move the wrong file.
+fully ticked (every box `[x]` or `[~]`) **and** its audit is clean. `progress.md` moves to
+`todo/` when every box of every section is `[x]`, unless the audit added a step back into a
+section or a `[~]` is left, in which case it stays until that step is resolved. `audit.md` stays
+in `plans/` - it is what a person acts on next. Moving files is the harness's job, never the
+model's: the rule is exact and a model asked to tidy up will eventually move the wrong file.
 
 A ticked section whose audit is **not** clean is not done - it is unproven, the same verdict
 given a phase ticked with no evidence in the `PROGRESS.md` shape `authoring-loop` and
@@ -486,7 +495,7 @@ defeated it: `local-coder` was never dispatched, the review loop of R35 had no b
 named a wrong reason for the bridge, and local work was barely visible. R36's floor still holds:
 a request that is a single step with no deliverable is answered directly. Anything larger gets
 `spec.md`, `plan<N>.md` and `progress.md` (R26 layout, ceilings from `context-budget.json`)
-before the first line of code.
+before the first line of code. The spec names the programming language (R26).
 
 The header is the front matter of each plan: `executor` (`local-coder`, `aider`, `cloud`),
 `tier` (`simple`, `standard`, `large`) and `bounds` (`max_rounds`, `max_tokens`, `plateau`,
@@ -499,26 +508,33 @@ names the tag at run time and no plan names a tag (R2).
 
 | Situation | Executor | Why it saves cloud tokens |
 |---|---|---|
-| Judgment, security, design, a repository-wide change, or no qualified local role | `cloud`, `executing-plans` in the session | none to save: the work needs the best model |
-| One plan, a test as oracle per step, each step's prompt plus output fits the coder window | `local-coder`, tier simple or standard | the cloud pays for the plan, the Haiku wrapper and the review, the code is generated locally |
-| One plan whose step output cannot fit the coder window and cannot be split | `local-coder`, tier `large` (the `session` role, 262K) | same, with a window large enough for long output |
-| Two or more plans, or an unattended night | `aider` (spec, `plan[N]`, `progress`, a writer model and a different reviewer model) | no Claude Code involved once started |
+| Work that writes no code (R39): judgment, security review, design, prose, data files | `cloud`, `executing-plans` in the session | none to save: the work needs the best model |
+| One plan, a test per step | `local-coder`: `aider-plan.ps1` on a small kit project mounted for that plan outside the repository, with the kit's writer model and its required reviewer audit | the cloud pays for the plan and the R35 review, the code is generated locally and nothing needs a wrapper to start |
+| Several plans, or an unattended night with no interactive session | `aider`: `aider-night.ps1` (spec, `plan<N>`, `progress`, a writer model and a different reviewer model) | no Claude Code involved once started |
 | A whole session on Ollama or Augure | the owner's manual choice (`claude-switch.ps1`), never written in a plan | the session itself is local |
 
-Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. One plan is
-one `local-coder` dispatch, and the dispatch prompt names it with a `PLAN: <path>` line. There is
-no audit inside the wrapper: R35 as amended runs in the harness that called it, inside the
-declared bounds. A fix found by a review round is a small plan of its own and follows the same
-table. Aider keeps its internal writer and reviewer loop. On a machine with no qualified role
-for the tier, `plan_contract.py resolve` returns the `cloud` executor with the stated reason and
-never a weaker model (R8).
+Fit is measured with `context_budget.py --role` and `token_count.py`, never guessed. One plan is one
+`local-coder` run. The plan is mounted as the only plan of a small kit project outside the repository, created
+with the kit's own `new-project.ps1` (`spec.md`, `plan1.md`, a `progress.md` whose step lines name their
+files, and only the existing files the plan reads or changes), so the kit audits those few files and not
+the repository. Only the files the plan names come back. The kit is an external component and is never
+modified. The kit supplies the models: the writer and the reviewer of the owner's aider
+configuration, never a model named in a plan or by the resolver (R2). The kit submits to the writer
+the files aider-setup submits to aider, sized by `context-budget.json`, runs the tests, fixes in its
+own loop, then audits with its reviewer model. That audit is required and `-NoAudit` is not used.
+The kit starts without a wrapper: the owner or the session runs the command. R35 as amended runs in
+the session before the pull request, under the bounds of the plan header (`loop_bounds.py init
+--from-plan`). A finding becomes an `- [ ] audit:` line in the plan's section of `progress.md`, and
+`aider-plan.ps1` runs the plan again. A fix beyond that is a revised or new plan, written by the
+cloud. When the kit has no model, the plan is not executed and the owner is told (R39), never that a
+weaker model or the cloud writes it (R8).
 
 Every step of this process uses a skill. That is R36 applied to R38: any task needs one, and a
 step with no skill is a gap to report, never a step run without one. The coding request is
 explored with `superpowers:brainstorming`. The spec, plans and progress are written with
 `superpowers:writing-plans`. The plans are executed in a session with
 `superpowers:executing-plans`, which loads `superpowers:test-driven-development`, and a
-`local-coder` dispatch is made by a session that follows it. The review uses `code-review` and
+`local-coder` run is started by a session that follows it. The review uses `code-review` and
 `security-review` (R35), and the pull request is prepared with
 `superpowers:finishing-a-development-branch`, which the no-merge rule overrides. A similar
 toolset may replace the three process skills, for example the speckit skills (`speckit-specify`,
@@ -535,6 +551,39 @@ and move to `docs/superpowers/done/` when executed. UNVERIFIED until a live firi
 both matchers fire on this machine and that the Skill tool names the skill under
 `tool_input.skill`. Proven offline by `test_plan_contract.py`,
 `test_local_coder_dispatch_guard.py`, `test_review_loop_guard.py` and `test_plan_contract_rule.py`.
+
+**R39 - no code is generated by a cloud model: code comes from a local model, through
+`local-coder` or `aider-setup`.** Effective 2026-11-05 (owner, Issue #104). It binds every
+project, every harness and every cloud model, the session and the Haiku wrapper included. Code
+means source files and tests included. Four parts:
+
+1. **The cloud designs, the local model codes.** The cloud writes the spec, the plans, the
+   progress ledger, the reviews and the memory requests. The writer model of the aider kit receives,
+   through `aider-plan.ps1` (one plan) or `aider-night.ps1` (several), the full budget of
+   `context-budget.json` and the files aider-setup submits to aider. The cloud reviews the result
+   under the bounds of the plan header (R35). It reads code only to review it. It never writes,
+   edits or finishes code, and it writes its findings only as `- [ ] audit:` lines of the ledger.
+2. **A failure is a defect of the plan.** A task the local model cannot execute is marked `[!]`
+   in the ledger and goes back to the cloud, which revises the plan: more precise files, an exact
+   test command, a smaller step. The code is never patched on the cloud side, and a finding left
+   by an audit round becomes an `- [ ] audit:` line the kit runs again, or a revised or new plan.
+3. **A fallback is not an execution.** When the kit has no model, or the local model
+   fails, nothing falls back to a cloud model or to another local model without the owner's
+   explicit order (R8). The result is reported as not executed.
+4. **Exempt, and nothing else.** Mirrors regenerated by `install.ps1`, and the data files a plan
+   lists as data (JSON, CSV, templates). Prose is not code: a `SKILL.md`, an agent or command
+   definition and a manual chapter stay cloud writing, as R36 and `latex-writer` already say.
+
+Why: measured 2026-11-05 on this effort, hand-picked prompts of 1245 to 4225 tokens inside a
+16384 window never showed the model the rules, the spec or the conventions, the wrapper spent
+366K cloud tokens on one plan, and the cloud ended up writing the code. The code of the driver
+itself (plans 13 to 15 of this effort) is the last code written by a cloud model, with one more exception
+granted by the owner on 2026-11-06: two one-line fixes in aider-setup's `aider-plan-core.ps1`
+(tiktoken `disallowed_special`, and a leading dot kept by `Get-PlanTargets`) that blocked every run in this
+repository. UNVERIFIED
+(R15): nothing blocks a session that edits a source file by hand, because no hook inspects an
+edit's author. The rule is written, and `test_cloud_never_codes_rule.py` proves only that it is
+written where every project reads it and that the agent carries no instruction to write code.
 
 ## Issue and Project tracking
 

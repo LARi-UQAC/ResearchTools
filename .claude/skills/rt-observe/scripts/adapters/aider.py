@@ -30,8 +30,165 @@ same thing.
 """
 import io
 import json
+import datetime
 import os
+import re
 import sys
+from pathlib import Path
+
+# The live context. The driver writes one log per aider process into the plans
+# folder of the project, and aider prints one line per request with the prompt
+# tokens it sent ("Tokens: 21k sent, 479 received."). That prompt is the context
+# the model holds at that moment, so the last such line is the live number. This
+# is the ONE place the adapter opens a project, and only to read the tail of a
+# few log files, bounded by two caps of observe-config.json. Only a run that is
+# still going is read: finished records are many and are read on every poll.
+_LOGS_PARTS = ("docs", "superpowers", "plans", ".logs")
+_TOKENS_SENT = re.compile(r"Tokens:\s*([0-9]+(?:\.[0-9]+)?)(k?)\s+sent")
+_TICKS_PER_K = 1000  # aider prints thousands as "k": a unit, not a setting
+_UTF16_BOM = b"\xff\xfe"
+
+
+def _sent_tokens(text):
+    """The prompt tokens of the LAST request in a log text, or None."""
+    found = _TOKENS_SENT.findall(text)
+    if not found:
+        return None
+    number, unit = found[-1]
+    return int(round(float(number) * (_TICKS_PER_K if unit else 1)))
+
+
+def _read_tail(path, size):
+    """The last `size` bytes of a log as text. The driver writes its logs through
+    Windows PowerShell 5.1, which saves UTF-16 with a byte-order mark, so the
+    encoding is read from the first two bytes and a UTF-16 tail starts on an
+    even offset."""
+    with io.open(path, "rb") as handle:
+        utf16 = handle.read(len(_UTF16_BOM)) == _UTF16_BOM
+        handle.seek(0, os.SEEK_END)
+        start = max(0, handle.tell() - size)
+        if utf16:
+            start -= start % 2
+        handle.seek(start)
+        data = handle.read()
+    return data.decode("utf-16-le" if utf16 else "utf-8", errors="replace")
+
+
+_PLANS_PARTS = ("docs", "superpowers", "plans")
+_LEDGER_SECTION = re.compile(r"^##\s+(plan[0-9]+\.md)\s*$", re.M)
+_LEDGER_MARK = re.compile(r"^\s*-\s*\[(.)\]", re.M)
+_TITLE = re.compile(r"^#\s+(?:Plan\s+[0-9]+\s*[-:]\s*)?(.+?)\s*$", re.M)
+
+
+def _plan_title(plans, name, size):
+    """The first heading of a plan file, without its "Plan N -" prefix. An
+    archived plan sits in `todo/`. Empty when neither file can be read."""
+    for folder in (plans, plans / "todo"):
+        try:
+            head = _read_head(folder / name, size)
+        except OSError:
+            continue
+        found = _TITLE.search(head)
+        if found:
+            return found.group(1)
+    return ""
+
+
+def _read_head(path, size):
+    with io.open(path, "rb") as handle:
+        return handle.read(size).decode("utf-8-sig", errors="replace")
+
+
+def _plan_ledger(project, current, caps):
+    """
+    Purpose:
+        The plans of a run still going, each with its steps ticked and open,
+        read from the project's own ledger (progress.md) and plan files.
+    Inputs:
+        project (str): the project path of a run record
+        current (str): the plan the run is on
+        caps (dict): observe-config `caps`, `aider_log_tail_bytes` bounds every read
+    Outputs:
+        list of {"name", "title", "done", "total", "blocked", "state"}, `state`
+        being done, blocked, in-progress or todo; empty when the ledger cannot
+        be read. No path is returned.
+    """
+    def plain(key):
+        entry = caps[key]
+        return entry["value"] if isinstance(entry, dict) else entry
+
+    try:
+        size = int(plain("aider_log_tail_bytes"))
+        plans = Path(project).joinpath(*_PLANS_PARTS)
+        text = _read_head(plans / "progress.md", size)
+    except (KeyError, TypeError, ValueError, OSError):
+        return []
+    sections = list(_LEDGER_SECTION.finditer(text))
+    rows = []
+    for index, section in enumerate(sections):
+        end = sections[index + 1].start() if index + 1 < len(sections) else len(text)
+        marks = [m.group(1) for m in _LEDGER_MARK.finditer(text[section.end():end])]
+        done = sum(1 for m in marks if m in ("x", "X"))
+        blocked = sum(1 for m in marks if m == "!")
+        name = section.group(1)
+        if blocked:
+            state = "blocked"
+        elif name == current:
+            # Ticked steps are not enough: the plan is archived only once its
+            # audit is clean, so the plan the run is on is still in progress.
+            state = "in-progress"
+        elif marks and done == len(marks):
+            state = "done"
+        else:
+            state = "todo"
+        rows.append({"name": name, "title": _plan_title(plans, name, size),
+                     "done": done, "total": len(marks), "blocked": blocked,
+                     "state": state})
+    return rows
+
+
+def _live_context(project, caps):
+    """
+    Purpose:
+        Read the context the model holds right now from the newest aider logs
+        of a project.
+    Inputs:
+        project (str): the project path of a run record
+        caps (dict): observe-config `caps`, with `aider_log_tail_bytes` and
+            `aider_log_files`
+    Outputs:
+        (tokens, reason): the prompt tokens of the last request and None, or
+        None and why nothing could be read. The reason holds no path.
+    """
+    def plain(key):
+        # observe-config.json wraps each value as {value, unit, provenance}; a
+        # bare number (a test fixture) is read as it is.
+        entry = caps[key]
+        return entry["value"] if isinstance(entry, dict) else entry
+
+    try:
+        tail = int(plain("aider_log_tail_bytes"))
+        count = int(plain("aider_log_files"))
+    except (KeyError, TypeError, ValueError):
+        return None, "observe-config caps aider_log_tail_bytes and aider_log_files are missing"
+    if tail <= 0 or count <= 0 or not project:
+        return None, "no project or no positive cap to read the logs with"
+    try:
+        logs = Path(project).joinpath(*_LOGS_PARTS)
+        # Newest first: during a test run the newest log holds no request line,
+        # so the search goes on to the next one rather than reporting nothing.
+        files = sorted(logs.glob("*.log"), key=lambda p: p.stat().st_mtime,
+                       reverse=True)[:count]
+    except OSError:
+        return None, "the project has no readable log folder yet"
+    for path in files:
+        try:
+            sent = _sent_tokens(_read_tail(path, tail))
+        except OSError:
+            continue
+        if sent is not None:
+            return sent, None
+    return None, "no request has been logged yet"
 
 # Every state the driver can write, in the order it walks them. The adapter is
 # the ONE place this vocabulary lives on the viewer side: a page that carried its
@@ -108,13 +265,46 @@ def _alive_windows(pid):
     return True
 
 
-def _alive(pid):
+def _process_start_windows(pid):
+    """When the process began, as a naive local datetime, or None when unreadable.
+
+    The run record stores local naive times (PowerShell's Get-Date), so the
+    process time is converted to the same form to be compared with them."""
+    import ctypes
+    from ctypes import wintypes
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        created, ended, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel32.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(ended),
+                                        ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+    finally:
+        kernel32.CloseHandle(handle)
+    ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
+    seconds = ticks / 10_000_000 - 11644473600  # FILETIME counts 100 ns from 1601
+    return datetime.datetime.fromtimestamp(seconds)
+
+
+def _alive(pid, last_write=None):
     """Is the process that wrote this record still running.
 
     Liveness is asked of the PROCESS, never of the file. A run killed by a
     shutdown leaves its last record behind, and reading that as "still running"
     reports exactly backwards - the same lesson the vault daemon's singleton lock
     already carries.
+
+    A pid that exists is not proof: Windows hands a dead process's number to the
+    next process that starts, so an old record read as live whenever an unrelated
+    process held its pid, and flipped back to ended when that process exited -
+    the intermittent "idle agent drawn as active" (measured 2026-11-10 on records
+    from September and November). The writer began before it wrote its last
+    record, so a process that began AFTER `last_write` (a naive local ISO time,
+    the record's `updated`) is a stranger holding the number, and the run is gone.
+    A start time that cannot be read keeps the plain answer, as before.
     """
     try:
         pid = int(pid)
@@ -124,7 +314,13 @@ def _alive(pid):
         return None
     if sys.platform == "win32":
         try:
-            return _alive_windows(pid)
+            if not _alive_windows(pid):
+                return False
+            written = _parse_local_time(last_write)
+            began = _process_start_windows(pid) if written is not None else None
+            if began is not None and began > written:
+                return False
+            return True
         except (AttributeError, OSError):
             # ctypes/kernel32 unavailable for some reason: unknown is an
             # honest answer and False is not.
@@ -134,14 +330,25 @@ def _alive(pid):
         return True
     except OSError:
         return False
+
+
+def _parse_local_time(text):
+    """A record's naive ISO time as a datetime, or None when absent or malformed."""
+    try:
+        return datetime.datetime.fromisoformat(str(text))
+    except (TypeError, ValueError):
+        return None
     except (AttributeError, PermissionError):
         # A process owned by someone else: unknown is an honest answer and
         # False is not.
         return None
 
 
-def _flow(record, age_seconds, idle_after):
-    """The step list the process tab draws, and the state it is in."""
+def _flow(record, age_seconds, idle_after, live=None):
+    """The step list the process tab draws, and the state it is in.
+
+    `live` is (tokens, reason) from `_live_context`, or None when the run is
+    finished and no log was read."""
     state = str(record.get("state") or "unknown")
     note = str(record.get("note") or "")
 
@@ -179,14 +386,41 @@ def _flow(record, age_seconds, idle_after):
     # rest of the window. Reading `working_set` as held drew the ring backwards
     # (60 percent where 39.9 was committed). A record with no window reports
     # nothing held rather than a guess.
-    held = max(0, window - working) if window else 0
+    #
+    # While the reviewer audits, the model in memory is the reviewer, with its
+    # own window (`audit_window`, recorded by the driver; 0 means unknown, and
+    # the writer's window is kept). The writer's fixed reserve means nothing to
+    # it, so nothing is held until a request of its own is logged.
+    reviewer = state == "auditing" and (record.get("audit_window") or 0) > 0
+    if reviewer:
+        window, working = int(record["audit_window"]), 0
+    held = 0 if reviewer else (max(0, window - working) if window else 0)
     # `ok` means measured. A record with no window measured nothing, so it is
     # unavailable with its reason (R8) rather than a zero the page would draw.
     tokens = {"status": "ok" if window else "unavailable", "held": held,
-              "task_budget": working, "window": window, "working_set": working}
+              "task_budget": working, "window": window, "working_set": working,
+              "window_of": "reviewer" if reviewer else "writer"}
+    live_tokens, live_reason = live if live else (None, None)
     if window:
-        tokens["percent"] = round(100.0 * (window - working) / window, 1)
-        tokens["percent_of"] = "the fixed cost against the window the driver measured"
+        tokens["fixed_cost"] = None if reviewer else held
+        if live_tokens is not None:
+            # The ring and the meters read `held` and `percent`: they now show
+            # the context the model holds, and the fixed cost stays beside it.
+            tokens["held"] = live_tokens
+            tokens["live_context"] = live_tokens
+            tokens["percent"] = round(100.0 * live_tokens / window, 1)
+            tokens["percent_of"] = ("the prompt of the last request, against "
+                                    "the window the driver measured")
+        elif reviewer:
+            tokens["percent"] = 0.0
+            tokens["percent_of"] = "no request of the reviewer has been logged yet"
+            if live_reason:
+                tokens["live_reason"] = live_reason
+        else:
+            tokens["percent"] = round(100.0 * (window - working) / window, 1)
+            tokens["percent_of"] = "the fixed cost against the window the driver measured"
+            if live_reason:
+                tokens["live_reason"] = live_reason
     else:
         tokens["reason"] = "the record carries no window"
         tokens["percent"] = None
@@ -247,9 +481,16 @@ def collect(context):
         except OSError:
             age = None
 
-        alive = _alive(record.get("pid"))
+        alive = _alive(record.get("pid"), record.get("updated"))
         done = record.get("plans_done") or 0
         total = record.get("plan_count") or 0
+        # Only a run still going is read: the finished ones are many.
+        live = None
+        plan_rows = []
+        if str(record.get("state") or "") not in TERMINAL_STATES and alive is not False:
+            caps = (context.config or {}).get("caps") or {}
+            live = _live_context(record.get("project"), caps)
+            plan_rows = _plan_ledger(record.get("project"), record.get("plan"), caps)
 
         sessions.append({
             "session_id": record.get("run_id") or path.stem,
@@ -268,6 +509,7 @@ def collect(context):
             "hook_errors": [],
             "age_seconds": age,
             "plan": record.get("plan"),
+            "plans": plan_rows,
             "live": alive,
             "live_reason": ("the process that wrote this record is gone, so the "
                             "state below is where it stopped, not where it is"
@@ -275,12 +517,14 @@ def collect(context):
             "progress": {
                 "plans_done": done,
                 "plans_total": total,
+                "plan_index": record.get("plan_index") or 0,
+                "round": record.get("round") or 0,
                 "steps_done": record.get("steps_done") or 0,
                 "steps_open": record.get("steps_open") or 0,
                 "steps_blocked": record.get("steps_blocked") or 0,
                 "audit_bytes": record.get("audit_bytes") or 0,
             },
-            "flow": _flow(record, age, idle_after),
+            "flow": _flow(record, age, idle_after, live),
             # Aider has no UserPromptSubmit event, so no inbox message can ever
             # reach it. Stated rather than omitted: a missing field would be read
             # as reachable.

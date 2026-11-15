@@ -50,6 +50,9 @@ def read_run_log(path: pathlib.Path):
     raw = path.read_bytes()
     if not raw:
         return "", False
+    if not raw.startswith(b"\xff\xfe"):
+        # Written by the driver since 2026-11-12: UTF-8, with or without a mark.
+        return raw.decode("utf-8-sig", errors="replace"), False
     text = raw.decode("utf-16", errors="replace")
     # A UTF-8 region decoded as UTF-16 comes out as ASCII separated by the
     # bytes of its neighbours, which shows up as an implausible run of single
@@ -267,7 +270,10 @@ def audit_logs_ending_in_question(project: pathlib.Path, run_log_text: str = "")
         raw = path.read_bytes()
         if not raw:
             continue
-        text = raw.decode("utf-16", errors="replace")
+        if raw.startswith(b"\xff\xfe"):
+            text = raw.decode("utf-16", errors="replace")
+        else:
+            text = raw.decode("utf-8-sig", errors="replace")
         tail = text.strip()[-400:]
         if re.search(r"\?\s*$", tail) or re.search(
                 r"(?i)voulez-vous|shall I|would you like me to|do you want me to", tail):

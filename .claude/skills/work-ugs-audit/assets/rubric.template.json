@@ -1,0 +1,17 @@
+{
+  "assessment_type": "lab_report",
+  "total_points": 10,
+  "items": [
+    {
+      "id": "I01",
+      "title": "Fictitious item: method described",
+      "max_points": 10,
+      "criteria": [
+        "The method is described well enough to be repeated."
+      ],
+      "checklist": [
+        "Equipment is listed with its settings."
+      ]
+    }
+  ]
+}

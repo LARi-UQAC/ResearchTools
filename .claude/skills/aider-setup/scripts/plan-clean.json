@@ -1,0 +1,61 @@
+{
+  "_comment": "Rules of plan_clean.py, data per R6. Provenance of every rule: written 2026-11-12 after the spec and plans of a night project were found to carry the owner, decision numbers, rule numbers, dates and process notes, which the small local writer model reads as facts about its own world. The detect list is the same pattern the aider-setup manual and local-coder give for a hand check.",
+  "strip_front_matter": true,
+  "substitutions": [
+    {
+      "name": "rule number in parentheses",
+      "pattern": "\\s*\\((?:rules?\\s+)?R\\d+(?:\\s*(?:,|/|and)\\s*R?\\d+)*\\)",
+      "replace": ""
+    },
+    {
+      "name": "decision number in parentheses",
+      "pattern": "\\s*\\(D\\d+(?:\\s*(?:,|to|and)\\s*D?\\d+)*\\)",
+      "replace": ""
+    },
+    {
+      "name": "who runs the plan",
+      "pattern": "(?i)run by the local coder model through the driver\\.?\\s*",
+      "replace": ""
+    },
+    {
+      "name": "reader label",
+      "pattern": "\\*\\*For agentic workers:\\*\\*",
+      "replace": "**How to answer:**"
+    },
+    {
+      "name": "tests are run by the harness, not by the model (step 1)",
+      "pattern": "write the tests, run the file, they fail \\((.+?) absent\\)",
+      "replace": "write the tests; they must fail while the \\1 is absent"
+    },
+    {
+      "name": "tests are run by the harness, not by the model (step 2)",
+      "pattern": "write the (module|helper), run the file, every test passes",
+      "replace": "write the \\1 so that every test passes"
+    },
+    {
+      "name": "decision numbers on the spec line",
+      "only_lines_matching": "^\\*\\*Spec:\\*\\*",
+      "pattern": "\\bD\\d+(?:\\s*(?:,|to|and)\\s*D?\\d+)*",
+      "replace": "\"Design choices\""
+    },
+    {
+      "name": "repeated section on the spec line",
+      "only_lines_matching": "^\\*\\*Spec:\\*\\*",
+      "pattern": "(\"Design choices\")(?:,?\\s*\"Design choices\")+",
+      "replace": "\\1"
+    },
+    {
+      "name": "design document sections on the spec line",
+      "only_lines_matching": "^\\*\\*Spec:\\*\\*",
+      "pattern": "[;,]?\\s*design sections?\\s+[0-9]+(?:\\.[0-9]+)?(?:\\s*(?:,|and)\\s*[0-9]+(?:\\.[0-9]+)?)*",
+      "replace": ""
+    },
+    {
+      "name": "rule numbers on the spec line",
+      "only_lines_matching": "^\\*\\*Spec:\\*\\*",
+      "pattern": ",?\\s*rules?\\s+R\\d+(?:\\s*[,/]\\s*R?\\d+)*",
+      "replace": ""
+    }
+  ],
+  "detect": "\\bR(?:0|[1-9][0-9]{0,2})\\b|\\bD[0-9]{1,2}\\b|\\bowner\\b|(?<!no )\\bcloud\\b|\\bsession\\b|\\bmemory\\b|\\bIssue\\b|\\bvault\\b|(?<![-\\w])proposal(?![-\\w])|\\bapproved\\b|\\bcondensed\\b|\\bworktree\\b|\\bbranch\\b|docs/superpowers|20[0-9]{2}-[0-9]{2}-[0-9]{2}"
+}

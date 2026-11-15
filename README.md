@@ -65,6 +65,7 @@ as one flat file — this keeps each topic at a readable size instead of one 130
 | Burn cloud tokens on routine docstrings and refactors | `local-writer` / `local-coder` push that generation to a local model, for free |
 | Know whether a coding task should run on the cloud, through `local-coder`, through aider, or on a switched session | A plan header names `executor`, `tier` and the review bounds, `plan_contract.py` checks it, two hooks enforce it, and the process has a flowchart ([chapter 11](docs/manual/11-local-coding.md)) |
 | Guess which local model fits your GPU | `opt-local-vram-llm` tunes the LLM's context window for the card, and `opt-local-stt-vram` scores speech-to-text models beside that LLM (word error, live-caption speed, VRAM) in one table |
+| Grade undergraduate lab reports without sending them to a cloud model | `/work-ugs-audit` grades a folder of PDF reports against your rubric with local models only (the `work-ugs-audit` skill, using `language-review` and `figure-review`), annotates each PDF and appends a correction annex. The agent never reads a report, and `figure-review` also serves the four auditors for TikZ, draw.io, SVG, EPS, PDF and bitmap figures |
 | Catch a committed secret but not a committed real name (a student, a co-author, an account path) | A global git privacy guard (pre-commit/pre-push, every repository) scans the diff against both betterleaks' secret rules and a machine-local deny list of real names, extended for each new student and never leaving the machine |
 
 Not a replacement for judgment — a second pair of eyes that never gets tired of checking.
@@ -88,6 +89,7 @@ git clone https://github.com/LARi-UQAC/ResearchTools.git
 cd ResearchTools
 .\setup.ps1 -All -Personal   # config + Claude links + all tool mirrors
 .\setup.ps1 -InstallPython   # optional: .venv-skills, .venv-docs and .venv-pdf2md (in the main clone)
+.\setup.ps1 -InstallAiderPath # optional: puts this clone's aider-setup scripts folder on your user Path (aider-night.bat, aider-plan.ps1)
 .\setup.ps1 -Update          # update an existing installation in one command (try -Update -Preview first); see manual chapter 01
 ```
 
@@ -126,7 +128,7 @@ graph LR
 | 03 | [Token management](docs/manual/03-token-management.md) | Output modes, `/slim` `/concis` `/focus` `/ctx`, switching the session identity |
 | 04 | [Commands](docs/manual/04-commands.md) | All slash commands |
 | 05 | [Agents](docs/manual/05-agents.md) | All agents, local delegation, loop engineering |
-| 06 | [Skills](docs/manual/06-skills.md) | All 26 skills, the two memories |
+| 06 | [Skills](docs/manual/06-skills.md) | All 29 skills, the two memories |
 | 07 | [Hooks and guards](docs/manual/07-hooks.md) | Every hook the toolkit declares: guards before a tool call, scanners, session hooks, git hooks |
 | 08 | [Rules and conventions](docs/manual/08-rules.md) | The rules R0 to R38 and the five files that hold them |
 | 09 | [Harnesses and mirrors](docs/manual/09-harnesses.md) | Claude Code, Copilot, OpenCode, Continue, Aider and Codex: what each receives, `mirror-policy.json`, session adapters |

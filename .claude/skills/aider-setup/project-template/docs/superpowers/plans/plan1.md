@@ -8,6 +8,6 @@ function", with no filename, made the model create a second module instead of
 editing the one that already existed.
 
 1. Add subtract(a, b) to calc.py returning a - b.
-2. Add its test to tests/test_calc.py, including the wrong-type case.
+2. Add its test to Test/test_calc.py, including the wrong-type case.
 
 Replace these steps.

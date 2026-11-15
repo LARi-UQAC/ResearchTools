@@ -45,13 +45,13 @@ function Check([string]$label, [scriptblock]$body) {
 $root = Join-Path $env:TEMP ("audit-sandbox-test-" + (Get-Date -Format "HHmmssfff"))
 $proj = Join-Path $root "project"
 $stub = Join-Path $root "stub"
-New-Item -ItemType Directory -Force -Path $proj, $stub, (Join-Path $proj "tests"),
+New-Item -ItemType Directory -Force -Path $proj, $stub, (Join-Path $proj "Test"),
                                      (Join-Path $proj "docs\superpowers\plans") | Out-Null
 
 # --- a project that looks like a night in progress -------------------------
 $plans = Join-Path $proj "docs\superpowers\plans"
 Set-Content -LiteralPath (Join-Path $proj "widget.py") -Value "VALUE = 1" -Encoding ascii
-Set-Content -LiteralPath (Join-Path $proj "tests\test_widget.py") -Encoding ascii -Value @(
+Set-Content -LiteralPath (Join-Path $proj "Test\test_widget.py") -Encoding ascii -Value @(
     "import unittest"
     "class T(unittest.TestCase):"
     "    def test_one(self):"
@@ -73,7 +73,13 @@ Push-Location $proj
 & git config user.name  "t"       | Out-Null
 & git checkout -q -b work 2>&1 | Out-Null
 & git add -A 2>&1 | Out-Null
+# The global privacy pre-commit hook writes its scan line on stderr: under Stop that is a failure
+# in Windows PowerShell 5.1, so the commit runs with errors tolerated and the hook-free repo is
+# checked by the checks below, not by this call.
+$previousPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & git commit -q -m seed 2>&1 | Out-Null
+$ErrorActionPreference = $previousPreference
 Pop-Location
 
 $original = Get-Content -LiteralPath (Join-Path $proj "widget.py") -Raw
@@ -133,7 +139,7 @@ try {
     $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $Driver `
               -Path $proj `
               -Model "ollama_chat/qwen3.8-aider" `
-              -TestCommand "python -m unittest discover -s tests -p test_*.py" `
+              -TestCommand "python -m unittest discover -s Test -p test_*.py" `
               2>&1 | Out-String
 } catch {
     $out = $_ | Out-String

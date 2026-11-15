@@ -34,7 +34,7 @@ the trajectory samples.
    `d(angle)/dt` in radians per second — so say so in the legend rather than
    implying one scale means one unit. Note it in the y label too.
 
-7. **Write `tests/test_render_velocity.py`** under the `Agg` backend. Cover:
+7. **Write `Test/test_render_velocity.py`** under the `Agg` backend. Cover:
    three lines created with a legend; `append` extending each by exactly one
    point; `reset` emptying all three; **the trapezoid property** — feed one
    segment's samples and assert `dr/dt` rises, holds a constant value, then
@@ -48,5 +48,5 @@ the trajectory samples.
    this plan does not import. **Do not install anything** - the run cannot,
    and a person installs it in the morning after reading the file.
 
-**Done when** `tests/test_render_velocity.py` passes, including the trapezoid
+**Done when** `Test/test_render_velocity.py` passes, including the trapezoid
 shape check.

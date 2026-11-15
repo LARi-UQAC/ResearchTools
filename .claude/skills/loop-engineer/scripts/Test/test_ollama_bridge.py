@@ -1244,5 +1244,106 @@ class TestResolverFailureIsABridgeError(unittest.TestCase):
                 ob.resolve_model("writer")
 
 
+class TestReplyReserveFollowsTheBudget(unittest.TestCase):
+    """The reply reserve is one new file at ceilings.code_file_output plus its fence, read
+    from context-budget.json (2026-11-05, Issue #104). The hardcoded 1024 cut every generated
+    file past about 100 lines, so a local plan came back truncated."""
+
+    def test_payload_num_predict_is_the_budget_reserve(self):
+        payload = ob.build_payload("prompt", "some:tag", 7, 16384)
+        self.assertEqual(payload["options"]["num_predict"],
+                         ob.context_budget.reply_reserve_tokens())
+        self.assertGreater(payload["options"]["num_predict"], 1024)
+
+    def test_an_explicit_num_predict_wins(self):
+        payload = ob.build_payload("prompt", "some:tag", 7, 16384, num_predict=77)
+        self.assertEqual(payload["options"]["num_predict"], 77)
+
+    def test_check_budget_holds_back_the_budget_reserve(self):
+        reserve = ob.context_budget.reply_reserve_tokens()
+        num_ctx = 16384
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=num_ctx - reserve + 1):
+            with self.assertRaises(ob.BridgeError) as ctx:
+                ob.check_budget("short prompt", "some:tag", num_ctx)
+        self.assertIn(f"{reserve}-token reply", str(ctx.exception))
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=num_ctx - reserve):
+            ob.check_budget("short prompt", "some:tag", num_ctx)
+
+    def test_a_broken_budget_file_is_a_bridge_error_naming_the_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "context-budget.json"
+            path.write_text(json.dumps({"ceilings": {"code_file_output": 4000}}),
+                            encoding="utf-8")
+            with mock.patch.object(ob.context_budget, "DEFAULT_BUDGET_PATH", path):
+                with self.assertRaises(ob.BridgeError) as ctx:
+                    ob.reply_reserve()
+        self.assertIn("fence_overhead_tokens", str(ctx.exception))
+
+    def test_no_reserve_literal_is_left_in_the_bridge(self):
+        source = Path(ob.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("RESPONSE_RESERVE_TOKENS = ", source)
+
+
+FENCE = "`" * 3
+LONG_FENCE = "`" * 4
+
+
+class TestSplitFiles(unittest.TestCase):
+    """A local-coder reply carries every file of a plan in one answer, each block opened by a
+    '# file: <path>' line (2026-11-05, Issue #104 plan 13, the aider-setup file set)."""
+
+    def test_two_files_in_order_and_prose_ignored(self):
+        reply = (f"Here is the plan.\n{FENCE}python\n# file: pkg/a.py\nA = 1\n{FENCE}\n"
+                 f"Some prose between.\n{FENCE}python\n# file: pkg/Test/test_a.py\nimport a\n{FENCE}\n")
+        self.assertEqual(ob.split_files(reply),
+                         [("pkg/a.py", "A = 1\n"), ("pkg/Test/test_a.py", "import a\n")])
+
+    def test_a_longer_fence_keeps_an_inner_fence_inside_the_file(self):
+        reply = (f"{LONG_FENCE}markdown\n# file: docs/x.md\nText\n{FENCE}python\nx = 1\n{FENCE}\n"
+                 f"{LONG_FENCE}\n")
+        self.assertEqual(ob.split_files(reply),
+                         [("docs/x.md", f"Text\n{FENCE}python\nx = 1\n{FENCE}\n")])
+
+    def test_accented_content_is_kept(self):
+        reply = f"{FENCE}python\n# file: a.py\nLABEL = \"Écart à la cible\"\n{FENCE}\n"
+        self.assertEqual(ob.split_files(reply)[0][1], 'LABEL = "Écart à la cible"\n')
+
+    def test_a_block_without_a_path_is_refused(self):
+        with self.assertRaises(ob.BridgeError):
+            ob.split_files(f"{FENCE}python\nA = 1\n{FENCE}\n")
+
+    def test_a_duplicate_path_is_refused(self):
+        block = f"{FENCE}python\n# file: a.py\nA = 1\n{FENCE}\n"
+        with self.assertRaises(ob.BridgeError) as ctx:
+            ob.split_files(block + block)
+        self.assertIn("a.py", str(ctx.exception))
+
+    def test_an_unterminated_fence_is_refused(self):
+        with self.assertRaises(ob.BridgeError):
+            ob.split_files(f"{FENCE}python\n# file: a.py\nA = 1\n")
+
+    def test_a_reply_with_no_file_is_refused(self):
+        with self.assertRaises(ob.BridgeError):
+            ob.split_files("I could not do it.")
+
+
+class TestExactOnlyBudget(unittest.TestCase):
+    """The character pre-filter (0.5 chars per token) refused a measured 4225-token prompt as
+    32644 on 2026-11-05. The driver checks with the exact count only."""
+
+    def test_exact_only_accepts_what_the_prefilter_refuses(self):
+        prompt = "x" * 20000
+        with self.assertRaises(ob.BridgeError):
+            ob.check_budget(prompt, "some:tag", 16384, reserve=4000)
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=5000) as probe:
+            ob.check_budget(prompt, "some:tag", 16384, reserve=4000, exact_only=True)
+        probe.assert_called_once()
+
+    def test_exact_only_still_refuses_over_the_probe_budget(self):
+        with mock.patch.object(ob, "probe_prompt_tokens", return_value=12385):
+            with self.assertRaises(ob.BridgeError):
+                ob.check_budget("x" * 20000, "some:tag", 16384, reserve=4000, exact_only=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

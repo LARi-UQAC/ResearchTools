@@ -34,7 +34,7 @@ and asserts a failure path.
    corner, `r >= 0` and `0 <= angle <= pi/2` for every point of the map, so
    **write no angle-unwrapping logic**.
 
-6. **Write `tests/test_world.py`.** Cover: obstacle occupancy true at the centre
+6. **Write `Test/test_world.py`.** Cover: obstacle occupancy true at the centre
    and false at the corners; the cell/xy round trip; the xy/polar round trip;
    the start cell (1,1) giving a small positive `r` and an angle near 45
    degrees; and the failure paths — an out-of-range cell raising `IndexError`,
@@ -47,5 +47,5 @@ and asserts a failure path.
    this plan does not import. **Do not install anything** - the run cannot,
    and a person installs it in the morning after reading the file.
 
-**Done when** `tests/test_world.py` passes and `config.json` holds every number
+**Done when** `Test/test_world.py` passes and `config.json` holds every number
 this plan introduced.

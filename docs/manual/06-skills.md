@@ -63,10 +63,16 @@ registration steps of a new skill.
 [obsidian-cli](#obsidian-cli---obsidian-vault-operations) ·
 [latex-hygiene](#latex-hygiene---mechanical-latex-manuscript-hygiene) ·
 [opt-local-vram-llm](#opt-local-vram-llm---measured-vram-tuning-for-the-local-agents) ·
-[opt-local-stt-vram](#opt-local-stt-vram---measured-speech-to-text-selection-for-this-gpu)
+[opt-local-stt-vram](#opt-local-stt-vram---measured-speech-to-text-selection-for-this-gpu) ·
+[work-ugs-audit](#work-ugs-audit---grading-undergraduate-reports) ·
+[figure-review](#figure-review---figures-of-a-report-paper-or-thesis) ·
+[language-review](#language-review---one-table-of-language-correction-codes)
 
 | Skill | Purpose | Entry point |
 |---|---|---|
+| `work-ugs-audit` | Grade undergraduate student reports (PDF) against the professor's rubric with local models only, annotate each PDF and append a correction annex; one driver (`ugs_driver.py`: prepare, run, batch, status) behind the `/work-ugs-audit` command and the blind `work-ugs-audit` agent | `/work-ugs-audit`, `.claude/skills/work-ugs-audit/SKILL.md` |
+| `figure-review` | Review the figures of a PDF, a LaTeX source or a single image: script checks, a model judges the rest, optional rendering of TikZ, draw.io, SVG, EPS and PDF figures to PNG (`--render`, off by default). Used by the four auditors, `/tikz` and `work-ugs-audit` | `.claude/skills/figure-review/SKILL.md` |
+| `language-review` | One table of language correction codes and composition flags (R1.x, R2.x) cited by the research auditors (LaTeX track changes) and by the undergraduate report grading (PDF annotations) | `.claude/skills/language-review/SKILL.md` |
 | `scopus` | Search Scopus (citation-ordered, title/abstract/keyword scoped), validate references (ambiguity-flagged), fetch PDFs via the Elsevier REST API (with a Semantic Scholar fallback), and search Semantic Scholar by keyword for candidates beside Scopus. | `/scopus`, `.claude/skills/scopus/SKILL.md` |
 | `scientific-writing` | Core writing skill: scientific manuscripts in flowing IMRAD prose with verified citations (IEEE/APA/AMA/Vancouver) and reporting guidelines (CONSORT/STROBE/PRISMA). | `.claude/skills/scientific-writing/SKILL.md` |
 | `scholar-evaluation` | ScholarEval framework — scores research work across problem formulation, literature review, methodology, data, analysis, results, writing, citations. | `.claude/skills/scholar-evaluation/SKILL.md` |
@@ -683,6 +689,52 @@ yet an engine.
 - `.claude/skills/opt-local-stt-vram/scripts/engines/` - `faster_whisper_engine.py`, `nemo_engine.py`
 - `.claude/skills/opt-local-stt-vram/scripts/Test/` - four offline suites (15 + 11 + 9 + 16
   tests), no model, no GPU, no Ollama
+
+### `work-ugs-audit` - grading undergraduate reports
+
+Grades a folder of undergraduate reports (PDF) one report at a time with the local models of this machine, so a
+confidential report never reaches a cloud model. For every report it cuts the PDF into pages and figures, grades each
+rubric item with evidence quoted from the report, reviews the language with `language-review` and each figure with
+`figure-review` (scope `undergraduate`), checks the cited references, audits the grades with a second model, then writes
+an annotated PDF and a correction annex. Across the batch it measures the spread of the totals against calibration
+targets and, when out of band, offers a second loop that carries a calibration note.
+
+The driver is `ugs_driver.py` with the subcommands `prepare`, `run`, `batch` and `status`, each with `--dry-run` and
+`--json`. Exit codes: 0 done, 1 a model step could not run (resume later), 2 refusal, 3 batch out of band. The work
+folder is `_correction/`, beside the reports folder. Three model roles, `ugs-grader`, `ugs-auditor` and `ugs-vision`, are
+adopted once by the owner with `model_resolver.py --adopt-role <role> <tag> --reason "<measurement>"`; there is no
+fallback and no cloud grading. The `work-ugs-audit` agent drives the driver through the `/work-ugs-audit` command and
+reads only the rubric and the step ledger.
+
+**Files:** `.claude/skills/work-ugs-audit/SKILL.md`, `scripts/` (one module per step, `ugs_bridge.py`, `ugs_text.py`,
+`report_prepare.py`, `rubric_check.py`, `batch_stats.py`, `pdf_annotate.py`, `pdf_annex.py`, `ref_check.py`), `assets/`
+(the configuration with provenance on every value, the rubric schema and templates, the calibration targets),
+`prompts/`, and an offline test beside each script in `scripts/Test/`.
+
+### `figure-review` - figures of a report, paper or thesis
+
+One place that knows how to look at a figure, for the student-report audit (criteria scope `undergraduate`) and for the
+four research auditors (scope `research`; `both` for the two criteria they share). Each criterion of
+`assets/figure_criteria.json` says whether a `script` measures it or a `model` judges it, and whether it needs the
+`source` or the `image`. Three entry points: the figures of a compiled PDF (`figure_extract.py`, `figure_checks.py`), the
+figures of a LaTeX source (`figure_tex.py`, `figure_render.py`) and a single image (`figure_image.py`).
+
+A figure a model cannot see (TikZ, draw.io, SVG, EPS, PDF, GIF, BMP, TIFF, WebP) is rendered to PNG only when the caller
+passes `--render`; PNG and JPEG are always shown as they are. A missing tool, a failed compile or a timeout gives
+`not_run` with the tool and the reason, never a broken picture. Rendering TikZ compiles the document's own LaTeX, which is
+untrusted, so a source using a file or shell primitive is refused before any compile; the limits are in the SKILL.md.
+
+**Files:** `.claude/skills/figure-review/SKILL.md`, `assets/figure_criteria.json`, `prompts/figure.md`, `scripts/` (six
+modules, PyMuPDF pinned in `requirements.txt`), and an offline test beside each module in `scripts/Test/`.
+
+### `language-review` - one table of language correction codes
+
+Keeps the language correction codes (spelling, grammar, agreement, punctuation, style, register, terminology,
+typography) and the composition flags R1.x and R2.x in one table, so the research auditors (LaTeX track changes) and the
+undergraduate report grading (PDF annotations) cite the same code for the same defect.
+
+**Files:** `.claude/skills/language-review/SKILL.md`, `assets/correction_table.csv`, `assets/correction_table.md`,
+`assets/language_categories.json`.
 
 `aider-setup` and `rt-observe` are big enough to get their own chapters rather than a
 subsection here: [14-aider-pipeline.md](14-aider-pipeline.md) and

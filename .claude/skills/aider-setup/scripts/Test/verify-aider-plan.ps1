@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $core)) {
 if (-not (Test-Path -LiteralPath $core)) { throw "aider-plan-core.ps1 not found: $core" }
 . $core
 
-foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord")) {
+foreach ($required in @("Get-RunRecordDir", "Initialize-RunRecord", "Update-RunRecord", "Get-BlockReport", "Convert-TestLogToUtf8Bom", "Get-LogText", "Get-PlanReads", "Get-PathsInText", "Get-PlanText", "Get-AuditPlanBlock", "Get-ReopenReport", "Get-QualityPrompt", "Get-QualityScore", "Format-QualityReport", "Get-TestCounts", "Get-TestInterpreter", "Get-MarkCounts", "Get-KitConfigDir", "Resolve-ConfigPath", "Restart-WatchdogIfEnded")) {
     if (-not (Get-Command $required -CommandType Function -ErrorAction SilentlyContinue)) {
         throw "$required is not defined by aider-plan-core.ps1"
     }
@@ -275,6 +275,31 @@ Check "Update-RunRecord before Initialize-RunRecord does nothing and does not th
     $true
 }
 
+# --- The watchdog restart ---------------------------------------------------
+# Start-Watchdog is replaced by a stub so that no real process starts (R21).
+$script:restarts = 0
+function Start-Watchdog([int]$driverPid, [string]$runRecord, [string]$logs) { $script:restarts++; return "new-watchdog" }
+
+Check "an ended watchdog is started again and the new one is returned" {
+    $script:restarts = 0
+    $ended = [pscustomobject]@{ HasExited = $true; ExitCode = 1 }
+    $r = Restart-WatchdogIfEnded $ended 1 "record.json" "logs"
+    ($r -eq "new-watchdog") -and ($script:restarts -eq 1)
+}
+
+Check "a watchdog still running is left alone" {
+    $script:restarts = 0
+    $alive = [pscustomobject]@{ HasExited = $false; ExitCode = 0 }
+    $r = Restart-WatchdogIfEnded $alive 1 "record.json" "logs"
+    ([object]::ReferenceEquals($r, $alive)) -and ($script:restarts -eq 0)
+}
+
+Check "a watchdog that never started is not started by the restart check" {
+    $script:restarts = 0
+    $r = Restart-WatchdogIfEnded $null 1 "record.json" "logs"
+    ($null -eq $r) -and ($script:restarts -eq 0)
+}
+
 # --- Teardown ---------------------------------------------------------------
 $env:AIDER_RUN_RECORD_DIR = $realRecordDir
 Remove-Item -LiteralPath $scratch -Recurse -Force -EA SilentlyContinue
@@ -297,8 +322,8 @@ $skillRoot = Split-Path $scriptsDir -Parent
 $conf = ""
 $confCandidates = @()
 if ($Config -ne "") { $confCandidates += $Config }
+$confCandidates += (Join-Path $skillRoot "config\aider.conf.yml")
 $confCandidates += (Join-Path $skillRoot "scripts\build\aider.conf.yml.saved")
-$confCandidates += (Join-Path $HOME ".config\aider\build\aider.conf.yml.saved")
 $confCandidates += (Join-Path $HOME ".aider.conf.yml")
 foreach ($candidate in $confCandidates) {
     if (Test-Path -LiteralPath $candidate) { $conf = $candidate; break }
@@ -326,21 +351,36 @@ if ($budgetText.Contains($homeToken)) {
     $resolvedDir = Join-Path $env:TEMP ("aider-budget-" + [guid]::NewGuid().ToString("N").Substring(0,8))
     New-Item -ItemType Directory -Force -Path $resolvedDir | Out-Null
     $resolved = Join-Path $resolvedDir "context-budget.json"
+    # The always-on files (conventions.md, rules.md) are rendered to THIS skill's own config folder, as the
+    # skills are below, and not to ~/.config/aider: that folder holds the installed copy of whoever runs the
+    # check, so the result depended on which kit version that machine had installed (R21).
+    $budgetText = $budgetText.Replace($homeToken + "/.config/aider", ((Join-Path $skillRoot "config") -replace '\\', '/'))
     [System.IO.File]::WriteAllText($resolved, $budgetText.Replace($homeToken, ($HOME -replace '\\', '/')),
                                    (New-Object System.Text.UTF8Encoding $false))
+    # The per-stage skills are mandatory, and the driver looks for skills.json
+    # beside the budget file. Render it the same way, pointing its files at this
+    # skill's own config folder so the check needs nothing installed.
+    $skillsSrc = Join-Path $skillRoot "config\skills.json"
+    if (Test-Path -LiteralPath $skillsSrc) {
+        $skillsText = Get-Content -LiteralPath $skillsSrc -Raw -Encoding UTF8
+        $cfgFwd = ((Join-Path $skillRoot "config") -replace '\\', '/')
+        $skillsText = $skillsText.Replace($homeToken + "/.config/aider", $cfgFwd)
+        [System.IO.File]::WriteAllText((Join-Path $resolvedDir "skills.json"), $skillsText,
+                                       (New-Object System.Text.UTF8Encoding $false))
+    }
     Write-Host ("budget      : {0} (template, home substituted)" -f $budget)
     $budget = $resolved
 }
-$testCmd = 'python -m unittest discover -s tests -p "test_*.py"'
+$testCmd = 'python -m unittest discover -s Test -p "test_*.py"'
 
 function New-Fixture {
     $root = Join-Path $env:TEMP ("refusal-" + [guid]::NewGuid().ToString("N").Substring(0,8))
     $p = Join-Path $root "docs\superpowers\plans"
-    New-Item -ItemType Directory -Force -Path $p, (Join-Path $root "tests") | Out-Null
+    New-Item -ItemType Directory -Force -Path $p, (Join-Path $root "Test") | Out-Null
     Push-Location $root
     & cmd /c "git init -q -b work . 2>NUL"
     "def add(a, b):`n    return a + b" | Set-Content -LiteralPath (Join-Path $root "calc.py") -Encoding UTF8
-    "import unittest" | Set-Content -LiteralPath (Join-Path $root "tests\test_calc.py") -Encoding UTF8
+    "import unittest" | Set-Content -LiteralPath (Join-Path $root "Test\test_calc.py") -Encoding UTF8
     & cmd /c "git add -A 2>NUL"
     & cmd /c "git commit -qm seed 2>NUL"
     Pop-Location
@@ -472,7 +512,7 @@ $planBody = @'
 
 **Files:**
 - Create: `src/world.py`
-- Test: `tests/test_world.py`
+- Test: `Test/test_world.py`
 '@
 $planHeader = @'
 ---
@@ -515,6 +555,328 @@ Check "a header never closed is not read as swallowing the whole plan" {
     $open = Join-Path $headerProj "open.md"
     Set-Content -LiteralPath $open -Value ("---`nexecutor: aider`n" + $planBody) -Encoding UTF8
     @(Get-Targets $open).Count -eq 2
+}
+
+Write-Host ""
+# --- Files a plan only reads are read-only, never targets (measured 2026-11-10) ---------
+New-Item -ItemType Directory -Force -Path (Join-Path $headerProj "lib") | Out-Null
+Set-Content -LiteralPath (Join-Path $headerProj "lib\shared.py") -Value "x = 1" -Encoding UTF8
+$readsBody = @'
+# Plan 2 - fictitious
+
+**Files:**
+- Create: `src/world.py`
+- Test: `Test/test_world.py`
+
+**Reads, do not modify:** `lib/shared.py` (its `x`), `lib/missing.py` and `src/world.py`.
+
+Nothing else is read here.
+'@
+$readsPlan = Join-Path $headerProj "reads.md"
+Set-Content -LiteralPath $readsPlan -Value $readsBody -Encoding UTF8
+
+Check "a file the plan only reads is not a target" {
+    (@(Get-Targets $readsPlan) | Where-Object { $_ -like "*shared.py" -or $_ -like "*missing.py" }).Count -eq 0
+}
+
+Check "the files the plan creates stay targets, even one the reads paragraph names again" {
+    $t = @(Get-Targets $readsPlan)
+    ($t.Count -eq 2) -and (($t | Where-Object { $_ -like "*world.py" -and $_ -notlike "*test_world.py" }).Count -eq 1)
+}
+
+Check "the read-only files are listed: existing ones only, never a target" {
+    $r = Get-PlanReads $readsPlan (Get-Targets $readsPlan)
+    (@($r).Count -eq 1) -and (@($r)[0] -like "*shared.py")
+}
+
+Check "NEGATIVE CONTROL: a plan with no reads paragraph has no read-only files" {
+    $r = Get-PlanReads $plainPlan @()
+    @($r).Count -eq 0
+}
+
+Write-Host ""
+# --- The reviewer sees the plan, the writer sees the report (found 2026-11-11) -----------
+$auditDir = Join-Path $scratch "auditctx"
+New-Item -ItemType Directory -Force -Path $auditDir | Out-Null
+Set-Content -LiteralPath (Join-Path $auditDir "plan1.md") -Encoding UTF8 -Value ("---`nexecutor: aider`ntier: simple`n---`n`n# Plan 1`n`nBuild the world function.`n")
+Set-Content -LiteralPath (Join-Path $auditDir "audit.md") -Encoding UTF8 -Value ("## plan1.md`n1. The world function never closes the file.`n   - File: src/world.py:12`n`n## plan2.md`n1. Something about plan two.`n")
+
+Check "the audit message carries the plan's text, without its front matter" {
+    $b = Get-AuditPlanBlock $auditDir "plan1.md"
+    ($b -match 'THE PLAN THIS CODE IMPLEMENTS') -and ($b -match 'Build the world function') -and ($b -notmatch 'executor: aider')
+}
+
+Check "NEGATIVE CONTROL: a plan that is not there gives no block, and no error" {
+    (Get-AuditPlanBlock $auditDir "plan9.md") -eq ""
+}
+
+Check "the reopen message carries the reviewer's report on THIS plan only" {
+    $r = Get-ReopenReport (Join-Path $auditDir "audit.md") "plan1.md"
+    ($r -match 'never closes the file') -and ($r -match 'src/world.py:12') -and ($r -notmatch 'plan two')
+}
+
+Check "NEGATIVE CONTROL: no report on the plan, or no audit.md, adds nothing" {
+    ((Get-ReopenReport (Join-Path $auditDir "audit.md") "plan7.md") -eq "") -and
+    ((Get-ReopenReport (Join-Path $auditDir "absent.md") "plan1.md") -eq "")
+}
+
+Write-Host ""
+# --- rules.md is checked before every pass (2026-11-11) ---------------------------------
+function New-RulesBudget([string]$root, [string]$rulesText) {
+    $rulesFile = Join-Path $root "rules.md"
+    [System.IO.File]::WriteAllText($rulesFile, $rulesText, (New-Object System.Text.UTF8Encoding $false))
+    $bad = Join-Path $root "budget-rules.json"
+    $b = Get-Content -LiteralPath $budget -Raw -Encoding UTF8 | ConvertFrom-Json
+    $b.always_on_files = @(($rulesFile -replace '\\', '/'))
+    ($b | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath $bad -Encoding UTF8
+    return $bad
+}
+
+Check "a rule defined twice refuses the run and names it" {
+    $root = New-Fixture
+    $bad = New-RulesBudget $root "# Coding rules`n`n**R0 - one.** Say it.`n`n**R1 - two.** Say it.`n`n**R1 - again.** Say it.`n"
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.code -eq 2) -and ($r.text -match 'R1 is defined twice')
+}
+
+Check "a gap in the numbering refuses the run and names it" {
+    $root = New-Fixture
+    $bad = New-RulesBudget $root "**R0 - one.** Say it.`n`n**R2 - two.** Say it.`n"
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.code -eq 2) -and ($r.text -match 'missing: R1')
+}
+
+Check "a rule over the per-rule cap refuses the run, naming it and its size, and cuts nothing" {
+    $root = New-Fixture
+    $long = "**R0 - long.** " + (("word " * 400).Trim()) + "`n"
+    $bad = New-RulesBudget $root $long
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.code -eq 2) -and ($r.text -match 'R0 is \d+ tokens, over the cap of') -and ((Get-Content -LiteralPath (Join-Path $root "rules.md") -Raw) -eq $long)
+}
+
+Check "a valid rules file is reported in one line and the run starts" {
+    $root = New-Fixture
+    $bad = New-RulesBudget $root "**R0 - one.** Say it.`n`n**R1 - two.** Say it.`n"
+    $r = Invoke-Driver $root @{ BudgetFile = $bad }
+    ($r.text -match 'rules.md: 2 rules R0-R1') -and ($r.text -notmatch 'breaks its own format')
+}
+
+Write-Host ""
+# --- Plan quality: the reviewer judges requirements, the driver counts them (2026-11-11) -------------
+# Tokens are counted as a quarter of the bytes here, so this check needs no tokenizer.
+function Get-TokenCount([string]$file) { return [int]((Get-Item -LiteralPath $file).Length / 4) }
+New-Item -ItemType Directory -Force -Path (Join-Path $headerProj "src") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $headerProj "Test") | Out-Null
+Set-Content -LiteralPath (Join-Path $headerProj "src\world.py") -Value ("def world():`n    return 1`n" + ("# padding line`n" * 40)) -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $headerProj "Test\test_world.py") -Value "import unittest`n" -Encoding UTF8
+
+Check "the score is counted from the reviewer's lines: full 1, partial 0.5, missing 0" {
+    $t = "## quality plan1.md`n- [full] the world function - there`n- [full] the test file - there`n- [full] one more - ok`n- [partial] the config key - named differently`n- [partial] the exit code - 0 instead of 2`n- [missing] the logging - absent`n"
+    $s = Get-QualityScore $t "plan1.md"
+    $s.scored -and ($s.full -eq 3) -and ($s.partial -eq 2) -and ($s.missing -eq 1) -and ($s.percent -eq 67) -and ($s.lines.Count -eq 6)
+}
+
+Check "only the lines under THIS plan's quality heading count, whatever the case of the status" {
+    $t = "## quality plan2.md`n- [missing] a thing - absent`n`n## quality plan1.md`n- [FULL] a - ok`n* [Partial] b - half`n"
+    $s = Get-QualityScore $t "plan1.md"
+    ($s.total -eq 2) -and ($s.full -eq 1) -and ($s.partial -eq 1) -and ($s.percent -eq 75)
+}
+
+Check "NEGATIVE CONTROL: no usable line is 'not scored' with its reason, never 0 percent" {
+    $s = Get-QualityScore "## quality plan1.md`nIt looks fine to me.`n" "plan1.md"
+    (-not $s.scored) -and ($s.percent -eq $null) -and ($s.reason -match 'no requirement line')
+}
+
+Check "the quality message carries the plan without its header, the code, and the instruction not to count tests" {
+    $p = Get-QualityPrompt $headedPlan $proj 5000 "=== HOW TO REVIEW: brief ===`nbe careful`n`n"
+    ($null -ne $p) -and ($p.text -match 'Build the world function|world') -and ($p.text -notmatch 'executor: aider') -and
+    ($p.text -match 'def world') -and ($p.text -match 'NOT running tests') -and ($p.text -match "## quality headed.md") -and
+    ($p.text -match 'be careful') -and ($p.shown.Count -eq 2) -and ($p.omitted.Count -eq 0)
+}
+
+Check "a file that does not fit is named as left out, so the reviewer can say it could not judge it" {
+    Set-Content -LiteralPath (Join-Path $headerProj "Test\test_world.py") -Value ("import unittest`n" + ("# x`n" * 400)) -Encoding UTF8
+    $p = Get-QualityPrompt $plainPlan $proj 200 ""
+    ($null -ne $p) -and ($p.omitted.Count -ge 1) -and ($p.text -match 'Not shown, no room')
+}
+
+Check "NEGATIVE CONTROL: a plan whose files do not exist gives no message" {
+    $none = Join-Path $headerProj "nofiles.md"
+    Set-Content -LiteralPath $none -Value "Build `nope/absent.py` and its test `nope/test_absent.py`.`n" -Encoding UTF8
+    $null -eq (Get-QualityPrompt $none $proj 5000 "")
+}
+
+Check "the report has one table with the percentages and lists what is not fully met" {
+    $a = Get-QualityScore "## quality plan1.md`n- [full] a - ok`n- [missing] b - absent`n" "plan1.md"
+    $b = Get-QualityScore "no lines" "plan2.md"
+    $r = Format-QualityReport @($a, $b)
+    ($r -match '\| plan1.md \| 50 % \| 50 % \| not measured \| 1 \| 0 \| 1 \|') -and ($r -match '\| plan2.md \| not scored') -and ($r -match '\*\*missing\*\* b - absent') -and ($r -notmatch '\*\*full\*\*')
+}
+
+# --- The tests count for 20 percent of the score (owner, 2026-11-12) ---------------------------------
+Check "20 percent of the score is the share of tests that pass: reviewer 100 and 25 of 26 tests gives 99" {
+    $t = "## quality plan1.md`n- [full] a - ok`n- [full] b - ok`n"
+    $s = Get-QualityScore $t "plan1.md" @{ total = 26; passed = 25 }
+    $s.scored -and $s.testsMeasured -and ($s.reviewer -eq 100) -and ($s.percent -eq 99) -and ($s.testsPassed -eq 25) -and ($s.testsTotal -eq 26)
+}
+
+Check "the reviewer's share is scaled to 80 and the tests fill the other 20: reviewer 50 with every test green gives 60" {
+    $t = "## quality plan1.md`n- [full] a - ok`n- [missing] b - absent`n"
+    $s = Get-QualityScore $t "plan1.md" @{ total = 10; passed = 10 }
+    ($s.reviewer -eq 50) -and ($s.percent -eq 60)
+}
+
+Check "NEGATIVE CONTROL: every test red costs the full 20 points, and no measured tests leaves the reviewer's number alone" {
+    $t = "## quality plan1.md`n- [full] a - ok`n"
+    $red = Get-QualityScore $t "plan1.md" @{ total = 4; passed = 0 }
+    $none = Get-QualityScore $t "plan1.md" $null
+    $zero = Get-QualityScore $t "plan1.md" @{ total = 0; passed = 0 }
+    ($red.percent -eq 80) -and ($none.percent -eq 100) -and (-not $none.testsMeasured) -and ($zero.percent -eq 100) -and (-not $zero.testsMeasured)
+}
+
+Check "the report shows the tests as passed over run, and the sentence on the weights" {
+    $a = Get-QualityScore "## quality plan1.md`n- [full] a - ok`n" "plan1.md" @{ total = 26; passed = 25 }
+    $r = Format-QualityReport @($a)
+    ($r -match '\| plan1.md \| 99 % \| 100 % \| 25/26 \| 1 \| 0 \| 0 \|') -and ($r -match '80 percent the reviewer') -and ($r -match '20 percent the share of the plan')
+}
+
+Check "unittest output is read: failures and errors are subtracted, a file that never ran counts as one failure" {
+    $ok = Get-TestCounts "...`nRan 10 tests in 0.1s`n`nOK`n"
+    $bad = Get-TestCounts "Ran 26 tests in 0.1s`n`nFAILED (errors=1)`n"
+    $mixed = Get-TestCounts "Ran 8 tests in 0.1s`n`nFAILED (failures=2, errors=1, skipped=1)`n"
+    $crash = Get-TestCounts "Traceback (most recent call last):`nSyntaxError: invalid syntax`n"
+    $empty = Get-TestCounts "Ran 0 tests in 0.0s`n`nNO TESTS RAN`n"
+    ($ok.total -eq 10 -and $ok.passed -eq 10) -and ($bad.total -eq 26 -and $bad.passed -eq 25) -and ($mixed.total -eq 8 -and $mixed.passed -eq 5) -and
+    ($crash.total -eq 1 -and $crash.passed -eq 0) -and ($empty.total -eq 0)
+}
+
+Check "the detached launcher runs the aider-night.ps1 that sits beside it, never the copy in the home folder" {
+    $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\run-detached.ps1") -Raw -Encoding UTF8
+    ($text -notmatch '\.local\bin\aider-night') -and ($text -match '\$NightScript = ') -and ($text -match '& \$NightScript -Project')
+}
+
+Check "Get-KitConfigDir: an explicit -Config wins, then an explicit -BudgetFile" {
+    $tmp = Join-Path $env:TEMP ("kcd-" + [guid]::NewGuid().ToString("N"))
+    $a = Join-Path $tmp "a"; $b = Join-Path $tmp "b"
+    New-Item -ItemType Directory -Path $a, $b -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $a "aider.conf.yml") "x"
+    Set-Content -LiteralPath (Join-Path $b "context-budget.json") "{}"
+    $viaConfig = Get-KitConfigDir (Join-Path $a "aider.conf.yml") (Join-Path $b "context-budget.json") "" ""
+    $viaBudget = Get-KitConfigDir "" (Join-Path $b "context-budget.json") "" ""
+    Remove-Item $tmp -Recurse -Force
+    ($viaConfig -eq (Resolve-Path -LiteralPath $a -ErrorAction SilentlyContinue).Path -or $viaConfig -like "*\a") -and ($viaBudget -like "*\b")
+}
+
+Check "Get-KitConfigDir: the config folder next to the scripts folder is used when it holds context-budget.json" {
+    $tmp = Join-Path $env:TEMP ("kcd-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path (Join-Path $tmp "scripts"), (Join-Path $tmp "config") -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $tmp "config\context-budget.json") "{}"
+    $got = Get-KitConfigDir "" "" (Join-Path $tmp "scripts") (Join-Path $tmp "nohome")
+    Remove-Item $tmp -Recurse -Force
+    $got -like "*\config"
+}
+
+Check "Get-KitConfigDir: without a config folder beside the scripts it falls back to .config\aider of the home, and invents nothing else" {
+    $tmp = Join-Path $env:TEMP ("kcd-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path (Join-Path $tmp "scripts") -Force | Out-Null
+    $got = Get-KitConfigDir "" "" (Join-Path $tmp "scripts") (Join-Path $tmp "fakehome")
+    $none = Test-Path -LiteralPath (Join-Path $tmp "fakehome")
+    Remove-Item $tmp -Recurse -Force
+    ($got -eq (Join-Path (Join-Path $tmp "fakehome") ".config\aider")) -and (-not $none)
+}
+
+Check "Resolve-ConfigPath: a relative path is read from the configuration folder, an absolute one is kept" {
+    ((Resolve-ConfigPath "C:\base" "rules.md") -eq "C:\base\rules.md") -and
+    ((Resolve-ConfigPath "C:\base" "skills\a.md") -eq "C:\base\skills\a.md") -and
+    ((Resolve-ConfigPath "C:\base" "D:\elsewhere\x.md") -eq "D:\elsewhere\x.md")
+}
+
+$shippedConfig = Join-Path (Split-Path $scriptsDir -Parent) "config"
+
+Check "the shipped configuration holds no home placeholder, so it runs from where it is" {
+    $token = "{{" + "HOME}}"
+    $bad = @("aider.conf.yml", "context-budget.json", "skills.json", "model-settings.yml", "conventions.md", "rules.md") |
+           Where-Object { (Get-Content -LiteralPath (Join-Path $shippedConfig $_) -Raw -Encoding UTF8).Contains($token) }
+    @($bad).Count -eq 0
+}
+
+Check "the shipped aider.conf.yml has no read list and no model-settings-file line (the driver passes both)" {
+    $conf = Get-Content -LiteralPath (Join-Path $shippedConfig "aider.conf.yml") -Encoding UTF8
+    (@($conf | Where-Object { $_ -match '^(read|model-settings-file):' }).Count -eq 0)
+}
+
+Check "the shipped always-on files and skills are relative names and every one exists beside the configuration" {
+    $b = Get-Content -LiteralPath (Join-Path $shippedConfig "context-budget.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $s = Get-Content -LiteralPath (Join-Path $shippedConfig "skills.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $names = @($b.always_on_files)
+    foreach ($stage in $s.stages.PSObject.Properties) {
+        if ($stage.Value.bundle) { $names += $stage.Value.bundle }
+        $names += @($stage.Value.files | Where-Object { $_ })
+    }
+    $bad = $names | Where-Object { [System.IO.Path]::IsPathRooted($_) -or -not (Test-Path -LiteralPath (Join-Path $shippedConfig $_)) }
+    ($names.Count -ge 4) -and (@($bad).Count -eq 0)
+}
+
+Check "the four ledger marks are counted apart: a partial step is neither open nor blocked" {
+    $m = Get-MarkCounts "## plan1.md`n- [x] a`n- [x] b`n- [~] c - module A written, left: module B`n- [ ] d`n- [!] e - blocked`n"
+    $none = Get-MarkCounts "## plan1.md`nplain text, no mark`n"
+    ($m.done -eq 2) -and ($m.partial -eq 1) -and ($m.open -eq 1) -and ($m.blocked -eq 1) -and
+    ($none.done -eq 0) -and ($none.partial -eq 0) -and ($none.open -eq 0) -and ($none.blocked -eq 0)
+}
+
+Check "a ledger holding only [x] and [~] has no open and no blocked step, so the run does not stop on it" {
+    $m = Get-MarkCounts "## plan1.md`n- [x] a`n- [~] b`n"
+    ($m.open -eq 0) -and ($m.blocked -eq 0) -and ($m.partial -eq 1)
+}
+
+Check "the test interpreter is the first word of the test command, quoted or not, only when it is Python" {
+    ((Get-TestInterpreter '.\.venv\Scripts\python.exe run_tests.py') -eq '.\.venv\Scripts\python.exe') -and
+    ((Get-TestInterpreter '"C:\Program Files\Python312\python.exe" -m unittest') -eq 'C:\Program Files\Python312\python.exe') -and
+    ((Get-TestInterpreter 'python3 -m pytest') -eq 'python3') -and
+    ($null -eq (Get-TestInterpreter 'cargo test')) -and ($null -eq (Get-TestInterpreter '')) -and ($null -eq (Get-TestInterpreter '"unclosed python.exe'))
+}
+
+Write-Host ""
+Check "a blocked run is reported plan by plan, with the evidence of its logs" {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("bk-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    try {
+        $ledger = "# Progress`n`n## plan1.md`n- [x] a`n`n## plan2.md`n- [ ] b`n- [!] tests - suite still failing (exit 1) after the fix loop`n"
+        $run = "Tokens: 16k sent, 5.0k received.`nModel m has hit a token limit!`nToken counts below are approximate.`n`nInput tokens: ~31,333 of 65,536`nOutput tokens: ~13,516 of 14,336 -- possibly exceeded output limit!`nTotal tokens: ~44,849 of 65,536`n`nOnly 3 reflections allowed`n"
+        [System.IO.File]::WriteAllText((Join-Path $dir "20260101-000000-plan2.log"), $run, [System.Text.Encoding]::Unicode)
+        [System.IO.File]::WriteAllText((Join-Path $dir "20260101-000000-plan2-tests.log"), "FAIL: test_one (m.T)`nRan 3 tests`nFAILED (failures=1)`n", (New-Object System.Text.UTF8Encoding($false)))
+        $r = Get-BlockReport $ledger $dir
+        ($r -match '## plan2.md') -and ($r -match 'suite still failing') -and ($r -match 'input ~31,333 of 65,536') -and
+        ($r -match 'output ~13,516 of 14,336') -and ($r -match 'Failing tests: test_one') -and ($r -match 'FAILED \(failures=1\)') -and
+        ($r -match '16k sent / 5.0k received') -and ($r -match 'used all its fix attempts') -and ($r -notmatch 'plan1')
+    } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+}
+
+Check "NEGATIVE CONTROL: a ledger with no blocked plan gives no report" {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("bk-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    try { (Get-BlockReport "# Progress`n`n## plan1.md`n- [x] a`n" $dir) -eq "" } finally { Remove-Item -LiteralPath $dir -Recurse -Force }
+}
+
+Check "a test log is re-saved as UTF-8 with a mark, content intact, once" {
+    $f = Join-Path ([System.IO.Path]::GetTempPath()) ("tl-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".log")
+    try {
+        [System.IO.File]::WriteAllBytes($f, [byte[]](0x72, 0xC3, 0xA9, 0x73))   # "r" "e acute" "s" in UTF-8, no mark
+        Convert-TestLogToUtf8Bom $f
+        Convert-TestLogToUtf8Bom $f                                              # a second pass must not add a second mark
+        $b = [System.IO.File]::ReadAllBytes($f)
+        ($b.Length -eq 7) -and ($b[0] -eq 0xEF) -and ($b[1] -eq 0xBB) -and ($b[2] -eq 0xBF) -and ($b[4] -eq 0xC3) -and ($b[5] -eq 0xA9)
+    } finally { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+}
+
+Check "a UTF-16 test log is converted, never read as UTF-8, and a missing log is left alone" {
+    $f = Join-Path ([System.IO.Path]::GetTempPath()) ("tl-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".log")
+    try {
+        [System.IO.File]::WriteAllText($f, "ok " + [char]0xE9, [System.Text.Encoding]::Unicode)
+        Convert-TestLogToUtf8Bom $f
+        Convert-TestLogToUtf8Bom (Join-Path ([System.IO.Path]::GetTempPath()) "no-such-test-log.log")
+        (Get-LogText $f) -eq ("ok " + [char]0xE9)
+    } finally { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Host ""

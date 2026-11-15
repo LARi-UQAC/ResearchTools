@@ -1,101 +1,37 @@
-# Writing Good Tests
+# Writing good tests
 
-**Load this reference when:** writing or changing tests, adding mocks, or
-adding cleanup/helper methods for tests.
+## One behaviour, one test
 
-## Overview
+A test checks one thing and says it in its name: `test_total_is_refused_when_a_score_is_missing`, not
+`test_total`. If the name needs the word "and", split the test.
 
-A test exists to catch a specific break. Two principles govern everything
-here:
+## Check the result, not the machinery
 
-```
-1. Every test names the break it catches
-2. Every test exercises the real thing
-```
+- Assert on what the code returns or writes, with exact values.
+- Do not assert that an inner function was called, unless the call is the behaviour.
+- A fake stands in for something outside the code (a model, a network, the clock). It is never what the test
+  checks.
 
-Strict TDD produces both naturally: a test written first and watched
-failing against real code has already proven it can fail, and only earns
-a mock when the real dependency proves slow or external.
+## Cover the failure
 
-## Gate functions
+For every function that can refuse or fail, write the test that makes it do so and check the error: its type
+and the fact that its message names the cause.
 
-Apply both to every test before you call a step done. The prose that
-argued for them is not shipped; these are the checks themselves.
+## Real inputs
 
-### Gate: name the break
-```
-BEFORE writing the test body:
-  Name the production change that would make this test fail.
+- Build inputs by hand in a temporary folder, with invented names and invented text.
+- Include the awkward case the plan lists: the empty list, the accented text, the value at the limit, the
+  value one past it.
+- A boundary is tested on both sides.
 
-  Cannot name one            → redesign around an observable behavior
-  "The source text changed"  → run the artifact and assert its effects
-  Only intentional decisions → change detector; test the behavior
-                               that depends on the decision
+## Stable and fast
 
-  Confirm the expected value is derived without the code under test.
-  IF it reuses the code's logic or helpers:
-    Replace it with a literal or hand-checked fixture
-```
+- No test depends on the order of the other tests, on the date, on a random number or on a file that
+  another test left behind.
+- A test cleans up the folder it created.
 
-### Gate: exercise the real thing
-```
-BEFORE adding a mock or test helper:
-  List the real method's side effects; keep the ones the test
-  depends on real — mock the slow/external level below them.
+## Test file layout
 
-  Mock responses mirror the complete real structure.
-
-  A method only tests call lives in test utilities, not production.
-
-  About to assert on the mock itself?
-    Unmock it or delete the assertion.
-```
-## Tests Ship With the Implementation
-
-The TDD cycle — failing test, minimal implementation, refactor — is what
-"complete" means. Ship the tests the behavior needs and only those:
-trivial code and human prose earn none, and a test written to satisfy
-process costs maintenance forever.
-
-## The Mutation Check
-
-Before finishing, mentally mutate the production code; at least one test
-should fail for each realistic mutation:
-
-- Wrong constant or argument
-- Wrong branch handler
-- Missing state change or side effect
-- Empty or default return
-- Missing validation for zero, empty, nil, unauthorized, or malformed input
-
-A mutation nothing catches marks the behavior as unprotected — or the
-test as tautological.
-
-## Quick Reference
-
-| When you... | Do |
-|-------------|-----|
-| Write any test | Name the break it catches — a bug, not a decision |
-| Build an expected value | Derive it by hand; never with the code under test |
-| Test a script or document | Run it / pressure-test its consumer; never grep its text |
-| Reach for a dependency test | Test your boundary contract, not their documented mechanics |
-| Want to assert on a mocked element | Test the real component, or unmock it |
-| Are about to mock a method | Learn its side effects; mock the slow/external level |
-| Build a mock response | Mirror the real structure completely |
-| Need cleanup only tests use | Put it in test utilities |
-| Watch mock setup balloon | Switch to an integration test with real components |
-| Finish a test file | Run the mutation check |
-
-## Warning Signs
-
-- Setup and assertion share the same object, guaranteeing equality
-- The test can fail only through a panic, crash, or missing selector
-- The test fails on every intentional change, never on accidental breakage
-- Expected values are hidden behind loops, builders, or helpers
-- The test greps source text, or asserts a removed symbol stays removed
-- The test would still matter if only the framework remained
-- The test exists for coverage, checking no side effect or outcome
-- An assertion checks a `*-mock` test ID, or fails if you remove the mock
-- A method is called only from test files
-- Mock setup is more than half the test, or you can't explain why the mock is needed
-- Mocking "just to be safe"
+Follow the section "Language and conventions" of `spec.md` for the test framework, the test folder, the file
+names and how a test file starts and ends. This brief says nothing about those, because they depend on the
+language of the project.

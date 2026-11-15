@@ -111,7 +111,7 @@ Fix round 1 additions (adversarial review, same numbering as the report):
                                                one improbable exact size, which sits near the
                                                budget ceiling anyway and is safe to refuse.
   I2 num_predict never sent                  -> build_payload now sends
-                                               options.num_predict = RESPONSE_RESERVE_TOKENS,
+                                               options.num_predict = the reply reserve,
                                                so the reply-length reserve is enforced by the
                                                daemon, not merely assumed by this module.
   I3 reasoning stripper data loss            -> strip_reasoning now protects fenced code
@@ -190,6 +190,19 @@ _SCRIPTS_DIR_FOR_IMPORT = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR_FOR_IMPORT not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR_FOR_IMPORT)
 import context_budget  # noqa: E402  # P4 Task 5: shared local-model-config.json reader.
+# The pure text helpers live in bridge_text.py (Issue #104: this module had passed the 16000-token
+# reading ceiling). Re-exported under their old names, so callers and tests are unchanged and
+# `ollama_bridge.BridgeError` is the very same class.
+from bridge_text import (  # noqa: E402,F401
+    BridgeError,
+    ReasoningAnomalyError,
+    _is_emoji,
+    _is_unicode_tag,
+    scan_hygiene,
+    split_files,
+    strip_reasoning,
+    unwrap_sole_code_fence,
+)
 
 OLLAMA_HOST = "http://127.0.0.1:11434"
 GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
@@ -216,7 +229,38 @@ GENERATE_URL = f"{OLLAMA_HOST}/api/generate"
 # MODEL, not of the module, so it is now resolved inside run_bridge once the role has picked
 # a tag (D7 resolves the tag, this resolves that tag's measured window). The refusal to
 # substitute a default when the measurement is absent is unchanged.
-RESPONSE_RESERVE_TOKENS = 1024  # tokens reserved for the reply inside num_ctx
+# The reply reserve (num_predict, and what check_budget holds back) is NOT a literal: it is
+# one new file at ceilings.code_file_output plus its fence, read by reply_reserve() from the
+# repository's context-budget.json through context_budget.reply_reserve_tokens, the same
+# value the planning-time gate holds back. The former hardcoded 1024 cut every generated
+# file past about 100 lines (measured 2026-11-05 on Issue #104 plan 3: the local coder's
+# files came back truncated). Read at call time, never at import, for the reason the window
+# above is (fix round 3).
+
+
+def reply_reserve() -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Return the reply reserve in tokens, from the local-coding budget.
+
+    Inputs:
+        None
+
+    Outputs:
+        reserve (int): ceilings.code_file_output plus
+        reserve.fence_overhead_tokens of context-budget.json.
+
+    Raises:
+        BridgeError: the budget file or a key is unusable; the message names
+            the key and the file, and every existing caller already handles
+            BridgeError (R3, R8: no default reserve).
+    --------------------------------------------------------------------------
+    """
+    try:
+        return context_budget.reply_reserve_tokens()
+    except context_budget.ConfigError as exc:
+        raise BridgeError(str(exc)) from exc
 
 # Fix round 1 (I1): kept ONLY as a cheap, deliberately OVER-estimating character pre-filter
 # for the obviously enormous, so a pathological prompt can be rejected without spending a
@@ -261,71 +305,6 @@ _VERIFY_CAUSE_CHARS = 200
 # never needs a .gitignore entry to stay out of a commit. Same home the outbox already
 # uses. --log overrides this.
 DEFAULT_LOG_PATH = Path.home() / ".claude" / "loop-bridge-log.jsonl"
-
-# D3 / I3: every marker strip_reasoning's single-pass state machine reacts to, matched in
-# one pass so fence and think/thinking state never break across an artificial segment
-# boundary. Order in the alternation does not matter; the state machine's own precedence
-# (in_fence, then think_depth, then in_thinking, then normal) decides what each match means.
-_REASONING_MARKER_RE = re.compile(
-    r"```|<think>|</think>|Thinking\.\.\.|\.\.\.done thinking\.",
-    re.IGNORECASE,
-)
-
-_ZERO_WIDTH_CHARS = "\u200b\u200c\u200d\u2060"
-_CURLY_QUOTES = "\u2018\u2019\u201c\u201d"
-# Fix round 1 (minor): non-breaking space, non-breaking hyphen, minus sign - grouped with
-# the typographic set scan_hygiene already checks.
-_OTHER_TYPOGRAPHIC_CHARS = "\u00a0\u2011\u2212"
-
-# Emoji blocks checked by _is_emoji (decision recorded in the module docstring).
-_EMOJI_RANGES: tuple[tuple[int, int], ...] = (
-    (0x1F300, 0x1F5FF),
-    (0x1F600, 0x1F64F),
-    (0x1F680, 0x1F6FF),
-    (0x1F900, 0x1F9FF),
-    (0x1FA70, 0x1FAFF),
-    (0x2600, 0x26FF),
-    (0x2700, 0x27BF),
-    (0xFE0F, 0xFE0F),
-)
-
-
-class BridgeError(RuntimeError):
-    """Raised on any refusal path: over-budget prompt, resolver failure, or daemon error."""
-
-
-def _is_unicode_tag(codepoint: int) -> bool:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Test whether a codepoint falls in the deprecated Unicode Tags block,
-        which can encode invisible machine-only instructions.
-
-    Inputs:
-        codepoint (int): a single character's ordinal value.
-
-    Outputs:
-        result (bool): True when the codepoint is in U+E0000..U+E007F.
-    --------------------------------------------------------------------------
-    """
-    return 0xE0000 <= codepoint <= 0xE007F
-
-
-def _is_emoji(codepoint: int) -> bool:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Test whether a codepoint falls in a common emoji block. See the module
-        docstring for why emoji are in scope for this bridge's hygiene gate.
-
-    Inputs:
-        codepoint (int): a single character's ordinal value.
-
-    Outputs:
-        result (bool): True when the codepoint falls in one of _EMOJI_RANGES.
-    --------------------------------------------------------------------------
-    """
-    return any(low <= codepoint <= high for low, high in _EMOJI_RANGES)
 
 
 def estimate_tokens(text: str) -> int:
@@ -510,7 +489,8 @@ def probe_prompt_tokens(prompt: str, model: str, num_ctx: int, timeout: float = 
     return count
 
 
-def check_budget(prompt: str, model: str, num_ctx: int) -> None:
+def check_budget(prompt: str, model: str, num_ctx: int, reserve: int | None = None,
+                 exact_only: bool = False) -> None:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -526,25 +506,33 @@ def check_budget(prompt: str, model: str, num_ctx: int) -> None:
         prompt (str): the full prompt text.
         model (str): the resolved Ollama tag (the probe needs one).
         num_ctx (int): the context window this attempt will request.
+        reserve (int | None): the reply reserve; None reads reply_reserve().
+        exact_only (bool): skip the character pre-filter and decide on the
+            exact probe count alone. The local-coder driver sets it: its prompt
+            carries whole source files, where the 0.5 chars-per-token
+            pre-filter over-estimates eightfold (a measured 4225-token prompt
+            was refused as 32644 on 2026-11-05).
 
     Outputs:
         None.
 
     Raises:
-        BridgeError: the pre-filter or the exact probe count exceeds the
-        budget (num_ctx minus RESPONSE_RESERVE_TOKENS), the probe call
+        BridgeError: the budget file is unusable, the pre-filter or the
+        exact probe count exceeds the budget (num_ctx minus the reply
+        reserve), the probe call
         itself failed, or the probe's count matched Ollama's own truncation
         signature for this num_ctx (R56 - see probe_prompt_tokens).
     --------------------------------------------------------------------------
     """
-    budget = num_ctx - RESPONSE_RESERVE_TOKENS
+    held = reply_reserve() if reserve is None else reserve
+    budget = num_ctx - held
 
     prefilter_tokens = estimate_tokens(prompt)
-    if prefilter_tokens > budget:
+    if not exact_only and prefilter_tokens > budget:
         raise BridgeError(
             f"[BRIDGE] prompt is at least {prefilter_tokens} tokens by a deliberately "
             f"pessimistic character-count pre-filter alone, over the {budget}-token "
-            f"budget (num_ctx={num_ctx} minus a {RESPONSE_RESERVE_TOKENS}-token reply "
+            f"budget (num_ctx={num_ctx} minus a {held}-token reply "
             "reserve); refusing without spending a probe round trip on the obviously "
             "enormous (D2/I1)."
         )
@@ -554,7 +542,7 @@ def check_budget(prompt: str, model: str, num_ctx: int) -> None:
         raise BridgeError(
             f"[BRIDGE] prompt measured at exactly {exact_tokens} tokens (the model's "
             f"own tokenizer, via prompt_eval_count) exceeds the {budget}-token budget "
-            f"(num_ctx={num_ctx} minus a {RESPONSE_RESERVE_TOKENS}-token reply "
+            f"(num_ctx={num_ctx} minus a {held}-token reply "
             "reserve); refusing rather than letting Ollama truncate the tail (D2/I1)."
         )
 
@@ -620,229 +608,10 @@ def resolve_model(role: str | None = None) -> str:
     return tag
 
 
-class ReasoningAnomalyError(RuntimeError):
-    """
-    Raised by strip_reasoning (I3) when the reasoning markers cannot be resolved safely:
-    an unterminated <think> block, an orphan </think> with no opener, or an unterminated
-    Thinking... block. The caller (run_bridge) must treat the whole attempt as failed and
-    retry, never guess how to clean an anomalous shape - a stripper that eats legitimate
-    content is worse than one that leaks, and both are unacceptable in a note.
-    """
-
-
-def strip_reasoning(text: str) -> str:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Remove a model's reasoning trace before it can reach a note (D3): a
-        plausible-looking reasoning block that survives into a file is worse
-        than a syntax error, because it reads as content and passes casual
-        review. Ollama's CLI '--hidethinking' flag has no HTTP equivalent, so
-        this is real stripping code, not a request flag.
-
-        A single left-to-right scan tracks three pieces of state at once -
-        in_fence, think_depth, in_thinking - because an earlier two-pass
-        design (split all fences out FIRST, then strip each fence-free
-        segment independently) broke exactly the case where a fence sits
-        INSIDE an active <think> span: splitting resets the depth counter
-        per segment, so the outer <think> looked unterminated in one
-        segment and its </think> looked orphaned in the next. A single
-        pass with one set of counters has no segment boundary to break
-        across (I3).
-
-        Precedence, checked in this order for every marker encountered:
-          1. Already inside a fence (in_fence) - only a closing ``` is
-             recognized; every other marker (including <think>, </think>,
-             Thinking..., ...done thinking.) is inert, just more protected
-             text. This is what stops an unclosed <think> used as a
-             literal HTML example inside a real ```html fence from
-             deleting the rest of the note.
-          2. Already dropping a <think> span (think_depth > 0) - only
-             <think> (nests deeper) and </think> (unnests) are recognized;
-             a fence marker seen here is simply more text being dropped
-             along with the rest of the reasoning (this is also what lets
-             a fence-looking backtick pair used INSIDE a think span, as
-             formatting inside the model's own reasoning, disappear
-             cleanly with it).
-          3. Already dropping a Thinking... block (in_thinking) - only the
-             closing '...done thinking.' marker is recognized; other
-             markers seen here are likewise just dropped text.
-          4. Otherwise (fully normal) - a marker starts a new state: ```
-             opens a fence, <think> starts dropping (depth 1), Thinking...
-             starts dropping. A </think> or an orphan '...done thinking.'
-             seen here has no opener to match, which is anomalous.
-        No other reasoning convention is recognized.
-
-        An ANOMALOUS shape - an orphan </think>, an orphan
-        '...done thinking.', an unterminated <think> (depth > 0 at the end
-        of the text), or an unterminated Thinking... block - raises
-        ReasoningAnomalyError instead of guessing how much to drop or keep
-        (I3). The caller must treat that as a failed attempt and retry,
-        the same as an empty body or a hygiene violation. An unterminated
-        FENCE is not treated as a reasoning anomaly (fences are not this
-        function's concern beyond protecting their contents); whatever
-        text remains open in that state is kept as-is.
-
-    Inputs:
-        text (str): the raw model response.
-
-    Outputs:
-        result (str): text with every recognized reasoning span removed
-        (fenced code preserved verbatim), then stripped of leading/trailing
-        whitespace.
-
-    Raises:
-        ReasoningAnomalyError: see above.
-    --------------------------------------------------------------------------
-    """
-    kept: list[str] = []
-    keep_from = 0
-    in_fence = False
-    think_depth = 0
-    in_thinking = False
-
-    for m in _REASONING_MARKER_RE.finditer(text):
-        token = m.group(0)
-        low = token.lower()
-
-        if in_fence:
-            if token == "```":
-                in_fence = False
-            continue  # every marker is inert while inside a protected fence
-
-        if think_depth > 0:
-            if low == "<think>":
-                think_depth += 1
-            elif low == "</think>":
-                think_depth -= 1
-                if think_depth == 0:
-                    keep_from = m.end()
-            continue  # a fence or Thinking marker here is just dropped text
-
-        if in_thinking:
-            if low == "...done thinking.":
-                in_thinking = False
-                keep_from = m.end()
-            continue  # a fence or <think> marker here is just dropped text
-
-        # Fully normal state: this marker starts something new.
-        if token == "```":
-            in_fence = True
-        elif low == "<think>":
-            kept.append(text[keep_from:m.start()])
-            think_depth = 1
-        elif low == "</think>":
-            raise ReasoningAnomalyError(
-                "[BRIDGE] orphan </think> with no matching opening tag (I3)."
-            )
-        elif low == "thinking...":
-            kept.append(text[keep_from:m.start()])
-            in_thinking = True
-        elif low == "...done thinking.":
-            raise ReasoningAnomalyError(
-                "[BRIDGE] orphan ...done thinking. with no matching Thinking... (I3)."
-            )
-
-    if think_depth > 0:
-        raise ReasoningAnomalyError(
-            "[BRIDGE] unterminated <think> block (no matching closing tag) (I3)."
-        )
-    if in_thinking:
-        raise ReasoningAnomalyError(
-            "[BRIDGE] unterminated Thinking... block (no matching "
-            "...done thinking.) (I3)."
-        )
-
-    kept.append(text[keep_from:])
-    return "".join(kept).strip()
-
-
-_FENCE_LINE_RE = re.compile(r"^\s*```[A-Za-z0-9_+.-]*\s*$")
-
-
-def unwrap_sole_code_fence(text: str) -> str:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Remove the fence when a response IS one fenced block and nothing else,
-        so a model that presents its module for display does not fail on
-        punctuation.
-
-        Measured 2026-08-28 on a coder candidate that scored 0 of 3. It wrapped
-        its module in a fence despite a prompt forbidding one, the bridge wrote
-        that text verbatim to a .py file, and every attempt died with
-        "SyntaxError: invalid syntax" on line 1, before a single case ran. The
-        oracle was grading punctuation rather than code, and it did so for any
-        model with that habit, which is most instruction-tuned ones.
-        strip_reasoning deliberately PROTECTS fences (defect I3), so nothing
-        else in the pipeline could ever remove an outer one.
-
-        Deliberately narrow. Only a body whose first and last lines are the
-        ONLY two fence lines in it is unwrapped. Prose around a fence is a
-        Markdown deliverable and unwrapping it would delete the document; two
-        blocks are a document as well; an unterminated fence is truncated
-        output, and dropping its opening marker would turn a broken response
-        into one that merely looks plausible.
-
-    Inputs:
-        text (str): the response body, after reasoning has been stripped.
-
-    Outputs:
-        result (str): the fenced block's contents when the body is exactly one
-        fenced block, otherwise `text` unchanged.
-    --------------------------------------------------------------------------
-    """
-    lines = text.strip().splitlines()
-    if len(lines) < 2:
-        return text
-    fence_lines = [i for i, line in enumerate(lines) if _FENCE_LINE_RE.match(line)]
-    if fence_lines != [0, len(lines) - 1]:
-        return text
-    return "\n".join(lines[1:-1]).strip()
-
-
-def scan_hygiene(text: str) -> list[str]:
-    """
-    --------------------------------------------------------------------------
-    Purpose:
-        Detect banned characters in code, never by asking the model to avoid
-        them (D5): a 9B model follows a style paragraph inconsistently, and
-        the paragraph itself spends the scarce num_ctx window. See the module
-        docstring for the exact banned set and the emoji decision.
-
-    Inputs:
-        text (str): the reasoning-stripped candidate body.
-
-    Outputs:
-        result (list[str]): one description per distinct violation found,
-        sorted for a deterministic log line; empty when the text is clean.
-        Non-empty means the caller must retry, not patch the text in place.
-    --------------------------------------------------------------------------
-    """
-    found: set[str] = set()
-    for ch in text:
-        cp = ord(ch)
-        if ch in _ZERO_WIDTH_CHARS:
-            found.add(f"zero-width character U+{cp:04X}")
-        elif ch in _CURLY_QUOTES:
-            found.add(f"curly quote U+{cp:04X}")
-        elif ch in _OTHER_TYPOGRAPHIC_CHARS:
-            found.add(f"typographic character U+{cp:04X}")
-        elif cp == 0x2026:
-            found.add("ellipsis character U+2026")
-        elif cp == 0x2014:
-            found.add("em dash U+2014")
-        elif cp == 0x2013:
-            found.add("en dash U+2013")
-        elif _is_unicode_tag(cp):
-            found.add(f"unicode tag character U+{cp:05X}")
-        elif _is_emoji(cp):
-            found.add(f"emoji character U+{cp:04X}")
-    return sorted(found)
-
 
 def build_payload(prompt: str, model: str, seed: int, num_ctx: int,
-                  fmt: "dict[str, Any] | str | None" = None) -> dict[str, Any]:
+                  fmt: "dict[str, Any] | str | None" = None, *,
+                  num_predict: int | None = None) -> dict[str, Any]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -868,12 +637,18 @@ def build_payload(prompt: str, model: str, seed: int, num_ctx: int,
             would have to build a second request body and would lose the
             decisions this one carries (think=false, the num_predict reserve,
             the fixed seed, the explicit window).
+        num_predict (int | None): keyword only; the reply cap. None reads
+            reply_reserve(), one file at ceilings.code_file_output plus its
+            fence (2026-11-05, Issue #104).
 
     Outputs:
         result (dict): the request body, ready for json.dumps. options.
-        num_predict is set to RESPONSE_RESERVE_TOKENS (fix round 1, I2), so
+        num_predict is set to the reply reserve (fix round 1, I2), so
         the reply-length reserve this module assumes is actually enforced by
         the daemon, not merely assumed by check_budget's arithmetic.
+
+    Raises:
+        BridgeError: num_predict is None and the budget file is unusable.
     --------------------------------------------------------------------------
     """
     payload: dict[str, Any] = {
@@ -894,7 +669,7 @@ def build_payload(prompt: str, model: str, seed: int, num_ctx: int,
         "options": {
             "seed": seed,
             "num_ctx": num_ctx,
-            "num_predict": RESPONSE_RESERVE_TOKENS,
+            "num_predict": reply_reserve() if num_predict is None else num_predict,
             "temperature": FIXED_TEMPERATURE,
             "top_p": FIXED_TOP_P,
             "top_k": FIXED_TOP_K,
@@ -1231,7 +1006,8 @@ def run_bridge(
             return 1
 
     try:
-        check_budget(prompt, model, num_ctx)
+        reserve = reply_reserve()
+        check_budget(prompt, model, num_ctx, reserve)
     except BridgeError as exc:
         logger.error("%s", exc)
         return 1
@@ -1241,7 +1017,7 @@ def run_bridge(
 
     for attempt in range(1, max_retries + 1):
         attempt_seed = seed + (attempt - 1)
-        payload = build_payload(prompt, model, attempt_seed, num_ctx)
+        payload = build_payload(prompt, model, attempt_seed, num_ctx, num_predict=reserve)
 
         # The attempt record below is written only when a generation ENDS, and one can take
         # many minutes on a small card. This start record lets a dashboard tell a role that is

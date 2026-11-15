@@ -13,10 +13,10 @@ this machine and were **not deleted** - they are simply no longer where an edit 
 inside the repo from now on; the external copies are stale the moment this integration is
 reviewed and kept.
 
-`config/rules.md` is generated, never edited: `scripts/aider-rules-sync.py` derives it from
-`.claude/rules/*.md` of this repository. Its `DEFAULT_SOURCE` is now computed from the
-script's own file location (`parents[4] / ".claude" / "rules"`), not a literal - if the repo
-ever moves or is cloned elsewhere, this keeps working with no edit.
+`config/rules.md` is the ONE copy of the coding rules and is edited by hand (since 2026-11-11: a generator
+and a second file, `rules-local/aider-kit.md`, used to produce it and cost an afternoon of edits when a hand
+edit of the generated file was overwritten by a build). `scripts/aider-rules-check.py` validates it before every
+run: no number twice, no gap from R0, no rule over the per-rule cap, nothing cut.
 
 `scripts/build/` is the packaging pipeline for the **student-facing** `aider-kit.zip`. It now
 reads its canonical sources from `SKILL_ROOT` (this skill's own tree) rather than `$HOME`.

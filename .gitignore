@@ -27,7 +27,12 @@ venv*/
 env*/
 *.egg-info/
 dist/
-build/
+/build/
+# The aider-setup packaging scripts live in a folder named build. A generic `build/` rule hid them
+# from git since 2026-09-24, so they existed on one machine only, and a negation to un-hide them is a
+# form verify-no-personal-data.ps1 refuses to read. The rule is anchored to the repository root instead.
+.claude/skills/aider-setup/scripts/build/__pycache__/
+.claude/skills/aider-setup/scripts/build/*.saved
 .pytest_cache/
 
 # Node / JS
@@ -134,3 +139,7 @@ site/
 # Playwright MCP debug snapshots (page state dumps written wherever a session invokes the
 # browser tools). One such file was found already committed (2026-09-25) and removed.
 .playwright-mcp/
+.aider*
+.claude/skills/aider-setup/watchdog/aider-watchdog.exe
+# Measurements of the models on this machine, written by aider-watchdog reference.
+.claude/skills/aider-setup/config/model-reference.json

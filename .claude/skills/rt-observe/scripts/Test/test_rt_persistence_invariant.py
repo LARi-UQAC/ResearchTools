@@ -44,7 +44,8 @@ PRE_EXISTING_SECTIONS = {
 }
 # identity and traces came with the journal-durable plan; local_calls and rounds (plan 6) came with the
 # local coding contract (plans 6 and 7, 2026-10-17), also additive and read-only.
-NEW_SECTIONS = {"identity", "traces", "local_calls", "rounds"}
+# rex (2026-11-09) is the watchdog dog: three local calls, additive and read-only.
+NEW_SECTIONS = {"identity", "traces", "local_calls", "rounds", "rex"}
 
 
 class TempTree(unittest.TestCase):

@@ -74,6 +74,16 @@
           "path": ".claude/skills/wp-portfolio-sync/scripts/requirements.txt",
           "why": "wp-portfolio-sync: PyYAML (mapping and extras files), requests (wp_common.py WpClient), defusedxml (cihr_cv.py, parse_cv.py)",
           "exclude": []
+        },
+        {
+          "path": ".claude/skills/work-ugs-audit/scripts/requirements.txt",
+          "why": "work-ugs-audit: PyMuPDF (pdf_annotate.py, pdf_annex.py), pymupdf4llm (report_prepare.py), PyYAML (ugs_config.annotation_author)",
+          "exclude": []
+        },
+        {
+          "path": ".claude/skills/figure-review/scripts/requirements.txt",
+          "why": "figure-review: PyMuPDF (figure_extract.py, figure_image.py, figure_checks.py and the test fixture helper)",
+          "exclude": []
         }
       ],
       "tools": [

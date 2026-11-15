@@ -100,7 +100,7 @@ One row along the bottom of the window:
   start and goal cells, default final time, colours, sampling resolution, figure
   size and every tolerance live in `config.json`, read at run time. A pure
   mathematical constant of the domain is not configuration.
-- Every source file has a matching test under `tests/`, written in the same step
+- Every source file has a matching test under `Test/`, written in the same step
   as the code. Code without its test is not done.
 - Every test asserts at least one **failure path**, not only the happy path.
 - Every function carries a header giving Purpose, Inputs, Outputs, and Raises

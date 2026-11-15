@@ -71,10 +71,24 @@ function Initialize-RunRecord([string]$project, [bool]$dryRun) {
         plans_done   = 0
         steps_done   = 0
         steps_open   = 0
+        steps_partial = 0
         steps_blocked = 0
         tests_exit   = $null
         audit_bytes  = 0
         note         = ""
+    }
+}
+
+# Purpose: count the four ledger marks of a progress.md text. [~] is a step done in part: it is neither open nor
+# blocked, so it never stops a plan, and the plan quality score measures how much of the plan was met.
+# Inputs: ledger (string) - the text of progress.md or of one plan section.
+# Outputs: hashtable with the integers done, open, partial and blocked.
+function Get-MarkCounts([string]$ledger) {
+    return @{
+        done    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[x\]')).Count
+        open    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[\s\]')).Count
+        partial = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[~\]')).Count
+        blocked = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[!\]')).Count
     }
 }
 
@@ -91,9 +105,11 @@ function Update-RunRecord([hashtable]$fields) {
         # rather than tracked, which would drift from the file the model writes.
         if (Test-Path -LiteralPath $progress) {
             $ledger = Get-Content -LiteralPath $progress -Raw -Encoding UTF8
-            $script:RunRecord["steps_done"]    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[x\]')).Count
-            $script:RunRecord["steps_open"]    = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[\s\]')).Count
-            $script:RunRecord["steps_blocked"] = ([regex]::Matches($ledger, '(?m)^\s*-\s*\[!\]')).Count
+            $marks = Get-MarkCounts $ledger
+            $script:RunRecord["steps_done"]    = $marks.done
+            $script:RunRecord["steps_open"]    = $marks.open
+            $script:RunRecord["steps_partial"] = $marks.partial
+            $script:RunRecord["steps_blocked"] = $marks.blocked
         }
         $auditFile = Join-Path $plansDir "audit.md"
         if (Test-Path -LiteralPath $auditFile) {
@@ -112,7 +128,7 @@ function Update-RunRecord([hashtable]$fields) {
 
 function Get-TokenCount([string]$file) {
     if (-not (Test-Path -LiteralPath $venvPython)) { return -1 }
-    $code = "import sys,tiktoken;print(len(tiktoken.get_encoding('cl100k_base').encode(open(sys.argv[1],encoding='utf-8',errors='replace').read())))"
+    $code = "import sys,tiktoken;print(len(tiktoken.get_encoding('cl100k_base').encode(open(sys.argv[1],encoding='utf-8',errors='replace').read(),disallowed_special=())))"
     $out = & $venvPython -c $code $file 2>$null
     if ($LASTEXITCODE -ne 0) { return -1 }
     return [int]$out
@@ -145,7 +161,35 @@ function Get-FileCeiling([string]$fileName) {
 
 # The window is asked of aider, never declared: a number written in a file would
 # silently disagree with whatever model is actually loaded.
-function Get-ModelWindow([string]$tag) {
+# Purpose: find the folder that holds the kit configuration (context-budget.json, skills.json, model-settings.yml,
+#   aider.conf.yml, conventions.md, rules.md), without any install step.
+# Inputs: config (string) - a -Config file, or ""; budgetFile (string) - a -BudgetFile, or ""; scriptDir (string) - the
+#   folder of the running script; homeDir (string) - the home folder, "" for the current user's.
+# Outputs: string - the folder. In order: beside an explicit -Config, beside an explicit -BudgetFile, the "config"
+#   folder next to the scripts folder when it holds context-budget.json (this repository, or an unpacked kit), and
+#   last the ".config\aider" folder of the home, which an installed student kit uses.
+function Get-KitConfigDir([string]$config = "", [string]$budgetFile = "", [string]$scriptDir = "", [string]$homeDir = "") {
+    # A path that does not exist is not resolved here: the caller refuses it by name.
+    if ($config -ne "")     { return Split-Path -Parent $(if (Test-Path -LiteralPath $config) { (Resolve-Path -LiteralPath $config).Path } else { $config }) }
+    if ($budgetFile -ne "") { return Split-Path -Parent $(if (Test-Path -LiteralPath $budgetFile) { (Resolve-Path -LiteralPath $budgetFile).Path } else { $budgetFile }) }
+    if ($scriptDir -ne "") {
+        $beside = Join-Path (Split-Path -Parent $scriptDir) "config"
+        if (Test-Path -LiteralPath (Join-Path $beside "context-budget.json")) { return (Resolve-Path -LiteralPath $beside).Path }
+    }
+    if ($homeDir -eq "") { $homeDir = $HOME }
+    return Join-Path $homeDir ".config\aider"
+}
+
+# Purpose: turn a path written in a configuration file into a usable one. A relative path is read from the folder of
+#   the file that names it, so the configuration holds no machine-specific text.
+# Inputs: baseDir (string) - the folder of the configuration file; path (string) - the path as written.
+# Outputs: string - the path itself when it is already absolute, else the path joined to baseDir.
+function Resolve-ConfigPath([string]$baseDir, [string]$path) {
+    if ([System.IO.Path]::IsPathRooted($path)) { return $path }
+    return Join-Path $baseDir $path
+}
+
+function Get-ModelWindow([string]$tag, [string]$settingsPath = "") {
     # Both files are registered, and the metadata one is not optional.
     #
     # model-settings.yml carries extra_params.num_ctx, which is what aider SENDS,
@@ -162,11 +206,7 @@ function Get-ModelWindow([string]$tag) {
           "s=[q for q in p if q.endswith('.yml')];m=[q for q in p if q.endswith('.json')];" +
           "register_models(s) if s else None;register_litellm_models(m) if m else None;" +
           "i=Model(sys.argv[1]).info or {};print(i.get('max_input_tokens') or 0)"
-    $settings = Join-Path $HOME ".config\aider\model-settings.yml"
-    if ($Config -ne "") {
-        $sibling = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $Config).Path) "model-settings.yml"
-        if (Test-Path -LiteralPath $sibling) { $settings = $sibling }
-    }
+    $settings = if ($settingsPath -ne "") { $settingsPath } else { Join-Path (Get-KitConfigDir "" "" "" "") "model-settings.yml" }
     $metadata = Join-Path $HOME ".aider.model.metadata.json"
     $out = & $venvPython -c $py $tag $settings $metadata 2>$null
     if ($LASTEXITCODE -ne 0) { return -1 }
@@ -175,8 +215,9 @@ function Get-ModelWindow([string]$tag) {
 
 function Resolve-SkillStage($stage, $entry, $file) {
     $paths = @()
+    $base = Split-Path -Parent $file
     if ($entry.bundle) {
-        $dir = $entry.bundle
+        $dir = Resolve-ConfigPath $base $entry.bundle
         if (-not (Test-Path -LiteralPath $dir)) {
             Write-Refusal @("REFUSED: skill bundle for stage '$stage' does not exist:", "  $dir")
             exit 2
@@ -204,6 +245,7 @@ function Resolve-SkillStage($stage, $entry, $file) {
     }
     foreach ($f in @($entry.files)) {
         if ($null -eq $f -or $f -eq "") { continue }
+        $f = Resolve-ConfigPath $base $f
         if (-not (Test-Path -LiteralPath $f)) {
             Write-Refusal @("REFUSED: skill file for stage '$stage' listed in $file does not exist:", "  $f")
             exit 2
@@ -214,18 +256,13 @@ function Resolve-SkillStage($stage, $entry, $file) {
 }
 
 # --- Helpers ---------------------------------------------------------------
-function Get-PlanTargets([string]$planPath) {
-    # The files a plan NAMES, added to the chat as editable rather than left for
-    # the model to request. Measured 2026-09-03: with only progress.md editable,
-    # a plan run produced NOTHING at all - the model spent its entire reply
-    # reasoning about whether it was allowed to touch calc.py, and concluded it
-    # was not. The convention already requires every plan step to name its file,
-    # so the harness reads them instead of hoping the model asks.
-    #
-    # No regex. A first version built one by joining escaped extensions, and it
-    # matched nothing while the identical pattern typed by hand matched two - an
-    # invisible character difference nobody can see in a diff. Splitting on
-    # separators and asking Path for the extension cannot fail that way.
+# The paragraph of a plan that lists the files it only READS: "**Reads, do not modify:**" up to the next
+# blank line. Its files are handed to the model read-only and are never targets. Measured 2026-11-10: they
+# were submitted as editable, and three plans edited a file that was not theirs (a shared test fixture, the
+# module of the plan before). A file the plan also lists under Files stays a target.
+$ReadsBlockPattern = '(?s)\*\*Reads, do not modify:\*\*(.*?)(?:\r?\n[ \t]*\r?\n|\z)'
+
+function Get-PlanText([string]$planPath) {
     $text = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8
 
     # A leading front matter block (executor, tier, bounds: the plan header of rule R38)
@@ -240,13 +277,22 @@ function Get-PlanTargets([string]$planPath) {
             }
         }
     }
+    return $text
+}
 
+function Get-PathsInText([string]$text) {
+    # No regex. A first version built one by joining escaped extensions, and it
+    # matched nothing while the identical pattern typed by hand matched two - an
+    # invisible character difference nobody can see in a diff. Splitting on
+    # separators and asking Path for the extension cannot fail that way.
     $separators = @(' ', "`t", "`r", "`n", ',', ';', ':', '(', ')', '[', ']',
                     '{', '}', '"', "'", '`', '<', '>', '|', '!', '?')
     $found = New-Object System.Collections.Generic.List[string]
 
     foreach ($token in $text.Split($separators, [StringSplitOptions]::RemoveEmptyEntries)) {
-        $word = $token.Trim('.', '*', '#')
+        # Trailing dots only: a leading dot is part of the name (.claude/x.py), and a path such as
+        # ../../evil.py must reach the containment check below intact so that it is refused.
+        $word = $token.Trim('*', '#').TrimEnd('.')
         if ($word -eq "") { continue }
         $ext = [System.IO.Path]::GetExtension($word)
         # Code OR data: a plan legitimately creates a config file, and a file
@@ -270,6 +316,33 @@ function Get-PlanTargets([string]$planPath) {
             continue
         }
         if (-not $found.Contains($resolved)) { $found.Add($resolved) }
+    }
+    return , $found.ToArray()
+}
+
+function Get-PlanTargets([string]$planPath) {
+    # The files a plan NAMES, added to the chat as editable rather than left for
+    # the model to request. Measured 2026-09-03: with only progress.md editable,
+    # a plan run produced NOTHING at all - the model spent its entire reply
+    # reasoning about whether it was allowed to touch calc.py, and concluded it
+    # was not. The convention already requires every plan step to name its file,
+    # so the harness reads them instead of hoping the model asks. The files of the
+    # "Reads, do not modify" paragraph are not among them: see Get-PlanReads.
+    $text = [regex]::Replace((Get-PlanText $planPath), $ReadsBlockPattern, "")
+    $found = Get-PathsInText $text
+    return , $found
+}
+
+function Get-PlanReads([string]$planPath, [string[]]$targets = @()) {
+    # The files a plan only reads, existing ones only (nothing is created for a file that is merely read),
+    # given to the model with --read. A file that is also a target stays a target.
+    $found = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches((Get-PlanText $planPath), $ReadsBlockPattern)) {
+        foreach ($path in (Get-PathsInText $m.Groups[1].Value)) {
+            if ((Test-Path -LiteralPath $path -PathType Leaf) -and ($targets -notcontains $path) -and -not $found.Contains($path)) {
+                $found.Add($path)
+            }
+        }
     }
     return , $found.ToArray()
 }
@@ -413,4 +486,328 @@ function Add-LedgerLine([string]$sectionName, [string]$line) {
         $out = (($head + @($line) + $tail) -join "`r`n")
     }
     Write-Utf8NoBom $progress $out
+}
+
+# --- The watchdog (aider-watchdog.exe) ---------------------------------------
+# A small Go program that reads the CPU of the model server and the GPU while the
+# writer or the reviewer should be generating, and stops the process in progress
+# when both have gone far under what this machine measured for that model. It
+# only stops the process: the plan it was working on is left undone and the
+# driver goes on to the next one without writing to progress.md (see
+# Test-WatchdogStop). Measured 2026-11-09: a model-written test looped for 6 hours
+# with the GPU idle and nothing noticed. Absent program or reference: say so and
+# carry on as before, never silently (R8).
+function Start-Watchdog([int]$driverPid, [string]$runRecord, [string]$logs) {
+    $exe = $null
+    foreach ($c in @((Join-Path $PSScriptRoot "aider-watchdog.exe"),
+                     (Join-Path $PSScriptRoot "..\watchdog\aider-watchdog.exe"))) {
+        if (Test-Path -LiteralPath $c) { $exe = (Resolve-Path -LiteralPath $c).Path; break }
+    }
+    $reference = $env:AIDER_MODEL_REFERENCE
+    if ([string]::IsNullOrEmpty($reference)) { $reference = Join-Path $script:KitConfigDir "model-reference.json" }
+    $settings = if ($null -ne $exe) { Join-Path (Split-Path $exe -Parent) "aider-watchdog.json" } else { "" }
+    if ($null -eq $exe -or -not (Test-Path -LiteralPath $settings) -or -not (Test-Path -LiteralPath $reference)) {
+        Write-Host "  WARNING: watchdog not started (needs aider-watchdog.exe, aider-watchdog.json and a reference file; set AIDER_MODEL_REFERENCE). The run goes on without it." -ForegroundColor Yellow
+        return $null
+    }
+    # One string, quoted by hand: Windows PowerShell 5.1 does not quote the items
+    # of an -ArgumentList array, and these paths hold spaces.
+    $argLine = 'watch --driver-pid {0} --run-record "{1}" --logs-dir "{2}" --settings "{3}" --reference "{4}"' -f `
+        $driverPid, $runRecord, $logs, $settings, (Resolve-Path -LiteralPath $reference).Path
+    $p = Start-Process -FilePath $exe -ArgumentList $argLine -WindowStyle Hidden -PassThru
+    Start-Sleep -Seconds 2
+    if ($p.HasExited) {
+        Write-Host ("  WARNING: the watchdog refused to start (exit {0}). The run goes on without it." -f $p.ExitCode) -ForegroundColor Yellow
+        return $null
+    }
+    Write-Host "  watchdog started (pid $($p.Id))"
+    return $p
+}
+
+# Purpose: Start the watchdog again when the one started with the run has ended while the run goes on.
+# Inputs: proc - the process returned by Start-Watchdog, or $null; the three arguments of Start-Watchdog.
+# Outputs: the process to use from now on: the same one when it is alive or never started, a new one after a restart.
+# Measured 2026-11-13 (night un5b): the watchdog ended on one failed call and nothing noticed for 14 hours.
+function Restart-WatchdogIfEnded($proc, [int]$driverPid, [string]$runRecord, [string]$logs) {
+    if ($null -eq $proc -or -not $proc.HasExited) { return $proc }
+    Write-Host ("  WARNING: the watchdog had ended (exit {0}); starting it again. See watchdog.log in the logs folder." -f $proc.ExitCode) -ForegroundColor Yellow
+    return (Start-Watchdog $driverPid $runRecord $logs)
+}
+
+function Stop-Watchdog($proc) {
+    if ($null -ne $proc -and -not $proc.HasExited) { try { $proc.Kill() } catch { } }
+}
+
+# True when the watchdog stopped the process that was working on this plan. The
+# signal is consumed, so it counts once. The caller then moves to the next plan
+# and writes nothing to progress.md: the plan simply stays undone.
+function Test-WatchdogStop([string]$logs, [string]$planName) {
+    $signal = Join-Path $logs "watchdog-stop.json"
+    if (-not (Test-Path -LiteralPath $signal)) { return $false }
+    try { $named = (Get-Content -LiteralPath $signal -Raw -Encoding UTF8 | ConvertFrom-Json).plan } catch { return $false }
+    if ($named -ne $planName) { return $false }
+    Remove-Item -LiteralPath $signal -Force
+    return $true
+}
+
+# Re-save a test log as UTF-8 WITH a byte order mark. The test command writes through cmd's redirection, in
+# plain bytes with no mark, while until 2026-11-12 every other log of a run was UTF-16 written by Tee-Object, so
+# an editor that had guessed UTF-16 for one showed the other as Chinese characters (reported 2026-11-11, the
+# content was intact). Every log is now UTF-8 with a mark. A mark is the one signal every editor and Get-Content
+# honour, and nothing parses a log as data, so unlike a JSON file it costs nothing here. A log that is already
+# UTF-16 (one written by an older driver) is converted, never read as UTF-8.
+function Convert-TestLogToUtf8Bom([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        $text = [System.Text.Encoding]::Unicode.GetString($bytes)
+    } else {
+        $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+    }
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    [System.IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($true)))
+}
+
+# A log read as it was written: UTF-8 with a mark since 2026-11-12, or UTF-16 with a mark for a log an older driver wrote.
+function Get-LogText([string]$Path) {
+    $b = [System.IO.File]::ReadAllBytes($Path)
+    if ($b.Length -ge 2 -and $b[0] -eq 0xFF -and $b[1] -eq 0xFE) { return [System.Text.Encoding]::Unicode.GetString($b) }
+    $t = [System.Text.Encoding]::UTF8.GetString($b)
+    if ($t.Length -gt 0 -and $t[0] -eq [char]0xFEFF) { $t = $t.Substring(1) }
+    return $t
+}
+
+# The report of a run that blocked: for each plan carrying a [!] line, WHY, in the words of the evidence the
+# run already holds. Until 2026-11-11 the end of a run said only "10 plan(s) blocked" and the student had to
+# open each log to find out whether the model had hit its reply limit, filled its window or used its three fix
+# attempts. Inputs: the text of progress.md, the log folder, how many lines of test output to keep. Output: the
+# Markdown text (empty when nothing is blocked). It reads files and runs nothing.
+function Get-BlockReport([string]$ledgerText, [string]$logDir, [int]$tailLines = 12) {
+    $out = New-Object System.Collections.Generic.List[string]
+    $found = 0
+    foreach ($section in [regex]::Split($ledgerText, '(?m)^## ')) {
+        $lines = @($section -split "\r?\n")
+        $heading = ([string]$lines[0]).Trim()
+        $blocked = @($lines | Where-Object { $_ -match '^\s*-\s*\[!\]' })
+        if ($heading -eq "" -or $blocked.Count -eq 0) { continue }
+        $found++
+        $base = $heading -replace '\.md$', ''
+        $out.Add("## $heading")
+        $out.Add("")
+        $out.Add("Recorded in progress.md:")
+        foreach ($b in $blocked) { $out.Add($b.Trim()) }
+        $out.Add("")
+        $runLog  = @(Get-ChildItem -LiteralPath $logDir -Filter "*-$base.log" -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1)
+        $testLog = @(Get-ChildItem -LiteralPath $logDir -Filter "*-$base-tests.log" -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1)
+        if ($runLog.Count -gt 0) {
+            $t = Get-LogText $runLog[0].FullName
+            $hit = [regex]::Match($t, '(?s)has hit a token limit!.*?Input tokens: ([^\r\n]+)\r?\n\s*Output tokens: ([^\r\n]+)\r?\n\s*Total tokens: ([^\r\n]+)')
+            if ($hit.Success) {
+                $out.Add("The model hit a token limit: input $($hit.Groups[1].Value.Trim()), output $($hit.Groups[2].Value.Trim()), total $($hit.Groups[3].Value.Trim()).")
+            }
+            if ($t -match 'Only \d+ reflections') { $out.Add("aider used all its fix attempts and the tests were still failing.") }
+            $reqs = @([regex]::Matches($t, 'Tokens: ([\d.,k]+) sent, ([\d.,k]+) received') | ForEach-Object { "$($_.Groups[1].Value) sent / $($_.Groups[2].Value) received" })
+            if ($reqs.Count -gt 0) { $out.Add("Requests of the run, in order: " + ($reqs -join "; ") + ".") }
+            $out.Add("Run log: $($runLog[0].Name)")
+        }
+        if ($testLog.Count -gt 0) {
+            $tt = Get-LogText $testLog[0].FullName
+            $names = @([regex]::Matches($tt, '(?m)^(?:FAIL|ERROR): (\S+)|^--- FAIL: (\S+)|^test (\S+) \.\.\. FAILED') |
+                       ForEach-Object { ($_.Groups[1].Value + $_.Groups[2].Value + $_.Groups[3].Value) } | Select-Object -Unique)
+            if ($names.Count -gt 0) { $out.Add("Failing tests: " + ($names -join ", ") + ".") }
+            $tail = @(($tt -split "\r?\n") | Where-Object { $_.Trim() -ne "" } | Select-Object -Last $tailLines)
+            $out.Add("End of the test output ($($testLog[0].Name)):")
+            $out.Add('```')
+            foreach ($l in $tail) { $out.Add($l) }
+            $out.Add('```')
+        }
+        $out.Add("")
+    }
+    if ($found -eq 0) { return "" }
+    return ("# What blocked`n`n" + ($out -join "`n") + "`n")
+}
+
+# What the reviewer is told about the plan its code answers to, and what the writer is told about the review that
+# reopened the plan. Found 2026-11-11: the reviewer judged the code against the spec alone, so it could not say that
+# a step of the plan was missing, and the writer received only the one-line `audit:` items of progress.md, never the
+# report with its file, its line and its reason. The plan's front matter is not sent (Get-PlanText drops it).
+function Get-AuditPlanBlock([string]$plansDir, [string]$planName) {
+    $path = Join-Path $plansDir $planName
+    if (-not (Test-Path -LiteralPath $path)) { return "" }
+    $text = (Get-PlanText $path).Trim()
+    if ($text -eq "") { return "" }
+    return "=== THE PLAN THIS CODE IMPLEMENTS ===`n" + $text + "`n`n"
+}
+
+function Get-ReopenReport([string]$auditPath, [string]$planName) {
+    if (-not (Test-Path -LiteralPath $auditPath)) { return "" }
+    $lines = Get-PlanSection (Get-Content -LiteralPath $auditPath -Raw -Encoding UTF8) $planName
+    if ($null -eq $lines) { return "" }
+    $body = ($lines -join "`n").Trim()
+    if ($body -eq "") { return "" }
+    return "`n`nThe reviewer's report on this plan, from audit.md. Each finding names the file, the line and why it matters:`n" + $body
+}
+
+# --- Plan quality: how closely the code follows the PLAN, not whether its tests pass (2026-11-11) ---
+# The owner asked for a measure of what was delivered against what was asked, because a plan whose code fails
+# a few tests can still be 80 percent right and cheap to finish, while a green suite says nothing about the
+# requirements nobody tested. The reviewer lists the plan's requirements and judges each one; THIS code, not
+# the model, counts them, so the number is arithmetic on its judgements and never a figure it made up.
+
+$QualityStatusWeights = @{ full = 1.0; partial = 0.5; missing = 0.0 }
+
+# Share of the final score that comes from the plan's own tests (chosen by the owner 2026-11-12, not measured).
+# The reviewer reads code and never runs it, so on 2026-11-12 it scored 100 percent a module whose central
+# call raised a TypeError (25 of 26 tests passed): the tests are the evidence it cannot produce. The other
+# 80 percent is the reviewer's judgement of the requirements.
+$QualityTestWeight = 0.2
+
+# The limit of one test file run by the quality stage, in seconds (the author's choice, unmeasured).
+$QualityTestTimeoutSeconds = 300
+
+# The interpreter the test command starts with, or $null when it does not start with one. The quality stage
+# runs one test file at a time and needs a command that takes a file; only a Python interpreter is known to.
+# Input: the whole test command. Output: the interpreter path as written, or $null.
+function Get-TestInterpreter([string]$testCommand) {
+    $c = $testCommand.Trim()
+    if ($c -eq "") { return $null }
+    if ($c.StartsWith('"')) {
+        $end = $c.IndexOf('"', 1)
+        if ($end -lt 0) { return $null }
+        $first = $c.Substring(1, $end - 1)
+    } else {
+        $first = ($c -split '\s+', 2)[0]
+    }
+    if ((Split-Path $first -Leaf) -match '^python[\d.]*(\.exe)?$') { return $first }
+    return $null
+}
+
+# Reads the end of a unittest run. Input: the output text. Output: total tests run and how many passed
+# (failures and errors are subtracted). Output that holds no "Ran N tests" line means the file never ran
+# (an import error, a syntax error), which counts as one test failed so the plan is not rewarded for it;
+# "Ran 0 tests" means the file holds no test and adds nothing.
+function Get-TestCounts([string]$output) {
+    $ran = [regex]::Matches($output, 'Ran (\d+) tests?')
+    if ($ran.Count -eq 0) { return @{ total = 1; passed = 0 } }
+    $total = [int]$ran[$ran.Count - 1].Groups[1].Value
+    $bad = 0
+    $failed = [regex]::Match($output, 'FAILED \(([^)]*)\)')
+    if ($failed.Success) {
+        foreach ($kind in @("failures", "errors")) {
+            $m = [regex]::Match($failed.Groups[1].Value, "$kind=(\d+)")
+            if ($m.Success) { $bad += [int]$m.Groups[1].Value }
+        }
+    }
+    return @{ total = $total; passed = [Math]::Max($total - $bad, 0) }
+}
+
+# The message that makes the reviewer list and judge the requirements of one plan. Inputs: the plan file, the
+# project folder, the token budget for the code shown, and the reviewer brief text. Output: a hashtable with the
+# message text, the files shown and the files left out for lack of room (named in the message, so the reviewer
+# can say it could not judge them), or $null when the plan names no file that exists.
+function Get-QualityPrompt([string]$planPath, [string]$projectRoot, [int]$maxTokens, [string]$briefText = "") {
+    $planName = Split-Path $planPath -Leaf
+    $targets = Get-PlanTargets $planPath
+    $shown = New-Object System.Collections.Generic.List[string]
+    $omitted = New-Object System.Collections.Generic.List[string]
+    $code = ""
+    $used = 0
+    foreach ($f in $targets) {
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { continue }
+        if ((Get-Item -LiteralPath $f).Length -eq 0) { continue }
+        $rel = $f
+        if ($f.StartsWith($projectRoot, [StringComparison]::OrdinalIgnoreCase)) { $rel = $f.Substring($projectRoot.Length + 1) }
+        $n = Get-TokenCount $f
+        if ($n -lt 0) { $n = $maxTokens }
+        if ($used + $n -gt $maxTokens) { $omitted.Add($rel); continue }
+        $used += $n
+        $shown.Add($rel)
+        $code += "`n`n----- $rel -----`n" + (Get-Content -LiteralPath $f -Raw -Encoding UTF8)
+    }
+    if ($shown.Count -eq 0) { return $null }
+    $note = ""
+    if ($omitted.Count -gt 0) {
+        $note = "`n`nNot shown, no room: " + ($omitted -join ", ") + ". Mark every requirement that depends only on those files [partial] and say it could not be judged.`n"
+    }
+    $text = "You are scoring how closely finished code follows its PLAN. You are NOT running tests, you are NOT editing code, and no source file is open for editing: the plan and the code are quoted below, as text. Do not count tests and do not say whether the suite passes: only compare what the plan asks for with what the code does.`n`n" +
+            "First list the requirements the plan states: each file it asks for, each function or interface with its signature, each behaviour, each constraint, each test it names. Then write ONE line per requirement, in this exact form, most important first. Group the trivial details that belong together (for example the imports, or the names of one family of constants) into one line instead of listing each:`n" +
+            "- [full] <the requirement> - <why, in a few words>   when the code does exactly what the plan says`n" +
+            "- [partial] <the requirement> - <what differs or is incomplete>   when it is there but not as the plan says`n" +
+            "- [missing] <the requirement> - <what is absent>   when the code does not do it`n`n" +
+            "Write these lines in quality.md under the heading '## quality $planName' and write nothing else there: no preamble, no summary, no score. There is no one to answer you: this is an unattended run, so never end your turn with a question, a request for permission or an offer to make fixes. Write the report in English.`n`n" +
+            $briefText +
+            "=== THE PLAN ===`n" + (Get-PlanText $planPath).Trim() + "`n`n" +
+            "=== THE CODE ===" + $code + $note
+    return @{ text = $text; shown = $shown.ToArray(); omitted = $omitted.ToArray() }
+}
+
+# Reads the reviewer's lines back and does the arithmetic. Inputs: the text of quality.md, the plan name and
+# optionally the plan's test counts (a hashtable with total and passed, $null when the tests could not be run).
+# Output: counts and a percentage, or scored = $false with the reason when the reviewer wrote no usable line,
+# which is reported as "not scored" and never as 0 percent. With test counts the percentage is the reviewer's
+# share scaled to (1 - test weight) plus the test weight times the share of tests that pass; without them it is
+# the reviewer's alone and testsMeasured is $false, so the report says so.
+function Get-QualityScore([string]$qualityText, [string]$planName, $tests = $null) {
+    $inside = $false
+    $full = 0; $partial = 0; $missing = 0
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($qualityText -split "`r?`n")) {
+        if ($line -match '^\s*##\s+(.*?)\s*$') {
+            $inside = ($Matches[1] -ieq "quality $planName")
+            continue
+        }
+        if (-not $inside) { continue }
+        if ($line -match '^\s*[-*]\s*\[(full|partial|missing)\]\s*(.+?)\s*$') {
+            $status = $Matches[1].ToLower()
+            switch ($status) { "full" { $full++ } "partial" { $partial++ } "missing" { $missing++ } }
+            $lines.Add("$status|" + $Matches[2])
+        }
+    }
+    $total = $full + $partial + $missing
+    if ($total -eq 0) {
+        return @{ plan = $planName; scored = $false; reason = "the reviewer wrote no requirement line under '## quality $planName'"; total = 0; full = 0; partial = 0; missing = 0; percent = $null; reviewer = $null; testsMeasured = $false; testsPassed = 0; testsTotal = 0; lines = @() }
+    }
+    $points = $full * $QualityStatusWeights.full + $partial * $QualityStatusWeights.partial + $missing * $QualityStatusWeights.missing
+    $reviewer = 100.0 * $points / $total
+    $measured = ($null -ne $tests) -and ($tests.total -gt 0)
+    if ($measured) {
+        $percent = (1.0 - $QualityTestWeight) * $reviewer + $QualityTestWeight * 100.0 * $tests.passed / $tests.total
+    } else {
+        $percent = $reviewer
+    }
+    return @{ plan = $planName; scored = $true; reason = ""; total = $total; full = $full; partial = $partial; missing = $missing
+              percent = [int][math]::Round($percent); reviewer = [int][math]::Round($reviewer)
+              testsMeasured = $measured; testsPassed = $(if ($measured) { $tests.passed } else { 0 }); testsTotal = $(if ($measured) { $tests.total } else { 0 })
+              lines = $lines.ToArray() }
+}
+
+# The Markdown a person reads: one table, then the requirements that are not fully met, per plan. Input: the
+# list of score hashtables, in plan order. Output: text.
+function Format-QualityReport($scores) {
+    $out = New-Object System.Collections.Generic.List[string]
+    $out.Add("# Plan quality")
+    $out.Add("")
+    $weightPercent = [int][math]::Round(100.0 * $QualityTestWeight)
+    $out.Add("How closely the code follows each plan. Quality is $(100 - $weightPercent) percent the reviewer model's judgement of the plan's requirements, one by one (full counts 1, partial 0.5, missing 0, counted by the driver, who reads the code and does not run it), plus $weightPercent percent the share of the plan's own tests that pass. A plan whose tests could not be run is scored on the reviewer's judgement alone and the Tests column says so.")
+    $out.Add("")
+    $out.Add("| Plan | Quality | Reviewer | Tests | Full | Partial | Missing |")
+    $out.Add("|---|---:|---:|---:|---:|---:|---:|")
+    foreach ($s in $scores) {
+        if ($s.scored) {
+            $testCell = "not measured"
+            if ($s.testsMeasured) { $testCell = "$($s.testsPassed)/$($s.testsTotal)" }
+            $out.Add("| $($s.plan) | $($s.percent) % | $($s.reviewer) % | $testCell | $($s.full) | $($s.partial) | $($s.missing) |")
+        }
+        else { $out.Add("| $($s.plan) | not scored | - | - | - | - | - |") }
+    }
+    foreach ($s in $scores) {
+        $out.Add("")
+        $out.Add("## $($s.plan)")
+        $out.Add("")
+        if (-not $s.scored) { $out.Add("Not scored: $($s.reason).") ; continue }
+        $open = @($s.lines | Where-Object { -not $_.StartsWith("full|") })
+        if ($open.Count -eq 0) { $out.Add("Every requirement the reviewer listed is fully met.") }
+        foreach ($l in $open) { $parts = $l.Split("|", 2); $out.Add("- **$($parts[0])** $($parts[1])") }
+    }
+    return (($out -join "`n") + "`n")
 }

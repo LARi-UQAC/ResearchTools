@@ -294,10 +294,67 @@ class TestCheckTaskBudgetMarginAndHeaviest(unittest.TestCase):
         result = cb.check_task_budget(items, window=16384)
 
         self.assertEqual(result.total_tokens, 9150)
-        self.assertEqual(result.budget_tokens, 16384 - cb.TASK_RESPONSE_RESERVE_TOKENS)
+        self.assertEqual(result.budget_tokens, 16384 - cb.reply_reserve_tokens())
         self.assertEqual(result.margin_tokens, result.budget_tokens - 9150)
         self.assertTrue(result.compliant)
         self.assertEqual(result.heaviest.name, "b")
+
+    def test_an_explicit_reserve_replaces_the_budget_file(self):
+        items = [cb.TaskItemSize(name="a", tokens=100, source="inline text")]
+        result = cb.check_task_budget(items, window=16384, reserve=500)
+        self.assertEqual(result.budget_tokens, 16384 - 500)
+
+
+def _write_budget(d: Path, budget: dict) -> Path:
+    """Purpose: write a fictitious context-budget.json. Inputs: d (Path), budget (dict).
+    Outputs: Path of the file."""
+    path = d / "context-budget.json"
+    path.write_text(json.dumps(budget), encoding="utf-8")
+    return path
+
+
+class TestReplyReserve(unittest.TestCase):
+    """The reply reserve follows the local-coding rules (2026-11-05, Issue #104): one new
+    file at ceilings.code_file_output plus its fence, read from context-budget.json, never a
+    literal. It was a hardcoded 1024 that cut every file past about 100 lines."""
+
+    def test_reserve_is_code_file_output_plus_fence_overhead(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = _write_budget(Path(d), {"ceilings": {"code_file_output": 4000},
+                                           "reserve": {"fence_overhead_tokens": 6}})
+            self.assertEqual(cb.reply_reserve_tokens(path), 4006)
+
+    def test_shipped_budget_gives_the_shipped_sum(self):
+        shipped = json.loads(cb.DEFAULT_BUDGET_PATH.read_text(encoding="utf-8"))
+        expected = (shipped["ceilings"]["code_file_output"]
+                    + shipped["reserve"]["fence_overhead_tokens"])
+        self.assertEqual(cb.reply_reserve_tokens(), expected)
+        self.assertGreater(cb.reply_reserve_tokens(), 1024)
+
+    def test_a_missing_key_is_named_with_the_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = _write_budget(Path(d), {"ceilings": {"code_file_output": 4000}})
+            with self.assertRaises(cb.ConfigError) as ctx:
+                cb.reply_reserve_tokens(path)
+        self.assertIn("reserve.fence_overhead_tokens", str(ctx.exception))
+        self.assertIn("context-budget.json", str(ctx.exception))
+
+    def test_a_bool_zero_or_text_value_is_refused(self):
+        for bad in (True, 0, -4, "4000", 4000.5):
+            with tempfile.TemporaryDirectory() as d:
+                path = _write_budget(Path(d), {"ceilings": {"code_file_output": bad},
+                                               "reserve": {"fence_overhead_tokens": 6}})
+                with self.assertRaises(cb.ConfigError, msg=repr(bad)):
+                    cb.reply_reserve_tokens(path)
+
+    def test_a_missing_file_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(cb.ConfigError):
+                cb.reply_reserve_tokens(Path(d) / "absent.json")
+
+    def test_no_reserve_literal_is_left_in_the_module(self):
+        source = (Path(cb.__file__)).read_text(encoding="utf-8")
+        self.assertNotIn("TASK_RESPONSE_RESERVE_TOKENS = ", source)
 
 
 class TestRoleWindow(unittest.TestCase):

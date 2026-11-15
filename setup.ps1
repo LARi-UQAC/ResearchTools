@@ -26,6 +26,10 @@
                               vault event daemon is running at login and raw drops in
                               ~/.claude/obsidian-outbox/raw are consumed instead of
                               piling up)
+        -InstallAiderPath  -> the scripts folder of aider-setup of THIS clone is added to
+                              your user Path (add-only, read back). The aider commands
+                              (aider-night.bat, aider-plan.ps1) then run from any folder,
+                              straight from the clone: nothing is installed or copied.
         -InstallPython     -> .venv-skills, .venv-docs and .venv-pdf2md (always in the
                               MAIN clone, even when run from a worktree): the packages
                               the repository's skills import, those the MkDocs site
@@ -92,6 +96,7 @@ param(
     [switch]$InstallTools,
     [switch]$InstallDaemon,
     [switch]$InstallPython,
+    [switch]$InstallAiderPath,
     [string]$Python = "",
     [switch]$UpdateHooks,
     [string[]]$KeepHooks = @(),
@@ -143,6 +148,9 @@ if (-not $WorkspaceRoot) {
 # main-clone lookup, so that file is loaded first.
 . (Join-Path $WorkspaceRoot "scripts\lib\rt-venv.ps1")
 . (Join-Path $WorkspaceRoot "scripts\lib\rt-python-env.ps1")
+
+# The aider-setup PATH step, separate for the same reason: it puts this clone's scripts folder on the user Path.
+. (Join-Path $WorkspaceRoot "scripts\lib\rt-aider-path.ps1")
 
 # The two GLOBAL writers, separate for the same reason: verify-setup-writes.ps1
 # drives them against temp copies without running this script's prompts.
@@ -285,6 +293,11 @@ function Invoke-PythonEnvironment {
     Set-InstallerExit "python environments (.venv-skills, .venv-docs, .venv-pdf2md)" $code
 }
 
+function Invoke-AiderPath {
+    $code = Install-RtAiderPath -RepoRoot $WorkspaceRoot -Preview:$Preview
+    Set-InstallerExit "aider-setup on the user Path" $code
+}
+
 function Invoke-VaultEnvironment {
     # U8: nothing in this repository used to set OBSIDIAN_VAULT, yet the guard hook,
     # the flush hook, the daemon, the drill and the autostart script all read it, so
@@ -331,10 +344,10 @@ function Invoke-DaemonScript {
 $script:UpdatePlan = @()
 if ($Update) { $UpdateHooks = $true }   # -Update implies the hook update
 if ($Update) {
-    if ($InstallJunctions -or $InstallTools -or $InstallDaemon -or $InstallPython -or $All) {
+    if ($InstallJunctions -or $InstallTools -or $InstallDaemon -or $InstallPython -or $InstallAiderPath -or $All) {
         Write-Warn "-Update runs its own steps; the -Install* and -All switches are ignored."
         $InstallJunctions = $false; $InstallTools = $false; $InstallDaemon = $false
-        $InstallPython = $false; $All = $false
+        $InstallPython = $false; $InstallAiderPath = $false; $All = $false
     }
 
     Write-Header "Update: questions"
@@ -383,6 +396,7 @@ if ($InstallPython -and -not $All) {
     if ($InstallJunctions) { Invoke-JunctionsScript }
     if ($InstallTools)     { Invoke-ToolsScript }
     if ($InstallDaemon)    { Invoke-DaemonScript }
+    if ($InstallAiderPath) { Invoke-AiderPath }
     exit $script:InstallerExit
 }
 
@@ -390,18 +404,27 @@ if ($InstallJunctions -and -not $All) {
     Invoke-JunctionsScript
     if ($InstallTools)  { Invoke-ToolsScript }
     if ($InstallDaemon) { Invoke-DaemonScript }
+    if ($InstallAiderPath) { Invoke-AiderPath }
     exit $script:InstallerExit
 }
 
 if ($InstallTools -and -not $All) {
     Invoke-ToolsScript
     if ($InstallDaemon) { Invoke-DaemonScript }
+    if ($InstallAiderPath) { Invoke-AiderPath }
     exit $script:InstallerExit
 }
 
 if ($InstallDaemon -and -not $All) {
     Write-Header "Vault event daemon at login"
     Invoke-DaemonScript
+    if ($InstallAiderPath) { Invoke-AiderPath }
+    exit $script:InstallerExit
+}
+
+if ($InstallAiderPath -and -not $All) {
+    Write-Header "aider-setup on the user Path"
+    Invoke-AiderPath
     exit $script:InstallerExit
 }
 
@@ -705,6 +728,8 @@ if ($All) {
     Invoke-DaemonScript
     Write-Header "Python environment for the offline test suite"
     Invoke-PythonEnvironment
+    Write-Header "aider-setup on the user Path"
+    Invoke-AiderPath
     Write-Host ""
     if ($script:InstallerExit -ne 0) {
         # Both installers still ran: a junction conflict must not stop the mirrors from
@@ -733,6 +758,9 @@ if ($All) {
     Write-Host "     first, so run-offline-tests.ps1 reports PASSED instead of NOT RUN):"
     Write-Host "       .\setup.ps1 -InstallPython           # .venv-skills + .venv-docs + .venv-pdf2md"
     Write-Host "     Programs that are not pip packages are in the Prerequisites table of README.md."
+    Write-Host "  5. Put the aider-setup commands on your Path, to run them from any folder"
+    Write-Host "     (aider-night.bat, aider-plan.ps1), straight from this clone:"
+    Write-Host "       .\setup.ps1 -InstallAiderPath"
     Write-Host "  Or run everything in one pass next time: .\setup.ps1 -All -Personal"
     Write-Host ""
 }

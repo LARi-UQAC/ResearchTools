@@ -1,0 +1,8 @@
+# figure-review skill (Issue #104).
+#
+# PyMuPDF : figure_extract.py, figure_image.py, figure_checks.py and the fixture helper of the
+# tests (import fitz). AGPL-3.0, acceptable for local use (same note as extract-statistic).
+# Same pin as extract-statistic, paper2talk, pdf2md, word2latex.
+# Audit: pip-audit -r .claude/skills/figure-review/scripts/requirements.txt
+
+PyMuPDF==1.27.2.3

@@ -590,6 +590,17 @@ against it; otherwise it records that raw-data cross-validation was not possible
 
 ### Step 9 — Figure and table audit (all chapters)
 
+**Figure review (`figure-review` skill).** Figure checks come from `.claude/skills/figure-review/`, not
+from a list kept here: apply every criterion of `assets/figure_criteria.json` whose scope is `research` or
+`both` (`figure_checks.criteria_for_scope(doc, "research")`), each flag keeping the text printed in this
+step. A document may mix TikZ, draw.io, SVG, EPS, PDF and bitmaps: handle it figure by figure, listing each
+source and its kind with `figure_render.py --tex FILE --out DIR`. A `source` criterion is judged on the
+code, an `image` criterion on the picture. Rendering a figure a model cannot see (TikZ, draw.io, SVG, EPS,
+PDF, GIF, BMP, TIFF, WebP) to PNG is the `--render` option, off by default: the dispatch prompt or the user
+turns it on. PNG and JPEG are native and are always shown. The citation, proximity, description and caption
+checks below also apply to tables and keep their text.
+
+
 For every `\begin{figure}` and `\begin{table}` environment across all chapters:
 
 **Citation check:** Extract `\label{}`. Search merged document for `\ref{label}`, `\autoref{label}`, or `\cref{label}`. Flag `[NOT CITED]` if absent.
@@ -618,7 +629,8 @@ For every `\begin{figure}` and `\begin{table}` environment across all chapters:
 
 **UQAC numbering format:** Figures and tables must use chapter-based numbering (`Figure N-M`, `Tableau N-M` where N is the chapter number). Check that `\caption{}` text or the generated label reflects this. Flag `[FIGURE NUMBERING WRONG]` if figures are numbered sequentially across the whole thesis (1, 2, 3...) instead of by chapter.
 
-**Image resolution:** For raster images in `\includegraphics{}` (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`): attempt to check DPI using PIL if the file path resolves. Flag `[LOW RESOLUTION]` if DPI < 300. Flag `[IMAGE FILE MISSING]` if path does not resolve. Skip vector formats (`.pdf`, `.eps`, `.svg`, `.tikz`, `.pgf`).
+**Image resolution:** done by `figure-review`: criteria `low_resolution_research` (`[LOW RESOLUTION]`, DPI < 300) and
+`image_file_missing` (`[IMAGE FILE MISSING]`, the path does not resolve). Vector formats are skipped.
 
 Record in Section H of the plan.
 
@@ -746,6 +758,8 @@ Record in Section J of the plan. The IAg items go in a `### J-IAg` subsection.
 ---
 
 ### Step 12.5 — Composition and register audit (all prose chapters)
+
+**Language codes.** The flags of this step, their rule numbers and their LaTeX action are entries of the `language-review` skill table, `.claude/skills/language-review/assets/language_categories.json` (codes and examples in `.claude/skills/language-review/references/categories.md`). Print the entry `flag` text exactly, cite its `rule`, and apply its `latex_action`: `direct_fix` for an isolated spelling or punctuation fix, `\replaced` otherwise. The table is the single list of language categories, so none is restated here.
 
 Audit the prose against `composition_rules.md`. Process chapter by chapter and report a per-chapter
 count plus a thesis-wide total. Scan every prose paragraph and every `\caption{}`; exclude math

@@ -62,8 +62,8 @@ def fake_bridge(reply='{"a": "ok", "x": []}', prompt_tokens=100, window=WINDOW, 
         resolve_model=resolve_model,
         _resolve_num_ctx=_window_must_come_from_the_config,
         probe_prompt_tokens=probe,
-        build_payload=lambda prompt, model, seed, num_ctx, fmt=None: {
-            "model": model, "prompt": prompt, "format": fmt, "options": {"seed": seed, "num_ctx": num_ctx, "num_predict": 1024, "temperature": 0.2}},
+        build_payload=lambda prompt, model, seed, num_ctx, fmt=None, num_predict=None: {
+            "model": model, "prompt": prompt, "format": fmt, "options": {"seed": seed, "num_ctx": num_ctx, "num_predict": num_predict, "temperature": 0.2}},
         _post_generate=post,
         strip_reasoning=lambda text: text,
     )

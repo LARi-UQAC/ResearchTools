@@ -204,8 +204,8 @@ def run_ollama(prompt: str, model: str = "auto", temperature: float = 0.3,
         raise ReviewerError(
             f"the prompt is {prompt_tokens} tokens and the reply budget {reply}, over the {num_ctx}-token window of {tag}; "
             "ask a shorter question (refusing rather than letting Ollama truncate)")
-    payload = bridge.build_payload(prompt, tag, int(config["seed"]), num_ctx, fmt="json")
-    payload["options"]["num_predict"] = reply
+    payload = bridge.build_payload(prompt, tag, int(config["seed"]), num_ctx, fmt="json",
+                                   num_predict=reply)
     payload["options"]["temperature"] = temperature
     try:
         response = bridge._post_generate(payload, float(config["request_timeout_s"]))

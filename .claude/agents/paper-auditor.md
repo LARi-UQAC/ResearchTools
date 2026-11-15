@@ -392,6 +392,17 @@ For `[OUTDATED METHOD]`: cite the more recent Scopus paper found in Step 3 as ev
 
 ### Step 4.5 — Figure and table audit
 
+**Figure review (`figure-review` skill).** Figure checks come from `.claude/skills/figure-review/`, not
+from a list kept here: apply every criterion of `assets/figure_criteria.json` whose scope is `research` or
+`both` (`figure_checks.criteria_for_scope(doc, "research")`), each flag keeping the text printed in this
+step. A document may mix TikZ, draw.io, SVG, EPS, PDF and bitmaps: handle it figure by figure, listing each
+source and its kind with `figure_render.py --tex FILE --out DIR`. A `source` criterion is judged on the
+code, an `image` criterion on the picture. Rendering a figure a model cannot see (TikZ, draw.io, SVG, EPS,
+PDF, GIF, BMP, TIFF, WebP) to PNG is the `--render` option, off by default: the dispatch prompt or the user
+turns it on. PNG and JPEG are native and are always shown. The citation, proximity, description and caption
+checks below also apply to tables and keep their text.
+
+
 Scan the entire `.tex` file for all `\begin{figure}` and `\begin{table}` environments. For each one:
 
 **Citation check**
@@ -427,17 +438,10 @@ Extract the `\caption{...}` argument of the environment, and the `\caption{...}`
   `threeparttable`, anchors the term with `\tnote{a}`, and supplies the `tablenotes` item text in
   `\footnotesize`.
 
-**Image resolution check**
-
-For `\begin{figure}` blocks: extract the file path from `\includegraphics[...]{path}`. If the file has a raster extension (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`, `.tiff`):
-
-```python
-from PIL import Image
-img = Image.open(path)
-dpi = img.info.get("dpi", (0, 0))
-```
-
-Flag `[LOW RESOLUTION]` if DPI < 300 on either axis. If the file does not exist at the given path (relative to the `.tex` source directory), flag `[IMAGE FILE MISSING]`. Skip resolution checks for vector formats (`.pdf`, `.eps`, `.svg`, `.tikz`, `.pgf`).
+**Image resolution and missing file (figures):** done by `figure-review`: criteria `low_resolution_research`
+(`[LOW RESOLUTION]`, DPI < 300 on either axis of a raster image) and `image_file_missing`
+(`[IMAGE FILE MISSING]`, the `\includegraphics` path does not resolve relative to the `.tex` directory).
+Vector formats are skipped.
 
 Apply these flags:
 
@@ -517,6 +521,8 @@ Flag `[SUBSECTION ORDER SUSPECT: section name — subsection title]` if a subsec
 Record all findings in Section M of the plan.
 
 ### Step 4.8 — Composition and register audit
+
+**Language codes.** The flags of this step, their rule numbers and their LaTeX action are entries of the `language-review` skill table, `.claude/skills/language-review/assets/language_categories.json` (codes and examples in `.claude/skills/language-review/references/categories.md`). Print the entry `flag` text exactly, cite its `rule`, and apply its `latex_action`: `direct_fix` for an isolated spelling or punctuation fix, `\replaced` otherwise. The table is the single list of language categories, so none is restated here.
 
 Audit the prose against `composition_rules.md`. Scan every prose section (Abstract, Introduction,
 Literature review, Methodology, Results, Discussion, Conclusion, Future works) and every `\caption{}`.

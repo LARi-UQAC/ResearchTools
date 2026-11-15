@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "work-ugs-audit rubric.json",
+  "description": "Normalized rubric of one assessment. Documentation for humans: the scripts validate the same rules in code (rubric_check.py), so this file needs no schema library.",
+  "type": "object",
+  "required": ["assessment_type", "total_points", "items"],
+  "properties": {
+    "assessment_type": {"enum": ["lab_report", "project_report"]},
+    "total_points": {"type": "number", "exclusiveMinimum": 0},
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "max_points", "criteria", "checklist"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^I[0-9]{2}$"},
+          "title": {"type": "string", "minLength": 1},
+          "max_points": {"type": "number", "exclusiveMinimum": 0},
+          "criteria": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "checklist": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

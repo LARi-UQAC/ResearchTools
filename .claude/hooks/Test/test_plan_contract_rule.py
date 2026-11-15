@@ -69,8 +69,8 @@ class TestRuleIsWritten(unittest.TestCase):
 
     def test_r38_states_the_plan_before_code_requirement_and_the_five_rows(self):
         body = flat(r38(self.workflows))
-        for phrase in ("before any code", "executing-plans", "simple or standard", "large",
-                       "aider", "manual", "header"):
+        for phrase in ("before any code", "executing-plans", "aider-plan.ps1", "aider-night.ps1",
+                       "manual", "header"):
             self.assertIn(phrase, body)
 
     def test_r38_binds_every_project_and_names_both_hooks(self):
@@ -81,19 +81,21 @@ class TestRuleIsWritten(unittest.TestCase):
         self.assertIn("docs/superpowers/todo/", body)
         self.assertIn("docs/superpowers/done/", body)
 
-    def test_the_agent_is_a_plan_procedure_with_no_audit_inside(self):
+    def test_the_agent_is_a_plan_procedure_that_launches_the_driver_and_audits(self):
+        # Rewritten 2026-11-12 (Issue #104): the wrapper validates the plan, runs the kit by following the
+        # aider-setup skill, brings back only the named files and reviews them under R35.
         body = flat(self.agent)
-        for phrase in ("plan_contract.py resolve", "PLAN:", "progress.md", "- [ ]", "- [x]",
-                       "- [!]", "no audit"):
+        for phrase in ("plan_contract.py validate", "PLAN:", "progress.md", "- [ ]", "[!]",
+                       "aider-setup", "only the", "R35", "review"):
             self.assertIn(phrase, body)
+        self.assertNotIn("local_coder_driver.py", body)
 
-    def test_the_agent_passes_the_plan_to_the_bridge_so_the_log_names_it(self):
-        # Code review 2026-10-17: the bridge gained --plan for the dashboard, but the
-        # agent's own bridge command never passed it, so every record said plan null.
+    def test_the_agent_leaves_the_bridge_to_the_driver(self):
+        # Replaces the 2026-10-17 pin that the agent's own bridge command passed --plan: since
+        # R39 the agent builds no prompt and calls no bridge, the driver does.
         command = [line for line in self.agent.splitlines() if "ollama_bridge.py" in line
                    and "--prompt-file" in line]
-        self.assertEqual(len(command), 1)
-        self.assertIn("--plan", command[0])
+        self.assertEqual(command, [])
 
     def test_the_code_style_index_lists_r38(self):
         index = flat(CODE_STYLE.read_text(encoding="utf-8"))
@@ -107,7 +109,7 @@ class TestRuleIsWritten(unittest.TestCase):
 
     def test_the_routing_row_no_longer_says_do_not_dispatch_at_all(self):
         row = next(line for line in self.claude.splitlines()
-                   if line.startswith("| ") and "`local-coder` agent (haiku" in line)
+                   if line.startswith("| ") and "`local-coder` agent (Haiku)" in line)
         self.assertNotIn("do not dispatch this agent at all", row)
         self.assertNotIn("Local code generation against a spec", row)
         self.assertIn("PLAN:", row)

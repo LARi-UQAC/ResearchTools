@@ -71,6 +71,11 @@ snippet (float + the prose citation sentence to insert + variable definitions), 
 "add a citation". Run the float self-check in the rules doc before finalizing and resolve every
 `[FLOAT NON-COMPLIANT]` item.
 
+**Figure review (`figure-review` skill).** Figures of the review under audit are checked with the
+`figure-review` skill, scope `research` (`figure_checks.criteria_for_scope`), figure by figure whatever the
+source (TikZ, draw.io, SVG, EPS, PDF, bitmap). Rendering a figure a model cannot see to PNG is the
+`--render` option of `figure_render.py`, off by default: the dispatch prompt or the user turns it on.
+
 Per prose passage, non-negotiable (`composition_rules.md`):
 - Passive voice or an impersonal form by default (R1.1). Active voice only where the passive obscures
   the agent or produces an ambiguous sentence, and the reason must be defensible (R1.2).
@@ -310,6 +315,8 @@ pipeline. Feed the ranked table into Section F1 (below). Do NOT run a deliberati
 Step 6b runs the single mandatory `deliberation`.
 
 ### Step 2e — Composition and register audit
+
+**Language codes.** The flags of this step, their rule numbers and their LaTeX action are entries of the `language-review` skill table, `.claude/skills/language-review/assets/language_categories.json` (codes and examples in `.claude/skills/language-review/references/categories.md`). Print the entry `flag` text exactly, cite its `rule`, and apply its `latex_action`: `direct_fix` for an isolated spelling or punctuation fix, `\replaced` otherwise. The table is the single list of language categories, so none is restated here.
 
 Audit the review prose against `composition_rules.md`. Scan every prose paragraph and every
 `\caption{}` of the source. Exclude math environments, `verbatim` / `lstlisting` bodies, the

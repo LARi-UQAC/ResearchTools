@@ -10,6 +10,15 @@ This file is for someone following releases. For the dated, engineering-level de
 ## [Unreleased]
 
 ### Added
+- `/work-ugs-audit` command, `work-ugs-audit` agent and skill (Issue #104): grade a folder of
+  undergraduate PDF reports against a rubric with local models only, annotate each PDF and append a
+  correction annex. The agent never reads a report. Three model roles (`ugs-grader`, `ugs-auditor`,
+  `ugs-vision`) are adopted once by the owner.
+- `figure-review` skill (Issue #104): one reviewer for the figures of a PDF, a LaTeX source or a single
+  image, used by the four auditors, `/tikz` and `work-ugs-audit`. TikZ, draw.io, SVG, EPS, PDF and the
+  other bitmaps are rendered to PNG only with the `--render` option (off by default); a source using a
+  file or shell primitive is refused before any compile. `language-review` keeps the language correction
+  codes in one table for the research auditors and the report grading.
 - `finish-branch` skill and `/finish-branch` command (Issue #102): one ordered end of a branch.
   Before the pull request it regenerates the mirrors and runs `run-all-checks.ps1`. After the
   merge ("clean the project"), `finish-branch.ps1 -Refresh` cleans the branch, then runs

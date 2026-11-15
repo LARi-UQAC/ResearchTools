@@ -1,0 +1,83 @@
+{
+  "annotation.colors": {
+    "value": {
+      "technical": "#0072B2",
+      "figure": "#E69F00",
+      "language": "#009E73",
+      "reference": "#CC79A7"
+    },
+    "provenance": "starting value, adjustable by the professor (Okabe-Ito hues, one per annotation kind)"
+  },
+  "references.url_timeout_s": {
+    "value": 10,
+    "provenance": "starting value, adjustable by the professor (seconds per URL reachability check)"
+  },
+  "references.max_retries": {
+    "value": 1,
+    "provenance": "starting value, adjustable by the professor (retries of a reachability check)"
+  },
+  "references.max_redirects": {
+    "value": 3,
+    "provenance": "starting value, adjustable by the professor (redirects followed while checking one URL)"
+  },
+  "reports.id_prefix": {
+    "value": "R",
+    "provenance": "specified by the design of the working folder (report ids look like R01)"
+  },
+  "reports.id_digits": {
+    "value": 2,
+    "provenance": "specified by the design of the working folder (R01 to R99 in a batch)"
+  },
+  "reports.page_digits": {
+    "value": 3,
+    "provenance": "specified by the design of the working folder (page files look like p001)"
+  },
+  "batch.outlier_z": {
+    "value": 2.0,
+    "provenance": "chosen by the professor (a grade whose |z| exceeds this value is an outlier)"
+  },
+  "driver.audit_retries": {
+    "value": 1,
+    "provenance": "starting value, adjustable by the professor (re-asks of the auditor role after a refusal)"
+  },
+  "driver.request_timeout_s": {
+    "value": 600,
+    "provenance": "starting value, adjustable by the professor (seconds per bridge call, a local model is slow)"
+  },
+  "roles.grader": {
+    "value": "ugs-grader",
+    "provenance": "model role name, read from the configuration; the model behind the name is chosen by the professor"
+  },
+  "roles.auditor": {
+    "value": "ugs-auditor",
+    "provenance": "model role name, read from the configuration; the model behind the name is chosen by the professor"
+  },
+  "roles.vision": {
+    "value": "ugs-vision",
+    "provenance": "model role name, read from the configuration; the model behind the name is chosen by the professor"
+  },
+  "driver.reply_reserve_tokens": {
+    "value": 4096,
+    "provenance": "starting value, adjustable by the professor (tokens held for one JSON answer: a normalized rubric of about a dozen items is the largest)"
+  },
+  "driver.max_image_bytes": {
+    "value": 4194304,
+    "provenance": "starting value, adjustable by the professor (bytes, largest image file attached to one request)"
+  },
+  "driver.image_tokens_fallback": {
+    "value": 3136,
+    "provenance": "computed: ceil(1568/28) * ceil(1568/28) patches for the largest allowed image, used until vision_probe has measured the local model"
+  },
+  "grade.invalid_answer_retries": {
+    "value": 1,
+    "provenance": "starting value, adjustable by the professor (repeats of a grader call after a refused answer)"
+  },
+  "select.min_word_len": {
+    "value": 4,
+    "provenance": "starting value, adjustable by the professor (letters; shorter words are ignored when matching a rubric item to page headings)"
+  },
+  "references.quote_chars": {
+    "value": 60,
+    "provenance": "starting value, adjustable by the professor (characters of a reference entry used to anchor its annotation)"
+  }
+}

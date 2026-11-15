@@ -1,0 +1,68 @@
+{
+  "pollSeconds": {
+    "value": 30,
+    "provenance": "initial value, adjust after measuring"
+  },
+  "negligibleReferencePercent": {
+    "value": 10,
+    "provenance": "measured 2026-11-10: with 88% of the model on the CPU the GPU median is 8% for the reviewer model; a dimension below this share is not the one doing the work"
+  },
+  "lowReadings": {
+    "value": 6,
+    "provenance": "initial value, adjust after measuring"
+  },
+  "watchedStates": {
+    "value": [
+      "writing",
+      "auditing"
+    ],
+    "provenance": "fixed list"
+  },
+  "terminalStates": {
+    "value": [
+      "done",
+      "done_with_blocked",
+      "failed"
+    ],
+    "provenance": "fixed list"
+  },
+  "modelServerNames": {
+    "value": [
+      "ollama",
+      "llama-server"
+    ],
+    "provenance": "fixed list"
+  },
+  "ollamaURL": {
+    "value": "http://127.0.0.1:11434",
+    "provenance": "fixed list"
+  },
+  "callTimeoutSeconds": {
+    "value": 30,
+    "provenance": "initial value, adjust after measuring"
+  },
+  "sampleSeconds": {
+    "value": 2,
+    "provenance": "author's choice, unmeasured: the sampling interval of the reference command"
+  },
+  "prompt": {
+    "value": "Write one paragraph of about two hundred words describing how a lighthouse keeper spends a stormy night.",
+    "provenance": "author's choice: a fixed request that makes the model decode steadily"
+  },
+  "numPredict": {
+    "value": 256,
+    "provenance": "author's choice, unmeasured: tokens generated during the measurement"
+  },
+  "warmupNumPredict": {
+    "value": 8,
+    "provenance": "author's choice, unmeasured: tokens generated to load the model before measuring"
+  },
+  "generationTimeoutSeconds": {
+    "value": 600,
+    "provenance": "author's choice, unmeasured: upper bound of one measured generation"
+  },
+  "maxConsecutiveFailures": {
+    "value": 10,
+    "provenance": "author's choice, unmeasured: failed tours in a row (10 at 30 s is 5 minutes) before the watch gives up; added 2026-11-13 after one failed call ended it silently in night un5b"
+  }
+}

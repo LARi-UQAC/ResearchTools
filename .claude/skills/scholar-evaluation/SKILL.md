@@ -184,6 +184,13 @@ Search patterns for quick access:
 - "Analysis rigor standards"
 - "Writing quality checklist"
 
+### references/undergraduate_framework.md
+
+Anchored levels for undergraduate lab and project reports (absent 0, attempted 0.5, partial 0.75, complete
+and correct 0.88, exemplary 1.0), with the statuses `rated`, `not_applicable` and `not_run`. Used by the
+`work-ugs-audit` skill. For undergraduate work load this file instead of `evaluation_framework.md`; the
+research framework is unchanged.
+
 ### scripts/calculate_scores.py
 
 Python script for calculating aggregate evaluation scores from dimension-level ratings. Supports weighted averaging, threshold analysis, and score visualization.

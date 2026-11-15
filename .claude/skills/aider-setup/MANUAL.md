@@ -64,7 +64,7 @@ flowchart TD
         LA0["progress.md ← '- [!] audit - the reviewer wrote<br/>no report, so this plan is NOT audited'"]
         P7{"Did the audit reopen the plan?<br/>one '- [ ] audit: &lt;what to fix&gt;'<br/>per finding that must be closed"}
         P8["Round 2: fix what the audit listed"]
-        LA2["progress.md ← '- [!] audit - findings still open<br/>after 2 round(s), stopped by the round limit'"]
+        LA2["progress.md ← '- [!] audit - findings still open<br/>after 3 round(s), stopped by the round limit'"]
         P9{"Section has no '- [ ]' and no '- [!]' left?"}
         PA["Archive planN.md to todo/<br/>this is the ONLY thing that archives a plan"]
         PF["The plan is blocked. Every mark above is already<br/>in progress.md, so nothing else is written here"]
@@ -111,7 +111,10 @@ A run with a blocked plan exits non-zero, so a zero exit means every plan
 finished.
 
 **A plan is archived only when its ledger section has no open line left**, `- [ ]`
-or `- [!]`. Nothing is filed as finished that is not.
+or `- [!]`. Nothing is filed as finished that is not. A line `- [~]` means a step done
+in part, with one line saying what is left: it does not stop the plan or hold it back, the
+quality score measures the share of the plan that was met, and `progress.md` itself stays in
+place while any `- [~]` remains.
 
 **The window is dropped between plans.** Whatever plan 4 needs to know must be in
 `spec.md`, in `progress.md`, or in code already on disk.
@@ -320,7 +323,7 @@ believes, and that figure must match the one you tuned to:
 
 ```powershell
 cd "$HOME\projects\my-project"
-aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 If the printed window is the model's native maximum rather than your tuned
@@ -498,6 +501,90 @@ copy here.
 **A step that names no file cannot be executed**, because the driver hands over
 exactly the files a plan names as editable and nothing else.
 
+**A file the plan only reads goes in its own paragraph**, which starts with the words
+`**Reads, do not modify:**` and ends at the next blank line. The files named there are given to the
+model read-only, and only if they exist. Without the paragraph they would be editable, and a plan
+would be free to rewrite a shared test fixture or the module of the plan before it.
+
+### Clean the three documents before the run
+
+The writer is a local model that sees only the project: `spec.md`, the plan being
+run, `progress.md`, the files that plan names, and this kit's own coding rules. It
+cannot see anything else, and it takes every sentence you write as a fact about its
+own world. Read each document once as the model will, and remove what it cannot use:
+
+- **Numbers that point elsewhere**: rule, decision or ticket numbers. The kit's rules
+  are already given to the model, so do not cite them, and never paste the rules of
+  another project.
+- **People, roles and other tools**: "the owner", "the cloud", "the session", an
+  assistant, a ticket, and any sentence about who installs, decides or reviews
+  something. A model that reads "the cloud installs it" starts to think it runs in a
+  cloud.
+- **Dates and stories**: "measured on...", "proposal...", why a value was chosen.
+- **Where a document came from**, above all at the top of `spec.md`: "condensed from <another
+  document>", "approved by the owner on <date>", the branch or the worktree it belongs to, a path
+  outside the project. A spec says what to build and says nothing about itself: the model reads
+  its first lines as part of the job.
+- **Other plans, other projects, files that are not in this project**, unless the
+  plan lists them as files to read and they exist.
+- **A header written for another program** (front matter with an executor, a tier,
+  bounds). The driver skips a front matter block when it looks for file names, but
+  the model reads the whole file and sees it: mount the plan without it.
+- **A bare file name** (`main.go`, `settings.json`). The driver reads it as a new
+  file at the root of the project and creates it empty. Write the path from the
+  project root in the list of files, and describe the file elsewhere ("the settings
+  file").
+
+Keep: for each file its path and what it holds, the signatures and types, the name
+and the meaning of each test, the exact values, the command that runs in the
+project, and in `spec.md` the language and the conventions. A quick check that
+catches the usual leftovers; every hit is rewritten or deleted:
+
+```powershell
+Select-String -Path docs\superpowers\plans\*.md -Pattern '\bR[0-9]+\b','owner','cloud','session','ticket','proposal','approved','condensed','worktree','branch','docs/superpowers','[0-9]{4}-[0-9]{2}-[0-9]{2}'
+```
+
+`plan_clean.py` (installed beside the driver, with its rules in `plan-clean.json`) does the mechanical part of this cleaning
+(data, extend it rather than the script). Run it on the MOUNTED project, never on the source plans: it
+removes a front matter header, rule and decision numbers in parentheses, "run by the local coder model"
+and the decision numbers of the `**Spec:**` line, and it lists every line it could not fix. It is a dry run
+until `--write`, and exits 1 while a hit is left for you to rewrite by hand:
+
+```powershell
+python plan_clean.py my-project\docs\superpowers\plans            # list what it would change and what is left
+python plan_clean.py my-project\docs\superpowers\plans --write    # apply, then fix the hits by hand
+```
+
+The dry run also tells you when a plan is too big: "this plan creates N new files ...
+Split the plan" means the reply cannot hold them, and a cut reply leaves the files
+empty. Split the plan before the night, not after.
+
+### Writing in Go or Rust instead of Python
+
+The language is chosen in `spec.md`, and the kit needs nothing more than a test
+command, because that command compiles first: a compile error comes back to the
+model exactly like a failing test, inside aider's fix attempts (three per run).
+
+| | Python (default) | Go | Rust |
+|---|---|---|---|
+| Test command | `.\.venv\Scripts\python.exe -m unittest discover -s Test` | `go test -C <module folder> ./...` | `cargo test --manifest-path <crate>/Cargo.toml` |
+| Test file of a source | `Test/test_<name>.py` | `<name>_test.go` beside the source | `<crate>/tests/<name>.rs` |
+| Project file a plan may name | `requirements.txt` | none: `go.mod` is not recognised (extension `.mod`) | `Cargo.toml` |
+
+- Give the command with `-TestCommand` (or `AIDER_TEST_COMMAND` for the night). If
+  the toolchain is not on `PATH`, write its full path in the command.
+- **Go**: create `go.mod` yourself before the run (a module line and the Go
+  version) and list it among the files the plan only reads.
+- **Rust**: integration tests in `tests/` see only a library, so put the logic in
+  `src/lib.rs` and its modules and keep `src/main.rs` to a few lines. A `lib.rs`
+  that only declares modules needs no test of its own; every module file does. The
+  crate's `Cargo.toml` is created by the model when the plan names it, or by you
+  with `cargo init` before the run. Prefer the standard library: a first build
+  downloads every crate the plan adds.
+- The kit does not install a toolchain. A user-level install needs no
+  administrator rights. A compiled language may need more than three attempts to
+  reach a clean build, so keep each plan small, a few files.
+
 **To take the worked example instead**, which is the fastest way to see a night
 run end to end. One uninterrupted sequence, from nothing to a dry run:
 
@@ -515,7 +602,7 @@ Remove-Item "$HOME\projects\robot-planner\docs\superpowers\plans\README.md"
 
 # 4. dry-run first, then drop -DryRun to run the night
 cd "$HOME\projects\robot-planner"
-aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 **Step 2 is not optional.** `new-project.ps1` creates an EMPTY `.venv`, and
@@ -541,7 +628,7 @@ unparseable budget or an over-budget file in seconds:
 ```powershell
 cd "$HOME\projects\my-project"
 aider-plan.ps1 -DryRun `
-  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 **Then the real run.** It takes hours, so run it detached: it survives closing the
@@ -554,7 +641,7 @@ it is still going.
   -Project     "$HOME\projects\my-project" `
   -LogFile     "$env:TEMP\my-project-run.log" `
   -RcFile      "$env:TEMP\my-project-run.rc" `
-  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+  -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 Read the log as UTF-16, which is how it is written:
@@ -567,11 +654,62 @@ To watch it instead, run it in the foreground and capture the exit code on the
 **very next line** — any other command overwrites `$LASTEXITCODE`:
 
 ```powershell
-aider-plan.ps1 -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 $rc = $LASTEXITCODE; "DRIVER EXIT = $rc"
 ```
 
-`aider-night.bat <project>` is the same thing with the per-stage skills wired in.
+`aider-night.bat <project>` is the same thing. The per-stage skills are **mandatory**
+(owner decision 2026-11-07): `aider-plan.ps1`, the night and a single-plan run all load
+them, there is no `-Skills` or `-NoSkills` switch, and a missing `skills.json` is a refusal.
+
+### Protect the run with the watchdog
+
+A run can stall without stopping: the writer's own code loops, the model server goes idle
+and the driver waits for ever. One plan looped for six hours this way. The watchdog is a small
+program (Go, standard library only) that the driver starts beside itself and stops when the
+run ends. At each poll it compares the model server's CPU and GPU load with what the same
+model measured while it was working. When the load stays under that measured minimum for
+`lowReadings` readings in a row, it stops the driver's child process, writes ONE line to
+`watchdog.log` in the plans' `.logs` folder (time, event, model, CPU, GPU, plan), and the driver
+moves to the next plan without touching `progress.md`. It only judges the `writing` and
+`auditing` states, never the test phase, and never a model that has no measurement or that runs
+with another context window.
+
+It is optional. Without it the driver prints `WARNING: watchdog not started` and the run goes
+on unprotected. To install it, once per machine:
+
+1. Install Go 1.22 or later (`winget install GoLang.Go`), then open a new terminal.
+2. Build it from the kit's `watchdog` folder, test it and put it beside the driver:
+
+```powershell
+cd "$HOME\aider-kit\watchdog"
+go test ./...
+go build -o aider-watchdog.exe .
+Copy-Item aider-watchdog.exe, aider-watchdog.json "$HOME\.local\bin\"
+```
+
+3. Measure each model you run, the writer and the reviewer, with nothing else using the CPU
+   or the GPU. The program loads the model, makes it generate a fixed paragraph and records
+   the load it saw. Give the tag exactly as `ollama ps` prints it, `:latest` included, and
+   measure again whenever you change a tag or its `num_ctx` (step 4):
+
+```powershell
+$ref = "$HOME\.config\aider\model-reference.json"
+aider-watchdog.exe reference --tag "<tag as ollama ps prints it>" `
+  --settings "$HOME\.local\bin\aider-watchdog.json" --reference $ref
+```
+
+4. Tell the driver where the measurements are, then open a new terminal:
+
+```powershell
+[Environment]::SetEnvironmentVariable("AIDER_MODEL_REFERENCE", $ref, "User")
+```
+
+The next run prints `watchdog started (pid N)`. The settings are in `aider-watchdog.json`, each
+with its provenance. `lowReadings` and `pollSeconds` are not measured, so adjust them if a
+healthy run is stopped or a stall lasts too long. `negligibleReferencePercent` is the share
+under which a dimension is ignored: with most of a model on the CPU its GPU load is a few
+percent and says nothing about progress.
 
 **What it refuses before starting anything**: running on battery, being on `main`
 or `master`, no config file, a model that is not local, tests required with no
@@ -615,6 +753,44 @@ prompt reached the model damaged, not that the model is confused.
 `- [!]` lines in `progress.md` are where a plan stopped, and why. A non-zero exit
 means at least one plan was blocked; every other plan still ran.
 
+When a plan blocked, the run also writes `docs\superpowers\plans\blocks.md`. For each blocked plan it
+gives the `[!]` line, whether the model hit a token limit (with the input, output and total counts),
+whether aider used its three fix attempts, the tokens of every request, the names of the failing tests
+and the end of the last test output. Read it first: it tells you which of the three things below
+happened, without opening ten logs.
+
+**`quality.md` says how much of each plan was delivered.** After the audit, the
+reviewer model reads each plan together with the code written for it, archived or blocked, lists the
+requirements the plan states and judges each one: fully met, partly met or missing. The driver does the
+arithmetic (full counts 1, partial 0.5, missing 0) and writes one percentage per plan, then the
+requirements that are not fully met. The score is 80 percent that judgement plus 20 percent the share of
+the plan's own test files that pass, because the reviewer reads code and never runs it: it scored 100 percent
+a module whose central call raised a TypeError. Reviewer 100 and 25 of 26 tests passing gives 99. The driver
+runs each test file the plan names, one at a time, with the Python interpreter that starts the test command;
+with any other test command the tests are shown as "not measured" and the score is the reviewer's alone.
+A plan at 80 percent with failing tests is code to finish, not code to rewrite. A plan whose
+reviewer wrote no usable line is shown as "not scored", never as 0. To score the code a previous run left
+behind, without running any plan, use `aider-plan.ps1 -QualityOnly` on the project.
+
+Three things block a plan, and each points at a different cure:
+
+| What `blocks.md` says | What happened | What to change |
+|---|---|---|
+| Output close to the reply limit | The reply was cut, so none of its edits was applied. Either the model wrote its reasoning into comments, or the plan needs many edits (each changed call site is one edit block). | Split the plan, or reduce the number of places it changes. Do not raise the limit: a longer reply is only a longer failure. |
+| Input close to the window | The conversation grew with each fix attempt (the previous reply and the test output are sent again). | Make the plan produce less per reply, so three attempts fit. |
+| Fix attempts used, tests failing | The model could not make the tests pass in three tries. | Read the failing tests: a test that contradicts the plan is a plan defect. |
+
+aider opens `https://aider.chat/docs/troubleshooting/token-limits.html` in your browser each time a
+request hits the reply limit or fills the window, because the run uses `--yes`. The page is a signal
+that one of the first two rows happened, not a malfunction of the browser: look for it in `blocks.md`.
+
+Every log of a run is UTF-8 with a byte order mark since 2026-11-12, and opens correctly in any editor.
+Logs written by an older driver are UTF-16 (`Get-Content -Encoding Unicode` reads them).
+
+The driver also passes `--no-detect-urls` to aider. Without it aider scrapes every URL it finds in a
+message, plan text included, with a browser before it calls the model: a plan about network addresses
+made it try to open `169.254.1.1`, and the model never loaded.
+
 The pipeline has no path to a merge. That is deliberate — see the last section.
 
 ---
@@ -630,8 +806,13 @@ each carries a comment saying where its number came from.
 
 **The driver prints the whole budget, against your files, at the top of every run
 including a dry run. Read that rather than any number written down here.** That
-is the one rule keeping this manual from going stale, and it is the same rule the
-kit applies to `rules.md`.
+is the one rule keeping this manual from going stale.
+
+**Every file the model reads obeys its ceiling, and the driver checks it before the first call.** A file over
+its ceiling is flagged `OVER`. `rules.md` is checked one rule at a time as well: it is written by hand and is the
+only copy of the rules, so you edit it in place, a rule opens a line as a bolded `**Rn - statement.**`, the
+numbers run from R0 without a gap, and each rule stays under `ceilings.rule_body_tokens`. A rule numbered twice,
+a gap in the numbers or a rule over the cap refuses the run and names the rule. Nothing shortens a rule for you.
 
 Two things are worth understanding before changing any ceiling:
 
@@ -751,7 +932,7 @@ somebody's guess, and next month nobody will know which.
 **4.** Run it with `-Round`:
 
 ```powershell
-aider-plan.ps1 -Round round1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"'
+aider-plan.ps1 -Round round1 -DryRun -TestCommand '.\.venv\Scripts\python.exe -m unittest discover -s Test -p "test_*.py"'
 ```
 
 Everything follows the round: its own `todo\`, its own `.logs\`, its own audit.

@@ -306,6 +306,61 @@ class FlowTests(unittest.TestCase):
             self.assertIn("prompt-submit", inbox["reason"])
 
 
+class RecycledPidTests(unittest.TestCase):
+    """A record whose pid now belongs to a stranger is a run that ended (2026-11-10).
+
+    Windows reuses a dead process's number, so a record from days ago read as
+    live whenever some unrelated process held its pid, and as ended again when
+    that process exited. The writer began before its last record, so a process
+    that began after `updated` cannot be the writer."""
+
+    def setUp(self):
+        if sys.platform != "win32":
+            self.skipTest("process start times are read through kernel32")
+        self.pid = os.getpid()
+
+    def began(self):
+        return aider._process_start_windows(self.pid)
+
+    def stamp(self, moment):
+        return moment.isoformat(timespec="seconds")
+
+    def test_the_start_of_a_running_process_is_readable(self):
+        self.assertIsNotNone(self.began())
+
+    def test_a_process_that_began_before_the_last_write_is_the_run(self):
+        later = self.began() + datetime.timedelta(minutes=5)
+        self.assertTrue(aider._alive(self.pid, self.stamp(later)))
+
+    def test_a_process_that_began_after_the_last_write_is_a_stranger(self):
+        earlier = self.began() - datetime.timedelta(days=3)
+        self.assertFalse(aider._alive(self.pid, self.stamp(earlier)))
+
+    def test_a_missing_or_malformed_last_write_keeps_the_plain_answer(self):
+        self.assertTrue(aider._alive(self.pid))
+        self.assertTrue(aider._alive(self.pid, "not a time"))
+
+    def test_a_pid_that_does_not_exist_is_gone_whatever_the_time(self):
+        self.assertFalse(aider._alive(2 ** 22 - 4, "2026-11-10T00:00:00"))
+
+    def test_the_collector_passes_the_record_update_time(self):
+        seen = []
+        original = aider._alive
+        aider._alive = lambda pid, last_write=None: seen.append(last_write) or False
+        try:
+            home = Path(tempfile.mkdtemp())
+            runs = home / ".aider-plan" / "runs"
+            runs.mkdir(parents=True)
+            record = {"schema": "aider-plan/run-record/1", "run_id": "r1", "pid": 4,
+                      "project": str(home), "state": "writing",
+                      "started": "2026-11-07T10:30:11", "updated": "2026-11-07T10:30:35"}
+            (runs / "r1.json").write_text(json.dumps(record), encoding="utf-8")
+            aider.collect(Context(home, NOW))
+        finally:
+            aider._alive = original
+        self.assertEqual(["2026-11-07T10:30:35"], seen)
+
+
 class ContractTests(unittest.TestCase):
     """The adapter must be droppable in with no core edit."""
 

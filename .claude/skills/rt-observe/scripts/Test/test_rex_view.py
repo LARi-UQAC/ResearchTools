@@ -180,10 +180,24 @@ class RexPage(unittest.TestCase):
         got = self.local_model(state)
         self.assertEqual(["uwd"], [t["name"] for t in got["targets"]])
 
-    def test_a_name_in_the_rex_list_without_a_local_row_still_gets_a_target(self):
-        got = self.local_model(self.local_state(["ugs-grader"], {}))
-        self.assertEqual(["ugs-grader"], [t["name"] for t in got["targets"]])
-        self.assertEqual("", got["targets"][0]["ctx"])
+    def test_a_name_in_the_rex_list_with_no_generating_row_is_no_target_but_rex_stays_awake(self):
+        """The target must have a lane the graph can draw, so it needs the local_calls row too."""
+        for rows in ({}, {"ugs-grader": dict(self.ROW, generating=False)}):
+            got = self.local_model(self.local_state(["ugs-grader"], rows))
+            self.assertTrue(got["awake"])
+            self.assertEqual([], got["targets"])
+
+    def test_the_mood_memory_starts_again_when_he_turns_to_another_local_role(self):
+        rows = {"ugs-grader": self.ROW, "ugs-auditor": self.ROW}
+        got = self.local_model(self.local_state(["ugs-grader", "ugs-auditor"], rows))
+        self.assertEqual(2, len(got["targets"]))
+        script = ("(function () { var h = {cpu: [], vram: [], cuda: [], at: '', mode: ''};"
+                  "var base = %s;"
+                  "function at(i, stamp) { var m = Object.assign({}, base, {index: i,"
+                  " loads: {proven_at: stamp, cpu_percent: 50, vram_percent: 50, cuda_percent: 50}});"
+                  " rexRemember(m, {level: 'calm'}, h); }"
+                  "at(0, 't1'); at(0, 't2'); at(1, 't3'); return h.cpu.length; })()" % json.dumps(got))
+        self.assertEqual(1, self.js(script))
 
     # -- the figure ----------------------------------------------------------
     def fig(self, model, focus=None):

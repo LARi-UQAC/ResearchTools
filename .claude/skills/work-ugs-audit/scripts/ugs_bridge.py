@@ -15,10 +15,6 @@ from bridge_images import ImageError, attach_images
 
 logger = logging.getLogger(__name__)
 
-# Characters of an error text kept in a `failed` log record. Chosen 2026-11-15 to match the cut of
-# ollama_bridge.py's own `failed` record (300), so one reader (collect_local.py) sees both alike.
-_ERROR_LOG_CHARS = 300
-
 
 class NotRun(RuntimeError):
     """Raised when a model call cannot be completed."""
@@ -41,7 +37,8 @@ def _now_iso() -> str:
 def _write_log(deps: Any, record: Dict[str, Any]) -> None:
     """
     Purpose: Hand one bridge log record to the deps object when it can write one.
-    Details: The log only feeds the dashboard, so a disk error is reported and the call goes on.
+    Details: The log only feeds the dashboard, so any failure of the writer is reported on the logger and the
+        call goes on.
         A deps object without a callable `log` writes nothing, which keeps every test fake working.
     Inputs:
         deps: the deps object of the call.
@@ -53,8 +50,8 @@ def _write_log(deps: Any, record: Dict[str, Any]) -> None:
         return
     try:
         write(record)
-    except OSError as exc:
-        logger.warning("[UGS-BRIDGE] bridge log not written: %s", exc)
+    except Exception as exc:  # noqa: BLE001 - best effort by design, and reported
+        logger.warning("[UGS-BRIDGE] bridge log not written: %s: %s", exc.__class__.__name__, exc)
 
 
 def validate_answer(answer: Any, schema: Dict[str, Any]) -> List[str]:
@@ -250,71 +247,84 @@ def call_with_usage(
             raise
         raise NotRun("unreachable", f"Failed to resolve window: {e}")
 
-    try:
-        prompt_tokens = deps.count(prompt, tag, window)
-    except Exception as e:
-        if isinstance(e, NotRun):
-            raise
-        raise NotRun("unreachable", f"Failed to count tokens: {e}")
-    
-    total_image_tokens = 0
-    if images:
-        total_image_tokens = len(images) * image_tokens
-    
-    if prompt_tokens + reserve + total_image_tokens > window:
-        raise NotRun("over_budget", f"Prompt ({prompt_tokens}) + reserve ({reserve}) + images ({total_image_tokens}) exceeds window ({window})")
-
-    try:
-        payload = deps.payload(prompt, tag, window, schema, reserve)
-    except Exception as e:
-        if isinstance(e, NotRun):
-            raise
-        raise NotRun("unreachable", f"Failed to build payload: {e}")
-
-    if images:
-        # bridge_images.attach_images expects List[Path]
-        paths = [Path(img) for img in images]
-        try:
-            payload = attach_images(payload, paths, max_image_bytes)
-        except ImageError as e:
-            raise NotRun("image", f"Image attachment failed: {e}")
-
+    # The start record comes BEFORE the token count: the count is a full prefill of the prompt and can
+    # take minutes on this machine, and the model is busy for all of it (Issue 118, review round 1).
     _write_log(deps, {"event": "start", "at": _now_iso(), "role": role, "tag": tag,
-                      "num_ctx": window, "plan": None, "attempt": 1})
+                      "num_ctx": window, "plan": None})
     try:
-        reply = deps.post(payload, timeout)
-    except Exception as e:
+        try:
+            prompt_tokens = deps.count(prompt, tag, window)
+        except Exception as e:
+            if isinstance(e, NotRun):
+                raise
+            raise NotRun("unreachable", f"Failed to count tokens: {e}")
+
+        total_image_tokens = 0
+        if images:
+            total_image_tokens = len(images) * image_tokens
+
+        if prompt_tokens + reserve + total_image_tokens > window:
+            raise NotRun("over_budget", f"Prompt ({prompt_tokens}) + reserve ({reserve}) + images ({total_image_tokens}) exceeds window ({window})")
+
+        try:
+            payload = deps.payload(prompt, tag, window, schema, reserve)
+        except Exception as e:
+            if isinstance(e, NotRun):
+                raise
+            raise NotRun("unreachable", f"Failed to build payload: {e}")
+
+        if images:
+            # bridge_images.attach_images expects List[Path]
+            paths = [Path(img) for img in images]
+            try:
+                payload = attach_images(payload, paths, max_image_bytes)
+            except ImageError as e:
+                raise NotRun("image", f"Image attachment failed: {e}")
+
+        try:
+            reply = deps.post(payload, timeout)
+        except Exception as e:
+            if isinstance(e, NotRun):
+                raise
+            raise NotRun("unreachable", f"Post failed: {e}")
+    except Exception as exc:
+        # Close the start record. Only the kind or the class name is logged: an error text can quote
+        # the request or the reply, and the log is plain text that other tools read (confidential reports).
         _write_log(deps, {"event": "failed", "at": _now_iso(), "role": role, "tag": tag,
-                          "attempt": 1, "error": str(e)[:_ERROR_LOG_CHARS]})
-        if isinstance(e, NotRun):
-            raise
-        raise NotRun("unreachable", f"Post failed: {e}")
-    _write_log(deps, {"at": _now_iso(), "role": role, "tag": tag, "num_ctx": window,
-                      "prompt_tokens": reply.get("prompt_eval_count"),
-                      "completion_tokens": reply.get("eval_count"),
-                      "plan": None, "attempt": 1, "accepted": True})
+                          "error": exc.kind if isinstance(exc, NotRun) else exc.__class__.__name__})
+        raise
 
-    response_text = reply.get("response", "")
+    accepted = False
     try:
-        stripped_text = strip_reasoning(response_text)
-    except ReasoningAnomalyError:
-        # an unterminated or orphan reasoning marker: one bad reply costs a retry, never the report
-        raise NotRun("unparsable", "Reasoning markers could not be resolved") from None
-    
-    # If the text is still wrapped in code fences, unwrap it
-    if stripped_text.startswith("```"):
-        stripped_text = unwrap_sole_code_fence(stripped_text)
-        
-    try:
-        answer = json.loads(stripped_text)
-    except json.JSONDecodeError as e:
-        raise NotRun("unparsable", f"Failed to parse JSON: {e}")
+        response_text = reply.get("response", "")
+        try:
+            stripped_text = strip_reasoning(response_text)
+        except ReasoningAnomalyError:
+            # an unterminated or orphan reasoning marker: one bad reply costs a retry, never the report
+            raise NotRun("unparsable", "Reasoning markers could not be resolved") from None
 
-    errors = validate_answer(answer, schema)
-    if errors:
-        # Reason holds first three errors, no reply text
-        reason = "; ".join(errors[:3])
-        raise NotRun("invalid", reason)
+        # If the text is still wrapped in code fences, unwrap it
+        if stripped_text.startswith("```"):
+            stripped_text = unwrap_sole_code_fence(stripped_text)
+
+        try:
+            answer = json.loads(stripped_text)
+        except json.JSONDecodeError as e:
+            raise NotRun("unparsable", f"Failed to parse JSON: {e}")
+
+        errors = validate_answer(answer, schema)
+        if errors:
+            # Reason holds first three errors, no reply text
+            reason = "; ".join(errors[:3])
+            raise NotRun("invalid", reason)
+        accepted = True
+    finally:
+        # The model did answer, so the tokens are real even when the answer is refused; `accepted` says
+        # whether it was used.
+        _write_log(deps, {"at": _now_iso(), "role": role, "tag": tag, "num_ctx": window,
+                          "prompt_tokens": reply.get("prompt_eval_count"),
+                          "completion_tokens": reply.get("eval_count"),
+                          "plan": None, "accepted": accepted})
 
     usage = {
         "prompt_tokens": reply.get("prompt_eval_count"),

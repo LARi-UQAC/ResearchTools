@@ -452,12 +452,55 @@ class TestBridgeLog(unittest.TestCase):
         self.assertIsNone(attempt["completion_tokens"])
 
     def test_a_failing_post_writes_start_then_failed_and_still_raises(self):
-        deps = LoggingDeps(post_error=Exception("connection refused " + "x" * 400))
+        deps = LoggingDeps(post_error=Exception("connection refused SECRET-REPORT-TEXT"))
         with self.assertRaises(ugs_bridge.NotRun) as ctx:
             _call(deps)
         self.assertEqual(ctx.exception.kind, "unreachable")
         self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
-        self.assertLessEqual(len(deps.records[1]["error"]), 300)
+        self.assertEqual(deps.records[1]["error"], "unreachable")
+
+    def test_the_log_never_carries_an_error_text(self):
+        deps = LoggingDeps(post_error=Exception("SECRET-REPORT-TEXT"))
+        with self.assertRaises(ugs_bridge.NotRun):
+            _call(deps)
+        self.assertNotIn("SECRET-REPORT-TEXT", json.dumps(deps.records))
+
+    def test_the_start_record_comes_before_the_token_count(self):
+        order = []
+
+        class Ordered(LoggingDeps):
+            def count(self, prompt, tag, window):
+                order.append(("count", [r.get("event") for r in self.records]))
+                return super().count(prompt, tag, window)
+
+        deps = Ordered(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        _call(deps)
+        self.assertEqual(order, [("count", ["start"])])
+
+    def test_a_count_that_fails_closes_the_start_record(self):
+        deps = LoggingDeps(count_error=Exception("timed out"))
+        with self.assertRaises(ugs_bridge.NotRun):
+            _call(deps)
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+
+    def test_an_over_budget_prompt_closes_the_start_record_and_is_never_posted(self):
+        deps = LoggingDeps(count=900, window=1000)
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            ugs_bridge.call(role="ugs-grader", prompt="test", schema=_SCHEMA_A, deps=deps, timeout=1,
+                            reserve=500, image_tokens=0, max_image_bytes=100)
+        self.assertEqual(ctx.exception.kind, "over_budget")
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+        self.assertEqual(deps.records[1]["error"], "over_budget")
+        self.assertNotIn("post", [c[0] for c in deps.calls])
+
+    def test_a_refused_reply_is_logged_with_its_tokens_and_not_accepted(self):
+        for reply in ("not json", '{"a": 123}'):
+            deps = LoggingDeps(post_result={"response": reply, "prompt_eval_count": 30, "eval_count": 4})
+            with self.assertRaises(ugs_bridge.NotRun):
+                _call(deps)
+            attempt = deps.records[-1]
+            self.assertEqual((attempt["prompt_tokens"], attempt["completion_tokens"]), (30, 4))
+            self.assertIs(attempt["accepted"], False)
 
     def test_deps_without_log_make_the_same_call(self):
         deps = FakeDeps(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
@@ -468,10 +511,12 @@ class TestBridgeLog(unittest.TestCase):
                            post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
         self.assertEqual(_call(deps), {"a": "x"})
 
-    def test_an_error_other_than_oserror_in_log_is_not_hidden(self):
-        deps = LoggingDeps(log_error=ValueError("bug"))
-        with self.assertRaises(ValueError):
-            _call(deps)
+    def test_any_failure_of_the_log_writer_is_reported_and_never_fatal(self):
+        for error in (ValueError("bug"), AttributeError("older bridge")):
+            deps = LoggingDeps(log_error=error,
+                               post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+            with self.assertLogs("ugs_bridge", level="WARNING"):
+                self.assertEqual(_call(deps), {"a": "x"})
 
     def test_the_records_read_back_as_a_generating_then_idle_role(self):
         scripts = Path(__file__).resolve().parents[3] / "rt-observe" / "scripts"

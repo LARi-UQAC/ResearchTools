@@ -4695,6 +4695,8 @@ function rexLocalTarget(role, row) {
     lane: "l:" + role,
     name: String(role),
     mode: "GENERATING",
+    /* Two roles run different models with different loads: the mood memory is kept per role. */
+    baseline: "GENERATING " + role,
     plan: base,
     context: r.tag ? "model " + r.tag + (window ? ", " + window : "") : window,
     ctx: window
@@ -4725,7 +4727,13 @@ function rexModel(state, hash, nowMs) {
   }).map(rexTarget);
   var localRoles = ((rex || {}).local_generating) || [];
   var localRows = (((state.local_calls || {}).status === "ok") ? state.local_calls.roles : null) || {};
-  localRoles.forEach(function (role) { targets.push(rexLocalTarget(role, localRows[role])); });
+  /* A target needs the local_calls row too: its lane is drawn from that section, and a name the
+     rex section knows but local_calls does not yet is a lane the graph cannot show him. */
+  localRoles.forEach(function (role) {
+    if (localRows[role] && localRows[role].generating) {
+      targets.push(rexLocalTarget(role, localRows[role]));
+    }
+  });
   var loads = rex || {};
   var awake = !!loads.active;
   if (demo) {
@@ -4806,7 +4814,7 @@ function rexMood(model, history) {
 function rexRemember(model, mood, history) {
   /* Add this reading to the working level, once per collection and only while he is calm. */
   var focus = rexFocus(model);
-  var mode = focus ? focus.mode : "";
+  var mode = focus ? (focus.baseline || focus.mode) : "";
   if (mode !== history.mode) {
     /* Coding and auditing run different models with different loads: start again. */
     history.cpu = []; history.vram = []; history.cuda = []; history.at = ""; history.mode = mode;

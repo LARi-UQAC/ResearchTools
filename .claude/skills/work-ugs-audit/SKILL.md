@@ -48,6 +48,12 @@ here. The owner adopts each once:
 not adopted stops the step and names it. There is no fallback and no cloud grading. `vision_probe.py` measures
 what the vision role reads on a chart before figures are graded.
 
+The token count that checks a prompt against the window waits `driver.count_timeout_s` seconds (measured
+2026-11-15: prefill runs near 130 tokens per second on a CPU-heavy split, so a prompt above about 1000 tokens
+needs more than a few seconds). Every model call also writes the `start`, attempt and `failed` records of
+`ollama_bridge.py` to the bridge log, so the dashboard shows the role, its window and its tokens, and Rex wakes
+while a role generates.
+
 ## Scripts
 
 `ugs_driver.py` (command line), `ugs_run.py` (the steps of one report), `ugs_ledger.py` (the step ledger),

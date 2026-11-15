@@ -4496,10 +4496,11 @@ function agentGraph(lanes, width, sessionMax, declared, holding, rex) {
        the next poll moves him: the CSS transition on his group does the walking. */
     var rowOf = {};
     lanes.forEach(function (lane, row) { rowOf[lane.id] = row; });
-    var drawn = rex.targets.filter(function (t) { return rowOf["s:" + t.id] !== undefined; });
+    var laneOf = function (t) { return t.lane || ("s:" + t.id); };
+    var drawn = rex.targets.filter(function (t) { return rowOf[laneOf(t)] !== undefined; });
     var focus = (rex.awake && drawn.length)
       ? drawn[Math.floor(rex.nowMs / rex.watchMs) % drawn.length] : null;
-    var rexY = centre(focus ? rowOf["s:" + focus.id] : 0).y;
+    var rexY = centre(focus ? rowOf[laneOf(focus)] : 0).y;
     mark(0, rexY - REX_FIG.rings[2] - 12);
     mark(REX_FIG.cx * 2, rexY + REX_FIG.rings[2] + 90);
     parts.push(rexFigure(rex, REX_FIG.cx, rexY, focus));
@@ -4670,6 +4671,7 @@ function rexTarget(session) {
   var flow = session.flow || {};
   return {
     id: session.session_id,
+    lane: "s:" + session.session_id,
     name: String(session.project || "agent").split(/[\\/]/).pop(),
     mode: rexWord(flow.state),
     plan: "plan " + (progress.plan_index || (progress.plans_done || 0) + 1)
@@ -4677,6 +4679,27 @@ function rexTarget(session) {
       + (progress.round ? ", round " + progress.round : ""),
     context: tokenNote(flow.tokens),
     ctx: rexCtx(flow.tokens)
+  };
+}
+
+function rexLocalTarget(role, row) {
+  /* A local model role that is generating now (a start record in the bridge log with no end),
+     as Rex's target. Its lane is the one `localLanes` draws, so he can stand level with it.
+     The row may be absent (a server that sent the rex section but no local_calls): the target
+     then has a name and no context. */
+  var r = row || {};
+  var base = String(r.plan || "").split(/[\\/]/).filter(Boolean).pop() || "";
+  var window = r.num_ctx ? "window " + thousands(r.num_ctx) + "K" : "";
+  return {
+    id: "l:" + role,
+    lane: "l:" + role,
+    name: String(role),
+    mode: "GENERATING",
+    /* Two roles run different models with different loads: the mood memory is kept per role. */
+    baseline: "GENERATING " + role,
+    plan: base,
+    context: r.tag ? "model " + r.tag + (window ? ", " + window : "") : window,
+    ctx: window
   };
 }
 
@@ -4702,6 +4725,15 @@ function rexModel(state, hash, nowMs) {
     var st = (s.flow || {}).state;
     return s.live !== false && st && AIDER_ENDED[st] !== true;
   }).map(rexTarget);
+  var localRoles = ((rex || {}).local_generating) || [];
+  var localRows = (((state.local_calls || {}).status === "ok") ? state.local_calls.roles : null) || {};
+  /* A target needs the local_calls row too: its lane is drawn from that section, and a name the
+     rex section knows but local_calls does not yet is a lane the graph cannot show him. */
+  localRoles.forEach(function (role) {
+    if (localRows[role] && localRows[role].generating) {
+      targets.push(rexLocalTarget(role, localRows[role]));
+    }
+  });
   var loads = rex || {};
   var awake = !!loads.active;
   if (demo) {
@@ -4736,7 +4768,7 @@ function rexModel(state, hash, nowMs) {
    RAM, which the dashboard does not read. */
 var REX_DIMS = [["cpu", "cpu_percent", "CPU"], ["vram", "vram_percent", "VRAM"],
                 ["cuda", "cuda_percent", "CUDA"]];
-var REX_JUDGED_MODES = { CODING: true, AUDITING: true };
+var REX_JUDGED_MODES = { CODING: true, AUDITING: true, GENERATING: true };
 var rexHistory = { cpu: [], vram: [], cuda: [], at: "", mode: "" };
 
 function rexFocus(model) {
@@ -4782,7 +4814,7 @@ function rexMood(model, history) {
 function rexRemember(model, mood, history) {
   /* Add this reading to the working level, once per collection and only while he is calm. */
   var focus = rexFocus(model);
-  var mode = focus ? focus.mode : "";
+  var mode = focus ? (focus.baseline || focus.mode) : "";
   if (mode !== history.mode) {
     /* Coding and auditing run different models with different loads: start again. */
     history.cpu = []; history.vram = []; history.cuda = []; history.at = ""; history.mode = mode;

@@ -114,7 +114,7 @@ def _current_loop(work: Path) -> int:
 
 def _real_deps(config: Dict[str, Any]) -> Dict[str, Any]:
     """The real window and token counter, from the resolver and the daemon; NotRun when a role is unadopted."""
-    deps = OllamaDeps()
+    deps = OllamaDeps(config["driver.count_timeout_s"])
     windows, tags = {}, {}
     for kind in ("grader", "auditor"):
         role = config[f"roles.{kind}"]

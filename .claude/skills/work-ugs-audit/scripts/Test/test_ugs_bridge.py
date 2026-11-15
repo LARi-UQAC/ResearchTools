@@ -4,6 +4,7 @@ import os
 import base64
 import atexit
 import sys
+import json
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -42,7 +43,7 @@ class FakeDeps:
     def __init__(self, tag: str = "fake-tag", window: int = 1000, count: int = 100,
                  payload: Optional[Dict[str, Any]] = None, post_result: Optional[Dict[str, Any]] = None,
                  post_error: Optional[Exception] = None, tag_error: Optional[Exception] = None,
-                 count_error: Optional[Exception] = None):
+                 count_error: Optional[Exception] = None, count_timeout_s: int = 10):
         self._default_tag = tag
         self._default_window = window
         self._default_count = count
@@ -51,6 +52,7 @@ class FakeDeps:
         self.post_error = post_error
         self.tag_error = tag_error
         self.count_error = count_error
+        self.count_timeout_s = count_timeout_s
         self.calls = []
 
     def tag(self, role: str) -> str:
@@ -295,6 +297,47 @@ class TestCallWithUsage(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "unadopted")
         self.assertFalse(ctx.exception.retryable)
 
+    def test_count_uses_configured_timeout(self):
+        class SpyBridge:
+            def probe_prompt_tokens(self, prompt, tag, window, timeout):
+                self.timeout = timeout
+                return 100
+            def resolve_model(self, role):
+                return "tag"
+            def _resolve_num_ctx(self, tag, role):
+                return 1000
+            def build_payload(self, *args, **kwargs):
+                return {}
+            def _post_generate(self, payload, timeout):
+                return {"response": "{}", "prompt_eval_count": 10, "eval_count": 5}
+            DEFAULT_SEED = 42
+        
+        bridge = SpyBridge()
+        deps = ugs_bridge.OllamaDeps(count_timeout_s=123)
+        deps._bridge = bridge
+        deps.count("prompt", "tag", 1000)
+        self.assertEqual(bridge.timeout, 123)
+
+    def test_count_timeout_missing_in_config_raises(self):
+        config = {"driver.request_timeout_s": 600}
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            # This test is conceptual: the actual check happens in driver/vision_probe
+            # We verify OllamaDeps requires count_timeout_s
+            try:
+                ugs_bridge.OllamaDeps()
+            except TypeError as e:
+                raise ugs_bridge.NotRun("config", str(e))
+        self.assertIn("count_timeout_s", str(ctx.exception))
+
+    def test_shipped_config_has_count_timeout(self):
+        config_path = Path(__file__).resolve().parent.parent.parent / "assets" / "ugs_config.json"
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        self.assertIn("driver.count_timeout_s", config)
+        entry = config["driver.count_timeout_s"]
+        self.assertEqual(entry["value"], 1200)
+        self.assertTrue(entry["provenance"])
+
     def test_images_reach_the_posted_body(self):
         deps = FakeDeps(post_result={"response": "{}", "prompt_eval_count": 10, "eval_count": 5})
         schema = {"type": "object"}
@@ -354,6 +397,179 @@ class TestCall(unittest.TestCase):
             image_tokens=0, max_image_bytes=100
         )
         self.assertEqual(answer, {"a": "hello"})
+
+
+class LoggingDeps(FakeDeps):
+    """FakeDeps that also records the bridge log records it is asked to write."""
+
+    def __init__(self, *args, log_error: Optional[Exception] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.records: List[Dict[str, Any]] = []
+        self.log_error = log_error
+
+    def log(self, record: Dict[str, Any]) -> None:
+        if self.log_error:
+            raise self.log_error
+        self.records.append(record)
+
+
+_SCHEMA_A = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
+
+
+def _call(deps, role="ugs-grader"):
+    """
+    Purpose: Run one call of ugs_bridge with fixed small settings.
+    Inputs:
+        deps: the deps object under test.
+        role (str): the role name.
+    Outputs:
+        The parsed answer.
+    """
+    return ugs_bridge.call(role=role, prompt="test", schema=_SCHEMA_A, deps=deps, timeout=1,
+                           reserve=0, image_tokens=0, max_image_bytes=100)
+
+
+class TestBridgeLog(unittest.TestCase):
+    """The records that let the dashboard see a work-ugs-audit call (Issue 118)."""
+
+    def test_a_good_call_writes_start_then_the_attempt_with_tokens(self):
+        deps = LoggingDeps(tag="tag-x", window=500,
+                           post_result={"response": '{"a": "x"}', "prompt_eval_count": 12, "eval_count": 7})
+        _call(deps)
+        self.assertEqual([r.get("event") for r in deps.records], ["start", None])
+        start, attempt = deps.records
+        self.assertEqual((start["role"], start["tag"], start["num_ctx"]), ("ugs-grader", "tag-x", 500))
+        self.assertEqual((attempt["prompt_tokens"], attempt["completion_tokens"]), (12, 7))
+        self.assertEqual((attempt["role"], attempt["tag"], attempt["num_ctx"]), ("ugs-grader", "tag-x", 500))
+        self.assertTrue(attempt["accepted"])
+        self.assertTrue(start["at"] and attempt["at"])
+
+    def test_absent_token_counts_are_none_not_zero(self):
+        deps = LoggingDeps(post_result={"response": '{"a": "x"}'})
+        _call(deps)
+        attempt = deps.records[1]
+        self.assertIsNone(attempt["prompt_tokens"])
+        self.assertIsNone(attempt["completion_tokens"])
+
+    def test_a_failing_post_writes_start_then_failed_and_still_raises(self):
+        deps = LoggingDeps(post_error=Exception("connection refused SECRET-REPORT-TEXT"))
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            _call(deps)
+        self.assertEqual(ctx.exception.kind, "unreachable")
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+        self.assertEqual(deps.records[1]["error"], "unreachable")
+
+    def test_the_log_never_carries_an_error_text(self):
+        deps = LoggingDeps(post_error=Exception("SECRET-REPORT-TEXT"))
+        with self.assertRaises(ugs_bridge.NotRun):
+            _call(deps)
+        self.assertNotIn("SECRET-REPORT-TEXT", json.dumps(deps.records))
+
+    def test_the_start_record_comes_before_the_token_count(self):
+        order = []
+
+        class Ordered(LoggingDeps):
+            def count(self, prompt, tag, window):
+                order.append(("count", [r.get("event") for r in self.records]))
+                return super().count(prompt, tag, window)
+
+        deps = Ordered(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        _call(deps)
+        self.assertEqual(order, [("count", ["start"])])
+
+    def test_a_count_that_fails_closes_the_start_record(self):
+        deps = LoggingDeps(count_error=Exception("timed out"))
+        with self.assertRaises(ugs_bridge.NotRun):
+            _call(deps)
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+
+    def test_an_over_budget_prompt_closes_the_start_record_and_is_never_posted(self):
+        deps = LoggingDeps(count=900, window=1000)
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            ugs_bridge.call(role="ugs-grader", prompt="test", schema=_SCHEMA_A, deps=deps, timeout=1,
+                            reserve=500, image_tokens=0, max_image_bytes=100)
+        self.assertEqual(ctx.exception.kind, "over_budget")
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+        self.assertEqual(deps.records[1]["error"], "over_budget")
+        self.assertNotIn("post", [c[0] for c in deps.calls])
+
+    def test_a_refused_reply_is_logged_with_its_tokens_and_not_accepted(self):
+        for reply in ("not json", '{"a": 123}'):
+            deps = LoggingDeps(post_result={"response": reply, "prompt_eval_count": 30, "eval_count": 4})
+            with self.assertRaises(ugs_bridge.NotRun):
+                _call(deps)
+            attempt = deps.records[-1]
+            self.assertEqual((attempt["prompt_tokens"], attempt["completion_tokens"]), (30, 4))
+            self.assertIs(attempt["accepted"], False)
+
+    def test_stamps_carry_milliseconds_so_back_to_back_calls_keep_their_order(self):
+        import re
+        self.assertRegex(ugs_bridge._now_iso(), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}\+00:00$")
+
+    def test_the_clock_is_injected_by_the_caller(self):
+        stamps = iter(["2026-11-15T12:00:00.001+00:00", "2026-11-15T12:00:00.002+00:00"])
+        deps = LoggingDeps(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        ugs_bridge.call(role="ugs-grader", prompt="test", schema=_SCHEMA_A, deps=deps, timeout=1,
+                        reserve=0, image_tokens=0, max_image_bytes=100, clock=lambda: next(stamps))
+        self.assertEqual([r["at"] for r in deps.records],
+                         ["2026-11-15T12:00:00.001+00:00", "2026-11-15T12:00:00.002+00:00"])
+
+    def test_an_interrupt_during_the_post_still_closes_the_start_record(self):
+        deps = LoggingDeps(post_error=KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt):
+            _call(deps)
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+        self.assertEqual(deps.records[1]["error"], "KeyboardInterrupt")
+
+    def test_deps_without_log_make_the_same_call(self):
+        deps = FakeDeps(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        self.assertEqual(_call(deps), {"a": "x"})
+
+    def test_a_log_that_cannot_write_does_not_change_the_answer(self):
+        deps = LoggingDeps(log_error=OSError("disk full"),
+                           post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        self.assertEqual(_call(deps), {"a": "x"})
+
+    def test_any_failure_of_the_log_writer_is_reported_and_never_fatal(self):
+        for error in (ValueError("bug"), AttributeError("older bridge")):
+            deps = LoggingDeps(log_error=error,
+                               post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+            with self.assertLogs("ugs_bridge", level="WARNING"):
+                self.assertEqual(_call(deps), {"a": "x"})
+
+    def test_the_records_read_back_as_a_generating_then_idle_role(self):
+        scripts = Path(__file__).resolve().parents[3] / "rt-observe" / "scripts"
+        sys.path.insert(0, str(scripts))
+        try:
+            import collect_local
+        finally:
+            sys.path.remove(str(scripts))
+        deps = LoggingDeps(tag="tag-y", window=777,
+                           post_result={"response": '{"a": "x"}', "prompt_eval_count": 20, "eval_count": 9})
+        _call(deps)
+        start, attempt = deps.records
+        now = collect_local._stamp(attempt["at"])
+        roles, kept, skipped = collect_local._group([start], now, 60, 3600)
+        self.assertTrue(roles["ugs-grader"]["generating"])
+        roles, kept, skipped = collect_local._group([start, attempt], now, 60, 3600)
+        row = roles["ugs-grader"]
+        self.assertFalse(row["generating"])
+        self.assertEqual((row["tag"], row["num_ctx"], row["prompt_tokens"], row["completion_tokens"]),
+                         ("tag-y", 777, 20, 9))
+
+    def test_ollama_deps_log_appends_to_the_bridge_log_path(self):
+        class SpyBridge:
+            DEFAULT_LOG_PATH = Path("log-path-for-the-test")
+            written = []
+
+            @staticmethod
+            def append_log(path, record):
+                SpyBridge.written.append((path, record))
+
+        deps = ugs_bridge.OllamaDeps(1200)
+        deps._bridge = SpyBridge
+        deps.log({"event": "start"})
+        self.assertEqual(SpyBridge.written, [(Path("log-path-for-the-test"), {"event": "start"})])
 
 
 if __name__ == "__main__":

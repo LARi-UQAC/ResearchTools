@@ -335,6 +335,11 @@ and `tier`) + `refs/_failed.md` are written. Set `UNPAYWALL_EMAIL` (or pass `--e
 Unpaywall tier. Note `_failed.md` DOIs in the plan for manual UQAC-network retrieval (save the page
 as `.pdf`/`.html`/`.md`); a retrieval failure is never a reference-validation failure.
 
+Stay inside the retrieval chain: `download_pdf.py` already runs every rung in order, including a
+real browser with the owner's institutional sign-in, so never fetch a paper's PDF through the
+Playwright MCP or any other browser tool. When a paper stays in `refs/_failed.md`, report the
+per-rung reasons listed in `refs/_failed.md` and stop there.
+
 ### Step 2.7 — Cited-corpus mining (extract-statistic + extract-futureworks, mine mode)
 
 When `refs/` is populated (Step 2.6 retrieved at least one cited paper's full text), mine the cited

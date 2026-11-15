@@ -392,6 +392,11 @@ and `tier`) + `refs/_failed.md` are written. Set `UNPAYWALL_EMAIL` (or pass `--e
 the Unpaywall tier. A retrieval failure never excludes a paper from the corpus — list its DOI in
 `_failed.md` for manual UQAC-network retrieval (save the page as `.pdf`/`.html`/`.md`).
 
+Stay inside the retrieval chain: `download_pdf.py` already runs every rung in order, including a
+real browser with the owner's institutional sign-in, so never fetch a paper's PDF through the
+Playwright MCP or any other browser tool. When a paper stays in `refs/_failed.md`, report the
+per-rung reasons listed in `refs/_failed.md` and stop there.
+
 ### Step 3b-stats — Corpus statistics mining (extract-statistic skill)
 
 Mine the reported statistics of the retained corpus so the gap map, the Pareto matrix, and the

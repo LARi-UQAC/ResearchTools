@@ -11,6 +11,7 @@ Run:
 """
 
 import contextlib
+import io
 import json
 import os
 import sys
@@ -187,6 +188,41 @@ class TestFetchPdf(unittest.TestCase):
 class TestDownloadOne(unittest.TestCase):
 
     ENTRY = {"citekey": "Smith2024", "doi": "10.1/x", "author": "Smith", "year": "2024"}
+
+    def _token_seen(self, env, passed):
+        """The token download_one hands to the Elsevier rung, for one environment."""
+        seen = {}
+
+        def fake_elsevier(doi, dest, key, tok):
+            seen["tok"] = tok
+            return False
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.dict(os.environ, env), \
+             mock.patch.object(download_pdf, "try_elsevier", side_effect=fake_elsevier), \
+             mock.patch.object(download_pdf, "try_semantic_scholar", return_value=False), \
+             mock.patch.object(download_pdf, "try_publisher_pdf", return_value=False), \
+             mock.patch.object(download_pdf, "try_unpaywall", return_value=None), \
+             mock.patch.object(download_pdf, "try_arxiv", return_value=None), \
+             mock.patch.object(download_pdf, "try_pmc", return_value=None), \
+             mock.patch.object(download_pdf, "try_landing_html", return_value=None), \
+             mock.patch.object(download_pdf, "s2", None):
+            download_pdf.download_one(self.ENTRY, tmp, "KEY", passed)
+        return seen.get("tok")
+
+    def test_the_token_comes_from_the_environment_for_a_caller_that_passes_none(self):
+        # Review round 1: extract_text.py and extract_locations.py call download_one
+        # with the raw flag value, so the environment token never reached rung 1.
+        self.assertEqual(self._token_seen({download_pdf.INSTTOKEN_ENV: "TOKEN-FIXTURE"}, None),
+                         "TOKEN-FIXTURE")
+
+    def test_an_explicit_token_beats_the_environment(self):
+        self.assertEqual(self._token_seen({download_pdf.INSTTOKEN_ENV: "FROM-ENV"}, "FROM-FLAG"),
+                         "FROM-FLAG")
+
+    def test_no_token_anywhere_stays_none(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop(download_pdf.INSTTOKEN_ENV, None)
+            self.assertIsNone(self._token_seen({}, None))
 
     def test_skip_when_present(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -802,20 +838,32 @@ class BrowserTierSilenceTest(unittest.TestCase):
 
     def test_every_browser_skip_reason_is_logged(self):
         src = self._source()
-        self.assertIn("tier 8 (browser) not requested", src)
+        self.assertIn("tier 8 (browser) disabled by --no-browser", src)
         self.assertIn("the playwright package", src)
-        self.assertIn("no Chromium build was found", src)
+        self.assertNotIn("no Chromium build was found", src)
 
     def test_the_unavailable_branches_name_the_remedy(self):
         src = self._source()
         self.assertIn("pip install playwright", src)
-        self.assertIn("playwright install chromium", src)
+        self.assertIn("playwright install chrome", src)
 
     def test_the_browser_tier_is_also_preview_gated(self):
         # A browser can land on a preview too; the gate is on the artifact, not
-        # on the tier that produced it.
-        src = self._source()
-        self.assertIn('_reject_preview(pdf_dest, "browser")', src)
+        # on the tier that produced it. Behavioural since 2026-11-05: the former
+        # source-text check pinned a call spelling the attempts refactor replaced.
+        def fake_fetch(doi, dest, override_url=None, headed=True):
+            Path(dest).write_bytes(b"%PDF-1.7 x")
+            return {"format": "pdf", "source": "browser", "file": os.path.basename(dest)}
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.side_effect = fake_fetch
+        tier = TestBrowserTier()
+        with mock.patch.object(download_pdf, "is_paywall_preview",
+                               return_value=(True, "1 page(s) - publisher preview")):
+            res = tier._run(fake_bf, use_browser=True)
+        self.assertEqual(res["status"], "failed")
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertEqual(browser["outcome"], "preview")
 
 
 class TestPreviewMeasurement(unittest.TestCase):
@@ -1010,6 +1058,728 @@ class TestAuditPreviews(unittest.TestCase):
             with mock.patch.object(download_pdf, "pdf_measure", self._measure):
                 report = download_pdf.audit_previews(tmp)
         self.assertEqual(report["checked"], 2)
+
+
+def _run_cli(argv, **patches):
+    """Drive main() with a patched argv and return the captured download_one call.
+
+    download_one, the key lookup and the manifest writers are replaced, so no
+    network call happens and no file is written outside the folder given in argv.
+    """
+    captured = {}
+
+    def fake_download_one(entry, out_dir, api_key, insttoken, **kwargs):
+        captured["entry"] = entry
+        captured["insttoken"] = insttoken
+        captured["kwargs"] = kwargs
+        return {"citekey": entry.get("citekey", ""), "doi": entry.get("doi", ""),
+                "file": "x.pdf", "format": "pdf", "source": "elsevier", "tier": 1,
+                "status": "elsevier"}
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(mock.patch.object(sys, "argv", ["download_pdf.py", *argv]))
+        stack.enter_context(mock.patch.object(
+            download_pdf, "download_one", side_effect=fake_download_one))
+        stack.enter_context(mock.patch.object(
+            download_pdf, "_scopus_key_optional", return_value="KEY"))
+        stack.enter_context(mock.patch.object(download_pdf, "write_manifest"))
+        stack.enter_context(mock.patch.object(download_pdf, "write_failed"))
+        for name, value in patches.items():
+            stack.enter_context(mock.patch.object(download_pdf, name, value))
+        with contextlib.redirect_stdout(io.StringIO()):
+            download_pdf.main()
+    return captured
+
+
+class TestInsttokenFromEnvironment(unittest.TestCase):
+    """The Elsevier institutional token may come from ELSEVIER_INSTTOKEN.
+
+    Measured 2026-11-05: no agent passes --insttoken, so an off-campus run could
+    never use the token even when the owner had one configured.
+    """
+
+    def test_helper_reads_the_environment_when_the_flag_is_absent(self):
+        with mock.patch.dict(os.environ, {"ELSEVIER_INSTTOKEN": "ENVTOKEN"}):
+            self.assertEqual(download_pdf._insttoken_optional(None), "ENVTOKEN")
+
+    def test_the_flag_wins_over_the_environment(self):
+        with mock.patch.dict(os.environ, {"ELSEVIER_INSTTOKEN": "ENVTOKEN"}):
+            self.assertEqual(download_pdf._insttoken_optional("FLAGTOKEN"), "FLAGTOKEN")
+
+    def test_neither_gives_none_and_blank_is_not_a_token(self):
+        env = {k: v for k, v in os.environ.items() if k != "ELSEVIER_INSTTOKEN"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertIsNone(download_pdf._insttoken_optional(None))
+        with mock.patch.dict(os.environ, {"ELSEVIER_INSTTOKEN": "   "}):
+            self.assertIsNone(download_pdf._insttoken_optional(None))
+
+    def test_doi_subcommand_passes_the_environment_token(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.dict(os.environ, {"ELSEVIER_INSTTOKEN": "ENVTOKEN"}):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp])
+        self.assertEqual(got["insttoken"], "ENVTOKEN")
+
+    def test_doi_subcommand_flag_beats_the_environment(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.dict(os.environ, {"ELSEVIER_INSTTOKEN": "ENVTOKEN"}):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp, "--insttoken", "FLAGTOKEN"])
+        self.assertEqual(got["insttoken"], "FLAGTOKEN")
+
+    def test_bib_subcommand_passes_the_environment_token(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.dict(os.environ, {"ELSEVIER_INSTTOKEN": "ENVTOKEN"}):
+            bib = os.path.join(tmp, "r.bib")
+            Path(bib).write_text("@article{a2024x,\n  doi = {10.1/x},\n  title = {T}\n}\n",
+                                 encoding="utf-8")
+            got = _run_cli(["bib", bib, "--out-dir", tmp])
+        self.assertEqual(got["insttoken"], "ENVTOKEN")
+
+    def test_the_header_is_sent_only_when_a_token_exists(self):
+        seen = {}
+
+        def fake_fetch(url, dest, headers=None):
+            seen["headers"] = headers
+            return False
+
+        with mock.patch.object(download_pdf, "_fetch_pdf", side_effect=fake_fetch):
+            download_pdf.try_elsevier("10.1/x", "d.pdf", "KEY", "TOK")
+            self.assertEqual(seen["headers"].get("X-ELS-Insttoken"), "TOK")
+            download_pdf.try_elsevier("10.1/x", "d.pdf", "KEY", None)
+            self.assertNotIn("X-ELS-Insttoken", seen["headers"])
+
+
+PII = "S0736584524000206"
+SD_URL = "https://www.sciencedirect.com/science/article/pii/" + PII
+
+
+class TestParsePii(unittest.TestCase):
+    """The `url` subcommand accepts a ScienceDirect URL or a bare PII, nothing else."""
+
+    def test_article_url(self):
+        self.assertEqual(download_pdf.parse_pii(SD_URL), PII)
+
+    def test_abs_and_pdf_variants(self):
+        for variant in ("https://www.sciencedirect.com/science/article/abs/pii/" + PII,
+                        "https://www.sciencedirect.com/science/article/pii/" + PII + "/pdfft",
+                        "https://www.sciencedirect.com/science/article/pii/" + PII + "?via=ihub"):
+            self.assertEqual(download_pdf.parse_pii(variant), PII)
+
+    def test_bare_pii_and_a_trailing_check_letter(self):
+        self.assertEqual(download_pdf.parse_pii(PII), PII)
+        self.assertEqual(download_pdf.parse_pii("S090657601200063X"), "S090657601200063X")
+
+    def test_refuses_plain_http(self):
+        with self.assertRaises(download_pdf.UrlInputError) as ctx:
+            download_pdf.parse_pii("http://www.sciencedirect.com/science/article/pii/" + PII)
+        self.assertIn("https", str(ctx.exception))
+
+    def test_refuses_another_host_including_a_lookalike(self):
+        for host in ("example.org", "www.sciencedirect.com.evil.example",
+                     "evil.example/www.sciencedirect.com"):
+            with self.assertRaises(download_pdf.UrlInputError):
+                download_pdf.parse_pii("https://%s/science/article/pii/%s" % (host, PII))
+
+    def test_refuses_a_malformed_pii(self):
+        for bad in ("S07365845240002", "S0736584524000206999", "X0736584524000206",
+                    "https://www.sciencedirect.com/science/article/pii/not-a-pii", "", "   "):
+            with self.assertRaises(download_pdf.UrlInputError):
+                download_pdf.parse_pii(bad)
+
+    def test_refuses_a_url_that_is_not_an_article_path(self):
+        with self.assertRaises(download_pdf.UrlInputError):
+            download_pdf.parse_pii("https://www.sciencedirect.com/journal/" + PII)
+
+
+class TestResolvePiiToDoi(unittest.TestCase):
+
+    @staticmethod
+    def _resp(status=200, payload=None):
+        return mock.Mock(status_code=status, json=mock.Mock(return_value=payload),
+                         text="")
+
+    def test_reads_the_doi_from_the_metadata_view_with_key_and_token(self):
+        payload = {"full-text-retrieval-response":
+                   {"coredata": {"prism:doi": "10.1016/j.rcim.2024.102734"}}}
+        with mock.patch.object(download_pdf.requests, "get",
+                               return_value=self._resp(payload=payload)) as get:
+            doi = download_pdf.resolve_pii_to_doi(PII, "KEY", "TOK")
+        self.assertEqual(doi, "10.1016/j.rcim.2024.102734")
+        args, kwargs = get.call_args
+        self.assertIn("/content/article/pii/" + PII, args[0])
+        self.assertEqual(kwargs["params"], {"view": "META"})
+        self.assertEqual(kwargs["headers"]["X-ELS-APIKey"], "KEY")
+        self.assertEqual(kwargs["headers"]["X-ELS-Insttoken"], "TOK")
+        self.assertEqual(kwargs["timeout"], download_pdf.REQUEST_TIMEOUT_S)
+
+    def test_no_token_header_without_a_token(self):
+        payload = {"full-text-retrieval-response": {"coredata": {"prism:doi": "10.1/x"}}}
+        with mock.patch.object(download_pdf.requests, "get",
+                               return_value=self._resp(payload=payload)) as get:
+            download_pdf.resolve_pii_to_doi(PII, "KEY", None)
+        self.assertNotIn("X-ELS-Insttoken", get.call_args.kwargs["headers"])
+
+    def test_an_answer_without_a_doi_is_refused_by_name(self):
+        payload = {"full-text-retrieval-response": {"coredata": {"dc:title": "T"}}}
+        with mock.patch.object(download_pdf.requests, "get",
+                               return_value=self._resp(payload=payload)):
+            with self.assertRaises(download_pdf.UrlInputError) as ctx:
+                download_pdf.resolve_pii_to_doi(PII, "KEY", None)
+        self.assertIn("DOI", str(ctx.exception))
+
+    def test_http_error_and_network_error_and_bad_json_are_refusals(self):
+        with mock.patch.object(download_pdf.requests, "get",
+                               return_value=self._resp(status=404)):
+            with self.assertRaises(download_pdf.UrlInputError) as ctx:
+                download_pdf.resolve_pii_to_doi(PII, "KEY", None)
+        self.assertIn("404", str(ctx.exception))
+        with mock.patch.object(download_pdf.requests, "get",
+                               side_effect=download_pdf.requests.ConnectionError("down")):
+            with self.assertRaises(download_pdf.UrlInputError):
+                download_pdf.resolve_pii_to_doi(PII, "KEY", None)
+        broken = mock.Mock(status_code=200, json=mock.Mock(side_effect=ValueError("x")), text="")
+        with mock.patch.object(download_pdf.requests, "get", return_value=broken):
+            with self.assertRaises(download_pdf.UrlInputError):
+                download_pdf.resolve_pii_to_doi(PII, "KEY", None)
+
+    def test_the_key_is_never_in_the_refusal_text(self):
+        with mock.patch.object(download_pdf.requests, "get",
+                               return_value=self._resp(status=401)):
+            with self.assertRaises(download_pdf.UrlInputError) as ctx:
+                download_pdf.resolve_pii_to_doi(PII, "SECRETKEY123", "SECRETTOK456")
+        self.assertNotIn("SECRETKEY123", str(ctx.exception))
+        self.assertNotIn("SECRETTOK456", str(ctx.exception))
+
+
+class TestUrlSubcommand(unittest.TestCase):
+
+    def test_resolves_the_doi_then_downloads_with_the_pii_as_citekey(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "resolve_pii_to_doi",
+                               return_value="10.1016/j.rcim.2024.102734") as res:
+            got = _run_cli(["url", SD_URL, "--out-dir", tmp])
+        res.assert_called_once()
+        self.assertEqual(got["entry"]["doi"], "10.1016/j.rcim.2024.102734")
+        self.assertEqual(got["entry"]["citekey"], PII.lower())
+
+    def test_an_explicit_citekey_wins(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "resolve_pii_to_doi", return_value="10.1/x"):
+            got = _run_cli(["url", PII, "--out-dir", tmp, "--citekey", "kim2024robot"])
+        self.assertEqual(got["entry"]["citekey"], "kim2024robot")
+
+    def _refusal(self, argv, **patches):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit) as ctx:
+                _run_cli(argv, **patches)
+        return ctx.exception.code, err.getvalue()
+
+    def test_bad_input_exits_2_with_a_named_reason_and_downloads_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, err = self._refusal(["url", "http://www.sciencedirect.com/x", "--out-dir", tmp])
+        self.assertEqual(code, 2)
+        self.assertIn("https", err)
+
+    def test_no_api_key_exits_2_naming_the_variable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, err = self._refusal(["url", SD_URL, "--out-dir", tmp],
+                                      _scopus_key_optional=lambda: None)
+        self.assertEqual(code, 2)
+        self.assertIn("SCOPUS_API_KEY", err)
+
+    def test_a_metadata_answer_with_no_doi_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def no_doi(pii, key, tok):
+                raise download_pdf.UrlInputError("the Elsevier metadata for %s carries no DOI" % pii)
+            code, err = self._refusal(["url", SD_URL, "--out-dir", tmp],
+                                      resolve_pii_to_doi=no_doi)
+        self.assertEqual(code, 2)
+        self.assertIn("no DOI", err)
+
+    def test_the_environment_token_reaches_both_the_lookup_and_the_download(self):
+        seen = {}
+
+        def fake_resolve(pii, key, tok):
+            seen["tok"] = tok
+            return "10.1/x"
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.dict(os.environ, {"ELSEVIER_INSTTOKEN": "ENVTOKEN"}):
+            got = _run_cli(["url", PII, "--out-dir", tmp], resolve_pii_to_doi=fake_resolve)
+        self.assertEqual(seen["tok"], "ENVTOKEN")
+        self.assertEqual(got["insttoken"], "ENVTOKEN")
+
+
+class TestAttemptsRecord(unittest.TestCase):
+    """Every rung leaves a line: number, outcome, short reason.
+
+    Measured 2026-11-05: a rung's failure reason was only logged, so the agent
+    could not tell why the Elsevier rung missed (no key, a 403, or a one-page
+    preview) and improvised the Playwright MCP instead.
+    """
+
+    ENTRY = {"citekey": "Smith2024", "doi": "10.1/x"}
+    OUTCOMES = {"ok", "miss", "preview", "skipped", "error", "listed"}
+
+    def _all_miss(self, **overrides):
+        patches = {
+            "try_elsevier": mock.patch.object(download_pdf, "try_elsevier", return_value=False),
+            "try_semantic_scholar": mock.patch.object(
+                download_pdf, "try_semantic_scholar", return_value=False),
+            "try_publisher_pdf": mock.patch.object(
+                download_pdf, "try_publisher_pdf", return_value=False),
+            "try_unpaywall": mock.patch.object(download_pdf, "try_unpaywall", return_value=None),
+            "try_arxiv": mock.patch.object(download_pdf, "try_arxiv", return_value=None),
+            "try_pmc": mock.patch.object(download_pdf, "try_pmc", return_value=None),
+            "try_landing_html": mock.patch.object(
+                download_pdf, "try_landing_html", return_value=None),
+            "s2": mock.patch.object(download_pdf, "s2", None),
+        }
+        patches.update(overrides)
+        return patches
+
+    def _run(self, patches, api_key="KEY", **kwargs):
+        with contextlib.ExitStack() as stack, tempfile.TemporaryDirectory() as tmp:
+            for cm in patches.values():
+                stack.enter_context(cm)
+            return download_pdf.download_one(self.ENTRY, tmp, api_key, None, **kwargs)
+
+    def test_a_failed_run_lists_every_rung_in_order_ending_with_the_manual_list(self):
+        res = self._run(self._all_miss(), email="a@b.ca")
+        self.assertEqual(res["status"], "failed")
+        self.assertEqual([a["rung"] for a in res["attempts"]], [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        self.assertEqual([a["name"] for a in res["attempts"]][:3],
+                         ["elsevier", "semantic_scholar", "publisher"])
+        self.assertEqual(res["attempts"][-1]["name"], "manual")
+        self.assertEqual(res["attempts"][-1]["outcome"], "listed")
+        for attempt in res["attempts"]:
+            self.assertIn(attempt["outcome"], self.OUTCOMES)
+            self.assertTrue(attempt["reason"])
+
+    def test_the_chain_stops_at_the_first_full_pdf_and_says_what_came_before(self):
+        def fake_s2(doi, dest):
+            Path(dest).write_bytes(b"%PDF-1.7 x")
+            return True
+        patches = self._all_miss(try_semantic_scholar=mock.patch.object(
+            download_pdf, "try_semantic_scholar", side_effect=fake_s2))
+        with contextlib.ExitStack() as stack:
+            for cm in patches.values():
+                stack.enter_context(cm)
+            publisher = stack.enter_context(
+                mock.patch.object(download_pdf, "try_publisher_pdf", return_value=False))
+            with tempfile.TemporaryDirectory() as tmp:
+                res = download_pdf.download_one(self.ENTRY, tmp, "KEY", None)
+        publisher.assert_not_called()
+        self.assertEqual([(a["rung"], a["outcome"]) for a in res["attempts"]],
+                         [(1, "miss"), (2, "ok")])
+
+    def test_a_preview_is_recorded_as_a_preview_with_its_page_count(self):
+        def fake_elsevier(doi, dest, key, tok):
+            Path(dest).write_bytes(b"%PDF-1.7 x")
+            return True
+        patches = self._all_miss(try_elsevier=mock.patch.object(
+            download_pdf, "try_elsevier", side_effect=fake_elsevier))
+        with mock.patch.object(download_pdf, "is_paywall_preview",
+                               return_value=(True, "1 page(s), 263000 bytes - publisher preview")):
+            res = self._run(patches)
+        first = res["attempts"][0]
+        self.assertEqual((first["rung"], first["outcome"]), (1, "preview"))
+        self.assertIn("1 page(s)", first["reason"])
+        self.assertEqual(res["status"], "failed")
+        manual = res["attempts"][-1]
+        self.assertEqual(manual["rung"], 9)
+        self.assertIn("not entitled", manual["reason"])
+
+    def test_no_key_is_skipped_and_names_the_variable(self):
+        res = self._run(self._all_miss(), api_key=None)
+        first = res["attempts"][0]
+        self.assertEqual(first["outcome"], "skipped")
+        self.assertIn("SCOPUS_API_KEY", first["reason"])
+
+    def test_an_http_status_and_a_non_pdf_body_become_the_miss_reason(self):
+        patches = self._all_miss()
+        del patches["try_elsevier"]
+        denied = FakeResponse(status_code=403)
+        with mock.patch.object(download_pdf.requests, "get", return_value=denied):
+            res = self._run(patches)
+        self.assertEqual(res["attempts"][0]["outcome"], "miss")
+        self.assertIn("403", res["attempts"][0]["reason"])
+        html = FakeResponse(status_code=200, headers={"Content-Type": "text/html"},
+                            chunks=[b"<html>sign in</html>"])
+        with mock.patch.object(download_pdf.requests, "get", return_value=html):
+            res = self._run(patches)
+        self.assertIn("not a PDF", res["attempts"][0]["reason"])
+
+    def test_a_reason_never_leaks_into_the_next_rung(self):
+        patches = self._all_miss()
+        del patches["try_elsevier"]
+        with mock.patch.object(download_pdf.requests, "get",
+                               return_value=FakeResponse(status_code=403)):
+            res = self._run(patches)
+        self.assertIn("403", res["attempts"][0]["reason"])
+        self.assertNotIn("403", res["attempts"][1]["reason"])
+
+    def test_skips_name_their_precondition(self):
+        s2_without_ids = mock.patch.object(
+            download_pdf, "s2", mock.Mock(external_ids_for_doi=mock.Mock(return_value={})))
+        res = self._run(self._all_miss(s2=s2_without_ids), allow_html=False)  # no email, no ids
+        by_name = {a["name"]: a for a in res["attempts"]}
+        self.assertEqual(by_name["unpaywall"]["outcome"], "skipped")
+        self.assertIn("UNPAYWALL_EMAIL", by_name["unpaywall"]["reason"])
+        self.assertEqual(by_name["arxiv"]["outcome"], "skipped")
+        self.assertIn("arXiv", by_name["arxiv"]["reason"])
+        self.assertEqual(by_name["pmc"]["outcome"], "skipped")
+        self.assertEqual(by_name["landing"]["outcome"], "skipped")
+        self.assertIn("--no-html", by_name["landing"]["reason"])
+        self.assertEqual(by_name["semantic_scholar"]["outcome"], "miss")
+
+    def test_a_missing_semantic_scholar_module_is_a_skip_not_a_miss(self):
+        res = self._run(self._all_miss())
+        by_name = {a["name"]: a for a in res["attempts"]}
+        self.assertEqual(by_name["semantic_scholar"]["outcome"], "skipped")
+
+    def test_reasons_are_one_short_line(self):
+        long_reason = "line one\nline two " + "x" * 500
+        patches = self._all_miss()
+        with mock.patch.object(download_pdf, "_take_reason", return_value=long_reason):
+            res = self._run(patches)
+        for attempt in res["attempts"]:
+            self.assertNotIn("\n", attempt["reason"])
+            self.assertLessEqual(len(attempt["reason"]), download_pdf.MAX_REASON_CHARS)
+
+    def test_present_and_no_doi_results_carry_no_attempts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(os.path.join(tmp, "smith2024.pdf")).write_bytes(b"%PDF-1.7 already")
+            present = download_pdf.download_one(self.ENTRY, tmp, "KEY", None)
+            nodoi = download_pdf.download_one({"citekey": "y", "doi": ""}, tmp, "KEY", None)
+        self.assertNotIn("attempts", present)
+        self.assertNotIn("attempts", nodoi)
+
+
+class TestElsevierEntitlementHeader(unittest.TestCase):
+    """Elsevier says why a PDF is a preview; the record quotes it.
+
+    Measured 2026-11-05 on the UQAC VPN (132.212.162.183): both paywalled
+    controls answered HTTP 200 with a one-page PDF and the header
+    `X-ELS-Status: WARNING - Response limited to first page because requestor
+    not entitled to resource`. That is the publisher's verdict, better evidence
+    than an inference from a page count.
+    """
+
+    WARNING = ("WARNING - Response limited to first page because requestor "
+               "not entitled to resource")
+    ENTRY = {"citekey": "Smith2024", "doi": "10.1/x"}
+
+    def _run(self, headers):
+        chain = TestAttemptsRecord()
+        patches = chain._all_miss()
+        del patches["try_elsevier"]
+        response = FakeResponse(status_code=200, headers=headers, chunks=PDF_CHUNKS)
+        with mock.patch.object(download_pdf.requests, "get", return_value=response), \
+             mock.patch.object(download_pdf, "is_paywall_preview",
+                               return_value=(True, "1 page(s), 2202710 bytes - preview")):
+            return chain._run(patches)
+
+    def test_the_publishers_own_words_become_the_rung_reason(self):
+        res = self._run({"Content-Type": "application/pdf", "X-ELS-Status": self.WARNING})
+        first = res["attempts"][0]
+        self.assertEqual(first["outcome"], "preview")
+        self.assertIn("not entitled", first["reason"])
+        self.assertTrue(first["reason"].startswith("Elsevier:"))
+
+    def test_the_manual_line_then_cites_the_publisher_not_a_guess(self):
+        res = self._run({"Content-Type": "application/pdf", "X-ELS-Status": self.WARNING})
+        self.assertIn("Elsevier reports", res["attempts"][-1]["reason"])
+
+    def test_without_the_header_the_page_count_reason_is_kept(self):
+        res = self._run({"Content-Type": "application/pdf"})
+        first = res["attempts"][0]
+        self.assertIn("1 page(s)", first["reason"])
+        self.assertNotIn("Elsevier reports", res["attempts"][-1]["reason"])
+
+    def test_a_non_warning_status_is_not_quoted(self):
+        res = self._run({"Content-Type": "application/pdf", "X-ELS-Status": "OK - Fine"})
+        self.assertNotIn("Fine", res["attempts"][0]["reason"])
+
+
+class TestBrowserRungDefault(unittest.TestCase):
+    """The browser rung is part of the chain, not an opt-in.
+
+    Measured 2026-11-05: tier 8 ran only with --browser and no agent passed it,
+    so the chain silently ended at tier 7.
+    """
+
+    def test_it_runs_by_default_on_every_subcommand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bib = os.path.join(tmp, "r.bib")
+            Path(bib).write_text("@article{a2024x,\n  doi = {10.1/x},\n  title = {T}\n}\n",
+                                 encoding="utf-8")
+            for argv in (["doi", "10.1/x", "--out-dir", tmp],
+                         ["bib", bib, "--out-dir", tmp],
+                         ["url", PII, "--out-dir", tmp]):
+                with self.subTest(mode=argv[0]), \
+                     mock.patch.object(download_pdf, "resolve_pii_to_doi", return_value="10.1/x"):
+                    got = _run_cli(argv)
+                    self.assertTrue(got["kwargs"]["use_browser"])
+
+    def test_browser_stays_accepted_as_a_no_op_alias(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp, "--browser"])
+        self.assertTrue(got["kwargs"]["use_browser"])
+
+    def test_no_browser_turns_the_rung_off_on_every_subcommand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bib = os.path.join(tmp, "r.bib")
+            Path(bib).write_text("@article{a2024x,\n  doi = {10.1/x},\n  title = {T}\n}\n",
+                                 encoding="utf-8")
+            for argv in (["doi", "10.1/x", "--out-dir", tmp, "--no-browser"],
+                         ["bib", bib, "--out-dir", tmp, "--no-browser"],
+                         ["url", PII, "--out-dir", tmp, "--no-browser"]):
+                with self.subTest(mode=argv[0]), \
+                     mock.patch.object(download_pdf, "resolve_pii_to_doi", return_value="10.1/x"):
+                    got = _run_cli(argv)
+                    self.assertFalse(got["kwargs"]["use_browser"])
+
+    def test_the_two_flags_together_are_a_refusal(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                _run_cli(["doi", "10.1/x", "--out-dir", tmp, "--browser", "--no-browser"])
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_a_disabled_rung_is_recorded_as_skipped_and_names_the_flag(self):
+        tier = TestBrowserTier()
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        res = tier._run(fake_bf, use_browser=False)
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertEqual(browser["outcome"], "skipped")
+        self.assertIn("--no-browser", browser["reason"])
+
+    def test_playwright_absent_is_a_recorded_skip_with_the_remedy_not_a_crash(self):
+        tier = TestBrowserTier()
+        res = tier._run(None, use_browser=True)
+        self.assertEqual(res["status"], "failed")
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertEqual(browser["outcome"], "skipped")
+        self.assertIn("pip install playwright", browser["reason"])
+
+    def test_a_missing_playwright_package_names_pip_and_not_a_chromium_build(self):
+        # Review round 1: browser_available() is False only when the playwright
+        # package cannot be imported. The old reason said "no Chromium build found" and
+        # told the user to run `playwright install chromium`, which fixes nothing.
+        tier = TestBrowserTier()
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = False
+        res = tier._run(fake_bf, use_browser=True)
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertEqual(browser["outcome"], "skipped")
+        self.assertIn("pip install playwright", browser["reason"])
+        self.assertNotIn("no Chromium build", browser["reason"])
+        fake_bf.fetch_pdf_via_browser.assert_not_called()
+
+    def test_a_disabled_rung_says_a_caller_may_leave_it_off_too(self):
+        # Review round 1: callers other than the CLI have no --no-browser flag, so the
+        # reason must not blame a flag they never had.
+        tier = TestBrowserTier()
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        res = tier._run(fake_bf, use_browser=False)
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertIn("--no-browser", browser["reason"])
+        self.assertIn("caller", browser["reason"])
+
+
+class TestSharedBrowserSession(unittest.TestCase):
+    """One browser session serves every paper of a CLI run (sign in once)."""
+
+    def _bib(self, tmp):
+        bib = os.path.join(tmp, "r.bib")
+        Path(bib).write_text(
+            "@article{a2024x,\n  doi = {10.1/x},\n  title = {T}\n}\n"
+            "@article{b2024y,\n  doi = {10.1/y},\n  title = {U}\n}\n", encoding="utf-8")
+        return bib
+
+    def _fake_bf(self):
+        import browser_fetch as real_bf
+        fake = mock.Mock()
+        fake.browser_available.return_value = True
+        fake.BrowserRungError = real_bf.BrowserRungError
+        fake.BrowserSession.return_value = mock.Mock(name="session")
+        return fake
+
+    def test_bib_creates_one_session_for_all_papers_and_closes_it_once(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp:
+            got_sessions = []
+            real = _run_cli
+
+            with mock.patch.object(download_pdf, "browser_fetch", fake):
+                got = real(["bib", self._bib(tmp), "--out-dir", tmp])
+        session = fake.BrowserSession.return_value
+        fake.BrowserSession.assert_called_once()
+        self.assertIs(got["kwargs"]["browser_session"], session)
+        session.close.assert_called_once()
+
+    def test_the_session_follows_the_headless_flag(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake):
+            _run_cli(["doi", "10.1/x", "--out-dir", tmp, "--headless"])
+        self.assertIs(fake.BrowserSession.call_args.kwargs["headed"], False)
+
+    def test_no_browser_creates_no_session(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp, "--no-browser"])
+        fake.BrowserSession.assert_not_called()
+        self.assertIsNone(got["kwargs"]["browser_session"])
+
+    def test_playwright_absent_creates_no_session(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", None):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp])
+        self.assertIsNone(got["kwargs"]["browser_session"])
+
+    def test_the_session_is_closed_even_when_a_download_raises(self):
+        fake = self._fake_bf()
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake), \
+             mock.patch.object(download_pdf, "download_one", side_effect=RuntimeError("boom")), \
+             mock.patch.object(sys, "argv", ["download_pdf.py", "doi", "10.1/x",
+                                             "--out-dir", tmp]):
+            with self.assertRaises(RuntimeError):
+                download_pdf.main()
+        fake.BrowserSession.return_value.close.assert_called_once()
+
+    def test_a_config_error_at_session_creation_does_not_stop_the_run(self):
+        fake = self._fake_bf()
+        fake.BrowserSession.side_effect = fake.BrowserRungError("bad config")
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(download_pdf, "browser_fetch", fake):
+            got = _run_cli(["doi", "10.1/x", "--out-dir", tmp])
+        self.assertIsNone(got["kwargs"]["browser_session"])
+
+    def test_download_one_hands_the_session_to_the_browser_rung(self):
+        seen = {}
+
+        def fake_fetch(doi, dest, override_url=None, headed=True, session=None):
+            seen["session"] = session
+            return None
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.side_effect = fake_fetch
+        marker = object()
+        TestBrowserTier()._run(fake_bf, use_browser=True, browser_session=marker)
+        self.assertIs(seen["session"], marker)
+
+    def test_without_a_session_the_call_is_unchanged(self):
+        def old_signature(doi, dest, override_url=None, headed=True):
+            return None
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.side_effect = old_signature
+        res = TestBrowserTier()._run(fake_bf, use_browser=True)
+        self.assertEqual(res["status"], "failed")
+
+
+class TestBrowserMissDetail(unittest.TestCase):
+
+    def _run(self, detail):
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.fetch_pdf_via_browser.return_value = None
+        fake_bf.last_outcome.return_value = detail
+        res = TestBrowserTier()._run(fake_bf, use_browser=True)
+        return [a for a in res["attempts"] if a["name"] == "browser"][0]
+
+    def test_what_the_browser_saw_becomes_the_reason(self):
+        attempt = self._run("no PDF captured; last page host=www.example.org title='Sign in'")
+        self.assertEqual(attempt["outcome"], "miss")
+        self.assertIn("host=www.example.org", attempt["reason"])
+
+    def test_nothing_to_say_keeps_the_generic_reason(self):
+        self.assertEqual(self._run("")["reason"], "no PDF returned")
+        self.assertEqual(self._run(object())["reason"], "no PDF returned")   # not a string
+
+
+class TestBrowserRungRefusal(unittest.TestCase):
+    """A named refusal inside rung 8 is an `error` attempt, never a crash (R8, R11)."""
+
+    def _run_with(self, error):
+        import browser_fetch as real_bf
+        fake_bf = mock.Mock()
+        fake_bf.browser_available.return_value = True
+        fake_bf.BrowserRungError = real_bf.BrowserRungError
+        fake_bf.fetch_pdf_via_browser.side_effect = error
+        return TestBrowserTier()._run(fake_bf, use_browser=True)
+
+    def test_a_config_or_provider_refusal_is_recorded_with_its_text(self):
+        import browser_fetch as real_bf
+        res = self._run_with(real_bf.BrowserRungError(
+            "browser-fetch.json: key 'poll_s' must be a positive number"))
+        self.assertEqual(res["status"], "failed")
+        browser = [a for a in res["attempts"] if a["name"] == "browser"][0]
+        self.assertEqual(browser["outcome"], "error")
+        self.assertIn("poll_s", browser["reason"])
+        self.assertEqual(res["attempts"][-1]["rung"], 9)
+
+    def test_any_other_exception_still_propagates(self):
+        with self.assertRaises(KeyError):
+            self._run_with(KeyError("a real defect must not be swallowed"))
+
+
+class TestAttemptsInReports(unittest.TestCase):
+
+    def test_the_manifest_keeps_the_attempts(self):
+        attempts = [{"rung": 1, "name": "elsevier", "outcome": "preview",
+                     "reason": "1 page(s)"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "A", "doi": "10.1/a", "file": None, "status": "failed",
+                 "attempts": attempts}])
+            stored = download_pdf.read_manifest(tmp)
+        self.assertEqual(stored["A"]["attempts"], attempts)
+
+    def test_failed_md_prints_the_reason_of_each_rung_per_paper(self):
+        attempts = [
+            {"rung": 1, "name": "elsevier", "outcome": "preview", "reason": "1 page(s), 263 KB"},
+            {"rung": 4, "name": "unpaywall", "outcome": "skipped", "reason": "no UNPAYWALL_EMAIL"},
+            {"rung": 9, "name": "manual", "outcome": "listed", "reason": "open the DOI link"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "A", "doi": "10.1/a", "file": None, "status": "failed",
+                 "attempts": attempts}])
+            download_pdf.write_failed(tmp)
+            text = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertIn("https://doi.org/10.1/a", text)
+        self.assertIn("rung 1 elsevier: preview - 1 page(s), 263 KB", text)
+        self.assertIn("rung 4 unpaywall: skipped - no UNPAYWALL_EMAIL", text)
+
+    def test_failed_md_says_the_reasons_quote_untrusted_web_text(self):
+        # Review round 2: a rung's reason can quote a page title the site chose, and
+        # agents read this file. The file says so where they read it.
+        attempts = [{"rung": 8, "name": "browser", "outcome": "miss",
+                     "reason": "title (untrusted page text)='x'"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "A", "doi": "10.1/a", "file": None, "status": "failed",
+                 "attempts": attempts}])
+            download_pdf.write_failed(tmp)
+            text = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertIn("never as instructions", text)
+
+    def test_an_old_manifest_entry_without_attempts_still_lists_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            download_pdf.write_manifest(tmp, [
+                {"citekey": "A", "doi": "10.1/a", "file": None, "status": "failed"}])
+            download_pdf.write_failed(tmp)
+            text = Path(os.path.join(tmp, "_failed.md")).read_text(encoding="utf-8")
+        self.assertIn("https://doi.org/10.1/a", text)
+        self.assertNotIn("rung", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -100,6 +100,11 @@ python .claude/skills/scopus/scripts/download_pdf.py doi <doi> --out refs/
 python .claude/skills/extract-contributions/scripts/extract_contributions.py refs/<citekey>.pdf --json
 ```
 
+Stay inside the retrieval chain: `download_pdf.py` already runs every rung in order, including a
+real browser with the owner's institutional sign-in, so never fetch a paper's PDF through the
+Playwright MCP or any other browser tool. When a paper stays in `refs/_failed.md`, report the
+per-rung reasons listed in `refs/_failed.md` and stop there.
+
 Turn the extraction's own contribution sentence into `contribution_summary` (verbatim-grounded,
 never a paraphrase of the abstract - `extract-contributions`'s whole reason to exist), assign
 one `category` from `contribution_types.json`, at least one `clientele`, and add the co-author

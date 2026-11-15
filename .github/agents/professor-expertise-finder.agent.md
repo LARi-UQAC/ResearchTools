@@ -47,7 +47,12 @@ workflow exactly. Key points:
    the article's OWN stated contribution against the keyword clusters —
    never a guessed title match. The repo's own working norm already
    requires every piece of information to be verified through `scopus`;
-   this is where it applies to this skill.
+   this is where it applies to this skill. Stay inside the retrieval chain:
+   `download_pdf.py` already runs every rung in order, including a real browser
+   with the owner's institutional sign-in, so never fetch a paper's PDF through
+   the Playwright MCP or any other browser tool. When a paper stays in
+   `refs/_failed.md`, report the per-rung reasons listed in `refs/_failed.md`
+   and stop there.
 5. Deliver the ranked table defined in the skill's Output Contract, in chat
    and as an XLSX stored with the location's data instance.
 6. Variants the user may invoke at any point: **test mode** — a list of

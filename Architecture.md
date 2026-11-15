@@ -251,13 +251,15 @@ flowchart TD
   S2 -.->|"ordered authors backfill"| API
 
   subgraph D["download_pdf.py — any-format full text"]
-    DL["download_pdf.py<br/>doi · bib"]
+    DL["download_pdf.py<br/>doi · bib · url"]
     DL --> DLE["Elsevier Full-Text (PDF)"]
     DL -.->|"OA fallback"| DLS["S2 openAccessPdf (PDF)"]
     DL -.->|"OA tiers"| DLO["Unpaywall · arXiv · PMC ·<br/>landing (PDF / HTML)"]
+    DL -.->|"rung 8, default on"| DLB["browser_fetch.py<br/>Chrome + institutional sign-in<br/>(browser_login.py secret provider)"]
     DLE --> CHK{"%PDF magic-byte (PDF)<br/>or text/html + length +<br/>no paywall markers (HTML)<br/>+ HTTPS + size cap"}
     DLS --> CHK
     DLO --> CHK
+    DLB --> CHK
     CHK -->|"ok"| REFS[("refs/*.pdf|html|md<br/>_manifest.json (format · tier)")]
     CHK -->|"reject"| FAIL[("refs/_failed.md")]
   end
@@ -283,8 +285,9 @@ flowchart TD
 | --- | --- | --- | --- |
 | [scopus_api.py](skills/scopus/scripts/scopus_api.py) | search · cite · validate · verify · author · journal · publications | Elsevier Search / Abstract Retrieval / Author Search / Serial Title | `SCOPUS_API_KEY` |
 | [semantic_scholar_api.py](skills/scopus/scripts/semantic_scholar_api.py) | authors · paper · match · oa · search (keyword search with `--year`, `--limit`), plus `external_ids_for_doi` | Semantic Scholar Academic Graph | `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` (optional) |
-| [download_pdf.py](skills/scopus/scripts/download_pdf.py) | doi · bib (any format: pdf/html/md) | Elsevier → S2 → publisher → Unpaywall → arXiv → PMC → DOI landing → browser (`--browser`) | `SCOPUS_API_KEY`, `UNPAYWALL_EMAIL` (optional) |
-| [browser_fetch.py](skills/scopus/scripts/browser_fetch.py) | tier 8 for download_pdf.py (opt-in) | real Playwright Chromium; per-paper `refs/_sources.json` override URL (e.g. ResearchGate) | optional: `playwright` + `playwright install chromium` |
+| [download_pdf.py](skills/scopus/scripts/download_pdf.py) | doi · bib · url (any format: pdf/html/md) | strict nine-rung chain: Elsevier → S2 → publisher → Unpaywall → arXiv → PMC → DOI landing → browser (default on, `--no-browser` skips) → manual list; each rung's outcome and reason in the manifest and `_failed.md` | `SCOPUS_API_KEY`, `UNPAYWALL_EMAIL`, `ELSEVIER_INSTTOKEN` (optional) |
+| [browser_fetch.py](skills/scopus/scripts/browser_fetch.py) | rung 8 for download_pdf.py | installed Chrome via Playwright (stated fallback to the bundled Chromium), institutional sign-in for hosts listed in [browser-fetch.json](skills/scopus/scripts/browser-fetch.json), one shared `BrowserSession` per run, per-paper `refs/_sources.json` override URL (e.g. ResearchGate); no stealth library | optional: `playwright`, Chrome |
+| [browser_login.py](skills/scopus/scripts/browser_login.py) | secret providers for that sign-in | `keyring` (default), `bitwarden` (`bw`, `BW_SESSION`), `keepassxc` (`keepassxc-cli`); password only, no fallback between providers, no secret in any log | optional: `keyring`, or the provider's command line tool |
 | [bib_batch.py](skills/scopus/scripts/bib_batch.py) | resolve · enrich · bib · all (candidates → `.bib`: title→DOI, grade A–D, BibTeX) | wraps `scopus_api.py` | `SCOPUS_API_KEY` |
 | [bib_audit.py](skills/scopus/scripts/bib_audit.py) | audit an existing `.bib` (required fields, duplicates, DOI validation, venue metrics by ISSN, publisher approval) → `<base>_clean.bib` + `<base>_bib_report.md` + JSON summary; `--no-network` replays the cache | wraps `scopus_api.py` (`cite`, `journal --issn`) | `SCOPUS_API_KEY` |
 | [litreview_update.py](skills/scopus/scripts/litreview_update.py) | baseline · delta · changelog (incremental `/litupdate` bookkeeping; reuses `bib_batch.title_match`) | none (offline) | — |

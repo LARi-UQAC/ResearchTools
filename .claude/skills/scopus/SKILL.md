@@ -47,7 +47,7 @@ cd ".claude/skills/scopus"
 | `author ` | Author profile. **Prefer the AU-ID form**: resolving a name to an AU-ID needs the Author Search API, which many keys are not entitled for (see `### Author`) | `python scripts/scopus_api.py author "AU-ID(<digits>)"` (or `author "<name>"`, which degrades) |
 | `journal ` | Venue metadata — journal, conference proceeding, book series, trade journal (SJR, CiteScore, publisher, ISSN/ISBN, venue type). **With `--issn` it also returns `pct` (best CiteScore subject percentile) and the `quartile` derived from it**; prefer that form, a lookup by title answers a sparse stub | `python scripts/scopus_api.py journal "<venue name>" [--issn "<ISSN>"] [--fallback-doi "<DOI>"]` |
 | `review ` | Literature review | `python scripts/scopus_api.py search "<rest>" --count 15` then synthesize |
-| `download ` | **Full-text retrieval** into a project `refs/` dir (Elsevier -> Semantic Scholar -> publisher PDF with browser-TLS (curl_cffi) + Akamai interstitial solver + curl fallback -> Unpaywall -> arXiv -> PMC -> validated landing HTML) | `python scripts/download_pdf.py doi "<DOI>" --latex "<main.tex>"` or `python scripts/download_pdf.py bib "<refs.bib>" --latex "<main.tex>"` |
+| `download ` | **Full-text retrieval** into a project `refs/` dir, nine rungs run in order until a full PDF (Elsevier -> Semantic Scholar -> publisher PDF with browser-TLS (curl_cffi) + Akamai interstitial solver + curl fallback -> Unpaywall -> arXiv -> PMC -> validated landing HTML -> real Chrome with the owner's institutional sign-in -> manual list), each rung's outcome and reason recorded | `python scripts/download_pdf.py doi "<DOI>" --latex "<main.tex>"`, `python scripts/download_pdf.py bib "<refs.bib>" --latex "<main.tex>"` or `python scripts/download_pdf.py url "<ScienceDirect URL or PII>" --out-dir "<refs>"` |
 | `batch ` | **Batch corpus pipeline**, candidates -> `.bib` — strict TITLE() title-to-DOI resolution (no weak-hit fallback), cite enrichment, venue grading A-D, BibTeX generation (doi + clickable url, at-free excluded blocks, forbidden-char normalization) | `python scripts/bib_batch.py all candidates.json --corpus corpus.json --bib review.bib` (modes: `resolve`, `enrich`, `bib`, `all`) |
 | `audit ` | **Audit an existing `.bib`**, the opposite direction — required fields, duplicates, DOI validation, venue metrics by ISSN, publisher approval; writes an annotated pass-through copy and a measured report | `python scripts/bib_audit.py "<file.bib>" --json` (see `## Auditing an existing .bib`) |
 | `publications ` | **One author's document list**, most recent first, each with its own DOI (never synthesized) and an `approved_publisher` flag against `.claude/CLAUDE.md`'s list. A venue outside it is flagged, not dropped. Backs RT-6's `GET /publications` on the form service, which adds an on-disk cache and a rate limiter | `python scripts/scopus_api.py publications "<name>" [--count N] [--au-id "<digits>"]` (max `--count` 25: Scopus's STANDARD view refuses a page above 25) |
@@ -351,11 +351,15 @@ script.
 directly under the LaTeX project. It is a separate script — `scopus_api.py` stays a pure
 JSON metadata client and never writes files.
 
-Two subcommands:
+Three subcommands:
 
 ```powershell
 # single reference, refs/ resolved next to main.tex
 python scripts/download_pdf.py doi "10.1109/TRO.2024.1" --citekey Smith2024 --latex "path/src/main.tex"
+
+# a ScienceDirect article URL (/pii/, /abs/pii/ or /pdf/pii/) or a bare PII: the DOI is
+# resolved through the Elsevier metadata view, then the same chain runs
+python scripts/download_pdf.py url "https://www.sciencedirect.com/science/article/pii/S0736584524000206" --out-dir "path/refs"
 
 # whole bibliography; --bib path explicit, or auto-discovered from \bibliography{} in the .tex
 python scripts/download_pdf.py bib "path/src/assets/references.bib" --latex "path/src/main.tex"
@@ -369,9 +373,47 @@ Behaviour:
 - **Filename** = `<citekey>.pdf` when known (stable presence check), else
   `<author>_<year>_<title>.pdf`.
 - **Presence-gated**: an existing target file is skipped — no re-download.
-- **Source chain**: 1) Elsevier Full-Text API (`SCOPUS_API_KEY` env, read like every
-  other mode; optional `--insttoken` for off-campus). 2) Semantic Scholar `openAccessPdf`
-  as the fallback when Scopus cannot deliver. Works for OA papers without the VPN.
+- **Strict source chain** (rung N runs only when rung N-1 gave no full PDF, the first
+  success stops it, no rung is opt-in on the command line; the corpus scripts of
+  `extract-statistic` and `geolocalisation` call the chain with the browser rung off):
+  1) Elsevier Full-Text API (`SCOPUS_API_KEY`;
+  the institutional token from `--insttoken`, else the `ELSEVIER_INSTTOKEN` environment
+  variable). 2) Semantic Scholar `openAccessPdf`. 3) publisher PDF rebuilt from the DOI
+  (browser TLS + curl fallback). 4) Unpaywall (`UNPAYWALL_EMAIL`). 5) arXiv. 6) PubMed
+  Central. 7) validated DOI landing HTML. 8) a real browser with the owner's institutional
+  sign-in (below). 9) the manual list, `refs/_failed.md`. A one-page publisher preview is
+  rejected and the chain goes on. Open-access papers need no VPN.
+- **Every rung leaves a line.** The manifest keeps an `attempts` list per paper (rung,
+  name, outcome `ok` / `miss` / `preview` / `skipped` / `error` / `listed`, one-line reason)
+  and `refs/_failed.md` prints it under each paper that stayed failed. When Elsevier answers
+  with `X-ELS-Status: WARNING - ... not entitled`, rung 1 quotes it and rung 9 says the
+  publisher reports the requestor is not entitled. **An agent reports these reasons and
+  never fetches a PDF itself through a browser tool.**
+- **Rung 8, the browser** runs by default (`--no-browser` skips it, `--browser` is kept as
+  a no-op). It launches the installed Google Chrome (falls back to the bundled Chromium
+  with a logged warning), keeps a persistent profile outside the repository, and shares one
+  browser across the papers of a run. The tool uses no stealth or anti-detect library and
+  does not solve the checkbox: a person clicks a Cloudflare Turnstile checkbox and approves
+  the MFA prompt inside `human_window_s`. Whether to automate that click is an open
+  question in Issue #11. Playwright absent or no browser installed is recorded as
+  `skipped` with the remedy.
+- **Institutional sign-in** (rung 8, per publisher host). Every timeout, limit and host
+  setting is in `scripts/browser-fetch.json` with its provenance. A host listed under
+  `hosts` gets: `entry_url` (https), `login_hosts` (the only pages a secret may be typed
+  into, checked before the secret is read and again after), `username_env` (the NAME of the
+  environment variable holding the user name, never the name), `vault_item`, `steps`
+  (`fill_username`, `fill_password`, `fill_totp`, `click`, each with a CSS selector) and
+  `logged_in_selector`. `hosts` ships empty: an entry is added only after a live run
+  verified it. A refusal (bad config, locked vault, MFA not approved in time) is recorded
+  as an `error` attempt and the chain goes on to the manual list.
+- **Secret providers** (`secret_provider` in `browser-fetch.json`): `keyring` (default, the
+  operating system store, `pip install keyring`), `bitwarden` (the `bw` command line tool:
+  `bw login`, `bw unlock`, then export `BW_SESSION`), `keepassxc` (`keepassxc-cli`, with
+  `KEEPASSXC_DATABASE` and `KEEPASSXC_PASSWORD` or `KEEPASSXC_KEYFILE`; command line not yet
+  verified against the real tool). The password only: a one-time code is read from a vault
+  only when `allow_totp_from_vault` is true, with a warning that both factors then sit in
+  one vault. A missing or locked provider is a named refusal, never a switch to another one,
+  and no secret is ever logged.
 - **Validation on every fetch**: HTTPS-only, capped redirect hops, `%PDF` magic-byte
   check (rejects publisher HTML "access denied" pages), and a 100 MB size cap. Atomic
   write via a `*.part` rename.

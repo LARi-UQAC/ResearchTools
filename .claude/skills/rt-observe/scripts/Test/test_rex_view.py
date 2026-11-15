@@ -35,7 +35,7 @@ def page_script():
 class RexPage(unittest.TestCase):
 
     FUNCTIONS = ("thousands", "tokenNote", "escapeText", "ringPath", "rexWord", "rexCtx",
-                 "rexTarget", "rexModel", "rexRing", "rexPercent", "rexDogArt",
+                 "rexTarget", "rexLocalTarget", "rexModel", "rexRing", "rexPercent", "rexDogArt",
                  "rexSleepingArt", "rexFigure", "rexNote", "rexFocus", "rexJudged", "rexMedian",
                  "rexMood", "rexRemember")
     VARS = ("AIDER_MODE", "AIDER_ENDED", "REX_FIG", "REX_SHIELD", "REX_INNER", "REX_DOG",
@@ -121,6 +121,69 @@ class RexPage(unittest.TestCase):
     def test_the_demo_keeps_the_real_agents_when_there_are_some(self):
         got = self.model({}, [self.session("real")], "#rex-demo")
         self.assertEqual(["real"], [t["name"] for t in got["targets"]])
+
+    # -- a local role that is generating (Issue 118) -------------------------
+    @staticmethod
+    def local_state(generating, rows, sessions=()):
+        """A state with the rex section naming `generating` and a local_calls section of `rows`."""
+        return {"rex": {"active": bool(generating), "local_generating": list(generating)},
+                "local_calls": {"status": "ok", "roles": rows, "recent": []},
+                "fleet": {"harnesses": {"aider": {"sessions": list(sessions)}}}}
+
+    def local_model(self, state, now=0):
+        return self.js("rexModel(%s, '', %d)" % (json.dumps(state), now))
+
+    ROW = {"generating": True, "tag": "tag-a", "num_ctx": 262144, "plan": "C:\work\plan1.md"}
+
+    def test_a_generating_local_role_is_a_target_in_the_generating_mode(self):
+        got = self.local_model(self.local_state(["ugs-grader"], {"ugs-grader": self.ROW}))
+        self.assertTrue(got["awake"])
+        self.assertEqual(["ugs-grader"], [t["name"] for t in got["targets"]])
+        target = got["targets"][0]
+        self.assertEqual("GENERATING", target["mode"])
+        self.assertEqual("l:ugs-grader", target["lane"])
+        self.assertEqual("plan1.md", target["plan"])
+        self.assertIn("262K", target["ctx"])
+
+    def test_a_local_role_that_is_not_generating_is_no_target(self):
+        row = dict(self.ROW, generating=False)
+        got = self.local_model(self.local_state([], {"ugs-grader": row}))
+        self.assertEqual([], got["targets"])
+
+    def test_aider_targets_come_first_and_keep_their_lane(self):
+        state = self.local_state(["ugs-grader"], {"ugs-grader": self.ROW},
+                                 sessions=[self.session("uwd")])
+        got = self.local_model(state)
+        self.assertEqual(["uwd", "ugs-grader"], [t["name"] for t in got["targets"]])
+        self.assertEqual("s:uwd", got["targets"][0]["lane"])
+        self.assertEqual("CODING", got["targets"][0]["mode"])
+
+    def test_the_generating_mode_is_judged_for_the_mood_and_testing_is_not(self):
+        got = self.local_model(self.local_state(["ugs-grader"], {"ugs-grader": self.ROW}))
+        got["index"] = 0
+        self.assertTrue(self.js("rexJudged(%s)" % json.dumps(got)))
+        tests = self.model({"active": True}, [self.session("t", state="testing")])
+        tests["index"] = 0
+        self.assertFalse(self.js("rexJudged(%s)" % json.dumps(tests)))
+
+    def test_a_role_name_with_markup_never_reaches_the_figure_unescaped(self):
+        name = "<img src=x onerror=alert(1)>"
+        got = self.local_model(self.local_state([name], {name: self.ROW}))
+        target = got["targets"][0]
+        got["loads"] = {}
+        fig = self.js("rexFigure(%s, 100, 200, %s)" % (json.dumps(got), json.dumps(target)))
+        self.assertNotIn("<img", fig)
+
+    def test_an_older_server_without_the_local_fields_gives_the_old_result(self):
+        state = {"rex": {"active": True},
+                 "fleet": {"harnesses": {"aider": {"sessions": [self.session("uwd")]}}}}
+        got = self.local_model(state)
+        self.assertEqual(["uwd"], [t["name"] for t in got["targets"]])
+
+    def test_a_name_in_the_rex_list_without_a_local_row_still_gets_a_target(self):
+        got = self.local_model(self.local_state(["ugs-grader"], {}))
+        self.assertEqual(["ugs-grader"], [t["name"] for t in got["targets"]])
+        self.assertEqual("", got["targets"][0]["ctx"])
 
     # -- the figure ----------------------------------------------------------
     def fig(self, model, focus=None):
@@ -353,7 +416,8 @@ class RexInTheAgentGraph(unittest.TestCase):
     def test_rex_is_drawn_by_the_graph_level_with_the_agent_he_watches(self):
         body = re.search(r"function agentGraph\(.*?\n\}\n", page_script(), re.S).group(0)
         self.assertIn("rexFigure(rex, REX_FIG.cx, rexY, focus)", body)
-        self.assertIn('rowOf["s:" + t.id]', body)
+        self.assertIn('t.lane || ("s:" + t.id)', body)
+        self.assertIn("rowOf[laneOf(t)]", body)
         self.assertIn("centre(focus ? rowOf", body)
 
     def test_the_graph_receives_the_model_and_a_lone_figure_covers_no_agent(self):

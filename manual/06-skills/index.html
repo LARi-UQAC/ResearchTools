@@ -1784,7 +1784,7 @@ registration steps of a new skill.</p>
 </tr>
 <tr>
 <td><code>obsidian-cli</code></td>
-<td>Read and search the Obsidian vault through the allowed command surface only (<code>read</code>, <code>search</code>, <code>list</code>, <code>property:get</code>/<code>property:set</code>, <code>tasks</code>, <code>links</code>, <code>tags</code>, <code>move</code>, <code>rename</code>); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (<code>create</code>, <code>append</code>, <code>prepend</code>, plus <code>eval</code>, <code>dev:*</code>, <code>plugin:install</code>, <code>theme:install</code>, <code>sync*</code>) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and <code>create</code> on an existing file writes a numbered duplicate instead of failing.</td>
+<td>Read and search the Obsidian vault through the allowed command surface only (<code>read</code>, <code>search</code>, <code>files</code>, <code>folders</code>, <code>property:read</code>/<code>property:set</code>, <code>tasks</code>, <code>links</code>, <code>tags</code>, <code>move</code>, <code>rename</code>); a captured learning is deposited to the outbox, the single write path, instead of calling a write command directly. The direct CLI write commands (<code>create</code>, <code>append</code>, <code>prepend</code>, plus <code>eval</code>, <code>dev:*</code>, <code>plugin:install</code>, <code>theme:install</code>, <code>sync*</code>) are forbidden for measured reasons: the failure sits in the whole JSON header, not the content (a 3850-byte header passes, 4343 does not, and 4096, a Windows named-pipe buffer, falls between); the CLI exits 0 on that failure too; and <code>create</code> on an existing file writes a numbered duplicate instead of failing.</td>
 <td><code>.claude/skills/obsidian-cli/SKILL.md</code></td>
 </tr>
 <tr>
@@ -2401,8 +2401,8 @@ in the graph, which files it claims to cover and never produced a node for, and 
 covered file is newer than the graph itself. It exits 0 where there is no <code>graphify-out/</code> at
 all, so it is harmless in a project that has no graph.</p>
 <h3 id="obsidian-cli---obsidian-vault-operations"><code>obsidian-cli</code> - Obsidian vault operations<a class="headerlink" href="#obsidian-cli---obsidian-vault-operations" title="Permanent link">&para;</a></h3>
-<p>Gives Claude the vault's allowed read/search command surface (<code>read</code>, <code>search</code>, <code>list</code>,
-<code>property:get</code>/<code>property:set</code>, <code>tasks</code>, <code>links</code>, <code>tags</code>, <code>move</code>, <code>rename</code>) and the single
+<p>Gives Claude the vault's allowed read/search command surface (<code>read</code>, <code>search</code>, <code>files</code>,
+<code>folders</code>, <code>property:read</code>/<code>property:set</code>, <code>tasks</code>, <code>links</code>, <code>tags</code>, <code>move</code>, <code>rename</code>) and the single
 sanctioned write path: a captured learning is drafted, dropped in
 <code>~/.claude/obsidian-outbox/</code> with a <code>create|append path="..."</code> directive on its first line,
 and the <code>obsidian-outbox-flush.py</code> hook (SessionStart/SessionEnd) writes it into the vault
@@ -2418,7 +2418,7 @@ on an existing file silently writes a numbered duplicate (<code>Decisions 1.md</
 failing.</p>
 <p><strong>Files:</strong>
 - <code>.claude/skills/obsidian-cli/SKILL.md</code>
-- <code>.claude/skills/obsidian-cli/references/command-reference.md</code> - full command syntax
+- <code>.claude/skills/obsidian-cli/references/command-reference.md</code> - syntax of the allowed commands and the status of every other command
 - <code>.claude/skills/obsidian-cli/scripts/vault_consolidate.py</code> - deterministic half of
   consolidation: measures shared tags/<code>domaine</code>/term overlap and proposes links, decides
   nothing; <code>--mode links</code> reports dead wiki-links read-only, and <code>--apply &lt;map.json&gt; --yes</code>

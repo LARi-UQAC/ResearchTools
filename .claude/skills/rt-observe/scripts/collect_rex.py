@@ -2,8 +2,9 @@
 collect_rex - the `rex` snapshot section: the numbers behind the watchdog dog.
 
 Rex is the dashboard's picture of the aider watchdog. He needs three things the
-other sections do not carry: whether the watchdog program is running (so he is
-awake or curled up asleep), the CPU load of the model server, and the load of the
+other sections do not carry: whether he should be awake (the watchdog program is
+running, or a local model role is generating now, whoever started it) or curled up
+asleep, the CPU load of the model server, and the load of the
 GPU in memory (VRAM) and in compute (CUDA). They are read on the dashboard's own
 clock, independent of the watchdog, so the dog can be drawn before the program is
 built and the rings keep moving between two of its readings.
@@ -16,9 +17,12 @@ so. Process names come from configuration and are checked before they reach a
 command line (R24). Every external call goes through an injected `run` with a
 timeout (R10), so the suite needs no process, no GPU and no clock (R19, R21).
 """
+import datetime
 import os
 import re
 import subprocess
+
+import collect_local
 
 _NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 _PERCENT = 100.0  # a percentage is a unit conversion, not a setting
@@ -138,6 +142,31 @@ def _gpu(run, timeout):
     return best
 
 
+def _local_generating(config, home, now):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        List the local model roles that are generating now, from the bridge log.
+    Details:
+        Reuses collect_local, which owns the log path, the tail cap and the generation limit.
+        A naive clock is read as UTC, as collect_local reads a naive record stamp.
+    Inputs:
+        config (dict): parsed observe-config.json
+        home (Path): the home directory the log path resolves against
+        now (datetime): the injected clock
+    Outputs:
+        result (tuple): (roles, reason): the sorted names of the generating roles, and None
+        or the reason the log could not be read (a missing log is a reason, not an error).
+    --------------------------------------------------------------------------
+    """
+    moment = now if now.tzinfo else now.replace(tzinfo=datetime.timezone.utc)
+    section = collect_local.collect(config, home, moment)
+    if section.get("status") != "ok":
+        return [], section.get("reason") or "the bridge log could not be read"
+    roles = section.get("roles") or {}
+    return sorted(name for name, row in roles.items() if row.get("generating")), None
+
+
 def collect(config, home, now, run=None, logical_cpus=None):
     """
     --------------------------------------------------------------------------
@@ -145,12 +174,13 @@ def collect(config, home, now, run=None, logical_cpus=None):
         Report whether the watchdog runs and the three loads Rex draws.
     Inputs:
         config (dict): parsed observe-config.json
-        home (Path): the home directory, unused here and kept for the section contract
+        home (Path): the home directory the bridge log path resolves against
         now (datetime): the injected clock
         run (callable): `run(argv, timeout) -> str`, defaults to a real subprocess
         logical_cpus (int): the processor count, defaults to os.cpu_count()
     Outputs:
-        section (dict): status, active, cpu_percent (the model server's share of all
+        section (dict): status, active (the watchdog is listed or a local role generates),
+        local_generating (sorted role names), cpu_percent (the model server's share of all
         processors), machine_cpu_percent (the whole machine, as a task manager shows it),
         vram_percent, cuda_percent,
         vram_used_mb, vram_total_mb, logical_cpus, unread {reading: reason},
@@ -169,6 +199,10 @@ def collect(config, home, now, run=None, logical_cpus=None):
     running = _watchdog_running(run, image, timeout)
     if running is None:
         unread["active"] = "tasklist could not be run"
+
+    generating, local_reason = _local_generating(config, home, now)
+    if local_reason is not None:
+        unread["local_calls"] = local_reason
 
     machine_cpu = _machine_cpu(run, timeout)
     if machine_cpu is None:
@@ -195,9 +229,10 @@ def collect(config, home, now, run=None, logical_cpus=None):
         cuda_percent, used, total = gpu
         vram_percent = round(_PERCENT * used / total, 1) if total else None
 
-    return {"status": "ok", "active": bool(running), "cpu_percent": cpu_percent,
+    return {"status": "ok", "active": bool(running) or bool(generating),
+            "local_generating": generating, "cpu_percent": cpu_percent,
             "machine_cpu_percent": machine_cpu,
             "vram_percent": vram_percent, "cuda_percent": cuda_percent,
             "vram_used_mb": used, "vram_total_mb": total, "logical_cpus": cpus,
-            "unread": unread, "proven_by": "tasklist, Get-Process, nvidia-smi",
+            "unread": unread, "proven_by": "tasklist, Get-Process, nvidia-smi, bridge log",
             "proven_at": now.isoformat(timespec="seconds")}

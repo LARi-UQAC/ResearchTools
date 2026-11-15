@@ -8,8 +8,10 @@ zero (R8). Every call goes through a fake `run` and the clock is injected: no
 process, no GPU, no real time (R19, R21).
 """
 import datetime
+import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -197,6 +199,90 @@ class Safety(unittest.TestCase):
                 node = node[key]
             self.assertTrue(node.get("provenance"), ".".join(keys))
             self.assertIn("value", node)
+
+
+LOG_NOW = datetime.datetime(2026, 11, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
+
+
+def entry(value):
+    """Wrap a value the way observe-config.json does."""
+    return {"value": value, "provenance": "test fixture"}
+
+
+def config_with_log(generating_max=1800):
+    """The rex fixture config plus the keys collect_local.py reads."""
+    out = config()
+    out["paths"] = {"bridge_log": entry("~/.claude/loop-bridge-log.jsonl")}
+    out["caps"] = {"local_calls_tail_bytes": entry(100000), "local_calls_recent": entry(3)}
+    out["staleness_seconds"] = {"local_active": entry(60),
+                                "local_generating_max": entry(generating_max)}
+    return out
+
+
+class LocalRoles(unittest.TestCase):
+    """Rex wakes for a local role that is generating, whatever started it (Issue 118)."""
+
+    def setUp(self):
+        collect_rex._LAST.clear()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.home = Path(self._tmp.name)
+
+    def write_log(self, *records):
+        path = self.home / ".claude" / "loop-bridge-log.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+
+    def start(self, role, at):
+        return {"event": "start", "at": at, "role": role, "tag": "tag-a", "num_ctx": 4096,
+                "plan": None, "attempt": 1}
+
+    def attempt(self, role, at):
+        return {"at": at, "role": role, "tag": "tag-a", "num_ctx": 4096, "prompt_tokens": 5,
+                "completion_tokens": 2, "plan": None, "attempt": 1, "accepted": True}
+
+    def run_collect(self, tasklist=GONE, cfg=None, now=LOG_NOW):
+        return collect_rex.collect(cfg or config_with_log(), self.home, now,
+                                   run=Fake(tasklist=tasklist, cpu="10", gpu="5, 100, 200"),
+                                   logical_cpus=20)
+
+    def test_a_generating_local_role_wakes_rex_without_the_watchdog(self):
+        self.write_log(self.start("ugs-grader", "2026-11-15T11:59:00+00:00"))
+        out = self.run_collect()
+        self.assertTrue(out["active"])
+        self.assertEqual(out["local_generating"], ["ugs-grader"])
+
+    def test_a_start_older_than_the_generation_limit_does_not_wake_rex(self):
+        self.write_log(self.start("ugs-grader", "2026-11-15T10:00:00+00:00"))
+        out = self.run_collect()
+        self.assertFalse(out["active"])
+        self.assertEqual(out["local_generating"], [])
+
+    def test_a_role_whose_call_ended_does_not_wake_rex(self):
+        self.write_log(self.start("ugs-grader", "2026-11-15T11:58:00+00:00"),
+                       self.attempt("ugs-grader", "2026-11-15T11:59:00+00:00"))
+        self.assertFalse(self.run_collect()["active"])
+
+    def test_the_watchdog_alone_still_wakes_rex_with_an_empty_list(self):
+        out = self.run_collect(tasklist=RUNNING)
+        self.assertTrue(out["active"])
+        self.assertEqual(out["local_generating"], [])
+
+    def test_a_missing_bridge_log_is_unread_with_a_reason_and_not_a_crash(self):
+        out = self.run_collect()
+        self.assertFalse(out["active"])
+        self.assertIn("local_calls", out["unread"])
+        self.assertTrue(out["unread"]["local_calls"])
+
+    def test_two_generating_roles_are_both_listed_sorted(self):
+        self.write_log(self.start("ugs-vision", "2026-11-15T11:59:10+00:00"),
+                       self.start("ugs-grader", "2026-11-15T11:59:20+00:00"))
+        self.assertEqual(self.run_collect()["local_generating"], ["ugs-grader", "ugs-vision"])
+
+    def test_a_naive_clock_is_read_as_utc_and_does_not_crash(self):
+        self.write_log(self.start("ugs-grader", "2026-11-15T11:59:00+00:00"))
+        naive = datetime.datetime(2026, 11, 15, 12, 0, 0)
+        self.assertTrue(self.run_collect(now=naive)["active"])
 
 
 if __name__ == "__main__":

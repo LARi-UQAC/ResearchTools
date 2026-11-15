@@ -211,7 +211,9 @@ def collect(config, home, now):
 
     Outputs:
         state (dict): status "ok" with proven_by, proven_at, roles, recent, skipped_without_role,
-        truncated and collected_at, or status "unavailable" with a named reason. Never raises.
+        truncated and collected_at, or status "unavailable" with a named reason, plus `absent` true
+        when there is simply nothing to read yet (no log, an empty one, no record with a role),
+        which is not a failure to read. Never raises.
     --------------------------------------------------------------------------
     """
     try:
@@ -225,17 +227,19 @@ def collect(config, home, now):
     path = _log_path(path_text, home)
     shown = rt_redact.home_tilde(str(path), home)
     if not path.is_file():
-        return {"status": "unavailable", "reason": "bridge log not found: %s" % shown}
+        return {"status": "unavailable", "absent": True,
+                "reason": "bridge log not found: %s" % shown}
     try:
         records, truncated, size = _read_tail(path, tail_bytes)
     except OSError as exc:
         return {"status": "unavailable",
                 "reason": "bridge log unreadable: %s (%s)" % (shown, exc.__class__.__name__)}
     if size == 0:
-        return {"status": "unavailable", "reason": "bridge log is empty: %s" % shown}
+        return {"status": "unavailable", "absent": True,
+                "reason": "bridge log is empty: %s" % shown}
     roles, kept, skipped = _group(records, now, active_seconds, generating_seconds)
     if not kept:
-        return {"status": "unavailable",
+        return {"status": "unavailable", "absent": True,
                 "reason": "no record carries a role yet in %s (%d older line(s) skipped)"
                           % (shown, skipped)}
     ended = [item for item in kept if item.get("event") not in ("start", "failed")]

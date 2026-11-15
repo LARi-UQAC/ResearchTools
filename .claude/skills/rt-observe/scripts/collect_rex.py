@@ -156,12 +156,15 @@ def _local_generating(config, home, now):
         now (datetime): the injected clock
     Outputs:
         result (tuple): (roles, reason): the sorted names of the generating roles, and None
-        or the reason the log could not be read (a missing log is a reason, not an error).
+        or the reason the log could not be read. A log that is absent or empty is not an
+        unread reading: there is nothing to read yet.
     --------------------------------------------------------------------------
     """
     moment = now if now.tzinfo else now.replace(tzinfo=datetime.timezone.utc)
     section = collect_local.collect(config, home, moment)
     if section.get("status") != "ok":
+        if section.get("absent"):
+            return [], None  # nothing to read yet is the normal state, not an unread reading
         return [], section.get("reason") or "the bridge log could not be read"
     roles = section.get("roles") or {}
     return sorted(name for name, row in roles.items() if row.get("generating")), None

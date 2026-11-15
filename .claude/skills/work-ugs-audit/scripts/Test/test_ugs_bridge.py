@@ -502,6 +502,25 @@ class TestBridgeLog(unittest.TestCase):
             self.assertEqual((attempt["prompt_tokens"], attempt["completion_tokens"]), (30, 4))
             self.assertIs(attempt["accepted"], False)
 
+    def test_stamps_carry_milliseconds_so_back_to_back_calls_keep_their_order(self):
+        import re
+        self.assertRegex(ugs_bridge._now_iso(), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}\+00:00$")
+
+    def test_the_clock_is_injected_by_the_caller(self):
+        stamps = iter(["2026-11-15T12:00:00.001+00:00", "2026-11-15T12:00:00.002+00:00"])
+        deps = LoggingDeps(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
+        ugs_bridge.call(role="ugs-grader", prompt="test", schema=_SCHEMA_A, deps=deps, timeout=1,
+                        reserve=0, image_tokens=0, max_image_bytes=100, clock=lambda: next(stamps))
+        self.assertEqual([r["at"] for r in deps.records],
+                         ["2026-11-15T12:00:00.001+00:00", "2026-11-15T12:00:00.002+00:00"])
+
+    def test_an_interrupt_during_the_post_still_closes_the_start_record(self):
+        deps = LoggingDeps(post_error=KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt):
+            _call(deps)
+        self.assertEqual([r.get("event") for r in deps.records], ["start", "failed"])
+        self.assertEqual(deps.records[1]["error"], "KeyboardInterrupt")
+
     def test_deps_without_log_make_the_same_call(self):
         deps = FakeDeps(post_result={"response": '{"a": "x"}', "prompt_eval_count": 1, "eval_count": 1})
         self.assertEqual(_call(deps), {"a": "x"})

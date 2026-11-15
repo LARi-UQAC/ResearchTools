@@ -214,6 +214,17 @@ class TestUnavailable(LogCase):
         reason = self.collect()["reason"]
         self.assertIn("no record carries a role", reason)
 
+    def test_an_absent_log_is_flagged_absent_and_a_broken_one_is_not(self):
+        """`absent` lets a caller tell nothing to read from could not read (Issue 118)."""
+        self.assertTrue(self.collect()["absent"])
+        self.log.write_text("", encoding="utf-8")
+        self.assertTrue(self.collect()["absent"])
+        self.write([{"attempt": 1, "accepted": True}])
+        self.assertTrue(self.collect()["absent"])
+        config = make_config()
+        del config["caps"]["local_calls_recent"]
+        self.assertNotIn("absent", self.collect(config))
+
     def test_a_missing_config_key_is_named_and_never_raises(self):
         config = make_config()
         del config["caps"]["local_calls_recent"]

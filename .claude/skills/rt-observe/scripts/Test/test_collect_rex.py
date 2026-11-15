@@ -268,11 +268,17 @@ class LocalRoles(unittest.TestCase):
         self.assertTrue(out["active"])
         self.assertEqual(out["local_generating"], [])
 
-    def test_a_missing_bridge_log_is_unread_with_a_reason_and_not_a_crash(self):
+    def test_a_missing_bridge_log_is_nothing_to_read_not_an_unread_reading(self):
         out = self.run_collect()
         self.assertFalse(out["active"])
-        self.assertIn("local_calls", out["unread"])
-        self.assertTrue(out["unread"]["local_calls"])
+        self.assertNotIn("local_calls", out["unread"])
+
+    def test_a_bridge_config_that_cannot_be_read_is_unread_with_its_reason(self):
+        cfg = config_with_log()
+        del cfg["caps"]["local_calls_tail_bytes"]
+        out = self.run_collect(cfg=cfg)
+        self.assertFalse(out["active"])
+        self.assertIn("local_calls_tail_bytes", out["unread"]["local_calls"])
 
     def test_two_generating_roles_are_both_listed_sorted(self):
         self.write_log(self.start("ugs-vision", "2026-11-15T11:59:10+00:00"),

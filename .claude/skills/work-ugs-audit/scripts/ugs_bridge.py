@@ -3,7 +3,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Add loop-engineer scripts to path
 _LOOP_ENGINEER_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "loop-engineer" / "scripts"
@@ -27,11 +27,13 @@ class NotRun(RuntimeError):
 
 def _now_iso() -> str:
     """
-    Purpose: The one wall-clock read of this module, as a UTC ISO 8601 stamp to the second.
+    Purpose: The default clock of this module, a UTC ISO 8601 stamp to the millisecond.
+    Details: Milliseconds, not seconds: a grading run makes calls back to back, and a start record
+        stamped in the same second as the previous end would not read as generating.
     Inputs: None.
-    Outputs: str: for example 2026-11-15T16:30:05+00:00. Tests patch this function (R19).
+    Outputs: str: for example 2026-11-15T16:30:05.123+00:00. A caller may inject another clock (R19).
     """
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _write_log(deps: Any, record: Dict[str, Any]) -> None:
@@ -214,7 +216,8 @@ def call_with_usage(
     timeout: int,
     reserve: int,
     image_tokens: int,
-    max_image_bytes: int
+    max_image_bytes: int,
+    clock: Optional[Callable[[], str]] = None
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Purpose: Call the model and return the answer and usage.
@@ -228,6 +231,7 @@ def call_with_usage(
         reserve: Reserve tokens for the reply.
         image_tokens: Estimated tokens per image.
         max_image_bytes: Max bytes per image.
+        clock: Optional callable giving the stamp of a log record; defaults to the module clock.
     Outputs:
         Tuple of (answer, usage).
     Raises:
@@ -247,9 +251,10 @@ def call_with_usage(
             raise
         raise NotRun("unreachable", f"Failed to resolve window: {e}")
 
+    now = clock or _now_iso
     # The start record comes BEFORE the token count: the count is a full prefill of the prompt and can
     # take minutes on this machine, and the model is busy for all of it (Issue 118, review round 1).
-    _write_log(deps, {"event": "start", "at": _now_iso(), "role": role, "tag": tag,
+    _write_log(deps, {"event": "start", "at": now(), "role": role, "tag": tag,
                       "num_ctx": window, "plan": None})
     try:
         try:
@@ -287,10 +292,12 @@ def call_with_usage(
             if isinstance(e, NotRun):
                 raise
             raise NotRun("unreachable", f"Post failed: {e}")
-    except Exception as exc:
-        # Close the start record. Only the kind or the class name is logged: an error text can quote
+    except BaseException as exc:
+        # Close the start record, also on an interrupt (Ctrl-C, SystemExit): a start with no end reads as
+        # a generation in progress for the whole generation limit.
+        # Only the kind or the class name is logged: an error text can quote
         # the request or the reply, and the log is plain text that other tools read (confidential reports).
-        _write_log(deps, {"event": "failed", "at": _now_iso(), "role": role, "tag": tag,
+        _write_log(deps, {"event": "failed", "at": now(), "role": role, "tag": tag,
                           "error": exc.kind if isinstance(exc, NotRun) else exc.__class__.__name__})
         raise
 
@@ -321,7 +328,7 @@ def call_with_usage(
     finally:
         # The model did answer, so the tokens are real even when the answer is refused; `accepted` says
         # whether it was used.
-        _write_log(deps, {"at": _now_iso(), "role": role, "tag": tag, "num_ctx": window,
+        _write_log(deps, {"at": now(), "role": role, "tag": tag, "num_ctx": window,
                           "prompt_tokens": reply.get("prompt_eval_count"),
                           "completion_tokens": reply.get("eval_count"),
                           "plan": None, "accepted": accepted})
@@ -344,7 +351,8 @@ def call(
     timeout: int,
     reserve: int,
     image_tokens: int,
-    max_image_bytes: int
+    max_image_bytes: int,
+    clock: Optional[Callable[[], str]] = None
 ) -> Dict[str, Any]:
     """
     Purpose: Call the model and return the answer.
@@ -358,6 +366,6 @@ def call(
     answer, _ = call_with_usage(
         role, prompt, schema, images,
         deps=deps, timeout=timeout, reserve=reserve,
-        image_tokens=image_tokens, max_image_bytes=max_image_bytes
+        image_tokens=image_tokens, max_image_bytes=max_image_bytes, clock=clock
     )
     return answer

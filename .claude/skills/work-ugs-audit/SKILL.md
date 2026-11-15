@@ -50,9 +50,11 @@ what the vision role reads on a chart before figures are graded.
 
 The token count that checks a prompt against the window waits `driver.count_timeout_s` seconds (measured
 2026-11-15: prefill runs near 130 tokens per second on a CPU-heavy split, so a prompt above about 1000 tokens
-needs more than a few seconds). Every model call also writes the `start`, attempt and `failed` records of
-`ollama_bridge.py` to the bridge log, so the dashboard shows the role, its window and its tokens, and Rex wakes
-while a role generates.
+needs more than a few seconds). Every model call also writes a `start` record, an attempt record with its token
+counts and, on a failure, a `failed` record to the bridge log, from `ugs_bridge.py` in the schema that
+`collect_local.py` of `rt-observe` reads (the same log `ollama_bridge.py` writes), so the dashboard shows the
+role, its window and its tokens, and Rex wakes while a role generates. The log never holds a prompt, a reply
+or an error text.
 
 ## Scripts
 

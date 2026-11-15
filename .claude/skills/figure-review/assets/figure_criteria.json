@@ -1,5 +1,5 @@
 {
-  "_provenance": "21 figure criteria plus one report criterion, all kept (scope undergraduate), and 16 research criteria taken from the CLAUDE.md figure rules and the paper-auditor figure audit step (scope research). Thresholds are the professor's (150 DPI, 0.7 of body text, 70 percent of the space). Labels and comments are starting wording, to be tuned by the professor. ISO 80000 and ISO 5807 are named in the labels and must be checked before they are quoted to students.",
+  "_provenance": "21 figure criteria plus one report criterion, all kept (scope undergraduate, two of them also used by the research auditors: scope both), and 19 research criteria taken from the CLAUDE.md figure rules and the paper-auditor figure audit step (scope research). Thresholds are the professor's (150 DPI, 0.7 of body text, 70 percent of the space). Labels and comments are starting wording, to be tuned by the professor. ISO 80000 and ISO 5807 are named in the labels and must be checked before they are quoted to students.",
   "extraction": {
     "min_area_pt2": {"value": 2500, "provenance": "starting value, adjustable by the professor (a drawing smaller than about 50 by 50 points is a logo or an icon, not a figure)"},
     "background_threshold": {"value": 200, "provenance": "starting value, adjustable by the professor (a pixel darker than this in any channel counts as drawing, 0 to 255)"},
@@ -44,10 +44,10 @@
     {"id": "legend_not_covering_data", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["chart"], "needs": "image", "threshold": null,
      "label_fr": "Légende ne masquant pas les données", "label_en": "Legend not covering data",
      "comment_fr": "La légende cache une partie des données : la déplacer hors du tracé.", "comment_en": "The legend hides part of the data: move it outside the plot."},
-    {"id": "numbered_in_sequence", "level": "figure", "scope": "undergraduate", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
+    {"id": "numbered_in_sequence", "level": "figure", "scope": "both", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
      "label_fr": "Figures numérotées dans l'ordre", "label_en": "Figures numbered in sequence",
      "comment_fr": "Numérotation des figures irrégulière : numéroter 1, 2, 3 dans l'ordre d'apparition.", "comment_en": "Figure numbering is irregular: number 1, 2, 3 in order of appearance."},
-    {"id": "called_before_appearing", "level": "figure", "scope": "undergraduate", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
+    {"id": "called_before_appearing", "level": "figure", "scope": "both", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
      "label_fr": "Figure appelée dans le texte avant d'apparaître", "label_en": "Figure called in the text before it appears",
      "comment_fr": "La figure apparaît avant d'être appelée dans le texte : la citer avant de la présenter.", "comment_en": "The figure appears before the text calls it: cite it before showing it."},
     {"id": "caption_self_contained", "level": "figure", "scope": "undergraduate", "judged_by": "model", "applies_to": ["all"], "needs": "either", "threshold": null,
@@ -108,7 +108,7 @@
      "label_fr": "Figure citée dans le texte", "label_en": "Figure cited in the text",
      "comment_fr": "Aucun appel \\ref, \\autoref ou \\cref ne cite la figure : l'appeler dans le texte.", "comment_en": "No \\ref, \\autoref or \\cref call cites the figure: call it in the text."},
     {"id": "citation_far", "level": "figure", "scope": "research", "judged_by": "model", "applies_to": ["all"], "needs": "source",
-     "threshold": {"value": 100, "provenance": "taken from the paper-auditor figure audit step, flag CITATION FAR (lines between the figure and its nearest call; the agent's own choice, unmeasured)"}, "flag": "[CITATION FAR]",
+     "threshold": {"value": 100, "provenance": "taken from the paper-auditor figure audit step, flag CITATION FAR (lines between the figure and its nearest call; the agent's own choice, unmeasured). The thesis-auditor uses 120 and the proposal auditor 80, stated in their own definitions"}, "flag": "[CITATION FAR]",
      "label_fr": "Figure proche de son premier appel", "label_en": "Figure close to its first call",
      "comment_fr": "La figure est trop loin de son appel dans le texte : la rapprocher de la première mention.", "comment_en": "The figure is too far from its call in the text: move it close to the first mention."},
     {"id": "insufficient_description", "level": "figure", "scope": "research", "judged_by": "model", "applies_to": ["all"], "needs": "source", "threshold": null, "flag": "[INSUFFICIENT DESCRIPTION]",
@@ -129,6 +129,15 @@
      "comment_fr": "La légende est un simple groupe nominal : écrire une phrase qui dit le contenu et le lie à l'argument.", "comment_en": "The caption is a bare noun phrase: write a sentence that states the content and links it to the argument."},
     {"id": "caption_carries_explanation", "level": "figure", "scope": "research", "judged_by": "model", "applies_to": ["all"], "needs": "source", "threshold": null, "flag": "[CAPTION CARRIES EXPLANATION]",
      "label_fr": "Légende sans explication qui relève du texte", "label_en": "Caption without explanation that belongs in the text",
-     "comment_fr": "La légende porte une définition ou une annotation statistique : la déplacer dans le texte près du premier appel.", "comment_en": "The caption carries a definition or a statistical annotation: move it to the text beside the first call."}
+     "comment_fr": "La légende porte une définition ou une annotation statistique : la déplacer dans le texte près du premier appel.", "comment_en": "The caption carries a definition or a statistical annotation: move it to the text beside the first call."},
+    {"id": "tikz_node_line_breaks", "level": "figure", "scope": "research", "judged_by": "model", "applies_to": ["tikz"], "needs": "source", "threshold": null,
+     "label_fr": "Sauts de ligne des nœuds par align=center", "label_en": "Node line breaks with align=center",
+     "comment_fr": "Un nœud utilise text centered avec un saut de ligne : utiliser align=center, seul compatible avec \\\\.", "comment_en": "A node uses text centered with a line break: use align=center, the only option that supports \\\\."},
+    {"id": "tikz_backgrounds_scaling", "level": "figure", "scope": "research", "judged_by": "model", "applies_to": ["tikz"], "needs": "source", "threshold": null,
+     "label_fr": "Pas de couche d'arrière-plan dans un redimensionnement", "label_en": "No background layer inside a resize",
+     "comment_fr": "Un tikzpicture avec on background layer est enveloppé dans \\resizebox ou \\scalebox : utiliser transform canvas ou réduire les nœuds.", "comment_en": "A tikzpicture using on background layer is wrapped in \\resizebox or \\scalebox: use transform canvas or reduce the node sizes."},
+    {"id": "figure_numbering_by_chapter", "level": "figure", "scope": "research", "judged_by": "model", "applies_to": ["all"], "needs": "source", "threshold": null, "flag": "[FIGURE NUMBERING WRONG]",
+     "label_fr": "Numérotation des figures par chapitre (thèse UQAC)", "label_en": "Figure numbering by chapter (UQAC thesis)",
+     "comment_fr": "Les figures sont numérotées de 1 à N sur toute la thèse : utiliser la numérotation Figure N-M par chapitre.", "comment_en": "Figures are numbered 1 to N across the whole thesis: use the Figure N-M numbering by chapter."}
   ]
 }

@@ -245,6 +245,25 @@ class TestFigureChecks(unittest.TestCase):
             size = figure_checks.body_font_size(pdf_path)
             self.assertEqual(size, 10.0)
 
+    def test_criteria_for_scope_keeps_both_and_drops_the_other_scope(self):
+        doc = {"criteria": [{"id": "a", "scope": "undergraduate"}, {"id": "b", "scope": "research"},
+                            {"id": "c", "scope": "both"}]}
+        self.assertEqual([c["id"] for c in figure_checks.criteria_for_scope(doc, "undergraduate")], ["a", "c"])
+        self.assertEqual([c["id"] for c in figure_checks.criteria_for_scope(doc, "research")], ["b", "c"])
+
+    def test_criteria_for_scope_refuses_an_unknown_scope(self):
+        with self.assertRaises(figure_checks.CriteriaError) as ctx:
+            figure_checks.criteria_for_scope({"criteria": []}, "primary")
+        self.assertIn("primary", str(ctx.exception))
+
+    def test_the_shipped_undergraduate_selection_has_no_research_only_entry(self):
+        doc = figure_checks.load_criteria(self.criteria_path)
+        chosen = figure_checks.criteria_for_scope(doc, "undergraduate")
+        self.assertTrue(all(c["scope"] in ("undergraduate", "both") for c in chosen))
+        self.assertEqual(len([c for c in chosen if c["scope"] == "undergraduate"]), 20)
+        self.assertEqual({c["id"] for c in chosen if c["scope"] == "both"},
+                         {"called_before_appearing", "numbered_in_sequence"})
+
 
 if __name__ == "__main__":
     unittest.main()

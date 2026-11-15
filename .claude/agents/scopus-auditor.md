@@ -71,6 +71,11 @@ snippet (float + the prose citation sentence to insert + variable definitions), 
 "add a citation". Run the float self-check in the rules doc before finalizing and resolve every
 `[FLOAT NON-COMPLIANT]` item.
 
+**Figure review (`figure-review` skill).** Figures of the review under audit are checked with the
+`figure-review` skill, scope `research` (`figure_checks.criteria_for_scope`), figure by figure whatever the
+source (TikZ, draw.io, SVG, EPS, PDF, bitmap). Rendering a figure a model cannot see to PNG is the
+`--render` option of `figure_render.py`, off by default: the dispatch prompt or the user turns it on.
+
 Per prose passage, non-negotiable (`composition_rules.md`):
 - Passive voice or an impersonal form by default (R1.1). Active voice only where the passive obscures
   the agent or produces an ambiguous sentence, and the reason must be defensible (R1.2).

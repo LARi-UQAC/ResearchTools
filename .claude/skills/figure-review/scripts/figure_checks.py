@@ -56,6 +56,26 @@ def load_criteria(path: Path) -> Dict[str, Any]:
     return data
 
 
+SCOPES = ("undergraduate", "research")
+
+
+def criteria_for_scope(criteria_doc: Dict[str, Any], scope: str) -> List[Dict[str, Any]]:
+    """
+    Purpose: Select the criteria one kind of caller applies: the student-report audit takes
+        `undergraduate`, the research auditors take `research`, and `both` goes to either.
+    Inputs:
+        criteria_doc: The loaded criteria document.
+        scope: "undergraduate" or "research".
+    Outputs:
+        The criteria whose scope is `scope` or `both`, in file order.
+    Raises:
+        CriteriaError: If the scope is not one of SCOPES.
+    """
+    if scope not in SCOPES:
+        raise CriteriaError(f"Unknown scope '{scope}', expected one of {', '.join(SCOPES)}")
+    return [crit for crit in criteria_doc["criteria"] if crit["scope"] in (scope, "both")]
+
+
 def _get_threshold(criteria_doc: Dict[str, Any], criterion_id: str) -> Optional[float]:
     """
     Purpose: Get the threshold value for a specific criterion.

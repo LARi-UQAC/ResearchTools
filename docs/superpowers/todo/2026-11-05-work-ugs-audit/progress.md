@@ -144,7 +144,7 @@ else. Finished sections are compressed to one line each (ceiling 2048 tokens).
 
 ## plan10.md
 
-- [ ] T1 four auditors and /tikz migrated to figure-review
+- [x] T1 four auditors and /tikz migrated to figure-review. Figure flags printed by the figure steps: before 9, after 9 (plus the table-only flag), all 9 in figure_criteria.json; contract test 10/10, figure-review suites green. Rulings: the citation, proximity, description and caption checks stay in the auditors because they also serve tables, only the figure-only resolution blocks moved; the criteria file gained scope both (called_before_appearing, numbered_in_sequence), 3 criteria (tikz_node_line_breaks, tikz_backgrounds_scaling, figure_numbering_by_chapter) and figure_checks.criteria_for_scope, so the student audit never receives a research-only entry; thesis 120 lines and proposal 80 lines stay in their agents; [FIGURE NOT CITED] (results step) and [GRAPHICSPATH NOT SET] (structure table) are not figure-step flags and stay put; /tikz had 6 rules not 9, now 9 criteria with its two extra ones added
 
 ## plan11.md
 

@@ -114,6 +114,17 @@ class TestUgsText(unittest.TestCase):
         self.assertEqual(body, "Body text")
         self.assertEqual(refs, [{"page": 2, "text": "[1] Author. Title."}])
 
+    def test_numbered_dot_references_are_entries_and_not_headings(self):
+        pages = ["Intro text.\n\n## References\n1. Smith, J. 2020. A paper.\n2. Doe, A. 2021. Another."]
+        body, refs = split_body_and_references(pages)
+        self.assertEqual(body, "Intro text.")
+        self.assertEqual([r["text"] for r in refs], ["1. Smith, J. 2020. A paper.", "2. Doe, A. 2021. Another."])
+
+    def test_a_numbered_section_heading_after_the_list_still_ends_it(self):
+        pages = ["Intro.\n\n## References\n1. Smith, J. 2020. A paper.\n\n7. Conclusion\nThe end."]
+        _, refs = split_body_and_references(pages)
+        self.assertEqual([r["text"] for r in refs], ["1. Smith, J. 2020. A paper."])
+
     def test_reference_word_in_a_sentence_is_not_a_heading(self):
         pages = [
             "The references are important.",

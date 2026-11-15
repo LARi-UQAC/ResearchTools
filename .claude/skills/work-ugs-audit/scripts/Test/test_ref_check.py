@@ -197,6 +197,39 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(self.status(connector_returning(404)), "unreachable")
         self.assertEqual(self.status(connector_returning(500)), "unreachable")
 
+    def test_punctuation_after_a_url_is_not_part_of_it(self):
+        for text, path in (("See (https://example.com/paper).", "/paper"),
+                           ("see https://example.com/a/b, then", "/a/b"),
+                           ("[https://example.com/x]", "/x"),
+                           ("https://example.com/wiki/Foo_(bar)", "/wiki/Foo_(bar)")):
+            connect = connector_returning(200)
+            ref_check.check(text, "", [], connect, TIMEOUT, 0, resolver_for(PUBLIC), 0)
+            self.assertEqual(connect.calls[0][5], path, text)
+
+    def test_a_server_that_refuses_head_is_asked_with_get(self):
+        seen = []
+
+        class FakeConnection:
+            def __init__(self, host, port, address, timeout):
+                pass
+
+            def request(self, method, target, headers=None):
+                seen.append((method, (headers or {}).get("Range")))
+
+            def getresponse(self):
+                response = MagicMock()
+                response.status = 405 if seen[-1][0] == "HEAD" else 206
+                response.getheader.return_value = None
+                return response
+
+            def close(self):
+                pass
+
+        with patch.object(ref_check, "_PinnedHTTPConnection", FakeConnection):
+            status = ref_check._request_pinned(PUBLIC, 80, "example.com", False, TIMEOUT, "/paper")
+        self.assertEqual(status, 206)
+        self.assertEqual(seen, [("HEAD", None), ("GET", "bytes=0-0")])
+
     def test_a_connection_failure_is_retried_as_many_times_as_asked(self):
         connect = connector_returning(OSError("a"), OSError("b"), OSError("c"))
         self.assertEqual(self.status(connect, retries=2), "unreachable")

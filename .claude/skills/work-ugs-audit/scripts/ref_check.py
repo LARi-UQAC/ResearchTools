@@ -22,6 +22,8 @@ from urllib.parse import urljoin, urlparse
 import ugs_config
 
 EXIT_REFUSAL = 2
+TRAILING_PUNCTUATION = ".,;:!?'\"]}"
+HEAD_REFUSED_STATUSES = (405, 501)  # a server that does not allow or implement HEAD: retried with GET
 CONFIG_KEYS = ("references.url_timeout_s", "references.max_retries", "references.max_redirects")
 HTTP_SCHEMES = ("http", "https")
 _NAT64_NETWORK = ipaddress.ip_network("64:ff9b::/96")
@@ -191,6 +193,29 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         self.sock = self._tls_context.wrap_socket(raw, server_hostname=self.host)
 
 
+def _trim_url(url: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Remove the punctuation that follows a URL in running text: `.`, `,`, `;`, `:`, `!`, `?`, quotes, a closing
+        bracket or brace, and a closing parenthesis that has no opening one inside the URL.
+
+    Inputs:
+        url (str): the URL as cut from the text by a non-blank match
+
+    Outputs:
+        url (str): the URL without its trailing punctuation.
+    --------------------------------------------------------------------------
+    """
+    while url:
+        last = url[-1]
+        if last in TRAILING_PUNCTUATION or (last == ")" and url.count(")") > url.count("(")):
+            url = url[:-1]
+        else:
+            return url
+    return url
+
+
 def _request_pinned(address: str, port: int, host: str, use_tls: bool, timeout: float, target: str) -> Any:
     """
     Purpose: Send a HEAD request to a validated address and read the status line.
@@ -213,6 +238,10 @@ def _request_pinned(address: str, port: int, host: str, use_tls: bool, timeout: 
     try:
         conn.request("HEAD", target)
         response = conn.getresponse()
+        if response.status in HEAD_REFUSED_STATUSES:
+            # Many servers answer HEAD with 405 or 501: ask again with GET for the first byte only
+            conn.request("GET", target, headers={"Range": "bytes=0-0"})
+            response = conn.getresponse()
         location = response.getheader("Location")
         return (response.status, location) if location else response.status
     except http.client.HTTPException as error:
@@ -305,7 +334,7 @@ def check(ref: str, body_text: str, patterns: list[dict], fetch: Optional[Callab
         status = "form-ok" if identifier else "malformed"
     elif kind == "url":
         url_match = re.search(r"\w+://\S+", ref)
-        url = url_match.group(0) if url_match else ""
+        url = _trim_url(url_match.group(0)) if url_match else ""
         scheme = urlparse(url).scheme
         if not url:
             status = "malformed"

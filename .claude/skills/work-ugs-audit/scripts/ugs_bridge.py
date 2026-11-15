@@ -8,7 +8,7 @@ _LOOP_ENGINEER_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "loop-e
 if str(_LOOP_ENGINEER_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LOOP_ENGINEER_SCRIPTS))
 
-from bridge_text import strip_reasoning, unwrap_sole_code_fence
+from bridge_text import strip_reasoning, unwrap_sole_code_fence, ReasoningAnomalyError
 from bridge_images import ImageError, attach_images
 
 
@@ -222,7 +222,11 @@ def call_with_usage(
         raise NotRun("unreachable", f"Post failed: {e}")
 
     response_text = reply.get("response", "")
-    stripped_text = strip_reasoning(response_text)
+    try:
+        stripped_text = strip_reasoning(response_text)
+    except ReasoningAnomalyError:
+        # an unterminated or orphan reasoning marker: one bad reply costs a retry, never the report
+        raise NotRun("unparsable", "Reasoning markers could not be resolved") from None
     
     # If the text is still wrapped in code fences, unwrap it
     if stripped_text.startswith("```"):

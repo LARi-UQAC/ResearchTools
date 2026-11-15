@@ -13,6 +13,30 @@ WORD_SPLIT_RE = re.compile(r'[^a-zA-Z0-9\u00C0-\u024F]+')
 REF_ENTRY_START_RE = re.compile(r'^(\[\d+\]|\d+\.|\d+\)|[-*•])\s*')
 REF_HEADING_RE = re.compile(r'^(?:#{1,6}\s*)?(?:\d+\.\s*)?(?:References|Références|Bibliographie)\s*$', re.IGNORECASE)
 
+NUMBERED_LINE_RE = re.compile(r'^\d+(?:\.\d+)*\.?\s+\S')
+YEAR_RE = re.compile(r'\b(?:19|20)\d{2}\b')
+# Longest numbered line still read as a section heading ("7. Conclusion"). Author's choice, unmeasured:
+# a numbered reference "1. Smith, J. 2020. A paper." is longer, holds a comma and a year.
+MAX_NUMBERED_HEADING_CHARS = 40
+
+
+def _is_numbered_heading(stripped: str) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell a numbered section heading ("7. Conclusion") from a numbered reference ("1. Smith, J. 2020.").
+
+    Inputs:
+        stripped (str): a line without surrounding blanks
+
+    Outputs:
+        heading (bool): True for a short numbered line with no comma and no year.
+    --------------------------------------------------------------------------
+    """
+    return (bool(NUMBERED_LINE_RE.match(stripped)) and len(stripped) <= MAX_NUMBERED_HEADING_CHARS
+            and ',' not in stripped and not YEAR_RE.search(stripped))
+
+
 class PromptError(ValueError):
     """Raised when a prompt operation fails."""
     pass
@@ -252,7 +276,7 @@ def split_body_and_references(pages: List[str]) -> Tuple[str, List[Dict[str, Any
             hashes = len(stripped) - len(stripped.lstrip('#'))
             return ref_level == 0 or hashes <= ref_level
         # Check for numbered headings like "7. Conclusion"
-        if re.match(r'^\d+\.\s+\w', stripped):
+        if _is_numbered_heading(stripped):
             return True
         
         # Heuristic for "Next section" type headings:

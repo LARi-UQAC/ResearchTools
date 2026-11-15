@@ -35,7 +35,7 @@ def add_report(text: str, report_id: str, item_ids: list[str]) -> str:
     Outputs:
         str - The updated ledger text.
     """
-    if f"## {report_id}" in text:
+    if f"## {report_id}" in (line.strip() for line in text.splitlines()):
         return text
     
     lines = [f"## {report_id}", "- [ ] prepare"]

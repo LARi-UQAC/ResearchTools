@@ -187,6 +187,16 @@ class TestCallWithUsage(unittest.TestCase):
         )
         self.assertEqual(answer, {"a": "hello"})
 
+    def test_a_reasoning_anomaly_is_a_retryable_unparsable_not_an_escape(self):
+        schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
+        for reply in ("<think>never closed {\"a\": \"x\"}", "</think>{\"a\": \"x\"}"):
+            deps = FakeDeps(post_result={"response": reply, "prompt_eval_count": 1, "eval_count": 1})
+            with self.assertRaises(ugs_bridge.NotRun) as ctx:
+                ugs_bridge.call_with_usage(role="grader", prompt="test", schema=schema, deps=deps, timeout=1,
+                                           reserve=0, image_tokens=0, max_image_bytes=100)
+            self.assertEqual(ctx.exception.kind, "unparsable")
+            self.assertTrue(ctx.exception.retryable)
+
     def test_invalid_reason_never_carries_the_replied_value(self):
         # A reply value can echo student text: only the path and the constraint may be reported.
         sentinel = "SENTINEL-STUDENT-TEXT"

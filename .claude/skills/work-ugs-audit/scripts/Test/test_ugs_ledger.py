@@ -39,6 +39,12 @@ class TestUgsLedger(unittest.TestCase):
         text2 = add_report(text1, "R01", ["I02"])
         self.assertEqual(text1, text2)
 
+    def test_a_report_id_that_begins_another_id_is_still_added(self):
+        text = add_report(new_ledger("Test Ledger"), "R10", ["I01"])
+        text = add_report(text, "R1", ["I01"])
+        self.assertEqual([l for l in text.splitlines() if l.startswith("## R")], ["## R10", "## R1"])
+        self.assertEqual(text.count("- [ ] prepare"), 2)
+
     def test_add_figures_after_the_figures_line_and_not_twice(self):
         text = new_ledger("Test Ledger")
         text = add_report(text, "R01", ["I01"])

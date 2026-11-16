@@ -24,6 +24,7 @@ REQUIRED_KEYS = (
     "rubric.min_check_words",
     "rubric.loose_heading_regex",
     "vision.min_word_share",
+    "vision.kind_aliases",
 )
 
 

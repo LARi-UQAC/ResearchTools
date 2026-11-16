@@ -45,7 +45,9 @@ rubric; say so in the result. A refusal (exit 2) names its reason: relay it and 
 
 **Step 2 - Vision probe.** Run the vision probe for the vision role (`vision_probe.py`) on an image of a
 figure whose printed words are known, with an expected file `{"kind": ..., "words": [...]}`. It works for any
-kind of figure (a chart, a Gantt chart, a diagram, a CAD or PCB view, a photo). Its JSON line always carries
+kind of figure (a chart or an S-curve, a Gantt chart, a UML or SysML diagram, an architecture or a breakdown
+structure, a flowchart or a logigram, a CAD or PCB view, a Kanban board, a budget or a timesheet table, a photo);
+the expected `kind` may be written in those words (`vision.kind_aliases` of the configuration). Its JSON line always carries
 `ok`, a `reason` and the missing words: relay them. If the role is not adopted or the probe fails, do not ask
 a question and do not stop: go on, say that the model-judged figure criteria will be `not_run` with the
 reason `vision_not_validated`, and count them in the checklist.

@@ -286,5 +286,108 @@ class TestProbeData(unittest.TestCase):
             self.assertEqual(by_id[cid], ["chart"])
 
 
+SKILLS = Path(__file__).resolve().parents[4] / "skills"
+ALIASES = CONFIG["vision.kind_aliases"]
+
+# every family of figure the professor listed (2026-11-15): (a name a professor writes, the schema kind the model
+# must answer, the words both prompts must carry so the model can recognise the family)
+FAMILIES = [
+    ("UML use case", "diagram", "UML"), ("class diagram", "diagram", "UML"), ("sequence diagram", "diagram", "UML"),
+    ("SysML", "diagram", "SysML"), ("software architecture", "diagram", "architecture"),
+    ("electronic architecture", "diagram", "architecture"), ("PBS", "diagram", "breakdown structure"),
+    ("WBS", "diagram", "breakdown structure"), ("flowchart", "flowchart", "flowchart"),
+    ("logigram", "flowchart", "logigram"), ("Gantt", "gantt", "Gantt"), ("Kanban", "other", "Kanban"),
+    ("budget table", "other", "budget"), ("budget chart", "chart", "budget"), ("S-curve", "chart", "S-curve"),
+    ("timesheet", "other", "timesheet"), ("PCB", "technical_drawing", "PCB"), ("CAD", "technical_drawing", "CAD"),
+    ("photo", "photo", "photo"),
+]
+
+
+def applicable(kind, criteria):
+    """The ids a figure of this kind is judged on, by the rule of ugs_figures (`all` or the kind itself)."""
+    return {c["id"] for c in criteria if "all" in c["applies_to"] or kind in c["applies_to"]}
+
+
+class TestFigureFamilies(unittest.TestCase):
+    """Every kind of figure a report can hold is classified, judged on the right criteria and probe-able."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.criteria = [c for c in json.loads((SKILLS / "figure-review" / "assets" / "figure_criteria.json"
+                                               ).read_text(encoding="utf-8"))["criteria"]
+                        if c["scope"] in ("undergraduate", "both")]
+        cls.probe_prompt = (PROMPTS / "vision_probe.md").read_text(encoding="utf-8")
+        cls.figure_prompt = (SKILLS / "figure-review" / "prompts" / "figure.md").read_text(encoding="utf-8")
+        cls.enum = SCHEMAS["vision_probe"]["properties"]["figure_kind"]["enum"]
+
+    def test_every_family_has_a_schema_kind_both_prompts_name_it_and_the_alias_resolves(self):
+        for written, kind, word in FAMILIES:
+            with self.subTest(family=written):
+                self.assertIn(kind, self.enum)
+                self.assertEqual(vision_probe.canonical_kind(written, ALIASES), vision_probe.canonical_kind(kind, {}))
+                self.assertIn(word.lower(), self.probe_prompt.lower())
+                self.assertIn(word.lower(), self.figure_prompt.lower())
+
+    def test_every_alias_points_to_a_schema_kind(self):
+        for alias, kind in ALIASES.items():
+            self.assertIn(kind, self.enum, alias)
+
+    def test_curve_and_budget_charts_get_the_axis_criteria_and_the_other_families_do_not(self):
+        chart_only = {"axis_titles", "units_adequate", "legend_when_multiple_curves", "curves_visible"}
+        for written, kind, _ in FAMILIES:
+            with self.subTest(family=written):
+                judged = applicable(kind, self.criteria)
+                if kind == "chart":
+                    self.assertTrue(chart_only <= judged)
+                else:
+                    self.assertFalse(chart_only & judged)
+                self.assertIn("caption_self_contained", judged)
+                self.assertIn("effective_resolution", judged)
+
+    def test_the_architecture_and_logic_families_get_the_arrow_criteria(self):
+        for written, kind, _ in FAMILIES:
+            with self.subTest(family=written):
+                judged = applicable(kind, self.criteria)
+                if kind in ("diagram", "flowchart"):
+                    self.assertIn("io_and_arrows", judged)
+                else:
+                    self.assertNotIn("io_and_arrows", judged)
+        self.assertIn("flowchart_symbols", applicable("flowchart", self.criteria))
+        self.assertNotIn("flowchart_symbols", applicable("diagram", self.criteria))
+
+    def test_a_gantt_a_kanban_board_and_a_timesheet_get_only_the_general_criteria(self):
+        general = applicable("photo", self.criteria)
+        for kind in ("gantt", "other"):
+            self.assertEqual(applicable(kind, self.criteria), general)
+
+    def test_a_professor_can_write_any_family_as_the_expected_kind(self):
+        for written, kind, _ in FAMILIES:
+            with self.subTest(family=written):
+                result = probe(lambda *a, **k: ({"figure_kind": kind, "visible_text": ["A", "B"]}, {"prompt_tokens": 9}),
+                               Path("figure.png"), {"kind": written, "words": ["A", "B"]}, "p", {"type": "object"},
+                               0.8, ALIASES)
+                self.assertTrue(result["ok"], result["reason"])
+
+    def test_a_wrong_family_still_fails_and_an_unknown_kind_is_refused_by_the_command_line(self):
+        result = probe(lambda *a, **k: ({"figure_kind": "chart", "visible_text": ["A"]}, {"prompt_tokens": 9}),
+                       Path("figure.png"), {"kind": "UML", "words": ["A"]}, "p", {"type": "object"}, 0.8, ALIASES)
+        self.assertFalse(result["ok"])
+        self.assertIn("UML", result["reason"])
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        (tmp / "f.png").touch()
+        (tmp / "e.json").write_text(json.dumps({"kind": "hologram", "words": ["A"]}), encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = main(["--work", str(tmp), "--image", str(tmp / "f.png"), "--expected", str(tmp / "e.json")],
+                        call_usage=MagicMock(side_effect=AssertionError("no model call for a refusal")))
+        self.assertEqual(code, 2)
+        self.assertFalse((tmp / "vision_probe.json").exists())
+
+    def test_the_alias_table_ships_with_a_provenance(self):
+        data = json.loads(ugs_config.default_path().read_text(encoding="utf-8"))
+        self.assertTrue(data["vision.kind_aliases"]["provenance"])
+        self.assertIn("vision.kind_aliases", ugs_config.REQUIRED_KEYS)
+
+
 if __name__ == "__main__":
     unittest.main()

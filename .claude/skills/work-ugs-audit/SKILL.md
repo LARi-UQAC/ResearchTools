@@ -48,7 +48,13 @@ here. The owner adopts each once:
 not adopted stops the step and names it. There is no fallback and no cloud grading. `vision_probe.py` measures
 what the vision role reads on a figure of any kind (a chart, a Gantt chart, a CAD or PCB view, a photo) before
 figures are graded, and always writes a reason; a failed probe leaves the model-judged figure criteria `not_run`,
-it does not stop the run.
+it does not stop the run. Any figure of a report is classified into one schema kind: `chart` (curves, bars, budget
+charts, S-curves), `gantt`, `diagram` (UML, SysML, architectures, block diagrams, breakdown structures),
+`flowchart` (flowcharts, logigrams, activity diagrams), `technical_drawing` (CAD, PCB, schematics), `photo`, or
+`other` (tables such as a budget or a timesheet, a Kanban board, a screenshot). The kind decides which criteria are
+judged: axes and legend only for a chart, arrows and signals for a diagram or a flowchart, the general criteria
+(caption, resolution, text size, citation) for every kind. The words a professor writes as the expected kind
+(`UML`, `Kanban`, `S-curve`, ...) are mapped to these kinds by `vision.kind_aliases` of the configuration.
 
 The token count that checks a prompt against the window waits `driver.count_timeout_s` seconds (measured
 2026-11-15: prefill runs near 130 tokens per second on a CPU-heavy split, so a prompt above about 1000 tokens

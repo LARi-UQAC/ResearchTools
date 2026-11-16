@@ -2,9 +2,13 @@
 
 You judge ONE figure of a technical report. The image is attached. Judge only what you can see in it.
 
-First name the kind of figure: chart (curves, bars or points on axes), gantt (a task schedule drawn as bars on a time
-scale), diagram (blocks and arrows), flowchart (decision boxes), technical_drawing (a CAD view, a PCB layout, an
-electrical or mechanical drawing), photo, or other. Then judge each criterion listed below, using the
+First name the kind of figure: chart (values on axes: curves, bars, points, a pie chart, a budget chart or an
+S-curve, the cumulative cost or progress against time), gantt (a task schedule drawn as bars on a time scale),
+diagram (boxes linked by lines or arrows: UML such as use case, class, sequence or state, SysML, a software or
+electronic architecture, a block diagram, a project or product breakdown structure, an organisation chart),
+flowchart (steps and decisions in sequence: a flowchart, a logigram, an activity diagram), technical_drawing (a CAD
+view, a PCB layout, an electrical schematic, a mechanical drawing), photo, or other (a table such as a budget or a
+timesheet, a Kanban board, a screenshot). Then judge each criterion listed below, using the
 criterion id exactly as written. Judge only the criteria that fit the kind you named. For a criterion
 that does not fit, answer not_applicable.
 

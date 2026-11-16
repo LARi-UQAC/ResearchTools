@@ -86,13 +86,41 @@ def _verdict(ok: bool, reason: str, kind: Optional[str], image_tokens: Optional[
             "answers": answer}
 
 
-def _judge(answer: Any, expected: dict, min_share: float) -> Tuple[bool, str, List[str], List[str]]:
+def canonical_kind(text: str, aliases: Dict[str, str]) -> str:
+    """
+    Purpose: Give the kind of a figure as the schema names it: the professor writes `UML`, `Kanban` or
+        `technical drawing`, the model answers one of the schema kinds, and both must compare equal.
+    Inputs:
+        text: str - a kind as written by the professor or as answered by the model.
+        aliases: dict - the config key vision.kind_aliases, written words to schema kinds.
+    Outputs:
+        str - the schema kind when the words are a known alias, else the words normalised (spaces for `_` and `-`,
+        lower case, accents removed).
+    """
+    def words(value: str) -> str:
+        return _spaced(re.sub(r"[_-]", " ", str(value)))
+
+    key = words(text)
+    table = {words(alias): words(kind) for alias, kind in aliases.items()}
+    if key in table:
+        return _normalize_text(table[key])
+    # `UML use case` holds the alias `use case`: the longest alias standing in the words as whole words wins
+    for alias in sorted(table, key=len, reverse=True):
+        if (" %s " % alias) in (" %s " % key):
+            return _normalize_text(table[alias])
+    return _normalize_text(key)
+
+
+def _judge(answer: Any, expected: dict, min_share: float,
+           aliases: Optional[Dict[str, str]] = None) -> Tuple[bool, str, List[str], List[str]]:
     """
     Purpose: Compare the model answer with what the figure is known to show.
     Inputs:
         answer: Any - the model answer: figure_kind and visible_text.
         expected: dict - `words` (list of text printed on the figure) and an optional `kind`.
         min_share: float - the share of expected words that must be found (config key vision.min_word_share).
+        aliases: dict | None - the config key vision.kind_aliases, so an expected kind written `UML` or `Kanban`
+            matches the schema kind the model answers.
     Outputs:
         tuple - (ok, reason, found words, missing words).
     """
@@ -104,9 +132,9 @@ def _judge(answer: Any, expected: dict, min_share: float) -> Tuple[bool, str, Li
     found = [word for word in words if any(_contains_word(entry, _spaced(word)) for entry in seen)]
     missing = [word for word in words if word not in found]
     wanted = expected.get("kind")
-    # `technical drawing`, `technical-drawing` and the enum value `technical_drawing` name the same kind
-    if wanted and _normalize_text(re.sub(r"[_-]", " ", str(wanted))) != \
-            _normalize_text(re.sub(r"[_-]", " ", answer["figure_kind"])):
+    # `technical drawing`, `technical-drawing` and the enum value `technical_drawing` name the same kind, and so
+    # do `UML` and `diagram`
+    if wanted and canonical_kind(wanted, aliases or {}) != canonical_kind(answer["figure_kind"], aliases or {}):
         return False, "expected the kind %s, the model said %s" % (wanted, answer["figure_kind"]), found, missing
     share = len(found) / len(words) if words else 0.0
     if share < min_share:
@@ -122,7 +150,8 @@ def probe(
     expected: dict,
     prompt: str,
     schema: dict,
-    min_share: float = 1.0
+    min_share: float = 1.0,
+    aliases: Optional[Dict[str, str]] = None
 ) -> dict:
     """
     Purpose: Probe the vision model: does it read the figure, and what does the image cost in tokens.
@@ -144,7 +173,7 @@ def probe(
     except Exception as error:
         return _verdict(False, "the model call failed: %s" % error.__class__.__name__, "unreachable", None, None,
                         expected, [], [str(w) for w in expected.get("words", [])])
-    ok, reason, found, missing = _judge(answer, expected, min_share)
+    ok, reason, found, missing = _judge(answer, expected, min_share, aliases)
     image_tokens = None
     try:
         _, usage_without = call_usage(prompt, schema, None)
@@ -214,6 +243,7 @@ def main(argv: Optional[List[str]] = None, *, call_usage: Optional[Callable] = N
     try:
         config = load_config(default_path())
         min_share = config["vision.min_word_share"]
+        aliases = config["vision.kind_aliases"]
     except Exception as e:
         print(f"Error: failed to load config: {e}", file=sys.stderr)
         return 2
@@ -233,6 +263,14 @@ def main(argv: Optional[List[str]] = None, *, call_usage: Optional[Callable] = N
     except Exception as e:
         print(f"Error: failed to load prompts/schemas: {e}", file=sys.stderr)
         return 2
+
+    wanted_kind = expected.get("kind")
+    if wanted_kind is not None:
+        known = {canonical_kind(kind, aliases) for kind in schema["properties"]["figure_kind"]["enum"]}
+        if not isinstance(wanted_kind, str) or canonical_kind(wanted_kind, aliases) not in known:
+            print("Error: the expected kind %r is neither a schema kind nor a kind alias of vision.kind_aliases"
+                  % (wanted_kind,), file=sys.stderr)
+            return 2
 
     if args.dry_run:
         # R16: say what would be done and touch nothing, no model is called
@@ -260,7 +298,7 @@ def main(argv: Optional[List[str]] = None, *, call_usage: Optional[Callable] = N
             )
         call_usage = real_call_usage
 
-    result = probe(call_usage, image_path, expected, prompt_text, schema, min_share)
+    result = probe(call_usage, image_path, expected, prompt_text, schema, min_share, aliases)
     output = {key: result[key] for key in ("ok", "reason", "image_tokens", "kind", "figure_kind",
                                            "expected_words", "found_words", "missing_words")}
 

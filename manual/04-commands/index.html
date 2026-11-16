@@ -1680,7 +1680,7 @@ not judged.</p>
 <h2 id="work-ugs-audit--grade-undergraduate-reports"><code>/work-ugs-audit</code> — grade undergraduate reports<a class="headerlink" href="#work-ugs-audit--grade-undergraduate-reports" title="Permanent link">&para;</a></h2>
 <p>Grades a folder of undergraduate student reports (PDF) against a rubric with local models only, through the
 <code>work-ugs-audit</code> agent, which never reads a report. Arguments: the reports folder, the rubric file (JSON, Markdown, text
-or PDF) and the assessment type. The agent prepares the folder, <strong>pauses so you confirm the rubric</strong>, runs the grading,
+or PDF) and the assessment type. The agent prepares the folder, takes your rubric as written (every section kept whole, no confirmation step), runs the grading and scores every section,
 presents the batch verdict from numbers only and, if the totals fall out of band, offers a calibrated second loop; a
 third loop needs your explicit answer. The annotated PDFs and the correction annex are written inside the work folder
 <code>_correction/</code>. See the <a href="../06-skills/"><code>work-ugs-audit</code></a> skill for the driver and the three model roles.</p>

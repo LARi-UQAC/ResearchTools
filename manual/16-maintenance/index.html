@@ -1445,9 +1445,16 @@ whatever <code>python</code> is on the <code>PATH</code>.</p>
 </tr>
 </tbody>
 </table>
-<p><code>run-all-checks.ps1</code> takes <code>-DryRun</code> (list, run nothing), <code>-SkipSuite</code>, <code>-Only a,b</code>, <code>-Exclude names</code>
-and <code>-ReportPath file.json</code>. It leaves out <code>verify-graph-health.ps1</code> for the same reason as above.</p>
-<p>The eleven verifiers in <code>scripts/test/</code> each prove one installer or tool by running it for real against a
+<p><code>run-all-checks.ps1</code> takes <code>-DryRun</code> (list, run nothing), <code>-SkipSuite</code>, <code>-Only a,b</code>, <code>-Exclude names</code>,
+<code>-ReportPath file.json</code> and <code>-Jobs N</code>. It leaves out <code>verify-graph-health.ps1</code> for the same reason as above.</p>
+<p><strong>Speed (<code>-Jobs</code>).</strong> Both scripts run their work side by side instead of one item at a time, because one
+sequential run left the machine at 20 to 25 percent CPU. <code>-Jobs 0</code>, the default, takes 90 percent of the
+logical processors, a share written with its provenance in <code>scripts/lib/rt-runner.json</code>. <code>-Jobs 1</code> gives the
+old sequential run, <code>-Jobs 8</code> caps it at eight. In <code>run-offline-tests.ps1</code> the slowest suites start first.
+A suite that fails while others run beside it is run again alone: if it passes alone it is listed as
+flaky under parallel load and counted as passed, and if it fails again it is a real failure. The run
+then needs more memory, about one Python process per job. <code>verify-parallel-runner.ps1</code> proves the pool.</p>
+<p>The twelve verifiers in <code>scripts/test/</code> each prove one installer or tool by running it for real against a
 throwaway home or repository, never your own:</p>
 <table>
 <thead>
@@ -1472,6 +1479,10 @@ throwaway home or repository, never your own:</p>
 <tr>
 <td><code>verify-no-personal-data.ps1</code></td>
 <td>No published file carries the account name of whoever runs it</td>
+</tr>
+<tr>
+<td><code>verify-parallel-runner.ps1</code></td>
+<td>The parallel pool of the two runners: job count, overlap, order of results, rerun of a failure alone</td>
 </tr>
 <tr>
 <td><code>verify-python-env.ps1</code></td>

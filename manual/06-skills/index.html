@@ -2654,7 +2654,7 @@ an annotated PDF and a correction annex. Across the batch it measures the spread
 targets and, when out of band, offers a second loop that carries a calibration note.</p>
 <p>The driver is <code>ugs_driver.py</code> with the subcommands <code>prepare</code>, <code>run</code>, <code>batch</code> and <code>status</code>, each with <code>--dry-run</code> and
 <code>--json</code>. Exit codes: 0 done, 1 a model step could not run (resume later), 2 refusal, 3 batch out of band. The work
-folder is <code>_correction/</code>, beside the reports folder. Three model roles, <code>ugs-grader</code>, <code>ugs-auditor</code> and <code>ugs-vision</code>, are
+folder is <code>_correction/</code>, inside the reports folder. Three model roles, <code>ugs-grader</code>, <code>ugs-auditor</code> and <code>ugs-vision</code>, are
 adopted once by the owner with <code>model_resolver.py --adopt-role &lt;role&gt; &lt;tag&gt; --reason "&lt;measurement&gt;"</code>; there is no
 fallback and no cloud grading. The <code>work-ugs-audit</code> agent drives the driver through the <code>/work-ugs-audit</code> command and
 reads only the rubric and the step ledger.</p>

@@ -96,7 +96,7 @@ class TestUgsDriver(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.reports = self.tmp / "reports"
         self.reports.mkdir()
-        self.work = self.tmp / "_correction"
+        self.work = self.reports / "_correction"
         self.rubric_file = self.tmp / "rubric.json"
         self.rubric_file.write_text(json.dumps(RUBRIC), encoding="utf-8")
         self.model = FakeModel()
@@ -281,11 +281,18 @@ class TestUgsDriver(unittest.TestCase):
         elsewhere = self.tmp / "other" / "_correction"
         code, lines, _ = self.prepare(["--work", str(elsewhere)])
         self.assertEqual(code, 2)
-        self.assertIn("beside", lines[0]["error"])
-        inside = self.reports / "_correction"
-        code, _, _ = self.prepare(["--work", str(inside)])
+        self.assertIn("directly inside", lines[0]["error"])
+        beside = self.tmp / "_correction"
+        code, _, _ = self.prepare(["--work", str(beside)])
         self.assertEqual(code, 2)
-        self.assertFalse(elsewhere.exists() or inside.exists())
+        self.assertFalse(elsewhere.exists() or beside.exists())
+
+    def test_the_default_work_folder_is_inside_the_reports_folder(self):
+        self.add_reports([9])
+        code, _, _ = self.prepare()
+        self.assertEqual(code, 0)
+        self.assertTrue((self.reports / "_correction" / "rubric.json").is_file())
+        self.assertFalse((self.tmp / "_correction").exists())
 
     # --- run ---
 

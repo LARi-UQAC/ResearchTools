@@ -4,7 +4,7 @@ ugs_driver.py - the command line of the grading driver of work-ugs-audit (Issue 
 Subcommands: prepare (ids, pages, rubric, ledger), run (the five steps of every report), batch (the spread of the
 totals and the next loop) and status (the ledger counts). The program that runs it reads only what it prints:
 every printed line is a JSON object whose values are ids, step labels, statuses, kinds and numbers, never text of a
-report. The work folder `_correction` lies beside the reports folder (spec, "Working folder").
+report. The work folder `_correction` lies inside the reports folder (owner decision 2026-11-15).
 
 EXIT CODES (R12): 0 done, 1 a model step could not run (stop, resume later), 2 refusal, 3 batch out of band.
 """
@@ -256,7 +256,7 @@ def cmd_prepare(args, call, window, count) -> int:
     reports = Path(args.reports).resolve()
     if not reports.is_dir():
         raise DriverError("reports folder not found")
-    work = Path(args.work).resolve() if args.work else reports.parent / WORK_FOLDER_NAME
+    work = Path(args.work).resolve() if args.work else reports / WORK_FOLDER_NAME
     try:
         report_prepare._check_work_dir(reports, work)
     except report_prepare.PrepareError as error:

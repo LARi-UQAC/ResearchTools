@@ -85,14 +85,15 @@ try {
     Check "a number asked for wins over the share" ((Get-RtJobCount -Requested 5 -ConfigPath $ShippedConfig -LogicalProcessors 20) -eq 5)
     Check "with nothing injected the count reads this machine and is at least one" ((Get-RtJobCount -ConfigPath $ShippedConfig) -ge 1)
     Check "(refusal) a negative -Jobs is refused" (Throws { Get-RtJobCount -Requested -2 -ConfigPath $ShippedConfig } "negative")
-    $rest = '"poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 60, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}, "rerun_jobs": {"value": 4, "provenance": "x"}'
+    $rest = '"poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 60, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}, "rerun_jobs": {"value": 4, "provenance": "x"}, "priority": {"value": "High", "provenance": "x"}'
+    Write-Text (Join-Path $Tmp "badprio.json") ('{"cpu_share": {"value": 0.5, "provenance": "x"}, ' + $rest.Replace('"priority": {"value": "High"', '"priority": {"value": "Turbo"') + '}')
     Write-Text (Join-Path $Tmp "over.json") ('{"cpu_share": {"value": 1.5, "provenance": "x"}, ' + $rest + '}')
     Check "(refusal) a share above 1 is refused naming the file" (Throws { Get-RtJobCount -ConfigPath (Join-Path $Tmp "over.json") } "cpu_share.*over\.json")
     Write-Text (Join-Path $Tmp "zero.json") ('{"cpu_share": {"value": 0, "provenance": "x"}, ' + $rest + '}')
     Check "(refusal) a share of 0 is refused" (Throws { Get-RtJobCount -ConfigPath (Join-Path $Tmp "zero.json") } "cpu_share")
     Write-Text (Join-Path $Tmp "nokey.json") '{"cpu_share": {"value": 0.5, "provenance": "x"}, "poll_ms": {"value": 100, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}}'
     Check "(refusal) a missing key is named" (Throws { Read-RtRunnerConfig -Path (Join-Path $Tmp "nokey.json") } "missing key 'split_seconds'")
-    Write-Text (Join-Path $Tmp "badsplit.json") ('{"cpu_share": {"value": 0.5, "provenance": "x"}, "poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 0, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}, "rerun_jobs": {"value": 4, "provenance": "x"}}')
+    Write-Text (Join-Path $Tmp "badsplit.json") ('{"cpu_share": {"value": 0.5, "provenance": "x"}, "poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 0, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}, "rerun_jobs": {"value": 4, "provenance": "x"}, "priority": {"value": "High", "provenance": "x"}}')
     Check "(refusal) a split_seconds of 0 is refused" (Throws { Read-RtRunnerConfig -Path (Join-Path $Tmp "badsplit.json") } "split_seconds must be above 0")
     Write-Text (Join-Path $Tmp "noprov.json") ('{"cpu_share": {"value": 0.5}, ' + $rest + '}')
     Check "(refusal) a missing provenance is named" (Throws { Read-RtRunnerConfig -Path (Join-Path $Tmp "noprov.json") } "provenance for 'cpu_share'")
@@ -138,6 +139,21 @@ try {
     Check "the seconds of a child are measured" ($mixed[0].Seconds -ge 2.5 -and $mixed[1].Seconds -lt $mixed[0].Seconds)
     Check "an empty list gives nothing" (@(Invoke-RtParallel -Items @() -Jobs 3).Count -eq 0)
     Check "(refusal) Jobs below one is refused" (Throws { Invoke-RtParallel -Items $four -Jobs 0 } "at least 1")
+
+    # --- priority --------------------------------------------------------------------------
+    Write-Host ""
+    Write-Host "  -- priority --" -ForegroundColor DarkCyan
+    $prioPath = Join-Path $Tmp "prio.ps1"
+    Write-Text $prioPath "Start-Sleep -Milliseconds 800`r`nWrite-Output ('PRIO ' + (Get-Process -Id `$PID).PriorityClass)`r`n"
+    $prioItem = [pscustomobject]@{ Name = "prio"; FilePath = "powershell"; WorkingDirectory = ""
+                                   ArgumentString = "-NoProfile -ExecutionPolicy Bypass -File `"$prioPath`"" }
+    $high = @(Invoke-RtParallel -Items @($prioItem) -Jobs 1 -PollMs 50 -Priority "High")[0]
+    $plain = @(Invoke-RtParallel -Items @($prioItem) -Jobs 1 -PollMs 50)[0]
+    Check "a child started with -Priority High really runs at High" ($high.Output -match "PRIO High")
+    Check "(control) without -Priority it keeps the normal class" ($plain.Output -match "PRIO Normal")
+    Check "the shipped priority is a valid class and is not RealTime (it freezes input, and only an administrator gets it)" ($cfg.priority -eq "High")
+    Check "Set-RtOwnPriority with nothing does nothing and says so" ((Set-RtOwnPriority -Priority "") -eq $false)
+    Check "(refusal) an unknown priority class in the configuration is refused" (Throws { Read-RtRunnerConfig -Path (Join-Path $Tmp "badprio.json") } "priority must be one of")
 
     # --- cutting a slow suite -------------------------------------------------------------
     Write-Host ""

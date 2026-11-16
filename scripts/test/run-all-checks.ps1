@@ -99,7 +99,11 @@ if ($DryRun) {
 . (Join-Path $PSScriptRoot "..\lib\rt-parallel.ps1")
 $runnerConfig = Join-Path $PSScriptRoot "..\lib\rt-runner.json"
 $jobCount = Get-RtJobCount -Requested $Jobs -ConfigPath $runnerConfig
-$pollMs   = [int](Read-RtRunnerConfig -Path $runnerConfig).poll_ms
+$runnerSettings = Read-RtRunnerConfig -Path $runnerConfig
+$pollMs   = [int]$runnerSettings.poll_ms
+$priority = [string]$runnerSettings.priority
+# This script and every check it starts run at the priority class of rt-runner.json (inherited by what they start).
+$null = Set-RtOwnPriority -Priority $priority
 
 $results = @()
 
@@ -130,7 +134,7 @@ if ($verifiers.Count -gt 0) {
             ArgumentString = "-NoProfile -ExecutionPolicy Bypass -File `"$($_.Path)`""
         }
     })
-    $ran = @(Invoke-RtParallel -Items $items -Jobs $jobCount -PollMs $pollMs -OnComplete {
+    $ran = @(Invoke-RtParallel -Items $items -Jobs $jobCount -PollMs $pollMs -Priority $priority -OnComplete {
         param($run)
         Write-Host ""
         Write-Host "=== $($run.Name)  (exit $($run.ExitCode), $($run.Seconds)s) ===" -ForegroundColor Cyan

@@ -24,7 +24,7 @@ function Read-RtRunnerConfig {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "missing file: $Path" }
     $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
     $config = @{}
-    foreach ($key in @("cpu_share", "poll_ms", "split_seconds", "chunk_seconds", "rerun_jobs")) {
+    foreach ($key in @("cpu_share", "poll_ms", "split_seconds", "chunk_seconds", "rerun_jobs", "priority")) {
         $entry = $raw.PSObject.Properties[$key]
         if ($null -eq $entry -or $null -eq $entry.Value.PSObject.Properties["value"]) { throw "missing key '$key' in $Path" }
         if (-not $entry.Value.PSObject.Properties["provenance"] -or -not $entry.Value.provenance) { throw "missing provenance for '$key' in $Path" }
@@ -34,6 +34,9 @@ function Read-RtRunnerConfig {
     foreach ($key in @("cpu_share", "poll_ms", "split_seconds", "chunk_seconds", "rerun_jobs")) {
         if ($config[$key] -isnot [ValueType] -or $config[$key] -is [bool]) { throw "$key must be a number in $Path" }
     }
+    if ($config.priority -isnot [string] -or [Enum]::GetNames([System.Diagnostics.ProcessPriorityClass]) -notcontains $config.priority) {
+        throw "priority must be one of $([Enum]::GetNames([System.Diagnostics.ProcessPriorityClass]) -join ', ') in $Path"
+    }
     foreach ($key in @("split_seconds", "chunk_seconds", "rerun_jobs")) {
         if ($config[$key] -le 0) { throw "$key must be above 0 in $Path" }
     }
@@ -42,6 +45,28 @@ function Read-RtRunnerConfig {
     if ($config.poll_ms -ne [Math]::Floor([double]$config.poll_ms) -or $config.poll_ms -lt 1) { throw "poll_ms must be a positive integer in $Path" }
     $config.poll_ms = [int]$config.poll_ms
     return $config
+}
+
+function Set-RtOwnPriority {
+    <#
+        --------------------------------------------------------------------------
+        Purpose:
+            Put the running script at a priority class, so every process it starts inherits it.
+
+        Inputs:
+            Priority (string): a ProcessPriorityClass name (config key priority); empty does nothing
+
+        Outputs:
+            ok (bool): true when the class is now the one asked for
+        --------------------------------------------------------------------------
+    #>
+    param([string]$Priority)
+    if (-not $Priority) { return $false }
+    try {
+        $me = [System.Diagnostics.Process]::GetCurrentProcess()
+        $me.PriorityClass = [System.Diagnostics.ProcessPriorityClass]$Priority
+        return ($me.PriorityClass.ToString() -eq $Priority)
+    } catch { return $false }
 }
 
 function Get-RtJobCount {
@@ -95,7 +120,8 @@ function Invoke-RtParallel {
         [object[]]$Items = @(),
         [int]$Jobs = 1,
         [int]$PollMs = 100,
-        [scriptblock]$OnComplete = $null
+        [scriptblock]$OnComplete = $null,
+        [string]$Priority = ""
     )
     if ($Jobs -lt 1) { throw "Jobs must be at least 1: $Jobs" }
     $list = @($Items)
@@ -116,6 +142,8 @@ function Invoke-RtParallel {
             $proc = Start-Process @start
             # Touching the handle keeps the exit code readable after the process ended (Windows PowerShell 5.1).
             $null = $proc.Handle
+            # The priority class is inherited by what the child starts, so a test that starts git and bash gets it too.
+            if ($Priority) { try { $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]$Priority } catch { } }
             [void]$running.Add([pscustomobject]@{
                 Index = $next; Proc = $proc; Out = $outFile; Err = $errFile; Watch = [System.Diagnostics.Stopwatch]::StartNew()
             })

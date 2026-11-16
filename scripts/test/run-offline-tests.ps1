@@ -159,7 +159,10 @@ $runnerConfig = Join-Path $RepoRoot "scripts\lib\rt-runner.json"
 $jobCount = Get-RtJobCount -Requested $Jobs -ConfigPath $runnerConfig
 $runnerSettings = Read-RtRunnerConfig -Path $runnerConfig
 $pollMs   = [int]$runnerSettings.poll_ms
-Write-Line "  Parallel    : $jobCount suite(s) at once"
+$priority = [string]$runnerSettings.priority
+# This script and every suite it starts run at the priority class of rt-runner.json (inherited by git, bash, sh).
+$prioritySet = Set-RtOwnPriority -Priority $priority
+Write-Line "  Parallel    : $jobCount suite(s) at once, priority $priority$(if (-not $prioritySet) { ' (could not be set for the runner)' })"
 
 # The slowest suites start first, so the run does not end on one long suite started last. The time of each suite
 # (the total work, in seconds) is kept in .rt-suite-times.json, written after every run even a red one, since a red
@@ -227,7 +230,7 @@ if ($candidates.Count -gt 0) {
         [pscustomobject]@{ Name = (Get-SuiteRel $_); FilePath = $suitePython; WorkingDirectory = $RepoRoot
                            ArgumentString = "`"$listScript`" `"$($_.FullName)`"" }
     })
-    foreach ($listed in @(Invoke-RtParallel -Items $listItems -Jobs $jobCount -PollMs $pollMs)) {
+    foreach ($listed in @(Invoke-RtParallel -Items $listItems -Jobs $jobCount -PollMs $pollMs -Priority $priority)) {
         if ($listed.ExitCode -eq 0) {
             $idsOf[$listed.Name] = @($listed.Output -split "`r?`n" | ForEach-Object { if ($_ -match '^TESTID (.+)$') { $Matches[1].Trim() } })
         }
@@ -257,7 +260,7 @@ foreach ($suite in $startOrder) {
     }
 }
 
-$ranFirst = @(Invoke-RtParallel -Items $items -Jobs $jobCount -PollMs $pollMs -OnComplete $onDone)
+$ranFirst = @(Invoke-RtParallel -Items $items -Jobs $jobCount -PollMs $pollMs -OnComplete $onDone -Priority $priority)
 
 # An item that fails while others run beside it is run again ALONE (a whole suite, or one share of a cut suite). A
 # failure that repeats is a real failure; one that does not repeat is reported as flaky under load (a shared file, a
@@ -269,7 +272,7 @@ if ($jobCount -gt 1) {
     if ($failedIdx.Count -gt 0) {
         $rerunJobs = [Math]::Min([int]$runnerSettings.rerun_jobs, $failedIdx.Count)
         Write-Line "  [RERUN]   $($failedIdx.Count) item(s) failed under parallel load, run again $rerunJobs at a time" "Yellow"
-        $again = @(Invoke-RtParallel -Items @($failedIdx | ForEach-Object { $items[$_] }) -Jobs $rerunJobs -PollMs $pollMs)
+        $again = @(Invoke-RtParallel -Items @($failedIdx | ForEach-Object { $items[$_] }) -Jobs $rerunJobs -PollMs $pollMs -Priority $priority)
         for ($k = 0; $k -lt $failedIdx.Count; $k++) {
             $i = $failedIdx[$k]
             $first = $ranFirst[$i]

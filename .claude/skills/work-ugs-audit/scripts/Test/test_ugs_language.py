@@ -1,4 +1,6 @@
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -45,14 +47,13 @@ def make_ctx(retries: int = 2) -> StepContext:
 
 class TestLoadTable(unittest.TestCase):
     def setUp(self):
-        self.tmp_dir = Path("./tmp_test_data")
-        self.tmp_dir.mkdir(exist_ok=True)
+        # A folder of its own per test, never `./tmp_test_data` of the current folder: two copies of this suite run at
+        # the same time (the test runner runs suites side by side) shared that folder and deleted each other's file.
+        self.tmp_dir = Path(tempfile.mkdtemp(prefix="ugs-language-"))
         self.table_path = self.tmp_dir / "table.json"
 
     def tearDown(self):
-        import shutil
-        if self.tmp_dir.exists():
-            shutil.rmtree(self.tmp_dir)
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_load_table_keeps_both_scope_entries_only(self):
         data = {

@@ -75,7 +75,7 @@
     "type": "object",
     "required": ["kind", "criteria"],
     "properties": {
-      "kind": {"type": "string", "enum": ["chart", "diagram", "flowchart", "photo", "other"]},
+      "kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "photo", "other"]},
       "criteria": {
         "type": "array",
         "items": {
@@ -101,12 +101,10 @@
   },
   "vision_probe": {
     "type": "object",
-    "required": ["x_title", "y_title", "unit", "curve_count"],
+    "required": ["figure_kind", "visible_text"],
     "properties": {
-      "x_title": {"type": "string"},
-      "y_title": {"type": "string"},
-      "unit": {"type": "string"},
-      "curve_count": {"type": "integer"}
+      "figure_kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "photo", "other"]},
+      "visible_text": {"type": "array", "items": {"type": "string"}}
     }
   }
 }

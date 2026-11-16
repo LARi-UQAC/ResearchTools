@@ -1,0 +1,182 @@
+"""
+Offline tests for rubric_split (Issue 120, plan 1): a Markdown rubric is split by the code on its numbered
+sections and every section keeps its exact text. Fictitious rubric text only (R34), no model, no network (R21).
+"""
+import copy
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import rubric_split  # noqa: E402
+import ugs_config  # noqa: E402
+
+CONFIG = ugs_config.load(ugs_config.default_path())
+HEADING = CONFIG["rubric.section_heading_regex"]
+TOTAL = CONFIG["rubric.total_regex"]
+
+SAMPLE = """# Grille d'exemple
+
+**Total : 3.5 points**, repartis comme suit.
+
+| # | Section | Points |
+|---|---------|-------:|
+| 1 | Resume | 1 |
+| 2 | Methode | 2 |
+| 3 | Conclusion | 0.5 |
+
+## Acronymes
+
+| Acronyme | Signification |
+|----------|---------------|
+| ABC | Guide fictif de la pratique |
+
+---
+
+## 1. Resume (/1)
+
+Le resume fait environ **250 mots** et comprend :
+
+- [ ] Contexte
+- [ ] Objectif
+
+---
+
+## 2. Methode (/2)
+
+Selon l'ABC :
+
+> Une citation fictive qui doit rester intacte.
+
+| Type | Information |
+|------|-------------|
+| Essais | nom de l'appareil |
+
+> **Exigence.** Un texte coherent et precis.
+
+---
+
+## 3. Conclusion (/0.5)
+
+Rappel des objectifs et des contraintes du client.
+"""
+
+
+def split(text=SAMPLE):
+    return rubric_split.split_rubric(text, "project_report", HEADING, TOTAL)
+
+
+class SplitTests(unittest.TestCase):
+
+    def test_items_carry_id_title_points_in_order(self):
+        rubric = split()
+        self.assertEqual(rubric["assessment_type"], "project_report")
+        self.assertEqual([i["id"] for i in rubric["items"]], ["I01", "I02", "I03"])
+        self.assertEqual([i["title"] for i in rubric["items"]], ["Resume", "Methode", "Conclusion"])
+        self.assertEqual([i["max_points"] for i in rubric["items"]], [1, 2, 0.5])
+        self.assertEqual(rubric["total_points"], 3.5)
+
+    def test_each_section_keeps_its_exact_text_without_the_closing_rule(self):
+        rubric = split()
+        second = rubric["items"][1]["text"]
+        self.assertTrue(second.startswith("## 2. Methode (/2)\n"))
+        for kept in ("> Une citation fictive qui doit rester intacte.", "| Essais | nom de l'appareil |",
+                     "> **Exigence.** Un texte coherent et precis."):
+            self.assertIn(kept, second)
+        self.assertFalse(second.rstrip().endswith("---"))
+        self.assertTrue(rubric["items"][0]["text"].rstrip().endswith("- [ ] Objectif"))
+
+    def test_the_last_section_runs_to_the_end_of_the_text(self):
+        self.assertTrue(split()["items"][2]["text"].rstrip().endswith("contraintes du client."))
+
+    def test_preamble_is_kept_whole_and_copied_into_each_item(self):
+        rubric = split()
+        self.assertIn("| ABC | Guide fictif de la pratique |", rubric["preamble"])
+        self.assertIn("**Total : 3.5 points**", rubric["preamble"])
+        for item in rubric["items"]:
+            self.assertEqual(item["preamble"], rubric["preamble"])
+
+    def test_a_wrong_stated_total_is_refused_naming_both_numbers(self):
+        with self.assertRaises(rubric_split.RubricSplitError) as ctx:
+            split(SAMPLE.replace("**Total : 3.5 points**", "**Total : 9 points**"))
+        self.assertIn("9", str(ctx.exception))
+        self.assertIn("3.5", str(ctx.exception))
+
+    def test_no_stated_total_is_accepted(self):
+        rubric = split(SAMPLE.replace("**Total : 3.5 points**, repartis comme suit.", ""))
+        self.assertEqual(rubric["total_points"], 3.5)
+
+    def test_fewer_than_two_numbered_sections_returns_none(self):
+        self.assertIsNone(split("# Titre\n\n## 1. Seule section (/2)\n\ntexte\n"))
+        self.assertIsNone(split("Du texte libre sans section numerotee.\n"))
+
+    def test_comma_points_are_read(self):
+        rubric = split(SAMPLE.replace("(/0.5)", "(/0,5)"))
+        self.assertEqual(rubric["items"][2]["max_points"], 0.5)
+
+    def test_more_than_ninety_nine_sections_are_refused(self):
+        text = "".join("## %d. S%d (/1)\n\ntexte\n\n" % (n, n) for n in range(1, 101))
+        with self.assertRaises(rubric_split.RubricSplitError):
+            split(text)
+
+
+class PromptTextTests(unittest.TestCase):
+
+    def test_a_split_item_gives_its_text_and_the_acronym_block(self):
+        rubric = split()
+        text = rubric_split.item_prompt_text(rubric["items"][1])
+        self.assertIn("> Une citation fictive qui doit rester intacte.", text)
+        self.assertIn("| ABC | Guide fictif de la pratique |", text)
+        self.assertNotIn("{'id'", text)
+
+    def test_an_item_without_text_keeps_the_old_rendering(self):
+        item = {"id": "I01", "title": "Resume", "max_points": 1, "criteria": ["Un critere."],
+                "checklist": ["Une case"]}
+        text = rubric_split.item_prompt_text(item)
+        self.assertIn("I01 - Resume (1)", text)
+        self.assertIn("- Un critere.", text)
+        self.assertIn("- Une case", text)
+
+    def test_markdown_of_a_split_item_is_its_exact_text(self):
+        item = split()["items"][1]
+        self.assertEqual(rubric_split.item_markdown(item), item["text"])
+
+
+class KeptTextTests(unittest.TestCase):
+
+    def test_a_faithful_rubric_keeps_every_long_line(self):
+        self.assertIsNone(rubric_split.check_text_kept(SAMPLE, split(), 4))
+
+    def test_a_removed_line_is_named(self):
+        rubric = copy.deepcopy(split())
+        rubric["items"][1]["text"] = rubric["items"][1]["text"].replace(
+            "> Une citation fictive qui doit rester intacte.", "")
+        missing = rubric_split.check_text_kept(SAMPLE, rubric, 4)
+        self.assertIn("Une citation fictive", missing)
+
+    def test_case_and_spacing_are_ignored_and_short_lines_are_not_checked(self):
+        rubric = copy.deepcopy(split())
+        rubric["items"][0]["text"] = rubric["items"][0]["text"].replace(
+            "Le resume fait environ", "LE  RESUME   fait environ")
+        self.assertIsNone(rubric_split.check_text_kept(SAMPLE, rubric, 4))
+        self.assertIsNone(rubric_split.check_text_kept("Mot seul\n", rubric, 4))
+
+
+class ConfigTests(unittest.TestCase):
+
+    def test_shipped_keys_load_and_the_regex_reads_a_heading(self):
+        import re
+        match = re.match(HEADING, "## 3. Titre long avec (parentheses) (/10)")
+        self.assertEqual((match.group("n"), match.group("title"), match.group("points")),
+                         ("3", "Titre long avec (parentheses)", "10"))
+        self.assertGreaterEqual(CONFIG["rubric.min_check_words"], 1)
+        self.assertTrue(re.search(TOTAL, "**Total : 28.5 points**").group("total"))
+
+    def test_a_missing_key_is_refused_by_the_loader_naming_it(self):
+        for key in ("rubric.section_heading_regex", "rubric.total_regex", "rubric.min_check_words"):
+            self.assertIn(key, ugs_config.REQUIRED_KEYS)
+
+
+if __name__ == "__main__":
+    unittest.main()

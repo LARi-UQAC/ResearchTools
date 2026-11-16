@@ -83,5 +83,17 @@
   "references.quote_chars": {
     "value": 60,
     "provenance": "starting value, adjustable by the professor (characters of a reference entry used to anchor its annotation)"
+  },
+  "rubric.section_heading_regex": {
+    "value": "^##\\s+(?P<n>\\d+)\\.\\s+(?P<title>.+?)\\s*\\(/\\s*(?P<points>\\d+(?:[.,]\\d+)?)\\)\\s*$",
+    "provenance": "chosen 2026-11-15 from the professor's own rubric, whose sections are headed `## 3. Title (/10)`; adjustable by the professor for another heading style (named groups n, title and points)"
+  },
+  "rubric.total_regex": {
+    "value": "\\*\\*Total\\s*:\\s*(?P<total>\\d+(?:[.,]\\d+)?)\\s*points?\\*\\*",
+    "provenance": "chosen 2026-11-15 from the professor's own rubric, which states `**Total : 28.5 points**`; adjustable by the professor (named group total)"
+  },
+  "rubric.min_check_words": {
+    "value": 4,
+    "provenance": "chosen 2026-11-15: a rubric line shorter than four words is a heading or a label, so only longer lines are checked against the text a model rebuilt; adjustable by the professor"
   }
 }

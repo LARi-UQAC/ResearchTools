@@ -19,6 +19,9 @@ REQUIRED_KEYS = (
     "driver.audit_retries",
     "driver.request_timeout_s",
     "driver.count_timeout_s",
+    "rubric.section_heading_regex",
+    "rubric.total_regex",
+    "rubric.min_check_words",
 )
 
 

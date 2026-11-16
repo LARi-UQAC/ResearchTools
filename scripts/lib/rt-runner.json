@@ -11,6 +11,10 @@
     "value": 60,
     "provenance": "chosen 2026-11-16 after one run: a single suite (the privacy guard, 122 tests that start git, a shell and a scanner) took 12 minutes alone while the rest ended in about 2, leaving the machine at 10 percent CPU; a suite whose recorded time is at least this many seconds is split by test into several processes"
   },
+  "rerun_jobs": {
+    "value": 4,
+    "provenance": "chosen 2026-11-16 after a run with 60 jobs: its failures under load were rerun one at a time and the last 5 minutes used one process while the machine sat idle; the failed items are rerun together, this many at once, which is light load (measured: process launches stop gaining beyond 4 to 8 at once)"
+  },
   "chunk_seconds": {
     "value": 60,
     "provenance": "chosen 2026-11-16, unmeasured: the work a split suite is cut into, in seconds of recorded time per process, so a 720-second suite becomes 12 processes, never more than the number of jobs or of tests"

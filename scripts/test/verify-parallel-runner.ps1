@@ -85,14 +85,14 @@ try {
     Check "a number asked for wins over the share" ((Get-RtJobCount -Requested 5 -ConfigPath $ShippedConfig -LogicalProcessors 20) -eq 5)
     Check "with nothing injected the count reads this machine and is at least one" ((Get-RtJobCount -ConfigPath $ShippedConfig) -ge 1)
     Check "(refusal) a negative -Jobs is refused" (Throws { Get-RtJobCount -Requested -2 -ConfigPath $ShippedConfig } "negative")
-    $rest = '"poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 60, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}'
+    $rest = '"poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 60, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}, "rerun_jobs": {"value": 4, "provenance": "x"}'
     Write-Text (Join-Path $Tmp "over.json") ('{"cpu_share": {"value": 1.5, "provenance": "x"}, ' + $rest + '}')
     Check "(refusal) a share above 1 is refused naming the file" (Throws { Get-RtJobCount -ConfigPath (Join-Path $Tmp "over.json") } "cpu_share.*over\.json")
     Write-Text (Join-Path $Tmp "zero.json") ('{"cpu_share": {"value": 0, "provenance": "x"}, ' + $rest + '}')
     Check "(refusal) a share of 0 is refused" (Throws { Get-RtJobCount -ConfigPath (Join-Path $Tmp "zero.json") } "cpu_share")
     Write-Text (Join-Path $Tmp "nokey.json") '{"cpu_share": {"value": 0.5, "provenance": "x"}, "poll_ms": {"value": 100, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}}'
     Check "(refusal) a missing key is named" (Throws { Read-RtRunnerConfig -Path (Join-Path $Tmp "nokey.json") } "missing key 'split_seconds'")
-    Write-Text (Join-Path $Tmp "badsplit.json") ('{"cpu_share": {"value": 0.5, "provenance": "x"}, "poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 0, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}}')
+    Write-Text (Join-Path $Tmp "badsplit.json") ('{"cpu_share": {"value": 0.5, "provenance": "x"}, "poll_ms": {"value": 100, "provenance": "x"}, "split_seconds": {"value": 0, "provenance": "x"}, "chunk_seconds": {"value": 60, "provenance": "x"}, "rerun_jobs": {"value": 4, "provenance": "x"}}')
     Check "(refusal) a split_seconds of 0 is refused" (Throws { Read-RtRunnerConfig -Path (Join-Path $Tmp "badsplit.json") } "split_seconds must be above 0")
     Write-Text (Join-Path $Tmp "noprov.json") ('{"cpu_share": {"value": 0.5}, ' + $rest + '}')
     Check "(refusal) a missing provenance is named" (Throws { Read-RtRunnerConfig -Path (Join-Path $Tmp "noprov.json") } "provenance for 'cpu_share'")
@@ -253,6 +253,7 @@ try {
     Write-Host ""
     Write-Host "  -- wiring --" -ForegroundColor DarkCyan
     $suiteText = Get-Content -LiteralPath (Join-Path $RepoRoot "scripts\test\run-offline-tests.ps1") -Raw
+    Check "failed items are rerun together, a few at a time, not one after the other" ($suiteText -match "rerun_jobs" -and $suiteText -notmatch "-Jobs 1 -PollMs")
     Check "run-offline-tests.ps1 has -Jobs, uses the pool and reruns a failure alone" ($suiteText -match "\[int\]\`$Jobs" -and $suiteText -match "Invoke-RtParallel" -and $suiteText -match "Resolve-RtRetry")
     Check "run-offline-tests.ps1 keeps no Start-Process of its own" ($suiteText -notmatch "Start-Process")
     Check "run-offline-tests.ps1 records the seconds of each suite in the stamp" ($suiteText -match "seconds = \`$run\.Seconds")

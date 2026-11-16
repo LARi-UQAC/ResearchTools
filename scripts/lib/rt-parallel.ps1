@@ -24,17 +24,17 @@ function Read-RtRunnerConfig {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "missing file: $Path" }
     $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
     $config = @{}
-    foreach ($key in @("cpu_share", "poll_ms", "split_seconds", "chunk_seconds")) {
+    foreach ($key in @("cpu_share", "poll_ms", "split_seconds", "chunk_seconds", "rerun_jobs")) {
         $entry = $raw.PSObject.Properties[$key]
         if ($null -eq $entry -or $null -eq $entry.Value.PSObject.Properties["value"]) { throw "missing key '$key' in $Path" }
         if (-not $entry.Value.PSObject.Properties["provenance"] -or -not $entry.Value.provenance) { throw "missing provenance for '$key' in $Path" }
         $config[$key] = $entry.Value.value
     }
     # Windows PowerShell 5.1 reads 0.9 as a decimal and 100 as an int: both are numbers, a string or a boolean is not.
-    foreach ($key in @("cpu_share", "poll_ms", "split_seconds", "chunk_seconds")) {
+    foreach ($key in @("cpu_share", "poll_ms", "split_seconds", "chunk_seconds", "rerun_jobs")) {
         if ($config[$key] -isnot [ValueType] -or $config[$key] -is [bool]) { throw "$key must be a number in $Path" }
     }
-    foreach ($key in @("split_seconds", "chunk_seconds")) {
+    foreach ($key in @("split_seconds", "chunk_seconds", "rerun_jobs")) {
         if ($config[$key] -le 0) { throw "$key must be above 0 in $Path" }
     }
     $config.cpu_share = [double]$config.cpu_share

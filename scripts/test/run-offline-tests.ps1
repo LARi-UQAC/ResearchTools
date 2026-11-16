@@ -263,16 +263,22 @@ $ranFirst = @(Invoke-RtParallel -Items $items -Jobs $jobCount -PollMs $pollMs -O
 # failure that repeats is a real failure; one that does not repeat is reported as flaky under load (a shared file, a
 # timing), never hidden and never counted red.
 if ($jobCount -gt 1) {
-    for ($i = 0; $i -lt $ranFirst.Count; $i++) {
-        $first = $ranFirst[$i]
-        if ((Get-SuiteVerdict $first).Outcome -ne "FAILED") { continue }
-        Write-Line "  [RERUN]   $($first.Name)  (alone, after a failure under parallel load)" "Yellow"
-        $alone = @(Invoke-RtParallel -Items @($items[$i]) -Jobs 1 -PollMs $pollMs)[0]
-        $decision = Resolve-RtRetry -FirstOutcome "FAILED" -AloneOutcome (Get-SuiteVerdict $alone).Outcome
-        $ranFirst[$i] = $alone
-        if ($decision.Flaky) {
-            $flaky += [pscustomobject]@{ suite = $first.Name; detail = (Get-SuiteVerdict $first).Detail }
-            Write-Line "  [PASS]    $($first.Name)  (flaky under parallel load, passed alone)" "Yellow"
+    # The failed items are rerun together, a few at a time (rerun_jobs of rt-runner.json), not one after the other:
+    # a run with many failures under heavy load spent its last minutes on one process while the machine sat idle.
+    $failedIdx = @(for ($i = 0; $i -lt $ranFirst.Count; $i++) { if ((Get-SuiteVerdict $ranFirst[$i]).Outcome -eq "FAILED") { $i } })
+    if ($failedIdx.Count -gt 0) {
+        $rerunJobs = [Math]::Min([int]$runnerSettings.rerun_jobs, $failedIdx.Count)
+        Write-Line "  [RERUN]   $($failedIdx.Count) item(s) failed under parallel load, run again $rerunJobs at a time" "Yellow"
+        $again = @(Invoke-RtParallel -Items @($failedIdx | ForEach-Object { $items[$_] }) -Jobs $rerunJobs -PollMs $pollMs)
+        for ($k = 0; $k -lt $failedIdx.Count; $k++) {
+            $i = $failedIdx[$k]
+            $first = $ranFirst[$i]
+            $decision = Resolve-RtRetry -FirstOutcome "FAILED" -AloneOutcome (Get-SuiteVerdict $again[$k]).Outcome
+            $ranFirst[$i] = $again[$k]
+            if ($decision.Flaky) {
+                $flaky += [pscustomobject]@{ suite = $first.Name; detail = (Get-SuiteVerdict $first).Detail }
+                Write-Line "  [PASS]    $($first.Name)  (flaky under parallel load, passed on the second run)" "Yellow"
+            }
         }
     }
 }

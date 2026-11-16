@@ -10,11 +10,12 @@
         "minItems": 1,
         "items": {
           "type": "object",
-          "required": ["id", "title", "max_points", "criteria", "checklist"],
+          "required": ["id", "title", "max_points", "text"],
           "properties": {
             "id": {"type": "string"},
             "title": {"type": "string"},
             "max_points": {"type": "number"},
+            "text": {"type": "string", "minLength": 1},
             "criteria": {"type": "array", "items": {"type": "string"}},
             "checklist": {"type": "array", "items": {"type": "string"}}
           }

@@ -25,6 +25,7 @@ import ugs_config
 import report_prepare
 from rubric_check import validate as validate_rubric, RubricError
 from ugs_grade import normalize_rubric
+import rubric_split
 from ugs_run import run_report
 from ugs_ledger import (new_ledger, add_report, set_mark, reopen_all, add_note, read as read_ledger,
                         write as write_ledger, counts as ledger_counts, first_open, parse as parse_ledger)
@@ -167,15 +168,8 @@ def _rubric_text(path: Path) -> str:
 
 
 def _items_markdown(rubric: dict) -> str:
-    sections = []
-    for item in rubric["items"]:
-        lines = [f"## {item['id']} - {item['title']} ({item['max_points']})"]
-        if item.get("criteria"):
-            lines += ["Criteria:"] + [f"- {text}" for text in item["criteria"]]
-        if item.get("checklist"):
-            lines += ["Checklist:"] + [f"- {text}" for text in item["checklist"]]
-        sections.append("\n".join(lines))
-    return "\n\n".join(sections)
+    """The sections of the rubric as the professor wrote them: each item's exact text, else its title and criteria."""
+    return "\n\n".join(rubric_split.item_markdown(item) for item in rubric["items"])
 
 
 def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window, count, dry: bool) -> Optional[dict]:
@@ -206,13 +200,27 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
         raise DriverError("rubric file not found")
     if suffix == ".json":
         rubric = _read_json(path, "rubric file")
-    elif dry:
-        return None
     else:
-        model_call, model_window, model_count = _inputs(call, window, count, config, work)
-        ctx = _context(config, model_window, model_count)
-        rubric = normalize_rubric(_rubric_text(path), args.type,
-                                  lambda prompt, schema, images=None: model_call("grader", prompt, schema, images), ctx)
+        source = _rubric_text(path)
+        rubric = None
+        if suffix != ".pdf":
+            # A rubric with numbered sections is split by the code: no sentence is removed or shortened.
+            try:
+                rubric = rubric_split.split_rubric(source, args.type, config["rubric.section_heading_regex"],
+                                                   config["rubric.total_regex"])
+            except rubric_split.RubricSplitError as error:
+                raise DriverError(f"invalid rubric: {error}") from None
+        if rubric is None:
+            if dry:
+                return None
+            model_call, model_window, model_count = _inputs(call, window, count, config, work)
+            ctx = _context(config, model_window, model_count)
+            rubric = normalize_rubric(source, args.type,
+                                      lambda prompt, schema, images=None: model_call("grader", prompt, schema, images), ctx)
+            _emit({"warning": "rubric_model_split"})
+            missing = rubric_split.check_text_kept(source, rubric, config["rubric.min_check_words"])
+            if missing is not None:
+                raise DriverError(f"the model removed a line of the rubric: {missing}")
     try:
         validate_rubric(rubric)
     except RubricError as error:
@@ -268,7 +276,7 @@ def cmd_prepare(args, call, window, count) -> int:
     template = (ASSETS / "rubric.template.md").read_text(encoding="utf-8")
     (work / "rubric.md").write_text(fill(template, {
         "ASSESSMENT_TYPE": rubric["assessment_type"], "TOTAL_POINTS": str(rubric["total_points"]),
-        "ITEMS": _items_markdown(rubric)}), encoding="utf-8")
+        "PREAMBLE": rubric.get("preamble", ""), "ITEMS": _items_markdown(rubric)}), encoding="utf-8")
     ledger_path = work / "ledger.md"
     ledger = read_ledger(ledger_path) if ledger_path.is_file() else new_ledger("Ledger - grading steps")
     item_ids = [item["id"] for item in rubric["items"]]

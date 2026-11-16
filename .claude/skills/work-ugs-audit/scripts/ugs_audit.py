@@ -18,6 +18,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 from ugs_text import StepContext, fill, page_blocks, select_pages
 from ugs_bridge import NotRun
 from ugs_grade import grade_item
+from rubric_split import item_prompt_text
 
 def audit_item(
     item: dict,
@@ -61,7 +62,7 @@ def audit_item(
     last_error = None
     for attempt in range(ctx.audit_retries + 1):
         prompt = fill(prompt_template, {
-            "ITEM": json.dumps(item),
+            "ITEM": item_prompt_text(item),
             "GRADE_RECORD": json.dumps(record_for_prompt),
             "EVIDENCE_PAGES": evidence_text
         })

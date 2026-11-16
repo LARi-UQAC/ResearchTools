@@ -25,7 +25,7 @@ out of band, offers a calibrated second loop.
 
 | Subcommand | Does |
 |---|---|
-| `prepare --reports DIR --rubric FILE --type T` | ids and pages of every PDF, validates or normalises the rubric (JSON, Markdown, text, PDF text), writes the rubric, its Markdown and the ledger |
+| `prepare --reports DIR --rubric FILE --type T` | ids and pages of every PDF, takes the rubric as written (JSON is validated, a Markdown or text grid with numbered sections is split by the code and every section keeps its exact text, an unnumbered or PDF rubric is restructured by the model, which may not remove a line), writes the rubric, its Markdown and the ledger. There is no confirmation step |
 | `run --work DIR --reports DIR [--loop N] [--resume] [--only R01]` | runs the steps of every report in id order, resumable |
 | `batch --work DIR --loop N [--allow-third]` | spread of the totals against the calibration targets, opens the next loop when out of band |
 | `status --work DIR` | ledger counts and the first open step |
@@ -35,7 +35,7 @@ loop needs `--allow-third` after the professor's answer.
 
 ## Files
 
-The work folder is `_correction/`, beside the reports folder. It holds `ids.json`, `rubric.json`, `rubric.md`,
+The work folder is `_correction/`, inside the reports folder. It holds `ids.json`, `rubric.json`, `rubric.md`,
 `ledger.md`, `loop_state.json`, `vision_probe.json`, one folder per report with its pages, figures and model
 images, and one folder per loop with the grades, language and figure results, annotations, totals, the
 annotated PDF and the batch report. Every output path is resolved inside the work folder (R24).
@@ -46,7 +46,9 @@ Three roles, `ugs-grader`, `ugs-auditor` and `ugs-vision`, resolved by `model_re
 here. The owner adopts each once:
 `model_resolver.py --adopt-role ugs-grader <tag> --reason "<measurement>"`, the same for the other two. A role
 not adopted stops the step and names it. There is no fallback and no cloud grading. `vision_probe.py` measures
-what the vision role reads on a chart before figures are graded.
+what the vision role reads on a figure of any kind (a chart, a Gantt chart, a CAD or PCB view, a photo) before
+figures are graded, and always writes a reason; a failed probe leaves the model-judged figure criteria `not_run`,
+it does not stop the run.
 
 The token count that checks a prompt against the window waits `driver.count_timeout_s` seconds (measured
 2026-11-15: prefill runs near 130 tokens per second on a CPU-heavy split, so a prompt above about 1000 tokens

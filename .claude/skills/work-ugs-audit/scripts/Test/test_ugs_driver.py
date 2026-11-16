@@ -208,6 +208,16 @@ class TestUgsDriver(unittest.TestCase):
         for line in SPLIT_SOURCE.splitlines():
             if line.strip() and line.strip() != "---":
                 self.assertIn(line, shown)
+        # the ledger names items I01 and I02: rubric.md must say which section each id is
+        self.assertIn("[I01]\n## 1.", shown)
+        self.assertIn("[I02]\n## 2.", shown)
+
+    def test_the_dry_run_counts_only_pdf_files_not_a_folder_named_like_one(self):
+        self.add_reports([9])
+        (self.reports / "old.pdf").mkdir()
+        code, lines, _ = self.prepare(["--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[0]["reports"], 1)
 
     def test_a_stated_total_that_differs_from_the_sum_is_refused_and_nothing_is_written(self):
         self.add_reports([4])

@@ -76,6 +76,18 @@ class TestVisionProbe(unittest.TestCase):
         photo = self.run_probe(answer("photo", ("MARQUE-X",)), {"words": ["marque-x"]})
         self.assertTrue(photo["ok"])
 
+    def test_a_kind_written_with_a_space_or_a_dash_matches_the_enum_value(self):
+        for written in ("technical drawing", "Technical-Drawing", "technical_drawing"):
+            result = self.run_probe(answer("technical_drawing", ("U1", "GND")),
+                                    {"kind": written, "words": ["U1", "GND"]})
+            self.assertTrue(result["ok"], written)
+
+    def test_a_different_kind_still_fails_with_both_kinds_in_the_reason(self):
+        result = self.run_probe(answer("photo", ("U1", "GND")), {"kind": "technical drawing", "words": ["U1", "GND"]})
+        self.assertFalse(result["ok"])
+        self.assertIn("technical drawing", result["reason"])
+        self.assertIn("photo", result["reason"])
+
     def test_one_misread_word_of_five_still_passes_at_the_configured_share(self):
         words = ["a1", "b2", "c3", "d4", "e5"]
         result = self.run_probe(answer("other", ("a1", "b2", "c3", "d4")), {"words": words})

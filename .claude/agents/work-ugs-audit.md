@@ -54,9 +54,12 @@ reason `vision_not_validated`, and count them in the checklist.
 
 **Step 3 - Run.** Start `ugs_driver.py run --work WORK --reports DIR --loop 1` detached, in the background
 mode of your Bash tool, because a call of yours ends at ten minutes and the run takes hours. Then poll
-`ugs_driver.py status --work WORK` until no step is open. An exit 1 means a model could not run
-(daemon unreachable, role not adopted, over budget): tell the professor which role and the kind from the JSON
-line, never guess, and resume with `run --resume` once he has fixed it.
+`ugs_driver.py status --work WORK` until no step is open. At every poll also check that the background process
+is still running. When it has ended and steps are still open, read its exit code and its last JSON lines and stop
+polling: do not wait for steps that no process will close. An exit 1 means a model could not run (daemon
+unreachable, role not adopted, over budget): tell the professor which role and the kind from the JSON line,
+never guess, and resume with `run --resume` once he has fixed it. Any other end (killed, crashed) is reported
+with the last JSON line, and `run --resume` is started once; a second end of the same kind is reported, not retried.
 
 **Step 4 - Batch.** Run `ugs_driver.py batch --work WORK --loop N`. Present the verdict from the
 numbers only (mean, spread, the band, the reasons). In band, or out of band (exit 3), the grades of every

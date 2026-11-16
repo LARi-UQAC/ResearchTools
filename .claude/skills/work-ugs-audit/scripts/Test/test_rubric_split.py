@@ -126,6 +126,11 @@ class SplitTests(unittest.TestCase):
         rubric = split(SAMPLE.replace("Selon l'ABC :", "### 2.1 Description\n\nSelon l'ABC :"))
         self.assertIn("### 2.1 Description", rubric["items"][1]["text"])
 
+    def test_a_numbered_level_three_sub_heading_stays_inside_its_section(self):
+        rubric = split(SAMPLE.replace("Selon l'ABC :", "### 2. Verifier le circuit\n\nSelon l'ABC :"))
+        self.assertEqual(len(rubric["items"]), 3)
+        self.assertIn("### 2. Verifier le circuit", rubric["items"][1]["text"])
+
     def test_a_total_stated_at_the_end_of_the_text_is_checked(self):
         with self.assertRaises(rubric_split.RubricSplitError):
             split(SAMPLE.replace("**Total : 3.5 points**, repartis comme suit.", "") + "\n**Total : 8 points**\n")
@@ -169,6 +174,16 @@ class KeptTextTests(unittest.TestCase):
             "> Une citation fictive qui doit rester intacte.", "")
         missing = rubric_split.check_text_kept(SAMPLE, rubric, 4)
         self.assertIn("Une citation fictive", missing)
+
+    def test_a_line_repeated_in_two_sections_must_be_kept_in_both(self):
+        repeated = "- [ ] Les unites sont indiquees partout dans le texte"
+        source = SAMPLE.replace("- [ ] Contexte", repeated).replace(
+            "Rappel des objectifs et des contraintes du client.", repeated)
+        rubric = copy.deepcopy(split(source))
+        self.assertIsNone(rubric_split.check_text_kept(source, rubric, 4))
+        rubric["items"][2]["text"] = rubric["items"][2]["text"].replace(repeated, "")
+        missing = rubric_split.check_text_kept(source, rubric, 4)
+        self.assertIn("Les unites sont indiquees", missing)
 
     def test_case_and_spacing_are_ignored_and_short_lines_are_not_checked(self):
         rubric = copy.deepcopy(split())

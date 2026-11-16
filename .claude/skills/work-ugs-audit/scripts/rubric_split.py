@@ -7,7 +7,7 @@ code, so no sentence is removed or shortened. The grader and the auditor receive
 """
 import re
 from decimal import Decimal
-from typing import Optional
+from typing import Dict, Optional
 
 MAX_ITEMS = 99  # the item id pattern of the rubric schema is I and two digits
 
@@ -189,7 +189,12 @@ def check_text_kept(source: str, rubric: dict, min_words: int) -> Optional[str]:
     --------------------------------------------------------------------------
     """
     haystack = _norm(" ".join([rubric.get("preamble", "")] + [item.get("text", "") for item in rubric["items"]]))
+    wanted: Dict[str, int] = {}
     for line in source.splitlines():
-        if len(line.split()) >= min_words and _norm(line) not in haystack:
+        if len(line.split()) >= min_words:
+            wanted[_norm(line)] = wanted.get(_norm(line), 0) + 1
+    # A line the professor repeats in several sections must be kept as many times as it is written
+    for line in source.splitlines():
+        if len(line.split()) >= min_words and haystack.count(_norm(line)) < wanted[_norm(line)]:
             return line.strip()
     return None

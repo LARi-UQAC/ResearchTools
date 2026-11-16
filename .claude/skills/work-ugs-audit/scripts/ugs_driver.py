@@ -169,7 +169,10 @@ def _rubric_text(path: Path) -> str:
 
 def _items_markdown(rubric: dict) -> str:
     """The sections of the rubric as the professor wrote them: each item's exact text, else its title and criteria."""
-    return "\n\n".join(rubric_split.item_markdown(item) for item in rubric["items"])
+    # The exact text starts with the professor's own heading, so the id the ledger and the grades use is added
+    # above it: the orchestrating agent reads only this file and must map a ledger line `I07` to its section.
+    return "\n\n".join(("[%s]\n%s" % (item["id"], rubric_split.item_markdown(item))) if item.get("text")
+                       else rubric_split.item_markdown(item) for item in rubric["items"])
 
 
 def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window, count, dry: bool) -> Optional[dict]:
@@ -277,7 +280,7 @@ def cmd_prepare(args, call, window, count) -> int:
         raise DriverError("unknown assessment type")
     rubric = _rubric_for(args, config, work, call, window, count, args.dry_run)
     if args.dry_run:
-        _emit({"dry_run": True, "step": "prepare", "reports": len([p for p in reports.iterdir() if p.suffix.lower() == ".pdf"])})
+        _emit({"dry_run": True, "step": "prepare", "reports": len([p for p in reports.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"])})
         return EXIT_OK
     try:
         results = report_prepare.prepare(reports, work)

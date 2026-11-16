@@ -85,6 +85,27 @@ class TestUgsText(unittest.TestCase):
         count = lambda text: len(text.split())
         self.assertEqual(select_pages(item, pages, 10, count, 3), [2])
 
+    def test_the_pages_matching_most_keywords_are_kept_first_when_the_budget_holds_one(self):
+        pages = [
+            "# Introduction projet\nTexte court",
+            "# Analyse des risques du projet\nTexte court",
+            "# Conclusion\nTexte court"
+        ]
+        item = {"id": "I01", "title": "Revue", "max_points": 1,
+                "text": "## 1. Revue (/1)\n\nAnalyser les risques du projet, introduction comprise."}
+        count = lambda text: len(text.split())
+        chosen = select_pages(item, pages, 12, count, 3)  # a page block is 8, 11 and 7 words: only one fits
+        self.assertEqual(chosen, [2])
+        self.assertNotIn(1, chosen)
+
+    def test_selected_pages_come_back_in_page_order(self):
+        pages = ["# Risques\nA", "# Autre\nB", "# Risques projet\nC"]
+        item = {"id": "I01", "title": "Risques projet", "max_points": 1, "criteria": [], "checklist": []}
+        count = lambda text: len(text.split())
+        self.assertEqual(select_pages(item, pages, 100, count, 3), [1, 2, 3])
+        # budget for two of the three pages: the two matching ones come back in page order, never best first
+        self.assertEqual(select_pages(item, pages, 14, count, 3), [1, 3])
+
     def test_accented_heading_matches_an_unaccented_word(self):
         pages = [
             "# Introduction\nText",

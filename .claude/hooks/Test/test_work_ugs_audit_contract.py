@@ -68,6 +68,11 @@ class TestWorkUgsAuditContract(unittest.TestCase):
     def test_the_long_run_is_started_detached(self):
         self.assertRegex(self.agent, r"(?i)detached")
 
+    def test_the_poll_checks_that_the_background_process_is_still_running(self):
+        self.assertRegex(self.agent, r"(?i)background process\s+is still running")
+        self.assertRegex(self.agent, r"(?i)steps are still open")
+        self.assertRegex(self.agent, r"(?i)not retried")
+
     def test_the_command_names_third_loop_as_its_only_pause(self):
         command = (ROOT / ".claude" / "commands" / "work-ugs-audit.md").read_text(encoding="utf-8")
         self.assertIn("only pause is `third-loop`", command)

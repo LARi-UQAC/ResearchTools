@@ -104,7 +104,9 @@ def _judge(answer: Any, expected: dict, min_share: float) -> Tuple[bool, str, Li
     found = [word for word in words if any(_contains_word(entry, _spaced(word)) for entry in seen)]
     missing = [word for word in words if word not in found]
     wanted = expected.get("kind")
-    if wanted and _normalize_text(str(wanted)) != _normalize_text(answer["figure_kind"]):
+    # `technical drawing`, `technical-drawing` and the enum value `technical_drawing` name the same kind
+    if wanted and _normalize_text(re.sub(r"[_-]", " ", str(wanted))) != \
+            _normalize_text(re.sub(r"[_-]", " ", answer["figure_kind"])):
         return False, "expected the kind %s, the model said %s" % (wanted, answer["figure_kind"]), found, missing
     share = len(found) / len(words) if words else 0.0
     if share < min_share:

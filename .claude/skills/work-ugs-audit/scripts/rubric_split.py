@@ -65,7 +65,8 @@ def _trim(lines: list) -> str:
     return "\n".join(kept)
 
 
-def split_rubric(text: str, assessment_type: str, heading_regex: str, total_regex: str) -> Optional[dict]:
+def split_rubric(text: str, assessment_type: str, heading_regex: str, total_regex: str,
+                 loose_heading_regex: str) -> Optional[dict]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -78,12 +79,16 @@ def split_rubric(text: str, assessment_type: str, heading_regex: str, total_rege
         text (str): the rubric as written by the professor
         assessment_type (str): the assessment type of the run
         heading_regex (str): the section heading pattern (config key rubric.section_heading_regex)
-        total_regex (str): the stated total pattern with the group `total` (config key rubric.total_regex)
+        total_regex (str): the stated total pattern with the group `total` (config key rubric.total_regex), searched
+            in the whole text
+        loose_heading_regex (str): any numbered heading, with or without points (config key
+            rubric.loose_heading_regex), used to refuse a heading the strict pattern did not read
     Outputs:
         rubric (dict | None): assessment_type, total_points, preamble and items (id, title, max_points, text,
         preamble), or None when fewer than two numbered sections are found.
     Raises:
-        RubricSplitError: a stated total differs from the sum of the item points, or more than 99 sections.
+        RubricSplitError: a stated total differs from the sum of the item points, more than 99 sections, or a
+        numbered heading that the strict pattern did not read (it would be absorbed into the previous item).
     --------------------------------------------------------------------------
     """
     heading = re.compile(heading_regex)
@@ -94,6 +99,12 @@ def split_rubric(text: str, assessment_type: str, heading_regex: str, total_rege
         return None
     if len(starts) > MAX_ITEMS:
         raise RubricSplitError("more than %d numbered sections" % MAX_ITEMS)
+    strict = {index for index, _ in starts}
+    loose = re.compile(loose_heading_regex)
+    for index, line in enumerate(lines):
+        if index not in strict and loose.match(line):
+            raise RubricSplitError("a numbered heading has no points or does not match the heading pattern: %s"
+                                   % line.strip())
     preamble = _trim(lines[:starts[0][0]])
     items = []
     total = Decimal(0)
@@ -103,7 +114,7 @@ def split_rubric(text: str, assessment_type: str, heading_regex: str, total_rege
         total += points
         items.append({"id": "I%02d" % (position + 1), "title": match.group("title").strip(),
                       "max_points": _plain(points), "text": _trim(lines[index:end]), "preamble": preamble})
-    stated = re.search(total_regex, preamble)
+    stated = re.search(total_regex, text)
     if stated and _number(stated.group("total")) != total:
         raise RubricSplitError("the stated total %s differs from the sum of the items %s"
                                % (stated.group("total"), _plain(total)))

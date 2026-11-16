@@ -84,9 +84,9 @@ def _words_match(word1: str, word2: str, prefix_len: int) -> bool:
 
 def _extract_keywords(item: Dict[str, Any], min_word_len: int) -> set:
     """
-    Purpose: Extract keywords from an item's title, criteria, and checklist.
+    Purpose: Extract keywords from an item's title, criteria, checklist and exact section text.
     Inputs:
-        item: Dict - The item containing title, criteria, checklist.
+        item: Dict - The item containing title, criteria, checklist and, for a rubric split by code, text.
         min_word_len: int - Minimum length for a word to be considered a keyword.
     Outputs:
         set - A set of normalized keywords.
@@ -94,6 +94,8 @@ def _extract_keywords(item: Dict[str, Any], min_word_len: int) -> set:
     texts = [item.get("title", "")]
     texts.extend(item.get("criteria", []))
     texts.extend(item.get("checklist", []))
+    if item.get("text"):
+        texts.append(item["text"])
     
     keywords = set()
     for text in texts:

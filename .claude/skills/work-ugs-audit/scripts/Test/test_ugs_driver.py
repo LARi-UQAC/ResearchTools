@@ -220,6 +220,39 @@ class TestUgsDriver(unittest.TestCase):
         self.assertIn("15", lines[0]["error"])
         self.assertFalse(self.work.exists())
 
+    def test_the_preamble_the_model_returns_is_copied_into_every_item(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.txt"
+        source.write_text("Acronym ABC means a fictitious guide of practice.\n" + TEXT_SOURCE, encoding="utf-8")
+        answer = dict(TEXT_ANSWER, preamble="Acronym ABC means a fictitious guide of practice.")
+        answer["items"] = [dict(answer["items"][0], text=TEXT_SOURCE)]
+        code, _, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                               "--type", "lab_report"], model=FakeModel(rubric_answer=answer))
+        self.assertEqual(code, 0)
+        rubric = json.loads((self.work / "rubric.json").read_text(encoding="utf-8"))
+        self.assertEqual(rubric["items"][0]["preamble"], "Acronym ABC means a fictitious guide of practice.")
+
+    def test_a_pdf_rubric_goes_to_the_model_and_is_reported_unverified_not_refused(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.pdf"
+        make_report(source, [{"text": "Method: 10 points. Page 1 of the fictitious rubric."}])
+        shortened = {"assessment_type": "lab_report", "total_points": 10,
+                     "items": [{"id": "I01", "title": "Method", "max_points": 10, "text": "Method: 10 points."}]}
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                                   "--type", "lab_report"], model=FakeModel(rubric_answer=shortened))
+        self.assertEqual(code, 0)
+        self.assertIn({"warning": "rubric_pdf_text_unverified"}, lines)
+
+    def test_a_numbered_heading_without_points_is_refused_by_prepare(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.md"
+        source.write_text(SPLIT_SOURCE + "\n---\n\n## 3. Annexes\n\ntexte\n", encoding="utf-8")
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                                   "--type", "lab_report"])
+        self.assertEqual(code, 2)
+        self.assertIn("## 3. Annexes", lines[0]["error"])
+        self.assertFalse(self.work.exists())
+
     def test_a_model_that_drops_a_line_of_an_unnumbered_rubric_is_refused(self):
         self.add_reports([4])
         source = self.tmp / "grille.txt"

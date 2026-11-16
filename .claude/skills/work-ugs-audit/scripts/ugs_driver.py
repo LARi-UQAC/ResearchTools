@@ -176,8 +176,10 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
     """
     --------------------------------------------------------------------------
     Purpose:
-        Read the professor's rubric file: JSON is validated and used as it is, text, Markdown or PDF text goes
-        through the grader model, any other extension is refused.
+        Read the professor's rubric file: JSON is validated and used as it is. A Markdown or text file with
+        numbered sections is split by the code (every section keeps its exact text, no model call). Any other text,
+        Markdown or PDF text goes through the grader model, which may restructure it but not remove a line (checked
+        for Markdown and text, reported as unverified for PDF). Any other extension is refused.
 
     Inputs:
         args (Namespace): `rubric` and `type`
@@ -185,7 +187,7 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
         dry (bool): True for a dry run, which never calls a model
 
     Outputs:
-        rubric (dict | None): the validated rubric, None in a dry run of a text rubric.
+        rubric (dict | None): the validated rubric, None in a dry run of a rubric that needs the model.
 
     Raises:
         DriverError: unsupported extension, missing file, invalid rubric, a type that differs from the rubric's.
@@ -207,7 +209,8 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
             # A rubric with numbered sections is split by the code: no sentence is removed or shortened.
             try:
                 rubric = rubric_split.split_rubric(source, args.type, config["rubric.section_heading_regex"],
-                                                   config["rubric.total_regex"])
+                                                   config["rubric.total_regex"],
+                                                   config["rubric.loose_heading_regex"])
             except rubric_split.RubricSplitError as error:
                 raise DriverError(f"invalid rubric: {error}") from None
         if rubric is None:
@@ -218,9 +221,17 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
             rubric = normalize_rubric(source, args.type,
                                       lambda prompt, schema, images=None: model_call("grader", prompt, schema, images), ctx)
             _emit({"warning": "rubric_model_split"})
-            missing = rubric_split.check_text_kept(source, rubric, config["rubric.min_check_words"])
-            if missing is not None:
-                raise DriverError(f"the model removed a line of the rubric: {missing}")
+            if rubric.get("preamble"):
+                for item in rubric.get("items", []):
+                    item.setdefault("preamble", rubric["preamble"])
+            if suffix == ".pdf":
+                # PDF text carries running headers, page numbers and hyphenation that no model copies, so a line
+                # check would refuse a faithful split: say it was not verified instead.
+                _emit({"warning": "rubric_pdf_text_unverified"})
+            else:
+                missing = rubric_split.check_text_kept(source, rubric, config["rubric.min_check_words"])
+                if missing is not None:
+                    raise DriverError(f"the model removed a line of the rubric: {missing}")
     try:
         validate_rubric(rubric)
     except RubricError as error:
@@ -237,8 +248,9 @@ def cmd_prepare(args, call, window, count) -> int:
         Give every report an id and its pages, write the rubric (JSON and Markdown) and the ledger.
 
     Details:
-        Idempotent: a second run adds no ledger section. The rubric is validated (and normalised by the model
-        when it is not JSON) before any page is extracted, so a refusal leaves nothing behind. The loop state
+        Idempotent: a second run adds no ledger section. The rubric is validated (split by the code when it has
+        numbered sections, restructured by the model otherwise) before any page is extracted, so a refusal leaves
+        nothing behind. The loop state
         is not touched.
 
     Inputs:

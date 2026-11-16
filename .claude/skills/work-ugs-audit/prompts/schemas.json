@@ -5,6 +5,7 @@
     "properties": {
       "assessment_type": {"type": "string", "enum": ["lab_report", "project_report"]},
       "total_points": {"type": "number"},
+      "preamble": {"type": "string"},
       "items": {
         "type": "array",
         "minItems": 1,

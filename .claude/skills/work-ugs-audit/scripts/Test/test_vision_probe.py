@@ -103,6 +103,21 @@ class TestVisionProbe(unittest.TestCase):
         result = self.run_probe(answer("gantt", ("PHASE  1", "conception", "Revué", "livraison")))
         self.assertTrue(result["ok"])
 
+    def test_a_short_expected_word_is_not_found_inside_another_word(self):
+        result = self.run_probe(answer("other", ("extra mixture of letters",)), {"words": ["x"]})
+        self.assertFalse(result["ok"])
+        self.assertTrue(self.run_probe(answer("other", ("x axis",)), {"words": ["x"]})["ok"])
+
+    def test_one_long_blob_does_not_make_every_word_found(self):
+        blob = ("Phase 1Conceptionx",)
+        self.assertFalse(self.run_probe(answer("gantt", blob), GANTT)["ok"])
+
+    def test_a_missing_token_count_is_said_in_the_reason(self):
+        call = self.make_call_usage([(answer(), {}), ({}, {"prompt_tokens": 50})])
+        result = probe(call, self.image_path, GANTT, self.prompt, self.schema, 0.8)
+        self.assertTrue(result["ok"])
+        self.assertIn("image cost is unknown", result["reason"])
+
     def test_an_answer_without_the_two_keys_fails_with_a_reason(self):
         for bad in ({"x_title": "t"}, {"figure_kind": "gantt"}, {"figure_kind": "gantt", "visible_text": "text"}, []):
             result = self.run_probe(bad)

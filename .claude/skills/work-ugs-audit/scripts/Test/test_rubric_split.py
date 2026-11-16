@@ -15,6 +15,7 @@ import ugs_config  # noqa: E402
 CONFIG = ugs_config.load(ugs_config.default_path())
 HEADING = CONFIG["rubric.section_heading_regex"]
 TOTAL = CONFIG["rubric.total_regex"]
+LOOSE = CONFIG["rubric.loose_heading_regex"]
 
 SAMPLE = """# Grille d'exemple
 
@@ -64,7 +65,7 @@ Rappel des objectifs et des contraintes du client.
 
 
 def split(text=SAMPLE):
-    return rubric_split.split_rubric(text, "project_report", HEADING, TOTAL)
+    return rubric_split.split_rubric(text, "project_report", HEADING, TOTAL, LOOSE)
 
 
 class SplitTests(unittest.TestCase):
@@ -114,6 +115,20 @@ class SplitTests(unittest.TestCase):
     def test_comma_points_are_read(self):
         rubric = split(SAMPLE.replace("(/0.5)", "(/0,5)"))
         self.assertEqual(rubric["items"][2]["max_points"], 0.5)
+
+    def test_a_numbered_heading_without_points_is_refused_naming_it(self):
+        for bad in ("## 4. Annexes\n\ntexte\n", "## 4. Annexes (10 points)\n\ntexte\n"):
+            with self.assertRaises(rubric_split.RubricSplitError) as ctx:
+                split(SAMPLE + "\n---\n\n" + bad)
+            self.assertIn("## 4. Annexes", str(ctx.exception))
+
+    def test_a_sub_heading_and_the_acronym_heading_are_not_refused(self):
+        rubric = split(SAMPLE.replace("Selon l'ABC :", "### 2.1 Description\n\nSelon l'ABC :"))
+        self.assertIn("### 2.1 Description", rubric["items"][1]["text"])
+
+    def test_a_total_stated_at_the_end_of_the_text_is_checked(self):
+        with self.assertRaises(rubric_split.RubricSplitError):
+            split(SAMPLE.replace("**Total : 3.5 points**, repartis comme suit.", "") + "\n**Total : 8 points**\n")
 
     def test_more_than_ninety_nine_sections_are_refused(self):
         text = "".join("## %d. S%d (/1)\n\ntexte\n\n" % (n, n) for n in range(1, 101))
@@ -171,10 +186,13 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual((match.group("n"), match.group("title"), match.group("points")),
                          ("3", "Titre long avec (parentheses)", "10"))
         self.assertGreaterEqual(CONFIG["rubric.min_check_words"], 1)
+        self.assertTrue(re.match(LOOSE, "## 4. Annexes"))
+        self.assertFalse(re.match(LOOSE, "### 3.1 Description"))
         self.assertTrue(re.search(TOTAL, "**Total : 28.5 points**").group("total"))
 
     def test_a_missing_key_is_refused_by_the_loader_naming_it(self):
-        for key in ("rubric.section_heading_regex", "rubric.total_regex", "rubric.min_check_words"):
+        for key in ("rubric.section_heading_regex", "rubric.total_regex", "rubric.min_check_words",
+                    "rubric.loose_heading_regex"):
             self.assertIn(key, ugs_config.REQUIRED_KEYS)
 
 

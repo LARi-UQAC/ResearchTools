@@ -8,6 +8,7 @@ expected) and enough of the expected words are among the text the model read. Th
 """
 import argparse
 import json
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -35,6 +36,31 @@ def _normalize_text(text: str) -> str:
     nfkd_form = unicodedata.normalize('NFKD', text)
     text = ''.join([c for c in nfkd_form if not unicodedata.combining(c)])
     return ''.join(text.split())
+
+
+def _spaced(text: str) -> str:
+    """
+    Purpose: Lowercase a text, remove its accents and collapse its spacing to single spaces, to match whole words.
+    Inputs:
+        text: str - The text.
+    Outputs:
+        str - The comparable form.
+    """
+    nfkd_form = unicodedata.normalize('NFKD', text.lower())
+    return ' '.join(''.join(c for c in nfkd_form if not unicodedata.combining(c)).split())
+
+
+def _contains_word(entry: str, word: str) -> bool:
+    """
+    Purpose: Tell whether a normalized entry holds a normalized word or phrase as whole words, so a short word such
+        as x or mm is not found inside an unrelated word.
+    Inputs:
+        entry: str - the normalized text the model read.
+        word: str - the normalized expected word or phrase.
+    Outputs:
+        bool - True when the word stands in the entry between non-word characters.
+    """
+    return re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", entry) is not None
 
 
 def _verdict(ok: bool, reason: str, kind: Optional[str], image_tokens: Optional[int], answer: Any,
@@ -74,8 +100,8 @@ def _judge(answer: Any, expected: dict, min_share: float) -> Tuple[bool, str, Li
     if not isinstance(answer, dict) or not isinstance(answer.get("figure_kind"), str) \
             or not isinstance(answer.get("visible_text"), list):
         return False, "the answer has no figure_kind or no visible_text list", [], words
-    seen = [_normalize_text(str(entry)) for entry in answer["visible_text"]]
-    found = [word for word in words if any(_normalize_text(word) in entry for entry in seen)]
+    seen = [_spaced(str(entry)) for entry in answer["visible_text"]]
+    found = [word for word in words if any(_contains_word(entry, _spaced(word)) for entry in seen)]
     missing = [word for word in words if word not in found]
     wanted = expected.get("kind")
     if wanted and _normalize_text(str(wanted)) != _normalize_text(answer["figure_kind"]):
@@ -120,8 +146,10 @@ def probe(
     image_tokens = None
     try:
         _, usage_without = call_usage(prompt, schema, None)
-        if "prompt_tokens" in usage_with and "prompt_tokens" in usage_without:
+        if usage_with.get("prompt_tokens") is not None and usage_without.get("prompt_tokens") is not None:
             image_tokens = usage_with["prompt_tokens"] - usage_without["prompt_tokens"]
+        else:
+            reason += "; the daemon did not report the prompt token count, so the image cost is unknown"
     except Exception:
         reason += "; the image cost could not be measured"
     return _verdict(ok, reason, None, image_tokens, answer, expected, found, missing)

@@ -74,6 +74,17 @@ class TestUgsText(unittest.TestCase):
         result = select_pages(item, pages, 10, count, 3)
         self.assertEqual(result, [2])
 
+    def test_an_item_with_only_a_title_and_its_exact_text_selects_pages_by_the_words_of_the_text(self):
+        pages = [
+            "# Introduction\nUnrelated text here",
+            "# Risques\nSpecific details about the risks",
+            "# Conclusion\nUnrelated text here"
+        ]
+        item = {"id": "I01", "title": "Revue", "max_points": 1,
+                "text": "## 1. Revue (/1)\n\nAnalyser et traiter les risques du projet."}
+        count = lambda text: len(text.split())
+        self.assertEqual(select_pages(item, pages, 10, count, 3), [2])
+
     def test_accented_heading_matches_an_unaccented_word(self):
         pages = [
             "# Introduction\nText",

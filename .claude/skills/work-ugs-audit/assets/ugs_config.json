@@ -99,5 +99,9 @@
   "vision.min_word_share": {
     "value": 0.8,
     "provenance": "chosen 2026-11-15: a figure of a report is read when four words out of five of the text printed on it are found, so one misread word does not stop the step; adjustable by the professor (a number above 0 and at most 1)"
+  },
+  "rubric.loose_heading_regex": {
+    "value": "^#{1,6}\\s+\\d+\\.\\s+\\S",
+    "provenance": "chosen 2026-11-15: a heading that starts with a number and a point is a section of the rubric, so one the strict heading pattern did not read (no points, another way to write them) is refused instead of being absorbed into the previous item; adjustable by the professor"
   }
 }

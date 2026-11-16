@@ -1,0 +1,26 @@
+{
+  "cpu_share": {
+    "value": 0.9,
+    "provenance": "chosen by the owner 2026-11-16: the test runners may use 90 percent of the logical processors at once, because one sequential suite left the machine at 20 to 25 percent CPU; a number above 0 and at most 1, overridden by -Jobs"
+  },
+  "poll_ms": {
+    "value": 100,
+    "provenance": "chosen 2026-11-16, unmeasured: milliseconds between two looks at the running child processes, short against a suite that lasts seconds"
+  },
+  "split_seconds": {
+    "value": 60,
+    "provenance": "chosen 2026-11-16 after one run: a single suite (the privacy guard, 122 tests that start git, a shell and a scanner) took 12 minutes alone while the rest ended in about 2, leaving the machine at 10 percent CPU; a suite whose recorded time is at least this many seconds is split by test into several processes"
+  },
+  "priority": {
+    "value": "High",
+    "provenance": "chosen by the owner 2026-11-16: the runners and every test process they start run at the highest priority class a normal account may set. RealTime is not used: Windows gives it only to an administrator (anyone else gets High), and a RealTime process can freeze the keyboard and the mouse. The class only matters when processes compete for the CPU, which they did not when measured (CPU at 15 to 30 percent)"
+  },
+  "rerun_jobs": {
+    "value": 4,
+    "provenance": "chosen 2026-11-16 after a run with 60 jobs: its failures under load were rerun one at a time and the last 5 minutes used one process while the machine sat idle; the failed items are rerun together, this many at once, which is light load (measured: process launches stop gaining beyond 4 to 8 at once)"
+  },
+  "chunk_seconds": {
+    "value": 60,
+    "provenance": "chosen 2026-11-16, unmeasured: the work a split suite is cut into, in seconds of recorded time per process, so a 720-second suite becomes 12 processes, never more than the number of jobs or of tests"
+  }
+}

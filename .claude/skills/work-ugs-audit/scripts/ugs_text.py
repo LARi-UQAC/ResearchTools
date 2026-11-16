@@ -84,9 +84,9 @@ def _words_match(word1: str, word2: str, prefix_len: int) -> bool:
 
 def _extract_keywords(item: Dict[str, Any], min_word_len: int) -> set:
     """
-    Purpose: Extract keywords from an item's title, criteria, and checklist.
+    Purpose: Extract keywords from an item's title, criteria, checklist and exact section text.
     Inputs:
-        item: Dict - The item containing title, criteria, checklist.
+        item: Dict - The item containing title, criteria, checklist and, for a rubric split by code, text.
         min_word_len: int - Minimum length for a word to be considered a keyword.
     Outputs:
         set - A set of normalized keywords.
@@ -94,6 +94,8 @@ def _extract_keywords(item: Dict[str, Any], min_word_len: int) -> set:
     texts = [item.get("title", "")]
     texts.extend(item.get("criteria", []))
     texts.extend(item.get("checklist", []))
+    if item.get("text"):
+        texts.append(item["text"])
     
     keywords = set()
     for text in texts:
@@ -185,9 +187,11 @@ def select_pages(item: Dict[str, Any], pages: List[str], budget_tokens: int, cou
     
     # Filter pages that have a heading matching keywords
     matching_numbers = []
+    hits: Dict[int, int] = {}
     for i, page_text in enumerate(pages):
         lines = page_text.split('\n')
         has_match = False
+        hit_words = set()
         for line in lines:
             # Headings might not start with # in all cases, but usually do in markdown.
             # The test `test_accented_heading_matches_an_unaccented_word` expects "Résumé" to match "Resume".
@@ -212,25 +216,25 @@ def select_pages(item: Dict[str, Any], pages: List[str], budget_tokens: int, cou
                     for k_word in keywords:
                         if _words_match(norm_h_word, k_word, min_word_len):
                             has_match = True
-                            break
-                    if has_match:
-                        break
-            if has_match:
-                break
+                            hit_words.add(k_word)
         if has_match:
             matching_numbers.append(i + 1)
-    
+            hits[i + 1] = len(hit_words)
+
+    # A rubric section of hundreds of words gives many keywords, so most headings can match one of them:
+    # the pages whose headings match the most distinct keywords are kept first, and the result is in page order.
+    ranked = sorted(matching_numbers, key=lambda number: (-hits[number], number))
     selected = []
     current_tokens = 0
-    for num in matching_numbers:
+    for num in ranked:
         block = page_blocks(pages, [num])
         block_tokens = count(block)
         if current_tokens + block_tokens <= budget_tokens:
             selected.append(num)
             current_tokens += block_tokens
         # else: skip page, never cut
-        
-    return selected
+
+    return sorted(selected)
 
 def split_body_and_references(pages: List[str]) -> Tuple[str, List[Dict[str, Any]]]:
     """

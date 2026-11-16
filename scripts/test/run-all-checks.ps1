@@ -44,6 +44,12 @@
 .PARAMETER DryRun
     List the checks in run order and run none of them.
 
+.PARAMETER Jobs
+    How many processes run at once. 0 (the default) takes the share of the logical processors written in
+    scripts\lib\rt-runner.json (90 percent, chosen by the owner 2026-11-16). The Python suites run first, side by
+    side inside run-offline-tests.ps1, then the verify-*.ps1 run side by side, each in its own process. 1 runs
+    everything one after the other, as before.
+
 .NOTES
     Exit codes: 0 every check passed (or a dry run), 1 at least one failed, 2 refused (an
     unknown -Only name, or no suite script).
@@ -61,7 +67,8 @@ param(
     [string]$Python = "",
     [string]$ReportPath = "",
     [string]$TestDir = $PSScriptRoot,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [int]$Jobs = 0
 )
 
 Set-StrictMode -Version Latest
@@ -89,20 +96,53 @@ if ($DryRun) {
     exit 0
 }
 
+. (Join-Path $PSScriptRoot "..\lib\rt-parallel.ps1")
+$runnerConfig = Join-Path $PSScriptRoot "..\lib\rt-runner.json"
+$jobCount = Get-RtJobCount -Requested $Jobs -ConfigPath $runnerConfig
+$runnerSettings = Read-RtRunnerConfig -Path $runnerConfig
+$pollMs   = [int]$runnerSettings.poll_ms
+$priority = [string]$runnerSettings.priority
+# This script and every check it starts run at the priority class of rt-runner.json (inherited by what they start).
+$null = Set-RtOwnPriority -Priority $priority
+
 $results = @()
-foreach ($c in $checks) {
+
+# Phase 1: the Python suites. The suite script runs its own suites side by side, so it gets the machine to itself.
+foreach ($c in @($checks | Where-Object { $_.Kind -eq "suite" })) {
     Write-Host ""
     Write-Host "=== $($c.Name) ===" -ForegroundColor Cyan
     $started = Get-Date
     $global:LASTEXITCODE = 0
-    if ($c.Kind -eq "suite" -and $Python) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $c.Path -Python $Python
-    } else {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $c.Path
-    }
+    $suiteArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $c.Path)
+    if ($Python) { $suiteArgs += @("-Python", $Python) }
+    if ($Jobs -gt 0) { $suiteArgs += @("-Jobs", "$Jobs") }
+    & powershell @suiteArgs
     $code = $LASTEXITCODE
     $seconds = [Math]::Round(((Get-Date) - $started).TotalSeconds, 1)
     $results += [PSCustomObject]@{ name = $c.Name; exit_code = $code; seconds = $seconds }
+}
+
+# Phase 2: the PowerShell verifiers, up to $jobCount at once, each in its own process. Each prints its own block when
+# it ends, so the lines of two checks never mix. Every check runs even when one fails.
+$verifiers = @($checks | Where-Object { $_.Kind -ne "suite" })
+if ($verifiers.Count -gt 0) {
+    Write-Host ""
+    Write-Host "=== $($verifiers.Count) verifier(s), $([Math]::Min($jobCount, $verifiers.Count)) at once ===" -ForegroundColor Cyan
+    $items = @($verifiers | ForEach-Object {
+        [PSCustomObject]@{
+            Name = $_.Name; FilePath = "powershell"; WorkingDirectory = ""
+            ArgumentString = "-NoProfile -ExecutionPolicy Bypass -File `"$($_.Path)`""
+        }
+    })
+    $ran = @(Invoke-RtParallel -Items $items -Jobs $jobCount -PollMs $pollMs -Priority $priority -OnComplete {
+        param($run)
+        Write-Host ""
+        Write-Host "=== $($run.Name)  (exit $($run.ExitCode), $($run.Seconds)s) ===" -ForegroundColor Cyan
+        Write-Host $run.Output
+    })
+    foreach ($run in $ran) {
+        $results += [PSCustomObject]@{ name = $run.Name; exit_code = $run.ExitCode; seconds = $run.Seconds }
+    }
 }
 
 $failed = @($results | Where-Object { $_.exit_code -ne 0 })

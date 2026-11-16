@@ -25,14 +25,46 @@ RUBRIC = {"assessment_type": "lab_report", "total_points": 10,
           "items": [{"id": "I01", "title": "Method", "max_points": 10, "criteria": ["The method is clear."],
                      "checklist": ["Equipment is listed."]}]}
 
+SPLIT_SOURCE = """# Fictitious rubric
+
+**Total : 15 points**
+
+| Acronym | Meaning |
+|---------|---------|
+| ABC | Fictitious guide |
+
+---
+
+## 1. Method (/10)
+
+The method is described with its tables:
+
+| Type | What to document |
+|------|------------------|
+| Tests | name of the instrument |
+
+> A quotation of the guide that must stay whole.
+
+---
+
+## 2. Conclusion (/5)
+
+Recall the objectives and the constraints of the client.
+"""
+
+TEXT_SOURCE = "Method: 10 points. The method is clear and complete."
+TEXT_ANSWER = {"assessment_type": "lab_report", "total_points": 10,
+               "items": [{"id": "I01", "title": "Method", "max_points": 10, "text": TEXT_SOURCE}]}
+
 
 class FakeModel:
     """A kind-aware call: a valid answer for every schema, the score read from `SCORE=` in the prompt."""
 
-    def __init__(self, fail_with=None, echo=False):
+    def __init__(self, fail_with=None, echo=False, rubric_answer=None):
         self.calls = []
         self.fail_with = fail_with
         self.echo = echo
+        self.rubric_answer = rubric_answer or RUBRIC
 
     def __call__(self, kind, prompt, schema, images=None):
         self.calls.append((kind, prompt))
@@ -50,7 +82,7 @@ class FakeModel:
         if schema == SCHEMAS["language"]:
             return {"findings": []}
         if schema == SCHEMAS["rubric"]:
-            return RUBRIC
+            return self.rubric_answer
         raise AssertionError("unexpected schema")
 
 
@@ -64,7 +96,7 @@ class TestUgsDriver(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.reports = self.tmp / "reports"
         self.reports.mkdir()
-        self.work = self.tmp / "_correction"
+        self.work = self.reports / "_correction"
         self.rubric_file = self.tmp / "rubric.json"
         self.rubric_file.write_text(json.dumps(RUBRIC), encoding="utf-8")
         self.model = FakeModel()
@@ -150,12 +182,116 @@ class TestUgsDriver(unittest.TestCase):
     def test_a_text_rubric_goes_through_the_grader_model(self):
         self.add_reports([9])
         text_rubric = self.tmp / "rubric.md"
-        text_rubric.write_text("Method: 10 points. The method is clear.", encoding="utf-8")
-        code, _, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(text_rubric),
-                               "--type", "lab_report"])
+        text_rubric.write_text(TEXT_SOURCE, encoding="utf-8")
+        model = FakeModel(rubric_answer=TEXT_ANSWER)
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(text_rubric),
+                                   "--type", "lab_report"], model=model)
         self.assertEqual(code, 0)
-        self.assertEqual([k for k, _ in self.model.calls], ["grader"])
-        self.assertEqual(json.loads((self.work / "rubric.json").read_text(encoding="utf-8")), RUBRIC)
+        self.assertEqual([k for k, _ in model.calls], ["grader"])
+        self.assertEqual(json.loads((self.work / "rubric.json").read_text(encoding="utf-8")), TEXT_ANSWER)
+        self.assertIn({"warning": "rubric_model_split"}, lines)
+
+    def test_a_numbered_markdown_rubric_is_split_by_code_without_a_model_call(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.md"
+        source.write_text(SPLIT_SOURCE, encoding="utf-8")
+        model = FakeModel(fail_with=AssertionError("no model call for a numbered Markdown rubric"))
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                                   "--type", "lab_report"], model=model)
+        self.assertEqual(code, 0)
+        self.assertEqual(model.calls, [])
+        self.assertNotIn({"warning": "rubric_model_split"}, lines)
+        rubric = json.loads((self.work / "rubric.json").read_text(encoding="utf-8"))
+        self.assertEqual([i["max_points"] for i in rubric["items"]], [10, 5])
+        self.assertEqual(rubric["total_points"], 15)
+        shown = (self.work / "rubric.md").read_text(encoding="utf-8")
+        for line in SPLIT_SOURCE.splitlines():
+            if line.strip() and line.strip() != "---":
+                self.assertIn(line, shown)
+        # the ledger names items I01 and I02: rubric.md must say which section each id is
+        self.assertIn("[I01]\n## 1.", shown)
+        self.assertIn("[I02]\n## 2.", shown)
+
+    def test_the_dry_run_counts_only_pdf_files_not_a_folder_named_like_one(self):
+        self.add_reports([9])
+        (self.reports / "old.pdf").mkdir()
+        code, lines, _ = self.prepare(["--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[0]["reports"], 1)
+
+    def test_a_stated_total_that_differs_from_the_sum_is_refused_and_nothing_is_written(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.md"
+        source.write_text(SPLIT_SOURCE.replace("**Total : 15 points**", "**Total : 99 points**"), encoding="utf-8")
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                                   "--type", "lab_report"])
+        self.assertEqual(code, 2)
+        self.assertIn("99", lines[0]["error"])
+        self.assertIn("15", lines[0]["error"])
+        self.assertFalse(self.work.exists())
+
+    def test_the_preamble_the_model_returns_is_copied_into_every_item(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.txt"
+        source.write_text("Acronym ABC means a fictitious guide of practice.\n" + TEXT_SOURCE, encoding="utf-8")
+        answer = dict(TEXT_ANSWER, preamble="Acronym ABC means a fictitious guide of practice.")
+        answer["items"] = [dict(answer["items"][0], text=TEXT_SOURCE)]
+        code, _, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                               "--type", "lab_report"], model=FakeModel(rubric_answer=answer))
+        self.assertEqual(code, 0)
+        rubric = json.loads((self.work / "rubric.json").read_text(encoding="utf-8"))
+        self.assertEqual(rubric["items"][0]["preamble"], "Acronym ABC means a fictitious guide of practice.")
+
+    def test_a_pdf_rubric_goes_to_the_model_and_is_reported_unverified_not_refused(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.pdf"
+        make_report(source, [{"text": "Method: 10 points. Page 1 of the fictitious rubric."}])
+        shortened = {"assessment_type": "lab_report", "total_points": 10,
+                     "items": [{"id": "I01", "title": "Method", "max_points": 10, "text": "Method: 10 points."}]}
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                                   "--type", "lab_report"], model=FakeModel(rubric_answer=shortened))
+        self.assertEqual(code, 0)
+        self.assertIn({"warning": "rubric_pdf_text_unverified"}, lines)
+
+    def test_a_numbered_heading_without_points_is_refused_by_prepare(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.md"
+        source.write_text(SPLIT_SOURCE + "\n---\n\n## 3. Annexes\n\ntexte\n", encoding="utf-8")
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                                   "--type", "lab_report"])
+        self.assertEqual(code, 2)
+        self.assertIn("## 3. Annexes", lines[0]["error"])
+        self.assertFalse(self.work.exists())
+
+    def test_a_model_that_drops_a_line_of_an_unnumbered_rubric_is_refused(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.txt"
+        source.write_text(TEXT_SOURCE, encoding="utf-8")
+        shortened = {"assessment_type": "lab_report", "total_points": 10,
+                     "items": [{"id": "I01", "title": "Method", "max_points": 10, "text": "Method: 10 points."}]}
+        code, lines, _ = self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source),
+                                   "--type", "lab_report"], model=FakeModel(rubric_answer=shortened))
+        self.assertEqual(code, 2)
+        self.assertIn("The method is clear and complete", lines[-1]["error"])
+        self.assertFalse(self.work.exists())
+
+    def test_the_grader_receives_the_exact_section_and_the_acronym_block(self):
+        self.add_reports([4])
+        source = self.tmp / "grille.md"
+        source.write_text(SPLIT_SOURCE, encoding="utf-8")
+        self.drv(["prepare", "--reports", str(self.reports), "--rubric", str(source), "--type", "lab_report"])
+        self.run_loop()
+        prompts = [prompt for kind, prompt in self.model.calls if kind == "grader" and "Conclusion (/5)" in prompt]
+        self.assertTrue(prompts)
+        self.assertIn("Recall the objectives and the constraints of the client.", prompts[0])
+        self.assertIn("| ABC | Fictitious guide |", prompts[0])
+        self.assertNotIn("{'id'", prompts[0])
+
+    def test_a_json_rubric_without_text_keeps_the_old_rendering(self):
+        self.add_reports([4])
+        self.prepare()
+        shown = (self.work / "rubric.md").read_text(encoding="utf-8")
+        self.assertIn("## I01 - Method (10)", shown)
 
     def test_unsupported_rubric_extension_is_a_refusal(self):
         self.add_reports([9])
@@ -188,11 +324,18 @@ class TestUgsDriver(unittest.TestCase):
         elsewhere = self.tmp / "other" / "_correction"
         code, lines, _ = self.prepare(["--work", str(elsewhere)])
         self.assertEqual(code, 2)
-        self.assertIn("beside", lines[0]["error"])
-        inside = self.reports / "_correction"
-        code, _, _ = self.prepare(["--work", str(inside)])
+        self.assertIn("directly inside", lines[0]["error"])
+        beside = self.tmp / "_correction"
+        code, _, _ = self.prepare(["--work", str(beside)])
         self.assertEqual(code, 2)
-        self.assertFalse(elsewhere.exists() or inside.exists())
+        self.assertFalse(elsewhere.exists() or beside.exists())
+
+    def test_the_default_work_folder_is_inside_the_reports_folder(self):
+        self.add_reports([9])
+        code, _, _ = self.prepare()
+        self.assertEqual(code, 0)
+        self.assertTrue((self.reports / "_correction" / "rubric.json").is_file())
+        self.assertFalse((self.tmp / "_correction").exists())
 
     # --- run ---
 

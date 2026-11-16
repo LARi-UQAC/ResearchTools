@@ -15,6 +15,7 @@ for _p in (_LOOP_ENGINEER_SCRIPTS, _LOOP_ENGINEER_ROOT):
 
 from ugs_text import StepContext, fill, page_blocks, select_pages
 from ugs_bridge import NotRun
+from rubric_split import item_prompt_text
 from rubric_check import validate, RubricError
 from pdf_annotate import normalize
 
@@ -149,7 +150,7 @@ def grade_item(
     # Estimate overhead: token count of filled prompt with empty sections
     prompt_template = ctx.prompts["grade_item"]
     overhead_prompt = fill(prompt_template, {
-        "ITEM": str(item),
+        "ITEM": item_prompt_text(item),
         "SECTIONS": "",
         "LEVELS": str(ctx.levels),
         "LANGUAGE_OF_REPORT": language,
@@ -186,7 +187,7 @@ def grade_item(
             current_note = f"{calibration_note}\nPrevious refusal: {last_error_reason}" if calibration_note else f"Previous refusal: {last_error_reason}"
             
         prompt = fill(prompt_template, {
-            "ITEM": str(item),
+            "ITEM": item_prompt_text(item),
             "SECTIONS": sections_text,
             "LEVELS": str(ctx.levels),
             "LANGUAGE_OF_REPORT": language,

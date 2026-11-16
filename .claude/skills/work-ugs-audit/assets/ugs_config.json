@@ -83,5 +83,48 @@
   "references.quote_chars": {
     "value": 60,
     "provenance": "starting value, adjustable by the professor (characters of a reference entry used to anchor its annotation)"
+  },
+  "rubric.section_heading_regex": {
+    "value": "^##\\s+(?P<n>\\d+)\\.\\s+(?P<title>.+?)\\s*\\(/\\s*(?P<points>\\d+(?:[.,]\\d+)?)\\)\\s*$",
+    "provenance": "chosen 2026-11-15 from the professor's own rubric, whose sections are headed `## 3. Title (/10)`; adjustable by the professor for another heading style (named groups n, title and points)"
+  },
+  "rubric.total_regex": {
+    "value": "\\*\\*Total\\s*:\\s*(?P<total>\\d+(?:[.,]\\d+)?)\\s*points?\\*\\*",
+    "provenance": "chosen 2026-11-15 from the professor's own rubric, which states `**Total : 28.5 points**`; adjustable by the professor (named group total)"
+  },
+  "rubric.min_check_words": {
+    "value": 4,
+    "provenance": "chosen 2026-11-15: a rubric line shorter than four words is a heading or a label, so only longer lines are checked against the text a model rebuilt; adjustable by the professor"
+  },
+  "vision.min_word_share": {
+    "value": 0.8,
+    "provenance": "chosen 2026-11-15: a figure of a report is read when four words out of five of the text printed on it are found, so one misread word does not stop the step; adjustable by the professor (a number above 0 and at most 1)"
+  },
+  "vision.kind_aliases": {
+    "value": {
+      "uml": "diagram", "use case": "diagram", "use case diagram": "diagram", "class diagram": "diagram",
+      "sequence diagram": "diagram", "state diagram": "diagram", "state machine": "diagram", "component diagram": "diagram",
+      "deployment diagram": "diagram", "sysml": "diagram", "block definition diagram": "diagram",
+      "internal block diagram": "diagram", "requirement diagram": "diagram", "block diagram": "diagram",
+      "architecture": "diagram", "software architecture": "diagram", "electronic architecture": "diagram",
+      "system architecture": "diagram", "organigram": "diagram", "org chart": "diagram",
+      "pbs": "diagram", "wbs": "diagram", "product breakdown structure": "diagram",
+      "project breakdown structure": "diagram", "work breakdown structure": "diagram", "mind map": "diagram",
+      "flow chart": "flowchart", "logigram": "flowchart", "logigramme": "flowchart", "ordinogramme": "flowchart",
+      "activity diagram": "flowchart", "algorithm": "flowchart",
+      "gantt chart": "gantt", "planning": "gantt", "schedule": "gantt",
+      "s curve": "chart", "budget curve": "chart", "cumulative curve": "chart", "graph": "chart", "plot": "chart",
+      "bar chart": "chart", "histogram": "chart", "pie chart": "chart", "curve": "chart", "budget chart": "chart",
+      "kanban": "other", "board": "other", "table": "other", "budget": "other", "budget table": "other",
+      "timesheet": "other", "time sheet": "other", "spreadsheet": "other", "screenshot": "other",
+      "cad": "technical_drawing", "pcb": "technical_drawing", "schematic": "technical_drawing",
+      "electrical drawing": "technical_drawing", "mechanical drawing": "technical_drawing", "3d model": "technical_drawing",
+      "picture": "photo", "image": "photo"
+    },
+    "provenance": "chosen 2026-11-15 from the professor's list of figures a report can hold (UML, SysML, flowchart, logigram, software or electronic architecture, project breakdown structure, Gantt, Kanban, budget, S-curve, timesheet): the words the professor writes as the expected kind of a figure in the vision probe, each mapped to the schema kind the model answers; a table or a board has no criterion of its own so it is `other`; adjustable by the professor"
+  },
+  "rubric.loose_heading_regex": {
+    "value": "^#{1,2}\\s+\\d+\\.\\s+\\S",
+    "provenance": "chosen 2026-11-15, narrowed to the heading levels 1 and 2 after review round 2 (a numbered sub-heading of level 3 or more inside a section is part of that section): a heading that starts with a number and a point is a section of the rubric, so one the strict heading pattern did not read (no points, another way to write them) is refused instead of being absorbed into the previous item; adjustable by the professor"
   }
 }

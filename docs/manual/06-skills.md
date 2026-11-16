@@ -701,7 +701,7 @@ targets and, when out of band, offers a second loop that carries a calibration n
 
 The driver is `ugs_driver.py` with the subcommands `prepare`, `run`, `batch` and `status`, each with `--dry-run` and
 `--json`. Exit codes: 0 done, 1 a model step could not run (resume later), 2 refusal, 3 batch out of band. The work
-folder is `_correction/`, beside the reports folder. Three model roles, `ugs-grader`, `ugs-auditor` and `ugs-vision`, are
+folder is `_correction/`, inside the reports folder. Three model roles, `ugs-grader`, `ugs-auditor` and `ugs-vision`, are
 adopted once by the owner with `model_resolver.py --adopt-role <role> <tag> --reason "<measurement>"`; there is no
 fallback and no cloud grading. The `work-ugs-audit` agent drives the driver through the `/work-ugs-audit` command and
 reads only the rubric and the step ledger.

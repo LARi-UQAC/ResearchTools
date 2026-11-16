@@ -118,21 +118,22 @@ def _load_ids(ids_file: Path) -> dict[str, str]:
 
 def _check_work_dir(reports_dir: Path, work_dir: Path) -> None:
     """
-    Purpose: Refuse a work folder that is not a sibling of the reports folder.
-    Details: The paths are resolved first, so links and '..' cannot escape the check. The work folder must share the
-        parent of the reports folder and must not be the reports folder itself.
+    Purpose: Refuse a work folder that is not a folder directly inside the reports folder.
+    Details: The paths are resolved first, so links and '..' cannot escape the check. The work folder must be a
+        direct child of the reports folder (owner decision 2026-11-15) and must not be the reports folder itself.
+        The listing of the reports reads files only, so the work folder is never taken for a report.
     Inputs:
         reports_dir (Path): the reports folder.
         work_dir (Path): the work folder.
     Outputs:
         None.
     Raises:
-        PrepareError: when the work folder is the reports folder or is not beside it.
+        PrepareError: when the work folder is the reports folder or is not directly inside it.
     """
     reports = reports_dir.resolve()
     work = work_dir.resolve()
-    if work == reports or work.parent != reports.parent:
-        raise PrepareError("the work folder must be a different folder beside the reports folder")
+    if work == reports or work.parent != reports:
+        raise PrepareError("the work folder must be a folder directly inside the reports folder")
 
 
 def prepare(reports_dir: Path, work_dir: Path) -> list[dict]:
@@ -142,12 +143,12 @@ def prepare(reports_dir: Path, work_dir: Path) -> list[dict]:
         the next number.
     Inputs:
         reports_dir (Path): the folder holding the PDF reports.
-        work_dir (Path): the work folder, beside the reports folder.
+        work_dir (Path): the work folder, directly inside the reports folder.
     Outputs:
         list[dict]: one dict per PDF with 'report_id', 'pages' (count) and 'empty_pages' (1-based numbers).
         Side effects: writes ids.json and the page files in work_dir.
     Raises:
-        PrepareError: when the work folder is not beside the reports folder, the id map is unreadable, the
+        PrepareError: when the work folder is not directly inside the reports folder, the id map is unreadable, the
             configuration is incomplete or a PDF cannot be read.
     """
     _check_work_dir(reports_dir, work_dir)
@@ -202,7 +203,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Give the PDF reports of a folder an id and a Markdown file per page.")
     parser.add_argument("--reports", required=True, help="Folder of the reports.")
-    parser.add_argument("--work", required=True, help="Work folder, beside the reports folder.")
+    parser.add_argument("--work", required=True, help="Work folder, directly inside the reports folder.")
     parser.add_argument("--dry-run", action="store_true", help="Count the reports and write nothing.")
     parser.add_argument("--json", action="store_true", help="JSON output (the only output).")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)

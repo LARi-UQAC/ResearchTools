@@ -334,5 +334,18 @@ class TestGradeReport(unittest.TestCase):
         self.assertIn("Important Note", call.calls[0])
 
 
+class TestItemPromptText(unittest.TestCase):
+    def test_the_item_slot_holds_the_exact_text_not_a_dict(self):
+        ctx = make_ctx()
+        item = {"id": "I01", "title": "Intro", "max_points": 2, "text": "## 1. Intro (/2)\n\nUne regle exacte.",
+                "preamble": "| ABC | Guide fictif |"}
+        call = FakeCall([{"status": "rated", "score": 1.0, "comment": "ok",
+                          "evidence": [{"page": 1, "quote": "texte"}]}])
+        grade_item(item, ["Un texte du rapport."], call, ctx, "fr", "")
+        self.assertIn("Une regle exacte.", call.calls[0])
+        self.assertIn("| ABC | Guide fictif |", call.calls[0])
+        self.assertNotIn("{'id'", call.calls[0])
+
+
 if __name__ == "__main__":
     unittest.main()

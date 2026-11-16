@@ -4,7 +4,7 @@ ugs_driver.py - the command line of the grading driver of work-ugs-audit (Issue 
 Subcommands: prepare (ids, pages, rubric, ledger), run (the five steps of every report), batch (the spread of the
 totals and the next loop) and status (the ledger counts). The program that runs it reads only what it prints:
 every printed line is a JSON object whose values are ids, step labels, statuses, kinds and numbers, never text of a
-report. The work folder `_correction` lies beside the reports folder (spec, "Working folder").
+report. The work folder `_correction` lies inside the reports folder (owner decision 2026-11-15).
 
 EXIT CODES (R12): 0 done, 1 a model step could not run (stop, resume later), 2 refusal, 3 batch out of band.
 """
@@ -25,6 +25,7 @@ import ugs_config
 import report_prepare
 from rubric_check import validate as validate_rubric, RubricError
 from ugs_grade import normalize_rubric
+import rubric_split
 from ugs_run import run_report
 from ugs_ledger import (new_ledger, add_report, set_mark, reopen_all, add_note, read as read_ledger,
                         write as write_ledger, counts as ledger_counts, first_open, parse as parse_ledger)
@@ -167,23 +168,21 @@ def _rubric_text(path: Path) -> str:
 
 
 def _items_markdown(rubric: dict) -> str:
-    sections = []
-    for item in rubric["items"]:
-        lines = [f"## {item['id']} - {item['title']} ({item['max_points']})"]
-        if item.get("criteria"):
-            lines += ["Criteria:"] + [f"- {text}" for text in item["criteria"]]
-        if item.get("checklist"):
-            lines += ["Checklist:"] + [f"- {text}" for text in item["checklist"]]
-        sections.append("\n".join(lines))
-    return "\n\n".join(sections)
+    """The sections of the rubric as the professor wrote them: each item's exact text, else its title and criteria."""
+    # The exact text starts with the professor's own heading, so the id the ledger and the grades use is added
+    # above it: the orchestrating agent reads only this file and must map a ledger line `I07` to its section.
+    return "\n\n".join(("[%s]\n%s" % (item["id"], rubric_split.item_markdown(item))) if item.get("text")
+                       else rubric_split.item_markdown(item) for item in rubric["items"])
 
 
 def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window, count, dry: bool) -> Optional[dict]:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Read the professor's rubric file: JSON is validated and used as it is, text, Markdown or PDF text goes
-        through the grader model, any other extension is refused.
+        Read the professor's rubric file: JSON is validated and used as it is. A Markdown or text file with
+        numbered sections is split by the code (every section keeps its exact text, no model call). Any other text,
+        Markdown or PDF text goes through the grader model, which may restructure it but not remove a line (checked
+        for Markdown and text, reported as unverified for PDF). Any other extension is refused.
 
     Inputs:
         args (Namespace): `rubric` and `type`
@@ -191,7 +190,7 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
         dry (bool): True for a dry run, which never calls a model
 
     Outputs:
-        rubric (dict | None): the validated rubric, None in a dry run of a text rubric.
+        rubric (dict | None): the validated rubric, None in a dry run of a rubric that needs the model.
 
     Raises:
         DriverError: unsupported extension, missing file, invalid rubric, a type that differs from the rubric's.
@@ -206,13 +205,36 @@ def _rubric_for(args: argparse.Namespace, config: dict, work: Path, call, window
         raise DriverError("rubric file not found")
     if suffix == ".json":
         rubric = _read_json(path, "rubric file")
-    elif dry:
-        return None
     else:
-        model_call, model_window, model_count = _inputs(call, window, count, config, work)
-        ctx = _context(config, model_window, model_count)
-        rubric = normalize_rubric(_rubric_text(path), args.type,
-                                  lambda prompt, schema, images=None: model_call("grader", prompt, schema, images), ctx)
+        source = _rubric_text(path)
+        rubric = None
+        if suffix != ".pdf":
+            # A rubric with numbered sections is split by the code: no sentence is removed or shortened.
+            try:
+                rubric = rubric_split.split_rubric(source, args.type, config["rubric.section_heading_regex"],
+                                                   config["rubric.total_regex"],
+                                                   config["rubric.loose_heading_regex"])
+            except rubric_split.RubricSplitError as error:
+                raise DriverError(f"invalid rubric: {error}") from None
+        if rubric is None:
+            if dry:
+                return None
+            model_call, model_window, model_count = _inputs(call, window, count, config, work)
+            ctx = _context(config, model_window, model_count)
+            rubric = normalize_rubric(source, args.type,
+                                      lambda prompt, schema, images=None: model_call("grader", prompt, schema, images), ctx)
+            _emit({"warning": "rubric_model_split"})
+            if rubric.get("preamble"):
+                for item in rubric.get("items", []):
+                    item.setdefault("preamble", rubric["preamble"])
+            if suffix == ".pdf":
+                # PDF text carries running headers, page numbers and hyphenation that no model copies, so a line
+                # check would refuse a faithful split: say it was not verified instead.
+                _emit({"warning": "rubric_pdf_text_unverified"})
+            else:
+                missing = rubric_split.check_text_kept(source, rubric, config["rubric.min_check_words"])
+                if missing is not None:
+                    raise DriverError(f"the model removed a line of the rubric: {missing}")
     try:
         validate_rubric(rubric)
     except RubricError as error:
@@ -229,8 +251,9 @@ def cmd_prepare(args, call, window, count) -> int:
         Give every report an id and its pages, write the rubric (JSON and Markdown) and the ledger.
 
     Details:
-        Idempotent: a second run adds no ledger section. The rubric is validated (and normalised by the model
-        when it is not JSON) before any page is extracted, so a refusal leaves nothing behind. The loop state
+        Idempotent: a second run adds no ledger section. The rubric is validated (split by the code when it has
+        numbered sections, restructured by the model otherwise) before any page is extracted, so a refusal leaves
+        nothing behind. The loop state
         is not touched.
 
     Inputs:
@@ -248,7 +271,7 @@ def cmd_prepare(args, call, window, count) -> int:
     reports = Path(args.reports).resolve()
     if not reports.is_dir():
         raise DriverError("reports folder not found")
-    work = Path(args.work).resolve() if args.work else reports.parent / WORK_FOLDER_NAME
+    work = Path(args.work).resolve() if args.work else reports / WORK_FOLDER_NAME
     try:
         report_prepare._check_work_dir(reports, work)
     except report_prepare.PrepareError as error:
@@ -257,7 +280,7 @@ def cmd_prepare(args, call, window, count) -> int:
         raise DriverError("unknown assessment type")
     rubric = _rubric_for(args, config, work, call, window, count, args.dry_run)
     if args.dry_run:
-        _emit({"dry_run": True, "step": "prepare", "reports": len([p for p in reports.iterdir() if p.suffix.lower() == ".pdf"])})
+        _emit({"dry_run": True, "step": "prepare", "reports": len([p for p in reports.iterdir() if p.is_file() and p.suffix.lower() == ".pdf"])})
         return EXIT_OK
     try:
         results = report_prepare.prepare(reports, work)
@@ -268,7 +291,7 @@ def cmd_prepare(args, call, window, count) -> int:
     template = (ASSETS / "rubric.template.md").read_text(encoding="utf-8")
     (work / "rubric.md").write_text(fill(template, {
         "ASSESSMENT_TYPE": rubric["assessment_type"], "TOTAL_POINTS": str(rubric["total_points"]),
-        "ITEMS": _items_markdown(rubric)}), encoding="utf-8")
+        "PREAMBLE": rubric.get("preamble", ""), "ITEMS": _items_markdown(rubric)}), encoding="utf-8")
     ledger_path = work / "ledger.md"
     ledger = read_ledger(ledger_path) if ledger_path.is_file() else new_ledger("Ledger - grading steps")
     item_ids = [item["id"] for item in rubric["items"]]

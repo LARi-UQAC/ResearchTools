@@ -27,10 +27,18 @@ whatever `python` is on the `PATH`.
 | `scripts/audit/check-claude-template.ps1` | Read-only drift check of `CLAUDE.template.md` against the live global file, plus the write-path invariants | seconds |
 | `scripts/audit/check-graph-health.ps1` | What the code graph holds and whether it is stale. Reserved to the `local-writer` agent, since it reads the graph | seconds |
 
-`run-all-checks.ps1` takes `-DryRun` (list, run nothing), `-SkipSuite`, `-Only a,b`, `-Exclude names`
-and `-ReportPath file.json`. It leaves out `verify-graph-health.ps1` for the same reason as above.
+`run-all-checks.ps1` takes `-DryRun` (list, run nothing), `-SkipSuite`, `-Only a,b`, `-Exclude names`,
+`-ReportPath file.json` and `-Jobs N`. It leaves out `verify-graph-health.ps1` for the same reason as above.
 
-The eleven verifiers in `scripts/test/` each prove one installer or tool by running it for real against a
+**Speed (`-Jobs`).** Both scripts run their work side by side instead of one item at a time, because one
+sequential run left the machine at 20 to 25 percent CPU. `-Jobs 0`, the default, takes 90 percent of the
+logical processors, a share written with its provenance in `scripts/lib/rt-runner.json`. `-Jobs 1` gives the
+old sequential run, `-Jobs 8` caps it at eight. In `run-offline-tests.ps1` the slowest suites start first.
+A suite that fails while others run beside it is run again alone: if it passes alone it is listed as
+flaky under parallel load and counted as passed, and if it fails again it is a real failure. The run
+then needs more memory, about one Python process per job. `verify-parallel-runner.ps1` proves the pool.
+
+The twelve verifiers in `scripts/test/` each prove one installer or tool by running it for real against a
 throwaway home or repository, never your own:
 
 | Verifier | Proves |
@@ -39,6 +47,7 @@ throwaway home or repository, never your own:
 | `verify-daemon-install.ps1` | `setup.ps1 -InstallDaemon` and the `OBSIDIAN_VAULT` offer |
 | `verify-graph-health.ps1` | The graph health script (`local-writer` only) |
 | `verify-no-personal-data.ps1` | No published file carries the account name of whoever runs it |
+| `verify-parallel-runner.ps1` | The parallel pool of the two runners: job count, overlap, order of results, rerun of a failure alone |
 | `verify-python-env.ps1` | `setup.ps1 -InstallPython`: the three environments, their order, one pin per library, every requirements file registered |
 | `verify-python-libs.ps1` | Every third-party import is declared and the library tables of chapter 02 are current (`scripts/docs/python_libs.py --check`) |
 | `verify-rt-contract.ps1` | The generated `RT-CONTRACT` block of the global `CLAUDE.md` |

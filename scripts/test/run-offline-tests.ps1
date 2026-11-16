@@ -43,6 +43,12 @@
     .\scripts\test\run-offline-tests.ps1 -Python "D:\tools\py311\python.exe"
     .\scripts\test\run-offline-tests.ps1 -AllowPathFallback
 
+.PARAMETER Jobs
+    How many suites run at once. 0 (the default) takes the share of the logical processors written in
+    scripts\lib\rt-runner.json (90 percent, chosen by the owner 2026-11-16); 1 runs them one after the other, as
+    before. A suite that fails under parallel load is run again alone: if it passes alone it is reported as
+    flaky under load and counted as passed, if it fails again it is a real failure.
+
 .PARAMETER Python
     An explicit interpreter. It must exist; a path that does not is a refusal.
 
@@ -56,7 +62,8 @@
 param(
     [switch]$Quiet,
     [string]$Python = "",
-    [switch]$AllowPathFallback
+    [switch]$AllowPathFallback,
+    [int]$Jobs = 0
 )
 
 Set-StrictMode -Version Latest
@@ -76,6 +83,8 @@ function Write-Line([string]$text, [string]$colour = "Gray") {
 # other launcher (R18): it finds the MAIN clone's .venv-skills from a worktree with no
 # link, and refuses instead of reaching for PATH unless -AllowPathFallback is given.
 . (Join-Path $RepoRoot "scripts\lib\rt-venv.ps1")
+# The suites run side by side (scripts\lib\rt-parallel.ps1), the share of processors is in scripts\lib\rt-runner.json.
+. (Join-Path $RepoRoot "scripts\lib\rt-parallel.ps1")
 
 # ── Missing-module classification ─────────────────────────────────────────────
 # Returns "third-party" (-> NOT RUN) or "first-party" (-> FAILED), or $null when the
@@ -139,50 +148,175 @@ Write-Line ""
 $results  = @()
 $failed   = @()
 $notRun   = @()
+$flaky    = @()
 $passed   = 0
 $started  = Get-Date
 
-foreach ($suite in $suites) {
-    $rel = $suite.FullName.Substring($RepoRoot.Length + 1)
+# ── How many suites run at once ───────────────────────────────────────────────
+# One suite is one python process, so the suites are independent and run side by side: sequentially the
+# machine sat at 20 to 25 percent CPU (measured by the owner 2026-11-16). -Jobs 1 gives the old sequential run.
+$runnerConfig = Join-Path $RepoRoot "scripts\lib\rt-runner.json"
+$jobCount = Get-RtJobCount -Requested $Jobs -ConfigPath $runnerConfig
+$runnerSettings = Read-RtRunnerConfig -Path $runnerConfig
+$pollMs   = [int]$runnerSettings.poll_ms
+$priority = [string]$runnerSettings.priority
+# This script and every suite it starts run at the priority class of rt-runner.json (inherited by git, bash, sh).
+$prioritySet = Set-RtOwnPriority -Priority $priority
+Write-Line "  Parallel    : $jobCount suite(s) at once, priority $priority$(if (-not $prioritySet) { ' (could not be set for the runner)' })"
 
-    $outFile = [System.IO.Path]::GetTempFileName()
-    $errFile = [System.IO.Path]::GetTempFileName()
+# The slowest suites start first, so the run does not end on one long suite started last. The time of each suite
+# (the total work, in seconds) is kept in .rt-suite-times.json, written after every run even a red one, since a red
+# run deletes the stamp; a suite it does not know starts before the known ones.
+$TimesPath = Join-Path $RepoRoot ".rt-suite-times.json"
+$previousSeconds = @{}
+if (Test-Path $TimesPath) {
+    try {
+        $timesDoc = Get-Content $TimesPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $timesDoc.PSObject.Properties) { $previousSeconds[[string]$p.Name] = [double]$p.Value }
+    } catch { $previousSeconds = @{} }
+}
+$splitSeconds = [double]$runnerSettings.split_seconds
+$chunkSeconds = [double]$runnerSettings.chunk_seconds
+function Get-SuiteRel($suite) { $suite.FullName.Substring($RepoRoot.Length + 1) }
+$startOrder = @($suites | Sort-Object -Property `
+    @{ Expression = { if ($previousSeconds.ContainsKey((Get-SuiteRel $_))) { $previousSeconds[(Get-SuiteRel $_)] } else { [double]::MaxValue } }; Descending = $true }, `
+    @{ Expression = { $_.Length }; Descending = $true })
 
-    # Start-Process with file redirection rather than `2>&1`: in PowerShell 5.1,
-    # redirecting a native executable's stderr inline wraps each line in an ErrorRecord
-    # and sets $? to false even on a clean exit, which would misreport every suite.
-    $proc = Start-Process -FilePath $suitePython -ArgumentList @("`"$($suite.FullName)`"") `
-                          -WorkingDirectory $RepoRoot -NoNewWindow -Wait -PassThru `
-                          -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+# File redirection of each child (done inside Invoke-RtParallel) rather than `2>&1`: in PowerShell 5.1,
+# redirecting a native executable's stderr inline wraps each line in an ErrorRecord
+# and sets $? to false even on a clean exit, which would misreport every suite.
+function New-SuiteItem($suite) {
+    [pscustomobject]@{ Name = (Get-SuiteRel $suite); FilePath = $suitePython
+                       ArgumentString = "`"$($suite.FullName)`""; WorkingDirectory = $RepoRoot }
+}
 
-    $output = ""
-    if (Test-Path $outFile) { $output += (Get-Content $outFile -Raw -ErrorAction SilentlyContinue) }
-    if (Test-Path $errFile) { $output += (Get-Content $errFile -Raw -ErrorAction SilentlyContinue) }
-    Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
-
-    if ($null -eq $output) { $output = "" }
-
-    if ($proc.ExitCode -eq 0) {
-        $results += [pscustomobject]@{ suite = $rel; outcome = "PASSED" }
-        $passed++
-        Write-Line "  [PASS]    $rel" "DarkGray"
+# PASSED, FAILED or NOT RUN for one finished suite, with the first problem line or the missing module.
+function Get-SuiteVerdict($run) {
+    $output = if ($null -eq $run.Output) { "" } else { $run.Output }
+    if ($run.ExitCode -eq 0) { return [pscustomobject]@{ Outcome = "PASSED"; Detail = ""; Missing = "" } }
+    if ((Get-MissingModuleKind $output) -eq "third-party") {
+        $mod = [regex]::Match($output, "ModuleNotFoundError: No module named '([^']+)'").Groups[1].Value
+        return [pscustomobject]@{ Outcome = "NOT RUN"; Detail = ""; Missing = $mod }
     }
-    else {
-        $kind = Get-MissingModuleKind $output
-        if ($kind -eq "third-party") {
-            $mod = [regex]::Match($output, "ModuleNotFoundError: No module named '([^']+)'").Groups[1].Value
-            $results += [pscustomobject]@{ suite = $rel; outcome = "NOT RUN"; missing = $mod }
-            $notRun  += [pscustomobject]@{ suite = $rel; missing = $mod }
-            Write-Line "  [NOT RUN] $rel  (missing '$mod')" "Yellow"
+    $firstProblem = ($output -split "`n" |
+        Where-Object { $_ -match '^(FAIL|ERROR)[: ]|^\w*Error:|^AssertionError' } |
+        Select-Object -First 1)
+    if ($null -eq $firstProblem) { $firstProblem = "exit code $($run.ExitCode)" }
+    return [pscustomobject]@{ Outcome = "FAILED"; Detail = $firstProblem.Trim(); Missing = "" }
+}
+
+$onDone = {
+    param($run)
+    $verdict = Get-SuiteVerdict $run
+    switch ($verdict.Outcome) {
+        "PASSED"  { Write-Line ("  [PASS]    {0}  ({1}s)" -f $run.Name, $run.Seconds) "DarkGray" }
+        "NOT RUN" { Write-Line "  [NOT RUN] $($run.Name)  (missing '$($verdict.Missing)')" "Yellow" }
+        default   { Write-Host "  [FAIL]    $($run.Name)  (first run)" -ForegroundColor Red }
+    }
+}
+
+# A slow suite is cut into several processes, a share of its tests each: one suite of 122 tests that start git, a shell
+# and a scanner took 12 minutes alone while the others ended in about 2, and the machine sat at 10 percent CPU. Only a
+# suite whose recorded time reaches split_seconds is cut, and only when it ends in unittest.main() so that the test
+# ids can be given on its command line; its ids are read by scripts\test\list_test_ids.py without running a test.
+$listScript = Join-Path $PSScriptRoot "list_test_ids.py"
+$candidates = @($startOrder | Where-Object {
+    $jobCount -gt 1 -and $previousSeconds.ContainsKey((Get-SuiteRel $_)) -and $previousSeconds[(Get-SuiteRel $_)] -ge $splitSeconds -and
+    (Select-String -LiteralPath $_.FullName -Pattern 'unittest\.main\(' -Quiet)
+})
+$idsOf = @{}
+if ($candidates.Count -gt 0) {
+    $listItems = @($candidates | ForEach-Object {
+        [pscustomobject]@{ Name = (Get-SuiteRel $_); FilePath = $suitePython; WorkingDirectory = $RepoRoot
+                           ArgumentString = "`"$listScript`" `"$($_.FullName)`"" }
+    })
+    foreach ($listed in @(Invoke-RtParallel -Items $listItems -Jobs $jobCount -PollMs $pollMs -Priority $priority)) {
+        if ($listed.ExitCode -eq 0) {
+            $idsOf[$listed.Name] = @($listed.Output -split "`r?`n" | ForEach-Object { if ($_ -match '^TESTID (.+)$') { $Matches[1].Trim() } })
         }
-        else {
-            $firstProblem = ($output -split "`n" |
-                Where-Object { $_ -match '^(FAIL|ERROR)[: ]|^\w*Error:|^AssertionError' } |
-                Select-Object -First 1)
-            if ($null -eq $firstProblem) { $firstProblem = "exit code $($proc.ExitCode)" }
-            $results += [pscustomobject]@{ suite = $rel; outcome = "FAILED"; detail = $firstProblem.Trim() }
-            $failed  += [pscustomobject]@{ suite = $rel; detail = $firstProblem.Trim(); output = $output }
-            Write-Host "  [FAIL]    $rel" -ForegroundColor Red
+    }
+}
+
+$items = @()
+$itemSuite = @()   # the suite each item belongs to, same index as $items
+foreach ($suite in $startOrder) {
+    $rel = Get-SuiteRel $suite
+    $ids = @(if ($idsOf.ContainsKey($rel)) { $idsOf[$rel] })
+    $count = if ($ids.Count -gt 0) {
+        Get-RtChunkCount -RecordedSeconds $previousSeconds[$rel] -TestCount $ids.Count -Jobs $jobCount `
+                         -SplitSeconds $splitSeconds -ChunkSeconds $chunkSeconds
+    } else { 1 }
+    if ($count -gt 1) {
+        $groups = @(Split-RtIds -Ids $ids -Count $count)
+        for ($k = 0; $k -lt $groups.Count; $k++) {
+            $items += [pscustomobject]@{ Name = "$rel#$($k + 1)"; FilePath = $suitePython; WorkingDirectory = $RepoRoot
+                                         ArgumentString = "`"$($suite.FullName)`" " + (@($groups[$k]) -join " ") }
+            $itemSuite += $rel
+        }
+        Write-Line "  [SPLIT]   $rel  ($($ids.Count) tests in $($groups.Count) processes, $([int]$previousSeconds[$rel]) s recorded)" "DarkGray"
+    } else {
+        $items += New-SuiteItem $suite
+        $itemSuite += $rel
+    }
+}
+
+$ranFirst = @(Invoke-RtParallel -Items $items -Jobs $jobCount -PollMs $pollMs -OnComplete $onDone -Priority $priority)
+
+# An item that fails while others run beside it is run again ALONE (a whole suite, or one share of a cut suite). A
+# failure that repeats is a real failure; one that does not repeat is reported as flaky under load (a shared file, a
+# timing), never hidden and never counted red.
+if ($jobCount -gt 1) {
+    # The failed items are rerun together, a few at a time (rerun_jobs of rt-runner.json), not one after the other:
+    # a run with many failures under heavy load spent its last minutes on one process while the machine sat idle.
+    $failedIdx = @(for ($i = 0; $i -lt $ranFirst.Count; $i++) { if ((Get-SuiteVerdict $ranFirst[$i]).Outcome -eq "FAILED") { $i } })
+    if ($failedIdx.Count -gt 0) {
+        $rerunJobs = [Math]::Min([int]$runnerSettings.rerun_jobs, $failedIdx.Count)
+        Write-Line "  [RERUN]   $($failedIdx.Count) item(s) failed under parallel load, run again $rerunJobs at a time" "Yellow"
+        $again = @(Invoke-RtParallel -Items @($failedIdx | ForEach-Object { $items[$_] }) -Jobs $rerunJobs -PollMs $pollMs -Priority $priority)
+        for ($k = 0; $k -lt $failedIdx.Count; $k++) {
+            $i = $failedIdx[$k]
+            $first = $ranFirst[$i]
+            $decision = Resolve-RtRetry -FirstOutcome "FAILED" -AloneOutcome (Get-SuiteVerdict $again[$k]).Outcome
+            $ranFirst[$i] = $again[$k]
+            if ($decision.Flaky) {
+                $flaky += [pscustomobject]@{ suite = $first.Name; detail = (Get-SuiteVerdict $first).Detail }
+                Write-Line "  [PASS]    $($first.Name)  (flaky under parallel load, passed on the second run)" "Yellow"
+            }
+        }
+    }
+}
+
+# One result per suite: the shares of a cut suite are merged (first failing exit code, every output, total seconds).
+$runByName = @{}
+foreach ($rel in @($itemSuite | Select-Object -Unique)) {
+    $mine = @(for ($i = 0; $i -lt $ranFirst.Count; $i++) { if ($itemSuite[$i] -eq $rel) { $ranFirst[$i] } })
+    $runByName[$rel] = if ($mine.Count -eq 1) { $mine[0] } else { Merge-RtChunks -Name $rel -Chunks $mine }
+}
+
+# The time of every suite, for the next run: the slowest start first and a slow one is cut. Written whatever the verdict.
+try {
+    $times = [ordered]@{}
+    foreach ($key in $runByName.Keys) { $times[$key] = $runByName[$key].Seconds }
+    ($times | ConvertTo-Json) | Set-Content -LiteralPath $TimesPath -Encoding UTF8
+} catch { Write-Line "  (could not write .rt-suite-times.json: $($_.Exception.Message))" "Yellow" }
+
+foreach ($suite in $suites) {
+    $rel = Get-SuiteRel $suite
+    $run = $runByName[$rel]
+    $verdict = Get-SuiteVerdict $run
+    switch ($verdict.Outcome) {
+        "PASSED" {
+            $results += [pscustomobject]@{ suite = $rel; outcome = "PASSED"; seconds = $run.Seconds }
+            $passed++
+        }
+        "NOT RUN" {
+            $results += [pscustomobject]@{ suite = $rel; outcome = "NOT RUN"; missing = $verdict.Missing; seconds = $run.Seconds }
+            $notRun  += [pscustomobject]@{ suite = $rel; missing = $verdict.Missing }
+        }
+        default {
+            $results += [pscustomobject]@{ suite = $rel; outcome = "FAILED"; detail = $verdict.Detail; seconds = $run.Seconds }
+            $failed  += [pscustomobject]@{ suite = $rel; detail = $verdict.Detail; output = $run.Output }
+            Write-Host "  [FAIL]    $rel  (also alone)" -ForegroundColor Red
         }
     }
 }
@@ -192,8 +326,15 @@ $elapsed = [int]((Get-Date) - $started).TotalSeconds
 # ── Verdict ───────────────────────────────────────────────────────────────────
 
 Write-Line ""
-Write-Host "  PASSED $passed   FAILED $($failed.Count)   NOT RUN $($notRun.Count)   ($elapsed s)" `
+Write-Host "  PASSED $passed   FAILED $($failed.Count)   NOT RUN $($notRun.Count)   ($elapsed s, $jobCount at once)" `
            -ForegroundColor $(if ($failed.Count -gt 0) { "Red" } else { "Green" })
+
+if ($flaky.Count -gt 0) {
+    Write-Line ""
+    Write-Line "  FLAKY under parallel load (failed with others running, passed alone; they are counted as passed):" "Yellow"
+    foreach ($f in $flaky) { Write-Line "    $($f.suite)  $($f.detail)" "Yellow" }
+    Write-Line "  Run with -Jobs 1 to see whether the suite itself depends on the others." "Yellow"
+}
 
 if ($notRun.Count -gt 0) {
     Write-Line ""
@@ -245,6 +386,8 @@ $stamp = [ordered]@{
     interpreter = $suitePython
     interpreter_source = $resolved.Source
     elapsed_s   = $elapsed
+    jobs        = $jobCount
+    flaky       = @($flaky | ForEach-Object { $_.suite })
     suites      = @{ passed = $passed; failed = 0; not_run = $notRun.Count; discovered = $suites.Count }
     outcomes    = $results
     code_hashes = $hashes

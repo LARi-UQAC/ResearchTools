@@ -54,10 +54,29 @@ class TestWorkUgsAuditContract(unittest.TestCase):
     def test_agent_names_no_forbidden_read_target(self):
         self.assertEqual(forbidden_targets_named(self.agent), [])
 
-    def test_agent_has_both_pause_points(self):
-        self.assertIn("PIPELINE-PAUSED @ rubric-confirmation", self.agent)
+    def test_agent_has_no_rubric_pause_and_keeps_the_third_loop_stop(self):
+        self.assertNotIn("rubric-confirmation", self.agent)
         self.assertIn("PIPELINE-PAUSED @ third-loop", self.agent)
-        self.assertRegex(self.agent, r"(?i)never go on without the answer")
+        self.assertRegex(self.agent, r"(?i)explicit answer")
+        self.assertRegex(self.agent, r"(?i)there is no confirmation step")
+
+    def test_a_failed_vision_probe_neither_asks_nor_stops_and_its_reason_is_relayed(self):
+        self.assertRegex(self.agent, r"(?i)do not ask\s+a question and do not stop")
+        self.assertIn("vision_not_validated", self.agent)
+        self.assertIn("`reason`", self.agent)
+
+    def test_the_long_run_is_started_detached(self):
+        self.assertRegex(self.agent, r"(?i)detached")
+
+    def test_the_poll_checks_that_the_background_process_is_still_running(self):
+        self.assertRegex(self.agent, r"(?i)background process\s+is still running")
+        self.assertRegex(self.agent, r"(?i)steps are still open")
+        self.assertRegex(self.agent, r"(?i)not retried")
+
+    def test_the_command_names_third_loop_as_its_only_pause(self):
+        command = (ROOT / ".claude" / "commands" / "work-ugs-audit.md").read_text(encoding="utf-8")
+        self.assertIn("only pause is `third-loop`", command)
+        self.assertNotIn("rubric-confirmation", command)
 
     def test_agent_starts_no_third_loop_on_its_own(self):
         self.assertIn("--allow-third", self.agent)

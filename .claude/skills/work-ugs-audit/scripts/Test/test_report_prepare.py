@@ -29,7 +29,7 @@ class ReportPrepareTests(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.reports = self.tmp / "reports"
         self.reports.mkdir()
-        self.work = self.tmp / "_correction"
+        self.work = self.reports / "_correction"
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
@@ -83,10 +83,18 @@ class ReportPrepareTests(unittest.TestCase):
         self.assertEqual(result[0]["empty_pages"], [1])
         self.assertEqual((self.work / "R01" / "pages" / "p001.md").read_text(encoding="utf-8").strip(), "")
 
-    def test_a_work_folder_inside_the_reports_folder_is_refused(self):
+    def test_a_work_folder_directly_inside_the_reports_folder_is_accepted_and_is_not_a_report(self):
+        make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
+        inside = self.reports / "_correction"
+        first = prepare(self.reports, inside)
+        second = prepare(self.reports, inside)
+        self.assertEqual([r["report_id"] for r in first], ["R01"])
+        self.assertEqual([r["report_id"] for r in second], ["R01"])
+
+    def test_a_work_folder_deeper_than_one_level_is_refused(self):
         make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
         with self.assertRaises(PrepareError):
-            prepare(self.reports, self.reports / "_correction")
+            prepare(self.reports, self.reports / "a" / "_correction")
 
     def test_the_reports_folder_itself_is_refused_as_work_folder(self):
         make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
@@ -94,10 +102,12 @@ class ReportPrepareTests(unittest.TestCase):
             prepare(self.reports, self.reports)
         self.assertEqual([path.name for path in self.reports.iterdir()], ["report.pdf"])
 
-    def test_a_work_folder_with_another_parent_is_refused(self):
+    def test_a_work_folder_beside_the_reports_folder_is_now_refused(self):
         make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
         with self.assertRaises(PrepareError):
             prepare(self.reports, self.tmp / "other" / "_correction")
+        with self.assertRaises(PrepareError):
+            prepare(self.reports, self.reports.parent / "_correction")
 
     def test_an_unreadable_id_map_is_refused_without_naming_a_file(self):
         make_report(self.reports / "report.pdf", [{"text": "Page 1"}])

@@ -5,11 +5,19 @@ from typing import Callable, List, Dict, Any, Optional
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+_SKILLS_DIR = Path(__file__).resolve().parent.parent.parent
+_FIGURE_REVIEW_SCRIPTS = _SKILLS_DIR / "figure-review" / "scripts"
+_SHIPPED_CRITERIA = _SKILLS_DIR / "figure-review" / "assets" / "figure_criteria.json"
+sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
+
+from figure_checks import failure_comment, load_criteria
 from grade_total import compute
 from pdf_annotate import annotate
 from pdf_annex import render_rows, build_html, append_annex
 from ref_check import check_all, _default_resolver
 from ugs_text import split_body_and_references
+
+REPORT_LANGUAGES = ("fr", "en")
 
 
 def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
@@ -49,22 +57,50 @@ def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
     return annotations
 
 
-def figure_annotations(figures: dict) -> List[dict]:
+def _check_language(language: str) -> None:
     """
-    Purpose: Generate annotations for failed figure criteria.
+    Purpose: Refuse a report language other than the two the annex and the prompts are written in.
+    Inputs:
+        language: str - Language code read from the report.
+    Outputs:
+        None.
+    Raises:
+        ValueError: If the language is neither "fr" nor "en" (named in the message, no silent English).
+    """
+    if language not in REPORT_LANGUAGES:
+        raise ValueError(f"Unknown report language: {language!r}; expected one of {', '.join(REPORT_LANGUAGES)}")
+
+
+def figure_annotations(figures: dict, criteria: Optional[List[dict]] = None, language: str = "en") -> List[dict]:
+    """
+    Purpose: Generate annotations for failed figure criteria, with the comment in the report language
+        when the criterion is judged by a script.
+    Details: A criterion judged by a script takes its comment from the criteria data (failure_comment). A
+        criterion judged by a model keeps the reason the model wrote. Without criteria, every comment is
+        the reason, as before.
     Inputs:
         figures: dict - The figures data.
+        criteria: Optional[List[dict]] - Criteria of figure-review (each with id, judged_by and comments).
+        language: str - Report language, "fr" or "en".
     Outputs:
         List[dict] - List of annotation dictionaries.
+    Raises:
+        ValueError: If the language is neither "fr" nor "en".
     """
+    _check_language(language)
+    criteria_list = criteria or []
+    by_id = {crit["id"]: crit for crit in criteria_list}
     annotations = []
     for figure in figures.get("figures", []):
         page = figure.get("page")
         rect = figure.get("rect")
-        criteria = figure.get("criteria", {})
-        for criterion_id, result in criteria.items():
+        criteria_results = figure.get("criteria", {})
+        for criterion_id, result in criteria_results.items():
             if result.get("verdict") == "fail":
                 comment = result.get("reason", "")
+                criterion = by_id.get(criterion_id)
+                if criterion is not None and criterion.get("judged_by") == "script":
+                    comment = failure_comment(criterion_id, criteria_list, language)
                 if comment:
                     annotations.append({
                         "page": page,
@@ -115,7 +151,7 @@ def reference_annotations(results: List[dict], entries: List[dict], comments: di
     return annotations
 
 
-def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, rubric: dict, pages: List[str], language: str, settings: dict, fetch: Optional[Callable]) -> dict:
+def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, rubric: dict, pages: List[str], language: str, settings: dict, fetch: Optional[Callable], criteria: Optional[List[dict]] = None) -> dict:
     """
     Purpose: Assemble the annotated report PDF with annex and compute totals.
     Inputs:
@@ -125,14 +161,16 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
         loop: int - Loop number.
         rubric: dict - Rubric definition.
         pages: List[str] - Page texts.
-        language: str - Language code.
+        language: str - Language code, "fr" or "en".
         settings: dict - Settings including colors, author, etc.
         fetch: Optional[Callable] - Fetch function for ref_check.
+        criteria: Optional[List[dict]] - Figure criteria; None loads the shipped figure-review criteria.
     Outputs:
         dict - Summary of the assembly process.
     Raises:
-        ValueError: If a required setting is missing.
+        ValueError: If a required setting is missing, or the language is neither "fr" nor "en".
     """
+    _check_language(language)
     required_settings = ["colors", "author", "quote_chars", "url_timeout_s", "max_retries", "patterns", "ref_comments", "annex_template"]
     for key in required_settings:
         if key not in settings:
@@ -171,7 +209,8 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
             })
 
     if figures_data:
-        annotations.extend(figure_annotations(figures_data))
+        figure_criteria = criteria if criteria is not None else load_criteria(_SHIPPED_CRITERIA)["criteria"]
+        annotations.extend(figure_annotations(figures_data, figure_criteria, language))
 
     # Reference annotations
     body_text, refs = split_body_and_references(pages)

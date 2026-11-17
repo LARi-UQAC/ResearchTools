@@ -68,6 +68,14 @@ Live MCP connection state exists on no file on disk, so the roster read from con
 reported as *configured, liveness unavailable* unless the `claude` binary is on PATH. That is
 stated on screen rather than blanked.
 
+## Actions of the local roles (2026-11-17)
+
+`collect_local.py` reads the action records that a local role writes to the bridge log (`event` equal to `action`,
+built by `work-ugs-audit`'s `ugs_events.py`) and gives each role its last actions as `actions`, oldest first, with
+`actions_dropped` for the older ones that were cut. The cap is `caps.local_actions_per_role` in `observe-config.json`
+(proposed, not measured). A log with no action record gives the section unchanged. Action records are never counted as
+calls or as starts. The page draws each action as a step of the lane, escaped as text.
+
 ## The optional journal (2026-09-24)
 
 Two more panels, both absent by default and both additive: an identity/account-to-container

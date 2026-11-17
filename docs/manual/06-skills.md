@@ -711,6 +711,12 @@ reads only the rubric and the step ledger.
 (the configuration with provenance on every value, the rubric schema and templates, the calibration targets),
 `prompts/`, and an offline test beside each script in `scripts/Test/`.
 
+Since 2026-11-17 (Issue 122) the preparation also detects the language, repairs the damaged pages by OCR in that
+language, excludes the cover and signature pages, extracts typed elements (figure, table, logo) and writes the five
+cross-reference checks into the annex. The OCR needs Tesseract with the `eng` and `fra` data, see chapter 01. The
+order of the steps, the vocabulary and the grade file fields are in `.claude/skills/work-ugs-audit/SKILL.md`, section
+"Preparation, in order".
+
 ### `figure-review` - figures of a report, paper or thesis
 
 One place that knows how to look at a figure, for the student-report audit (criteria scope `undergraduate`) and for the

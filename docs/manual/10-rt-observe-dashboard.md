@@ -37,6 +37,16 @@ badge top-right and the footer strip (drawn by `rt_state.py`, generation timesta
 hash, last install, repo root) are the receipts every panel here carries per R9 — a claim with
 no stamp is not trusted.
 
+## Actions of the local roles (2026-11-17)
+
+A local role that works on a long task, such as the grader of `work-ugs-audit`, now shows its recent actions as steps
+of its lane, the way a Claude Code session shows its tool calls. An action is one of five kinds: `read` (the pages a
+step read, as a compact range such as `p3-5,9`), `call` (one model call for an item), `write` (the base name of an
+output file), `mark` (a ledger line, with its mark as a word) and `check`. Each action carries identifiers only: a
+report identifier, an item identifier, a page range or a base file name. It never carries a prompt, a reply, a quote,
+an error message or a path. The collector keeps the newest `caps.local_actions_per_role` actions of each role and
+says how many older ones it dropped. A role with no action record keeps its lane without steps.
+
 ## The voice panel (2026-09-26)
 
 A fifth tab, **Voice**, next to Real-Time Process. Hold **P** to record, release to send; a

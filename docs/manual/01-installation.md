@@ -80,6 +80,7 @@ job.
 | [Node.js](https://nodejs.org/) | Caveman-mode hooks (`caveman-activate.js`, etc.) |
 | Python 3.x | Scopus skill scripts + security hooks (`betterleaks`, `pip-audit`, `prompt-injection-defender`) |
 | Python libraries (`pip`) | Every library each skill imports, with its pin, the requirements file that declares it and the environment `setup.ps1 -InstallPython` puts it in: [chapter 02, Python environments](02-profiles.md#python-environments-every-library) |
+| Tesseract 5 with the `eng` and `fra` language data | `work-ugs-audit` preparation: OCR repairs the damaged pages of a report in the report's own language. Install with `winget install tesseract-ocr.tesseract`, then put `fra.traineddata` (from the `tessdata_fast` set) and the `eng` file in the `tessdata` folder of the installation, and set the user variable `TESSDATA_PREFIX` to that folder. Open a new terminal after setting it. Without it the preparation refuses before it writes anything, and the refusal names the missing tool or language |
 | `pandoc` | `word2latex` skill (Word → LaTeX) |
 | `npm install pptxgenjs` *(optional)* | `paper2talk` fallback for a PowerPoint deck with no gabarit at all. Set `NODE_PATH` when building outside the tree that holds the install |
 | PowerPoint (Office 16+) **or** LibreOffice, plus Poppler `pdftoppm` | `paper2talk` render loop: deck → PDF → page images. On Windows the working path is PowerPoint COM `SaveAs(..., 32)`; the `document-skills` `soffice.py` wrapper fails here with `AF_UNIX`. Poppler ships with MiKTeX |

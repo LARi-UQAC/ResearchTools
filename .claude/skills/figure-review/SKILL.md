@@ -62,6 +62,18 @@ No tool is substituted for a missing one. A source path that leaves the document
 image for a model (PNG for line art, JPEG for a photo) and reports its estimated token cost. Then judge it
 with `prompts/figure.md`, `## single`.
 
+## Elements of a report (preparation)
+
+The work-ugs-audit preparation calls `figure_extract.extract_elements` (added 2026-11-17, Issue 122), which returns
+one record per element with a type. A table is found with PyMuPDF's table finder (`page.find_tables()`) and is never
+judged as a figure; its cells come back as Markdown. Figure regions closer than `extraction.fragment_gap_pt` form one
+figure, unless a title lies between them. A region that overlaps a table box by `extraction.table_overlap_ratio` is
+dropped. A small image that recurs in the header or footer band on `extraction.repeat_min_pages` pages or more is a
+`logo`. Each title (found by `element_labels.py` from the marker words of `assets/element_markers.json`) is attached to
+at most one element. Every threshold is in `assets/figure_criteria.json` with its provenance, and the thresholds are
+proposals to tune on the counts of the real reports. The vocabulary (title, legend, notes) is defined in the
+work-ugs-audit skill.
+
 ## Limits
 
 - Rendering needs `pdflatex`, `epstopdf` or draw.io on the machine. None is installed by this skill.

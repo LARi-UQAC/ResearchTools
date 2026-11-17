@@ -12,6 +12,7 @@ import fitz
 # The validation codes are owned by ugs_grade (R2): the annex only labels them.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ugs_grade import GRADE_CODES
+from crossref_checks import CHECK_IDS, STATUS_OK, STATUS_NOT_OK, STATUS_NOT_APPLICABLE
 
 DEFAULT_TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "annex.template.html"
 DEFAULT_LABELS = Path(__file__).resolve().parent.parent / "assets" / "annex_labels.json"
@@ -21,6 +22,9 @@ LABEL_TEXT_KEYS = ("title", "loop", "item", "score", "status", "comment", "total
 STATUS_KEYS = ("rated", "not_applicable", "not_run")
 COLUMN_KEYS = ("item", "score", "status")
 PERCENT_TOTAL = 100
+# The detail keys crossref_checks writes (missing, out_of_order, repeated, skipped); the annex labels each one.
+CHECK_DETAIL_KEYS = ("missing", "out_of_order", "repeated", "skipped")
+CHECK_STATUS_KEYS = (STATUS_OK, STATUS_NOT_OK, STATUS_NOT_APPLICABLE)
 
 # One placeholder: an upper-case name between double braces. Filled in a single pass (see build_html).
 PLACEHOLDER_RE = re.compile(r"\{\{([A-Z_]+)\}\}")
@@ -163,6 +167,65 @@ def load_default_language(path: Path = DEFAULT_LABELS) -> str:
     return language
 
 
+def _text_map(block: dict, key: str, path: Path, where: str, allowed: Optional[tuple]) -> Dict[str, str]:
+    """
+    Purpose: Return one required map of non-empty texts of a language block, optionally with fixed keys.
+    Inputs:
+        block: dict - The language block holding the key.
+        key: str - The key of the map.
+        path: Path - The labels file, named in the message.
+        where: str - The dotted place of the block, named in the message.
+        allowed: Optional[tuple] - The exact keys required, or None when any non-empty set of keys is accepted.
+    Outputs:
+        Dict[str, str] - The map, every value a non-empty text.
+    Raises:
+        AnnexError: If the map is absent, not an object, lacks an allowed key, holds an unexpected key, or holds
+            an empty text.
+    """
+    values = _require(block, key, path, where)
+    if not isinstance(values, dict) or not values:
+        raise AnnexError(f"key {where}.{key} must be a non-empty object in {path}")
+    if allowed is not None:
+        missing = [name for name in allowed if name not in values]
+        if missing:
+            raise AnnexError(f"key {where}.{key} is missing {missing} in {path}")
+        extra = sorted(set(values) - set(allowed))
+        if extra:
+            raise AnnexError(f"key {where}.{key} has keys with no meaning in {path}: {extra}")
+    return {name: _require_text(values, name, path, f"{where}.{key}") for name in values}
+
+
+def _load_check_labels(block: dict, path: Path, where: str) -> dict:
+    """
+    Purpose: Read the labels of the cross-reference checks and of the excluded pages from one language block (R3).
+    Inputs:
+        block: dict - The language block of the labels file.
+        path: Path - The labels file, named in the message.
+        where: str - The language, named in the message.
+    Outputs:
+        dict - The keys checks_title, check_column, numbers_column, check_values (one label per check id),
+            check_status_values (ok, not_ok, not_applicable), check_detail_values (one label per detail key),
+            excluded_reason_values, excluded_item (text with {page} and {reason}) and excluded_separator.
+    Raises:
+        AnnexError: If a label is missing, empty, or a map holds a key the checks do not produce.
+    """
+    labels = {
+        "checks_title": _require_text(block, "checks_title", path, where),
+        "check_column": _require_text(block, "check_column", path, where),
+        "numbers_column": _require_text(block, "numbers_column", path, where),
+        "check_values": _text_map(block, "check_values", path, where, tuple(CHECK_IDS)),
+        "check_status_values": _text_map(block, "check_status_values", path, where, CHECK_STATUS_KEYS),
+        "check_detail_values": _text_map(block, "check_detail_values", path, where, CHECK_DETAIL_KEYS),
+        "excluded_reason_values": _text_map(block, "excluded_reason_values", path, where, None),
+        "excluded_item": _require_text(block, "excluded_item", path, where),
+    }
+    separator = _require(block, "excluded_separator", path, where)
+    if not isinstance(separator, str) or not separator:
+        raise AnnexError(f"key {where}.excluded_separator must be a non-empty text in {path}")
+    labels["excluded_separator"] = separator
+    return labels
+
+
 def load_labels(path: Path, language: str) -> dict:
     """
     Purpose: Load the annex labels of one language, with the column widths of the layout block.
@@ -204,6 +267,8 @@ def load_labels(path: Path, language: str) -> dict:
     if extra:
         raise AnnexError(f"key {where}.validation_values has codes with no grade meaning in {path}: {extra}")
     labels["validation_values"] = {code: codes[code] for code in refusals}
+
+    labels.update(_load_check_labels(block, path, where))
 
     layout = load_layout(path)
     labels["column_widths_percent"] = layout["column_widths_percent"]
@@ -323,6 +388,103 @@ def render_rows(rubric: dict, grade: dict, totals: dict, labels: Optional[dict] 
     return "\n".join(rows)
 
 
+def _is_whole_number(value: object) -> bool:
+    """
+    Purpose: Tell a whole number from anything else, a boolean included.
+    Inputs:
+        value: object - The value to test.
+    Outputs:
+        bool - True for an int that is not a boolean.
+    """
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _number_text(number: object) -> str:
+    """
+    Purpose: Format one number of a check the way the report writes it, its parts joined by dots.
+    Inputs:
+        number: object - A non-empty list or tuple of whole numbers, for example (2, 1) for 2.1.
+    Outputs:
+        str - The dotted number, for example "2.1".
+    Raises:
+        AnnexError: If the value is not a non-empty list or tuple of whole numbers.
+    """
+    if not isinstance(number, (list, tuple)) or not number or not all(_is_whole_number(p) for p in number):
+        raise AnnexError("a check number must be a list of whole numbers")
+    return ".".join(str(part) for part in number)
+
+
+def _check_numbers_text(detail: object, labels: dict) -> str:
+    """
+    Purpose: Print the numbers of one check's detail, numbers only, grouped under the label of each detail key.
+    Details: Only the numbers are printed. The keys are printed as their labels, in the fixed order of
+        CHECK_DETAIL_KEYS, and a key with no number is left out.
+    Inputs:
+        detail: object - The detail of one check: an object of number lists.
+        labels: dict - The labels of one language, from load_labels.
+    Outputs:
+        str - For example "Missing : 2.1, 2.3"; an empty string when every list is empty.
+    Raises:
+        AnnexError: If the detail is not an object, holds a key with no label, or a value that is not a list.
+    """
+    if not isinstance(detail, dict):
+        raise AnnexError("a check detail must be an object")
+    unknown = sorted(set(detail) - set(CHECK_DETAIL_KEYS))
+    if unknown:
+        raise AnnexError(f"no label for the check detail keys {unknown}")
+    parts = []
+    for key in CHECK_DETAIL_KEYS:
+        if key not in detail:
+            continue
+        value = detail[key]
+        if not isinstance(value, (list, tuple)):
+            raise AnnexError(f"the check detail {key!r} must be a list")
+        numbers = [_number_text(number) for number in value]
+        if numbers:
+            parts.append(f"{labels['check_detail_values'][key]} : {', '.join(numbers)}")
+    return "; ".join(parts)
+
+
+def render_checks(checks: List[dict], labels: dict) -> str:
+    """
+    Purpose: Render the table of the cross-reference checks: the label of each check, its status label and its
+        numbers. The three columns take the widths of the rubric table (item and status), the numbers the rest.
+    Details: Nothing from a check's detail is printed except its numbers, so no text of a report reaches the annex
+        through this table (spec R9).
+    Inputs:
+        checks: List[dict] - The check entries of crossref_checks.run_checks: id, status and detail.
+        labels: dict - The labels of one language, from load_labels.
+    Outputs:
+        str - An HTML heading and table.
+    Raises:
+        AnnexError: If a check id or status has no label, or a detail is not made of numbers.
+    """
+    widths = labels["column_widths_percent"]
+    numbers_width = PERCENT_TOTAL - widths["item"] - widths["status"]
+    header = (
+        f"<tr><th style=\"width:{widths['item']:g}%\">{html.escape(labels['check_column'])}</th>"
+        f"<th style=\"width:{widths['status']:g}%\">{html.escape(labels['status'])}</th>"
+        f"<th style=\"width:{numbers_width:g}%\">{html.escape(labels['numbers_column'])}</th></tr>"
+    )
+    rows = []
+    for check in checks:
+        check_id = check.get("id")
+        status = check.get("status")
+        if check_id not in labels["check_values"]:
+            raise AnnexError(f"no label for the check {check_id!r}")
+        if status not in labels["check_status_values"]:
+            raise AnnexError(f"no label for the check status {status!r}")
+        name = html.escape(labels["check_values"][check_id])
+        status_text = html.escape(labels["check_status_values"][status])
+        numbers = html.escape(_check_numbers_text(check.get("detail"), labels))
+        rows.append(f"<tr><td>{name}</td><td>{status_text}</td><td>{numbers}</td></tr>")
+    return (
+        f"<h3>{html.escape(labels['checks_title'])}</h3>\n"
+        "<table style=\"width:100%; border-collapse:collapse;\" border=\"1\" cellpadding=\"4\">\n"
+        f"{header}\n" + "\n".join(rows) + "\n</table>"
+    )
+
+
 def _label_placeholders(labels: dict) -> Dict[str, str]:
     """
     Purpose: Map each label and column width of one language to its template placeholder.
@@ -340,11 +502,12 @@ def _label_placeholders(labels: dict) -> Dict[str, str]:
 
 
 def build_html(template: str, rows: str, report_id: str, loop: int, total: Optional[str],
-               labels: Optional[dict] = None, excluded_note: str = "") -> str:
+               labels: Optional[dict] = None, excluded_note: str = "", checks_html: str = "") -> str:
     """
     Purpose: Build the final HTML annex.
     Details: Every placeholder is replaced in one pass, so a value that itself contains braces is never
-        replaced again. The excluded note is escaped, since it is text and not markup.
+        replaced again. The excluded note is escaped, since it is text and not markup. The checks table is
+        HTML built by render_checks and is inserted as it is.
     Inputs:
         template: str - The HTML template.
         rows: str - The rendered rows.
@@ -354,6 +517,7 @@ def build_html(template: str, rows: str, report_id: str, loop: int, total: Optio
         labels: Optional[dict] - The labels of one language, from load_labels, or None when the template has
             no label placeholder.
         excluded_note: str - The text of the excluded pages, empty when there are none.
+        checks_html: str - The HTML of the cross-reference checks (render_checks), empty when there are none.
     Outputs:
         str - The final HTML string.
     Raises:
@@ -367,6 +531,7 @@ def build_html(template: str, rows: str, report_id: str, loop: int, total: Optio
         "ROWS": rows,
         "TOTAL": total_str,
         "EXCLUDED": html.escape(excluded_note),
+        "CHECKS": checks_html,
     }
     if labels is not None:
         replacements.update(_label_placeholders(labels))

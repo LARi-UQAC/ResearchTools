@@ -1,6 +1,7 @@
 import json
+import os
 from pathlib import Path
-from typing import Callable, List, Dict, Any, Optional
+from typing import Callable, List, Dict, Any, Optional, Tuple
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -13,11 +14,19 @@ sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
 from figure_checks import failure_comment, load_criteria
 from grade_total import compute
 from pdf_annotate import annotate
-from pdf_annex import DEFAULT_LABELS, render_rows, build_html, append_annex, load_labels
+from pdf_annex import DEFAULT_LABELS, render_rows, build_html, append_annex, load_labels, render_checks
 from ref_check import check_all, _default_resolver
 from ugs_text import split_body_and_references
+from ugs_tables import load_elements
+import ugs_config
+import element_labels
+from crossref_checks import run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH
 
 REPORT_LANGUAGES = ("fr", "en")
+CHECKS_FILE_NAME = "checks.json"
+META_NAME_KEY = "reports.meta_file_name"
+ELEMENTS_NAME_KEY = "reports.elements_file_name"
+EXCLUDED_PAGES_KEY = "excluded_pages"
 
 
 def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
@@ -151,6 +160,102 @@ def reference_annotations(results: List[dict], entries: List[dict], comments: di
     return annotations
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """
+    Purpose: Write a text file in one step: the content goes to a temporary file beside it, then replaces it.
+    Inputs:
+        path: Path - The destination file.
+        text: str - The content, written as UTF-8.
+    Outputs:
+        None.
+    Raises:
+        OSError: If the file cannot be written or replaced.
+    """
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _read_excluded(meta_path: Path) -> List[dict]:
+    """
+    Purpose: Read the pages excluded from evaluation from the report metadata (spec R7).
+    Details: A report folder with no metadata file has no excluded page. Every report prepared under the data
+        contract has the file, so the case concerns only a folder made before it.
+    Inputs:
+        meta_path: Path - The report metadata file (reports.meta_file_name of ugs_config.json).
+    Outputs:
+        List[dict] - The records {"page": int, "reason": str} in file order, an empty list when there is no file.
+    Raises:
+        ValueError: If the file is not JSON, or excluded_pages is not a list of records with a page number and a
+            reason. The message names the file and the key, never its content.
+    """
+    if not meta_path.exists():
+        return []
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"report metadata is not readable JSON: {meta_path.name}") from exc
+    if not isinstance(meta, dict) or not isinstance(meta.get(EXCLUDED_PAGES_KEY, []), list):
+        raise ValueError(f"key {EXCLUDED_PAGES_KEY} must be a list in {meta_path.name}")
+    excluded = meta.get(EXCLUDED_PAGES_KEY, [])
+    for record in excluded:
+        if not isinstance(record, dict) or not isinstance(record.get("page"), int) \
+                or not isinstance(record.get("reason"), str):
+            raise ValueError(f"each {EXCLUDED_PAGES_KEY} record needs a page number and a reason in {meta_path.name}")
+    return excluded
+
+
+def build_excluded_note(excluded: List[dict], labels: dict) -> str:
+    """
+    Purpose: Write the excluded-page note of the annex: each page with its reason, in the report language.
+    Inputs:
+        excluded: List[dict] - The records {"page": int, "reason": str}, the reason being a code (cover,
+            signature_table, version_table).
+        labels: dict - The labels of one language, from load_labels.
+    Outputs:
+        str - For example "page 1 : cover page ; page 5 : signature table"; an empty string when there is none.
+    Raises:
+        ValueError: If a reason code has no label; the message names the code.
+    """
+    items = []
+    for record in excluded:
+        reason = record.get("reason")
+        if reason not in labels["excluded_reason_values"]:
+            raise ValueError(f"no label for the excluded reason {reason!r}")
+        items.append(labels["excluded_item"].format(
+            page=record.get("page"), reason=labels["excluded_reason_values"][reason]))
+    return labels["excluded_separator"].join(items)
+
+
+def run_report_checks(src_pdf: Path, source_dir: Path, pages: List[str]) -> Tuple[List[dict], List[dict]]:
+    """
+    Purpose: Run the five cross-reference checks of the last step on one report (spec R9).
+    Details: The element file and the report metadata are read from the report folder of the work folder, whose
+        file names come from ugs_config.json. With no element file the figure and table checks are not
+        applicable. The equation check reads the PDF, and the excluded pages are not searched.
+    Inputs:
+        src_pdf: Path - The PDF of the report, read for the equation numbers.
+        source_dir: Path - The report folder of the work folder (<work>/<report_id>).
+        pages: List[str] - The text of each page, index 0 for page 1.
+    Outputs:
+        Tuple[List[dict], List[dict]] - The five check entries, and the excluded-page records.
+    Raises:
+        ugs_config.ConfigError: If a configuration key is missing or malformed (R3).
+        crossref_checks.CrossrefConfigError: If a check setting or a marker list is missing (R3).
+        element_labels.MarkerError: If the markers file is missing or malformed.
+        ugs_tables.TablesError: If the element file is not a list of records.
+        ValueError: If the metadata file is not usable.
+    """
+    config = ugs_config.load(ugs_config.default_path())
+    elements = load_elements(source_dir / config[ELEMENTS_NAME_KEY])
+    excluded = _read_excluded(source_dir / config[META_NAME_KEY])
+    markers = element_labels.load_markers(DEFAULT_MARKERS_PATH)
+    settings = load_checks_settings()
+    skipped = [record["page"] for record in excluded]
+    checks = run_checks(src_pdf, pages, elements, markers, settings, skipped)
+    return checks, excluded
+
+
 def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, rubric: dict, pages: List[str], language: str, settings: dict, fetch: Optional[Callable], criteria: Optional[List[dict]] = None) -> dict:
     """
     Purpose: Assemble the annotated report PDF with annex and compute totals.
@@ -239,12 +344,18 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
         settings["author"]
     )
 
+    # Cross-reference checks (spec R9): saved in the loop folder and printed in the annex.
+    checks, excluded = run_report_checks(src_pdf, report_dir.parent.parent / report_id, pages)
+    _atomic_write_text(report_dir / CHECKS_FILE_NAME, json.dumps(checks, indent=2))
+
     # Append annex
     template = settings["annex_template"]
     # The labels come from the report language, through the same label file pdf_annex.main reads.
     labels = load_labels(DEFAULT_LABELS, language)
     rows = render_rows(rubric, grade, totals, labels)
-    html_text = build_html(template, rows, report_id, loop, totals.get("total"), labels)
+    html_text = build_html(template, rows, report_id, loop, totals.get("total"), labels,
+                           excluded_note=build_excluded_note(excluded, labels),
+                           checks_html=render_checks(checks, labels))
     annex_pages = append_annex(dst_pdf, html_text)
 
     return {

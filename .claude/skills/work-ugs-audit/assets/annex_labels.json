@@ -13,7 +13,7 @@
     }
   },
   "fr": {
-    "provenance": "French wording chosen by the author, to be reviewed by the owner.",
+    "provenance": "French wording chosen by the author, to be reviewed by the owner. The check, numbering and excluded-page wording was added on 2026-11-17 (Issue 122, plan 8), with the same status.",
     "title": "Grille corrigée",
     "loop": "boucle",
     "item": "Élément",
@@ -41,10 +41,38 @@
       "schema_invalid": "Réponse hors du format attendu",
       "no_fit": "Texte trop long pour la fenêtre du modèle",
       "over_budget": "Dépasse le budget de jetons"
-    }
+    },
+    "checks_title": "Contrôles de références croisées",
+    "check_column": "Contrôle",
+    "numbers_column": "Numéros",
+    "check_values": {
+      "figures_cited": "Figures citées dans le texte",
+      "tables_cited": "Tableaux cités dans le texte",
+      "figure_order": "Numérotation des figures",
+      "table_order": "Numérotation des tableaux",
+      "equation_order": "Numérotation des équations"
+    },
+    "check_status_values": {
+      "ok": "Conforme",
+      "not_ok": "Non conforme",
+      "not_applicable": "Non applicable"
+    },
+    "check_detail_values": {
+      "missing": "Absents",
+      "out_of_order": "Hors d'ordre",
+      "repeated": "Répétés",
+      "skipped": "Sautés"
+    },
+    "excluded_reason_values": {
+      "cover": "page couverture",
+      "signature_table": "tableau de signatures",
+      "version_table": "tableau des versions"
+    },
+    "excluded_item": "page {page} : {reason}",
+    "excluded_separator": " ; "
   },
   "en": {
-    "provenance": "English wording chosen by the author, to be reviewed by the owner.",
+    "provenance": "English wording chosen by the author, to be reviewed by the owner. The check, numbering and excluded-page wording was added on 2026-11-17 (Issue 122, plan 8), with the same status.",
     "title": "Completed rubric",
     "loop": "loop",
     "item": "Item",
@@ -72,6 +100,34 @@
       "schema_invalid": "Answer outside the expected format",
       "no_fit": "Text too long for the model window",
       "over_budget": "Over the token budget"
-    }
+    },
+    "checks_title": "Cross-reference checks",
+    "check_column": "Check",
+    "numbers_column": "Numbers",
+    "check_values": {
+      "figures_cited": "Figures cited in the text",
+      "tables_cited": "Tables cited in the text",
+      "figure_order": "Figure numbering",
+      "table_order": "Table numbering",
+      "equation_order": "Equation numbering"
+    },
+    "check_status_values": {
+      "ok": "Passed",
+      "not_ok": "Not passed",
+      "not_applicable": "Not applicable"
+    },
+    "check_detail_values": {
+      "missing": "Missing",
+      "out_of_order": "Out of order",
+      "repeated": "Repeated",
+      "skipped": "Skipped"
+    },
+    "excluded_reason_values": {
+      "cover": "cover page",
+      "signature_table": "signature table",
+      "version_table": "version table"
+    },
+    "excluded_item": "page {page}: {reason}",
+    "excluded_separator": "; "
   }
 }

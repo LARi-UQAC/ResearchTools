@@ -20,10 +20,11 @@ REPLACEMENT = "�"
 PDF = Path("fictitious_report.pdf")
 
 
-def _settings(min_chars=3):
-    """Return fictitious settings: a threshold and the language map."""
+def _settings(min_chars=3, min_words=1):
+    """Return fictitious settings: a replacement threshold, a word minimum and the language map."""
     return {
         "min_replacement_chars": min_chars,
+        "min_words_per_page": min_words,
         "language_codes": {"fr": ["fra"], "en": ["eng"], "ambiguous": ["fra", "eng"]},
     }
 
@@ -157,18 +158,55 @@ class RepairTests(unittest.TestCase):
         new, quality = tq.repair_pages(PDF, texts, "fr", _settings(3), ocr_page)
         self.assertEqual(calls, [(3, "fra")])
         self.assertEqual(new, ["clean text", "one " + REPLACEMENT, "OCR page"])
-        self.assertEqual(quality[0], {"page": 1, "replacement_chars": 0, "ocr": False, "ocr_empty": False})
-        self.assertEqual(quality[1], {"page": 2, "replacement_chars": 1, "ocr": False, "ocr_empty": False})
-        self.assertEqual(quality[2], {"page": 3, "replacement_chars": 3, "ocr": True, "ocr_empty": False})
+        self.assertEqual(quality[0], {"page": 1, "replacement_chars": 0, "ocr": False, "empty": False})
+        self.assertEqual(quality[1], {"page": 2, "replacement_chars": 1, "ocr": False, "empty": False})
+        self.assertEqual(quality[2], {"page": 3, "replacement_chars": 3, "ocr": True, "empty": False})
 
-    def test_empty_ocr_keeps_the_original_text(self):
-        """An OCR that returns only blanks keeps the original text and flags the page."""
+    def test_blank_ocr_keeps_the_original_text(self):
+        """An OCR that returns only blanks keeps the original text; the page was still sent to OCR."""
         original = REPLACEMENT * 4 + "abc"
         new, quality = tq.repair_pages(PDF, [original], "en", _settings(3), lambda p, n, t: "   ")
         self.assertEqual(new, [original])
-        self.assertEqual(quality[0]["ocr"], False)
-        self.assertEqual(quality[0]["ocr_empty"], True)
+        self.assertEqual(quality[0]["ocr"], True)
+        self.assertEqual(quality[0]["empty"], False)
         self.assertEqual(quality[0]["replacement_chars"], 4)
+
+    def test_empty_page_is_sent_to_ocr(self):
+        """A page with no text layer (count 0) is sent to OCR, and the OCR text replaces the empty text."""
+        calls = []
+
+        def ocr_page(pdf, page_number, tesseract_language):
+            calls.append((page_number, tesseract_language))
+            return "Texte lu par OCR"
+
+        new, quality = tq.repair_pages(PDF, ["", "Le réseau est fiable."], "fr", _settings(3, min_words=3),
+                                       ocr_page)
+        self.assertEqual(calls, [(1, "fra")])
+        self.assertEqual(new, ["Texte lu par OCR", "Le réseau est fiable."])
+        self.assertEqual(quality[0]["ocr"], True)
+        self.assertEqual(quality[0]["empty"], False)
+
+    def test_still_empty_page_is_flagged(self):
+        """An OCR that returns nothing leaves the page empty: the entry carries empty true and ocr true."""
+        new, quality = tq.repair_pages(PDF, [""], "fr", _settings(3, min_words=3), lambda p, n, t: "")
+        self.assertEqual(new, [""])
+        self.assertEqual(quality[0]["empty"], True)
+        self.assertEqual(quality[0]["ocr"], True)
+
+    def test_page_below_the_word_minimum_is_sent_to_ocr(self):
+        """A page of fewer words than the configured minimum is treated as having no text layer."""
+        seen = []
+        tq.repair_pages(PDF, ["1"], "fr", _settings(3, min_words=3),
+                        lambda p, n, t: seen.append(n) or "Texte complet de la page")
+        self.assertEqual(seen, [1])
+
+    def test_missing_word_minimum_is_named(self):
+        """A settings dict with no word minimum raises a named error (R3)."""
+        settings = _settings(3)
+        del settings["min_words_per_page"]
+        with self.assertRaises(QualityConfigError) as ctx:
+            tq.repair_pages(PDF, ["x"], "fr", settings, lambda p, n, t: "x")
+        self.assertIn("min_words_per_page", str(ctx.exception))
 
     def test_english_document_uses_the_english_code(self):
         """An English document asks OCR for the English code, never the French one."""

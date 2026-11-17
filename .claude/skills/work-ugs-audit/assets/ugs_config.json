@@ -56,6 +56,10 @@
     "value": 2,
     "provenance": "starting value, adjustable by the professor (a page holding fewer Unicode replacement characters keeps its text layer; one such character can be a real symbol)"
   },
+  "text.min_words_per_page": {
+    "value": 3,
+    "provenance": "proposal 2026-11-17, a page with fewer words than this is treated as having no text layer; tune on counts"
+  },
   "text.ocr_dpi": {
     "value": 300,
     "provenance": "starting value, adjustable by the professor (resolution of the OCR of a damaged page, the usual resolution for printed text; the same figure as the probe of text_quality)"

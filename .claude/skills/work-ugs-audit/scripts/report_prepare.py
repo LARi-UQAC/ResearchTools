@@ -32,7 +32,7 @@ import ugs_config  # noqa: E402
 from figure_extract import ELEMENT_SETTING_KEYS, extract_elements  # noqa: E402
 from text_quality import OcrUnavailable, TextQualityError  # noqa: E402
 from ugs_tables import enrich_page_text, tables_on_page  # noqa: E402
-from ugs_text import detect_language, load_hints  # noqa: E402
+from ugs_text import LanguageUndecidable, detect_language, load_hints  # noqa: E402
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
@@ -56,6 +56,7 @@ CONFIG_KEYS = (
     "text.excluded_folder",
     "text.excluded_marker",
     "text.min_replacement_chars",
+    "text.min_words_per_page",
     "text.ocr_dpi",
     "pages.small_image_max_area_ratio",
 )
@@ -365,9 +366,11 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     """
     Purpose: Prepare one report: detect its language, repair its damaged pages, mark its excluded pages, extract its
         elements and write its page files, report_meta.json and elements.json.
-    Details: The order is fixed: language from the text layer, OCR repair of the damaged pages, excluded pages from
-        the repaired text, elements with the excluded pages skipped, then the table Markdown added to each page that
-        is kept. The original text of an excluded page is kept in the excluded folder.
+    Details: The order is fixed: language from the text layer, OCR repair of the damaged and text-less pages, excluded
+        pages from the repaired text, elements with the excluded pages skipped, then the table Markdown added to each
+        page that is kept. The original text of an excluded page is kept in the excluded folder. When the text layer
+        gives no language decision, the report is refused before any file of it is written, and the result carries
+        the reason under 'refused'; the other reports are still prepared.
     Inputs:
         pdf_file (Path): the PDF of the report.
         report_id (str): the id of the report.
@@ -376,21 +379,27 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
         context (dict): the hints, the OCR data and the page-role markers (see _load_context).
         hooks (PrepHooks): the OCR page call and the element finder.
     Outputs:
-        dict: 'report_id', 'pages' (count) and 'empty_pages' (1-based numbers of the pages with no text layer).
-        Side effects: writes the page files, the excluded folder, elements.json and report_meta.json of the report.
+        dict: 'report_id', 'pages' (count), 'empty_pages' (1-based numbers of the pages with no text layer before
+        repair) and, for a refused report only, 'refused' (the reason, which names the id and never the file).
+        Side effects: writes the page files, the excluded folder, elements.json and report_meta.json of the report
+        (none for a refused report). report_meta.json lists the empty pages still unreadable after OCR under
+        'unreadable_pages'.
     Raises:
         PrepareError: when the text, the repair or the elements cannot be produced.
     """
     report_dir = work_dir / report_id
     texts = _extract_page_text(pdf_file)
     empty_pages = [number for number, text in enumerate(texts, start=1) if not text.strip()]
-    language = detect_language(texts, context["hints"])
+    try:
+        language = detect_language(texts, context["hints"])
+    except LanguageUndecidable as error:
+        return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages,
+                "refused": f"{report_id}: {error}"}
 
     repair_settings = {"min_replacement_chars": settings["text.min_replacement_chars"],
+                       "min_words_per_page": settings["text.min_words_per_page"],
                        "language_codes": context["ocr"]["language_codes"]}
     new_texts, quality = text_quality.repair_pages(pdf_file, texts, language, repair_settings, hooks.ocr_page)
-    for entry, original in zip(quality, texts):
-        entry["empty"] = not original.strip()
 
     small_images = page_roles.small_image_counts(pdf_file, settings["pages.small_image_max_area_ratio"])
     excluded = page_roles.excluded_pages(new_texts, small_images, context["markers"])
@@ -413,7 +422,9 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
         else:
             _write_atomic(page_path, enrich_page_text(text, tables_on_page(elements, number)))
 
-    meta = {"language": language, "excluded_pages": excluded, "text_quality": quality}
+    unreadable_pages = [entry["page"] for entry in quality if entry["empty"]]
+    meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,
+            "unreadable_pages": unreadable_pages}
     _write_atomic(report_dir / settings["reports.meta_file_name"], json.dumps(meta, indent=2, ensure_ascii=False))
     return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages}
 
@@ -429,7 +440,8 @@ def prepare(reports_dir: Path, work_dir: Path, hooks: Optional[PrepHooks] = None
         work_dir (Path): the work folder, directly inside the reports folder.
         hooks (PrepHooks | None): the injected effects; None means the real OCR and element extraction.
     Outputs:
-        list[dict]: one dict per PDF with 'report_id', 'pages' (count) and 'empty_pages' (1-based numbers).
+        list[dict]: one dict per PDF with 'report_id', 'pages' (count), 'empty_pages' (1-based numbers) and, for a
+        refused report, 'refused' (see _prepare_report).
         Side effects: writes ids.json and, per report, its page files, excluded folder, elements.json and
         report_meta.json in work_dir.
     Raises:
@@ -517,8 +529,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(json.dumps({"reports": pdf_count, "skipped": skipped_count(reports_dir)}))
             return EXIT_OK
         results = prepare(reports_dir, work_dir)
+        refused = [{"report_id": result["report_id"], "reason": result["refused"]}
+                   for result in results if "refused" in result]
         print(json.dumps({"reports": len(results), "skipped": skipped_count(reports_dir),
-                          "ids": [result["report_id"] for result in results]}))
+                          "ids": [result["report_id"] for result in results], "refused": refused}))
         return EXIT_OK
     except OcrPreflightError as error:
         print(json.dumps({"error": "OCR preflight refused", "reason": str(error), "status": "refused"}))

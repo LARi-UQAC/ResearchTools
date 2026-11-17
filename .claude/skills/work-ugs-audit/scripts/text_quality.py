@@ -26,8 +26,9 @@ REQUIRED_KEYS = (
     "ocr_probe_dpi",
 )
 
-# Keys the repair step needs from the caller's settings (R3).
-REPAIR_KEYS = ("min_replacement_chars", "language_codes")
+# Keys the repair step needs from the caller's settings (R3). A page with fewer words than min_words_per_page is
+# treated as having no text layer, so a scanned page with no text is sent to OCR as well as a damaged one.
+REPAIR_KEYS = ("min_replacement_chars", "min_words_per_page", "language_codes")
 
 
 class TextQualityError(ValueError):
@@ -123,6 +124,16 @@ def normalize_text(text: str) -> str:
     return "".join(pieces)
 
 
+def has_readable_text(text: str) -> bool:
+    """
+    Purpose: Tell whether a page text holds any readable character once the replacement characters are removed.
+    Inputs: text (str): the page text.
+    Outputs: bool: True when at least one character other than whitespace and U+FFFD is present.
+    Raises: None.
+    """
+    return bool(text.replace(REPLACEMENT_CHARACTER, "").strip())
+
+
 def replacement_count(text: str) -> int:
     """
     Purpose: Count the Unicode replacement characters of a page text, the sign of a damaged text layer.
@@ -213,39 +224,43 @@ def repair_pages(
     ocr_page: Callable[[Path, int, str], str],
 ) -> Tuple[List[str], List[dict]]:
     """
-    Purpose: Replace the text of each damaged page by its OCR, and keep every other page as it is.
+    Purpose: Replace the text of each damaged or text-less page by its OCR, and keep every other page as it is.
+    Details: A page is sent to OCR when its replacement count reaches min_replacement_chars (and is at least 1), or
+        when it holds fewer than min_words_per_page words, which includes a page with no text layer at all. The OCR
+        text replaces the page text when it is not blank. A page still without readable text afterwards keeps its
+        text and is flagged empty.
     Inputs: pdf (Path): the report; texts (List[str]): the text of each page, in page order;
         language (str): the document language key (fr, en or ambiguous); settings (Mapping[str, object]) with
-        "min_replacement_chars" (the replacement count from which a page is OCR'd) and "language_codes" (the
-        language map); ocr_page (Callable[[Path, int, str], str]): the OCR of one page, called with the 1-based
-        page number and the Tesseract code(s), joined with "+" when there are several.
+        "min_replacement_chars" (the replacement count from which a page is OCR'd), "min_words_per_page" (the word
+        count below which a page is OCR'd) and "language_codes" (the language map); ocr_page
+        (Callable[[Path, int, str], str]): the OCR of one page, called with the 1-based page number and the
+        Tesseract code(s), joined with "+" when there are several.
     Outputs: Tuple[List[str], List[dict]]: the new texts, and one quality entry per page
-        {"page": int (1-based), "replacement_chars": int, "ocr": bool, "ocr_empty": bool}. A page is OCR'd only
-        when its count reaches the threshold and is at least 1, so a sound page is never replaced. A page whose
-        OCR returns only blanks keeps its original text and has ocr_empty set to true.
+        {"page": int (1-based), "replacement_chars": int, "ocr": bool, "empty": bool}. ocr is true when the page was
+        sent to OCR, whatever the OCR returned. empty is true when the text kept for the page holds no readable
+        character, so the page needs a human reader.
     Raises: QualityConfigError: if a required settings key is missing, or the language has no entry in the map.
     """
     for key in REPAIR_KEYS:
         if key not in settings:
             raise QualityConfigError(f"missing settings key '{key}' for the text repair")
     threshold = max(int(settings["min_replacement_chars"]), 1)
+    word_minimum = int(settings["min_words_per_page"])
     tesseract_language = "+".join(tesseract_codes(language, settings["language_codes"]))
 
     new_texts: List[str] = []
     quality: List[dict] = []
     for index, text in enumerate(texts, start=1):
         count = replacement_count(text)
-        entry = {"page": index, "replacement_chars": count, "ocr": False, "ocr_empty": False}
-        if count < threshold:
-            new_texts.append(text)
-            quality.append(entry)
-            continue
-        recognised = ocr_page(pdf, index, tesseract_language)
-        if recognised.strip():
-            new_texts.append(normalize_text(recognised))
+        needs_ocr = count >= threshold or len(text.split()) < word_minimum
+        entry = {"page": index, "replacement_chars": count, "ocr": False, "empty": False}
+        kept = text
+        if needs_ocr:
             entry["ocr"] = True
-        else:
-            new_texts.append(text)
-            entry["ocr_empty"] = True
+            recognised = ocr_page(pdf, index, tesseract_language)
+            if recognised.strip():
+                kept = normalize_text(recognised)
+        new_texts.append(kept)
+        entry["empty"] = not has_readable_text(kept)
         quality.append(entry)
     return new_texts, quality

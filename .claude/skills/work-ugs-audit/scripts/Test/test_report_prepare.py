@@ -122,10 +122,11 @@ class ReportPrepareTests(unittest.TestCase):
         self.assertIn("Étude des réseaux électriques", page.read_text(encoding="utf-8"))
 
     def test_an_empty_page_is_flagged_and_its_file_is_empty(self):
-        make_report(self.reports / "report.pdf", [{}])
-        result = prepare(self.reports, self.work)
-        self.assertEqual(result[0]["empty_pages"], [1])
-        self.assertEqual((self.work / "R01" / "pages" / "p001.md").read_text(encoding="utf-8").strip(), "")
+        make_report(self.reports / "report.pdf", [{"text": "Le réseau des noeuds"}, {}])
+        with patch.object(report_prepare, "_run_ocr_page", lambda *args, **kwargs: ""):
+            result = prepare(self.reports, self.work)
+        self.assertEqual(result[0]["empty_pages"], [2])
+        self.assertEqual((self.work / "R01" / "pages" / "p002.md").read_text(encoding="utf-8").strip(), "")
 
     def test_a_work_folder_directly_inside_the_reports_folder_is_accepted_and_is_not_a_report(self):
         make_report(self.reports / "report.pdf", [{"text": "Page 1"}])
@@ -325,13 +326,41 @@ class PreparationTests(unittest.TestCase):
         self.assertTrue(meta["text_quality"][1]["ocr"])
         self.assertFalse(meta["text_quality"][0]["ocr"])
 
-    def test_a_page_without_any_text_is_flagged_and_not_sent_to_ocr(self):
+    def test_a_page_without_any_text_is_sent_to_ocr_and_flagged_when_still_empty(self):
         texts = [COVER_TEXT, "", SIGNATURE_TEXT]
+        calls = []
+
+        def ocr(pdf, page_number, tesseract_language):
+            calls.append(page_number)
+            return ""
+
         with patch.object(report_prepare, "_extract_page_text", return_value=texts):
-            prepare(self.reports, self.work, hooks=_hooks())
+            prepare(self.reports, self.work, hooks=_hooks(ocr_page=ocr))
+        self.assertEqual(calls, [2])
         meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
         self.assertTrue(meta["text_quality"][1]["empty"])
-        self.assertFalse(meta["text_quality"][1]["ocr"])
+        self.assertTrue(meta["text_quality"][1]["ocr"])
+
+    def test_unreadable_pages_are_listed_in_meta(self):
+        texts = [COVER_TEXT, "", SIGNATURE_TEXT]
+        with patch.object(report_prepare, "_extract_page_text", return_value=texts):
+            prepare(self.reports, self.work, hooks=_hooks(ocr_page=lambda pdf, number, language: ""))
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["unreadable_pages"], [2])
+        self.assertTrue(all(isinstance(number, int) for number in meta["unreadable_pages"]))
+
+    def test_undecidable_language_refuses_the_report_with_a_named_reason(self):
+        self.pdf.unlink()
+        make_report(self.reports / "undecidable.pdf", [{"text": "Page 1"}])
+        make_report(self.reports / "french.pdf", [{"text": COVER_TEXT}, {"text": BODY_TEXT}])
+        result = prepare(self.reports, self.work, hooks=_hooks())
+        by_id = {item["report_id"]: item for item in result}
+        # Sorted names: french.pdf is R01 and undecidable.pdf is R02.
+        self.assertIn("language", by_id["R02"]["refused"])
+        self.assertIn("R02", by_id["R02"]["refused"])
+        self.assertFalse((self.work / "R02" / "pages").exists())
+        self.assertNotIn("refused", by_id["R01"])
+        self.assertTrue((self.work / "R01" / "pages" / "p002.md").exists())
 
     def test_library_messages_never_reach_stdout(self):
         def chatty(languages):

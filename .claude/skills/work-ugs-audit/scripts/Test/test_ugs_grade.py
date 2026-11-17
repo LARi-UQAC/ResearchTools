@@ -182,6 +182,9 @@ class TestGradeItem(unittest.TestCase):
         self.assertEqual(result["status"], "rated")
 
     def test_invalid_after_retries_is_not_run_and_flagged(self):
+        # Updated by plan 12: the exhausted-retries record is built from the LAST answer, not a blank record.
+        # A score above the maximum drops the score (status not_run, score null) and keeps the raw value in
+        # model_score, the code says why, and the model comment is kept instead of the old "invalid_answer" word.
         invalid_answer = {
             "status": "rated",
             "score": 11,
@@ -192,6 +195,10 @@ class TestGradeItem(unittest.TestCase):
         result = grade_item(self.item, self.pages, call, self.ctx, self.language, self.calibration_note)
         self.assertEqual(result["status"], "not_run")
         self.assertIsNone(result["score"])
+        self.assertEqual(result["model_score"], 11)
+        self.assertEqual(result["validation"], "score_above_max")
+        self.assertEqual(result["comment"], "Bad")
+        self.assertEqual(result["attempts"], 2)
         self.assertTrue(result["flag"])
 
     def test_over_budget_is_not_run(self):

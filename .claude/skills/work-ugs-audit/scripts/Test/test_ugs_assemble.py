@@ -439,6 +439,51 @@ class TestUgsAssemble(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertTrue(str(path.resolve()).startswith(str(self.report_dir.resolve())))
 
+    @patch('ugs_assemble.annotate')
+    @patch('ugs_assemble.append_annex')
+    @patch('ugs_assemble.check_all')
+    @patch('ugs_assemble.compute')
+    def test_assemble_annex_carries_the_labels_of_the_report_language(self, mock_compute, mock_check_all, mock_append_annex, mock_annotate):
+        import pdf_annex
+        mock_compute.return_value = {
+            "report_id": "R01",
+            "total": "45.0",
+            "max_rated": "50.0",
+            "percent": 90.0,
+            "by_item": {},
+            "not_run": [],
+            "complete": True
+        }
+        mock_check_all.return_value = []
+
+        def copy_side_effect(src, items, dst, colors, author):
+            import shutil
+            shutil.copy(src, dst)
+            return {"placed": 0, "not_found": [], "duplicates": []}
+        mock_annotate.side_effect = copy_side_effect
+        mock_append_annex.return_value = 1
+
+        settings = dict(self.settings)
+        settings["annex_template"] = pdf_annex.DEFAULT_TEMPLATE.read_text(encoding="utf-8")
+
+        ugs_assemble.assemble_report(
+            self.src_pdf,
+            self.report_dir,
+            "R01",
+            1,
+            self.rubric,
+            self.pages,
+            "fr",
+            settings,
+            fetch=None
+        )
+
+        html_text = mock_append_annex.call_args[0][1]
+        fr_title = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "fr")["title"]
+        en_title = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "en")["title"]
+        self.assertIn(fr_title, html_text)
+        self.assertNotIn(en_title, html_text)
+
 
 if __name__ == "__main__":
     unittest.main()

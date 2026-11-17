@@ -13,7 +13,7 @@ sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
 from figure_checks import failure_comment, load_criteria
 from grade_total import compute
 from pdf_annotate import annotate
-from pdf_annex import render_rows, build_html, append_annex
+from pdf_annex import DEFAULT_LABELS, render_rows, build_html, append_annex, load_labels
 from ref_check import check_all, _default_resolver
 from ugs_text import split_body_and_references
 
@@ -241,8 +241,10 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
 
     # Append annex
     template = settings["annex_template"]
-    rows = render_rows(rubric, grade, totals)
-    html_text = build_html(template, rows, report_id, loop, totals.get("total"))
+    # The labels come from the report language, through the same label file pdf_annex.main reads.
+    labels = load_labels(DEFAULT_LABELS, language)
+    rows = render_rows(rubric, grade, totals, labels)
+    html_text = build_html(template, rows, report_id, loop, totals.get("total"), labels)
     annex_pages = append_annex(dst_pdf, html_text)
 
     return {

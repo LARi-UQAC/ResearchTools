@@ -4,6 +4,7 @@ Every fixture is fictitious (R34). The checks are driven through ugs_grade.check
 scripted fake model call, so no network, no model and no report is read (R21). Each assertion reads a record field with
 .get(), so a missing field is a FAIL with its name, never a KeyError.
 """
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -326,6 +327,47 @@ class TestMissingField(unittest.TestCase):
         mark, note = _grade_mark(self._grade([blocked, blocked]))
         self.assertEqual((mark, note), ("!", "score_above_max"))
         self.assertNotIn("MARKER", str(note))
+
+
+class TestNanScoreAndNullEvidencePage(unittest.TestCase):
+    """A non-finite score and an evidence page that is not an int are refused, and the audit never raises on them.
+
+    json.loads accepts NaN, which passes every comparison of a range test; a null page reached audit_item and
+    raised TypeError in page_blocks. Fictitious data only (R34); the model is a scripted fake call (R21).
+    """
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.item = {"id": "I01", "title": "Intro", "max_points": 10}
+        self.pages = ["Page 1 text", "Page 2 text"]
+
+    def test_nan_score_is_refused_not_ok(self):
+        nan_answer = _rated(float("nan"), [_quote(1, "Page 1 text")])
+        code, _message = ugs_grade.check_grade_answer(nan_answer, self.item, self.pages)
+        self.assertEqual(code, "score_missing")
+        record = grade_item(self.item, self.pages, FakeCall([nan_answer, nan_answer]), self.ctx, "en", "")
+        self.assertEqual(record.get("status"), "not_run")
+        self.assertIsNone(record.get("score"))
+        self.assertTrue(math.isnan(record.get("model_score")))
+        self.assertEqual(record.get("validation"), "score_missing")
+        result = grade_total.compute({"assessment_type": "lab_report", "total_points": 10, "items": [self.item]},
+                                     {"report_id": "R01", "items": [record]})
+        self.assertIsNone(result.get("total"))
+        self.assertFalse(result.get("complete"))
+
+    def test_null_evidence_page_is_refused_and_audit_does_not_raise(self):
+        import ugs_audit
+        self.ctx.prompts["audit_item"] = "AUDIT {{ITEM}} {{GRADE_RECORD}} {{EVIDENCE_PAGES}}"
+        self.ctx.schemas["audit_item"] = {"type": "object"}
+        for score in (5, 10):
+            answer = _rated(score, [{"page": None, "quote": "x"}])
+            code, _message = ugs_grade.check_grade_answer(answer, self.item, self.pages)
+            self.assertEqual(code, "evidence_incomplete", f"score {score}")
+            record = grade_item(self.item, self.pages, FakeCall([answer, answer]), self.ctx, "en", "")
+            self.assertEqual(record.get("validation"), "evidence_incomplete", f"score {score}")
+            verdict = ugs_audit.audit_item(self.item, record, self.pages,
+                                           FakeCall([{"verdict": "agree", "reason": "ok"}]), self.ctx)
+            self.assertEqual(verdict.get("verdict"), "agree", f"score {score}")
 
 
 class TestTotals(unittest.TestCase):

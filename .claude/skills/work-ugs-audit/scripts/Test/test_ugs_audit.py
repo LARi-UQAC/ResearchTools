@@ -97,6 +97,19 @@ class TestAuditItem(unittest.TestCase):
         self.assertIn("text on page 1", prompt)
         self.assertNotIn("text on page 2", prompt)
 
+    def test_audit_item_skips_an_evidence_page_that_is_not_an_int(self):
+        bad_records = [
+            dict(self.record, evidence=[{"page": None, "quote": "text"}]),
+            dict(self.record, evidence=[{"page": True, "quote": "text"}]),
+            dict(self.record, evidence=[None, "text", {"page": "1", "quote": "text"}]),
+        ]
+        for record in bad_records:
+            call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+            result = audit_item(self.item, record, self.pages, call, self.ctx)
+            self.assertEqual(result["verdict"], "agree")
+            # No usable page left: the audit falls back to the selected pages, as for a record with no evidence.
+            self.assertIn("text on page 1", call.prompts[0])
+
 class TestAuditReport(unittest.TestCase):
     def setUp(self):
         self.ctx = make_ctx()

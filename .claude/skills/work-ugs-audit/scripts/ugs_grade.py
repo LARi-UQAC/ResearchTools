@@ -2,6 +2,7 @@
 Purpose: Grade rubric items using local models.
 """
 
+import math
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -151,6 +152,9 @@ def check_grade_answer(
         return "unknown_status", "status must be rated or not_applicable"
     if score is not None and not _is_number(score):
         return "schema_invalid", "score is not a number"
+    # json.loads accepts NaN and Infinity, and NaN passes every range test below: refuse it before them.
+    if isinstance(score, float) and not math.isfinite(score):
+        return "score_missing", "score is not a finite number"
 
     if status == "not_applicable":
         if score is not None:
@@ -164,6 +168,12 @@ def check_grade_answer(
         return "score_negative", "score must be non-negative"
     if score > max_points:
         return "score_above_max", f"score {score} is above the maximum {max_points}"
+
+    # Every evidence entry is checked for its page, at the maximum score too: the audit reads these pages.
+    if isinstance(evidence, list):
+        for entry in evidence:
+            if not isinstance(entry, dict) or not _is_page_number(entry.get("page")):
+                return "evidence_incomplete", "evidence entry needs an integer page number"
 
     if score < max_points:
         if not isinstance(evidence, list):

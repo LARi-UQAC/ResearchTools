@@ -51,8 +51,10 @@ def audit_item(
     evidence_pages = []
     if record.get("evidence"):
         for ev in record["evidence"]:
-            if "page" in ev:
-                evidence_pages.append(ev["page"])
+            # A page that is not an int (null, a boolean, a string) is skipped, never passed to page_blocks.
+            page = ev.get("page") if isinstance(ev, dict) else None
+            if isinstance(page, int) and not isinstance(page, bool):
+                evidence_pages.append(page)
         if not evidence_pages:
             evidence_pages = select_pages(item, pages, ctx.window_tokens - ctx.reserve_tokens, ctx.count, ctx.min_word_len)
     else:

@@ -60,6 +60,10 @@
     "value": 3,
     "provenance": "proposal 2026-11-17, a page with fewer words than this is treated as having no text layer; tune on counts"
   },
+  "tables.min_anchor_chars": {
+    "value": 12,
+    "provenance": "proposal 2026-11-17, an anchor shorter than this cannot prove the table is already in the text; tune on counts"
+  },
   "text.ocr_dpi": {
     "value": 300,
     "provenance": "starting value, adjustable by the professor (resolution of the OCR of a damaged page, the usual resolution for printed text; the same figure as the probe of text_quality)"

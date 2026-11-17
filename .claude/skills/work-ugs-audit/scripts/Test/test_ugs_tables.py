@@ -31,6 +31,8 @@ PAGES = [
 
 MARKDOWN_ALPHA = "| Name | Value |\n|---|---|\n| Alpha | 12 |\n| Beta | 13 |"
 MARKDOWN_GAMMA = "| Name | Value |\n| :--- | ---: |\n| Gamma | 7 |"
+MARKDOWN_LONG = "| Name | Value |\n|---|---|\n| Alphabetical trial | 12 |"
+MARKDOWN_NUMERIC = "| Count | Total |\n|---|---|\n| 2 | 3 |"
 
 
 def make_ctx():
@@ -71,9 +73,30 @@ class TestUgsTables(unittest.TestCase):
         self.assertIn("Some prose about the study.", out)
 
     def test_enrich_skips_a_table_already_in_the_text(self):
-        text = "The results were Alpha 12 and Beta 13 in the first trial."
-        tables = [table("T01", 1, 100.0, MARKDOWN_ALPHA)]
-        self.assertEqual(ugs_tables.enrich_page_text(text, tables), text)
+        # The anchor row must be long enough to prove the table is in the text (tables.min_anchor_chars).
+        text = "The results were Alphabetical trial 12 and Beta 13 in the first trial."
+        tables = [table("T01", 1, 100.0, MARKDOWN_LONG)]
+        self.assertEqual(ugs_tables.enrich_page_text(text, tables, min_anchor_chars=12), text)
+
+    def test_short_numeric_anchor_still_adds_the_table(self):
+        text = "The sample of 23 students completed the trial."
+        tables = [table("T01", 1, 100.0, MARKDOWN_NUMERIC)]
+        out = ugs_tables.enrich_page_text(text, tables, min_anchor_chars=12)
+        self.assertIn("## Table T01 (detected)", out)
+        self.assertIn(MARKDOWN_NUMERIC, out)
+
+    def test_missing_min_anchor_key_is_named(self):
+        path = self.tmp / "ugs_config.json"
+        path.write_text(json.dumps({"other.key": {"value": 1, "provenance": "fictitious"}}), encoding="utf-8")
+        with self.assertRaises(ugs_tables.TablesError) as ctx:
+            ugs_tables.load_min_anchor_chars(path)
+        self.assertIn("tables.min_anchor_chars", str(ctx.exception))
+        self.assertIn("ugs_config.json", str(ctx.exception))
+
+    def test_shipped_min_anchor_key_is_read_with_provenance(self):
+        value = ugs_tables.load_min_anchor_chars()
+        self.assertIsInstance(value, int)
+        self.assertGreater(value, 0)
 
     def test_enrich_empty_markdown_adds_nothing(self):
         text = "Prose only."

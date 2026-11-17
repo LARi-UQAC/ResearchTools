@@ -9,7 +9,7 @@ figures only. Nothing from a report leaves this module except the page text it r
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 TABLE_TYPE = "table"
 FIGURE_TYPE = "figure"
@@ -17,10 +17,42 @@ TABLE_HEADING = "## Table {element_id} (detected)"
 TABLE_PAGE_LINE = "Page {page}"
 SEPARATOR_PATTERN = r"[\s|:\-]*"
 IGNORED_CHARS_PATTERN = r"[\s|]"
+MIN_ANCHOR_KEY = "tables.min_anchor_chars"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "assets" / "ugs_config.json"
 
 
 class TablesError(ValueError):
     """A record or the elements file is not usable; the message names the file or the key."""
+
+
+def load_min_anchor_chars(path: Optional[Path] = None) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the shortest anchor, in characters after normalisation, that can prove a table is already in
+        the page text (`tables.min_anchor_chars`).
+
+    Inputs:
+        path (Path | None): the configuration file; None means the work-ugs-audit assets file
+
+    Outputs:
+        value (int): the configured minimum, a positive integer.
+
+    Raises:
+        TablesError: the file is missing or not JSON, the key is absent, or its value is not a positive
+        integer; the message names the key and the file (R3).
+    --------------------------------------------------------------------------
+    """
+    config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TablesError(f"configuration {config_path.name} is not readable JSON: {exc}") from None
+    entry = raw.get(MIN_ANCHOR_KEY) if isinstance(raw, dict) else None
+    value = entry.get("value") if isinstance(entry, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise TablesError(f"missing or invalid key '{MIN_ANCHOR_KEY}' in {config_path.name}")
+    return value
 
 
 def _require(record: Dict[str, Any], key: str) -> Any:
@@ -155,7 +187,7 @@ def tables_on_page(elements: List[Dict[str, Any]], page: int) -> List[Dict[str, 
     return sorted(found, key=_top)
 
 
-def enrich_page_text(text: str, tables: List[Dict[str, Any]]) -> str:
+def enrich_page_text(text: str, tables: List[Dict[str, Any]], min_anchor_chars: Optional[int] = None) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -164,25 +196,31 @@ def enrich_page_text(text: str, tables: List[Dict[str, Any]]) -> str:
     Details:
         The row compared is the first data row after the header, or the header of a table with no other row.
         Spaces, pipes and case are ignored on both sides. A table with no row beyond its separator adds
-        nothing. The added block is headed by the element id and states the page, in the order given.
+        nothing. An anchor shorter than `min_anchor_chars` after normalisation cannot prove the table is in
+        the text (a short number matches almost any page), so the table is added: the model then sees it
+        twice rather than not at all. The added block is headed by the element id and states the page, in
+        the order given.
 
     Inputs:
         text (str): the text of one page
         tables (list[dict]): the table records of that page, in reading order (see tables_on_page)
+        min_anchor_chars (int | None): the shortest anchor that proves presence; None reads
+            `tables.min_anchor_chars` from the configuration
 
     Outputs:
         page_text (str): the text with the missing tables appended, or `text` itself when nothing is added.
 
     Raises:
-        TablesError: a table record has no `element_id` or no `page`.
+        TablesError: a table record has no `element_id` or no `page`, or the configured minimum is absent.
     --------------------------------------------------------------------------
     """
+    minimum = load_min_anchor_chars() if min_anchor_chars is None else min_anchor_chars
     haystack = _key(text)
     blocks = []
     for table in tables:
         markdown = (table.get("markdown") or "").strip()
-        anchor = _anchor_row(markdown)
-        if not anchor or _key(anchor) in haystack:
+        anchor = _key(_anchor_row(markdown))
+        if not anchor or (len(anchor) >= minimum and anchor in haystack):
             continue
         element_id = _require(table, "element_id")
         page = _require(table, "page")

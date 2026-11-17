@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import fitz
 
@@ -216,6 +217,44 @@ class TestUgsFigures(unittest.TestCase):
         model = FakeModel(script=[NotRun("unparsable", "bad json"), good, good, {"verdict": "pass", "reason": "r"}])
         result = self.report(model)
         self.assertEqual(result["figures"][0]["criteria"]["axis_titles"]["verdict"], "pass")
+
+    def element_records(self, titles):
+        """
+        Fictitious element records built from the real extraction of the fixture PDF, in reading order.
+        `titles` gives one entry per figure: its title text, or None for an untitled decorative drawing.
+        """
+        settings = self.criteria["extraction"]
+        figures_dir = self.report_dir / "figures"
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        raw = ugs_figures.extract(self.pdf, figures_dir, settings["min_area_pt2"]["value"],
+                                  settings["background_threshold"]["value"])
+        return [dict(record, element_type="figure", element_id="F%02d" % (index + 1),
+                     title={"text": title} if title else None)
+                for index, (record, title) in enumerate(zip(raw, titles))]
+
+    def test_printed_number_not_element_counter(self):
+        # The first drawing is untitled, so the element counter F02 belongs to the figure printed as "Figure 1".
+        elements = self.element_records([None, "Figure 1 - The plant."])
+        # Citing sentences open with "As Figure N", since a paragraph opening with "Figure N" is a caption.
+        pages = ["Figure 1: The plant.\n\nAs Figure 1 shows, the plant reacts.\n\nMore text.",
+                 "Figure 2: The loop.\n\nAs Figure 2 shows, the loop is stable."]
+        model = FakeModel()
+        result = ugs_figures.figures_report(self.pdf, self.report_dir, "R01", pages, model, self.ctx,
+                                            self.criteria, "en", True, elements=elements)
+        figure_prompts = [c for c in model.calls if "set of" not in c]
+        self.assertEqual(len(figure_prompts), 2)
+        self.assertEqual(result["figures"][0]["cited_in_text"], "not_applicable")
+        self.assertTrue(result["figures"][1]["cited_in_text"])
+        self.assertIn("As Figure 1 shows, the plant reacts.", figure_prompts[1])
+        self.assertNotIn("As Figure 2 shows", figure_prompts[1])
+
+    def test_untitled_element_has_no_citing_search(self):
+        elements = self.element_records([None, None])
+        with mock.patch.object(ugs_figures, "citing_text", wraps=ugs_figures.citing_text) as spy:
+            result = ugs_figures.figures_report(self.pdf, self.report_dir, "R01", self.pages, lambda *a: {},
+                                                self.ctx, self.criteria, "en", False, elements=elements)
+        spy.assert_not_called()
+        self.assertEqual([f["cited_in_text"] for f in result["figures"]], ["not_applicable", "not_applicable"])
 
     def test_effective_dpi_is_given_for_a_raster_and_a_missing_extraction_key_is_named(self):
         result = self.report(FakeModel(), vision_ok=False)

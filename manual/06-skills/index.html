@@ -2662,6 +2662,11 @@ reads only the rubric and the step ledger.</p>
 <code>report_prepare.py</code>, <code>rubric_check.py</code>, <code>batch_stats.py</code>, <code>pdf_annotate.py</code>, <code>pdf_annex.py</code>, <code>ref_check.py</code>), <code>assets/</code>
 (the configuration with provenance on every value, the rubric schema and templates, the calibration targets),
 <code>prompts/</code>, and an offline test beside each script in <code>scripts/Test/</code>.</p>
+<p>Since 2026-11-17 (Issue 122) the preparation also detects the language, repairs the damaged pages by OCR in that
+language, excludes the cover and signature pages, extracts typed elements (figure, table, logo) and writes the five
+cross-reference checks into the annex. The OCR needs Tesseract with the <code>eng</code> and <code>fra</code> data, see chapter 01. The
+order of the steps, the vocabulary and the grade file fields are in <code>.claude/skills/work-ugs-audit/SKILL.md</code>, section
+"Preparation, in order".</p>
 <h3 id="figure-review---figures-of-a-report-paper-or-thesis"><code>figure-review</code> - figures of a report, paper or thesis<a class="headerlink" href="#figure-review---figures-of-a-report-paper-or-thesis" title="Permanent link">&para;</a></h3>
 <p>One place that knows how to look at a figure, for the student-report audit (criteria scope <code>undergraduate</code>) and for the
 four research auditors (scope <code>research</code>; <code>both</code> for the two criteria they share). Each criterion of

@@ -778,6 +778,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#actions-of-the-local-roles-2026-11-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actions of the local roles (2026-11-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-voice-panel-2026-09-26" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1287,6 +1298,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#actions-of-the-local-roles-2026-11-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actions of the local roles (2026-11-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-voice-panel-2026-09-26" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1359,6 +1381,14 @@ prover), with <strong>Plan</strong>, <strong>Services</strong>, <strong>Graph</s
 badge top-right and the footer strip (drawn by <code>rt_state.py</code>, generation timestamp, policy
 hash, last install, repo root) are the receipts every panel here carries per R9 — a claim with
 no stamp is not trusted.</p>
+<h2 id="actions-of-the-local-roles-2026-11-17">Actions of the local roles (2026-11-17)<a class="headerlink" href="#actions-of-the-local-roles-2026-11-17" title="Permanent link">&para;</a></h2>
+<p>A local role that works on a long task, such as the grader of <code>work-ugs-audit</code>, now shows its recent actions as steps
+of its lane, the way a Claude Code session shows its tool calls. An action is one of five kinds: <code>read</code> (the pages a
+step read, as a compact range such as <code>p3-5,9</code>), <code>call</code> (one model call for an item), <code>write</code> (the base name of an
+output file), <code>mark</code> (a ledger line, with its mark as a word) and <code>check</code>. Each action carries identifiers only: a
+report identifier, an item identifier, a page range or a base file name. It never carries a prompt, a reply, a quote,
+an error message or a path. The collector keeps the newest <code>caps.local_actions_per_role</code> actions of each role and
+says how many older ones it dropped. A role with no action record keeps its lane without steps.</p>
 <h2 id="the-voice-panel-2026-09-26">The voice panel (2026-09-26)<a class="headerlink" href="#the-voice-panel-2026-09-26" title="Permanent link">&para;</a></h2>
 <p>A fifth tab, <strong>Voice</strong>, next to Real-Time Process. Hold <strong>P</strong> to record, release to send; a
 dropdown next to the button picks the language (Auto-detect, English, Francais), which drives

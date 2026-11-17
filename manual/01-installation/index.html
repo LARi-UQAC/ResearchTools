@@ -1635,6 +1635,10 @@ job.</p>
 <td>Every library each skill imports, with its pin, the requirements file that declares it and the environment <code>setup.ps1 -InstallPython</code> puts it in: <a href="../02-profiles/#python-environments-every-library">chapter 02, Python environments</a></td>
 </tr>
 <tr>
+<td>Tesseract 5 with the <code>eng</code> and <code>fra</code> language data</td>
+<td><code>work-ugs-audit</code> preparation: OCR repairs the damaged pages of a report in the report's own language. Install with <code>winget install tesseract-ocr.tesseract</code>, then put <code>fra.traineddata</code> (from the <code>tessdata_fast</code> set) and the <code>eng</code> file in the <code>tessdata</code> folder of the installation, and set the user variable <code>TESSDATA_PREFIX</code> to that folder. Open a new terminal after setting it. Without it the preparation refuses before it writes anything, and the refusal names the missing tool or language</td>
+</tr>
+<tr>
 <td><code>pandoc</code></td>
 <td><code>word2latex</code> skill (Word → LaTeX)</td>
 </tr>

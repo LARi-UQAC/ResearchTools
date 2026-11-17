@@ -5,6 +5,7 @@ fake kind-aware model call, an injected window and counter and no network. Ficti
 import contextlib
 import io
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -15,11 +16,15 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "figure-review" / "scripts" / "Test"))
 
+import report_prepare
+import text_quality
 import ugs_driver
 from _pdf_fixtures import make_report
+from text_quality import OcrUnavailable
 from ugs_bridge import NotRun
 
 MARKER = "UNIQUE-MARKER-SENTENCE-ZEBRA"
+_PATCHES = []
 SCHEMAS = ugs_driver.load_schemas(ugs_driver.SCHEMAS_FILE, ugs_driver.SCHEMA_NAMES)
 RUBRIC = {"assessment_type": "lab_report", "total_points": 10,
           "items": [{"id": "I01", "title": "Method", "max_points": 10, "criteria": ["The method is clear."],
@@ -88,6 +93,34 @@ class FakeModel:
 
 def snapshot(folder: Path):
     return sorted((str(p.relative_to(folder)), p.stat().st_size) for p in folder.rglob("*"))
+
+
+def _fixed_ocr_page(pdf_path, page_number, tesseract_language, dpi=None):
+    """Stand in for the real OCR of a page: return a fixed text, so no Tesseract installation is needed."""
+    return "Fixed OCR text of a fictitious page."
+
+
+def setUpModule():
+    """
+    Purpose: Replace the OCR preflight and the OCR call of report_prepare for this module, which builds no Tesseract
+        installation. prepare() runs the preflight by default, and without these stubs the suite depends on the
+        machine (it passed only with TESSDATA_PREFIX set).
+    Inputs: None.
+    Outputs: None. Patches are started here and stopped in tearDownModule.
+    """
+    global _PATCHES
+    _PATCHES = [
+        patch.object(report_prepare, "_run_preflight", lambda languages: None, create=True),
+        patch.object(report_prepare, "_run_ocr_page", _fixed_ocr_page, create=True),
+    ]
+    for patcher in _PATCHES:
+        patcher.start()
+
+
+def tearDownModule():
+    """Stop the patches started by setUpModule."""
+    for patcher in _PATCHES:
+        patcher.stop()
 
 
 class TestUgsDriver(unittest.TestCase):
@@ -477,6 +510,24 @@ class TestUgsDriver(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(snapshot(self.tmp), prepared)
         self.assertEqual(self.model.calls, [])
+
+
+class TestOcrPreflightRefusal(unittest.TestCase):
+
+    def test_preflight_refusal_is_named_when_tesseract_is_missing(self):
+        """
+        Purpose: Prove that the real text_quality.ocr_preflight refuses, with a message naming TESSDATA_PREFIX, when
+            that variable is absent from the environment. The refusal is the real one, not a stub: this test calls the
+            module function directly, so setUpModule's patches do not reach it.
+        Inputs: None. The environment is copied and restored by mock.patch.dict.
+        Outputs: None. Asserts OcrUnavailable is raised and its message contains TESSDATA_PREFIX.
+        Raises: AssertionError when the refusal is missing or does not name the variable.
+        """
+        with patch.dict(os.environ, clear=False):
+            os.environ.pop("TESSDATA_PREFIX", None)
+            with self.assertRaises(OcrUnavailable) as ctx:
+                text_quality.ocr_preflight(["fra", "eng"])
+        self.assertIn("TESSDATA_PREFIX", str(ctx.exception))
 
 
 if __name__ == "__main__":

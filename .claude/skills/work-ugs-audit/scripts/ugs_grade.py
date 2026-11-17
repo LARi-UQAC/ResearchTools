@@ -52,6 +52,11 @@ NO_ANSWER_CODES = {
     "invalid": "schema_invalid",
 }
 
+# Longest `missing` kept in a grade record, in characters. Provenance: chosen, not measured. grade_item.md asks
+# for one sentence, and this bound only stops a model that ignores that from filling grade.json. A bound on the
+# text of one saved field, never on what the model is shown, so the professor may raise it without re-measuring.
+MISSING_MAX_CHARS = 300
+
 
 def normalize_rubric(
     rubric_text: str,
@@ -198,22 +203,46 @@ def _validate_grade_answer(
     return None if code == "ok" else message
 
 
+def _missing_text(answer: dict, raw_score: Any, max_points: Any) -> str:
+    """
+    Purpose: Give the `missing` value of a grade record: the element that cost the points, or "".
+    Details: Empty at the maximum score, when the answer has no `missing`, or when it is not a string. Otherwise
+        the text is kept as the model gave it, stripped and cut to MISSING_MAX_CHARS. It is model text saved in
+        grade.json only: it never reaches the ledger note, a log or the dashboard (see ugs_run._grade_mark).
+    Inputs:
+        answer: dict - The model's answer, as given.
+        raw_score: Any - The score the model gave, None when there is none.
+        max_points: Any - The maximum of the rubric item.
+    Outputs:
+        str - The missing text, possibly empty.
+    """
+    if _is_number(raw_score) and raw_score == max_points:
+        return ""
+    value = answer.get("missing")
+    if not isinstance(value, str):
+        return ""
+    return value.strip()[:MISSING_MAX_CHARS]
+
+
 def _record_from_answer(
     item_id: str,
     answer: dict,
     code: str,
-    attempts: int
+    attempts: int,
+    max_points: Any
 ) -> dict:
     """
     Purpose: Build the grade record of an answer the model gave, with its validation code.
     Details: A success keeps the status and the score as given. A refused proof keeps status rated and the score.
         Any other refusal drops the score (status not_run, score null) and keeps the raw value in model_score.
-        The model comment and the evidence are kept as given in every case.
+        The model comment, the evidence and the missing element are kept as given in every case (missing is
+        emptied at the maximum score, see _missing_text). The key order is the saved order of grade.json.
     Inputs:
         item_id: str - The rubric item identifier.
         answer: dict - The model's answer, as given.
         code: str - The code of check_grade_answer, "ok" for a success.
         attempts: int - The number of model calls made, this one included.
+        max_points: Any - The maximum of the rubric item.
     Outputs:
         dict - The grade record, flagged unless the code is "ok".
     """
@@ -232,13 +261,14 @@ def _record_from_answer(
         "item_id": item_id,
         "status": status,
         "score": score,
-        "model_score": raw_score,
         "comment": answer.get("comment", ""),
         "evidence": [] if evidence is None else evidence,
-        "validation": code,
-        "attempts": attempts,
+        "missing": _missing_text(answer, raw_score, max_points),
         "audit": "not_run",
         "flag": code != "ok",
+        "model_score": raw_score,
+        "validation": code,
+        "attempts": attempts,
     }
 
 
@@ -256,19 +286,20 @@ def _no_answer_record(
         attempts: int - The number of model calls made, the refused one included.
         comment: str - The comment of the record: the refusal name for no_fit or over_budget, "" otherwise.
     Outputs:
-        dict - The grade record, status not_run, score and model_score null, flagged.
+        dict - The grade record, status not_run, score and model_score null, missing empty, flagged.
     """
     return {
         "item_id": item_id,
         "status": "not_run",
         "score": None,
-        "model_score": None,
         "comment": comment,
         "evidence": [],
-        "validation": code,
-        "attempts": attempts,
+        "missing": "",
         "audit": "not_run",
         "flag": True,
+        "model_score": None,
+        "validation": code,
+        "attempts": attempts,
     }
 
 
@@ -297,8 +328,8 @@ def grade_item(
         calibration_note: str - The current calibration note.
         report_id: str or None - The identifier of the report, for the action records only.
     Outputs:
-        dict - The grade record: item_id, status, score, model_score, comment, evidence, validation, attempts,
-            audit and flag.
+        dict - The grade record: item_id, status, score, comment, evidence, missing, audit, flag, then model_score,
+            validation and attempts.
     Raises:
         NotRun: If the model fails with an unretryable error (an unreachable daemon, for example).
     """
@@ -366,14 +397,14 @@ def grade_item(
 
         code, message = check_grade_answer(answer, item, pages)
         if code == "ok":
-            return _record_from_answer(item_id, answer, "ok", attempt + 1)
+            return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0))
         last_error_reason = message
         last_answer = answer
 
     attempts = ctx.grade_retries + 1
     if last_answer is None:
         return _no_answer_record(item_id, code, attempts, "")
-    return _record_from_answer(item_id, last_answer, code, attempts)
+    return _record_from_answer(item_id, last_answer, code, attempts, item.get("max_points", 0))
 
 
 def grade_report(

@@ -12,6 +12,7 @@ You grade ONE item of an undergraduate technical report. Use only the report pag
 - If the item cannot apply to this report, answer status "not_applicable" and score null.
 - Otherwise answer status "rated" and a score between 0 and max_points, at most two decimals.
 - Write the comment in {{LANGUAGE_OF_REPORT}}, two sentences at most. Say what is missing or wrong. Be respectful.
+- Give in 'missing' the element that is absent or wrong in the report and that cost the points, in {{LANGUAGE_OF_REPORT}}, one sentence at most; empty when the score is the maximum.
 
 {{CALIBRATION_NOTE}}
 
@@ -25,4 +26,4 @@ You grade ONE item of an undergraduate technical report. Use only the report pag
 
 ## Answer
 
-Return one JSON object with the keys status, score, comment and evidence. Nothing else.
+Return one JSON object with the keys status, score, comment, evidence and missing. Nothing else.

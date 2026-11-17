@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from ugs_grade import (
     grade_report,
 )
 from ugs_text import StepContext
+import ugs_bridge
 from ugs_bridge import NotRun
 from rubric_check import RubricError
 
@@ -339,6 +341,46 @@ class TestGradeReport(unittest.TestCase):
         )
         
         self.assertIn("Important Note", call.calls[0])
+
+
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
+
+
+class TestMissingInThePromptAndSchema(unittest.TestCase):
+    """The grader is asked for `missing` in the report language, and the schema does not require it."""
+
+    def test_prompt_asks_for_missing_in_the_report_language(self):
+        template = (PROMPTS_DIR / "grade_item.md").read_text(encoding="utf-8")
+        ctx = StepContext(
+            prompts={"grade_item": template},
+            schemas={"grade_item": {"type": "object"}},
+            levels={"absent": 0, "attempted": 0.5, "partial": 0.75, "complete": 0.88, "exemplary": 1.0},
+            window_tokens=100000,
+            reserve_tokens=100,
+            count=lambda text: len(text.split()),
+            grade_retries=0,
+            audit_retries=0,
+            min_word_len=3,
+        )
+        call = FakeCall([{"status": "rated", "score": 10, "comment": "Fictitious.", "evidence": [], "missing": ""}])
+        item = {"id": "I01", "title": "Intro", "max_points": 10}
+        grade_item(item, ["Un rapport fictif."], call, ctx, "fr", "")
+        prompt = call.calls[0]
+        self.assertIn("'missing'", prompt)
+        self.assertIn("in fr, one sentence at most", prompt)
+        self.assertIn("status, score, comment, evidence and missing", prompt)
+        self.assertNotIn("{{", prompt)
+
+    def test_schema_accepts_an_answer_without_missing(self):
+        schema = json.loads((PROMPTS_DIR / "schemas.json").read_text(encoding="utf-8"))["grade_item"]
+        self.assertNotIn("missing", schema["required"])
+        self.assertEqual(ugs_bridge.validate_answer(
+            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": []}, schema), [])
+        self.assertEqual(ugs_bridge.validate_answer(
+            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": "A gap."}, schema), [])
+        # Control: the key exists and is typed, so a number under it is refused.
+        self.assertTrue(ugs_bridge.validate_answer(
+            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": 5}, schema))
 
 
 class TestItemPromptText(unittest.TestCase):

@@ -41,7 +41,8 @@
             "quote": {"type": "string"}
           }
         }
-      }
+      },
+      "missing": {"type": "string"}
     }
   },
   "audit_item": {

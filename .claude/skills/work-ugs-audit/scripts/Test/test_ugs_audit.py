@@ -229,5 +229,33 @@ class TestAuditReport(unittest.TestCase):
         self.assertIn("specific_reason", regrade_prompt)
         self.assertIn("calibration_note", regrade_prompt)
 
+
+class TestMissingInTheAudit(unittest.TestCase):
+    """`missing` follows the rule of `comment`: the auditor is shown it, and the saved record keeps it."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.item = {"id": "I01", "title": "Intro", "max_points": 10}
+        self.pages = ["text on page 1", "text on page 2"]
+        self.record = {
+            "item_id": "I01", "status": "rated", "score": 5, "comment": "CMT_ONE",
+            "evidence": [{"page": 1, "quote": "text"}], "missing": "MISS_ONE", "audit": "not_run", "flag": False,
+        }
+
+    def test_auditor_is_shown_missing_as_it_is_shown_comment(self):
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_item(self.item, self.record, self.pages, call, self.ctx)
+        self.assertIn("CMT_ONE", call.prompts[0])
+        self.assertIn("MISS_ONE", call.prompts[0])
+
+    def test_saved_audit_record_keeps_missing(self):
+        grade = {"report_id": "R01", "loop": 1, "items": [dict(self.record)]}
+        rubric = {"assessment_type": "lab_report", "total_points": 10, "items": [self.item]}
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        result = audit_report(rubric, self.pages, grade, call, self.ctx, "en", "")
+        self.assertEqual(result["items"][0]["missing"], "MISS_ONE")
+        self.assertEqual(result["items"][0]["comment"], "CMT_ONE")
+
+
 if __name__ == '__main__':
     unittest.main()

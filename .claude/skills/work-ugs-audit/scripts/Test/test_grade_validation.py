@@ -16,6 +16,7 @@ from ugs_grade import grade_item  # noqa: E402
 from ugs_text import StepContext  # noqa: E402
 from ugs_bridge import NotRun  # noqa: E402
 import grade_total  # noqa: E402
+from ugs_run import _grade_mark  # noqa: E402
 
 CODE_TABLE = (
     "ok", "quote_not_found", "evidence_missing", "evidence_incomplete", "evidence_page_out_of_range",
@@ -242,6 +243,89 @@ class TestGradeRecord(unittest.TestCase):
         record = self._grade([NotRun("invalid", "score: wrong type"), NotRun("invalid", "score: wrong type")])
         self.assertEqual(record.get("validation"), "schema_invalid")
         self.assertIsNone(record.get("model_score"))
+
+
+class TestMissingField(unittest.TestCase):
+    """The grade record carries `missing`: the element that cost the points, kept as the model gave it.
+
+    Fictitious data only (R34). The module ugs_grade is driven with a scripted call, so no model runs (R21).
+    """
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.item = {"id": "I01", "title": "Intro", "max_points": 10}
+        self.pages = ["Page 1 text", "Page 2 text"]
+
+    def _grade(self, responses):
+        """Grade the item with the scripted responses and return the record."""
+        return grade_item(self.item, self.pages, FakeCall(responses), self.ctx, "en", "")
+
+    def test_record_has_missing_key_in_order(self):
+        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+                  "evidence": [_quote(1, "Page 1 text")], "missing": "Fictitious gap."}
+        record = self._grade([answer])
+        self.assertEqual(
+            list(record.keys())[:8],
+            ["item_id", "status", "score", "comment", "evidence", "missing", "audit", "flag"],
+        )
+        self.assertEqual(list(record.keys())[8:], ["model_score", "validation", "attempts"])
+
+    def test_missing_is_kept_as_given_below_the_maximum(self):
+        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+                  "evidence": [_quote(1, "Page 1 text")], "missing": "Fictitious gap."}
+        self.assertEqual(self._grade([answer]).get("missing"), "Fictitious gap.")
+
+    def test_missing_is_empty_at_full_score(self):
+        answer = {"status": "rated", "score": 10, "comment": "Fictitious.", "evidence": [],
+                  "missing": "Should not be kept."}
+        self.assertEqual(self._grade([answer]).get("missing"), "")
+
+    def test_missing_is_empty_when_the_answer_has_none(self):
+        answer = {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [_quote(1, "Page 1 text")]}
+        self.assertEqual(self._grade([answer]).get("missing"), "")
+
+    def test_a_non_text_missing_is_empty(self):
+        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+                  "evidence": [_quote(1, "Page 1 text")], "missing": 5}
+        self.assertEqual(self._grade([answer]).get("missing"), "")
+
+    def test_missing_is_kept_from_the_last_answer_on_refusal(self):
+        first = _rated(5, [_quote(1, "NOT IN PAGE")])
+        first["missing"] = "First missing text."
+        last = _rated(5, [_quote(1, "NOT IN PAGE")])
+        last["missing"] = "Last missing text."
+        record = self._grade([first, last])
+        self.assertEqual(record.get("validation"), "quote_not_found")
+        self.assertEqual(record.get("missing"), "Last missing text.")
+
+    def test_missing_is_trimmed_to_the_maximum_length(self):
+        self.assertTrue(hasattr(ugs_grade, "MISSING_MAX_CHARS"), "ugs_grade.MISSING_MAX_CHARS is missing")
+        limit = ugs_grade.MISSING_MAX_CHARS
+        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+                  "evidence": [_quote(1, "Page 1 text")], "missing": "x" * (limit + 50)}
+        self.assertEqual(len(self._grade([answer]).get("missing")), limit)
+
+    def test_a_record_with_no_answer_has_empty_missing(self):
+        self.ctx.window_tokens = 10
+        self.ctx.reserve_tokens = 5
+        self.pages = ["Very long page text that definitely exceeds the tiny budget limit"]
+        record = self._grade([])
+        self.assertEqual(record.get("comment"), "no_fit")
+        self.assertEqual(record.get("missing"), "")
+
+    def test_ledger_note_never_contains_missing(self):
+        marker = "SECRET MARKER SENTENCE"
+        refused = _rated(5, [_quote(1, "NOT IN PAGE")])
+        refused["missing"] = marker
+        record = self._grade([refused, refused])
+        mark, note = _grade_mark(record)
+        self.assertEqual((mark, note), ("x", "quote_not_found"))
+        self.assertNotIn("SECRET", str(note))
+        blocked = _rated(11)
+        blocked["missing"] = marker
+        mark, note = _grade_mark(self._grade([blocked, blocked]))
+        self.assertEqual((mark, note), ("!", "score_above_max"))
+        self.assertNotIn("MARKER", str(note))
 
 
 class TestTotals(unittest.TestCase):

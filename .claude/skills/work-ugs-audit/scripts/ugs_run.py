@@ -323,9 +323,32 @@ def _step_grade(job: _Job) -> str:
 
 
 def _step_language(job: _Job) -> str:
-    """Language findings of every page; blocked, with the count of pages that did not run, when some failed."""
-    result = language_report(job.pages, job.call_for("language"), job.ctx, job.services["entries"], job.language)
-    job.save(job.loop_dir / "language.json", result)
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Language findings of every page, saved page by page so a stop keeps the pages already answered.
+
+    Details:
+        The partial file `language.json` of the loop folder holds the pages answered so far under `pages`; a
+        resume passes them to language_report, which sends only the other pages to the model. The step is
+        blocked, with the count of pages that did not run, when some failed.
+
+    Inputs:
+        job (_Job): the shared state
+
+    Outputs:
+        status (str): `blocked` when a page did not run, else `done`.
+
+    Raises:
+        NotRun: propagates from the model call; the pages answered before it are already saved.
+    --------------------------------------------------------------------------
+    """
+    path = job.loop_dir / "language.json"
+    saved = _load_json(path) or {}
+    existing = {int(number): record for number, record in saved.get("pages", {}).items()}
+    result = language_report(job.pages, job.call_for("language"), job.ctx, job.services["entries"], job.language,
+                             existing=existing, on_page=lambda _number, partial: job.save(path, partial))
+    job.save(path, result)
     if result["not_run"]:
         job.mark("language", "!", "pages=%d" % len(result["not_run"]))
         return "blocked"

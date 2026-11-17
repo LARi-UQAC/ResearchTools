@@ -93,6 +93,16 @@ class FakeModel:
         raise AssertionError("unexpected schema")
 
 
+class LanguageDownModel(FakeModel):
+    """A model whose language answers are unreachable; the grade and every other schema are answered as usual."""
+
+    def __call__(self, kind, prompt, schema, images=None):
+        if schema == SCHEMAS["language"]:
+            self.calls.append((kind, prompt))
+            raise NotRun("unreachable", "the daemon went away")
+        return super().__call__(kind, prompt, schema, images)
+
+
 def snapshot(folder: Path):
     return sorted((str(p.relative_to(folder)), p.stat().st_size) for p in folder.rglob("*"))
 
@@ -440,6 +450,17 @@ class TestUgsDriver(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual([l["report_id"] for l in lines], ["R01", "R02"])
         self.assertIn("- [x] assemble", self.ledger())
+
+    def test_stop_line_names_the_failing_step_not_the_first_open_line(self):
+        self.add_reports([9])
+        self.prepare()
+        # A figure line is the first open line of the whole ledger; the language step is the one that fails.
+        ledger = self.ledger().replace("- [ ] language", "- [ ] figure F44\n- [ ] language", 1)
+        (self.work / "ledger.md").write_text(ledger, encoding="utf-8")
+        code, lines, _ = self.run_loop(model=LanguageDownModel())
+        self.assertEqual(code, 1)
+        self.assertEqual(lines, [{"report_id": "R01", "step": "language", "status": "not_run",
+                                  "kind": "unreachable"}])
 
     def test_marker_sentence_never_reaches_stdout_ledger_or_batch_files(self):
         self.add_reports([9, 9])

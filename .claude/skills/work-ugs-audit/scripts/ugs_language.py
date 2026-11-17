@@ -55,29 +55,95 @@ def table_text(entries: List[Dict], language: str) -> str:
     return "\n".join(lines)
 
 
+def _partial(records: Dict[int, dict]) -> Dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the result of the pages answered so far: the three result keys, plus `pages`, the record of each page.
+
+    Details:
+        The `pages` key is what a resume reads back, so a stop never loses a page already answered. The final
+        result of language_report carries the three result keys only.
+
+    Inputs:
+        records (Dict[int, dict]): page number to the page record {annotations, rejected, not_run}
+
+    Outputs:
+        partial (dict): `annotations`, `rejected`, `not_run` and `pages` (keys of the page numbers as strings).
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    result = _result(records)
+    result["pages"] = {str(number): records[number] for number in sorted(records)}
+    return result
+
+
+def _result(records: Dict[int, dict]) -> Dict[str, Any]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Combine the page records, in page order, into the result of the language step.
+
+    Inputs:
+        records (Dict[int, dict]): page number to the page record {annotations, rejected, not_run}
+
+    Outputs:
+        result (dict): `annotations` (all pages in order), `rejected` (the sum) and `not_run` (the pages not answered).
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    annotations: List[dict] = []
+    for number in sorted(records):
+        annotations.extend(records[number]["annotations"])
+    return {
+        "annotations": annotations,
+        "rejected": sum(records[number]["rejected"] for number in records),
+        "not_run": [number for number in sorted(records) if records[number]["not_run"]],
+    }
+
+
 def language_report(
     pages: List[str],
     call: Callable,
     ctx: StepContext,
     entries: List[Dict],
-    language: str
+    language: str,
+    existing: Optional[Dict[int, dict]] = None,
+    on_page: Optional[Callable[[int, Dict[str, Any]], None]] = None
 ) -> Dict:
     """
-    Purpose: Run language check on each page and collect findings.
+    --------------------------------------------------------------------------
+    Purpose:
+        Run the language check on each page and collect the findings, resuming from the pages already answered.
+
+    Details:
+        A page whose number is in `existing` is not sent to the model again; its saved record is used as it is.
+        After each page that was sent to the model (answered or not run), `on_page` receives the partial result
+        of the pages done so far (see _partial), so a stop loses nothing already answered. A blank page is skipped
+        as before and leaves no record.
+
     Inputs:
-        pages: List[str] - Page texts.
-        call: Callable - The model call function.
-        ctx: StepContext - The step context.
-        entries: List[Dict] - The valid language entries.
-        language: str - Report language.
+        pages (List[str]): page texts
+        call (Callable): the model call function
+        ctx (StepContext): the step context
+        entries (List[Dict]): the valid language entries
+        language (str): report language
+        existing (Dict[int, dict] | None): page number to the saved record of a page already answered; None for none
+        on_page (Callable[[int, dict], None] | None): called with the page number and the partial result after
+            each page sent to the model; None changes nothing
+
     Outputs:
         Dict - With 'annotations', 'rejected', 'not_run'.
+
     Raises:
-        NotRun - If an unretriable error occurs.
+        NotRun - If an unretriable error occurs; the pages answered before it are already given to on_page.
+    --------------------------------------------------------------------------
     """
-    annotations = []
-    rejected = 0
-    not_run = []
+    records: Dict[int, dict] = dict(existing or {})
     valid_codes = {e["code"] for e in entries}
     
     table_txt = table_text(entries, language)
@@ -85,6 +151,8 @@ def language_report(
     for i, page_text in enumerate(pages):
         page_num = i + 1
         
+        if page_num in records:
+            continue
         if not page_text.strip():
             continue
             
@@ -111,58 +179,76 @@ def language_report(
                 # retryable, continue loop
         
         if answer is None:
-            not_run.append(page_num)
+            records[page_num] = {"annotations": [], "rejected": 0, "not_run": True}
+        else:
+            records[page_num] = _answer_record(answer, page_num, page_text, valid_codes)
+        if on_page is not None:
+            on_page(page_num, _partial(records))
+        
+    return _result(records)
+
+
+def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Turn the model answer of one page into its record: the findings that name a valid code and quote the page.
+
+    Inputs:
+        answer (dict): the model answer, with a `findings` list
+        page_num (int): the page number
+        page_text (str): the page text the quotes must be found in
+        valid_codes (set): the codes of the language table
+
+    Outputs:
+        record (dict): {annotations, rejected, not_run: False}; a finding with an unknown code or a quote not in the
+        page is counted as rejected; a repeated (code, quote) on the page is kept once.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    findings = answer.get("findings", [])
+    rejected = 0
+    seen = set()
+    page_annotations = []
+    
+    for f in findings:
+        code = f.get("code")
+        quote = f.get("quote", "")
+        
+        if code not in valid_codes:
+            rejected += 1
             continue
             
-        findings = answer.get("findings", [])
+        # Check if quote is in page
+        # We check if normalized quote is a substring of normalized page text
+        norm_quote = normalize(quote)
+        norm_page = normalize(page_text)
         
-        # Deduplicate findings on this page
-        seen = set()
-        page_annotations = []
+        if norm_quote not in norm_page:
+            rejected += 1
+            continue
+            
+        key = (code, norm_quote)
+        if key in seen:
+            continue
+        seen.add(key)
         
-        for f in findings:
-            code = f.get("code")
-            quote = f.get("quote", "")
-            
-            if code not in valid_codes:
-                rejected += 1
-                continue
-                
-            # Check if quote is in page
-            # We check if normalized quote is a substring of normalized page text
-            norm_quote = normalize(quote)
-            norm_page = normalize(page_text)
-            
-            if norm_quote not in norm_page:
-                rejected += 1
-                continue
-                
-            key = (code, norm_quote)
-            if key in seen:
-                continue
-            seen.add(key)
-            
-            proposed = f.get("proposed", "")
-            reason = f.get("reason", "")
-            
-            if proposed:
-                comment = f"{proposed} - {reason}" if reason else proposed
-            else:
-                comment = reason
-                
-            page_annotations.append({
-                "page": page_num,
-                "kind": "language",
-                "code": code,
-                "quote": quote,
-                "rect": None,
-                "comment": comment
-            })
-            
-        annotations.extend(page_annotations)
+        proposed = f.get("proposed", "")
+        reason = f.get("reason", "")
         
-    return {
-        "annotations": annotations,
-        "rejected": rejected,
-        "not_run": not_run
-    }
+        if proposed:
+            comment = f"{proposed} - {reason}" if reason else proposed
+        else:
+            comment = reason
+            
+        page_annotations.append({
+            "page": page_num,
+            "kind": "language",
+            "code": code,
+            "quote": quote,
+            "rect": None,
+            "comment": comment
+        })
+    return {"annotations": page_annotations, "rejected": rejected, "not_run": False}

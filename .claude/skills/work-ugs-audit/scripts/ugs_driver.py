@@ -432,6 +432,36 @@ def _calibration_note(work: Path, loop: int, prompts: Dict[str, str]) -> str:
         "REASONS": "; ".join(batch.get("reasons", []))})
 
 
+def _stopped_step(ledger_path: Path, report_id: str, step: Optional[str]) -> Optional[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Name the step that raised a NotRun: the step on_step announced last, a grade step narrowed to its open item.
+
+    Details:
+        The first open line of the whole ledger is not the answer: a figure line can be open before the language
+        step that failed. A grade stop keeps the label of the grade item still open, as the run has always named it.
+
+    Inputs:
+        ledger_path (Path): the work ledger
+        report_id (str): the report whose step raised
+        step (str | None): the step announced by on_step, None when no step was active
+
+    Outputs:
+        label (str | None): None when no step was active; the open grade line when a grade step stopped on one;
+        otherwise the step name.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if step != "grade":
+        return step
+    open_items = [s["label"] for s in parse_ledger(read_ledger(ledger_path))
+                  if s["report_id"] == report_id and s["label"].startswith("grade ") and s["mark"] == " "]
+    return open_items[0] if open_items else step
+
+
 def cmd_run(args, call, fetch, window, count) -> int:
     """
     --------------------------------------------------------------------------
@@ -475,7 +505,7 @@ def cmd_run(args, call, fetch, window, count) -> int:
     rubric = _read_json(work / "rubric.json", "rubric")
     model_call, model_window, model_count = _inputs(call, window, count, config, work)
     # The actions are recorded only on the real run: an injected call (tests) writes nothing to the machine's log.
-    active = {"step": "grade"}
+    active: Dict[str, Optional[str]] = {"step": None}  # the step running now, set by on_step; None before any
     emitter = _action_emitter(OllamaDeps(config["driver.count_timeout_s"]) if call is None else None,
                               lambda: _step_role(config, active["step"]), _stamp)
     ctx = _context(config, model_window, model_count, emitter)
@@ -491,9 +521,8 @@ def cmd_run(args, call, fetch, window, count) -> int:
             result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note, fetch,
                                 on_step=lambda name: active.update(step=name))
         except NotRun as error:
-            opened = first_open(read_ledger(work / "ledger.md"))
-            _emit({"report_id": report_id, "step": opened[1] if opened else None, "status": "not_run",
-                   "kind": error.kind})
+            _emit({"report_id": report_id, "step": _stopped_step(work / "ledger.md", report_id, active["step"]),
+                   "status": "not_run", "kind": error.kind})
             return EXIT_NOT_RUN
         states = list(result["steps"].values())
         line = {"report_id": report_id, "status": result["status"], "done": states.count("done"),

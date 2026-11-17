@@ -179,18 +179,22 @@ def _atomic_write_text(path: Path, text: str) -> None:
 def _read_excluded(meta_path: Path) -> List[dict]:
     """
     Purpose: Read the pages excluded from evaluation from the report metadata (spec R7).
-    Details: A report folder with no metadata file has no excluded page. Every report prepared under the data
-        contract has the file, so the case concerns only a folder made before it.
+    Details: A report folder with no metadata file was not prepared, and its excluded pages are unknown. That is
+        refused rather than read as "no excluded page" (R8): the preparation step writes the file for every
+        report, so its absence is a missing preparation to be run again.
     Inputs:
         meta_path: Path - The report metadata file (reports.meta_file_name of ugs_config.json).
     Outputs:
-        List[dict] - The records {"page": int, "reason": str} in file order, an empty list when there is no file.
+        List[dict] - The records {"page": int, "reason": str} in file order.
     Raises:
-        ValueError: If the file is not JSON, or excluded_pages is not a list of records with a page number and a
-            reason. The message names the file and the key, never its content.
+        ValueError: If the file is missing, naming the file and the report folder; if it is not JSON, or
+            excluded_pages is not a list of records with a page number and a reason. The message names the file
+            and the key, never its content.
     """
     if not meta_path.exists():
-        return []
+        raise ValueError(
+            f"report metadata file {meta_path.name} is missing in report folder {meta_path.parent}: "
+            "the report was not prepared, run the preparation step again")
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -244,7 +248,7 @@ def run_report_checks(src_pdf: Path, source_dir: Path, pages: List[str]) -> Tupl
         crossref_checks.CrossrefConfigError: If a check setting or a marker list is missing (R3).
         element_labels.MarkerError: If the markers file is missing or malformed.
         ugs_tables.TablesError: If the element file is not a list of records.
-        ValueError: If the metadata file is not usable.
+        ValueError: If the metadata file is missing or not usable.
     """
     config = ugs_config.load(ugs_config.default_path())
     elements = load_elements(source_dir / config[ELEMENTS_NAME_KEY])

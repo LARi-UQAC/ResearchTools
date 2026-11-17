@@ -100,8 +100,13 @@ class TestAssembleReportLanguage(unittest.TestCase):
 
     def setUp(self):
         self.tmp_dir = Path(tempfile.mkdtemp())
-        self.report_dir = self.tmp_dir / "R01"
-        self.report_dir.mkdir()
+        # Real layout: the work folder holds the report folder (R01) with its metadata, and the loop folder.
+        source_dir = self.tmp_dir / "R01"
+        source_dir.mkdir()
+        (source_dir / "report_meta.json").write_text(
+            json.dumps({"language": "en", "excluded_pages": [], "text_quality": {}}), encoding="utf-8")
+        self.report_dir = self.tmp_dir / "loop-1" / "R01"
+        self.report_dir.mkdir(parents=True)
         self.src_pdf = self.report_dir / "source.pdf"
         make_report(self.src_pdf, [{"text": "Figure text"}])
         self.rubric = {

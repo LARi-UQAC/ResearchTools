@@ -28,7 +28,9 @@ MARKERS_PATH = FIGURE_REVIEW_ASSETS / "element_markers.json"
 PAGE_WIDTH = 595.0
 PAGE_HEIGHT = 842.0
 ZONE = 0.8
-SETTINGS = {"right_zone_ratio": ZONE}
+MAX_GAP = 50
+MAX_NUMBER = 100000
+SETTINGS = {"right_zone_ratio": ZONE, "max_gap_numbers": MAX_GAP, "max_number": MAX_NUMBER}
 RUN_IDS = ["figures_cited", "tables_cited", "figure_order", "table_order", "equation_order"]
 
 
@@ -350,6 +352,104 @@ class TestRunChecksContract(CrossrefBase):
         with self.assertRaises(crossref_checks.CrossrefConfigError) as caught:
             crossref_checks.equation_numbers(pdf, [], {})
         self.assertIn("right_zone_ratio", str(caught.exception))
+
+
+class TestGapAndNumberLimits(CrossrefBase):
+    """The configured limits on a listed gap and on a number read from a title or a citation (proposal 2026-11-17)."""
+
+    def test_huge_gap_is_capped_and_counted(self) -> None:
+        """
+        Purpose: Figures titled 1 and 99999, both under checks.max_number, leave a gap of 99997 numbers. The
+            run finishes, the list holds at most checks.max_gap_numbers numbers, the first ones, and
+            skipped_omitted holds the count of the numbers left out.
+        Inputs: None.
+        Outputs: None.
+        Raises: AssertionError on a list longer than the cap or a wrong count.
+        """
+        elements = [make_element("figure", "Figure 1 A"), make_element("figure", "Figure 99999 B")]
+        pdf = make_pdf(self.tmp / "gap.pdf", [[(72, 100, "Plain body text.")]])
+        checks = crossref_checks.run_checks(pdf, ["Plain body text."], elements, self.markers, SETTINGS, [])
+        order = {c["id"]: c for c in checks}["figure_order"]
+        self.assertEqual(order["status"], "not_ok")
+        self.assertLessEqual(len(order["detail"]["skipped"]), MAX_GAP)
+        self.assertEqual(len(order["detail"]["skipped"]), MAX_GAP)
+        self.assertEqual(order["detail"]["skipped"][0], (2,))
+        self.assertEqual(order["detail"]["skipped"][-1], (MAX_GAP + 1,))
+        self.assertEqual(order["detail"]["skipped_omitted"], (99999 - 1 - 1) - MAX_GAP)
+
+    def test_small_gap_has_no_omitted_count(self) -> None:
+        """
+        Purpose: A gap that fits under checks.max_gap_numbers lists every number and carries no
+            skipped_omitted key.
+        Inputs: None.
+        Outputs: None.
+        Raises: AssertionError when the key is present or a number is lost.
+        """
+        elements = [make_element("figure", "Figure 1 A"), make_element("figure", "Figure 4 B")]
+        pdf = make_pdf(self.tmp / "small.pdf", [[(72, 100, "Plain body text.")]])
+        checks = crossref_checks.run_checks(pdf, ["Plain body text."], elements, self.markers, SETTINGS, [])
+        order = {c["id"]: c for c in checks}["figure_order"]
+        self.assertEqual(order["detail"]["skipped"], [(2,), (3,)])
+        self.assertNotIn("skipped_omitted", order["detail"])
+
+    def test_number_above_max_is_refused(self) -> None:
+        """
+        Purpose: A number above checks.max_number is refused: parse_number returns None for it, also for a
+            digit string too long to convert, and a title or a citation holding it contributes no number.
+        Inputs: None.
+        Outputs: None.
+        Raises: AssertionError when a refused number is read or when the run fails.
+        """
+        self.assertIsNone(crossref_checks.parse_number("1000000", MAX_NUMBER))
+        self.assertIsNone(crossref_checks.parse_number(f"2.{MAX_NUMBER + 1}", MAX_NUMBER))
+        self.assertIsNone(crossref_checks.parse_number("9" * 5000, MAX_NUMBER))
+        self.assertEqual(crossref_checks.parse_number(str(MAX_NUMBER), MAX_NUMBER), (MAX_NUMBER,))
+        prefixes = self.markers["figure_prefixes"]
+        self.assertEqual(crossref_checks.cited_numbers(["See Figure 1000000."], prefixes, MAX_NUMBER), set())
+        elements = [make_element("figure", "Figure 1 A"), make_element("figure", "Figure 1000000 B")]
+        pdf = make_pdf(self.tmp / "refused.pdf", [[(72, 100, "Plain body text.")]])
+        checks = crossref_checks.run_checks(pdf, ["Plain body text."], elements, self.markers, SETTINGS, [])
+        by_id = {c["id"]: c for c in checks}
+        self.assertEqual(by_id["figure_order"]["status"], "ok")
+        self.assertEqual(by_id["figures_cited"]["detail"]["missing"], [(1,)])
+
+    def test_missing_max_gap_key_is_named(self) -> None:
+        """
+        Purpose: A configuration without checks.max_gap_numbers raises a named CrossrefConfigError naming the
+            key and the file (R3); run_checks refuses settings without it.
+        Inputs: None.
+        Outputs: None.
+        Raises: AssertionError when no error is raised or the message is not named.
+        """
+        config = self.tmp / "config_no_gap.json"
+        config.write_text(json.dumps({
+            "checks.right_zone_ratio": {"value": ZONE, "provenance": "x"},
+            "checks.max_number": {"value": MAX_NUMBER, "provenance": "x"},
+        }), encoding="utf-8")
+        with self.assertRaises(crossref_checks.CrossrefConfigError) as caught:
+            crossref_checks.load_settings(config)
+        self.assertIn("checks.max_gap_numbers", str(caught.exception))
+        self.assertIn(str(config), str(caught.exception))
+        pdf = make_pdf(self.tmp / "nogap.pdf", [[(72, 100, "Plain body text.")]])
+        settings_without_gap = {"right_zone_ratio": ZONE, "max_number": MAX_NUMBER}
+        with self.assertRaises(crossref_checks.CrossrefConfigError) as caught:
+            crossref_checks.run_checks(pdf, [""], [], self.markers, settings_without_gap, [])
+        self.assertIn("max_gap_numbers", str(caught.exception))
+
+    def test_shipped_limits_are_positive_integers_with_provenance(self) -> None:
+        """
+        Purpose: checks.max_gap_numbers and checks.max_number are in the shipped configuration as positive
+            integers, each with a provenance text.
+        Inputs: None.
+        Outputs: None.
+        Raises: AssertionError on a missing key, a bad value or an empty provenance.
+        """
+        settings = crossref_checks.load_settings(CONFIG_PATH)
+        self.assertGreater(settings["max_gap_numbers"], 0)
+        self.assertGreater(settings["max_number"], 0)
+        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertTrue(raw["checks.max_gap_numbers"]["provenance"])
+        self.assertTrue(raw["checks.max_number"]["provenance"])
 
 
 if __name__ == "__main__":

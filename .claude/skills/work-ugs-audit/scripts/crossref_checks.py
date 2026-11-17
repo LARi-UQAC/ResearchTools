@@ -29,6 +29,10 @@ import element_labels  # noqa: E402
 
 ZONE_CONFIG_KEY = "checks.right_zone_ratio"
 ZONE_SETTING_KEY = "right_zone_ratio"
+MAX_GAP_CONFIG_KEY = "checks.max_gap_numbers"
+MAX_GAP_SETTING_KEY = "max_gap_numbers"
+MAX_NUMBER_CONFIG_KEY = "checks.max_number"
+MAX_NUMBER_SETTING_KEY = "max_number"
 CHECK_IDS = ("figures_cited", "tables_cited", "figure_order", "table_order", "equation_order")
 STATUS_OK = "ok"
 STATUS_NOT_OK = "not_ok"
@@ -76,15 +80,52 @@ def _check_ratio(value: Any, source: str) -> float:
     return float(value)
 
 
-def load_settings(path: Optional[Path] = None) -> Dict[str, float]:
+def _check_positive_int(value: Any, key: str, source: str) -> int:
     """
-    Purpose: Read the right-zone ratio from the configuration key checks.right_zone_ratio.
+    Purpose: Check that a configured limit is a whole number above zero.
+    Inputs:
+        value: Any - the value read from the settings or the configuration.
+        key: str - the configuration key, named in the error.
+        source: str - where the value came from, named in the error.
+    Outputs:
+        int - the limit.
+    Raises:
+        CrossrefConfigError: If the value is not an integer above zero (a boolean is not accepted).
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise CrossrefConfigError(f"'{key}' must be a whole number above 0 ({source})")
+    return value
+
+
+def _config_value(raw: Any, key: str, config_path: Path) -> Any:
+    """
+    Purpose: Read the value of one configuration key, refusing when the key is absent.
+    Inputs:
+        raw: Any - the parsed configuration file.
+        key: str - the configuration key.
+        config_path: Path - the file, named in the error.
+    Outputs:
+        Any - the value of the key.
+    Raises:
+        CrossrefConfigError: If the key is absent or has no value; the message names the key and the file.
+    """
+    entry = raw.get(key) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise CrossrefConfigError(f"missing key '{key}' in {config_path}")
+    return entry["value"]
+
+
+def load_settings(path: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Purpose: Read the cross-reference settings from the configuration: the right-zone ratio, the longest
+        gap of numbers listed and the largest number read.
     Inputs:
         path: Optional[Path] - the configuration file; None means the work-ugs-audit assets file.
     Outputs:
-        Dict[str, float] - {"right_zone_ratio": ratio} to pass to equation_numbers and run_checks.
+        Dict[str, Any] - {"right_zone_ratio", "max_gap_numbers", "max_number"} to pass to equation_numbers and
+            run_checks.
     Raises:
-        CrossrefConfigError: If the file is missing, is not JSON, or lacks the key or holds a bad value;
+        CrossrefConfigError: If the file is missing, is not JSON, or lacks a key or holds a bad value;
             the message names the key and the file.
     """
     config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
@@ -94,10 +135,34 @@ def load_settings(path: Optional[Path] = None) -> Dict[str, float]:
         raw = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise CrossrefConfigError(f"configuration file {config_path} is not readable JSON: {exc}") from exc
-    entry = raw.get(ZONE_CONFIG_KEY) if isinstance(raw, dict) else None
-    if not isinstance(entry, dict) or "value" not in entry:
-        raise CrossrefConfigError(f"missing key '{ZONE_CONFIG_KEY}' in {config_path}")
-    return {ZONE_SETTING_KEY: _check_ratio(entry["value"], str(config_path))}
+    source = str(config_path)
+    return {
+        ZONE_SETTING_KEY: _check_ratio(_config_value(raw, ZONE_CONFIG_KEY, config_path), source),
+        MAX_GAP_SETTING_KEY: _check_positive_int(
+            _config_value(raw, MAX_GAP_CONFIG_KEY, config_path), MAX_GAP_CONFIG_KEY, source),
+        MAX_NUMBER_SETTING_KEY: _check_positive_int(
+            _config_value(raw, MAX_NUMBER_CONFIG_KEY, config_path), MAX_NUMBER_CONFIG_KEY, source),
+    }
+
+
+def _setting(settings: Dict[str, Any], setting_key: str, config_key: str) -> Any:
+    """
+    Purpose: Read one setting given to a check, refusing when it is absent.
+    Inputs:
+        settings: Dict[str, Any] - the settings dict given to the check.
+        setting_key: str - the name of the setting in the dict.
+        config_key: str - the configuration key the setting comes from, named in the error.
+    Outputs:
+        Any - the raw value of the setting.
+    Raises:
+        CrossrefConfigError: If the setting is absent; the message names the configuration key.
+    """
+    if not isinstance(settings, dict) or setting_key not in settings:
+        raise CrossrefConfigError(
+            f"settings lack '{setting_key}' (configuration key {config_key}, "
+            f"read by load_settings from {DEFAULT_CONFIG_PATH})"
+        )
+    return settings[setting_key]
 
 
 def _zone_ratio(settings: Dict[str, Any]) -> float:
@@ -110,12 +175,35 @@ def _zone_ratio(settings: Dict[str, Any]) -> float:
     Raises:
         CrossrefConfigError: If the key is absent or the value is not a ratio between 0 and 1.
     """
-    if not isinstance(settings, dict) or ZONE_SETTING_KEY not in settings:
-        raise CrossrefConfigError(
-            f"settings lack '{ZONE_SETTING_KEY}' (configuration key {ZONE_CONFIG_KEY}, "
-            f"read by load_settings from {DEFAULT_CONFIG_PATH})"
-        )
-    return _check_ratio(settings[ZONE_SETTING_KEY], "settings")
+    return _check_ratio(_setting(settings, ZONE_SETTING_KEY, ZONE_CONFIG_KEY), "settings")
+
+
+def _max_number(settings: Dict[str, Any]) -> int:
+    """
+    Purpose: Read the largest number a title or a citation may carry, from the settings given to a check.
+    Inputs:
+        settings: Dict[str, Any] - the settings dict, expected to hold max_number.
+    Outputs:
+        int - the ceiling, a whole number above zero.
+    Raises:
+        CrossrefConfigError: If the key is absent or the value is not a whole number above zero.
+    """
+    return _check_positive_int(_setting(settings, MAX_NUMBER_SETTING_KEY, MAX_NUMBER_CONFIG_KEY),
+                               MAX_NUMBER_CONFIG_KEY, "settings")
+
+
+def _max_gap(settings: Dict[str, Any]) -> int:
+    """
+    Purpose: Read how many numbers of one gap are listed, from the settings given to a check.
+    Inputs:
+        settings: Dict[str, Any] - the settings dict, expected to hold max_gap_numbers.
+    Outputs:
+        int - the number of gap numbers listed, a whole number above zero.
+    Raises:
+        CrossrefConfigError: If the key is absent or the value is not a whole number above zero.
+    """
+    return _check_positive_int(_setting(settings, MAX_GAP_SETTING_KEY, MAX_GAP_CONFIG_KEY),
+                               MAX_GAP_CONFIG_KEY, "settings")
 
 
 def _marker_list(markers: Dict[str, Any], element_type: str) -> List[str]:
@@ -153,20 +241,52 @@ def _alternatives(prefixes: List[str]) -> str:
     return "|".join(re.escape(word) for word in words)
 
 
-def parse_number(text: str) -> Number:
+def _part_value(part: str, max_number: Optional[int]) -> Optional[int]:
     """
-    Purpose: Turn a number written with dots into a tuple, so that chapter numbers compare correctly.
+    Purpose: Turn one group of digits into an integer, refusing it when it exceeds the ceiling. The length is
+        compared before any conversion, so a digit string too long to convert is refused, not raised.
+    Inputs:
+        part: str - one group of digits, such as "12" or "0007".
+        max_number: Optional[int] - the ceiling, or None for no ceiling.
+    Outputs:
+        Optional[int] - the value, or None when it is above the ceiling.
+    Raises:
+        None.
+    """
+    significant = part.lstrip("0") or "0"
+    if max_number is not None and len(significant) > len(str(max_number)):
+        return None
+    value = int(significant)
+    if max_number is not None and value > max_number:
+        return None
+    return value
+
+
+def parse_number(text: str, max_number: Optional[int] = None) -> Optional[Number]:
+    """
+    Purpose: Turn a number written with dots into a tuple, so that chapter numbers compare correctly. A number
+        with any group above the ceiling is refused, so that a cited or titled number of a document cannot make
+        the checks build a list of unbounded size (proposal 2026-11-17).
+    Details: The callers of run_checks always pass checks.max_number. None applies the number syntax alone and is
+        meant for a caller that has no settings of its own.
     Inputs:
         text: str - a number such as "2.3" or "3".
+        max_number: Optional[int] - the largest group allowed, or None for no ceiling.
     Outputs:
-        Tuple[int, ...] - (2, 3) or (3,).
+        Optional[Tuple[int, ...]] - (2, 3) or (3,); None when a group is above the ceiling.
     Raises:
         ValueError: If the text is not a number made of digit groups separated by dots.
     """
     match = NUMBER_RE.match(text)
     if not match:
         raise ValueError(f"not a number: {text!r}")
-    return tuple(int(part) for part in match.group(1).split("."))
+    values = []
+    for part in match.group(1).split("."):
+        value = _part_value(part, max_number)
+        if value is None:
+            return None
+        values.append(value)
+    return tuple(values)
 
 
 def _title_pattern(prefixes: List[str]) -> "re.Pattern[str]":
@@ -214,12 +334,13 @@ def _is_title_line(line: str, prefixes: List[str]) -> bool:
     return BODY_SENTENCE_RE.search(cleaned[match.end():]) is None
 
 
-def cited_numbers(pages: List[str], prefixes: List[str]) -> Set[Number]:
+def cited_numbers(pages: List[str], prefixes: List[str], max_number: Optional[int] = None) -> Set[Number]:
     """
     Purpose: Collect the element numbers the text cites, ignoring the title line of each element.
     Inputs:
         pages: List[str] - the text of each page that is searched (excluded pages already removed).
         prefixes: List[str] - the marker words of the element type (for example Figure, Fig.).
+        max_number: Optional[int] - the ceiling of parse_number; a citation above it is not counted.
     Outputs:
         Set[Tuple[int, ...]] - the cited numbers. A number that appears only in a title line is absent.
     Raises:
@@ -232,7 +353,9 @@ def cited_numbers(pages: List[str], prefixes: List[str]) -> Set[Number]:
             if _is_title_line(line, prefixes):
                 continue
             for match in pattern.finditer(line):
-                found.add(parse_number(match.group(1)))
+                number = parse_number(match.group(1), max_number)
+                if number is not None:
+                    found.add(number)
     return found
 
 
@@ -253,13 +376,15 @@ def _ordered(elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(elements, key=key)
 
 
-def _title_numbers(elements: List[Dict[str, Any]], element_type: str, prefixes: List[str]) -> List[Number]:
+def _title_numbers(elements: List[Dict[str, Any]], element_type: str, prefixes: List[str],
+                   max_number: Optional[int] = None) -> List[Number]:
     """
     Purpose: Read the numbers of the titles of one element type, in document order.
     Inputs:
         elements: List[Dict[str, Any]] - element records.
         element_type: str - "figure" or "table".
         prefixes: List[str] - the marker words of that type.
+        max_number: Optional[int] - the ceiling of parse_number; a title above it contributes no number.
     Outputs:
         List[Tuple[int, ...]] - one number per titled element whose title opens with a marker and a number.
     Raises:
@@ -275,17 +400,21 @@ def _title_numbers(elements: List[Dict[str, Any]], element_type: str, prefixes: 
             continue
         match = pattern.match(_clean(title["text"]))
         if match:
-            numbers.append(parse_number(match.group(1)))
+            number = parse_number(match.group(1), max_number)
+            if number is not None:
+                numbers.append(number)
     return numbers
 
 
-def element_numbers(elements: List[Dict[str, Any]], element_type: str) -> List[Number]:
+def element_numbers(elements: List[Dict[str, Any]], element_type: str,
+                    max_number: Optional[int] = None) -> List[Number]:
     """
     Purpose: Read the figure or table numbers from the titles of the elements, in document order.
         The marker words come from figure-review's element_markers.json.
     Inputs:
         elements: List[Dict[str, Any]] - element records as figure-review writes them.
         element_type: str - "figure" or "table".
+        max_number: Optional[int] - the ceiling of parse_number, None for no ceiling.
     Outputs:
         List[Tuple[int, ...]] - the numbers, for example (2, 1) for "Figure 2.1".
     Raises:
@@ -295,17 +424,21 @@ def element_numbers(elements: List[Dict[str, Any]], element_type: str) -> List[N
     """
     markers = element_labels.load_markers(DEFAULT_MARKERS_PATH)
     prefixes = _marker_list(markers, element_type)
-    return _title_numbers(elements, element_type, prefixes)
+    return _title_numbers(elements, element_type, prefixes, max_number)
 
 
-def _sequence_detail(numbers: List[Number]) -> Tuple[str, Dict[str, List[Number]]]:
+def _sequence_detail(numbers: List[Number], max_gap: int) -> Tuple[str, Dict[str, Any]]:
     """
-    Purpose: Judge that numbers increase through the document and list the ones that do not.
+    Purpose: Judge that numbers increase through the document and list the ones that do not. A gap of skipped
+        numbers lists at most max_gap of them, the first ones; the count of the rest is kept in skipped_omitted.
+        A gap is never expanded in full, so a document citing a very large number cannot make a long list.
     Inputs:
         numbers: List[Tuple[int, ...]] - numbers in document order.
+        max_gap: int - how many numbers of one gap are listed (checks.max_gap_numbers).
     Outputs:
-        Tuple[str, Dict[str, List[Tuple[int, ...]]]] - the status (ok, not_ok or not_applicable) and the
-            detail with the keys out_of_order, repeated and skipped, each a list of numbers.
+        Tuple[str, Dict[str, Any]] - the status (ok, not_ok or not_applicable) and the detail with the keys
+            out_of_order, repeated and skipped, each a list of numbers, and skipped_omitted (an integer) only when
+            some gap was cut.
     Raises:
         None.
     """
@@ -323,11 +456,17 @@ def _sequence_detail(numbers: List[Number]) -> Tuple[str, Dict[str, List[Number]
     out_of_order = list(dict.fromkeys(out_of_order))
     unique = sorted(counts)
     skipped: List[Number] = []
+    omitted = 0
     for before, after in zip(unique, unique[1:]):
         same_chapter = len(before) == len(after) and before[:-1] == after[:-1]
         if same_chapter and after[-1] - before[-1] > 1:
-            skipped.extend(before[:-1] + (k,) for k in range(before[-1] + 1, after[-1]))
-    detail = {"out_of_order": out_of_order, "repeated": repeated, "skipped": skipped}
+            gap_length = after[-1] - before[-1] - 1
+            listed = min(gap_length, max_gap)
+            skipped.extend(before[:-1] + (before[-1] + offset,) for offset in range(1, listed + 1))
+            omitted += gap_length - listed
+    detail: Dict[str, Any] = {"out_of_order": out_of_order, "repeated": repeated, "skipped": skipped}
+    if omitted:
+        detail["skipped_omitted"] = omitted
     status = STATUS_OK if not (out_of_order or repeated or skipped) else STATUS_NOT_OK
     return status, detail
 
@@ -384,6 +523,7 @@ def equation_numbers(pdf: Path, skip_pages: Iterable[int], settings: Dict[str, A
         FileNotFoundError: If the PDF does not exist.
     """
     ratio = _zone_ratio(settings)
+    ceiling = _max_number(settings)
     pdf_path = Path(pdf)
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -400,7 +540,9 @@ def equation_numbers(pdf: Path, skip_pages: Iterable[int], settings: Dict[str, A
             for word in words:
                 match = EQUATION_RE.match(word[4])
                 if match and word[0] > limit:
-                    numbers.append(parse_number(match.group(1)))
+                    number = parse_number(match.group(1), ceiling)
+                    if number is not None:
+                        numbers.append(number)
     finally:
         doc.close()
     return numbers
@@ -419,23 +561,27 @@ def run_checks(pdf: Path, pages: List[str], elements: List[Dict[str, Any]], mark
         skip_pages: Iterable[int] - 1-based pages excluded from evaluation; not searched.
     Outputs:
         List[Dict[str, Any]] - five entries {"id", "status", "detail"} in the order of CHECK_IDS; the
-            detail holds lists of numbers only.
+            detail holds lists of numbers only, and skipped_omitted (an integer) when a gap was cut.
     Raises:
-        CrossrefConfigError: If a marker list or the ratio is missing.
+        CrossrefConfigError: If a marker list, the ratio or a limit (max_number, max_gap_numbers) is missing.
         FileNotFoundError: If the PDF does not exist.
     """
+    ceiling = _max_number(settings)
+    max_gap = _max_gap(settings)
     skipped = set(skip_pages)
     kept = [text for index, text in enumerate(pages) if index + 1 not in skipped]
     prepared = _strip_titles(kept, elements)
     figure_prefixes = _marker_list(markers, ELEMENT_FIGURE)
     table_prefixes = _marker_list(markers, ELEMENT_TABLE)
-    figure_nums = _title_numbers(elements, ELEMENT_FIGURE, figure_prefixes)
-    table_nums = _title_numbers(elements, ELEMENT_TABLE, table_prefixes)
-    figures_status, figures_detail = _cited_check(figure_nums, cited_numbers(prepared, figure_prefixes))
-    tables_status, tables_detail = _cited_check(table_nums, cited_numbers(prepared, table_prefixes))
-    fig_order_status, fig_order_detail = _sequence_detail(figure_nums)
-    tab_order_status, tab_order_detail = _sequence_detail(table_nums)
-    eq_status, eq_detail = _sequence_detail(equation_numbers(pdf, skipped, settings))
+    figure_nums = _title_numbers(elements, ELEMENT_FIGURE, figure_prefixes, ceiling)
+    table_nums = _title_numbers(elements, ELEMENT_TABLE, table_prefixes, ceiling)
+    figures_status, figures_detail = _cited_check(
+        figure_nums, cited_numbers(prepared, figure_prefixes, ceiling))
+    tables_status, tables_detail = _cited_check(
+        table_nums, cited_numbers(prepared, table_prefixes, ceiling))
+    fig_order_status, fig_order_detail = _sequence_detail(figure_nums, max_gap)
+    tab_order_status, tab_order_detail = _sequence_detail(table_nums, max_gap)
+    eq_status, eq_detail = _sequence_detail(equation_numbers(pdf, skipped, settings), max_gap)
     results = [
         ("figures_cited", figures_status, figures_detail),
         ("tables_cited", tables_status, tables_detail),

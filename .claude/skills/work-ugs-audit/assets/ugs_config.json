@@ -162,5 +162,13 @@
   "checks.right_zone_ratio": {
     "value": 0.8,
     "provenance": "starting value, adjustable by the professor (share of the page width beyond which a word shaped (n) or (n.m) counts as an equation number; a number above 0 and below 1; a body year such as (2023) sits left of this share in running text)"
+  },
+  "checks.max_gap_numbers": {
+    "value": 50,
+    "provenance": "proposal 2026-11-17, a gap longer than this is listed by its first numbers and a count of the omitted ones; tune on the counts of the real reports"
+  },
+  "checks.max_number": {
+    "value": 100000,
+    "provenance": "proposal 2026-11-17, a figure, table or equation number above this is refused rather than read, so a report citing a very large number cannot build an unbounded list"
   }
 }

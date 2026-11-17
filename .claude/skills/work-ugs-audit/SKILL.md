@@ -40,9 +40,15 @@ judged.
 Grades. Each item of `grade.json` keeps every field the model gave, above all the score. The `validation` field holds
 `ok` or the code of the refusal (`quote_not_found`, `evidence_missing`, `score_above_max`, `unknown_status`, and the
 others of `GRADE_CODES` in `ugs_grade.py`). A refused proof keeps its score and counts in the totals, with its label in
-the annex. A score that cannot be used gives status `not_run`, a null score, and the raw value in `model_score`. The
-ledger line carries the code as its note, and `attempts` counts the tries. The audit prompt never receives these
-fields.
+the annex. A score that cannot be used (absent, not finite, above the maximum) gives status `not_run`, a null score,
+and the raw value in `model_score`. Each record also carries `missing`: the element that is absent or wrong in the
+report and cost the points, in the report language, empty at the maximum score. It is model text saved in
+`grade.json` only; it never reaches the ledger, a log or the dashboard. The ledger line carries the code as its note,
+and `attempts` counts the tries. The auditor receives `missing` and `comment`, never the validation fields.
+
+A report whose language cannot be decided (no text layer and no metadata) is refused in preparation with a named
+reason, and the other reports continue. A page with no text layer is sent to OCR and, when still empty, listed in
+`unreadable_pages` of `report_meta.json`.
 
 The annex is written in the document language (labels in `assets/annex_labels.json`) and its table fits the page. Its
 last section holds five checks computed by `crossref_checks.py` on the report's own text and elements: every figure

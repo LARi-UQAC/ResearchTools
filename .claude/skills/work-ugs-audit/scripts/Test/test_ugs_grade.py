@@ -383,6 +383,62 @@ class TestMissingInThePromptAndSchema(unittest.TestCase):
             {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": 5}, schema))
 
 
+class TestTimeoutIsOneItem(unittest.TestCase):
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.rubric = {
+            "assessment_type": "lab_report",
+            "total_points": 30,
+            "items": [
+                {"id": "I01", "title": "Intro", "max_points": 10},
+                {"id": "I02", "title": "Body", "max_points": 10},
+                {"id": "I03", "title": "End", "max_points": 10},
+            ]
+        }
+        self.pages = ["Page 1", "Page 2"]
+        self.full_answer = {
+            "status": "rated",
+            "score": 10,
+            "comment": "Ok",
+            "evidence": [{"page": 1, "quote": "Page 1"}],
+        }
+
+    def test_timeout_marks_only_its_item_and_the_grade_goes_on(self):
+        # Item 1 answered; item 2 times out on its call and on its one retry (grade_retries=1); item 3 answered.
+        call = FakeCall([
+            self.full_answer,
+            NotRun("timeout", "post timed out"),
+            NotRun("timeout", "post timed out"),
+            self.full_answer,
+        ])
+        result = grade_report(
+            self.rubric, self.pages, "R01", 1, call, self.ctx, "en", "",
+        )
+        by_id = {record["item_id"]: record for record in result["items"]}
+        self.assertEqual(by_id["I01"]["status"], "rated")
+        self.assertEqual(by_id["I03"]["status"], "rated")
+        self.assertEqual(by_id["I03"]["score"], 10)
+        timed_out = by_id["I02"]
+        self.assertEqual(timed_out["validation"], "timeout")
+        self.assertEqual(timed_out["status"], "not_run")
+        self.assertIsNone(timed_out["score"])
+        self.assertIsNone(timed_out["model_score"])
+        self.assertEqual(timed_out["comment"], "")
+        self.assertEqual(timed_out["evidence"], [])
+        self.assertEqual(timed_out["missing"], "")
+        self.assertTrue(timed_out["flag"])
+        self.assertEqual(timed_out["attempts"], self.ctx.grade_retries + 1)
+
+    def test_unreachable_still_stops(self):
+        call = FakeCall([
+            self.full_answer,
+            NotRun("unreachable", "daemon down"),
+        ])
+        with self.assertRaises(NotRun) as ctx:
+            grade_report(self.rubric, self.pages, "R01", 1, call, self.ctx, "en", "")
+        self.assertEqual(ctx.exception.kind, "unreachable")
+
+
 class TestItemPromptText(unittest.TestCase):
     def test_the_item_slot_holds_the_exact_text_not_a_dict(self):
         ctx = make_ctx()

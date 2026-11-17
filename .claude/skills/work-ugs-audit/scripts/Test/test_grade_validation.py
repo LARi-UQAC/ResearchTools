@@ -374,6 +374,21 @@ class TestNanScoreAndNullEvidencePage(unittest.TestCase):
             self.assertEqual(verdict.get("verdict"), "agree", f"score {score}")
 
 
+class TestTimeoutCode(unittest.TestCase):
+    def test_timeout_is_a_known_grade_code(self):
+        self.assertIn("timeout", ugs_grade.GRADE_CODES)
+        self.assertLessEqual(len("timeout"), 30)
+
+    def test_a_timeout_that_exhausts_its_retries_is_a_timeout_record(self):
+        ctx = make_ctx()
+        item = {"id": "I01", "title": "Intro", "max_points": 10}
+        call = FakeCall([NotRun("timeout", "post timed out"), NotRun("timeout", "post timed out")])
+        record = grade_item(item, ["Page 1"], call, ctx, "en", "")
+        self.assertEqual(record["validation"], "timeout")
+        self.assertEqual(record["status"], "not_run")
+        self.assertIsNone(record["score"])
+
+
 class TestTotals(unittest.TestCase):
     """grade_total accepts a refused proof and ignores only an unusable score."""
 

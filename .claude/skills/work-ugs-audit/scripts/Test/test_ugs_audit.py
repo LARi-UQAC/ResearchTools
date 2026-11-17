@@ -243,6 +243,46 @@ class TestAuditReport(unittest.TestCase):
         self.assertIn("calibration_note", regrade_prompt)
 
 
+class TestAuditTimeoutIsOneItem(unittest.TestCase):
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.rubric = {
+            "assessment_type": "lab_report",
+            "total_points": 20,
+            "items": [
+                {"id": "I01", "title": "Intro", "max_points": 10},
+                {"id": "I02", "title": "Body", "max_points": 10},
+            ]
+        }
+        self.pages = ["text on page 1", "text on page 2"]
+
+        def rated(item_id):
+            return {
+                "item_id": item_id,
+                "status": "rated",
+                "score": 8.0,
+                "comment": "Good",
+                "evidence": [{"page": 1, "quote": "text"}],
+                "audit": "not_run",
+                "flag": False,
+            }
+
+        self.grade = {"report_id": "R01", "loop": 1, "items": [rated("I01"), rated("I02")]}
+
+    def test_audit_timeout_does_not_stop_the_batch(self):
+        # Item 1's audit times out on its call and on its retry (audit_retries=1); item 2 is still audited.
+        call = FakeCall([
+            NotRun("timeout", "post timed out"),
+            NotRun("timeout", "post timed out"),
+            {"verdict": "agree", "reason": "ok"},
+        ])
+        result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
+        by_id = {record["item_id"]: record for record in result["items"]}
+        self.assertEqual(by_id["I01"]["audit"], "not_run")
+        self.assertEqual(by_id["I02"]["audit"], "agree")
+        self.assertEqual(len(result["items"]), 2)
+
+
 class TestMissingInTheAudit(unittest.TestCase):
     """`missing` follows the rule of `comment`: the auditor is shown it, and the saved record keeps it."""
 

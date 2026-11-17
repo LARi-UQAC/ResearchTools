@@ -37,6 +37,7 @@ GRADE_CODES = (
     "schema_invalid",
     "no_fit",
     "over_budget",
+    "timeout",
 )
 
 # A refused proof keeps the score the model gave: the number is usable, only the evidence is not.
@@ -51,6 +52,7 @@ PROOF_REFUSAL_CODES = (
 NO_ANSWER_CODES = {
     "unparsable": "unparsable_answer",
     "invalid": "schema_invalid",
+    "timeout": "timeout",
 }
 
 # Longest `missing` kept in a grade record, in characters. Provenance: chosen, not measured. grade_item.md asks

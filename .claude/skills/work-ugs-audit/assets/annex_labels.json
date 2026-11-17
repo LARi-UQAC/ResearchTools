@@ -28,6 +28,7 @@
       "not_run": "Non exécuté"
     },
     "validation_values": {
+      "timeout": "Pas de réponse du modèle dans le délai",
       "quote_not_found": "Citation introuvable dans la page",
       "evidence_missing": "Preuve absente",
       "evidence_incomplete": "Preuve incomplète",
@@ -87,6 +88,7 @@
       "not_run": "Not run"
     },
     "validation_values": {
+      "timeout": "The model did not answer in time",
       "quote_not_found": "Quote not found on the page",
       "evidence_missing": "Evidence missing",
       "evidence_incomplete": "Evidence incomplete",

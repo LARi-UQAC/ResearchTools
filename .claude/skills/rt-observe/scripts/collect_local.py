@@ -139,11 +139,49 @@ def _read_tail(path, tail_bytes):
     return records, start > 0, size
 
 
+def _action_entry(item):
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Reduce one action record to the fields the dashboard lists, or refuse it.
+
+    Details:
+        A target and an action must be strings, and a detail must be a string or absent. A
+        report id or a stamp that is not a string becomes None rather than refusing the record.
+
+    Inputs:
+        item (dict): one record whose event is "action"
+
+    Outputs:
+        entry (dict or None): {"at", "action", "target", "report_id", "detail"}, or None when the
+        target, the action or the detail is not a string.
+
+    Raises:
+        None: a malformed record is dropped, never raised.
+    --------------------------------------------------------------------------
+    """
+    target, act, detail = item.get("target"), item.get("action"), item.get("detail")
+    if not isinstance(target, str) or not isinstance(act, str):
+        return None
+    if detail is not None and not isinstance(detail, str):
+        return None
+    report_id = item.get("report_id")
+    return {"at": item.get("at") if isinstance(item.get("at"), str) else None,
+            "action": act, "target": target,
+            "report_id": report_id if isinstance(report_id, str) else None,
+            "detail": detail}
+
+
 def _group(records, now, active_seconds, generating_seconds):
     """
     --------------------------------------------------------------------------
     Purpose:
         Group enriched records by role, in order of first appearance.
+
+    Details:
+        An action record (event "action", written by a grading step) is neither a call, a start
+        nor an end: it neither moves last_at nor clears a generation. It is collected per role
+        in file order, oldest first, for collect() to cap.
 
     Inputs:
         records (list[dict]): parsed log records, oldest first
@@ -153,11 +191,15 @@ def _group(records, now, active_seconds, generating_seconds):
             end, means the role is generating now
 
     Outputs:
-        result (tuple): (roles, kept, skipped) with roles a mapping role -> summary, kept the
-        enriched records and skipped the count of records that carry no role.
+        result (tuple): (roles, kept, skipped, actions) with roles a mapping role -> summary,
+        kept the enriched records, skipped the count of records that carry no role, and actions
+        a mapping role -> list of valid action entries, oldest first.
+
+    Raises:
+        None.
     --------------------------------------------------------------------------
     """
-    roles, kept, skipped = {}, [], 0
+    roles, kept, skipped, actions = {}, [], 0, {}
     for item in records:
         role = item.get("role")
         if not isinstance(role, str) or not role:
@@ -166,6 +208,11 @@ def _group(records, now, active_seconds, generating_seconds):
         kept.append(item)
         row = roles.setdefault(role, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0,
                                       "last_at": None, "start_at": None})
+        if item.get("event") == "action":
+            entry = _action_entry(item)
+            if entry is not None:
+                actions.setdefault(role, []).append(entry)
+            continue
         if item.get("event") == "start":
             # Written BEFORE a generation (R35 round 2): not a call, not tokens.
             row.update(tag=item.get("tag"), num_ctx=item.get("num_ctx"),
@@ -193,7 +240,7 @@ def _group(records, now, active_seconds, generating_seconds):
             and (now - began).total_seconds() < generating_seconds)
         row["active"] = row["generating"] or (
             row["age_seconds"] is not None and row["age_seconds"] < active_seconds)
-    return roles, kept, skipped
+    return roles, kept, skipped, actions
 
 
 def collect(config, home, now):
@@ -202,9 +249,17 @@ def collect(config, home, now):
     Purpose:
         Build the `local_calls` section from the bridge log.
 
+    Details:
+        When the tail holds at least one action record, every role row gains `actions` (its
+        newest `caps.local_actions_per_role` actions, oldest first) and `actions_dropped` (the
+        older actions of the tail not listed). A log with no action record gets neither key, so
+        its section is the same as before actions existed. The cap is read only in that case,
+        so a config without it still serves a log that has no actions.
+
     Inputs:
         config (dict): parsed observe-config.json (paths.bridge_log, caps.local_calls_tail_bytes,
-            caps.local_calls_recent, staleness_seconds.local_active)
+            caps.local_calls_recent, staleness_seconds.local_active, and, when the log holds
+            action records, caps.local_actions_per_role)
         home (Path): the home directory the log path resolves against and every string is
             redacted against
         now (datetime): the injected clock (R19)
@@ -213,7 +268,11 @@ def collect(config, home, now):
         state (dict): status "ok" with proven_by, proven_at, roles, recent, skipped_without_role,
         truncated and collected_at, or status "unavailable" with a named reason, plus `absent` true
         when there is simply nothing to read yet (no log, an empty one, no record with a role),
-        which is not a failure to read. Never raises.
+        which is not a failure to read. A missing or invalid cap, when actions exist, is an
+        unavailable state naming the key. Never raises.
+
+    Raises:
+        None: every failure is returned as an unavailable state.
     --------------------------------------------------------------------------
     """
     try:
@@ -237,12 +296,26 @@ def collect(config, home, now):
     if size == 0:
         return {"status": "unavailable", "absent": True,
                 "reason": "bridge log is empty: %s" % shown}
-    roles, kept, skipped = _group(records, now, active_seconds, generating_seconds)
+    roles, kept, skipped, actions = _group(records, now, active_seconds, generating_seconds)
     if not kept:
         return {"status": "unavailable", "absent": True,
                 "reason": "no record carries a role yet in %s (%d older line(s) skipped)"
                           % (shown, skipped)}
-    ended = [item for item in kept if item.get("event") not in ("start", "failed")]
+    if any(item.get("event") == "action" for item in kept):
+        try:
+            per_role = _cfg(config, "caps", "local_actions_per_role")
+        except ConfigKeyError as exc:
+            return {"status": "unavailable", "reason": str(exc)}
+        if not isinstance(per_role, int) or isinstance(per_role, bool) or per_role < 1:
+            return {"status": "unavailable",
+                    "reason": "observe-config.json caps.local_actions_per_role must be a "
+                              "positive integer"}
+        for name, row in roles.items():
+            listed = actions.get(name, [])
+            row["actions"] = listed[-per_role:]
+            row["actions_dropped"] = len(listed) - len(row["actions"])
+    ended = [item for item in kept
+             if item.get("event") not in ("start", "failed", "action")]
     recent = [{key: item.get(key) for key in
                ("at", "role", "tag", "plan", "prompt_tokens", "completion_tokens", "accepted")}
               for item in reversed(ended[-recent_cap:])]

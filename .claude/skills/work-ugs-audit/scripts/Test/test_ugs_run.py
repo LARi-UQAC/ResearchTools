@@ -304,6 +304,23 @@ class TestRunReport(unittest.TestCase):
         self.assertEqual(good["status"], "done")
         self.assertEqual(mocks["grade"].call_count, 1)
 
+    def test_undecidable_language_fails_only_its_report(self):
+        self.services["hints"] = {"fr": ["le", "la", "les"], "en": ["the", "and", "of"]}
+        self.ledger_path.write_text(
+            add_report(add_report(new_ledger("Test Ledger"), "R01", ["I01"]), "R02", ["I01"]), encoding="utf-8")
+        (self.work_dir / "R01" / "pages" / "p001.md").write_text("zzz qqq xyzzy", encoding="utf-8")
+        pages_dir = self.work_dir / "R02" / "pages"
+        pages_dir.mkdir(parents=True)
+        (pages_dir / "p001.md").write_text("the report of the fictive lab and the results", encoding="utf-8")
+        with self.steps() as mocks:
+            bad = self.run_it()
+            good = self.run_it(report_id="R02")
+        self.assertEqual(bad["status"], "failed")
+        self.assertEqual(bad["reason"], "R01: language undecidable")
+        self.assertNotIn("zzz", str(bad))
+        self.assertEqual(good["status"], "done")
+        self.assertEqual(mocks["grade"].call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

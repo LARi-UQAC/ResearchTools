@@ -199,13 +199,14 @@ def _count_hits(norm_text: str, words: List[str]) -> int:
         words (List[str]): marker words in any case or accent.
 
     Outputs:
-        int: the number of distinct normalized markers found at the start of a word.
+        int: the number of distinct normalized markers found as whole words (no letter on either side,
+            so "version" does not match "versions").
 
     Raises:
         None.
     """
     distinct = {_normalize(w) for w in words if _normalize(w)}
-    return sum(1 for w in distinct if re.search(r"(?<!\w)" + re.escape(w), norm_text))
+    return sum(1 for w in distinct if re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", norm_text))
 
 
 def _all_words(markers: dict, key: str) -> List[str]:
@@ -246,13 +247,15 @@ def classify_page(text: str, index: int, small_images: int, markers: dict) -> Op
     norm = _normalize(text)
     words = len(WORD_PATTERN.findall(norm))
     min_markers = markers["min_markers"]
-    if index < markers["max_leading_pages"] and words <= markers["max_cover_words"]:
+    short = words <= markers["max_cover_words"]
+    if index < markers["max_leading_pages"] and short:
         cover_hits = _count_hits(norm, _all_words(markers, "cover_markers"))
         if cover_hits >= min_markers or (cover_hits >= 1 and small_images >= 1):
             return ROLE_COVER
-    if _count_hits(norm, _all_words(markers, "signature_markers")) >= min_markers:
+    # A table is short by nature: a long body page that uses a marker word is content to grade (defect 1, Issue 122).
+    if short and _count_hits(norm, _all_words(markers, "signature_markers")) >= min_markers:
         return ROLE_SIGNATURE
-    if _count_hits(norm, _all_words(markers, "version_markers")) >= min_markers:
+    if short and _count_hits(norm, _all_words(markers, "version_markers")) >= min_markers:
         return ROLE_VERSION
     return None
 

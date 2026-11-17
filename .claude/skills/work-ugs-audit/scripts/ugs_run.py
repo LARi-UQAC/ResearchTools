@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ugs_ledger import read, write, set_mark, parse, add_figures
-from ugs_text import StepContext, read_pages, detect_language
+from ugs_text import StepContext, read_pages, detect_language, LanguageUndecidable
 from ugs_grade import grade_report
 from ugs_audit import audit_report
 from ugs_language import language_report
@@ -478,7 +478,8 @@ def run_report(
     Outputs:
         summary (dict): `report_id`, `status` (`done` or `failed`) and `steps`, a map of each step to
         `done`, `blocked` or `skipped`. It holds no text of the report. A report whose metadata is refused
-        is `failed` with a `reason` naming the key or the file (never report text) and no step run.
+        is `failed` with a `reason` naming the key or the file (never report text) and no step run. A report
+        whose language cannot be decided is `failed` with the reason `<report id>: language undecidable`.
 
     Raises:
         NotRun: the model could not run; the step stays open so a resume continues there.
@@ -493,6 +494,9 @@ def run_report(
         language = report_language(work_dir, report_id, pages, hints)
     except LanguageError as exc:  # a bad report stops only itself: the batch goes on with the next one
         return {"report_id": report_id, "status": "failed", "steps": steps, "reason": str(exc)}
+    except LanguageUndecidable:  # the reason names the report only, never its text (R8, Issue 122, defect 2)
+        return {"report_id": report_id, "status": "failed", "steps": steps,
+                "reason": f"{report_id}: language undecidable"}
     job = _Job(work_dir, report_id, loop, src_pdf, call, ctx, services, calibration_note, fetch, pages,
                language, work_dir / "ledger.md", loop_dir)
     for name, runner in RUNNERS:

@@ -313,5 +313,67 @@ class TestPageRoles(unittest.TestCase):
         )
 
 
+    def test_long_body_page_with_version_words_is_kept(self) -> None:
+        """
+        Purpose:
+            A body page of about 300 words that uses "version" and "history" is graded, not excluded.
+            Signature and version markers apply only to a page within max_cover_words (Issue 122, defect 1).
+
+        Inputs:
+            None.
+
+        Outputs:
+            None. Asserts the page on index 6 is kept.
+
+        Raises:
+            AssertionError: when a long body page is excluded as a version table.
+        """
+        sentence = "The fictive sample was heated slowly while readings accumulated in the log."
+        body = " ".join([sentence] * 14)
+        body += " The version of the fictive model and its history were compared with the reference."
+        body += " A second version and the history of its runs were examined by the team."
+        self.assertGreater(len(body.split()), self.markers["max_cover_words"])
+        role = page_roles.classify_page(body, 6, 0, self.markers)
+        self.assertIsNone(role)
+
+    def test_short_version_table_is_excluded(self) -> None:
+        """
+        Purpose:
+            A short page with two version markers is still excluded as a version table (Issue 122, defect 1).
+
+        Inputs:
+            None.
+
+        Outputs:
+            None. Asserts the role is "version_table".
+
+        Raises:
+            AssertionError: when a short version table is kept.
+        """
+        text = "Version 1.0 first draft\nHistory of the changes to the fictive model"
+        role = page_roles.classify_page(text, 6, 0, self.markers)
+        self.assertEqual(role, "version_table")
+
+    def test_plural_is_not_a_marker(self) -> None:
+        """
+        Purpose:
+            "versions" is not the marker "version": a short page with "versions" alone is kept, and a short page
+            with "versions" and "history" counts one marker only, so it is kept too (Issue 122, defect 1).
+
+        Inputs:
+            None.
+
+        Outputs:
+            None. Asserts both pages are kept.
+
+        Raises:
+            AssertionError: when a plural word is read as a marker.
+        """
+        alone = "Several versions of the fictive tool were compared in the lab."
+        with_history = "Several versions of the fictive tool and its history were compared."
+        self.assertIsNone(page_roles.classify_page(alone, 6, 0, self.markers))
+        self.assertIsNone(page_roles.classify_page(with_history, 6, 0, self.markers))
+
+
 if __name__ == "__main__":
     unittest.main()

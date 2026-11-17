@@ -1,0 +1,17 @@
+{
+  "figure_prefixes": ["Figure", "Fig.", "Fig"],
+  "table_prefixes": ["Tableau", "Table"],
+  "note_prefixes": ["Note", "Notes", "Source", "*"],
+  "max_title_distance_pt": {
+    "value": 36,
+    "provenance": "proposal 2026-11-16, tune on the real reports"
+  },
+  "max_note_distance_pt": {
+    "value": 24,
+    "provenance": "proposal 2026-11-16, tune on the real reports"
+  },
+  "centre_tolerance_ratio": {
+    "value": 0.1,
+    "provenance": "proposal 2026-11-16 (a tenth of the element width is centred), tune on the real reports"
+  }
+}

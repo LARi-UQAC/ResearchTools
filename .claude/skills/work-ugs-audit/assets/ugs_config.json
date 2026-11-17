@@ -32,6 +32,38 @@
     "value": 3,
     "provenance": "specified by the design of the working folder (page files look like p001)"
   },
+  "reports.meta_file_name": {
+    "value": "report_meta.json",
+    "provenance": "specified by the preparation contract of issue 122 (spec, Data contracts): language, excluded pages and text quality of one report"
+  },
+  "reports.elements_file_name": {
+    "value": "elements.json",
+    "provenance": "specified by the preparation contract of issue 122 (spec, Data contracts): the element records of one report"
+  },
+  "reports.figures_folder": {
+    "value": "figures",
+    "provenance": "the folder the figure step reads (ugs_figures.figures_report), kept equal to it by the same name"
+  },
+  "text.excluded_folder": {
+    "value": "excluded",
+    "provenance": "specified by spec R7: the original text of an excluded page is kept in this folder beside the pages"
+  },
+  "text.excluded_marker": {
+    "value": "[page excluded: {reason}]",
+    "provenance": "specified by spec R7: the one line that replaces the text of an excluded page in its page file; {reason} is the reason code of page_roles (cover, signature_table, version_table)"
+  },
+  "text.min_replacement_chars": {
+    "value": 2,
+    "provenance": "starting value, adjustable by the professor (a page holding fewer Unicode replacement characters keeps its text layer; one such character can be a real symbol)"
+  },
+  "text.ocr_dpi": {
+    "value": 300,
+    "provenance": "starting value, adjustable by the professor (resolution of the OCR of a damaged page, the usual resolution for printed text; the same figure as the probe of text_quality)"
+  },
+  "pages.small_image_max_area_ratio": {
+    "value": 0.1,
+    "provenance": "starting value, adjustable by the professor (largest share of the page area an image may cover to count as a small image, such as a logo, when a page is excluded)"
+  },
   "batch.outlier_z": {
     "value": 2.0,
     "provenance": "chosen by the professor (a grade whose |z| exceeds this value is an outlier)"

@@ -255,6 +255,55 @@ class TestRunReport(unittest.TestCase):
         self.assertNotIn("SECRET", str(result))
         self.assertEqual(set(result), {"report_id", "status", "steps"})
 
+    def test_figure_step_passes_element_records_to_figures_report(self):
+        records = [{"element_id": "F01", "element_type": "figure", "page": 1,
+                    "rect": [72.0, 100.0, 500.0, 300.0], "file": "F01.png", "title": None, "legend": "",
+                    "notes": [], "caption": "Figure 1: A fictitious plant.", "markdown": None}]
+        (self.work_dir / "R01" / "elements.json").write_text(json.dumps(records), encoding="utf-8")
+        with self.steps() as mocks:
+            self.run_it()
+        self.assertEqual(mocks["figures"].call_args.kwargs["elements"], records)
+
+    def test_figure_step_reads_prepared_figures_folder(self):
+        (self.work_dir / "R01" / "elements.json").write_text("[]", encoding="utf-8")
+        with self.steps() as mocks:
+            self.run_it()
+        report_dir = mocks["figures"].call_args.args[1]
+        self.assertEqual(report_dir, self.work_dir / "R01")
+        self.assertNotEqual(report_dir, self.work_dir / "loop-1" / "R01")
+
+    def test_a_step_that_raised_is_retried_on_resume(self):
+        with self.steps() as mocks:
+            mocks["audit"].side_effect = TypeError("Something went wrong")
+            first = self.run_it()
+        self.assertEqual(first["status"], "failed")
+        self.assertIn("- [!] audit - error=TypeError", self.ledger())
+        order = []
+        grade = grade_doc(grade_record())
+        with self.steps() as mocks:
+            mocks["audit"].side_effect = lambda *args, **kwargs: (order.append("audit"), grade)[1]
+            mocks["assemble"].side_effect = lambda *args, **kwargs: (order.append("assemble"), ASSEMBLE_DOC)[1]
+            second = self.run_it()
+        self.assertEqual(second["status"], "done")
+        self.assertEqual(order, ["audit", "assemble"])
+        self.assertIn("- [x] audit", self.ledger())
+
+    def test_a_bad_language_stops_only_its_report(self):
+        self.ledger_path.write_text(
+            add_report(add_report(new_ledger("Test Ledger"), "R01", ["I01"]), "R02", ["I01"]), encoding="utf-8")
+        pages_dir = self.work_dir / "R02" / "pages"
+        pages_dir.mkdir(parents=True)
+        (pages_dir / "p001.md").write_text("text on page 1", encoding="utf-8")
+        (self.work_dir / "R01" / "report_meta.json").write_text(json.dumps({"language": "xx"}), encoding="utf-8")
+        with self.steps() as mocks:
+            bad = self.run_it()
+            good = self.run_it(report_id="R02")
+        self.assertEqual(bad["status"], "failed")
+        self.assertIn("language", bad["reason"])
+        self.assertIn("report_meta.json", bad["reason"])
+        self.assertEqual(good["status"], "done")
+        self.assertEqual(mocks["grade"].call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

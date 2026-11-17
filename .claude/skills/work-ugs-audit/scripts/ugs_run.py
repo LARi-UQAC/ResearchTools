@@ -11,7 +11,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ugs_ledger import read, write, set_mark, parse, add_figures
 from ugs_text import StepContext, read_pages, detect_language
@@ -22,17 +22,21 @@ from ugs_figures import figures_report
 from ugs_assemble import assemble_report
 from ugs_bridge import NotRun
 from ugs_config import load as load_config, default_path as default_config_path
+from ugs_tables import load_elements
 from page_roles import LANGUAGES
 
 STEPS = ("grade", "language", "figures", "audit", "assemble")
 DEFAULT_LANGUAGE = "en"
 META_NAME_KEY = "reports.meta_file_name"
+ELEMENTS_NAME_KEY = "reports.elements_file_name"
 META_LANGUAGE_KEY = "language"
 
 
 class LanguageError(ValueError):
     """Raised when the language recorded in a report's metadata is not one the pipeline supports."""
-SETTLED_MARKS = ("x", "!")
+# A "!" line whose note starts with this prefix is an ordinary exception, not a block that waits for the owner:
+# a resume retries it, so an unaudited grade can never reach the annex by being skipped.
+ERROR_NOTE_PREFIX = "error="
 # The detail of a mark record: a ledger mark written as a word, because the allow-list of ugs_events takes no "!".
 MARK_WORDS = {"x": "done", "!": "blocked", " ": "open"}
 # A ledger note that comes from a model answer must look like a snake_case code, so a sentence of a report
@@ -142,11 +146,39 @@ def _step_lines(ledger_text: str, report_id: str, step: str) -> List[dict]:
     return [s for s in parse(ledger_text) if s["report_id"] == report_id and _belongs(s["label"], step)]
 
 
+def _is_settled(line: dict) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Say whether one ledger line needs no further run: done, or blocked for a reason that waits for the owner.
+
+    Details:
+        A "!" line whose note is an error code (ERROR_NOTE_PREFIX) records an ordinary exception and is not
+        settled, so a resume runs its step again. Every other "!" line is an explicit block (a model that
+        answered not_run, a flagged audit, a missing vision validation) and stays settled.
+
+    Inputs:
+        line (dict): one step of ugs_ledger.parse, with keys `mark` and `note`
+
+    Outputs:
+        settled (bool): True for "x" and for a "!" line that is not an error.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if line["mark"] == "x":
+        return True
+    if line["mark"] == "!":
+        return not (line.get("note") or "").startswith(ERROR_NOTE_PREFIX)
+    return False
+
+
 def _settled(ledger_text: str, report_id: str, step: str) -> bool:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Say whether a step has nothing left to do: it has ledger lines and every one is done or blocked.
+        Say whether a step has nothing left to do: it has ledger lines and every one is settled.
 
     Inputs:
         ledger_text (str): the ledger
@@ -154,11 +186,11 @@ def _settled(ledger_text: str, report_id: str, step: str) -> bool:
         step (str): one of STEPS
 
     Outputs:
-        settled (bool): False when the step has no line at all.
+        settled (bool): False when the step has no line at all, or when one line is open or an exception.
     --------------------------------------------------------------------------
     """
     lines = _step_lines(ledger_text, report_id, step)
-    return bool(lines) and all(line["mark"] in SETTLED_MARKS for line in lines)
+    return bool(lines) and all(_is_settled(line) for line in lines)
 
 
 def _load_json(path: Path) -> Optional[dict]:
@@ -301,6 +333,36 @@ def _step_language(job: _Job) -> str:
     return "done"
 
 
+def _figure_inputs(job: _Job) -> Tuple[Optional[List[Dict[str, Any]]], Path]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Find the element records and the folder that holds the figure files of one report.
+
+    Details:
+        The prepared folder is `<work_dir>/<report_id>`, where report_prepare wrote `elements.json` and the
+        figure files under `figures`. When `elements.json` exists its records are given to the figure step and
+        the prepared folder is the report folder of the step. Without it the figures are extracted from the PDF
+        into the loop folder, as before the element records existed.
+
+    Inputs:
+        job (_Job): the shared state of the report
+
+    Outputs:
+        inputs (tuple): (elements, report_dir), where elements is the list of records or None and report_dir
+        the folder given to figures_report.
+
+    Raises:
+        ugs_tables.TablesError: the elements file is not valid JSON or not a list of records.
+    --------------------------------------------------------------------------
+    """
+    prepared = job.work_dir / job.report_id
+    elements_path = prepared / load_config(default_config_path())[ELEMENTS_NAME_KEY]
+    if not elements_path.exists():
+        return None, job.loop_dir
+    return load_elements(elements_path), prepared
+
+
 def _step_figures(job: _Job) -> str:
     """Figures: partial file saved and each figure line marked after each figure, then the `figures` line."""
     figures_path = job.loop_dir / "figures.json"
@@ -318,9 +380,10 @@ def _step_figures(job: _Job) -> str:
         job.mark("figure " + figure_id, *_figure_mark(record))
         announced.add(figure_id)
 
-    result = figures_report(job.src_pdf, job.loop_dir, job.report_id, job.pages, job.call_for("figures"), job.ctx,
+    elements, report_dir = _figure_inputs(job)
+    result = figures_report(job.src_pdf, report_dir, job.report_id, job.pages, job.call_for("figures"), job.ctx,
                             job.services["criteria_doc"], job.language, job.services["vision_ok"],
-                            existing, on_figure)
+                            existing, on_figure, elements=elements)
     job.save(figures_path, result)
     job.ensure_figure_lines([f["figure_id"] for f in result["figures"]])
     for record in result["figures"]:
@@ -370,7 +433,7 @@ def _failure_label(job: _Job, step: str) -> str:
     if step != "grade":
         return step
     lines = _step_lines(read(job.ledger_path), job.report_id, "grade")
-    open_lines = [s for s in lines if s["mark"] not in SETTLED_MARKS]
+    open_lines = [s for s in lines if not _is_settled(s)]
     return (open_lines or lines)[0]["label"]
 
 
@@ -414,7 +477,8 @@ def run_report(
 
     Outputs:
         summary (dict): `report_id`, `status` (`done` or `failed`) and `steps`, a map of each step to
-        `done`, `blocked` or `skipped`. It holds no text of the report.
+        `done`, `blocked` or `skipped`. It holds no text of the report. A report whose metadata is refused
+        is `failed` with a `reason` naming the key or the file (never report text) and no step run.
 
     Raises:
         NotRun: the model could not run; the step stays open so a resume continues there.
@@ -424,9 +488,13 @@ def run_report(
     loop_dir.mkdir(parents=True, exist_ok=True)
     pages = read_pages(work_dir, report_id)
     hints = services.get("hints") or {}
-    job = _Job(work_dir, report_id, loop, src_pdf, call, ctx, services, calibration_note, fetch, pages,
-               report_language(work_dir, report_id, pages, hints), work_dir / "ledger.md", loop_dir)
     steps: Dict[str, str] = {name: "skipped" for name in STEPS}
+    try:
+        language = report_language(work_dir, report_id, pages, hints)
+    except LanguageError as exc:  # a bad report stops only itself: the batch goes on with the next one
+        return {"report_id": report_id, "status": "failed", "steps": steps, "reason": str(exc)}
+    job = _Job(work_dir, report_id, loop, src_pdf, call, ctx, services, calibration_note, fetch, pages,
+               language, work_dir / "ledger.md", loop_dir)
     for name, runner in RUNNERS:
         if _settled(read(job.ledger_path), report_id, name):
             continue

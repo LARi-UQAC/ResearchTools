@@ -549,9 +549,9 @@ class TestBridgeLog(unittest.TestCase):
         _call(deps)
         start, attempt = deps.records
         now = collect_local._stamp(attempt["at"])
-        roles, kept, skipped = collect_local._group([start], now, 60, 3600)
+        roles, kept, skipped, _actions = collect_local._group([start], now, 60, 3600)
         self.assertTrue(roles["ugs-grader"]["generating"])
-        roles, kept, skipped = collect_local._group([start, attempt], now, 60, 3600)
+        roles, kept, skipped, _actions = collect_local._group([start, attempt], now, 60, 3600)
         row = roles["ugs-grader"]
         self.assertFalse(row["generating"])
         self.assertEqual((row["tag"], row["num_ctx"], row["prompt_tokens"], row["completion_tokens"]),

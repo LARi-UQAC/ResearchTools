@@ -21,9 +21,17 @@ from ugs_language import language_report
 from ugs_figures import figures_report
 from ugs_assemble import assemble_report
 from ugs_bridge import NotRun
+from ugs_config import load as load_config, default_path as default_config_path
+from page_roles import LANGUAGES
 
 STEPS = ("grade", "language", "figures", "audit", "assemble")
 DEFAULT_LANGUAGE = "en"
+META_NAME_KEY = "reports.meta_file_name"
+META_LANGUAGE_KEY = "language"
+
+
+class LanguageError(ValueError):
+    """Raised when the language recorded in a report's metadata is not one the pipeline supports."""
 SETTLED_MARKS = ("x", "!")
 # A ledger note that comes from a model answer must look like a snake_case code, so a sentence of a report
 # (letters and spaces would pass the ledger's own check) can never be written into the ledger.
@@ -115,6 +123,47 @@ def _load_json(path: Path) -> Optional[dict]:
 
 def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def report_language(work_dir: Path, report_id: str, pages: List[str], hints: dict) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the language of one report: the one recorded at preparation when its metadata file exists,
+        otherwise the detector's answer from the page text and the language hints.
+
+    Details:
+        The metadata file is `<work_dir>/<report_id>/<reports.meta_file_name>` (ugs_config.json). Without it
+        the detector runs exactly as before the metadata existed: with hints, detect_language; with none,
+        DEFAULT_LANGUAGE.
+
+    Inputs:
+        work_dir (Path): the work folder
+        report_id (str): the report id, for example R01
+        pages (List[str]): the page texts of the report, used only by the detector
+        hints (dict): the language hints, a map from 'fr' and 'en' to lists of words; empty when absent
+
+    Outputs:
+        language (str): 'fr' or 'en'.
+
+    Raises:
+        LanguageError: the metadata file is unreadable, holds no `language` key, or holds a value other
+            than one of LANGUAGES. The message names the value or key and the file, never report text.
+    --------------------------------------------------------------------------
+    """
+    meta_path = work_dir / report_id / load_config(default_config_path())[META_NAME_KEY]
+    if not meta_path.exists():
+        return detect_language(pages, hints) if hints else DEFAULT_LANGUAGE
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LanguageError(f"report metadata is unreadable: {meta_path} ({type(exc).__name__})") from exc
+    if not isinstance(meta, dict) or META_LANGUAGE_KEY not in meta:
+        raise LanguageError(f"key '{META_LANGUAGE_KEY}' missing in report metadata: {meta_path}")
+    language = meta[META_LANGUAGE_KEY]
+    if language not in LANGUAGES:
+        raise LanguageError(f"language '{language}' is not one of {list(LANGUAGES)} in: {meta_path}")
+    return language
 
 
 def _upsert(records: List[dict], key: str, value: str, record: dict) -> None:
@@ -299,7 +348,7 @@ def run_report(
     pages = read_pages(work_dir, report_id)
     hints = services.get("hints") or {}
     job = _Job(work_dir, report_id, loop, src_pdf, call, ctx, services, calibration_note, fetch, pages,
-               detect_language(pages, hints) if hints else DEFAULT_LANGUAGE, work_dir / "ledger.md", loop_dir)
+               report_language(work_dir, report_id, pages, hints), work_dir / "ledger.md", loop_dir)
     steps: Dict[str, str] = {name: "skipped" for name in STEPS}
     for name, runner in RUNNERS:
         if _settled(read(job.ledger_path), report_id, name):

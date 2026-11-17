@@ -8,6 +8,7 @@ Decide only this: does the evidence support the score and the comment, given the
 - Answer "disagree" when the comment is false, when a quote is not on the pages, or when the score is
   clearly too high or too low for what the comment describes.
 - Give a reason in one sentence. If you disagree, say what is wrong.
+- The comment of the grade and your reason are written in {{LANGUAGE_OF_REPORT}}.
 
 ## Item
 

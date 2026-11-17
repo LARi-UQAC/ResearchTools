@@ -1192,10 +1192,12 @@ svg.flowgraph .fx-ring {
   stroke-linecap: round;
 }
 svg.flowgraph .fx-ring--full { stroke: var(--rt-budget-full); }
+/* No letter spacing: the word "generating" is wider than the hexagon's centre line
+   with it (about 52 px at the node radius) and the label is never cut to fit. */
 svg.flowgraph .fx-agent-state {
   font-size: 10px;
   fill: #9fd0e8;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
 }
 svg.flowgraph .fx-agent-name { font-size: 12px; fill: #e6f1f6; }
 /* The number itself, in the one colour reserved for a figure rather than a
@@ -3896,7 +3898,15 @@ function localLanes(state) {
       tokens: { status: "ok",
                 held: (last.prompt_tokens || 0) + (last.completion_tokens || 0),
                 window: row.num_ctx || null },
-      steps: [],
+      /* The actions the role took, oldest first, drawn as tool-call steps (plan 11,
+         R11). Identical ones are grouped into one box with a count by laneEvents. A
+         role with no actions has no steps, so nothing empty is drawn. The mapping is
+         written inline so localLanes calls no helper that a page-function cut omits. */
+      steps: (row.actions || []).map(function (item) {
+        return { kind: "tool", at: item.at || "", network: "no", server: "",
+                 name: String(item.action || "")
+                   + (item.target ? " " + item.target : "") };
+      }),
       hooks: []
     });
   });
@@ -4467,7 +4477,7 @@ function agentGraph(lanes, width, sessionMax, declared, holding, rex) {
       + '<path class="fx-hex" d="' + hexPath(at.x, at.y, nodeR) + '"/>'
       + '<text class="fx-agent-state" x="' + at.x + '" y="' + (at.y + 4)
       + '" text-anchor="middle">'
-      + escapeText((lane.state || "").slice(0, 8)) + "</text>"
+      + escapeText(lane.state || "") + "</text>"
       + '<text class="fx-agent-name" x="' + at.x + '" y="' + (at.y + ringR + 20)
       + '" text-anchor="middle">'
       + escapeText(lane.label.length > 18

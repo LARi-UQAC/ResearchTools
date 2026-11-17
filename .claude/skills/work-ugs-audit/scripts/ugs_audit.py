@@ -60,8 +60,10 @@ def audit_item(
         
     evidence_text = page_blocks(pages, evidence_pages) if evidence_pages else ""
     
-    # Remove audit and flag from record for prompt
-    record_for_prompt = {k: v for k, v in record.items() if k not in ("audit", "flag")}
+    # The auditor judges the grade, not the bookkeeping of its validation (plan 12, R12): these keys stay in the
+    # saved record, which audit_report copies, and never reach the prompt.
+    record_for_prompt = {k: v for k, v in record.items()
+                         if k not in ("audit", "flag", "validation", "attempts", "model_score")}
     
     prompt_template = ctx.prompts["audit_item"]
     schema = ctx.schemas["audit_item"]

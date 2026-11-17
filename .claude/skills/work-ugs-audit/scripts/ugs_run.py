@@ -220,10 +220,32 @@ def _upsert(records: List[dict], key: str, value: str, record: dict) -> None:
 
 
 def _grade_mark(record: dict) -> tuple:
-    """The mark and note of a grade line: blocked with its code only when the item was not run."""
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the ledger mark and note of a grade line. The note is the validation code only, never a quote.
+
+    Details:
+        A record not run is blocked with its validation code (a record written before plan 12 has no
+        validation field, so its comment is read as before). A rated record whose proof was refused is done
+        with its code, because its score is usable; a rated record with code ok is done with no note.
+
+    Inputs:
+        record (dict): one grade record of ugs_grade.grade_item
+
+    Outputs:
+        mark_and_note (tuple): (mark, note), the mark being "x" or "!" and the note a code or None.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
     if record["status"] == "not_run":
-        return "!", _short_code(record.get("comment"))
-    return "x", None
+        return "!", _short_code(record.get("validation", record.get("comment")))
+    code = record.get("validation")
+    if code in (None, "ok"):
+        return "x", None
+    return "x", _short_code(code)
 
 
 def _figure_mark(record: dict) -> tuple:

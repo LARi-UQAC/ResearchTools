@@ -1,0 +1,26 @@
+{
+  "cover_markers": {
+    "fr": ["université", "faculté", "département", "rapport présenté", "rapport"],
+    "en": ["university", "faculty", "department", "report submitted", "report"]
+  },
+  "signature_markers": {
+    "fr": ["signature", "approuvé", "approbation"],
+    "en": ["signature", "approved", "approval"]
+  },
+  "version_markers": {
+    "fr": ["version", "historique", "révision"],
+    "en": ["version", "history", "revision"]
+  },
+  "max_leading_pages": {
+    "value": 2,
+    "provenance": "proposal 2026-11-16, tune on the counts of the real reports (a cover is page 1, page 2 allowed)"
+  },
+  "max_cover_words": {
+    "value": 120,
+    "provenance": "proposal 2026-11-16, tune on the counts of the real reports (a cover holds few words, a body page many)"
+  },
+  "min_markers": {
+    "value": 2,
+    "provenance": "proposal 2026-11-16, tune on the counts of the real reports (distinct marker words needed on one page)"
+  }
+}

@@ -33,6 +33,8 @@ META_LANGUAGE_KEY = "language"
 class LanguageError(ValueError):
     """Raised when the language recorded in a report's metadata is not one the pipeline supports."""
 SETTLED_MARKS = ("x", "!")
+# The detail of a mark record: a ledger mark written as a word, because the allow-list of ugs_events takes no "!".
+MARK_WORDS = {"x": "done", "!": "blocked", " ": "open"}
 # A ledger note that comes from a model answer must look like a snake_case code, so a sentence of a report
 # (letters and spaces would pass the ledger's own check) can never be written into the ledger.
 CODE_RE = re.compile(r"^[a-z0-9_]{1,30}$")
@@ -61,8 +63,50 @@ class _Job:
         return self.call[step] if isinstance(self.call, dict) else self.call
 
     def mark(self, label: str, mark: str, note: Optional[str] = None) -> None:
-        """Set one ledger line, reading the file again so no step works on a stale text."""
+        """Set one ledger line, reading the file again so no step works on a stale text, then record the mark."""
         write(self.ledger_path, set_mark(read(self.ledger_path), self.report_id, label, mark, note))
+        self.emit("mark", label, MARK_WORDS.get(mark))
+
+    def emit(self, action: str, target: str, detail: Optional[str] = None) -> None:
+        """
+        --------------------------------------------------------------------------
+        Purpose:
+            Record one action of this step through the emitter of the step context, when there is one.
+
+        Inputs:
+            action (str): one of the actions of ugs_events
+            target (str): an item label, a page range or a bare file name
+            detail (str or None): an allow-listed detail, for a mark
+
+        Outputs:
+            None. The emitter never raises (ugs_events.make_emitter), so the step result is not changed by it.
+
+        Raises:
+            None.
+        --------------------------------------------------------------------------
+        """
+        if self.ctx.emit is not None:
+            self.ctx.emit(action, target, report_id=self.report_id, detail=detail)
+
+    def save(self, path: Path, data: Any) -> None:
+        """
+        --------------------------------------------------------------------------
+        Purpose:
+            Write one JSON output file of a step and record its base name as a write action.
+
+        Inputs:
+            path (Path): the output file, inside the loop folder
+            data (Any): the JSON document
+
+        Outputs:
+            None. The file is written before its record, so a record never names a file that does not exist.
+
+        Raises:
+            OSError: the output file cannot be written, as before plan 10.
+        --------------------------------------------------------------------------
+        """
+        _write_json(path, data)
+        self.emit("write", path.name)
 
     def ensure_figure_lines(self, figure_ids: List[str]) -> None:
         """Add the figure lines that are not yet in the ledger (add_figures skips the present ones)."""
@@ -207,23 +251,27 @@ def _step_grade(job: _Job) -> str:
     existing = _load_json(grade_path)
     items = list(existing["items"]) if existing and "items" in existing else []
 
+    announced = set()
+
     def on_item(item_id: str, record: dict) -> None:
         _upsert(items, "item_id", item_id, record)
-        _write_json(grade_path, {"report_id": job.report_id, "loop": job.loop, "items": items})
+        job.save(grade_path, {"report_id": job.report_id, "loop": job.loop, "items": items})
         job.mark("grade " + item_id, *_grade_mark(record))
+        announced.add(item_id)
 
     result = grade_report(job.services["rubric"], job.pages, job.report_id, job.loop, job.call_for("grade"), job.ctx,
                           job.language, job.calibration_note, existing, on_item)
-    _write_json(grade_path, result)
-    for record in result["items"]:  # an item saved before an interruption still gets its mark
-        job.mark("grade " + record["item_id"], *_grade_mark(record))
+    job.save(grade_path, result)
+    for record in result["items"]:  # an item saved before an interruption still gets its mark, once
+        if record["item_id"] not in announced:
+            job.mark("grade " + record["item_id"], *_grade_mark(record))
     return "blocked" if any(r["status"] == "not_run" for r in result["items"]) else "done"
 
 
 def _step_language(job: _Job) -> str:
     """Language findings of every page; blocked, with the count of pages that did not run, when some failed."""
     result = language_report(job.pages, job.call_for("language"), job.ctx, job.services["entries"], job.language)
-    _write_json(job.loop_dir / "language.json", result)
+    job.save(job.loop_dir / "language.json", result)
     if result["not_run"]:
         job.mark("language", "!", "pages=%d" % len(result["not_run"]))
         return "blocked"
@@ -239,19 +287,23 @@ def _step_figures(job: _Job) -> str:
            "report_criteria": saved.get("report_criteria", {})}
     existing = {f["figure_id"]: f for f in doc["figures"]}
 
+    announced = set()
+
     def on_figure(figure_id: str, record: dict) -> None:
         _upsert(doc["figures"], "figure_id", figure_id, record)
-        _write_json(figures_path, doc)
+        job.save(figures_path, doc)
         job.ensure_figure_lines([figure_id])
         job.mark("figure " + figure_id, *_figure_mark(record))
+        announced.add(figure_id)
 
     result = figures_report(job.src_pdf, job.loop_dir, job.report_id, job.pages, job.call_for("figures"), job.ctx,
                             job.services["criteria_doc"], job.language, job.services["vision_ok"],
                             existing, on_figure)
-    _write_json(figures_path, result)
+    job.save(figures_path, result)
     job.ensure_figure_lines([f["figure_id"] for f in result["figures"]])
     for record in result["figures"]:
-        job.mark("figure " + record["figure_id"], *_figure_mark(record))
+        if record["figure_id"] not in announced:
+            job.mark("figure " + record["figure_id"], *_figure_mark(record))
     if not job.services["vision_ok"]:
         job.mark("figures", "!", "vision_not_ok")
         return "blocked"
@@ -266,11 +318,11 @@ def _step_audit(job: _Job) -> str:
 
     def on_item(item_id: str, record: dict) -> None:
         _upsert(grade["items"], "item_id", item_id, record)
-        _write_json(grade_path, grade)
+        job.save(grade_path, grade)
 
     result = audit_report(job.services["rubric"], job.pages, grade, job.call_for("audit"), job.ctx, job.language,
                           job.calibration_note, on_item)
-    _write_json(grade_path, result)
+    job.save(grade_path, result)
     flags = sum(1 for item in result["items"] if item.get("flag"))
     if flags:
         job.mark("audit", "!", "flags=%d" % flags)
@@ -309,7 +361,8 @@ def run_report(
     ctx: StepContext,
     services: dict,
     calibration_note: str,
-    fetch: Optional[Callable]
+    fetch: Optional[Callable],
+    on_step: Optional[Callable[[str], None]] = None
 ) -> dict:
     """
     --------------------------------------------------------------------------
@@ -334,6 +387,8 @@ def run_report(
             `settings` (for assemble_report)
         calibration_note (str): the note of the loop, empty on loop 1
         fetch (Callable | None): the URL fetcher of the reference check, injected
+        on_step (Callable[[str], None] | None): called with the name of each step before it runs, so the caller
+            can name the role of the actions the step records; None changes nothing
 
     Outputs:
         summary (dict): `report_id`, `status` (`done` or `failed`) and `steps`, a map of each step to
@@ -353,6 +408,8 @@ def run_report(
     for name, runner in RUNNERS:
         if _settled(read(job.ledger_path), report_id, name):
             continue
+        if on_step is not None:
+            on_step(name)
         try:
             steps[name] = runner(job)
         except NotRun:

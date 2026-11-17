@@ -52,6 +52,8 @@ class StepContext:
     grade_retries: int
     audit_retries: int
     min_word_len: int
+    # Optional action emitter (ugs_events.make_emitter): None keeps every step silent, as before plan 10.
+    emit: Optional[Callable[..., None]] = None
 
 def _normalize_word(word: str) -> str:
     """

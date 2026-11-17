@@ -14,6 +14,7 @@ for _p in (_LOOP_ENGINEER_SCRIPTS, _LOOP_ENGINEER_ROOT):
         sys.path.insert(0, str(_p))
 
 from ugs_text import StepContext, fill, page_blocks, select_pages
+from ugs_events import page_range
 from ugs_bridge import NotRun
 from rubric_split import item_prompt_text
 from rubric_check import validate, RubricError
@@ -126,10 +127,13 @@ def grade_item(
     call: Callable,
     ctx: StepContext,
     language: str,
-    calibration_note: str
+    calibration_note: str,
+    report_id: Optional[str] = None
 ) -> dict:
     """
     Purpose: Grade a single rubric item.
+    Details: When ctx.emit is set, one `read` record gives the page range selected and one `call` record each
+        model call, both with identifiers only (R11). With no emitter nothing is recorded.
     Inputs:
         item: dict - The rubric item.
         pages: List[str] - The page texts.
@@ -137,6 +141,7 @@ def grade_item(
         ctx: StepContext - The context for the step.
         language: str - The language of the report.
         calibration_note: str - The current calibration note.
+        report_id: str or None - The identifier of the report, for the action records only.
     Outputs:
         dict - The grade record.
     Raises:
@@ -177,7 +182,9 @@ def grade_item(
                 "flag": True
             }
         sections_text = page_blocks(pages, selected_pages)
-        
+
+    if ctx.emit is not None:
+        ctx.emit("read", page_range(selected_pages), report_id=report_id)
     schema = ctx.schemas["grade_item"]
     
     last_error_reason = None
@@ -194,6 +201,8 @@ def grade_item(
             "CALIBRATION_NOTE": current_note
         })
         
+        if ctx.emit is not None:
+            ctx.emit("call", item_id, report_id=report_id)
         try:
             answer = call(prompt, schema)
             reason = _validate_grade_answer(answer, item, pages)
@@ -277,7 +286,7 @@ def grade_report(
             items_to_grade.append(existing_items[item_id])
         else:
             record = grade_item(
-                item, pages, call, ctx, language, calibration_note
+                item, pages, call, ctx, language, calibration_note, report_id
             )
             items_to_grade.append(record)
             if on_item:

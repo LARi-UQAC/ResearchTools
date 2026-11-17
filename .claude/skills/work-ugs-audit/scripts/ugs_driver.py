@@ -13,6 +13,7 @@ import contextlib
 import io
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -33,6 +34,7 @@ from batch_stats import main as batch_stats_main
 from ugs_text import StepContext, load_prompts, load_schemas, load_hints, fill
 from ugs_language import load_table
 from ugs_bridge import OllamaDeps, NotRun, call as bridge_call
+from ugs_events import make_emitter
 from figure_checks import load_criteria
 
 EXIT_OK, EXIT_NOT_RUN, EXIT_REFUSAL, EXIT_OUT_OF_BAND = 0, 1, 2, 3
@@ -139,14 +141,100 @@ def _real_call(config: Dict[str, Any], work: Path, deps: OllamaDeps) -> Callable
     return call
 
 
-def _context(config: Dict[str, Any], window: int, count: Callable) -> StepContext:
+def _stamp() -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        The clock of the action records: a UTC ISO 8601 stamp to the millisecond, the format of the bridge log.
+
+    Inputs:
+        None
+
+    Outputs:
+        stamp (str): for example 2026-11-16T10:00:00.000+00:00
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _step_role(config: Dict[str, Any], step: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Name the local role that acts in a grading step, for the action records of the dashboard.
+
+    Inputs:
+        config (dict): the configuration, with the roles.* keys
+        step (str): one of the steps of ugs_run; a step with no model call acts as the grader
+
+    Outputs:
+        role (str): the configured role name, for example the grader role.
+
+    Raises:
+        KeyError: the configuration lacks the roles.* key; cmd_run checks the keys before it calls this.
+    --------------------------------------------------------------------------
+    """
+    return config[f"roles.{STEP_KIND.get(step, 'grader')}"]
+
+
+def _action_emitter(deps: Any, role_for: Callable[[], str], clock: Callable[[], str]) -> Optional[Callable[..., None]]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the emitter of the grading steps on the bridge log writer, or None when there is no real log.
+
+    Details:
+        The records go through deps.log, the writer the bridge uses, so no second log file is opened. A test that
+        injects its own model call passes no deps, which gives None and keeps the machine's log untouched.
+
+    Inputs:
+        deps (object or None): an object with a log(record) method, None when there is no real log
+        role_for (callable): returns the role of the acting step at the time of the call
+        clock (callable): returns the stamp of a record
+
+    Outputs:
+        emit (callable or None): the make_emitter function, which never raises, or None.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if deps is None:
+        return None
+    return make_emitter(deps.log, role_for, clock)
+
+
+def _context(config: Dict[str, Any], window: int, count: Callable,
+             emit: Optional[Callable[..., None]] = None) -> StepContext:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the step context of the grading steps from the prompts, the schemas and the configuration.
+
+    Inputs:
+        config (dict): the configuration
+        window (int): the context window in tokens
+        count (callable): the token counter
+        emit (callable or None): the action emitter, None for a silent run
+
+    Outputs:
+        ctx (StepContext): the context shared by the steps of one run.
+
+    Raises:
+        PromptError: a missing prompt or schema, raised by ugs_text as before.
+    --------------------------------------------------------------------------
+    """
     prompts: Dict[str, str] = {}
     for folder in PROMPTS_DIRS:
         prompts.update(load_prompts(folder))
     return StepContext(prompts=prompts, schemas=load_schemas(SCHEMAS_FILE, SCHEMA_NAMES), levels=prompts["levels"],
                        window_tokens=window, reserve_tokens=config["driver.reply_reserve_tokens"], count=count,
                        grade_retries=config["grade.invalid_answer_retries"],
-                       audit_retries=config["driver.audit_retries"], min_word_len=config["select.min_word_len"])
+                       audit_retries=config["driver.audit_retries"], min_word_len=config["select.min_word_len"],
+                       emit=emit)
 
 
 def _inputs(call: Optional[Callable], window: Optional[int], count: Optional[Callable], config: dict, work: Path):
@@ -379,7 +467,11 @@ def cmd_run(args, call, fetch, window, count) -> int:
         return EXIT_OK
     rubric = _read_json(work / "rubric.json", "rubric")
     model_call, model_window, model_count = _inputs(call, window, count, config, work)
-    ctx = _context(config, model_window, model_count)
+    # The actions are recorded only on the real run: an injected call (tests) writes nothing to the machine's log.
+    active = {"step": "grade"}
+    emitter = _action_emitter(OllamaDeps(config["driver.count_timeout_s"]) if call is None else None,
+                              lambda: _step_role(config, active["step"]), _stamp)
+    ctx = _context(config, model_window, model_count, emitter)
     services = _services(config, work, rubric)
     note = _calibration_note(work, current, ctx.prompts)
     state = work / "loop_state.json"
@@ -389,7 +481,8 @@ def cmd_run(args, call, fetch, window, count) -> int:
              for step, kind in STEP_KIND.items()}
     for report_id in wanted:
         try:
-            result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note, fetch)
+            result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note, fetch,
+                                on_step=lambda name: active.update(step=name))
         except NotRun as error:
             opened = first_open(read_ledger(work / "ledger.md"))
             _emit({"report_id": report_id, "step": opened[1] if opened else None, "status": "not_run",

@@ -22,6 +22,7 @@ from figure_checks import check, body_font_size, failure_comment, criteria_for_s
 from figure_image import fit_for_model, contact_sheet
 from ugs_text import StepContext, fill, prompt_section
 from ugs_bridge import NotRun
+from ugs_tables import figure_records
 
 SCOPE = "undergraduate"
 RETRYABLE_KINDS = ("unparsable", "invalid")
@@ -188,7 +189,8 @@ def figures_report(
     language: str,
     vision_ok: bool,
     existing: Optional[Dict[str, Any]] = None,
-    on_figure: Optional[Callable[[str, Dict[str, Any]], None]] = None
+    on_figure: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    elements: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
     --------------------------------------------------------------------------
@@ -203,6 +205,8 @@ def figures_report(
         does not apply to the kind the model named becomes `not_applicable` whatever it said, one it did
         not answer is `not_run` with reason `no_answer`, and a failed one carries the ready comment and the
         reason. Only criteria of the undergraduate scope are applied.
+        When `elements` is given (the records of elements.json), those figure records are the raw list and
+        the PDF is not extracted again: the figure files must already be in `report_dir / "figures"`.
 
     Inputs:
         pdf (Path): the report PDF
@@ -216,6 +220,8 @@ def figures_report(
         vision_ok (bool): whether the vision model was validated
         existing (dict | None): records already judged, by figure id, not judged again
         on_figure (Callable | None): called with the id and the record after each figure
+        elements (list[dict] | None): the element records of the report; when given, only their figure
+            records are judged and no extraction runs (None keeps the extraction)
 
     Outputs:
         report (dict): `report_id`, `figures` (a record per figure) and `report_criteria`.
@@ -223,6 +229,7 @@ def figures_report(
     Raises:
         NotRun: a model kind that is not retryable.
         KeyError: an `extraction` key is missing from the criteria file.
+        TablesError: an element record of a figure has no id, page or rect.
     --------------------------------------------------------------------------
     """
     existing = existing or {}
@@ -230,7 +237,10 @@ def figures_report(
     criteria = criteria_for_scope(criteria_doc, SCOPE)
     figures_dir = report_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
-    raw = extract(pdf, figures_dir, settings["min_area_pt2"], settings["background_threshold"])
+    if elements is None:
+        raw = extract(pdf, figures_dir, settings["min_area_pt2"], settings["background_threshold"])
+    else:
+        raw = figure_records(elements)
     checked = check(raw, pages, body_font_size(pdf), criteria_doc)
 
     figures = []

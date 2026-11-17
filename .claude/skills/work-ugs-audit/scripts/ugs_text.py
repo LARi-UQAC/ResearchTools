@@ -52,6 +52,8 @@ class StepContext:
     grade_retries: int
     audit_retries: int
     min_word_len: int
+    # Optional action emitter (ugs_events.make_emitter): None keeps every step silent, as before plan 10.
+    emit: Optional[Callable[..., None]] = None
 
 def _normalize_word(word: str) -> str:
     """
@@ -327,14 +329,23 @@ def split_body_and_references(pages: List[str]) -> Tuple[str, List[Dict[str, Any
 
     return body_text, refs
 
+class LanguageUndecidable(ValueError):
+    """Raised when the text layer of a report gives no language decision (no hint word, or a tie). Never silenced (R8)."""
+
+
 def detect_language(pages: List[str], hints: Dict[str, List[str]]) -> str:
     """
     Purpose: Detect the language of the report based on word frequency hints.
+    Details: The language is decided only when one of French and English scores strictly higher than the other. A
+        tie, including two zero scores such as an empty text layer, is refused: the English default would write a
+        French report as English without any sign.
     Inputs:
         pages: List[str] - List of page texts.
         hints: Dict[str, List[str]] - Mapping of language code to list of common words.
     Outputs:
         str - 'fr' or 'en'.
+    Raises:
+        LanguageUndecidable: when the French and English scores are equal, both zero included.
     """
     text = " ".join(pages).lower()
     words = re.findall(r'\b\w+\b', text)
@@ -347,11 +358,15 @@ def detect_language(pages: List[str], hints: Dict[str, List[str]]) -> str:
         
     fr_score = scores.get('fr', 0)
     en_score = scores.get('en', 0)
-    
+
     if fr_score > en_score:
         return 'fr'
-    else:
+    if en_score > fr_score:
         return 'en'
+    raise LanguageUndecidable(
+        "the text layer gives no language decision (no hint word, or a tie between French and English); "
+        "a scanned page needs its language settled another way"
+    )
 
 def load_hints(path: Path) -> Dict[str, List[str]]:
     """

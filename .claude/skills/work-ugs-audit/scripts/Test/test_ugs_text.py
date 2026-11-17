@@ -220,7 +220,23 @@ class TestUgsText(unittest.TestCase):
         }
         self.assertEqual(detect_language(["le la le"], hints), "fr")
         self.assertEqual(detect_language(["the of the"], hints), "en")
-        self.assertEqual(detect_language(["le the"], hints), "en")
+        self.assertEqual(detect_language(["the of the"], hints), "en")
+
+    def test_no_text_layer_is_refused_not_english(self):
+        """Pages with no word of either hint list give no decision: the English default is not used (R8)."""
+        from ugs_text import LanguageUndecidable
+        hints = {"fr": ["le", "la"], "en": ["the", "of"]}
+        with self.assertRaises(LanguageUndecidable) as ctx:
+            detect_language(["", "   "], hints)
+        self.assertIn("text layer", str(ctx.exception))
+        self.assertTrue(issubclass(LanguageUndecidable, ValueError))
+
+    def test_tie_is_refused(self):
+        """A tie between the French and the English score gives no decision and is refused, not read as English."""
+        from ugs_text import LanguageUndecidable
+        hints = {"fr": ["le", "la"], "en": ["the", "of"]}
+        with self.assertRaises(LanguageUndecidable):
+            detect_language(["le the"], hints)
 
     def test_load_hints_names_a_missing_key(self):
         import json

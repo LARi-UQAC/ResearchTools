@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from ugs_grade import (
     grade_report,
 )
 from ugs_text import StepContext
+import ugs_bridge
 from ugs_bridge import NotRun
 from rubric_check import RubricError
 
@@ -182,6 +184,9 @@ class TestGradeItem(unittest.TestCase):
         self.assertEqual(result["status"], "rated")
 
     def test_invalid_after_retries_is_not_run_and_flagged(self):
+        # Updated by plan 12: the exhausted-retries record is built from the LAST answer, not a blank record.
+        # A score above the maximum drops the score (status not_run, score null) and keeps the raw value in
+        # model_score, the code says why, and the model comment is kept instead of the old "invalid_answer" word.
         invalid_answer = {
             "status": "rated",
             "score": 11,
@@ -192,6 +197,10 @@ class TestGradeItem(unittest.TestCase):
         result = grade_item(self.item, self.pages, call, self.ctx, self.language, self.calibration_note)
         self.assertEqual(result["status"], "not_run")
         self.assertIsNone(result["score"])
+        self.assertEqual(result["model_score"], 11)
+        self.assertEqual(result["validation"], "score_above_max")
+        self.assertEqual(result["comment"], "Bad")
+        self.assertEqual(result["attempts"], 2)
         self.assertTrue(result["flag"])
 
     def test_over_budget_is_not_run(self):
@@ -332,6 +341,102 @@ class TestGradeReport(unittest.TestCase):
         )
         
         self.assertIn("Important Note", call.calls[0])
+
+
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
+
+
+class TestMissingInThePromptAndSchema(unittest.TestCase):
+    """The grader is asked for `missing` in the report language, and the schema does not require it."""
+
+    def test_prompt_asks_for_missing_in_the_report_language(self):
+        template = (PROMPTS_DIR / "grade_item.md").read_text(encoding="utf-8")
+        ctx = StepContext(
+            prompts={"grade_item": template},
+            schemas={"grade_item": {"type": "object"}},
+            levels={"absent": 0, "attempted": 0.5, "partial": 0.75, "complete": 0.88, "exemplary": 1.0},
+            window_tokens=100000,
+            reserve_tokens=100,
+            count=lambda text: len(text.split()),
+            grade_retries=0,
+            audit_retries=0,
+            min_word_len=3,
+        )
+        call = FakeCall([{"status": "rated", "score": 10, "comment": "Fictitious.", "evidence": [], "missing": ""}])
+        item = {"id": "I01", "title": "Intro", "max_points": 10}
+        grade_item(item, ["Un rapport fictif."], call, ctx, "fr", "")
+        prompt = call.calls[0]
+        self.assertIn("'missing'", prompt)
+        self.assertIn("in fr, one sentence at most", prompt)
+        self.assertIn("status, score, comment, evidence and missing", prompt)
+        self.assertNotIn("{{", prompt)
+
+    def test_schema_accepts_an_answer_without_missing(self):
+        schema = json.loads((PROMPTS_DIR / "schemas.json").read_text(encoding="utf-8"))["grade_item"]
+        self.assertNotIn("missing", schema["required"])
+        self.assertEqual(ugs_bridge.validate_answer(
+            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": []}, schema), [])
+        self.assertEqual(ugs_bridge.validate_answer(
+            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": "A gap."}, schema), [])
+        # Control: the key exists and is typed, so a number under it is refused.
+        self.assertTrue(ugs_bridge.validate_answer(
+            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": 5}, schema))
+
+
+class TestTimeoutIsOneItem(unittest.TestCase):
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.rubric = {
+            "assessment_type": "lab_report",
+            "total_points": 30,
+            "items": [
+                {"id": "I01", "title": "Intro", "max_points": 10},
+                {"id": "I02", "title": "Body", "max_points": 10},
+                {"id": "I03", "title": "End", "max_points": 10},
+            ]
+        }
+        self.pages = ["Page 1", "Page 2"]
+        self.full_answer = {
+            "status": "rated",
+            "score": 10,
+            "comment": "Ok",
+            "evidence": [{"page": 1, "quote": "Page 1"}],
+        }
+
+    def test_timeout_marks_only_its_item_and_the_grade_goes_on(self):
+        # Item 1 answered; item 2 times out on its call and on its one retry (grade_retries=1); item 3 answered.
+        call = FakeCall([
+            self.full_answer,
+            NotRun("timeout", "post timed out"),
+            NotRun("timeout", "post timed out"),
+            self.full_answer,
+        ])
+        result = grade_report(
+            self.rubric, self.pages, "R01", 1, call, self.ctx, "en", "",
+        )
+        by_id = {record["item_id"]: record for record in result["items"]}
+        self.assertEqual(by_id["I01"]["status"], "rated")
+        self.assertEqual(by_id["I03"]["status"], "rated")
+        self.assertEqual(by_id["I03"]["score"], 10)
+        timed_out = by_id["I02"]
+        self.assertEqual(timed_out["validation"], "timeout")
+        self.assertEqual(timed_out["status"], "not_run")
+        self.assertIsNone(timed_out["score"])
+        self.assertIsNone(timed_out["model_score"])
+        self.assertEqual(timed_out["comment"], "")
+        self.assertEqual(timed_out["evidence"], [])
+        self.assertEqual(timed_out["missing"], "")
+        self.assertTrue(timed_out["flag"])
+        self.assertEqual(timed_out["attempts"], self.ctx.grade_retries + 1)
+
+    def test_unreachable_still_stops(self):
+        call = FakeCall([
+            self.full_answer,
+            NotRun("unreachable", "daemon down"),
+        ])
+        with self.assertRaises(NotRun) as ctx:
+            grade_report(self.rubric, self.pages, "R01", 1, call, self.ctx, "en", "")
+        self.assertEqual(ctx.exception.kind, "unreachable")
 
 
 class TestItemPromptText(unittest.TestCase):

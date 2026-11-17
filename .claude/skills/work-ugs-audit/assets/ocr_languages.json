@@ -1,0 +1,30 @@
+{
+  "language_codes": {
+    "value": {
+      "fr": ["fra"],
+      "en": ["eng"],
+      "ambiguous": ["fra", "eng"]
+    },
+    "provenance": "Tesseract traineddata codes for the two languages of the owner's courses (French and English, preferences.md). fra and eng are the files of the tessdata_fast set installed with Tesseract 5.5.3 (winget tesseract-ocr.tesseract), verified 2026-11-16. The ambiguous entry lists both codes for a document whose language cannot be decided (spec R6)."
+  },
+  "tessdata_env_var": {
+    "value": "TESSDATA_PREFIX",
+    "provenance": "Environment variable that PyMuPDF get_tessdata reads for the Tesseract language folder (pymupdf/__init__.py, read 2026-11-16, and spec Constraints)."
+  },
+  "tesseract_tool_name": {
+    "value": "Tesseract",
+    "provenance": "Name of the OCR engine used in refusal messages (spec R10). tesseract.exe is not on PATH; PyMuPDF performs the OCR once TESSDATA_PREFIX is set (verified by the session 2026-11-16)."
+  },
+  "ocr_probe_word": {
+    "value": "Test",
+    "provenance": "Fixed fictitious word written into the image of the preflight probe (spec R10). Chosen by the author; it carries no content of any report."
+  },
+  "ocr_probe_font_size": {
+    "value": 48,
+    "provenance": "Font size in points of the probe word, large enough for the probe to be read at the probe resolution. Chosen by the author, not measured."
+  },
+  "ocr_probe_dpi": {
+    "value": 300,
+    "provenance": "Resolution in dots per inch of the probe image and of the OCR call. 300 dpi is the usual resolution for printed text; chosen by the author, not measured on this machine."
+  }
+}

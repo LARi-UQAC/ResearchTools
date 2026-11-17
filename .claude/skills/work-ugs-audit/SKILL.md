@@ -19,6 +19,47 @@ skill (scope `undergraduate`), check the cited references, audit the grades with
 annotated PDF and a correction annex. Across the batch it measures the spread of the totals and, when they fall
 out of band, offers a calibrated second loop.
 
+## Preparation, in order
+
+`prepare` runs these steps for each report before any model is called. (1) The language is detected once from the
+text layer and stored in `report_meta.json`. (2) The OCR preflight (`text_quality.ocr_preflight`) runs a real OCR
+probe for each language and refuses before any write when Tesseract does not answer (`TESSDATA_PREFIX`, the `fra`
+and `eng` data). (3) Pages holding replacement characters are repaired by OCR in the detected language; a page with
+sound text keeps its text, and an OCR that returns nothing keeps the original text and flags the page. (4) Excluded
+pages (cover, signature table, version table, `page_roles.py`) are replaced by a one-line marker; their text goes to an
+`excluded` folder and they are never graded. (5) Elements are extracted with a type (`figure`, `table`, `logo`): a
+table is never judged as a figure, its Markdown is added to the page text the models read, a diagram made of separate
+regions is one figure, and a logo is not judged. (6) Each table is added to its page text.
+
+Vocabulary, the same in the code and the annex. A **title** names the whole figure or the whole table and starts with
+a marker word (Figure, Fig., Tableau, Table): a figure title is usually below the figure, a table title above it. A
+**legend** is the text inside a figure that explains its series or symbols; a table has no legend. **Notes** are the
+lines under a table (Note, Source, an asterisk). The element type is `figure`, `table` or `logo`; only a `figure` is
+judged.
+
+Grades. Each item of `grade.json` keeps every field the model gave, above all the score. The `validation` field holds
+`ok` or the code of the refusal (`quote_not_found`, `evidence_missing`, `score_above_max`, `unknown_status`, and the
+others of `GRADE_CODES` in `ugs_grade.py`). A refused proof keeps its score and counts in the totals, with its label in
+the annex. A score that cannot be used (absent, not finite, above the maximum) gives status `not_run`, a null score,
+and the raw value in `model_score`. Each record also carries `missing`: the element that is absent or wrong in the
+report and cost the points, in the report language, empty at the maximum score. It is model text saved in
+`grade.json` only; it never reaches the ledger, a log or the dashboard. The ledger line carries the code as its note,
+and `attempts` counts the tries. The auditor receives `missing` and `comment`, never the validation fields.
+
+A report whose language cannot be decided (no text layer and no metadata) is refused in preparation with a named
+reason, and the other reports continue. A page with no text layer is sent to OCR and, when still empty, listed in
+`unreadable_pages` of `report_meta.json`.
+
+The annex is written in the document language (labels in `assets/annex_labels.json`) and its table fits the page. Its
+last section holds five checks computed by `crossref_checks.py` on the report's own text and elements: every figure
+cited, every table cited, figure numbers increasing, table numbers increasing, equation numbers increasing. Each check
+gives `ok`, `not_ok` or `not_applicable` with the numbers concerned only. A gap in the numbers lists at most
+`checks.max_gap_numbers` numbers, and a number above `checks.max_number` is refused.
+
+Local actions. While it runs, each local role emits action records built by `ugs_events.py` from identifiers only:
+the report id, the item id, a page range, the base name of an output file, a mark. No prompt, reply, quote or report
+text is recorded. `rt-observe` shows them as the steps of the role's lane.
+
 ## Driver
 
 `scripts/ugs_driver.py`, all subcommands take `--dry-run` and `--json` and print one JSON object per line.

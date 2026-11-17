@@ -5,7 +5,9 @@ import base64
 import atexit
 import sys
 import json
+import io
 import unittest
+import urllib.error
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -388,6 +390,129 @@ class TestCallWithUsage(unittest.TestCase):
         self.assertNotIn("123", ctx.exception.reason) # Reply text should not be in reason
 
 
+class FakeTransportBridge:
+    """
+    Purpose: Stand in for the ollama_bridge module behind OllamaDeps, with its transport raising what the test sets.
+    Details: The real _post_generate wraps a timeout or a refused connection in BridgeError with the original as its
+        __cause__; FakeBridgeError below plays BridgeError, so the test reads the same chain the real client makes.
+    """
+
+    DEFAULT_SEED = 1
+    DEFAULT_LOG_PATH = None
+
+    def __init__(self, post_exc: Optional[BaseException] = None, count_exc: Optional[BaseException] = None):
+        self.post_exc = post_exc
+        self.count_exc = count_exc
+
+    def append_log(self, path, record) -> None:
+        return None
+
+    def resolve_model(self, role: str) -> str:
+        return "fake-tag"
+
+    def _resolve_num_ctx(self, tag: str, role: str) -> int:
+        return 1000
+
+    def build_payload(self, prompt, tag, seed, window, fmt=None, num_predict=None) -> Dict[str, Any]:
+        return {"prompt": prompt}
+
+    def probe_prompt_tokens(self, prompt, tag, window, timeout) -> int:
+        if self.count_exc is not None:
+            raise self.count_exc
+        return 5
+
+    def _post_generate(self, payload, timeout) -> Dict[str, Any]:
+        if self.post_exc is not None:
+            raise self.post_exc
+        return {"response": "{}"}
+
+
+class FakeBridgeError(Exception):
+    """Plays ollama_bridge.BridgeError, the wrapper the real client raises around the transport error."""
+
+
+def _chained(outer: BaseException, inner: BaseException) -> BaseException:
+    """
+    Purpose: Attach inner as the cause of outer, the way `raise outer from inner` does in the real client.
+    Inputs:
+        outer (BaseException): the wrapper, a BridgeError in the tests.
+        inner (BaseException): the transport error underneath.
+    Outputs:
+        BaseException: outer, with __cause__ set to inner.
+    """
+    outer.__cause__ = inner
+    return outer
+
+
+def _ollama_deps_with(post_exc: Optional[BaseException] = None, count_exc: Optional[BaseException] = None):
+    """
+    Purpose: Build the real OllamaDeps over a fake bridge module, so its own error classification runs.
+    Inputs:
+        post_exc (BaseException or None): what the transport raises on the generate call.
+        count_exc (BaseException or None): what the transport raises on the token count.
+    Outputs:
+        OllamaDeps: the dependencies object with the fake bridge in place.
+    """
+    deps = ugs_bridge.OllamaDeps(count_timeout_s=10)
+    deps._bridge = FakeTransportBridge(post_exc=post_exc, count_exc=count_exc)
+    return deps
+
+
+def _call_over(deps) -> None:
+    """
+    Purpose: Make one bridge call over the given dependencies, with no reserve and no images.
+    Inputs:
+        deps: the dependencies object.
+    Outputs:
+        None. Any NotRun raised by the call propagates to the caller.
+    """
+    ugs_bridge.call_with_usage(
+        role="grader", prompt="test", schema={"type": "object"}, deps=deps, timeout=1, reserve=0,
+        image_tokens=0, max_image_bytes=100
+    )
+
+
+class TestTransportKinds(unittest.TestCase):
+    def test_timeout_is_a_retryable_timeout_kind(self):
+        timed_out = _chained(FakeBridgeError("request timed out"), TimeoutError("read timed out"))
+        for post_exc in (timed_out, TimeoutError("read timed out")):
+            with self.subTest(post_exc=type(post_exc).__name__):
+                deps = _ollama_deps_with(post_exc=post_exc)
+                with self.assertRaises(ugs_bridge.NotRun) as ctx:
+                    _call_over(deps)
+                self.assertEqual(ctx.exception.kind, "timeout")
+                self.assertTrue(ctx.exception.retryable)
+
+    def test_a_timeout_on_the_token_count_is_a_retryable_timeout_kind(self):
+        deps = _ollama_deps_with(count_exc=_chained(FakeBridgeError("count timed out"), TimeoutError("slow")))
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            _call_over(deps)
+        self.assertEqual(ctx.exception.kind, "timeout")
+        self.assertTrue(ctx.exception.retryable)
+
+    def test_connection_refused_stays_unreachable_and_not_retryable(self):
+        refused = _chained(FakeBridgeError("cannot reach the daemon"), urllib.error.URLError(ConnectionRefusedError("refused")))
+        deps = _ollama_deps_with(post_exc=refused)
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            _call_over(deps)
+        self.assertEqual(ctx.exception.kind, "unreachable")
+        self.assertFalse(ctx.exception.retryable)
+
+    def test_bad_request_is_its_own_kind_not_retryable(self):
+        http_400 = urllib.error.HTTPError("http://127.0.0.1/api/generate", 400, "Bad Request", None, io.BytesIO(b""))
+        deps = _ollama_deps_with(post_exc=_chained(FakeBridgeError("HTTP 400"), http_400))
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            _call_over(deps)
+        self.assertEqual(ctx.exception.kind, "bad_request")
+        self.assertFalse(ctx.exception.retryable)
+
+    def test_the_reason_holds_no_report_text(self):
+        deps = _ollama_deps_with(post_exc=_chained(FakeBridgeError("SECRET-REPORT-TEXT"), TimeoutError("read timed out")))
+        with self.assertRaises(ugs_bridge.NotRun) as ctx:
+            _call_over(deps)
+        self.assertNotIn("SECRET-REPORT-TEXT", ctx.exception.reason)
+
+
 class TestCall(unittest.TestCase):
     def test_call_returns_only_answer(self):
         deps = FakeDeps(post_result={"response": '{"a": "hello"}', "prompt_eval_count": 10, "eval_count": 5})
@@ -549,9 +674,9 @@ class TestBridgeLog(unittest.TestCase):
         _call(deps)
         start, attempt = deps.records
         now = collect_local._stamp(attempt["at"])
-        roles, kept, skipped = collect_local._group([start], now, 60, 3600)
+        roles, kept, skipped, _actions = collect_local._group([start], now, 60, 3600)
         self.assertTrue(roles["ugs-grader"]["generating"])
-        roles, kept, skipped = collect_local._group([start, attempt], now, 60, 3600)
+        roles, kept, skipped, _actions = collect_local._group([start, attempt], now, 60, 3600)
         row = roles["ugs-grader"]
         self.assertFalse(row["generating"])
         self.assertEqual((row["tag"], row["num_ctx"], row["prompt_tokens"], row["completion_tokens"]),

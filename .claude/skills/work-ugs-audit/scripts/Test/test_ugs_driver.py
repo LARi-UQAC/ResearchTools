@@ -5,6 +5,7 @@ fake kind-aware model call, an injected window and counter and no network. Ficti
 import contextlib
 import io
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -15,11 +16,17 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "figure-review" / "scripts" / "Test"))
 
+import report_prepare
+import text_quality
 import ugs_driver
+import ugs_tables
+from ugs_ledger import parse as parse_ledger
 from _pdf_fixtures import make_report
+from text_quality import OcrUnavailable
 from ugs_bridge import NotRun
 
 MARKER = "UNIQUE-MARKER-SENTENCE-ZEBRA"
+_PATCHES = []
 SCHEMAS = ugs_driver.load_schemas(ugs_driver.SCHEMAS_FILE, ugs_driver.SCHEMA_NAMES)
 RUBRIC = {"assessment_type": "lab_report", "total_points": 10,
           "items": [{"id": "I01", "title": "Method", "max_points": 10, "criteria": ["The method is clear."],
@@ -86,8 +93,46 @@ class FakeModel:
         raise AssertionError("unexpected schema")
 
 
+class LanguageDownModel(FakeModel):
+    """A model whose language answers are unreachable; the grade and every other schema are answered as usual."""
+
+    def __call__(self, kind, prompt, schema, images=None):
+        if schema == SCHEMAS["language"]:
+            self.calls.append((kind, prompt))
+            raise NotRun("unreachable", "the daemon went away")
+        return super().__call__(kind, prompt, schema, images)
+
+
 def snapshot(folder: Path):
     return sorted((str(p.relative_to(folder)), p.stat().st_size) for p in folder.rglob("*"))
+
+
+def _fixed_ocr_page(pdf_path, page_number, tesseract_language, dpi=None):
+    """Stand in for the real OCR of a page: return a fixed text, so no Tesseract installation is needed."""
+    return "Fixed OCR text of a fictitious page."
+
+
+def setUpModule():
+    """
+    Purpose: Replace the OCR preflight and the OCR call of report_prepare for this module, which builds no Tesseract
+        installation. prepare() runs the preflight by default, and without these stubs the suite depends on the
+        machine (it passed only with TESSDATA_PREFIX set).
+    Inputs: None.
+    Outputs: None. Patches are started here and stopped in tearDownModule.
+    """
+    global _PATCHES
+    _PATCHES = [
+        patch.object(report_prepare, "_run_preflight", lambda languages: None, create=True),
+        patch.object(report_prepare, "_run_ocr_page", _fixed_ocr_page, create=True),
+    ]
+    for patcher in _PATCHES:
+        patcher.start()
+
+
+def tearDownModule():
+    """Stop the patches started by setUpModule."""
+    for patcher in _PATCHES:
+        patcher.stop()
 
 
 class TestUgsDriver(unittest.TestCase):
@@ -163,6 +208,30 @@ class TestUgsDriver(unittest.TestCase):
         self.prepare()
         self.assertEqual(self.ledger(), first)
         self.assertEqual(first.count("## R01"), 1)
+
+    def test_refused_prepare_is_not_marked_done(self):
+        self.add_reports([9])
+        make_report(self.reports / "student2.pdf", [{"text": "Zxq wvb plm kkr."}])
+        code, lines, _ = self.prepare()
+        self.assertEqual(code, 0)
+        refused = [line for line in lines if line.get("report_id") == "R02"]
+        self.assertEqual(refused[0]["status"], "refused")
+        self.assertTrue(refused[0]["reason"].startswith("R02: "))
+        marks = {(s["report_id"], s["label"]): s["mark"] for s in parse_ledger(self.ledger())}
+        self.assertEqual(marks[("R01", "prepare")], "x")
+        self.assertEqual(marks[("R02", "prepare")], " ")
+
+    def test_missing_min_anchor_key_is_named_by_prepare(self):
+        self.add_reports([9])
+        config = json.loads(ugs_tables.DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        del config["tables.min_anchor_chars"]
+        partial = self.tmp / "ugs_config.json"
+        partial.write_text(json.dumps(config), encoding="utf-8")
+        with patch("ugs_tables.DEFAULT_CONFIG_PATH", partial):
+            code, lines, _ = self.prepare()
+        self.assertEqual(code, 2)
+        self.assertEqual(lines[-1]["status"], "refused")
+        self.assertIn("tables.min_anchor_chars", lines[-1]["error"])
 
     def test_prepare_json_rubric_is_validated_and_not_sent_to_the_model(self):
         self.add_reports([9])
@@ -382,6 +451,17 @@ class TestUgsDriver(unittest.TestCase):
         self.assertEqual([l["report_id"] for l in lines], ["R01", "R02"])
         self.assertIn("- [x] assemble", self.ledger())
 
+    def test_stop_line_names_the_failing_step_not_the_first_open_line(self):
+        self.add_reports([9])
+        self.prepare()
+        # A figure line is the first open line of the whole ledger; the language step is the one that fails.
+        ledger = self.ledger().replace("- [ ] language", "- [ ] figure F44\n- [ ] language", 1)
+        (self.work / "ledger.md").write_text(ledger, encoding="utf-8")
+        code, lines, _ = self.run_loop(model=LanguageDownModel())
+        self.assertEqual(code, 1)
+        self.assertEqual(lines, [{"report_id": "R01", "step": "language", "status": "not_run",
+                                  "kind": "unreachable"}])
+
     def test_marker_sentence_never_reaches_stdout_ledger_or_batch_files(self):
         self.add_reports([9, 9])
         self.prepare()
@@ -477,6 +557,24 @@ class TestUgsDriver(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(snapshot(self.tmp), prepared)
         self.assertEqual(self.model.calls, [])
+
+
+class TestOcrPreflightRefusal(unittest.TestCase):
+
+    def test_preflight_refusal_is_named_when_tesseract_is_missing(self):
+        """
+        Purpose: Prove that the real text_quality.ocr_preflight refuses, with a message naming TESSDATA_PREFIX, when
+            that variable is absent from the environment. The refusal is the real one, not a stub: this test calls the
+            module function directly, so setUpModule's patches do not reach it.
+        Inputs: None. The environment is copied and restored by mock.patch.dict.
+        Outputs: None. Asserts OcrUnavailable is raised and its message contains TESSDATA_PREFIX.
+        Raises: AssertionError when the refusal is missing or does not name the variable.
+        """
+        with patch.dict(os.environ, clear=False):
+            os.environ.pop("TESSDATA_PREFIX", None)
+            with self.assertRaises(OcrUnavailable) as ctx:
+                text_quality.ocr_preflight(["fra", "eng"])
+        self.assertIn("TESSDATA_PREFIX", str(ctx.exception))
 
 
 if __name__ == "__main__":

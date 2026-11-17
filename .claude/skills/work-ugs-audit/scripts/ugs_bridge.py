@@ -1,6 +1,8 @@
 import json
 import logging
+import socket
 import sys
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -22,7 +24,83 @@ class NotRun(RuntimeError):
         super().__init__(f"NotRun({kind}): {reason}")
         self.kind = kind
         self.reason = reason
-        self.retryable = kind in ("unparsable", "invalid")
+        self.retryable = kind in ("unparsable", "invalid", "timeout")
+
+
+# HTTP status codes that carry a meaning of their own here (protocol constants, not configuration).
+HTTP_REQUEST_TIMEOUT = 408
+HTTP_CLIENT_ERROR_FIRST = 400
+HTTP_CLIENT_ERROR_LAST = 499
+
+# What a socket read or connect raises when it runs out of time. socket.timeout is an alias of TimeoutError from
+# Python 3.10 on; it is listed for the interpreters before that.
+_TIMEOUT_TYPES = (TimeoutError, socket.timeout)
+
+
+def _cause_chain(exc: BaseException) -> List[BaseException]:
+    """
+    Purpose: List an exception and each exception it was raised from, in order.
+    Details: The real client raises its own error `from` the transport error, so the kind sits one or two links
+        down the __cause__ chain. A set of seen identities stops a cycle; a chain is otherwise finite.
+    Inputs:
+        exc (BaseException): the exception that reached the bridge.
+    Outputs:
+        List[BaseException]: exc first, then its causes, each listed once.
+    """
+    chain: List[BaseException] = []
+    seen = set()
+    current: Optional[BaseException] = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        current = current.__cause__
+    return chain
+
+
+def _is_timeout(link: BaseException) -> bool:
+    """
+    Purpose: Tell whether one link of a failure chain is a timeout.
+    Details: urllib reports a connect timeout as a URLError whose reason is the timeout, so that reason counts.
+        An HTTPError is a URLError too, and is judged by its status code instead, never here.
+    Inputs:
+        link (BaseException): one exception of the chain.
+    Outputs:
+        bool: True for a timeout error or a URLError whose reason is one.
+    """
+    if isinstance(link, _TIMEOUT_TYPES):
+        return True
+    if isinstance(link, urllib.error.HTTPError):
+        return False
+    if isinstance(link, urllib.error.URLError):
+        return isinstance(link.reason, _TIMEOUT_TYPES)
+    return False
+
+
+def classify_transport_error(exc: BaseException) -> NotRun:
+    """
+    Purpose: Name the kind of a failed transport call, so the grading batch can tell a slow model from a dead daemon.
+    Details: A timeout is kind "timeout" and retryable: the daemon was reached and the model is slow. An HTTP 408
+        is the server's own request timeout and is the same kind. Any other 4xx answer is "bad_request": the
+        request was refused, and sending it again changes nothing. Everything else (a refused connection, a name
+        that does not resolve, a daemon that is down, a 5xx) stays "unreachable" and is not retryable.
+        The message names the kind and the classes of the chain, never the text of an error, since that text can
+        quote the request or the reply, and the log and the reasons must hold no report text.
+    Inputs:
+        exc (BaseException): the exception the transport raised, with its causes.
+    Outputs:
+        NotRun: the classified refusal, for the caller to raise.
+    """
+    chain = _cause_chain(exc)
+    names = " <- ".join(link.__class__.__name__ for link in chain)
+    if any(_is_timeout(link) for link in chain):
+        return NotRun("timeout", f"the daemon did not answer in time ({names})")
+    for link in chain:
+        if isinstance(link, urllib.error.HTTPError):
+            if link.code == HTTP_REQUEST_TIMEOUT:
+                return NotRun("timeout", f"the daemon timed out the request ({names})")
+            if HTTP_CLIENT_ERROR_FIRST <= link.code <= HTTP_CLIENT_ERROR_LAST:
+                return NotRun("bad_request", f"the daemon refused the request with HTTP {link.code} ({names})")
+    return NotRun("unreachable", f"the daemon could not be reached ({names})")
 
 
 def _now_iso() -> str:
@@ -191,7 +269,7 @@ class OllamaDeps:
         try:
             return self._get_bridge().probe_prompt_tokens(prompt, tag, window, timeout=self.count_timeout_s)
         except Exception as e:
-            raise NotRun("unreachable", f"Failed to count tokens: {e}")
+            raise classify_transport_error(e) from e
 
     def payload(self, prompt: str, tag: str, window: int, schema: Dict[str, Any], reserve: int) -> Dict[str, Any]:
         try:
@@ -200,10 +278,20 @@ class OllamaDeps:
             raise NotRun("unreachable", f"Failed to build payload: {e}")
 
     def post(self, payload: Dict[str, Any], timeout: int) -> Dict[str, Any]:
+        """
+        Purpose: Send the generate request and return the daemon's reply, classifying any transport failure.
+        Inputs:
+            payload (dict): the request body.
+            timeout (int): the socket timeout in seconds, from driver.request_timeout_s.
+        Outputs:
+            dict: the parsed reply.
+        Raises:
+            NotRun: kind "timeout" (retryable), "bad_request" or "unreachable" (not retryable). See classify_transport_error.
+        """
         try:
             return self._get_bridge()._post_generate(payload, timeout)
         except Exception as e:
-            raise NotRun("unreachable", f"Post failed: {e}")
+            raise classify_transport_error(e) from e
 
 
 def call_with_usage(
@@ -262,7 +350,7 @@ def call_with_usage(
         except Exception as e:
             if isinstance(e, NotRun):
                 raise
-            raise NotRun("unreachable", f"Failed to count tokens: {e}")
+            raise classify_transport_error(e) from e
 
         total_image_tokens = 0
         if images:
@@ -291,7 +379,7 @@ def call_with_usage(
         except Exception as e:
             if isinstance(e, NotRun):
                 raise
-            raise NotRun("unreachable", f"Post failed: {e}")
+            raise classify_transport_error(e) from e
     except BaseException as exc:
         # Close the start record, also on an interrupt (Ctrl-C, SystemExit): a start with no end reads as
         # a generation in progress for the whole generation limit.

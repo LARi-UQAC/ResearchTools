@@ -97,6 +97,19 @@ class TestAuditItem(unittest.TestCase):
         self.assertIn("text on page 1", prompt)
         self.assertNotIn("text on page 2", prompt)
 
+    def test_audit_item_skips_an_evidence_page_that_is_not_an_int(self):
+        bad_records = [
+            dict(self.record, evidence=[{"page": None, "quote": "text"}]),
+            dict(self.record, evidence=[{"page": True, "quote": "text"}]),
+            dict(self.record, evidence=[None, "text", {"page": "1", "quote": "text"}]),
+        ]
+        for record in bad_records:
+            call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+            result = audit_item(self.item, record, self.pages, call, self.ctx)
+            self.assertEqual(result["verdict"], "agree")
+            # No usable page left: the audit falls back to the selected pages, as for a record with no evidence.
+            self.assertIn("text on page 1", call.prompts[0])
+
 class TestAuditReport(unittest.TestCase):
     def setUp(self):
         self.ctx = make_ctx()
@@ -228,6 +241,74 @@ class TestAuditReport(unittest.TestCase):
         regrade_prompt = call.prompts[1]
         self.assertIn("specific_reason", regrade_prompt)
         self.assertIn("calibration_note", regrade_prompt)
+
+
+class TestAuditTimeoutIsOneItem(unittest.TestCase):
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.rubric = {
+            "assessment_type": "lab_report",
+            "total_points": 20,
+            "items": [
+                {"id": "I01", "title": "Intro", "max_points": 10},
+                {"id": "I02", "title": "Body", "max_points": 10},
+            ]
+        }
+        self.pages = ["text on page 1", "text on page 2"]
+
+        def rated(item_id):
+            return {
+                "item_id": item_id,
+                "status": "rated",
+                "score": 8.0,
+                "comment": "Good",
+                "evidence": [{"page": 1, "quote": "text"}],
+                "audit": "not_run",
+                "flag": False,
+            }
+
+        self.grade = {"report_id": "R01", "loop": 1, "items": [rated("I01"), rated("I02")]}
+
+    def test_audit_timeout_does_not_stop_the_batch(self):
+        # Item 1's audit times out on its call and on its retry (audit_retries=1); item 2 is still audited.
+        call = FakeCall([
+            NotRun("timeout", "post timed out"),
+            NotRun("timeout", "post timed out"),
+            {"verdict": "agree", "reason": "ok"},
+        ])
+        result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
+        by_id = {record["item_id"]: record for record in result["items"]}
+        self.assertEqual(by_id["I01"]["audit"], "not_run")
+        self.assertEqual(by_id["I02"]["audit"], "agree")
+        self.assertEqual(len(result["items"]), 2)
+
+
+class TestMissingInTheAudit(unittest.TestCase):
+    """`missing` follows the rule of `comment`: the auditor is shown it, and the saved record keeps it."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.item = {"id": "I01", "title": "Intro", "max_points": 10}
+        self.pages = ["text on page 1", "text on page 2"]
+        self.record = {
+            "item_id": "I01", "status": "rated", "score": 5, "comment": "CMT_ONE",
+            "evidence": [{"page": 1, "quote": "text"}], "missing": "MISS_ONE", "audit": "not_run", "flag": False,
+        }
+
+    def test_auditor_is_shown_missing_as_it_is_shown_comment(self):
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_item(self.item, self.record, self.pages, call, self.ctx)
+        self.assertIn("CMT_ONE", call.prompts[0])
+        self.assertIn("MISS_ONE", call.prompts[0])
+
+    def test_saved_audit_record_keeps_missing(self):
+        grade = {"report_id": "R01", "loop": 1, "items": [dict(self.record)]}
+        rubric = {"assessment_type": "lab_report", "total_points": 10, "items": [self.item]}
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        result = audit_report(rubric, self.pages, grade, call, self.ctx, "en", "")
+        self.assertEqual(result["items"][0]["missing"], "MISS_ONE")
+        self.assertEqual(result["items"][0]["comment"], "CMT_ONE")
+
 
 if __name__ == '__main__':
     unittest.main()

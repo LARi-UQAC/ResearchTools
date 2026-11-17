@@ -1,11 +1,14 @@
-<h2>Grille corrigée / Completed rubric - {{REPORT_ID}} - boucle / loop {{LOOP}}</h2>
+<h2>{{L_TITLE}} - {{REPORT_ID}} - {{L_LOOP}} {{LOOP}}</h2>
 <table style="width:100%; border-collapse:collapse;" border="1" cellpadding="4">
 <tr>
-<th style="width:30%">Élément / Item</th>
-<th style="width:12%">Note / Score</th>
-<th style="width:12%">Statut / Status</th>
-<th>Commentaire / Comment</th>
+<th style="width:{{W_ITEM}}%">{{L_ITEM}}</th>
+<th style="width:{{W_SCORE}}%">{{L_SCORE}}</th>
+<th style="width:{{W_STATUS}}%">{{L_STATUS}}</th>
+<th style="width:{{W_COMMENT}}%">{{L_COMMENT}}</th>
 </tr>
 {{ROWS}}
 </table>
-<p><b>Total : {{TOTAL}}</b></p>
+<p><b>{{L_TOTAL}} : {{TOTAL}}</b></p>
+<h3>{{L_EXCLUDED}}</h3>
+<p>{{EXCLUDED}}</p>
+{{CHECKS}}

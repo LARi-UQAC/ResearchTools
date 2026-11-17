@@ -286,6 +286,11 @@
       "unit": "calls listed, newest first",
       "provenance": "chosen 2026-10-17 - the dashboard shows what just happened, not the whole history; the totals per role carry the rest"
     },
+    "local_actions_per_role": {
+      "value": 20,
+      "unit": "action records listed per role, newest kept",
+      "provenance": "proposed 2026-11-17, not measured - a grading step writes one action per page read, per item mark and per output file, so 20 shows the last few items of a report; the owner may change it"
+    },
     "usage_window_days": {
       "value": 7,
       "unit": "days of transcript history summed for the week bar",

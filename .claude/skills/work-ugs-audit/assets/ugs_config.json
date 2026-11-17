@@ -32,6 +32,46 @@
     "value": 3,
     "provenance": "specified by the design of the working folder (page files look like p001)"
   },
+  "reports.meta_file_name": {
+    "value": "report_meta.json",
+    "provenance": "specified by the preparation contract of issue 122 (spec, Data contracts): language, excluded pages and text quality of one report"
+  },
+  "reports.elements_file_name": {
+    "value": "elements.json",
+    "provenance": "specified by the preparation contract of issue 122 (spec, Data contracts): the element records of one report"
+  },
+  "reports.figures_folder": {
+    "value": "figures",
+    "provenance": "the folder the figure step reads (ugs_figures.figures_report), kept equal to it by the same name"
+  },
+  "text.excluded_folder": {
+    "value": "excluded",
+    "provenance": "specified by spec R7: the original text of an excluded page is kept in this folder beside the pages"
+  },
+  "text.excluded_marker": {
+    "value": "[page excluded: {reason}]",
+    "provenance": "specified by spec R7: the one line that replaces the text of an excluded page in its page file; {reason} is the reason code of page_roles (cover, signature_table, version_table)"
+  },
+  "text.min_replacement_chars": {
+    "value": 2,
+    "provenance": "starting value, adjustable by the professor (a page holding fewer Unicode replacement characters keeps its text layer; one such character can be a real symbol)"
+  },
+  "text.min_words_per_page": {
+    "value": 3,
+    "provenance": "proposal 2026-11-17, a page with fewer words than this is treated as having no text layer; tune on counts"
+  },
+  "tables.min_anchor_chars": {
+    "value": 12,
+    "provenance": "proposal 2026-11-17, an anchor shorter than this cannot prove the table is already in the text; tune on counts"
+  },
+  "text.ocr_dpi": {
+    "value": 300,
+    "provenance": "starting value, adjustable by the professor (resolution of the OCR of a damaged page, the usual resolution for printed text; the same figure as the probe of text_quality)"
+  },
+  "pages.small_image_max_area_ratio": {
+    "value": 0.1,
+    "provenance": "starting value, adjustable by the professor (largest share of the page area an image may cover to count as a small image, such as a logo, when a page is excluded)"
+  },
   "batch.outlier_z": {
     "value": 2.0,
     "provenance": "chosen by the professor (a grade whose |z| exceeds this value is an outlier)"
@@ -126,5 +166,17 @@
   "rubric.loose_heading_regex": {
     "value": "^#{1,2}\\s+\\d+\\.\\s+\\S",
     "provenance": "chosen 2026-11-15, narrowed to the heading levels 1 and 2 after review round 2 (a numbered sub-heading of level 3 or more inside a section is part of that section): a heading that starts with a number and a point is a section of the rubric, so one the strict heading pattern did not read (no points, another way to write them) is refused instead of being absorbed into the previous item; adjustable by the professor"
+  },
+  "checks.right_zone_ratio": {
+    "value": 0.8,
+    "provenance": "starting value, adjustable by the professor (share of the page width beyond which a word shaped (n) or (n.m) counts as an equation number; a number above 0 and below 1; a body year such as (2023) sits left of this share in running text)"
+  },
+  "checks.max_gap_numbers": {
+    "value": 50,
+    "provenance": "proposal 2026-11-17, a gap longer than this is listed by its first numbers and a count of the omitted ones; tune on the counts of the real reports"
+  },
+  "checks.max_number": {
+    "value": 100000,
+    "provenance": "proposal 2026-11-17, a figure, table or equation number above this is refused rather than read, so a report citing a very large number cannot build an unbounded list"
   }
 }

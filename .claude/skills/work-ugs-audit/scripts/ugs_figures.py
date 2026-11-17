@@ -10,50 +10,111 @@ the call repeated. Unretryable NotRun kinds propagate.
 import re
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 # Add figure-review scripts to path
 _FR_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "figure-review" / "scripts"
 if str(_FR_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_FR_SCRIPTS))
 
+import crossref_checks
+import element_labels
 from figure_extract import extract
 from figure_checks import check, body_font_size, failure_comment, criteria_for_scope
 from figure_image import fit_for_model, contact_sheet
+from crossref_checks import ELEMENT_FIGURE, MAX_NUMBER_SETTING_KEY, element_numbers, load_settings
 from ugs_text import StepContext, fill, prompt_section
 from ugs_bridge import NotRun
+from ugs_tables import figure_records
 
 SCOPE = "undergraduate"
 RETRYABLE_KINDS = ("unparsable", "invalid")
 VERDICTS = ("pass", "fail", "not_applicable")
 DEFAULT_KIND = "other"
+NOT_APPLICABLE = "not_applicable"  # cited_in_text when the figure's printed number is unknown: no guess
 SET_CRITERION_ID = "style_consistency"
 EXTRACTION_KEYS = ("min_area_pt2", "background_threshold", "max_long_edge", "photo_colors", "jpeg_quality")
 POINTS_PER_INCH = 72.0  # points per inch, the unit of a PDF rectangle
 
 
-def citing_text(pages: List[str], number: int) -> str:
+def _figure_words() -> List[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the figure marker words from figure-review's element markers file, longest first.
+
+    Inputs:
+        None
+
+    Outputs:
+        words (list[str]): the marker words, such as Figure, Fig. and Fig, so that the longest one is tried first.
+
+    Raises:
+        element_labels.MarkerError: the markers file is missing, unreadable or lacks figure_prefixes.
+    --------------------------------------------------------------------------
+    """
+    markers = element_labels.load_markers(crossref_checks.DEFAULT_MARKERS_PATH)
+    return sorted((str(word) for word in markers["figure_prefixes"]), key=len, reverse=True)
+
+
+def citing_text(pages: List[str], number: Union[int, str]) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
         Find the first paragraph that cites a figure without being its caption.
 
+    Details:
+        A caption is a line that opens with a marker word and the number, then a colon, a hyphen or an en dash.
+        Such a line is left out of the paragraph before the search, so a body sentence that opens with the figure
+        reference is a citation, and a caption is not. The number must not be the first part of a longer one
+        (2 does not match 2.1), and the marker words come from element_markers.json, never from this module.
+
     Inputs:
         pages (list[str]): the page texts
-        number (int): the figure number
+        number (int | str): the number printed in the figure title, such as 2 or "2.1"
 
     Outputs:
-        text (str): the first blank-line paragraph that mentions `Figure N` or `Fig. N` and does not start
-        with it, or an empty string.
+        text (str): the first blank-line paragraph that cites the figure outside its caption, or an empty string.
+
+    Raises:
+        element_labels.MarkerError: the markers file is missing, unreadable or lacks figure_prefixes.
     --------------------------------------------------------------------------
     """
-    pattern = rf"(?:Figure|Fig\.)\s*{number}\b"
-    starts = (f"Figure {number}", f"Fig. {number}")
+    words = "|".join(re.escape(word) for word in _figure_words())
+    printed = re.escape(str(number))
+    cited = re.compile(rf"\b(?:{words})\s*{printed}(?!\.\d)(?!\d)\b")
+    caption = re.compile(rf"(?:{words})\s*{printed}(?!\.\d)(?!\d)\s*[:\-–]")
     for page in pages:
         for paragraph in page.split("\n\n"):
-            if re.search(pattern, paragraph) and not paragraph.strip().startswith(starts):
+            body = "\n".join(line for line in paragraph.splitlines() if not caption.match(line.strip()))
+            if cited.search(body):
                 return paragraph.strip()
     return ""
+
+
+def printed_number(record: Dict[str, Any], max_number: int) -> Optional[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the number printed in the title of one figure element, the number a reader sees, which is not
+        the element counter (an untitled drawing before a figure shifts the counter).
+
+    Inputs:
+        record (dict): an element record of type figure, carrying its `title` (a dict with `text`, or None)
+        max_number (int): the largest number read, from the cross-reference settings (checks.max_number)
+
+    Outputs:
+        number (str | None): the printed number, dotted for a chapter number ("2.1"), or None when the
+        element has no title that opens with a figure marker and a number.
+
+    Raises:
+        CrossrefConfigError: the figure marker words are missing from the markers file.
+    --------------------------------------------------------------------------
+    """
+    numbers = element_numbers([record], ELEMENT_FIGURE, max_number)
+    if not numbers:
+        return None
+    return ".".join(str(part) for part in numbers[0])
 
 
 def _setting(criteria_doc: Dict[str, Any], key: str) -> Any:
@@ -115,8 +176,12 @@ def _ask(call: Callable, prompt: str, schema: Any, images: List[str], retries: i
 
 
 def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Dict[str, Any]], pages: List[str],
-                  report_dir: Path, call: Callable, ctx: StepContext, language: str, settings: Dict[str, int]) -> None:
-    """Fit the image, ask the model once about the figure and write the verdicts into the record."""
+                  report_dir: Path, call: Callable, ctx: StepContext, language: str, settings: Dict[str, int],
+                  printed: Optional[str]) -> None:
+    """
+    Fit the image, ask the model once about the figure and write the verdicts into the record.
+    The citing paragraph is searched with the printed number only; without one it is left empty.
+    """
     figure_id = record["figure_id"]
     fitted = fit_for_model(report_dir / "figures" / fig["file"], report_dir / "model_images", settings["max_long_edge"],
                            settings["photo_colors"], settings["jpeg_quality"])
@@ -128,10 +193,10 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
                                           (crit.get("model_when_script_not_run") and script_verdict == "not_run")):
             sent.append(crit)
     sent_ids = [c["id"] for c in sent]
-    number = int(figure_id[1:])
+    citing = citing_text(pages, printed) if printed else ""
     prompt = fill(prompt_section(ctx.prompts["figure"], "single"), {
         "CAPTION": record["caption"] or "",
-        "CITING_TEXT": citing_text(pages, number),
+        "CITING_TEXT": citing,
         "SCRIPT_VERDICTS": "\n".join(f"{cid}: {v['verdict']} ({v['reason']})" for cid, v in fig["criteria"].items()),
         "CRITERIA": "\n".join(f"{c['id']} | {c[f'label_{language}']} | applies to: {', '.join(c['applies_to'])}"
                               for c in sent),
@@ -188,7 +253,8 @@ def figures_report(
     language: str,
     vision_ok: bool,
     existing: Optional[Dict[str, Any]] = None,
-    on_figure: Optional[Callable[[str, Dict[str, Any]], None]] = None
+    on_figure: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+    elements: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
     --------------------------------------------------------------------------
@@ -203,6 +269,10 @@ def figures_report(
         does not apply to the kind the model named becomes `not_applicable` whatever it said, one it did
         not answer is `not_run` with reason `no_answer`, and a failed one carries the ready comment and the
         reason. Only criteria of the undergraduate scope are applied.
+        The citing paragraph is searched with the number printed in the figure title, never the element
+        counter; a figure with no printed number has `cited_in_text` "not_applicable" and no search.
+        When `elements` is given (the records of elements.json), those figure records are the raw list and
+        the PDF is not extracted again: the figure files must already be in `report_dir / "figures"`.
 
     Inputs:
         pdf (Path): the report PDF
@@ -216,6 +286,8 @@ def figures_report(
         vision_ok (bool): whether the vision model was validated
         existing (dict | None): records already judged, by figure id, not judged again
         on_figure (Callable | None): called with the id and the record after each figure
+        elements (list[dict] | None): the element records of the report; when given, only their figure
+            records are judged and no extraction runs (None keeps the extraction)
 
     Outputs:
         report (dict): `report_id`, `figures` (a record per figure) and `report_criteria`.
@@ -223,6 +295,7 @@ def figures_report(
     Raises:
         NotRun: a model kind that is not retryable.
         KeyError: an `extraction` key is missing from the criteria file.
+        TablesError: an element record of a figure has no id, page or rect.
     --------------------------------------------------------------------------
     """
     existing = existing or {}
@@ -230,8 +303,13 @@ def figures_report(
     criteria = criteria_for_scope(criteria_doc, SCOPE)
     figures_dir = report_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
-    raw = extract(pdf, figures_dir, settings["min_area_pt2"], settings["background_threshold"])
+    if elements is None:
+        raw = extract(pdf, figures_dir, settings["min_area_pt2"], settings["background_threshold"])
+    else:
+        raw = figure_records(elements)
     checked = check(raw, pages, body_font_size(pdf), criteria_doc)
+    max_number = load_settings()[MAX_NUMBER_SETTING_KEY]
+    elements_by_id = {element["figure_id"]: element for element in raw}
 
     figures = []
     for fig in checked:
@@ -241,15 +319,17 @@ def figures_report(
             if on_figure:
                 on_figure(figure_id, existing[figure_id])
             continue
+        printed = printed_number(elements_by_id[figure_id], max_number)
         record = {
             "figure_id": figure_id, "page": fig["page"], "rect": fig["rect"], "file": fig["file"],
             "kind": DEFAULT_KIND, "drawing_area_ratio": fig.get("drawing_area_ratio"),
             "effective_dpi": _effective_dpi(fig), "caption": fig.get("caption"),
-            "cited_in_text": bool(citing_text(pages, int(figure_id[1:]))), "criteria": dict(fig["criteria"]),
-            "model_image": None,
+            "printed_number": printed,
+            "cited_in_text": bool(citing_text(pages, printed)) if printed else NOT_APPLICABLE,
+            "criteria": dict(fig["criteria"]), "model_image": None,
         }
         if vision_ok:
-            _judge_figure(record, fig, criteria, pages, report_dir, call, ctx, language, settings)
+            _judge_figure(record, fig, criteria, pages, report_dir, call, ctx, language, settings, printed)
         else:
             for crit in criteria:
                 if crit["level"] == "figure" and crit["judged_by"] == "model":

@@ -17,6 +17,8 @@ _FR_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "figure-review" / 
 if str(_FR_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_FR_SCRIPTS))
 
+import crossref_checks
+import element_labels
 from figure_extract import extract
 from figure_checks import check, body_font_size, failure_comment, criteria_for_scope
 from figure_image import fit_for_model, contact_sheet
@@ -35,27 +37,57 @@ EXTRACTION_KEYS = ("min_area_pt2", "background_threshold", "max_long_edge", "pho
 POINTS_PER_INCH = 72.0  # points per inch, the unit of a PDF rectangle
 
 
+def _figure_words() -> List[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the figure marker words from figure-review's element markers file, longest first.
+
+    Inputs:
+        None
+
+    Outputs:
+        words (list[str]): the marker words, such as Figure, Fig. and Fig, so that the longest one is tried first.
+
+    Raises:
+        element_labels.MarkerError: the markers file is missing, unreadable or lacks figure_prefixes.
+    --------------------------------------------------------------------------
+    """
+    markers = element_labels.load_markers(crossref_checks.DEFAULT_MARKERS_PATH)
+    return sorted((str(word) for word in markers["figure_prefixes"]), key=len, reverse=True)
+
+
 def citing_text(pages: List[str], number: Union[int, str]) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
         Find the first paragraph that cites a figure without being its caption.
 
+    Details:
+        A caption is a line that opens with a marker word and the number, then a colon, a hyphen or an en dash.
+        Such a line is left out of the paragraph before the search, so a body sentence that opens with the figure
+        reference is a citation, and a caption is not. The number must not be the first part of a longer one
+        (2 does not match 2.1), and the marker words come from element_markers.json, never from this module.
+
     Inputs:
         pages (list[str]): the page texts
         number (int | str): the number printed in the figure title, such as 2 or "2.1"
 
     Outputs:
-        text (str): the first blank-line paragraph that mentions `Figure N` or `Fig. N` and does not start
-        with it, or an empty string.
+        text (str): the first blank-line paragraph that cites the figure outside its caption, or an empty string.
+
+    Raises:
+        element_labels.MarkerError: the markers file is missing, unreadable or lacks figure_prefixes.
     --------------------------------------------------------------------------
     """
+    words = "|".join(re.escape(word) for word in _figure_words())
     printed = re.escape(str(number))
-    pattern = rf"(?:Figure|Fig\.)\s*{printed}\b"
-    starts = (f"Figure {number}", f"Fig. {number}")
+    cited = re.compile(rf"\b(?:{words})\s*{printed}(?!\.\d)(?!\d)\b")
+    caption = re.compile(rf"(?:{words})\s*{printed}(?!\.\d)(?!\d)\s*[:\-–]")
     for page in pages:
         for paragraph in page.split("\n\n"):
-            if re.search(pattern, paragraph) and not paragraph.strip().startswith(starts):
+            body = "\n".join(line for line in paragraph.splitlines() if not caption.match(line.strip()))
+            if cited.search(body):
                 return paragraph.strip()
     return ""
 

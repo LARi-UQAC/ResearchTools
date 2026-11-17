@@ -193,6 +193,17 @@ class TestUgsFigures(unittest.TestCase):
         self.assertEqual(ugs_figures.citing_text(["See Fig. 4 here."], 4), "See Fig. 4 here.")
         self.assertEqual(ugs_figures.citing_text(["Figure 33 is another figure."], 3), "")
 
+    def test_body_sentence_starting_with_figure_is_a_citation(self):
+        self.assertTrue(ugs_figures.citing_text(["Figure 2 shows the measured response."], 2))
+
+    def test_caption_is_not_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2: Response curve."], 2), "")
+        self.assertEqual(ugs_figures.citing_text(["Figure 2 - Response curve."], 2), "")
+
+    def test_two_part_number_is_not_the_one_part(self):
+        self.assertEqual(ugs_figures.citing_text(["As Figure 2.1 shows, the loop is stable."], 2), "")
+        self.assertTrue(ugs_figures.citing_text(["As Figure 2.1 shows, the loop is stable."], "2.1"))
+
     def test_existing_figures_are_not_judged_again(self):
         first = self.report(FakeModel())
         saved = {f["figure_id"]: f for f in first["figures"][:1]}

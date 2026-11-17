@@ -155,6 +155,9 @@ def check_grade_answer(
     # json.loads accepts NaN and Infinity, and NaN passes every range test below: refuse it before them.
     if isinstance(score, float) and not math.isfinite(score):
         return "score_missing", "score is not a finite number"
+    # The evidence has one shape at every score, a full one included: a string is refused before any score test.
+    if not isinstance(evidence, list):
+        return "schema_invalid", "evidence must be a list"
 
     if status == "not_applicable":
         if score is not None:
@@ -170,14 +173,11 @@ def check_grade_answer(
         return "score_above_max", f"score {score} is above the maximum {max_points}"
 
     # Every evidence entry is checked for its page, at the maximum score too: the audit reads these pages.
-    if isinstance(evidence, list):
-        for entry in evidence:
-            if not isinstance(entry, dict) or not _is_page_number(entry.get("page")):
-                return "evidence_incomplete", "evidence entry needs an integer page number"
+    for entry in evidence:
+        if not isinstance(entry, dict) or not _is_page_number(entry.get("page")):
+            return "evidence_incomplete", "evidence entry needs an integer page number"
 
     if score < max_points:
-        if not isinstance(evidence, list):
-            return "schema_invalid", "evidence must be a list"
         if not evidence:
             return "evidence_missing", "score below the maximum needs evidence"
         for entry in evidence:

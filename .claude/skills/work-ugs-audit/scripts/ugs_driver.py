@@ -33,6 +33,7 @@ from ugs_ledger import (new_ledger, add_report, set_mark, reopen_all, add_note, 
 from batch_stats import main as batch_stats_main
 from ugs_text import StepContext, load_prompts, load_schemas, load_hints, fill
 from ugs_language import load_table
+from ugs_tables import TablesError
 from ugs_bridge import OllamaDeps, NotRun, call as bridge_call
 from ugs_events import make_emitter
 from figure_checks import load_criteria
@@ -372,7 +373,7 @@ def cmd_prepare(args, call, window, count) -> int:
         return EXIT_OK
     try:
         results = report_prepare.prepare(reports, work)
-    except report_prepare.PrepareError as error:
+    except (report_prepare.PrepareError, TablesError) as error:  # TablesError names the missing key (R3)
         raise DriverError(str(error)) from None
     work.mkdir(parents=True, exist_ok=True)
     (work / "rubric.json").write_text(json.dumps(rubric, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -384,10 +385,16 @@ def cmd_prepare(args, call, window, count) -> int:
     ledger = read_ledger(ledger_path) if ledger_path.is_file() else new_ledger("Ledger - grading steps")
     item_ids = [item["id"] for item in rubric["items"]]
     for result in results:
-        ledger = set_mark(add_report(ledger, result["report_id"], item_ids), result["report_id"], "prepare", "x")
+        ledger = add_report(ledger, result["report_id"], item_ids)
+        if "refused" not in result:  # a refused report stays open: its prepare line is not done (Issue 122, defect 1)
+            ledger = set_mark(ledger, result["report_id"], "prepare", "x")
     write_ledger(ledger_path, ledger)
     for result in results:
-        _emit({"report_id": result["report_id"], "pages": result["pages"], "step": "prepare", "status": "done"})
+        if "refused" in result:
+            _emit({"report_id": result["report_id"], "step": "prepare", "status": "refused",
+                   "reason": result["refused"]})
+        else:
+            _emit({"report_id": result["report_id"], "pages": result["pages"], "step": "prepare", "status": "done"})
     return EXIT_OK
 
 
@@ -489,8 +496,11 @@ def cmd_run(args, call, fetch, window, count) -> int:
                    "kind": error.kind})
             return EXIT_NOT_RUN
         states = list(result["steps"].values())
-        _emit({"report_id": report_id, "status": result["status"], "done": states.count("done"),
-               "blocked": states.count("blocked")})
+        line = {"report_id": report_id, "status": result["status"], "done": states.count("done"),
+                "blocked": states.count("blocked")}
+        if "reason" in result:  # a report refused by its own pages or language: named, the batch goes on
+            line["reason"] = result["reason"]
+        _emit(line)
     return EXIT_OK
 
 

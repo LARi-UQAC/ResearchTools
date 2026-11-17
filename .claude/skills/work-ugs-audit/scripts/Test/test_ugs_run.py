@@ -321,6 +321,22 @@ class TestRunReport(unittest.TestCase):
         self.assertEqual(good["status"], "done")
         self.assertEqual(mocks["grade"].call_count, 1)
 
+    def test_report_without_pages_fails_only_itself(self):
+        self.ledger_path.write_text(
+            add_report(add_report(new_ledger("Test Ledger"), "R01", ["I01"]), "R02", ["I01"]), encoding="utf-8")
+        shutil.rmtree(self.work_dir / "R01" / "pages")
+        pages_dir = self.work_dir / "R02" / "pages"
+        pages_dir.mkdir(parents=True)
+        (pages_dir / "p001.md").write_text("text on page 1", encoding="utf-8")
+        with self.steps() as mocks:
+            bad = self.run_it()
+            good = self.run_it(report_id="R02")
+        self.assertEqual(bad["status"], "failed")
+        self.assertEqual(bad["reason"], "R01: pages missing")
+        self.assertEqual(set(bad["steps"].values()), {"skipped"})
+        self.assertEqual(good["status"], "done")
+        self.assertEqual(mocks["grade"].call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

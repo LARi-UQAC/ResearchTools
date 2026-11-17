@@ -19,6 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "f
 import report_prepare
 import text_quality
 import ugs_driver
+import ugs_tables
+from ugs_ledger import parse as parse_ledger
 from _pdf_fixtures import make_report
 from text_quality import OcrUnavailable
 from ugs_bridge import NotRun
@@ -196,6 +198,30 @@ class TestUgsDriver(unittest.TestCase):
         self.prepare()
         self.assertEqual(self.ledger(), first)
         self.assertEqual(first.count("## R01"), 1)
+
+    def test_refused_prepare_is_not_marked_done(self):
+        self.add_reports([9])
+        make_report(self.reports / "student2.pdf", [{"text": "Zxq wvb plm kkr."}])
+        code, lines, _ = self.prepare()
+        self.assertEqual(code, 0)
+        refused = [line for line in lines if line.get("report_id") == "R02"]
+        self.assertEqual(refused[0]["status"], "refused")
+        self.assertTrue(refused[0]["reason"].startswith("R02: "))
+        marks = {(s["report_id"], s["label"]): s["mark"] for s in parse_ledger(self.ledger())}
+        self.assertEqual(marks[("R01", "prepare")], "x")
+        self.assertEqual(marks[("R02", "prepare")], " ")
+
+    def test_missing_min_anchor_key_is_named_by_prepare(self):
+        self.add_reports([9])
+        config = json.loads(ugs_tables.DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        del config["tables.min_anchor_chars"]
+        partial = self.tmp / "ugs_config.json"
+        partial.write_text(json.dumps(config), encoding="utf-8")
+        with patch("ugs_tables.DEFAULT_CONFIG_PATH", partial):
+            code, lines, _ = self.prepare()
+        self.assertEqual(code, 2)
+        self.assertEqual(lines[-1]["status"], "refused")
+        self.assertIn("tables.min_anchor_chars", lines[-1]["error"])
 
     def test_prepare_json_rubric_is_validated_and_not_sent_to_the_model(self):
         self.add_reports([9])

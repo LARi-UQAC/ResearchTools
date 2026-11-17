@@ -124,6 +124,10 @@ class TestCheckGradeAnswer(unittest.TestCase):
     def test_evidence_that_is_not_a_list_is_schema_invalid(self):
         self.assertEqual(self._check(_rated(5, "Page 1 text"))[0], "schema_invalid")
 
+    def test_non_list_evidence_at_max_is_refused(self):
+        # A full score still needs evidence in the shape the audit reads: a string is refused at any score.
+        self.assertEqual(self._check(_rated(10, "p. 3"))[0], "schema_invalid")
+
     def test_every_code_is_in_the_table_and_snake_case(self):
         answers = [
             _rated(10), _rated(11), _rated(-1), _rated(5, []), _rated(5, [_quote(1, "NOT IN PAGE")]),

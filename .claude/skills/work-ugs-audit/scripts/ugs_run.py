@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ugs_ledger import read, write, set_mark, parse, add_figures
-from ugs_text import StepContext, read_pages, detect_language, LanguageUndecidable
+from ugs_text import StepContext, read_pages, detect_language, LanguageUndecidable, PromptError
 from ugs_grade import grade_report
 from ugs_audit import audit_report
 from ugs_language import language_report
@@ -479,7 +479,8 @@ def run_report(
         summary (dict): `report_id`, `status` (`done` or `failed`) and `steps`, a map of each step to
         `done`, `blocked` or `skipped`. It holds no text of the report. A report whose metadata is refused
         is `failed` with a `reason` naming the key or the file (never report text) and no step run. A report
-        whose language cannot be decided is `failed` with the reason `<report id>: language undecidable`.
+        whose language cannot be decided is `failed` with the reason `<report id>: language undecidable`. A report
+        with no pages folder, or an empty one, is `failed` with the reason `<report id>: pages missing`.
 
     Raises:
         NotRun: the model could not run; the step stays open so a resume continues there.
@@ -487,9 +488,13 @@ def run_report(
     """
     loop_dir = work_dir / f"loop-{loop}" / report_id
     loop_dir.mkdir(parents=True, exist_ok=True)
-    pages = read_pages(work_dir, report_id)
     hints = services.get("hints") or {}
     steps: Dict[str, str] = {name: "skipped" for name in STEPS}
+    try:  # a report with no pages folder stops only itself, as a refused language does (Issue 122, defect 1)
+        pages = read_pages(work_dir, report_id)
+    except PromptError:
+        return {"report_id": report_id, "status": "failed", "steps": steps,
+                "reason": f"{report_id}: pages missing"}
     try:
         language = report_language(work_dir, report_id, pages, hints)
     except LanguageError as exc:  # a bad report stops only itself: the batch goes on with the next one

@@ -12,6 +12,7 @@ import argparse
 import contextlib
 import io
 import json
+import batch_stats
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -112,8 +113,28 @@ def _work_dir(work: Path) -> Path:
 
 
 def _current_loop(work: Path) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the loop counter of the work folder; a missing state file means loop 1.
+
+    Inputs:
+        work (Path): the work folder.
+
+    Outputs:
+        int: the loop number.
+
+    Raises:
+        DriverError: when loop_state.json exists but is unreadable or does not hold a loop counter (never reset).
+    --------------------------------------------------------------------------
+    """
     state = work / "loop_state.json"
-    return int(_read_json(state, "loop state").get("loop", 1)) if state.is_file() else 1
+    if not state.is_file():
+        return 1
+    data = _read_json(state, "loop state")
+    if not isinstance(data, dict) or not isinstance(data.get("loop", 1), int):
+        raise DriverError("loop state is not a loop counter (loop_state.json)")
+    return data.get("loop", 1)
 
 
 def _real_deps(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -535,7 +556,7 @@ def cmd_run(args, call, fetch, window, count) -> int:
     note = _calibration_note(work, current, ctx.prompts)
     state = work / "loop_state.json"
     if not state.is_file():
-        state.write_text(json.dumps({"loop": current}), encoding="utf-8")
+        batch_stats.write_json_atomic(state, {"loop": current})
     calls = {step: (lambda prompt, schema, images=None, kind=kind: model_call(kind, prompt, schema, images))
              for step, kind in STEP_KIND.items()}
     for report_id in wanted:

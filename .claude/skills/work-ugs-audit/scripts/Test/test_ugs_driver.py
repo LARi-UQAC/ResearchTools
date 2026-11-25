@@ -606,5 +606,26 @@ class TestStepsFilter(unittest.TestCase):
             ugs_driver.parse_steps("grade,bogus")
         self.assertIn("bogus", str(ctx.exception))
 
+class TestLoopStateRefusal(unittest.TestCase):
+    """Review round 2 F (Issue 126): the driver refuses a corrupt loop state, it never reads it as loop 1."""
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp(prefix="ugs-driver-loop-"))
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.work, ignore_errors=True)
+
+    def test_corrupt_loop_state_is_refused(self):
+        (self.work / "loop_state.json").write_text("{broken", encoding="utf-8")
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver._current_loop(self.work)
+
+    def test_loop_state_that_is_not_an_object_is_refused(self):
+        (self.work / "loop_state.json").write_text("[3]", encoding="utf-8")
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver._current_loop(self.work)
+
+
 if __name__ == "__main__":
     unittest.main()

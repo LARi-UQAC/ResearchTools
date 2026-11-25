@@ -4,7 +4,7 @@ count_check - declared against extracted counts of figures and tables (Issue 126
 Stage: preparation of the work folder. compare_counts takes the declared counts of plan 5 and the element records
 of figure extraction, and returns, per type, the extracted count, a status (ok, mismatch or not_found) and the printed
 numbers missing or extra. A mismatch is a finding shown in the annex; it is never corrected here (spec E2). A
-table_image counts as a table, a logo as nothing. The printed numbers come from crossref_checks.element_numbers.
+table_image counts as a table, a logo as nothing. Declared and extracted numbers use one pattern (front_matter.json).
 """
 
 from typing import Any, Dict, List
@@ -100,7 +100,7 @@ def compare_counts(declared: Dict[str, Any], elements: List[Dict[str, Any]]) -> 
             extra_table_numbers. A status is ok, mismatch or not_found; a logo is counted as nothing.
 
     Raises:
-        crossref_checks.CrossrefConfigError: when the marker lists of the element titles are missing.
+        re.error: when the number pattern is not a valid regular expression.
     """
     figures = [e for e in elements if e.get("element_type") in FIGURE_TYPES]
     tables = [e for e in elements if e.get("element_type") in TABLE_TYPES]

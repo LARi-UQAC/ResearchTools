@@ -144,7 +144,9 @@ def annotate(src: Path, items: List[Dict], dst: Path, colors: Dict[str, str], au
         quote = item.get("quote")
         rect = item.get("rect")
         
-        color_hex = colors.get(kind, "#000000")
+        if kind not in colors:  # F1: an unknown kind is refused, never painted in a default colour
+            raise AnnotateError(f"no colour for the annotation kind {kind!r} in annotation.colors")
+        color_hex = colors[kind]
         # Convert hex to RGB tuple (0.0-1.0)
         color_hex = color_hex.lstrip('#')
         r = int(color_hex[0:2], 16) / 255.0

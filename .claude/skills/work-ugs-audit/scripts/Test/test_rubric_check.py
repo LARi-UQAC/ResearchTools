@@ -137,7 +137,7 @@ class ConfigTests(unittest.TestCase):
         for key in ugs_config.REQUIRED_KEYS:
             self.assertIn(key, values)
         self.assertEqual(values["batch.outlier_z"], 2.0)
-        self.assertEqual(set(values["annotation.colors"]), {"technical", "figure", "language", "reference"})
+        self.assertEqual(set(values["annotation.colors"]), {"technical", "figure", "language", "reference", "citation"})
 
     def test_shipped_config_values_carry_provenance(self):
         """Shipped config values carry provenance."""

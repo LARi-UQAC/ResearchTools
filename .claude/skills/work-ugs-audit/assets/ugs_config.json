@@ -4,7 +4,8 @@
       "technical": "#0072B2",
       "figure": "#E69F00",
       "language": "#009E73",
-      "reference": "#CC79A7"
+      "reference": "#CC79A7",
+      "citation": "#D55E00"
     },
     "provenance": "starting value, adjustable by the professor (Okabe-Ito hues, one per annotation kind)"
   },

@@ -54,6 +54,17 @@ class TestPdfAnnotate(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
+    def test_unknown_kind_is_a_named_error(self):
+        """F1: an annotation kind with no colour raises, it is never painted black in silence."""
+        items = [{"page": 1, "kind": "citation", "quote": "This is a test", "rect": None, "comment": "x"}]
+        with self.assertRaises(AnnotateError) as ctx:
+            annotate(self.src_pdf, items, self.dst_pdf, self.colors, "Fictitious author")
+        self.assertIn("citation", str(ctx.exception))
+
+    def test_shipped_colours_include_citation(self):
+        """F1: the shipped configuration gives the citation kind its own colour."""
+        from ugs_config import load, default_path
+        self.assertIn("citation", load(default_path())["annotation.colors"])
     def test_normalize_function(self):
         # Test basic normalization
         self.assertEqual(normalize("  hello   world  "), "hello world")

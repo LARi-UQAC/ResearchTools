@@ -20,13 +20,69 @@ from ugs_text import split_body_and_references
 from ugs_tables import load_elements
 import ugs_config
 import element_labels
-from crossref_checks import run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH
+import crossref_checks
+from crossref_checks import (run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH,
+                             misplaced_citations, load_citation_rules)
 
 REPORT_LANGUAGES = ("fr", "en")
 CHECKS_FILE_NAME = "checks.json"
+CITATION_CHECK_ID = crossref_checks.CITATION_CHECK_ID
+CITATION_CODE = "CIT"
+CITATION_KIND = "citation"
 META_NAME_KEY = "reports.meta_file_name"
 ELEMENTS_NAME_KEY = "reports.elements_file_name"
 EXCLUDED_PAGES_KEY = "excluded_pages"
+
+
+def _body_pages(pages: List[str]) -> List[str]:
+    """
+    Purpose: Keep the pages before the reference list, the only pages a citation placement is judged on (N5).
+    Details: The first page whose text starts the reference list is cut from the body; its text before the
+        reference heading is lost, a small accepted limit that keeps the rule simple.
+    Inputs:
+        pages: List[str] - the page texts of the report.
+    Outputs:
+        List[str] - the body pages, all of them when no reference list is found.
+    Raises:
+        None.
+    """
+    for index in range(1, len(pages) + 1):
+        if split_body_and_references(pages[:index])[1]:
+            return pages[:index - 1]
+    return list(pages)
+
+
+def citation_placement_row(body_pages: List[str], language: str) -> dict:
+    """
+    Purpose: Build the check row of misplaced citations for checks.json and the annex (N5).
+    Inputs:
+        body_pages: List[str] - the body page texts (see _body_pages).
+        language: str - the report language, selecting the abbreviations of citation_rules.json.
+    Outputs:
+        dict - {"id", "status" (ok or not_ok), "detail": {"count": n}}.
+    Raises:
+        CrossrefConfigError: the citation rules file lacks the language (R3).
+    """
+    found = misplaced_citations(body_pages, load_citation_rules(language))
+    status = "ok" if not found else "not_ok"
+    return {"id": CITATION_CHECK_ID, "status": status, "detail": {"count": len(found)}}
+
+
+def citation_annotations(body_pages: List[str], language: str) -> List[dict]:
+    """
+    Purpose: One annotation per misplaced citation, with its quote and its comment in the report language (N5).
+    Inputs:
+        body_pages: List[str] - the body page texts (see _body_pages).
+        language: str - the report language.
+    Outputs:
+        List[dict] - annotations with page, kind, code, quote, rect and comment.
+    Raises:
+        CrossrefConfigError: the citation rules file lacks the language (R3).
+    """
+    comment = load_labels(DEFAULT_LABELS, language)["citation_comment"]
+    return [{"page": found["page"], "kind": CITATION_KIND, "code": CITATION_CODE, "quote": found["quote"],
+             "rect": None, "comment": comment}
+            for found in misplaced_citations(body_pages, load_citation_rules(language))]
 
 
 def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
@@ -321,6 +377,10 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
         figure_criteria = criteria if criteria is not None else load_criteria(_SHIPPED_CRITERIA)["criteria"]
         annotations.extend(figure_annotations(figures_data, figure_criteria, language))
 
+    # N5: misplaced citations on the body pages, one annotation each and one row of the checks table.
+    body_pages = _body_pages(pages)
+    annotations.extend(citation_annotations(body_pages, language))
+
     # Reference annotations
     body_text, refs = split_body_and_references(pages)
     if refs:
@@ -350,6 +410,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
 
     # Cross-reference checks (spec R9): saved in the loop folder and printed in the annex.
     checks, excluded = run_report_checks(src_pdf, report_dir.parent.parent / report_id, pages)
+    checks.append(citation_placement_row(body_pages, language))
     _atomic_write_text(report_dir / CHECKS_FILE_NAME, json.dumps(checks, indent=2))
 
     # Append annex

@@ -235,7 +235,8 @@ class TestAssembleChecks(unittest.TestCase):
         self._write_source_files(with_element=True, excluded=[])
         self._assemble(["Figure 2.1 shows the layout."])
         checks = self._checks()
-        self.assertEqual([c["id"] for c in checks], CHECK_IDS)
+        # N5 adds the citation_placement row after the five cross-reference checks.
+        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement"])
         self.assertEqual(checks[0]["status"], "ok")
         labels = _labels("en")
         with fitz.open(str(self.loop_dir / "annotated.pdf")) as doc:
@@ -285,6 +286,39 @@ class TestAssembleChecks(unittest.TestCase):
         self.assertIn(labels["excluded_reason_values"]["signature_table"], note)
         self.assertNotIn("signature_table", note)
         self.assertEqual(ugs_assemble.build_excluded_note([], labels), "")
+
+
+class TestCitationPlacement(unittest.TestCase):
+    """N5: a row of checks.json and one annotation per misplaced citation, labels in the report language."""
+
+    PAGES = ["Plain text with a claim. [1] and another. [2, 3].", "Clean text [4]. Also fine (see 3.5 [5])."]
+
+    def test_citation_placement_row_counts_occurrences(self):
+        row = ugs_assemble.citation_placement_row(self.PAGES, "en")
+        self.assertEqual(row["id"], "citation_placement")
+        self.assertEqual(row["status"], "not_ok")
+        self.assertEqual(row["detail"], {"count": 2})
+
+    def test_citation_placement_row_ok_without_occurrence(self):
+        row = ugs_assemble.citation_placement_row(["Clean text [4]."], "en")
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["detail"], {"count": 0})
+
+    def test_citation_row_renders_in_the_annex_with_its_label(self):
+        row = ugs_assemble.citation_placement_row(self.PAGES, "fr")
+        labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "fr")
+        html_text = pdf_annex.render_checks([row], labels)
+        self.assertIn(labels["check_values"]["citation_placement"], html_text)
+        self.assertIn("2", html_text)
+
+    def test_each_misplaced_citation_is_annotated(self):
+        annotations = ugs_assemble.citation_annotations(self.PAGES, "fr")
+        self.assertEqual([(a["page"], a["quote"]) for a in annotations],
+                         [(1, "claim. [1]"), (1, "another. [2, 3]")])
+        for annotation in annotations:
+            self.assertEqual(annotation["kind"], "citation")
+            self.assertEqual(annotation["code"], "CIT")
+            self.assertTrue(annotation["comment"])
 
 
 if __name__ == "__main__":

@@ -1,135 +1,141 @@
 {
-  "provenance": "Labels and layout numbers chosen by the author of the work-ugs-audit skill (plan 7, spec 2026-11-16) and to be reviewed by the owner. The wording is data (R6): a label is shown in the language of the report only, and a missing key is a named error (R3).",
-  "default_language": "fr",
-  "layout": {
-    "provenance": "Chosen by the author on 2026-11-16 for an A4 page; checked on fictitious PDFs by Test/test_annex_layout.py, which reads word boxes against this margin. The comment column takes the width the three fixed columns leave. The two values after page_margin were measured on the same fixtures on 2026-11-17: a story run of 300 unbroken characters overflowed the comment column unless split, and the first line of a row continued on the next page started 2.6 points above the content box.",
-    "page_margin": 36,
-    "text_top_inset": 4,
-    "max_unbroken_run": 24,
-    "column_widths_percent": {
-      "item": 28,
-      "score": 12,
-      "status": 16
-    }
-  },
-  "fr": {
-    "provenance": "French wording chosen by the author, to be reviewed by the owner. The check, numbering and excluded-page wording was added on 2026-11-17 (Issue 122, plan 8), with the same status.",
-    "title": "Grille corrigée",
-    "loop": "boucle",
-    "item": "Élément",
-    "score": "Note",
-    "status": "Statut",
-    "comment": "Commentaire",
-    "total": "Total",
-    "excluded": "Pages exclues de l'évaluation",
-    "status_values": {
-      "rated": "Évalué",
-      "not_applicable": "Non applicable",
-      "not_run": "Non exécuté"
-    },
-    "validation_values": {
-      "timeout": "Pas de réponse du modèle dans le délai",
-      "quote_not_found": "Citation introuvable dans la page",
-      "evidence_missing": "Preuve absente",
-      "evidence_incomplete": "Preuve incomplète",
-      "evidence_page_out_of_range": "Page de la preuve hors du rapport",
-      "score_above_max": "Note supérieure au maximum",
-      "score_negative": "Note négative",
-      "score_missing": "Note absente",
-      "unknown_status": "Statut inconnu",
-      "not_applicable_with_score": "Non applicable avec une note",
-      "unparsable_answer": "Réponse du modèle illisible",
-      "schema_invalid": "Réponse hors du format attendu",
-      "no_fit": "Texte trop long pour la fenêtre du modèle",
-      "over_budget": "Dépasse le budget de jetons"
-    },
-    "checks_title": "Contrôles de références croisées",
-    "check_column": "Contrôle",
-    "numbers_column": "Numéros",
-    "check_values": {
-      "figures_cited": "Figures citées dans le texte",
-      "tables_cited": "Tableaux cités dans le texte",
-      "figure_order": "Numérotation des figures",
-      "table_order": "Numérotation des tableaux",
-      "equation_order": "Numérotation des équations"
-    },
-    "check_status_values": {
-      "ok": "Conforme",
-      "not_ok": "Non conforme",
-      "not_applicable": "Non applicable"
-    },
-    "check_detail_values": {
-      "missing": "Absents",
-      "out_of_order": "Hors d'ordre",
-      "repeated": "Répétés",
-      "skipped": "Sautés"
-    },
-    "excluded_reason_values": {
-      "cover": "page couverture",
-      "signature_table": "tableau de signatures",
-      "version_table": "tableau des versions"
-    },
-    "excluded_item": "page {page} : {reason}",
-    "excluded_separator": " ; "
-  },
-  "en": {
-    "provenance": "English wording chosen by the author, to be reviewed by the owner. The check, numbering and excluded-page wording was added on 2026-11-17 (Issue 122, plan 8), with the same status.",
-    "title": "Completed rubric",
-    "loop": "loop",
-    "item": "Item",
-    "score": "Score",
-    "status": "Status",
-    "comment": "Comment",
-    "total": "Total",
-    "excluded": "Pages excluded from evaluation",
-    "status_values": {
-      "rated": "Rated",
-      "not_applicable": "Not applicable",
-      "not_run": "Not run"
-    },
-    "validation_values": {
-      "timeout": "The model did not answer in time",
-      "quote_not_found": "Quote not found on the page",
-      "evidence_missing": "Evidence missing",
-      "evidence_incomplete": "Evidence incomplete",
-      "evidence_page_out_of_range": "Evidence page outside the report",
-      "score_above_max": "Score above the maximum",
-      "score_negative": "Negative score",
-      "score_missing": "Score missing",
-      "unknown_status": "Unknown status",
-      "not_applicable_with_score": "Not applicable with a score",
-      "unparsable_answer": "Unreadable model answer",
-      "schema_invalid": "Answer outside the expected format",
-      "no_fit": "Text too long for the model window",
-      "over_budget": "Over the token budget"
-    },
-    "checks_title": "Cross-reference checks",
-    "check_column": "Check",
-    "numbers_column": "Numbers",
-    "check_values": {
-      "figures_cited": "Figures cited in the text",
-      "tables_cited": "Tables cited in the text",
-      "figure_order": "Figure numbering",
-      "table_order": "Table numbering",
-      "equation_order": "Equation numbering"
-    },
-    "check_status_values": {
-      "ok": "Passed",
-      "not_ok": "Not passed",
-      "not_applicable": "Not applicable"
-    },
-    "check_detail_values": {
-      "missing": "Missing",
-      "out_of_order": "Out of order",
-      "repeated": "Repeated",
-      "skipped": "Skipped"
-    },
-    "excluded_reason_values": {
-      "cover": "cover page",
-      "signature_table": "signature table",
-      "version_table": "version table"
-    },
-    "excluded_item": "page {page}: {reason}",
-    "excluded_separator": "; "
-  }
+    "provenance":  "Labels and layout numbers chosen by the author of the work-ugs-audit skill (plan 7, spec 2026-11-16) and to be reviewed by the owner. The wording is data (R6): a label is shown in the language of the report only, and a missing key is a named error (R3).",
+    "default_language":  "fr",
+    "layout":  {
+                   "provenance":  "Chosen by the author on 2026-11-16 for an A4 page; checked on fictitious PDFs by Test/test_annex_layout.py, which reads word boxes against this margin. The comment column takes the width the three fixed columns leave. The two values after page_margin were measured on the same fixtures on 2026-11-17: a story run of 300 unbroken characters overflowed the comment column unless split, and the first line of a row continued on the next page started 2.6 points above the content box.",
+                   "page_margin":  36,
+                   "text_top_inset":  4,
+                   "max_unbroken_run":  24,
+                   "column_widths_percent":  {
+                                                 "item":  28,
+                                                 "score":  12,
+                                                 "status":  16
+                                             }
+               },
+    "fr":  {
+               "provenance":  "French wording chosen by the author, to be reviewed by the owner. The check, numbering and excluded-page wording was added on 2026-11-17 (Issue 122, plan 8), with the same status.",
+               "title":  "Grille corrigée",
+               "loop":  "boucle",
+               "item":  "Élément",
+               "score":  "Note",
+               "status":  "Statut",
+               "comment":  "Commentaire",
+               "total":  "Total",
+               "excluded":  "Pages exclues de l\u0027évaluation",
+               "status_values":  {
+                                     "rated":  "Évalué",
+                                     "not_applicable":  "Non applicable",
+                                     "not_run":  "Non exécuté"
+                                 },
+               "validation_values":  {
+                                         "timeout":  "Pas de réponse du modèle dans le délai",
+                                         "quote_not_found":  "Citation introuvable dans la page",
+                                         "evidence_missing":  "Preuve absente",
+                                         "evidence_incomplete":  "Preuve incomplète",
+                                         "evidence_page_out_of_range":  "Page de la preuve hors du rapport",
+                                         "score_above_max":  "Note supérieure au maximum",
+                                         "score_negative":  "Note négative",
+                                         "score_missing":  "Note absente",
+                                         "unknown_status":  "Statut inconnu",
+                                         "not_applicable_with_score":  "Non applicable avec une note",
+                                         "unparsable_answer":  "Réponse du modèle illisible",
+                                         "schema_invalid":  "Réponse hors du format attendu",
+                                         "no_fit":  "Texte trop long pour la fenêtre du modèle",
+                                         "over_budget":  "Dépasse le budget de jetons"
+                                     },
+               "checks_title":  "Contrôles de références croisées",
+               "check_column":  "Contrôle",
+               "numbers_column":  "Numéros",
+               "check_values":  {
+                                    "figures_cited":  "Figures citées dans le texte",
+                                    "tables_cited":  "Tableaux cités dans le texte",
+                                    "figure_order":  "Numérotation des figures",
+                                    "table_order":  "Numérotation des tableaux",
+                                    "equation_order":  "Numérotation des équations",
+                                    "citation_placement":  "Appels de citation placés après le point"
+                                },
+               "check_status_values":  {
+                                           "ok":  "Conforme",
+                                           "not_ok":  "Non conforme",
+                                           "not_applicable":  "Non applicable"
+                                       },
+               "check_detail_values":  {
+                                           "missing":  "Absents",
+                                           "out_of_order":  "Hors d\u0027ordre",
+                                           "repeated":  "Répétés",
+                                           "skipped":  "Sautés",
+                                           "count":  "Occurrences"
+                                       },
+               "excluded_reason_values":  {
+                                              "cover":  "page couverture",
+                                              "signature_table":  "tableau de signatures",
+                                              "version_table":  "tableau des versions"
+                                          },
+               "excluded_item":  "page {page} : {reason}",
+               "excluded_separator":  " ; ",
+               "citation_comment":  "Appel numérique placé après le point de la phrase : placer la citation avant le point."
+           },
+    "en":  {
+               "provenance":  "English wording chosen by the author, to be reviewed by the owner. The check, numbering and excluded-page wording was added on 2026-11-17 (Issue 122, plan 8), with the same status.",
+               "title":  "Completed rubric",
+               "loop":  "loop",
+               "item":  "Item",
+               "score":  "Score",
+               "status":  "Status",
+               "comment":  "Comment",
+               "total":  "Total",
+               "excluded":  "Pages excluded from evaluation",
+               "status_values":  {
+                                     "rated":  "Rated",
+                                     "not_applicable":  "Not applicable",
+                                     "not_run":  "Not run"
+                                 },
+               "validation_values":  {
+                                         "timeout":  "The model did not answer in time",
+                                         "quote_not_found":  "Quote not found on the page",
+                                         "evidence_missing":  "Evidence missing",
+                                         "evidence_incomplete":  "Evidence incomplete",
+                                         "evidence_page_out_of_range":  "Evidence page outside the report",
+                                         "score_above_max":  "Score above the maximum",
+                                         "score_negative":  "Negative score",
+                                         "score_missing":  "Score missing",
+                                         "unknown_status":  "Unknown status",
+                                         "not_applicable_with_score":  "Not applicable with a score",
+                                         "unparsable_answer":  "Unreadable model answer",
+                                         "schema_invalid":  "Answer outside the expected format",
+                                         "no_fit":  "Text too long for the model window",
+                                         "over_budget":  "Over the token budget"
+                                     },
+               "checks_title":  "Cross-reference checks",
+               "check_column":  "Check",
+               "numbers_column":  "Numbers",
+               "check_values":  {
+                                    "figures_cited":  "Figures cited in the text",
+                                    "tables_cited":  "Tables cited in the text",
+                                    "figure_order":  "Figure numbering",
+                                    "table_order":  "Table numbering",
+                                    "equation_order":  "Equation numbering",
+                                    "citation_placement":  "Citations placed after the period"
+                                },
+               "check_status_values":  {
+                                           "ok":  "Passed",
+                                           "not_ok":  "Not passed",
+                                           "not_applicable":  "Not applicable"
+                                       },
+               "check_detail_values":  {
+                                           "missing":  "Missing",
+                                           "out_of_order":  "Out of order",
+                                           "repeated":  "Repeated",
+                                           "skipped":  "Skipped",
+                                           "count":  "Occurrences"
+                                       },
+               "excluded_reason_values":  {
+                                              "cover":  "cover page",
+                                              "signature_table":  "signature table",
+                                              "version_table":  "version table"
+                                          },
+               "excluded_item":  "page {page}: {reason}",
+               "excluded_separator":  "; ",
+               "citation_comment":  "Numeric citation placed after the period of the sentence: place the citation before the period."
+           }
 }

@@ -34,6 +34,8 @@ MAX_GAP_SETTING_KEY = "max_gap_numbers"
 MAX_NUMBER_CONFIG_KEY = "checks.max_number"
 MAX_NUMBER_SETTING_KEY = "max_number"
 CHECK_IDS = ("figures_cited", "tables_cited", "figure_order", "table_order", "equation_order")
+# N5: a row added by the assemble step, not by run_checks; its id is named here so the annex can label it.
+CITATION_CHECK_ID = "citation_placement"
 STATUS_OK = "ok"
 STATUS_NOT_OK = "not_ok"
 STATUS_NOT_APPLICABLE = "not_applicable"
@@ -590,3 +592,56 @@ def run_checks(pdf: Path, pages: List[str], elements: List[Dict[str, Any]], mark
         ("equation_order", eq_status, eq_detail),
     ]
     return [{"id": check_id, "status": status, "detail": detail} for check_id, status, detail in results]
+
+
+# N5: a numeric citation written after the sentence's period. The abbreviations are data (citation_rules.json, R6).
+CITATION_RULES_PATH = SCRIPTS_DIR.parent / "assets" / "citation_rules.json"
+MISPLACED_CITATION_RE = re.compile(
+    r"(?P<word>\S*[^\W\d_])\.(?P<gap> ?)\[(?P<body>\s*\d+(?:\s*[,\u2013\u2014\-]\s*\d+)*\s*)\]")
+
+
+def load_citation_rules(language: str, path: Optional[Path] = None) -> List[str]:
+    """
+    Purpose: Read the abbreviations that end in a period and may stand before a citation without being a finding (N5).
+    Inputs:
+        language: str - the report language, a key of the file (fr, en).
+        path: Optional[Path] - the rules file; None means assets/citation_rules.json.
+    Outputs:
+        List[str] - the abbreviations of the language, each with its period (for example "et al.").
+    Raises:
+        CrossrefConfigError: the file is unreadable, the language has no entry, or its value is not a list of strings.
+    """
+    rules_path = Path(path) if path is not None else CITATION_RULES_PATH
+    try:
+        raw = json.loads(rules_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise CrossrefConfigError(f"cannot read {rules_path.name}: {exc}") from None
+    entry = raw.get(language) if isinstance(raw, dict) else None
+    value = entry.get("value") if isinstance(entry, dict) else None
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise CrossrefConfigError(f"language '{language}' has no list of abbreviations in {rules_path.name}")
+    return value
+
+
+def misplaced_citations(pages: List[str], abbreviations: List[str]) -> List[Dict[str, Any]]:
+    """
+    Purpose: Find each numeric citation written after the period of its sentence (". [5]") on the given pages (N5).
+    Details: The word before the period must end with a letter, so a decimal (3.5 [2]) is not a finding. A word
+        that is one of the abbreviations (et al., etc.) is not a finding either. Spaces around the bracket may be
+        absent; a list or a range is a citation too. The quote is the text as it stands in the page.
+    Inputs:
+        pages: List[str] - the body page texts, index 0 for page 1 (references must be removed by the caller).
+        abbreviations: List[str] - the abbreviations ending in a period, from load_citation_rules.
+    Outputs:
+        List[Dict[str, Any]] - one {"page", "quote"} per occurrence, in page order.
+    Raises:
+        None.
+    """
+    forms = {item.casefold() for item in abbreviations}
+    found: List[Dict[str, Any]] = []
+    for number, text in enumerate(pages, start=1):
+        for match in MISPLACED_CITATION_RE.finditer(text):
+            if (match.group("word") + ".").casefold() in forms:
+                continue
+            found.append({"page": number, "quote": match.group(0)})
+    return found

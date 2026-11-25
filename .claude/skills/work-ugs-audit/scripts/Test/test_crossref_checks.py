@@ -452,5 +452,57 @@ class TestGapAndNumberLimits(CrossrefBase):
         self.assertTrue(raw["checks.max_number"]["provenance"])
 
 
+class TestMisplacedCitations(unittest.TestCase):
+    """N5: a numeric citation after the sentence's period is a finding; before the period it is correct."""
+
+    ABBREVIATIONS = ["et al.", "al.", "etc.", "p.", "pp.", "fig.", "vol.", "no."]
+
+    def _found(self, text):
+        return crossref_checks.misplaced_citations([text], self.ABBREVIATIONS)
+
+    def test_period_then_citation_is_found(self):
+        found = self._found("The loop is stable. [5] Then it holds.")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["page"], 1)
+        self.assertEqual(found[0]["quote"], "stable. [5]")
+
+    def test_citation_before_period_is_ok(self):
+        self.assertEqual(self._found("The loop is stable [5]. Then it holds."), [])
+
+    def test_no_space_and_list_and_ranges_are_found(self):
+        for text in ("stable.[5]", "stable. [3, 4]", "stable. [2-4]", "stable. [2–4]"):
+            with self.subTest(text=text):
+                self.assertEqual(len(self._found(text)), 1)
+
+    def test_abbreviation_before_citation_is_ok(self):
+        self.assertEqual(self._found("As shown by Smith et al. [5] in the study."), [])
+        self.assertEqual(self._found("Such cases, etc. [5] remain open."), [])
+
+    def test_decimal_number_is_ok(self):
+        self.assertEqual(self._found("The gain was 3.5 [2] in the test."), [])
+
+    def test_quote_is_found_in_page_text(self):
+        text = "First sentence. Second one ends here. [7] Third."
+        found = self._found(text)
+        self.assertEqual(len(found), 1)
+        self.assertIn(found[0]["quote"], text)
+
+    def test_each_occurrence_is_listed_with_its_page(self):
+        found = crossref_checks.misplaced_citations(["A stable. [1]", "B ok [2].", "C stable. [3]"], self.ABBREVIATIONS)
+        self.assertEqual([(f["page"], f["quote"]) for f in found], [(1, "stable. [1]"), (3, "stable. [3]")])
+
+    def test_missing_language_is_named(self):
+        path = Path(tempfile.mkdtemp()) / "citation_rules.json"
+        path.write_text('{"fr": {"value": ["al."], "provenance": "t"}}', encoding="utf-8")
+        with self.assertRaises(crossref_checks.CrossrefConfigError) as ctx:
+            crossref_checks.load_citation_rules("en", path)
+        self.assertIn("en", str(ctx.exception))
+        self.assertIn("citation_rules.json", str(ctx.exception))
+
+    def test_shipped_rules_load_for_both_languages(self):
+        self.assertIn("et al.", crossref_checks.load_citation_rules("en"))
+        self.assertIn("p.", crossref_checks.load_citation_rules("fr"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,10 @@
+{
+  "fr": {
+    "value": ["et al.", "al.", "etc.", "p.", "pp.", "fig.", "réf.", "vol.", "no."],
+    "provenance": "Abbreviations ending in a period that may stand before a citation: seed list proposed 2026-11-25 (spec N5), the professor may add entries"
+  },
+  "en": {
+    "value": ["et al.", "al.", "etc.", "p.", "pp.", "fig.", "vol.", "no."],
+    "provenance": "Abbreviations ending in a period that may stand before a citation: seed list proposed 2026-11-25 (spec N5), the professor may add entries"
+  }
+}

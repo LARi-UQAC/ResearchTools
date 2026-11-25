@@ -204,7 +204,7 @@ def _is_continuation(text: str, data: dict) -> bool:
 
 
 def _list_pages(texts: List[str], markers: List[str], taken: set, data: dict,
-                all_markers: List[str]) -> Optional[List[int]]:
+                all_markers: List[str], continues: bool = True) -> Optional[List[int]]:
     """
     Purpose:
         Find the pages of one list: each page carrying its heading, plus the pages that directly follow it and read
@@ -216,6 +216,7 @@ def _list_pages(texts: List[str], markers: List[str], taken: set, data: dict,
         taken (set): the 1-based pages already given another role; they are never reused.
         data (dict): the result of load_front_matter.
         all_markers (List[str]): the heading words of every list, so that a continuation never swallows another list.
+        continues (bool): False for a one-page heading (the executive summary), which takes no continuation pages.
 
     Outputs:
         List[int] or None: the sorted 1-based pages, or None when no heading is found.
@@ -230,7 +231,8 @@ def _list_pages(texts: List[str], markers: List[str], taken: set, data: dict,
             continue
         found.append(number)
         follow = number + 1
-        while (follow <= len(texts) and follow not in taken and not _has_heading(texts[follow - 1], all_markers, data)
+        while (continues and follow <= len(texts) and follow not in taken
+               and not _has_heading(texts[follow - 1], all_markers, data)
                and _is_continuation(texts[follow - 1], data)):
             found.append(follow)
             taken.add(follow)
@@ -283,7 +285,8 @@ def find_front_roles(page_texts: List[str], language: str, data: dict, small_ima
     result["table_of_contents"] = _list_pages(page_texts, data["table_of_contents_markers"][language], taken, data, all_markers)
     result["list_of_figures"] = _list_pages(page_texts, data["figure_list_markers"][language], taken, data, all_markers)
     result["list_of_tables"] = _list_pages(page_texts, data["table_list_markers"][language], taken, data, all_markers)
-    summary = _list_pages(page_texts, data["executive_summary_markers"][language], taken, data, all_markers)
+    summary = _list_pages(page_texts, data["executive_summary_markers"][language], taken, data, all_markers,
+                          continues=False)
     result["executive_summary"] = summary
     last = 0
     for key in ("cover", "version_signature", "table_of_contents", "list_of_figures", "list_of_tables",

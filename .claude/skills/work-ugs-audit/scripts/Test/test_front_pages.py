@@ -82,6 +82,21 @@ class FrenchFrontMatterTests(unittest.TestCase):
         self.assertEqual(roles["list_of_figures"], [2, 3])
         self.assertEqual(roles["body_start"], 4)
 
+    def test_plural_headings_of_a_real_report_are_found(self):
+        """Regression (Issue 126, real report R01): the headings read 'Tables des matieres' and 'Tables des figures'."""
+        toc = "Tables des matieres\n1. Introduction ........ 3\n2. Methodes ........ 5\n3. Resultats ........ 9"
+        figures = "Tables des figures\nFigure 1 Schema ........ 12\nFigure 2 Courbe ........ 14\nFigure 3 Bloc ........ 16"
+        roles = _roles([COVER, toc, figures, INTRO], "fr")
+        self.assertEqual(roles["table_of_contents"], [2])
+        self.assertEqual(roles["list_of_figures"], [3])
+
+    def test_summary_page_does_not_swallow_following_entry_pages(self):
+        """Regression (Issue 126, real report R01): the summary is one page; entry pages after it are not its own."""
+        entries = "1. Introduction ........ 3 2. Methodes ........ 5 3. Resultats ........ 9 4. Conclusion ........ 12"
+        roles = _roles([COVER, SUMMARY, entries, INTRO], "fr")
+        self.assertEqual(roles["executive_summary"], [2])
+        self.assertEqual(roles["body_start"], 3)
+
     def test_chapter_only_toc_is_not_a_list_of_figures(self):
         roles = _roles([COVER, TOC, INTRO], "fr")
         self.assertEqual(roles["table_of_contents"], [2])

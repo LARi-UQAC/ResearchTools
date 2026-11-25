@@ -1,22 +1,24 @@
 {
   "table_of_contents_markers": {
     "fr": [
-      "table des matieres"
+      "table des matieres",
+      "tables des matieres"
     ],
     "en": [
       "table of contents",
       "contents"
     ],
-    "provenance": "Issue 126 plan 10, F1: heading words of a table of contents in each language; the page is read by its first lines"
+    "provenance": "Issue 126 plan 10, F1: heading words of a table of contents in each language; the page is read by its first lines; plural variant 'Tables des matieres' as printed by real report R01 (2026-11-25)"
   },
   "figure_list_markers": {
     "fr": [
-      "liste des figures"
+      "liste des figures",
+      "tables des figures"
     ],
     "en": [
       "list of figures"
     ],
-    "provenance": "Issue 126 plan 10, F1: heading words of the list of figures in each language"
+    "provenance": "Issue 126 plan 10, F1: heading words of the list of figures in each language; variant 'Tables des figures' as printed by real report R01 (2026-11-25)"
   },
   "table_list_markers": {
     "fr": [

@@ -329,5 +329,29 @@ class TestCitationPlacement(unittest.TestCase):
             self.assertTrue(annotation["comment"])
 
 
+class TestNoDuplicateKeys(unittest.TestCase):
+    """N2: every JSON data file of the skill loads with no duplicate key, which json would otherwise keep silently."""
+
+    def test_every_assets_json_has_no_duplicate_key(self):
+        import json
+        assets = SCRIPTS.parent / "assets"
+        refused = []
+
+        def make_hook(name):
+            def refuse_duplicates(pairs):
+                seen = {}
+                for key, value in pairs:
+                    if key in seen:
+                        refused.append(f"{name}: {key}")
+                    seen[key] = value
+                return seen
+            return refuse_duplicates
+
+        for path in sorted(assets.glob("*.json")):
+            with self.subTest(file=path.name):
+                json.loads(path.read_text(encoding="utf-8-sig"), object_pairs_hook=make_hook(path.name))
+        self.assertEqual(refused, [])
+
+
 if __name__ == "__main__":
     unittest.main()

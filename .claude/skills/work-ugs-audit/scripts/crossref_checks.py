@@ -653,60 +653,93 @@ def misplaced_citations(pages: List[str], abbreviations: List[str]) -> List[Dict
 
 
 APPENDIX_CHECK_ID = "appendices"
-APPENDIX_ID_PATTERN = r"(?:[A-Z]{1,3}|\d{1,2})"
 APPENDIX_NOT_APPLICABLE = "not_applicable"
+APPENDIX_TITLE_END = r"[ \t]*(?:[:\-–.|*]|$|\n)"
+LOWERCASE_WORD_BEFORE = re.compile(r"([^\W\d_]+)[\s'’]*$")
 
 
-def _appendix_pattern(markers: List[str], line_start: bool) -> "re.Pattern":
+def _appendix_pattern(settings: Dict[str, Any], heading: bool) -> "re.Pattern":
     """
     --------------------------------------------------------------------------
     Purpose:
-        Build the pattern of an appendix mention: an appendix word, then its id (a capital letter group or a number).
+        Build the pattern of an appendix mention: an appendix word (group word), then its id (group id).
 
     Inputs:
-        markers (List[str]): the appendix words of both languages.
-        line_start (bool): True for a heading, which must open its line after any markup; False for a contents
-            entry, whose line may be joined to the rest of the page.
+        settings (dict): markers (the appendix words of both languages), plural (the plural words) and id_pattern
+            (the id, read from front_matter.json).
+        heading (bool): True for a heading, which must be followed by a title mark (':', '-', '.', a bold mark or the
+            end of the line), so that a mention in a sentence is not one; False for a contents entry.
 
     Outputs:
-        re.Pattern: case-insensitive on the word, case-sensitive on the id, group "id".
+        re.Pattern: case-insensitive on the word, case-sensitive on the id.
 
     Raises:
-        re.error: when a word cannot be compiled (words are escaped, so not in practice).
+        re.error: when id_pattern is not a valid regular expression.
     --------------------------------------------------------------------------
     """
-    words = "|".join(re.escape(word) for word in sorted(markers, key=len, reverse=True))
-    anchor = r"(?:^|\n)[#*_|\s]*(?:\d{1,2}\.?\s*)?" if line_start else r"(?<!\w)"
-    return re.compile(anchor + r"(?i:" + words + r")\s+(?P<id>" + APPENDIX_ID_PATTERN + r")(?![A-Za-z0-9])",
-                      re.MULTILINE)
+    words = "|".join(re.escape(word) for word in sorted(settings["markers"], key=len, reverse=True))
+    base = r"(?<![\w'’])(?i:(?P<word>" + words + r"))\s+(?P<id>" + settings["id_pattern"] + r")(?![A-Za-z0-9])"
+    if heading:
+        base += "(?=" + APPENDIX_TITLE_END + ")"
+    return re.compile(base, re.MULTILINE)
+
+
+def _is_mention(text: str, match: "re.Match", settings: Dict[str, Any], heading: bool) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether one match is an appendix id: a plural word takes no number (a page number), and a heading is not
+        preceded by a lower-case word (in a sentence such as "voir l'annexe A").
+
+    Inputs:
+        text (str): the page text the match was found in.
+        match (re.Match): the match, with groups word and id.
+        settings (dict): the appendix settings (plural).
+
+    Outputs:
+        bool: True when the match counts.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    word, name = match.group("word"), match.group("id")
+    plural = {p.lower() for p in settings["plural"]}
+    if word.lower() in plural and name.isdigit():
+        return False
+    if not heading:
+        return True
+    before = LOWERCASE_WORD_BEFORE.search(text[:match.start()])
+    return not (before and before.group(1)[0].islower())
 
 
 def appendix_check(pages: List[str], toc_pages: Optional[List[int]], end_start_page: Optional[int],
-                   markers: List[str]) -> Dict[str, Any]:
+                   settings: Dict[str, Any]) -> Dict[str, Any]:
     """
     --------------------------------------------------------------------------
     Purpose:
         Check that every appendix listed in the table of contents is found after the references, and that every
-        appendix found there is listed (plan 15, N4).
+        appendix found there is listed (plan 15, N4; review round 1 I3).
 
     Details:
-        The listed appendices are the mentions on the contents pages. The present appendices are the headings, a line
-        opening with the appendix word and its id, on the pages from end_start_page on. A mention in the middle of a
-        sentence is not a heading. The status is not_applicable when there is no contents page or no reference heading
-        (the reason says which), or when neither side lists any appendix. Ids are compared as printed, without case.
+        The listed appendices are the mentions on the contents pages. The present appendices are the headings on the
+        pages from end_start_page on. A heading is a mention followed by a title mark and not preceded by a lower-case
+        word, so it is found inside a joined text layer too. A plural word takes no number, so 'Annexes 45' is a page
+        number. The status is not_applicable when there is no contents page or no reference heading (the reason says
+        which), or when neither side lists any appendix. Ids are compared as printed.
 
     Inputs:
         pages (List[str]): the text of each page, index 0 for page 1.
         toc_pages (List[int] or None): the 1-based contents pages from the front roles; None when none was found.
-        end_start_page (int or None): the 1-based page of the reference heading; None when there is none.
-        markers (List[str]): the appendix words of both languages (front_matter.json).
+        end_start_page (int or None): the 1-based page of the reference heading, searched from the body start.
+        settings (dict): markers, plural and id_pattern (front_matter.load_appendix_settings).
 
     Outputs:
         dict: status (ok, not_ok or not_applicable), reason (None or the text naming why), listed, present,
             listed_missing and unlisted_present (lists of ids in order of appearance).
 
     Raises:
-        None.
+        re.error: when the id pattern is not a valid regular expression.
     --------------------------------------------------------------------------
     """
     empty = {"listed": [], "present": [], "listed_missing": [], "unlisted_present": []}
@@ -714,8 +747,9 @@ def appendix_check(pages: List[str], toc_pages: Optional[List[int]], end_start_p
         return {"status": APPENDIX_NOT_APPLICABLE, "reason": "no contents page found", **empty}
     if end_start_page is None:
         return {"status": APPENDIX_NOT_APPLICABLE, "reason": "no reference heading found", **empty}
-    listed = _unique_ids(pages, toc_pages, _appendix_pattern(markers, line_start=False))
-    present = _unique_ids(pages, range(end_start_page, len(pages) + 1), _appendix_pattern(markers, line_start=True))
+    listed = _unique_ids(pages, toc_pages, _appendix_pattern(settings, heading=False), settings, heading=False)
+    present = _unique_ids(pages, range(end_start_page, len(pages) + 1), _appendix_pattern(settings, heading=True),
+                          settings, heading=True)
     if not listed and not present:
         return {"status": APPENDIX_NOT_APPLICABLE, "reason": None, **empty}
     listed_missing = [name for name in listed if name not in present]
@@ -725,7 +759,8 @@ def appendix_check(pages: List[str], toc_pages: Optional[List[int]], end_start_p
             "listed_missing": listed_missing, "unlisted_present": unlisted_present}
 
 
-def _unique_ids(pages: List[str], numbers: Iterable[int], pattern: "re.Pattern") -> List[str]:
+def _unique_ids(pages: List[str], numbers: Iterable[int], pattern: "re.Pattern", settings: Dict[str, Any],
+                heading: bool) -> List[str]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -734,10 +769,12 @@ def _unique_ids(pages: List[str], numbers: Iterable[int], pattern: "re.Pattern")
     Inputs:
         pages (List[str]): the text of each page.
         numbers (Iterable[int]): the 1-based pages to search.
-        pattern (re.Pattern): a pattern with a group named id.
+        pattern (re.Pattern): an appendix pattern with groups word and id.
+        settings (dict): the appendix settings, read by _is_mention.
+        heading (bool): True for headings (the lower-case rule applies), False for contents entries.
 
     Outputs:
-        List[str]: the distinct ids.
+        List[str]: the distinct ids that count as mentions.
 
     Raises:
         None.
@@ -747,7 +784,8 @@ def _unique_ids(pages: List[str], numbers: Iterable[int], pattern: "re.Pattern")
     for number in numbers:
         if not 1 <= number <= len(pages):
             continue
-        for match in pattern.finditer(pages[number - 1]):
-            if match.group("id") not in found:
+        text = pages[number - 1]
+        for match in pattern.finditer(text):
+            if _is_mention(text, match, settings, heading) and match.group("id") not in found:
                 found.append(match.group("id"))
     return found

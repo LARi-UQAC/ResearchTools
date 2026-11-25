@@ -32,7 +32,6 @@ CITATION_CHECK_ID = crossref_checks.CITATION_CHECK_ID
 FIGURE_COUNT_CHECK_ID = crossref_checks.FIGURE_COUNT_CHECK_ID
 TABLE_COUNT_CHECK_ID = crossref_checks.TABLE_COUNT_CHECK_ID
 APPENDIX_CHECK_ID = crossref_checks.APPENDIX_CHECK_ID
-REFERENCES_LINE_RE = re.compile(r"^(?:\d{1,2}\.?\s*)?(?:References|Références|Bibliographie)\s*$", re.IGNORECASE)
 APPENDIX_STATUS = {"ok": "ok", "not_ok": "not_ok", "not_applicable": "not_applicable"}
 CITATION_CODE = "CIT"
 CITATION_KIND = "citation"
@@ -157,22 +156,27 @@ def appendix_row(pages: List[str], meta: dict) -> dict:
         Build the annex row that checks the appendices of a report (plan 15, N4): each appendix listed in the
         contents is found after the references, and each one found there is listed.
 
+    Details:
+        The reference heading is searched from the body start (review round 1 I3), so a contents line 'Références'
+        does not start the end. The heading test is the one of ugs_text, after the Markdown markup is removed.
+
     Inputs:
         pages (List[str]): the text of each page, index 0 for page 1.
-        meta (dict): report_meta.json; its front_roles give the contents pages.
+        meta (dict): report_meta.json; its front_roles give the contents pages and body_start the search start.
 
     Outputs:
         dict: id, status and detail; the detail holds missing (listed, not found) and extra (found, not listed) ids.
 
     Raises:
-        FrontMatterEntryError: when the appendix words are missing from the data file.
+        FrontMatterEntryError: when the appendix settings are missing from the data file.
     --------------------------------------------------------------------------
     """
     roles = meta.get("front_roles") or {}
-    end_start = next((index + 1 for index, text in enumerate(pages)
-                      if any(REFERENCES_LINE_RE.match(_plain_line(line)) for line in text.splitlines())), None)
+    body_start = roles.get("body_start") or 1
+    end_start = next((index + 1 for index in range(max(body_start, 1) - 1, len(pages))
+                      if any(REF_HEADING_RE.match(_plain_line(line)) for line in pages[index].splitlines())), None)
     result = crossref_checks.appendix_check(pages, roles.get("table_of_contents"), end_start,
-                                            front_matter.load_appendix_markers())
+                                            front_matter.load_appendix_settings())
     status = APPENDIX_STATUS[result["status"]]
     detail: dict = {}
     if status in ("ok", "not_ok"):

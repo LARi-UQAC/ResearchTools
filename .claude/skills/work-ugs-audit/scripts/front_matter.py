@@ -253,20 +253,21 @@ def declared_counts(page_texts: List[str], front_roles: dict, language: str, set
     }
 
 
-def load_appendix_markers(path: Optional[Path] = None) -> List[str]:
+def load_appendix_settings(path: Optional[Path] = None) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Read the appendix words of both languages (plan 15, N4) from the front-matter data file.
+        Read the appendix settings (plan 15, N4; review round 1 I3) from the front-matter data file: the appendix words
+        of both languages, the plural words, and the id pattern.
 
     Inputs:
         path (Path or None): the JSON data file; None means assets/front_matter.json.
 
     Outputs:
-        List[str]: the French and English words, in the file order.
+        dict: markers (List[str]), plural (List[str]) and id_pattern (str).
 
     Raises:
-        FrontMatterEntryError: when the file, the key or a language is missing or a word is not a string.
+        FrontMatterEntryError: when a key, a language or the id pattern is missing or malformed.
     --------------------------------------------------------------------------
     """
     target = Path(path) if path is not None else front_pages.DATA_FILE
@@ -274,13 +275,42 @@ def load_appendix_markers(path: Optional[Path] = None) -> List[str]:
         raw = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise FrontMatterEntryError(f"cannot read {target}: {exc}") from exc
-    if "appendix_markers" not in raw:
-        raise FrontMatterEntryError(f"missing key 'appendix_markers' in {target}")
-    entry = raw["appendix_markers"]
+    markers = _words_both(raw, "appendix_markers", target)
+    plural = _words_both(raw, "appendix_plural_markers", target)
+    if "appendix_id_pattern" not in raw or not isinstance(raw["appendix_id_pattern"].get("value"), str):
+        raise FrontMatterEntryError(f"missing key 'appendix_id_pattern' (a text value) in {target}")
+    pattern = raw["appendix_id_pattern"]["value"]
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise FrontMatterEntryError(f"'appendix_id_pattern.value' in {target} is not a valid pattern: {exc}") from exc
+    return {"markers": markers, "plural": plural, "id_pattern": pattern}
+
+
+def _words_both(raw: dict, key: str, target: Path) -> List[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read a word map of both languages (fr and en lists) from the data file.
+
+    Inputs:
+        raw (dict): the parsed data file.
+        key (str): the key of the map.
+        target (Path): the data file, named in the error.
+
+    Outputs:
+        List[str]: the French and English words, in file order.
+
+    Raises:
+        FrontMatterEntryError: when the key or a language is missing, or a word is not a non-empty string.
+    --------------------------------------------------------------------------
+    """
+    if key not in raw or not isinstance(raw[key], dict):
+        raise FrontMatterEntryError(f"missing key '{key}' in {target}")
     words: List[str] = []
     for lang in LANGUAGES:
-        values = entry.get(lang) if isinstance(entry, dict) else None
+        values = raw[key].get(lang)
         if not isinstance(values, list) or not all(isinstance(w, str) and w.strip() for w in values):
-            raise FrontMatterEntryError(f"'appendix_markers.{lang}' in {target} must be a list of non-empty words")
+            raise FrontMatterEntryError(f"'{key}.{lang}' in {target} must be a list of non-empty words")
         words.extend(values)
     return words

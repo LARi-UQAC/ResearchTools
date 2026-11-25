@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 WORD_SPLIT_RE = re.compile(r'[^a-zA-Z0-9\u00C0-\u024F]+')
 REF_ENTRY_START_RE = re.compile(r'^(\[\d+\]|\d+\.|\d+\)|[-*•])\s*')
-REF_HEADING_RE = re.compile(r'^(?:#{1,6}\s*)?(?:\d+\.\s*)?(?:References|Références|Bibliographie)\s*$', re.IGNORECASE)
+REF_HEADING_RE = re.compile(r'^(?:#{1,6}\s*)?(?:\d+\.?\s*)?(?:References|Références|Bibliographie)\s*$', re.IGNORECASE)
 
 NUMBERED_LINE_RE = re.compile(r'^\d+(?:\.\d+)*\.?\s+\S')
 YEAR_RE = re.compile(r'\b(?:19|20)\d{2}\b')

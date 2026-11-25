@@ -518,14 +518,16 @@ class TestMisplacedCitations(unittest.TestCase):
 
 
 class TestAppendixCheck(unittest.TestCase):
-    """Issue 126 plan 15 N4: appendices listed in the contents are found after the references (fictitious text, R34)."""
+    """Issue 126 plan 15 N4 and review round 1 I3: appendices listed in the contents are found after the references
+    (fictitious text, R34). The settings are the data of front_matter.json: words, plural words and the id pattern."""
 
-    MARKERS = ["Annexe", "Annexes", "Appendice", "Appendix", "Appendices"]
+    SETTINGS = {"markers": ["Annexe", "Annexes", "Appendice", "Appendix", "Appendices"],
+                "plural": ["Annexes", "Appendices"], "id_pattern": r"[A-Z]{1,4}|\d{1,2}"}
 
     def test_names_ignore_case_and_dash(self):
         toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
         end = ["References\nSource A.", "ANNEXE A\nPlans detailles"]
-        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["listed"], ["A"])
         self.assertEqual(result["present"], ["A"])
@@ -533,49 +535,81 @@ class TestAppendixCheck(unittest.TestCase):
     def test_listed_but_missing_at_the_end(self):
         toc = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe B - Tableaux ........ 44"]
         end = ["References\nSource.", "Annexe A\nPlans"]
-        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
         self.assertEqual(result["status"], "not_ok")
         self.assertEqual(result["listed_missing"], ["B"])
 
     def test_present_at_the_end_but_not_listed(self):
         toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
         end = ["References\nSource.", "Annexe A\nPlans", "Annexe C\nNotes"]
-        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
         self.assertEqual(result["status"], "not_ok")
         self.assertEqual(result["unlisted_present"], ["C"])
 
-    def test_numbered_bold_heading_at_the_end_is_found(self):
-        """Regression (Issue 126, real report): the heading reads '## **11. ANNEXE A: Plans**' or '## **Annexe 1**'."""
-        toc = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe 1 ........ 41"]
-        end = ["## **10. References**\nSource.", "## **11. ANNEXE A: Plans**\nDetail.", "## **Annexe 1**\nNotes."]
-        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
-        self.assertEqual(result["present"], ["A", "1"])
-        self.assertEqual(result["status"], "ok")
-
     def test_none_listed_none_found_is_not_applicable(self):
         result = crossref_checks.appendix_check(["Table des matieres\n1 Intro ........ 3", "References\nSource."],
-                                                [1], 2, self.MARKERS)
+                                                [1], 2, self.SETTINGS)
         self.assertEqual(result["status"], "not_applicable")
 
     def test_body_mention_is_not_a_heading(self):
         toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
         body = ["Introduction. Voir l'annexe A pour les details."]
         end = ["References\nSource."]
-        result = crossref_checks.appendix_check(toc + body + end, [1], 3, self.MARKERS)
+        result = crossref_checks.appendix_check(toc + body + end, [1], 3, self.SETTINGS)
         self.assertEqual(result["status"], "not_ok")
         self.assertEqual(result["present"], [])
         self.assertEqual(result["listed_missing"], ["A"])
 
     def test_no_contents_found_is_not_applicable_with_reason(self):
-        result = crossref_checks.appendix_check(["References\nSource.", "Annexe A\nPlans"], None, 1, self.MARKERS)
+        result = crossref_checks.appendix_check(["References\nSource.", "Annexe A\nPlans"], None, 1, self.SETTINGS)
         self.assertEqual(result["status"], "not_applicable")
         self.assertIn("contents", result["reason"])
 
     def test_no_reference_heading_is_not_applicable_with_reason(self):
-        result = crossref_checks.appendix_check(["Table des matieres\nAnnexe A ........ 4"], [1], None, self.MARKERS)
+        result = crossref_checks.appendix_check(["Table des matieres\nAnnexe A ........ 4"], [1], None, self.SETTINGS)
         self.assertEqual(result["status"], "not_applicable")
         self.assertIn("reference", result["reason"])
 
+    def test_numbered_bold_heading_at_the_end_is_found(self):
+        """Regression (Issue 126, real report): the heading reads '## **11. ANNEXE A: Plans**' or '## **Annexe 1**'."""
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe 1 ........ 41"]
+        end = ["## **10. References**\nSource.", "## **11. ANNEXE A: Plans**\nDetail.", "## **Annexe 1**\nNotes."]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], ["A", "1"])
+        self.assertEqual(result["status"], "ok")
+
+    def test_mid_page_heading_in_a_joined_text_layer_is_found(self):
+        """Review round 1 I3 (Issue 126): the text layer is one joined line; a heading inside it, followed by a title,
+        is an appendix."""
+        toc = ["Table des matieres Annexe A - Plans ........ 40 Annexe B - Notes ........ 44"]
+        end = ["References Source. 11. ANNEXE A: Plans detailles 12. ANNEXE B : Notes sur les mesures"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], ["A", "B"])
+        self.assertEqual(result["status"], "ok")
+
+    def test_a_mention_after_a_lowercase_word_is_not_a_heading(self):
+        """Review round 1 I3 (Issue 126): 'voir l'annexe A' is a mention, even in a joined line."""
+        toc = ["Table des matieres Annexe A - Plans ........ 40"]
+        end = ["References Source. Le lecteur consultera l'annexe A: Plans fictifs pour verifier."]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], [])
+
+    def test_plural_marker_with_a_page_number_lists_nothing(self):
+        """Review round 1 I3 (Issue 126): 'Annexes 45' on the contents page is a page number, not an appendix id."""
+        toc = ["Table des matieres\nAnnexes 45\nAnnexe A - Plans ........ 40"]
+        end = ["References\nSource.", "Annexe A\nPlans"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["listed"], ["A"])
+        self.assertEqual(result["status"], "ok")
+
+    def test_the_id_pattern_is_read_from_the_settings(self):
+        """Review round 1 I3 (Issue 126): the id pattern is data; a letters-only pattern refuses 'Annexe 1'."""
+        settings = dict(self.SETTINGS, id_pattern=r"[A-Z]{1,4}")
+        toc = ["Table des matieres\nAnnexe 1 ........ 41"]
+        end = ["References\nSource.", "Annexe 1\nNotes"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, settings)
+        self.assertEqual(result["listed"], [])
+        self.assertEqual(result["status"], "not_applicable")
 
 if __name__ == "__main__":
     unittest.main()

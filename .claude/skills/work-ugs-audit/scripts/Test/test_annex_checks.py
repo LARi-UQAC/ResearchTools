@@ -360,6 +360,15 @@ class TestCitationPlacement(unittest.TestCase):
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["detail"], {"missing": [], "extra": []})
 
+    def test_contents_line_references_does_not_start_the_end(self):
+        """Review round 1 I3 (Issue 126): a contents line 'References' is no reference heading; the search starts at the
+        body. An appendix named only on the contents page is not found at the end."""
+        pages = ["Table des matieres\nReferences\nAnnexe C - Notes ........ 50", "Introduction du rapport.",
+                 "## **10. References**\nSource.", "Texte de fin sans annexe."]
+        row = ugs_assemble.appendix_row(pages, {"front_roles": {"table_of_contents": [1], "body_start": 2}})
+        self.assertEqual(row["status"], "not_ok")
+        self.assertEqual(row["detail"], {"missing": ["C"], "extra": []})
+
     def test_body_text_before_the_reference_heading_is_kept(self):
         """F6: the page holding the reference heading keeps its body text before the heading."""
         pages = ["Intro page text. [1]", "Body claim here. [2] ends.\nReferences\n[1] Fictitious Author, Title."]

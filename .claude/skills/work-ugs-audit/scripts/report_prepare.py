@@ -16,7 +16,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 FIGURE_REVIEW_DIR = SCRIPTS_DIR.parent.parent / "figure-review"
@@ -34,7 +34,9 @@ import text_quality  # noqa: E402
 import ugs_config  # noqa: E402
 from figure_extract import ELEMENT_SETTING_KEYS, extract_elements  # noqa: E402
 from text_quality import OcrUnavailable, TextQualityError  # noqa: E402
-from ugs_tables import TablesError, enrich_page_text, load_min_anchor_chars, load_table_text, tables_on_page  # noqa: E402
+import table_image  # noqa: E402
+from ugs_tables import (TABLE_IMAGE_TYPE, TablesError, enrich_page_text, load_min_anchor_chars,  # noqa: E402
+                        load_table_text, tables_on_page)
 from ugs_text import LanguageUndecidable, detect_language, load_hints  # noqa: E402
 
 EXIT_OK = 0
@@ -92,6 +94,7 @@ class PrepHooks:
     preflight: Callable[[List[str]], None]
     ocr_page: Callable[[Path, int, str], str]
     find_elements: Callable[[Path, Path, List[int]], List[Dict[str, Any]]]
+    ocr_words: Optional[Callable[[Path, int, Sequence[float], str], List[tuple]]] = None
 
 
 def _is_pdf(file_path: Path) -> bool:
@@ -235,6 +238,72 @@ def _run_ocr_page(pdf_path: Path, page_number: int, tesseract_language: str, dpi
     return "\n".join(chunk.get("text", "") for chunk in chunks)
 
 
+def _run_ocr_words(pdf_path: Path, page_number: int, rect: Sequence[float], tesseract_language: str,
+                   dpi: int) -> List[tuple]:
+    """
+    Purpose: Read the words of one region of a page by OCR, for a table drawn as an image (plan 8, E3).
+    Details: The OCR runs on the whole page at the configured resolution, and only the words inside the region are
+        kept, with the coordinates of the page.
+    Inputs:
+        pdf_path (Path): the PDF.
+        page_number (int): the 1-based page.
+        rect (Sequence[float]): the region as x0, y0, x1, y1 in points.
+        tesseract_language (str): the Tesseract code(s), joined with '+' when there are several.
+        dpi (int): the resolution of the OCR, in dots per inch.
+    Outputs:
+        List[tuple]: the PyMuPDF word tuples (x0, y0, x1, y1, text, ...) inside the region.
+    Raises:
+        PrepareError: when the OCR or the page cannot be read (the message holds no text of the report).
+    """
+    try:
+        document = fitz.open(str(pdf_path))
+        try:
+            page = document[page_number - 1]
+            textpage = page.get_textpage_ocr(language=tesseract_language, dpi=dpi, full=True)
+            return list(page.get_text("words", clip=fitz.Rect(*rect), textpage=textpage))
+        finally:
+            document.close()
+    except Exception as error:
+        raise PrepareError(f"OCR of a table drawn as an image failed: {type(error).__name__}") from error
+
+
+def _read_table_images(elements: List[Dict[str, Any]], pdf_file: Path, hooks: PrepHooks, language: str,
+                       language_codes: Dict[str, List[str]], gap: float, min_rows: int) -> List[Dict[str, Any]]:
+    """
+    Purpose: Give each table drawn as an image its Markdown rows, read by OCR, or mark it unreadable (plan 8, E3).
+    Details: OCR is called only for a table_image record, so a report with none needs no OCR hook. A record with no
+        usable row keeps its type and gets the status table_image_unreadable, never an empty table.
+    Inputs:
+        elements (list[dict]): the element records of the report, changed in place.
+        pdf_file (Path): the PDF of the report.
+        hooks (PrepHooks): the word-box OCR hook.
+        language (str): the report language, to choose the Tesseract codes.
+        language_codes (dict): the language map of the OCR data file.
+        gap (float): the column gap in points.
+        min_rows (int): the fewest rows that make a table.
+    Outputs:
+        list[dict]: the same records; each table_image has markdown, or the status table_image_unreadable.
+    Raises:
+        PrepareError: when a table_image exists and no OCR hook was given, or the Tesseract codes are unknown.
+    """
+    images = [record for record in elements if record.get("element_type") == TABLE_IMAGE_TYPE]
+    if not images:
+        return elements
+    if hooks.ocr_words is None:
+        raise PrepareError("a table drawn as an image needs an OCR hook, none was given")
+    try:
+        tesseract_language = "+".join(text_quality.tesseract_codes(language, language_codes))
+    except text_quality.QualityConfigError as error:
+        raise PrepareError(str(error)) from None
+    for record in images:
+        words = hooks.ocr_words(pdf_file, record["page"], record["rect"], tesseract_language)
+        try:
+            record["markdown"] = table_image.words_to_markdown(words, gap, min_rows)
+        except table_image.TableImageUnreadable:
+            record["status"] = "table_image_unreadable"
+    return elements
+
+
 def _tables_dropped(report_dir: Path) -> int:
     """
     Purpose: Read how many tables the element extraction dropped for having no readable cells (F0).
@@ -295,6 +364,8 @@ def _default_hooks(dpi: int) -> PrepHooks:
         preflight=_run_preflight,
         ocr_page=lambda pdf_path, page_number, language: _run_ocr_page(pdf_path, page_number, language, dpi),
         find_elements=_run_find_elements,
+        ocr_words=lambda pdf_path, page_number, rect, language: _run_ocr_words(pdf_path, page_number, rect,
+                                                                               language, dpi),
     )
 
 
@@ -433,6 +504,10 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
         table_texts = load_table_text(language)
     except TablesError as error:
         raise PrepareError(str(error)) from None
+    try:
+        image_gap, image_min_rows = table_image.load_image_settings()
+    except table_image.TableImageError as error:
+        raise PrepareError(str(error)) from None
 
     repair_settings = {"min_replacement_chars": settings["text.min_replacement_chars"],
                        "min_words_per_page": settings["text.min_words_per_page"],
@@ -456,6 +531,8 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
                   if mode != front_pages.FULL_MODE]
     skip_pages = sorted(set(reasons) | set(front_skip))
     elements = hooks.find_elements(pdf_file, report_dir / settings["reports.figures_folder"], skip_pages)
+    elements = _read_table_images(elements, pdf_file, hooks, language, context["ocr"]["language_codes"],
+                                  image_gap, image_min_rows)
     _write_atomic(report_dir / settings["reports.elements_file_name"],
                   json.dumps(elements, indent=2, ensure_ascii=False))
 

@@ -347,6 +347,76 @@ class PreparationTests(unittest.TestCase):
         self.assertIn("| Alpha | 12 |", text)
         self.assertIn("Le tableau", text)
 
+    def _table_image_record(self):
+        """
+        Purpose: Build one fictitious table_image element record (plan 8), as extract_elements returns it.
+        Inputs:
+            None.
+        Outputs:
+            dict - the record, on page 2, with its title above.
+        Raises:
+            None.
+        """
+        return {"element_id": "T01", "element_type": "table_image", "page": 2,
+                "rect": [50.0, 300.0, 500.0, 400.0], "file": "T01.png",
+                "title": {"text": "Tableau 1 : Mesures", "position": "above", "alignment": "center"},
+                "legend": "", "notes": [], "caption": "Tableau 1 : Mesures", "source": "raster",
+                "pixel_size": [100, 80]}
+
+    def test_titled_table_image_reaches_page_markdown(self):
+        """Issue 126 plan 8 E3: the OCR words of a table drawn as an image become rows of the page text (fictitious)."""
+        words = [(60.0, 310.0, 90.0, 320.0, "Mesure", 0, 0, 0), (200.0, 310.0, 240.0, 320.0, "Valeur", 0, 0, 1),
+                 (60.0, 330.0, 90.0, 340.0, "Masse", 0, 0, 2), (200.0, 330.0, 220.0, 340.0, "12.5", 0, 0, 3)]
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=lambda pdf, out, skip: [self._table_image_record()],
+                                         ocr_words=lambda pdf, page, rect, language: words)
+        prepare(self.reports, self.work, hooks=hooks)
+        text = self.report_file("pages", "p002.md").read_text(encoding="utf-8")
+        self.assertIn("## Tableau T01 (détecté)", text)
+        self.assertIn("| Mesure | Valeur |", text)
+        self.assertIn("| Masse | 12.5 |", text)
+        record = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))[0]
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertIn("markdown", record)
+
+    def test_empty_table_image_is_unreadable_and_not_a_figure(self):
+        """Issue 126 plan 8 E3: a table drawn as an image with no OCR word is unreadable, never an empty table."""
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=lambda pdf, out, skip: [self._table_image_record()],
+                                         ocr_words=lambda pdf, page, rect, language: [])
+        prepare(self.reports, self.work, hooks=hooks)
+        record = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))[0]
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertEqual(record["status"], "table_image_unreadable")
+        self.assertNotIn("markdown", record)
+        self.assertNotIn("| --- |", self.report_file("pages", "p002.md").read_text(encoding="utf-8"))
+
+    def test_table_image_without_an_ocr_hook_is_a_named_refusal(self):
+        """Issue 126 plan 8 E3: a table_image with no OCR hook given is refused by name, never guessed."""
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        with self.assertRaises(PrepareError) as ctx:
+            prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip: [self._table_image_record()]))
+        self.assertIn("OCR", str(ctx.exception))
+
+    @unittest.skipUnless(os.environ.get("TESSDATA_PREFIX"), "needs TESSDATA_PREFIX (Tesseract) to run real OCR")
+    def test_real_ocr_reads_the_words_of_a_table_image(self):
+        """Issue 126 plan 8 E3: real OCR of a fictitious picture of two words (skips without TESSDATA_PREFIX)."""
+        source = fitz.open()
+        page = source.new_page(width=400, height=120)
+        page.insert_text((20, 70), "Mesure", fontsize=28)
+        pix = page.get_pixmap(dpi=200)
+        probe = self.tmp / "table_image_probe.pdf"
+        doc = fitz.open()
+        picture_page = doc.new_page(width=400, height=120)
+        picture_page.insert_image(picture_page.rect, pixmap=pix)
+        doc.save(str(probe))
+        doc.close()
+        source.close()
+        words = report_prepare._run_ocr_words(probe, 1, [0.0, 0.0, 400.0, 120.0], "eng", 300)
+        self.assertTrue(any("Mesure" in str(word[4]) for word in words))
+
     def test_missing_min_anchor_key_writes_no_elements_file(self):
         cfg = self.work.parent / "ugs_config_no_anchor.json"
         cfg.write_text(json.dumps({"other.key": {"value": 1, "provenance": "fictitious"}}), encoding="utf-8")

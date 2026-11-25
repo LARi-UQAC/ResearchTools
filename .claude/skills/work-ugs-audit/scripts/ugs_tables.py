@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 TABLE_TYPE = "table"
+TABLE_IMAGE_TYPE = "table_image"  # plan 8: included in the page text only once its Markdown exists
 FIGURE_TYPE = "figure"
 TABLE_TEXT_PATH = Path(__file__).resolve().parent.parent / "assets" / "table_text.json"
 TABLE_TEXT_KEYS = ("heading", "page_line")
@@ -240,7 +241,9 @@ def tables_on_page(elements: List[Dict[str, Any]], page: int) -> List[Dict[str, 
         TablesError: a table record has no `rect`.
     --------------------------------------------------------------------------
     """
-    found = [e for e in elements if e.get("element_type") == TABLE_TYPE and e.get("page") == page]
+    found = [e for e in elements if e.get("page") == page and (
+        e.get("element_type") == TABLE_TYPE
+        or (e.get("element_type") == TABLE_IMAGE_TYPE and e.get("markdown")))]
     return sorted(found, key=_top)
 
 

@@ -103,6 +103,15 @@ class TestUgsTables(unittest.TestCase):
         self.assertEqual(ugs_tables.enrich_page_text(text, [table("T01", 1, 100.0, "")], "en"), text)
         self.assertEqual(ugs_tables.enrich_page_text(text, [table("T02", 1, 100.0, "  \n ")], "en"), text)
 
+    def test_table_image_enters_the_page_only_with_markdown(self):
+        """Issue 126 plan 8 E3: a table_image is a table of its page once its Markdown exists, never before."""
+        readable = {"element_id": "T01", "element_type": "table_image", "page": 1, "rect": [0, 10, 5, 20],
+                    "markdown": "| a | b |"}
+        unreadable = {"element_id": "T02", "element_type": "table_image", "page": 1, "rect": [0, 30, 5, 40],
+                      "status": "table_image_unreadable"}
+        found = ugs_tables.tables_on_page([unreadable, readable], 1)
+        self.assertEqual([record["element_id"] for record in found], ["T01"])
+
     def test_two_tables_in_reading_order(self):
         page_tables = [table("T02", 1, 500.0, MARKDOWN_GAMMA), table("T01", 1, 100.0, MARKDOWN_ALPHA),
                        table("T09", 2, 50.0, MARKDOWN_GAMMA)]

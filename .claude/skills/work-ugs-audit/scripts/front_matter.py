@@ -209,3 +209,36 @@ def declared_counts(page_texts: List[str], front_roles: dict, language: str, set
         "duplicate_numbers": figures["duplicates"] + tables["duplicates"],
         "declared_sources": {"figures": figures["source"], "tables": tables["source"]},
     }
+
+
+def load_appendix_markers(path: Optional[Path] = None) -> List[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the appendix words of both languages (plan 15, N4) from the front-matter data file.
+
+    Inputs:
+        path (Path or None): the JSON data file; None means assets/front_matter.json.
+
+    Outputs:
+        List[str]: the French and English words, in the file order.
+
+    Raises:
+        FrontMatterEntryError: when the file, the key or a language is missing or a word is not a string.
+    --------------------------------------------------------------------------
+    """
+    target = Path(path) if path is not None else front_pages.DATA_FILE
+    try:
+        raw = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise FrontMatterEntryError(f"cannot read {target}: {exc}") from exc
+    if "appendix_markers" not in raw:
+        raise FrontMatterEntryError(f"missing key 'appendix_markers' in {target}")
+    entry = raw["appendix_markers"]
+    words: List[str] = []
+    for lang in LANGUAGES:
+        values = entry.get(lang) if isinstance(entry, dict) else None
+        if not isinstance(values, list) or not all(isinstance(w, str) and w.strip() for w in values):
+            raise FrontMatterEntryError(f"'appendix_markers.{lang}' in {target} must be a list of non-empty words")
+        words.extend(values)
+    return words

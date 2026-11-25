@@ -236,7 +236,7 @@ class TestAssembleChecks(unittest.TestCase):
         self._assemble(["Figure 2.1 shows the layout."])
         checks = self._checks()
         # N5 adds the citation_placement row after the five cross-reference checks.
-        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts"])
+        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "appendices"])
         self.assertEqual(checks[0]["status"], "ok")
         labels = _labels("en")
         with fitz.open(str(self.loop_dir / "annotated.pdf")) as doc:
@@ -338,6 +338,19 @@ class TestCitationPlacement(unittest.TestCase):
         """A report prepared before plan 6 has no count keys: the rows say not applicable, with no invented number."""
         rows = ugs_assemble.count_rows({})
         self.assertEqual([row["status"] for row in rows], ["not_applicable", "not_applicable"])
+
+    def test_appendix_row_in_annex(self):
+        """Issue 126 plan 15 N4: an appendix listed and not found is a row with its id, in the annex (fictitious)."""
+        pages = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe B - Tableaux ........ 44",
+                 "References\nSource.", "Annexe A\nPlans detailles"]
+        row = ugs_assemble.appendix_row(pages, {"front_roles": {"table_of_contents": [1]}})
+        self.assertEqual(row["id"], "appendices")
+        self.assertEqual(row["status"], "not_ok")
+        self.assertEqual(row["detail"], {"missing": ["B"], "extra": []})
+        labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "fr")
+        html_text = pdf_annex.render_checks([row], labels)
+        self.assertIn(labels["check_values"]["appendices"], html_text)
+        self.assertIn("B", html_text)
 
     def test_body_text_before_the_reference_heading_is_kept(self):
         """F6: the page holding the reference heading keeps its body text before the heading."""

@@ -21,6 +21,7 @@ from ugs_tables import load_elements
 import ugs_config
 import element_labels
 import crossref_checks
+import front_matter
 from crossref_checks import (run_checks, load_settings as load_checks_settings, DEFAULT_MARKERS_PATH,
                              misplaced_citations, load_citation_rules)
 
@@ -29,6 +30,8 @@ CHECKS_FILE_NAME = "checks.json"
 CITATION_CHECK_ID = crossref_checks.CITATION_CHECK_ID
 FIGURE_COUNT_CHECK_ID = crossref_checks.FIGURE_COUNT_CHECK_ID
 TABLE_COUNT_CHECK_ID = crossref_checks.TABLE_COUNT_CHECK_ID
+APPENDIX_CHECK_ID = crossref_checks.APPENDIX_CHECK_ID
+APPENDIX_STATUS = {"ok": "ok", "not_ok": "not_ok", "not_applicable": "not_applicable"}
 CITATION_CODE = "CIT"
 CITATION_KIND = "citation"
 META_NAME_KEY = "reports.meta_file_name"
@@ -124,6 +127,36 @@ def count_rows(meta: dict) -> List[dict]:
             detail = {"declared": meta[f"declared_{kind}s"], "extracted": meta[f"extracted_{kind}s"]}
         rows.append({"id": check_id, "status": status, "detail": detail})
     return rows
+
+
+def appendix_row(pages: List[str], meta: dict) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the annex row that checks the appendices of a report (plan 15, N4): each appendix listed in the
+        contents is found after the references, and each one found there is listed.
+
+    Inputs:
+        pages (List[str]): the text of each page, index 0 for page 1.
+        meta (dict): report_meta.json; its front_roles give the contents pages.
+
+    Outputs:
+        dict: id, status and detail; the detail holds missing (listed, not found) and extra (found, not listed) ids.
+
+    Raises:
+        FrontMatterEntryError: when the appendix words are missing from the data file.
+    --------------------------------------------------------------------------
+    """
+    roles = meta.get("front_roles") or {}
+    end_start = next((index + 1 for index, text in enumerate(pages)
+                      if any(REF_HEADING_RE.match(line.strip()) for line in text.splitlines())), None)
+    result = crossref_checks.appendix_check(pages, roles.get("table_of_contents"), end_start,
+                                            front_matter.load_appendix_markers())
+    status = APPENDIX_STATUS[result["status"]]
+    detail: dict = {}
+    if status in ("ok", "not_ok"):
+        detail = {"missing": result["listed_missing"], "extra": result["unlisted_present"]}
+    return {"id": APPENDIX_CHECK_ID, "status": status, "detail": detail}
 
 
 def _read_report_meta(path: Path) -> dict:
@@ -477,7 +510,9 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     checks, excluded = run_report_checks(src_pdf, report_dir.parent.parent / report_id, pages)
     checks.append(citation_placement_row(body_pages, language))
     meta_name = ugs_config.load(ugs_config.default_path())[META_NAME_KEY]
-    checks.extend(count_rows(_read_report_meta(report_dir.parent.parent / report_id / meta_name)))
+    report_meta = _read_report_meta(report_dir.parent.parent / report_id / meta_name)
+    checks.extend(count_rows(report_meta))
+    checks.append(appendix_row(pages, report_meta))
     _atomic_write_text(report_dir / CHECKS_FILE_NAME, json.dumps(checks, indent=2))
 
     # Append annex

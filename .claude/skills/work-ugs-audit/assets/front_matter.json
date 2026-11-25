@@ -83,5 +83,16 @@
   "entry_number_pattern": {
     "value": "\\d+(?:[.\\-]\\d+)*|[A-Z]\\.\\d+",
     "provenance": "Issue 126 plan 5, E1 and N2: a printed number kept as a string (12, 2.1, A.1); a dot after it ends the number"
+  },
+  "appendix_markers": {
+    "fr": [
+      "Annexe",
+      "Annexes"
+    ],
+    "en": [
+      "Appendix",
+      "Appendices"
+    ],
+    "provenance": "Issue 126 plan 15, N4 (owner, 2026-11-25): the word that opens an appendix heading or a contents entry; an id after it is a capital letter, a roman numeral or a number"
   }
 }

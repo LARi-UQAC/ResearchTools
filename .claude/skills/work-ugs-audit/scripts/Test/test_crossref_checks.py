@@ -517,5 +517,57 @@ class TestMisplacedCitations(unittest.TestCase):
         self.assertIn("p.", crossref_checks.load_citation_rules("fr"))
 
 
+class TestAppendixCheck(unittest.TestCase):
+    """Issue 126 plan 15 N4: appendices listed in the contents are found after the references (fictitious text, R34)."""
+
+    MARKERS = ["Annexe", "Annexes", "Appendice", "Appendix", "Appendices"]
+
+    def test_names_ignore_case_and_dash(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
+        end = ["References\nSource A.", "ANNEXE A\nPlans detailles"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["listed"], ["A"])
+        self.assertEqual(result["present"], ["A"])
+
+    def test_listed_but_missing_at_the_end(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe B - Tableaux ........ 44"]
+        end = ["References\nSource.", "Annexe A\nPlans"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
+        self.assertEqual(result["status"], "not_ok")
+        self.assertEqual(result["listed_missing"], ["B"])
+
+    def test_present_at_the_end_but_not_listed(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
+        end = ["References\nSource.", "Annexe A\nPlans", "Annexe C\nNotes"]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
+        self.assertEqual(result["status"], "not_ok")
+        self.assertEqual(result["unlisted_present"], ["C"])
+
+    def test_none_listed_none_found_is_not_applicable(self):
+        result = crossref_checks.appendix_check(["Table des matieres\n1 Intro ........ 3", "References\nSource."],
+                                                [1], 2, self.MARKERS)
+        self.assertEqual(result["status"], "not_applicable")
+
+    def test_body_mention_is_not_a_heading(self):
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40"]
+        body = ["Introduction. Voir l'annexe A pour les details."]
+        end = ["References\nSource."]
+        result = crossref_checks.appendix_check(toc + body + end, [1], 3, self.MARKERS)
+        self.assertEqual(result["status"], "not_ok")
+        self.assertEqual(result["present"], [])
+        self.assertEqual(result["listed_missing"], ["A"])
+
+    def test_no_contents_found_is_not_applicable_with_reason(self):
+        result = crossref_checks.appendix_check(["References\nSource.", "Annexe A\nPlans"], None, 1, self.MARKERS)
+        self.assertEqual(result["status"], "not_applicable")
+        self.assertIn("contents", result["reason"])
+
+    def test_no_reference_heading_is_not_applicable_with_reason(self):
+        result = crossref_checks.appendix_check(["Table des matieres\nAnnexe A ........ 4"], [1], None, self.MARKERS)
+        self.assertEqual(result["status"], "not_applicable")
+        self.assertIn("reference", result["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -54,7 +54,8 @@
       "citation_placement": "Appels de citation placés après le point",
       "equation_order": "Numérotation des équations",
       "figure_counts": "Nombre de figures : déclaré et extrait",
-      "table_counts": "Nombre de tableaux : déclaré et extrait"
+      "table_counts": "Nombre de tableaux : déclaré et extrait",
+      "appendices": "Appendices listées et présentes"
     },
     "check_status_values": {
       "ok": "Conforme",
@@ -68,7 +69,8 @@
       "count": "Occurrences",
       "skipped": "Sautés",
       "declared": "Déclaré",
-      "extracted": "Extrait"
+      "extracted": "Extrait",
+      "extra": "Non listées"
     },
     "excluded_reason_values": {
       "cover": "page couverture",
@@ -121,7 +123,8 @@
       "citation_placement": "Citations placed after the period",
       "equation_order": "Equation numbering",
       "figure_counts": "Number of figures: declared and extracted",
-      "table_counts": "Number of tables: declared and extracted"
+      "table_counts": "Number of tables: declared and extracted",
+      "appendices": "Appendices listed and present"
     },
     "check_status_values": {
       "ok": "Passed",
@@ -135,7 +138,8 @@
       "count": "Occurrences",
       "skipped": "Skipped",
       "declared": "Declared",
-      "extracted": "Extracted"
+      "extracted": "Extracted",
+      "extra": "Not listed"
     },
     "excluded_reason_values": {
       "cover": "cover page",

@@ -61,5 +61,27 @@
       "executive_summary": "full"
     },
     "provenance": "Issue 126 plan 16, N3 (owner, 2026-11-25): no language correction on the cover and the version page, spelling only on the table of contents and the lists, full correction on the summary; a page absent from this map is body and is judged in full"
+  },
+  "figure_entry_words": {
+    "fr": [
+      "Figure"
+    ],
+    "en": [
+      "Figure"
+    ],
+    "provenance": "Issue 126 plan 5, E1: the word that opens a printed figure entry in each language"
+  },
+  "table_entry_words": {
+    "fr": [
+      "Tableau"
+    ],
+    "en": [
+      "Table"
+    ],
+    "provenance": "Issue 126 plan 5, E1: the word that opens a printed table entry in each language"
+  },
+  "entry_number_pattern": {
+    "value": "\\d+(?:[.\\-]\\d+)*|[A-Z]\\.\\d+",
+    "provenance": "Issue 126 plan 5, E1 and N2: a printed number kept as a string (12, 2.1, A.1); a dot after it ends the number"
   }
 }

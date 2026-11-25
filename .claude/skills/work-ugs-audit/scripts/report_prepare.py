@@ -26,6 +26,7 @@ for _folder in (SCRIPTS_DIR, FIGURE_REVIEW_DIR / "scripts"):
 
 import fitz  # noqa: E402
 import element_labels  # noqa: E402
+import front_matter  # noqa: E402
 import front_pages  # noqa: E402
 import page_roles  # noqa: E402
 import text_quality  # noqa: E402
@@ -140,11 +141,11 @@ def _load_context() -> dict:
         hints = load_hints(HINTS_FILE)
         ocr = text_quality.load_ocr_settings()
         markers = page_roles.load_markers(PAGE_ROLES_FILE)
-        front_matter = front_pages.load_front_matter()
+        front_matter_settings = front_matter.load_entry_settings()
     except (OSError, ValueError, TextQualityError, page_roles.PageRolesConfigError,
             front_pages.FrontMatterConfigError) as error:
         raise PrepareError(f"data file unreadable: {error}") from error
-    return {"hints": hints, "ocr": ocr, "markers": markers, "front_matter": front_matter}
+    return {"hints": hints, "ocr": ocr, "markers": markers, "front_matter": front_matter_settings}
 
 
 def _ocr_languages(language_codes: Dict[str, List[str]]) -> List[str]:
@@ -442,6 +443,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     reasons = {entry["page"]: entry["reason"] for entry in excluded}
     try:
         front_roles = front_pages.find_front_roles(new_texts, language, context["front_matter"], small_images)
+        declared = front_matter.declared_counts(new_texts, front_roles, language, context["front_matter"])
     except front_pages.FrontMatterConfigError as error:
         raise PrepareError(str(error)) from None
 
@@ -469,7 +471,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     unreadable_pages = [entry["page"] for entry in quality if entry["empty"]]
     meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,
             "tables_dropped": _tables_dropped(report_dir),
-            "unreadable_pages": unreadable_pages, "front_roles": front_roles}
+            "unreadable_pages": unreadable_pages, "front_roles": front_roles, **declared}
     _write_atomic(report_dir / settings["reports.meta_file_name"], json.dumps(meta, indent=2, ensure_ascii=False))
     return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages}
 

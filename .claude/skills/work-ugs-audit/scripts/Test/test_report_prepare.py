@@ -301,6 +301,16 @@ class PreparationTests(unittest.TestCase):
         prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
         self.assertEqual(json.loads(self.report_file("elements.json").read_text(encoding="utf-8")), [])
 
+    def test_declared_counts_written_to_meta(self):
+        """Issue 126 plan 5 E1: the printed figure count of the list is written to report_meta.json (fictitious)."""
+        list_text = "Liste des figures\nFigure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        prepare(self.reports, self.work, hooks=_hooks())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["declared_figures"], 3)
+        self.assertEqual(meta["declared_figure_numbers"], ["1", "2", "3"])
+        self.assertIsNone(meta["declared_tables"])
+
     def test_elements_file_written(self):
         prepare(self.reports, self.work, hooks=_hooks())
         elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))

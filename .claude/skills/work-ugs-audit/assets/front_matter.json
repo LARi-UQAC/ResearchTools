@@ -50,5 +50,16 @@
   "heading_max_chars": {
     "value": 40,
     "provenance": "proposal 2026-11-25, tune on the counts of the real reports: a heading marker starts within the first 40 characters of the page text (the text layer is joined into one line, so lines cannot mark a heading)"
+  },
+  "language_mode": {
+    "value": {
+      "cover": "none",
+      "version_signature": "none",
+      "table_of_contents": "spelling_only",
+      "list_of_figures": "spelling_only",
+      "list_of_tables": "spelling_only",
+      "executive_summary": "full"
+    },
+    "provenance": "Issue 126 plan 16, N3 (owner, 2026-11-25): no language correction on the cover and the version page, spelling only on the table of contents and the lists, full correction on the summary; a page absent from this map is body and is judged in full"
   }
 }

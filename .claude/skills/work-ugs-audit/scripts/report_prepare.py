@@ -448,7 +448,10 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     excluded_dir = report_dir / settings["text.excluded_folder"]
     if excluded_dir.exists():
         shutil.rmtree(excluded_dir)
-    skip_pages = sorted(reasons)
+    # N3 (plan 16): a front page (cover, version, contents, lists) is never sent to the element finder as content.
+    front_skip = [page for page, mode in front_pages.page_modes(front_roles, context["front_matter"]).items()
+                  if mode != front_pages.FULL_MODE]
+    skip_pages = sorted(set(reasons) | set(front_skip))
     elements = hooks.find_elements(pdf_file, report_dir / settings["reports.figures_folder"], skip_pages)
     _write_atomic(report_dir / settings["reports.elements_file_name"],
                   json.dumps(elements, indent=2, ensure_ascii=False))

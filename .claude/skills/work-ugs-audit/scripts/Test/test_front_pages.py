@@ -194,5 +194,27 @@ class ConfigurationTests(unittest.TestCase):
             _roles([COVER], "de")
 
 
+class LanguageModeTests(unittest.TestCase):
+    """Issue 126 plan 16 N3: the correction mode of each front role comes from the data file."""
+
+    def test_page_modes_map_each_front_role(self):
+        roles = _roles([COVER, TOC, LIST_FIG, SUMMARY, INTRO], "fr")
+        modes = front_pages.page_modes(roles, _data())
+        self.assertEqual(modes[1], "none")
+        self.assertEqual(modes[2], "spelling_only")
+        self.assertEqual(modes[3], "spelling_only")
+        self.assertEqual(modes[4], "full")
+        self.assertNotIn(5, modes)
+
+    def test_unknown_mode_is_named_error(self):
+        data = json.loads((SCRIPTS.parent / "assets" / "front_matter.json").read_text(encoding="utf-8"))
+        data["language_mode"]["value"]["cover"] = "judge"
+        path = Path(tempfile.mkdtemp()) / "front_matter.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaises(front_pages.FrontMatterConfigError) as ctx:
+            front_pages.load_front_matter(path)
+        self.assertIn("judge", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

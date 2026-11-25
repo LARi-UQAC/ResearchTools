@@ -276,6 +276,31 @@ class PreparationTests(unittest.TestCase):
         meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
         self.assertEqual(meta["front_roles"]["list_of_figures"], [2])
         self.assertEqual(meta["front_roles"]["body_start"], 3)
+    def test_front_pages_are_skipped_by_extraction(self):
+        """Issue 126 plan 16 N3: a list page is not sent to the element finder as content (fictitious report)."""
+        list_text = "Liste des figures\nFigure 1 Schema ........ 4\nFigure 2 Courbe ........ 6\nFigure 3 Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        seen = {}
+
+        def finder(pdf, figures_dir, skip_pages):
+            seen["skip"] = list(skip_pages)
+            return []
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        self.assertEqual(seen["skip"], [1, 2])
+
+    def test_cover_logo_gives_no_element(self):
+        """Issue 126 plan 16 N3: a finder that would take the cover logo writes no element, the cover being skipped."""
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": BODY_TEXT}])
+
+        def finder(pdf, figures_dir, skip_pages):
+            if 1 in skip_pages:
+                return []
+            return [{"element_id": "F01", "element_type": "figure", "page": 1, "file": "F01.png"}]
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        self.assertEqual(json.loads(self.report_file("elements.json").read_text(encoding="utf-8")), [])
+
     def test_elements_file_written(self):
         prepare(self.reports, self.work, hooks=_hooks())
         elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))

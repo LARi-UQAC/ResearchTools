@@ -19,6 +19,8 @@ ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 DATA_FILE = ASSETS_DIR / "front_matter.json"
 PAGE_ROLES_FILE = ASSETS_DIR / "page_roles.json"
 LANGUAGES = ("fr", "en")
+LANGUAGE_MODES = ("none", "spelling_only", "full")
+FULL_MODE = "full"
 MARKER_KEYS = ("table_of_contents_markers", "figure_list_markers", "table_list_markers", "executive_summary_markers")
 NUMERIC_KEYS = ("heading_max_chars", "max_list_words", "min_entry_lines")
 ENTRY_LINE_PATTERN = re.compile(r"\d+\s*$")
@@ -127,6 +129,32 @@ def _numeric(data: dict, key: str, path: Path) -> int:
     return value
 
 
+def _modes_of(data: dict, path: Path) -> Dict[str, str]:
+    """
+    Purpose:
+        Read the correction mode of each front role from the data file and refuse an unknown mode.
+
+    Inputs:
+        data (dict): the parsed data file.
+        path (Path): the data file, named in the error.
+
+    Outputs:
+        dict: role name to mode, each mode one of LANGUAGE_MODES.
+
+    Raises:
+        FrontMatterConfigError: when the entry, its value or its provenance is missing, or a mode is unknown.
+    """
+    entry = _require(data, "language_mode", path)
+    if not isinstance(entry, dict) or not isinstance(entry.get("value"), dict):
+        raise FrontMatterConfigError(f"'language_mode' in {path} must be an object with a 'value' map")
+    if not isinstance(entry.get("provenance"), str) or not entry["provenance"].strip():
+        raise FrontMatterConfigError(f"'language_mode' in {path} lacks its 'provenance'")
+    for role, mode in entry["value"].items():
+        if mode not in LANGUAGE_MODES:
+            raise FrontMatterConfigError(f"unknown language mode '{mode}' for role '{role}' in {path}")
+    return dict(entry["value"])
+
+
 def load_front_matter(path: Optional[Path] = None) -> dict:
     """
     Purpose:
@@ -151,7 +179,30 @@ def load_front_matter(path: Optional[Path] = None) -> dict:
     result: dict = {key: _markers_of(data, key, target) for key in MARKER_KEYS}
     for key in NUMERIC_KEYS:
         result[key] = _numeric(data, key, target)
+    result["language_mode"] = _modes_of(data, target)
     return result
+
+
+def page_modes(front_roles: dict, data: dict) -> Dict[int, str]:
+    """
+    Purpose:
+        Give the correction mode of every front page of a report; a body page is absent from the map (full).
+
+    Inputs:
+        front_roles (dict): the result of find_front_roles.
+        data (dict): the result of load_front_matter, holding language_mode.
+
+    Outputs:
+        Dict[int, str]: 1-based page to mode, for the front pages whose role has a mode in the data file.
+
+    Raises:
+        KeyError: when front_roles lacks a role named in the data file (a caller error).
+    """
+    modes: Dict[int, str] = {}
+    for role, mode in data["language_mode"].items():
+        for page in front_roles.get(role) or []:
+            modes[page] = mode
+    return modes
 
 
 def _has_heading(text: str, markers: List[str], data: dict) -> bool:

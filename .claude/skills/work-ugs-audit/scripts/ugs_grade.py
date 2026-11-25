@@ -2,6 +2,7 @@
 Purpose: Grade rubric items using local models.
 """
 
+import json
 import math
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ for _p in (_LOOP_ENGINEER_SCRIPTS, _LOOP_ENGINEER_ROOT):
 from ugs_text import StepContext, fill, page_blocks, select_pages
 from ugs_events import page_range
 from ugs_bridge import NotRun
+from ugs_config import default_path
 from rubric_split import item_prompt_text
 from rubric_check import validate, RubricError
 from pdf_annotate import normalize
@@ -55,10 +57,34 @@ NO_ANSWER_CODES = {
     "timeout": "timeout",
 }
 
-# Longest `missing` kept in a grade record, in characters. Provenance: chosen, not measured. grade_item.md asks
-# for one sentence, and this bound only stops a model that ignores that from filling grade.json. A bound on the
-# text of one saved field, never on what the model is shown, so the professor may raise it without re-measuring.
-MISSING_MAX_CHARS = 300
+# The configuration key of the longest `missing` kept in a grade record (D2). Its value and provenance live in
+# assets/ugs_config.json; the code holds no literal for it.
+MISSING_MAX_CHARS_KEY = "grade.missing_max_chars"
+
+
+def read_missing_max_chars(path: Path) -> int:
+    """
+    Purpose: Read the character limit of the missing-element text from the configuration file (D2).
+    Details: The file is read on its own, not through ugs_config.load, which demands its whole key set. A
+        missing key, a missing entry or a value that is not a positive integer is a named error.
+    Inputs:
+        path: Path - The configuration JSON file, normally ugs_config.default_path().
+    Outputs:
+        int - The limit in characters.
+    Raises:
+        ValueError: If the file is unreadable, the key is absent or its value is not a positive integer (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get(MISSING_MAX_CHARS_KEY) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise ValueError(f"missing key '{MISSING_MAX_CHARS_KEY}' in {path}")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"'{MISSING_MAX_CHARS_KEY}' must be a positive integer in {path}")
+    return value
 
 
 def normalize_rubric(
@@ -215,16 +241,17 @@ def _validate_grade_answer(
     return None if code == "ok" else message
 
 
-def _missing_text(answer: dict, raw_score: Any, max_points: Any) -> str:
+def _missing_text(answer: dict, raw_score: Any, max_points: Any, max_chars: int) -> str:
     """
     Purpose: Give the `missing` value of a grade record: the element that cost the points, or "".
     Details: Empty at the maximum score, when the answer has no `missing`, or when it is not a string. Otherwise
-        the text is kept as the model gave it, stripped and cut to MISSING_MAX_CHARS. It is model text saved in
+        the text is kept as the model gave it, stripped and cut to max_chars. It is model text saved in
         grade.json only: it never reaches the ledger note, a log or the dashboard (see ugs_run._grade_mark).
     Inputs:
         answer: dict - The model's answer, as given.
         raw_score: Any - The score the model gave, None when there is none.
         max_points: Any - The maximum of the rubric item.
+        max_chars: int - The character limit, from grade.missing_max_chars (D2).
     Outputs:
         str - The missing text, possibly empty.
     """
@@ -233,7 +260,23 @@ def _missing_text(answer: dict, raw_score: Any, max_points: Any) -> str:
     value = answer.get("missing")
     if not isinstance(value, str):
         return ""
-    return value.strip()[:MISSING_MAX_CHARS]
+    return value.strip()[:max_chars]
+
+
+def _strict_score(raw: Any) -> Tuple[Any, Optional[str]]:
+    """
+    Purpose: Split the score the model gave into a strict-JSON value and its raw text, for grade.json (D1).
+    Details: json.dumps writes NaN and Infinity as literals that no strict JSON reader accepts. A non-finite
+        float therefore becomes null, and its text ("nan", "inf", "-inf") is kept beside it in model_score_raw.
+    Inputs:
+        raw: Any - The score as the model gave it, possibly None.
+    Outputs:
+        Tuple[Any, Optional[str]] - (model_score, model_score_raw); the second is None unless the score was
+            a non-finite float.
+    """
+    if isinstance(raw, float) and not math.isfinite(raw):
+        return None, str(raw)
+    return raw, None
 
 
 def _record_from_answer(
@@ -241,7 +284,8 @@ def _record_from_answer(
     answer: dict,
     code: str,
     attempts: int,
-    max_points: Any
+    max_points: Any,
+    missing_max_chars: Optional[int] = None
 ) -> dict:
     """
     Purpose: Build the grade record of an answer the model gave, with its validation code.
@@ -255,9 +299,12 @@ def _record_from_answer(
         code: str - The code of check_grade_answer, "ok" for a success.
         attempts: int - The number of model calls made, this one included.
         max_points: Any - The maximum of the rubric item.
+        missing_max_chars: Optional[int] - The limit of the missing text; None reads it from the configuration.
     Outputs:
         dict - The grade record, flagged unless the code is "ok".
     """
+    if missing_max_chars is None:
+        missing_max_chars = read_missing_max_chars(default_path())
     raw_score = answer.get("score")
     evidence = answer.get("evidence")
     if code == "ok":
@@ -269,19 +316,23 @@ def _record_from_answer(
     else:
         status = "not_run"
         score = None
-    return {
+    model_score, model_score_raw = _strict_score(raw_score)
+    record = {
         "item_id": item_id,
         "status": status,
         "score": score,
         "comment": answer.get("comment", ""),
         "evidence": [] if evidence is None else evidence,
-        "missing": _missing_text(answer, raw_score, max_points),
+        "missing": _missing_text(answer, raw_score, max_points, missing_max_chars),
         "audit": "not_run",
         "flag": code != "ok",
-        "model_score": raw_score,
+        "model_score": model_score,
         "validation": code,
         "attempts": attempts,
     }
+    if model_score_raw is not None:
+        record["model_score_raw"] = model_score_raw
+    return record
 
 
 def _no_answer_record(
@@ -322,7 +373,8 @@ def grade_item(
     ctx: StepContext,
     language: str,
     calibration_note: str,
-    report_id: Optional[str] = None
+    report_id: Optional[str] = None,
+    missing_max_chars: Optional[int] = None
 ) -> dict:
     """
     Purpose: Grade a single rubric item.
@@ -339,6 +391,7 @@ def grade_item(
         language: str - The language of the report.
         calibration_note: str - The current calibration note.
         report_id: str or None - The identifier of the report, for the action records only.
+        missing_max_chars: int or None - The limit of the missing text; None reads grade.missing_max_chars once.
     Outputs:
         dict - The grade record: item_id, status, score, comment, evidence, missing, audit, flag, then model_score,
             validation and attempts.
@@ -346,6 +399,8 @@ def grade_item(
         NotRun: If the model fails with an unretryable error (an unreachable daemon, for example).
     """
     item_id = item["id"]
+    if missing_max_chars is None:
+        missing_max_chars = read_missing_max_chars(default_path())
 
     # Determine pages to send
     budget_tokens = ctx.window_tokens - ctx.reserve_tokens
@@ -409,14 +464,14 @@ def grade_item(
 
         code, message = check_grade_answer(answer, item, pages)
         if code == "ok":
-            return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0))
+            return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)
         last_error_reason = message
         last_answer = answer
 
     attempts = ctx.grade_retries + 1
     if last_answer is None:
         return _no_answer_record(item_id, code, attempts, "")
-    return _record_from_answer(item_id, last_answer, code, attempts, item.get("max_points", 0))
+    return _record_from_answer(item_id, last_answer, code, attempts, item.get("max_points", 0), missing_max_chars)
 
 
 def grade_report(
@@ -449,6 +504,7 @@ def grade_report(
     """
     items_to_grade = []
     existing_items = {}
+    missing_max_chars = read_missing_max_chars(default_path())
     if existing and "items" in existing:
         for item in existing["items"]:
             existing_items[item["item_id"]] = item
@@ -459,7 +515,7 @@ def grade_report(
             items_to_grade.append(existing_items[item_id])
         else:
             record = grade_item(
-                item, pages, call, ctx, language, calibration_note, report_id
+                item, pages, call, ctx, language, calibration_note, report_id, missing_max_chars
             )
             items_to_grade.append(record)
             if on_item:

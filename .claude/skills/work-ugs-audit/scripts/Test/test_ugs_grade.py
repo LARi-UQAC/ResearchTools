@@ -452,5 +452,72 @@ class TestItemPromptText(unittest.TestCase):
         self.assertNotIn("{'id'", call.calls[0])
 
 
+class TestStrictJson(unittest.TestCase):
+    """D1: every grade record is strict JSON, a non-finite score included."""
+
+    def _strict_loads(self, text):
+        def refuse(name):
+            raise ValueError("non-finite constant in JSON: " + name)
+        return json.loads(text, parse_constant=refuse)
+
+    def test_nan_score_is_written_as_strict_json(self):
+        from ugs_grade import _record_from_answer
+        answer = {"status": "rated", "score": float("nan"), "comment": "c", "evidence": []}
+        record = _record_from_answer("i1", answer, "score_missing", 1, 5)
+        text = json.dumps(record, allow_nan=False)
+        back = self._strict_loads(text)
+        self.assertIsNone(back["model_score"])
+        self.assertEqual(back["model_score_raw"], "nan")
+        self.assertEqual(back["status"], "not_run")
+
+    def test_infinite_score_keeps_raw_text(self):
+        from ugs_grade import _record_from_answer
+        answer = {"status": "rated", "score": float("-inf"), "comment": "", "evidence": []}
+        record = _record_from_answer("i2", answer, "score_missing", 1, 5)
+        back = self._strict_loads(json.dumps(record, allow_nan=False))
+        self.assertIsNone(back["model_score"])
+        self.assertEqual(back["model_score_raw"], "-inf")
+
+    def test_finite_score_has_no_raw_key(self):
+        from ugs_grade import _record_from_answer
+        answer = {"status": "rated", "score": 3.0, "comment": "", "evidence": []}
+        record = _record_from_answer("i3", answer, "ok", 1, 5)
+        self.assertNotIn("model_score_raw", record)
+        self.assertEqual(record["model_score"], 3.0)
+
+
+class TestMissingLimitFromConfig(unittest.TestCase):
+    """D2: the character limit of the missing-element text is configuration, read by name."""
+
+    def _write_config(self, payload):
+        import tempfile
+        folder = Path(tempfile.mkdtemp())
+        path = folder / "ugs_config.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def test_limit_is_read_from_config(self):
+        from ugs_grade import read_missing_max_chars, _missing_text
+        path = self._write_config({"grade.missing_max_chars": {"value": 10, "provenance": "test"}})
+        limit = read_missing_max_chars(path)
+        self.assertEqual(limit, 10)
+        answer = {"missing": "x" * 50}
+        self.assertEqual(len(_missing_text(answer, 2, 5, limit)), 10)
+
+    def test_missing_key_is_named_with_its_file(self):
+        from ugs_grade import read_missing_max_chars
+        path = self._write_config({"other.key": {"value": 1, "provenance": "test"}})
+        with self.assertRaises(ValueError) as ctx:
+            read_missing_max_chars(path)
+        message = str(ctx.exception)
+        self.assertIn("grade.missing_max_chars", message)
+        self.assertIn(path.name, message)
+
+    def test_shipped_config_holds_the_limit(self):
+        from ugs_grade import read_missing_max_chars
+        from ugs_config import default_path
+        self.assertEqual(read_missing_max_chars(default_path()), 300)
+
+
 if __name__ == "__main__":
     unittest.main()

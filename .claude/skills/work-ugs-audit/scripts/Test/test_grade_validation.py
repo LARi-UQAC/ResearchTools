@@ -304,8 +304,9 @@ class TestMissingField(unittest.TestCase):
         self.assertEqual(record.get("missing"), "Last missing text.")
 
     def test_missing_is_trimmed_to_the_maximum_length(self):
-        self.assertTrue(hasattr(ugs_grade, "MISSING_MAX_CHARS"), "ugs_grade.MISSING_MAX_CHARS is missing")
-        limit = ugs_grade.MISSING_MAX_CHARS
+        # D2: the limit is read from configuration (grade.missing_max_chars), not from a constant of the module.
+        from ugs_config import default_path
+        limit = ugs_grade.read_missing_max_chars(default_path())
         answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
                   "evidence": [_quote(1, "Page 1 text")], "missing": "x" * (limit + 50)}
         self.assertEqual(len(self._grade([answer]).get("missing")), limit)
@@ -352,7 +353,9 @@ class TestNanScoreAndNullEvidencePage(unittest.TestCase):
         record = grade_item(self.item, self.pages, FakeCall([nan_answer, nan_answer]), self.ctx, "en", "")
         self.assertEqual(record.get("status"), "not_run")
         self.assertIsNone(record.get("score"))
-        self.assertTrue(math.isnan(record.get("model_score")))
+        # D1: model_score is strict JSON (null), the NaN text is kept in model_score_raw.
+        self.assertIsNone(record.get("model_score"))
+        self.assertEqual(record.get("model_score_raw"), "nan")
         self.assertEqual(record.get("validation"), "score_missing")
         result = grade_total.compute({"assessment_type": "lab_report", "total_points": 10, "items": [self.item]},
                                      {"report_id": "R01", "items": [record]})

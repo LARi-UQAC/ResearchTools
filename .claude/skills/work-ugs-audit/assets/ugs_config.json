@@ -112,6 +112,10 @@
     "value": 3136,
     "provenance": "computed: ceil(1568/28) * ceil(1568/28) patches for the largest allowed image, used until vision_probe has measured the local model"
   },
+  "grade.missing_max_chars": {
+    "value": 300,
+    "provenance": "starting value, proposed 2026-11-17 and adjustable by the professor: longest missing-element text kept in grade.json, in characters. A bound on one saved field, never on what the model is shown"
+  },
   "grade.invalid_answer_retries": {
     "value": 1,
     "provenance": "starting value, adjustable by the professor (repeats of a grader call after a refused answer)"

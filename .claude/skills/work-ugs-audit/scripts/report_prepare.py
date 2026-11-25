@@ -26,6 +26,7 @@ for _folder in (SCRIPTS_DIR, FIGURE_REVIEW_DIR / "scripts"):
 
 import fitz  # noqa: E402
 import element_labels  # noqa: E402
+import count_check  # noqa: E402
 import front_matter  # noqa: E402
 import front_pages  # noqa: E402
 import page_roles  # noqa: E402
@@ -471,7 +472,8 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     unreadable_pages = [entry["page"] for entry in quality if entry["empty"]]
     meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,
             "tables_dropped": _tables_dropped(report_dir),
-            "unreadable_pages": unreadable_pages, "front_roles": front_roles, **declared}
+            "unreadable_pages": unreadable_pages, "front_roles": front_roles, **declared,
+            **count_check.compare_counts(declared, elements)}
     _write_atomic(report_dir / settings["reports.meta_file_name"], json.dumps(meta, indent=2, ensure_ascii=False))
     return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages}
 

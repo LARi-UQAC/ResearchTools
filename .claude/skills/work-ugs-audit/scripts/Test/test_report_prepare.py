@@ -301,6 +301,17 @@ class PreparationTests(unittest.TestCase):
         prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
         self.assertEqual(json.loads(self.report_file("elements.json").read_text(encoding="utf-8")), [])
 
+    def test_count_status_written_to_meta(self):
+        """Issue 126 plan 6 E2: a declared figure with no extracted figure is a mismatch in report_meta.json."""
+        list_text = "Liste des figures\nFigure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        prepare(self.reports, self.work, hooks=_hooks())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["figure_count_status"], "mismatch")
+        self.assertEqual(meta["extracted_figures"], 0)
+        self.assertEqual(meta["missing_figure_numbers"], ["1", "2", "3"])
+        self.assertEqual(meta["table_count_status"], "not_found")
+
     def test_declared_counts_written_to_meta(self):
         """Issue 126 plan 5 E1: the printed figure count of the list is written to report_meta.json (fictitious)."""
         list_text = "Liste des figures\nFigure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"

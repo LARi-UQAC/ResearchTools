@@ -65,6 +65,14 @@
     "value": 12,
     "provenance": "proposal 2026-11-17, an anchor shorter than this cannot prove the table is already in the text; tune on counts"
   },
+  "tables.image_column_gap_pt": {
+    "value": 12,
+    "provenance": "proposal 2026-11-25, a horizontal gap of this many points between two words starts a new column of a table drawn as an image; tune on the real reports"
+  },
+  "tables.image_min_rows": {
+    "value": 2,
+    "provenance": "proposal 2026-11-25, a table drawn as an image needs at least this many rows of words to be taken as a table; tune on the real reports"
+  },
   "text.ocr_dpi": {
     "value": 300,
     "provenance": "starting value, adjustable by the professor (resolution of the OCR of a damaged page, the usual resolution for printed text; the same figure as the probe of text_quality)"

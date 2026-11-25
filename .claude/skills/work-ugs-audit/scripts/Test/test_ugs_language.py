@@ -287,6 +287,14 @@ class TestSpellingGuard(unittest.TestCase):
         self.assertIn("règlementation", accepted)
         self.assertIn("réglementation", accepted)
 
+    def test_real_fault_in_an_accepted_word_quote_is_reported(self):
+        """N1: an accepted word in the quote does not hide a real fault next to it (obligatoir is not a reform pair)."""
+        finding = {"code": "SP", "quote": "règlementation obligatoir", "proposed": "réglementation obligatoire",
+                   "reason": "fictitious"}
+        rec = self._record([finding], "Une règlementation obligatoir fictive.")
+        self.assertEqual(len(rec["annotations"]), 1)
+        self.assertEqual(rec["rejected_correct"], 0)
+
     def test_capitalised_accepted_word_is_refused(self):
         """F3: a capitalised accepted spelling at the start of a sentence is the same word."""
         finding = {"code": "SP", "quote": "Règlementation", "proposed": "Réglementation", "reason": "fictitious"}

@@ -27,7 +27,7 @@ class LanguageDataError(ValueError):
     """A language data file is missing, unreadable or lacks the entry asked for; the message names it."""
 
 
-def load_accepted(language: str, path: Path = ACCEPTED_SPELLINGS_PATH) -> set:
+def load_accepted(language: str, path: Path = ACCEPTED_SPELLINGS_PATH) -> Dict[str, set]:
     """
     Purpose: Read the spellings both forms of which are correct for one language (N1), normalised as the quote check
         normalises them, so a finding on any member of a pair is recognised.
@@ -35,7 +35,7 @@ def load_accepted(language: str, path: Path = ACCEPTED_SPELLINGS_PATH) -> set:
         language (str): the report language, a key of the file (fr, en).
         path (Path): the accepted spellings file.
     Outputs:
-        set: the normalised spellings of every pair of the language.
+        Dict[str, set]: each normalised spelling mapped to the normalised spellings it pairs with (N1).
     Raises:
         LanguageDataError: the file is unreadable, or the language has no entry or no value list (R3).
     """
@@ -47,12 +47,36 @@ def load_accepted(language: str, path: Path = ACCEPTED_SPELLINGS_PATH) -> set:
     value = entry.get("value") if isinstance(entry, dict) else None
     if not isinstance(value, list):
         raise LanguageDataError(f"language '{language}' has no value list in {Path(path).name}")
-    forms = set()
+    partners: Dict[str, set] = {}
     for pair in value:
         if not isinstance(pair, list) or not all(isinstance(word, str) for word in pair):
             raise LanguageDataError(f"each pair of '{language}' must be a list of strings in {Path(path).name}")
-        forms.update(normalize(word) for word in pair)
-    return forms
+        forms = [normalize(word).casefold() for word in pair]
+        for form in forms:
+            partners.setdefault(form, set()).update(other for other in forms if other != form)
+    return partners
+
+
+def _variant_only(quote: str, proposal: str, partners: Dict[str, set]) -> bool:
+    """
+    Purpose: Tell whether the proposal differs from the quote only by swapping accepted variants for each other (N1).
+    Inputs:
+        quote: str - the quote, normalised and case-folded.
+        proposal: str - the proposed text, normalised and case-folded.
+        partners: Dict[str, set] - each accepted spelling mapped to its partners (load_accepted).
+    Outputs:
+        bool - True when both have the same words and each differing word pairs with its counterpart.
+    Raises:
+        None.
+    """
+    quote_words = re.findall(r"\w+", quote)
+    proposal_words = re.findall(r"\w+", proposal)
+    if not quote_words or len(quote_words) != len(proposal_words):
+        return False
+    for q_word, p_word in zip(quote_words, proposal_words):
+        if q_word != p_word and p_word not in partners.get(q_word, set()):
+            return False
+    return True
 
 
 def spelling_code(path: Path = CATEGORIES_PATH) -> str:
@@ -275,8 +299,13 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
     rejected = 0
     rejected_correct = 0
     seen = set()
-    # F3: compared case-folded, and a quote is refused when any of its words is an accepted spelling.
-    accepted_words = {normalize(word).casefold() for word in (accepted or ())}
+    # N1: a spelling finding is refused only when it is a variant of the same word (see _variant_only). A dict is
+    # load_accepted's output; a plain set is read as one reform pair per two members.
+    if isinstance(accepted, dict):
+        partners = accepted
+    else:
+        members = [normalize(word).casefold() for word in (accepted or ())]
+        partners = {word: set(members) - {word} for word in members}
     page_annotations = []
     
     for f in findings:
@@ -298,9 +327,9 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
 
         # N1: a spelling finding is refused when its quote is an accepted spelling (either form of a 1990 reform
         # pair) or when its proposal equals the quote: the word is correct, so a finding on it is never a fault.
-        quote_words = re.findall(r"\w+", norm_quote.casefold())
-        same_word = normalize(f.get("proposed", "")).casefold() == norm_quote.casefold()
-        if code == spelling_code_value and (same_word or any(word in accepted_words for word in quote_words)):
+        proposal = normalize(f.get("proposed", "")).casefold()
+        same_word = proposal == norm_quote.casefold()
+        if code == spelling_code_value and (same_word or _variant_only(norm_quote.casefold(), proposal, partners)):
             rejected_correct += 1
             continue
             

@@ -16,6 +16,7 @@ import table_image  # noqa: E402
 
 GAP = 12
 MIN_ROWS = 2
+OVERLAP = 0.5
 
 
 def _w(x0, y0, text, width=30, height=10):
@@ -41,7 +42,7 @@ class TestWordsToRows(unittest.TestCase):
     def test_two_rows_three_columns_become_markdown(self):
         words = [_w(10, 100, "Mesure"), _w(100, 100, "Valeur"), _w(200, 100, "Unite"),
                  _w(10, 120, "Masse"), _w(100, 120, "12.5"), _w(200, 120, "kg")]
-        markdown = table_image.words_to_markdown(words, GAP, MIN_ROWS)
+        markdown = table_image.words_to_markdown(words, GAP, MIN_ROWS, OVERLAP)
         self.assertEqual(
             markdown,
             "| Mesure | Valeur | Unite |\n| --- | --- | --- |\n| Masse | 12.5 | kg |",
@@ -49,59 +50,91 @@ class TestWordsToRows(unittest.TestCase):
 
     def test_small_gap_merges_columns(self):
         words = [_w(10, 100, "Essai"), _w(44, 100, "un")]
-        self.assertEqual(table_image.words_to_rows(words, GAP), [["Essai un"]])
+        self.assertEqual(table_image.words_to_rows(words, GAP, OVERLAP), [["Essai un"]])
 
     def test_pipe_in_cell_is_escaped(self):
         words = [_w(10, 100, "a|b"), _w(100, 100, "c"),
                  _w(10, 120, "d"), _w(100, 120, "e")]
-        markdown = table_image.words_to_markdown(words, GAP, MIN_ROWS)
+        markdown = table_image.words_to_markdown(words, GAP, MIN_ROWS, OVERLAP)
         self.assertIn("a\\|b", markdown)
         self.assertNotIn("a|b", markdown)
 
     def test_short_row_is_padded(self):
         words = [_w(10, 100, "Mesure"), _w(100, 100, "Valeur"), _w(200, 100, "Unite"),
                  _w(10, 120, "Masse"), _w(100, 120, "12.5")]
-        markdown = table_image.words_to_markdown(words, GAP, MIN_ROWS)
+        markdown = table_image.words_to_markdown(words, GAP, MIN_ROWS, OVERLAP)
         self.assertIn("| Masse | 12.5 |  |", markdown)
 
     def test_close_baselines_are_one_row(self):
         words = [_w(10, 100, "Masse"), _w(100, 102, "12.5")]
-        self.assertEqual(table_image.words_to_rows(words, GAP), [["Masse", "12.5"]])
+        self.assertEqual(table_image.words_to_rows(words, GAP, OVERLAP), [["Masse", "12.5"]])
+
+    def test_overlap_ratio_from_configuration_changes_the_rows(self):
+        # Review M2: boxes offset by 6 points overlap by 4 of 10. One row at 0.3 (4 >= 3), two at 0.5 (4 < 5).
+        words = [_w(10, 100, "Masse"), _w(100, 106, "12.5")]
+        self.assertEqual(table_image.words_to_rows(words, GAP, 0.3), [["Masse", "12.5"]])
+        self.assertEqual(len(table_image.words_to_rows(words, GAP, 0.5)), 2)
 
     def test_no_words_raises_unreadable(self):
         with self.assertRaises(table_image.TableImageUnreadable):
-            table_image.words_to_markdown([], GAP, MIN_ROWS)
+            table_image.words_to_markdown([], GAP, MIN_ROWS, OVERLAP)
 
     def test_blank_words_only_raises_unreadable(self):
         with self.assertRaises(table_image.TableImageUnreadable):
-            table_image.words_to_markdown([_w(10, 100, "   ")], GAP, MIN_ROWS)
+            table_image.words_to_markdown([_w(10, 100, "   ")], GAP, MIN_ROWS, OVERLAP)
 
     def test_too_few_rows_raises_unreadable(self):
         words = [_w(10, 100, "Seule"), _w(100, 100, "ligne")]
         with self.assertRaises(table_image.TableImageUnreadable) as ctx:
-            table_image.words_to_markdown(words, GAP, MIN_ROWS)
+            table_image.words_to_markdown(words, GAP, MIN_ROWS, OVERLAP)
         self.assertIn("rows", str(ctx.exception))
+        self.assertNotIn("Seule", str(ctx.exception))
 
 
 class TestSettings(unittest.TestCase):
-    """The two configuration keys, read with a named error when absent (R0, R3)."""
+    """The configuration keys, read with a named error when absent or invalid (R0, R3)."""
 
-    def test_shipped_config_has_both_keys(self):
-        gap, min_rows = table_image.load_image_settings()
-        self.assertIsInstance(gap, (int, float))
-        self.assertGreater(gap, 0)
-        self.assertIsInstance(min_rows, int)
-        self.assertGreater(min_rows, 0)
+    def _write(self, tmp, entries):
+        """
+        Purpose: Write a fictitious configuration file holding the given entries.
+        Inputs:
+            tmp: str - the temporary folder.
+            entries: dict - the configuration entries.
+        Outputs:
+            Path - the file written.
+        Raises:
+            None.
+        """
+        path = Path(tmp) / "config.json"
+        path.write_text(json.dumps(entries), encoding="utf-8")
+        return path
+
+    def test_shipped_config_has_every_key(self):
+        settings = table_image.load_image_settings()
+        self.assertGreater(settings.column_gap_pt, 0)
+        self.assertIsInstance(settings.min_rows, int)
+        self.assertGreater(settings.min_rows, 0)
+        self.assertGreater(settings.row_overlap_ratio, 0)
+        self.assertLessEqual(settings.row_overlap_ratio, 1)
 
     def test_missing_key_is_named_with_its_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "config.json"
-            path.write_text(json.dumps({"tables.image_column_gap_pt": {"value": 12, "provenance": "t"}}),
-                            encoding="utf-8")
+            path = self._write(tmp, {"tables.image_column_gap_pt": {"value": 12, "provenance": "t"},
+                                     "tables.image_min_rows": {"value": 2, "provenance": "t"}})
             with self.assertRaises(table_image.TableImageError) as ctx:
                 table_image.load_image_settings(path)
-            self.assertIn("tables.image_min_rows", str(ctx.exception))
+            self.assertIn("tables.image_row_overlap_ratio", str(ctx.exception))
             self.assertIn("config.json", str(ctx.exception))
+
+    def test_overlap_ratio_outside_zero_one_is_named(self):
+        # Review M2: a ratio above 1 can never be reached, so it is refused by name.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, {"tables.image_column_gap_pt": {"value": 12, "provenance": "t"},
+                                     "tables.image_min_rows": {"value": 2, "provenance": "t"},
+                                     "tables.image_row_overlap_ratio": {"value": 2, "provenance": "t"}})
+            with self.assertRaises(table_image.TableImageError) as ctx:
+                table_image.load_image_settings(path)
+            self.assertIn("tables.image_row_overlap_ratio", str(ctx.exception))
 
 
 if __name__ == "__main__":

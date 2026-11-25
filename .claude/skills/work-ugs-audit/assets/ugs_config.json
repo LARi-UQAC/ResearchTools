@@ -73,6 +73,10 @@
     "value": 2,
     "provenance": "proposal 2026-11-25, a table drawn as an image needs at least this many rows of words to be taken as a table; tune on the real reports"
   },
+  "tables.image_row_overlap_ratio": {
+    "value": 0.5,
+    "provenance": "proposal 2026-11-25 (review M2), two words join one row when their boxes overlap vertically by this share of the smaller box; tune on the real reports"
+  },
   "text.ocr_dpi": {
     "value": 300,
     "provenance": "starting value, adjustable by the professor (resolution of the OCR of a damaged page, the usual resolution for printed text; the same figure as the probe of text_quality)"

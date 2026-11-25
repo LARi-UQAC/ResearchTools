@@ -7,12 +7,20 @@ Pipeline stage: work-ugs-audit, page text preparation (issue 126).
 """
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "assets" / "ugs_config.json"
 GAP_KEY = "tables.image_column_gap_pt"
 MIN_ROWS_KEY = "tables.image_min_rows"
-ROW_OVERLAP_RATIO = 0.5
+OVERLAP_KEY = "tables.image_row_overlap_ratio"
+
+
+class ImageSettings(NamedTuple):
+    """The configuration of a table drawn as an image: gap, minimum rows and row overlap ratio."""
+
+    column_gap_pt: float
+    min_rows: int
+    row_overlap_ratio: float
 
 
 class TableImageError(Exception):
@@ -41,15 +49,16 @@ def _read_entry(raw: Any, key: str, source: Path) -> Any:
     return entry["value"]
 
 
-def load_image_settings(path: Optional[Path] = None) -> Tuple[float, int]:
+def load_image_settings(path: Optional[Path] = None) -> ImageSettings:
     """
-    Purpose: Read the column gap and the minimum row count of a table drawn as an image from the configuration.
+    Purpose: Read the column gap, the minimum row count and the row overlap ratio of a table drawn as an image.
     Inputs:
         path: Optional[Path] - the configuration file; None means the work-ugs-audit assets file.
     Outputs:
-        Tuple[float, int] - the gap in points (positive) and the minimum number of rows (positive integer).
+        ImageSettings - the gap in points (positive), the minimum rows (positive integer) and the overlap ratio
+            (above 0 and at most 1).
     Raises:
-        TableImageError: If the file is unreadable, or either key is missing or not a positive value.
+        TableImageError: If the file is unreadable, or a key is missing or not a valid value.
     """
     config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
     try:
@@ -58,11 +67,14 @@ def load_image_settings(path: Optional[Path] = None) -> Tuple[float, int]:
         raise TableImageError(f"configuration {config_path.name} is not readable JSON: {exc}") from None
     gap = _read_entry(raw, GAP_KEY, config_path)
     min_rows = _read_entry(raw, MIN_ROWS_KEY, config_path)
+    overlap = _read_entry(raw, OVERLAP_KEY, config_path)
     if isinstance(gap, bool) or not isinstance(gap, (int, float)) or gap <= 0:
         raise TableImageError(f"key '{GAP_KEY}' in {config_path.name} must be a positive number")
     if isinstance(min_rows, bool) or not isinstance(min_rows, int) or min_rows <= 0:
         raise TableImageError(f"key '{MIN_ROWS_KEY}' in {config_path.name} must be a positive integer")
-    return float(gap), min_rows
+    if isinstance(overlap, bool) or not isinstance(overlap, (int, float)) or not 0 < overlap <= 1:
+        raise TableImageError(f"key '{OVERLAP_KEY}' in {config_path.name} must be a number above 0 and at most 1")
+    return ImageSettings(float(gap), min_rows, float(overlap))
 
 
 def _usable(words: Sequence[tuple]) -> List[tuple]:
@@ -78,11 +90,12 @@ def _usable(words: Sequence[tuple]) -> List[tuple]:
     return [word for word in words if " ".join(str(word[4]).split())]
 
 
-def _group_lines(words: List[tuple]) -> List[Dict[str, Any]]:
+def _group_lines(words: List[tuple], row_overlap_ratio: float) -> List[Dict[str, Any]]:
     """
     Purpose: Group words into lines, a word joining a line when their boxes overlap vertically enough.
     Inputs:
         words: List[tuple] - usable word tuples.
+        row_overlap_ratio: float - the share of the smaller box height that two boxes must overlap.
     Outputs:
         List[Dict[str, Any]] - one dict per line with keys y0, y1 and words, in top-to-bottom order.
     Raises:
@@ -94,7 +107,7 @@ def _group_lines(words: List[tuple]) -> List[Dict[str, Any]]:
         for line in lines:
             overlap = min(word[3], line["y1"]) - max(word[1], line["y0"])
             height = min(word[3] - word[1], line["y1"] - line["y0"])
-            if height > 0 and overlap >= ROW_OVERLAP_RATIO * height:
+            if height > 0 and overlap >= row_overlap_ratio * height:
                 line["words"].append(word)
                 line["y0"] = min(line["y0"], word[1])
                 line["y1"] = max(line["y1"], word[3])
@@ -126,7 +139,7 @@ def _cells(line_words: List[tuple], column_gap_pt: float) -> List[str]:
     return [" ".join(" ".join(str(item[4]).split()) for item in group) for group in groups]
 
 
-def words_to_rows(words: Sequence[tuple], column_gap_pt: float) -> List[List[str]]:
+def words_to_rows(words: Sequence[tuple], column_gap_pt: float, row_overlap_ratio: float) -> List[List[str]]:
     """
     Purpose: Turn the word boxes of a table drawn as an image into rows of cell texts.
     Details: A column is a run of words with no gap of column_gap_pt or more. The columns are not aligned
@@ -134,6 +147,7 @@ def words_to_rows(words: Sequence[tuple], column_gap_pt: float) -> List[List[str
     Inputs:
         words: Sequence[tuple] - PyMuPDF word tuples (x0, y0, x1, y1, text, ...) of one region.
         column_gap_pt: float - the gap that starts a new column, in points.
+        row_overlap_ratio: float - the vertical overlap, as a share of the smaller box, that joins two words in one row.
     Outputs:
         List[List[str]] - the rows, top to bottom, each a list of cell texts; empty when no word has text.
     Raises:
@@ -142,7 +156,7 @@ def words_to_rows(words: Sequence[tuple], column_gap_pt: float) -> List[List[str
     usable = _usable(words)
     if not usable:
         return []
-    return [_cells(line["words"], column_gap_pt) for line in _group_lines(usable)]
+    return [_cells(line["words"], column_gap_pt) for line in _group_lines(usable, row_overlap_ratio)]
 
 
 def _markdown_cell(text: str) -> str:
@@ -158,19 +172,20 @@ def _markdown_cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def words_to_markdown(words: Sequence[tuple], column_gap_pt: float, min_rows: int) -> str:
+def words_to_markdown(words: Sequence[tuple], column_gap_pt: float, min_rows: int, row_overlap_ratio: float) -> str:
     """
     Purpose: Build the Markdown of a table drawn as an image, its first row used as the header.
     Inputs:
         words: Sequence[tuple] - PyMuPDF word tuples of the region.
         column_gap_pt: float - the gap that starts a new column, in points.
         min_rows: int - the fewest rows that make a table.
+        row_overlap_ratio: float - the vertical overlap that joins two words in one row.
     Outputs:
         str - the Markdown table, lines joined by a newline; rows shorter than the widest are padded.
     Raises:
         TableImageUnreadable: If the region has fewer than min_rows rows, with the count as the reason.
     """
-    rows = words_to_rows(words, column_gap_pt)
+    rows = words_to_rows(words, column_gap_pt, row_overlap_ratio)
     if len(rows) < min_rows:
         raise TableImageUnreadable(f"{len(rows)} rows found, {min_rows} needed")
     width = max(len(row) for row in rows)

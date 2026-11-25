@@ -390,8 +390,55 @@ class PreparationTests(unittest.TestCase):
         record = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))[0]
         self.assertEqual(record["element_type"], "table_image")
         self.assertEqual(record["status"], "table_image_unreadable")
+        self.assertEqual(record["status_reason"], "0 rows found, 2 needed")
         self.assertNotIn("markdown", record)
         self.assertNotIn("| --- |", self.report_file("pages", "p002.md").read_text(encoding="utf-8"))
+
+    def test_two_table_images_on_one_page_cost_one_ocr(self):
+        """Review M3 (series C): the OCR of a page is cached for one preparation; a second region reuses it."""
+        calls = []
+
+        def reader(pdf, page_number, language, dpi):
+            calls.append(page_number)
+            return [(10.0, 10.0, 20.0, 20.0, "Mesure", 0, 0, 0)]
+
+        hook = report_prepare._make_ocr_words_hook(300, page_reader=reader)
+        hook(self.pdf, 1, [0.0, 0.0, 100.0, 100.0], "fra")
+        hook(self.pdf, 1, [0.0, 0.0, 100.0, 100.0], "fra")
+        self.assertEqual(calls, [1])
+        hook(self.pdf, 2, [0.0, 0.0, 100.0, 100.0], "fra")
+        self.assertEqual(calls, [1, 2])
+
+    def test_only_words_inside_the_element_rect_are_returned(self):
+        """Review M4 (series C): a stub textpage gives words inside and outside a sub-rect; only the inside ones return."""
+
+        class StubPage:
+            def __init__(self):
+                self.textpages = 0
+
+            def get_textpage_ocr(self, language, dpi, full):
+                self.textpages += 1
+                return "stub-textpage"
+
+            def get_text(self, kind, textpage=None):
+                assert kind == "words" and textpage == "stub-textpage"
+                return [(110.0, 110.0, 130.0, 120.0, "dedans", 0, 0, 0),
+                        (10.0, 10.0, 30.0, 20.0, "dehors", 0, 0, 1),
+                        (190.0, 110.0, 230.0, 120.0, "bord", 0, 0, 2)]
+
+        stub = StubPage()
+        hook = report_prepare._make_ocr_words_hook(
+            300, page_reader=lambda pdf, number, language, dpi: report_prepare._page_words(stub, language, dpi))
+        words = hook(self.pdf, 1, [100.0, 100.0, 150.0, 150.0], "fra")
+        self.assertEqual([word[4] for word in words], ["dedans"])
+        self.assertEqual(stub.textpages, 1)
+
+    def test_ocr_error_keeps_the_real_message(self):
+        """Review M3 (series C): the PrepareError carries the real error text, not only the exception type."""
+        with patch.object(report_prepare.fitz, "open", side_effect=RuntimeError("boom detail")):
+            with self.assertRaises(PrepareError) as ctx:
+                report_prepare._ocr_page_words(self.pdf, 1, "fra", 300)
+        self.assertIn("boom detail", str(ctx.exception))
 
     def test_table_image_without_an_ocr_hook_is_a_named_refusal(self):
         """Issue 126 plan 8 E3: a table_image with no OCR hook given is refused by name, never guessed."""
@@ -414,7 +461,7 @@ class PreparationTests(unittest.TestCase):
         doc.save(str(probe))
         doc.close()
         source.close()
-        words = report_prepare._run_ocr_words(probe, 1, [0.0, 0.0, 400.0, 120.0], "eng", 300)
+        words = report_prepare._ocr_page_words(probe, 1, "eng", 300)
         self.assertTrue(any("Mesure" in str(word[4]) for word in words))
 
     def test_missing_min_anchor_key_writes_no_elements_file(self):

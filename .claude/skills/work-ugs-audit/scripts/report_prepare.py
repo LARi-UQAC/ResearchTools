@@ -238,37 +238,106 @@ def _run_ocr_page(pdf_path: Path, page_number: int, tesseract_language: str, dpi
     return "\n".join(chunk.get("text", "") for chunk in chunks)
 
 
-def _run_ocr_words(pdf_path: Path, page_number: int, rect: Sequence[float], tesseract_language: str,
-                   dpi: int) -> List[tuple]:
+def _page_words(page: Any, tesseract_language: str, dpi: int) -> List[tuple]:
     """
-    Purpose: Read the words of one region of a page by OCR, for a table drawn as an image (plan 8, E3).
-    Details: The OCR runs on the whole page at the configured resolution, and only the words inside the region are
-        kept, with the coordinates of the page.
+    Purpose: Run the OCR of one page object and return every word it reads (review M3/M4, series C).
+    Details: Takes a page object rather than a path, so a stub page can stand in for PyMuPDF in the tests.
     Inputs:
-        pdf_path (Path): the PDF.
-        page_number (int): the 1-based page.
-        rect (Sequence[float]): the region as x0, y0, x1, y1 in points.
+        page (Any): a PyMuPDF page, or an object with the same get_textpage_ocr and get_text methods.
         tesseract_language (str): the Tesseract code(s), joined with '+' when there are several.
         dpi (int): the resolution of the OCR, in dots per inch.
     Outputs:
-        List[tuple]: the PyMuPDF word tuples (x0, y0, x1, y1, text, ...) inside the region.
+        List[tuple]: the word tuples (x0, y0, x1, y1, text, ...) of the whole page.
     Raises:
-        PrepareError: when the OCR or the page cannot be read (the message holds no text of the report).
+        None: the caller wraps any error of the page object.
+    """
+    textpage = page.get_textpage_ocr(language=tesseract_language, dpi=dpi, full=True)
+    return list(page.get_text("words", textpage=textpage))
+
+
+def _ocr_page_words(pdf_path: Path, page_number: int, tesseract_language: str, dpi: int) -> List[tuple]:
+    """
+    Purpose: OCR one page of a PDF and return its word tuples, for a table drawn as an image (plan 8, E3).
+    Inputs:
+        pdf_path (Path): the PDF.
+        page_number (int): the 1-based page.
+        tesseract_language (str): the Tesseract code(s), joined with '+' when there are several.
+        dpi (int): the resolution of the OCR, in dots per inch.
+    Outputs:
+        List[tuple]: the word tuples of the page.
+    Raises:
+        PrepareError: when the OCR fails; the message keeps the real error text (review M3).
     """
     try:
         document = fitz.open(str(pdf_path))
         try:
-            page = document[page_number - 1]
-            textpage = page.get_textpage_ocr(language=tesseract_language, dpi=dpi, full=True)
-            return list(page.get_text("words", clip=fitz.Rect(*rect), textpage=textpage))
+            return _page_words(document[page_number - 1], tesseract_language, dpi)
         finally:
             document.close()
     except Exception as error:
-        raise PrepareError(f"OCR of a table drawn as an image failed: {type(error).__name__}") from error
+        raise PrepareError(f"OCR of a table drawn as an image failed: {error}") from error
+
+
+def _words_in_rect(words: List[tuple], rect: Sequence[float]) -> List[tuple]:
+    """
+    Purpose: Keep the words whose centre lies inside a region of the page (review M4, series C).
+    Inputs:
+        words (List[tuple]): word tuples (x0, y0, x1, y1, text, ...) of the page.
+        rect (Sequence[float]): the region as x0, y0, x1, y1 in points.
+    Outputs:
+        List[tuple]: the words inside the region, in their original order.
+    Raises:
+        None.
+    """
+    x0, y0, x1, y1 = rect
+    kept = []
+    for word in words:
+        centre_x = (word[0] + word[2]) / 2
+        centre_y = (word[1] + word[3]) / 2
+        if x0 <= centre_x <= x1 and y0 <= centre_y <= y1:
+            kept.append(word)
+    return kept
+
+
+def _make_ocr_words_hook(dpi: int, page_reader: Callable[[Path, int, str, int], List[tuple]] = _ocr_page_words
+                         ) -> Callable[[Path, int, Sequence[float], str], List[tuple]]:
+    """
+    Purpose: Build the word-box OCR hook of one preparation run, which OCRs each page once and caches its words
+        (review M3, series C): two tables drawn as images on one page cost one OCR.
+    Inputs:
+        dpi (int): the resolution of the OCR, in dots per inch.
+        page_reader (Callable): reads every word of one page; the real one is _ocr_page_words.
+    Outputs:
+        Callable: ocr_words(pdf_path, page_number, rect, tesseract_language) -> words inside the rect.
+    Raises:
+        None.
+    """
+    cache: Dict[tuple, List[tuple]] = {}
+
+    def ocr_words(pdf_path: Path, page_number: int, rect: Sequence[float], tesseract_language: str) -> List[tuple]:
+        """
+        Purpose: Return the words of one region, reading the page only the first time it is asked for.
+        Inputs:
+            pdf_path (Path): the PDF.
+            page_number (int): the 1-based page.
+            rect (Sequence[float]): the region as x0, y0, x1, y1 in points.
+            tesseract_language (str): the Tesseract code(s).
+        Outputs:
+            List[tuple]: the words inside the region.
+        Raises:
+            PrepareError: when the page OCR fails.
+        """
+        key = (str(pdf_path), page_number, tesseract_language)
+        if key not in cache:
+            cache[key] = page_reader(pdf_path, page_number, tesseract_language, dpi)
+        return _words_in_rect(cache[key], rect)
+
+    return ocr_words
 
 
 def _read_table_images(elements: List[Dict[str, Any]], pdf_file: Path, hooks: PrepHooks, language: str,
-                       language_codes: Dict[str, List[str]], gap: float, min_rows: int) -> List[Dict[str, Any]]:
+                       language_codes: Dict[str, List[str]],
+                       settings: table_image.ImageSettings) -> List[Dict[str, Any]]:
     """
     Purpose: Give each table drawn as an image its Markdown rows, read by OCR, or mark it unreadable (plan 8, E3).
     Details: OCR is called only for a table_image record, so a report with none needs no OCR hook. A record with no
@@ -279,8 +348,7 @@ def _read_table_images(elements: List[Dict[str, Any]], pdf_file: Path, hooks: Pr
         hooks (PrepHooks): the word-box OCR hook.
         language (str): the report language, to choose the Tesseract codes.
         language_codes (dict): the language map of the OCR data file.
-        gap (float): the column gap in points.
-        min_rows (int): the fewest rows that make a table.
+        settings (table_image.ImageSettings): the column gap, the minimum rows and the row overlap ratio.
     Outputs:
         list[dict]: the same records; each table_image has markdown, or the status table_image_unreadable.
     Raises:
@@ -298,9 +366,11 @@ def _read_table_images(elements: List[Dict[str, Any]], pdf_file: Path, hooks: Pr
     for record in images:
         words = hooks.ocr_words(pdf_file, record["page"], record["rect"], tesseract_language)
         try:
-            record["markdown"] = table_image.words_to_markdown(words, gap, min_rows)
-        except table_image.TableImageUnreadable:
+            record["markdown"] = table_image.words_to_markdown(
+                words, settings.column_gap_pt, settings.min_rows, settings.row_overlap_ratio)
+        except table_image.TableImageUnreadable as error:
             record["status"] = "table_image_unreadable"
+            record["status_reason"] = str(error)  # counts only, never the words (review M1)
     return elements
 
 
@@ -364,8 +434,7 @@ def _default_hooks(dpi: int) -> PrepHooks:
         preflight=_run_preflight,
         ocr_page=lambda pdf_path, page_number, language: _run_ocr_page(pdf_path, page_number, language, dpi),
         find_elements=_run_find_elements,
-        ocr_words=lambda pdf_path, page_number, rect, language: _run_ocr_words(pdf_path, page_number, rect,
-                                                                               language, dpi),
+        ocr_words=_make_ocr_words_hook(dpi),
     )
 
 
@@ -505,7 +574,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     except TablesError as error:
         raise PrepareError(str(error)) from None
     try:
-        image_gap, image_min_rows = table_image.load_image_settings()
+        image_settings = table_image.load_image_settings()
     except table_image.TableImageError as error:
         raise PrepareError(str(error)) from None
 
@@ -532,7 +601,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     skip_pages = sorted(set(reasons) | set(front_skip))
     elements = hooks.find_elements(pdf_file, report_dir / settings["reports.figures_folder"], skip_pages)
     elements = _read_table_images(elements, pdf_file, hooks, language, context["ocr"]["language_codes"],
-                                  image_gap, image_min_rows)
+                                  image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],
                   json.dumps(elements, indent=2, ensure_ascii=False))
 

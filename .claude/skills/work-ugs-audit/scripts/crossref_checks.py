@@ -597,7 +597,9 @@ def run_checks(pdf: Path, pages: List[str], elements: List[Dict[str, Any]], mark
 # N5: a numeric citation written after the sentence's period. The abbreviations are data (citation_rules.json, R6).
 CITATION_RULES_PATH = SCRIPTS_DIR.parent / "assets" / "citation_rules.json"
 MISPLACED_CITATION_RE = re.compile(
-    r"(?P<word>\S*[^\W\d_])\.(?P<gap> ?)\[(?P<body>\s*\d+(?:\s*[,\u2013\u2014\-]\s*\d+)*\s*)\]")
+    # F4: the word before the period is bounded (40 characters, no space, no period, no bracket) so a long run of
+    # letters cannot make the search quadratic. F6: the gap may be a line break as well as a space.
+    r"(?P<word>[^\s.\[]{0,40}[^\W\d_])\.(?P<gap>\s?)\[(?P<body>\s*\d+(?:\s*[,\u2013\u2014\-]\s*\d+)*\s*)\]")
 
 
 def load_citation_rules(language: str, path: Optional[Path] = None) -> List[str]:

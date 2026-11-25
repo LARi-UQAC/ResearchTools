@@ -311,6 +311,14 @@ class TestCitationPlacement(unittest.TestCase):
         self.assertIn(labels["check_values"]["citation_placement"], html_text)
         self.assertIn("2", html_text)
 
+    def test_body_text_before_the_reference_heading_is_kept(self):
+        """F6: the page holding the reference heading keeps its body text before the heading."""
+        pages = ["Intro page text. [1]", "Body claim here. [2] ends.\nReferences\n[1] Fictitious Author, Title."]
+        body = ugs_assemble._body_pages(pages)
+        self.assertEqual(len(body), 2)
+        self.assertIn("Body claim here. [2] ends.", body[1])
+        self.assertNotIn("Fictitious Author", body[1])
+
     def test_each_misplaced_citation_is_annotated(self):
         annotations = ugs_assemble.citation_annotations(self.PAGES, "fr")
         self.assertEqual([(a["page"], a["quote"]) for a in annotations],

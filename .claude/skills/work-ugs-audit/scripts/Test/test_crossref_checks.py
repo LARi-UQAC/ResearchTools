@@ -491,6 +491,19 @@ class TestMisplacedCitations(unittest.TestCase):
         found = crossref_checks.misplaced_citations(["A stable. [1]", "B ok [2].", "C stable. [3]"], self.ABBREVIATIONS)
         self.assertEqual([(f["page"], f["quote"]) for f in found], [(1, "stable. [1]"), (3, "stable. [3]")])
 
+    def test_line_break_before_the_bracket_is_a_finding(self):
+        """F6: a citation on the next line after the period is still after the period."""
+        self.assertEqual(len(self._found("The loop is stable.\n[5] Then it holds.")), 1)
+
+    def test_long_token_without_spaces_is_fast_and_clean(self):
+        """F4: a 20000-character token with no space gives no finding, quickly (no quadratic scan)."""
+        import time
+        token = "a" * 20000
+        started = time.perf_counter()
+        found = self._found(token)
+        self.assertLess(time.perf_counter() - started, 1.0)
+        self.assertEqual(found, [])
+
     def test_missing_language_is_named(self):
         path = Path(tempfile.mkdtemp()) / "citation_rules.json"
         path.write_text('{"fr": {"value": ["al."], "provenance": "t"}}', encoding="utf-8")

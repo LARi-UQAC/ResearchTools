@@ -16,7 +16,7 @@ from grade_total import compute
 from pdf_annotate import annotate
 from pdf_annex import DEFAULT_LABELS, render_rows, build_html, append_annex, load_labels, render_checks
 from ref_check import check_all, _default_resolver
-from ugs_text import split_body_and_references
+from ugs_text import REF_HEADING_RE, split_body_and_references
 from ugs_tables import load_elements
 import ugs_config
 import element_labels
@@ -37,8 +37,7 @@ EXCLUDED_PAGES_KEY = "excluded_pages"
 def _body_pages(pages: List[str]) -> List[str]:
     """
     Purpose: Keep the pages before the reference list, the only pages a citation placement is judged on (N5).
-    Details: The first page whose text starts the reference list is cut from the body; its text before the
-        reference heading is lost, a small accepted limit that keeps the rule simple.
+    Details: The page holding the reference heading is kept up to that heading (F6); later pages are dropped.
     Inputs:
         pages: List[str] - the page texts of the report.
     Outputs:
@@ -48,7 +47,12 @@ def _body_pages(pages: List[str]) -> List[str]:
     """
     for index in range(1, len(pages) + 1):
         if split_body_and_references(pages[:index])[1]:
-            return pages[:index - 1]
+            kept = []
+            for line in pages[index - 1].split("\n"):  # F6: the body lines before the reference heading stay
+                if REF_HEADING_RE.match(line.strip()):
+                    break
+                kept.append(line)
+            return pages[:index - 1] + ["\n".join(kept)]
     return list(pages)
 
 

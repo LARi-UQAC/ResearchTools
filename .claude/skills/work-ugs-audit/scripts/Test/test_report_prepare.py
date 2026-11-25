@@ -1,4 +1,4 @@
-"""
+﻿"""
 Offline tests of report_prepare.py. The reports are fictitious PDFs built in a temporary folder.
 """
 import io
@@ -268,6 +268,14 @@ class PreparationTests(unittest.TestCase):
         self.assertIn("Le réseau", self.report_file("pages", "p002.md").read_text(encoding="utf-8"))
         self.assertFalse(self.report_file("excluded", "p002.md").exists())
 
+    def test_front_roles_written_to_meta(self):
+        """Issue 126 plan 10 F1: the front-matter pages are recorded in report_meta.json (fictitious list page)."""
+        list_text = "Liste des figures\nFigure 1 Schema du montage ........ 4\nFigure 2 Courbe mesuree ........ 6\nFigure 3 Bloc ........ 8"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+        prepare(self.reports, self.work, hooks=_hooks())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["front_roles"]["list_of_figures"], [2])
+        self.assertEqual(meta["front_roles"]["body_start"], 3)
     def test_elements_file_written(self):
         prepare(self.reports, self.work, hooks=_hooks())
         elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))

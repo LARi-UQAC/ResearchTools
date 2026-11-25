@@ -74,6 +74,14 @@ class FrenchFrontMatterTests(unittest.TestCase):
         self.assertEqual(roles["executive_summary"], [5])
         self.assertEqual(roles["body_start"], 6)
 
+    def test_joined_text_layer_is_still_read(self):
+        """Regression (Issue 126): the text layer of a real page is one joined line, not one line per entry."""
+        joined = "Liste des figures Figure 1 Schema du montage ........ 4 Figure 2 Courbe mesuree ........ 6 Figure 3 Bloc ........ 8 "
+        continuation = "Figure 4 Diagramme ........ 10 Figure 5 Mesure ........ 11 Figure 6 Courbe ........ 12 "
+        roles = _roles([COVER, joined, continuation, INTRO], "fr")
+        self.assertEqual(roles["list_of_figures"], [2, 3])
+        self.assertEqual(roles["body_start"], 4)
+
     def test_chapter_only_toc_is_not_a_list_of_figures(self):
         roles = _roles([COVER, TOC, INTRO], "fr")
         self.assertEqual(roles["table_of_contents"], [2])

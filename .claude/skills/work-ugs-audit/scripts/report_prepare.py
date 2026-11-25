@@ -1,4 +1,4 @@
-"""
+﻿"""
 Report preparation - gives every PDF report of a folder a stable pseudonymous id, and writes its pages, its
 metadata and its elements into the work folder.
 
@@ -26,6 +26,7 @@ for _folder in (SCRIPTS_DIR, FIGURE_REVIEW_DIR / "scripts"):
 
 import fitz  # noqa: E402
 import element_labels  # noqa: E402
+import front_pages  # noqa: E402
 import page_roles  # noqa: E402
 import text_quality  # noqa: E402
 import ugs_config  # noqa: E402
@@ -139,9 +140,11 @@ def _load_context() -> dict:
         hints = load_hints(HINTS_FILE)
         ocr = text_quality.load_ocr_settings()
         markers = page_roles.load_markers(PAGE_ROLES_FILE)
-    except (OSError, ValueError, TextQualityError, page_roles.PageRolesConfigError) as error:
+        front_matter = front_pages.load_front_matter()
+    except (OSError, ValueError, TextQualityError, page_roles.PageRolesConfigError,
+            front_pages.FrontMatterConfigError) as error:
         raise PrepareError(f"data file unreadable: {error}") from error
-    return {"hints": hints, "ocr": ocr, "markers": markers}
+    return {"hints": hints, "ocr": ocr, "markers": markers, "front_matter": front_matter}
 
 
 def _ocr_languages(language_codes: Dict[str, List[str]]) -> List[str]:
@@ -437,6 +440,10 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     small_images = page_roles.small_image_counts(pdf_file, settings["pages.small_image_max_area_ratio"])
     excluded = page_roles.excluded_pages(new_texts, small_images, context["markers"])
     reasons = {entry["page"]: entry["reason"] for entry in excluded}
+    try:
+        front_roles = front_pages.find_front_roles(new_texts, language, context["front_matter"], small_images)
+    except front_pages.FrontMatterConfigError as error:
+        raise PrepareError(str(error)) from None
 
     excluded_dir = report_dir / settings["text.excluded_folder"]
     if excluded_dir.exists():
@@ -459,7 +466,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     unreadable_pages = [entry["page"] for entry in quality if entry["empty"]]
     meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,
             "tables_dropped": _tables_dropped(report_dir),
-            "unreadable_pages": unreadable_pages}
+            "unreadable_pages": unreadable_pages, "front_roles": front_roles}
     _write_atomic(report_dir / settings["reports.meta_file_name"], json.dumps(meta, indent=2, ensure_ascii=False))
     return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages}
 

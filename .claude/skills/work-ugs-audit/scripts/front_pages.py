@@ -1,4 +1,4 @@
-﻿"""
+"""
 front_pages - which pages of a student report are its front matter (Issue 126, plan 10, requirement F1).
 
 Stage: preparation of the work folder. find_front_roles takes the text of every page and returns the 1-based pages
@@ -20,8 +20,10 @@ DATA_FILE = ASSETS_DIR / "front_matter.json"
 PAGE_ROLES_FILE = ASSETS_DIR / "page_roles.json"
 LANGUAGES = ("fr", "en")
 MARKER_KEYS = ("table_of_contents_markers", "figure_list_markers", "table_list_markers", "executive_summary_markers")
-NUMERIC_KEYS = ("heading_lines", "heading_extra_chars", "max_list_words", "min_entry_lines")
+NUMERIC_KEYS = ("heading_max_chars", "max_list_words", "min_entry_lines")
 ENTRY_LINE_PATTERN = re.compile(r"\d+\s*$")
+DOT_LEADER_PATTERN = re.compile(r"\.{3,}\s*\d{1,4}")
+HEADING_PREFIX_PATTERN = re.compile(r"^[\W\d_]+")
 SPACE_PATTERN = re.compile(r"\s+")
 WORD_PATTERN = re.compile(r"\w+")
 
@@ -155,8 +157,8 @@ def load_front_matter(path: Optional[Path] = None) -> dict:
 def _has_heading(text: str, markers: List[str], data: dict) -> bool:
     """
     Purpose:
-        Tell whether one of the marker words is the heading of a page: it sits among the first lines of the page
-        and its line carries no more than the configured extra characters beyond the marker.
+        Tell whether a marker word is the heading of a page: it starts within the first characters of the page text,
+        after any markup or numbering, and is a whole word.
 
     Inputs:
         text (str): the text layer of the page.
@@ -164,25 +166,25 @@ def _has_heading(text: str, markers: List[str], data: dict) -> bool:
         data (dict): the result of load_front_matter.
 
     Outputs:
-        bool: True when a heading line carries a marker.
+        bool: True when a marker starts within heading_max_chars characters of the normalized text.
 
     Raises:
         None.
     """
-    lines = [_normalize(line) for line in text.splitlines() if line.strip()][: data["heading_lines"]]
-    for line in lines:
-        for marker in markers:
-            norm = _normalize(marker)
-            if norm and norm in line and len(line) <= len(norm) + data["heading_extra_chars"]:
-                return True
+    norm = HEADING_PREFIX_PATTERN.sub("", _normalize(text))
+    head = norm[: data["heading_max_chars"]]
+    for marker in markers:
+        word = _normalize(marker)
+        if word and re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", head):
+            return True
     return False
 
 
 def _is_continuation(text: str, data: dict) -> bool:
     """
     Purpose:
-        Tell whether a page reads as the next page of a list: enough entry lines (text ending with a page number)
-        and not a long page.
+        Tell whether a page reads as the next page of a list: enough entries (a line ending with a page number, or a
+        dot leader followed by a page number, the text layer being joined into one line) and not a long page.
 
     Inputs:
         text (str): the text layer of the page.
@@ -194,7 +196,9 @@ def _is_continuation(text: str, data: dict) -> bool:
     Raises:
         None.
     """
-    entries = sum(1 for line in text.splitlines() if ENTRY_LINE_PATTERN.search(line.strip()))
+    by_line = sum(1 for line in text.splitlines() if ENTRY_LINE_PATTERN.search(line.strip()))
+    by_leader = len(DOT_LEADER_PATTERN.findall(text))
+    entries = max(by_line, by_leader)
     words = len(WORD_PATTERN.findall(text))
     return entries >= data["min_entry_lines"] and words <= data["max_list_words"]
 

@@ -107,6 +107,22 @@ class CountTests(unittest.TestCase):
         self.assertEqual(result["declared_figures"], 2)
         self.assertEqual(result["duplicate_numbers"], ["figure 3"])
 
+    def test_contents_mention_without_entries_is_not_found(self):
+        """Review round 1 I2 (Issue 126): a contents line 'Liste des figures ... 4' is no list; no entries gives None."""
+        contents = "Table des matieres\n1 Introduction ........ 3\nListe des figures ........ 4\nListe des tableaux ........ 5"
+        result = _counts([contents], _roles(table_of_contents=[1]), "fr")
+        self.assertIsNone(result["declared_figures"])
+        self.assertIsNone(result["declared_tables"])
+
+    def test_contents_shape_with_list_starting_mid_page_is_counted(self):
+        """Review round 1 I2, the R02 shape (fictitious): the list heading sits mid-page on the contents page and its
+        entries follow on the next page."""
+        contents = "Table des matieres\n1 Introduction ........ 3\nListe des figures ........ 4"
+        entries = "Figure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"
+        result = _counts([contents, entries], _roles(table_of_contents=[1, 2]), "fr")
+        self.assertEqual(result["declared_figures"], 3)
+        self.assertEqual(result["declared_sources"]["figures"], "table_of_contents")
+
     def test_missing_entry_key_is_named(self):
         data = json.loads((SCRIPTS.parent / "assets" / "front_matter.json").read_text(encoding="utf-8"))
         del data["figure_entry_words"]

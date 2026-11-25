@@ -202,6 +202,9 @@ def _count_kind(texts: List[str], roles: dict, role: str, heading: List[str], wo
         for match in pattern.finditer(texts[page - 1]):
             numbers.append(match.group(1))
             entry_pages.append(page)
+    if source == "table_of_contents" and not numbers:
+        # Review round 1 I2: a contents line that only names the list is no list; without entries it is not found.
+        return not_found
     seen: Dict[str, int] = {}
     for number in numbers:
         seen[number] = seen.get(number, 0) + 1

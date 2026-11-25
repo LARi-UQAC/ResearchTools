@@ -23,8 +23,8 @@ LANGUAGE_MODES = ("none", "spelling_only", "full")
 FULL_MODE = "full"
 MARKER_KEYS = ("table_of_contents_markers", "figure_list_markers", "table_list_markers", "executive_summary_markers")
 NUMERIC_KEYS = ("heading_max_chars", "max_list_words", "min_entry_lines")
+PATTERN_KEYS = ("dot_leader_pattern", "entry_start_pattern")
 ENTRY_LINE_PATTERN = re.compile(r"\d+\s*$")
-DOT_LEADER_PATTERN = re.compile(r"\.{3,}\s*\d{1,4}\b")
 HEADING_PREFIX_PATTERN = re.compile(r"^[\W\d_]+")
 SPACE_PATTERN = re.compile(r"\s+")
 WORD_PATTERN = re.compile(r"\w+")
@@ -129,6 +129,36 @@ def _numeric(data: dict, key: str, path: Path) -> int:
     return value
 
 
+def _pattern_of(data: dict, key: str, path: Path) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read a regular-expression setting stored as {value, provenance} and check that it compiles (R0, R4).
+
+    Inputs:
+        data (dict): the parsed data file.
+        key (str): the setting name.
+        path (Path): the data file, named in the error.
+
+    Outputs:
+        str: the pattern text.
+
+    Raises:
+        FrontMatterConfigError: when the entry, its value or its provenance is missing, or the pattern is invalid.
+    --------------------------------------------------------------------------
+    """
+    entry = _require(data, key, path)
+    if not isinstance(entry, dict) or not isinstance(entry.get("value"), str):
+        raise FrontMatterConfigError(f"'{key}' in {path} must be an object with a text 'value' and a 'provenance'")
+    if not isinstance(entry.get("provenance"), str) or not entry["provenance"].strip():
+        raise FrontMatterConfigError(f"'{key}' in {path} lacks its 'provenance'")
+    try:
+        re.compile(entry["value"])
+    except re.error as exc:
+        raise FrontMatterConfigError(f"'{key}.value' in {path} is not a valid pattern: {exc}") from exc
+    return entry["value"]
+
+
 def _modes_of(data: dict, path: Path) -> Dict[str, str]:
     """
     Purpose:
@@ -180,6 +210,8 @@ def load_front_matter(path: Optional[Path] = None) -> dict:
     for key in NUMERIC_KEYS:
         result[key] = _numeric(data, key, target)
     result["language_mode"] = _modes_of(data, target)
+    for key in PATTERN_KEYS:
+        result[key] = _pattern_of(data, key, target)
     return result
 
 
@@ -196,7 +228,7 @@ def page_modes(front_roles: dict, data: dict) -> Dict[int, str]:
         Dict[int, str]: 1-based page to mode, for the front pages whose role has a mode in the data file.
 
     Raises:
-        KeyError: when front_roles lacks a role named in the data file (a caller error).
+        None. A role missing from front_roles, or a None value, gives no page for it.
     """
     modes: Dict[int, str] = {}
     for role, mode in data["language_mode"].items():
@@ -248,10 +280,14 @@ def _is_continuation(text: str, data: dict) -> bool:
         None.
     """
     by_line = sum(1 for line in text.splitlines() if ENTRY_LINE_PATTERN.search(line.strip()))
-    by_leader = len(DOT_LEADER_PATTERN.findall(text))
+    by_leader = len(re.findall(data["dot_leader_pattern"], text))
     entries = max(by_line, by_leader)
     words = len(WORD_PATTERN.findall(text))
-    return entries >= data["min_entry_lines"] and words <= data["max_list_words"]
+    if words > data["max_list_words"] or entries < 1:
+        return False
+    # A list ends at its own last entry: a page opening with an entry continues the list whatever its count (I2).
+    opens_with_entry = re.match(r"\W*" + data["entry_start_pattern"], text.strip()) is not None
+    return entries >= data["min_entry_lines"] or opens_with_entry
 
 
 def _list_pages(texts: List[str], markers: List[str], taken: set, data: dict,

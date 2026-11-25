@@ -94,5 +94,13 @@
       "Appendices"
     ],
     "provenance": "Issue 126 plan 15, N4 (owner, 2026-11-25): the word that opens an appendix heading or a contents entry; an id after it is a capital letter, a roman numeral or a number"
+  },
+  "dot_leader_pattern": {
+    "value": "\\.{3,}\\s*\\d{1,4}\\b",
+    "provenance": "Issue 126 review round 1 (M3): a dot leader followed by a page number ends a contents entry; was a literal in front_pages.py"
+  },
+  "entry_start_pattern": {
+    "value": "[A-Za-zÀ-ÿ]{2,12}\\.?\\s*(?:\\d{1,3}(?:[.\\-]\\d+)*|[A-Z]\\.\\d+)(?!\\d)",
+    "provenance": "Issue 126 review round 1 (I2): a page whose text opens with an entry (a word, then its printed number) continues the list whatever its count"
   }
 }

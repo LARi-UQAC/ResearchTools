@@ -97,6 +97,13 @@ class FrenchFrontMatterTests(unittest.TestCase):
         self.assertEqual(roles["executive_summary"], [2])
         self.assertEqual(roles["body_start"], 3)
 
+    def test_last_page_with_two_entries_continues_the_list(self):
+        """Review round 1 I2 (Issue 126): a list ends at its last entry, however few entries that page holds."""
+        last = "Figure 4 Diagramme ........ 10 Figure 5 Mesure ........ 11 "
+        roles = _roles([COVER, LIST_FIG, last, INTRO], "fr")
+        self.assertEqual(roles["list_of_figures"], [2, 3])
+        self.assertEqual(roles["body_start"], 4)
+
     def test_chapter_only_toc_is_not_a_list_of_figures(self):
         roles = _roles([COVER, TOC, INTRO], "fr")
         self.assertEqual(roles["table_of_contents"], [2])

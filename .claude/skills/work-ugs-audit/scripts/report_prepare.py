@@ -255,6 +255,11 @@ def _page_words(page: Any, tesseract_language: str, dpi: int) -> List[tuple]:
     return list(page.get_text("words", textpage=textpage))
 
 
+# Exception type name -> fixed failure category, the only OCR failure detail a PrepareError carries (security).
+OCR_FAILURE_CATEGORIES = {"FileNotFoundError": "tesseract_missing", "IndexError": "page_out_of_range"}
+OCR_FAILURE_DEFAULT = "ocr_failed"
+
+
 def _ocr_page_words(pdf_path: Path, page_number: int, tesseract_language: str, dpi: int) -> List[tuple]:
     """
     Purpose: OCR one page of a PDF and return its word tuples, for a table drawn as an image (plan 8, E3).
@@ -266,7 +271,8 @@ def _ocr_page_words(pdf_path: Path, page_number: int, tesseract_language: str, d
     Outputs:
         List[tuple]: the word tuples of the page.
     Raises:
-        PrepareError: when the OCR fails; the message keeps the real error text (review M3).
+        PrepareError: when the OCR fails; the message holds a fixed failure category and the exception type name,
+            never the error text, which can carry the PDF path.
     """
     try:
         document = fitz.open(str(pdf_path))
@@ -275,7 +281,9 @@ def _ocr_page_words(pdf_path: Path, page_number: int, tesseract_language: str, d
         finally:
             document.close()
     except Exception as error:
-        raise PrepareError(f"OCR of a table drawn as an image failed: {error}") from error
+        # Security correction: the error text can hold the PDF path, so only a fixed category and the type name go out.
+        category = OCR_FAILURE_CATEGORIES.get(type(error).__name__, OCR_FAILURE_DEFAULT)
+        raise PrepareError(f"OCR of a table drawn as an image failed: {category} ({type(error).__name__})") from None
 
 
 def _words_in_rect(words: List[tuple], rect: Sequence[float]) -> List[tuple]:

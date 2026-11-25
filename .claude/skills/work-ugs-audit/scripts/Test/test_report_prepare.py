@@ -433,12 +433,26 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual([word[4] for word in words], ["dedans"])
         self.assertEqual(stub.textpages, 1)
 
-    def test_ocr_error_keeps_the_real_message(self):
-        """Review M3 (series C): the PrepareError carries the real error text, not only the exception type."""
-        with patch.object(report_prepare.fitz, "open", side_effect=RuntimeError("boom detail")):
+    def test_ocr_error_gives_a_category_and_never_the_path(self):
+        """Security correction (series C, M3): the PrepareError holds a fixed category and the type name, never the
+        error text, which can carry the PDF path (fictitious path here)."""
+        leaking = FileNotFoundError("C:/Etudiants/Fictif Dupont/rapport.pdf introuvable")
+        with patch.object(report_prepare.fitz, "open", side_effect=leaking):
             with self.assertRaises(PrepareError) as ctx:
                 report_prepare._ocr_page_words(self.pdf, 1, "fra", 300)
-        self.assertIn("boom detail", str(ctx.exception))
+        text = str(ctx.exception)
+        self.assertIn("tesseract_missing", text)
+        self.assertIn("FileNotFoundError", text)
+        self.assertNotIn("Dupont", text)
+        self.assertNotIn("Etudiants", text)
+
+    def test_unlisted_ocr_error_is_ocr_failed(self):
+        """Security correction (series C, M3): an exception type with no category is reported as ocr_failed."""
+        with patch.object(report_prepare.fitz, "open", side_effect=RuntimeError("secret detail")):
+            with self.assertRaises(PrepareError) as ctx:
+                report_prepare._ocr_page_words(self.pdf, 1, "fra", 300)
+        self.assertIn("ocr_failed", str(ctx.exception))
+        self.assertNotIn("secret detail", str(ctx.exception))
 
     def test_table_image_without_an_ocr_hook_is_a_named_refusal(self):
         """Issue 126 plan 8 E3: a table_image with no OCR hook given is refused by name, never guessed."""

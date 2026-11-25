@@ -330,6 +330,47 @@ def _list_pages(texts: List[str], markers: List[str], taken: set, data: dict,
     return sorted(found)
 
 
+def _front_region(page_texts: List[str], role_pages: set, data: dict, language: str) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Find where the front matter ends: the first page that is neither a cover, version or signature page, nor a
+        heading of a front list or summary, nor the continuation of a list. Headings are searched only before it
+        (review round 1 I4): a body page starting with "Contents" later in the report is not a front page.
+
+    Inputs:
+        page_texts (List[str]): the text of each page, in order.
+        role_pages (set): the 1-based pages with a cover, signature or version role (page_roles).
+        data (dict): the result of load_front_matter.
+        language (str): "fr" or "en".
+
+    Outputs:
+        int: the number of front pages, counted from page 1; 0 when page 1 is already body.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    list_words = [w for key in ("table_of_contents_markers", "figure_list_markers", "table_list_markers")
+                  for w in data[key][language]]
+    summary_words = data["executive_summary_markers"][language]
+    end = 0
+    after_list = False
+    for number, text in enumerate(page_texts, start=1):
+        if number in role_pages:
+            after_list = False
+        elif _has_heading(text, list_words, data):
+            after_list = True
+        elif _has_heading(text, summary_words, data):
+            after_list = False
+        elif after_list and _is_continuation(text, data):
+            pass
+        else:
+            break
+        end = number
+    return end
+
+
 def find_front_roles(page_texts: List[str], language: str, data: dict, small_images: List[int]) -> dict:
     """
     Purpose:
@@ -369,10 +410,12 @@ def find_front_roles(page_texts: List[str], language: str, data: dict, small_ima
         "cover": cover or None,
         "version_signature": signature_or_version or None,
     }
-    result["table_of_contents"] = _list_pages(page_texts, data["table_of_contents_markers"][language], taken, data, all_markers)
-    result["list_of_figures"] = _list_pages(page_texts, data["figure_list_markers"][language], taken, data, all_markers)
-    result["list_of_tables"] = _list_pages(page_texts, data["table_list_markers"][language], taken, data, all_markers)
-    summary = _list_pages(page_texts, data["executive_summary_markers"][language], taken, data, all_markers,
+    region = _front_region(page_texts, taken, data, language)
+    texts = page_texts[:region]
+    result["table_of_contents"] = _list_pages(texts, data["table_of_contents_markers"][language], taken, data, all_markers)
+    result["list_of_figures"] = _list_pages(texts, data["figure_list_markers"][language], taken, data, all_markers)
+    result["list_of_tables"] = _list_pages(texts, data["table_list_markers"][language], taken, data, all_markers)
+    summary = _list_pages(texts, data["executive_summary_markers"][language], taken, data, all_markers,
                           continues=False)
     result["executive_summary"] = summary
     last = 0

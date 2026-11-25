@@ -104,6 +104,21 @@ class FrenchFrontMatterTests(unittest.TestCase):
         self.assertEqual(roles["list_of_figures"], [2, 3])
         self.assertEqual(roles["body_start"], 4)
 
+    def test_contents_word_on_a_later_body_page_is_not_front_matter(self):
+        """Review round 1 I4 (Issue 126): a body page starting with 'Table des matieres' later in the report is not a
+        contents page: the front matter ended at the introduction."""
+        later = "Table des matieres de la section annexe\n" + " ".join(["mot"] * 40)
+        roles = _roles([COVER, TOC, INTRO, later], "fr")
+        self.assertEqual(roles["table_of_contents"], [2])
+        self.assertEqual(roles["body_start"], 3)
+
+    def test_summary_word_on_a_later_body_page_is_not_front_matter(self):
+        """Review round 1 I4 (Issue 126): 'Resume executif' starting a body page after the introduction is no summary."""
+        later = "Resume executif\nTexte du corps du rapport."
+        roles = _roles([COVER, INTRO, later], "fr")
+        self.assertIsNone(roles["executive_summary"])
+        self.assertEqual(roles["body_start"], 2)
+
     def test_chapter_only_toc_is_not_a_list_of_figures(self):
         roles = _roles([COVER, TOC, INTRO], "fr")
         self.assertEqual(roles["table_of_contents"], [2])

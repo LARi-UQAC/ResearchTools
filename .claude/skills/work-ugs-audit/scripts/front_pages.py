@@ -22,9 +22,8 @@ LANGUAGES = ("fr", "en")
 LANGUAGE_MODES = ("none", "spelling_only", "full")
 FULL_MODE = "full"
 MARKER_KEYS = ("table_of_contents_markers", "figure_list_markers", "table_list_markers", "executive_summary_markers")
-NUMERIC_KEYS = ("heading_max_chars", "max_list_words", "min_entry_lines")
-PATTERN_KEYS = ("dot_leader_pattern", "entry_start_pattern")
-ENTRY_LINE_PATTERN = re.compile(r"\d+\s*$")
+NUMERIC_KEYS = ("heading_max_chars", "max_list_words", "min_entry_lines", "front_max_words")
+PATTERN_KEYS = ("dot_leader_pattern", "entry_start_pattern", "chapter_heading_pattern")
 HEADING_PREFIX_PATTERN = re.compile(r"^[\W\d_]+")
 SPACE_PATTERN = re.compile(r"\s+")
 WORD_PATTERN = re.compile(r"\w+")
@@ -279,15 +278,41 @@ def _is_continuation(text: str, data: dict) -> bool:
     Raises:
         None.
     """
-    by_line = sum(1 for line in text.splitlines() if ENTRY_LINE_PATTERN.search(line.strip()))
+    if _opens_a_chapter(text, data):
+        # Review round 2 N2: a page opening with a chapter heading is body, never an entry of the list.
+        return False
+    entry_start = r"\W*" + data["entry_start_pattern"]
+    by_shape = sum(1 for line in text.splitlines()
+                   if re.match(entry_start, line.strip()) and re.search(r"\d+\s*$", line.strip()))
     by_leader = len(re.findall(data["dot_leader_pattern"], text))
-    entries = max(by_line, by_leader)
+    entries = max(by_shape, by_leader)
     words = len(WORD_PATTERN.findall(text))
     if words > data["max_list_words"] or entries < 1:
         return False
     # A list ends at its own last entry: a page opening with an entry continues the list whatever its count (I2).
-    opens_with_entry = re.match(r"\W*" + data["entry_start_pattern"], text.strip()) is not None
+    opens_with_entry = re.match(entry_start, text.strip()) is not None
     return entries >= data["min_entry_lines"] or opens_with_entry
+
+
+def _opens_a_chapter(text: str, data: dict) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a page opens with a chapter heading (chapitre, chapter or section followed by a number), so that
+        it is body text (review round 2 N1, N2).
+
+    Inputs:
+        text (str): the text layer of the page.
+        data (dict): the result of load_front_matter (chapter_heading_pattern).
+
+    Outputs:
+        bool: True when the stripped text starts with the chapter pattern, ignoring case.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    return re.match(data["chapter_heading_pattern"], text.strip(), re.IGNORECASE) is not None
 
 
 def _list_pages(texts: List[str], markers: List[str], taken: set, data: dict,
@@ -330,6 +355,26 @@ def _list_pages(texts: List[str], markers: List[str], taken: set, data: dict,
     return sorted(found)
 
 
+def _is_short_front(text: str, data: dict) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether an unknown page is still front matter: not a chapter opening and not longer than front_max_words.
+
+    Inputs:
+        text (str): the text layer of the page.
+        data (dict): the result of load_front_matter.
+
+    Outputs:
+        bool: True for a short page that opens no chapter.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    return len(WORD_PATTERN.findall(text)) <= data["front_max_words"] and not _opens_a_chapter(text, data)
+
+
 def _front_region(page_texts: List[str], role_pages: set, data: dict, language: str) -> int:
     """
     --------------------------------------------------------------------------
@@ -364,6 +409,9 @@ def _front_region(page_texts: List[str], role_pages: set, data: dict, language: 
         elif _has_heading(text, summary_words, data):
             after_list = False
         elif after_list and _is_continuation(text, data):
+            pass
+        elif _is_short_front(text, data):
+            # Review round 2 N1: a short page of no known kind (acknowledgements, foreword) stays in the front matter.
             pass
         else:
             break

@@ -115,5 +115,13 @@
   "appendix_id_pattern": {
     "value": "[A-Z]{1,4}|\\d{1,2}",
     "provenance": "Issue 126 review round 1 (I3): an appendix id is a capital letter group (A, B, roman numerals included) or a number of one or two digits (after a singular word only)"
+  },
+  "front_max_words": {
+    "value": 150,
+    "provenance": "Issue 126 review round 2 (N1), proposal 2026-11-25, tune on the real reports: a page with more words is body; a shorter unknown page (acknowledgements, foreword) stays in the front matter"
+  },
+  "chapter_heading_pattern": {
+    "value": "^\\W*(?:chapitre|chapter|section)\\s*\\d+",
+    "provenance": "Issue 126 review round 2 (N1, N2): a page opening with a chapter word and a number is body, never a list continuation"
   }
 }

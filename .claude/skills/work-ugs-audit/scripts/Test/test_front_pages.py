@@ -119,6 +119,22 @@ class FrenchFrontMatterTests(unittest.TestCase):
         self.assertIsNone(roles["executive_summary"])
         self.assertEqual(roles["body_start"], 2)
 
+    def test_acknowledgements_page_does_not_end_the_front_matter(self):
+        """Review round 2 N1 (Issue 126): a short unknown page (acknowledgements) between the cover and the contents
+        does not end the front matter; the body starts at the introduction."""
+        thanks = "Remerciements\nJe remercie les personnes qui ont aide a ce projet fictif."
+        roles = _roles([COVER, thanks, TOC, LIST_FIG, INTRO], "fr")
+        self.assertEqual(roles["table_of_contents"], [3])
+        self.assertEqual(roles["list_of_figures"], [4])
+        self.assertEqual(roles["body_start"], 5)
+
+    def test_short_chapter_page_after_a_list_is_not_a_continuation(self):
+        """Review round 2 N2 (Issue 126): 'Chapitre 1' opens the body; it is no entry of the list."""
+        chapter = "Chapitre 1 Introduction\nTexte court de la page fictive\n12"
+        roles = _roles([COVER, LIST_FIG, chapter, INTRO], "fr")
+        self.assertEqual(roles["list_of_figures"], [2])
+        self.assertEqual(roles["body_start"], 3)
+
     def test_chapter_only_toc_is_not_a_list_of_figures(self):
         roles = _roles([COVER, TOC, INTRO], "fr")
         self.assertEqual(roles["table_of_contents"], [2])

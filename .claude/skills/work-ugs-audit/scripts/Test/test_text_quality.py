@@ -129,6 +129,10 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(tq.normalize_text("étﬁ"), "étfi")
         self.assertEqual(tq.normalize_text("ﬀ"), "ff")
 
+    def test_decomposed_grave_accent_is_composed(self):
+        """N1, cause a: e followed by a combining grave becomes the single letter e-grave (the heading of R01 is already composed; this pins it)."""
+        self.assertEqual(tq.normalize_text("règlementation"), "règlementation")
+
     def test_plain_text_is_unchanged(self):
         """Text with no ligature and no decomposed letter comes back identical."""
         self.assertEqual(tq.normalize_text("Rapport fictif, 2 pages."), "Rapport fictif, 2 pages.")

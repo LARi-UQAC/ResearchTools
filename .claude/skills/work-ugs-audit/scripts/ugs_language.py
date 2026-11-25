@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -274,7 +275,8 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
     rejected = 0
     rejected_correct = 0
     seen = set()
-    accepted_forms = {normalize(word) for word in (accepted or ())}
+    # F3: compared case-folded, and a quote is refused when any of its words is an accepted spelling.
+    accepted_words = {normalize(word).casefold() for word in (accepted or ())}
     page_annotations = []
     
     for f in findings:
@@ -296,7 +298,9 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
 
         # N1: a spelling finding is refused when its quote is an accepted spelling (either form of a 1990 reform
         # pair) or when its proposal equals the quote: the word is correct, so a finding on it is never a fault.
-        if code == spelling_code_value and (norm_quote in accepted_forms or normalize(f.get("proposed", "")) == norm_quote):
+        quote_words = re.findall(r"\w+", norm_quote.casefold())
+        same_word = normalize(f.get("proposed", "")).casefold() == norm_quote.casefold()
+        if code == spelling_code_value and (same_word or any(word in accepted_words for word in quote_words)):
             rejected_correct += 1
             continue
             

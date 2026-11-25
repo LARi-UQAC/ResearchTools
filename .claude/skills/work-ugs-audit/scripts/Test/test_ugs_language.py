@@ -287,6 +287,26 @@ class TestSpellingGuard(unittest.TestCase):
         self.assertIn("règlementation", accepted)
         self.assertIn("réglementation", accepted)
 
+    def test_capitalised_accepted_word_is_refused(self):
+        """F3: a capitalised accepted spelling at the start of a sentence is the same word."""
+        finding = {"code": "SP", "quote": "Règlementation", "proposed": "Réglementation", "reason": "fictitious"}
+        rec = self._record([finding], "Règlementation des fictives règles.")
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_accepted_word_inside_a_multi_word_quote_is_refused(self):
+        """F3: an accepted word of a multi-word quote is recognised (la règlementation)."""
+        finding = {"code": "SP", "quote": "la règlementation", "proposed": "la réglementation", "reason": "fictitious"}
+        rec = self._record([finding], "Voir la règlementation fictive.")
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_plural_accepted_forms_are_data(self):
+        from ugs_language import load_accepted, ACCEPTED_SPELLINGS_PATH
+        accepted = load_accepted("fr", ACCEPTED_SPELLINGS_PATH)
+        self.assertIn("règlementations", accepted)
+        self.assertIn("réglementations", accepted)
+
     def test_missing_language_in_accepted_file_is_named(self):
         from ugs_language import load_accepted, LanguageDataError
         path = Path(tempfile.mkdtemp()) / "accepted_spellings.json"

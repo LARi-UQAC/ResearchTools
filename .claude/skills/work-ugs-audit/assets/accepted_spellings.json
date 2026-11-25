@@ -3,7 +3,9 @@
     "value": [
       ["règlementation", "réglementation"],
       ["règlementaire", "réglementaire"],
-      ["évènement", "événement"]
+      ["évènement", "événement"],
+      ["règlementations", "réglementations"],
+      ["règlementaires", "réglementaires"]
     ],
     "provenance": "The spelling reform of 1990 (Rectifications orthographiques du français, accepted by the Académie française in 1990): each pair holds the traditional form and the reformed form, both correct. Seed pairs proposed 2026-11-25 from the diagnosis of report R01 (the heading of its section 2.2.3 carries the first form); the professor may add pairs"
   },

@@ -100,6 +100,14 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(result["missing_figure_numbers"], ["3"])
         self.assertEqual(result["extra_figure_numbers"], ["5"])
 
+    def test_letter_and_dash_numbers_match_on_both_sides(self):
+        """Review round 1 I1 (Issue 126): declared 'A.1' and '2-1' against titles 'Figure A.1' and 'Figure 2-1' are ok."""
+        declared = _declared(2, ["A.1", "2-1"])
+        elements = [_element("figure", "Figure A.1 Annexe"), _element("figure", "Figure 2-1 Schema")]
+        result = count_check.compare_counts(declared, elements)
+        self.assertEqual(result["figure_count_status"], "ok")
+        self.assertEqual(result["missing_figure_numbers"], [])
+
     def test_more_extracted_than_declared_gives_both_numbers(self):
         declared = _declared(1, ["1"])
         elements = [_element("figure", "Figure 1. A"), _element("figure", "Figure 2. B")]

@@ -83,6 +83,45 @@ def load_entry_settings(path: Optional[Path] = None) -> dict:
     return result
 
 
+def normalize_number(text: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Put a printed number in the one form both sides of a count comparison use: upper case, dots not dashes.
+
+    Inputs:
+        text (str): a number as printed in a list entry or in an element title, for example "2-1" or "a.1".
+
+    Outputs:
+        str: the normalized number, for example "2.1" and "A.1".
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    return text.strip().replace("-", ".").upper()
+
+
+def entry_pattern(words: List[str], number_pattern: str) -> "re.Pattern":
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Public form of the entry pattern: a marker word, an optional dot, then the printed number (group 1).
+
+    Inputs:
+        words (List[str]): the entry words of the kind.
+        number_pattern (str): the printed-number pattern from the data file.
+
+    Outputs:
+        re.Pattern: a case-insensitive pattern.
+
+    Raises:
+        re.error: when the number pattern is not a valid regular expression.
+    --------------------------------------------------------------------------
+    """
+    return _entry_pattern(words, number_pattern)
+
+
 def _entry_pattern(words: List[str], number_pattern: str) -> "re.Pattern":
     """
     Purpose:

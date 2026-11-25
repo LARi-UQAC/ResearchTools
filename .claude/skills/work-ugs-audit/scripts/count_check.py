@@ -9,7 +9,7 @@ table_image counts as a table, a logo as nothing. The printed numbers come from 
 
 from typing import Any, Dict, List
 
-import crossref_checks
+import front_matter
 
 STATUS_OK = "ok"
 STATUS_MISMATCH = "mismatch"
@@ -18,46 +18,65 @@ FIGURE_TYPES = ("figure",)
 TABLE_TYPES = ("table", "table_image")
 
 
-def _numbers_text(numbers: List[tuple]) -> List[str]:
+def _title_numbers(records: List[Dict[str, Any]], kind: str, settings: Dict[str, Any]) -> List[str]:
     """
+    --------------------------------------------------------------------------
     Purpose:
-        Turn the numbers read from titles, tuples such as (2, 1), into the printed strings such as "2.1".
+        Read the printed number of each element title with the same pattern the declared list uses (plan 5), so both
+        sides meet in one form.
 
     Inputs:
-        numbers (List[tuple]): numbers as crossref_checks.element_numbers returns them.
+        records (List[dict]): the element records of one type; the title is a dict with "text", or a plain string.
+        kind (str): "figure" or "table", which selects the entry words.
+        settings (dict): the result of front_matter.load_entry_settings.
 
     Outputs:
-        List[str]: the dotted strings, in the order given.
+        List[str]: the normalized numbers, in document order; a title with no number contributes nothing.
 
     Raises:
-        None.
+        re.error: when the number pattern is not a valid regular expression.
+    --------------------------------------------------------------------------
     """
-    return [".".join(str(part) for part in number) for number in numbers]
+    words = [w for lang in ("fr", "en") for w in settings[f"{kind}_entry_words"][lang]]
+    pattern = front_matter.entry_pattern(words, settings[front_matter.NUMBER_PATTERN_KEY])
+    numbers: List[str] = []
+    for record in records:
+        title = record.get("title")
+        text = title.get("text") if isinstance(title, dict) else title
+        if not isinstance(text, str):
+            continue
+        match = pattern.search(text)
+        if match:
+            numbers.append(front_matter.normalize_number(match.group(1)))
+    return numbers
 
 
-def _kind_result(declared_count: Any, declared_numbers: Any, records: List[Dict[str, Any]], kind: str) -> dict:
+def _kind_result(declared_count: Any, declared_numbers: Any, records: List[Dict[str, Any]], kind: str,
+                 settings: Dict[str, Any]) -> dict:
     """
+    --------------------------------------------------------------------------
     Purpose:
         Compare the declared and extracted counts and numbers of one type.
 
     Inputs:
         declared_count (int or None): the declared count; None when the list was not found.
-        declared_numbers (list of str or None): the declared printed numbers.
+        declared_numbers (list of str or None): the declared printed numbers, as the list printed them.
         records (List[dict]): the element records of this type.
-        kind (str): "figure" or "table", the marker list used to read the titles.
+        kind (str): "figure" or "table".
+        settings (dict): the result of front_matter.load_entry_settings.
 
     Outputs:
-        dict: extracted, status, missing and extra numbers.
+        dict: extracted, status, missing and extra numbers (normalized).
 
     Raises:
-        crossref_checks.CrossrefConfigError: when the marker list of the type is missing.
+        re.error: when the number pattern is not a valid regular expression.
+    --------------------------------------------------------------------------
     """
-    as_kind = [dict(record, element_type=kind) for record in records]
-    numbers = _numbers_text(crossref_checks.element_numbers(as_kind, kind))
+    numbers = _title_numbers(records, kind, settings)
     extracted = len(records)
     if declared_count is None:
         return {"extracted": extracted, "status": STATUS_NOT_FOUND, "missing": [], "extra": []}
-    declared_set = list(declared_numbers or [])
+    declared_set = [front_matter.normalize_number(n) for n in (declared_numbers or [])]
     missing = [number for number in declared_set if number not in numbers]
     extra = [number for number in numbers if number not in declared_set]
     same = extracted == declared_count and not missing and not extra
@@ -85,8 +104,11 @@ def compare_counts(declared: Dict[str, Any], elements: List[Dict[str, Any]]) -> 
     """
     figures = [e for e in elements if e.get("element_type") in FIGURE_TYPES]
     tables = [e for e in elements if e.get("element_type") in TABLE_TYPES]
-    fig = _kind_result(declared.get("declared_figures"), declared.get("declared_figure_numbers"), figures, "figure")
-    tab = _kind_result(declared.get("declared_tables"), declared.get("declared_table_numbers"), tables, "table")
+    settings = front_matter.load_entry_settings()
+    fig = _kind_result(declared.get("declared_figures"), declared.get("declared_figure_numbers"), figures, "figure",
+                       settings)
+    tab = _kind_result(declared.get("declared_tables"), declared.get("declared_table_numbers"), tables, "table",
+                       settings)
     return {
         "declared_figures": declared.get("declared_figures"),
         "extracted_figures": fig["extracted"],

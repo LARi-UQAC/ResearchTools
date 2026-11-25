@@ -192,6 +192,7 @@ def _result(records: Dict[int, dict]) -> Dict[str, Any]:
         "annotations": annotations,
         "rejected": sum(records[number]["rejected"] for number in records),
         "rejected_correct": sum(records[number].get("rejected_correct", 0) for number in records),
+        "dropped_scope": sum(records[number].get("dropped_scope", 0) for number in records),
         "not_run": [number for number in sorted(records) if records[number]["not_run"]],
     }
 
@@ -286,8 +287,10 @@ def language_report(
         else:
             records[page_num] = _answer_record(answer, page_num, page_text, valid_codes, spelling_value, accepted)
             if mode == SPELLING_ONLY_PAGE_MODE:
-                records[page_num]["annotations"] = [a for a in records[page_num]["annotations"]
-                                                    if a["code"] == spelling_value]
+                kept = [a for a in records[page_num]["annotations"] if a["code"] == spelling_value]
+                # M1: the findings of another code are dropped by the page's scope, and the count is kept.
+                records[page_num]["dropped_scope"] = len(records[page_num]["annotations"]) - len(kept)
+                records[page_num]["annotations"] = kept
         if on_page is not None:
             on_page(page_num, _partial(records))
         

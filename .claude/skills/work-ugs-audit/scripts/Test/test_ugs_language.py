@@ -274,6 +274,14 @@ class TestPageModes(unittest.TestCase):
                                               page_modes={2: "spelling_only"})
         self.assertEqual([a["code"] for a in result["annotations"]], ["SP"])
 
+    def test_dropped_scope_counts_the_non_spelling_findings(self):
+        """Review round 1 M1 (Issue 126): the findings dropped on a spelling-only page are counted in the result."""
+        call = FakeCall([{"findings": []}, {"findings": [self.spelling, self.grammar]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en",
+                                              page_modes={2: "spelling_only"})
+        self.assertEqual(result["dropped_scope"], 1)
+        self.assertEqual([a["code"] for a in result["annotations"]], ["SP"])
+
     def test_no_map_is_unchanged(self):
         call = FakeCall([{"findings": []}, {"findings": [self.spelling, self.grammar]}])
         result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en")

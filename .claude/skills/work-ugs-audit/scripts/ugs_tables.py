@@ -245,7 +245,8 @@ def tables_on_page(elements: List[Dict[str, Any]], page: int) -> List[Dict[str, 
 
 
 def enrich_page_text(text: str, tables: List[Dict[str, Any]], language: str,
-                     min_anchor_chars: Optional[int] = None) -> str:
+                     min_anchor_chars: Optional[int] = None,
+                     table_texts: Optional[Dict[str, str]] = None) -> str:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -275,7 +276,7 @@ def enrich_page_text(text: str, tables: List[Dict[str, Any]], language: str,
     --------------------------------------------------------------------------
     """
     minimum = load_min_anchor_chars() if min_anchor_chars is None else min_anchor_chars
-    texts = load_table_text(language)
+    texts = load_table_text(language) if table_texts is None else table_texts
     haystack = _key(text)
     blocks = []
     for table in tables:

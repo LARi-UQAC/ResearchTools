@@ -31,7 +31,7 @@ import text_quality  # noqa: E402
 import ugs_config  # noqa: E402
 from figure_extract import ELEMENT_SETTING_KEYS, extract_elements  # noqa: E402
 from text_quality import OcrUnavailable, TextQualityError  # noqa: E402
-from ugs_tables import TablesError, enrich_page_text, load_min_anchor_chars, tables_on_page  # noqa: E402
+from ugs_tables import TablesError, enrich_page_text, load_min_anchor_chars, load_table_text, tables_on_page  # noqa: E402
 from ugs_text import LanguageUndecidable, detect_language, load_hints  # noqa: E402
 
 EXIT_OK = 0
@@ -39,6 +39,7 @@ EXIT_FAILURE = 1
 EXIT_REFUSAL = 2
 IDS_FILE_NAME = "ids.json"
 PAGES_FOLDER = "pages"
+TABLE_STATS_FILE = "table_extraction.json"
 PAGE_FILE_PREFIX = "p"
 ASSETS_DIR = SCRIPTS_DIR.parent / "assets"
 HINTS_FILE = ASSETS_DIR / "language_hints.json"
@@ -229,6 +230,28 @@ def _run_ocr_page(pdf_path: Path, page_number: int, tesseract_language: str, dpi
     return "\n".join(chunk.get("text", "") for chunk in chunks)
 
 
+def _tables_dropped(report_dir: Path) -> int:
+    """
+    Purpose: Read how many tables the element extraction dropped for having no readable cells (F0).
+    Inputs:
+        report_dir (Path): the report folder, holding TABLE_STATS_FILE once the extraction has run.
+    Outputs:
+        int - the count; 0 when the extraction wrote no statistics file.
+    Raises:
+        PrepareError: the statistics file is unreadable or holds no whole number.
+    """
+    path = report_dir / TABLE_STATS_FILE
+    if not path.exists():
+        return 0
+    try:
+        value = json.loads(path.read_text(encoding="utf-8")).get("tables_dropped")
+    except (OSError, ValueError, AttributeError) as error:
+        raise PrepareError(f"{TABLE_STATS_FILE} is unreadable") from error
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise PrepareError(f"{TABLE_STATS_FILE} holds no whole number of dropped tables")
+    return value
+
+
 def _run_find_elements(pdf_path: Path, figures_dir: Path, skip_pages: List[int]) -> List[Dict[str, Any]]:
     """
     Purpose: Extract the elements of a PDF with figure-review's extract_elements, the settings and the markers read
@@ -247,7 +270,10 @@ def _run_find_elements(pdf_path: Path, figures_dir: Path, skip_pages: List[int])
         markers = element_labels.load_markers(ELEMENT_MARKERS_FILE)
     except (OSError, ValueError, element_labels.MarkerError) as error:
         raise PrepareError("the element markers file is unreadable or incomplete") from error
-    return extract_elements(pdf_path, figures_dir, settings, markers, skip_pages=skip_pages)
+    stats: Dict[str, Any] = {}
+    records = extract_elements(pdf_path, figures_dir, settings, markers, skip_pages=skip_pages, stats=stats)
+    _write_atomic(figures_dir.parent / TABLE_STATS_FILE, json.dumps(stats, indent=2))
+    return records
 
 
 def _default_hooks(dpi: int) -> PrepHooks:
@@ -399,6 +425,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     # refuses the preparation with nothing on disk for it, instead of failing midway through the pages.
     try:
         minimum_anchor = load_min_anchor_chars()
+        table_texts = load_table_text(language)
     except TablesError as error:
         raise PrepareError(str(error)) from None
 
@@ -427,10 +454,11 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
             _write_atomic(excluded_dir / page_path.name, texts[number - 1])
         else:
             _write_atomic(page_path, enrich_page_text(text, tables_on_page(elements, number), language,
-                                                      minimum_anchor))
+                                                      minimum_anchor, table_texts))
 
     unreadable_pages = [entry["page"] for entry in quality if entry["empty"]]
     meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,
+            "tables_dropped": _tables_dropped(report_dir),
             "unreadable_pages": unreadable_pages}
     _write_atomic(report_dir / settings["reports.meta_file_name"], json.dumps(meta, indent=2, ensure_ascii=False))
     return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages}

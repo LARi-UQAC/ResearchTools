@@ -469,6 +469,34 @@ def _vector_text_sizes(page: "fitz.Page", rect: "fitz.Rect") -> List[float]:
     return text_sizes
 
 
+def _usable_tables(tables: List[Any]) -> Tuple[List[Tuple["fitz.Rect", str]], int]:
+    """
+    Purpose: Keep the tables PyMuPDF can read and count the others (F0). A table with no cells, which PyMuPDF
+        builds from a table box holding no grid, has a lazy bbox that raises ValueError; such a table is dropped.
+    Inputs:
+        tables: List[Any] - the Table objects of one page, as find_tables returns them.
+    Outputs:
+        Tuple[List[Tuple[fitz.Rect, str]], int] - the (rectangle, Markdown) of each readable table, and the number
+            of tables dropped.
+    Raises:
+        None: a ValueError from one table is counted, never raised.
+    """
+    kept: List[Tuple["fitz.Rect", str]] = []
+    dropped = 0
+    for table in tables:
+        if not getattr(table, "cells", None):
+            dropped += 1
+            continue
+        try:
+            rect = fitz.Rect(table.bbox)
+            markdown = table.to_markdown() or ""
+        except ValueError:
+            dropped += 1
+            continue
+        kept.append((rect, markdown))
+    return kept, dropped
+
+
 def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
                markers: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -488,8 +516,8 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
     """
     blocks = page.get_text("blocks")
     words = page.get_text("words")
-    tables = page.find_tables().tables
-    table_boxes = [fitz.Rect(table.bbox) for table in tables]
+    tables, tables_dropped = _usable_tables(page.find_tables().tables)
+    table_boxes = [rect for rect, _markdown in tables]
 
     raster = [(fitz.Rect(img["bbox"]), True) for img in page.get_image_info()]
     vector_rects = [path["rect"] for path in page.get_drawings()
@@ -508,7 +536,8 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
         "height": page.rect.height,
         "blocks": blocks,
         "words": words,
-        "tables": [(fitz.Rect(table.bbox), table.to_markdown() or "") for table in tables],
+        "tables": tables,
+        "tables_dropped": tables_dropped,
         "regions": figures,
     }
 
@@ -621,7 +650,7 @@ def _take_title(available: List[tuple], rect: "fitz.Rect", element_type: str,
 
 
 def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers: Dict[str, Any],
-                     skip_pages: Iterable[int] = ()) -> List[Dict[str, Any]]:
+                     skip_pages: Iterable[int] = (), stats: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Purpose: Extract the elements of a PDF with a type: figures, tables and logos, with their titles,
         legends and notes, so that a table is never judged as a figure (spec R1 to R3).
@@ -656,6 +685,8 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
     try:
         scans = [_scan_page(doc[number - 1], number, settings, markers)
                  for number in range(1, doc.page_count + 1) if number not in skipped]
+        if stats is not None:  # F0: tables dropped for having no readable cells, surfaced by the caller
+            stats["tables_dropped"] = sum(scan["tables_dropped"] for scan in scans)
 
         pending: List[Dict[str, Any]] = []
         for scan in scans:

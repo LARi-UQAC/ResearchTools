@@ -297,6 +297,26 @@ class PreparationTests(unittest.TestCase):
         self.assertIn("tables.min_anchor_chars", str(ctx.exception))
         self.assertFalse(list(self.work.rglob("elements.json")))
 
+    def test_missing_table_text_language_writes_no_elements_file(self):
+        """F2: a language with no table text refuses the report before any write of its elements."""
+        cfg = self.work.parent / "table_text_en_only.json"
+        cfg.write_text(json.dumps({"en": {"heading": {"value": "## Table {element_id} (detected)", "provenance": "t"},
+                                          "page_line": {"value": "Page {page}", "provenance": "t"}}}), encoding="utf-8")
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        with patch.object(ugs_tables, "TABLE_TEXT_PATH", cfg):
+            with self.assertRaises(PrepareError) as ctx:
+                prepare(self.reports, self.work, hooks=_hooks())
+        self.assertIn("'fr'", str(ctx.exception))
+        self.assertFalse(list(self.work.rglob("elements.json")))
+
+    def test_tables_dropped_is_read_from_the_extraction_file(self):
+        """F0: the count of tables dropped by the extraction is surfaced in report_meta.json, 0 when none."""
+        report_dir = self.work / "R01"
+        report_dir.mkdir(parents=True)
+        self.assertEqual(report_prepare._tables_dropped(report_dir), 0)
+        (report_dir / report_prepare.TABLE_STATS_FILE).write_text(json.dumps({"tables_dropped": 2}), encoding="utf-8")
+        self.assertEqual(report_prepare._tables_dropped(report_dir), 2)
+
     def test_second_run_changes_nothing(self):
         prepare(self.reports, self.work, hooks=_hooks())
         first_files = _snapshot(self.work)

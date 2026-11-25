@@ -1,4 +1,5 @@
 import json
+import re
 import os
 from pathlib import Path
 from typing import Callable, List, Dict, Any, Optional, Tuple
@@ -31,6 +32,7 @@ CITATION_CHECK_ID = crossref_checks.CITATION_CHECK_ID
 FIGURE_COUNT_CHECK_ID = crossref_checks.FIGURE_COUNT_CHECK_ID
 TABLE_COUNT_CHECK_ID = crossref_checks.TABLE_COUNT_CHECK_ID
 APPENDIX_CHECK_ID = crossref_checks.APPENDIX_CHECK_ID
+REFERENCES_LINE_RE = re.compile(r"^(?:\d{1,2}\.?\s*)?(?:References|Références|Bibliographie)\s*$", re.IGNORECASE)
 APPENDIX_STATUS = {"ok": "ok", "not_ok": "not_ok", "not_applicable": "not_applicable"}
 CITATION_CODE = "CIT"
 CITATION_KIND = "citation"
@@ -129,6 +131,25 @@ def count_rows(meta: dict) -> List[dict]:
     return rows
 
 
+def _plain_line(line: str) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Remove the markup of a Markdown line (heading marks, bold, italics, table bars) before a heading test.
+
+    Inputs:
+        line (str): one line of a page text.
+
+    Outputs:
+        str: the stripped line.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    return re.sub(r"[#*_|]", "", line).strip()
+
+
 def appendix_row(pages: List[str], meta: dict) -> dict:
     """
     --------------------------------------------------------------------------
@@ -149,7 +170,7 @@ def appendix_row(pages: List[str], meta: dict) -> dict:
     """
     roles = meta.get("front_roles") or {}
     end_start = next((index + 1 for index, text in enumerate(pages)
-                      if any(REF_HEADING_RE.match(line.strip()) for line in text.splitlines())), None)
+                      if any(REFERENCES_LINE_RE.match(_plain_line(line)) for line in text.splitlines())), None)
     result = crossref_checks.appendix_check(pages, roles.get("table_of_contents"), end_start,
                                             front_matter.load_appendix_markers())
     status = APPENDIX_STATUS[result["status"]]

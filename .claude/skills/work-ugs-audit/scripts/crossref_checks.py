@@ -676,7 +676,7 @@ def _appendix_pattern(markers: List[str], line_start: bool) -> "re.Pattern":
     --------------------------------------------------------------------------
     """
     words = "|".join(re.escape(word) for word in sorted(markers, key=len, reverse=True))
-    anchor = r"(?:^|\n)[#*_|\s]*" if line_start else r"(?<!\w)"
+    anchor = r"(?:^|\n)[#*_|\s]*(?:\d{1,2}\.?\s*)?" if line_start else r"(?<!\w)"
     return re.compile(anchor + r"(?i:" + words + r")\s+(?P<id>" + APPENDIX_ID_PATTERN + r")(?![A-Za-z0-9])",
                       re.MULTILINE)
 

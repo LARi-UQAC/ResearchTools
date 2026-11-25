@@ -352,6 +352,14 @@ class TestCitationPlacement(unittest.TestCase):
         self.assertIn(labels["check_values"]["appendices"], html_text)
         self.assertIn("B", html_text)
 
+    def test_bold_numbered_references_heading_starts_the_end(self):
+        """Regression (Issue 126, real report): '## **10. Références**' starts the end, so an appendix after it is found."""
+        pages = ["Table des matieres\nAnnexe A - Plans ........ 40", "## **10. Références**\nSource.",
+                 "## **11. ANNEXE A: Plans**\nDetail."]
+        row = ugs_assemble.appendix_row(pages, {"front_roles": {"table_of_contents": [1]}})
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["detail"], {"missing": [], "extra": []})
+
     def test_body_text_before_the_reference_heading_is_kept(self):
         """F6: the page holding the reference heading keeps its body text before the heading."""
         pages = ["Intro page text. [1]", "Body claim here. [2] ends.\nReferences\n[1] Fictitious Author, Title."]

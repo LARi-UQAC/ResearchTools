@@ -544,6 +544,14 @@ class TestAppendixCheck(unittest.TestCase):
         self.assertEqual(result["status"], "not_ok")
         self.assertEqual(result["unlisted_present"], ["C"])
 
+    def test_numbered_bold_heading_at_the_end_is_found(self):
+        """Regression (Issue 126, real report): the heading reads '## **11. ANNEXE A: Plans**' or '## **Annexe 1**'."""
+        toc = ["Table des matieres\nAnnexe A - Plans ........ 40\nAnnexe 1 ........ 41"]
+        end = ["## **10. References**\nSource.", "## **11. ANNEXE A: Plans**\nDetail.", "## **Annexe 1**\nNotes."]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.MARKERS)
+        self.assertEqual(result["present"], ["A", "1"])
+        self.assertEqual(result["status"], "ok")
+
     def test_none_listed_none_found_is_not_applicable(self):
         result = crossref_checks.appendix_check(["Table des matieres\n1 Intro ........ 3", "References\nSource."],
                                                 [1], 2, self.MARKERS)

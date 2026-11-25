@@ -1,0 +1,38 @@
+{
+  "table_of_contents_markers": {
+    "fr": ["table des matieres"],
+    "en": ["table of contents", "contents"],
+    "provenance": "Issue 126 plan 10, F1: heading words of a table of contents in each language; the page is read by its first lines"
+  },
+  "figure_list_markers": {
+    "fr": ["liste des figures"],
+    "en": ["list of figures"],
+    "provenance": "Issue 126 plan 10, F1: heading words of the list of figures in each language"
+  },
+  "table_list_markers": {
+    "fr": ["liste des tableaux"],
+    "en": ["list of tables"],
+    "provenance": "Issue 126 plan 10, F1: heading words of the list of tables in each language"
+  },
+  "executive_summary_markers": {
+    "fr": ["sommaire executif", "resume executif"],
+    "en": ["executive summary"],
+    "provenance": "Issue 126 plan 10, F1: heading words of the executive summary in each language"
+  },
+  "heading_lines": {
+    "value": 3,
+    "provenance": "proposal 2026-11-25: a heading sits among the first three non-empty lines of its page"
+  },
+  "heading_extra_chars": {
+    "value": 20,
+    "provenance": "proposal 2026-11-25: a heading line may carry this many characters beyond its marker (a suffix such as a continuation mark)"
+  },
+  "max_list_words": {
+    "value": 600,
+    "provenance": "proposal 2026-11-25, tune on the counts of the real reports: a list page holds fewer words than a body page"
+  },
+  "min_entry_lines": {
+    "value": 3,
+    "provenance": "proposal 2026-11-25, tune on the counts of the real reports: entry lines (text ending with a page number) that make a continuation page"
+  }
+}

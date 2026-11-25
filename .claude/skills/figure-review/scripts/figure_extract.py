@@ -23,6 +23,7 @@ ELEMENT_SETTING_KEYS = (
     "header_band_pt",
     "repeat_min_pages",
     "logo_size_tolerance_pt",
+    "table_image_min_height_pt",
 )
 # Element id prefix per element type: F01 figures, T01 tables, L01 logos.
 ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "table_image": "T", "logo": "L"}
@@ -698,27 +699,34 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 kind = "logo" if _is_repeated_logo(rect, scan["height"], scans, settings) else "figure"
                 items.append({"kind": kind, "rect": rect, "markdown": None, "raster": is_raster})
             items.sort(key=lambda item: (item["rect"].y0, item["rect"].x0))
-
-            available = list(scan["blocks"])
             for item in items:
                 item["scan"] = scan
                 item["title"] = None
                 item["notes"] = []
                 item["legend"] = ""
-                if item["kind"] in ("figure", "table"):
-                    item["title"] = _take_title(available, item["rect"], item["kind"], markers)
-                if item["kind"] == "figure" and item["title"] is None:
-                    # Plan 7 (E4): a region with no figure title but a table title is a table drawn as a picture.
-                    table_title = _take_title(available, item["rect"], "table", markers)
-                    if table_title is not None:
-                        item["kind"] = "table_image"
-                        item["title"] = table_title
-                if item["kind"] in ("table", "table_image"):
+
+            # Review I1 (series C): ruled tables claim their titles first, so no region can take the title of a
+            # table that lies beside it on the page.
+            available = list(scan["blocks"])
+            for item in items:
+                if item["kind"] == "table":
+                    item["title"] = _take_title(available, item["rect"], "table", markers)
                     item["notes"] = element_labels.find_notes(scan["blocks"], item["rect"], markers)
+            for item in items:
                 if item["kind"] == "figure":
-                    title_text = item["title"]["text"] if item["title"] else None
-                    item["legend"] = element_labels.find_legend(scan["words"], item["rect"], title_text)
-                pending.append(item)
+                    item["title"] = _take_title(available, item["rect"], "figure", markers)
+                    # Plan 7 (E4) and review I1: a region with no figure title becomes a table_image only when it
+                    # is a raster or tall enough to hold text lines; a thin vector band stays a figure.
+                    if item["title"] is None and (item["raster"] or item["rect"].height >= settings["table_image_min_height_pt"]):
+                        table_title = _take_title(available, item["rect"], "table", markers)
+                        if table_title is not None:
+                            item["kind"] = "table_image"
+                            item["title"] = table_title
+                            item["notes"] = element_labels.find_notes(scan["blocks"], item["rect"], markers)
+                    if item["kind"] == "figure":
+                        title_text = item["title"]["text"] if item["title"] else None
+                        item["legend"] = element_labels.find_legend(scan["words"], item["rect"], title_text)
+            pending.extend(items)
 
         counters = {prefix: 0 for prefix in ELEMENT_ID_PREFIX.values()}
         threshold = settings["background_threshold"]

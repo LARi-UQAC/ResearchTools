@@ -26,6 +26,7 @@ SETTINGS = {
     "logo_max_area_pt2": 20000,
     "header_band_pt": 70,
     "repeat_min_pages": 3,
+    "table_image_min_height_pt": 24,
     "logo_size_tolerance_pt": 1.0,
 }
 ELEMENT_SETTING_KEYS = tuple(SETTINGS)
@@ -262,6 +263,22 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["table"])
+
+    def test_untitled_thin_band_does_not_steal_a_ruled_table_title(self):
+        # Review I1 (series C): a 19 point vector band with no title, directly above a ruled table whose
+        # title lies between them. The table claims its title first; the band is too thin for a table_image.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 300, 300, 319)
+        _centred_text(page, 200, 334, "Tableau 2 : Essais")
+        _ruled_table(page, 72, 340, 120, 25, [["Mesure", "Valeur"],
+                                               ["Masse", "12.5"]])
+        self._save(doc)
+        records = self._extract()
+        table = next(r for r in records if r["element_type"] == "table")
+        self.assertEqual(table["title"]["text"], "Tableau 2 : Essais")
+        self.assertNotIn("table_image", [r["element_type"] for r in records])
+        self.assertEqual([r["element_type"] for r in records], ["figure", "table"])
 
     def test_figure_title_keeps_a_figure(self):
         doc = fitz.open()

@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS.parent.parent / "figure-review" / "scripts" / "Te
 
 import fitz  # noqa: E402
 import report_prepare  # noqa: E402
+import ugs_tables  # noqa: E402
 import ugs_config  # noqa: E402
 from report_prepare import PrepareError, main, prepare, skipped_count  # noqa: E402
 from text_quality import OcrUnavailable  # noqa: E402
@@ -281,9 +282,20 @@ class PreparationTests(unittest.TestCase):
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
         prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip: [table]))
         text = self.report_file("pages", "p002.md").read_text(encoding="utf-8")
-        self.assertIn("## Table T01 (detected)", text)
+        # The fixture report is French (meta language fr), so its heading is the French one (D3).
+        self.assertIn("## Tableau T01 (détecté)", text)
         self.assertIn("| Alpha | 12 |", text)
         self.assertIn("Le tableau", text)
+
+    def test_missing_min_anchor_key_writes_no_elements_file(self):
+        cfg = self.work.parent / "ugs_config_no_anchor.json"
+        cfg.write_text(json.dumps({"other.key": {"value": 1, "provenance": "fictitious"}}), encoding="utf-8")
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
+        with patch.object(ugs_tables, "DEFAULT_CONFIG_PATH", cfg):
+            with self.assertRaises(PrepareError) as ctx:
+                prepare(self.reports, self.work, hooks=_hooks())
+        self.assertIn("tables.min_anchor_chars", str(ctx.exception))
+        self.assertFalse(list(self.work.rglob("elements.json")))
 
     def test_second_run_changes_nothing(self):
         prepare(self.reports, self.work, hooks=_hooks())

@@ -66,7 +66,7 @@ class TestUgsTables(unittest.TestCase):
 
     def test_enrich_adds_a_missing_table(self):
         tables = [table("T01", 1, 100.0, MARKDOWN_ALPHA)]
-        out = ugs_tables.enrich_page_text("Some prose about the study.", tables)
+        out = ugs_tables.enrich_page_text("Some prose about the study.", tables, "en")
         self.assertNotEqual(out, "Some prose about the study.")
         self.assertIn("## Table T01 (detected)", out)
         self.assertIn(MARKDOWN_ALPHA, out)
@@ -76,12 +76,12 @@ class TestUgsTables(unittest.TestCase):
         # The anchor row must be long enough to prove the table is in the text (tables.min_anchor_chars).
         text = "The results were Alphabetical trial 12 and Beta 13 in the first trial."
         tables = [table("T01", 1, 100.0, MARKDOWN_LONG)]
-        self.assertEqual(ugs_tables.enrich_page_text(text, tables, min_anchor_chars=12), text)
+        self.assertEqual(ugs_tables.enrich_page_text(text, tables, "en", min_anchor_chars=12), text)
 
     def test_short_numeric_anchor_still_adds_the_table(self):
         text = "The sample of 23 students completed the trial."
         tables = [table("T01", 1, 100.0, MARKDOWN_NUMERIC)]
-        out = ugs_tables.enrich_page_text(text, tables, min_anchor_chars=12)
+        out = ugs_tables.enrich_page_text(text, tables, "en", min_anchor_chars=12)
         self.assertIn("## Table T01 (detected)", out)
         self.assertIn(MARKDOWN_NUMERIC, out)
 
@@ -100,15 +100,15 @@ class TestUgsTables(unittest.TestCase):
 
     def test_enrich_empty_markdown_adds_nothing(self):
         text = "Prose only."
-        self.assertEqual(ugs_tables.enrich_page_text(text, [table("T01", 1, 100.0, "")]), text)
-        self.assertEqual(ugs_tables.enrich_page_text(text, [table("T02", 1, 100.0, "  \n ")]), text)
+        self.assertEqual(ugs_tables.enrich_page_text(text, [table("T01", 1, 100.0, "")], "en"), text)
+        self.assertEqual(ugs_tables.enrich_page_text(text, [table("T02", 1, 100.0, "  \n ")], "en"), text)
 
     def test_two_tables_in_reading_order(self):
         page_tables = [table("T02", 1, 500.0, MARKDOWN_GAMMA), table("T01", 1, 100.0, MARKDOWN_ALPHA),
                        table("T09", 2, 50.0, MARKDOWN_GAMMA)]
         on_page = ugs_tables.tables_on_page(page_tables, 1)
         self.assertEqual([t["element_id"] for t in on_page], ["T01", "T02"])
-        out = ugs_tables.enrich_page_text("Prose.", on_page)
+        out = ugs_tables.enrich_page_text("Prose.", on_page, "en")
         self.assertIn("## Table T01 (detected)", out)
         self.assertIn("## Table T02 (detected)", out)
         self.assertLess(out.index("## Table T01"), out.index("## Table T02"))
@@ -167,6 +167,37 @@ class TestUgsTables(unittest.TestCase):
                                                 criteria_doc, "en", False)
         self.assertEqual(spy.call_count, 1)
         self.assertEqual(len(result["figures"]), 2)
+
+
+class TestTableTextByLanguage(unittest.TestCase):
+    """D3: the heading and the page line of an added table are data per language, never a literal of the module."""
+
+    def test_french_report_gets_french_heading(self):
+        out = ugs_tables.enrich_page_text("Texte.", [table("T01", 1, 100.0, MARKDOWN_ALPHA)], "fr", min_anchor_chars=12)
+        self.assertIn("## Tableau T01 (détecté)", out)
+        self.assertIn("Page 1", out)
+
+    def test_english_report_gets_english_heading(self):
+        out = ugs_tables.enrich_page_text("Text.", [table("T01", 1, 100.0, MARKDOWN_ALPHA)], "en", min_anchor_chars=12)
+        self.assertIn("## Table T01 (detected)", out)
+        self.assertNotIn("Tableau", out)
+
+    def test_unknown_language_is_named_error(self):
+        with self.assertRaises(ugs_tables.TablesError) as ctx:
+            ugs_tables.enrich_page_text("Text.", [table("T01", 1, 100.0, MARKDOWN_ALPHA)], "de", min_anchor_chars=12)
+        self.assertIn("'de'", str(ctx.exception))
+        self.assertIn("table_text.json", str(ctx.exception))
+
+    def test_no_english_literal_in_module(self):
+        source = Path(ugs_tables.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("(detected)", source)
+        self.assertNotIn("TABLE_HEADING", source)
+
+    def test_element_id_with_braces_and_percent_is_not_interpreted(self):
+        out = ugs_tables.enrich_page_text("Texte.", [table("T{page}%s{x}", 3, 100.0, MARKDOWN_ALPHA)], "fr",
+                                          min_anchor_chars=12)
+        self.assertIn("## Tableau T{page}%s{x} (détecté)", out)
+        self.assertIn("Page 3", out)
 
 
 if __name__ == "__main__":

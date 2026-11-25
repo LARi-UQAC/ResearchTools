@@ -31,7 +31,7 @@ import text_quality  # noqa: E402
 import ugs_config  # noqa: E402
 from figure_extract import ELEMENT_SETTING_KEYS, extract_elements  # noqa: E402
 from text_quality import OcrUnavailable, TextQualityError  # noqa: E402
-from ugs_tables import enrich_page_text, tables_on_page  # noqa: E402
+from ugs_tables import TablesError, enrich_page_text, load_min_anchor_chars, tables_on_page  # noqa: E402
 from ugs_text import LanguageUndecidable, detect_language, load_hints  # noqa: E402
 
 EXIT_OK = 0
@@ -395,6 +395,12 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     except LanguageUndecidable as error:
         return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages,
                 "refused": f"{report_id}: {error}"}
+    # D4: the configured anchor length is read before any file of this report is written, so a missing key
+    # refuses the preparation with nothing on disk for it, instead of failing midway through the pages.
+    try:
+        minimum_anchor = load_min_anchor_chars()
+    except TablesError as error:
+        raise PrepareError(str(error)) from None
 
     repair_settings = {"min_replacement_chars": settings["text.min_replacement_chars"],
                        "min_words_per_page": settings["text.min_words_per_page"],
@@ -420,7 +426,8 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
             _write_atomic(page_path, marker)
             _write_atomic(excluded_dir / page_path.name, texts[number - 1])
         else:
-            _write_atomic(page_path, enrich_page_text(text, tables_on_page(elements, number)))
+            _write_atomic(page_path, enrich_page_text(text, tables_on_page(elements, number), language,
+                                                      minimum_anchor))
 
     unreadable_pages = [entry["page"] for entry in quality if entry["empty"]]
     meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,

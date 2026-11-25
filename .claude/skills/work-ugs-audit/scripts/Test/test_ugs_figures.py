@@ -277,5 +277,27 @@ class TestUgsFigures(unittest.TestCase):
         self.assertIn("jpeg_quality", str(ctx.exception))
 
 
+class TestCitingParagraph(unittest.TestCase):
+    """D5: a body sentence opening "Figure N shows" is a citation; a caption line is not, whatever its dash."""
+
+    def test_body_sentence_starting_with_figure_is_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2 shows the response."], 2), "Figure 2 shows the response.")
+
+    def test_abbreviated_marker_at_the_start_is_a_citation(self):
+        self.assertTrue(ugs_figures.citing_text(["Fig. 2 shows the response."], 2))
+
+    def test_caption_with_colon_is_not_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2: Response curve."], 2), "")
+
+    def test_caption_with_hyphen_is_not_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2 - Response curve."], 2), "")
+
+    def test_caption_with_en_dash_is_not_a_citation(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2 – Response curve."], 2), "")
+
+    def test_two_part_number_is_not_one_part(self):
+        self.assertEqual(ugs_figures.citing_text(["Figure 2.1 shows the loop."], 2), "")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -229,6 +229,12 @@ def _hooks(preflight=None, ocr_page=None, find_elements=None):
     )
 
 
+def test_module_starts_without_a_byte_order_mark():
+    """Review round 1 M2 (Issue 126): report_prepare.py carries no stray BOM before its first line."""
+    head = (SCRIPTS / "report_prepare.py").read_bytes()[:3]
+    assert head != b"\xef\xbb\xbf", "report_prepare.py starts with a byte-order mark"
+
+
 class PreparationTests(unittest.TestCase):
     """Language, excluded pages, text repair, elements, table text and rerun of the preparation (R5 to R7, R10)."""
 

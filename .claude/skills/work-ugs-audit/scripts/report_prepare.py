@@ -1,4 +1,4 @@
-﻿"""
+"""
 Report preparation - gives every PDF report of a folder a stable pseudonymous id, and writes its pages, its
 metadata and its elements into the work folder.
 

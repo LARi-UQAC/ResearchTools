@@ -655,7 +655,6 @@ def misplaced_citations(pages: List[str], abbreviations: List[str]) -> List[Dict
 APPENDIX_CHECK_ID = "appendices"
 APPENDIX_NOT_APPLICABLE = "not_applicable"
 APPENDIX_TITLE_END = r"[ \t]*(?:[:\-–.|*]|$|\n)"
-LOWERCASE_WORD_BEFORE = re.compile(r"([^\W\d_]+)[\s'’]*$")
 
 
 def _appendix_pattern(settings: Dict[str, Any], heading: bool) -> "re.Pattern":
@@ -707,10 +706,34 @@ def _is_mention(text: str, match: "re.Match", settings: Dict[str, Any], heading:
     plural = {p.lower() for p in settings["plural"]}
     if word.lower() in plural and name.isdigit():
         return False
-    if not heading:
+    return not heading or _starts_a_heading(text, match.start())
+
+
+def _starts_a_heading(text: str, start: int) -> bool:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether a match at a given position opens a heading: the same line holds nothing before it but markup,
+        spaces and a number (a numbered heading). A word, or an apostrophe after a word, before the match means the
+        match is in a sentence ('Voir Annexe A.', "l'annexe A").
+
+    Inputs:
+        text (str): the page text.
+        start (int): the position of the appendix word in text.
+
+    Outputs:
+        bool: True when the match opens a heading.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    line = text[max(0, start - 200):start].rsplit("\n", 1)[-1]
+    line = re.sub(r"[#*_|\s]+$", "", line)
+    if re.search(r"\d{1,2}[.)]?$", line):
+        # A number before the mention numbers a heading ('11. ANNEXE A'), even after a word of the previous sentence.
         return True
-    before = LOWERCASE_WORD_BEFORE.search(text[:match.start()])
-    return not (before and before.group(1)[0].islower())
+    return not line or not (line[-1].isalpha() or line[-1] in "'’")
 
 
 def appendix_check(pages: List[str], toc_pages: Optional[List[int]], end_start_page: Optional[int],

@@ -594,6 +594,13 @@ class TestAppendixCheck(unittest.TestCase):
         result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
         self.assertEqual(result["present"], [])
 
+    def test_capital_voir_before_an_appendix_is_a_mention(self):
+        """Review round 2 (Issue 126): 'Voir Annexe A.' in a joined line is a mention, not a heading."""
+        toc = ["Table des matieres Annexe A - Plans ........ 40"]
+        end = ["References Source. Voir Annexe A. Les details sont fictifs."]
+        result = crossref_checks.appendix_check(toc + end, [1], 2, self.SETTINGS)
+        self.assertEqual(result["present"], [])
+
     def test_plural_marker_with_a_page_number_lists_nothing(self):
         """Review round 1 I3 (Issue 126): 'Annexes 45' on the contents page is a page number, not an appendix id."""
         toc = ["Table des matieres\nAnnexes 45\nAnnexe A - Plans ........ 40"]

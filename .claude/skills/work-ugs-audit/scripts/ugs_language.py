@@ -27,6 +27,12 @@ class LanguageDataError(ValueError):
     """A language data file is missing, unreadable or lacks the entry asked for; the message names it."""
 
 
+NONE_PAGE_MODE = "none"
+SPELLING_ONLY_PAGE_MODE = "spelling_only"
+FULL_PAGE_MODE = "full"
+PAGE_MODES = (NONE_PAGE_MODE, SPELLING_ONLY_PAGE_MODE, FULL_PAGE_MODE)
+
+
 def load_accepted(language: str, path: Path = ACCEPTED_SPELLINGS_PATH) -> Dict[str, set]:
     """
     Purpose: Read the spellings both forms of which are correct for one language (N1), normalised as the quote check
@@ -197,7 +203,8 @@ def language_report(
     entries: List[Dict],
     language: str,
     existing: Optional[Dict[int, dict]] = None,
-    on_page: Optional[Callable[[int, Dict[str, Any]], None]] = None
+    on_page: Optional[Callable[[int, Dict[str, Any]], None]] = None,
+    page_modes: Optional[Dict[int, str]] = None
 ) -> Dict:
     """
     --------------------------------------------------------------------------
@@ -219,6 +226,9 @@ def language_report(
         existing (Dict[int, dict] | None): page number to the saved record of a page already answered; None for none
         on_page (Callable[[int, dict], None] | None): called with the page number and the partial result after
             each page sent to the model; None changes nothing
+        page_modes (Dict[int, str] | None): correction mode of a front page (N3): `none` pages are not sent,
+            `spelling_only` pages keep only the spelling findings, any other page or a page absent from the map
+            is judged in full; None changes nothing. An unknown mode is refused before any call.
 
     Outputs:
         Dict - With 'annotations', 'rejected', 'not_run'.
@@ -228,6 +238,10 @@ def language_report(
     --------------------------------------------------------------------------
     """
     records: Dict[int, dict] = dict(existing or {})
+    modes = dict(page_modes or {})
+    for page_number, mode in modes.items():
+        if mode not in PAGE_MODES:
+            raise ValueError(f"unknown language mode '{mode}' for page {page_number}")
     valid_codes = {e["code"] for e in entries}
     spelling_value = spelling_code()
     accepted = load_accepted(language)
@@ -240,6 +254,9 @@ def language_report(
         if page_num in records:
             continue
         if not page_text.strip():
+            continue
+        mode = modes.get(page_num, FULL_PAGE_MODE)
+        if mode == NONE_PAGE_MODE:
             continue
             
         prompt = fill(
@@ -268,6 +285,9 @@ def language_report(
             records[page_num] = {"annotations": [], "rejected": 0, "not_run": True}
         else:
             records[page_num] = _answer_record(answer, page_num, page_text, valid_codes, spelling_value, accepted)
+            if mode == SPELLING_ONLY_PAGE_MODE:
+                records[page_num]["annotations"] = [a for a in records[page_num]["annotations"]
+                                                    if a["code"] == spelling_value]
         if on_page is not None:
             on_page(page_num, _partial(records))
         

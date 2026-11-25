@@ -245,6 +245,48 @@ class TestLanguageReport(unittest.TestCase):
         self.assertEqual(result["annotations"][0]["comment"], "Just reason")
 
 
+class TestPageModes(unittest.TestCase):
+    """Issue 126 plan 16 N3: a front page is judged by its mode (none, spelling_only, full); fictitious text (R34)."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.entries = [
+            {"code": "SP", "label_fr": "Ortho", "label_en": "Spelling", "severity": "minor"},
+            {"code": "G", "label_fr": "Gram", "label_en": "Grammar", "severity": "minor"},
+        ]
+        self.pages = [
+            "Cover text with a cover word.",
+            "A page with an error: recieve is wrong, the cat sat.",
+        ]
+        self.spelling = {"code": "SP", "quote": "recieve", "proposed": "receive", "reason": "Spelling"}
+        self.grammar = {"code": "G", "quote": "is wrong", "proposed": "is incorrect", "reason": "Grammar"}
+
+    def test_page_of_mode_none_is_not_sent(self):
+        call = FakeCall([{"findings": [self.spelling]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en", page_modes={1: "none"})
+        self.assertEqual(len(call.calls), 1)
+        self.assertFalse(any("Cover text" in prompt for prompt in call.calls))
+        self.assertEqual([a["page"] for a in result["annotations"]], [2])
+
+    def test_spelling_only_page_keeps_only_spelling(self):
+        call = FakeCall([{"findings": []}, {"findings": [self.spelling, self.grammar]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en",
+                                              page_modes={2: "spelling_only"})
+        self.assertEqual([a["code"] for a in result["annotations"]], ["SP"])
+
+    def test_no_map_is_unchanged(self):
+        call = FakeCall([{"findings": []}, {"findings": [self.spelling, self.grammar]}])
+        result = ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en")
+        self.assertEqual(sorted(a["code"] for a in result["annotations"]), ["G", "SP"])
+
+    def test_unknown_mode_is_named_error_before_any_call(self):
+        call = FakeCall([])
+        with self.assertRaises(ValueError) as ctx:
+            ugs_language.language_report(self.pages, call, self.ctx, self.entries, "en", page_modes={2: "judge"})
+        self.assertIn("judge", str(ctx.exception))
+        self.assertEqual(call.calls, [])
+
+
 class TestSpellingGuard(unittest.TestCase):
     """N1 cause b: a spelling finding of a correct word (both reform spellings, or quote equal to proposal) is refused."""
 

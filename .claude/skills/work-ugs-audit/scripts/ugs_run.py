@@ -18,6 +18,7 @@ from ugs_text import StepContext, read_pages, detect_language, LanguageUndecidab
 from ugs_grade import grade_report
 from ugs_audit import audit_report
 from ugs_language import language_report
+import front_pages
 from ugs_figures import figures_report
 from ugs_assemble import assemble_report
 from ugs_bridge import NotRun
@@ -322,6 +323,31 @@ def _step_grade(job: _Job) -> str:
     return "blocked" if any(r["status"] == "not_run" for r in result["items"]) else "done"
 
 
+def _page_modes(work_dir: Path, report_id: str) -> Dict[int, str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the correction mode of each front page of a report, from the front roles recorded in its
+        report_meta.json (plan 16, N3).
+
+    Inputs:
+        work_dir (Path): the work folder of the run.
+        report_id (str): the report id, its folder is work_dir / report_id.
+
+    Outputs:
+        Dict[int, str]: 1-based page to mode; empty when the report has no recorded front roles.
+
+    Raises:
+        FrontMatterConfigError: when the front-matter data file is incomplete (named in the message).
+    --------------------------------------------------------------------------
+    """
+    meta = _load_json(work_dir / report_id / "report_meta.json") or {}
+    roles = meta.get("front_roles")
+    if not roles:
+        return {}
+    return front_pages.page_modes(roles, front_pages.load_front_matter())
+
+
 def _step_language(job: _Job) -> str:
     """
     --------------------------------------------------------------------------
@@ -347,7 +373,8 @@ def _step_language(job: _Job) -> str:
     saved = _load_json(path) or {}
     existing = {int(number): record for number, record in saved.get("pages", {}).items()}
     result = language_report(job.pages, job.call_for("language"), job.ctx, job.services["entries"], job.language,
-                             existing=existing, on_page=lambda _number, partial: job.save(path, partial))
+                             existing=existing, on_page=lambda _number, partial: job.save(path, partial),
+                             page_modes=_page_modes(job.work_dir, job.report_id))
     job.save(path, result)
     if result["not_run"]:
         job.mark("language", "!", "pages=%d" % len(result["not_run"]))

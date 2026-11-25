@@ -237,5 +237,30 @@ class TestLanguageResume(unittest.TestCase):
         self.assertEqual([a["page"] for a in partial["annotations"]], [1])
 
 
+class TestFrontModesFromMeta(unittest.TestCase):
+    """Issue 126 plan 16 N3: the language step reads the front roles of report_meta.json (fictitious roles)."""
+
+    def test_modes_come_from_the_recorded_front_roles(self):
+        import json
+        import tempfile
+        import ugs_run
+        work = Path(tempfile.mkdtemp(prefix="ugs-modes-"))
+        (work / "R01").mkdir()
+        meta = {"front_roles": {"cover": [1], "version_signature": None, "table_of_contents": [2],
+                                "list_of_figures": [3], "list_of_tables": None, "executive_summary": [4]}}
+        (work / "R01" / "report_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        modes = ugs_run._page_modes(work, "R01")
+        self.assertEqual(modes, {1: "none", 2: "spelling_only", 3: "spelling_only", 4: "full"})
+
+    def test_no_front_roles_gives_no_map(self):
+        import json
+        import tempfile
+        import ugs_run
+        work = Path(tempfile.mkdtemp(prefix="ugs-modes-"))
+        (work / "R01").mkdir()
+        (work / "R01" / "report_meta.json").write_text(json.dumps({"language": "fr"}), encoding="utf-8")
+        self.assertEqual(ugs_run._page_modes(work, "R01"), {})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -580,6 +580,22 @@ class TestOcrPreflightRefusal(unittest.TestCase):
 class TestStepsFilter(unittest.TestCase):
     """N1: `run --steps` runs only the named steps; an unknown name is refused naming it."""
 
+    def test_empty_steps_list_is_refused(self):
+        """F5: `--steps ""` names no step and is refused, never read as every step."""
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver.parse_steps("")
+        with self.assertRaises(ugs_driver.DriverError):
+            ugs_driver.parse_steps(" , ")
+
+    def test_unknown_steps_are_refused_before_any_write(self):
+        """F5: the steps are parsed at the top of run, before the dry-run return and before loop_state.json."""
+        import argparse
+        args = argparse.Namespace(work="Z:/no-such-work-folder", reports="Z:/no-such-reports", loop=1,
+                                  only=None, steps="bogus", dry_run=True)
+        with self.assertRaises(ugs_driver.DriverError) as ctx:
+            ugs_driver.cmd_run(args, None, None, None, None)
+        self.assertIn("bogus", str(ctx.exception))
+
     def test_steps_filter_runs_only_named_steps(self):
         self.assertEqual(ugs_driver.parse_steps("language,figures"), ["language", "figures"])
         self.assertEqual(ugs_driver.parse_steps(" language "), ["language"])

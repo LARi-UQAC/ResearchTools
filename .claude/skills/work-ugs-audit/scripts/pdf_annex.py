@@ -50,7 +50,7 @@ def _read_json_file(path: Path) -> dict:
         AnnexError: If the file cannot be read, is not JSON, or is not a JSON object.
     """
     try:
-        text = Path(path).read_text(encoding="utf-8")
+        text = Path(path).read_text(encoding="utf-8-sig")  # a byte-order mark is accepted (the shipped file carries one)
     except OSError as e:
         raise AnnexError(f"annex data file cannot be read: {path}") from e
     try:

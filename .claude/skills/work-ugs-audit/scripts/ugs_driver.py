@@ -475,6 +475,8 @@ def parse_steps(value: Optional[str]) -> Optional[List[str]]:
     if value is None:
         return None
     names = [part.strip() for part in value.split(",") if part.strip()]
+    if not names:  # F5: an empty list would read as every step, so it is refused
+        raise DriverError("the --steps list names no step")
     for name in names:
         if name not in STEPS:
             raise DriverError(f"unknown step '{name}', expected one of {', '.join(STEPS)}")
@@ -504,6 +506,7 @@ def cmd_run(args, call, fetch, window, count) -> int:
         DriverError: a refusal.
     --------------------------------------------------------------------------
     """
+    only_steps = parse_steps(getattr(args, "steps", None))  # F5: refused before any folder or file is touched
     config = _load_config()
     work = _work_dir(Path(args.work))
     reports = Path(args.reports).resolve()
@@ -535,7 +538,6 @@ def cmd_run(args, call, fetch, window, count) -> int:
         state.write_text(json.dumps({"loop": current}), encoding="utf-8")
     calls = {step: (lambda prompt, schema, images=None, kind=kind: model_call(kind, prompt, schema, images))
              for step, kind in STEP_KIND.items()}
-    only_steps = parse_steps(getattr(args, "steps", None))
     for report_id in wanted:
         try:
             result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note, fetch,

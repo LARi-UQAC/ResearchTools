@@ -36,7 +36,7 @@ def _layout_margin() -> float:
     Outputs:
         float - The page margin in points.
     """
-    data = json.loads(LABELS_FILE.read_text(encoding="utf-8"))
+    data = json.loads(LABELS_FILE.read_text(encoding="utf-8-sig"))
     return float(data["layout"]["page_margin"])
 
 
@@ -177,7 +177,7 @@ class TestAnnexLayout(unittest.TestCase):
 
     def test_missing_key_is_named_with_its_file(self):
         broken = self.test_dir / "labels.json"
-        data = json.loads(LABELS_FILE.read_text(encoding="utf-8"))
+        data = json.loads(LABELS_FILE.read_text(encoding="utf-8-sig"))
         del data["fr"]["comment"]
         broken.write_text(json.dumps(data), encoding="utf-8")
         with self.assertRaises(pdf_annex.AnnexError) as ctx:

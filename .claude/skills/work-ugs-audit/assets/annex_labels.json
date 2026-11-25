@@ -1,4 +1,4 @@
-{
+﻿{
     "provenance":  "Labels and layout numbers chosen by the author of the work-ugs-audit skill (plan 7, spec 2026-11-16) and to be reviewed by the owner. The wording is data (R6): a label is shown in the language of the report only, and a missing key is a named error (R3).",
     "default_language":  "fr",
     "layout":  {
@@ -51,6 +51,7 @@
                                     "tables_cited":  "Tableaux cités dans le texte",
                                     "figure_order":  "Numérotation des figures",
                                     "table_order":  "Numérotation des tableaux",
+                                    "citation_placement": "Appels de citation placés après le point",
                                     "equation_order":  "Numérotation des équations",
                                     "citation_placement":  "Appels de citation placés après le point"
                                 },
@@ -63,6 +64,7 @@
                                            "missing":  "Absents",
                                            "out_of_order":  "Hors d\u0027ordre",
                                            "repeated":  "Répétés",
+                                           "count": "Occurrences",
                                            "skipped":  "Sautés",
                                            "count":  "Occurrences"
                                        },
@@ -72,6 +74,7 @@
                                               "version_table":  "tableau des versions"
                                           },
                "excluded_item":  "page {page} : {reason}",
+               "citation_comment": "Appel numérique placé après le point de la phrase : placer la citation avant le point.",
                "excluded_separator":  " ; ",
                "citation_comment":  "Appel numérique placé après le point de la phrase : placer la citation avant le point."
            },
@@ -114,6 +117,7 @@
                                     "tables_cited":  "Tables cited in the text",
                                     "figure_order":  "Figure numbering",
                                     "table_order":  "Table numbering",
+                                    "citation_placement": "Citations placed after the period",
                                     "equation_order":  "Equation numbering",
                                     "citation_placement":  "Citations placed after the period"
                                 },
@@ -126,6 +130,7 @@
                                            "missing":  "Missing",
                                            "out_of_order":  "Out of order",
                                            "repeated":  "Repeated",
+                                           "count": "Occurrences",
                                            "skipped":  "Skipped",
                                            "count":  "Occurrences"
                                        },
@@ -135,6 +140,7 @@
                                               "version_table":  "version table"
                                           },
                "excluded_item":  "page {page}: {reason}",
+               "citation_comment": "Numeric citation placed after the period of the sentence: place the citation before the period.",
                "excluded_separator":  "; ",
                "citation_comment":  "Numeric citation placed after the period of the sentence: place the citation before the period."
            }

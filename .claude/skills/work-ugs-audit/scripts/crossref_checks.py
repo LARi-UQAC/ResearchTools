@@ -36,6 +36,9 @@ MAX_NUMBER_SETTING_KEY = "max_number"
 CHECK_IDS = ("figures_cited", "tables_cited", "figure_order", "table_order", "equation_order")
 # N5: a row added by the assemble step, not by run_checks; its id is named here so the annex can label it.
 CITATION_CHECK_ID = "citation_placement"
+FIGURE_COUNT_CHECK_ID = "figure_counts"
+TABLE_COUNT_CHECK_ID = "table_counts"
+COUNT_CHECK_IDS = (FIGURE_COUNT_CHECK_ID, TABLE_COUNT_CHECK_ID)
 STATUS_OK = "ok"
 STATUS_NOT_OK = "not_ok"
 STATUS_NOT_APPLICABLE = "not_applicable"

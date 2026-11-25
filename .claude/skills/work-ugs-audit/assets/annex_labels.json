@@ -52,7 +52,9 @@
       "figure_order": "Numérotation des figures",
       "table_order": "Numérotation des tableaux",
       "citation_placement": "Appels de citation placés après le point",
-      "equation_order": "Numérotation des équations"
+      "equation_order": "Numérotation des équations",
+      "figure_counts": "Nombre de figures : déclaré et extrait",
+      "table_counts": "Nombre de tableaux : déclaré et extrait"
     },
     "check_status_values": {
       "ok": "Conforme",
@@ -64,7 +66,9 @@
       "out_of_order": "Hors d'ordre",
       "repeated": "Répétés",
       "count": "Occurrences",
-      "skipped": "Sautés"
+      "skipped": "Sautés",
+      "declared": "Déclaré",
+      "extracted": "Extrait"
     },
     "excluded_reason_values": {
       "cover": "page couverture",
@@ -115,7 +119,9 @@
       "figure_order": "Figure numbering",
       "table_order": "Table numbering",
       "citation_placement": "Citations placed after the period",
-      "equation_order": "Equation numbering"
+      "equation_order": "Equation numbering",
+      "figure_counts": "Number of figures: declared and extracted",
+      "table_counts": "Number of tables: declared and extracted"
     },
     "check_status_values": {
       "ok": "Passed",
@@ -127,7 +133,9 @@
       "out_of_order": "Out of order",
       "repeated": "Repeated",
       "count": "Occurrences",
-      "skipped": "Skipped"
+      "skipped": "Skipped",
+      "declared": "Declared",
+      "extracted": "Extracted"
     },
     "excluded_reason_values": {
       "cover": "cover page",

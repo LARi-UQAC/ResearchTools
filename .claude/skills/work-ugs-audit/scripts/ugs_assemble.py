@@ -27,6 +27,8 @@ from crossref_checks import (run_checks, load_settings as load_checks_settings, 
 REPORT_LANGUAGES = ("fr", "en")
 CHECKS_FILE_NAME = "checks.json"
 CITATION_CHECK_ID = crossref_checks.CITATION_CHECK_ID
+FIGURE_COUNT_CHECK_ID = crossref_checks.FIGURE_COUNT_CHECK_ID
+TABLE_COUNT_CHECK_ID = crossref_checks.TABLE_COUNT_CHECK_ID
 CITATION_CODE = "CIT"
 CITATION_KIND = "citation"
 META_NAME_KEY = "reports.meta_file_name"
@@ -87,6 +89,65 @@ def citation_annotations(body_pages: List[str], language: str) -> List[dict]:
     return [{"page": found["page"], "kind": CITATION_KIND, "code": CITATION_CODE, "quote": found["quote"],
              "rect": None, "comment": comment}
             for found in misplaced_citations(body_pages, load_citation_rules(language))]
+
+
+COUNT_STATUS_TO_CHECK = {"ok": "ok", "mismatch": "not_ok", "not_found": "not_applicable"}
+
+
+def count_rows(meta: dict) -> List[dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Turn the declared against extracted counts of a report (report_meta.json, plan 6, E2) into two check rows,
+        one for the figures and one for the tables, shown in the annex.
+
+    Details:
+        A mismatch is `not_ok` and shows the declared and the extracted count; a list not found, or a report prepared
+        before the counts existed, is `not_applicable` with no number. The printed numbers that differ stay in
+        report_meta.json: the annex shows the counts only.
+
+    Inputs:
+        meta (dict): the report_meta.json of the report ({} when the file is absent).
+
+    Outputs:
+        List[dict]: the rows figure_counts and table_counts, each with id, status and detail.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    rows = []
+    for check_id, kind in ((FIGURE_COUNT_CHECK_ID, "figure"), (TABLE_COUNT_CHECK_ID, "table")):
+        status = COUNT_STATUS_TO_CHECK.get(meta.get(f"{kind}_count_status"), "not_applicable")
+        detail: dict = {}
+        if status in ("ok", "not_ok"):
+            detail = {"declared": meta[f"declared_{kind}s"], "extracted": meta[f"extracted_{kind}s"]}
+        rows.append({"id": check_id, "status": status, "detail": detail})
+    return rows
+
+
+def _read_report_meta(path: Path) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the report_meta.json of a report; a file that is absent gives an empty dict (no count is then judged).
+
+    Inputs:
+        path (Path): the metadata file of the report.
+
+    Outputs:
+        dict: the parsed object, or {} when the file does not exist.
+
+    Raises:
+        ValueError: when the file exists but is not a JSON object.
+    --------------------------------------------------------------------------
+    """
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must hold a JSON object")
+    return data
 
 
 def grade_annotations(rubric: dict, grade: dict) -> List[dict]:
@@ -415,6 +476,8 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     # Cross-reference checks (spec R9): saved in the loop folder and printed in the annex.
     checks, excluded = run_report_checks(src_pdf, report_dir.parent.parent / report_id, pages)
     checks.append(citation_placement_row(body_pages, language))
+    meta_name = ugs_config.load(ugs_config.default_path())[META_NAME_KEY]
+    checks.extend(count_rows(_read_report_meta(report_dir.parent.parent / report_id / meta_name)))
     _atomic_write_text(report_dir / CHECKS_FILE_NAME, json.dumps(checks, indent=2))
 
     # Append annex

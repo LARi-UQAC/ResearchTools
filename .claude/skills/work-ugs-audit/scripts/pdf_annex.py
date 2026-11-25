@@ -12,7 +12,7 @@ import fitz
 # The validation codes are owned by ugs_grade (R2): the annex only labels them.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ugs_grade import GRADE_CODES
-from crossref_checks import CHECK_IDS, CITATION_CHECK_ID, STATUS_OK, STATUS_NOT_OK, STATUS_NOT_APPLICABLE
+from crossref_checks import CHECK_IDS, CITATION_CHECK_ID, COUNT_CHECK_IDS, STATUS_OK, STATUS_NOT_OK, STATUS_NOT_APPLICABLE
 
 DEFAULT_TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "annex.template.html"
 DEFAULT_LABELS = Path(__file__).resolve().parent.parent / "assets" / "annex_labels.json"
@@ -23,9 +23,11 @@ STATUS_KEYS = ("rated", "not_applicable", "not_run")
 COLUMN_KEYS = ("item", "score", "status")
 PERCENT_TOTAL = 100
 # The detail keys crossref_checks writes (missing, out_of_order, repeated, skipped); the annex labels each one.
-CHECK_DETAIL_KEYS = ("missing", "out_of_order", "repeated", "skipped", "count")
+CHECK_DETAIL_KEYS = ("missing", "out_of_order", "repeated", "skipped", "count", "declared", "extracted")
 # N5: the count of a check is one whole number, not a list; it is printed as "<label> : <n>".
 COUNT_DETAIL_KEY = "count"
+# Plan 6 E2: the declared and extracted counts of a figure or table row are whole numbers too.
+WHOLE_COUNT_DETAIL_KEYS = (COUNT_DETAIL_KEY, "declared", "extracted")
 CHECK_STATUS_KEYS = (STATUS_OK, STATUS_NOT_OK, STATUS_NOT_APPLICABLE)
 
 # One placeholder: an upper-case name between double braces. Filled in a single pass (see build_html).
@@ -215,7 +217,7 @@ def _load_check_labels(block: dict, path: Path, where: str) -> dict:
         "checks_title": _require_text(block, "checks_title", path, where),
         "check_column": _require_text(block, "check_column", path, where),
         "numbers_column": _require_text(block, "numbers_column", path, where),
-        "check_values": _text_map(block, "check_values", path, where, tuple(CHECK_IDS) + (CITATION_CHECK_ID,)),
+        "check_values": _text_map(block, "check_values", path, where, tuple(CHECK_IDS) + (CITATION_CHECK_ID,) + tuple(COUNT_CHECK_IDS)),
         "check_status_values": _text_map(block, "check_status_values", path, where, CHECK_STATUS_KEYS),
         "check_detail_values": _text_map(block, "check_detail_values", path, where, CHECK_DETAIL_KEYS),
         "excluded_reason_values": _text_map(block, "excluded_reason_values", path, where, None),
@@ -440,7 +442,7 @@ def _check_numbers_text(detail: object, labels: dict) -> str:
         if key not in detail:
             continue
         value = detail[key]
-        if key == COUNT_DETAIL_KEY:
+        if key in WHOLE_COUNT_DETAIL_KEYS:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise AnnexError("the check detail 'count' must be a whole number")
             parts.append(f"{labels['check_detail_values'][key]} : {value}")

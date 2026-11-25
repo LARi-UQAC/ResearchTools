@@ -236,7 +236,7 @@ class TestAssembleChecks(unittest.TestCase):
         self._assemble(["Figure 2.1 shows the layout."])
         checks = self._checks()
         # N5 adds the citation_placement row after the five cross-reference checks.
-        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement"])
+        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts"])
         self.assertEqual(checks[0]["status"], "ok")
         labels = _labels("en")
         with fitz.open(str(self.loop_dir / "annotated.pdf")) as doc:
@@ -310,6 +310,34 @@ class TestCitationPlacement(unittest.TestCase):
         html_text = pdf_annex.render_checks([row], labels)
         self.assertIn(labels["check_values"]["citation_placement"], html_text)
         self.assertIn("2", html_text)
+
+    def test_count_mismatch_is_a_row_with_both_numbers(self):
+        """Issue 126 plan 6 E2: a declared figure count of 3 against 2 extracted is a row with both numbers."""
+        meta = {"declared_figures": 3, "extracted_figures": 2, "figure_count_status": "mismatch",
+                "declared_tables": 1, "extracted_tables": 1, "table_count_status": "ok"}
+        rows = ugs_assemble.count_rows(meta)
+        figures = next(row for row in rows if row["id"] == "figure_counts")
+        self.assertEqual(figures["status"], "not_ok")
+        self.assertEqual(figures["detail"], {"declared": 3, "extracted": 2})
+        labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, "fr")
+        html_text = pdf_annex.render_checks([figures], labels)
+        self.assertIn(labels["check_values"]["figure_counts"], html_text)
+        self.assertIn("3", html_text)
+        self.assertIn("2", html_text)
+
+    def test_not_found_counts_give_not_applicable_row(self):
+        """Issue 126 plan 6 E2: a list not found is not applicable, never a mismatch and never zero."""
+        meta = {"declared_figures": None, "extracted_figures": 1, "figure_count_status": "not_found",
+                "declared_tables": None, "extracted_tables": 0, "table_count_status": "not_found"}
+        rows = ugs_assemble.count_rows(meta)
+        for row in rows:
+            self.assertEqual(row["status"], "not_applicable")
+            self.assertNotIn("declared", row["detail"])
+
+    def test_report_without_count_keys_is_not_applicable(self):
+        """A report prepared before plan 6 has no count keys: the rows say not applicable, with no invented number."""
+        rows = ugs_assemble.count_rows({})
+        self.assertEqual([row["status"] for row in rows], ["not_applicable", "not_applicable"])
 
     def test_body_text_before_the_reference_heading_is_kept(self):
         """F6: the page holding the reference heading keeps its body text before the heading."""

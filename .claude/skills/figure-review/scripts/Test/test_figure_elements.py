@@ -106,6 +106,25 @@ def _logo_png():
     return pix.tobytes("png")
 
 
+def _grid_png():
+    """
+    Purpose: Build a small PNG of a grid of black lines, the picture of a table with no vector border.
+    Inputs:
+        None.
+    Outputs:
+        bytes - the PNG file content, 200 by 120 pixels.
+    Raises:
+        None.
+    """
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 200, 120), False)
+    pix.set_rect(pix.irect, (255, 255, 255))
+    for x in range(0, 200, 40):
+        pix.set_rect(fitz.IRect(x, 0, x + 2, 120), (0, 0, 0))
+    for y in range(0, 120, 30):
+        pix.set_rect(fitz.IRect(0, y, 200, y + 2), (0, 0, 0))
+    return pix.tobytes("png")
+
+
 class TestExtractElements(unittest.TestCase):
     """Behaviour of extract_elements on fictitious PDFs (R1 tables, R2 labels, R3 merged fragments)."""
 
@@ -220,6 +239,39 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["figure"])
+
+    def test_titled_table_image_is_not_a_figure(self):
+        # Plan 7 (E4): a table pasted as a picture with no ruled border, under a table title.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 286, "Tableau 1 : Mesures")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table_image"])
+        self.assertEqual(records[0]["element_id"], "T01")
+        self.assertEqual(records[0]["title"]["text"], "Tableau 1 : Mesures")
+        self.assertEqual(records[0]["legend"], "")
+
+    def test_ruled_table_is_not_duplicated_by_a_table_image(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _centred_text(page, 200, 186, "Tableau 1 : Mesures")
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"],
+                                               ["Masse", "12.5"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["table"])
+
+    def test_figure_title_keeps_a_figure(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 436, "Figure 3: Trame")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual([r["element_type"] for r in records], ["figure"])
+        self.assertEqual(records[0]["element_id"], "F01")
 
     def test_skipped_page_gives_no_element(self):
         doc = fitz.open()

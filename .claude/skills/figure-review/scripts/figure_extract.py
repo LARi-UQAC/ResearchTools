@@ -25,7 +25,7 @@ ELEMENT_SETTING_KEYS = (
     "logo_size_tolerance_pt",
 )
 # Element id prefix per element type: F01 figures, T01 tables, L01 logos.
-ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "logo": "L"}
+ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "table_image": "T", "logo": "L"}
 TEXT_BLOCK_TYPE = 0
 
 
@@ -658,7 +658,8 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
         they contain. Figure regions are merged with fragment_gap_pt unless a title lies between them. A
         small region in the header or footer band that recurs on repeat_min_pages pages is a logo. Titles
         are attached once: an element takes the nearest title of its page and that title is no longer free.
-        The old extract() is not changed.
+        A picture with no figure title but with a table title is a table_image (plan 7, E4), numbered with the
+        T prefix. The old extract() is not changed.
     Inputs:
         pdf: Path - the PDF file.
         out_dir: Path - the folder for the PNG files, created when absent.
@@ -706,20 +707,27 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 item["legend"] = ""
                 if item["kind"] in ("figure", "table"):
                     item["title"] = _take_title(available, item["rect"], item["kind"], markers)
-                if item["kind"] == "table":
+                if item["kind"] == "figure" and item["title"] is None:
+                    # Plan 7 (E4): a region with no figure title but a table title is a table drawn as a picture.
+                    table_title = _take_title(available, item["rect"], "table", markers)
+                    if table_title is not None:
+                        item["kind"] = "table_image"
+                        item["title"] = table_title
+                if item["kind"] in ("table", "table_image"):
                     item["notes"] = element_labels.find_notes(scan["blocks"], item["rect"], markers)
                 if item["kind"] == "figure":
                     title_text = item["title"]["text"] if item["title"] else None
                     item["legend"] = element_labels.find_legend(scan["words"], item["rect"], title_text)
                 pending.append(item)
 
-        counters = {kind: 0 for kind in ELEMENT_ID_PREFIX}
+        counters = {prefix: 0 for prefix in ELEMENT_ID_PREFIX.values()}
         threshold = settings["background_threshold"]
         records: List[Dict[str, Any]] = []
         for item in pending:
             kind = item["kind"]
-            counters[kind] += 1
-            element_id = f"{ELEMENT_ID_PREFIX[kind]}{counters[kind]:02d}"
+            prefix = ELEMENT_ID_PREFIX[kind]
+            counters[prefix] += 1
+            element_id = f"{prefix}{counters[prefix]:02d}"
             file_name = f"{element_id}.png"
             page = item["scan"]["page"]
             rect = item["rect"]
@@ -737,15 +745,18 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 "caption": title["text"] if title else None,
                 "drawing_area_ratio": None,
             }
-            if kind == "figure":
-                record["figure_id"] = element_id
+            if kind in ("figure", "table_image"):
                 record["source"] = "raster" if item["raster"] else "vector"
-                ratio = drawing_area_ratio(pix.samples, pix.width, pix.height, pix.n, threshold)
-                record["drawing_area_ratio"] = round(ratio, 3)
                 if item["raster"]:
                     record["pixel_size"] = [pix.width, pix.height]
                 else:
                     record["text_sizes"] = _vector_text_sizes(page, rect)
+            if kind == "figure":
+                record["figure_id"] = element_id
+                ratio = drawing_area_ratio(pix.samples, pix.width, pix.height, pix.n, threshold)
+                record["drawing_area_ratio"] = round(ratio, 3)
+            if kind == "table_image":
+                del record["drawing_area_ratio"]  # plan 7: a table_image has no figure_id nor ratio
             if kind == "table":
                 record["markdown"] = item["markdown"]
             records.append(record)

@@ -245,5 +245,61 @@ class TestLanguageReport(unittest.TestCase):
         self.assertEqual(result["annotations"][0]["comment"], "Just reason")
 
 
+class TestSpellingGuard(unittest.TestCase):
+    """N1 cause b: a spelling finding of a correct word (both reform spellings, or quote equal to proposal) is refused."""
+
+    CODES = {"SP", "AG"}
+
+    def _record(self, findings, page_text, accepted=None):
+        from ugs_language import _answer_record
+        accepted_set = {"règlementation", "réglementation"} if accepted is None else accepted
+        return _answer_record({"findings": findings}, 1, page_text, self.CODES, "SP", accepted_set)
+
+    def test_finding_equal_to_its_quote_is_rejected(self):
+        finding = {"code": "SP", "quote": "Normes", "proposed": "normes", "reason": "fictitious"}
+        rec = self._record([dict(finding, proposed="Normes")], "Normes, standards and rules.", accepted=set())
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_accepted_variant_is_not_a_spelling_fault(self):
+        finding = {"code": "SP", "quote": "règlementation", "proposed": "réglementation", "reason": "fictitious"}
+        rec = self._record([finding], "2.2.3 Normes et règlementation, fictitious page.")
+        self.assertEqual(rec["annotations"], [])
+        self.assertEqual(rec["rejected_correct"], 1)
+
+    def test_real_fault_still_reported(self):
+        finding = {"code": "SP", "quote": "la chevaux", "proposed": "les chevaux", "reason": "fictitious"}
+        rec = self._record([finding], "Il y a la chevaux dans le champ.")
+        self.assertEqual(len(rec["annotations"]), 1)
+        self.assertEqual(rec["rejected_correct"], 0)
+
+    def test_rejected_correct_is_counted_and_summed(self):
+        from ugs_language import _result
+        bad = {"code": "SP", "quote": "règlementation", "proposed": "réglementation", "reason": "fictitious"}
+        rec = self._record([bad, bad], "Une règlementation fictive.")
+        self.assertEqual(rec["rejected_correct"], 2)
+        result = _result({1: rec, 2: dict(rec, rejected_correct=3)})
+        self.assertEqual(result["rejected_correct"], 5)
+
+    def test_accepted_list_comes_with_provenance(self):
+        from ugs_language import load_accepted, ACCEPTED_SPELLINGS_PATH
+        accepted = load_accepted("fr", ACCEPTED_SPELLINGS_PATH)
+        self.assertIn("règlementation", accepted)
+        self.assertIn("réglementation", accepted)
+
+    def test_missing_language_in_accepted_file_is_named(self):
+        from ugs_language import load_accepted, LanguageDataError
+        path = Path(tempfile.mkdtemp()) / "accepted_spellings.json"
+        path.write_text('{"fr": {"value": [], "provenance": "t"}}', encoding="utf-8")
+        with self.assertRaises(LanguageDataError) as ctx:
+            load_accepted("en", path)
+        self.assertIn("en", str(ctx.exception))
+        self.assertIn("accepted_spellings.json", str(ctx.exception))
+
+    def test_spelling_code_is_read_from_the_categories(self):
+        from ugs_language import spelling_code
+        self.assertEqual(spelling_code(), "SP")
+
+
 if __name__ == "__main__":
     unittest.main()

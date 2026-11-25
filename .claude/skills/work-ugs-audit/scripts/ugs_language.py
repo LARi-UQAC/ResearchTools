@@ -15,6 +15,64 @@ from ugs_bridge import NotRun
 from ugs_text import StepContext, fill
 from pdf_annotate import normalize
 
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+ACCEPTED_SPELLINGS_PATH = ASSETS_DIR / "accepted_spellings.json"
+# The categories table is owned by language-review (R1.x and codes); the spelling code is read from it, never written here.
+CATEGORIES_PATH = Path(__file__).resolve().parent.parent.parent / "language-review" / "assets" / "language_categories.json"
+SPELLING_LABEL = "Spelling"
+
+
+class LanguageDataError(ValueError):
+    """A language data file is missing, unreadable or lacks the entry asked for; the message names it."""
+
+
+def load_accepted(language: str, path: Path = ACCEPTED_SPELLINGS_PATH) -> set:
+    """
+    Purpose: Read the spellings both forms of which are correct for one language (N1), normalised as the quote check
+        normalises them, so a finding on any member of a pair is recognised.
+    Inputs:
+        language (str): the report language, a key of the file (fr, en).
+        path (Path): the accepted spellings file.
+    Outputs:
+        set: the normalised spellings of every pair of the language.
+    Raises:
+        LanguageDataError: the file is unreadable, or the language has no entry or no value list (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LanguageDataError(f"cannot read {Path(path).name}: {exc}") from exc
+    entry = raw.get(language) if isinstance(raw, dict) else None
+    value = entry.get("value") if isinstance(entry, dict) else None
+    if not isinstance(value, list):
+        raise LanguageDataError(f"language '{language}' has no value list in {Path(path).name}")
+    forms = set()
+    for pair in value:
+        if not isinstance(pair, list) or not all(isinstance(word, str) for word in pair):
+            raise LanguageDataError(f"each pair of '{language}' must be a list of strings in {Path(path).name}")
+        forms.update(normalize(word) for word in pair)
+    return forms
+
+
+def spelling_code(path: Path = CATEGORIES_PATH) -> str:
+    """
+    Purpose: Give the code of the spelling category from the shared categories table (its English label is Spelling).
+    Inputs:
+        path (Path): the language categories file.
+    Outputs:
+        str: the code, for example SP.
+    Raises:
+        LanguageDataError: the file is unreadable or holds no entry labelled Spelling (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LanguageDataError(f"cannot read {Path(path).name}: {exc}") from exc
+    for entry in raw.get("entries", []):
+        if entry.get("label_en") == SPELLING_LABEL:
+            return entry["code"]
+    raise LanguageDataError(f"no entry labelled '{SPELLING_LABEL}' in {Path(path).name}")
+
 
 def load_table(path: Path) -> List[Dict]:
     """
@@ -102,6 +160,7 @@ def _result(records: Dict[int, dict]) -> Dict[str, Any]:
     return {
         "annotations": annotations,
         "rejected": sum(records[number]["rejected"] for number in records),
+        "rejected_correct": sum(records[number].get("rejected_correct", 0) for number in records),
         "not_run": [number for number in sorted(records) if records[number]["not_run"]],
     }
 
@@ -145,6 +204,8 @@ def language_report(
     """
     records: Dict[int, dict] = dict(existing or {})
     valid_codes = {e["code"] for e in entries}
+    spelling_value = spelling_code()
+    accepted = load_accepted(language)
     
     table_txt = table_text(entries, language)
     
@@ -181,14 +242,15 @@ def language_report(
         if answer is None:
             records[page_num] = {"annotations": [], "rejected": 0, "not_run": True}
         else:
-            records[page_num] = _answer_record(answer, page_num, page_text, valid_codes)
+            records[page_num] = _answer_record(answer, page_num, page_text, valid_codes, spelling_value, accepted)
         if on_page is not None:
             on_page(page_num, _partial(records))
         
     return _result(records)
 
 
-def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set) -> dict:
+def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set,
+                   spelling_code_value: Optional[str] = None, accepted: Optional[set] = None) -> dict:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -210,7 +272,9 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
     """
     findings = answer.get("findings", [])
     rejected = 0
+    rejected_correct = 0
     seen = set()
+    accepted_forms = {normalize(word) for word in (accepted or ())}
     page_annotations = []
     
     for f in findings:
@@ -228,6 +292,12 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
         
         if norm_quote not in norm_page:
             rejected += 1
+            continue
+
+        # N1: a spelling finding is refused when its quote is an accepted spelling (either form of a 1990 reform
+        # pair) or when its proposal equals the quote: the word is correct, so a finding on it is never a fault.
+        if code == spelling_code_value and (norm_quote in accepted_forms or normalize(f.get("proposed", "")) == norm_quote):
+            rejected_correct += 1
             continue
             
         key = (code, norm_quote)
@@ -251,4 +321,5 @@ def _answer_record(answer: dict, page_num: int, page_text: str, valid_codes: set
             "rect": None,
             "comment": comment
         })
-    return {"annotations": page_annotations, "rejected": rejected, "not_run": False}
+    return {"annotations": page_annotations, "rejected": rejected, "rejected_correct": rejected_correct,
+            "not_run": False}

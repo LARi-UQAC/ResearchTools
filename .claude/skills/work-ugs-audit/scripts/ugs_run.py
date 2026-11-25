@@ -470,7 +470,8 @@ def run_report(
     services: dict,
     calibration_note: str,
     fetch: Optional[Callable],
-    on_step: Optional[Callable[[str], None]] = None
+    on_step: Optional[Callable[[str], None]] = None,
+    only_steps: Optional[List[str]] = None
 ) -> dict:
     """
     --------------------------------------------------------------------------
@@ -528,6 +529,8 @@ def run_report(
     job = _Job(work_dir, report_id, loop, src_pdf, call, ctx, services, calibration_note, fetch, pages,
                language, work_dir / "ledger.md", loop_dir)
     for name, runner in RUNNERS:
+        if only_steps is not None and name not in only_steps:
+            continue  # N1: `run --steps` restricts the run; the other steps stay skipped and open
         if _settled(read(job.ledger_path), report_id, name):
             continue
         if on_step is not None:

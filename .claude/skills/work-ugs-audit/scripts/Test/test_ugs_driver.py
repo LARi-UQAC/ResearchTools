@@ -577,5 +577,18 @@ class TestOcrPreflightRefusal(unittest.TestCase):
         self.assertIn("TESSDATA_PREFIX", str(ctx.exception))
 
 
+class TestStepsFilter(unittest.TestCase):
+    """N1: `run --steps` runs only the named steps; an unknown name is refused naming it."""
+
+    def test_steps_filter_runs_only_named_steps(self):
+        self.assertEqual(ugs_driver.parse_steps("language,figures"), ["language", "figures"])
+        self.assertEqual(ugs_driver.parse_steps(" language "), ["language"])
+        self.assertIsNone(ugs_driver.parse_steps(None))
+
+    def test_unknown_step_is_refused(self):
+        with self.assertRaises(ugs_driver.DriverError) as ctx:
+            ugs_driver.parse_steps("grade,bogus")
+        self.assertIn("bogus", str(ctx.exception))
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,7 @@ import report_prepare
 from rubric_check import validate as validate_rubric, RubricError
 from ugs_grade import normalize_rubric
 import rubric_split
-from ugs_run import run_report
+from ugs_run import STEPS, run_report
 from ugs_ledger import (new_ledger, add_report, set_mark, reopen_all, add_note, read as read_ledger,
                         write as write_ledger, counts as ledger_counts, first_open, parse as parse_ledger)
 from batch_stats import main as batch_stats_main
@@ -462,6 +462,25 @@ def _stopped_step(ledger_path: Path, report_id: str, step: Optional[str]) -> Opt
     return open_items[0] if open_items else step
 
 
+def parse_steps(value: Optional[str]) -> Optional[List[str]]:
+    """
+    Purpose: Read the comma list of `run --steps` and refuse a step name the grading run does not have (N1).
+    Inputs:
+        value (str or None): the comma-separated step names, None for every step.
+    Outputs:
+        Optional[List[str]]: the names in the order given, or None when no list was given.
+    Raises:
+        DriverError: a name is not one of ugs_run.STEPS; the message names it.
+    """
+    if value is None:
+        return None
+    names = [part.strip() for part in value.split(",") if part.strip()]
+    for name in names:
+        if name not in STEPS:
+            raise DriverError(f"unknown step '{name}', expected one of {', '.join(STEPS)}")
+    return names
+
+
 def cmd_run(args, call, fetch, window, count) -> int:
     """
     --------------------------------------------------------------------------
@@ -516,10 +535,11 @@ def cmd_run(args, call, fetch, window, count) -> int:
         state.write_text(json.dumps({"loop": current}), encoding="utf-8")
     calls = {step: (lambda prompt, schema, images=None, kind=kind: model_call(kind, prompt, schema, images))
              for step, kind in STEP_KIND.items()}
+    only_steps = parse_steps(getattr(args, "steps", None))
     for report_id in wanted:
         try:
             result = run_report(work, report_id, current, reports / ids[report_id], calls, ctx, services, note, fetch,
-                                on_step=lambda name: active.update(step=name))
+                                on_step=lambda name: active.update(step=name), only_steps=only_steps)
         except NotRun as error:
             _emit({"report_id": report_id, "step": _stopped_step(work / "ledger.md", report_id, active["step"]),
                    "status": "not_run", "kind": error.kind})
@@ -613,6 +633,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--loop", type=int, default=1)
     run.add_argument("--resume", action="store_true", help="accepted for clarity: a run always resumes from the ledger")
     run.add_argument("--only", default=None)
+    run.add_argument("--steps", default=None, help="comma list of steps to run, for example language,figures")
     batch = sub.add_parser("batch")
     batch.add_argument("--work", required=True)
     batch.add_argument("--loop", type=int, required=True)

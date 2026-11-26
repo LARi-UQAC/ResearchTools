@@ -149,6 +149,22 @@
     "value": 0.25,
     "provenance": "chosen by the session 2026-11-26 (plan 25, Task 1): points are the level fraction times the maximum, rounded to the nearest multiple of this step (ties up); quarter points keep 0.88 x 0.5 = 0.44 distinct from 0.5 only when rounded, and 0.88 x 10 = 8.8 becomes 8.75"
   },
+  "grade.quote_min_chars": {
+    "value": 20,
+    "provenance": "starting value, unmeasured, adjustable by the professor (review round 2): the shortest normalised quote the key tier accepts; a shorter key is too weak for a substring test"
+  },
+  "grade.quote_min_word_share": {
+    "value": 0.9,
+    "provenance": "chosen by the owner (review round 2, 2026-11-26): the share of the quote words the fuzzy tier must find in order in its window"
+  },
+  "grade.quote_window_factor": {
+    "value": 1.3,
+    "provenance": "chosen by the owner (review round 2, 2026-11-26): the fuzzy window is about this many times the quote word count"
+  },
+  "grade.unverified_present_counts_as": {
+    "value": "partial",
+    "provenance": "chosen by the session 2026-11-27 under the owner's review of round 2: an element marked present whose quote no tier verifies counts as this verdict in the level"
+  },
   "grade.missing_max_chars": {
     "value": 300,
     "provenance": "starting value, proposed 2026-11-17 and adjustable by the professor: longest missing-element text kept in grade.json, in characters. A bound on one saved field, never on what the model is shown"

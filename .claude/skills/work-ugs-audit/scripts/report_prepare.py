@@ -10,6 +10,7 @@ logos) and adds the Markdown of each table to the text of its page. The result i
 Exit codes: 0 done, 1 unexpected failure, 2 refusal.
 """
 import argparse
+import dataclasses
 import json
 import os
 import shutil
@@ -471,8 +472,96 @@ def _load_loop_settings() -> tuple:
         raise PrepareError(str(error)) from None
 
 
+def _memoized_ocr(ocr_words: Optional[Callable]) -> Optional[Callable]:
+    """
+    Purpose: Wrap the word-box OCR hook so that one region of one page is read once per preparation (plan 11).
+    Inputs:
+        ocr_words (Callable | None): the word-box OCR hook, or None when there is none.
+    Outputs:
+        Callable | None - the memoized hook, or None when ocr_words is None.
+    Raises:
+        None: an error of the hook is not cached and propagates to the caller.
+    """
+    if ocr_words is None:
+        return None
+    cache: Dict[tuple, List[tuple]] = {}
+
+    def memoized(pdf_path: Path, page_number: int, rect: Sequence[float], tesseract_language: str) -> List[tuple]:
+        """
+        Purpose: Return the words of one region, reading it through the hook only on the first call.
+        Inputs:
+            pdf_path (Path): the PDF.
+            page_number (int): the 1-based page.
+            rect (Sequence[float]): the region rectangle.
+            tesseract_language (str): the Tesseract codes.
+        Outputs:
+            List[tuple] - the word boxes of the region.
+        Raises:
+            Exception: whatever the hook raises, unchanged.
+        """
+        key = (str(pdf_path), page_number, tuple(round(float(v), 2) for v in rect), tesseract_language)
+        if key not in cache:
+            cache[key] = ocr_words(pdf_path, page_number, rect, tesseract_language)
+        return cache[key]
+
+    return memoized
+
+
+def _classify_untitled_records(records: List[Dict[str, Any]], folder: Path, pdf_file: Path,
+                               ocr_words: Optional[Callable], tesseract_language: Callable[[], str],
+                               image_settings: table_image.ImageSettings, min_rows: int,
+                               min_cols: int) -> List[Dict[str, Any]]:
+    """
+    Purpose: Decide, for each untitled figure record, whether it is a table drawn as an image (plan 11, spec E5).
+    Details: An untitled figure whose OCR rebuilds a grid of min_rows by min_cols becomes a table_image with the
+        id T-u<NN> and its file is renamed to match. When OCR cannot run, the record stays a figure with the
+        status untitled_ocr_unavailable (a fixed category, never the error text).
+    Inputs:
+        records (list[dict]): the element records of one attempt, changed in place.
+        folder (Path): the folder holding the attempt's PNG files.
+        pdf_file (Path): the PDF of the report.
+        ocr_words (Callable | None): the memoized word-box OCR hook.
+        tesseract_language (Callable[[], str]): the Tesseract codes, computed only when OCR is needed.
+        image_settings (table_image.ImageSettings): the column gap, rows and overlap of a table drawn as an image.
+        min_rows (int): the fewest rows of an untitled table.
+        min_cols (int): the fewest columns of an untitled table.
+    Outputs:
+        list[dict]: the same records.
+    Raises:
+        PrepareError: when the Tesseract codes of the language are unknown.
+    """
+    for record in records:
+        if record.get("element_type") != "figure" or record.get("title") is not None:
+            continue
+        element_id = str(record.get("element_id", ""))
+        if not element_id.startswith("F-u"):
+            continue
+        if ocr_words is None:
+            record["status"] = "untitled_ocr_unavailable"
+            continue
+        try:
+            words = ocr_words(pdf_file, record["page"], record["rect"], tesseract_language())
+        except (PrepareError, TextQualityError, OSError):
+            record["status"] = "untitled_ocr_unavailable"
+            continue
+        kind = table_image.classify_untitled(words, image_settings.column_gap_pt, min_rows, min_cols,
+                                             image_settings.row_overlap_ratio)
+        if kind != table_image.UNTITLED_TABLE:
+            continue
+        new_id = "T" + element_id[1:]
+        old_file = folder / record["file"]
+        if old_file.exists():
+            old_file.rename(folder / f"{new_id}.png")
+        record.update({"element_type": TABLE_IMAGE_TYPE, "element_id": new_id, "file": f"{new_id}.png"})
+        record.pop("figure_id", None)
+        record.pop("drawing_area_ratio", None)
+    return records
+
+
 def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: str, skip_pages: List[int],
-                                hooks: PrepHooks, declared_figures: Optional[int]) -> tuple:
+                                hooks: PrepHooks, declared_figures: Optional[int],
+                                classify: Optional[Callable[[List[Dict[str, Any]], Path], List[Dict[str, Any]]]] = None
+                                ) -> tuple:
     """
     Purpose: Extract the elements of a report under the count loop (plan 12 Task 3, spec E6). Each attempt renders
         into a folder of its own inside the report folder; only the kept attempt's files reach the figures folder.
@@ -515,6 +604,8 @@ def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: 
             stats_file.unlink()  # a previous attempt's statistics must not be read as this one's
         kwargs = {"overrides": overrides} if overrides else {}
         records = hooks.find_elements(pdf_file, folder, skip_pages, **kwargs)
+        if classify is not None:  # plan 11: an untitled region may become a table_image, its file renamed
+            records = classify(records, folder)
         dropped.append(_read_tables_dropped(stats_file))
         return records
 
@@ -689,6 +780,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
         raise PrepareError(str(error)) from None
     try:
         image_settings = table_image.load_image_settings()
+        untitled_rows, untitled_cols = table_image.load_untitled_settings()
     except table_image.TableImageError as error:
         raise PrepareError(str(error)) from None
 
@@ -713,9 +805,42 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     front_skip = [page for page, mode in front_pages.page_modes(front_roles, context["front_matter"]).items()
                   if mode != front_pages.FULL_MODE]
     skip_pages = sorted(set(reasons) | set(front_skip))
+    ocr_words = _memoized_ocr(hooks.ocr_words)
+    memo_hooks = dataclasses.replace(hooks, ocr_words=ocr_words)
+
+    def tesseract_language() -> str:
+        """
+        Purpose: Give the Tesseract codes of the report language, as the table reading does.
+        Inputs:
+            None.
+        Outputs:
+            str - the codes joined with '+'.
+        Raises:
+            PrepareError: when the language has no Tesseract codes.
+        """
+        try:
+            return "+".join(text_quality.tesseract_codes(language, context["ocr"]["language_codes"]))
+        except text_quality.QualityConfigError as error:
+            raise PrepareError(str(error)) from None
+
+    def classify(records: List[Dict[str, Any]], folder: Path) -> List[Dict[str, Any]]:
+        """
+        Purpose: Apply the untitled-region rule to one attempt's records, with the loaded settings.
+        Inputs:
+            records (list[dict]): the records of the attempt.
+            folder (Path): the attempt folder.
+        Outputs:
+            list[dict] - the records, as _classify_untitled_records returns them.
+        Raises:
+            PrepareError: when the Tesseract codes are unknown.
+        """
+        return _classify_untitled_records(records, folder, pdf_file, ocr_words, tesseract_language,
+                                          image_settings, untitled_rows, untitled_cols)
+
     elements, figure_attempts = _extract_elements_with_loop(pdf_file, report_dir, settings["reports.figures_folder"],
-                                                            skip_pages, hooks, declared["declared_figures"])
-    elements = _read_table_images(elements, pdf_file, hooks, language, context["ocr"]["language_codes"],
+                                                            skip_pages, memo_hooks, declared["declared_figures"],
+                                                            classify=classify)
+    elements = _read_table_images(elements, pdf_file, memo_hooks, language, context["ocr"]["language_codes"],
                                   image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],
                   json.dumps(elements, indent=2, ensure_ascii=False))

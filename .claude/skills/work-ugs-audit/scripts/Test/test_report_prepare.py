@@ -357,6 +357,57 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(figures, ["F01.png", "F02.png"])
         self.assertFalse(self.report_file(".attempts").exists())
 
+    def _untitled_region_finder(self):
+        """Finder giving one untitled figure record that its folder holds as a PNG (plan 11 Task 2)."""
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            (figures_dir / "F-u01.png").write_bytes(b"png")
+            return [{"element_id": "F-u01", "element_type": "figure", "page": 2, "file": "F-u01.png",
+                     "rect": [100, 300, 400, 500], "title": None, "drawing_area_ratio": 1.0}]
+        return finder
+
+    @staticmethod
+    def _grid_words(rows, cols):
+        """Fictitious OCR word boxes laid out as a grid (plan 11 Task 2)."""
+        return [(100 + c * 100, 300 + r * 15, 140 + c * 100, 310 + r * 15, f"w{r}{c}", 0, 0, 0)
+                for r in range(rows) for c in range(cols)]
+
+    def _prepare_with_ocr(self, words_hook):
+        """Prepare the fictitious report with an untitled region and the given word-box OCR hook."""
+        hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
+                                         find_elements=self._untitled_region_finder(), ocr_words=words_hook)
+        prepare(self.reports, self.work, hooks=hooks)
+
+    def test_untitled_grid_region_becomes_table_image(self):
+        """Plan 11 Task 2: an untitled region whose OCR rebuilds a 3 by 3 grid is a table_image T-u01."""
+        self._prepare_with_ocr(lambda pdf, page, rect, lang: self._grid_words(3, 3))
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        self.assertEqual([(e["element_type"], e["element_id"], e["file"]) for e in elements],
+                         [("table_image", "T-u01", "T-u01.png")])
+        self.assertTrue(self.report_file("figures", "T-u01.png").exists())
+        self.assertFalse(self.report_file("figures", "F-u01.png").exists())
+
+    def test_ocr_failure_keeps_figure_with_reason(self):
+        """Plan 11 Task 2: when OCR cannot run, the untitled region stays a figure with a fixed status."""
+        def failing(pdf, page, rect, lang):
+            raise PrepareError("tesseract_missing")
+
+        self._prepare_with_ocr(failing)
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        self.assertEqual(elements[0]["element_type"], "figure")
+        self.assertEqual(elements[0]["status"], "untitled_ocr_unavailable")
+
+    def test_ocr_called_once_per_region(self):
+        """Plan 11 Task 2: the classification and the table reading share one OCR call per region."""
+        calls = []
+
+        def counting(pdf, page, rect, lang):
+            calls.append((page, tuple(rect)))
+            return self._grid_words(3, 3)
+
+        self._prepare_with_ocr(counting)
+        self.assertEqual(len(calls), 1)
+
     def test_count_status_written_to_meta(self):
         """Issue 126 plan 6 E2: a declared figure with no extracted figure is a mismatch in report_meta.json."""
         list_text = "Liste des figures\nFigure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"

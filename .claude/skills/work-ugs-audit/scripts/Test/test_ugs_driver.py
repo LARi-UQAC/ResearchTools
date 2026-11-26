@@ -76,7 +76,7 @@ def answer_for_points(points):
     Raises:
         None.
     """
-    element = {"element": "Introduction", "verdict": "present", "page": 1, "quote": "Introduction text"}
+    element = {"element": "Introduction", "verdict": "present", "page": 1, "quote": "Introduction text of the fictitious report"}
     return {"status": "rated", "elements": [element], "exceptional": points >= 9.5}
 
 

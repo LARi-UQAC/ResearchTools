@@ -76,7 +76,9 @@ band against a ruled table belongs to that table. Ruled tables claim their title
 second pass pairs the remaining table titles of a page with its untitled tables within
 `extraction.second_pass_title_distance_pt`. A region under a table title that holds no ruled table is a `table_image`
 (a raster, or a vector region tall enough for `tables.image_min_rows` lines); an untitled ruled table next to an
-unclaimed figure title is a figure. A region that overlaps a table box by `extraction.table_overlap_ratio` is dropped.
+unclaimed figure title is a figure. Such a grid under a figure title keeps
+its figure number and file, and its record carries `title_kind_mismatch: "table_titled_figure"` with
+`title_kind_source: "script"` (every element record carries both keys, null when nothing is flagged). A region that overlaps a table box by `extraction.table_overlap_ratio` is dropped.
 The id and file name of a titled element is its printed number (`F2.3`, `T4`), an untitled one `F-u<NN>` or
 `T-u<NN>`. Each title (found by `element_labels.py` from the marker words of `assets/element_markers.json`) is attached
 to at most one element. Every threshold is in `assets/figure_criteria.json` with its provenance, and the thresholds are

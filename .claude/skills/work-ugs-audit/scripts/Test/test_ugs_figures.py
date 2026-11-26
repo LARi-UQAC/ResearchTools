@@ -539,5 +539,40 @@ class RealR01AcceptanceTest(unittest.TestCase):
                 self.assertIsNone(record.get("title_kind_source"))
 
 
+class RealR01FiguresTest(unittest.TestCase):
+    """
+    Plan 21 task 3 on the owner's R01 report (2026-11-26): skipped unless UGS_REAL_WORK names the check work folder
+    holding loop-1/R01/figures.json (UGS_REAL_WORK unset is a skip, R11). Only ids and verdict codes are asserted (R34):
+    the titled figures F1 to F18 pass the numbering, the untitled F-u01 and F-u02 are not applicable, and no figure
+    fails the source check, because no figure is marked borrowed without a source.
+    """
+
+    TITLED = ["F%d" % number for number in range(1, 19)]
+    UNTITLED = ["F-u01", "F-u02"]
+
+    def setUp(self):
+        work = os.environ.get("UGS_REAL_WORK")
+        if not work:
+            self.skipTest("UGS_REAL_WORK is not set: the R01 figures check runs on the owner's report only")
+        path = Path(work) / "loop-1" / "R01" / "figures.json"
+        if not path.is_file():
+            self.skipTest("loop-1/R01/figures.json is absent: run the figures step first")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.records = {record["figure_id"]: record for record in data["figures"]}
+
+    def _verdict(self, figure_id, criterion):
+        return self.records.get(figure_id, {}).get("criteria", {}).get(criterion, {}).get("verdict")
+
+    def test_every_titled_figure_passes_the_numbering(self):
+        self.assertEqual([fid for fid in self.TITLED if self._verdict(fid, "numbered_in_sequence") != "pass"], [])
+
+    def test_untitled_elements_are_not_applicable_to_the_numbering(self):
+        self.assertEqual([self._verdict(fid, "numbered_in_sequence") for fid in self.UNTITLED],
+                         ["not_applicable", "not_applicable"])
+
+    def test_no_figure_fails_the_source_check(self):
+        self.assertEqual([fid for fid in self.records if self._verdict(fid, "source_cited") == "fail"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

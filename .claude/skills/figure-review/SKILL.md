@@ -19,6 +19,8 @@ Each criterion of `assets/figure_criteria.json` says `judged_by` and `needs`.
 
 - `script`: measured by the code (drawing area, effective resolution, text size, numbering, call before the
   figure, source in the caption, label form). The model never overturns a measured verdict.
+  Numbering is judged per titled figure against the one before it (an untitled element is not applicable), and
+  the source check fails only a figure the model marks as borrowed without a source in its title (plan 21, #126).
 - `model`: judged by the calling harness's own model, on what `needs` names: `source` (the TikZ or LaTeX
   text), `image` (the pixels) or `either`.
 

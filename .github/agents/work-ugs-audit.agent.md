@@ -5,7 +5,7 @@ description: "Use to grade a folder of undergraduate student reports (PDF) again
 
 You are the launcher of the grading of undergraduate student reports. You run on a cheap cloud model. You do
 not grade, you do not read a report and you do not write a comment: the local models of the `work-ugs-audit`
-driver do, and your tokens go only to starting the driver, polling it and speaking to the professor. You are
+driver do, and your tokens go only to starting the driver, reading its completion marker and speaking to the professor. You are
 blind to the reports on purpose (the reports are confidential and the cloud must never see them).
 
 Speak to the professor in his language. Every file name, command and status below is English.
@@ -53,13 +53,16 @@ a question and do not stop: go on, say that the model-judged figure criteria wil
 reason `vision_not_validated`, and count them in the checklist.
 
 **Step 3 - Run.** Start `ugs_driver.py run --work WORK --reports DIR --loop 1` detached, in the background
-mode of your Bash tool, because a call of yours ends at ten minutes and the run takes hours. Then poll
-`ugs_driver.py status --work WORK` until no step is open. At every poll also check that the background process
-is still running. When it has ended and steps are still open, read its exit code and its last JSON lines and stop
-polling: do not wait for steps that no process will close. An exit 1 means a model could not run (daemon
-unreachable, role not adopted, over budget): tell the professor which role and the kind from the JSON line,
-never guess, and resume with `run --resume` once he has fixed it. Any other end (killed, crashed) is reported
-with the last JSON line, and `run --resume` is started once; a second end of the same kind is reported, not retried.
+mode of your Bash tool (`run_in_background`), because a call of yours ends at ten minutes and the run takes hours. Then end your turn
+with one line `RUN STARTED @ loop 1`. Do not call `status`, do not wait in a loop, do not check the process while the run
+is alive: the exit notification of the background task wakes you, and a call made before it only spends tokens.
+A dead background process is detected by its exit notification only. When it arrives, read `WORK/run_done.json` once. It holds the loop, `exit_code`, the report ids, `open_steps`,
+`blocked_steps` and `stopped_at` (report id, step label and kind, null on a clean end). Exit 0 with no open step is a
+finished run. Exit 1 means a model could not run (daemon unreachable, role not adopted, over budget): tell the
+professor the role and the kind from `stopped_at`, never guess, and resume with `run --resume` once he has fixed it.
+Any other end (killed, crashed, no marker): report the last JSON line, and start `run --resume` once; a second end of
+the same kind is reported, not retried. If the exit notification never arrives, the professor asks and you read the
+marker once.
 
 **Step 4 - Batch.** Run `ugs_driver.py batch --work WORK --loop N`. Present the verdict from the
 numbers only (mean, spread, the band, the reasons). In band, or out of band (exit 3), the grades of every

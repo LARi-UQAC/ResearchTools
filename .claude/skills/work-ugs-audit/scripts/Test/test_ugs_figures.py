@@ -82,9 +82,10 @@ class TestUgsFigures(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def report(self, call, vision_ok=True, existing=None, on_figure=None, criteria=None, language="en"):
+    def report(self, call, vision_ok=True, existing=None, on_figure=None, criteria=None, language="en", elements=None):
         return ugs_figures.figures_report(self.pdf, self.report_dir, "R01", self.pages, call, self.ctx,
-                                          criteria or self.criteria, language, vision_ok, existing, on_figure)
+                                          criteria or self.criteria, language, vision_ok, existing, on_figure,
+                                          elements=elements)
 
     def test_script_verdicts_are_recorded_without_any_model_call_when_vision_is_not_ok(self):
         model = FakeModel()
@@ -275,6 +276,66 @@ class TestUgsFigures(unittest.TestCase):
         with self.assertRaises(KeyError) as ctx:
             self.report(FakeModel(), criteria=broken)
         self.assertIn("jpeg_quality", str(ctx.exception))
+
+
+    # --- N7 signal 2 (plan 20): the vision role says an element is a table ---
+
+    def test_a_table_judged_by_vision_under_a_figure_title_is_flagged(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        result = self.report(FakeModel(kind="table"), elements=elements)
+        record = result["figures"][0]
+        self.assertEqual(record["kind"], "table")
+        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_source"], "vision")
+        self.assertEqual(result["figures"][1]["title_kind_mismatch"], "table_titled_figure")  # the same model says table
+
+    def test_a_chart_judged_under_a_figure_title_is_not_flagged(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        self.assertIsNone(result["figures"][0]["title_kind_mismatch"])
+        self.assertIsNone(result["figures"][0]["title_kind_source"])
+
+    def test_a_script_flag_is_never_overwritten_by_a_vision_answer(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_kind_mismatch="table_titled_figure", title_kind_source="script")
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = result["figures"][0]
+        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_source"], "script")
+
+    def test_without_vision_the_script_flag_stays_and_vision_adds_nothing(self):
+        elements = self.element_records([None, None])
+        result = self.report(FakeModel(kind="table"), vision_ok=False, elements=elements)
+        self.assertIsNone(result["figures"][0]["title_kind_mismatch"])
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_kind_mismatch="table_titled_figure", title_kind_source="script")
+        result = self.report(FakeModel(), vision_ok=False, elements=elements)
+        self.assertEqual(result["figures"][0]["title_kind_source"], "script")
+
+    def test_the_figure_schema_and_the_probe_schema_accept_the_kind_table(self):
+        schemas = json.loads((Path(__file__).resolve().parent.parent.parent / "prompts" / "schemas.json")
+                             .read_text(encoding="utf-8"))
+        self.assertIn("table", schemas["figure"]["properties"]["kind"]["enum"])
+        self.assertIn("table", schemas["vision_probe"]["properties"]["figure_kind"]["enum"])
+
+    def test_the_figure_prompt_names_the_kind_table(self):
+        self.assertIn("table (a grid of rows and columns", FIGURE_PROMPT)
+
+
+class TestTitleKindFromAnswer(unittest.TestCase):
+    """N7 (plan 20): the mapping from an element type and a vision kind to the title mismatch."""
+
+    def test_the_four_combinations(self):
+        self.assertEqual(ugs_figures.title_kind_from_answer("figure", "table"), "table_titled_figure")
+        self.assertIsNone(ugs_figures.title_kind_from_answer("figure", "chart"))
+        self.assertEqual(ugs_figures.title_kind_from_answer("table_image", "chart"), "figure_titled_table")
+        self.assertIsNone(ugs_figures.title_kind_from_answer("table_image", "table"))
+
+    def test_other_is_never_a_mismatch_for_a_table_image(self):
+        self.assertIsNone(ugs_figures.title_kind_from_answer("table_image", "other"))
+
+    def test_a_diagram_under_a_table_title_is_a_mismatch(self):
+        self.assertEqual(ugs_figures.title_kind_from_answer("table_image", "diagram"), "figure_titled_table")
 
 
 class TestCitingParagraph(unittest.TestCase):

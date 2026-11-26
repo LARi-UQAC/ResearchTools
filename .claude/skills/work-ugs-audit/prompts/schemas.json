@@ -77,7 +77,7 @@
     "type": "object",
     "required": ["kind", "criteria"],
     "properties": {
-      "kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "photo", "other"]},
+      "kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "table", "photo", "other"]},
       "criteria": {
         "type": "array",
         "items": {
@@ -105,7 +105,7 @@
     "type": "object",
     "required": ["figure_kind", "visible_text"],
     "properties": {
-      "figure_kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "photo", "other"]},
+      "figure_kind": {"type": "string", "enum": ["chart", "gantt", "diagram", "flowchart", "technical_drawing", "table", "photo", "other"]},
       "visible_text": {"type": "array", "items": {"type": "string"}}
     }
   }

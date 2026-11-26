@@ -133,6 +133,35 @@ def _effective_dpi(figure: Dict[str, Any]) -> Optional[float]:
     return round(size[0] / ((rect[2] - rect[0]) / POINTS_PER_INCH), 1)
 
 
+def title_kind_from_answer(element_type: str, answer_kind: str) -> Optional[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Tell whether the vision kind of an element contradicts the kind its printed title announces (N7, plan 20).
+
+    Details:
+        A figure the model calls a table has a table printed under a figure title. A table_image (a table title over a
+        picture) the model calls anything but a table or other has a figure printed under a table title. The
+        mismatch is a fact about the title, so the caller keeps a script verdict over this one.
+
+    Inputs:
+        element_type (str): the element type of the record: figure or table_image
+        answer_kind (str): the kind named by the vision model, one of the figure schema kinds
+
+    Outputs:
+        mismatch (str | None): table_titled_figure, figure_titled_table, or None when the title fits.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if element_type == "figure" and answer_kind == "table":
+        return "table_titled_figure"
+    if element_type == "table_image" and answer_kind not in ("table", "other"):
+        return "figure_titled_table"
+    return None
+
+
 def _valid_figure_answer(answer: Any, sent_ids: List[str]) -> bool:
     """True when the answer has a kind and only criteria that were sent, each with a known verdict."""
     if not isinstance(answer, dict) or not isinstance(answer.get("kind"), str):
@@ -208,6 +237,10 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
             record["criteria"][cid] = {"verdict": "not_run", "reason": "invalid_answer"}
         return
     record["kind"] = answer["kind"]
+    if record.get("title_kind_source") != "script":  # N7: a script verdict on the title is never overwritten
+        mismatch = title_kind_from_answer(record.get("element_type") or "figure", answer["kind"])
+        record["title_kind_mismatch"] = mismatch
+        record["title_kind_source"] = "vision" if mismatch else None
     answered = {item["id"]: item for item in answer["criteria"]}
     for crit in sent:
         cid, item = crit["id"], answered.get(crit["id"])
@@ -327,6 +360,9 @@ def figures_report(
             "printed_number": printed,
             "cited_in_text": bool(citing_text(pages, printed)) if printed else NOT_APPLICABLE,
             "criteria": dict(fig["criteria"]), "model_image": None,
+            "element_type": elements_by_id.get(figure_id, {}).get("element_type"),
+            "title_kind_mismatch": elements_by_id.get(figure_id, {}).get("title_kind_mismatch"),
+            "title_kind_source": elements_by_id.get(figure_id, {}).get("title_kind_source"),
         }
         if vision_ok:
             _judge_figure(record, fig, criteria, pages, report_dir, call, ctx, language, settings, printed)

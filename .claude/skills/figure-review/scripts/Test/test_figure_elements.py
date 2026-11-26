@@ -179,7 +179,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["table"])
-        self.assertEqual(records[0]["element_id"], "T01")
+        self.assertEqual(records[0]["element_id"], "T-u01")
 
     def test_table_markdown_holds_the_cells(self):
         doc = fitz.open()
@@ -209,7 +209,7 @@ class TestExtractElements(unittest.TestCase):
         records = self._extract()
         figures = [r for r in records if r["element_type"] == "figure"]
         self.assertEqual(len(figures), 1)
-        self.assertEqual(figures[0]["element_id"], "F01")
+        self.assertEqual(figures[0]["element_id"], "F1")
         self.assertEqual([r["element_type"] for r in records], ["figure"])
 
     def test_title_between_figures_blocks_the_merge(self):
@@ -224,7 +224,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         figures = [r for r in self._extract() if r["element_type"] == "figure"]
         self.assertEqual(len(figures), 2)
-        self.assertEqual([f["element_id"] for f in figures], ["F01", "F02"])
+        self.assertEqual([f["element_id"] for f in figures], ["F1", "F2"])
 
     def test_repeated_header_image_is_a_logo(self):
         doc = fitz.open()
@@ -255,7 +255,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["table_image"])
-        self.assertEqual(records[0]["element_id"], "T01")
+        self.assertEqual(records[0]["element_id"], "T1")
         self.assertEqual(records[0]["title"]["text"], "Tableau 1 : Mesures")
         self.assertEqual(records[0]["legend"], "")
 
@@ -293,7 +293,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["figure"])
-        self.assertEqual(records[0]["element_id"], "F01")
+        self.assertEqual(records[0]["element_id"], "F3")
 
     def test_skipped_page_gives_no_element(self):
         doc = fitz.open()
@@ -303,7 +303,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         records = self._extract(skip_pages=(2,))
         self.assertEqual([r["page"] for r in records], [1, 3])
-        self.assertEqual([r["element_id"] for r in records], ["F01", "F02"])
+        self.assertEqual([r["element_id"] for r in records], ["F-u01", "F-u02"])
 
     def test_titles_legend_notes_are_attached(self):
         doc = fitz.open()
@@ -387,7 +387,7 @@ class TestExtractElements(unittest.TestCase):
         self._save(doc)
         figures = [r for r in self._extract() if r["element_type"] == "figure"]
         self.assertEqual(len(figures), 2)
-        self.assertEqual([f["element_id"] for f in figures], ["F01", "F02"])
+        self.assertEqual([f["element_id"] for f in figures], ["F1", "F2"])
 
     def test_long_paragraph_between_figures_separates_them(self):
         doc = fitz.open()
@@ -448,6 +448,72 @@ class TestExtractElements(unittest.TestCase):
         records = self._extract()
         self.assertEqual([r["element_type"] for r in records], ["table"])
         self.assertLessEqual(records[0]["rect"][1], 301)
+
+    def test_figure_file_named_by_printed_number(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 216, "Figure 2.3: Schema")
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "F2.3")
+        self.assertEqual(record["file"], "F2.3.png")
+        self.assertTrue((self.out / "F2.3.png").exists())
+
+    def test_table_image_file_named_by_number(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 286, "Tableau 4 : Mesures")
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertEqual(record["element_id"], "T4")
+        self.assertEqual(record["file"], "T4.png")
+        self.assertTrue((self.out / "T4.png").exists())
+
+    def test_untitled_figure_named_u(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 300, 400, 500)
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "F-u01")
+        self.assertEqual(record["file"], "F-u01.png")
+
+    def test_duplicate_number_gets_suffix(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 216, "Figure 1: A")
+        _filled(page, 100, 260, 300, 360)
+        _centred_text(page, 200, 376, "Figure 1: B")
+        self._save(doc)
+        ids = [r["element_id"] for r in self._extract()]
+        self.assertEqual(ids, ["F1", "F1-b"])
+
+    def test_ruled_table_writes_no_file(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _centred_text(page, 200, 186, "Tableau 1 : Mesures")
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur"], ["Masse", "12.5"]])
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "T1")
+        self.assertIsNone(record["file"])
+        self.assertFalse((self.out / "T1.png").exists())
+
+    def test_logo_writes_no_file(self):
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            page.insert_image(fitz.Rect(40, 10, 140, 90), stream=_logo_png())
+            _filled(page, 100, 300, 400, 500)
+        self._save(doc)
+        logos = [r for r in self._extract() if r["element_type"] == "logo"]
+        self.assertEqual(len(logos), 3)
+        self.assertTrue(all(r["file"] is None for r in logos))
+        self.assertFalse((self.out / "L01.png").exists())
 
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]

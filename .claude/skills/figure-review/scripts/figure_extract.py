@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Iterable, Tuple
@@ -33,6 +34,8 @@ ELEMENT_SETTING_KEYS = (
 # Element id prefix per element type: F01 figures, T01 tables, L01 logos.
 ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "table_image": "T", "logo": "L"}
 TEXT_BLOCK_TYPE = 0
+# The number printed after the marker word of a title (plan 12 N2): "Figure 2.3", "Tableau 4", "Fig. A.1".
+PRINTED_NUMBER_RE = re.compile(r"^\s*(?:Figure|Fig\.?|Tableau|Table)\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)")
 
 
 def drawing_area_ratio(samples: bytes, width: int, height: int, n: int, threshold: int) -> float:
@@ -537,6 +540,46 @@ def _title_barriers(page: "fitz.Page", markers: Dict[str, Any]) -> List["fitz.Re
     return barriers
 
 
+def _split_title_blocks(page: "fitz.Page", blocks: List[tuple], markers: Dict[str, Any]) -> List[tuple]:
+    """
+    Purpose: Split a text block that holds two titles on separate lines side by side, so that each title can be
+        claimed by its own element (plan 12 N2: two figures side by side, each with its title below).
+    Details: PyMuPDF puts two titles on one baseline in one block; the block then names neither figure. Only blocks
+        with at least two title lines are split, line by line; every other block is returned unchanged.
+    Inputs:
+        page: fitz.Page - the page.
+        blocks: List[tuple] - the tuples of page.get_text("blocks").
+        markers: Dict[str, Any] - the data returned by element_labels.load_markers.
+    Outputs:
+        List[tuple] - the blocks, with each multi-title block replaced by one tuple per line.
+    Raises:
+        MarkerError: If the markers are incomplete.
+    """
+    prefixes = (list(element_labels._marker_prefixes(markers, "figure_prefixes"))
+                + list(element_labels._marker_prefixes(markers, "table_prefixes")))
+    split_boxes: Dict[Tuple[int, ...], List[tuple]] = {}
+    for block in page.get_text("dict")["blocks"]:
+        if block.get("type") != TEXT_BLOCK_TYPE:
+            continue
+        title_lines = [line for line in block["lines"]
+                       if element_labels._starts_with_marker(
+                           element_labels._clean("".join(span["text"] for span in line["spans"])), prefixes)]
+        if len(title_lines) >= 2:
+            key = tuple(round(value) for value in block["bbox"])
+            split_boxes[key] = [
+                (*line["bbox"], "".join(span["text"] for span in line["spans"]), index, TEXT_BLOCK_TYPE)
+                for index, line in enumerate(block["lines"])
+            ]
+    result: List[tuple] = []
+    for block in blocks:
+        key = tuple(round(value) for value in block[:4])
+        if len(block) >= 7 and block[6] == TEXT_BLOCK_TYPE and key in split_boxes:
+            result.extend(split_boxes[key])
+        else:
+            result.append(block)
+    return result
+
+
 def _group_by_barriers(regions: List[Tuple["fitz.Rect", bool]], barriers: List["fitz.Rect"],
                        gap: float) -> List[Tuple["fitz.Rect", bool]]:
     """
@@ -699,7 +742,7 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
     Raises:
         MarkerError: If the markers are incomplete.
     """
-    blocks = page.get_text("blocks")
+    blocks = _split_title_blocks(page, page.get_text("blocks"), markers)
     words = page.get_text("words")
     tables, tables_dropped = _usable_tables(page.find_tables().tables)
     table_boxes = [rect for rect, _markdown in tables]
@@ -861,6 +904,55 @@ def _take_title(available: List[tuple], rect: "fitz.Rect", element_type: str,
     return title
 
 
+def _printed_number(title: Optional[Dict[str, str]]) -> Optional[str]:
+    """
+    Purpose: Read the number printed in an element title, such as 2.3 in "Figure 2.3: Schema" (plan 12 N2).
+    Inputs:
+        title: Optional[Dict[str, str]] - the title record, or None for an untitled element.
+    Outputs:
+        Optional[str] - the printed number, or None when the title carries no number.
+    Raises:
+        None.
+    """
+    if not title:
+        return None
+    match = PRINTED_NUMBER_RE.match(title["text"])
+    return match.group(1) if match else None
+
+
+def _element_id(kind: str, title: Optional[Dict[str, str]], counters: Dict[str, int], used_ids: set) -> str:
+    """
+    Purpose: Give an element its id: F<X> or T<X> from the number printed in its title, F-u<NN> or T-u<NN> when
+        untitled, L<NN> for a logo; a repeated id gets the suffix -b, -c and so on (plan 12 N2).
+    Inputs:
+        kind: str - the element type (figure, table, table_image or logo).
+        title: Optional[Dict[str, str]] - the title record, or None.
+        counters: Dict[str, int] - the running counter of each untitled or logo id base, updated in place.
+        used_ids: set - the ids already given on this report, updated in place.
+    Outputs:
+        str - the element id, unique among used_ids.
+    Raises:
+        None.
+    """
+    number = _printed_number(title)
+    if kind == "logo":
+        base = f"L{counters.get('L', 0) + 1:02d}"
+        counters["L"] = counters.get("L", 0) + 1
+    elif number is not None:
+        base = f"{ELEMENT_ID_PREFIX[kind]}{number}"
+    else:
+        key = "F-u" if kind == "figure" else "T-u"
+        counters[key] = counters.get(key, 0) + 1
+        base = f"{key}{counters[key]:02d}"
+    element_id = base
+    suffix = 1
+    while element_id in used_ids:
+        suffix += 1
+        element_id = f"{base}-{chr(ord('a') + suffix - 1)}"
+    used_ids.add(element_id)
+    return element_id
+
+
 def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers: Dict[str, Any],
                      skip_pages: Iterable[int] = (), stats: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
@@ -974,19 +1066,20 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                         break
             pending.extend(item for item in items if item["kind"] in ("figure", "table", "table_image", "logo"))
 
-        counters = {prefix: 0 for prefix in ELEMENT_ID_PREFIX.values()}
+        counters: Dict[str, int] = {}
+        used_ids: set = set()
         threshold = settings["background_threshold"]
         records: List[Dict[str, Any]] = []
         for item in pending:
             kind = item["kind"]
-            prefix = ELEMENT_ID_PREFIX[kind]
-            counters[prefix] += 1
-            element_id = f"{prefix}{counters[prefix]:02d}"
-            file_name = f"{element_id}.png"
+            title = item["title"]
+            element_id = _element_id(kind, title, counters, used_ids)
+            # N2 (plan 12 Task 4): only figures and table images are written as files; ruled tables and logos
+            # are recorded with no file.
+            file_name = f"{element_id}.png" if kind in ("figure", "table_image") else None
             page = item["scan"]["page"]
             rect = item["rect"]
-            pix = _render_element(page, rect, out_root, file_name)
-            title = item["title"]
+            pix = _render_element(page, rect, out_root, file_name) if file_name else None
             record: Dict[str, Any] = {
                 "element_id": element_id,
                 "element_type": kind,

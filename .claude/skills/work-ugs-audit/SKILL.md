@@ -56,6 +56,15 @@ a marker word (Figure, Fig., Tableau, Table): a figure title is usually below th
 lines under a table (Note, Source, an asterisk). The element type is `figure`, `table`, `table_image` (a table drawn as
 an image, rebuilt by OCR) or `logo`; only a `figure` is judged as a figure.
 
+Titles in the image and placement (Issue #126 plans 24 and 25). A title drawn inside a raster figure is read in the
+top or bottom band of `extraction.in_image_title_band_ratio` of its height (`element_labels.find_in_image_title`), with
+its position `in_image_top` or `in_image_bottom`; the element then takes its printed number as its id and file name,
+as a text title does. A title is placed by the house rule: a figure title centred below the figure (or centred on the
+text column), a table title left-aligned above the table; a title drawn in the image is always a finding. The annex
+row `title_placement` lists the ids of the findings, and its annotations carry the comments of `title_placement_comments`.
+Appendix pages after the references are body pages; `assets/section_terms.json` adds the words of a section (a
+timesheet analysis, for instance) to the page search.
+
 Language step. A word written correctly is never a spelling finding: a finding is refused when its proposal equals its
 quote, or only swaps spellings listed in `assets/accepted_spellings.json` (both spellings of the 1990 French reform);
 the count is `rejected_correct`. Findings dropped by a `spelling_only` page are counted in `dropped_scope`.
@@ -74,6 +83,12 @@ absent or wrong in the report and cost the points, in the report language, empty
 `grade.missing_max_chars` characters. It is model text saved in
 `grade.json` only; it never reaches the ledger, a log or the dashboard. The ledger line carries the code as its note,
 and `attempts` counts the tries. The auditor receives `missing` and `comment`, never the validation fields.
+
+Levels (Issue #126 plan 25). The model names one level of `assets/grade_levels.json` (`absent`, `attempted`,
+`partial`, `complete_correct`, `exemplary`) and never a score: the code computes the points as the level's fraction of
+the maximum, rounded to the nearest `grade.score_step` (ties up), so `score` is always within the maximum. A level
+outside the list is refused as `unknown_level`, asked again once, then `not_run`. `model_score` keeps the level name.
+The fractions live only in `grade_levels.json`; no prompt states a number the model could copy.
 
 A report whose language cannot be decided (no text layer and no metadata) is refused in preparation with a named
 reason, and the other reports continue. A page with no text layer is sent to OCR and, when still empty, listed in

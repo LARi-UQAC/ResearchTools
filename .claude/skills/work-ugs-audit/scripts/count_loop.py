@@ -33,27 +33,32 @@ def _count_figures(records: List[Dict[str, Any]]) -> int:
 
 
 def run_count_loop(extract: Callable[[Dict[str, Any]], List[Dict[str, Any]]], declared_figures: Optional[int],
-                   steps: List[Dict[str, Any]], max_iterations: int) -> Dict[str, Any]:
+                   steps: List[Dict[str, Any]], max_iterations: int,
+                   judge: Optional[Callable[[List[Dict[str, Any]]], Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
-    Purpose: Run the extraction until its figure count equals the declared count, or the bound is reached.
-    Details: The first attempt uses no override. Each re-run uses the next entry of steps, at most
-        max_iterations re-runs. With no declared count (not_found) the extraction runs once. On a mismatch the
-        attempt whose count is closest to the declared one is kept (the earliest on a tie).
+    Purpose: Run the extraction until its figures agree with the declared list, or the bound is reached.
+    Details: The first attempt uses no override. Each re-run uses the next entry of steps, at most max_iterations
+        re-runs. An attempt is ok only when its count equals the declared count AND, when judge is given, it has
+        no missing and no extra printed number (review I2: a count coincidence is not agreement). With judge None
+        the count alone decides. With no declared count (not_found) the extraction runs once. On a mismatch the
+        attempt with the fewest differences is kept (the earliest on a tie).
     Inputs:
         extract: Callable - takes a dict of setting overrides and returns the element records of one attempt.
         declared_figures: Optional[int] - the declared figure count, None when the list was not found.
         steps: List[Dict[str, Any]] - the override dicts of the re-runs, in order.
         max_iterations: int - the largest number of re-runs after the first attempt.
+        judge: Optional[Callable] - takes the records and returns {"extracted", "missing", "extra"}.
     Outputs:
         Dict[str, Any] - keys status (ok, mismatch or not_found), declared, records (of the kept attempt),
-            kept_attempt (its index in attempts) and attempts (each with overrides, extracted and status).
+            kept_attempt (its index in attempts) and attempts (each with overrides, extracted, missing, extra and
+            status).
     Raises:
         None: an extraction error is the caller's to handle.
     """
     if declared_figures is None:
         records = extract({})
-        count = _count_figures(records)
-        attempt = {"overrides": {}, "extracted": count, "status": "not_found"}
+        attempt = {"overrides": {}, "extracted": _count_figures(records), "missing": [], "extra": [],
+                   "status": "not_found"}
         return {"status": "not_found", "declared": None, "records": records, "attempts": [attempt],
                 "kept_attempt": 0}
 
@@ -62,12 +67,19 @@ def run_count_loop(extract: Callable[[Dict[str, Any]], List[Dict[str, Any]]], de
     kept: Optional[Tuple[int, int, List[Dict[str, Any]]]] = None
     for index, overrides in enumerate(plan):
         records = extract(dict(overrides))
-        count = _count_figures(records)
-        distance = abs(count - declared_figures)
-        status = "ok" if distance == 0 else "mismatch"
-        attempts.append({"overrides": dict(overrides), "extracted": count, "status": status})
-        if kept is None or distance < kept[0]:
-            kept = (distance, index, records)
+        if judge is None:
+            judged = {"extracted": _count_figures(records), "missing": [], "extra": []}
+        else:
+            judged = judge(records)
+        count = judged["extracted"]
+        missing = list(judged["missing"])
+        extra = list(judged["extra"])
+        difference = abs(count - declared_figures) + len(missing) + len(extra)
+        status = "ok" if difference == 0 else "mismatch"
+        attempts.append({"overrides": dict(overrides), "extracted": count, "missing": missing, "extra": extra,
+                         "status": status})
+        if kept is None or difference < kept[0]:
+            kept = (difference, index, records)
         if status == "ok":
             break
     return {

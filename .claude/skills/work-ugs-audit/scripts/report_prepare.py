@@ -566,8 +566,8 @@ def _classify_untitled_records(records: List[Dict[str, Any]], folder: Path, pdf_
 
 def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: str, skip_pages: List[int],
                                 hooks: PrepHooks, declared_figures: Optional[int],
-                                classify: Optional[Callable[[List[Dict[str, Any]], Path], List[Dict[str, Any]]]] = None
-                                ) -> tuple:
+                                classify: Optional[Callable[[List[Dict[str, Any]], Path], List[Dict[str, Any]]]] = None,
+                                declared: Optional[Dict[str, Any]] = None) -> tuple:
     """
     Purpose: Extract the elements of a report under the count loop (plan 12 Task 3, spec E6). Each attempt renders
         into a folder of its own inside the report folder; only the kept attempt's files reach the figures folder.
@@ -615,7 +615,22 @@ def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: 
         dropped.append(_read_tables_dropped(stats_file))
         return records
 
-    result = count_loop.run_count_loop(extract, declared_figures, steps, max_iterations)
+    def judge(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Purpose: Judge one attempt's figures against the declared list: count, missing and extra printed numbers.
+        Inputs:
+            records (list[dict]): the records of the attempt.
+        Outputs:
+            dict - extracted, missing and extra, as the count loop reads them.
+        Raises:
+            None.
+        """
+        counted = count_check.compare_counts(declared or {}, records)
+        return {"extracted": counted["extracted_figures"], "missing": counted["missing_figure_numbers"],
+                "extra": counted["extra_figure_numbers"]}
+
+    result = count_loop.run_count_loop(extract, declared_figures, steps, max_iterations,
+                                       judge=judge if declared is not None else None)
     index = result["kept_attempt"]
     kept = folders[index]
     figures_dir = report_dir / figures_name
@@ -845,7 +860,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
 
     elements, figure_attempts = _extract_elements_with_loop(pdf_file, report_dir, settings["reports.figures_folder"],
                                                             skip_pages, memo_hooks, declared["declared_figures"],
-                                                            classify=classify)
+                                                            classify=classify, declared=declared)
     elements = _read_table_images(elements, pdf_file, memo_hooks, language, context["ocr"]["language_codes"],
                                   image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],

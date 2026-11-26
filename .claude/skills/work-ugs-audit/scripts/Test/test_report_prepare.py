@@ -387,6 +387,29 @@ class PreparationTests(unittest.TestCase):
         self.assertTrue(self.report_file("figures", "T-i01.png").exists())
         self.assertFalse(self.report_file("figures", "F-u01.png").exists())
 
+    def test_count_match_with_wrong_numbers_is_rerun(self):
+        """Review I2: two figures numbered 1 and 3 against a declared 1 and 2 is a mismatch, so the loop re-runs."""
+        self._two_figures_declared()
+        calls = []
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            calls.append(overrides)
+            numbers = [1, 3] if not overrides else [1, 2]
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for number in numbers:
+                (figures_dir / f"F{number}.png").write_bytes(b"png")
+                records.append({"element_id": f"F{number}", "element_type": "figure", "page": 2,
+                                "file": f"F{number}.png", "title": {"text": f"Figure {number}: Schema"}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual([a["status"] for a in meta["figure_attempts"]], ["mismatch", "ok"])
+        self.assertEqual(meta["figure_attempts"][0]["missing"], ["2"])
+        self.assertEqual(meta["figure_attempts"][0]["extra"], ["3"])
+        self.assertEqual(meta["figure_count_status"], "ok")
+
     def test_renamed_table_image_never_collides_with_a_ruled_table_id(self):
         """Review I1: an untitled ruled table T-u01 and an untitled figure turned table image keep distinct ids."""
         def finder(pdf, figures_dir, skip_pages, overrides=None):

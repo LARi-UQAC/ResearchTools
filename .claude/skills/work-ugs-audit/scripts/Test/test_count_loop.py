@@ -99,6 +99,25 @@ class TestCountLoop(unittest.TestCase):
         self.assertEqual(len(result["attempts"]), 1)
         self.assertEqual(result["status"], "mismatch")
 
+    def test_count_coincidence_is_not_ok_when_numbers_differ(self):
+        """Review I2: the count can match while a printed number is missing; the attempt is then a mismatch."""
+        stub = _Stub({"default": 18})
+
+        def judge(records):
+            return {"extracted": len(records), "missing": ["16", "17"], "extra": []}
+
+        result = count_loop.run_count_loop(stub, 18, STEPS, 1, judge=judge)
+        self.assertEqual(result["status"], "mismatch")
+        self.assertEqual(result["attempts"][0]["missing"], ["16", "17"])
+        self.assertEqual(result["attempts"][0]["extra"], [])
+
+    def test_ok_needs_no_missing_and_no_extra_numbers(self):
+        stub = _Stub({"default": 2})
+        result = count_loop.run_count_loop(stub, 2, STEPS, 1,
+                                           judge=lambda records: {"extracted": len(records), "missing": [], "extra": []})
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(result["attempts"]), 1)
+
     def test_read_settings_names_a_missing_key(self):
         with self.assertRaises(count_loop.CountLoopError) as ctx:
             count_loop.read_loop_settings({"count_max_iterations": {"value": 3, "provenance": "x"}})

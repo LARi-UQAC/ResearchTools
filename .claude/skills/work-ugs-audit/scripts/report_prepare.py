@@ -484,7 +484,7 @@ def _memoized_ocr(ocr_words: Optional[Callable]) -> Optional[Callable]:
     """
     if ocr_words is None:
         return None
-    cache: Dict[tuple, List[tuple]] = {}
+    cache: Dict[tuple, Any] = {}
 
     def memoized(pdf_path: Path, page_number: int, rect: Sequence[float], tesseract_language: str) -> List[tuple]:
         """
@@ -497,12 +497,18 @@ def _memoized_ocr(ocr_words: Optional[Callable]) -> Optional[Callable]:
         Outputs:
             List[tuple] - the word boxes of the region.
         Raises:
-            Exception: whatever the hook raises, unchanged.
+            Exception: whatever the hook raised the first time, raised again without a second OCR.
         """
         key = (str(pdf_path), page_number, tuple(round(float(v), 2) for v in rect), tesseract_language)
         if key not in cache:
-            cache[key] = ocr_words(pdf_path, page_number, rect, tesseract_language)
-        return cache[key]
+            try:
+                cache[key] = ("ok", ocr_words(pdf_path, page_number, rect, tesseract_language))
+            except Exception as error:  # review minor: a failed OCR is remembered and raised again, not repeated
+                cache[key] = ("error", error)
+        state, value = cache[key]
+        if state == "error":
+            raise value
+        return value
 
     return memoized
 
@@ -539,8 +545,9 @@ def _classify_untitled_records(records: List[Dict[str, Any]], folder: Path, pdf_
         if ocr_words is None:
             record["status"] = "untitled_ocr_unavailable"
             continue
+        codes = tesseract_language()  # review minor: a configuration error raises here, not as an OCR status
         try:
-            words = ocr_words(pdf_file, record["page"], record["rect"], tesseract_language())
+            words = ocr_words(pdf_file, record["page"], record["rect"], codes)
         except (PrepareError, TextQualityError, OSError):
             record["status"] = "untitled_ocr_unavailable"
             continue
@@ -590,6 +597,37 @@ def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: 
     scratch = report_dir / ATTEMPTS_FOLDER
     if scratch.exists():
         shutil.rmtree(scratch)
+    try:
+        return _run_loop_attempts(pdf_file, report_dir, figures_name, skip_pages, scratch, max_iterations, steps,
+                                  hooks, declared_figures, classify, declared)
+    finally:
+        if scratch.exists():
+            shutil.rmtree(scratch)
+
+
+def _run_loop_attempts(pdf_file: Path, report_dir: Path, figures_name: str, skip_pages: List[int], scratch: Path,
+                       max_iterations: int, steps: list, hooks: PrepHooks, declared_figures: Optional[int],
+                       classify: Optional[Callable], declared: Optional[Dict[str, Any]]) -> tuple:
+    """
+    Purpose: Run the attempts of the count loop and keep the chosen one (plan 12 Task 3). Called by
+        _extract_elements_with_loop, which removes the attempts folder whatever the outcome.
+    Inputs:
+        pdf_file (Path): the PDF of the report.
+        report_dir (Path): the report folder.
+        figures_name (str): the figures folder name.
+        skip_pages (List[int]): the 1-based pages to leave out.
+        scratch (Path): the attempts folder.
+        max_iterations (int): the re-runs allowed.
+        steps (list): the override dicts of the re-runs.
+        hooks (PrepHooks): the element finder.
+        declared_figures (Optional[int]): the declared figure count.
+        classify (Callable | None): the untitled-region rule of each attempt.
+        declared (dict | None): the declared counts, for the judge.
+    Outputs:
+        tuple - (records of the kept attempt, attempts).
+    Raises:
+        PrepareError: when a statistics file is unreadable.
+    """
     folders: List[Path] = []
     dropped: List[int] = []
 
@@ -641,8 +679,6 @@ def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: 
         for entry in kept.iterdir():
             shutil.move(str(entry), str(figures_dir / entry.name))
     _write_atomic(report_dir / TABLE_STATS_FILE, json.dumps({"tables_dropped": dropped[index]}))
-    if scratch.exists():
-        shutil.rmtree(scratch)
     return result["records"], result["attempts"]
 
 

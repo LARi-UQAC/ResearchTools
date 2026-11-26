@@ -37,7 +37,7 @@ ELEMENT_SETTING_KEYS = (
 ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "table_image": "T", "logo": "L"}
 TEXT_BLOCK_TYPE = 0
 # The number printed after the marker word of a title (plan 12 N2): "Figure 2.3", "Tableau 4", "Fig. A.1".
-PRINTED_NUMBER_RE = re.compile(r"^\s*(?:Figure|Fig\.?|Tableau|Table)\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)")
+PRINTED_NUMBER_RE = re.compile(r"^\s*(?:Figure|Fig\.?|Tableau|Table)\s+([A-Za-z0-9]+(?:[.\-][A-Za-z0-9]+)*)")
 
 
 def drawing_area_ratio(samples: bytes, width: int, height: int, n: int, threshold: int) -> float:
@@ -374,29 +374,6 @@ def _table_overlap_ratio(region: "fitz.Rect", boxes: List["fitz.Rect"]) -> float
     return best
 
 
-def _marker_barriers(blocks: List[tuple], markers: Dict[str, Any]) -> List["fitz.Rect"]:
-    """
-    Purpose: Collect the rectangles of the text blocks that open with a figure or table marker word.
-    Details: Such a block is a title, so two regions with one of them between them are two elements (R3).
-    Inputs:
-        blocks: List[tuple] - the tuples of page.get_text("blocks").
-        markers: Dict[str, Any] - the data returned by element_labels.load_markers.
-    Outputs:
-        List[fitz.Rect] - one rectangle per title-like text block.
-    Raises:
-        MarkerError: If the markers lack the figure or table prefix list.
-    """
-    prefixes = (list(element_labels._marker_prefixes(markers, "figure_prefixes"))
-                + list(element_labels._marker_prefixes(markers, "table_prefixes")))
-    barriers = []
-    for block in blocks:
-        if len(block) < 7 or block[6] != TEXT_BLOCK_TYPE:
-            continue
-        if element_labels._starts_with_marker(element_labels._clean(block[4]), prefixes):
-            barriers.append(fitz.Rect(block[:4]))
-    return barriers
-
-
 def _blocked_by_title(a: "fitz.Rect", b: "fitz.Rect", barriers: List["fitz.Rect"]) -> bool:
     """
     Purpose: Tell whether a title lies in the vertical gap between two regions, which keeps them apart.
@@ -421,36 +398,6 @@ def _blocked_by_title(a: "fitz.Rect", b: "fitz.Rect", barriers: List["fitz.Rect"
         if barrier.y0 >= upper.y1 and barrier.y1 <= lower.y0 and barrier.x0 < right and barrier.x1 > left:
             return True
     return False
-
-
-def _merge_blocked(items: List[Tuple["fitz.Rect", bool]], gap: float,
-                   barriers: List["fitz.Rect"]) -> List[Tuple["fitz.Rect", bool]]:
-    """
-    Purpose: Merge regions that lie within gap of each other, unless a title lies between them (R3).
-    Inputs:
-        items: List[Tuple[fitz.Rect, bool]] - each region with True when it is a raster image.
-        gap: float - largest gap in points that still counts as touching.
-        barriers: List[fitz.Rect] - the title rectangles of the page.
-    Outputs:
-        List[Tuple[fitz.Rect, bool]] - one bounding region per group, raster when any member is.
-    Raises:
-        None.
-    """
-    clusters = list(items)
-    changed = True
-    while changed:
-        changed = False
-        merged: List[Tuple["fitz.Rect", bool]] = []
-        for rect, raster in clusters:
-            for i, (other, other_raster) in enumerate(merged):
-                if _touch(rect, other, gap) and not _blocked_by_title(rect, other, barriers):
-                    merged[i] = (_union(other, rect), raster or other_raster)
-                    changed = True
-                    break
-            else:
-                merged.append((rect, raster))
-        clusters = merged
-    return clusters
 
 
 def _paragraph_barriers(blocks: List[tuple], max_text_words: int) -> List["fitz.Rect"]:
@@ -610,7 +557,7 @@ def _group_by_barriers(regions: List[Tuple["fitz.Rect", bool]], barriers: List["
     Inputs:
         regions: List[Tuple[fitz.Rect, bool]] - each region with True when it is a raster image.
         barriers: List[fitz.Rect] - the title spans and paragraph blocks of the page.
-        gap: float - largest gap in points that still counts as touching (fragment_gap_pt).
+        gap: float - largest gap in points that still counts as touching (group_max_gap_pt).
     Outputs:
         List[Tuple[fitz.Rect, bool]] - one bounding region per group, raster when any member is.
     Raises:
@@ -846,7 +793,7 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
     """
     Purpose: First pass over one page: find its tables and the merged regions that may be figures.
     Details: Regions overlapping a table box beyond table_overlap_ratio are dropped, the vector drawings are
-        clustered as extract does, then the regions are merged with fragment_gap_pt unless a title lies between.
+        clustered as extract does, then the regions are grouped by _group_by_barriers (group_max_gap_pt, titles and paragraphs as barriers).
     Inputs:
         page: fitz.Page - the page to scan.
         page_no: int - the 1-based page number.
@@ -1047,7 +994,7 @@ def _element_id(kind: str, title: Optional[Dict[str, str]], counters: Dict[str, 
         kind: str - the element type (figure, table, table_image or logo).
         title: Optional[Dict[str, str]] - the title record, or None.
         counters: Dict[str, int] - the running counter of each untitled or logo id base, updated in place.
-        used_ids: set - the ids already given on this report, updated in place.
+        used_ids: set - the lower-case ids already given on this report, updated in place.
     Outputs:
         str - the element id, unique among used_ids.
     Raises:
@@ -1065,10 +1012,11 @@ def _element_id(kind: str, title: Optional[Dict[str, str]], counters: Dict[str, 
         base = f"{key}{counters[key]:02d}"
     element_id = base
     suffix = 1
-    while element_id in used_ids:
+    # Review minor: file names on Windows ignore case, so the comparison is made on the lower-case id.
+    while element_id.lower() in used_ids:
         suffix += 1
         element_id = f"{base}-{chr(ord('a') + suffix - 1)}"
-    used_ids.add(element_id)
+    used_ids.add(element_id.lower())
     return element_id
 
 
@@ -1078,7 +1026,7 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
     Purpose: Extract the elements of a PDF with a type: figures, tables and logos, with their titles,
         legends and notes, so that a table is never judged as a figure (spec R1 to R3).
     Details: Per page, the tables found by PyMuPDF are kept as tables and their boxes remove the drawings
-        they contain. Figure regions are merged with fragment_gap_pt unless a title lies between them. A
+        they contain. Figure regions are grouped by barriers (group_max_gap_pt). A
         small region in the header or footer band that recurs on repeat_min_pages pages is a logo. Titles
         are attached once: an element takes the nearest title of its page and that title is no longer free.
         A picture with no figure title but with a table title is a table_image (plan 7, E4), numbered with the

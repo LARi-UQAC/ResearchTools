@@ -451,6 +451,39 @@ class PreparationTests(unittest.TestCase):
         self._prepare_with_ocr(counting)
         self.assertEqual(len(calls), 1)
 
+    def test_unknown_tesseract_language_is_not_an_ocr_status(self):
+        """Review minor: a configuration error of the Tesseract codes raises; it is not untitled_ocr_unavailable."""
+        from text_quality import QualityConfigError
+        with patch.object(report_prepare.text_quality, "tesseract_codes", side_effect=QualityConfigError("no codes")):
+            with self.assertRaises((PrepareError, report_prepare.text_quality.TextQualityError)):
+                self._prepare_with_ocr(lambda pdf, page, rect, lang: self._grid_words(3, 3))
+
+    def test_attempts_folder_removed_when_an_attempt_fails(self):
+        """Review minor: a failing attempt leaves no .attempts folder behind."""
+        self._two_figures_declared()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            raise PrepareError("attempt failed")
+
+        with self.assertRaises(PrepareError):
+            prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        self.assertFalse(self.report_file(".attempts").exists())
+
+    def test_failed_page_ocr_is_cached_once(self):
+        """Review minor: a failed OCR of one region is not repeated for the same region."""
+        calls = []
+
+        def failing(pdf, page, rect, lang):
+            calls.append(page)
+            raise PrepareError("tesseract_missing")
+
+        memo = report_prepare._memoized_ocr(failing)
+        for _ in range(2):
+            with self.assertRaises(PrepareError):
+                memo(self.pdf, 2, [1, 2, 3, 4], "fra")
+        self.assertEqual(len(calls), 1)
+
     def test_count_status_written_to_meta(self):
         """Issue 126 plan 6 E2: a declared figure with no extracted figure is a mismatch in report_meta.json."""
         list_text = "Liste des figures\nFigure 1. Schema ........ 4\nFigure 2. Courbe ........ 6\nFigure 3. Bloc ........ 8"

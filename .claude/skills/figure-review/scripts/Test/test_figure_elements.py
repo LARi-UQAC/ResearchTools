@@ -588,6 +588,26 @@ class TestExtractElements(unittest.TestCase):
         self.assertEqual(table["title"]["text"], "Tableau 6 : Essais")
         self.assertEqual(table["element_id"], "T6")
 
+    def test_hyphenated_printed_number_names_the_file(self):
+        # Review minor: "Figure 2-1" is a printed number with a hyphen.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        _centred_text(page, 200, 216, "Figure 2-1: Schema")
+        self._save(doc)
+        record = self._extract()[0]
+        self.assertEqual(record["element_id"], "F2-1")
+        self.assertEqual(record["file"], "F2-1.png")
+
+    def test_ids_differing_only_by_case_get_a_suffix(self):
+        # Review minor: Windows file names are not case sensitive, so F1a and F1A must not both be written.
+        used = set()
+        counters = {}
+        first = figure_extract._element_id("figure", {"text": "Figure 1a: A"}, counters, used)
+        second = figure_extract._element_id("figure", {"text": "Figure 1A: B"}, counters, used)
+        self.assertEqual(first, "F1a")
+        self.assertNotEqual(first.lower(), second.lower())
+
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]
         for key in ELEMENT_SETTING_KEYS:

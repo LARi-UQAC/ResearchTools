@@ -196,6 +196,29 @@ def read_grade_step(path: Path) -> Decimal:
     return Decimal(str(value))
 
 
+def read_max_elements(path: Path) -> int:
+    """
+    Purpose: Read the cap on the elements verified in one item (review round 2, item 3, grade.max_elements).
+    Inputs:
+        path: Path - The configuration JSON.
+    Outputs:
+        int - A positive whole number of elements.
+    Raises:
+        ValueError: If the file is unreadable, the key is absent or the value is not a positive whole number (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get("grade.max_elements") if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise ValueError(f"missing key 'grade.max_elements' in {path}")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"'grade.max_elements' must be a positive whole number in {path}")
+    return value
+
+
 def read_unverified_as(path: Path) -> str:
     """
     Purpose: Read the verdict an element marked present takes when no tier verifies its quote (review round 2, item 2).
@@ -330,7 +353,7 @@ def read_grade_settings(path: Path = None) -> Dict[str, Any]:
     """
     config = default_path() if path is None else Path(path)
     return {"quote": quote_match.read_quote_settings(config), "unverified_as": read_unverified_as(config),
-            "step": read_grade_step(config)}
+            "step": read_grade_step(config), "max_elements": read_max_elements(config)}
 
 
 # The keys of a rated answer that only the code computes (review round 1, security): the model's values are never kept.
@@ -351,7 +374,7 @@ def _name_key(name: Any) -> str:
 
 
 def prepare_elements(elements: List[dict], pages: List[str], settings: Dict[str, Any],
-                     unverified_as: str) -> List[dict]:
+                     unverified_as: str, max_elements: int) -> Tuple[List[dict], int]:
     """
     Purpose: Verify each present or partial element's quote and give every element its effective verdict (review
         round 2, items 1 and 2). A repeated element name is counted once (item 6).
@@ -362,19 +385,26 @@ def prepare_elements(elements: List[dict], pages: List[str], settings: Dict[str,
         pages: List[str] - The page texts of the report.
         settings: dict - The quote settings, from read_quote_settings.
         unverified_as: str - "partial" or "absent".
+        max_elements: int - The most elements verified in one item (grade.max_elements); the rest are ignored.
     Outputs:
-        List[dict] - One entry per distinct element: element, verdict, effective, verified, tier, page, page_corrected,
+        Tuple[List[dict], int] - The verified elements (at most max_elements), and the number ignored beyond the cap.
+            Each entry: element, verdict, effective, verified, tier, page, page_corrected,
             tiers_tried and quote.
     Raises:
         None.
     """
-    prepared: List[dict] = []
+    distinct: List[dict] = []
     seen = set()
     for element in elements:
         key = _name_key(element.get("element"))
         if key in seen:
             continue
         seen.add(key)
+        distinct.append(element)
+    # Review round 2, item 3: the elements beyond the cap are ignored and counted, never verified.
+    kept = distinct[:max_elements]
+    prepared: List[dict] = []
+    for element in kept:
         verdict = element.get("verdict")
         entry = {"element": element.get("element"), "verdict": verdict, "page": element.get("page"),
                  "quote": element.get("quote"), "verified": False, "tier": None, "page_corrected": False,
@@ -385,12 +415,16 @@ def prepare_elements(elements: List[dict], pages: List[str], settings: Dict[str,
                          page_corrected=found["page_corrected"])
             if found["verified"]:
                 entry["page"] = found["page"]
+        # An unverified present element takes unverified_as (review round 2, item 2); an unverified partial is absent
+        # (review round 2 security, item 1): no credit is given for a quote that no tier verifies.
         if verdict == "present" and not entry["verified"]:
             entry["effective"] = unverified_as
+        elif verdict == "partial" and not entry["verified"]:
+            entry["effective"] = "absent"
         else:
             entry["effective"] = verdict
         prepared.append(entry)
-    return prepared
+    return prepared, len(distinct) - len(kept)
 
 
 def checklist_count(item: dict) -> int:
@@ -412,7 +446,7 @@ def checklist_count(item: dict) -> int:
 
 
 def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal, pages: List[str],
-                     settings: Dict[str, Any], unverified_as: str) -> dict:
+                     settings: Dict[str, Any], unverified_as: str, max_elements: int) -> dict:
     """
     Purpose: Verify the elements of a rated answer and compute its level, points and evidence from the verified verdicts
         (review round 2, items 1, 2 and 4). The model's level, score and evidence are never kept (security review).
@@ -436,12 +470,13 @@ def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal,
     answer = {key: value for key, value in answer.items() if key not in MODEL_DERIVED_KEYS}
     if not _elements_are_list_of_objects(answer.get("elements")):
         return answer
-    elements = prepare_elements(answer["elements"], pages, settings, unverified_as)
+    elements, ignored = prepare_elements(answer["elements"], pages, settings, unverified_as, max_elements)
     claimed = answer.get("exceptional") is True and all(entry["effective"] == "present" for entry in elements)
     level = level_for_elements(elements, claimed, scale)
     computed = dict(answer)
     computed["elements"] = elements
     computed["exceptional"] = claimed
+    computed["elements_ignored"] = ignored
     computed["level"] = level
     computed["score"] = points_for_level(level, item.get("max_points", 0), scale.fractions, step)
     computed["evidence"] = [{"element": entry["element"], "page": entry["page"], "quote": entry["quote"]}
@@ -696,6 +731,7 @@ def _record_from_answer(
         "validation": code,
         "attempts": attempts,
         "level": answer.get("level") if usable else None,
+        "elements_ignored": answer.get("elements_ignored", 0) if usable else 0,
         "elements": [] if not isinstance(elements, list) else [
             {"element": entry.get("element"), "verdict": entry.get("verdict"),
              "effective": entry.get("effective"), "verified": entry.get("verified"), "tier": entry.get("tier"),
@@ -846,6 +882,7 @@ def grade_item(
     scale = load_grade_scale()
     quote_settings = settings["quote"]
     unverified_as = settings["unverified_as"]
+    max_elements = settings["max_elements"]
     step = settings["step"]
 
     last_error_reason = None
@@ -881,7 +918,7 @@ def grade_item(
             code = NO_ANSWER_CODES.get(e.kind, "schema_invalid")
             continue
 
-        answer = with_level_score(answer, item, scale, step, pages, quote_settings, unverified_as)
+        answer = with_level_score(answer, item, scale, step, pages, quote_settings, unverified_as, max_elements)
         code, message = check_grade_answer(answer, item, pages)
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)

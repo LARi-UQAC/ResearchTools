@@ -12,7 +12,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 import quote_match  # noqa: E402
 
-SETTINGS = {"min_chars": 12, "min_word_share": 0.9, "window_factor": 1.3}
+SETTINGS = {"min_chars": 12, "min_words": 3, "min_word_share": 0.9, "window_factor": 1.3, "page_window": 1,
+            "max_words": 24}
 
 
 def check(quote, page, settings=SETTINGS):
@@ -134,6 +135,40 @@ class TestPageSearch(unittest.TestCase):
         self.assertFalse(result["page_corrected"])
 
 
+class TestRoundTwoLimits(unittest.TestCase):
+    """Review round 2, item 2 and 3: a minimum word count in every tier, the page window, the quote cap."""
+
+    def test_a_two_word_quote_never_verifies_by_fuzzy(self):
+        result = check("fictive engine", "The fictive engine is described here.")
+        self.assertFalse(result["verified"])
+        self.assertIsNone(result["tier"])
+
+    def test_a_two_word_quote_never_verifies_by_the_key_tier_either(self):
+        result = check("fictiveengine", "fictiveengine")
+        self.assertFalse(result["verified"])
+
+    def test_a_quote_found_five_pages_away_is_not_accepted(self):
+        pages = ["p%d filler" % n for n in range(1, 7)]
+        pages[5] = "the target sentence about the fictive engine test is here"
+        far = quote_match.verify_element("the target sentence about the fictive engine test", 1, pages, SETTINGS)
+        self.assertFalse(far["verified"])
+        near = quote_match.verify_element("the target sentence about the fictive engine test", 5, pages, SETTINGS)
+        self.assertTrue(near["verified"])
+        self.assertEqual(near["page"], 6)
+
+    def test_an_over_long_quote_skips_the_fuzzy_tier(self):
+        words = ["w%d" % n for n in range(30)]
+        page = " ".join(words[:-1] + ["changed"])  # every word but the last one is on the page: fuzzy would match
+        result = check(" ".join(words), page)
+        self.assertNotIn("fuzzy", result["tiers_tried"])
+        self.assertFalse(result["verified"])
+
+    def test_an_over_long_quote_is_still_verified_by_the_key_tier(self):
+        words = ["w%d" % n for n in range(30)]
+        result = check(" ".join(words), " ".join(words))
+        self.assertEqual(result["tier"], "key")
+
+
 class TestNegativeControl(unittest.TestCase):
     def test_an_invented_sentence_is_refused_at_every_tier(self):
         page = "Le rapport décrit une mesure de température sur le moteur à deux temps."
@@ -148,13 +183,18 @@ class TestSettings(unittest.TestCase):
         settings = quote_match.read_quote_settings(quote_match.default_config_path())
         self.assertEqual(settings["min_word_share"], 0.9)
         self.assertEqual(settings["window_factor"], 1.3)
+        self.assertEqual(settings["min_words"], 3)
+        self.assertEqual(settings["page_window"], 1)
+        self.assertEqual(settings["max_words"], 24)
         self.assertGreater(settings["min_chars"], 0)
 
     def test_a_missing_key_is_named(self):
         import json
         import tempfile
         path = Path(tempfile.mkdtemp()) / "ugs_config.json"
-        path.write_text(json.dumps({"grade.quote_min_chars": {"value": 12, "provenance": "t"}}), encoding="utf-8")
+        shipped = json.loads(quote_match.default_config_path().read_text(encoding="utf-8"))
+        del shipped["grade.quote_min_word_share"]
+        path.write_text(json.dumps(shipped), encoding="utf-8")
         with self.assertRaises(ValueError) as raised:
             quote_match.read_quote_settings(path)
         self.assertIn("grade.quote_min_word_share", str(raised.exception))

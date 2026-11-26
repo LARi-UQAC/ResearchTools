@@ -21,9 +21,14 @@ TIERS = (KEY_TIER, ELISION_TIER, FUZZY_TIER)
 # The configuration keys this module reads, each a {value, provenance} entry of ugs_config.json (R3).
 QUOTE_SETTING_KEYS = {
     "min_chars": "grade.quote_min_chars",
+    "min_words": "grade.quote_min_words",
     "min_word_share": "grade.quote_min_word_share",
     "window_factor": "grade.quote_window_factor",
+    "page_window": "grade.quote_page_window",
+    "max_words": "grade.quote_max_words",
 }
+# The settings read as whole numbers (a character, word or page count); the others are read as numbers.
+WHOLE_SETTINGS = ("min_chars", "min_words", "page_window", "max_words")
 
 INVISIBLE_RE = re.compile("[­​‌‍⁠﻿]")
 HTML_TAG_RE = re.compile(r"<[^>]*>")
@@ -69,7 +74,7 @@ def read_quote_settings(path: Path) -> Dict[str, Any]:
         value = entry["value"]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise ValueError(f"'{key}' must be a positive number in {path}")
-        settings[name] = int(value) if name == "min_chars" else float(value)
+        settings[name] = int(value) if name in WHOLE_SETTINGS else float(value)
     if settings["min_word_share"] > 1:
         raise ValueError(f"'{QUOTE_SETTING_KEYS['min_word_share']}' must not exceed 1 in {path}")
     return settings
@@ -218,22 +223,26 @@ def _fuzzy_tier(quote: str, text: str, min_share: float, factor: float) -> bool:
     return False
 
 
-def _candidates(named_page: int, pages: List[str]) -> List[Tuple[int, str]]:
+def _candidates(named_page: int, pages: List[str], window: int) -> List[Tuple[int, str]]:
     """
-    Purpose: List the texts to search for a quote: the named page first, then the other pages in order, then each
-        join of a page with the next one (a quote can cross a page break).
+    Purpose: List the texts to search for a quote: the named page first, then the pages within the window around it,
+        then each join of two consecutive pages inside the window (a quote can cross a page break). Pages further away
+        are never searched (review round 2, item 2).
     Inputs:
-        named_page: int - The page the element names.
+        named_page: int - The page the element names; anything outside the report gives no candidate.
         pages: List[str] - The page texts of the report.
+        window: int - How many pages either side of the named page are searched.
     Outputs:
         List[Tuple[int, str]] - (page number, text) pairs; a join carries the number of its first page.
     Raises:
         None.
     """
-    numbers = list(range(1, len(pages) + 1))
-    ordered = ([named_page] if 1 <= named_page <= len(pages) else []) + [n for n in numbers if n != named_page]
+    if not 1 <= named_page <= len(pages):
+        return []
+    inside = list(range(max(1, named_page - window), min(len(pages), named_page + window) + 1))
+    ordered = [named_page] + [number for number in inside if number != named_page]
     found = [(number, pages[number - 1]) for number in ordered]
-    for number in numbers[:-1]:
+    for number in inside[:-1]:
         found.append((number, pages[number - 1] + "\n" + pages[number]))
     return found
 
@@ -257,9 +266,14 @@ def verify_element(quote: Any, named_page: Any, pages: List[str], settings: Dict
                               "tiers_tried": []}
     if not isinstance(quote, str) or not quote.strip():
         return result
+    words = len(_fold_words(quote))
+    if words < settings["min_words"]:  # review round 2, item 2: a short quote never verifies, in any tier
+        return result
     named = named_page if isinstance(named_page, int) and not isinstance(named_page, bool) else 0
-    candidates = _candidates(named, pages)
+    candidates = _candidates(named, pages, settings["page_window"])
     for tier in TIERS:
+        if tier == FUZZY_TIER and words > settings["max_words"]:  # review round 2, item 3: no fuzzy on a long quote
+            continue
         result["tiers_tried"].append(tier)
         for number, text in candidates:
             if _matches(tier, quote, text, settings):

@@ -70,7 +70,7 @@ def _rated(elements, comment="Ok", missing=""):
     return answer
 
 
-def _present(page=1, quote="Page 1 text", name="element"):
+def _present(page=1, quote="Page one text here", name="element"):
     return {"element": name, "verdict": "present", "page": page, "quote": quote}
 
 
@@ -98,7 +98,7 @@ class TestGradeItem(unittest.TestCase):
     def setUp(self):
         self.ctx = make_ctx()
         self.item = {"id": "I01", "title": "Intro", "max_points": 10}
-        self.pages = ["Page 1 text", "Page 2 text"]
+        self.pages = ["Page one text here.", "Page two text here."]
         self.language = "en"
         self.calibration_note = ""
 
@@ -108,7 +108,7 @@ class TestGradeItem(unittest.TestCase):
         self.assertEqual(result["status"], "rated")
         self.assertEqual(result["level"], "attempted")
         self.assertEqual(result["score"], 5.0)
-        self.assertEqual(result["evidence"], [{"page": 1, "quote": "Page 1 text"}])
+        self.assertEqual(result["evidence"], [{"element": "element", "page": 1, "quote": "Page one text here"}])
 
     def test_not_applicable_has_a_null_score(self):
         answer = {"status": "not_applicable", "elements": [], "comment": "N/A"}
@@ -180,7 +180,7 @@ class TestGradeItem(unittest.TestCase):
         self.ctx.reserve_tokens = 10
         self.pages = ["## Intro\nIntro page with keyword", "## Methods\nOther page", "## Results\nAnother page"]
         self.item["title"] = "Intro"
-        answer = _rated([_present(quote="Intro page")], comment="Ok")
+        answer = _rated([_present(quote="Intro page with keyword")], comment="Ok")
         call = FakeCall([answer])
         grade_item(self.item, self.pages, call, self.ctx, self.language, self.calibration_note)
         self.assertIn("Intro page", call.calls[0])
@@ -211,7 +211,7 @@ class TestGradeReport(unittest.TestCase):
                 {"id": "I02", "title": "Body", "max_points": 10}
             ]
         }
-        self.pages = ["Page 1", "Page 2"]
+        self.pages = ["Page one text here.", "Page two text here."]
         self.report_id = "R01"
         self.loop = 1
         self.language = "en"
@@ -226,7 +226,7 @@ class TestGradeReport(unittest.TestCase):
                  "evidence": [], "audit": "not_run", "flag": False}
             ]
         }
-        answer_i02 = _rated([_present(page=1, quote="Page 1")])
+        answer_i02 = _rated([_present(page=1, quote="Page one text here")])
         call = FakeCall([answer_i02])
         result = grade_report(self.rubric, self.pages, self.report_id, self.loop, call, self.ctx, self.language,
                               self.calibration_note, existing=existing)
@@ -243,14 +243,14 @@ class TestGradeReport(unittest.TestCase):
         def on_item(item_id, record):
             calls.append(item_id)
 
-        answer = _rated([_present(page=1, quote="Page 1")])
+        answer = _rated([_present(page=1, quote="Page one text here")])
         call = FakeCall([answer, answer])
         grade_report(self.rubric, self.pages, self.report_id, self.loop, call, self.ctx, self.language,
                      self.calibration_note, existing={}, on_item=on_item)
         self.assertEqual(calls, ["I01", "I02"])
 
     def test_calibration_note_reaches_the_prompt(self):
-        answer = _rated([_present(page=1, quote="Page 1")])
+        answer = _rated([_present(page=1, quote="Page one text here")])
         call = FakeCall([answer, answer])
         grade_report(self.rubric, self.pages, self.report_id, self.loop, call, self.ctx, "en", "Important Note",
                      existing={})
@@ -276,9 +276,9 @@ class TestMissingInThePromptAndSchema(unittest.TestCase):
             audit_retries=0,
             min_word_len=3,
         )
-        call = FakeCall([_rated([_present(page=1, quote="Un rapport fictif")], comment="Fictitious.")])
+        call = FakeCall([_rated([_present(page=1, quote="Un texte du rapport")], comment="Fictitious.")])
         item = {"id": "I01", "title": "Intro", "max_points": 10}
-        grade_item(item, ["Un rapport fictif."], call, ctx, "fr", "")
+        grade_item(item, ["Un texte du rapport."], call, ctx, "fr", "")
         prompt = call.calls[0]
         self.assertIn("'missing'", prompt)
         self.assertIn("in fr, one sentence at most", prompt)
@@ -307,8 +307,8 @@ class TestTimeoutIsOneItem(unittest.TestCase):
                 {"id": "I03", "title": "End", "max_points": 10},
             ]
         }
-        self.pages = ["Page 1", "Page 2"]
-        self.full_answer = _rated([_present(page=1, quote="Page 1")])
+        self.pages = ["Page one text here.", "Page two text here."]
+        self.full_answer = _rated([_present(page=1, quote="Page one text here")])
 
     def test_timeout_marks_only_its_item_and_the_grade_goes_on(self):
         call = FakeCall([
@@ -344,7 +344,7 @@ class TestItemPromptText(unittest.TestCase):
         ctx = make_ctx()
         item = {"id": "I01", "title": "Intro", "max_points": 2, "text": "## 1. Intro (/2)\n\nUne regle exacte.",
                 "preamble": "| ABC | Guide fictif |"}
-        call = FakeCall([_rated([_present(page=1, quote="texte")], comment="ok")])
+        call = FakeCall([_rated([_present(page=1, quote="Un texte du rapport")], comment="ok")])
         grade_item(item, ["Un texte du rapport."], call, ctx, "fr", "")
         self.assertIn("Une regle exacte.", call.calls[0])
         self.assertIn("| ABC | Guide fictif |", call.calls[0])
@@ -357,7 +357,7 @@ class TestRecordIsStrictJson(unittest.TestCase):
     def test_an_element_record_round_trips_as_strict_json(self):
         ctx = make_ctx()
         item = {"id": "I01", "title": "Intro", "max_points": 10}
-        record = grade_item(item, ["Page 1 text"], FakeCall([_rated([_present()])]), ctx, "en", "")
+        record = grade_item(item, ["Page one text here."], FakeCall([_rated([_present()])]), ctx, "en", "")
 
         def refuse(name):
             raise ValueError("non-finite constant in JSON: " + name)

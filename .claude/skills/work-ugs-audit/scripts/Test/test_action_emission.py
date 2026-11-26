@@ -37,6 +37,12 @@ def make_ctx(emit=None, *, prompts=None) -> StepContext:
     return StepContext(
         prompts=prompts if prompts is not None else {
             "grade_item": "{{ITEM}}|{{SECTIONS}}|{{LEVELS}}|{{LANGUAGE_OF_REPORT}}|{{CALIBRATION_NOTE}}",
+            "retry_grade_item": ("## fr_elements\nnFictif.\n\n"
+                                "## en_elements\nnFictive.\n\n"
+                                "## fr_evidence\nnFictif.\n\n"
+                                "## en_evidence\nnFictive.\n\n"
+                                "## fr_not_applicable\nnFictif.\n\n"
+                                "## en_not_applicable\nnFictive.\n"),
         },
         schemas={"grade_item": {}}, levels={"0": 0.0, "10": 1.0}, window_tokens=100000, reserve_tokens=10,
         count=lambda text: 1, grade_retries=0, audit_retries=0, min_word_len=3, emit=emit,

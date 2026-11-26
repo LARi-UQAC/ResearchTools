@@ -36,8 +36,8 @@ TEST_SCALE = GradeScale(
     bands=((Decimal("0.75"), "partial"), (Decimal("0"), "attempted")),
 )
 STEP = Decimal("0.25")
-QUOTE = {"min_chars": 12, "min_word_share": 0.9, "window_factor": 1.3}
-SETTINGS = {"quote": QUOTE, "unverified_as": "partial", "step": STEP}
+QUOTE = {"min_chars": 12, "min_words": 3, "min_word_share": 0.9, "window_factor": 1.3, "page_window": 1, "max_words": 24}
+SETTINGS = {"quote": QUOTE, "unverified_as": "partial", "step": STEP, "max_elements": 12}
 
 
 class FakeCall:
@@ -111,7 +111,7 @@ def _present(page=1, quote="The first page describes the fictive engine test", n
 def _prepared(answer, item=None):
     """Run the element verification and the level computation on a raw answer."""
     item = item or {"id": "I01", "title": "Intro", "max_points": 10}
-    return with_level_score(answer, item, TEST_SCALE, STEP, PAGES, QUOTE, "partial")
+    return with_level_score(answer, item, TEST_SCALE, STEP, PAGES, QUOTE, "partial", 12)
 
 
 class TestCheckGradeAnswer(unittest.TestCase):
@@ -121,7 +121,7 @@ class TestCheckGradeAnswer(unittest.TestCase):
         """Prepare and check one answer against a fictitious item."""
         item = {"id": "I01", "title": "Intro", "max_points": 10, "optional": optional}
         item.update(item_extra or {})
-        prepared = with_level_score(answer, item, TEST_SCALE, STEP, PAGES, QUOTE, "partial")
+        prepared = with_level_score(answer, item, TEST_SCALE, STEP, PAGES, QUOTE, "partial", 12)
         return check_grade_answer(prepared, item, PAGES)
 
     def test_a_verified_present_element_is_ok(self):
@@ -343,6 +343,39 @@ class TestSecurityAndRoundTwoFlow(unittest.TestCase):
         self.assertNotIn("quote", element)
 
 
+class TestRoundTwoCapsAndDowngrade(unittest.TestCase):
+    """Security review of round 2: an unverified partial is absent; the element cap and the quote cap."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.item = {"id": "I01", "title": "Intro", "max_points": 10}
+
+    def test_an_unverified_partial_counts_as_absent(self):
+        prepared = _prepared(_rated([_el("partial", 1, "A sentence that no page holds at all")]))
+        self.assertEqual(prepared["elements"][0]["effective"], "absent")
+
+    def test_an_item_whose_only_engaged_elements_are_unverified_partials_gets_no_credit(self):
+        unverified = _rated([_el("partial", 1, "A sentence that no page holds at all")], missing="Fictive gap.")
+        record = grade_item(self.item, PAGES, FakeCall([unverified]), self.ctx, "en", "", settings=SETTINGS)
+        self.assertEqual((record["level"], record["score"]), ("absent", 0.0))
+        bare = _rated([_el("partial", 1, "A sentence that no page holds at all")])
+        record = grade_item(self.item, PAGES, FakeCall([bare, bare]), self.ctx, "en", "", settings=SETTINGS)
+        self.assertEqual(record["validation"], "evidence_missing")
+
+    def test_elements_beyond_the_cap_are_ignored_and_counted(self):
+        elements = [_present(name="element %d" % n) for n in range(13)]
+        record = grade_item(self.item, PAGES, FakeCall([_rated(elements)]), self.ctx, "en", "", settings=SETTINGS)
+        self.assertEqual(len(record["elements"]), 12)
+        self.assertEqual(record["elements_ignored"], 1)
+
+    def test_an_over_long_element_quote_is_unverified_when_only_fuzzy_would_match(self):
+        words = ["w%d" % n for n in range(30)]
+        page = " ".join(words[:-1] + ["changed"])
+        prepared = _prepared(_rated([_el("present", 1, " ".join(words), "long")]))
+        self.assertFalse(prepared["elements"][0]["verified"])
+        self.assertEqual(prepared["elements"][0]["effective"], "partial")
+
+
 class TestMissingField(unittest.TestCase):
     """The record carries `missing`: kept as the model gave it, empty when every element is present, cut to the limit."""
 
@@ -374,7 +407,7 @@ class TestMissingField(unittest.TestCase):
     def test_record_key_order_is_saved(self):
         record = self.grade(_rated([_present()]))
         self.assertEqual(list(record.keys()), ["item_id", "status", "score", "comment", "evidence", "missing", "audit",
-                                               "flag", "model_score", "validation", "attempts", "level", "elements"])
+                                               "flag", "model_score", "validation", "attempts", "level", "elements_ignored", "elements"])
 
 
 class TestGradeScaleFile(unittest.TestCase):

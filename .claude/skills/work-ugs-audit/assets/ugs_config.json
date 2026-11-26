@@ -165,6 +165,22 @@
     "value": "partial",
     "provenance": "chosen by the session 2026-11-27 under the owner's review of round 2: an element marked present whose quote no tier verifies counts as this verdict in the level"
   },
+  "grade.quote_min_words": {
+    "value": 3,
+    "provenance": "starting value, unmeasured, adjustable by the professor (review round 2): a quote shorter than this many words never verifies, in any tier"
+  },
+  "grade.quote_page_window": {
+    "value": 1,
+    "provenance": "chosen by the owner (review round 2, 2026-11-26): a quote is searched on its named page and this many pages either side, never further"
+  },
+  "grade.quote_max_words": {
+    "value": 24,
+    "provenance": "chosen by the session 2026-11-27 under the owner's review of round 2: twice the 12 words the prompt asks for; a longer quote skips the fuzzy tier (resource cap)"
+  },
+  "grade.max_elements": {
+    "value": 12,
+    "provenance": "starting value, unmeasured, adjustable by the professor (review round 2): elements beyond this count in one item are ignored and counted, a resource cap on the verification"
+  },
   "grade.missing_max_chars": {
     "value": 300,
     "provenance": "starting value, proposed 2026-11-17 and adjustable by the professor: longest missing-element text kept in grade.json, in characters. A bound on one saved field, never on what the model is shown"

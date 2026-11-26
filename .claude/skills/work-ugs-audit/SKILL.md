@@ -101,7 +101,7 @@ text is recorded. `rt-observe` shows them as the steps of the role's lane.
 | `batch --work DIR --loop N [--allow-third]` | spread of the totals against the calibration targets, opens the next loop when out of band |
 | `status --work DIR` | ledger counts and the first open step |
 
-Exit codes: 0 done, 1 a model step could not run (stop, resume later), 2 refusal, 3 batch out of band. A third
+Exit codes: 0 done, 1 a model step could not run (stop, resume later), 2 refusal, 3 batch out of band. Each `run` also writes `run_done.json` in the work folder when it ends (keys: `loop`, `exit_code`, `reports`, `open_steps`, `blocked_steps`, `stopped_at`), so a stopped session reads the outcome once. A third
 loop needs `--allow-third` after the professor's answer.
 
 ## Files

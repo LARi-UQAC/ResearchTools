@@ -717,6 +717,17 @@ cross-reference checks into the annex. The OCR needs Tesseract with the `eng` an
 order of the steps, the vocabulary and the grade file fields are in `.claude/skills/work-ugs-audit/SKILL.md`, section
 "Preparation, in order".
 
+Since 2026-11-25 (Issue 126) the preparation finds the front pages (cover, version and signature, summary, contents,
+lists of figures and tables) and corrects them by role: no figure judgement there, no language correction on the cover
+and the version page, spelling only on the contents and the lists. It reads the declared numbers of figures and tables
+from the lists and checks the extraction against them: the fragments of one diagram are grouped into one figure,
+running footers, text boxes and logos are set aside, a table drawn as an image is rebuilt by OCR as a Markdown table,
+and the figures folder holds one `F<X>.png` per titled figure and one `T<Y>.png` per image table, named by their printed
+numbers. Elements without a title are listed apart and still judged. The annex gains rows for the counts, the untitled
+elements, the appendices listed in the contents, and the citations placed after the period (". [5]"). The language step
+no longer reports a correctly written word, and `ugs_driver.py run --steps` runs selected steps only. Measured on two
+real reports the same day: their titled figure and table numbers matched their lists.
+
 ### `figure-review` - figures of a report, paper or thesis
 
 One place that knows how to look at a figure, for the student-report audit (criteria scope `undergraduate`) and for the

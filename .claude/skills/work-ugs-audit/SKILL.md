@@ -27,22 +27,47 @@ probe for each language and refuses before any write when Tesseract does not ans
 and `eng` data). (3) Pages holding replacement characters are repaired by OCR in the detected language; a page with
 sound text keeps its text, and an OCR that returns nothing keeps the original text and flags the page. (4) Excluded
 pages (cover, signature table, version table, `page_roles.py`) are replaced by a one-line marker; their text goes to an
-`excluded` folder and they are never graded. (5) Elements are extracted with a type (`figure`, `table`, `logo`): a
-table is never judged as a figure, its Markdown is added to the page text the models read, a diagram made of separate
-regions is one figure, and a logo is not judged. (6) Each table is added to its page text.
+`excluded` folder and they are never graded. (5) `front_pages.py` finds the front-matter roles from the page texts
+(cover, version and signature page, executive summary, table of contents, list of figures, list of tables) and the
+first body page, written as `front_roles` in `report_meta.json`. Every front page but the summary is skipped by the
+element extraction, and each role has a language mode (`none` for the cover and the version page, `spelling_only` for
+the contents and the lists, `full` otherwise). (6) `front_matter.py` reads the declared counts and printed numbers of
+figures and tables from the lists, or from the contents pages that hold them (`declared_figures`, `declared_tables`;
+a list that cannot be found is `None`, never 0). (7) Elements are extracted with a type (`figure`, `table`,
+`table_image`, `logo`) through the count loop of `count_loop.py`: an attempt is accepted when the titled numbers
+match the declared ones, otherwise the extraction runs again with the next settings, up to
+`extraction.count_max_iterations`, every attempt kept in `figure_attempts`, and a rejected attempt leaves no file.
+(8) A table drawn as an image (a table title over a picture, or an untitled region whose OCR gives a grid) is read by
+OCR at `text.ocr_dpi` in the report language and rebuilt as a Markdown table by `table_image.py`; when no usable row
+comes back it is `table_image_unreadable` with a `status_reason` of counts only. (9) Each table and each rebuilt
+table image is added to its page text under the heading of `assets/table_text.json`, in the report language.
+(10) `count_check.py` compares declared and titled numbers per type and writes `figure_count_status` and
+`table_count_status` (`ok`, `mismatch`, `not_found`) with the missing and extra numbers. An element without a title
+never counts and never stands in for a number: it is listed in `untitled_figures` or `untitled_tables`, its file goes
+to `figures/untitled/`, and it is still judged (a missing title is a fault).
+
+Files of a report: `figures/F<X>.png` for each titled figure and `figures/T<Y>.png` for each table drawn as an image,
+X and Y being the numbers printed in the titles ("Figure 2.3" gives `F2.3.png`). Ruled tables and logos write no file.
+The figures folder therefore holds exactly one file per declared figure and per image table.
 
 Vocabulary, the same in the code and the annex. A **title** names the whole figure or the whole table and starts with
 a marker word (Figure, Fig., Tableau, Table): a figure title is usually below the figure, a table title above it. A
 **legend** is the text inside a figure that explains its series or symbols; a table has no legend. **Notes** are the
-lines under a table (Note, Source, an asterisk). The element type is `figure`, `table` or `logo`; only a `figure` is
-judged.
+lines under a table (Note, Source, an asterisk). The element type is `figure`, `table`, `table_image` (a table drawn as
+an image, rebuilt by OCR) or `logo`; only a `figure` is judged as a figure.
+
+Language step. A word written correctly is never a spelling finding: a finding is refused when its proposal equals its
+quote, or only swaps spellings listed in `assets/accepted_spellings.json` (both spellings of the 1990 French reform);
+the count is `rejected_correct`. Findings dropped by a `spelling_only` page are counted in `dropped_scope`.
 
 Grades. Each item of `grade.json` keeps every field the model gave, above all the score. The `validation` field holds
 `ok` or the code of the refusal (`quote_not_found`, `evidence_missing`, `score_above_max`, `unknown_status`, and the
 others of `GRADE_CODES` in `ugs_grade.py`). A refused proof keeps its score and counts in the totals, with its label in
 the annex. A score that cannot be used (absent, not finite, above the maximum) gives status `not_run`, a null score,
-and the raw value in `model_score`. Each record also carries `missing`: the element that is absent or wrong in the
-report and cost the points, in the report language, empty at the maximum score. It is model text saved in
+and the raw value in `model_score`; a score that is not finite gives `model_score` null and its text in
+`model_score_raw`, so `grade.json` is always strict JSON. Each record also carries `missing`: the element that is
+absent or wrong in the report and cost the points, in the report language, empty at the maximum score, cut at
+`grade.missing_max_chars` characters. It is model text saved in
 `grade.json` only; it never reaches the ledger, a log or the dashboard. The ledger line carries the code as its note,
 and `attempts` counts the tries. The auditor receives `missing` and `comment`, never the validation fields.
 
@@ -54,7 +79,12 @@ The annex is written in the document language (labels in `assets/annex_labels.js
 last section holds five checks computed by `crossref_checks.py` on the report's own text and elements: every figure
 cited, every table cited, figure numbers increasing, table numbers increasing, equation numbers increasing. Each check
 gives `ok`, `not_ok` or `not_applicable` with the numbers concerned only. A gap in the numbers lists at most
-`checks.max_gap_numbers` numbers, and a number above `checks.max_number` is refused.
+`checks.max_gap_numbers` numbers, and a number above `checks.max_number` is refused. Five more rows follow:
+`citation_placement` (see below), `figure_counts` and `table_counts` (declared against titled numbers, from
+`report_meta.json`), `untitled_elements` (figures and tables without a title), `appendices` (every appendix listed in the contents is found after the references, and every
+appendix found there is listed; markers in `front_matter.json`). `citation_placement` finds a numeric citation after
+the sentence's period, ". [5]", on body pages; an abbreviation of `assets/citation_rules.json` such as "et al." before
+the bracket is not a finding; each finding is also annotated in the PDF.
 
 Local actions. While it runs, each local role emits action records built by `ugs_events.py` from identifiers only:
 the report id, the item id, a page range, the base name of an output file, a mark. No prompt, reply, quote or report
@@ -67,7 +97,7 @@ text is recorded. `rt-observe` shows them as the steps of the role's lane.
 | Subcommand | Does |
 |---|---|
 | `prepare --reports DIR --rubric FILE --type T` | ids and pages of every PDF, takes the rubric as written (JSON is validated, a Markdown or text grid with numbered sections is split by the code and every section keeps its exact text, an unnumbered or PDF rubric is restructured by the model, which may not remove a line), writes the rubric, its Markdown and the ledger. There is no confirmation step |
-| `run --work DIR --reports DIR [--loop N] [--resume] [--only R01]` | runs the steps of every report in id order, resumable |
+| `run --work DIR --reports DIR [--loop N] [--resume] [--only R01] [--steps a,b]` | runs the steps of every report in id order, resumable; `--steps` runs only the named steps (an unknown or empty list is refused before any write) |
 | `batch --work DIR --loop N [--allow-third]` | spread of the totals against the calibration targets, opens the next loop when out of band |
 | `status --work DIR` | ledger counts and the first open step |
 
@@ -111,10 +141,16 @@ or an error text.
 `ugs_grade.py`, `ugs_audit.py`, `ugs_language.py`, `ugs_figures.py`, `ugs_assemble.py` (one module per step),
 `ugs_bridge.py` (the model call, reusing the bridge helpers of `loop-engineer`), `ugs_text.py`, `ugs_config.py`,
 `report_prepare.py`, `rubric_check.py`, `grade_total.py`, `batch_stats.py`, `ref_check.py`, `pdf_annotate.py`,
-`pdf_annex.py`, `vision_probe.py`. Each has an offline test in `scripts/Test/`.
+`pdf_annex.py`, `vision_probe.py`, `crossref_checks.py`, `front_pages.py`, `front_matter.py`, `count_check.py`,
+`count_loop.py`, `table_image.py`. Each has an offline test in `scripts/Test/`.
 
 ## Limits
 
+- Measured 2026-11-25 on two real reports: the titled figure and table numbers matched their lists, but a scanned
+  page and a Simulink diagram, both without a title, were taken for untitled tables by the grid rule. They count
+  nowhere and are listed as untitled; read them in `figures/untitled/`.
+- The front pages are found from their headings; a list of figures whose heading sits mid-page is read from the
+  contents pages that hold it. A front page the code does not know is passed through until the first body page.
 - Local models only, so the quality of a grade is that of the adopted models. The audit and the batch
   calibration exist to expose a spread, not to remove it; the professor decides.
 - The marker sentence test proves a sentence of a report never reaches an output or the ledger; it does not

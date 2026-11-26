@@ -667,7 +667,8 @@ def _region_words(pdf_file: Path, record: Dict[str, Any], page_words: Optional[C
 
 def _decide_title_kinds(records: List[Dict[str, Any]], pdf_file: Path, page_words: Optional[Callable],
                         tesseract_language: Callable[[], str], image_settings: table_image.ImageSettings,
-                        min_rows: int, min_cols: int) -> List[Dict[str, Any]]:
+                        strong_rows: int, strong_cols: int, weak_rows: int, weak_cols: int,
+                        min_words: int) -> List[Dict[str, Any]]:
     """
     --------------------------------------------------------------------------
     Purpose:
@@ -685,11 +686,13 @@ def _decide_title_kinds(records: List[Dict[str, Any]], pdf_file: Path, page_word
         page_words (Callable | None): the page-level reader, None when OCR is unavailable.
         tesseract_language (Callable[[], str]): the Tesseract codes of the report language.
         image_settings (table_image.ImageSettings): the column gap and row overlap of the grid rule.
-        min_rows (int): the fewest rows of a grid.
-        min_cols (int): the fewest columns of a grid.
+        strong_rows, strong_cols (int): the minimum rows and columns of a grid that is a table (titled minimums).
+        weak_rows, weak_cols (int): the minimums of a weak grid, the untitled ones (review 6).
+        min_words (int): the fewest words of a region; fewer make it unreadable (review 6).
 
     Outputs:
-        list[dict]: the same records. A flagged figure carries title_kind_mismatch and title_kind_source "script".
+        list[dict]: the same records. title_grid_reading is strong, weak, none, or None when unreadable; title_grid is
+        True only for strong. A flagged figure carries title_kind_mismatch and title_kind_source "script".
 
     Raises:
         PrepareError: when the Tesseract codes of the language are unknown.
@@ -701,13 +704,14 @@ def _decide_title_kinds(records: List[Dict[str, Any]], pdf_file: Path, page_word
         if "rect" not in record or "page" not in record:  # an element record from the finder always has both
             continue
         words = _region_words(pdf_file, record, page_words, tesseract_language)
-        if words is None:
+        if words is None or len(words) < min_words:  # review 6: too few words to read a grid at all
             record["title_grid"] = None
+            record["title_grid_reading"] = None
             continue
-        grid = table_image.classify_untitled(words, image_settings.column_gap_pt, min_rows, min_cols,
-                                             image_settings.row_overlap_ratio) == table_image.UNTITLED_TABLE
-        record["title_grid"] = grid
-        if grid and record["element_type"] == "figure" and not record.get("title_kind_mismatch"):
+        reading = table_image.grid_reading(words, image_settings, (strong_rows, strong_cols), (weak_rows, weak_cols))
+        record["title_grid_reading"] = reading
+        record["title_grid"] = reading == "strong"
+        if reading == "strong" and record["element_type"] == "figure" and not record.get("title_kind_mismatch"):
             record["title_kind_mismatch"] = "table_titled_figure"
             record["title_kind_source"] = "script"
     return records
@@ -991,6 +995,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
         image_settings = table_image.load_image_settings()
         untitled_rows, untitled_cols = table_image.load_untitled_settings()
         titled_rows, titled_cols = table_image.load_titled_settings()
+        titled_words = table_image.load_titled_min_words()
     except table_image.TableImageError as error:
         raise PrepareError(str(error)) from None
 
@@ -1051,7 +1056,8 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
                                                             skip_pages, memo_hooks, declared["declared_figures"],
                                                             classify=classify, declared=declared)
     elements = _decide_title_kinds(elements, pdf_file, _memoized_page_ocr(hooks.ocr_words), tesseract_language,
-                                   image_settings, titled_rows, titled_cols)  # review A: final records only, D keys
+                                   image_settings, titled_rows, titled_cols, untitled_rows, untitled_cols,
+                                   titled_words)  # review A: final records only; D and 6: the keys
     elements = _read_table_images(elements, pdf_file, memo_hooks, language, context["ocr"]["language_codes"],
                                   image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],

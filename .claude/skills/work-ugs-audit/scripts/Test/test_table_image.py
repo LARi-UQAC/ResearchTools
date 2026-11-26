@@ -204,6 +204,27 @@ class TitledSettingsTests(unittest.TestCase):
             table_image.load_titled_settings(config)
         self.assertIn(table_image.TITLED_COLS_KEY, str(ctx.exception))
 
+    def test_the_shipped_minimum_words_is_ten(self):
+        self.assertEqual(table_image.load_titled_min_words(), 10)
+
+    def test_a_missing_minimum_words_key_is_named(self):
+        config = Path(tempfile.mkdtemp()) / "config.json"
+        raw = json.loads(table_image.DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        del raw[table_image.TITLED_WORDS_KEY]
+        config.write_text(json.dumps(raw), encoding="utf-8")
+        with self.assertRaises(table_image.TableImageError) as ctx:
+            table_image.load_titled_min_words(config)
+        self.assertIn(table_image.TITLED_WORDS_KEY, str(ctx.exception))
+
+    def test_the_grid_reading_is_strong_weak_or_none(self):
+        settings = table_image.ImageSettings(column_gap_pt=8.0, min_rows=3, row_overlap_ratio=0.5)
+        grid = [(x, y, x + 20, y + 10, t, 0, 0, 0) for x, y, t in
+                [(60, 130, "a"), (200, 130, "b"), (340, 130, "c"), (60, 160, "d"), (200, 160, "e"),
+                 (340, 160, "f"), (60, 190, "g"), (200, 190, "h"), (340, 190, "i")]]
+        self.assertEqual(table_image.grid_reading(grid, settings, (3, 5), (3, 3)), "weak")
+        self.assertEqual(table_image.grid_reading(grid, settings, (3, 3), (3, 3)), "strong")
+        self.assertEqual(table_image.grid_reading(grid, settings, (3, 5), (3, 4)), "none")
+
 
 if __name__ == "__main__":
     unittest.main()

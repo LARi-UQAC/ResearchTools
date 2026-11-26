@@ -17,6 +17,7 @@ UNTITLED_ROWS_KEY = "tables.untitled_min_rows"
 UNTITLED_COLS_KEY = "tables.untitled_min_cols"
 TITLED_ROWS_KEY = "tables.titled_min_rows"  # review D: the grid rule of a titled figure
 TITLED_COLS_KEY = "tables.titled_min_cols"
+TITLED_WORDS_KEY = "tables.titled_min_words"  # review 6: fewer words make a region unreadable
 
 
 class ImageSettings(NamedTuple):
@@ -256,6 +257,62 @@ def load_titled_settings(path: Optional[Path] = None) -> Tuple[int, int]:
             raise TableImageError(f"key '{key}' in {config_path.name} must be a positive integer")
         values.append(value)
     return values[0], values[1]
+
+
+def load_titled_min_words(path: Optional[Path] = None) -> int:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the fewest words a titled region must hold for its grid to be read at all (review 6, F7 rule).
+
+    Inputs:
+        path (Path | None): the configuration file; None means the work-ugs-audit assets file.
+
+    Outputs:
+        int: the minimum word count, a positive integer.
+
+    Raises:
+        TableImageError: when the file is unreadable, or the key is missing or not a positive integer (named).
+    --------------------------------------------------------------------------
+    """
+    config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TableImageError(f"configuration {config_path.name} is not readable JSON: {exc}") from None
+    value = _read_entry(raw, TITLED_WORDS_KEY, config_path)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise TableImageError(f"key '{TITLED_WORDS_KEY}' in {config_path.name} must be a positive integer")
+    return value
+
+
+def grid_reading(words: Sequence[tuple], image_settings: "ImageSettings", strong: Tuple[int, int],
+                 weak: Tuple[int, int]) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Grade how far a region's words make a grid: strong (the titled minimums), weak (the untitled minimums) or none.
+
+    Inputs:
+        words (Sequence[tuple]): the word boxes of the region.
+        image_settings (ImageSettings): the column gap and row overlap of the grid rule.
+        strong (Tuple[int, int]): the minimum rows and columns of a grid that is a table.
+        weak (Tuple[int, int]): the minimum rows and columns of a weak grid.
+
+    Outputs:
+        str: "strong", "weak" or "none".
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    if classify_untitled(words, image_settings.column_gap_pt, strong[0], strong[1],
+                         image_settings.row_overlap_ratio) == UNTITLED_TABLE:
+        return "strong"
+    if classify_untitled(words, image_settings.column_gap_pt, weak[0], weak[1],
+                         image_settings.row_overlap_ratio) == UNTITLED_TABLE:
+        return "weak"
+    return "none"
 
 
 def load_untitled_settings(path: Optional[Path] = None) -> Tuple[int, int]:

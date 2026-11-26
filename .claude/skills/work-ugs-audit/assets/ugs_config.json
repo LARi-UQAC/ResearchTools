@@ -89,6 +89,10 @@
     "value": 5,
     "provenance": "measured 2026-11-26 on R01 (plan 20 review D): with five columns the rule flags the owner-listed titled tables and no other titled figure of R01 except the one with no text layer; at three columns it flagged F9, F10, F13 and F15 (at most two full rows at five cells) which the owner does not list"
   },
+  "tables.titled_min_words": {
+    "value": 10,
+    "provenance": "measured 2026-11-26 on R01 (plan 20 review 6): the regions of the owner-listed titled figures hold 22 to 450 words where a table has text, and the one region with no text layer and no OCR words (F7) holds none; a region under ten words is unreadable, and the smallest measured figure with words holds 17"
+  },
   "tables.image_row_overlap_ratio": {
     "value": 0.5,
     "provenance": "proposal 2026-11-25 (review M2), two words join one row when their boxes overlap vertically by this share of the smaller box; tune on the real reports"

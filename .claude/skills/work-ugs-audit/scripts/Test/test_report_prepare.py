@@ -861,9 +861,9 @@ class TitledGridSignalTests(unittest.TestCase):
         base.update(extra)
         return base
 
-    def decide(self, records, page_words=None):
-        return report_prepare._decide_title_kinds(records, self.pdf, page_words, lambda: "eng",
-                                                 self.settings, 3, 3)
+    def decide(self, records, page_words=None, strong=(3, 3), weak=(3, 3), min_words=1):
+        return report_prepare._decide_title_kinds(records, self.pdf, page_words, lambda: "eng", self.settings,
+                                                 strong[0], strong[1], weak[0], weak[1], min_words)
 
     def test_a_vector_grid_under_a_figure_title_is_flagged_by_the_script(self):
         records = self.decide([self.record("F3", self.RECT)])
@@ -910,6 +910,40 @@ class TitledGridSignalTests(unittest.TestCase):
             (x, y, x + 20, y + 10, t, 0, 0, 0) for x, y, t in self.GRID])
         self.assertIs(records[0]["title_grid"], True)
         self.assertNotIn("title_kind_mismatch", records[0])
+
+
+class TitledGridReadingTests(unittest.TestCase):
+    """Review 6 (F7 rule): a titled region reads as strong, weak, none or unreadable, and only strong is a flag."""
+
+    GRID = TitledGridSignalTests.GRID
+    CHART = TitledGridSignalTests.CHART
+    RECT = TitledGridSignalTests.RECT
+    setUp = TitledGridSignalTests.setUp
+    tearDown = TitledGridSignalTests.tearDown
+    record = TitledGridSignalTests.record
+    decide = TitledGridSignalTests.decide
+
+    def test_a_region_with_too_few_words_is_unreadable(self):
+        records = self.decide([self.record("F9", self.RECT)], min_words=100)
+        self.assertIsNone(records[0]["title_grid"])
+        self.assertIsNone(records[0]["title_grid_reading"])
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_a_grid_between_the_weak_and_the_strong_thresholds_is_weak_and_not_flagged(self):
+        records = self.decide([self.record("F10", self.RECT)], strong=(3, 5), weak=(3, 3))
+        self.assertEqual(records[0]["title_grid_reading"], "weak")
+        self.assertIs(records[0]["title_grid"], False)
+        self.assertIsNone(records[0].get("title_kind_mismatch"))
+
+    def test_a_region_below_the_weak_grid_is_none(self):
+        records = self.decide([self.record("F11", self.RECT)], strong=(3, 5), weak=(3, 4))
+        self.assertEqual(records[0]["title_grid_reading"], "none")
+        self.assertIs(records[0]["title_grid"], False)
+
+    def test_a_strong_grid_is_strong_and_flagged(self):
+        records = self.decide([self.record("F12", self.RECT)], strong=(3, 3), weak=(3, 3))
+        self.assertEqual(records[0]["title_grid_reading"], "strong")
+        self.assertEqual(records[0]["title_kind_source"], "script")
 
 
 if __name__ == "__main__":

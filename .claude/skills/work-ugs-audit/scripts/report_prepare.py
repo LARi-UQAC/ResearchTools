@@ -48,6 +48,7 @@ IDS_FILE_NAME = "ids.json"
 PAGES_FOLDER = "pages"
 TABLE_STATS_FILE = "table_extraction.json"
 ATTEMPTS_FOLDER = ".attempts"
+UNTITLED_FOLDER = "untitled"
 PAGE_FILE_PREFIX = "p"
 ASSETS_DIR = SCRIPTS_DIR.parent / "assets"
 HINTS_FILE = ASSETS_DIR / "language_hints.json"
@@ -678,6 +679,16 @@ def _run_loop_attempts(pdf_file: Path, report_dir: Path, figures_name: str, skip
     if kept.exists():
         for entry in kept.iterdir():
             shutil.move(str(entry), str(figures_dir / entry.name))
+    # Owner N2: an element with no title is kept apart, in figures/untitled, so the figures folder holds only the
+    # titled numbers; the record names its file relative to the figures folder.
+    for record in result["records"]:
+        if record.get("title") is None and record.get("file"):
+            source = figures_dir / record["file"]
+            if source.exists():
+                untitled_dir = figures_dir / UNTITLED_FOLDER
+                untitled_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(source), str(untitled_dir / source.name))
+            record["file"] = f"{UNTITLED_FOLDER}/{source.name}"
     _write_atomic(report_dir / TABLE_STATS_FILE, json.dumps({"tables_dropped": dropped[index]}))
     return result["records"], result["attempts"]
 

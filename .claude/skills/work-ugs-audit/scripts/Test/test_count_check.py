@@ -77,6 +77,25 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(result["table_count_status"], "not_found")
         self.assertEqual(result["extracted_figures"], 1)
 
+    def test_untitled_figure_never_decides_the_status(self):
+        """Owner N2: an element with no title is recorded apart; the status is judged on titled numbers only."""
+        declared = _declared(2, ["1", "2"])
+        untitled = {"element_type": "figure", "page": 50, "title": None}
+        elements = [_element("figure", "Figure 1. A"), _element("figure", "Figure 2. B"), untitled]
+        result = count_check.compare_counts(declared, elements)
+        self.assertEqual(result["figure_count_status"], "ok")
+        self.assertEqual(result["extracted_figures"], 2)
+        self.assertEqual(result["untitled_figures"], {"count": 1, "pages": [50]})
+
+    def test_untitled_table_is_recorded_and_never_counted(self):
+        declared = _declared(None, None, tables=1, table_numbers=["1"])
+        untitled = {"element_type": "table", "page": 49, "title": None}
+        elements = [_element("table", "Tableau 1. A"), untitled]
+        result = count_check.compare_counts(declared, elements)
+        self.assertEqual(result["table_count_status"], "ok")
+        self.assertEqual(result["extracted_tables"], 1)
+        self.assertEqual(result["untitled_tables"], {"count": 1, "pages": [49]})
+
     def test_table_image_counts_as_table(self):
         declared = _declared(tables=1, table_numbers=["1"])
         elements = [_element("table_image", "Table 1. Parametres")]

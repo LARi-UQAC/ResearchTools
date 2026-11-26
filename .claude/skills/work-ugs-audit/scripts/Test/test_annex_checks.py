@@ -236,7 +236,7 @@ class TestAssembleChecks(unittest.TestCase):
         self._assemble(["Figure 2.1 shows the layout."])
         checks = self._checks()
         # N5 adds the citation_placement row after the five cross-reference checks.
-        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "appendices"])
+        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "untitled_elements", "appendices"])
         self.assertEqual(checks[0]["status"], "ok")
         labels = _labels("en")
         with fitz.open(str(self.loop_dir / "annotated.pdf")) as doc:
@@ -325,6 +325,23 @@ class TestCitationPlacement(unittest.TestCase):
         self.assertIn("3", html_text)
         self.assertIn("2", html_text)
 
+    def test_untitled_elements_are_an_annex_row_in_both_languages(self):
+        """Owner N2: elements with no title are a finding of the annex, labels in fr and en, never a count."""
+        meta = {"untitled_figures": {"count": 2, "pages": [49, 66]}, "untitled_tables": {"count": 0, "pages": []}}
+        rows = ugs_assemble.count_rows(meta)
+        untitled = next(row for row in rows if row["id"] == "untitled_elements")
+        self.assertEqual(untitled["status"], "not_ok")
+        self.assertEqual(untitled["detail"], {"count": 2})
+        for language in ("fr", "en"):
+            labels = pdf_annex.load_labels(pdf_annex.DEFAULT_LABELS, language)
+            html_text = pdf_annex.render_checks([untitled], labels)
+            self.assertIn(labels["check_values"]["untitled_elements"], html_text)
+
+    def test_no_untitled_element_is_an_ok_row(self):
+        meta = {"untitled_figures": {"count": 0, "pages": []}, "untitled_tables": {"count": 0, "pages": []}}
+        untitled = next(row for row in ugs_assemble.count_rows(meta) if row["id"] == "untitled_elements")
+        self.assertEqual(untitled["status"], "ok")
+
     def test_not_found_counts_give_not_applicable_row(self):
         """Issue 126 plan 6 E2: a list not found is not applicable, never a mismatch and never zero."""
         meta = {"declared_figures": None, "extracted_figures": 1, "figure_count_status": "not_found",
@@ -337,7 +354,7 @@ class TestCitationPlacement(unittest.TestCase):
     def test_report_without_count_keys_is_not_applicable(self):
         """A report prepared before plan 6 has no count keys: the rows say not applicable, with no invented number."""
         rows = ugs_assemble.count_rows({})
-        self.assertEqual([row["status"] for row in rows], ["not_applicable", "not_applicable"])
+        self.assertEqual([row["status"] for row in rows if row["id"] in ("figure_counts", "table_counts")], ["not_applicable", "not_applicable"])
 
     def test_appendix_row_in_annex(self):
         """Issue 126 plan 15 N4: an appendix listed and not found is a row with its id, in the annex (fictitious)."""

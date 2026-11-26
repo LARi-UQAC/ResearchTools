@@ -84,6 +84,19 @@ def _kind_result(declared_count: Any, declared_numbers: Any, records: List[Dict[
             "missing": missing, "extra": extra}
 
 
+def _untitled_summary(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Purpose: Summarise the elements with no title: how many, and on which pages (owner N2, never counted).
+    Inputs:
+        records (List[dict]): the untitled element records of one type.
+    Outputs:
+        dict - count and the sorted list of their pages, each page once.
+    Raises:
+        None.
+    """
+    return {"count": len(records), "pages": sorted({record.get("page") for record in records})}
+
+
 def compare_counts(declared: Dict[str, Any], elements: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Purpose:
@@ -102,14 +115,18 @@ def compare_counts(declared: Dict[str, Any], elements: List[Dict[str, Any]]) -> 
     Raises:
         re.error: when the number pattern is not a valid regular expression.
     """
-    figures = [e for e in elements if e.get("element_type") in FIGURE_TYPES]
-    tables = [e for e in elements if e.get("element_type") in TABLE_TYPES]
+    figures = [e for e in elements if e.get("element_type") in FIGURE_TYPES and e.get("title")]
+    tables = [e for e in elements if e.get("element_type") in TABLE_TYPES and e.get("title")]
+    untitled_figures = [e for e in elements if e.get("element_type") in FIGURE_TYPES and not e.get("title")]
+    untitled_tables = [e for e in elements if e.get("element_type") in TABLE_TYPES and not e.get("title")]
     settings = front_matter.load_entry_settings()
     fig = _kind_result(declared.get("declared_figures"), declared.get("declared_figure_numbers"), figures, "figure",
                        settings)
     tab = _kind_result(declared.get("declared_tables"), declared.get("declared_table_numbers"), tables, "table",
                        settings)
     return {
+        "untitled_figures": _untitled_summary(untitled_figures),
+        "untitled_tables": _untitled_summary(untitled_tables),
         "declared_figures": declared.get("declared_figures"),
         "extracted_figures": fig["extracted"],
         "figure_count_status": fig["status"],

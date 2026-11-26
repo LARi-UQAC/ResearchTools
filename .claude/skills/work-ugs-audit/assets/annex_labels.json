@@ -55,7 +55,8 @@
       "equation_order": "Numérotation des équations",
       "figure_counts": "Nombre de figures : déclaré et extrait",
       "table_counts": "Nombre de tableaux : déclaré et extrait",
-      "appendices": "Appendices listées et présentes"
+      "appendices": "Appendices listées et présentes",
+      "untitled_elements": "Éléments sans titre (figures ou tableaux non légendés)"
     },
     "check_status_values": {
       "ok": "Conforme",
@@ -124,7 +125,8 @@
       "equation_order": "Equation numbering",
       "figure_counts": "Number of figures: declared and extracted",
       "table_counts": "Number of tables: declared and extracted",
-      "appendices": "Appendices listed and present"
+      "appendices": "Appendices listed and present",
+      "untitled_elements": "Elements without a title (unlabelled figures or tables)"
     },
     "check_status_values": {
       "ok": "Passed",

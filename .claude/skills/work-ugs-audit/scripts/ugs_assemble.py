@@ -31,6 +31,7 @@ CHECKS_FILE_NAME = "checks.json"
 CITATION_CHECK_ID = crossref_checks.CITATION_CHECK_ID
 FIGURE_COUNT_CHECK_ID = crossref_checks.FIGURE_COUNT_CHECK_ID
 TABLE_COUNT_CHECK_ID = crossref_checks.TABLE_COUNT_CHECK_ID
+UNTITLED_CHECK_ID = crossref_checks.UNTITLED_CHECK_ID
 APPENDIX_CHECK_ID = crossref_checks.APPENDIX_CHECK_ID
 APPENDIX_STATUS = {"ok": "ok", "not_ok": "not_ok", "not_applicable": "not_applicable"}
 CITATION_CODE = "CIT"
@@ -114,7 +115,7 @@ def count_rows(meta: dict) -> List[dict]:
         meta (dict): the report_meta.json of the report ({} when the file is absent).
 
     Outputs:
-        List[dict]: the rows figure_counts and table_counts, each with id, status and detail.
+        List[dict]: the rows figure_counts, table_counts and untitled_elements, each with id, status and detail.
 
     Raises:
         None.
@@ -127,6 +128,11 @@ def count_rows(meta: dict) -> List[dict]:
         if status in ("ok", "not_ok"):
             detail = {"declared": meta[f"declared_{kind}s"], "extracted": meta[f"extracted_{kind}s"]}
         rows.append({"id": check_id, "status": status, "detail": detail})
+    if "untitled_figures" in meta or "untitled_tables" in meta:
+        untitled = meta.get("untitled_figures", {}).get("count", 0) + meta.get("untitled_tables", {}).get("count", 0)
+        rows.append({"id": UNTITLED_CHECK_ID, "status": "not_ok" if untitled else "ok", "detail": {"count": untitled}})
+    else:  # a report prepared before this check existed: not applicable, never zero
+        rows.append({"id": UNTITLED_CHECK_ID, "status": "not_applicable", "detail": {}})
     return rows
 
 

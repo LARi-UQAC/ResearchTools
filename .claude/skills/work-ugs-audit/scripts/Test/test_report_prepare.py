@@ -383,8 +383,8 @@ class PreparationTests(unittest.TestCase):
         self._prepare_with_ocr(lambda pdf, page, rect, lang: self._grid_words(3, 3))
         elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
         self.assertEqual([(e["element_type"], e["element_id"], e["file"]) for e in elements],
-                         [("table_image", "T-i01", "T-i01.png")])
-        self.assertTrue(self.report_file("figures", "T-i01.png").exists())
+                         [("table_image", "T-i01", "untitled/T-i01.png")])
+        self.assertTrue(self.report_file("figures", "untitled", "T-i01.png").exists())
         self.assertFalse(self.report_file("figures", "F-u01.png").exists())
 
     def test_count_match_with_wrong_numbers_is_rerun(self):
@@ -483,6 +483,31 @@ class PreparationTests(unittest.TestCase):
             with self.assertRaises(PrepareError):
                 memo(self.pdf, 2, [1, 2, 3, 4], "fra")
         self.assertEqual(len(calls), 1)
+
+    def test_untitled_files_go_to_a_subfolder_and_are_recorded(self):
+        """Owner N2: the figures folder holds only titled files; untitled ones go to figures/untitled, recorded."""
+        self._two_figures_declared()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for name, title in (("F1.png", "Figure 1: A"), ("F2.png", "Figure 2: B"), ("F-u01.png", None)):
+                (figures_dir / name).write_bytes(b"png")
+                record = {"element_id": name[:-4], "element_type": "figure", "page": 2, "file": name,
+                          "title": {"text": title} if title else None}
+                records.append(record)
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        figures = self.report_file("figures")
+        self.assertEqual(sorted(p.name for p in figures.glob("*.png")), ["F1.png", "F2.png"])
+        self.assertTrue((figures / "untitled" / "F-u01.png").exists())
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["untitled_figures"], {"count": 1, "pages": [2]})
+        self.assertEqual([a["status"] for a in meta["figure_attempts"]], ["ok"])  # untitled never fails an attempt
+        elements = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))
+        untitled = [e for e in elements if e["element_id"] == "F-u01"][0]
+        self.assertEqual(untitled["file"], "untitled/F-u01.png")
 
     def test_count_status_written_to_meta(self):
         """Issue 126 plan 6 E2: a declared figure with no extracted figure is a mismatch in report_meta.json."""

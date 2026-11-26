@@ -12,7 +12,7 @@ import fitz
 # The validation codes are owned by ugs_grade (R2): the annex only labels them.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ugs_grade import GRADE_CODES
-from crossref_checks import (CHECK_IDS, CITATION_CHECK_ID, COUNT_CHECK_IDS, APPENDIX_CHECK_ID, STATUS_OK, STATUS_NOT_OK,
+from crossref_checks import (CHECK_IDS, CITATION_CHECK_ID, COUNT_CHECK_IDS, APPENDIX_CHECK_ID, UNTITLED_CHECK_ID, STATUS_OK, STATUS_NOT_OK,
                          STATUS_NOT_APPLICABLE)
 
 DEFAULT_TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "annex.template.html"
@@ -218,7 +218,7 @@ def _load_check_labels(block: dict, path: Path, where: str) -> dict:
         "checks_title": _require_text(block, "checks_title", path, where),
         "check_column": _require_text(block, "check_column", path, where),
         "numbers_column": _require_text(block, "numbers_column", path, where),
-        "check_values": _text_map(block, "check_values", path, where, tuple(CHECK_IDS) + (CITATION_CHECK_ID,) + tuple(COUNT_CHECK_IDS) + (APPENDIX_CHECK_ID,)),
+        "check_values": _text_map(block, "check_values", path, where, tuple(CHECK_IDS) + (CITATION_CHECK_ID,) + tuple(COUNT_CHECK_IDS) + (APPENDIX_CHECK_ID, UNTITLED_CHECK_ID)),
         "check_status_values": _text_map(block, "check_status_values", path, where, CHECK_STATUS_KEYS),
         "check_detail_values": _text_map(block, "check_detail_values", path, where, CHECK_DETAIL_KEYS),
         "excluded_reason_values": _text_map(block, "excluded_reason_values", path, where, None),

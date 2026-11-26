@@ -81,7 +81,7 @@ cited, every table cited, figure numbers increasing, table numbers increasing, e
 gives `ok`, `not_ok` or `not_applicable` with the numbers concerned only. A gap in the numbers lists at most
 `checks.max_gap_numbers` numbers, and a number above `checks.max_number` is refused. Five more rows follow:
 `citation_placement` (see below), `figure_counts` and `table_counts` (declared against titled numbers, from
-`report_meta.json`), `untitled_elements` (figures and tables without a title), `appendices` (every appendix listed in the contents is found after the references, and every
+`report_meta.json`), `untitled_elements` (figures and tables without a title), `title_kind` (an element whose printed title says Figure but is a table, or the reverse: the ids, from the script's ruled-table signal or the vision kind; each one gets a PDF annotation on its caption), `appendices` (every appendix listed in the contents is found after the references, and every
 appendix found there is listed; markers in `front_matter.json`). `citation_placement` finds a numeric citation after
 the sentence's period, ". [5]", on body pages; an abbreviation of `assets/citation_rules.json` such as "et al." before
 the bracket is not a finding; each finding is also annotated in the PDF.
@@ -122,7 +122,7 @@ figures are graded, and always writes a reason; a failed probe leaves the model-
 it does not stop the run. Any figure of a report is classified into one schema kind: `chart` (curves, bars, budget
 charts, S-curves), `gantt`, `diagram` (UML, SysML, architectures, block diagrams, breakdown structures),
 `flowchart` (flowcharts, logigrams, activity diagrams), `technical_drawing` (CAD, PCB, schematics), `photo`, or
-`other` (tables such as a budget or a timesheet, a Kanban board, a screenshot). The kind decides which criteria are
+`table` (a grid of rows and columns, such as a budget or a timesheet), `other` (a Kanban board, a screenshot). The kind decides which criteria are
 judged: axes and legend only for a chart, arrows and signals for a diagram or a flowchart, the general criteria
 (caption, resolution, text size, citation) for every kind. The words a professor writes as the expected kind
 (`UML`, `Kanban`, `S-curve`, ...) are mapped to these kinds by `vision.kind_aliases` of the configuration.

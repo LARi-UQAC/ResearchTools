@@ -133,6 +133,9 @@ def _effective_dpi(figure: Dict[str, Any]) -> Optional[float]:
     return round(size[0] / ((rect[2] - rect[0]) / POINTS_PER_INCH), 1)
 
 
+TABLE_IMAGE_TYPE = "table_image"
+
+
 def title_kind_from_answer(element_type: str, answer_kind: str) -> Optional[str]:
     """
     --------------------------------------------------------------------------
@@ -237,10 +240,16 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
             record["criteria"][cid] = {"verdict": "not_run", "reason": "invalid_answer"}
         return
     record["kind"] = answer["kind"]
+    if record.get("title_kind_mismatch") == "table_titled_figure":  # H: a script-flagged table is judged as a table
+        record["kind"] = "table"
     if record.get("title_kind_source") != "script":  # N7: a script verdict on the title is never overwritten
         mismatch = title_kind_from_answer(record.get("element_type") or "figure", answer["kind"])
-        record["title_kind_mismatch"] = mismatch
-        record["title_kind_source"] = "vision" if mismatch else None
+        if record.get("element_type") == TABLE_IMAGE_TYPE:  # C: flagged by vision unless the grid rule reads a grid
+            if mismatch and record.get("title_grid") is not True:
+                record["title_kind_mismatch"] = mismatch
+                record["title_kind_source"] = "vision"
+        elif mismatch and record.get("titled"):  # B: a vision table is a candidate only, the script flags it
+            record["title_kind_candidate"] = mismatch
     answered = {item["id"]: item for item in answer["criteria"]}
     for crit in sent:
         cid, item = crit["id"], answered.get(crit["id"])
@@ -363,6 +372,9 @@ def figures_report(
             "element_type": elements_by_id.get(figure_id, {}).get("element_type"),
             "title_kind_mismatch": elements_by_id.get(figure_id, {}).get("title_kind_mismatch"),
             "title_kind_source": elements_by_id.get(figure_id, {}).get("title_kind_source"),
+            "title_grid": elements_by_id.get(figure_id, {}).get("title_grid"),
+            "titled": elements_by_id.get(figure_id, {}).get("title") is not None,
+            "title_kind_candidate": None,
         }
         if vision_ok:
             _judge_figure(record, fig, criteria, pages, report_dir, call, ctx, language, settings, printed)
@@ -374,7 +386,32 @@ def figures_report(
         if on_figure:
             on_figure(figure_id, record)
 
+    # C (review): a table drawn as an image goes to the vision role for its kind only; it has no criteria to judge.
+    for element in elements or []:
+        if element.get("element_type") != TABLE_IMAGE_TYPE:
+            continue
+        element_id = element["element_id"]
+        if element_id in existing:
+            figures.append(existing[element_id])
+            continue
+        record = {
+            "figure_id": element_id, "page": element["page"], "rect": element["rect"], "file": element["file"],
+            "element_type": TABLE_IMAGE_TYPE, "kind": DEFAULT_KIND, "drawing_area_ratio": None,
+            "effective_dpi": None, "caption": (element.get("title") or {}).get("text"), "printed_number": None,
+            "cited_in_text": NOT_APPLICABLE, "criteria": {}, "model_image": None,
+            "title_kind_mismatch": None, "title_kind_source": None, "title_kind_candidate": None,
+            "title_grid": element.get("title_grid"), "titled": element.get("title") is not None,
+        }
+        if vision_ok:
+            _judge_figure(record, {"file": element["file"], "criteria": {}}, [], pages, report_dir, call, ctx,
+                          language, settings, None)
+        figures.append(record)
+        if on_figure:
+            on_figure(element_id, record)
+
     report_criteria = {}
     if vision_ok:
-        report_criteria = _judge_style(figures, criteria, report_dir, call, ctx, language, settings["max_long_edge"])
-    return {"report_id": report_id, "figures": figures, "report_criteria": report_criteria}
+        figure_only = [f for f in figures if f.get("element_type") != TABLE_IMAGE_TYPE]
+        report_criteria = _judge_style(figure_only, criteria, report_dir, call, ctx, language, settings["max_long_edge"])
+    return {"report_id": report_id, "figures": figures, "report_criteria": report_criteria,
+            "vision_validated": vision_ok}

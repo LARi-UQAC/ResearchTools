@@ -280,14 +280,76 @@ class TestUgsFigures(unittest.TestCase):
 
     # --- N7 signal 2 (plan 20): the vision role says an element is a table ---
 
-    def test_a_table_judged_by_vision_under_a_figure_title_is_flagged(self):
+    def test_a_vision_only_table_under_a_figure_title_is_a_candidate_and_not_flagged(self):
+        # Review B: the vision answer is a candidate only; the script decides the flag.
         elements = self.element_records(["Figure 1 - The plant.", None])
         result = self.report(FakeModel(kind="table"), elements=elements)
         record = result["figures"][0]
         self.assertEqual(record["kind"], "table")
-        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_candidate"], "table_titled_figure")
+        self.assertIsNone(record["title_kind_mismatch"])
+        self.assertIsNone(record["title_kind_source"])
+
+    def test_an_untitled_element_is_never_a_candidate_or_a_flag(self):
+        # Review B: an element without a printed title is never flagged, whatever the vision says.
+        elements = self.element_records([None, None])
+        result = self.report(FakeModel(kind="table"), elements=elements)
+        for record in result["figures"]:
+            self.assertIsNone(record["title_kind_candidate"])
+            self.assertIsNone(record["title_kind_mismatch"])
+
+    def test_a_script_flagged_table_is_judged_as_kind_table_with_general_criteria_only(self):
+        # Review H: a flagged table_titled_figure is judged as a table, so chart-only criteria are not applicable.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_kind_mismatch="table_titled_figure", title_kind_source="script")
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = result["figures"][0]
+        self.assertEqual(record["kind"], "table")
+        self.assertEqual(record["criteria"]["axis_titles"]["verdict"], "not_applicable")
+        self.assertEqual(record["title_kind_source"], "script")
+
+    def test_a_table_image_with_a_non_table_vision_kind_and_no_grid_is_flagged_by_vision(self):
+        # Review C: a table_image is sent to vision; a kind other than table or other, with no grid, is a mismatch.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=False))
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i01")
+        self.assertEqual(record["element_type"], "table_image")
+        self.assertEqual(record["title_kind_mismatch"], "figure_titled_table")
         self.assertEqual(record["title_kind_source"], "vision")
-        self.assertEqual(result["figures"][1]["title_kind_mismatch"], "table_titled_figure")  # the same model says table
+
+    def test_a_table_image_whose_grid_reading_is_a_grid_is_not_flagged(self):
+        # Review C: the grid rule says grid, so a vision chart answer does not flag it.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=True))
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i01")
+        self.assertIsNone(record["title_kind_mismatch"])
+
+    def test_a_table_image_judged_as_a_table_is_not_flagged(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements.append(self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=False))
+        result = self.report(FakeModel(kind="table"), elements=elements)
+        record = next(f for f in result["figures"] if f["figure_id"] == "T-i01")
+        self.assertIsNone(record["title_kind_mismatch"])
+
+    def test_the_figures_document_says_whether_vision_was_validated(self):
+        result = self.report(FakeModel(), vision_ok=False, elements=self.element_records([None, None]))
+        self.assertIs(result["vision_validated"], False)
+        result = self.report(FakeModel(), elements=self.element_records([None, None]))
+        self.assertIs(result["vision_validated"], True)
+
+    def table_image_record(self, element_id, title, title_grid):
+        """A table_image element record as extract_elements writes it, with its file in the figures folder."""
+        figures = self.report_dir / "figures"
+        figures.mkdir(parents=True, exist_ok=True)
+        pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 40), False)
+        pixmap.clear_with(200)
+        pixmap.save(str(figures / f"{element_id}.png"))
+        return {"element_id": element_id, "element_type": "table_image", "page": 1, "rect": [50, 400, 400, 500],
+                "file": f"{element_id}.png", "title": {"text": title}, "title_grid": title_grid,
+                "title_kind_mismatch": None, "title_kind_source": None, "legend": "", "notes": [],
+                "caption": title, "source": "vector"}
 
     def test_a_chart_judged_under_a_figure_title_is_not_flagged(self):
         elements = self.element_records(["Figure 1 - The plant.", None])

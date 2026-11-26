@@ -180,13 +180,13 @@
       "gantt chart": "gantt", "planning": "gantt", "schedule": "gantt",
       "s curve": "chart", "budget curve": "chart", "cumulative curve": "chart", "graph": "chart", "plot": "chart",
       "bar chart": "chart", "histogram": "chart", "pie chart": "chart", "curve": "chart", "budget chart": "chart",
-      "kanban": "other", "board": "other", "table": "other", "budget": "other", "budget table": "other",
-      "timesheet": "other", "time sheet": "other", "spreadsheet": "other", "screenshot": "other",
+      "kanban": "other", "board": "other", "table": "table", "budget": "table", "budget table": "table",
+      "timesheet": "table", "time sheet": "table", "spreadsheet": "table", "screenshot": "other",
       "cad": "technical_drawing", "pcb": "technical_drawing", "schematic": "technical_drawing",
       "electrical drawing": "technical_drawing", "mechanical drawing": "technical_drawing", "3d model": "technical_drawing",
       "picture": "photo", "image": "photo"
     },
-    "provenance": "chosen 2026-11-15 from the professor's list of figures a report can hold (UML, SysML, flowchart, logigram, software or electronic architecture, project breakdown structure, Gantt, Kanban, budget, S-curve, timesheet): the words the professor writes as the expected kind of a figure in the vision probe, each mapped to the schema kind the model answers; a table or a board has no criterion of its own so it is `other`; adjustable by the professor"
+    "provenance": "chosen 2026-11-15 from the professor's list of figures a report can hold (UML, SysML, flowchart, logigram, software or electronic architecture, project breakdown structure, Gantt, Kanban, budget, S-curve, timesheet): the words the professor writes as the expected kind of a figure in the vision probe, each mapped to the schema kind the model answers; a table or a board has no criterion of its own so it is `other`; adjustable by the professor 2026-11-26 (review H, #126): a table, a budget table, a budget, a timesheet, a time sheet and a spreadsheet are the kind table, which the figure criteria judge; they were other."
   },
   "rubric.loose_heading_regex": {
     "value": "^#{1,2}\\s+\\d+\\.\\s+\\S",

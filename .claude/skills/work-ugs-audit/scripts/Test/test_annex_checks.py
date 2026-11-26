@@ -141,8 +141,8 @@ class TestTitleKindRow(unittest.TestCase):
     EN_FIGURE = 'Wrong title: this element is a figure, not a table. Use "Figure N" and add it to the list of figures.'
 
     @staticmethod
-    def _figures(*flags):
-        return {"figures": [{"figure_id": "F%d" % (i + 1), "page": 1, "rect": [0, 0, 1, 1], "caption": "Figure %d: x" % (i + 1),
+    def _figures(*flags, vision_validated=True):
+        return {"vision_validated": vision_validated, "figures": [{"figure_id": "F%d" % (i + 1), "page": 1, "rect": [0, 0, 1, 1], "caption": "Figure %d: x" % (i + 1),
                              "title_kind_mismatch": flag, "title_kind_source": "script" if flag else None}
                             for i, flag in enumerate(flags)]}
 
@@ -153,6 +153,11 @@ class TestTitleKindRow(unittest.TestCase):
     def test_no_flagged_element_gives_ok_with_no_ids(self):
         row = ugs_assemble.title_kind_row(self._figures(None, None))
         self.assertEqual(row, {"id": "title_kind", "status": "ok", "detail": {}})
+
+    def test_vision_not_validated_gives_not_applicable_even_with_script_flags(self):
+        # Review F: the check did not really run on the model-side signal, so it is not a pass nor a finding.
+        row = ugs_assemble.title_kind_row(self._figures("table_titled_figure", vision_validated=False))
+        self.assertEqual(row["status"], "not_applicable")
 
     def test_no_figures_file_gives_not_applicable(self):
         self.assertEqual(ugs_assemble.title_kind_row(None)["status"], "not_applicable")

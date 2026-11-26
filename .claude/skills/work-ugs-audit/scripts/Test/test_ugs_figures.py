@@ -5,6 +5,7 @@ data only (R34).
 """
 import copy
 import json
+import os
 import re
 import shutil
 import sys
@@ -420,6 +421,38 @@ class TestCitingParagraph(unittest.TestCase):
 
     def test_two_part_number_is_not_one_part(self):
         self.assertEqual(ugs_figures.citing_text(["Figure 2.1 shows the loop."], 2), "")
+
+
+class RealR01AcceptanceTest(unittest.TestCase):
+    """
+    Real-data acceptance on the owner's R01 report (review D, 2026-11-26). Skipped unless UGS_REAL_WORK names the
+    check work folder of a completed figures step (loop-1/R01/figures.json). Only ids and counts are asserted (R34).
+    The expected set is the owner's list, exactly: a flag outside it, or a missing one, is a failure.
+    """
+
+    EXPECTED = {"F%d" % n for n in range(1, 8)} | {"F16", "F17", "F18"}
+
+    def setUp(self):
+        work = os.environ.get("UGS_REAL_WORK", "")
+        if not work:
+            self.skipTest("UGS_REAL_WORK is not set (owner's real-data check)")
+        self.figures_path = Path(work) / "loop-1" / "R01" / "figures.json"
+        if not self.figures_path.is_file():
+            self.skipTest("no figures.json for R01 in UGS_REAL_WORK yet")
+
+    def test_the_flagged_set_is_the_owner_list_exactly(self):
+        document = json.loads(self.figures_path.read_text(encoding="utf-8"))
+        self.assertTrue(document.get("vision_validated"), "the acceptance run must validate the vision role")
+        flagged = {f["figure_id"] for f in document["figures"] if f.get("title_kind_mismatch")}
+        self.assertEqual(flagged, self.EXPECTED)
+
+    def test_every_flag_carries_its_source_and_no_candidate_is_flagged(self):
+        document = json.loads(self.figures_path.read_text(encoding="utf-8"))
+        for record in document["figures"]:
+            if record.get("title_kind_mismatch"):
+                self.assertIn(record.get("title_kind_source"), ("script", "vision"))
+            else:
+                self.assertIsNone(record.get("title_kind_source"))
 
 
 if __name__ == "__main__":

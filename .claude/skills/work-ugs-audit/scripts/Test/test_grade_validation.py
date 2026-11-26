@@ -4,9 +4,13 @@ Every fixture is fictitious (R34). The checks are driven through ugs_grade.check
 scripted fake model call, so no network, no model and no report is read (R21). Each assertion reads a record field with
 .get(), so a missing field is a FAIL with its name, never a KeyError.
 """
+import json
 import math
+import re
 import sys
+import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent
@@ -21,7 +25,7 @@ from ugs_run import _grade_mark  # noqa: E402
 
 CODE_TABLE = (
     "ok", "quote_not_found", "evidence_missing", "evidence_incomplete", "evidence_page_out_of_range",
-    "score_above_max", "score_negative", "score_missing", "unknown_status", "not_applicable_with_score",
+    "score_above_max", "unknown_level", "score_negative", "score_missing", "unknown_status", "not_applicable_with_score",
     "unparsable_answer", "schema_invalid", "no_fit", "over_budget",
 )
 
@@ -68,8 +72,20 @@ def make_ctx():
 
 
 def _rated(score, evidence=None, comment="Fictitious comment."):
-    """Return a fictitious rated answer."""
-    return {"status": "rated", "score": score, "comment": comment,
+    """Return a fictitious rated answer with a valid level, for the direct checks of check_grade_answer."""
+    return {"status": "rated", "level": "partial", "score": score, "comment": comment,
+            "evidence": [] if evidence is None else evidence}
+
+
+# Plan 25 Task 1: the level the model would name for each score of a maximum of 10 (fraction x 10). Any other score
+# is a level the model cannot have named, so it is refused as unknown_level.
+FLOW_LEVEL_FOR_SCORE = {0: "absent", 5: "attempted", 7.5: "partial", 10: "exemplary"}
+
+
+def _flow(score, evidence=None, comment="Fictitious comment."):
+    """Return a fictitious answer as the model now gives it: a level, and the score the level computes to."""
+    level = FLOW_LEVEL_FOR_SCORE.get(score, "great")
+    return {"status": "rated", "level": level, "score": score, "comment": comment,
             "evidence": [] if evidence is None else evidence}
 
 
@@ -112,7 +128,7 @@ class TestCheckGradeAnswer(unittest.TestCase):
         self.assertEqual(self._check(_rated(-1))[0], "score_negative")
 
     def test_score_missing_on_a_rated_answer(self):
-        self.assertEqual(self._check({"status": "rated", "score": None, "comment": "", "evidence": []})[0], "score_missing")
+        self.assertEqual(self._check({"status": "rated", "level": "partial", "score": None, "comment": "", "evidence": []})[0], "score_missing")
 
     def test_unknown_status(self):
         self.assertEqual(self._check({"status": "maybe", "score": 5, "comment": "", "evidence": []})[0], "unknown_status")
@@ -144,7 +160,8 @@ class TestCheckGradeAnswer(unittest.TestCase):
         answers = [
             _rated(10), _rated(11), _rated(-1), _rated(5, []), _rated(5, [_quote(1, "NOT IN PAGE")]),
             _rated(5, [_quote(9, "Page 1 text")]), _rated(5, "x"),
-            {"status": "rated", "score": None, "comment": "", "evidence": []},
+            {"status": "rated", "level": "partial", "score": None, "comment": "", "evidence": []},
+            {"status": "rated", "level": "attempted", "score": 5, "comment": "", "evidence": []},
             {"status": "maybe", "score": 5, "comment": "", "evidence": []},
             {"status": "not_applicable", "score": 3, "comment": "", "evidence": []},
         ]
@@ -163,6 +180,108 @@ class TestCheckGradeAnswer(unittest.TestCase):
         self.assertNotIn("PHRASE", message)
 
 
+class TestLevelScoring(unittest.TestCase):
+    """Plan 25 task 1: the grader names a level; the code computes the points (fraction x maximum, rounded to the
+    configured step, ties up). Fictitious items and answers (R34); the levels are read from grade_levels.json."""
+
+    PAGES = ["Page 1 text", "Page 2 text"]
+
+    def setUp(self):
+        """
+        Purpose: Give each test a step context with the shipped level names, fictitious (R34).
+        Inputs:
+            None.
+        Outputs:
+            None. Sets self.ctx.
+        Raises:
+            None.
+        """
+        self.ctx = make_ctx()
+
+    @staticmethod
+    def _level(level, evidence=None):
+        """
+        Purpose: Build a fictitious rated answer with a level and no score, as the schema now asks.
+        Inputs:
+            level (str): the level name.
+            evidence (list | None): the evidence entries.
+        Outputs:
+            dict: the answer.
+        Raises:
+            None.
+        """
+        return {"status": "rated", "level": level, "comment": "Fictitious comment.",
+                "evidence": [] if evidence is None else evidence}
+
+    def test_complete_correct_on_a_half_point_item_is_half_a_point(self):
+        item = {"id": "I01", "title": "Intro", "max_points": 0.5}
+        record = grade_item(item, self.PAGES, FakeCall([self._level("complete_correct")]), self.ctx, "en", "")
+        self.assertEqual(record["score"], 0.5)
+        self.assertEqual(record["validation"], "ok")
+
+    def test_complete_correct_on_ten_points_is_eight_and_three_quarters(self):
+        item = {"id": "I02", "title": "Method", "max_points": 10}
+        answer = self._level("complete_correct", [_quote(1, "Page 1 text")])
+        record = grade_item(item, self.PAGES, FakeCall([answer]), self.ctx, "en", "")
+        self.assertEqual(record["score"], 8.75)
+        self.assertEqual(record["model_score"], "complete_correct")
+
+    def test_absent_is_zero_with_its_evidence(self):
+        item = {"id": "I03", "title": "Table", "max_points": 4}
+        record = grade_item(item, self.PAGES, FakeCall([self._level("absent", [_quote(2, "Page 2 text")])]),
+                            self.ctx, "en", "")
+        self.assertEqual(record["score"], 0.0)
+
+    def test_an_unknown_level_is_asked_again_then_not_run(self):
+        item = {"id": "I04", "title": "Intro", "max_points": 2}
+        call = FakeCall([self._level("great"), self._level("great")])
+        record = grade_item(item, self.PAGES, call, self.ctx, "en", "")
+        self.assertEqual((record["status"], record["validation"], record["score"]), ("not_run", "unknown_level", None))
+        self.assertEqual(record["attempts"], 2)
+
+    def test_a_score_without_a_level_is_refused_as_unknown_level(self):
+        item = {"id": "I05", "title": "Intro", "max_points": 0.5}
+        answer = {"status": "rated", "score": 0.5, "comment": "x", "evidence": []}
+        record = grade_item(item, self.PAGES, FakeCall([answer, answer]), self.ctx, "en", "")
+        self.assertEqual(record["validation"], "unknown_level")
+        self.assertIsNone(record["score"])
+
+    def test_points_are_the_fraction_rounded_to_the_nearest_step_ties_up(self):
+        levels = ugs_grade.load_grade_levels()
+        step = Decimal("0.25")
+        self.assertEqual(ugs_grade.points_for_level("complete_correct", 0.5, levels, step), 0.5)
+        self.assertEqual(ugs_grade.points_for_level("complete_correct", 10, levels, step), 8.75)
+        self.assertEqual(ugs_grade.points_for_level("partial", 10, levels, step), 7.5)
+        self.assertEqual(ugs_grade.points_for_level("exemplary", 10, levels, step), 10.0)
+        self.assertEqual(ugs_grade.points_for_level("attempted", 0.5, levels, step), 0.25)
+
+    def test_no_prompt_states_a_numeric_fraction_the_model_could_copy(self):
+        prompts = SCRIPTS.parent / "prompts"
+        for name in ("levels.md", "grade_item.md", "audit_item.md"):
+            text = (prompts / name).read_text(encoding="utf-8")
+            self.assertIsNone(re.search(r"\b0[.,]\d+\b|\b1\.0\b", text), name)
+        # Negative control: the check can fail on a prompt that carries a fraction.
+        self.assertIsNotNone(re.search(r"\b0[.,]\d+\b", "complete and correct = 0.88 of max_points"))
+
+    def test_the_level_names_match_the_schema_and_carry_provenance(self):
+        data = json.loads((SCRIPTS.parent / "assets" / "grade_levels.json").read_text(encoding="utf-8"))
+        schema = json.loads((SCRIPTS.parent / "prompts" / "schemas.json").read_text(encoding="utf-8"))
+        names = [name for name in schema["grade_item"]["properties"]["level"]["enum"] if name is not None]
+        self.assertEqual(sorted(data["levels"]), sorted(names))
+        self.assertTrue(data["_provenance"].strip())
+        for name, entry in data["levels"].items():
+            self.assertIsInstance(entry["fraction"], (int, float), name)
+            self.assertTrue(entry["fr"] and entry["en"], name)
+
+    def test_the_step_is_read_from_the_configuration_and_a_missing_one_is_named(self):
+        self.assertEqual(ugs_grade.read_grade_step(ugs_grade.default_path()), Decimal("0.25"))
+        broken = Path(tempfile.mkdtemp()) / "config.json"
+        broken.write_text(json.dumps({"grade.missing_max_chars": {"value": 300}}), encoding="utf-8")
+        with self.assertRaises(ValueError) as raised:
+            ugs_grade.read_grade_step(broken)
+        self.assertIn("grade.score_step", str(raised.exception))
+
+
 class TestScoreRetry(unittest.TestCase):
     """Plan 22 task 2 (R01 case 4): a score above the maximum is asked again with the maximum named, in the report
     language, from a template of the prompts folder; not_applicable on a required item is refused and asked again.
@@ -172,21 +291,21 @@ class TestScoreRetry(unittest.TestCase):
         self.ctx = make_ctx()
         self.pages = ["Page 1 text", "Page 2 text"]
 
-    def test_score_above_max_is_asked_again_and_the_repeat_is_kept(self):
+    def test_an_unknown_level_is_asked_again_and_the_repeat_is_kept(self):
         item = {"id": "I01", "title": "Intro", "max_points": 0.5}
-        record = grade_item(item, self.pages, FakeCall([_rated(0.88), _rated(0.5)]), self.ctx, "en", "")
-        self.assertEqual(record.get("status"), "rated")
+        good = {"status": "rated", "level": "complete_correct", "comment": "Fictitious.", "evidence": []}
+        record = grade_item(item, self.pages, FakeCall([{"status": "rated", "level": "great", "comment": ""}, good]),
+                            self.ctx, "en", "")
         self.assertEqual(record.get("score"), 0.5)
         self.assertEqual(record.get("validation"), "ok")
         self.assertEqual(record.get("attempts"), 2)
 
-    def test_the_retry_prompt_names_the_maximum_in_the_report_language(self):
+    def test_the_retry_prompt_carries_the_refusal_of_the_level(self):
         item = {"id": "I01", "title": "Intro", "max_points": 0.5}
-        call = FakeCall([_rated(0.88), _rated(0.5)])
+        call = FakeCall([{"status": "rated", "level": "great", "comment": ""},
+                         {"status": "rated", "level": "complete_correct", "comment": "", "evidence": []}])
         grade_item(item, self.pages, call, self.ctx, "fr", "")
-        self.assertIn("0.88", call.calls[1])
-        self.assertIn("dépasse le maximum 0.5", call.calls[1])
-        self.assertNotIn("The score 0.88", call.calls[1])
+        self.assertIn("Previous refusal: level must be one of", call.calls[1])
 
     def test_a_required_item_answered_not_applicable_is_refused_and_asked_once_more(self):
         item = {"id": "I01", "title": "Intro", "max_points": 10}
@@ -207,10 +326,11 @@ class TestScoreRetry(unittest.TestCase):
         self.assertEqual(record.get("validation"), "ok")
         self.assertEqual(len(call.calls), 1)
 
-    def test_still_above_max_after_the_retry_stays_not_run(self):
+    def test_two_unknown_levels_stay_not_run(self):
         item = {"id": "I01", "title": "Intro", "max_points": 0.5}
-        record = grade_item(item, self.pages, FakeCall([_rated(0.88), _rated(0.8)]), self.ctx, "en", "")
-        self.assertEqual(record.get("validation"), "score_above_max")
+        bad = {"status": "rated", "level": "great", "comment": "", "evidence": []}
+        record = grade_item(item, self.pages, FakeCall([bad, bad]), self.ctx, "en", "")
+        self.assertEqual(record.get("validation"), "unknown_level")
         self.assertEqual(record.get("status"), "not_run")
         self.assertIsNone(record.get("score"))
         self.assertEqual(record.get("attempts"), 2)
@@ -230,27 +350,28 @@ class TestGradeRecord(unittest.TestCase):
 
     def test_quote_not_found_keeps_the_score_and_flags(self):
         evidence = [_quote(1, "NOT IN PAGE")]
-        bad = _rated(5, evidence, comment="Bad quote")
+        bad = _flow(5, evidence, comment="Bad quote")
         record = self._grade([bad, bad])
         self.assertEqual(record.get("status"), "rated")
         self.assertEqual(record.get("score"), 5)
-        self.assertEqual(record.get("model_score"), 5)
+        self.assertEqual(record.get("model_score"), "attempted")
         self.assertEqual(record.get("validation"), "quote_not_found")
         self.assertIs(record.get("flag"), True)
         self.assertEqual(record.get("attempts"), 2)
         self.assertEqual(record.get("evidence"), evidence)
 
-    def test_score_above_max_keeps_model_score_and_drops_score(self):
-        record = self._grade([_rated(11), _rated(11)])
+    def test_an_unknown_level_keeps_the_level_name_and_drops_the_score(self):
+        bad = {"status": "rated", "level": "great", "comment": "", "evidence": []}
+        record = self._grade([bad, bad])
         self.assertEqual(record.get("status"), "not_run")
         self.assertIsNone(record.get("score"))
-        self.assertEqual(record.get("model_score"), 11)
-        self.assertEqual(record.get("validation"), "score_above_max")
+        self.assertEqual(record.get("model_score"), "great")
+        self.assertEqual(record.get("validation"), "unknown_level")
         self.assertIs(record.get("flag"), True)
         self.assertEqual(record.get("attempts"), 2)
 
     def test_missing_evidence_below_max_keeps_the_score(self):
-        record = self._grade([_rated(5, []), _rated(5, [])])
+        record = self._grade([_flow(5, []), _flow(5, [])])
         self.assertEqual(record.get("status"), "rated")
         self.assertEqual(record.get("score"), 5)
         self.assertEqual(record.get("validation"), "evidence_missing")
@@ -265,7 +386,7 @@ class TestGradeRecord(unittest.TestCase):
         self.assertEqual(record.get("validation"), "unknown_status")
 
     def test_a_success_has_ok_and_its_attempt_count(self):
-        good = _rated(5, [_quote(1, "Page 1 text")], comment="Good")
+        good = _flow(5, [_quote(1, "Page 1 text")], comment="Good")
         record = self._grade([good])
         self.assertEqual(record.get("validation"), "ok")
         self.assertEqual(record.get("attempts"), 1)
@@ -274,13 +395,13 @@ class TestGradeRecord(unittest.TestCase):
         self.assertEqual(record.get("comment"), "Good")
 
     def test_a_success_on_the_second_try_counts_two_attempts(self):
-        record = self._grade([_rated(11), _rated(10)])
+        record = self._grade([_flow(11), _flow(10)])
         self.assertEqual(record.get("validation"), "ok")
         self.assertEqual(record.get("attempts"), 2)
         self.assertIs(record.get("flag"), False)
 
     def test_the_model_comment_is_kept_on_a_refusal(self):
-        record = self._grade([_rated(11, comment="Too generous"), _rated(11, comment="Too generous again")])
+        record = self._grade([_flow(11, comment="Too generous"), _flow(11, comment="Too generous again")])
         self.assertEqual(record.get("comment"), "Too generous again")
 
     def test_no_fit_carries_its_code(self):
@@ -331,7 +452,7 @@ class TestMissingField(unittest.TestCase):
         return grade_item(self.item, self.pages, FakeCall(responses), self.ctx, "en", "")
 
     def test_record_has_missing_key_in_order(self):
-        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+        answer = {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.",
                   "evidence": [_quote(1, "Page 1 text")], "missing": "Fictitious gap."}
         record = self._grade([answer])
         self.assertEqual(
@@ -341,28 +462,28 @@ class TestMissingField(unittest.TestCase):
         self.assertEqual(list(record.keys())[8:], ["model_score", "validation", "attempts"])
 
     def test_missing_is_kept_as_given_below_the_maximum(self):
-        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+        answer = {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.",
                   "evidence": [_quote(1, "Page 1 text")], "missing": "Fictitious gap."}
         self.assertEqual(self._grade([answer]).get("missing"), "Fictitious gap.")
 
     def test_missing_is_empty_at_full_score(self):
-        answer = {"status": "rated", "score": 10, "comment": "Fictitious.", "evidence": [],
+        answer = {"status": "rated", "level": "exemplary", "score": 10, "comment": "Fictitious.", "evidence": [],
                   "missing": "Should not be kept."}
         self.assertEqual(self._grade([answer]).get("missing"), "")
 
     def test_missing_is_empty_when_the_answer_has_none(self):
-        answer = {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [_quote(1, "Page 1 text")]}
+        answer = {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.", "evidence": [_quote(1, "Page 1 text")]}
         self.assertEqual(self._grade([answer]).get("missing"), "")
 
     def test_a_non_text_missing_is_empty(self):
-        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+        answer = {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.",
                   "evidence": [_quote(1, "Page 1 text")], "missing": 5}
         self.assertEqual(self._grade([answer]).get("missing"), "")
 
     def test_missing_is_kept_from_the_last_answer_on_refusal(self):
-        first = _rated(5, [_quote(1, "NOT IN PAGE")])
+        first = _flow(5, [_quote(1, "NOT IN PAGE")])
         first["missing"] = "First missing text."
-        last = _rated(5, [_quote(1, "NOT IN PAGE")])
+        last = _flow(5, [_quote(1, "NOT IN PAGE")])
         last["missing"] = "Last missing text."
         record = self._grade([first, last])
         self.assertEqual(record.get("validation"), "quote_not_found")
@@ -372,7 +493,7 @@ class TestMissingField(unittest.TestCase):
         # D2: the limit is read from configuration (grade.missing_max_chars), not from a constant of the module.
         from ugs_config import default_path
         limit = ugs_grade.read_missing_max_chars(default_path())
-        answer = {"status": "rated", "score": 5, "comment": "Fictitious.",
+        answer = {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.",
                   "evidence": [_quote(1, "Page 1 text")], "missing": "x" * (limit + 50)}
         self.assertEqual(len(self._grade([answer]).get("missing")), limit)
 
@@ -386,16 +507,16 @@ class TestMissingField(unittest.TestCase):
 
     def test_ledger_note_never_contains_missing(self):
         marker = "SECRET MARKER SENTENCE"
-        refused = _rated(5, [_quote(1, "NOT IN PAGE")])
+        refused = _flow(5, [_quote(1, "NOT IN PAGE")])
         refused["missing"] = marker
         record = self._grade([refused, refused])
         mark, note = _grade_mark(record)
         self.assertEqual((mark, note), ("x", "quote_not_found"))
         self.assertNotIn("SECRET", str(note))
-        blocked = _rated(11)
+        blocked = {"status": "rated", "level": "great", "comment": "", "evidence": []}
         blocked["missing"] = marker
         mark, note = _grade_mark(self._grade([blocked, blocked]))
-        self.assertEqual((mark, note), ("!", "score_above_max"))
+        self.assertEqual((mark, note), ("!", "unknown_level"))
         self.assertNotIn("MARKER", str(note))
 
 
@@ -415,13 +536,15 @@ class TestNanScoreAndNullEvidencePage(unittest.TestCase):
         nan_answer = _rated(float("nan"), [_quote(1, "Page 1 text")])
         code, _message = ugs_grade.check_grade_answer(nan_answer, self.item, self.pages)
         self.assertEqual(code, "score_missing")
-        record = grade_item(self.item, self.pages, FakeCall([nan_answer, nan_answer]), self.ctx, "en", "")
+        # Plan 25: the points come from the level, so a NaN score only reaches the record with no level at all.
+        legacy_nan = {"status": "rated", "score": float("nan"), "comment": "", "evidence": []}
+        record = grade_item(self.item, self.pages, FakeCall([legacy_nan, legacy_nan]), self.ctx, "en", "")
         self.assertEqual(record.get("status"), "not_run")
         self.assertIsNone(record.get("score"))
         # D1: model_score is strict JSON (null), the NaN text is kept in model_score_raw.
         self.assertIsNone(record.get("model_score"))
         self.assertEqual(record.get("model_score_raw"), "nan")
-        self.assertEqual(record.get("validation"), "score_missing")
+        self.assertEqual(record.get("validation"), "unknown_level")
         result = grade_total.compute({"assessment_type": "lab_report", "total_points": 10, "items": [self.item]},
                                      {"report_id": "R01", "items": [record]})
         self.assertIsNone(result.get("total"))
@@ -474,10 +597,10 @@ class TestTotals(unittest.TestCase):
 
     def test_a_refused_proof_keeps_its_score_in_the_totals(self):
         proof = grade_item(self.rubric["items"][0], self.pages,
-                           FakeCall([_rated(5, [_quote(1, "NOT IN PAGE")])] * 2),
+                           FakeCall([_flow(5, [_quote(1, "NOT IN PAGE")])] * 2),
                            self.ctx, "en", "")
         full = grade_item(self.rubric["items"][1], self.pages,
-                          FakeCall([_rated(10, [_quote(2, "Page 2 text")])]), self.ctx, "en", "")
+                          FakeCall([_flow(10, [_quote(2, "Page 2 text")])]), self.ctx, "en", "")
         result = grade_total.compute(self.rubric, {"report_id": "R01", "items": [proof, full]})
         self.assertTrue(result["complete"])
         self.assertEqual(result["by_item"]["I01"]["score"], "5")
@@ -485,9 +608,9 @@ class TestTotals(unittest.TestCase):
 
     def test_an_unusable_score_is_left_out_as_not_run(self):
         proof = grade_item(self.rubric["items"][0], self.pages,
-                           FakeCall([_rated(5, [_quote(1, "Page 1 text")])]), self.ctx, "en", "")
+                           FakeCall([_flow(5, [_quote(1, "Page 1 text")])]), self.ctx, "en", "")
         unusable = grade_item(self.rubric["items"][1], self.pages,
-                              FakeCall([_rated(11), _rated(11)]), self.ctx, "en", "")
+                              FakeCall([_flow(11), _flow(11)]), self.ctx, "en", "")
         result = grade_total.compute(self.rubric, {"report_id": "R01", "items": [proof, unusable]})
         self.assertFalse(result["complete"])
         self.assertEqual(result["not_run"], ["I02"])

@@ -5,6 +5,7 @@ Purpose: Grade rubric items using local models.
 import json
 import math
 import sys
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -31,6 +32,7 @@ GRADE_CODES = (
     "evidence_incomplete",
     "evidence_page_out_of_range",
     "score_above_max",
+    "unknown_level",
     "score_negative",
     "score_missing",
     "unknown_status",
@@ -64,6 +66,102 @@ NO_ANSWER_CODES = {
     "invalid": "schema_invalid",
     "timeout": "timeout",
 }
+
+# Plan 25 Task 1: the grader names a level from grade_levels.json; the code computes the points. The file holds the
+# fractions, so no prompt carries a number the model could copy as a score.
+GRADE_LEVELS_FILE = Path(__file__).resolve().parent.parent / "assets" / "grade_levels.json"
+GRADE_STEP_KEY = "grade.score_step"
+
+
+def load_grade_levels(path: Path = GRADE_LEVELS_FILE) -> Dict[str, Decimal]:
+    """
+    Purpose: Read the level names and their fractions of the maximum from grade_levels.json (plan 25, Task 1).
+    Inputs:
+        path: Path - The levels file, the shipped one by default.
+    Outputs:
+        Dict[str, Decimal] - Each level name with its fraction, exact.
+    Raises:
+        ValueError: If the file is unreadable, has no levels, or a fraction is not a number from 0 to 1 (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    levels = raw.get("levels") if isinstance(raw, dict) else None
+    if not isinstance(levels, dict) or not levels:
+        raise ValueError(f"no 'levels' object in {path}")
+    result: Dict[str, Decimal] = {}
+    for name, entry in levels.items():
+        fraction = entry.get("fraction") if isinstance(entry, dict) else None
+        if isinstance(fraction, bool) or not isinstance(fraction, (int, float)) or not 0 <= fraction <= 1:
+            raise ValueError(f"level '{name}' needs a fraction from 0 to 1 in {path}")
+        result[name] = Decimal(str(fraction))
+    return result
+
+
+def read_grade_step(path: Path) -> Decimal:
+    """
+    Purpose: Read the rounding step of the points from the configuration (plan 25, Task 1).
+    Inputs:
+        path: Path - The configuration JSON, normally ugs_config.default_path().
+    Outputs:
+        Decimal - The step in points, exact and positive.
+    Raises:
+        ValueError: If the file is unreadable, the key is absent or the value is not a positive number (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get(GRADE_STEP_KEY) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise ValueError(f"missing key '{GRADE_STEP_KEY}' in {path}")
+    value = entry["value"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError(f"'{GRADE_STEP_KEY}' must be a positive number in {path}")
+    return Decimal(str(value))
+
+
+def points_for_level(level: str, max_points: Any, levels: Dict[str, Decimal], step: Decimal) -> float:
+    """
+    Purpose: Give the points of a level: its fraction times the maximum, rounded to the nearest multiple of the step,
+        a tie going up (plan 25, Task 1). 0.88 of 0.5 is 0.44, rounded to 0.5; 0.88 of 10 is 8.8, rounded to 8.75.
+    Inputs:
+        level: str - A key of levels.
+        max_points: Any - The maximum of the item, a number.
+        levels: Dict[str, Decimal] - The fractions, from load_grade_levels.
+        step: Decimal - The rounding step, from read_grade_step.
+    Outputs:
+        float - The points, never above the maximum.
+    Raises:
+        KeyError: If the level is not in levels (the caller refuses it first as unknown_level).
+    """
+    value = levels[level] * Decimal(str(max_points))
+    units = (value / step).to_integral_value(rounding=ROUND_HALF_UP)
+    return float(units * step)
+
+
+def with_level_score(answer: dict, item: dict, levels: Dict[str, Decimal], step: Decimal) -> dict:
+    """
+    Purpose: Give a copy of a rated answer with the points of its level in score, so the score checks and the record
+        work on the computed number (plan 25, Task 1). An answer with no known level is returned unchanged and is
+        refused by check_grade_answer as unknown_level.
+    Inputs:
+        answer: dict - The model's answer.
+        item: dict - The rubric item; its max_points is used.
+        levels: Dict[str, Decimal] - The fractions.
+        step: Decimal - The rounding step.
+    Outputs:
+        dict - The answer, with its score computed when its level is known.
+    Raises:
+        None.
+    """
+    if answer.get("status") != "rated" or answer.get("level") not in levels:
+        return answer
+    computed = dict(answer)
+    computed["score"] = points_for_level(answer["level"], item.get("max_points", 0), levels, step)
+    return computed
+
 
 # The configuration key of the longest `missing` kept in a grade record (D2). Its value and provenance live in
 # assets/ugs_config.json; the code holds no literal for it.
@@ -186,6 +284,8 @@ def check_grade_answer(
 
     if status not in ("rated", "not_applicable"):
         return "unknown_status", "status must be rated or not_applicable"
+    if status == "rated" and answer.get("level") not in load_grade_levels():
+        return "unknown_level", "level must be one of the levels of grade_levels.json"
     if score is not None and not _is_number(score):
         return "schema_invalid", "score is not a number"
     # json.loads accepts NaN and Infinity, and NaN passes every range test below: refuse it before them.
@@ -326,7 +426,8 @@ def _record_from_answer(
     else:
         status = "not_run"
         score = None
-    model_score, model_score_raw = _strict_score(raw_score)
+    level = answer.get("level")  # plan 25: model_score keeps the level name the model chose, the score is computed
+    model_score, model_score_raw = _strict_score(level if isinstance(level, str) else raw_score)
     record = {
         "item_id": item_id,
         "status": status,
@@ -470,6 +571,8 @@ def grade_item(
     if ctx.emit is not None:
         ctx.emit("read", page_range(selected_pages), report_id=report_id)
     schema = ctx.schemas["grade_item"]
+    levels = load_grade_levels()  # plan 25 task 1: the points are computed from the level, never asked of the model
+    step = read_grade_step(default_path())
 
     last_error_reason = None
     last_retry_note = ""
@@ -505,6 +608,7 @@ def grade_item(
             last_answer = None
             continue
 
+        answer = with_level_score(answer, item, levels, step)
         code, message = check_grade_answer(answer, item, pages)
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)

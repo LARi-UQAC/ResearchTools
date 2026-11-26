@@ -64,6 +64,20 @@ TEXT_ANSWER = {"assessment_type": "lab_report", "total_points": 10,
                "items": [{"id": "I01", "title": "Method", "max_points": 10, "text": TEXT_SOURCE}]}
 
 
+def level_for_points(points):
+    """
+    Purpose: Name the level whose fraction of a maximum of 10 is nearest the given points (test fake only).
+    Inputs:
+        points: float - the points the fake model used to mean.
+    Outputs:
+        str - a level name of grade_levels.json.
+    Raises:
+        None.
+    """
+    fractions = {"absent": 0.0, "attempted": 0.5, "partial": 0.75, "complete_correct": 0.88, "exemplary": 1.0}
+    return min(fractions, key=lambda name: abs(points / 10 - fractions[name]))
+
+
 class FakeModel:
     """A kind-aware call: a valid answer for every schema, the score read from `SCORE=` in the prompt."""
 
@@ -82,7 +96,7 @@ class FakeModel:
             if "SCORE=" in prompt:
                 score = float(prompt.split("SCORE=")[1].split()[0])
             comment = prompt[:300] if self.echo else "ok"
-            return {"status": "rated", "score": score, "comment": comment,
+            return {"status": "rated", "level": level_for_points(score), "comment": comment,
                     "evidence": [{"page": 1, "quote": "Introduction text"}]}
         if schema == SCHEMAS["audit_item"]:
             return {"verdict": "agree", "reason": "r"}
@@ -493,7 +507,9 @@ class TestUgsDriver(unittest.TestCase):
     # --- batch ---
 
     def test_batch_in_band_exits_0_and_writes_batch_json(self):
-        self.graded_batch([9, 8.5, 9.5, 8.8])
+        # Plan 25: the fake names a level; the points are computed from it, so these eight reports give 88 and 100
+        # percent: a mean of 91 and a sample standard deviation of 3.2, both in the calibration band.
+        self.graded_batch([9, 8.5, 9.5, 8.8, 9, 8.8, 9.5, 8.5])
         code, lines, _ = self.drv(["batch", "--work", str(self.work), "--loop", "1"])
         self.assertEqual(code, 0)
         self.assertEqual(lines[0]["verdict"], "in_band")

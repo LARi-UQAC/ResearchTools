@@ -56,6 +56,7 @@ class TestAuditItem(unittest.TestCase):
         self.record = {
             "item_id": "I01",
             "status": "rated",
+            "level": "complete_correct",
             "score": 8.0,
             "comment": "Good",
             "evidence": [{"page": 1, "quote": "text"}],
@@ -126,6 +127,7 @@ class TestAuditReport(unittest.TestCase):
                 {
                     "item_id": "I01",
                     "status": "rated",
+                    "level": "complete_correct",
                     "score": 8.0,
                     "comment": "Good",
                     "evidence": [{"page": 1, "quote": "text"}],
@@ -150,13 +152,13 @@ class TestAuditReport(unittest.TestCase):
         # Auditor agrees with new record
         call = FakeCall([
             {"verdict": "disagree", "reason": "bad"}, # Audit 1
-            {"status": "rated", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
+            {"status": "rated", "level": "complete_correct", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
             {"verdict": "agree", "reason": "ok"} # Audit 2
         ])
         result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
         item = result["items"][0]
         self.assertEqual(item["audit"], "agree")
-        self.assertEqual(item["score"], 9.0)
+        self.assertEqual(item["score"], 8.75)  # plan 25: complete_correct of 10 points
         self.assertFalse(item["flag"])
 
     def test_disagree_twice_keeps_the_first_record_and_flags(self):
@@ -165,7 +167,7 @@ class TestAuditReport(unittest.TestCase):
         # Auditor disagrees again
         call = FakeCall([
             {"verdict": "disagree", "reason": "bad"}, # Audit 1
-            {"status": "rated", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
+            {"status": "rated", "level": "complete_correct", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
             {"verdict": "disagree", "reason": "still bad"} # Audit 2
         ])
         result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
@@ -232,7 +234,7 @@ class TestAuditReport(unittest.TestCase):
         # Disagree -> Regrade -> Agree
         call = FakeCall([
             {"verdict": "disagree", "reason": "specific_reason"},
-            {"status": "rated", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]},
+            {"status": "rated", "level": "complete_correct", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]},
             {"verdict": "agree", "reason": "ok"}
         ])
         audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "calibration_note")
@@ -260,6 +262,7 @@ class TestAuditTimeoutIsOneItem(unittest.TestCase):
             return {
                 "item_id": item_id,
                 "status": "rated",
+                "level": "complete_correct",
                 "score": 8.0,
                 "comment": "Good",
                 "evidence": [{"page": 1, "quote": "text"}],
@@ -291,7 +294,7 @@ class TestMissingInTheAudit(unittest.TestCase):
         self.item = {"id": "I01", "title": "Intro", "max_points": 10}
         self.pages = ["text on page 1", "text on page 2"]
         self.record = {
-            "item_id": "I01", "status": "rated", "score": 5, "comment": "CMT_ONE",
+            "item_id": "I01", "status": "rated", "level": "attempted", "score": 5, "comment": "CMT_ONE",
             "evidence": [{"page": 1, "quote": "text"}], "missing": "MISS_ONE", "audit": "not_run", "flag": False,
         }
 

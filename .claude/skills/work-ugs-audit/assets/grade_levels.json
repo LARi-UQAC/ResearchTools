@@ -1,0 +1,30 @@
+{
+  "_provenance": "Chosen by the session 2026-11-26 under the owner's delegation (plan 25, Task 1). Names and anchors from prompts/levels.md as it stood before this change; the fractions are kept here only, never in a prompt (R0, R4).",
+  "levels": {
+    "absent": {
+      "fraction": 0,
+      "fr": "L'élément demandé n'est pas dans le rapport.",
+      "en": "The element asked for is not in the report."
+    },
+    "attempted": {
+      "fraction": 0.5,
+      "fr": "L'élément est présent mais largement faux, ou la plupart des parties manquent.",
+      "en": "The element is there but largely wrong, or most parts are missing."
+    },
+    "partial": {
+      "fraction": 0.75,
+      "fr": "Majoritairement juste, mais une partie manque ou une erreur technique subsiste.",
+      "en": "Mostly right, but one part is missing or one technical error remains."
+    },
+    "complete_correct": {
+      "fraction": 0.88,
+      "fr": "Toutes les parties demandées sont présentes et correctes : le rapport normal et bon.",
+      "en": "Every part asked for is present and correct: the normal good report."
+    },
+    "exemplary": {
+      "fraction": 1.0,
+      "fr": "Nettement meilleur que prévu. Rare, seulement avec une preuve forte.",
+      "en": "Clearly better than expected. Rare, only with strong evidence."
+    }
+  }
+}

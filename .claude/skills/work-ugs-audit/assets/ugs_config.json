@@ -145,6 +145,10 @@
     "value": 3136,
     "provenance": "computed: ceil(1568/28) * ceil(1568/28) patches for the largest allowed image, used until vision_probe has measured the local model"
   },
+  "grade.score_step": {
+    "value": 0.25,
+    "provenance": "chosen by the session 2026-11-26 (plan 25, Task 1): points are the level fraction times the maximum, rounded to the nearest multiple of this step (ties up); quarter points keep 0.88 x 0.5 = 0.44 distinct from 0.5 only when rounded, and 0.88 x 10 = 8.8 becomes 8.75"
+  },
   "grade.missing_max_chars": {
     "value": 300,
     "provenance": "starting value, proposed 2026-11-17 and adjustable by the professor: longest missing-element text kept in grade.json, in characters. A bound on one saved field, never on what the model is shown"

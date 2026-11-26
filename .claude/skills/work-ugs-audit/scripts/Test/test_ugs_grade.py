@@ -90,6 +90,7 @@ class TestGradeItem(unittest.TestCase):
     def test_a_rated_item_is_recorded_with_its_evidence(self):
         answer = {
             "status": "rated",
+            "level": "attempted",
             "score": 5,
             "comment": "Good",
             "evidence": [{"page": 1, "quote": "Page 1 text"}]
@@ -113,15 +114,17 @@ class TestGradeItem(unittest.TestCase):
         self.assertEqual(result["status"], "not_applicable")
         self.assertIsNone(result["score"])
 
-    def test_score_above_max_is_refused_and_retried_once_with_the_reason(self):
+    def test_an_unknown_level_is_refused_and_retried_once_with_the_reason(self):
         invalid_answer = {
             "status": "rated",
-            "score": 11, # Above max 10
+            "level": "great",
+            "score": 11, # no level named
             "comment": "Too high",
             "evidence": [{"page": 1, "quote": "Page 1 text"}]
         }
         valid_answer = {
             "status": "rated",
+            "level": "exemplary",
             "score": 10,
             "comment": "Fixed",
             "evidence": [{"page": 1, "quote": "Page 1 text"}]
@@ -139,17 +142,19 @@ class TestGradeItem(unittest.TestCase):
         # The plan says: "a line naming the refusal added to calibration_note".
         # So the second prompt should contain the reason.
         # Let's verify call.calls[1] contains "above" or similar.
-        self.assertIn("above", call.calls[1].lower())
+        self.assertIn("previous refusal: level must be one of", call.calls[1].lower())
 
     def test_low_score_without_evidence_is_refused(self):
         invalid_answer = {
             "status": "rated",
+            "level": "attempted",
             "score": 5,
             "comment": "Low",
             "evidence": [] # Missing evidence for score < max
         }
         valid_answer = {
             "status": "rated",
+            "level": "attempted",
             "score": 5,
             "comment": "Fixed",
             "evidence": [{"page": 1, "quote": "Page 1 text"}]
@@ -161,12 +166,14 @@ class TestGradeItem(unittest.TestCase):
     def test_quote_absent_from_its_page_is_refused(self):
         invalid_answer = {
             "status": "rated",
+            "level": "attempted",
             "score": 5,
             "comment": "Bad quote",
             "evidence": [{"page": 1, "quote": "NOT IN PAGE"}]
         }
         valid_answer = {
             "status": "rated",
+            "level": "attempted",
             "score": 5,
             "comment": "Good quote",
             "evidence": [{"page": 1, "quote": "Page 1 text"}]
@@ -180,6 +187,7 @@ class TestGradeItem(unittest.TestCase):
         self.pages = ["Page 1\nsplit text"]
         answer = {
             "status": "rated",
+            "level": "attempted",
             "score": 5,
             "comment": "Split quote",
             "evidence": [{"page": 1, "quote": "Page 1 split text"}]
@@ -197,6 +205,7 @@ class TestGradeItem(unittest.TestCase):
         # model_score, the code says why, and the model comment is kept instead of the old "invalid_answer" word.
         invalid_answer = {
             "status": "rated",
+            "level": "great",
             "score": 11,
             "comment": "Bad",
             "evidence": [{"page": 1, "quote": "Page 1 text"}]
@@ -205,8 +214,8 @@ class TestGradeItem(unittest.TestCase):
         result = grade_item(self.item, self.pages, call, self.ctx, self.language, self.calibration_note)
         self.assertEqual(result["status"], "not_run")
         self.assertIsNone(result["score"])
-        self.assertEqual(result["model_score"], 11)
-        self.assertEqual(result["validation"], "score_above_max")
+        self.assertEqual(result["model_score"], "great")
+        self.assertEqual(result["validation"], "unknown_level")
         self.assertEqual(result["comment"], "Bad")
         self.assertEqual(result["attempts"], 2)
         self.assertTrue(result["flag"])
@@ -240,6 +249,7 @@ class TestGradeItem(unittest.TestCase):
         
         answer = {
             "status": "rated",
+            "level": "attempted",
             "score": 5,
             "comment": "Ok",
             "evidence": [{"page": 1, "quote": "Intro page"}]
@@ -289,13 +299,14 @@ class TestGradeReport(unittest.TestCase):
             "report_id": "R01",
             "loop": 1,
             "items": [
-                {"item_id": "I01", "status": "rated", "score": 10, "comment": "Done", "evidence": [], "audit": "not_run", "flag": False}
+                {"item_id": "I01", "status": "rated", "level": "exemplary", "score": 10, "comment": "Done", "evidence": [], "audit": "not_run", "flag": False}
             ]
         }
         
         # I02 needs grading
         answer_i02 = {
             "status": "rated",
+            "level": "exemplary",
             "score": 10,
             "comment": "Ok",
             "evidence": [{"page": 1, "quote": "Page 1"}]
@@ -324,8 +335,8 @@ class TestGradeReport(unittest.TestCase):
             
         existing = {}
         
-        answer_i01 = {"status": "rated", "score": 10, "comment": "Ok", "evidence": [{"page": 1, "quote": "Page 1"}]}
-        answer_i02 = {"status": "rated", "score": 10, "comment": "Ok", "evidence": [{"page": 1, "quote": "Page 1"}]}
+        answer_i01 = {"status": "rated", "level": "exemplary", "score": 10, "comment": "Ok", "evidence": [{"page": 1, "quote": "Page 1"}]}
+        answer_i02 = {"status": "rated", "level": "exemplary", "score": 10, "comment": "Ok", "evidence": [{"page": 1, "quote": "Page 1"}]}
         
         call = FakeCall([answer_i01, answer_i02])
         
@@ -339,7 +350,7 @@ class TestGradeReport(unittest.TestCase):
         self.assertEqual(calls, ["I01", "I02"])
 
     def test_calibration_note_reaches_the_prompt(self):
-        answer = {"status": "rated", "score": 10, "comment": "Ok", "evidence": [{"page": 1, "quote": "Page 1"}]}
+        answer = {"status": "rated", "level": "exemplary", "score": 10, "comment": "Ok", "evidence": [{"page": 1, "quote": "Page 1"}]}
         call = FakeCall([answer, answer])
         
         grade_report(
@@ -370,25 +381,25 @@ class TestMissingInThePromptAndSchema(unittest.TestCase):
             audit_retries=0,
             min_word_len=3,
         )
-        call = FakeCall([{"status": "rated", "score": 10, "comment": "Fictitious.", "evidence": [], "missing": ""}])
+        call = FakeCall([{"status": "rated", "level": "exemplary", "score": 10, "comment": "Fictitious.", "evidence": [], "missing": ""}])
         item = {"id": "I01", "title": "Intro", "max_points": 10}
         grade_item(item, ["Un rapport fictif."], call, ctx, "fr", "")
         prompt = call.calls[0]
         self.assertIn("'missing'", prompt)
         self.assertIn("in fr, one sentence at most", prompt)
-        self.assertIn("status, score, comment, evidence and missing", prompt)
+        self.assertIn("status, level, comment, evidence and missing", prompt)
         self.assertNotIn("{{", prompt)
 
     def test_schema_accepts_an_answer_without_missing(self):
         schema = json.loads((PROMPTS_DIR / "schemas.json").read_text(encoding="utf-8"))["grade_item"]
         self.assertNotIn("missing", schema["required"])
         self.assertEqual(ugs_bridge.validate_answer(
-            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": []}, schema), [])
+            {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.", "evidence": []}, schema), [])
         self.assertEqual(ugs_bridge.validate_answer(
-            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": "A gap."}, schema), [])
+            {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": "A gap."}, schema), [])
         # Control: the key exists and is typed, so a number under it is refused.
         self.assertTrue(ugs_bridge.validate_answer(
-            {"status": "rated", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": 5}, schema))
+            {"status": "rated", "level": "attempted", "score": 5, "comment": "Fictitious.", "evidence": [], "missing": 5}, schema))
 
 
 class TestTimeoutIsOneItem(unittest.TestCase):
@@ -406,6 +417,7 @@ class TestTimeoutIsOneItem(unittest.TestCase):
         self.pages = ["Page 1", "Page 2"]
         self.full_answer = {
             "status": "rated",
+            "level": "exemplary",
             "score": 10,
             "comment": "Ok",
             "evidence": [{"page": 1, "quote": "Page 1"}],
@@ -452,7 +464,7 @@ class TestItemPromptText(unittest.TestCase):
         ctx = make_ctx()
         item = {"id": "I01", "title": "Intro", "max_points": 2, "text": "## 1. Intro (/2)\n\nUne regle exacte.",
                 "preamble": "| ABC | Guide fictif |"}
-        call = FakeCall([{"status": "rated", "score": 1.0, "comment": "ok",
+        call = FakeCall([{"status": "rated", "level": "exemplary", "score": 1.0, "comment": "ok",
                           "evidence": [{"page": 1, "quote": "texte"}]}])
         grade_item(item, ["Un texte du rapport."], call, ctx, "fr", "")
         self.assertIn("Une regle exacte.", call.calls[0])

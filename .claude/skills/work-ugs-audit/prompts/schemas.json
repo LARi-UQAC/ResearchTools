@@ -26,10 +26,10 @@
   },
   "grade_item": {
     "type": "object",
-    "required": ["status", "score", "comment", "evidence"],
+    "required": ["status", "level", "comment", "evidence"],
     "properties": {
       "status": {"type": "string", "enum": ["rated", "not_applicable"]},
-      "score": {"type": ["number", "null"]},
+      "level": {"type": ["string", "null"], "enum": ["absent", "attempted", "partial", "complete_correct", "exemplary", null]},
       "comment": {"type": "string"},
       "evidence": {
         "type": "array",

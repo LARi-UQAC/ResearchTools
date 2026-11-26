@@ -28,6 +28,7 @@
       "not_run": "Non exécuté"
     },
     "validation_values": {
+      "unknown_level": "Niveau inconnu : le modèle n'a pas nommé un niveau de la liste",
       "timeout": "Pas de réponse du modèle dans le délai",
       "quote_not_found": "Citation introuvable dans la page",
       "evidence_missing": "Preuve absente",
@@ -111,6 +112,7 @@
       "not_run": "Not run"
     },
     "validation_values": {
+      "unknown_level": "Unknown level: the model did not name a level of the list",
       "timeout": "The model did not answer in time",
       "quote_not_found": "Quote not found on the page",
       "evidence_missing": "Evidence missing",

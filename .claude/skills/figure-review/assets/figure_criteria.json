@@ -61,6 +61,7 @@
      "label_fr": "Légende ne masquant pas les données", "label_en": "Legend not covering data",
      "comment_fr": "La légende cache une partie des données : la déplacer hors du tracé.", "comment_en": "The legend hides part of the data: move it outside the plot."},
     {"id": "numbered_in_sequence", "level": "figure", "scope": "both", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,
+     "reason_fr": "Numérotation irrégulière : la figure {n} suit la figure {m}.",
      "label_fr": "Figures numérotées dans l'ordre", "label_en": "Figures numbered in sequence",
      "comment_fr": "Numérotation des figures irrégulière : numéroter 1, 2, 3 dans l'ordre d'apparition.", "comment_en": "Figure numbering is irregular: number 1, 2, 3 in order of appearance."},
     {"id": "called_before_appearing", "level": "figure", "scope": "both", "judged_by": "script", "applies_to": ["all"], "needs": "source", "threshold": null,

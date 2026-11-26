@@ -27,6 +27,7 @@ for _folder in (SCRIPTS_DIR, FIGURE_REVIEW_DIR / "scripts"):
 import fitz  # noqa: E402
 import element_labels  # noqa: E402
 import count_check  # noqa: E402
+import count_loop  # noqa: E402
 import front_matter  # noqa: E402
 import front_pages  # noqa: E402
 import page_roles  # noqa: E402
@@ -45,6 +46,7 @@ EXIT_REFUSAL = 2
 IDS_FILE_NAME = "ids.json"
 PAGES_FOLDER = "pages"
 TABLE_STATS_FILE = "table_extraction.json"
+ATTEMPTS_FOLDER = ".attempts"
 PAGE_FILE_PREFIX = "p"
 ASSETS_DIR = SCRIPTS_DIR.parent / "assets"
 HINTS_FILE = ASSETS_DIR / "language_hints.json"
@@ -392,7 +394,19 @@ def _tables_dropped(report_dir: Path) -> int:
     Raises:
         PrepareError: the statistics file is unreadable or holds no whole number.
     """
-    path = report_dir / TABLE_STATS_FILE
+    return _read_tables_dropped(report_dir / TABLE_STATS_FILE)
+
+
+def _read_tables_dropped(path: Path) -> int:
+    """
+    Purpose: Read the count of dropped tables from one extraction statistics file.
+    Inputs:
+        path (Path): the statistics file; 0 when it does not exist.
+    Outputs:
+        int - the count of tables dropped.
+    Raises:
+        PrepareError: the statistics file is unreadable or holds no whole number.
+    """
     if not path.exists():
         return 0
     try:
@@ -404,20 +418,25 @@ def _tables_dropped(report_dir: Path) -> int:
     return value
 
 
-def _run_find_elements(pdf_path: Path, figures_dir: Path, skip_pages: List[int]) -> List[Dict[str, Any]]:
+def _run_find_elements(pdf_path: Path, figures_dir: Path, skip_pages: List[int],
+                       overrides: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Purpose: Extract the elements of a PDF with figure-review's extract_elements, the settings and the markers read
         from the figure-review data files.
+    Details: overrides replace some extraction settings for one attempt of the count loop (plan 12 Task 3).
     Inputs:
         pdf_path (Path): the PDF.
         figures_dir (Path): the folder for the figure files.
         skip_pages (list[int]): the 1-based pages to leave out (excluded pages).
+        overrides (dict | None): extraction setting values replacing the file's, for one attempt.
     Outputs:
         list[dict]: the element records in reading order.
     Raises:
         PrepareError: when a settings or marker file is unreadable or incomplete.
     """
     settings = _load_extraction_settings()
+    if overrides:
+        settings.update(overrides)
     try:
         markers = element_labels.load_markers(ELEMENT_MARKERS_FILE)
     except (OSError, ValueError, element_labels.MarkerError) as error:
@@ -426,6 +445,93 @@ def _run_find_elements(pdf_path: Path, figures_dir: Path, skip_pages: List[int])
     records = extract_elements(pdf_path, figures_dir, settings, markers, skip_pages=skip_pages, stats=stats)
     _write_atomic(figures_dir.parent / TABLE_STATS_FILE, json.dumps(stats, indent=2))
     return records
+
+
+def _load_loop_settings() -> tuple:
+    """
+    Purpose: Read the count loop settings (count_max_iterations, count_gap_steps_pt) from the extraction block of
+        the figure criteria file (plan 12 E6, R0, R3).
+    Inputs:
+        None.
+    Outputs:
+        tuple - (max_iterations, steps) as count_loop.read_loop_settings returns them.
+    Raises:
+        PrepareError: when the file is unreadable or a loop setting is missing or malformed (the message names it).
+    """
+    try:
+        document = json.loads(FIGURE_CRITERIA_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise PrepareError("the figure criteria file is unreadable") from error
+    block = document.get(EXTRACTION_BLOCK) if isinstance(document, dict) else None
+    if not isinstance(block, dict):
+        raise PrepareError(f"the '{EXTRACTION_BLOCK}' block is missing from the figure criteria")
+    try:
+        return count_loop.read_loop_settings(block)
+    except count_loop.CountLoopError as error:
+        raise PrepareError(str(error)) from None
+
+
+def _extract_elements_with_loop(pdf_file: Path, report_dir: Path, figures_name: str, skip_pages: List[int],
+                                hooks: PrepHooks, declared_figures: Optional[int]) -> tuple:
+    """
+    Purpose: Extract the elements of a report under the count loop (plan 12 Task 3, spec E6). Each attempt renders
+        into a folder of its own inside the report folder; only the kept attempt's files reach the figures folder.
+    Details: The kept attempt is the one whose figure count equals the declared count, else the closest one. The
+        table statistics of the kept attempt are written to the report's statistics file. The attempts folder is
+        removed at the end, so a rejected attempt leaves no file.
+    Inputs:
+        pdf_file (Path): the PDF of the report.
+        report_dir (Path): the report folder.
+        figures_name (str): the figures folder name, from the settings.
+        skip_pages (List[int]): the 1-based pages to leave out.
+        hooks (PrepHooks): the element finder; called with overrides only on a re-run.
+        declared_figures (Optional[int]): the declared figure count, None when the list was not found.
+    Outputs:
+        tuple - (records of the kept attempt, the attempts as count_loop records them).
+    Raises:
+        PrepareError: when the loop settings are missing or a statistics file is unreadable.
+    """
+    max_iterations, steps = _load_loop_settings()
+    scratch = report_dir / ATTEMPTS_FOLDER
+    if scratch.exists():
+        shutil.rmtree(scratch)
+    folders: List[Path] = []
+    dropped: List[int] = []
+
+    def extract(overrides: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Purpose: Run one attempt of the extraction into its own folder and read its table statistics.
+        Inputs:
+            overrides (dict): the setting overrides of the attempt; empty on the first attempt.
+        Outputs:
+            list[dict] - the element records of the attempt.
+        Raises:
+            PrepareError: when the attempt's statistics file is unreadable.
+        """
+        folder = scratch / f"attempt{len(folders) + 1:02d}"
+        folders.append(folder)
+        stats_file = scratch / TABLE_STATS_FILE
+        if stats_file.exists():
+            stats_file.unlink()  # a previous attempt's statistics must not be read as this one's
+        kwargs = {"overrides": overrides} if overrides else {}
+        records = hooks.find_elements(pdf_file, folder, skip_pages, **kwargs)
+        dropped.append(_read_tables_dropped(stats_file))
+        return records
+
+    result = count_loop.run_count_loop(extract, declared_figures, steps, max_iterations)
+    index = result["kept_attempt"]
+    kept = folders[index]
+    figures_dir = report_dir / figures_name
+    if figures_dir.exists():
+        shutil.rmtree(figures_dir)
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    if kept.exists():
+        for entry in kept.iterdir():
+            shutil.move(str(entry), str(figures_dir / entry.name))
+    _write_atomic(report_dir / TABLE_STATS_FILE, json.dumps({"tables_dropped": dropped[index]}))
+    if scratch.exists():
+        shutil.rmtree(scratch)
+    return result["records"], result["attempts"]
 
 
 def _default_hooks(dpi: int) -> PrepHooks:
@@ -607,7 +713,8 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     front_skip = [page for page, mode in front_pages.page_modes(front_roles, context["front_matter"]).items()
                   if mode != front_pages.FULL_MODE]
     skip_pages = sorted(set(reasons) | set(front_skip))
-    elements = hooks.find_elements(pdf_file, report_dir / settings["reports.figures_folder"], skip_pages)
+    elements, figure_attempts = _extract_elements_with_loop(pdf_file, report_dir, settings["reports.figures_folder"],
+                                                            skip_pages, hooks, declared["declared_figures"])
     elements = _read_table_images(elements, pdf_file, hooks, language, context["ocr"]["language_codes"],
                                   image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],
@@ -627,7 +734,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     meta = {"language": language, "excluded_pages": excluded, "text_quality": quality,
             "tables_dropped": _tables_dropped(report_dir),
             "unreadable_pages": unreadable_pages, "front_roles": front_roles, **declared,
-            **count_check.compare_counts(declared, elements)}
+            "figure_attempts": figure_attempts, **count_check.compare_counts(declared, elements)}
     _write_atomic(report_dir / settings["reports.meta_file_name"], json.dumps(meta, indent=2, ensure_ascii=False))
     return {"report_id": report_id, "pages": len(texts), "empty_pages": empty_pages}
 

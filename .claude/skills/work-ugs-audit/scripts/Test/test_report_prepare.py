@@ -288,7 +288,7 @@ class PreparationTests(unittest.TestCase):
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
         seen = {}
 
-        def finder(pdf, figures_dir, skip_pages):
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
             seen["skip"] = list(skip_pages)
             return []
 
@@ -299,13 +299,63 @@ class PreparationTests(unittest.TestCase):
         """Issue 126 plan 16 N3: a finder that would take the cover logo writes no element, the cover being skipped."""
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": BODY_TEXT}])
 
-        def finder(pdf, figures_dir, skip_pages):
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
             if 1 in skip_pages:
                 return []
             return [{"element_id": "F01", "element_type": "figure", "page": 1, "file": "F01.png"}]
 
         prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
         self.assertEqual(json.loads(self.report_file("elements.json").read_text(encoding="utf-8")), [])
+
+    def _two_figures_declared(self):
+        """Give the fictitious report a list of figures declaring two figures (plan 12 Task 3)."""
+        list_text = "Liste des figures\nFigure 1 Schema ........ 4\nFigure 2 Courbe ........ 6"
+        make_report(self.pdf, [{"text": COVER_TEXT}, {"text": list_text}, {"text": BODY_TEXT}])
+
+    def test_preparation_records_attempts_and_status(self):
+        """Plan 12 Task 3: the first attempt gives three figures, the re-run gives the two declared ones."""
+        self._two_figures_declared()
+        calls = []
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            calls.append(overrides)
+            count = 2 if overrides else 3
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for number in range(1, count + 1):
+                (figures_dir / f"F{number:02d}.png").write_bytes(b"png")
+                records.append({"element_id": f"F{number:02d}", "element_type": "figure", "page": 2,
+                                "file": f"F{number:02d}.png",
+                                "title": {"text": f"Figure {number}: Schema"}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        meta = json.loads(self.report_file("report_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual([attempt["extracted"] for attempt in meta["figure_attempts"]], [3, 2])
+        self.assertEqual([attempt["status"] for attempt in meta["figure_attempts"]], ["mismatch", "ok"])
+        self.assertEqual(meta["figure_count_status"], "ok")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], None)
+
+    def test_rejected_attempt_leaves_no_file(self):
+        """Plan 12 Task 3: the files of a rejected attempt never reach the figures folder."""
+        self._two_figures_declared()
+
+        def finder(pdf, figures_dir, skip_pages, overrides=None):
+            count = 2 if overrides else 3
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for number in range(1, count + 1):
+                (figures_dir / f"F{number:02d}.png").write_bytes(b"png")
+                records.append({"element_id": f"F{number:02d}", "element_type": "figure", "page": 2,
+                                "file": f"F{number:02d}.png",
+                                "title": {"text": f"Figure {number}: Schema"}})
+            return records
+
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=finder))
+        figures = sorted(path.name for path in self.report_file("figures").glob("*.png"))
+        self.assertEqual(figures, ["F01.png", "F02.png"])
+        self.assertFalse(self.report_file(".attempts").exists())
 
     def test_count_status_written_to_meta(self):
         """Issue 126 plan 6 E2: a declared figure with no extracted figure is a mismatch in report_meta.json."""
@@ -340,7 +390,7 @@ class PreparationTests(unittest.TestCase):
                  "notes": [], "caption": None, "drawing_area_ratio": None,
                  "markdown": "| Nom | Valeur |\n|---|---|\n| Alpha | 12 |"}
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
-        prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip: [table]))
+        prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip, overrides=None: [table]))
         text = self.report_file("pages", "p002.md").read_text(encoding="utf-8")
         # The fixture report is French (meta language fr), so its heading is the French one (D3).
         self.assertIn("## Tableau T01 (détecté)", text)
@@ -369,7 +419,7 @@ class PreparationTests(unittest.TestCase):
                  (60.0, 330.0, 90.0, 340.0, "Masse", 0, 0, 2), (200.0, 330.0, 220.0, 340.0, "12.5", 0, 0, 3)]
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
         hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
-                                         find_elements=lambda pdf, out, skip: [self._table_image_record()],
+                                         find_elements=lambda pdf, out, skip, overrides=None: [self._table_image_record()],
                                          ocr_words=lambda pdf, page, rect, language: words)
         prepare(self.reports, self.work, hooks=hooks)
         text = self.report_file("pages", "p002.md").read_text(encoding="utf-8")
@@ -384,7 +434,7 @@ class PreparationTests(unittest.TestCase):
         """Issue 126 plan 8 E3: a table drawn as an image with no OCR word is unreadable, never an empty table."""
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
         hooks = report_prepare.PrepHooks(preflight=lambda languages: None, ocr_page=_no_ocr,
-                                         find_elements=lambda pdf, out, skip: [self._table_image_record()],
+                                         find_elements=lambda pdf, out, skip, overrides=None: [self._table_image_record()],
                                          ocr_words=lambda pdf, page, rect, language: [])
         prepare(self.reports, self.work, hooks=hooks)
         record = json.loads(self.report_file("elements.json").read_text(encoding="utf-8"))[0]
@@ -458,7 +508,7 @@ class PreparationTests(unittest.TestCase):
         """Issue 126 plan 8 E3: a table_image with no OCR hook given is refused by name, never guessed."""
         make_report(self.pdf, [{"text": COVER_TEXT}, {"text": TABLE_BODY_TEXT}, {"text": SIGNATURE_TEXT}])
         with self.assertRaises(PrepareError) as ctx:
-            prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip: [self._table_image_record()]))
+            prepare(self.reports, self.work, hooks=_hooks(find_elements=lambda pdf, out, skip, overrides=None: [self._table_image_record()]))
         self.assertIn("OCR", str(ctx.exception))
 
     @unittest.skipUnless(os.environ.get("TESSDATA_PREFIX"), "needs TESSDATA_PREFIX (Tesseract) to run real OCR")

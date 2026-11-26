@@ -45,8 +45,8 @@ def run_count_loop(extract: Callable[[Dict[str, Any]], List[Dict[str, Any]]], de
         steps: List[Dict[str, Any]] - the override dicts of the re-runs, in order.
         max_iterations: int - the largest number of re-runs after the first attempt.
     Outputs:
-        Dict[str, Any] - keys status (ok, mismatch or not_found), declared, records (of the kept attempt) and
-            attempts (each with overrides, extracted and status).
+        Dict[str, Any] - keys status (ok, mismatch or not_found), declared, records (of the kept attempt),
+            kept_attempt (its index in attempts) and attempts (each with overrides, extracted and status).
     Raises:
         None: an extraction error is the caller's to handle.
     """
@@ -54,7 +54,8 @@ def run_count_loop(extract: Callable[[Dict[str, Any]], List[Dict[str, Any]]], de
         records = extract({})
         count = _count_figures(records)
         attempt = {"overrides": {}, "extracted": count, "status": "not_found"}
-        return {"status": "not_found", "declared": None, "records": records, "attempts": [attempt]}
+        return {"status": "not_found", "declared": None, "records": records, "attempts": [attempt],
+                "kept_attempt": 0}
 
     plan: List[Dict[str, Any]] = [{}] + list(steps[:max(max_iterations, 0)])
     attempts: List[Dict[str, Any]] = []
@@ -74,6 +75,7 @@ def run_count_loop(extract: Callable[[Dict[str, Any]], List[Dict[str, Any]]], de
         "declared": declared_figures,
         "records": kept[2],
         "attempts": attempts,
+        "kept_attempt": kept[1],
     }
 
 

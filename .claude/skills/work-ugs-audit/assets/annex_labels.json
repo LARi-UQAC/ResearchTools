@@ -29,10 +29,7 @@
     },
     "validation_values": {
       "timeout": "Pas de réponse du modèle dans le délai",
-      "quote_not_found": "Citation introuvable dans la page",
       "evidence_missing": "Preuve absente",
-      "evidence_incomplete": "Preuve incomplète",
-      "evidence_page_out_of_range": "Page de la preuve hors du rapport",
       "unknown_status": "Statut inconnu",
       "not_applicable_not_allowed": "Non applicable refusé : élément non facultatif",
       "unparsable_answer": "Réponse du modèle illisible",
@@ -40,9 +37,8 @@
       "no_fit": "Texte trop long pour la fenêtre du modèle",
       "over_budget": "Dépasse le budget de jetons",
       "elements_missing": "Aucun élément nommé : le modèle n'a pas listé les éléments demandés",
-      "exceptional_unsupported": "Exceptionnel non justifié : tous les éléments doivent être présents, avec une preuve",
-      "unknown_level": "Niveau inconnu : le niveau n'est pas dans la liste du fichier des niveaux",
-      "not_applicable_with_score": "Non applicable avec un score ou une preuve : la réponse ne doit contenir ni score ni preuve"
+      "not_applicable_with_score": "Non applicable avec un score ou une preuve : la réponse ne doit contenir ni score ni preuve",
+      "elements_too_few": "Trop peu d'éléments nommés : la réponse liste moins d'éléments que la grille n'en demande"
     },
     "checks_title": "Contrôles de références croisées",
     "check_column": "Contrôle",
@@ -112,10 +108,7 @@
     },
     "validation_values": {
       "timeout": "The model did not answer in time",
-      "quote_not_found": "Quote not found on the page",
       "evidence_missing": "Evidence missing",
-      "evidence_incomplete": "Evidence incomplete",
-      "evidence_page_out_of_range": "Evidence page outside the report",
       "unknown_status": "Unknown status",
       "not_applicable_not_allowed": "Not applicable refused: item not optional",
       "unparsable_answer": "Unreadable model answer",
@@ -123,9 +116,8 @@
       "no_fit": "Text too long for the model window",
       "over_budget": "Over the token budget",
       "elements_missing": "No element named: the model did not list the elements the item asks for",
-      "exceptional_unsupported": "Exceptional claim not supported: every element must be present, with evidence",
-      "unknown_level": "Unknown level: the level is not in the list of the levels file",
-      "not_applicable_with_score": "Not applicable with a score or evidence: the answer must carry neither"
+      "not_applicable_with_score": "Not applicable with a score or evidence: the answer must carry neither",
+      "elements_too_few": "Too few elements named: the answer lists fewer elements than the rubric asks for"
     },
     "checks_title": "Cross-reference checks",
     "check_column": "Check",

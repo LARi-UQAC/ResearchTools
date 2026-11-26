@@ -47,21 +47,24 @@ def audit_item(
         NotRun: If the model fails with an unretryable error.
         PromptError: If the audit prompt holds the language slot and no language is given.
     """
-    # Prepare evidence pages
-    evidence_pages = []
-    if record.get("evidence"):
-        for ev in record["evidence"]:
-            # A page that is not an int (null, a boolean, a string) is skipped, never passed to page_blocks.
-            page = ev.get("page") if isinstance(ev, dict) else None
-            if isinstance(page, int) and not isinstance(page, bool):
-                evidence_pages.append(page)
-        if not evidence_pages:
-            evidence_pages = select_pages(item, pages, ctx.window_tokens - ctx.reserve_tokens, ctx.count, ctx.min_word_len)
-    else:
-        evidence_pages = select_pages(item, pages, ctx.window_tokens - ctx.reserve_tokens, ctx.count, ctx.min_word_len)
-        
+    # Review round 2, item 5: the cited pages are always joined with the pages the selection keeps within the budget,
+    # so an auditor never judges a grade on the cited pages alone; each quote is paired with its element name.
+    budget = ctx.window_tokens - ctx.reserve_tokens
+    cited = []
+    for ev in record.get("evidence") or []:
+        page = ev.get("page") if isinstance(ev, dict) else None
+        if isinstance(page, int) and not isinstance(page, bool):
+            cited.append(page)
+    selected = select_pages(item, pages, budget, ctx.count, ctx.min_word_len)
+    evidence_pages = sorted(set(cited) | set(selected))
     evidence_text = page_blocks(pages, evidence_pages) if evidence_pages else ""
-    
+    quotes = []
+    for ev in record.get("evidence") or []:
+        if isinstance(ev, dict) and isinstance(ev.get("quote"), str):
+            quotes.append(f"- {ev.get('element', '(element)')} (page {ev.get('page')}): {ev['quote']}")
+    if quotes:
+        evidence_text = evidence_text + "\n\nQuotes by element:\n" + "\n".join(quotes)
+
     # The auditor judges the grade, not the bookkeeping of its validation (plan 12, R12): these keys stay in the
     # saved record, which audit_report copies, and never reach the prompt.
     record_for_prompt = {k: v for k, v in record.items()

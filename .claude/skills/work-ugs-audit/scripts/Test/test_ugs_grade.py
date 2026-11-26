@@ -41,6 +41,8 @@ def make_ctx():
             "retry_grade_item": (
                 "## fr_elements\nListe les éléments demandés.\n\n"
                 "## en_elements\nList the elements asked.\n\n"
+                "## fr_evidence\nCite une preuve exacte.\n\n"
+                "## en_evidence\nCite an exact quote.\n\n"
                 "## fr_exceptional\nNon justifié.\n\n"
                 "## en_exceptional\nNot supported.\n\n"
                 "## fr_not_applicable\nNon facultatif.\n\n"
@@ -142,7 +144,7 @@ class TestGradeItem(unittest.TestCase):
         unproven = _rated([{"element": "x", "verdict": "present"}])
         call = FakeCall([unproven, unproven])
         result = grade_item(self.item, self.pages, call, self.ctx, self.language, self.calibration_note)
-        self.assertEqual(result["validation"], "evidence_incomplete")
+        self.assertEqual(result["validation"], "evidence_missing")
         self.assertIs(result["flag"], True)
 
     def test_invalid_after_retries_is_not_run_and_flagged(self):
@@ -274,7 +276,7 @@ class TestMissingInThePromptAndSchema(unittest.TestCase):
             audit_retries=0,
             min_word_len=3,
         )
-        call = FakeCall([_rated([_present()], comment="Fictitious.")])
+        call = FakeCall([_rated([_present(page=1, quote="Un rapport fictif")], comment="Fictitious.")])
         item = {"id": "I01", "title": "Intro", "max_points": 10}
         grade_item(item, ["Un rapport fictif."], call, ctx, "fr", "")
         prompt = call.calls[0]

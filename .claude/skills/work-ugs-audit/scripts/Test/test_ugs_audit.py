@@ -103,12 +103,17 @@ class TestAuditItem(unittest.TestCase):
         self.assertIn('"verdict": "absent"', prompt)
         self.assertNotIn("present 1, partial 0", prompt)
 
-    def test_evidence_pages_are_the_pages_named_by_the_evidence(self):
+    def test_the_cited_pages_are_always_sent(self):
+        # Review round 2, item 5: the cited pages are joined with the selection, so the cited page is always there.
         call = FakeCall([{"verdict": "agree", "reason": "ok"}])
         audit_item(self.item, self.record, self.pages, call, self.ctx)
-        prompt = call.prompts[0]
-        self.assertIn("text on page 1", prompt)
-        self.assertNotIn("text on page 2", prompt)
+        self.assertIn("text on page 1", call.prompts[0])
+
+    def test_each_quote_is_paired_with_its_element_name(self):
+        record = dict(self.record, evidence=[{"element": "Method named", "page": 1, "quote": "text on page one"}])
+        call = FakeCall([{"verdict": "agree", "reason": "ok"}])
+        audit_item(self.item, record, self.pages, call, self.ctx)
+        self.assertIn("- Method named (page 1): text on page one", call.prompts[0])
 
     def test_audit_item_skips_an_evidence_page_that_is_not_an_int(self):
         bad_records = [

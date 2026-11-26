@@ -27,18 +27,15 @@ from ugs_config import default_path
 from rubric_split import item_prompt_text
 from rubric_check import validate, RubricError
 from pdf_annotate import normalize
+import quote_match
 
 # The one table of validation codes (R5). A code is snake_case, at most 30 characters, never report text.
+# A quote that no tier verifies is no longer an item refusal (review round 2, item 2): it makes its element partial.
 GRADE_CODES = (
     "ok",
-    "quote_not_found",
     "evidence_missing",
-    "evidence_incomplete",
-    "evidence_page_out_of_range",
     "elements_missing",
-    "exceptional_unsupported",
-    "unknown_level",
-    "not_applicable_with_score",
+    "elements_too_few",
     "unknown_status",
     "unparsable_answer",
     "schema_invalid",
@@ -46,23 +43,18 @@ GRADE_CODES = (
     "over_budget",
     "timeout",
     "not_applicable_not_allowed",
+    "not_applicable_with_score",
 )
 
 # The refusals asked again with a template of the prompts folder: each code names its section of
 # retry_grade_item.md, in the report language.
 RETRY_SECTION_BY_CODE = {
     "elements_missing": "elements",
+    "elements_too_few": "elements",
+    "evidence_missing": "evidence",
     "not_applicable_not_allowed": "not_applicable",
-    "exceptional_unsupported": "exceptional",
+    "not_applicable_with_score": "not_applicable",
 }
-
-# A refused proof keeps the level and the points the verdicts give: only the evidence is refused.
-PROOF_REFUSAL_CODES = (
-    "quote_not_found",
-    "evidence_missing",
-    "evidence_incomplete",
-    "evidence_page_out_of_range",
-)
 
 # The bridge's retryable refusals carry no answer at all; each maps to the code the record reports.
 NO_ANSWER_CODES = {
@@ -78,6 +70,7 @@ PRESENT_VERDICTS = ("present", "partial")
 # The fractions, the partial weight and the bands live in assets/grade_levels.json (R0, R4); no code holds a number.
 GRADE_LEVELS_FILE = Path(__file__).resolve().parent.parent / "assets" / "grade_levels.json"
 GRADE_STEP_KEY = "grade.score_step"
+UNVERIFIED_KEY = "grade.unverified_present_counts_as"
 EXCEPTIONAL_LEVEL = "exemplary"
 FULL_LEVEL = "complete_correct"
 ABSENT_LEVEL = "absent"
@@ -132,7 +125,7 @@ def _ratio(value: Any, name: str, path: Path) -> Decimal:
 
 def load_grade_scale(path: Path = GRADE_LEVELS_FILE) -> GradeScale:
     """
-    Purpose: Read the level scale from grade_levels.json (plan 25; review round 1, decision 1).
+    Purpose: Read the level scale from grade_levels.json (plan 25; review rounds 1 and 2).
     Inputs:
         path: Path - The levels file, the shipped one by default.
     Outputs:
@@ -203,6 +196,28 @@ def read_grade_step(path: Path) -> Decimal:
     return Decimal(str(value))
 
 
+def read_unverified_as(path: Path) -> str:
+    """
+    Purpose: Read the verdict an element marked present takes when no tier verifies its quote (review round 2, item 2).
+    Inputs:
+        path: Path - The configuration JSON, normally ugs_config.default_path().
+    Outputs:
+        str - "partial" or "absent".
+    Raises:
+        ValueError: If the file is unreadable, the key is absent or its value is not partial or absent (R3).
+    """
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    entry = raw.get(UNVERIFIED_KEY) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise ValueError(f"missing key '{UNVERIFIED_KEY}' in {path}")
+    if entry["value"] not in ("partial", "absent"):
+        raise ValueError(f"'{UNVERIFIED_KEY}' must be partial or absent in {path}")
+    return entry["value"]
+
+
 def points_for_level(level: str, max_points: Any, fractions: Dict[str, Decimal], step: Decimal) -> float:
     """
     Purpose: Give the points of a level: its fraction times the maximum, rounded to the nearest multiple of the step
@@ -225,9 +240,10 @@ def points_for_level(level: str, max_points: Any, fractions: Dict[str, Decimal],
 
 def count_verdicts(elements: List[dict]) -> Dict[str, int]:
     """
-    Purpose: Count the present, partial and absent verdicts of an item's elements.
+    Purpose: Count the effective verdicts of an item's elements: an element marked present whose quote no tier verified
+        counts as the unverified verdict (review round 2, item 2); an element never checked keeps its verdict.
     Inputs:
-        elements: List[dict] - The elements of an answer, each with a verdict.
+        elements: List[dict] - The elements of an answer.
     Outputs:
         Dict[str, int] - The count of each verdict, zero when none.
     Raises:
@@ -235,15 +251,17 @@ def count_verdicts(elements: List[dict]) -> Dict[str, int]:
     """
     counts = {verdict: 0 for verdict in VERDICTS}
     for element in elements:
-        if isinstance(element, dict) and element.get("verdict") in counts:
-            counts[element["verdict"]] += 1
+        if isinstance(element, dict):
+            verdict = element.get("effective", element.get("verdict"))
+            if verdict in counts:
+                counts[verdict] += 1
     return counts
 
 
 def element_summary(elements: Any) -> Optional[str]:
     """
     Purpose: Give the element summary kept in a grade record as model_score (review round 1, decision 6): the count
-        of each verdict, as text. None when the answer names no elements.
+        of each effective verdict, as text. None when the answer names no elements.
     Inputs:
         elements: Any - The elements of an answer.
     Outputs:
@@ -259,12 +277,12 @@ def element_summary(elements: Any) -> Optional[str]:
 
 def level_for_elements(elements: List[dict], exceptional: bool, scale: GradeScale) -> str:
     """
-    Purpose: Compute the level of an item from its element verdicts (review round 1, decision 1): exemplary only
-        when the model claims it as exceptional, complete_correct when every element is present, absent when none is
-        present or partial, else the first band the share of present elements reaches.
+    Purpose: Compute the level of an item from its effective element verdicts (review rounds 1 and 2): exemplary only
+        when the claim holds (decided by the caller), complete_correct when every element is present and verified,
+        absent when none is present or partial, else the first band the share of present elements reaches.
     Inputs:
-        elements: List[dict] - The elements of the answer, each with a verdict.
-        exceptional: bool - The explicit claim of an exceptional report.
+        elements: List[dict] - The elements of the answer, with their effective verdicts.
+        exceptional: bool - The claim of an exceptional report, already checked against the verified elements.
         scale: GradeScale - The bands and the partial weight.
     Outputs:
         str - A level name of grade_levels.json.
@@ -299,75 +317,135 @@ def _elements_are_list_of_objects(elements: Any) -> bool:
     return isinstance(elements, list) and bool(elements) and all(isinstance(entry, dict) for entry in elements)
 
 
-def _quote_verified(page_num: Any, quote: Any, pages: List[str]) -> bool:
+def read_grade_settings(path: Path = None) -> Dict[str, Any]:
     """
-    Purpose: Tell whether an element's quote is found on its page, after the same normalisation as check_grade_answer.
+    Purpose: Read every setting the grader needs from the configuration: the quote settings (quote_match), the
+        verdict of an unverified present element, and the rounding step.
     Inputs:
-        page_num: Any - The page number of the element.
-        quote: Any - The quote of the element.
-        pages: List[str] - The page texts.
+        path: Path - The configuration JSON; None reads ugs_config.default_path().
     Outputs:
-        bool - True only when the page exists and the normalised quote is found on it.
+        dict - quote (the quote settings), unverified_as and step.
     Raises:
-        None.
+        ValueError: As the readers, each naming its key and file (R3).
     """
-    if not _is_page_number(page_num) or not 1 <= page_num <= len(pages):
-        return False
-    if not isinstance(quote, str) or not normalize(quote).strip():
-        return False
-    return normalize(quote) in normalize(pages[page_num - 1])
+    config = default_path() if path is None else Path(path)
+    return {"quote": quote_match.read_quote_settings(config), "unverified_as": read_unverified_as(config),
+            "step": read_grade_step(config)}
 
 
-def _exceptional_holds(elements: List[dict], pages: List[str]) -> bool:
-    """
-    Purpose: Tell whether an exceptional claim holds: every element present, each with a quote found on its page (the
-        security review of round 1: an unverifiable quote never earns exemplary points).
-    Inputs:
-        elements: List[dict] - The elements of the answer.
-        pages: List[str] - The page texts.
-    Outputs:
-        bool - True only when every element is present and verified.
-    Raises:
-        None.
-    """
-    return all(entry.get("verdict") == "present" and _quote_verified(entry.get("page"), entry.get("quote"), pages)
-               for entry in elements)
-
-
-# The keys of a rated answer that only the code computes.
+# The keys of a rated answer that only the code computes (review round 1, security): the model's values are never kept.
 MODEL_DERIVED_KEYS = ("level", "score", "evidence")
 
 
-def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal, pages: List[str]) -> dict:
+def _name_key(name: Any) -> str:
     """
-    Purpose: Give a copy of a rated answer with its level, its points and its evidence computed from the element
-        verdicts (review round 1, decisions 1 and 2). An answer with no usable elements is returned unchanged and is
-        refused by check_grade_answer.
+    Purpose: Give the key of an element name, for the deduplication of repeated elements (review round 2, item 6).
+    Inputs:
+        name: Any - The element name as the model gave it.
+    Outputs:
+        str - The name in lower case with its spaces collapsed; empty for a name that is not text.
+    Raises:
+        None.
+    """
+    return " ".join(name.split()).casefold() if isinstance(name, str) else ""
+
+
+def prepare_elements(elements: List[dict], pages: List[str], settings: Dict[str, Any],
+                     unverified_as: str) -> List[dict]:
+    """
+    Purpose: Verify each present or partial element's quote and give every element its effective verdict (review
+        round 2, items 1 and 2). A repeated element name is counted once (item 6).
+    Details: A present element whose quote no tier verifies takes the verdict unverified_as in the level. The verified
+        page and tier replace the named ones, and page_corrected says the match is not on the named page.
+    Inputs:
+        elements: List[dict] - The elements of the answer, as the model gave them.
+        pages: List[str] - The page texts of the report.
+        settings: dict - The quote settings, from read_quote_settings.
+        unverified_as: str - "partial" or "absent".
+    Outputs:
+        List[dict] - One entry per distinct element: element, verdict, effective, verified, tier, page, page_corrected,
+            tiers_tried and quote.
+    Raises:
+        None.
+    """
+    prepared: List[dict] = []
+    seen = set()
+    for element in elements:
+        key = _name_key(element.get("element"))
+        if key in seen:
+            continue
+        seen.add(key)
+        verdict = element.get("verdict")
+        entry = {"element": element.get("element"), "verdict": verdict, "page": element.get("page"),
+                 "quote": element.get("quote"), "verified": False, "tier": None, "page_corrected": False,
+                 "tiers_tried": []}
+        if verdict in PRESENT_VERDICTS:
+            found = quote_match.verify_element(element.get("quote"), element.get("page"), pages, settings)
+            entry.update(verified=found["verified"], tier=found["tier"], tiers_tried=found["tiers_tried"],
+                         page_corrected=found["page_corrected"])
+            if found["verified"]:
+                entry["page"] = found["page"]
+        if verdict == "present" and not entry["verified"]:
+            entry["effective"] = unverified_as
+        else:
+            entry["effective"] = verdict
+        prepared.append(entry)
+    return prepared
+
+
+def checklist_count(item: dict) -> int:
+    """
+    Purpose: Give the number of elements the rubric item asks for, from its checklist or else its criteria (review
+        round 2, item 6). Repeated entries count once.
+    Inputs:
+        item: dict - The rubric item.
+    Outputs:
+        int - The number of distinct checklist (or criteria) entries, zero when there are none.
+    Raises:
+        None.
+    """
+    for key in ("checklist", "criteria"):
+        entries = item.get(key)
+        if isinstance(entries, list) and entries:
+            return len({_name_key(entry) for entry in entries if isinstance(entry, str) and entry.strip()})
+    return 0
+
+
+def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal, pages: List[str],
+                     settings: Dict[str, Any], unverified_as: str) -> dict:
+    """
+    Purpose: Verify the elements of a rated answer and compute its level, points and evidence from the verified verdicts
+        (review round 2, items 1, 2 and 4). The model's level, score and evidence are never kept (security review).
+        An exceptional claim holds only when every element is present and verified; otherwise it is dropped.
     Inputs:
         answer: dict - The model's answer.
         item: dict - The rubric item; its max_points is used.
         scale: GradeScale - The level scale.
         step: Decimal - The rounding step.
+        pages: List[str] - The page texts of the report.
+        settings: dict - The quote settings, from read_quote_settings.
+        unverified_as: str - "partial" or "absent".
     Outputs:
-        dict - The answer with level, score and evidence (the present and partial quotes) when computable.
+        dict - The answer, with prepared elements, and level, score and evidence when the elements are usable. A
+            not_applicable answer is returned unchanged, so check_grade_answer can refuse its payload.
     Raises:
         None.
     """
     if answer.get("status") != "rated":
-        return answer  # a not_applicable answer keeps its payload, so check_grade_answer can refuse it
-    # Security review of round 1: a level, a score and evidence written by the model are never kept; only the values
-    # computed here from the verdicts are (a level the model names is not a verdict).
+        return answer
     answer = {key: value for key, value in answer.items() if key not in MODEL_DERIVED_KEYS}
     if not _elements_are_list_of_objects(answer.get("elements")):
         return answer
-    elements = answer["elements"]
-    claimed = answer.get("exceptional") is True and _exceptional_holds(elements, pages)  # refused proof: no claim
+    elements = prepare_elements(answer["elements"], pages, settings, unverified_as)
+    claimed = answer.get("exceptional") is True and all(entry["effective"] == "present" for entry in elements)
     level = level_for_elements(elements, claimed, scale)
     computed = dict(answer)
+    computed["elements"] = elements
+    computed["exceptional"] = claimed
     computed["level"] = level
     computed["score"] = points_for_level(level, item.get("max_points", 0), scale.fractions, step)
-    computed["evidence"] = [{"page": entry.get("page"), "quote": entry.get("quote")} for entry in elements
-                            if entry.get("verdict") in PRESENT_VERDICTS]
+    computed["evidence"] = [{"element": entry["element"], "page": entry["page"], "quote": entry["quote"]}
+                            for entry in elements if entry["verified"] and entry["effective"] in PRESENT_VERDICTS]
     return computed
 
 
@@ -470,22 +548,19 @@ def _is_page_number(value: Any) -> bool:
 def check_grade_answer(
     answer: dict,
     item: dict,
-    pages: List[str],
-    scale: Optional[GradeScale] = None
+    pages: List[str]
 ) -> Tuple[str, str]:
     """
-    Purpose: Check one model answer against its rubric item and the page texts, and name the first defect.
-    Details: The answer names the elements the item requires, each with a verdict. Every present or partial element
-        needs a page and a quote found on it (the evidence). A rated item with no present or partial element that
-        verifies is refused whatever its level (review round 1, decision 2). An exceptional claim needs every element
-        present and a verified one. The codes are the table GRADE_CODES. A refused proof is a defect of the evidence
-        only. The message names a page number or a count, never a quote.
+    Purpose: Check one prepared answer against its rubric item, and name the first defect.
+    Details: The answer must have been prepared by with_level_score, so each element carries its verified flag and its
+        effective verdict. An item needs at least one verified present or partial element; when no element is present
+        or partial, the item is accepted only with a non-empty missing text (review round 2, item 3). The elements must
+        cover the checklist or criteria of the item (item 6). A quote no tier verifies is not a refusal here: it only
+        leaves its element unverified. The message names a count, never a quote.
     Inputs:
-        answer: dict - The model's answer, as given.
-        item: dict - The rubric item, with its max_points and its optional flag.
-        pages: List[str] - The page texts of the report.
-        scale: Optional[GradeScale] - The level scale the level of an answer must belong to; None loads
-            grade_levels.json (review round 1, decision 6: the tests inject their own scale).
+        answer: dict - The prepared answer.
+        item: dict - The rubric item, with its max_points, its optional flag and its checklist or criteria.
+        pages: List[str] - The page texts (the verification is done by with_level_score, not here).
     Outputs:
         Tuple[str, str] - The code, and a short message: "ok" with an empty message on success.
     Raises:
@@ -494,10 +569,6 @@ def check_grade_answer(
     status = answer.get("status")
     if status not in ("rated", "not_applicable"):
         return "unknown_status", "status must be rated or not_applicable"
-    if scale is None:
-        scale = load_grade_scale()
-    if "level" in answer and answer["level"] not in scale.fractions:  # the injected scale names every level it may give
-        return "unknown_level", "level must be one of the levels of grade_levels.json"
     if status == "not_applicable":
         if answer.get("score") is not None or answer.get("evidence"):
             return "not_applicable_with_score", "not_applicable must carry no score and no evidence"
@@ -506,35 +577,24 @@ def check_grade_answer(
         return "ok", ""
 
     elements = answer.get("elements")
+    if elements is None or elements == []:
+        return "elements_missing", "a rated item names the elements it requires"
     if not isinstance(elements, list):
         return "schema_invalid", "elements must be a list"
-    if not elements:
-        return "elements_missing", "a rated item names the elements it requires"
     for entry in elements:
         if not isinstance(entry, dict) or not isinstance(entry.get("element"), str) \
                 or entry.get("verdict") not in VERDICTS:
             return "schema_invalid", "each element needs its name and a verdict: present, partial or absent"
+    if len(elements) < checklist_count(item):
+        return "elements_too_few", "the item asks for more elements than the answer names"
 
-    verified = 0
-    for entry in elements:
-        if entry.get("verdict") not in PRESENT_VERDICTS:
-            continue
-        page_num = entry.get("page")
-        quote = entry.get("quote")
-        if not _is_page_number(page_num) or not isinstance(quote, str) or not normalize(quote).strip():
-            return "evidence_incomplete", "a present or partial element needs a page number and a quote"
-        if page_num < 1 or page_num > len(pages):
-            return "evidence_page_out_of_range", f"evidence page {page_num} is out of range"
-        if normalize(quote) not in normalize(pages[page_num - 1]):
-            return "quote_not_found", f"quote not found on page {page_num}"
-        verified += 1
-    if verified == 0:
-        return "evidence_missing", "no element is present or partial with a quote found on its page"
-
-    if answer.get("exceptional") is True:
-        counts = count_verdicts(elements)
-        if counts["present"] != len(elements):
-            return "exceptional_unsupported", "an exceptional report has every element present"
+    engaged = [entry for entry in elements if entry.get("effective") in PRESENT_VERDICTS]
+    if not engaged:
+        if isinstance(answer.get("missing"), str) and answer["missing"].strip():
+            return "ok", ""
+        return "evidence_missing", "every element is absent: the item needs its missing text"
+    if not any(entry.get("verified") for entry in engaged):
+        return "evidence_missing", "no present or partial element has a quote found on its page"
     return "ok", ""
 
 
@@ -546,7 +606,7 @@ def _validate_grade_answer(
     """
     Purpose: Give the message of the check of one answer, or None when it passes.
     Inputs:
-        answer: dict - The model's answer.
+        answer: dict - The prepared answer.
         item: dict - The rubric item.
         pages: List[str] - The page texts.
     Outputs:
@@ -561,12 +621,12 @@ def _validate_grade_answer(
 def _missing_text(answer: dict, max_points: Any, points: Any, max_chars: int) -> str:
     """
     Purpose: Give the `missing` value of a grade record: the element that cost the points, or "".
-    Details: Empty at the maximum points or when every element is present, when the answer has no `missing`, or when
-        it is not a string. Otherwise the
-        text is kept as the model gave it, stripped and cut to max_chars. It is model text saved in grade.json only:
-        it never reaches the ledger note, a log or the dashboard (see ugs_run._grade_mark).
+    Details: Empty at the maximum points or when every element is present and verified, when the answer has no
+        `missing`, or when it is not a string. Otherwise the text is kept as the model gave it, stripped and cut to
+        max_chars. It is model text saved in grade.json only: it never reaches the ledger note, a log or the dashboard
+        (see ugs_run._grade_mark).
     Inputs:
-        answer: dict - The model's answer, as given.
+        answer: dict - The prepared answer.
         max_points: Any - The maximum of the rubric item.
         points: Any - The points of the item, None when there are none.
         max_chars: int - The character limit, from grade.missing_max_chars (D2).
@@ -578,8 +638,8 @@ def _missing_text(answer: dict, max_points: Any, points: Any, max_chars: int) ->
     if _is_number(points) and points == max_points:
         return ""
     elements = answer.get("elements")
-    if isinstance(elements, list) and elements and count_verdicts(elements)["present"] == len(elements):
-        return ""  # every element present: nothing cost the points
+    if isinstance(elements, list) and elements and all(entry.get("effective") == "present" for entry in elements):
+        return ""
     value = answer.get("missing")
     if not isinstance(value, str):
         return ""
@@ -595,15 +655,13 @@ def _record_from_answer(
     missing_max_chars: Optional[int] = None
 ) -> dict:
     """
-    Purpose: Build the grade record of an answer the model gave, with its validation code.
-    Details: A success keeps the status, the points and the level computed from the elements. A refused proof keeps
-        status rated and the computed points. Any other refusal drops the points (status not_run, score null). The
-        model_score field holds the element summary ("present N, partial N, absent N"), as the review round 1 decision
-        6 records it; the element verdicts are kept in elements, with their pages and no quote (the quotes are in
-        evidence). The key order is the saved order of grade.json.
+    Purpose: Build the grade record of an answer, with its validation code (review round 2, item 2).
+    Details: Only a rated answer whose level the code computed keeps its points, its evidence (verified quotes only)
+        and its elements. Any refusal is status not_run with no score. The model_score is the element summary of the
+        effective verdicts; the elements keep their verified flags and tiers and no quote (the quotes are in evidence).
     Inputs:
         item_id: str - The rubric item identifier.
-        answer: dict - The model's answer, with the computed level, score and evidence when computable.
+        answer: dict - The prepared answer, or the raw answer of a refusal that no preparation reached.
         code: str - The code of check_grade_answer, "ok" for a success.
         attempts: int - The number of model calls made, this one included.
         max_points: Any - The maximum of the rubric item.
@@ -615,19 +673,16 @@ def _record_from_answer(
     """
     if missing_max_chars is None:
         missing_max_chars = read_missing_max_chars(default_path())
-    elements = answer.get("elements")
-    # Only a level computed by with_level_score makes a score and evidence trustworthy (security review of round 1).
     usable = answer.get("status") == "rated" and "level" in answer
     if code == "ok":
         status = answer.get("status")
         score = answer.get("score") if usable else None
-    elif code in PROOF_REFUSAL_CODES:
-        status = "rated"
-        score = answer.get("score") if usable else None
     else:
         status = "not_run"
         score = None
-    evidence = answer.get("evidence") if usable else []
+    elements = answer.get("elements") if usable else []
+    keep_evidence = code == "ok" and usable
+    evidence = answer.get("evidence") if keep_evidence else []
     record = {
         "item_id": item_id,
         "status": status,
@@ -640,9 +695,12 @@ def _record_from_answer(
         "model_score": element_summary(elements) if usable else None,
         "validation": code,
         "attempts": attempts,
-        "level": answer.get("level"),
-        "elements": [] if not usable or not isinstance(elements, list) else [
-            {"element": entry.get("element"), "verdict": entry.get("verdict"), "page": entry.get("page")}
+        "level": answer.get("level") if usable else None,
+        "elements": [] if not isinstance(elements, list) else [
+            {"element": entry.get("element"), "verdict": entry.get("verdict"),
+             "effective": entry.get("effective"), "verified": entry.get("verified"), "tier": entry.get("tier"),
+             "tiers_tried": entry.get("tiers_tried", []), "page": entry.get("page"),
+             "page_corrected": entry.get("page_corrected", False)}
             for entry in elements if isinstance(entry, dict)],
     }
     return record
@@ -683,15 +741,13 @@ def _no_answer_record(
     }
 
 
-def _retry_note(ctx: StepContext, code: str, item: dict, language: str) -> str:
+def _retry_note(ctx: StepContext, code: str, language: str) -> str:
     """
-    Purpose: Build the note that asks the model again after a refusal that names its missing part: no elements, an
-        exceptional claim without support, or a not_applicable on a required item. The wording lives in the
-        retry_grade_item prompt file, never in code (R6).
+    Purpose: Build the note that asks the model again after a refusal that names its missing part. The wording lives in
+        the retry_grade_item prompt file, never in code (R6).
     Inputs:
         ctx: StepContext - The step context; its prompts hold retry_grade_item.
         code: str - The refusal code, a key of RETRY_SECTION_BY_CODE.
-        item: dict - The rubric item, its max_points is named in the note.
         language: str - The report language, fr or en; it selects the section.
     Outputs:
         str - The note, stripped.
@@ -700,7 +756,24 @@ def _retry_note(ctx: StepContext, code: str, item: dict, language: str) -> str:
     """
     section = RETRY_SECTION_BY_CODE[code]
     template = prompt_section(ctx.prompts["retry_grade_item"], f"{language}_{section}")
-    return fill(template, {}).strip()  # the retry sections name no slot: the wording is fixed by the item kind
+    return fill(template, {}).strip()
+
+
+def _verified_count(answer: dict) -> int:
+    """
+    Purpose: Count the verified elements of a prepared answer, to keep the best answer across attempts (review round 2,
+        item 2).
+    Inputs:
+        answer: dict - The prepared answer, or a raw one (then zero).
+    Outputs:
+        int - The number of elements whose quote a tier verified.
+    Raises:
+        None.
+    """
+    elements = answer.get("elements")
+    if not isinstance(elements, list):
+        return 0
+    return sum(1 for entry in elements if isinstance(entry, dict) and entry.get("verified"))
 
 
 def grade_item(
@@ -711,14 +784,15 @@ def grade_item(
     language: str,
     calibration_note: str,
     report_id: Optional[str] = None,
-    missing_max_chars: Optional[int] = None
+    missing_max_chars: Optional[int] = None,
+    settings: Optional[Dict[str, Any]] = None
 ) -> dict:
     """
     Purpose: Grade a single rubric item.
     Details: When ctx.emit is set, one `read` record gives the page range selected and one `call` record each model
-        call, both with identifiers only (R11). With no emitter nothing is recorded. The level and the points are
-        computed from the element verdicts of the answer (review round 1). A refused attempt is retried once with its
-        reason; the record is built from the last answer given, with its validation code (plan 12, R12).
+        call, both with identifiers only (R11). With no emitter nothing is recorded. Each answer is verified element by
+        element; an answer refused for a structural reason is asked again (retry_grade_item), and the record is built
+        from the answer with the most verified elements across the attempts (review round 2, item 2).
     Inputs:
         item: dict - The rubric item.
         pages: List[str] - The page texts.
@@ -728,6 +802,7 @@ def grade_item(
         calibration_note: str - The current calibration note.
         report_id: str or None - The identifier of the report, for the action records only.
         missing_max_chars: int or None - The limit of the missing text; None reads grade.missing_max_chars once.
+        settings: dict or None - The grade settings from read_grade_settings; None reads the configuration.
     Outputs:
         dict - The grade record: item_id, status, score, comment, evidence, missing, audit, flag, model_score,
             validation, attempts, level and elements.
@@ -737,6 +812,7 @@ def grade_item(
     item_id = item["id"]
     if missing_max_chars is None:
         missing_max_chars = read_missing_max_chars(default_path())
+    settings = read_grade_settings() if settings is None else settings
 
     # Determine pages to send
     budget_tokens = ctx.window_tokens - ctx.reserve_tokens
@@ -768,12 +844,14 @@ def grade_item(
         ctx.emit("read", page_range(selected_pages), report_id=report_id)
     schema = ctx.schemas["grade_item"]
     scale = load_grade_scale()
-    step = read_grade_step(default_path())
+    quote_settings = settings["quote"]
+    unverified_as = settings["unverified_as"]
+    step = settings["step"]
 
     last_error_reason = None
     last_retry_note = ""
     code = "schema_invalid"
-    last_answer = None
+    best = None  # (answer, code, verified count): the answer with the most verified elements across the attempts
     for attempt in range(ctx.grade_retries + 1):
         current_note = calibration_note
         if last_retry_note:
@@ -801,21 +879,22 @@ def grade_item(
             last_error_reason = e.reason
             last_retry_note = ""
             code = NO_ANSWER_CODES.get(e.kind, "schema_invalid")
-            last_answer = None
             continue
 
-        answer = with_level_score(answer, item, scale, step, pages)
-        code, message = check_grade_answer(answer, item, pages, scale)
+        answer = with_level_score(answer, item, scale, step, pages, quote_settings, unverified_as)
+        code, message = check_grade_answer(answer, item, pages)
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)
+        support = _verified_count(answer)
+        if best is None or support >= best[2]:
+            best = (answer, code, support)
         last_error_reason = message
-        last_retry_note = _retry_note(ctx, code, item, language) if code in RETRY_SECTION_BY_CODE else ""
-        last_answer = answer
+        last_retry_note = _retry_note(ctx, code, language) if code in RETRY_SECTION_BY_CODE else ""
 
     attempts = ctx.grade_retries + 1
-    if last_answer is None:
+    if best is None:
         return _no_answer_record(item_id, code, attempts, "")
-    return _record_from_answer(item_id, last_answer, code, attempts, item.get("max_points", 0), missing_max_chars)
+    return _record_from_answer(item_id, best[0], best[1], attempts, item.get("max_points", 0), missing_max_chars)
 
 
 def grade_report(

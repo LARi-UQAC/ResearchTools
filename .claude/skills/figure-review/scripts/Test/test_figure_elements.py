@@ -33,6 +33,7 @@ SETTINGS = {
     "text_box_min_spans": 6,
     "running_band_pt": 80,
     "group_max_gap_pt": 150,
+    "running_size_tolerance_pt": 8,
 }
 ELEMENT_SETTING_KEYS = tuple(SETTINGS)
 
@@ -415,6 +416,15 @@ class TestExtractElements(unittest.TestCase):
         for _ in range(3):
             page = doc.new_page(width=612, height=792)
             _filled(page, 70, 722, 540, 782)
+        self._save(doc)
+        self.assertEqual(self._extract(), [])
+
+    def test_running_frame_widths_varying_by_five_points_is_nothing(self):
+        # Review R2: the R02 footer frame is 432 to 437 points wide from page to page.
+        doc = fitz.open()
+        for width in (470, 465, 468):  # widths differ by 5 points at most, as in R02
+            page = doc.new_page(width=612, height=792)
+            _filled(page, 70, 722, 70 + width, 782)
         self._save(doc)
         self.assertEqual(self._extract(), [])
 

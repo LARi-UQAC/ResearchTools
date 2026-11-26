@@ -30,6 +30,7 @@ ELEMENT_SETTING_KEYS = (
     "text_box_min_spans",
     "running_band_pt",
     "group_max_gap_pt",
+    "running_size_tolerance_pt",
 )
 # Element id prefix per element type: F01 figures, T01 tables, L01 logos.
 ELEMENT_ID_PREFIX = {"figure": "F", "table": "T", "table_image": "T", "logo": "L"}
@@ -845,11 +846,13 @@ def _is_repeated_logo(rect: "fitz.Rect", own_height: float, scans: List[Dict[str
         None.
     """
     return _repeated_in_band(rect, own_height, scans, settings["header_band_pt"], settings,
-                             settings["logo_max_area_pt2"], with_tables=False)
+                             settings["logo_max_area_pt2"], with_tables=False,
+                             tolerance=settings["logo_size_tolerance_pt"])
 
 
 def _repeated_in_band(rect: "fitz.Rect", own_height: float, scans: List[Dict[str, Any]], band: float,
-                      settings: Dict[str, Any], max_area: Optional[float], with_tables: bool) -> bool:
+                      settings: Dict[str, Any], max_area: Optional[float], with_tables: bool,
+                      tolerance: float) -> bool:
     """
     Purpose: Tell whether a region of the same size recurs in the header or footer band on enough pages.
     Details: Shared by the logo rule (small regions, header band) and the running-frame rule (any size, the
@@ -859,9 +862,10 @@ def _repeated_in_band(rect: "fitz.Rect", own_height: float, scans: List[Dict[str
         own_height: float - the height of the page holding the candidate.
         scans: List[Dict[str, Any]] - the first-pass results of every page kept.
         band: float - the band height in points.
-        settings: Dict[str, Any] - the extraction settings (logo_size_tolerance_pt, repeat_min_pages).
+        settings: Dict[str, Any] - the extraction settings (repeat_min_pages).
         max_area: Optional[float] - the largest area allowed, None for no limit.
         with_tables: bool - True when the ruled tables of each page count as candidates too.
+        tolerance: float - the points of tolerance when two regions have the same size.
     Outputs:
         bool - True when the region recurs on at least repeat_min_pages pages.
     Raises:
@@ -871,7 +875,6 @@ def _repeated_in_band(rect: "fitz.Rect", own_height: float, scans: List[Dict[str
         return False
     if not _in_band(rect, own_height, band):
         return False
-    tolerance = settings["logo_size_tolerance_pt"]
     pages_with_it = set()
     for scan in scans:
         others = [other for other, _ in scan["regions"]]
@@ -1094,7 +1097,8 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
             for item in items:
                 if item["kind"] in ("figure", "table") and item["title"] is None:
                     if _repeated_in_band(item["rect"], scan["height"], scans, settings["running_band_pt"],
-                                         settings, None, with_tables=True):
+                                         settings, None, with_tables=True,
+                                     tolerance=settings["running_size_tolerance_pt"]):
                         item["kind"] = "frame"
             for item in items:
                 if item["kind"] != "table" or item["title"] is not None:

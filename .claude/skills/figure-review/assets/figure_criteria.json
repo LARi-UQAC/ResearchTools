@@ -22,6 +22,7 @@
     "group_max_gap_pt": {"value": 150, "provenance": "proposal 2026-11-25 (plan 12 E6): largest gap in points between two regions that may still form one figure when no title or paragraph lies between them; a logo at the top of a page stays apart from a figure below it. Tune on the real reports"},
     "count_max_iterations": {"value": 3, "provenance": "proposal 2026-11-25 (plan 12 E6): re-runs of the extraction after the first attempt when the figure count differs from the declared count; every attempt is recorded"},
     "count_gap_steps_pt": {"value": [48, 96, 192], "provenance": "proposal 2026-11-25 (plan 12 E6): group_max_gap_pt values tried in order on the re-runs; the largest reaches fragments the first gap cannot join. Tune on the real reports"},
+    "running_size_tolerance_pt": {"value": 8, "provenance": "proposal 2026-11-25 (review R2): points of tolerance when two footer or header frames of different pages are of the same size; the real R02 frame is 432 to 437 points wide from page to page. Tune on the real reports"},
     "running_band_pt": {"value": 80, "provenance": "proposal 2026-11-25 (series B review, R02: a footer frame of about 437 by 65 points on 22 pages): points from the top or bottom edge within which a repeated untitled region of any size is a running element, not an element"}
   },
   "criteria": [

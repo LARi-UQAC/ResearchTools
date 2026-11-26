@@ -323,5 +323,36 @@ class TestPerFigureNumbering(unittest.TestCase):
         self.assertEqual(verdicts[1]["reason"], "Numérotation irrégulière : la figure 4 suit la figure 1.")
 
 
+class TestNumberingShapes(unittest.TestCase):
+    """Review round 1, minor 6: the successor rule accepts a change of numbering shape, and the key never raises."""
+
+    KEY = staticmethod(figure_checks._number_key)
+    SUCC = staticmethod(figure_checks._is_successor)
+
+    def test_the_next_figure_in_a_chapter(self):
+        self.assertTrue(self.SUCC(self.KEY("2.2"), self.KEY("2.3")))
+        self.assertFalse(self.SUCC(self.KEY("2.2"), self.KEY("2.5")))
+
+    def test_a_new_chapter_prefix_is_a_successor(self):
+        self.assertTrue(self.SUCC(self.KEY("2.2"), self.KEY("3.1")))
+        self.assertFalse(self.SUCC(self.KEY("2.2"), self.KEY("3.2")))
+
+    def test_the_first_appendix_after_body_numbers_is_a_successor(self):
+        self.assertTrue(self.SUCC(self.KEY("3.2"), self.KEY("A.1")))
+        self.assertFalse(self.SUCC(self.KEY("3.2"), self.KEY("A.3")))
+
+    def test_the_next_appendix_letter_is_a_successor(self):
+        self.assertTrue(self.SUCC(self.KEY("A.1"), self.KEY("B.1")))
+        self.assertFalse(self.SUCC(self.KEY("A.1"), self.KEY("B.2")))
+
+    def test_an_empty_key_is_never_a_successor(self):
+        self.assertFalse(self.SUCC((), self.KEY("2.1")))
+
+    def test_the_number_key_never_raises_on_a_non_ascii_digit(self):
+        # A superscript two is a digit for str.isdigit, but int() refuses it: the key must treat it as a letter part.
+        key = self.KEY("2.\u00b2")
+        self.assertEqual(len(key), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

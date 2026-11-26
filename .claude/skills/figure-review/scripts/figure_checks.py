@@ -181,19 +181,22 @@ def _number_key(number: str) -> tuple:
     --------------------------------------------------------------------------
     """
     parts = [p for p in re.split(r"[.\-]", number.strip().upper()) if p]
-    return tuple((1, int(p)) if p.isdigit() else (0, ord(p[0])) for p in parts)
+    # ASCII digits only: str.isdigit accepts other digits (a superscript two), which int() then refuses (review round 1).
+    return tuple((1, int(p)) if re.fullmatch(r"[0-9]+", p) else (0, ord(p[0])) for p in parts)
 
 
 def _is_successor(prev: tuple, cur: tuple) -> bool:
     """
     --------------------------------------------------------------------------
     Purpose:
-        Tell whether a numbered figure directly follows the previous titled figure: its last part is one more, or
-        the chapter changed (first part one more, the others 1), as 2.2 then 3.1.
+        Tell whether a numbered figure directly follows the previous titled figure. Three successions are accepted:
+        the same number of parts with the last one more (2.2 then 2.3); a new chapter, the first part one more and the
+        others 1 (2.2 then 3.1); an appendix, a letter part after body numbers (3.2 then A.1), or the next letter
+        (A.1 then B.1), whose other parts are 1.
 
     Inputs:
-        prev (tuple): the key of the previous titled figure.
-        cur (tuple): the key of the figure judged.
+        prev (tuple): the key of the previous titled figure, from _number_key (never empty).
+        cur (tuple): the key of the figure judged, from _number_key.
 
     Outputs:
         bool: True when cur is the successor of prev.
@@ -202,11 +205,16 @@ def _is_successor(prev: tuple, cur: tuple) -> bool:
         None.
     --------------------------------------------------------------------------
     """
-    if not prev or len(prev) != len(cur):
+    if not prev or not cur:
         return False
-    if prev[:-1] == cur[:-1] and cur[-1] == (prev[-1][0], prev[-1][1] + 1):
+    if len(prev) == len(cur) and prev[:-1] == cur[:-1] and cur[-1] == (prev[-1][0], prev[-1][1] + 1):
         return True
-    return cur[0] == (prev[0][0], prev[0][1] + 1) and all(c == (1, 1) for c in cur[1:])
+    rest_is_one = all(part == (1, 1) for part in cur[1:])
+    if cur[0][0] == 1 and prev[0][0] == 1 and cur[0][1] == prev[0][1] + 1 and rest_is_one:
+        return True
+    if cur[0][0] == 0 and rest_is_one and (prev[0][0] == 1 or cur[0][1] == prev[0][1] + 1):
+        return True
+    return False
 
 
 def _reason(criteria_doc: Dict[str, Any], crit_id: str, field: str, **values: Any) -> str:

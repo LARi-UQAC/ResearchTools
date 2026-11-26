@@ -281,15 +281,44 @@ class TestUgsFigures(unittest.TestCase):
 
     # --- N7 signal 2 (plan 20): the vision role says an element is a table ---
 
-    def test_a_vision_only_table_under_a_figure_title_is_a_candidate_and_not_flagged(self):
-        # Review B: the vision answer is a candidate only; the script decides the flag.
+    def test_a_vision_table_below_the_weak_grid_is_a_candidate_and_vetoed(self):
+        # Review 6: a region clearly below the weak grid vetoes the vision table; it stays a candidate only.
         elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_grid_reading="none", title_grid=False)
         result = self.report(FakeModel(kind="table"), elements=elements)
         record = result["figures"][0]
         self.assertEqual(record["kind"], "table")
         self.assertEqual(record["title_kind_candidate"], "table_titled_figure")
         self.assertIsNone(record["title_kind_mismatch"])
         self.assertIsNone(record["title_kind_source"])
+
+    def test_a_vision_table_on_a_weak_grid_is_flagged_by_vision(self):
+        # Review 6: between the weak and the strong grid, the vision answer decides.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_grid_reading="weak", title_grid=False)
+        record = self.report(FakeModel(kind="table"), elements=elements)["figures"][0]
+        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_source"], "vision")
+
+    def test_a_vision_table_on_an_unreadable_region_is_flagged_by_vision(self):
+        # Review 6 (F7): a region with too few words cannot be read, so the vision table flags.
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        elements[0].update(title_grid_reading=None, title_grid=None)
+        record = self.report(FakeModel(kind="table"), elements=elements)["figures"][0]
+        self.assertEqual(record["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(record["title_kind_source"], "vision")
+
+    def test_a_table_image_below_the_weak_grid_is_vetoed_and_one_on_a_weak_grid_is_flagged(self):
+        elements = self.element_records(["Figure 1 - The plant.", None])
+        vetoed = self.table_image_record("T-i01", title="Tableau 2: Mesures", title_grid=False)
+        vetoed["title_grid_reading"] = "none"
+        weak = self.table_image_record("T-i02", title="Tableau 3: Mesures", title_grid=False)
+        weak["title_grid_reading"] = "weak"
+        elements.extend([vetoed, weak])
+        result = self.report(FakeModel(kind="chart"), elements=elements)
+        by_id = {f["figure_id"]: f for f in result["figures"]}
+        self.assertIsNone(by_id["T-i01"]["title_kind_mismatch"])
+        self.assertEqual(by_id["T-i02"]["title_kind_mismatch"], "figure_titled_table")
 
     def test_an_untitled_element_is_never_a_candidate_or_a_flag(self):
         # Review B: an element without a printed title is never flagged, whatever the vision says.

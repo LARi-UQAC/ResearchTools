@@ -266,11 +266,17 @@ def _judge_figure(record: Dict[str, Any], fig: Dict[str, Any], criteria: List[Di
         record["kind"] = "table"
     if record.get("title_kind_source") != "script":  # N7: a script verdict on the title is never overwritten
         mismatch = title_kind_from_answer(record.get("element_type") or "figure", answer["kind"])
-        if record.get("element_type") == TABLE_IMAGE_TYPE:  # C: flagged by vision unless the grid rule reads a grid
-            if mismatch and record.get("titled") and record.get("title_grid") is not True:
+        # Review 6 (F7 rule): the vision answer flags unless the region is clearly below the weak grid ("none"), and
+        # an unreadable region ("None") or a weak one lets vision decide. A strong grid is a script flag already.
+        reading = record.get("title_grid_reading")
+        if record.get("element_type") == TABLE_IMAGE_TYPE:  # C: flagged by vision unless a grid or a veto says no
+            if mismatch and record.get("titled") and record.get("title_grid") is not True and reading != "none":
                 record["title_kind_mismatch"] = mismatch
                 record["title_kind_source"] = "vision"
-        elif mismatch and record.get("titled"):  # B: a vision table is a candidate only, the script flags it
+        elif mismatch and record.get("titled") and reading != "none":
+            record["title_kind_mismatch"] = mismatch
+            record["title_kind_source"] = "vision"
+        elif mismatch and record.get("titled"):  # vetoed: the answer stays a candidate, unflagged
             record["title_kind_candidate"] = mismatch
     answered = {item["id"]: item for item in answer["criteria"]}
     for crit in sent:
@@ -397,6 +403,7 @@ def figures_report(
             "title_kind_mismatch": elements_by_id.get(figure_id, {}).get("title_kind_mismatch"),
             "title_kind_source": elements_by_id.get(figure_id, {}).get("title_kind_source"),
             "title_grid": elements_by_id.get(figure_id, {}).get("title_grid"),
+            "title_grid_reading": elements_by_id.get(figure_id, {}).get("title_grid_reading"),
             "titled": elements_by_id.get(figure_id, {}).get("title") is not None,
             "title_kind_candidate": None,
         }
@@ -427,6 +434,7 @@ def figures_report(
             "cited_in_text": NOT_APPLICABLE, "criteria": {}, "model_image": None,
             "title_kind_mismatch": None, "title_kind_source": None, "title_kind_candidate": None,
             "title_grid": element.get("title_grid"), "titled": element.get("title") is not None,
+            "title_grid_reading": element.get("title_grid_reading"),
         }
         if vision_ok:
             _judge_figure(record, {"file": element["file"], "criteria": {}}, [], pages, report_dir, call, ctx,

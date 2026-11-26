@@ -1,10 +1,14 @@
 """
 Purpose: Grade rubric items using local models.
+
+The model names, for each rubric item, the elements the item requires and a verdict on each (present, partial or
+absent). The code computes the level from those verdicts (grade_levels.json) and the points from the level.
 """
 
 import json
 import math
 import sys
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -31,12 +35,10 @@ GRADE_CODES = (
     "evidence_missing",
     "evidence_incomplete",
     "evidence_page_out_of_range",
-    "score_above_max",
+    "elements_missing",
+    "exceptional_unsupported",
     "unknown_level",
-    "score_negative",
-    "score_missing",
     "unknown_status",
-    "not_applicable_with_score",
     "unparsable_answer",
     "schema_invalid",
     "no_fit",
@@ -45,14 +47,15 @@ GRADE_CODES = (
     "not_applicable_not_allowed",
 )
 
-# The refusals asked again with a template of the prompts folder (plan 22 task 2, R01 case 4): the maximum is named,
-# in the report language, from retry_grade_item.md. Each code names its section of that file.
+# The refusals asked again with a template of the prompts folder: each code names its section of
+# retry_grade_item.md, in the report language.
 RETRY_SECTION_BY_CODE = {
-    "score_above_max": "score",
+    "elements_missing": "elements",
     "not_applicable_not_allowed": "not_applicable",
+    "exceptional_unsupported": "exceptional",
 }
 
-# A refused proof keeps the score the model gave: the number is usable, only the evidence is not.
+# A refused proof keeps the level and the points the verdicts give: only the evidence is refused.
 PROOF_REFUSAL_CODES = (
     "quote_not_found",
     "evidence_missing",
@@ -67,21 +70,75 @@ NO_ANSWER_CODES = {
     "timeout": "timeout",
 }
 
-# Plan 25 Task 1: the grader names a level from grade_levels.json; the code computes the points. The file holds the
-# fractions, so no prompt carries a number the model could copy as a score.
+# The verdicts the model may give an element of the rubric item.
+VERDICTS = ("present", "partial", "absent")
+PRESENT_VERDICTS = ("present", "partial")
+
+# The fractions, the partial weight and the bands live in assets/grade_levels.json (R0, R4); no code holds a number.
 GRADE_LEVELS_FILE = Path(__file__).resolve().parent.parent / "assets" / "grade_levels.json"
 GRADE_STEP_KEY = "grade.score_step"
+EXCEPTIONAL_LEVEL = "exemplary"
+FULL_LEVEL = "complete_correct"
+ABSENT_LEVEL = "absent"
 
 
-def load_grade_levels(path: Path = GRADE_LEVELS_FILE) -> Dict[str, Decimal]:
+@dataclass(frozen=True)
+class GradeScale:
     """
-    Purpose: Read the level names and their fractions of the maximum from grade_levels.json (plan 25, Task 1).
+    Purpose: The level scale of grade_levels.json: the fraction of each level, the weight of a partial element and the
+        bands, highest first, that map the share of present elements to a level.
+    """
+
+    fractions: Dict[str, Decimal]
+    partial_weight: Decimal
+    bands: Tuple[Tuple[Decimal, str], ...]
+
+
+def _config_value(raw: Any, key: str, path: Path) -> Any:
+    """
+    Purpose: Read the value of one keyed entry of the levels file, a named error when it is missing (R3).
+    Inputs:
+        raw: Any - The parsed JSON document.
+        key: str - The entry name.
+        path: Path - The file, for the message.
+    Outputs:
+        Any - The value of the entry.
+    Raises:
+        ValueError: If the entry or its value is missing.
+    """
+    entry = raw.get(key) if isinstance(raw, dict) else None
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise ValueError(f"missing key '{key}' in {path}")
+    return entry["value"]
+
+
+def _ratio(value: Any, name: str, path: Path) -> Decimal:
+    """
+    Purpose: Check that a value is a number from 0 to 1 and give it exactly.
+    Inputs:
+        value: Any - The value read from the file.
+        name: str - The name, for the message.
+        path: Path - The file, for the message.
+    Outputs:
+        Decimal - The value.
+    Raises:
+        ValueError: If the value is not a number from 0 to 1.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+        raise ValueError(f"'{name}' must be a number from 0 to 1 in {path}")
+    return Decimal(str(value))
+
+
+def load_grade_scale(path: Path = GRADE_LEVELS_FILE) -> GradeScale:
+    """
+    Purpose: Read the level scale from grade_levels.json (plan 25; review round 1, decision 1).
     Inputs:
         path: Path - The levels file, the shipped one by default.
     Outputs:
-        Dict[str, Decimal] - Each level name with its fraction, exact.
+        GradeScale - The fractions, the partial weight and the bands, highest first.
     Raises:
-        ValueError: If the file is unreadable, has no levels, or a fraction is not a number from 0 to 1 (R3).
+        ValueError: If the file is unreadable or incomplete, a band names no level, or the last band does not reach
+            a share of 0 (R3).
     """
     try:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -90,13 +147,36 @@ def load_grade_levels(path: Path = GRADE_LEVELS_FILE) -> Dict[str, Decimal]:
     levels = raw.get("levels") if isinstance(raw, dict) else None
     if not isinstance(levels, dict) or not levels:
         raise ValueError(f"no 'levels' object in {path}")
-    result: Dict[str, Decimal] = {}
-    for name, entry in levels.items():
-        fraction = entry.get("fraction") if isinstance(entry, dict) else None
-        if isinstance(fraction, bool) or not isinstance(fraction, (int, float)) or not 0 <= fraction <= 1:
-            raise ValueError(f"level '{name}' needs a fraction from 0 to 1 in {path}")
-        result[name] = Decimal(str(fraction))
-    return result
+    fractions = {name: _ratio(entry.get("fraction") if isinstance(entry, dict) else None,
+                              f"levels.{name}.fraction", path)
+                 for name, entry in levels.items()}
+    partial_weight = _ratio(_config_value(raw, "partial_weight", path), "partial_weight", path)
+    block = raw.get("bands") if isinstance(raw, dict) else None
+    rows = block.get("list") if isinstance(block, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"no 'bands.list' in {path}")
+    bands = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("level") not in fractions:
+            raise ValueError(f"a band of 'bands.list' names no known level in {path}")
+        bands.append((_ratio(row.get("min_share"), "bands.list.min_share", path), row["level"]))
+    bands.sort(key=lambda band: band[0], reverse=True)
+    if bands[-1][0] != 0:
+        raise ValueError(f"the last band of 'bands.list' must have min_share 0 in {path}")
+    return GradeScale(fractions=fractions, partial_weight=partial_weight, bands=tuple(bands))
+
+
+def load_grade_levels(path: Path = GRADE_LEVELS_FILE) -> Dict[str, Decimal]:
+    """
+    Purpose: Give the fraction of each level of grade_levels.json (the points are fraction times maximum).
+    Inputs:
+        path: Path - The levels file, the shipped one by default.
+    Outputs:
+        Dict[str, Decimal] - The fraction of each level name, exact.
+    Raises:
+        ValueError: As load_grade_scale.
+    """
+    return load_grade_scale(path).fractions
 
 
 def read_grade_step(path: Path) -> Decimal:
@@ -122,44 +202,126 @@ def read_grade_step(path: Path) -> Decimal:
     return Decimal(str(value))
 
 
-def points_for_level(level: str, max_points: Any, levels: Dict[str, Decimal], step: Decimal) -> float:
+def points_for_level(level: str, max_points: Any, fractions: Dict[str, Decimal], step: Decimal) -> float:
     """
-    Purpose: Give the points of a level: its fraction times the maximum, rounded to the nearest multiple of the step,
-        a tie going up (plan 25, Task 1). 0.88 of 0.5 is 0.44, rounded to 0.5; 0.88 of 10 is 8.8, rounded to 8.75.
+    Purpose: Give the points of a level: its fraction times the maximum, rounded to the nearest multiple of the step
+        (a tie going up), and never above the maximum (review round 1, decision 3).
     Inputs:
-        level: str - A key of levels.
+        level: str - A key of fractions.
         max_points: Any - The maximum of the item, a number.
-        levels: Dict[str, Decimal] - The fractions, from load_grade_levels.
+        fractions: Dict[str, Decimal] - The fraction of each level, from load_grade_levels.
         step: Decimal - The rounding step, from read_grade_step.
     Outputs:
-        float - The points, never above the maximum.
+        float - The points, from 0 to the maximum.
     Raises:
-        KeyError: If the level is not in levels (the caller refuses it first as unknown_level).
+        KeyError: If the level is not in fractions.
     """
-    value = levels[level] * Decimal(str(max_points))
+    maximum = Decimal(str(max_points))
+    value = min(fractions[level] * maximum, maximum)
     units = (value / step).to_integral_value(rounding=ROUND_HALF_UP)
-    return float(units * step)
+    return min(float(units * step), float(maximum))
 
 
-def with_level_score(answer: dict, item: dict, levels: Dict[str, Decimal], step: Decimal) -> dict:
+def count_verdicts(elements: List[dict]) -> Dict[str, int]:
     """
-    Purpose: Give a copy of a rated answer with the points of its level in score, so the score checks and the record
-        work on the computed number (plan 25, Task 1). An answer with no known level is returned unchanged and is
-        refused by check_grade_answer as unknown_level.
+    Purpose: Count the present, partial and absent verdicts of an item's elements.
     Inputs:
-        answer: dict - The model's answer.
-        item: dict - The rubric item; its max_points is used.
-        levels: Dict[str, Decimal] - The fractions.
-        step: Decimal - The rounding step.
+        elements: List[dict] - The elements of an answer, each with a verdict.
     Outputs:
-        dict - The answer, with its score computed when its level is known.
+        Dict[str, int] - The count of each verdict, zero when none.
     Raises:
         None.
     """
-    if answer.get("status") != "rated" or answer.get("level") not in levels:
+    counts = {verdict: 0 for verdict in VERDICTS}
+    for element in elements:
+        if isinstance(element, dict) and element.get("verdict") in counts:
+            counts[element["verdict"]] += 1
+    return counts
+
+
+def element_summary(elements: Any) -> Optional[str]:
+    """
+    Purpose: Give the element summary kept in a grade record as model_score (review round 1, decision 6): the count
+        of each verdict, as text. None when the answer names no elements.
+    Inputs:
+        elements: Any - The elements of an answer.
+    Outputs:
+        Optional[str] - The summary text, or None.
+    Raises:
+        None.
+    """
+    if not isinstance(elements, list):
+        return None
+    counts = count_verdicts(elements)
+    return "present %d, partial %d, absent %d" % (counts["present"], counts["partial"], counts["absent"])
+
+
+def level_for_elements(elements: List[dict], exceptional: bool, scale: GradeScale) -> str:
+    """
+    Purpose: Compute the level of an item from its element verdicts (review round 1, decision 1): exemplary only
+        when the model claims it as exceptional, complete_correct when every element is present, absent when none is
+        present or partial, else the first band the share of present elements reaches.
+    Inputs:
+        elements: List[dict] - The elements of the answer, each with a verdict.
+        exceptional: bool - The explicit claim of an exceptional report.
+        scale: GradeScale - The bands and the partial weight.
+    Outputs:
+        str - A level name of grade_levels.json.
+    Raises:
+        None.
+    """
+    if exceptional:
+        return EXCEPTIONAL_LEVEL
+    counts = count_verdicts(elements)
+    total = len(elements)
+    if total == 0 or (counts["present"] == 0 and counts["partial"] == 0):
+        return ABSENT_LEVEL
+    if counts["present"] == total:
+        return FULL_LEVEL
+    share = (Decimal(counts["present"]) + scale.partial_weight * counts["partial"]) / total
+    for min_share, level in scale.bands:
+        if share >= min_share:
+            return level
+    return ABSENT_LEVEL
+
+
+def _elements_are_list_of_objects(elements: Any) -> bool:
+    """
+    Purpose: Tell whether an answer's elements are a non-empty list of objects, before any verdict is read.
+    Inputs:
+        elements: Any - The elements of an answer.
+    Outputs:
+        bool - True for a non-empty list in which every entry is an object.
+    Raises:
+        None.
+    """
+    return isinstance(elements, list) and bool(elements) and all(isinstance(entry, dict) for entry in elements)
+
+
+def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal) -> dict:
+    """
+    Purpose: Give a copy of a rated answer with its level, its points and its evidence computed from the element
+        verdicts (review round 1, decisions 1 and 2). An answer with no usable elements is returned unchanged and is
+        refused by check_grade_answer.
+    Inputs:
+        answer: dict - The model's answer.
+        item: dict - The rubric item; its max_points is used.
+        scale: GradeScale - The level scale.
+        step: Decimal - The rounding step.
+    Outputs:
+        dict - The answer with level, score and evidence (the present and partial quotes) when computable.
+    Raises:
+        None.
+    """
+    if answer.get("status") != "rated" or not _elements_are_list_of_objects(answer.get("elements")):
         return answer
+    elements = answer["elements"]
+    level = level_for_elements(elements, answer.get("exceptional") is True, scale)
     computed = dict(answer)
-    computed["score"] = points_for_level(answer["level"], item.get("max_points", 0), levels, step)
+    computed["level"] = level
+    computed["score"] = points_for_level(level, item.get("max_points", 0), scale.fractions, step)
+    computed["evidence"] = [{"page": entry.get("page"), "quote": entry.get("quote")} for entry in elements
+                            if entry.get("verdict") in PRESENT_VERDICTS]
     return computed
 
 
@@ -262,74 +424,69 @@ def _is_page_number(value: Any) -> bool:
 def check_grade_answer(
     answer: dict,
     item: dict,
-    pages: List[str]
+    pages: List[str],
+    scale: Optional[GradeScale] = None
 ) -> Tuple[str, str]:
     """
     Purpose: Check one model answer against its rubric item and the page texts, and name the first defect.
-    Details: The codes are the table GRADE_CODES. A refused proof (a quote not on its page, missing or
-        incomplete evidence, a page out of range) is a defect of the evidence only; the score it carries is
-        still reported by the caller. The message names a page number, a score or a count, never a quote.
+    Details: The answer names the elements the item requires, each with a verdict. Every present or partial element
+        needs a page and a quote found on it (the evidence). A rated item with no present or partial element that
+        verifies is refused whatever its level (review round 1, decision 2). An exceptional claim needs every element
+        present and a verified one. The codes are the table GRADE_CODES. A refused proof is a defect of the evidence
+        only. The message names a page number or a count, never a quote.
     Inputs:
         answer: dict - The model's answer, as given.
-        item: dict - The rubric item, with its max_points.
+        item: dict - The rubric item, with its max_points and its optional flag.
         pages: List[str] - The page texts of the report.
+        scale: Optional[GradeScale] - The level scale the level of an answer must belong to; None loads
+            grade_levels.json (review round 1, decision 6: the tests inject their own scale).
     Outputs:
         Tuple[str, str] - The code, and a short message: "ok" with an empty message on success.
+    Raises:
+        None.
     """
     status = answer.get("status")
-    score = answer.get("score")
-    evidence = answer.get("evidence")
-    if evidence is None:
-        evidence = []
-
     if status not in ("rated", "not_applicable"):
         return "unknown_status", "status must be rated or not_applicable"
-    if status == "rated" and answer.get("level") not in load_grade_levels():
+    if scale is None:
+        scale = load_grade_scale()
+    if "level" in answer and answer["level"] not in scale.fractions:  # the injected scale names every level it may give
         return "unknown_level", "level must be one of the levels of grade_levels.json"
-    if score is not None and not _is_number(score):
-        return "schema_invalid", "score is not a number"
-    # json.loads accepts NaN and Infinity, and NaN passes every range test below: refuse it before them.
-    if isinstance(score, float) and not math.isfinite(score):
-        return "score_missing", "score is not a finite number"
-    # The evidence has one shape at every score, a full one included: a string is refused before any score test.
-    if not isinstance(evidence, list):
-        return "schema_invalid", "evidence must be a list"
-
     if status == "not_applicable":
-        if score is not None:
-            return "not_applicable_with_score", "not_applicable must have a null score"
         if not item.get("optional"):
             return "not_applicable_not_allowed", "not_applicable is allowed only for an optional item"
         return "ok", ""
 
-    max_points = item.get("max_points", 0)
-    if score is None:
-        return "score_missing", "rated must have a score"
-    if score < 0:
-        return "score_negative", "score must be non-negative"
-    if score > max_points:
-        return "score_above_max", f"score {score} is above the maximum {max_points}"
+    elements = answer.get("elements")
+    if not isinstance(elements, list):
+        return "schema_invalid", "elements must be a list"
+    if not elements:
+        return "elements_missing", "a rated item names the elements it requires"
+    for entry in elements:
+        if not isinstance(entry, dict) or not isinstance(entry.get("element"), str) \
+                or entry.get("verdict") not in VERDICTS:
+            return "schema_invalid", "each element needs its name and a verdict: present, partial or absent"
 
-    # Every evidence entry is checked for its page, at the maximum score too: the audit reads these pages.
-    for entry in evidence:
-        if not isinstance(entry, dict) or not _is_page_number(entry.get("page")):
-            return "evidence_incomplete", "evidence entry needs an integer page number"
+    verified = 0
+    for entry in elements:
+        if entry.get("verdict") not in PRESENT_VERDICTS:
+            continue
+        page_num = entry.get("page")
+        quote = entry.get("quote")
+        if not _is_page_number(page_num) or not isinstance(quote, str) or not normalize(quote).strip():
+            return "evidence_incomplete", "a present or partial element needs a page number and a quote"
+        if page_num < 1 or page_num > len(pages):
+            return "evidence_page_out_of_range", f"evidence page {page_num} is out of range"
+        if normalize(quote) not in normalize(pages[page_num - 1]):
+            return "quote_not_found", f"quote not found on page {page_num}"
+        verified += 1
+    if verified == 0:
+        return "evidence_missing", "no element is present or partial with a quote found on its page"
 
-    if score < max_points:
-        if not evidence:
-            return "evidence_missing", "score below the maximum needs evidence"
-        for entry in evidence:
-            if not isinstance(entry, dict):
-                return "evidence_incomplete", "evidence entry is not an object"
-            page_num = entry.get("page")
-            quote = entry.get("quote")
-            if not _is_page_number(page_num) or not isinstance(quote, str) or not normalize(quote).strip():
-                return "evidence_incomplete", "evidence entry needs a page number and a quote"
-            if page_num < 1 or page_num > len(pages):
-                return "evidence_page_out_of_range", f"evidence page {page_num} is out of range"
-            if normalize(quote) not in normalize(pages[page_num - 1]):
-                return "quote_not_found", f"quote not found on page {page_num}"
-
+    if answer.get("exceptional") is True:
+        counts = count_verdicts(elements)
+        if counts["present"] != len(elements):
+            return "exceptional_unsupported", "an exceptional report has every element present"
     return "ok", ""
 
 
@@ -346,47 +503,39 @@ def _validate_grade_answer(
         pages: List[str] - The page texts.
     Outputs:
         Optional[str] - None if valid, else the message of check_grade_answer.
+    Raises:
+        None.
     """
     code, message = check_grade_answer(answer, item, pages)
     return None if code == "ok" else message
 
 
-def _missing_text(answer: dict, raw_score: Any, max_points: Any, max_chars: int) -> str:
+def _missing_text(answer: dict, max_points: Any, points: Any, max_chars: int) -> str:
     """
     Purpose: Give the `missing` value of a grade record: the element that cost the points, or "".
-    Details: Empty at the maximum score, when the answer has no `missing`, or when it is not a string. Otherwise
-        the text is kept as the model gave it, stripped and cut to max_chars. It is model text saved in
-        grade.json only: it never reaches the ledger note, a log or the dashboard (see ugs_run._grade_mark).
+    Details: Empty at the maximum points or when every element is present, when the answer has no `missing`, or when
+        it is not a string. Otherwise the
+        text is kept as the model gave it, stripped and cut to max_chars. It is model text saved in grade.json only:
+        it never reaches the ledger note, a log or the dashboard (see ugs_run._grade_mark).
     Inputs:
         answer: dict - The model's answer, as given.
-        raw_score: Any - The score the model gave, None when there is none.
         max_points: Any - The maximum of the rubric item.
+        points: Any - The points of the item, None when there are none.
         max_chars: int - The character limit, from grade.missing_max_chars (D2).
     Outputs:
         str - The missing text, possibly empty.
+    Raises:
+        None.
     """
-    if _is_number(raw_score) and raw_score == max_points:
+    if _is_number(points) and points == max_points:
         return ""
+    elements = answer.get("elements")
+    if isinstance(elements, list) and elements and count_verdicts(elements)["present"] == len(elements):
+        return ""  # every element present: nothing cost the points
     value = answer.get("missing")
     if not isinstance(value, str):
         return ""
     return value.strip()[:max_chars]
-
-
-def _strict_score(raw: Any) -> Tuple[Any, Optional[str]]:
-    """
-    Purpose: Split the score the model gave into a strict-JSON value and its raw text, for grade.json (D1).
-    Details: json.dumps writes NaN and Infinity as literals that no strict JSON reader accepts. A non-finite
-        float therefore becomes null, and its text ("nan", "inf", "-inf") is kept beside it in model_score_raw.
-    Inputs:
-        raw: Any - The score as the model gave it, possibly None.
-    Outputs:
-        Tuple[Any, Optional[str]] - (model_score, model_score_raw); the second is None unless the score was
-            a non-finite float.
-    """
-    if isinstance(raw, float) and not math.isfinite(raw):
-        return None, str(raw)
-    return raw, None
 
 
 def _record_from_answer(
@@ -399,50 +548,53 @@ def _record_from_answer(
 ) -> dict:
     """
     Purpose: Build the grade record of an answer the model gave, with its validation code.
-    Details: A success keeps the status and the score as given. A refused proof keeps status rated and the score.
-        Any other refusal drops the score (status not_run, score null) and keeps the raw value in model_score.
-        The model comment, the evidence and the missing element are kept as given in every case (missing is
-        emptied at the maximum score, see _missing_text). The key order is the saved order of grade.json.
+    Details: A success keeps the status, the points and the level computed from the elements. A refused proof keeps
+        status rated and the computed points. Any other refusal drops the points (status not_run, score null). The
+        model_score field holds the element summary ("present N, partial N, absent N"), as the review round 1 decision
+        6 records it; the element verdicts are kept in elements, with their pages and no quote (the quotes are in
+        evidence). The key order is the saved order of grade.json.
     Inputs:
         item_id: str - The rubric item identifier.
-        answer: dict - The model's answer, as given.
+        answer: dict - The model's answer, with the computed level, score and evidence when computable.
         code: str - The code of check_grade_answer, "ok" for a success.
         attempts: int - The number of model calls made, this one included.
         max_points: Any - The maximum of the rubric item.
         missing_max_chars: Optional[int] - The limit of the missing text; None reads it from the configuration.
     Outputs:
         dict - The grade record, flagged unless the code is "ok".
+    Raises:
+        ValueError: If the configuration has no positive missing limit and none is given (R3).
     """
     if missing_max_chars is None:
         missing_max_chars = read_missing_max_chars(default_path())
-    raw_score = answer.get("score")
-    evidence = answer.get("evidence")
+    elements = answer.get("elements")
     if code == "ok":
         status = answer.get("status")
-        score = raw_score
+        score = answer.get("score")
     elif code in PROOF_REFUSAL_CODES:
         status = "rated"
-        score = raw_score
+        score = answer.get("score")
     else:
         status = "not_run"
         score = None
-    level = answer.get("level")  # plan 25: model_score keeps the level name the model chose, the score is computed
-    model_score, model_score_raw = _strict_score(level if isinstance(level, str) else raw_score)
+    evidence = answer.get("evidence")
     record = {
         "item_id": item_id,
         "status": status,
         "score": score,
         "comment": answer.get("comment", ""),
         "evidence": [] if evidence is None else evidence,
-        "missing": _missing_text(answer, raw_score, max_points, missing_max_chars),
+        "missing": _missing_text(answer, max_points, score, missing_max_chars),
         "audit": "not_run",
         "flag": code != "ok",
-        "model_score": model_score,
+        "model_score": element_summary(elements),
         "validation": code,
         "attempts": attempts,
+        "level": answer.get("level"),
+        "elements": [] if not isinstance(elements, list) else [
+            {"element": entry.get("element"), "verdict": entry.get("verdict"), "page": entry.get("page")}
+            for entry in elements if isinstance(entry, dict)],
     }
-    if model_score_raw is not None:
-        record["model_score_raw"] = model_score_raw
     return record
 
 
@@ -461,6 +613,8 @@ def _no_answer_record(
         comment: str - The comment of the record: the refusal name for no_fit or over_budget, "" otherwise.
     Outputs:
         dict - The grade record, status not_run, score and model_score null, missing empty, flagged.
+    Raises:
+        None.
     """
     return {
         "item_id": item_id,
@@ -474,36 +628,29 @@ def _no_answer_record(
         "model_score": None,
         "validation": code,
         "attempts": attempts,
+        "level": None,
+        "elements": [],
     }
 
 
-def _retry_note(ctx: StepContext, code: str, item: dict, answer: dict, language: str) -> str:
+def _retry_note(ctx: StepContext, code: str, item: dict, language: str) -> str:
     """
-    --------------------------------------------------------------------------
-    Purpose:
-        Build the note that asks the model again after a score above the maximum, or a not_applicable on a required
-        item. The wording lives in the retry_grade_item prompt file, never in code (R6).
-
+    Purpose: Build the note that asks the model again after a refusal that names its missing part: no elements, an
+        exceptional claim without support, or a not_applicable on a required item. The wording lives in the
+        retry_grade_item prompt file, never in code (R6).
     Inputs:
-        ctx (StepContext): the step context; its prompts hold retry_grade_item.
-        code (str): the refusal code, a key of RETRY_SECTION_BY_CODE.
-        item (dict): the rubric item, its max_points is named in the note.
-        answer (dict): the refused answer, its score is named in the note.
-        language (str): the report language, fr or en; it selects the section.
-
+        ctx: StepContext - The step context; its prompts hold retry_grade_item.
+        code: str - The refusal code, a key of RETRY_SECTION_BY_CODE.
+        item: dict - The rubric item, its max_points is named in the note.
+        language: str - The report language, fr or en; it selects the section.
     Outputs:
-        str: the note, stripped.
-
+        str - The note, stripped.
     Raises:
-        PromptError: when the template or its section for this language is missing (R3).
-    --------------------------------------------------------------------------
+        PromptError: When the template or its section for this language is missing (R3).
     """
     section = RETRY_SECTION_BY_CODE[code]
     template = prompt_section(ctx.prompts["retry_grade_item"], f"{language}_{section}")
-    values = {"MAX": str(item.get("max_points", 0))}
-    if section == "score":  # the not_applicable template has no SCORE slot, and fill refuses a value with no slot
-        values["SCORE"] = str(answer.get("score"))
-    return fill(template, values).strip()
+    return fill(template, {}).strip()  # the retry sections name no slot: the wording is fixed by the item kind
 
 
 def grade_item(
@@ -518,11 +665,10 @@ def grade_item(
 ) -> dict:
     """
     Purpose: Grade a single rubric item.
-    Details: When ctx.emit is set, one `read` record gives the page range selected and one `call` record each
-        model call, both with identifiers only (R11). With no emitter nothing is recorded.
-        After the last attempt the record is built from the last answer the model gave, with its validation
-        code (plan 12, R12). A refused attempt is retried with its reason; a retry that fails with no answer
-        at all leaves no score.
+    Details: When ctx.emit is set, one `read` record gives the page range selected and one `call` record each model
+        call, both with identifiers only (R11). With no emitter nothing is recorded. The level and the points are
+        computed from the element verdicts of the answer (review round 1). A refused attempt is retried once with its
+        reason; the record is built from the last answer given, with its validation code (plan 12, R12).
     Inputs:
         item: dict - The rubric item.
         pages: List[str] - The page texts.
@@ -533,8 +679,8 @@ def grade_item(
         report_id: str or None - The identifier of the report, for the action records only.
         missing_max_chars: int or None - The limit of the missing text; None reads grade.missing_max_chars once.
     Outputs:
-        dict - The grade record: item_id, status, score, comment, evidence, missing, audit, flag, then model_score,
-            validation and attempts.
+        dict - The grade record: item_id, status, score, comment, evidence, missing, audit, flag, model_score,
+            validation, attempts, level and elements.
     Raises:
         NotRun: If the model fails with an unretryable error (an unreachable daemon, for example).
     """
@@ -571,7 +717,7 @@ def grade_item(
     if ctx.emit is not None:
         ctx.emit("read", page_range(selected_pages), report_id=report_id)
     schema = ctx.schemas["grade_item"]
-    levels = load_grade_levels()  # plan 25 task 1: the points are computed from the level, never asked of the model
+    scale = load_grade_scale()
     step = read_grade_step(default_path())
 
     last_error_reason = None
@@ -608,12 +754,12 @@ def grade_item(
             last_answer = None
             continue
 
-        answer = with_level_score(answer, item, levels, step)
-        code, message = check_grade_answer(answer, item, pages)
+        answer = with_level_score(answer, item, scale, step)
+        code, message = check_grade_answer(answer, item, pages, scale)
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)
         last_error_reason = message
-        last_retry_note = _retry_note(ctx, code, item, answer, language) if code in RETRY_SECTION_BY_CODE else ""
+        last_retry_note = _retry_note(ctx, code, item, language) if code in RETRY_SECTION_BY_CODE else ""
         last_answer = answer
 
     attempts = ctx.grade_retries + 1

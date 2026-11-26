@@ -152,7 +152,7 @@ class TestAuditReport(unittest.TestCase):
         # Auditor agrees with new record
         call = FakeCall([
             {"verdict": "disagree", "reason": "bad"}, # Audit 1
-            {"status": "rated", "level": "complete_correct", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
+            {"status": "rated", "elements": [{"element": "x", "verdict": "present", "page": 1, "quote": "text"}], "comment": "Better"}, # Regrade
             {"verdict": "agree", "reason": "ok"} # Audit 2
         ])
         result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
@@ -167,7 +167,7 @@ class TestAuditReport(unittest.TestCase):
         # Auditor disagrees again
         call = FakeCall([
             {"verdict": "disagree", "reason": "bad"}, # Audit 1
-            {"status": "rated", "level": "complete_correct", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]}, # Regrade
+            {"status": "rated", "elements": [{"element": "x", "verdict": "present", "page": 1, "quote": "text"}], "comment": "Better"}, # Regrade
             {"verdict": "disagree", "reason": "still bad"} # Audit 2
         ])
         result = audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "")
@@ -234,7 +234,7 @@ class TestAuditReport(unittest.TestCase):
         # Disagree -> Regrade -> Agree
         call = FakeCall([
             {"verdict": "disagree", "reason": "specific_reason"},
-            {"status": "rated", "level": "complete_correct", "score": 9.0, "comment": "Better", "evidence": [{"page": 1, "quote": "text"}]},
+            {"status": "rated", "elements": [{"element": "x", "verdict": "present", "page": 1, "quote": "text"}], "comment": "Better"},
             {"verdict": "agree", "reason": "ok"}
         ])
         audit_report(self.rubric, self.pages, self.grade, call, self.ctx, "en", "calibration_note")

@@ -26,22 +26,24 @@
   },
   "grade_item": {
     "type": "object",
-    "required": ["status", "level", "comment", "evidence"],
+    "required": ["status", "elements", "comment"],
     "properties": {
       "status": {"type": "string", "enum": ["rated", "not_applicable"]},
-      "level": {"type": ["string", "null"], "enum": ["absent", "attempted", "partial", "complete_correct", "exemplary", null]},
-      "comment": {"type": "string"},
-      "evidence": {
+      "elements": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["page", "quote"],
+          "required": ["element", "verdict"],
           "properties": {
-            "page": {"type": "integer", "minimum": 1},
-            "quote": {"type": "string"}
+            "element": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["present", "partial", "absent"]},
+            "page": {"type": ["integer", "null"], "minimum": 1},
+            "quote": {"type": ["string", "null"]}
           }
         }
       },
+      "exceptional": {"type": "boolean"},
+      "comment": {"type": "string"},
       "missing": {"type": "string"}
     }
   },

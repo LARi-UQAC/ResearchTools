@@ -64,18 +64,20 @@ TEXT_ANSWER = {"assessment_type": "lab_report", "total_points": 10,
                "items": [{"id": "I01", "title": "Method", "max_points": 10, "text": TEXT_SOURCE}]}
 
 
-def level_for_points(points):
+def answer_for_points(points):
     """
-    Purpose: Name the level whose fraction of a maximum of 10 is nearest the given points (test fake only).
+    Purpose: Give the fake model's answer that makes the points of a maximum of 10 (test fake only): every element
+        present, and the report claimed exceptional at 9.5 points or more, which gives 10 points; otherwise
+        complete_correct, 8.75 points.
     Inputs:
         points: float - the points the fake model used to mean.
     Outputs:
-        str - a level name of grade_levels.json.
+        dict - a rated answer with its elements.
     Raises:
         None.
     """
-    fractions = {"absent": 0.0, "attempted": 0.5, "partial": 0.75, "complete_correct": 0.88, "exemplary": 1.0}
-    return min(fractions, key=lambda name: abs(points / 10 - fractions[name]))
+    element = {"element": "Introduction", "verdict": "present", "page": 1, "quote": "Introduction text"}
+    return {"status": "rated", "elements": [element], "exceptional": points >= 9.5}
 
 
 class FakeModel:
@@ -96,8 +98,9 @@ class FakeModel:
             if "SCORE=" in prompt:
                 score = float(prompt.split("SCORE=")[1].split()[0])
             comment = prompt[:300] if self.echo else "ok"
-            return {"status": "rated", "level": level_for_points(score), "comment": comment,
-                    "evidence": [{"page": 1, "quote": "Introduction text"}]}
+            answer = answer_for_points(score)
+            answer["comment"] = comment
+            return answer
         if schema == SCHEMAS["audit_item"]:
             return {"verdict": "agree", "reason": "r"}
         if schema == SCHEMAS["language"]:
@@ -507,7 +510,7 @@ class TestUgsDriver(unittest.TestCase):
     # --- batch ---
 
     def test_batch_in_band_exits_0_and_writes_batch_json(self):
-        # Plan 25: the fake names a level; the points are computed from it, so these eight reports give 88 and 100
+        # Plan 25 (review round 1): the fake names its elements; the points are computed from them, so these eight reports give 88 and 100
         # percent: a mean of 91 and a sample standard deviation of 3.2, both in the calibration band.
         self.graded_batch([9, 8.5, 9.5, 8.8, 9, 8.8, 9.5, 8.5])
         code, lines, _ = self.drv(["batch", "--work", str(self.work), "--loop", "1"])

@@ -1,9 +1,15 @@
-Choose the level that describes this item in the report. Use only these level names, as written.
+List every distinct thing the rubric section asks for, one entry per element, in the order of the section. Then judge
+each element against the report pages, one verdict per element:
 
-- absent: the element asked for is not in the report.
-- attempted: the element is there, but largely wrong, or most of its parts are missing.
-- partial: mostly right, but one part is missing or one technical error remains.
-- complete_correct: every part asked for is present and correct. This is the normal good report.
-- exemplary: clearly better than expected. Rare. Only with strong evidence.
+- present: the element is in the report and correct.
+- partial: the element is in the report, but incomplete, or with one technical error.
+- absent: the element is not in the report.
 
-Complete and correct is the normal good report, and exemplary is exceptional. Never write a number for a level.
+For a present or partial element, give its page number and a quote copied word for word from that page, one sentence at
+most. An absent element has no page and no quote.
+
+Set exceptional to true only when every element is present and the report shows clearly more than was asked, with a
+quote for it. Otherwise set it to false.
+
+The code computes the level from your verdicts, and the points from the level. Never write a level, a score or a number
+for the level. The levels the code can give are: absent, attempted, partial, complete_correct and exemplary.

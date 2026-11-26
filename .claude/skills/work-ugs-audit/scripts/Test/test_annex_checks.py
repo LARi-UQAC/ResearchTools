@@ -303,7 +303,7 @@ class TestAssembleChecks(unittest.TestCase):
         self._assemble(["Figure 2.1 shows the layout."])
         checks = self._checks()
         # N5 adds the citation_placement row after the five cross-reference checks.
-        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "untitled_elements", "title_kind", "appendices"])
+        self.assertEqual([c["id"] for c in checks], list(CHECK_IDS) + ["citation_placement", "figure_counts", "table_counts", "untitled_elements", "title_kind", "title_placement", "appendices"])
         self.assertEqual(checks[0]["status"], "ok")
         labels = _labels("en")
         with fitz.open(str(self.loop_dir / "annotated.pdf")) as doc:
@@ -469,6 +469,88 @@ class TestCitationPlacement(unittest.TestCase):
             self.assertEqual(annotation["kind"], "citation")
             self.assertEqual(annotation["code"], "CIT")
             self.assertTrue(annotation["comment"])
+
+
+class TestTitlePlacementRow(unittest.TestCase):
+    """Plan 24 Task 3: the title_placement row and its annotations. Figure: centred below. Table: left above."""
+
+    FR_FIGURE = "Titre de figure mal placé : le centrer sous la figure."
+    FR_TABLE = "Titre de tableau mal placé : l'aligner à gauche au-dessus du tableau."
+    FR_IN_IMAGE = ("Titre inclus dans l'image : l'écrire dans le texte du document, sous la figure "
+                   "(ou au-dessus du tableau).")
+    EN_FIGURE = "Figure title misplaced: center it below the figure."
+    EN_TABLE = "Table title misplaced: left-align it above the table."
+
+    @staticmethod
+    def _element(element_id, element_type, position=None, alignment=None, title_text="Figure 4 x"):
+        """
+        Purpose: Build one fictitious element record with an optional title.
+        Inputs:
+            element_id (str): the id.
+            element_type (str): figure, table or table_image.
+            position (str | None): the title position, None for an untitled element.
+            alignment (str | None): the title alignment.
+            title_text (str): the fictitious title text.
+        Outputs:
+            dict: the element record.
+        Raises:
+            None.
+        """
+        title = None if position is None else {"text": title_text, "position": position, "alignment": alignment}
+        return {"element_id": element_id, "element_type": element_type, "page": 2, "rect": [0, 0, 1, 1], "title": title}
+
+    def test_a_figure_centred_below_is_conforming(self):
+        row = ugs_assemble.title_placement_row([self._element("F1", "figure", "below", "center")])
+        self.assertEqual(row, {"id": "title_placement", "status": "ok", "detail": {}})
+
+    def test_a_figure_title_left_below_or_centred_above_is_a_finding(self):
+        elements = [self._element("F1", "figure", "below", "left"), self._element("F2", "figure", "above", "center")]
+        row = ugs_assemble.title_placement_row(elements)
+        self.assertEqual(row, {"id": "title_placement", "status": "not_ok", "detail": {"ids": ["F1", "F2"]}})
+
+    def test_a_table_left_above_is_conforming_and_a_table_below_is_not(self):
+        conforming = ugs_assemble.title_placement_row([self._element("T1", "table", "above", "left")])
+        self.assertEqual(conforming["status"], "ok")
+        finding = ugs_assemble.title_placement_row([self._element("T2", "table", "below", "left")])
+        self.assertEqual(finding["detail"], {"ids": ["T2"]})
+        centred = ugs_assemble.title_placement_row([self._element("T3", "table_image", "above", "center")])
+        self.assertEqual(centred["detail"], {"ids": ["T3"]})
+
+    def test_a_title_drawn_inside_the_image_is_a_finding(self):
+        row = ugs_assemble.title_placement_row([self._element("F4", "figure", "in_image_bottom", "center")])
+        self.assertEqual(row["detail"], {"ids": ["F4"]})
+
+    def test_untitled_elements_are_never_findings(self):
+        row = ugs_assemble.title_placement_row([self._element("F-u01", "figure")])
+        self.assertEqual(row, {"id": "title_placement", "status": "not_applicable", "detail": {}})
+
+    def test_no_titled_element_gives_not_applicable_and_none_gives_no_file(self):
+        self.assertEqual(ugs_assemble.title_placement_row([])["status"], "not_applicable")
+        self.assertEqual(ugs_assemble.title_placement_row(None)["status"], "not_applicable")
+
+    def test_annotations_carry_the_exact_french_copy(self):
+        annotations = ugs_assemble.title_placement_annotations([
+            self._element("F1", "figure", "below", "left"), self._element("T2", "table", "below", "left"),
+            self._element("F4", "figure", "in_image_bottom", "center")], "fr")
+        self.assertEqual([a["comment"] for a in annotations], [self.FR_FIGURE, self.FR_TABLE, self.FR_IN_IMAGE])
+
+    def test_annotations_carry_the_exact_english_copy(self):
+        annotations = ugs_assemble.title_placement_annotations([
+            self._element("F1", "figure", "below", "left"), self._element("T2", "table", "below", "left")], "en")
+        self.assertEqual([a["comment"] for a in annotations], [self.EN_FIGURE, self.EN_TABLE])
+
+    def test_an_in_image_title_is_annotated_without_a_quote(self):
+        annotations = ugs_assemble.title_placement_annotations(
+            [self._element("F4", "figure", "in_image_bottom", "center")], "fr")
+        self.assertIsNone(annotations[0]["quote"])
+        misplaced = ugs_assemble.title_placement_annotations([self._element("F1", "figure", "below", "left")], "fr")
+        self.assertEqual(misplaced[0]["quote"], "Figure 4 x")
+
+    def test_labels_carry_the_row_and_the_three_comments_in_both_languages(self):
+        for language in ("fr", "en"):
+            labels = _labels(language)
+            self.assertIn("title_placement", labels["check_values"])
+            self.assertEqual(set(labels["title_placement_comments"]), {"figure_misplaced", "table_misplaced", "in_image"})
 
 
 class TestNoDuplicateKeys(unittest.TestCase):

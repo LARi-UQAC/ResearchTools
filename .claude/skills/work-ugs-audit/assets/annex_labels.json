@@ -58,7 +58,8 @@
       "table_counts": "Nombre de tableaux : déclaré et extrait",
       "appendices": "Appendices listées et présentes",
       "untitled_elements": "Éléments sans titre (figures ou tableaux non légendés)",
-      "title_kind": "Titre conforme au type d'élément (figure ou tableau)"
+      "title_kind": "Titre conforme au type d'élément (figure ou tableau)",
+      "title_placement": "Titres placés selon la règle (figure : centré dessous ; tableau : à gauche dessus)"
     },
     "check_status_values": {
       "ok": "Conforme",
@@ -84,6 +85,11 @@
     "excluded_item": "page {page} : {reason}",
     "citation_comment": "Appel numérique placé après le point de la phrase : placer la citation avant le point.",
     "excluded_separator": " ; ",
+    "title_placement_comments": {
+      "figure_misplaced": "Titre de figure mal placé : le centrer sous la figure.",
+      "table_misplaced": "Titre de tableau mal placé : l'aligner à gauche au-dessus du tableau.",
+      "in_image": "Titre inclus dans l'image : l'écrire dans le texte du document, sous la figure (ou au-dessus du tableau)."
+    },
     "title_kind_comments": {
       "table_titled_figure": "Titre incorrect : cet élément est un tableau, pas une figure. Utiliser « Tableau N » et l'inscrire dans la liste des tableaux.",
       "figure_titled_table": "Titre incorrect : cet élément est une figure, pas un tableau. Utiliser « Figure N » et l'inscrire dans la liste des figures."
@@ -135,7 +141,8 @@
       "table_counts": "Number of tables: declared and extracted",
       "appendices": "Appendices listed and present",
       "untitled_elements": "Elements without a title (unlabelled figures or tables)",
-      "title_kind": "Title matches the element type (figure or table)"
+      "title_kind": "Title matches the element type (figure or table)",
+      "title_placement": "Titles placed by the rule (figure: centered below; table: left-aligned above)"
     },
     "check_status_values": {
       "ok": "Passed",
@@ -161,6 +168,11 @@
     "excluded_item": "page {page}: {reason}",
     "citation_comment": "Numeric citation placed after the period of the sentence: place the citation before the period.",
     "excluded_separator": "; ",
+    "title_placement_comments": {
+      "figure_misplaced": "Figure title misplaced: center it below the figure.",
+      "table_misplaced": "Table title misplaced: left-align it above the table.",
+      "in_image": "Title drawn inside the image: write it in the document text, below the figure (or above the table)."
+    },
     "title_kind_comments": {
       "table_titled_figure": "Wrong title: this element is a table, not a figure. Use \"Table N\" and add it to the list of tables.",
       "figure_titled_table": "Wrong title: this element is a figure, not a table. Use \"Figure N\" and add it to the list of figures."

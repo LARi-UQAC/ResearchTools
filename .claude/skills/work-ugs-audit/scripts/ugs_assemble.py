@@ -15,7 +15,7 @@ sys.path.insert(0, str(_FIGURE_REVIEW_SCRIPTS))
 from figure_checks import failure_comment, load_criteria
 from grade_total import compute
 from pdf_annotate import annotate
-from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, render_rows, build_html, append_annex, load_labels, render_checks
+from pdf_annex import DEFAULT_LABELS, TITLE_KIND_CODES, TITLE_PLACEMENT_CHECK_ID, render_rows, build_html, append_annex, load_labels, render_checks
 from ref_check import check_all, _default_resolver
 from ugs_text import REF_HEADING_RE, split_body_and_references
 from ugs_tables import load_elements
@@ -162,6 +162,112 @@ def title_kind_annotations(figures: dict, language: str) -> List[dict]:
         annotations.append({"page": record.get("page"), "kind": "figure", "code": code,
                             "quote": record.get("caption") or None, "rect": record.get("rect"),
                             "comment": comments[code]})
+    return annotations
+
+
+# Plan 24 Task 3: the title the house rule expects, per element type (figure: centred below; table: left above).
+EXPECTED_PLACEMENT = {"figure": ("below", "center"), "table": ("above", "left"), "table_image": ("above", "left")}
+IN_IMAGE_POSITION_PREFIX = "in_image"
+
+
+def placement_code(element: dict) -> Optional[str]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Give the placement finding of one element's title (plan 24, Task 3), or None when the element is untitled or
+        its title follows the house rule.
+
+    Details:
+        A title drawn inside the image is always a finding ("in_image"). A figure title must lie below the figure and
+        be centred; a table title above the table and left-aligned. Notes below a table are not checked here.
+
+    Inputs:
+        element (dict): an element record of elements.json (title, element_type).
+
+    Outputs:
+        str | None: "in_image", "figure_misplaced", "table_misplaced", or None.
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    title = element.get("title")
+    if not title:
+        return None
+    position = str(title.get("position") or "")
+    if position.startswith(IN_IMAGE_POSITION_PREFIX):
+        return "in_image"
+    kind = element.get("element_type")
+    if kind not in EXPECTED_PLACEMENT:
+        return None
+    expected_position, expected_alignment = EXPECTED_PLACEMENT[kind]
+    if position == expected_position and title.get("alignment") == expected_alignment:
+        return None
+    return "figure_misplaced" if kind == "figure" else "table_misplaced"
+
+
+def title_placement_row(elements: Optional[List[dict]]) -> dict:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Build the title_placement check row of the annex (plan 24, Task 3): every titled element whose title is placed
+        against the house rule, by id.
+
+    Details:
+        not_applicable when no element carries a title (or no element file exists), never ok in that case. not_ok with
+        the ids of the findings, ok when every title follows the rule.
+
+    Inputs:
+        elements (list[dict] | None): the records of elements.json, None when the file is absent.
+
+    Outputs:
+        dict: id, status and detail (ids only).
+
+    Raises:
+        None.
+    --------------------------------------------------------------------------
+    """
+    records = elements or []
+    if not any(record.get("title") for record in records):
+        return {"id": TITLE_PLACEMENT_CHECK_ID, "status": "not_applicable", "detail": {}}
+    ids = [str(record.get("element_id")) for record in records if placement_code(record) is not None]
+    if not ids:
+        return {"id": TITLE_PLACEMENT_CHECK_ID, "status": "ok", "detail": {}}
+    return {"id": TITLE_PLACEMENT_CHECK_ID, "status": "not_ok", "detail": {"ids": ids}}
+
+
+def title_placement_annotations(elements: List[dict], language: str) -> List[dict]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        One PDF annotation per title placed against the house rule (plan 24, Task 3), with the comment of its code in
+        the report language.
+
+    Details:
+        A text title is quoted so the annotation sits on its words; a title drawn inside the image has no text layer,
+        so its annotation carries no quote and is placed on the element rectangle.
+
+    Inputs:
+        elements (list[dict]): the records of elements.json.
+        language (str): "fr" or "en".
+
+    Outputs:
+        list[dict]: page, kind, code, quote, rect and comment, as the other annotations.
+
+    Raises:
+        AnnexError: from load_labels when a comment is missing from annex_labels.json (R3).
+    --------------------------------------------------------------------------
+    """
+    comments = load_labels(DEFAULT_LABELS, language)["title_placement_comments"]
+    annotations = []
+    for record in elements:
+        code = placement_code(record)
+        if code is None:
+            continue
+        quote = None if code == "in_image" else (record["title"].get("text") or None)
+        kind = "table" if record.get("element_type") in ("table", "table_image") else "figure"
+        annotations.append({"page": record.get("page"), "kind": kind, "code": code, "quote": quote,
+                            "rect": record.get("rect"), "comment": comments[code]})
     return annotations
 
 
@@ -550,6 +656,9 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
 
     figures_path = report_dir / "figures.json"
     figures_data = json.loads(figures_path.read_text(encoding="utf-8")) if figures_path.exists() else None
+    elements_name = ugs_config.load(ugs_config.default_path())[ELEMENTS_NAME_KEY]
+    elements_path = report_dir.parent.parent / report_id / elements_name
+    elements = load_elements(elements_path) if elements_path.exists() else None
 
     # Generate annotations
     annotations = []
@@ -572,6 +681,8 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
         figure_criteria = criteria if criteria is not None else load_criteria(_SHIPPED_CRITERIA)["criteria"]
         annotations.extend(figure_annotations(figures_data, figure_criteria, language))
         annotations.extend(title_kind_annotations(figures_data, language))
+    if elements is not None:
+        annotations.extend(title_placement_annotations(elements, language))
 
     # N5: misplaced citations on the body pages, one annotation each and one row of the checks table.
     body_pages = _body_pages(pages)
@@ -611,6 +722,7 @@ def assemble_report(src_pdf: Path, report_dir: Path, report_id: str, loop: int, 
     report_meta = _read_report_meta(report_dir.parent.parent / report_id / meta_name)
     checks.extend(count_rows(report_meta))
     checks.append(title_kind_row(figures_data))
+    checks.append(title_placement_row(elements))  # plan 24 task 3
     checks.append(appendix_row(pages, report_meta))
     _atomic_write_text(report_dir / CHECKS_FILE_NAME, json.dumps(checks, indent=2))
 

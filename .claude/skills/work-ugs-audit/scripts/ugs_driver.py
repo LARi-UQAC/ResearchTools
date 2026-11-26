@@ -13,6 +13,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import batch_stats
 import sys
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ from ugs_text import StepContext, load_prompts, load_schemas, load_hints, fill
 from ugs_language import load_table
 from ugs_tables import TablesError
 from ugs_bridge import OllamaDeps, NotRun, call as bridge_call
+import vision_probe
 from ugs_events import make_emitter
 from figure_checks import load_criteria
 
@@ -568,6 +570,55 @@ def parse_steps(value: Optional[str]) -> Optional[List[str]]:
     return names
 
 
+VISION_VERDICT_NAME = "vision_probe.json"
+VISION_FIXTURE_IMAGE = ASSETS / "vision_probe_fixture.png"
+VISION_FIXTURE_EXPECTED = ASSETS / "vision_probe_fixture.json"
+
+
+def run_vision_probe(work: Path, call_usage=None) -> str:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Probe the vision role once per work folder, with the shipped fictitious figure, so the figures step knows
+        whether a model reads figures (plan 22 task 3). A verdict that already exists is kept, never probed again.
+
+    Details:
+        The probe needs its image and its expected file inside the work folder (R24), so both are copied into
+        work/vision_probe/. A probe that the model cannot answer still writes a verdict with ok false, and the figures
+        step then runs with vision not validated.
+
+    Inputs:
+        work (Path): the work folder.
+        call_usage (callable or None): the model call of vision_probe.main; None means the real vision role.
+
+    Outputs:
+        str: "present" when the verdict already existed, "ran" when the probe wrote one, "failed" when no verdict was
+            written.
+
+    Raises:
+        DriverError: the fixture files are missing from the skill (R3).
+    --------------------------------------------------------------------------
+    """
+    verdict = work / VISION_VERDICT_NAME
+    if verdict.is_file():
+        return "present"
+    for source in (VISION_FIXTURE_IMAGE, VISION_FIXTURE_EXPECTED):
+        if not source.is_file():
+            raise DriverError(f"the vision probe fixture is missing: {source.name}")
+    folder = work / "vision_probe"
+    folder.mkdir(parents=True, exist_ok=True)
+    image = folder / VISION_FIXTURE_IMAGE.name
+    expected = folder / VISION_FIXTURE_EXPECTED.name
+    shutil.copyfile(VISION_FIXTURE_IMAGE, image)
+    shutil.copyfile(VISION_FIXTURE_EXPECTED, expected)
+    try:
+        vision_probe.main(["--work", str(work), "--image", str(image), "--expected", str(expected)],
+                          call_usage=call_usage)
+    except Exception:  # noqa: BLE001 - a probe that raises is one failed probe; the figures step still runs
+        return "failed"
+    return "ran" if verdict.is_file() else "failed"
+
+
 def cmd_run(args, call, fetch, window, count) -> int:
     """
     --------------------------------------------------------------------------
@@ -610,6 +661,10 @@ def cmd_run(args, call, fetch, window, count) -> int:
         _emit({"dry_run": True, "step": "run", "loop": current, "reports": len(wanted)})
         return EXIT_OK
     rubric = _read_json(work / "rubric.json", "rubric")
+    # Plan 22 task 3: the real run probes the vision role itself before the figures step; injected calls (tests)
+    # never reach a model, and a verdict that exists is kept.
+    if call is None and (only_steps is None or "figures" in only_steps):
+        run_vision_probe(work)
     model_call, model_window, model_count = _inputs(call, window, count, config, work)
     # The actions are recorded only on the real run: an injected call (tests) writes nothing to the machine's log.
     active: Dict[str, Optional[str]] = {"step": None}  # the step running now, set by on_step; None before any

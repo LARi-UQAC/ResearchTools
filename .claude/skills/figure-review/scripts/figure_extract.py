@@ -1074,6 +1074,7 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 item["title"] = None
                 item["notes"] = []
                 item["legend"] = ""
+                item["title_kind_mismatch"] = None  # N7 (plan 19): set only by the ruled-grid branch below
 
             # Series C review (R01 page 34): a thin vector band stacked against a ruled table, with no title
             # between them, is that table's header band: it joins the table rectangle, it is no figure.
@@ -1113,6 +1114,7 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                             item["kind"] = "figure"
                             item["title"] = figure_title
                             item["notes"] = []
+                            item["title_kind_mismatch"] = "table_titled_figure"  # N7: the grid keeps its figure number
             for item in items:
                 if item["kind"] == "figure":
                     if item["title"] is None:
@@ -1178,6 +1180,8 @@ def extract_elements(pdf: Path, out_dir: Path, settings: Dict[str, Any], markers
                 "notes": item["notes"],
                 "caption": title["text"] if title else None,
                 "drawing_area_ratio": None,
+                "title_kind_mismatch": item["title_kind_mismatch"],
+                "title_kind_source": "script" if item["title_kind_mismatch"] else None,
             }
             if kind in ("figure", "table_image"):
                 record["source"] = "raster" if item["raster"] else "vector"

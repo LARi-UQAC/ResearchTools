@@ -5,6 +5,7 @@ Pipeline stage: figure-review, element extraction (issue 122).
 Expected runtime: a few seconds (rendering of small pages only).
 """
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -616,6 +617,123 @@ class TestExtractElements(unittest.TestCase):
             self.assertTrue(block[key]["provenance"].strip())
         self.assertEqual(block["fragment_gap_pt"]["value"], 24)
         self.assertEqual(block["table_overlap_ratio"]["value"], 0.6)
+
+
+class TitleKindMismatchTest(unittest.TestCase):
+    """N7 signal 1 (plan 19): a ruled table under a figure title is flagged by the script; nothing else is."""
+
+    setUp = TestExtractElements.setUp
+    tearDown = TestExtractElements.tearDown
+    _save = TestExtractElements._save
+    _extract = TestExtractElements._extract
+
+    def test_a_ruled_table_under_a_figure_title_is_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Figure 3: Schema du montage")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["element_type"], "figure")
+        self.assertEqual(records[0]["element_id"], "F3")
+        self.assertEqual(records[0]["file"], "F3.png")
+        self.assertEqual(records[0]["title_kind_mismatch"], "table_titled_figure")
+        self.assertEqual(records[0]["title_kind_source"], "script")
+
+    def test_a_chart_under_a_figure_title_is_not_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 436, "Figure 3: Trame")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(records[0]["element_id"], "F3")
+        self.assertIsNone(records[0]["title_kind_mismatch"])
+        self.assertIsNone(records[0]["title_kind_source"])
+
+    def test_a_ruled_table_under_a_table_title_is_not_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Tableau 2: Mesures")
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(records[0]["element_type"], "table")
+        self.assertIsNone(records[0]["title_kind_mismatch"])
+
+    def test_only_the_table_under_the_figure_title_is_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        _centred_text(page, 200, 290, "Figure 4: Schema du montage")
+        _ruled_table(page, 72, 420, 120, 25, [["Zone", "Pas", "Unite"],
+                                               ["Haut", "2.0", "m"],
+                                               ["Bas", "1.1", "m"]])
+        _centred_text(page, 200, 520, "Tableau 1: Zones")
+        self._save(doc)
+        by_id = {r["element_id"]: r for r in self._extract()}
+        self.assertEqual(by_id["F4"]["title_kind_mismatch"], "table_titled_figure")
+        self.assertIsNone(by_id["T1"]["title_kind_mismatch"])
+
+    def test_an_untitled_ruled_table_with_no_title_in_reach_is_not_flagged(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _ruled_table(page, 72, 200, 120, 25, [["Mesure", "Valeur", "Unite"],
+                                               ["Masse", "12.5", "kg"],
+                                               ["Longueur", "3.2", "m"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(records[0]["element_type"], "table")
+        self.assertIsNone(records[0]["title_kind_mismatch"])
+        self.assertIsNone(records[0]["title_kind_source"])
+
+    def test_every_record_carries_both_keys(self):
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        page.insert_image(fitz.Rect(100, 300, 300, 420), stream=_grid_png())
+        _centred_text(page, 200, 436, "Figure 3: Trame")
+        _ruled_table(page, 72, 480, 120, 25, [["A", "B", "C"], ["1", "2", "3"]])
+        self._save(doc)
+        records = self._extract()
+        self.assertTrue(records)
+        for record in records:
+            self.assertIn("title_kind_mismatch", record)
+            self.assertIn("title_kind_source", record)
+
+
+class RealR01Test(unittest.TestCase):
+    """
+    Real-data check on the owner's R01 report (plan 19, 2026-11-26). Skipped unless UGS_REAL_R01 names the PDF and
+    UGS_REAL_WORK a scratch folder. Only ids and counts are asserted (R34): no text, image or path is printed.
+    Expected: every flagged id is one of the ten printed "Figure" titles the owner listed; the script need not find
+    all of them (the vision signal of plan 20 covers the rest), so the test checks inclusion, not equality.
+    """
+
+    LISTED = {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F16", "F17", "F18"}
+
+    def setUp(self):
+        self.pdf = os.environ.get("UGS_REAL_R01", "")
+        self.work = os.environ.get("UGS_REAL_WORK", "")
+        if not self.pdf or not self.work:
+            self.skipTest("UGS_REAL_R01 and UGS_REAL_WORK are not set (owner's real-data check)")
+
+    def test_flagged_elements_are_among_the_listed_titles(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "work-ugs-audit" / "scripts"))
+        import report_prepare  # noqa: E402 - imported here, the real-data check only
+        out = Path(self.work) / "plan19-elements"
+        out.mkdir(parents=True, exist_ok=True)
+        records = report_prepare._run_find_elements(Path(self.pdf), out, [])
+        flagged = {r["element_id"] for r in records if r["title_kind_mismatch"]}
+        self.assertTrue(flagged, "the script flags no element on R01")
+        self.assertLessEqual(flagged, self.LISTED)
+        self.assertTrue(all(r["title_kind_source"] == "script" for r in records if r["title_kind_mismatch"]))
 
 
 if __name__ == "__main__":

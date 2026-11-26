@@ -265,8 +265,8 @@ def title_placement_annotations(elements: List[dict], language: str) -> List[dic
         if code is None:
             continue
         quote = None if code == "in_image" else (record["title"].get("text") or None)
-        kind = "table" if record.get("element_type") in ("table", "table_image") else "figure"
-        annotations.append({"page": record.get("page"), "kind": kind, "code": code, "quote": quote,
+        # The annotation colours have no table kind (annotation.colors): a table is annotated as a figure, as title_kind does.
+        annotations.append({"page": record.get("page"), "kind": "figure", "code": code, "quote": quote,
                             "rect": record.get("rect"), "comment": comments[code]})
     return annotations
 

@@ -84,11 +84,15 @@ absent or wrong in the report and cost the points, in the report language, empty
 `grade.json` only; it never reaches the ledger, a log or the dashboard. The ledger line carries the code as its note,
 and `attempts` counts the tries. The auditor receives `missing` and `comment`, never the validation fields.
 
-Levels (Issue #126 plan 25). The model names one level of `assets/grade_levels.json` (`absent`, `attempted`,
-`partial`, `complete_correct`, `exemplary`) and never a score: the code computes the points as the level's fraction of
-the maximum, rounded to the nearest `grade.score_step` (ties up), so `score` is always within the maximum. A level
-outside the list is refused as `unknown_level`, asked again once, then `not_run`. `model_score` keeps the level name.
-The fractions live only in `grade_levels.json`; no prompt states a number the model could copy.
+Elements and levels (Issue #126 plan 25, review round 1). The model lists the elements a rubric item asks for and gives each
+a verdict: `present`, `partial` or `absent`; a present or partial element carries its page and a quote, checked on the page
+(`quote_not_found` and the other proof codes). The code computes the level from the verdicts (`assets/grade_levels.json`):
+all present gives `complete_correct`, none present or partial gives `absent`, otherwise the share of present elements (a
+partial one counts `partial_weight`) selects a band. `exemplary` comes only from an explicit `exceptional` claim, and only when
+every element is present and every quote is verified; a refused proof never keeps it. The points are the level's fraction of
+the maximum, rounded to `grade.score_step` and never above the maximum. A rated item with no verified quote is refused at any
+level (`evidence_missing`), an empty element list is `elements_missing` (asked again once). `model_score` holds the element
+summary ("present N, partial N, absent N"). A not_applicable answer carries no score and no evidence (`not_applicable_with_score`).
 
 A report whose language cannot be decided (no text layer and no metadata) is refused in preparation with a named
 reason, and the other reports continue. A page with no text layer is sent to OCR and, when still empty, listed in

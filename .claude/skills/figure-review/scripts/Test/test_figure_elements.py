@@ -528,6 +528,29 @@ class TestExtractElements(unittest.TestCase):
         self.assertEqual(figures[0]["title"]["text"], "Figure 1: Recouvrement")
         self.assertEqual(figures[0]["title"]["position"], "below")
 
+    def test_header_logo_near_a_figure_stays_a_logo(self):
+        # Review I3: a logo 100 points above a figure is within group_max_gap_pt but must not join the figure.
+        doc = fitz.open()
+        for _ in range(3):
+            page = doc.new_page(width=612, height=792)
+            page.insert_image(fitz.Rect(40, 10, 140, 90), stream=_logo_png())
+            _filled(page, 100, 190, 400, 290)
+        self._save(doc)
+        records = self._extract()
+        self.assertEqual(sum(1 for r in records if r["element_type"] == "logo"), 3)
+        self.assertEqual(sum(1 for r in records if r["element_type"] == "figure"), 3)
+
+    def test_numbered_section_heading_between_figures_splits_them(self):
+        # Review I3: a numbered heading "3.2 Resultats" between two untitled figures is a barrier.
+        doc = fitz.open()
+        page = doc.new_page(width=612, height=792)
+        _filled(page, 100, 100, 300, 200)
+        page.insert_text((100, 240), "3.2 Resultats", fontsize=12, fontname="helv")
+        _filled(page, 100, 260, 300, 360)
+        self._save(doc)
+        figures = [r for r in self._extract() if r["element_type"] == "figure"]
+        self.assertEqual(len(figures), 2)
+
     def test_extraction_block_holds_the_element_settings(self):
         block = json.loads(CRITERIA_PATH.read_text(encoding="utf-8"))["extraction"]
         for key in ELEMENT_SETTING_KEYS:

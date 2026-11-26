@@ -514,6 +514,22 @@ def _separated(a: "fitz.Rect", b: "fitz.Rect", barriers: List["fitz.Rect"]) -> b
     return any(_splits_side_by_side(a, b, barrier) for barrier in barriers)
 
 
+def _heading_pattern(markers: Dict[str, Any]) -> "re.Pattern":
+    """
+    Purpose: Compile the numbered section heading pattern of the element markers (review I3).
+    Inputs:
+        markers: Dict[str, Any] - the data returned by element_labels.load_markers.
+    Outputs:
+        re.Pattern - the compiled pattern.
+    Raises:
+        MarkerError: If section_heading_regex is missing or is not a string value.
+    """
+    entry = markers.get("section_heading_regex")
+    if not isinstance(entry, dict) or not isinstance(entry.get("value"), str):
+        raise element_labels.MarkerError("element markers lack 'section_heading_regex' (expected a value string)")
+    return re.compile(entry["value"])
+
+
 def _title_barriers(page: "fitz.Page", markers: Dict[str, Any]) -> List["fitz.Rect"]:
     """
     Purpose: Collect the rectangles of the title lines of a page, one per text span that opens with a marker.
@@ -529,13 +545,15 @@ def _title_barriers(page: "fitz.Page", markers: Dict[str, Any]) -> List["fitz.Re
     """
     prefixes = (list(element_labels._marker_prefixes(markers, "figure_prefixes"))
                 + list(element_labels._marker_prefixes(markers, "table_prefixes")))
+    heading = _heading_pattern(markers)
     barriers = []
     for block in page.get_text("dict")["blocks"]:
         if block.get("type") != TEXT_BLOCK_TYPE:
             continue
         for line in block["lines"]:
             for span in line["spans"]:
-                if element_labels._starts_with_marker(element_labels._clean(span["text"]), prefixes):
+                text = element_labels._clean(span["text"])
+                if element_labels._starts_with_marker(text, prefixes) or heading.match(text):
                     barriers.append(fitz.Rect(span["bbox"]))
     return barriers
 
@@ -581,7 +599,8 @@ def _split_title_blocks(page: "fitz.Page", blocks: List[tuple], markers: Dict[st
 
 
 def _group_by_barriers(regions: List[Tuple["fitz.Rect", bool]], barriers: List["fitz.Rect"],
-                       gap: float) -> List[Tuple["fitz.Rect", bool]]:
+                       gap: float, page_height: float, running_band: float,
+                       small_area: float) -> List[Tuple["fitz.Rect", bool]]:
     """
     Purpose: Group the figure regions of a page: regions within gap of each other form one figure unless a
         barrier (a title or a paragraph) lies between them or splits them side by side (plan 12 E6, review
@@ -602,6 +621,9 @@ def _group_by_barriers(regions: List[Tuple["fitz.Rect", bool]], barriers: List["
         merged: List[Tuple["fitz.Rect", bool]] = []
         for rect, raster in groups:
             for i, (other, other_raster) in enumerate(merged):
+                if (_running(rect, page_height, running_band, small_area)
+                        or _running(other, page_height, running_band, small_area)):
+                    continue  # review I3: a header logo or footer frame never joins a figure
                 if _touch(rect, other, gap) and not _separated(rect, other, barriers):
                     merged[i] = (_union(other, rect), raster or other_raster)
                     changed = True
@@ -610,6 +632,25 @@ def _group_by_barriers(regions: List[Tuple["fitz.Rect", bool]], barriers: List["
                 merged.append((rect, raster))
         groups = merged
     return groups
+
+
+def _running(rect: "fitz.Rect", page_height: float, band: float, small_area: float) -> bool:
+    """
+    Purpose: Tell whether a region is a header or footer element: a small region touching the running band, or
+        any region lying entirely in it (review I3).
+    Inputs:
+        rect: fitz.Rect - the region.
+        page_height: float - the page height in points.
+        band: float - the running band height in points.
+        small_area: float - the area under which a region touching the band is a logo.
+    Outputs:
+        bool - True for a logo-sized region touching the band, or a region entirely inside it.
+    Raises:
+        None.
+    """
+    touches = rect.y0 <= band or rect.y1 >= page_height - band
+    entirely = rect.y1 <= band or rect.y0 >= page_height - band
+    return entirely or (touches and rect.width * rect.height <= small_area)
 
 
 def _words_inside(words: List[tuple], rect: "fitz.Rect") -> int:
@@ -755,7 +796,8 @@ def _scan_page(page: "fitz.Page", page_no: int, settings: Dict[str, Any],
     regions = [(rect, is_raster) for rect, is_raster in raster + vector
                if _table_overlap_ratio(rect, table_boxes) < settings["table_overlap_ratio"]]
     barriers = _title_barriers(page, markers) + _paragraph_barriers(blocks, settings["merge_max_text_words"])
-    merged = _group_by_barriers(regions, barriers, settings["group_max_gap_pt"])
+    merged = _group_by_barriers(regions, barriers, settings["group_max_gap_pt"], page.rect.height,
+                                settings["running_band_pt"], settings["logo_max_area_pt2"])
     min_area = settings["min_area_pt2"]
     figures = [(rect, is_raster) for rect, is_raster in merged if rect.width * rect.height >= min_area]
 

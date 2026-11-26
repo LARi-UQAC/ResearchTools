@@ -1,7 +1,19 @@
 {
-  "figure_prefixes": ["Figure", "Fig.", "Fig"],
-  "table_prefixes": ["Tableau", "Table"],
-  "note_prefixes": ["Note", "Notes", "Source", "*"],
+  "figure_prefixes": [
+    "Figure",
+    "Fig.",
+    "Fig"
+  ],
+  "table_prefixes": [
+    "Tableau",
+    "Table"
+  ],
+  "note_prefixes": [
+    "Note",
+    "Notes",
+    "Source",
+    "*"
+  ],
   "max_title_distance_pt": {
     "value": 36,
     "provenance": "proposal 2026-11-16, tune on the real reports"
@@ -9,6 +21,10 @@
   "max_note_distance_pt": {
     "value": 24,
     "provenance": "proposal 2026-11-16, tune on the real reports"
+  },
+  "section_heading_regex": {
+    "value": "^\\s*\\d+(?:\\.\\d+)+\\s+[A-Za-z\\u00c0-\\u00ff]{3,}",
+    "provenance": "proposal 2026-11-25 (review I3): a numbered section heading of two levels or more and a word of three letters or more; a figure label such as 1.5 V is not a heading. A barrier between two figures"
   },
   "title_overlap_pt": {
     "value": 12,

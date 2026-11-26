@@ -81,6 +81,14 @@
     "value": 3,
     "provenance": "proposal 2026-11-25 (plan 11 E5), an untitled region is a table drawn as an image only when its OCR rebuilds at least this many columns of non-empty cells; a two-column label grid is a diagram in the real reports (plan 17, first run: 12 untitled regions of R01 wrongly tables at 2); tune on the real reports"
   },
+  "tables.titled_min_rows": {
+    "value": 3,
+    "provenance": "measured 2026-11-26 on R01 (plan 20 review D): the grid of each owner-listed titled table holds at least three rows of five non-empty cells; the untitled grid rule keeps its own keys"
+  },
+  "tables.titled_min_cols": {
+    "value": 5,
+    "provenance": "measured 2026-11-26 on R01 (plan 20 review D): with five columns the rule flags the owner-listed titled tables and no other titled figure of R01 except the one with no text layer; at three columns it flagged F9, F10, F13 and F15 (at most two full rows at five cells) which the owner does not list"
+  },
   "tables.image_row_overlap_ratio": {
     "value": 0.5,
     "provenance": "proposal 2026-11-25 (review M2), two words join one row when their boxes overlap vertically by this share of the smaller box; tune on the real reports"

@@ -15,6 +15,8 @@ MIN_ROWS_KEY = "tables.image_min_rows"
 OVERLAP_KEY = "tables.image_row_overlap_ratio"
 UNTITLED_ROWS_KEY = "tables.untitled_min_rows"
 UNTITLED_COLS_KEY = "tables.untitled_min_cols"
+TITLED_ROWS_KEY = "tables.titled_min_rows"  # review D: the grid rule of a titled figure
+TITLED_COLS_KEY = "tables.titled_min_cols"
 
 
 class ImageSettings(NamedTuple):
@@ -224,6 +226,36 @@ def classify_untitled(words: Sequence[tuple], column_gap_pt: float, min_rows: in
     if full_rows >= min_rows:
         return UNTITLED_TABLE
     return UNTITLED_FIGURE
+
+
+def load_titled_settings(path: Optional[Path] = None) -> Tuple[int, int]:
+    """
+    --------------------------------------------------------------------------
+    Purpose:
+        Read the minimum rows and columns of a grid that makes a titled figure a table (review D of plan 20).
+
+    Inputs:
+        path (Path | None): the configuration file; None means the work-ugs-audit assets file.
+
+    Outputs:
+        Tuple[int, int]: the minimum rows and the minimum columns, both positive integers.
+
+    Raises:
+        TableImageError: when the file is unreadable, or a key is missing or not a positive integer (the key is named).
+    --------------------------------------------------------------------------
+    """
+    config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise TableImageError(f"configuration {config_path.name} is not readable JSON: {exc}") from None
+    values = []
+    for key in (TITLED_ROWS_KEY, TITLED_COLS_KEY):
+        value = _read_entry(raw, key, config_path)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise TableImageError(f"key '{key}' in {config_path.name} must be a positive integer")
+        values.append(value)
+    return values[0], values[1]
 
 
 def load_untitled_settings(path: Optional[Path] = None) -> Tuple[int, int]:

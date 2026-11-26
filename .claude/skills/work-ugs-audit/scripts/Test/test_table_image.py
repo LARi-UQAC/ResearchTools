@@ -189,5 +189,21 @@ class UntitledClassificationTests(unittest.TestCase):
         self.assertEqual(table_image.classify_untitled(self._grid(1, 3), self.GAP, 2, 3, self.OVERLAP), "figure")
 
 
+class TitledSettingsTests(unittest.TestCase):
+    """Review D: the grid rule of a titled figure has its own keys, read with provenance (R0, R3)."""
+
+    def test_the_shipped_titled_minimums_are_five_columns_and_three_rows(self):
+        self.assertEqual(table_image.load_titled_settings(), (3, 5))
+
+    def test_a_missing_titled_key_is_named(self):
+        config = Path(tempfile.mkdtemp()) / "config.json"
+        raw = json.loads(table_image.DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+        del raw[table_image.TITLED_COLS_KEY]
+        config.write_text(json.dumps(raw), encoding="utf-8")
+        with self.assertRaises(table_image.TableImageError) as ctx:
+            table_image.load_titled_settings(config)
+        self.assertIn(table_image.TITLED_COLS_KEY, str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

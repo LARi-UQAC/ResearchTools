@@ -990,6 +990,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
     try:
         image_settings = table_image.load_image_settings()
         untitled_rows, untitled_cols = table_image.load_untitled_settings()
+        titled_rows, titled_cols = table_image.load_titled_settings()
     except table_image.TableImageError as error:
         raise PrepareError(str(error)) from None
 
@@ -1050,7 +1051,7 @@ def _prepare_report(pdf_file: Path, report_id: str, work_dir: Path, settings: di
                                                             skip_pages, memo_hooks, declared["declared_figures"],
                                                             classify=classify, declared=declared)
     elements = _decide_title_kinds(elements, pdf_file, _memoized_page_ocr(hooks.ocr_words), tesseract_language,
-                                   image_settings, untitled_rows, untitled_cols)  # review A: final records only
+                                   image_settings, titled_rows, titled_cols)  # review A: final records only, D keys
     elements = _read_table_images(elements, pdf_file, memo_hooks, language, context["ocr"]["language_codes"],
                                   image_settings)
     _write_atomic(report_dir / settings["reports.elements_file_name"],

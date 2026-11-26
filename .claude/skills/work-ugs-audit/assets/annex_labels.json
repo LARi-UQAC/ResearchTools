@@ -41,7 +41,8 @@
       "over_budget": "Dépasse le budget de jetons",
       "elements_missing": "Aucun élément nommé : le modèle n'a pas listé les éléments demandés",
       "exceptional_unsupported": "Exceptionnel non justifié : tous les éléments doivent être présents, avec une preuve",
-      "unknown_level": "Niveau inconnu : le niveau n'est pas dans la liste du fichier des niveaux"
+      "unknown_level": "Niveau inconnu : le niveau n'est pas dans la liste du fichier des niveaux",
+      "not_applicable_with_score": "Non applicable avec un score ou une preuve : la réponse ne doit contenir ni score ni preuve"
     },
     "checks_title": "Contrôles de références croisées",
     "check_column": "Contrôle",
@@ -123,7 +124,8 @@
       "over_budget": "Over the token budget",
       "elements_missing": "No element named: the model did not list the elements the item asks for",
       "exceptional_unsupported": "Exceptional claim not supported: every element must be present, with evidence",
-      "unknown_level": "Unknown level: the level is not in the list of the levels file"
+      "unknown_level": "Unknown level: the level is not in the list of the levels file",
+      "not_applicable_with_score": "Not applicable with a score or evidence: the answer must carry neither"
     },
     "checks_title": "Cross-reference checks",
     "check_column": "Check",

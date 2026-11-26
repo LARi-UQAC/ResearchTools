@@ -38,6 +38,7 @@ GRADE_CODES = (
     "elements_missing",
     "exceptional_unsupported",
     "unknown_level",
+    "not_applicable_with_score",
     "unknown_status",
     "unparsable_answer",
     "schema_invalid",
@@ -298,7 +299,46 @@ def _elements_are_list_of_objects(elements: Any) -> bool:
     return isinstance(elements, list) and bool(elements) and all(isinstance(entry, dict) for entry in elements)
 
 
-def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal) -> dict:
+def _quote_verified(page_num: Any, quote: Any, pages: List[str]) -> bool:
+    """
+    Purpose: Tell whether an element's quote is found on its page, after the same normalisation as check_grade_answer.
+    Inputs:
+        page_num: Any - The page number of the element.
+        quote: Any - The quote of the element.
+        pages: List[str] - The page texts.
+    Outputs:
+        bool - True only when the page exists and the normalised quote is found on it.
+    Raises:
+        None.
+    """
+    if not _is_page_number(page_num) or not 1 <= page_num <= len(pages):
+        return False
+    if not isinstance(quote, str) or not normalize(quote).strip():
+        return False
+    return normalize(quote) in normalize(pages[page_num - 1])
+
+
+def _exceptional_holds(elements: List[dict], pages: List[str]) -> bool:
+    """
+    Purpose: Tell whether an exceptional claim holds: every element present, each with a quote found on its page (the
+        security review of round 1: an unverifiable quote never earns exemplary points).
+    Inputs:
+        elements: List[dict] - The elements of the answer.
+        pages: List[str] - The page texts.
+    Outputs:
+        bool - True only when every element is present and verified.
+    Raises:
+        None.
+    """
+    return all(entry.get("verdict") == "present" and _quote_verified(entry.get("page"), entry.get("quote"), pages)
+               for entry in elements)
+
+
+# The keys of a rated answer that only the code computes.
+MODEL_DERIVED_KEYS = ("level", "score", "evidence")
+
+
+def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal, pages: List[str]) -> dict:
     """
     Purpose: Give a copy of a rated answer with its level, its points and its evidence computed from the element
         verdicts (review round 1, decisions 1 and 2). An answer with no usable elements is returned unchanged and is
@@ -313,10 +353,16 @@ def with_level_score(answer: dict, item: dict, scale: GradeScale, step: Decimal)
     Raises:
         None.
     """
-    if answer.get("status") != "rated" or not _elements_are_list_of_objects(answer.get("elements")):
+    if answer.get("status") != "rated":
+        return answer  # a not_applicable answer keeps its payload, so check_grade_answer can refuse it
+    # Security review of round 1: a level, a score and evidence written by the model are never kept; only the values
+    # computed here from the verdicts are (a level the model names is not a verdict).
+    answer = {key: value for key, value in answer.items() if key not in MODEL_DERIVED_KEYS}
+    if not _elements_are_list_of_objects(answer.get("elements")):
         return answer
     elements = answer["elements"]
-    level = level_for_elements(elements, answer.get("exceptional") is True, scale)
+    claimed = answer.get("exceptional") is True and _exceptional_holds(elements, pages)  # refused proof: no claim
+    level = level_for_elements(elements, claimed, scale)
     computed = dict(answer)
     computed["level"] = level
     computed["score"] = points_for_level(level, item.get("max_points", 0), scale.fractions, step)
@@ -453,6 +499,8 @@ def check_grade_answer(
     if "level" in answer and answer["level"] not in scale.fractions:  # the injected scale names every level it may give
         return "unknown_level", "level must be one of the levels of grade_levels.json"
     if status == "not_applicable":
+        if answer.get("score") is not None or answer.get("evidence"):
+            return "not_applicable_with_score", "not_applicable must carry no score and no evidence"
         if not item.get("optional"):
             return "not_applicable_not_allowed", "not_applicable is allowed only for an optional item"
         return "ok", ""
@@ -568,16 +616,18 @@ def _record_from_answer(
     if missing_max_chars is None:
         missing_max_chars = read_missing_max_chars(default_path())
     elements = answer.get("elements")
+    # Only a level computed by with_level_score makes a score and evidence trustworthy (security review of round 1).
+    usable = answer.get("status") == "rated" and "level" in answer
     if code == "ok":
         status = answer.get("status")
-        score = answer.get("score")
+        score = answer.get("score") if usable else None
     elif code in PROOF_REFUSAL_CODES:
         status = "rated"
-        score = answer.get("score")
+        score = answer.get("score") if usable else None
     else:
         status = "not_run"
         score = None
-    evidence = answer.get("evidence")
+    evidence = answer.get("evidence") if usable else []
     record = {
         "item_id": item_id,
         "status": status,
@@ -587,11 +637,11 @@ def _record_from_answer(
         "missing": _missing_text(answer, max_points, score, missing_max_chars),
         "audit": "not_run",
         "flag": code != "ok",
-        "model_score": element_summary(elements),
+        "model_score": element_summary(elements) if usable else None,
         "validation": code,
         "attempts": attempts,
         "level": answer.get("level"),
-        "elements": [] if not isinstance(elements, list) else [
+        "elements": [] if not usable or not isinstance(elements, list) else [
             {"element": entry.get("element"), "verdict": entry.get("verdict"), "page": entry.get("page")}
             for entry in elements if isinstance(entry, dict)],
     }
@@ -754,7 +804,7 @@ def grade_item(
             last_answer = None
             continue
 
-        answer = with_level_score(answer, item, scale, step)
+        answer = with_level_score(answer, item, scale, step, pages)
         code, message = check_grade_answer(answer, item, pages, scale)
         if code == "ok":
             return _record_from_answer(item_id, answer, "ok", attempt + 1, item.get("max_points", 0), missing_max_chars)

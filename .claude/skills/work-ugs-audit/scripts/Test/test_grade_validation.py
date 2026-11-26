@@ -302,6 +302,51 @@ class TestGradeItemFlow(unittest.TestCase):
                          ("not_run", "unparsable_answer", None))
 
 
+class TestSecurityReviewRound1(unittest.TestCase):
+    """Security review of round 1: a refused proof never keeps exemplary points, and a not_applicable answer never
+    carries its score or evidence into the record."""
+
+    def setUp(self):
+        self.ctx = make_ctx()
+        self.item = {"id": "I01", "title": "Intro", "max_points": 10}
+
+    def test_an_exceptional_claim_with_one_unverifiable_quote_never_gets_exemplary_points(self):
+        bad = _rated([_present(), _present(2, "NOT IN PAGE", "second")], exceptional=True)
+        record = grade_item(self.item, PAGES, FakeCall([bad, bad]), self.ctx, "en", "")
+        self.assertEqual(record["validation"], "quote_not_found")
+        self.assertEqual(record["level"], "complete_correct")
+        self.assertEqual(record["score"], 8.75)
+
+    def test_an_exceptional_claim_with_every_quote_verified_gets_exemplary(self):
+        good = _rated([_present(), _present(2, "Page 2 text", "second")], exceptional=True)
+        record = grade_item(self.item, PAGES, FakeCall([good]), self.ctx, "en", "")
+        self.assertEqual(record["validation"], "ok")
+        self.assertEqual(record["level"], "exemplary")
+        self.assertEqual(record["score"], 10)
+
+    def test_a_not_applicable_record_holds_no_score_and_no_evidence(self):
+        na = {"status": "not_applicable", "elements": [], "comment": "N/A"}
+        record = grade_item(dict(self.item, optional=True), PAGES, FakeCall([na]), self.ctx, "en", "")
+        self.assertEqual(record["status"], "not_applicable")
+        self.assertIsNone(record["score"])
+        self.assertEqual(record["evidence"], [])
+        self.assertIsNone(record["model_score"])
+
+    def test_a_not_applicable_answer_carrying_a_score_is_refused_and_not_copied(self):
+        na = {"status": "not_applicable", "elements": [], "comment": "N/A", "score": 5}
+        record = grade_item(dict(self.item, optional=True), PAGES, FakeCall([na, na]), self.ctx, "en", "")
+        self.assertEqual(record["validation"], "not_applicable_with_score")
+        self.assertEqual(record["status"], "not_run")
+        self.assertIsNone(record["score"])
+
+    def test_a_not_applicable_answer_carrying_evidence_is_refused_and_not_copied(self):
+        na = {"status": "not_applicable", "elements": [], "comment": "N/A",
+              "evidence": [{"page": 1, "quote": "Page 1 text"}]}
+        record = grade_item(dict(self.item, optional=True), PAGES, FakeCall([na, na]), self.ctx, "en", "")
+        self.assertEqual(record["validation"], "not_applicable_with_score")
+        self.assertEqual(record["evidence"], [])
+
+
 class TestMissingField(unittest.TestCase):
     """The record carries `missing`: kept as the model gave it, empty at the full points, cut to the limit."""
 

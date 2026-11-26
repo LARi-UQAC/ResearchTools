@@ -68,10 +68,21 @@ class TestWorkUgsAuditContract(unittest.TestCase):
     def test_the_long_run_is_started_detached(self):
         self.assertRegex(self.agent, r"(?i)detached")
 
-    def test_the_poll_checks_that_the_background_process_is_still_running(self):
-        self.assertRegex(self.agent, r"(?i)background process\s+is still running")
-        self.assertRegex(self.agent, r"(?i)steps are still open")
-        self.assertRegex(self.agent, r"(?i)not retried")
+    def test_the_agent_never_polls_the_run(self):
+        self.assertNotIn("poll", self.agent.lower())
+        self.assertNotIn("sleep", self.agent.lower())  # no sleep-loop either
+
+    def test_the_agent_ends_its_turn_and_reads_the_marker_once(self):
+        self.assertIn("run_in_background", self.agent)
+        self.assertRegex(self.agent, r"(?i)end your turn")
+        self.assertIn("run_done.json", self.agent)
+        self.assertRegex(self.agent, r"(?i)read .*run_done\.json.* once")
+        self.assertRegex(self.agent, r"(?i)do not call .status.")
+
+    def test_the_command_reads_the_marker_once_and_never_polls(self):
+        command = read(".claude/commands/work-ugs-audit.md")
+        self.assertIn("run_done.json", command)
+        self.assertRegex(command, r"(?i)never polls")
 
     def test_the_command_names_third_loop_as_its_only_pause(self):
         command = (ROOT / ".claude" / "commands" / "work-ugs-audit.md").read_text(encoding="utf-8")
@@ -124,6 +135,9 @@ class TestWorkUgsAuditContract(unittest.TestCase):
         self.assertTrue(any("`/work-ugs-audit`" in row for row in rows))
 
     # --- negative controls: the finders can fail ---
+
+    def test_poll_finder_reports_a_planted_polling_instruction(self):
+        self.assertIn("poll", "Poll status every minute until the run ends.".lower())
 
     def test_forbidden_target_finder_detects_a_planted_read(self):
         fictitious = "Read `R01/grade.json` and the pages/ folder to explain the grade."

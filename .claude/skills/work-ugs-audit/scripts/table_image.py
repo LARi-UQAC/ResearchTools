@@ -206,8 +206,8 @@ def classify_untitled(words: Sequence[tuple], column_gap_pt: float, min_rows: in
     """
     Purpose: Decide whether an untitled region is a table drawn as an image (plan 11, spec E5).
     Details: The region is a table when its OCR words rebuild a grid of at least min_rows rows and min_cols columns,
-        the rows and columns being those words_to_rows gives. Otherwise, such as a diagram with a few labels, it
-        stays a figure. Nothing here runs OCR: the caller supplies the word boxes.
+        the rows and columns being those words_to_rows gives: at least min_rows rows that each reach min_cols
+        non-empty cells, so a diagram whose labels make ragged rows stays a figure. Nothing here runs OCR.
     Inputs:
         words: Sequence[tuple] - PyMuPDF word tuples of the region (x0, y0, x1, y1, text, ...).
         column_gap_pt: float - the gap that starts a new column, in points.
@@ -220,10 +220,8 @@ def classify_untitled(words: Sequence[tuple], column_gap_pt: float, min_rows: in
         None.
     """
     rows = words_to_rows(words, column_gap_pt, row_overlap_ratio)
-    if not rows:
-        return UNTITLED_FIGURE
-    widest = max(len(row) for row in rows)
-    if len(rows) >= min_rows and widest >= min_cols:
+    full_rows = sum(1 for row in rows if sum(1 for cell in row if cell.strip()) >= min_cols)
+    if full_rows >= min_rows:
         return UNTITLED_TABLE
     return UNTITLED_FIGURE
 

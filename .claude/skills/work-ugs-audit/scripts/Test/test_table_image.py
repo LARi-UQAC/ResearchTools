@@ -178,6 +178,13 @@ class UntitledClassificationTests(unittest.TestCase):
     def test_below_min_cols_is_figure(self):
         self.assertEqual(table_image.classify_untitled(self._grid(3, 2), self.GAP, 2, 3, self.OVERLAP), "figure")
 
+    def test_only_one_full_row_is_figure(self):
+        # Review of the real counts (plan 17): a diagram's labels make ragged rows; a grid needs min_rows rows
+        # that each reach min_cols cells, so one full row among ragged ones is not a table.
+        words = self._grid(1, 3) + [(100 + c * 100, 315 + k * 15, 140 + c * 100, 325 + k * 15, f"x{k}{c}", 0, 0, 0)
+                                    for k in range(2) for c in range(2)]
+        self.assertEqual(table_image.classify_untitled(words, self.GAP, 2, 3, self.OVERLAP), "figure")
+
     def test_below_min_rows_is_figure(self):
         self.assertEqual(table_image.classify_untitled(self._grid(1, 3), self.GAP, 2, 3, self.OVERLAP), "figure")
 
